@@ -99,10 +99,15 @@ object GeminiService:
             _      <- ZIO.logDebug(s"Gemini execution completed with exit code: ${result.exitCode}")
           yield result
 
-        // Retry with exponential backoff on failure
-        operation.retry(
-          Schedule.exponential(Duration.fromSeconds(1)) && Schedule.recurs(config.geminiMaxRetries)
+        // Build retry policy from config
+        val policy = RetryPolicy(
+          maxRetries = config.geminiMaxRetries,
+          baseDelay = Duration.fromSeconds(1),
+          maxDelay = Duration.fromSeconds(30),
         )
+
+        // Apply retry with exponential backoff on retryable errors
+        RetryPolicy.withRetry(operation, policy, RetryPolicy.isRetryable)
 
       /** Check if Gemini CLI is installed */
       private def checkGeminiInstalled: ZIO[Any, GeminiError, Unit] =
