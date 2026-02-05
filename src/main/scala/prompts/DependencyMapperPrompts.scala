@@ -21,7 +21,7 @@ import models.CobolAnalysis
   */
 object DependencyMapperPrompts:
 
-  val version = "1.0.0"
+  val version: String = "1.0.0"
 
   private val systemPrompt =
     """You are an expert in COBOL program dependency analysis and architecture mapping.

@@ -22,7 +22,7 @@ import models.CobolFile
   */
 object CobolAnalyzerPrompts:
 
-  val version = "1.0.0"
+  val version: String = "1.0.0"
 
   private val systemPrompt =
     """You are an expert COBOL program analyzer with deep knowledge of mainframe COBOL syntax.

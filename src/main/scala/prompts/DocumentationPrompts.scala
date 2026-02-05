@@ -23,7 +23,7 @@ import models.{ CobolAnalysis, DependencyGraph, SpringBootProject, ValidationRep
   */
 object DocumentationPrompts:
 
-  val version = "1.0.0"
+  val version: String = "1.0.0"
 
   private val systemPrompt =
     """You are an expert technical writer specializing in migration documentation.

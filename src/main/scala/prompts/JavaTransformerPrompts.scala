@@ -22,7 +22,7 @@ import models.{ CobolAnalysis, Procedure, Variable }
   */
 object JavaTransformerPrompts:
 
-  val version = "1.0.0"
+  val version: String = "1.0.0"
 
   private val systemPrompt =
     """You are an expert in COBOL to Java Spring Boot transformation.
