@@ -4,7 +4,7 @@ import java.nio.file.Path
 
 import zio.*
 
-import models.MigrationState
+import models.{ FileError, MigrationState }
 
 /** StateService - State persistence and checkpointing
   *
@@ -35,24 +35,27 @@ object StateService:
         private val statePath = stateDir.resolve("migration-state.json")
 
         override def saveState(state: MigrationState): ZIO[Any, Throwable, Unit] =
-          for
+          (for
             // TODO: Implement JSON serialization with zio-json
             _   <- ZIO.logInfo(s"Saving state to $statePath")
             json = "{}" // Placeholder
             _   <- fileService.writeFile(statePath, json)
-          yield ()
+          yield ()).mapError(fileErrorToThrowable)
 
         override def loadState(): ZIO[Any, Throwable, Option[MigrationState]] =
-          for
+          (for
             _      <- ZIO.logInfo(s"Loading state from $statePath")
-            exists <- ZIO.attempt(java.nio.file.Files.exists(statePath))
+            exists <- fileService.exists(statePath)
             state  <- if exists then fileService.readFile(statePath).map(_ => Some(MigrationState.empty))
                       else ZIO.succeed(None)
-          yield state
+          yield state).mapError(fileErrorToThrowable)
 
         override def createCheckpoint(step: String): ZIO[Any, Throwable, Unit] =
           for _ <- ZIO.logInfo(s"Creating checkpoint for step: $step")
           // TODO: Implement checkpoint logic
           yield ()
+
+        private def fileErrorToThrowable(error: FileError): Throwable =
+          new RuntimeException(error.message)
       }
   }

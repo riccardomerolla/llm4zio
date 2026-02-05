@@ -26,6 +26,19 @@ import Codecs.given
 /** Domain models for the legacy modernization system */
 
 // ============================================================================
+// Error Types
+// ============================================================================
+
+/** File operation errors with typed error handling */
+enum FileError(val message: String) derives JsonCodec:
+  case NotFound(path: Path)               extends FileError(s"File not found: $path")
+  case PermissionDenied(path: Path)       extends FileError(s"Permission denied: $path")
+  case IOError(path: Path, cause: String) extends FileError(s"I/O error at $path: $cause")
+  case InvalidPath(path: String)          extends FileError(s"Invalid path: $path")
+  case DirectoryNotEmpty(path: Path)      extends FileError(s"Directory not empty: $path")
+  case AlreadyExists(path: Path)          extends FileError(s"Already exists: $path")
+
+// ============================================================================
 // Discovery Phase
 // ============================================================================
 
