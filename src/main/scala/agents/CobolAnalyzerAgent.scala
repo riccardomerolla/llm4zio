@@ -1,23 +1,23 @@
 package agents
 
 import zio.*
-import core.GeminiService
-import models.{CobolAnalysis, CobolFile}
 
-/**
- * CobolAnalyzerAgent - Deep structural analysis of COBOL programs using AI
- *
- * Responsibilities:
- * - Parse COBOL divisions (IDENTIFICATION, ENVIRONMENT, DATA, PROCEDURE)
- * - Extract variables, data structures, and types
- * - Identify control flow (IF, PERFORM, GOTO statements)
- * - Detect copybook dependencies
- * - Generate structured analysis JSON
- *
- * Interactions:
- * - Input from: CobolDiscoveryAgent
- * - Output consumed by: JavaTransformerAgent, DependencyMapperAgent
- */
+import core.GeminiService
+import models.{ CobolAnalysis, CobolFile }
+
+/** CobolAnalyzerAgent - Deep structural analysis of COBOL programs using AI
+  *
+  * Responsibilities:
+  *   - Parse COBOL divisions (IDENTIFICATION, ENVIRONMENT, DATA, PROCEDURE)
+  *   - Extract variables, data structures, and types
+  *   - Identify control flow (IF, PERFORM, GOTO statements)
+  *   - Detect copybook dependencies
+  *   - Generate structured analysis JSON
+  *
+  * Interactions:
+  *   - Input from: CobolDiscoveryAgent
+  *   - Output consumed by: JavaTransformerAgent, DependencyMapperAgent
+  */
 trait CobolAnalyzerAgent:
   def analyze(cobolFile: CobolFile): ZIO[GeminiService, Throwable, CobolAnalysis]
 

@@ -1,11 +1,10 @@
 package models
 
-import java.nio.file.Path
+import java.nio.file.{ Path, Paths }
 import java.time.Instant
 
-/**
- * Domain models for the legacy modernization system
- */
+/** Domain models for the legacy modernization system
+  */
 
 // Discovery Phase
 case class CobolFile(
@@ -14,7 +13,7 @@ case class CobolFile(
   size: Long,
   lastModified: Instant,
   encoding: String,
-  fileType: FileType
+  fileType: FileType,
 )
 
 enum FileType:
@@ -22,7 +21,7 @@ enum FileType:
 
 case class FileInventory(
   files: List[CobolFile],
-  metadata: Map[String, String]
+  metadata: Map[String, String],
 )
 
 // Analysis Phase
@@ -32,24 +31,31 @@ case class CobolAnalysis(
   variables: List[Variable],
   procedures: List[Procedure],
   copybooks: List[String],
-  complexity: ComplexityMetrics
+  complexity: ComplexityMetrics,
 )
 
 object CobolAnalysis:
   def empty: CobolAnalysis = CobolAnalysis(
-    file = null, // Placeholder
+    file = CobolFile(
+      path = Paths.get(""),
+      name = "",
+      size = 0L,
+      lastModified = Instant.EPOCH,
+      encoding = "UTF-8",
+      fileType = FileType.Program,
+    ),
     divisions = CobolDivisions(None, None, None, None),
     variables = List.empty,
     procedures = List.empty,
     copybooks = List.empty,
-    complexity = ComplexityMetrics(0, 0, 0)
+    complexity = ComplexityMetrics(0, 0, 0),
   )
 
 case class CobolDivisions(
   identification: Option[String],
   environment: Option[String],
   data: Option[String],
-  procedure: Option[String]
+  procedure: Option[String],
 )
 
 case class Variable(
@@ -57,32 +63,32 @@ case class Variable(
   level: Int,
   dataType: String,
   picture: Option[String],
-  usage: Option[String]
+  usage: Option[String],
 )
 
 case class Procedure(
   name: String,
   paragraphs: List[String],
-  statements: List[Statement]
+  statements: List[Statement],
 )
 
 case class Statement(
   lineNumber: Int,
   statementType: String,
-  content: String
+  content: String,
 )
 
 case class ComplexityMetrics(
   cyclomaticComplexity: Int,
   linesOfCode: Int,
-  numberOfProcedures: Int
+  numberOfProcedures: Int,
 )
 
 // Dependency Mapping Phase
 case class DependencyGraph(
   nodes: List[DependencyNode],
   edges: List[DependencyEdge],
-  serviceCandidates: List[String]
+  serviceCandidates: List[String],
 )
 
 object DependencyGraph:
@@ -92,7 +98,7 @@ case class DependencyNode(
   id: String,
   name: String,
   nodeType: NodeType,
-  complexity: Int
+  complexity: Int,
 )
 
 enum NodeType:
@@ -101,7 +107,7 @@ enum NodeType:
 case class DependencyEdge(
   from: String,
   to: String,
-  edgeType: EdgeType
+  edgeType: EdgeType,
 )
 
 enum EdgeType:
@@ -114,7 +120,7 @@ case class SpringBootProject(
   entities: List[JavaEntity],
   services: List[JavaService],
   controllers: List[JavaController],
-  configuration: ProjectConfiguration
+  configuration: ProjectConfiguration,
 )
 
 object SpringBootProject:
@@ -124,53 +130,53 @@ object SpringBootProject:
     entities = List.empty,
     services = List.empty,
     controllers = List.empty,
-    configuration = ProjectConfiguration("", "", List.empty)
+    configuration = ProjectConfiguration("", "", List.empty),
   )
 
 case class JavaPackage(
   name: String,
-  classes: List[String]
+  classes: List[String],
 )
 
 case class JavaEntity(
   name: String,
   fields: List[JavaField],
-  annotations: List[String]
+  annotations: List[String],
 )
 
 case class JavaField(
   name: String,
   javaType: String,
-  annotations: List[String]
+  annotations: List[String],
 )
 
 case class JavaService(
   name: String,
-  methods: List[JavaMethod]
+  methods: List[JavaMethod],
 )
 
 case class JavaMethod(
   name: String,
   returnType: String,
   parameters: List[JavaParameter],
-  body: String
+  body: String,
 )
 
 case class JavaParameter(
   name: String,
-  javaType: String
+  javaType: String,
 )
 
 case class JavaController(
   name: String,
   basePath: String,
-  endpoints: List[RestEndpoint]
+  endpoints: List[RestEndpoint],
 )
 
 case class RestEndpoint(
   path: String,
   method: HttpMethod,
-  methodName: String
+  methodName: String,
 )
 
 enum HttpMethod:
@@ -179,7 +185,7 @@ enum HttpMethod:
 case class ProjectConfiguration(
   groupId: String,
   artifactId: String,
-  dependencies: List[String]
+  dependencies: List[String],
 )
 
 // Validation Phase
@@ -187,7 +193,7 @@ case class ValidationReport(
   testResults: TestResults,
   coverageMetrics: CoverageMetrics,
   staticAnalysisIssues: List[String],
-  businessLogicValidation: Boolean
+  businessLogicValidation: Boolean,
 )
 
 object ValidationReport:
@@ -195,19 +201,19 @@ object ValidationReport:
     testResults = TestResults(0, 0, 0),
     coverageMetrics = CoverageMetrics(0.0, 0.0, 0.0),
     staticAnalysisIssues = List.empty,
-    businessLogicValidation = false
+    businessLogicValidation = false,
   )
 
 case class TestResults(
   totalTests: Int,
   passed: Int,
-  failed: Int
+  failed: Int,
 )
 
 case class CoverageMetrics(
   lineCoverage: Double,
   branchCoverage: Double,
-  methodCoverage: Double
+  methodCoverage: Double,
 )
 
 // Documentation Phase
@@ -216,7 +222,7 @@ case class MigrationDocumentation(
   apiReference: String,
   dataModelMappings: String,
   migrationSummary: String,
-  deploymentGuide: String
+  deploymentGuide: String,
 )
 
 object MigrationDocumentation:
@@ -232,7 +238,7 @@ case class MigrationState(
   projects: List[SpringBootProject],
   validationReports: List[ValidationReport],
   startTime: Instant,
-  lastCheckpoint: Instant
+  lastCheckpoint: Instant,
 )
 
 object MigrationState:
@@ -245,7 +251,7 @@ object MigrationState:
     projects = List.empty,
     validationReports = List.empty,
     startTime = Instant.now(),
-    lastCheckpoint = Instant.now()
+    lastCheckpoint = Instant.now(),
   )
 
 enum MigrationStep:
@@ -257,7 +263,7 @@ case class AgentMessage(
   sourceAgent: AgentType,
   targetAgent: AgentType,
   payload: String, // JSON payload
-  timestamp: Instant
+  timestamp: Instant,
 )
 
 enum AgentType:

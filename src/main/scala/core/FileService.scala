@@ -1,19 +1,21 @@
 package core
 
+import java.nio.charset.StandardCharsets
+import java.nio.file.{ Files, Path }
+
+import scala.jdk.CollectionConverters.*
+
 import zio.*
 import zio.stream.*
-import java.nio.file.{Path, Files}
-import java.nio.charset.StandardCharsets
 
-/**
- * FileService - File I/O operations with ZIO effects
- *
- * Features:
- * - Read/write files with proper resource management
- * - Stream large files efficiently
- * - Directory traversal
- * - File metadata extraction
- */
+/** FileService - File I/O operations with ZIO effects
+  *
+  * Features:
+  *   - Read/write files with proper resource management
+  *   - Stream large files efficiently
+  *   - Directory traversal
+  *   - File metadata extraction
+  */
 trait FileService:
   def readFile(path: Path): ZIO[Any, Throwable, String]
   def writeFile(path: Path, content: String): ZIO[Any, Throwable, Unit]

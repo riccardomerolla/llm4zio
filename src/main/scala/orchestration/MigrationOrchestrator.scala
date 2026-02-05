@@ -1,22 +1,23 @@
 package orchestration
 
+import java.nio.file.Path
+
 import zio.*
+
 import agents.*
 import core.*
 import models.*
-import java.nio.file.Path
 
-/**
- * MigrationOrchestrator - Main workflow orchestrator using ZIO effects
- *
- * Orchestrates the six-step migration pipeline:
- * 1. Discovery and Inventory
- * 2. Deep Analysis
- * 3. Dependency Mapping
- * 4. Code Transformation
- * 5. Validation and Testing
- * 6. Documentation Generation
- */
+/** MigrationOrchestrator - Main workflow orchestrator using ZIO effects
+  *
+  * Orchestrates the six-step migration pipeline:
+  *   1. Discovery and Inventory
+  *   2. Deep Analysis
+  *   3. Dependency Mapping
+  *   4. Code Transformation
+  *   5. Validation and Testing
+  *   6. Documentation Generation
+  */
 trait MigrationOrchestrator:
   def runFullMigration(sourcePath: Path, outputPath: Path): ZIO[Any, Throwable, MigrationResult]
   def runStep(step: MigrationStep): ZIO[Any, Throwable, StepResult]
@@ -28,95 +29,95 @@ object MigrationOrchestrator:
 
   val live: ZLayer[
     CobolDiscoveryAgent &
-    CobolAnalyzerAgent &
-    DependencyMapperAgent &
-    JavaTransformerAgent &
-    ValidationAgent &
-    DocumentationAgent &
-    StateService &
-    GeminiService,
+      CobolAnalyzerAgent &
+      DependencyMapperAgent &
+      JavaTransformerAgent &
+      ValidationAgent &
+      DocumentationAgent &
+      StateService &
+      GeminiService,
     Nothing,
-    MigrationOrchestrator
-  ] = ZLayer.fromFunction { (
-    discoveryAgent: CobolDiscoveryAgent,
-    analyzerAgent: CobolAnalyzerAgent,
-    mapperAgent: DependencyMapperAgent,
-    transformerAgent: JavaTransformerAgent,
-    validationAgent: ValidationAgent,
-    documentationAgent: DocumentationAgent,
-    stateService: StateService,
-    geminiService: GeminiService
-  ) =>
-    new MigrationOrchestrator {
+    MigrationOrchestrator,
+  ] = ZLayer.fromFunction {
+    (
+      discoveryAgent: CobolDiscoveryAgent,
+      analyzerAgent: CobolAnalyzerAgent,
+      mapperAgent: DependencyMapperAgent,
+      transformerAgent: JavaTransformerAgent,
+      validationAgent: ValidationAgent,
+      documentationAgent: DocumentationAgent,
+      stateService: StateService,
+      geminiService: GeminiService,
+    ) =>
+      new MigrationOrchestrator {
 
-      override def runFullMigration(sourcePath: Path, outputPath: Path): ZIO[Any, Throwable, MigrationResult] =
-        for
-          _ <- Logger.info("Starting full migration pipeline...")
+        override def runFullMigration(sourcePath: Path, outputPath: Path): ZIO[Any, Throwable, MigrationResult] =
+          for
+            _ <- Logger.info("Starting full migration pipeline...")
 
-          // Step 1: Discovery and Inventory
-          _ <- Logger.info("Step 1: Discovery and Inventory")
-          inventory <- discoveryAgent.discover(sourcePath, List("*.cbl", "*.cpy", "*.jcl"))
-          _ <- stateService.createCheckpoint("discovery")
+            // Step 1: Discovery and Inventory
+            _         <- Logger.info("Step 1: Discovery and Inventory")
+            inventory <- discoveryAgent.discover(sourcePath, List("*.cbl", "*.cpy", "*.jcl"))
+            _         <- stateService.createCheckpoint("discovery")
 
-          // Step 2: Deep Analysis
-          _ <- Logger.info("Step 2: Deep Analysis")
-          analyses <- ZIO.foreach(inventory.files.filter(_.fileType == FileType.Program)) { file =>
-            analyzerAgent.analyze(file).provide(ZLayer.succeed(geminiService))
-          }
-          _ <- stateService.createCheckpoint("analysis")
+            // Step 2: Deep Analysis
+            _        <- Logger.info("Step 2: Deep Analysis")
+            analyses <- ZIO.foreach(inventory.files.filter(_.fileType == FileType.Program)) { file =>
+                          analyzerAgent.analyze(file).provide(ZLayer.succeed(geminiService))
+                        }
+            _        <- stateService.createCheckpoint("analysis")
 
-          // Step 3: Dependency Mapping
-          _ <- Logger.info("Step 3: Dependency Mapping")
-          dependencyGraph <- mapperAgent.mapDependencies(analyses)
-          _ <- stateService.createCheckpoint("mapping")
+            // Step 3: Dependency Mapping
+            _               <- Logger.info("Step 3: Dependency Mapping")
+            dependencyGraph <- mapperAgent.mapDependencies(analyses)
+            _               <- stateService.createCheckpoint("mapping")
 
-          // Step 4: Code Transformation
-          _ <- Logger.info("Step 4: Code Transformation")
-          projects <- ZIO.foreach(analyses) { analysis =>
-            transformerAgent.transform(analysis, dependencyGraph).provide(ZLayer.succeed(geminiService))
-          }
-          _ <- stateService.createCheckpoint("transformation")
+            // Step 4: Code Transformation
+            _        <- Logger.info("Step 4: Code Transformation")
+            projects <- ZIO.foreach(analyses) { analysis =>
+                          transformerAgent.transform(analysis, dependencyGraph).provide(ZLayer.succeed(geminiService))
+                        }
+            _        <- stateService.createCheckpoint("transformation")
 
-          // Step 5: Validation and Testing
-          _ <- Logger.info("Step 5: Validation and Testing")
-          validationReports <- ZIO.foreach(projects) { project =>
-            validationAgent.validate(project)
-          }
-          _ <- stateService.createCheckpoint("validation")
+            // Step 5: Validation and Testing
+            _                 <- Logger.info("Step 5: Validation and Testing")
+            validationReports <- ZIO.foreach(projects) { project =>
+                                   validationAgent.validate(project)
+                                 }
+            _                 <- stateService.createCheckpoint("validation")
 
-          // Step 6: Documentation Generation
-          _ <- Logger.info("Step 6: Documentation Generation")
-          documentation <- documentationAgent.generateDocumentation(
-            projects.head,
-            validationReports.head,
-            dependencyGraph
+            // Step 6: Documentation Generation
+            _             <- Logger.info("Step 6: Documentation Generation")
+            documentation <- documentationAgent.generateDocumentation(
+                               projects.head,
+                               validationReports.head,
+                               dependencyGraph,
+                             )
+            _             <- stateService.createCheckpoint("documentation")
+
+            _ <- Logger.info("Migration pipeline completed successfully!")
+          yield MigrationResult(
+            success = true,
+            projects = projects,
+            documentation = documentation,
+            validationReports = validationReports,
           )
-          _ <- stateService.createCheckpoint("documentation")
 
-          _ <- Logger.info("Migration pipeline completed successfully!")
-
-        yield MigrationResult(
-          success = true,
-          projects = projects,
-          documentation = documentation,
-          validationReports = validationReports
-        )
-
-      override def runStep(step: MigrationStep): ZIO[Any, Throwable, StepResult] =
-        Logger.info(s"Running step: $step") *>
-          ZIO.succeed(StepResult(step, success = true, None))
-    }
+        override def runStep(step: MigrationStep): ZIO[Any, Throwable, StepResult] =
+          Logger.info(s"Running step: $step") *>
+            ZIO.succeed(StepResult(step, success = true, None))
+      }
   }
 
 case class MigrationResult(
   success: Boolean,
   projects: List[SpringBootProject],
   documentation: MigrationDocumentation,
-  validationReports: List[ValidationReport]
+  validationReports: List[ValidationReport],
 )
 
 case class StepResult(
   step: MigrationStep,
   success: Boolean,
-  error: Option[String]
+  error: Option[String],
 )

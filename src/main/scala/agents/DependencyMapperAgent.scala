@@ -1,22 +1,22 @@
 package agents
 
 import zio.*
-import models.{DependencyGraph, CobolAnalysis}
 
-/**
- * DependencyMapperAgent - Map relationships between COBOL programs and copybooks
- *
- * Responsibilities:
- * - Analyze COPY statements and program calls
- * - Build dependency graph
- * - Calculate complexity metrics
- * - Generate Mermaid diagrams
- * - Identify shared copybooks as service candidates
- *
- * Interactions:
- * - Input from: CobolDiscoveryAgent, CobolAnalyzerAgent
- * - Output consumed by: JavaTransformerAgent, DocumentationAgent
- */
+import models.{ CobolAnalysis, DependencyGraph }
+
+/** DependencyMapperAgent - Map relationships between COBOL programs and copybooks
+  *
+  * Responsibilities:
+  *   - Analyze COPY statements and program calls
+  *   - Build dependency graph
+  *   - Calculate complexity metrics
+  *   - Generate Mermaid diagrams
+  *   - Identify shared copybooks as service candidates
+  *
+  * Interactions:
+  *   - Input from: CobolDiscoveryAgent, CobolAnalyzerAgent
+  *   - Output consumed by: JavaTransformerAgent, DocumentationAgent
+  */
 trait DependencyMapperAgent:
   def mapDependencies(analyses: List[CobolAnalysis]): ZIO[Any, Throwable, DependencyGraph]
 

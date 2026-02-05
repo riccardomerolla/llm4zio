@@ -1,17 +1,18 @@
-import zio.*
-import zio.Console.*
-import agents.*
-import core.*
-import orchestration.*
-import models.*
 import java.nio.file.Paths
 
-/**
- * Main entry point for the Legacy Modernization Agent system
- *
- * This application orchestrates the migration of COBOL programs to Spring Boot microservices
- * using Scala 3 + ZIO 2.x and Google Gemini CLI.
- */
+import zio.*
+import zio.Console.*
+
+import agents.*
+import core.*
+import models.*
+import orchestration.*
+
+/** Main entry point for the Legacy Modernization Agent system
+  *
+  * This application orchestrates the migration of COBOL programs to Spring Boot microservices using Scala 3 + ZIO 2.x
+  * and Google Gemini CLI.
+  */
 object Main extends ZIOAppDefault:
 
   private val banner =
@@ -42,7 +43,7 @@ object Main extends ZIOAppDefault:
       DocumentationAgent.live,
 
       // Layer 0: Orchestrator (depends on all agents)
-      MigrationOrchestrator.live
+      MigrationOrchestrator.live,
     ).exitCode
 
   private def program: ZIO[MigrationOrchestrator, Throwable, Unit] =
@@ -54,19 +55,19 @@ object Main extends ZIOAppDefault:
       args <- ZIO.succeed(List("--migrate")) // TODO: Get from actual args
 
       result <- args.headOption match
-        case Some("--migrate") =>
-          runFullMigration()
-        case Some("--step") =>
-          args.lift(1) match
-            case Some(step) => runStep(step)
-            case None =>
-              Logger.error("Missing step name. Usage: --step <step-name>") *>
-              ZIO.fail(new IllegalArgumentException("Missing step name"))
-        case Some("--help") =>
-          showHelp()
-        case _ =>
-          Logger.error("Invalid arguments. Use --help for usage information.") *>
-          showHelp()
+                  case Some("--migrate") =>
+                    runFullMigration()
+                  case Some("--step")    =>
+                    args.lift(1) match
+                      case Some(step) => runStep(step)
+                      case None       =>
+                        Logger.error("Missing step name. Usage: --step <step-name>") *>
+                          ZIO.fail(new IllegalArgumentException("Missing step name"))
+                  case Some("--help")    =>
+                    showHelp()
+                  case _                 =>
+                    Logger.error("Invalid arguments. Use --help for usage information.") *>
+                      showHelp()
 
       _ <- Logger.info("Migration agent system completed successfully!")
     yield ()
@@ -92,21 +93,21 @@ object Main extends ZIOAppDefault:
 
   private def runStep(stepName: String): ZIO[Any, Throwable, Unit] =
     for
-      _ <- Logger.info(s"Running step: $stepName")
+      _    <- Logger.info(s"Running step: $stepName")
       step <- parseStep(stepName)
       // TODO: Implement step execution via MigrationOrchestrator
-      _ <- Logger.info(s"Step $stepName completed")
+      _    <- Logger.info(s"Step $stepName completed")
     yield ()
 
   private def parseStep(stepName: String): ZIO[Any, Throwable, MigrationStep] =
     stepName.toLowerCase match
-      case "discovery" => ZIO.succeed(MigrationStep.Discovery)
-      case "analysis" => ZIO.succeed(MigrationStep.Analysis)
-      case "mapping" => ZIO.succeed(MigrationStep.Mapping)
+      case "discovery"      => ZIO.succeed(MigrationStep.Discovery)
+      case "analysis"       => ZIO.succeed(MigrationStep.Analysis)
+      case "mapping"        => ZIO.succeed(MigrationStep.Mapping)
       case "transformation" => ZIO.succeed(MigrationStep.Transformation)
-      case "validation" => ZIO.succeed(MigrationStep.Validation)
-      case "documentation" => ZIO.succeed(MigrationStep.Documentation)
-      case _ => ZIO.fail(new IllegalArgumentException(s"Unknown step: $stepName"))
+      case "validation"     => ZIO.succeed(MigrationStep.Validation)
+      case "documentation"  => ZIO.succeed(MigrationStep.Documentation)
+      case _                => ZIO.fail(new IllegalArgumentException(s"Unknown step: $stepName"))
 
   private def showHelp(): ZIO[Any, Nothing, Unit] =
     val helpText =

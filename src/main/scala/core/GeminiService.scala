@@ -1,19 +1,16 @@
 package core
 
 import zio.*
-import zio.process.*
-import scala.concurrent.duration.*
 
-/**
- * GeminiService - Wrapper for Google Gemini CLI non-interactive invocation
- *
- * Features:
- * - Process execution with streaming output
- * - Timeout handling
- * - Retry logic with exponential backoff
- * - Response parsing and validation
- * - Cost tracking and rate limiting
- */
+/** GeminiService - Wrapper for Google Gemini CLI non-interactive invocation
+  *
+  * Features:
+  *   - Process execution with streaming output
+  *   - Timeout handling
+  *   - Retry logic with exponential backoff
+  *   - Response parsing and validation
+  *   - Cost tracking and rate limiting
+  */
 trait GeminiService:
   def analyze(prompt: String, context: String): ZIO[Any, Throwable, String]
   def transform(prompt: String, code: String): ZIO[Any, Throwable, String]
@@ -37,8 +34,8 @@ object GeminiService:
         for
           // TODO: Implement actual Gemini CLI invocation
           // gemini -p "prompt" --json-output < input
-          _ <- ZIO.logInfo(s"Executing Gemini with prompt: ${prompt.take(100)}...")
-          result <- ZIO.succeed(s"""{"result": "Placeholder response from Gemini"}""")
+          _      <- ZIO.logInfo(s"Executing Gemini with prompt: ${prompt.take(100)}...")
+          result <- ZIO.succeed("""{"result": "Placeholder response from Gemini"}""")
         yield result
     }
   }
@@ -47,7 +44,7 @@ case class GeminiConfig(
   model: String = "gemini-2.0-flash",
   maxTokens: Int = 32768,
   temperature: Double = 0.1,
-  timeout: Duration = 300.seconds
+  timeout: Duration = Duration.fromSeconds(300),
 )
 
 object GeminiConfig:

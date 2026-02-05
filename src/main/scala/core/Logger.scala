@@ -2,14 +2,13 @@ package core
 
 import zio.*
 
-/**
- * Logger - Logging and observability service
- *
- * Features:
- * - Structured logging with context
- * - Different log levels (debug, info, warn, error)
- * - Integration with ZIO logging
- */
+/** Logger - Logging and observability service
+  *
+  * Features:
+  *   - Structured logging with context
+  *   - Different log levels (debug, info, warn, error)
+  *   - Integration with ZIO logging
+  */
 object Logger:
   def info(message: String): ZIO[Any, Nothing, Unit] =
     ZIO.logInfo(message)

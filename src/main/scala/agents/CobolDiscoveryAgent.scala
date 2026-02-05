@@ -1,22 +1,22 @@
 package agents
 
-import zio.*
-import core.GeminiService
-import models.{FileInventory, CobolFile}
 import java.nio.file.Path
 
-/**
- * CobolDiscoveryAgent - Scan and catalog COBOL source files and copybooks
- *
- * Responsibilities:
- * - Traverse directory structures
- * - Identify .cbl, .cpy, .jcl files
- * - Extract metadata (file size, last modified, encoding)
- * - Build initial file inventory
- *
- * Interactions:
- * - Output consumed by: CobolAnalyzerAgent, DependencyMapperAgent
- */
+import zio.*
+
+import models.FileInventory
+
+/** CobolDiscoveryAgent - Scan and catalog COBOL source files and copybooks
+  *
+  * Responsibilities:
+  *   - Traverse directory structures
+  *   - Identify .cbl, .cpy, .jcl files
+  *   - Extract metadata (file size, last modified, encoding)
+  *   - Build initial file inventory
+  *
+  * Interactions:
+  *   - Output consumed by: CobolAnalyzerAgent, DependencyMapperAgent
+  */
 trait CobolDiscoveryAgent:
   def discover(sourcePath: Path, patterns: List[String]): ZIO[Any, Throwable, FileInventory]
 
