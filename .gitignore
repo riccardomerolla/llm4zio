@@ -1,0 +1,21 @@
+*.class
+*.log
+
+# virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
+hs_err_pid*
+
+# SBT specific
+target/
+project/target/
+project/project/
+.bsp/
+.metals/
+.bloop/
+metals.sbt
+sbt/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.DS_Store

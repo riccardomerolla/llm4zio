@@ -1,0 +1,105 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - master
+    tags:
+      - "v*"
+  pull_request:
+    branches:
+      - master
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: 'sbt'
+
+      - name: Setup SBT
+        uses: sbt/setup-sbt@v1
+
+      - name: Check formatting and run tests
+        run: |
+          sbt scalafmtCheckAll
+          sbt test
+
+  publish:
+    name: Publish to Maven Central
+    needs: [ test ]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup GraalVM
+        uses: graalvm/setup-graalvm@v1
+        with:
+          java-version: '21'
+          distribution: 'graalvm'
+          components: 'native-image'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          cache: 'sbt'
+
+      - name: Setup SBT
+        uses: sbt/setup-sbt@v1
+
+      - name: Import GPG key
+        uses: crazy-max/ghaction-import-gpg@v6
+        with:
+          gpg_private_key: ${{ secrets.PGP_SECRET }}
+          passphrase: ${{ secrets.PGP_PASSPHRASE }}
+
+      - name: Publish to Maven Central
+        run: sbt --batch --no-colors ci-release 
+        env:
+          PGP_PASSPHRASE: ${{ secrets.PGP_PASSPHRASE }}
+          PGP_SECRET: ${{ secrets.PGP_SECRET }}
+          SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
+          SONATYPE_USERNAME: ${{ secrets.SONATYPE_USERNAME }}
+
+      - name: Build CLI native image
+        run: sbt --batch --no-colors cliNativeImage
+
+      - name: Package CLI native binary
+        run: |
+          set -euo pipefail
+          ARCHIVE_NAME="zio-toon-cli-${GITHUB_REF_NAME}-linux-x86_64.tar.gz"
+          ARCHIVE_PATH="cli/target/${ARCHIVE_NAME}"
+          DIST_DIR="cli/target/native-dist"
+          mkdir -p "${DIST_DIR}"
+          BIN_PATH=$(find cli/target -path "*native-image*" -type f -name "zio-toon-cli" -perm -111 | head -n 1 || true)
+          if [ -z "${BIN_PATH}" ]; then
+            echo "Failed to locate native binary under cli/target"
+            exit 1
+          fi
+          cp "${BIN_PATH}" "${DIST_DIR}/"
+          tar -C "${DIST_DIR}" -czf "${ARCHIVE_PATH}" "zio-toon-cli"
+          echo "CLI_NATIVE_ARCHIVE=${ARCHIVE_PATH}" >> $GITHUB_ENV
+
+      - name: Create GitHub Release
+        if: success()
+        uses: ncipollo/release-action@v1
+        with:
+          tag: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
+          body: "See CHANGELOG.md for detailed release notes."
+          artifacts: ${{ env.CLI_NATIVE_ARCHIVE }}
+          token: ${{ secrets.GITHUB_TOKEN }}
