@@ -24,7 +24,7 @@ object Main extends ZIOAppDefault:
       |╚═══════════════════════════════════════════════════════════════════╝
       |""".stripMargin
 
-  def run: ZIO[Any, Any, ExitCode] =
+  def run: ZIO[Any, Any, Unit] =
     program.provide(
       // Layer 3: Core Services
       FileService.live,
@@ -44,7 +44,7 @@ object Main extends ZIOAppDefault:
 
       // Layer 0: Orchestrator (depends on all agents)
       MigrationOrchestrator.live,
-    ).exitCode
+    )
 
   private def program: ZIO[MigrationOrchestrator, Throwable, Unit] =
     for

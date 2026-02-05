@@ -30,11 +30,13 @@ object GeminiService:
       override def transform(prompt: String, code: String): ZIO[Any, Throwable, String] =
         executeGemini(prompt, code, config)
 
+      @SuppressWarnings(Array("scalafix:Disable.unused"))
       private def executeGemini(prompt: String, input: String, config: GeminiConfig): ZIO[Any, Throwable, String] =
         for
           // TODO: Implement actual Gemini CLI invocation
           // gemini -p "prompt" --json-output < input
           _      <- ZIO.logInfo(s"Executing Gemini with prompt: ${prompt.take(100)}...")
+          _      <- ZIO.logDebug(s"Input length: ${input.length}, timeout: ${config.timeout}")
           result <- ZIO.succeed("""{"result": "Placeholder response from Gemini"}""")
         yield result
     }

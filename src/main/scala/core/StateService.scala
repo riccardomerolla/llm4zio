@@ -46,10 +46,8 @@ object StateService:
           for
             _      <- ZIO.logInfo(s"Loading state from $statePath")
             exists <- ZIO.attempt(java.nio.file.Files.exists(statePath))
-            state  <- if exists then
-                        fileService.readFile(statePath).map(_ => Some(MigrationState.empty))
-                      else
-                        ZIO.succeed(None)
+            state  <- if exists then fileService.readFile(statePath).map(_ => Some(MigrationState.empty))
+                      else ZIO.succeed(None)
           yield state
 
         override def createCheckpoint(step: String): ZIO[Any, Throwable, Unit] =

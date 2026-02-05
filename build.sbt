@@ -42,6 +42,7 @@ lazy val root = (project in file("."))
     libraryDependencies ++= Seq(
       "dev.zio" %% "zio" % "2.1.24",
       "dev.zio" %% "zio-streams" % "2.1.24",
+      "dev.zio" %% "zio-json" % "0.9.0",
       "dev.zio" %% "zio-test" % "2.1.24" % Test,
       "dev.zio" %% "zio-test-sbt" % "2.1.24" % Test
     ),
