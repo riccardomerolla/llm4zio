@@ -63,6 +63,13 @@ enum GeminiError(val message: String) derives JsonCodec:
   case NotInstalled                           extends GeminiError("Gemini CLI is not installed or not in PATH")
   case InvalidResponse(output: String)        extends GeminiError(s"Invalid response from Gemini: $output")
 
+/** Gemini response parsing errors with typed error handling */
+enum ParseError(val message: String) derives JsonCodec:
+  case NoJsonFound(response: String)            extends ParseError("No JSON found in Gemini response")
+  case InvalidJson(json: String, error: String) extends ParseError(s"Invalid JSON: $error")
+  case SchemaMismatch(expected: String, actual: String)
+    extends ParseError(s"Schema mismatch. Expected: $expected. Error: $actual")
+
 // ============================================================================
 // Gemini Service
 // ============================================================================
