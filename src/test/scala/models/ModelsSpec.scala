@@ -352,8 +352,8 @@ object ModelsSpec extends ZIOSpecDefault:
         ),
       ),
       test("MigrationState.empty creates valid state") {
-        val state = MigrationState.empty
-        assertTrue(
+        for state <- MigrationState.empty
+        yield assertTrue(
           state.currentStep == MigrationStep.Discovery,
           state.completedSteps.isEmpty,
           state.fileInventory.isEmpty,

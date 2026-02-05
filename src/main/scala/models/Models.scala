@@ -3,6 +3,7 @@ package models
 import java.nio.file.{ Path, Paths }
 import java.time.Instant
 
+import zio.*
 import zio.json.*
 
 /** Custom JSON codecs for Java types that don't have built-in ZIO JSON support
@@ -322,25 +323,28 @@ case class MigrationState(
 ) derives JsonCodec
 
 object MigrationState:
-  def empty: MigrationState = MigrationState(
-    runId = s"run-${Instant.now().toEpochMilli}",
-    startedAt = Instant.now(),
-    currentStep = MigrationStep.Discovery,
-    completedSteps = Set.empty,
-    artifacts = Map.empty,
-    errors = List.empty,
-    config = MigrationConfig(
-      sourceDirectory = Paths.get("cobol-source"),
-      outputDirectory = Paths.get("java-output"),
-      geminiModel = "gemini-2.0-flash",
-    ),
-    fileInventory = None,
-    analyses = List.empty,
-    dependencyGraph = None,
-    projects = List.empty,
-    validationReports = List.empty,
-    lastCheckpoint = Instant.now(),
-  )
+  def empty: UIO[MigrationState] =
+    Clock.instant.map { now =>
+      MigrationState(
+        runId = s"run-${now.toEpochMilli}",
+        startedAt = now,
+        currentStep = MigrationStep.Discovery,
+        completedSteps = Set.empty,
+        artifacts = Map.empty,
+        errors = List.empty,
+        config = MigrationConfig(
+          sourceDirectory = Paths.get("cobol-source"),
+          outputDirectory = Paths.get("java-output"),
+          geminiModel = "gemini-2.0-flash",
+        ),
+        fileInventory = None,
+        analyses = List.empty,
+        dependencyGraph = None,
+        projects = List.empty,
+        validationReports = List.empty,
+        lastCheckpoint = now,
+      )
+    }
 
 case class MigrationRunSummary(
   runId: String,

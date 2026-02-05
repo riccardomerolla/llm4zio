@@ -43,6 +43,13 @@ lazy val root = (project in file("."))
       "dev.zio" %% "zio" % "2.1.24",
       "dev.zio" %% "zio-streams" % "2.1.24",
       "dev.zio" %% "zio-json" % "0.9.0",
+      "dev.zio" %% "zio-logging" % "2.4.0",
+      "dev.zio" %% "zio-logging-slf4j2" % "2.4.0",
+      "dev.zio" %% "zio-opentelemetry" % "3.0.0",
+      "dev.zio" %% "zio-opentelemetry-zio-logging" % "3.0.0",
+      "io.opentelemetry" % "opentelemetry-sdk" % "1.44.1",
+      "io.opentelemetry" % "opentelemetry-exporter-otlp" % "1.44.1",
+      "io.opentelemetry" % "opentelemetry-exporter-logging-otlp" % "1.44.1",
       "dev.zio" %% "zio-test" % "2.1.24" % Test,
       "dev.zio" %% "zio-test-sbt" % "2.1.24" % Test
     ),

@@ -1,6 +1,7 @@
 package core
 
 import java.nio.file.Path
+import java.util.concurrent.TimeUnit
 
 import zio.*
 import zio.json.*
@@ -60,7 +61,7 @@ object StateService:
             _       <- ZIO.logInfo(s"Saving state for run: ${state.runId}")
             _       <- fileService.ensureDirectory(runDir(state.runId)).mapError(fe => mapFileToStateError(state.runId)(fe))
             json     = state.toJsonPretty
-            ts      <- ZIO.succeed(java.lang.System.currentTimeMillis())
+            ts      <- Clock.currentTime(TimeUnit.MILLISECONDS)
             tempPath = statePath(state.runId).resolveSibling(s"state.tmp.$ts")
             _       <- fileService.writeFile(tempPath, json).mapError(fe => mapFileToStateError(state.runId)(fe))
             _       <- ZIO.attemptBlocking {

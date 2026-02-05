@@ -1,6 +1,7 @@
 package orchestration
 
 import java.nio.file.Path
+import java.util.concurrent.TimeUnit
 
 import zio.*
 
@@ -56,7 +57,7 @@ object MigrationOrchestrator:
             _ <- Logger.info("Starting full migration pipeline...")
 
             // Generate run ID for this migration
-            runId <- ZIO.succeed(s"run-${java.lang.System.currentTimeMillis()}")
+            runId <- Clock.currentTime(TimeUnit.MILLISECONDS).map(ts => s"run-$ts")
 
             // Step 1: Discovery and Inventory
             _         <- Logger.info("Step 1: Discovery and Inventory")

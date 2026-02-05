@@ -393,17 +393,20 @@ object StateServiceSpec extends ZIOSpecDefault:
       },
       test("run summaries contain correct metadata") {
         withTempStateDir { stateDir =>
-          val state = createTestState(
-            runId = "run-with-metadata",
-            currentStep = MigrationStep.Analysis,
-            completedSteps = Set(MigrationStep.Discovery),
-          ).copy(
-            errors = List(
-              MigrationError(MigrationStep.Discovery, "Error 1", Instant.now()),
-              MigrationError(MigrationStep.Discovery, "Error 2", Instant.now()),
-            )
-          )
           for
+            now    <- Clock.instant
+            state  <- ZIO.succeed(
+                        createTestState(
+                          runId = "run-with-metadata",
+                          currentStep = MigrationStep.Analysis,
+                          completedSteps = Set(MigrationStep.Discovery),
+                        ).copy(
+                          errors = List(
+                            MigrationError(MigrationStep.Discovery, "Error 1", now),
+                            MigrationError(MigrationStep.Discovery, "Error 2", now),
+                          )
+                        )
+                      )
             _      <- StateService.saveState(state).provide(
                         StateService.live(stateDir),
                         FileService.live,
