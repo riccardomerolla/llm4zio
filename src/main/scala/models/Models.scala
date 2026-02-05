@@ -38,6 +38,14 @@ enum FileError(val message: String) derives JsonCodec:
   case DirectoryNotEmpty(path: Path)      extends FileError(s"Directory not empty: $path")
   case AlreadyExists(path: Path)          extends FileError(s"Already exists: $path")
 
+/** State service errors with typed error handling */
+enum StateError(val message: String) derives JsonCodec:
+  case StateNotFound(runId: String)                extends StateError(s"State not found for run: $runId")
+  case InvalidState(runId: String, reason: String) extends StateError(s"Invalid state for run $runId: $reason")
+  case WriteError(runId: String, cause: String)    extends StateError(s"Failed to write state for run $runId: $cause")
+  case ReadError(runId: String, cause: String)     extends StateError(s"Failed to read state for run $runId: $cause")
+  case LockError(runId: String)                    extends StateError(s"Failed to acquire lock for run: $runId")
+
 // ============================================================================
 // Discovery Phase
 // ============================================================================
@@ -285,30 +293,62 @@ object MigrationDocumentation:
 enum MigrationStep derives JsonCodec:
   case Discovery, Analysis, Mapping, Transformation, Validation, Documentation
 
+case class MigrationError(
+  step: MigrationStep,
+  message: String,
+  timestamp: Instant,
+) derives JsonCodec
+
+case class MigrationConfig(
+  sourceDirectory: Path,
+  outputDirectory: Path,
+  geminiModel: String,
+) derives JsonCodec
+
 case class MigrationState(
+  runId: String,
+  startedAt: Instant,
   currentStep: MigrationStep,
-  completedSteps: List[MigrationStep],
+  completedSteps: Set[MigrationStep],
+  artifacts: Map[String, String], // MigrationStep name -> artifact path
+  errors: List[MigrationError],
+  config: MigrationConfig,
   fileInventory: Option[FileInventory],
   analyses: List[CobolAnalysis],
   dependencyGraph: Option[DependencyGraph],
   projects: List[SpringBootProject],
   validationReports: List[ValidationReport],
-  startTime: Instant,
   lastCheckpoint: Instant,
 ) derives JsonCodec
 
 object MigrationState:
   def empty: MigrationState = MigrationState(
+    runId = s"run-${Instant.now().toEpochMilli}",
+    startedAt = Instant.now(),
     currentStep = MigrationStep.Discovery,
-    completedSteps = List.empty,
+    completedSteps = Set.empty,
+    artifacts = Map.empty,
+    errors = List.empty,
+    config = MigrationConfig(
+      sourceDirectory = Paths.get("cobol-source"),
+      outputDirectory = Paths.get("java-output"),
+      geminiModel = "gemini-2.0-flash",
+    ),
     fileInventory = None,
     analyses = List.empty,
     dependencyGraph = None,
     projects = List.empty,
     validationReports = List.empty,
-    startTime = Instant.now(),
     lastCheckpoint = Instant.now(),
   )
+
+case class MigrationRunSummary(
+  runId: String,
+  startedAt: Instant,
+  currentStep: MigrationStep,
+  completedSteps: Set[MigrationStep],
+  errorCount: Int,
+) derives JsonCodec
 
 // ============================================================================
 // Agent Messages

@@ -55,36 +55,40 @@ object MigrationOrchestrator:
           for
             _ <- Logger.info("Starting full migration pipeline...")
 
+            // Generate run ID for this migration
+            runId <- ZIO.succeed(s"run-${java.lang.System.currentTimeMillis()}")
+
             // Step 1: Discovery and Inventory
             _         <- Logger.info("Step 1: Discovery and Inventory")
             inventory <- discoveryAgent.discover(sourcePath, List("*.cbl", "*.cpy", "*.jcl"))
-            _         <- stateService.createCheckpoint("discovery")
+            _         <- stateService.createCheckpoint(runId, MigrationStep.Discovery).mapError(e => new Exception(e.message))
 
             // Step 2: Deep Analysis
             _        <- Logger.info("Step 2: Deep Analysis")
             analyses <- ZIO.foreach(inventory.files.filter(_.fileType == FileType.Program)) { file =>
                           analyzerAgent.analyze(file).provide(ZLayer.succeed(geminiService))
                         }
-            _        <- stateService.createCheckpoint("analysis")
+            _        <- stateService.createCheckpoint(runId, MigrationStep.Analysis).mapError(e => new Exception(e.message))
 
             // Step 3: Dependency Mapping
             _               <- Logger.info("Step 3: Dependency Mapping")
             dependencyGraph <- mapperAgent.mapDependencies(analyses)
-            _               <- stateService.createCheckpoint("mapping")
+            _               <- stateService.createCheckpoint(runId, MigrationStep.Mapping).mapError(e => new Exception(e.message))
 
             // Step 4: Code Transformation
             _        <- Logger.info("Step 4: Code Transformation")
             projects <- ZIO.foreach(analyses) { analysis =>
                           transformerAgent.transform(analysis, dependencyGraph).provide(ZLayer.succeed(geminiService))
                         }
-            _        <- stateService.createCheckpoint("transformation")
+            _        <-
+              stateService.createCheckpoint(runId, MigrationStep.Transformation).mapError(e => new Exception(e.message))
 
             // Step 5: Validation and Testing
             _                 <- Logger.info("Step 5: Validation and Testing")
             validationReports <- ZIO.foreach(projects) { project =>
                                    validationAgent.validate(project)
                                  }
-            _                 <- stateService.createCheckpoint("validation")
+            _                 <- stateService.createCheckpoint(runId, MigrationStep.Validation).mapError(e => new Exception(e.message))
 
             // Step 6: Documentation Generation
             _             <- Logger.info("Step 6: Documentation Generation")
@@ -93,7 +97,8 @@ object MigrationOrchestrator:
                                validationReports.head,
                                dependencyGraph,
                              )
-            _             <- stateService.createCheckpoint("documentation")
+            _             <-
+              stateService.createCheckpoint(runId, MigrationStep.Documentation).mapError(e => new Exception(e.message))
 
             _ <- Logger.info("Migration pipeline completed successfully!")
           yield MigrationResult(
