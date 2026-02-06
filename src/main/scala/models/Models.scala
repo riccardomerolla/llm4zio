@@ -587,6 +587,19 @@ case class MigrationState(
   lastCheckpoint: Instant,
 ) derives JsonCodec
 
+case class Checkpoint(
+  runId: String,
+  step: MigrationStep,
+  createdAt: Instant,
+  artifactPaths: Map[String, Path],
+  checksum: String,
+) derives JsonCodec
+
+case class CheckpointSnapshot(
+  checkpoint: Checkpoint,
+  state: MigrationState,
+) derives JsonCodec
+
 object MigrationState:
   def empty: UIO[MigrationState] =
     Clock.instant.map { now =>
