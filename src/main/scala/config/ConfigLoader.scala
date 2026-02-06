@@ -81,6 +81,7 @@ object ConfigLoader:
       _ <- validateRetries(config.geminiMaxRetries)
       _ <- validateTimeout(config.geminiTimeout)
       _ <- validateRateLimiter(config.geminiRequestsPerMinute, config.geminiBurstSize, config.geminiAcquireTimeout)
+      _ <- validateDiscovery(config.discoveryMaxDepth, config.discoveryExcludePatterns)
     yield config
 
   private def validateParallelism(parallelism: Int): IO[String, Unit] =
@@ -122,4 +123,14 @@ object ConfigLoader:
       _ <- ZIO
              .fail(s"Gemini acquire timeout must be between 1 and 300 seconds, got: ${acquireTimeout.toSeconds}s")
              .when(acquireTimeout.toSeconds < 1 || acquireTimeout.toSeconds > 300)
+    yield ()
+
+  private def validateDiscovery(maxDepth: Int, excludes: List[String]): IO[String, Unit] =
+    for
+      _ <- ZIO
+             .fail(s"Discovery max depth must be between 1 and 100, got: $maxDepth")
+             .when(maxDepth < 1 || maxDepth > 100)
+      _ <- ZIO
+             .fail("Discovery exclude patterns cannot contain empty values")
+             .when(excludes.exists(_.trim.isEmpty))
     yield ()

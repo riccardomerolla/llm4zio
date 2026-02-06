@@ -34,6 +34,11 @@ object Main extends ZIOAppDefault:
     Options.integer("gemini-timeout").optional ?? "Gemini API timeout in seconds (default: 60)"
   private val geminiRetriesOpt = Options.integer("gemini-retries").optional ?? "Max Gemini API retries (default: 3)"
 
+  private val discoveryMaxDepthOpt =
+    Options.integer("discovery-max-depth").optional ?? "Max discovery scan depth (default: 25)"
+  private val discoveryExcludeOpt  =
+    Options.text("discovery-exclude").optional ?? "Comma-separated exclude globs for discovery"
+
   private val parallelismOpt =
     Options.integer("parallelism").alias("p").optional ?? "Number of parallel workers (default: 4)"
   private val batchSizeOpt   = Options.integer("batch-size").optional ?? "Batch size for file processing (default: 10)"
@@ -54,25 +59,27 @@ object Main extends ZIOAppDefault:
     Option[BigInt],
     Option[BigInt],
     Option[BigInt],
+    Option[String],
+    Option[BigInt],
     Option[BigInt],
     Option[String],
     Option[Boolean],
     Option[Boolean],
   )
 
-  type StepOpts = ((Path, Path, Option[Path], Option[Boolean]), String)
+  type StepOpts = ((Path, Path, Option[Path], Option[Boolean], Option[BigInt], Option[String]), String)
 
   private val migrateCmd: Command[MigrateOpts] =
     Command(
       "migrate",
       sourceDirOpt ++ outputDirOpt ++ stateDirOpt ++ configFileOpt ++
-        geminiModelOpt ++ geminiTimeoutOpt ++ geminiRetriesOpt ++ parallelismOpt ++
-        batchSizeOpt ++ resumeOpt ++ dryRunOpt ++ verboseOpt,
+        geminiModelOpt ++ geminiTimeoutOpt ++ geminiRetriesOpt ++ discoveryMaxDepthOpt ++
+        discoveryExcludeOpt ++ parallelismOpt ++ batchSizeOpt ++ resumeOpt ++ dryRunOpt ++ verboseOpt,
     ).withHelp("Run the full migration pipeline")
 
   private val stepCmd: Command[StepOpts] = Command(
     "step",
-    sourceDirOpt ++ outputDirOpt ++ configFileOpt ++ verboseOpt,
+    sourceDirOpt ++ outputDirOpt ++ configFileOpt ++ verboseOpt ++ discoveryMaxDepthOpt ++ discoveryExcludeOpt,
     stepNameArg,
   ).withHelp("Run a specific migration step")
 
@@ -96,10 +103,12 @@ object Main extends ZIOAppDefault:
         opts._10,
         opts._11,
         opts._12,
+        opts._13,
+        opts._14,
       )
 
     case opts: StepOpts @unchecked =>
-      executeStep(opts._1._1, opts._1._2, opts._1._3, opts._1._4, opts._2)
+      executeStep(opts._1._1, opts._1._2, opts._1._3, opts._1._4, opts._1._5, opts._1._6, opts._2)
 
     case _ =>
       ZIO.fail(new IllegalArgumentException("Unknown command"))
@@ -118,6 +127,8 @@ object Main extends ZIOAppDefault:
     geminiModel: Option[String],
     geminiTimeout: Option[BigInt],
     geminiRetries: Option[BigInt],
+    discoveryMaxDepth: Option[BigInt],
+    discoveryExclude: Option[String],
     parallelism: Option[BigInt],
     batchSize: Option[BigInt],
     resume: Option[String],
@@ -142,6 +153,9 @@ object Main extends ZIOAppDefault:
                             baseConfig.geminiTimeout
                           ),
                           geminiMaxRetries = geminiRetries.map(_.toInt).getOrElse(baseConfig.geminiMaxRetries),
+                          discoveryMaxDepth = discoveryMaxDepth.map(_.toInt).getOrElse(baseConfig.discoveryMaxDepth),
+                          discoveryExcludePatterns =
+                            parseExcludePatterns(discoveryExclude).getOrElse(baseConfig.discoveryExcludePatterns),
                           parallelism = parallelism.map(_.toInt).getOrElse(baseConfig.parallelism),
                           batchSize = batchSize.map(_.toInt).getOrElse(baseConfig.batchSize),
                           resumeFromCheckpoint = resume,
@@ -162,6 +176,8 @@ object Main extends ZIOAppDefault:
     outputDir: Path,
     configFile: Option[Path],
     verbose: Option[Boolean],
+    discoveryMaxDepth: Option[BigInt],
+    discoveryExclude: Option[String],
     stepName: String,
   ): ZIO[Any, Throwable, Unit] =
     for
@@ -177,12 +193,18 @@ object Main extends ZIOAppDefault:
                           sourceDir = sourceDir,
                           outputDir = outputDir,
                           verbose = verbose.getOrElse(baseConfig.verbose),
+                          discoveryMaxDepth = discoveryMaxDepth.map(_.toInt).getOrElse(baseConfig.discoveryMaxDepth),
+                          discoveryExcludePatterns =
+                            parseExcludePatterns(discoveryExclude).getOrElse(baseConfig.discoveryExcludePatterns),
                         )
 
       validatedConfig <- ConfigLoader.validate(migrationConfig).mapError(msg => new IllegalArgumentException(msg))
 
       _ <- runStepWithConfig(step, validatedConfig)
     yield ()
+
+  private def parseExcludePatterns(value: Option[String]): Option[List[String]] =
+    value.map(_.split(",").map(_.trim).filter(_.nonEmpty).toList)
 
   private val banner =
     """

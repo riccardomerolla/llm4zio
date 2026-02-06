@@ -61,7 +61,7 @@ object MigrationOrchestrator:
 
             // Step 1: Discovery and Inventory
             _         <- Logger.info("Step 1: Discovery and Inventory")
-            inventory <- discoveryAgent.discover(sourcePath, List("*.cbl", "*.cpy", "*.jcl"))
+            inventory <- discoveryAgent.discover(sourcePath).mapError(e => new Exception(e.message))
             _         <- stateService.createCheckpoint(runId, MigrationStep.Discovery).mapError(e => new Exception(e.message))
 
             // Step 2: Deep Analysis

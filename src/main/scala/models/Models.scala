@@ -80,6 +80,17 @@ enum RateLimitError(val message: String) derives JsonCodec:
     extends RateLimitError(s"Rate limiter timed out after ${timeout.toSeconds}s")
   case InvalidConfig(details: String) extends RateLimitError(s"Invalid rate limiter config: $details")
 
+/** Discovery errors with typed error handling */
+enum DiscoveryError(val message: String) derives JsonCodec:
+  case SourceNotFound(path: Path)                extends DiscoveryError(s"Source directory not found: $path")
+  case ScanFailed(path: Path, cause: String)     extends DiscoveryError(s"Failed to scan directory $path: $cause")
+  case MetadataFailed(path: Path, cause: String) extends DiscoveryError(s"Failed to read metadata for $path: $cause")
+  case EncodingDetectionFailed(path: Path, cause: String)
+    extends DiscoveryError(s"Failed to detect encoding for $path: $cause")
+  case ReportWriteFailed(path: Path, cause: String)
+    extends DiscoveryError(s"Failed to write discovery report at $path: $cause")
+  case InvalidConfig(details: String)            extends DiscoveryError(s"Invalid discovery config: $details")
+
 // ============================================================================
 // Gemini Service
 // ============================================================================
@@ -101,14 +112,26 @@ case class CobolFile(
   path: Path,
   name: String,
   size: Long,
+  lineCount: Long,
   lastModified: Instant,
   encoding: String,
   fileType: FileType,
 ) derives JsonCodec
 
+case class InventorySummary(
+  totalFiles: Int,
+  programFiles: Int,
+  copybooks: Int,
+  jclFiles: Int,
+  totalLines: Long,
+  totalBytes: Long,
+) derives JsonCodec
+
 case class FileInventory(
+  discoveredAt: Instant,
+  sourceDirectory: Path,
   files: List[CobolFile],
-  metadata: Map[String, String],
+  summary: InventorySummary,
 ) derives JsonCodec
 
 // ============================================================================
@@ -163,6 +186,7 @@ object CobolAnalysis:
       path = Paths.get(""),
       name = "",
       size = 0L,
+      lineCount = 0L,
       lastModified = Instant.EPOCH,
       encoding = "UTF-8",
       fileType = FileType.Program,
@@ -363,6 +387,10 @@ case class MigrationError(
   *   Maximum burst size for rate limiter
   * @param geminiAcquireTimeout
   *   Timeout for waiting on rate limiter token
+  * @param discoveryMaxDepth
+  *   Maximum directory depth for discovery scanning
+  * @param discoveryExcludePatterns
+  *   Glob patterns to exclude during discovery
   * @param parallelism
   *   Number of parallel processing workers
   * @param batchSize
@@ -389,6 +417,20 @@ case class MigrationConfig(
   geminiRequestsPerMinute: Int = 60,
   geminiBurstSize: Int = 10,
   geminiAcquireTimeout: zio.Duration = zio.Duration.fromSeconds(30),
+
+  // Discovery settings
+  discoveryMaxDepth: Int = 25,
+  discoveryExcludePatterns: List[String] = List(
+    "**/.git/**",
+    "**/target/**",
+    "**/node_modules/**",
+    "**/.idea/**",
+    "**/.vscode/**",
+    "**/backup/**",
+    "**/*.bak",
+    "**/*.tmp",
+    "**/*~",
+  ),
 
   // Processing
   parallelism: Int = 4,
