@@ -37,6 +37,7 @@ object CobolDiscoveryAgent:
         private val supportedExtensions = Set(".cbl", ".cob", ".cpy", ".jcl")
         private val maxDepth            = config.discoveryMaxDepth
         private val excludePatterns     = config.discoveryExcludePatterns
+        private val maxProbeBytes       = 65536
 
         override def discover(sourcePath: Path): ZIO[Any, DiscoveryError, FileInventory] =
           for
@@ -95,7 +96,7 @@ object CobolDiscoveryAgent:
                            .attemptBlocking(Files.getLastModifiedTime(path).toInstant)
                            .mapError(e => DiscoveryError.MetadataFailed(path, e.getMessage))
             encoding  <- detectEncoding(path)
-            fileType   = detectFileType(path)
+            fileType  <- detectFileType(path)
           yield CobolFile(
             path = path,
             name = path.getFileName.toString,
@@ -106,11 +107,54 @@ object CobolDiscoveryAgent:
             fileType = fileType,
           )
 
-        private def detectFileType(path: Path): FileType =
+        private def detectFileType(path: Path): ZIO[Any, DiscoveryError, FileType] =
           val name = path.getFileName.toString.toLowerCase
-          if name.endsWith(".cpy") then FileType.Copybook
-          else if name.endsWith(".jcl") then FileType.JCL
-          else FileType.Program
+          if name.endsWith(".jcl") then ZIO.succeed(FileType.JCL)
+          else
+            readSnippet(path).map { snippet =>
+              val upper             = snippet.toUpperCase
+              val hasIdentification =
+                upper.contains("IDENTIFICATION DIVISION") ||
+                upper.contains("PROGRAM-ID") ||
+                upper.contains("PROGRAM ID") ||
+                upper.contains("IDENTIFICATION.")
+              val hasDivision       =
+                upper.contains("PROCEDURE DIVISION") ||
+                upper.contains("ENVIRONMENT DIVISION") ||
+                upper.contains("DATA DIVISION") ||
+                upper.contains("PROCEDURE.") ||
+                upper.contains("ENVIRONMENT.") ||
+                upper.contains("DATA.")
+              val looksLikeJcl      =
+                upper.linesIterator.exists(_.trim.startsWith("//")) &&
+                (upper.contains(" JOB ") || upper.contains(" EXEC ") || upper.contains("JOB ") || upper.contains(
+                  "EXEC "
+                ))
+
+              if looksLikeJcl then FileType.JCL
+              else if hasIdentification || hasDivision then FileType.Program
+              else if name.endsWith(".cpy") then FileType.Copybook
+              else FileType.Copybook
+            }
+
+        private def readSnippet(path: Path): ZIO[Any, DiscoveryError, String] =
+          ZIO
+            .attemptBlocking {
+              val in = Files.newInputStream(path)
+              try
+                val buffer   = Array.ofDim[Byte](maxProbeBytes)
+                val readSize = in.read(buffer)
+                if readSize <= 0 then ""
+                else
+                  val actual  = if readSize == maxProbeBytes then buffer else buffer.take(readSize)
+                  val decoder = StandardCharsets.UTF_8
+                    .newDecoder()
+                    .onMalformedInput(CodingErrorAction.REPLACE)
+                    .onUnmappableCharacter(CodingErrorAction.REPLACE)
+                  decoder.decode(java.nio.ByteBuffer.wrap(actual)).toString
+              finally in.close()
+            }
+            .mapError(e => DiscoveryError.MetadataFailed(path, e.getMessage))
 
         private def detectEncoding(path: Path): ZIO[Any, DiscoveryError, String] =
           for
@@ -162,12 +206,20 @@ object CobolDiscoveryAgent:
           val reportDir     = Path.of("reports/discovery")
           val inventoryPath = reportDir.resolve("inventory.json")
           val markdownPath  = reportDir.resolve("discovery-report.md")
+          val json          = inventory.toJsonPretty
           for
             _ <- fileService.ensureDirectory(reportDir)
                    .mapError(fe => DiscoveryError.ReportWriteFailed(reportDir, fe.message))
-            _ <- writeFileAtomic(inventoryPath, inventory.toJsonPretty)
+            _ <- validateInventorySchema(inventoryPath, json)
+            _ <- writeFileAtomic(inventoryPath, json)
             _ <- writeFileAtomic(markdownPath, renderMarkdown(inventory))
           yield ()
+
+        private def validateInventorySchema(path: Path, json: String): ZIO[Any, DiscoveryError, Unit] =
+          ZIO
+            .fromEither(json.fromJson[FileInventory])
+            .mapError(error => DiscoveryError.ReportSchemaMismatch(path, error))
+            .unit
 
         private def writeFileAtomic(path: Path, content: String): ZIO[Any, DiscoveryError, Unit] =
           for

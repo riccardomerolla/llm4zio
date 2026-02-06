@@ -274,6 +274,39 @@ object OutputSchemas:
       |}
       |""".stripMargin
 
+  /** Schema for FileInventory - COBOL discovery inventory output
+    *
+    * Returned by: CobolDiscoveryAgent
+    *
+    * Contains file metadata and summary counts for discovery
+    */
+  val fileInventory: String =
+    """
+      |{
+      |  "discoveredAt": "string (ISO-8601 timestamp)",
+      |  "sourceDirectory": "string (absolute source directory path)",
+      |  "files": [
+      |    {
+      |      "path": "string (absolute file path)",
+      |      "name": "string (filename with extension)",
+      |      "size": "number (bytes)",
+      |      "lineCount": "number",
+      |      "lastModified": "string (ISO-8601 timestamp)",
+      |      "encoding": "string (UTF-8 | EBCDIC)",
+      |      "fileType": "string (Program | Copybook | JCL)"
+      |    }
+      |  ],
+      |  "summary": {
+      |    "totalFiles": "number",
+      |    "programFiles": "number",
+      |    "copybooks": "number",
+      |    "jclFiles": "number",
+      |    "totalLines": "number",
+      |    "totalBytes": "number"
+      |  }
+      |}
+      |""".stripMargin
+
   /** Schema for MigrationDocumentation - comprehensive migration documentation
     *
     * Returned by: DocumentationAgent
@@ -315,6 +348,7 @@ object OutputSchemas:
     "TestResults"            -> testResults,
     "ValidationReport"       -> validationReport,
     "MigrationDocumentation" -> migrationDocumentation,
+    "FileInventory"          -> fileInventory,
   )
 
   /** Get schema by case class name with error handling

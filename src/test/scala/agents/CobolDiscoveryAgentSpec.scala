@@ -18,6 +18,7 @@ object CobolDiscoveryAgentSpec extends ZIOSpecDefault:
           tempDir   <- ZIO.attemptBlocking(Files.createTempDirectory("discovery-spec"))
           _         <- createFile(tempDir.resolve("PROG1.cbl"), "IDENTIFICATION.\nPROCEDURE.\n")
           _         <- createFile(tempDir.resolve("COPY1.cpy"), "01 WS-NAME PIC X(10).\n")
+          _         <- createFile(tempDir.resolve("SHARED.cbl"), "01 WS-SHARED PIC X(5).\n")
           _         <- createFile(tempDir.resolve("JOB1.jcl"), "//JOB JOB\n")
           _         <- createFile(tempDir.resolve("README.txt"), "ignore\n")
           _         <- createFile(tempDir.resolve("target/IGNORED.cbl"), "IGNORE\n")
@@ -31,13 +32,13 @@ object CobolDiscoveryAgentSpec extends ZIOSpecDefault:
           report    <- readReport()
           parsed     = report.fromJson[FileInventory]
         yield assertTrue(
-          inventory.files.map(_.name).toSet == Set("PROG1.cbl", "COPY1.cpy", "JOB1.jcl"),
+          inventory.files.map(_.name).toSet == Set("PROG1.cbl", "COPY1.cpy", "SHARED.cbl", "JOB1.jcl"),
           inventory.summary == InventorySummary(
-            totalFiles = 3,
+            totalFiles = 4,
             programFiles = 1,
-            copybooks = 1,
+            copybooks = 2,
             jclFiles = 1,
-            totalLines = 4,
+            totalLines = 5,
             totalBytes = inventory.files.map(_.size).sum,
           ),
           parsed.isRight,

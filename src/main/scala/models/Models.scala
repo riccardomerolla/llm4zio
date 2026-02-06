@@ -89,6 +89,8 @@ enum DiscoveryError(val message: String) derives JsonCodec:
     extends DiscoveryError(s"Failed to detect encoding for $path: $cause")
   case ReportWriteFailed(path: Path, cause: String)
     extends DiscoveryError(s"Failed to write discovery report at $path: $cause")
+  case ReportSchemaMismatch(path: Path, cause: String)
+    extends DiscoveryError(s"Discovery report schema validation failed for $path: $cause")
   case InvalidConfig(details: String)            extends DiscoveryError(s"Invalid discovery config: $details")
 
 /** Analysis errors with typed error handling */
