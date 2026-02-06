@@ -283,11 +283,19 @@ object OutputSchemas:
   val migrationDocumentation: String =
     """
       |{
-      |  "technicalDesign": "string (Markdown-formatted technical design document)",
-      |  "apiReference": "string (Markdown-formatted API reference documentation)",
-      |  "dataModelMappings": "string (Markdown-formatted COBOL to Java data mappings)",
-      |  "migrationSummary": "string (Markdown-formatted migration summary report)",
-      |  "deploymentGuide": "string (Markdown-formatted deployment instructions)"
+      |  "generatedAt": "string (ISO-8601 timestamp)",
+      |  "summaryReport": "string (Markdown-formatted migration summary report)",
+      |  "designDocument": "string (Markdown-formatted technical design document)",
+      |  "apiDocumentation": "string (Markdown-formatted API reference documentation)",
+      |  "dataMappingReference": "string (Markdown-formatted COBOL to Java data mappings)",
+      |  "deploymentGuide": "string (Markdown-formatted deployment instructions)",
+      |  "diagrams": [
+      |    {
+      |      "name": "string (diagram filename without extension)",
+      |      "diagramType": "string (Mermaid | PlantUML)",
+      |      "content": "string (diagram source text)"
+      |    }
+      |  ]
       |}
       |""".stripMargin
 

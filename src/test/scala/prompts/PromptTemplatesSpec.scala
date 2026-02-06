@@ -192,7 +192,7 @@ object PromptTemplatesSpec extends ZIOSpecDefault:
         assertTrue(
           prompt.contains("MIGRATION METRICS:"),
           prompt.contains("Duration:"),
-          prompt.contains("migrationSummary"),
+          prompt.contains("summaryReport"),
           prompt.contains("Success Criteria"),
         )
       },

@@ -90,7 +90,7 @@ object DocumentationPrompts:
        |   - Database requirements
        |   - Infrastructure needs
        |
-       |Output format: Markdown stored in JSON field "technicalDesign"
+       |Output format: Markdown stored in JSON field "designDocument"
        |
        |Respond with JSON only.
        |""".stripMargin
@@ -148,7 +148,7 @@ object DocumentationPrompts:
        |   - Manual review items
        |   - Performance testing needs
        |
-       |Output format: Markdown stored in JSON field "migrationSummary"
+       |Output format: Markdown stored in JSON field "summaryReport"
        |
        |Respond with JSON only.
        |""".stripMargin
