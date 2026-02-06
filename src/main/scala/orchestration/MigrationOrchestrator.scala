@@ -86,8 +86,8 @@ object MigrationOrchestrator:
 
             // Step 5: Validation and Testing
             _                 <- Logger.info("Step 5: Validation and Testing")
-            validationReports <- ZIO.foreach(projects) { project =>
-                                   validationAgent.validate(project)
+            validationReports <- ZIO.foreach(projects.zip(analyses)) { (project, analysis) =>
+                                   validationAgent.validate(project, analysis).mapError(e => new Exception(e.message))
                                  }
             _                 <- stateService.createCheckpoint(runId, MigrationStep.Validation).mapError(e => new Exception(e.message))
 

@@ -160,8 +160,8 @@ object PromptTemplatesSpec extends ZIOSpecDefault:
         assertTrue(
           prompt.contains("ORIGINAL COBOL:"),
           prompt.contains("GENERATED JAVA:"),
-          prompt.contains("ValidationReport"),
-          prompt.contains("businessLogicValidation"),
+          prompt.contains("SemanticValidation"),
+          prompt.contains("businessLogicPreserved"),
         )
       },
     ),

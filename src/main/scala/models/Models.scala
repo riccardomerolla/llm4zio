@@ -116,6 +116,17 @@ enum TransformError(val message: String) derives JsonCodec:
   case WriteFailed(path: Path, cause: String)
     extends TransformError(s"Failed to write generated output at $path: $cause")
 
+/** Validation errors with typed error handling */
+enum ValidationError(val message: String) derives JsonCodec:
+  case CompileFailed(projectName: String, cause: String)
+    extends ValidationError(s"Compilation failed for $projectName: $cause")
+  case SemanticValidationFailed(projectName: String, cause: String)
+    extends ValidationError(s"Semantic validation failed for $projectName: $cause")
+  case ReportWriteFailed(path: Path, cause: String)
+    extends ValidationError(s"Failed to write validation report at $path: $cause")
+  case InvalidProject(projectName: String, reason: String)
+    extends ValidationError(s"Invalid project $projectName: $reason")
+
 // ============================================================================
 // Gemini Service
 // ============================================================================
@@ -366,25 +377,68 @@ case class TestResults(
   failed: Int,
 ) derives JsonCodec
 
-case class CoverageMetrics(
-  lineCoverage: Double,
-  branchCoverage: Double,
-  methodCoverage: Double,
+enum Severity derives JsonCodec:
+  case ERROR, WARNING, INFO
+
+enum IssueCategory derives JsonCodec:
+  case Compile, Coverage, StaticAnalysis, Semantic, Convention
+
+case class CompileResult(
+  success: Boolean,
+  exitCode: Int,
+  output: String,
 ) derives JsonCodec
 
+case class ValidationIssue(
+  severity: Severity,
+  category: IssueCategory,
+  message: String,
+  file: Option[String],
+  line: Option[Int],
+  suggestion: Option[String],
+) derives JsonCodec
+
+case class CoverageMetrics(
+  variablesCovered: Double,
+  proceduresCovered: Double,
+  fileSectionCovered: Double,
+  unmappedItems: List[String],
+) derives JsonCodec
+
+case class SemanticValidation(
+  businessLogicPreserved: Boolean,
+  confidence: Double,
+  summary: String,
+  issues: List[ValidationIssue],
+) derives JsonCodec
+
+enum ValidationStatus derives JsonCodec:
+  case Passed, PassedWithWarnings, Failed
+
 case class ValidationReport(
-  testResults: TestResults,
+  projectName: String,
+  validatedAt: Instant,
+  compileResult: CompileResult,
   coverageMetrics: CoverageMetrics,
-  staticAnalysisIssues: List[String],
-  businessLogicValidation: Boolean,
+  issues: List[ValidationIssue],
+  semanticValidation: SemanticValidation,
+  overallStatus: ValidationStatus,
 ) derives JsonCodec
 
 object ValidationReport:
   def empty: ValidationReport = ValidationReport(
-    testResults = TestResults(0, 0, 0),
-    coverageMetrics = CoverageMetrics(0.0, 0.0, 0.0),
-    staticAnalysisIssues = List.empty,
-    businessLogicValidation = false,
+    projectName = "",
+    validatedAt = Instant.EPOCH,
+    compileResult = CompileResult(success = false, exitCode = -1, output = ""),
+    coverageMetrics = CoverageMetrics(0.0, 0.0, 0.0, List.empty),
+    issues = List.empty,
+    semanticValidation = SemanticValidation(
+      businessLogicPreserved = false,
+      confidence = 0.0,
+      summary = "",
+      issues = List.empty,
+    ),
+    overallStatus = ValidationStatus.Failed,
   )
 
 // ============================================================================

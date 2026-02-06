@@ -173,29 +173,104 @@ object OutputSchemas:
       |}
       |""".stripMargin
 
-  /** Schema for ValidationReport - test results and quality metrics
+  /** Schema for SemanticValidation - AI semantic equivalence validation
+    *
+    * Returned by: ValidationAgent semantic validation prompt
+    */
+  val semanticValidation: String =
+    """
+      |{
+      |  "businessLogicPreserved": "boolean (true if Java logic preserves COBOL behavior)",
+      |  "confidence": "number (0.0-1.0 confidence score)",
+      |  "summary": "string (short explanation of semantic validation result)",
+      |  "issues": [
+      |    {
+      |      "severity": "string (ERROR | WARNING | INFO)",
+      |      "category": "string (Semantic | Coverage | StaticAnalysis | Compile | Convention)",
+      |      "message": "string (issue description)",
+      |      "file": "string? (optional filename)",
+      |      "line": "number? (optional line number)",
+      |      "suggestion": "string? (recommended remediation)"
+      |    }
+      |  ]
+      |}
+      |""".stripMargin
+
+  /** Schema for ValidationReport - code quality and correctness validation
     *
     * Returned by: ValidationAgent
     *
-    * Contains test execution results, coverage metrics, and business logic validation
+    * Contains compile result, coverage metrics, semantic validation, and issue classifications
     */
   val validationReport: String =
     """
       |{
-      |  "testResults": {
-      |    "totalTests": "number (count of all tests)",
-      |    "passed": "number (count of passing tests)",
-      |    "failed": "number (count of failing tests)"
+      |  "projectName": "string (Spring Boot project name)",
+      |  "validatedAt": "string (ISO-8601 timestamp)",
+      |  "compileResult": {
+      |    "success": "boolean",
+      |    "exitCode": "number",
+      |    "output": "string (truncated compile output)"
       |  },
       |  "coverageMetrics": {
-      |    "lineCoverage": "number (percentage 0.0-100.0)",
-      |    "branchCoverage": "number (percentage 0.0-100.0)",
-      |    "methodCoverage": "number (percentage 0.0-100.0)"
+      |    "variablesCovered": "number (percentage 0.0-100.0)",
+      |    "proceduresCovered": "number (percentage 0.0-100.0)",
+      |    "fileSectionCovered": "number (percentage 0.0-100.0)",
+      |    "unmappedItems": ["string (COBOL variables/procedures not mapped)"]
       |  },
-      |  "staticAnalysisIssues": [
-      |    "string (description of issue found by static analysis)"
+      |  "issues": [
+      |    {
+      |      "severity": "string (ERROR | WARNING | INFO)",
+      |      "category": "string (Compile | Coverage | StaticAnalysis | Semantic | Convention)",
+      |      "message": "string",
+      |      "file": "string?",
+      |      "line": "number?",
+      |      "suggestion": "string?"
+      |    }
       |  ],
-      |  "businessLogicValidation": "boolean (true if Java logic matches COBOL)"
+      |  "semanticValidation": {
+      |    "businessLogicPreserved": "boolean",
+      |    "confidence": "number (0.0-1.0)",
+      |    "summary": "string",
+      |    "issues": ["ValidationIssue objects with semantic findings"]
+      |  },
+      |  "overallStatus": "string (Passed | PassedWithWarnings | Failed)"
+      |}
+      |""".stripMargin
+
+  /** Schema for TestResults - generated testing summary
+    *
+    * Returned by: ValidationAgent test-generation prompt
+    */
+  val testResults: String =
+    """
+      |{
+      |  "totalTests": "number (count of all generated tests)",
+      |  "passed": "number (count of passing tests)",
+      |  "failed": "number (count of failing tests)"
+      |}
+      |""".stripMargin
+
+  /** Schema for ValidationIssue - reusable issue format
+    */
+  val validationIssue: String =
+    """
+      |{
+      |  "severity": "string (ERROR | WARNING | INFO)",
+      |  "category": "string (Compile | Coverage | StaticAnalysis | Semantic | Convention)",
+      |  "message": "string",
+      |  "file": "string?",
+      |  "line": "number?",
+      |  "suggestion": "string?"
+      |}
+      |""".stripMargin
+
+  /** Schema for ValidationStatus - overall validation status enum
+    */
+  val validationStatus: String =
+    """
+      |{
+      |  "value": "string (Passed | PassedWithWarnings | Failed)"
       |}
       |""".stripMargin
 
@@ -226,6 +301,10 @@ object OutputSchemas:
     "JavaEntity"             -> javaEntity,
     "JavaService"            -> javaService,
     "JavaController"         -> javaController,
+    "SemanticValidation"     -> semanticValidation,
+    "ValidationIssue"        -> validationIssue,
+    "ValidationStatus"       -> validationStatus,
+    "TestResults"            -> testResults,
     "ValidationReport"       -> validationReport,
     "MigrationDocumentation" -> migrationDocumentation,
   )

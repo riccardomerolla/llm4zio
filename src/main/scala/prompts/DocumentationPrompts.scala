@@ -114,9 +114,9 @@ object DocumentationPrompts:
     analyses: List[CobolAnalysis],
     validationReports: List[ValidationReport],
   ): String =
-    val duration    = Duration.between(startTime, endTime)
-    val totalTests  = validationReports.map(_.testResults.totalTests).sum
-    val passedTests = validationReports.map(_.testResults.passed).sum
+    val duration            = Duration.between(startTime, endTime)
+    val compileSuccessCount = validationReports.count(_.compileResult.success)
+    val failedCount         = validationReports.count(_.overallStatus == models.ValidationStatus.Failed)
 
     s"""$systemPrompt
        |
@@ -125,8 +125,8 @@ object DocumentationPrompts:
        |MIGRATION METRICS:
        |Duration: ${duration.toMinutes} minutes
        |Programs migrated: ${analyses.size}
-       |Total tests generated: $totalTests
-       |Tests passed: $passedTests
+       |Compile successes: $compileSuccessCount
+       |Validation failures: $failedCount
        |
        |$documentationExamples
        |

@@ -336,16 +336,66 @@ object ModelsSpec extends ZIOSpecDefault:
         TestResults(totalTests = 100, passed = 95, failed = 5),
       ),
       roundTripTest(
-        "CoverageMetrics",
-        CoverageMetrics(lineCoverage = 85.5, branchCoverage = 72.3, methodCoverage = 90.0),
+        "CompileResult",
+        CompileResult(success = true, exitCode = 0, output = ""),
       ),
+      roundTripTest(
+        "CoverageMetrics",
+        CoverageMetrics(
+          variablesCovered = 85.5,
+          proceduresCovered = 72.3,
+          fileSectionCovered = 90.0,
+          unmappedItems = List("WS-NAME"),
+        ),
+      ),
+      roundTripTest(
+        "ValidationIssue",
+        ValidationIssue(
+          severity = Severity.WARNING,
+          category = IssueCategory.StaticAnalysis,
+          message = "unused variable",
+          file = Some("CustomerService.java"),
+          line = Some(42),
+          suggestion = Some("Remove or use the variable"),
+        ),
+      ),
+      roundTripTest(
+        "SemanticValidation",
+        SemanticValidation(
+          businessLogicPreserved = true,
+          confidence = 0.93,
+          summary = "Equivalent control flow",
+          issues = List.empty,
+        ),
+      ),
+      roundTripTest("ValidationStatus.Passed", ValidationStatus.Passed),
+      roundTripTest("ValidationStatus.Failed", ValidationStatus.Failed),
+      roundTripTest("Severity.ERROR", Severity.ERROR),
+      roundTripTest("IssueCategory.Semantic", IssueCategory.Semantic),
       roundTripTest(
         "ValidationReport",
         ValidationReport(
-          testResults = TestResults(50, 48, 2),
-          coverageMetrics = CoverageMetrics(80.0, 70.0, 85.0),
-          staticAnalysisIssues = List("Warning: unused variable", "Info: consider using final"),
-          businessLogicValidation = true,
+          projectName = "CUSTPROG",
+          validatedAt = Instant.parse("2026-02-06T00:00:00Z"),
+          compileResult = CompileResult(success = true, exitCode = 0, output = ""),
+          coverageMetrics = CoverageMetrics(80.0, 70.0, 85.0, List("WS-ID")),
+          issues = List(
+            ValidationIssue(
+              severity = Severity.INFO,
+              category = IssueCategory.Coverage,
+              message = "Procedure coverage below 100%",
+              file = None,
+              line = None,
+              suggestion = None,
+            )
+          ),
+          semanticValidation = SemanticValidation(
+            businessLogicPreserved = true,
+            confidence = 0.88,
+            summary = "Functionally equivalent with minor differences",
+            issues = List.empty,
+          ),
+          overallStatus = ValidationStatus.PassedWithWarnings,
         ),
       ),
       roundTripTest("ValidationReport.empty", ValidationReport.empty),

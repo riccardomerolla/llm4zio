@@ -117,7 +117,7 @@ object ValidationPrompts:
        |Variables: ${analysis.variables.size}
        |Complexity: ${analysis.complexity.cyclomaticComplexity}
        |
-       |${PromptHelpers.schemaReference("ValidationReport")}
+       |${PromptHelpers.schemaReference("SemanticValidation")}
        |
        |Validation checklist:
        |1. All COBOL variables have corresponding Java fields
@@ -128,7 +128,7 @@ object ValidationPrompts:
        |6. Edge cases handled (division by zero, null checks)
        |7. Business logic is functionally equivalent
        |
-       |Output: ValidationReport with businessLogicValidation true/false and any issues found.
+       |Output: SemanticValidation with businessLogicPreserved true/false and classified issues.
        |
        |Respond with JSON only.
        |""".stripMargin
@@ -169,10 +169,10 @@ object ValidationPrompts:
          |Java: if (balance.compareTo(new BigDecimal("1000")) > 0) { return "APPROVED"; }""",
         """Validation result:
          |{
-         |  "testResults": { "totalTests": 0, "passed": 0, "failed": 0 },
-         |  "coverageMetrics": { "lineCoverage": 0.0, "branchCoverage": 0.0, "methodCoverage": 0.0 },
-         |  "staticAnalysisIssues": [],
-         |  "businessLogicValidation": true
+         |  "businessLogicPreserved": true,
+         |  "confidence": 0.92,
+         |  "summary": "Control flow and arithmetic mapping are equivalent.",
+         |  "issues": []
          |}""",
       )}
        |
