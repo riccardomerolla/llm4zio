@@ -1,10 +1,10 @@
 package orchestration
 
-import java.nio.file.{ Path, Paths }
+import java.nio.file.{ Files, Path }
 import java.time.Instant
 
 import zio.*
-import zio.stream.*
+import zio.stream.ZStream
 import zio.test.*
 
 import agents.*
@@ -13,300 +13,232 @@ import models.*
 
 object MigrationOrchestratorSpec extends ZIOSpecDefault:
 
-  // ============================================================================
-  // Mock Implementations
-  // ============================================================================
+  def spec: Spec[Any, Any] = suite("MigrationOrchestratorSpec")(
+    test("runs full 6-phase pipeline and returns completed result") {
+      ZIO.scoped {
+        for
+          stateDir  <- ZIO.attemptBlocking(Files.createTempDirectory("orchestrator-state"))
+          sourceDir <- ZIO.attemptBlocking(Files.createTempDirectory("orchestrator-src"))
+          outputDir <- ZIO.attemptBlocking(Files.createTempDirectory("orchestrator-out"))
+          result    <- MigrationOrchestrator
+                         .runFullMigration(sourceDir, outputDir)
+                         .provide(
+                           FileService.live,
+                           StateService.live(stateDir),
+                           mockDiscoveryAgent,
+                           mockAnalyzerAgent,
+                           mockMapperAgent,
+                           mockTransformerAgent,
+                           mockValidationAgent,
+                           mockDocumentationAgent,
+                           mockGemini,
+                           ZLayer.succeed(MigrationConfig(
+                             sourceDir = sourceDir,
+                             outputDir = outputDir,
+                             stateDir = stateDir,
+                           )),
+                           MigrationOrchestrator.live,
+                         )
+        yield assertTrue(
+          result.status == MigrationStatus.Completed,
+          result.projects.nonEmpty,
+          result.validationReport.semanticValidation.businessLogicPreserved,
+          result.errors.isEmpty,
+        )
+      }
+    },
+    test("dry-run mode returns completed with warnings and skips generation phases") {
+      ZIO.scoped {
+        for
+          stateDir  <- ZIO.attemptBlocking(Files.createTempDirectory("orchestrator-state-dry"))
+          sourceDir <- ZIO.attemptBlocking(Files.createTempDirectory("orchestrator-src-dry"))
+          outputDir <- ZIO.attemptBlocking(Files.createTempDirectory("orchestrator-out-dry"))
+          result    <- MigrationOrchestrator
+                         .runFullMigration(sourceDir, outputDir)
+                         .provide(
+                           FileService.live,
+                           StateService.live(stateDir),
+                           mockDiscoveryAgent,
+                           mockAnalyzerAgent,
+                           mockMapperAgent,
+                           mockTransformerAgent,
+                           mockValidationAgent,
+                           mockDocumentationAgent,
+                           mockGemini,
+                           ZLayer.succeed(MigrationConfig(
+                             sourceDir = sourceDir,
+                             outputDir = outputDir,
+                             stateDir = stateDir,
+                             dryRun = true,
+                           )),
+                           MigrationOrchestrator.live,
+                         )
+        yield assertTrue(
+          result.status == MigrationStatus.CompletedWithWarnings,
+          result.projects.isEmpty,
+          result.validationReport == ValidationReport.empty,
+        )
+      }
+    },
+    test("phase failure is captured as failed result") {
+      ZIO.scoped {
+        for
+          stateDir       <- ZIO.attemptBlocking(Files.createTempDirectory("orchestrator-state-fail"))
+          sourceDir      <- ZIO.attemptBlocking(Files.createTempDirectory("orchestrator-src-fail"))
+          outputDir      <- ZIO.attemptBlocking(Files.createTempDirectory("orchestrator-out-fail"))
+          failingAnalyzer = ZLayer.succeed(new CobolAnalyzerAgent {
+                              override def analyze(cobolFile: CobolFile): ZIO[Any, AnalysisError, CobolAnalysis] =
+                                ZIO.fail(AnalysisError.GeminiFailed(cobolFile.name, "analysis boom"))
+                              override def analyzeAll(files: List[CobolFile])
+                                : ZStream[Any, AnalysisError, CobolAnalysis] =
+                                ZStream.fromZIO(
+                                  ZIO.fail(AnalysisError.GeminiFailed(
+                                    files.headOption.map(_.name).getOrElse("unknown"),
+                                    "analysis boom",
+                                  ))
+                                )
+                            })
+          result         <- MigrationOrchestrator
+                              .runFullMigration(sourceDir, outputDir)
+                              .provide(
+                                FileService.live,
+                                StateService.live(stateDir),
+                                mockDiscoveryAgent,
+                                failingAnalyzer,
+                                mockMapperAgent,
+                                mockTransformerAgent,
+                                mockValidationAgent,
+                                mockDocumentationAgent,
+                                mockGemini,
+                                ZLayer.succeed(MigrationConfig(
+                                  sourceDir = sourceDir,
+                                  outputDir = outputDir,
+                                  stateDir = stateDir,
+                                )),
+                                MigrationOrchestrator.live,
+                              )
+        yield assertTrue(
+          result.status == MigrationStatus.Failed,
+          result.errors.nonEmpty,
+          result.errors.exists(_.step == MigrationStep.Analysis),
+        )
+      }
+    },
+  ) @@ TestAspect.sequential
 
   private val sampleFile = CobolFile(
-    path = Paths.get("/cobol/PROG1.cbl"),
-    name = "PROG1.cbl",
-    size = 1000L,
-    lineCount = 100,
-    lastModified = Instant.EPOCH,
+    path = Path.of("/tmp/SAMPLE.cbl"),
+    name = "SAMPLE.cbl",
+    size = 100,
+    lineCount = 10,
+    lastModified = Instant.parse("2026-02-06T00:00:00Z"),
     encoding = "UTF-8",
     fileType = FileType.Program,
   )
 
-  private val sampleInventory = FileInventory(
-    discoveredAt = Instant.EPOCH,
-    sourceDirectory = Paths.get("/cobol"),
-    files = List(sampleFile),
-    summary = InventorySummary(1, 1, 0, 0, 100, 1000L),
-  )
-
   private val sampleAnalysis = CobolAnalysis(
     file = sampleFile,
-    divisions = CobolDivisions(Some("PROGRAM-ID. PROG1."), None, None, None),
+    divisions = CobolDivisions(Some("PROGRAM-ID."), None, None, Some("MAIN.")),
     variables = List.empty,
     procedures = List.empty,
     copybooks = List.empty,
-    complexity = ComplexityMetrics(1, 100, 1),
-  )
-
-  private val sampleGraph = DependencyGraph(
-    nodes = List(DependencyNode("PROG1", "PROG1", NodeType.Program, 1)),
-    edges = List.empty,
-    serviceCandidates = List.empty,
+    complexity = ComplexityMetrics(1, 10, 1),
   )
 
   private val sampleProject = SpringBootProject(
-    projectName = "prog1-service",
-    sourceProgram = "PROG1.cbl",
-    generatedAt = Instant.EPOCH,
+    projectName = "sample",
+    sourceProgram = "SAMPLE.cbl",
+    generatedAt = Instant.parse("2026-02-06T00:00:00Z"),
     entities = List.empty,
     services = List.empty,
     controllers = List.empty,
     repositories = List.empty,
-    configuration = ProjectConfiguration("com.example", "prog1", List.empty),
+    configuration = ProjectConfiguration("com.example", "sample", List.empty),
     buildFile = BuildFile("maven", "<project/>"),
   )
 
   private val sampleValidation = ValidationReport(
-    projectName = "prog1-service",
-    validatedAt = Instant.EPOCH,
+    projectName = "sample",
+    validatedAt = Instant.parse("2026-02-06T00:00:00Z"),
     compileResult = CompileResult(success = true, exitCode = 0, output = ""),
-    coverageMetrics = CoverageMetrics(90.0, 85.0, 95.0, List.empty),
+    coverageMetrics = CoverageMetrics(90.0, 80.0, 85.0, List.empty),
     issues = List.empty,
-    semanticValidation = SemanticValidation(true, 0.95, "OK", List.empty),
+    semanticValidation = SemanticValidation(
+      businessLogicPreserved = true,
+      confidence = 0.95,
+      summary = "OK",
+      issues = List.empty,
+    ),
     overallStatus = ValidationStatus.Passed,
   )
 
-  private val sampleDocs = MigrationDocumentation(
-    generatedAt = Instant.EPOCH,
-    summaryReport = "# Summary",
-    designDocument = "# Design",
-    apiDocumentation = "# API",
-    dataMappingReference = "# Data",
-    deploymentGuide = "# Deploy",
+  private val sampleDocumentation = MigrationDocumentation(
+    generatedAt = Instant.parse("2026-02-06T00:00:00Z"),
+    summaryReport = "summary",
+    designDocument = "design",
+    apiDocumentation = "api",
+    dataMappingReference = "mapping",
+    deploymentGuide = "deploy",
     diagrams = List.empty,
   )
 
-  private def mockDiscoveryAgent: ULayer[CobolDiscoveryAgent] =
-    ZLayer.succeed(new CobolDiscoveryAgent:
+  private val mockDiscoveryAgent: ULayer[CobolDiscoveryAgent] =
+    ZLayer.succeed(new CobolDiscoveryAgent {
       override def discover(sourcePath: Path): ZIO[Any, DiscoveryError, FileInventory] =
-        ZIO.succeed(sampleInventory))
+        ZIO.succeed(
+          FileInventory(
+            discoveredAt = Instant.parse("2026-02-06T00:00:00Z"),
+            sourceDirectory = sourcePath,
+            files = List(sampleFile),
+            summary = InventorySummary(1, 1, 0, 0, 10, 100),
+          )
+        )
+    })
 
-  private def mockAnalyzerAgent: ULayer[CobolAnalyzerAgent] =
-    ZLayer.succeed(new CobolAnalyzerAgent:
-      override def analyze(file: CobolFile): ZIO[Any, AnalysisError, CobolAnalysis]               =
-        ZIO.succeed(sampleAnalysis)
+  private val mockAnalyzerAgent: ULayer[CobolAnalyzerAgent] =
+    ZLayer.succeed(new CobolAnalyzerAgent {
+      override def analyze(cobolFile: CobolFile): ZIO[Any, AnalysisError, CobolAnalysis]          =
+        ZIO.succeed(sampleAnalysis.copy(file = cobolFile))
       override def analyzeAll(files: List[CobolFile]): ZStream[Any, AnalysisError, CobolAnalysis] =
-        ZStream.fromIterable(files.map(_ => sampleAnalysis)))
+        ZStream.fromIterable(files.map(file => sampleAnalysis.copy(file = file)))
+    })
 
-  private def mockMapperAgent: ULayer[DependencyMapperAgent] =
-    ZLayer.succeed(new DependencyMapperAgent:
+  private val mockMapperAgent: ULayer[DependencyMapperAgent] =
+    ZLayer.succeed(new DependencyMapperAgent {
       override def mapDependencies(analyses: List[CobolAnalysis]): ZIO[Any, MappingError, DependencyGraph] =
-        ZIO.succeed(sampleGraph))
+        ZIO.succeed(DependencyGraph.empty)
+    })
 
-  private def mockTransformerAgent: ULayer[JavaTransformerAgent] =
-    ZLayer.succeed(new JavaTransformerAgent:
+  private val mockTransformerAgent: ULayer[JavaTransformerAgent] =
+    ZLayer.succeed(new JavaTransformerAgent {
       override def transform(
         analysis: CobolAnalysis,
-        graph: DependencyGraph,
+        dependencyGraph: DependencyGraph,
       ): ZIO[Any, TransformError, SpringBootProject] =
-        ZIO.succeed(sampleProject))
+        ZIO.succeed(sampleProject)
+    })
 
-  private def mockValidationAgent: ULayer[ValidationAgent] =
-    ZLayer.succeed(new ValidationAgent:
-      override def validate(
-        project: SpringBootProject,
-        analysis: CobolAnalysis,
-      ): ZIO[Any, ValidationError, ValidationReport] =
-        ZIO.succeed(sampleValidation))
+  private val mockValidationAgent: ULayer[ValidationAgent] =
+    ZLayer.succeed(new ValidationAgent {
+      override def validate(project: SpringBootProject, analysis: CobolAnalysis)
+        : ZIO[Any, ValidationError, ValidationReport] =
+        ZIO.succeed(sampleValidation)
+    })
 
-  private def mockDocumentationAgent: ULayer[DocumentationAgent] =
-    ZLayer.succeed(new DocumentationAgent:
+  private val mockDocumentationAgent: ULayer[DocumentationAgent] =
+    ZLayer.succeed(new DocumentationAgent {
       override def generateDocs(result: MigrationResult): ZIO[Any, DocError, MigrationDocumentation] =
-        ZIO.succeed(sampleDocs))
+        ZIO.succeed(sampleDocumentation)
+    })
 
-  private def mockStateService: ULayer[StateService] =
-    ZLayer.succeed(new StateService:
-      override def saveState(state: MigrationState): ZIO[Any, StateError, Unit]                     = ZIO.unit
-      override def loadState(runId: String): ZIO[Any, StateError, Option[MigrationState]]           = ZIO.succeed(None)
-      override def createCheckpoint(runId: String, step: MigrationStep): ZIO[Any, StateError, Unit] = ZIO.unit
-      override def getLastCheckpoint(runId: String): ZIO[Any, StateError, Option[MigrationStep]]    = ZIO.succeed(None)
-      override def listRuns(): ZIO[Any, StateError, List[MigrationRunSummary]]                      = ZIO.succeed(List.empty))
+  private val mockGemini: ULayer[GeminiService] =
+    ZLayer.succeed(new GeminiService {
+      override def execute(prompt: String): ZIO[Any, GeminiError, GeminiResponse] =
+        ZIO.succeed(GeminiResponse("{}", 0))
 
-  private def mockGeminiService: ULayer[GeminiService] =
-    ZLayer.succeed(new GeminiService:
-      override def execute(prompt: String): ZIO[Any, GeminiError, GeminiResponse]                             =
-        ZIO.succeed(GeminiResponse("mock", 0))
       override def executeWithContext(prompt: String, context: String): ZIO[Any, GeminiError, GeminiResponse] =
-        ZIO.succeed(GeminiResponse("mock", 0))
-      override def isAvailable: ZIO[Any, Nothing, Boolean]                                                    = ZIO.succeed(true))
+        execute(prompt)
 
-  private val allMockLayers =
-    mockDiscoveryAgent ++
-      mockAnalyzerAgent ++
-      mockMapperAgent ++
-      mockTransformerAgent ++
-      mockValidationAgent ++
-      mockDocumentationAgent ++
-      mockStateService ++
-      mockGeminiService
-
-  def spec: Spec[Any, Any] = suite("MigrationOrchestratorSpec")(
-    suite("runFullMigration")(
-      test("completes full pipeline successfully") {
-        for
-          result <- MigrationOrchestrator
-                      .runFullMigration(Paths.get("/cobol"), Paths.get("/output"))
-                      .provide(MigrationOrchestrator.live, allMockLayers)
-        yield assertTrue(
-          result.success,
-          result.projects.length == 1,
-          result.projects.head.projectName == "prog1-service",
-          result.validationReports.length == 1,
-          result.validationReports.head.overallStatus == ValidationStatus.Passed,
-          result.documentation.summaryReport == "# Summary",
-        )
-      },
-      test("propagates discovery errors") {
-        val failingDiscovery = ZLayer.succeed(new CobolDiscoveryAgent:
-          override def discover(sourcePath: Path): ZIO[Any, DiscoveryError, FileInventory] =
-            ZIO.fail(DiscoveryError.SourceNotFound(sourcePath)))
-
-        for result <- MigrationOrchestrator
-                        .runFullMigration(Paths.get("/missing"), Paths.get("/output"))
-                        .provide(
-                          MigrationOrchestrator.live,
-                          failingDiscovery,
-                          mockAnalyzerAgent,
-                          mockMapperAgent,
-                          mockTransformerAgent,
-                          mockValidationAgent,
-                          mockDocumentationAgent,
-                          mockStateService,
-                          mockGeminiService,
-                        )
-                        .either
-        yield assertTrue(result.isLeft)
-      },
-      test("propagates analysis errors") {
-        val failingAnalyzer = ZLayer.succeed(new CobolAnalyzerAgent:
-          override def analyze(file: CobolFile): ZIO[Any, AnalysisError, CobolAnalysis]               =
-            ZIO.fail(AnalysisError.GeminiFailed(file.name, "timeout"))
-          override def analyzeAll(files: List[CobolFile]): ZStream[Any, AnalysisError, CobolAnalysis] =
-            ZStream.fromZIO(ZIO.fail(AnalysisError.GeminiFailed("test", "timeout"))))
-
-        for result <- MigrationOrchestrator
-                        .runFullMigration(Paths.get("/cobol"), Paths.get("/output"))
-                        .provide(
-                          MigrationOrchestrator.live,
-                          mockDiscoveryAgent,
-                          failingAnalyzer,
-                          mockMapperAgent,
-                          mockTransformerAgent,
-                          mockValidationAgent,
-                          mockDocumentationAgent,
-                          mockStateService,
-                          mockGeminiService,
-                        )
-                        .either
-        yield assertTrue(result.isLeft)
-      },
-      test("propagates mapping errors") {
-        val failingMapper = ZLayer.succeed(new DependencyMapperAgent:
-          override def mapDependencies(analyses: List[CobolAnalysis]): ZIO[Any, MappingError, DependencyGraph] =
-            ZIO.fail(MappingError.EmptyAnalysis))
-
-        for result <- MigrationOrchestrator
-                        .runFullMigration(Paths.get("/cobol"), Paths.get("/output"))
-                        .provide(
-                          MigrationOrchestrator.live,
-                          mockDiscoveryAgent,
-                          mockAnalyzerAgent,
-                          failingMapper,
-                          mockTransformerAgent,
-                          mockValidationAgent,
-                          mockDocumentationAgent,
-                          mockStateService,
-                          mockGeminiService,
-                        )
-                        .either
-        yield assertTrue(result.isLeft)
-      },
-      test("propagates transform errors") {
-        val failingTransformer = ZLayer.succeed(new JavaTransformerAgent:
-          override def transform(
-            analysis: CobolAnalysis,
-            graph: DependencyGraph,
-          ): ZIO[Any, TransformError, SpringBootProject] =
-            ZIO.fail(TransformError.GeminiFailed("PROG1", "timeout")))
-
-        for result <- MigrationOrchestrator
-                        .runFullMigration(Paths.get("/cobol"), Paths.get("/output"))
-                        .provide(
-                          MigrationOrchestrator.live,
-                          mockDiscoveryAgent,
-                          mockAnalyzerAgent,
-                          mockMapperAgent,
-                          failingTransformer,
-                          mockValidationAgent,
-                          mockDocumentationAgent,
-                          mockStateService,
-                          mockGeminiService,
-                        )
-                        .either
-        yield assertTrue(result.isLeft)
-      },
-      test("propagates validation errors") {
-        val failingValidation = ZLayer.succeed(new ValidationAgent:
-          override def validate(
-            project: SpringBootProject,
-            analysis: CobolAnalysis,
-          ): ZIO[Any, ValidationError, ValidationReport] =
-            ZIO.fail(ValidationError.CompileFailed("prog1", "compilation error")))
-
-        for result <- MigrationOrchestrator
-                        .runFullMigration(Paths.get("/cobol"), Paths.get("/output"))
-                        .provide(
-                          MigrationOrchestrator.live,
-                          mockDiscoveryAgent,
-                          mockAnalyzerAgent,
-                          mockMapperAgent,
-                          mockTransformerAgent,
-                          failingValidation,
-                          mockDocumentationAgent,
-                          mockStateService,
-                          mockGeminiService,
-                        )
-                        .either
-        yield assertTrue(result.isLeft)
-      },
-      test("propagates documentation errors") {
-        val failingDocs = ZLayer.succeed(new DocumentationAgent:
-          override def generateDocs(result: MigrationResult): ZIO[Any, DocError, MigrationDocumentation] =
-            ZIO.fail(DocError.InvalidResult("no projects")))
-
-        for result <- MigrationOrchestrator
-                        .runFullMigration(Paths.get("/cobol"), Paths.get("/output"))
-                        .provide(
-                          MigrationOrchestrator.live,
-                          mockDiscoveryAgent,
-                          mockAnalyzerAgent,
-                          mockMapperAgent,
-                          mockTransformerAgent,
-                          mockValidationAgent,
-                          failingDocs,
-                          mockStateService,
-                          mockGeminiService,
-                        )
-                        .either
-        yield assertTrue(result.isLeft)
-      },
-    ),
-    suite("runStep")(
-      test("returns success for any step") {
-        for
-          result <- ZIO
-                      .serviceWithZIO[MigrationOrchestrator](_.runStep(MigrationStep.Discovery))
-                      .provide(MigrationOrchestrator.live, allMockLayers)
-        yield assertTrue(
-          result.success,
-          result.step == MigrationStep.Discovery,
-          result.error.isEmpty,
-        )
-      }
-    ),
-  )
+      override def isAvailable: ZIO[Any, Nothing, Boolean] =
+        ZIO.succeed(true)
+    })

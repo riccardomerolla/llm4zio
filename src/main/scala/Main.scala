@@ -265,14 +265,35 @@ object Main extends ZIOAppDefault:
       result <-
         if config.dryRun then
           Logger.info("DRY RUN MODE - No files will be written") *>
-            ZIO.succeed(
+            Clock.instant.map { now =>
               MigrationResult(
-                success = true,
+                runId = s"dry-run-${now.toEpochMilli}",
+                startedAt = now,
+                completedAt = now,
+                config = config,
+                inventory = FileInventory(
+                  discoveredAt = now,
+                  sourceDirectory = config.sourceDir,
+                  files = List.empty,
+                  summary = InventorySummary(
+                    totalFiles = 0,
+                    programFiles = 0,
+                    copybooks = 0,
+                    jclFiles = 0,
+                    totalLines = 0L,
+                    totalBytes = 0L,
+                  ),
+                ),
+                analyses = List.empty,
+                dependencyGraph = DependencyGraph.empty,
                 projects = List.empty,
-                documentation = MigrationDocumentation.empty,
+                validationReport = ValidationReport.empty,
                 validationReports = List.empty,
+                documentation = MigrationDocumentation.empty,
+                errors = List.empty,
+                status = MigrationStatus.CompletedWithWarnings,
               )
-            )
+            }
         else MigrationOrchestrator.runFullMigration(config.sourceDir, config.outputDir)
 
       _ <- Logger.info(s"Migration completed: ${result.projects.length} projects generated")
@@ -307,9 +328,9 @@ object Main extends ZIOAppDefault:
          |╔═══════════════════════════════════════════════════════════════════╗
          |║                      Migration Summary                           ║
          |╠═══════════════════════════════════════════════════════════════════╣
-         |║  Status: ${if result.success then "SUCCESS" else "FAILED"}
+         |║  Status: ${result.status}
          |║  Projects Generated: ${result.projects.length}
-         |║  Validation Reports: ${result.validationReports.length}
+         |║  Validation Errors: ${result.errors.length}
          |║
          |║  Output Directory: java-output/
          |║  Reports Directory: reports/
