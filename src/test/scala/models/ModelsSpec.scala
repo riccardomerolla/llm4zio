@@ -404,14 +404,31 @@ object ModelsSpec extends ZIOSpecDefault:
     // Documentation Phase Models
     // ========================================================================
     suite("Documentation Phase Models")(
+      roundTripTest("DiagramType.Mermaid", DiagramType.Mermaid),
+      roundTripTest(
+        "Diagram",
+        Diagram(
+          name = "architecture",
+          diagramType = DiagramType.Mermaid,
+          content = "graph TD\nA --> B",
+        ),
+      ),
       roundTripTest(
         "MigrationDocumentation",
         MigrationDocumentation(
-          technicalDesign = "# Technical Design\n\nArchitecture overview...",
-          apiReference = "# API Reference\n\nEndpoints...",
-          dataModelMappings = "# Data Model Mappings\n\nCOBOL to Java...",
-          migrationSummary = "# Migration Summary\n\nFiles processed: 100",
+          generatedAt = Instant.parse("2026-02-06T00:00:00Z"),
+          summaryReport = "# Migration Summary\n\nFiles processed: 100",
+          designDocument = "# Technical Design\n\nArchitecture overview...",
+          apiDocumentation = "# API Reference\n\nEndpoints...",
+          dataMappingReference = "# Data Model Mappings\n\nCOBOL to Java...",
           deploymentGuide = "# Deployment Guide\n\nSteps...",
+          diagrams = List(
+            Diagram(
+              name = "architecture",
+              diagramType = DiagramType.Mermaid,
+              content = "graph TD\nA --> B",
+            )
+          ),
         ),
       ),
       roundTripTest("MigrationDocumentation.empty", MigrationDocumentation.empty),
@@ -569,7 +586,15 @@ object ModelsSpec extends ZIOSpecDefault:
     // ========================================================================
     suite("Edge Cases")(
       test("Empty strings in models") {
-        val doc     = MigrationDocumentation("", "", "", "", "")
+        val doc     = MigrationDocumentation(
+          generatedAt = Instant.EPOCH,
+          summaryReport = "",
+          designDocument = "",
+          apiDocumentation = "",
+          dataMappingReference = "",
+          deploymentGuide = "",
+          diagrams = List.empty,
+        )
         val json    = doc.toJson
         val decoded = json.fromJson[MigrationDocumentation]
         assertTrue(decoded == Right(doc))

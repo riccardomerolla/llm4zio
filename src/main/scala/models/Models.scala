@@ -127,6 +127,13 @@ enum ValidationError(val message: String) derives JsonCodec:
   case InvalidProject(projectName: String, reason: String)
     extends ValidationError(s"Invalid project $projectName: $reason")
 
+/** Documentation generation errors with typed error handling */
+enum DocError(val message: String) derives JsonCodec:
+  case InvalidResult(reason: String) extends DocError(s"Invalid migration result: $reason")
+  case ReportWriteFailed(path: Path, cause: String)
+    extends DocError(s"Failed to write documentation at $path: $cause")
+  case RenderFailed(cause: String)   extends DocError(s"Failed to render documentation: $cause")
+
 // ============================================================================
 // Gemini Service
 // ============================================================================
@@ -445,16 +452,35 @@ object ValidationReport:
 // Documentation Phase
 // ============================================================================
 
+enum DiagramType derives JsonCodec:
+  case Mermaid, PlantUML
+
+case class Diagram(
+  name: String,
+  diagramType: DiagramType,
+  content: String,
+) derives JsonCodec
+
 case class MigrationDocumentation(
-  technicalDesign: String,
-  apiReference: String,
-  dataModelMappings: String,
-  migrationSummary: String,
+  generatedAt: Instant,
+  summaryReport: String,
+  designDocument: String,
+  apiDocumentation: String,
+  dataMappingReference: String,
   deploymentGuide: String,
+  diagrams: List[Diagram],
 ) derives JsonCodec
 
 object MigrationDocumentation:
-  def empty: MigrationDocumentation = MigrationDocumentation("", "", "", "", "")
+  def empty: MigrationDocumentation = MigrationDocumentation(
+    generatedAt = Instant.EPOCH,
+    summaryReport = "",
+    designDocument = "",
+    apiDocumentation = "",
+    dataMappingReference = "",
+    deploymentGuide = "",
+    diagrams = List.empty,
+  )
 
 // ============================================================================
 // State Management

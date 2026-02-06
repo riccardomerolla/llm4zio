@@ -93,11 +93,13 @@ object MigrationOrchestrator:
 
             // Step 6: Documentation Generation
             _             <- Logger.info("Step 6: Documentation Generation")
-            documentation <- documentationAgent.generateDocumentation(
-                               projects.head,
-                               validationReports.head,
-                               dependencyGraph,
+            draftResult    = MigrationResult(
+                               success = true,
+                               projects = projects,
+                               documentation = MigrationDocumentation.empty,
+                               validationReports = validationReports,
                              )
+            documentation <- documentationAgent.generateDocs(draftResult).mapError(e => new Exception(e.message))
             _             <-
               stateService.createCheckpoint(runId, MigrationStep.Documentation).mapError(e => new Exception(e.message))
 
