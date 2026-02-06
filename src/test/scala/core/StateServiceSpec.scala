@@ -261,6 +261,7 @@ object StateServiceSpec extends ZIOSpecDefault:
           yield assertTrue(
             content.contains("\"test-run-001\""),
             content.contains("\"Discovery\""),
+            content.contains("\"checksum\""),
           )
         }
       },
@@ -299,6 +300,96 @@ object StateServiceSpec extends ZIOSpecDefault:
                          Files.exists(stateDir.resolve("runs/test-run-001/checkpoints/analysis.json"))
                        )
           yield assertTrue(exists1, exists2)
+        }
+      },
+    ),
+    // ========================================================================
+    // listCheckpoints tests
+    // ========================================================================
+    suite("listCheckpoints")(
+      test("returns checkpoints sorted by creation time") {
+        withTempStateDir { stateDir =>
+          val state = createTestState()
+          for
+            _           <- StateService.saveState(state).provide(
+                             StateService.live(stateDir),
+                             FileService.live,
+                           )
+            _           <- StateService.createCheckpoint("test-run-001", MigrationStep.Discovery).provide(
+                             StateService.live(stateDir),
+                             FileService.live,
+                           )
+            _           <- TestClock.adjust(1.second)
+            _           <- StateService.createCheckpoint("test-run-001", MigrationStep.Analysis).provide(
+                             StateService.live(stateDir),
+                             FileService.live,
+                           )
+            checkpoints <- StateService.listCheckpoints("test-run-001").provide(
+                             StateService.live(stateDir),
+                             FileService.live,
+                           )
+          yield assertTrue(
+            checkpoints.map(_.step) == List(MigrationStep.Discovery, MigrationStep.Analysis),
+            checkpoints.forall(_.checksum.nonEmpty),
+          )
+        }
+      },
+      test("returns empty list for unknown run") {
+        withTempStateDir { stateDir =>
+          for checkpoints <- StateService.listCheckpoints("unknown-run").provide(
+                               StateService.live(stateDir),
+                               FileService.live,
+                             )
+          yield assertTrue(checkpoints.isEmpty)
+        }
+      },
+    ),
+    // ========================================================================
+    // validateCheckpointIntegrity tests
+    // ========================================================================
+    suite("validateCheckpointIntegrity")(
+      test("succeeds for valid checkpoints") {
+        withTempStateDir { stateDir =>
+          val state = createTestState()
+          for
+            _         <- StateService.saveState(state).provide(
+                           StateService.live(stateDir),
+                           FileService.live,
+                         )
+            _         <- StateService.createCheckpoint("test-run-001", MigrationStep.Discovery).provide(
+                           StateService.live(stateDir),
+                           FileService.live,
+                         )
+            validated <- StateService.validateCheckpointIntegrity("test-run-001").provide(
+                           StateService.live(stateDir),
+                           FileService.live,
+                         ).either
+          yield assertTrue(validated.isRight)
+        }
+      },
+      test("fails when checkpoint file is corrupted") {
+        withTempStateDir { stateDir =>
+          val state = createTestState()
+          for
+            _         <- StateService.saveState(state).provide(
+                           StateService.live(stateDir),
+                           FileService.live,
+                         )
+            _         <- StateService.createCheckpoint("test-run-001", MigrationStep.Discovery).provide(
+                           StateService.live(stateDir),
+                           FileService.live,
+                         )
+            _         <- ZIO.succeed(
+                           Files.writeString(
+                             stateDir.resolve("runs/test-run-001/checkpoints/discovery.json"),
+                             """{"not":"a-valid-checkpoint"}""",
+                           )
+                         )
+            validated <- StateService.validateCheckpointIntegrity("test-run-001").provide(
+                           StateService.live(stateDir),
+                           FileService.live,
+                         ).either
+          yield assertTrue(validated.isLeft)
         }
       },
     ),

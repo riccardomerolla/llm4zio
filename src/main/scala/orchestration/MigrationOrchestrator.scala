@@ -415,7 +415,11 @@ object MigrationOrchestrator:
 
         private def loadResumeState(resumeRunId: Option[String]): ZIO[Any, Throwable, Option[MigrationState]] =
           resumeRunId match
-            case Some(runId) => stateService.loadState(runId).mapError(e => new Exception(e.message))
+            case Some(runId) =>
+              for
+                _     <- stateService.validateCheckpointIntegrity(runId).mapError(e => new Exception(e.message))
+                state <- stateService.loadState(runId).mapError(e => new Exception(e.message))
+              yield state
             case None        => ZIO.none
 
         private def derivedStartStep(state: Option[MigrationState]): Option[MigrationStep] =

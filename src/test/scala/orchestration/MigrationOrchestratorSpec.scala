@@ -124,6 +124,78 @@ object MigrationOrchestratorSpec extends ZIOSpecDefault:
         )
       }
     },
+    test("resume skips completed phases after checkpoint") {
+      ZIO.scoped {
+        for
+          stateDir         <- ZIO.attemptBlocking(Files.createTempDirectory("orchestrator-state-resume"))
+          sourceDir        <- ZIO.attemptBlocking(Files.createTempDirectory("orchestrator-src-resume"))
+          outputDir        <- ZIO.attemptBlocking(Files.createTempDirectory("orchestrator-out-resume"))
+          discoveryCalls   <- Ref.make(0)
+          countingDiscovery = ZLayer.succeed(new CobolDiscoveryAgent {
+                                override def discover(sourcePath: Path): ZIO[Any, DiscoveryError, FileInventory] =
+                                  for
+                                    _ <- discoveryCalls.update(_ + 1)
+                                  yield FileInventory(
+                                    discoveredAt = Instant.parse("2026-02-06T00:00:00Z"),
+                                    sourceDirectory = sourcePath,
+                                    files = List(sampleFile),
+                                    summary = InventorySummary(1, 1, 0, 0, 10, 100),
+                                  )
+                              })
+          failingAnalyzer   = ZLayer.succeed(new CobolAnalyzerAgent {
+                                override def analyze(cobolFile: CobolFile): ZIO[Any, AnalysisError, CobolAnalysis] =
+                                  ZIO.fail(AnalysisError.GeminiFailed(cobolFile.name, "analysis boom"))
+                                override def analyzeAll(files: List[CobolFile])
+                                  : ZStream[Any, AnalysisError, CobolAnalysis] =
+                                  ZStream.empty
+                              })
+          firstResult      <- MigrationOrchestrator
+                                .runFullMigration(sourceDir, outputDir)
+                                .provide(
+                                  FileService.live,
+                                  StateService.live(stateDir),
+                                  countingDiscovery,
+                                  failingAnalyzer,
+                                  mockMapperAgent,
+                                  mockTransformerAgent,
+                                  mockValidationAgent,
+                                  mockDocumentationAgent,
+                                  mockGemini,
+                                  ZLayer.succeed(MigrationConfig(
+                                    sourceDir = sourceDir,
+                                    outputDir = outputDir,
+                                    stateDir = stateDir,
+                                  )),
+                                  MigrationOrchestrator.live,
+                                )
+          resumedResult    <- MigrationOrchestrator
+                                .runFullMigration(sourceDir, outputDir)
+                                .provide(
+                                  FileService.live,
+                                  StateService.live(stateDir),
+                                  countingDiscovery,
+                                  mockAnalyzerAgent,
+                                  mockMapperAgent,
+                                  mockTransformerAgent,
+                                  mockValidationAgent,
+                                  mockDocumentationAgent,
+                                  mockGemini,
+                                  ZLayer.succeed(MigrationConfig(
+                                    sourceDir = sourceDir,
+                                    outputDir = outputDir,
+                                    stateDir = stateDir,
+                                    resumeFromCheckpoint = Some(firstResult.runId),
+                                  )),
+                                  MigrationOrchestrator.live,
+                                )
+          calls            <- discoveryCalls.get
+        yield assertTrue(
+          firstResult.status == MigrationStatus.Failed,
+          resumedResult.status == MigrationStatus.Completed,
+          calls == 1,
+        )
+      }
+    },
   ) @@ TestAspect.sequential
 
   private val sampleFile = CobolFile(

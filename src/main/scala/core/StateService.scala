@@ -1,12 +1,13 @@
 package core
 
 import java.nio.file.Path
+import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 
 import zio.*
 import zio.json.*
 
-import models.{ FileError, MigrationRunSummary, MigrationState, MigrationStep, StateError }
+import models.*
 
 /** StateService - State persistence and checkpointing
   *
@@ -22,6 +23,8 @@ trait StateService:
   def loadState(runId: String): ZIO[Any, StateError, Option[MigrationState]]
   def createCheckpoint(runId: String, step: MigrationStep): ZIO[Any, StateError, Unit]
   def getLastCheckpoint(runId: String): ZIO[Any, StateError, Option[MigrationStep]]
+  def listCheckpoints(runId: String): ZIO[Any, StateError, List[Checkpoint]]
+  def validateCheckpointIntegrity(runId: String): ZIO[Any, StateError, Unit]
   def listRuns(): ZIO[Any, StateError, List[MigrationRunSummary]]
 
 object StateService:
@@ -36,6 +39,12 @@ object StateService:
 
   def getLastCheckpoint(runId: String): ZIO[StateService, StateError, Option[MigrationStep]] =
     ZIO.serviceWithZIO[StateService](_.getLastCheckpoint(runId))
+
+  def listCheckpoints(runId: String): ZIO[StateService, StateError, List[Checkpoint]] =
+    ZIO.serviceWithZIO[StateService](_.listCheckpoints(runId))
+
+  def validateCheckpointIntegrity(runId: String): ZIO[StateService, StateError, Unit] =
+    ZIO.serviceWithZIO[StateService](_.validateCheckpointIntegrity(runId))
 
   def listRuns(): ZIO[StateService, StateError, List[MigrationRunSummary]] =
     ZIO.serviceWithZIO[StateService](_.listRuns())
@@ -96,36 +105,61 @@ object StateService:
 
         override def createCheckpoint(runId: String, step: MigrationStep): ZIO[Any, StateError, Unit] =
           for
-            _        <- ZIO.logInfo(s"Creating checkpoint for run $runId, step: $step")
-            stateOpt <- loadState(runId)
-            state    <- ZIO
-                          .fromOption(stateOpt)
-                          .mapError(_ => StateError.StateNotFound(runId))
-            _        <- fileService.ensureDirectory(checkpointsDir(runId)).mapError(fe => mapFileToStateError(runId)(fe))
-            json      = state.toJsonPretty
-            _        <- fileService.writeFile(checkpointPath(runId, step), json).mapError(fe => mapFileToStateError(runId)(fe))
-            _        <- ZIO.logInfo(s"Checkpoint created for run $runId, step: $step")
+            _         <- ZIO.logInfo(s"Creating checkpoint for run $runId, step: $step")
+            stateOpt  <- loadState(runId)
+            state     <- ZIO
+                           .fromOption(stateOpt)
+                           .mapError(_ => StateError.StateNotFound(runId))
+            _         <- fileService.ensureDirectory(checkpointsDir(runId)).mapError(fe => mapFileToStateError(runId)(fe))
+            createdAt <- Clock.instant
+            checksum   = calculateChecksum(state.toJson)
+            checkpoint = Checkpoint(
+                           runId = runId,
+                           step = step,
+                           createdAt = createdAt,
+                           artifactPaths = state.artifacts.map { case (key, value) => key -> Path.of(value) },
+                           checksum = checksum,
+                         )
+            snapshot   = CheckpointSnapshot(checkpoint = checkpoint, state = state)
+            _         <- fileService
+                           .writeFile(checkpointPath(runId, step), snapshot.toJsonPretty)
+                           .mapError(fe => mapFileToStateError(runId)(fe))
+            _         <- ZIO.logInfo(s"Checkpoint created for run $runId, step: $step")
           yield ()
 
         override def getLastCheckpoint(runId: String): ZIO[Any, StateError, Option[MigrationStep]] =
           for
-            _          <- ZIO.logInfo(s"Getting last checkpoint for run: $runId")
-            dirExists  <- fileService.exists(checkpointsDir(runId)).mapError(fe => mapFileToStateError(runId)(fe))
-            checkpoint <-
-              if dirExists then
-                fileService
-                  .listFiles(checkpointsDir(runId), Set(".json"))
-                  .runCollect
-                  .mapError(fe => mapFileToStateError(runId)(fe))
-                  .map { files =>
-                    files.headOption.flatMap { path =>
-                      val filename = path.getFileName.toString.replace(".json", "")
-                      MigrationStep.values.find(_.toString.toLowerCase == filename)
-                    }
-                  }
-              else ZIO.succeed(None)
-            _          <- ZIO.logInfo(s"Last checkpoint for run $runId: $checkpoint")
+            _           <- ZIO.logInfo(s"Getting last checkpoint for run: $runId")
+            checkpoints <- listCheckpoints(runId)
+            checkpoint   = checkpoints.sortBy(_.createdAt.toEpochMilli).lastOption.map(_.step)
+            _           <- ZIO.logInfo(s"Last checkpoint for run $runId: $checkpoint")
           yield checkpoint
+
+        override def listCheckpoints(runId: String): ZIO[Any, StateError, List[Checkpoint]] =
+          for
+            dirExists <- fileService.exists(checkpointsDir(runId)).mapError(fe => mapFileToStateError(runId)(fe))
+            snapshots <-
+              if dirExists then
+                for
+                  files  <- fileService
+                              .listFiles(checkpointsDir(runId), Set(".json"))
+                              .runCollect
+                              .mapError(fe => mapFileToStateError(runId)(fe))
+                  parsed <- ZIO.foreach(files.toList) { path =>
+                              readCheckpointSnapshot(path, runId)
+                            }
+                yield parsed
+              else ZIO.succeed(List.empty)
+          yield snapshots.map(_.checkpoint).sortBy(_.createdAt.toEpochMilli)
+
+        override def validateCheckpointIntegrity(runId: String): ZIO[Any, StateError, Unit] =
+          for
+            _           <- ZIO.logInfo(s"Validating checkpoint integrity for run: $runId")
+            checkpoints <- listCheckpoints(runId)
+            _           <- ZIO.foreachDiscard(checkpoints) { checkpoint =>
+                             validateCheckpoint(runId, checkpoint)
+                           }
+          yield ()
 
         override def listRuns(): ZIO[Any, StateError, List[MigrationRunSummary]] =
           for
@@ -195,5 +229,41 @@ object StateService:
           case FileError.PermissionDenied(_) => StateError.WriteError(runId, "Permission denied")
           case FileError.IOError(_, cause)   => StateError.WriteError(runId, cause)
           case _                             => StateError.WriteError(runId, fe.message)
+
+        private def readCheckpointSnapshot(path: Path, runId: String): ZIO[Any, StateError, CheckpointSnapshot] =
+          for
+            json     <- fileService.readFile(path).mapError(fe => mapFileToStateError(runId)(fe))
+            snapshot <-
+              ZIO
+                .fromEither(json.fromJson[CheckpointSnapshot])
+                .mapError(err => StateError.InvalidState(runId, s"Invalid checkpoint ${path.getFileName}: $err"))
+          yield snapshot
+
+        private def validateCheckpoint(runId: String, checkpoint: Checkpoint): ZIO[Any, StateError, Unit] =
+          for
+            snapshot <- readCheckpointSnapshot(checkpointPath(runId, checkpoint.step), runId)
+            _        <- if snapshot.checkpoint.runId == runId then ZIO.unit
+                        else
+                          ZIO.fail(
+                            StateError.InvalidState(
+                              runId,
+                              s"Checkpoint ${checkpoint.step} has mismatched runId ${snapshot.checkpoint.runId}",
+                            )
+                          )
+            checksum  = calculateChecksum(snapshot.state.toJson)
+            _        <- if checksum == snapshot.checkpoint.checksum then ZIO.unit
+                        else
+                          ZIO.fail(
+                            StateError.InvalidState(
+                              runId,
+                              s"Checkpoint ${checkpoint.step} checksum mismatch",
+                            )
+                          )
+          yield ()
+
+        private def calculateChecksum(content: String): String =
+          val digest = MessageDigest.getInstance("SHA-256")
+          val bytes  = digest.digest(content.getBytes(java.nio.charset.StandardCharsets.UTF_8))
+          bytes.map("%02x".format(_)).mkString
       }
   }

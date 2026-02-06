@@ -1,4 +1,4 @@
-import java.nio.file.Path
+import java.nio.file.{ Path, Paths }
 
 import zio.*
 import zio.Console.*
@@ -67,7 +67,8 @@ object Main extends ZIOAppDefault:
     Option[Boolean],
   )
 
-  type StepOpts = ((Path, Path, Option[Path], Option[Boolean], Option[BigInt], Option[String]), String)
+  type StepOpts     = ((Path, Path, Option[Path], Option[Boolean], Option[BigInt], Option[String]), String)
+  type ListRunsOpts = (Option[Path], Option[Path])
 
   private val migrateCmd: Command[MigrateOpts] =
     Command(
@@ -83,11 +84,16 @@ object Main extends ZIOAppDefault:
     stepNameArg,
   ).withHelp("Run a specific migration step")
 
+  private val listRunsCmd: Command[ListRunsOpts] = Command(
+    "list-runs",
+    stateDirOpt ++ configFileOpt,
+  ).withHelp("List available migration runs and checkpoints")
+
   private val cliApp = CliApp.make(
     name = "zio-legacy-modernization",
     version = "1.0.0",
     summary = text("COBOL to Spring Boot Migration Tool"),
-    command = migrateCmd | stepCmd,
+    command = migrateCmd | stepCmd | listRunsCmd,
   ) {
     case opts: MigrateOpts @unchecked =>
       executeMigrate(
@@ -109,6 +115,9 @@ object Main extends ZIOAppDefault:
 
     case opts: StepOpts @unchecked =>
       executeStep(opts._1._1, opts._1._2, opts._1._3, opts._1._4, opts._1._5, opts._1._6, opts._2)
+
+    case opts: ListRunsOpts @unchecked =>
+      executeListRuns(opts._1, opts._2)
 
     case _ =>
       ZIO.fail(new IllegalArgumentException("Unknown command"))
@@ -205,6 +214,50 @@ object Main extends ZIOAppDefault:
 
   private def parseExcludePatterns(value: Option[String]): Option[List[String]] =
     value.map(_.split(",").map(_.trim).filter(_.nonEmpty).toList)
+
+  private def executeListRuns(stateDir: Option[Path], configFile: Option[Path]): ZIO[Any, Throwable, Unit] =
+    for
+      baseConfig      <- configFile match
+                           case Some(path) =>
+                             ConfigLoader.loadFromFile(path).orElse(
+                               ZIO.succeed(MigrationConfig(Paths.get("cobol-source"), Paths.get("java-output")))
+                             )
+                           case None       =>
+                             ConfigLoader.loadWithEnvOverrides.orElse(
+                               ZIO.succeed(MigrationConfig(Paths.get("cobol-source"), Paths.get("java-output")))
+                             )
+      resolvedStateDir = stateDir.getOrElse(baseConfig.stateDir)
+      runs            <- StateService
+                           .listRuns()
+                           .provide(
+                             StateService.live(resolvedStateDir),
+                             FileService.live,
+                           )
+                           .mapError(e => new IllegalStateException(e.message))
+      _               <-
+        if runs.isEmpty then
+          printLine(s"No migration runs found in: $resolvedStateDir")
+        else
+          printLine(s"Migration runs in: $resolvedStateDir") *>
+            ZIO.foreachDiscard(runs) { run =>
+              for
+                checkpoints    <- StateService
+                                    .listCheckpoints(run.runId)
+                                    .provide(
+                                      StateService.live(resolvedStateDir),
+                                      FileService.live,
+                                    )
+                                    .mapError(e => new IllegalStateException(e.message))
+                checkpointNames = checkpoints.map(_.step.toString).mkString(", ")
+                _              <-
+                  printLine(
+                    s"- ${run.runId} | step=${run.currentStep} | completed=${run.completedSteps.size} | errors=${run.errorCount} | checkpoints=${
+                        if checkpointNames.nonEmpty then checkpointNames else "none"
+                      }"
+                  )
+              yield ()
+            }
+    yield ()
 
   private val banner =
     """
