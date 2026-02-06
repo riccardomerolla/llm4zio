@@ -19,3 +19,5 @@ sbt/
 *.iml
 .vscode/
 .DS_Store
+
+reports/

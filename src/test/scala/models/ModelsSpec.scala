@@ -88,6 +88,7 @@ object ModelsSpec extends ZIOSpecDefault:
           path = Paths.get("/cobol/PROGRAM1.cbl"),
           name = "PROGRAM1.cbl",
           size = 12345L,
+          lineCount = 250,
           lastModified = Instant.parse("2024-01-15T10:30:00Z"),
           encoding = "UTF-8",
           fileType = FileType.Program,
@@ -96,22 +97,44 @@ object ModelsSpec extends ZIOSpecDefault:
       roundTripTest(
         "FileInventory",
         FileInventory(
+          discoveredAt = Instant.parse("2026-02-05T10:00:00Z"),
+          sourceDirectory = Paths.get("/cobol"),
           files = List(
             CobolFile(
               path = Paths.get("/cobol/PROG1.cbl"),
               name = "PROG1.cbl",
               size = 1000L,
+              lineCount = 100,
               lastModified = Instant.EPOCH,
               encoding = "UTF-8",
               fileType = FileType.Program,
             )
           ),
-          metadata = Map("source" -> "/cobol", "count" -> "1"),
+          summary = InventorySummary(
+            totalFiles = 1,
+            programFiles = 1,
+            copybooks = 0,
+            jclFiles = 0,
+            totalLines = 100,
+            totalBytes = 1000L,
+          ),
         ),
       ),
       roundTripTest(
         "FileInventory empty",
-        FileInventory(files = List.empty, metadata = Map.empty),
+        FileInventory(
+          discoveredAt = Instant.parse("2026-02-05T10:00:00Z"),
+          sourceDirectory = Paths.get("/cobol"),
+          files = List.empty,
+          summary = InventorySummary(
+            totalFiles = 0,
+            programFiles = 0,
+            copybooks = 0,
+            jclFiles = 0,
+            totalLines = 0L,
+            totalBytes = 0L,
+          ),
+        ),
       ),
     ),
     // ========================================================================
@@ -342,7 +365,21 @@ object ModelsSpec extends ZIOSpecDefault:
             sourceDir = Paths.get("cobol-source"),
             outputDir = Paths.get("java-output"),
           ),
-          fileInventory = Some(FileInventory(List.empty, Map.empty)),
+          fileInventory = Some(
+            FileInventory(
+              discoveredAt = Instant.parse("2024-01-15T08:05:00Z"),
+              sourceDirectory = Paths.get("cobol-source"),
+              files = List.empty,
+              summary = InventorySummary(
+                totalFiles = 0,
+                programFiles = 0,
+                copybooks = 0,
+                jclFiles = 0,
+                totalLines = 0L,
+                totalBytes = 0L,
+              ),
+            )
+          ),
           analyses = List.empty,
           dependencyGraph = None,
           projects = List.empty,
@@ -418,6 +455,7 @@ object ModelsSpec extends ZIOSpecDefault:
             Paths.get("/cobol/MAINPROG.cbl"),
             "MAINPROG.cbl",
             5000L,
+            250,
             Instant.parse("2024-01-01T00:00:00Z"),
             "EBCDIC",
             FileType.Program,
@@ -478,6 +516,7 @@ object ModelsSpec extends ZIOSpecDefault:
           path = Paths.get("/path/with spaces/and-dashes/file.cbl"),
           name = "file.cbl",
           size = 100L,
+          lineCount = 10,
           lastModified = Instant.EPOCH,
           encoding = "UTF-8",
           fileType = FileType.Program,
