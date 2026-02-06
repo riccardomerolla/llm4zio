@@ -79,7 +79,7 @@ object MigrationOrchestrator:
             // Step 4: Code Transformation
             _        <- Logger.info("Step 4: Code Transformation")
             projects <- ZIO.foreach(analyses) { analysis =>
-                          transformerAgent.transform(analysis, dependencyGraph).provide(ZLayer.succeed(geminiService))
+                          transformerAgent.transform(analysis, dependencyGraph).mapError(e => new Exception(e.message))
                         }
             _        <-
               stateService.createCheckpoint(runId, MigrationStep.Transformation).mapError(e => new Exception(e.message))

@@ -244,18 +244,21 @@ object ModelsSpec extends ZIOSpecDefault:
         JavaField(
           name = "counter",
           javaType = "Long",
+          cobolSource = "WS-COUNTER PIC 9(5)",
           annotations = List("@Column(name = \"counter\")"),
         ),
       ),
       roundTripTest(
         "JavaEntity",
         JavaEntity(
-          name = "Customer",
+          className = "Customer",
+          packageName = "com.example.customer.entity",
           fields = List(
-            JavaField("id", "Long", List("@Id", "@GeneratedValue")),
-            JavaField("name", "String", List("@Column")),
+            JavaField("id", "Long", "CUSTOMER-ID", List("@Id", "@GeneratedValue")),
+            JavaField("name", "String", "CUSTOMER-NAME", List("@Column")),
           ),
           annotations = List("@Entity", "@Table(name = \"customers\")"),
+          sourceCode = "public class Customer { }",
         ),
       ),
       roundTripTest(
@@ -298,6 +301,21 @@ object ModelsSpec extends ZIOSpecDefault:
             RestEndpoint("/customers", HttpMethod.POST, "createCustomer"),
           ),
         ),
+      ),
+      roundTripTest(
+        "JavaRepository",
+        JavaRepository(
+          name = "CustomerRepository",
+          entityName = "Customer",
+          idType = "Long",
+          packageName = "com.example.customer.repository",
+          annotations = List("@Repository"),
+          sourceCode = "public interface CustomerRepository {}",
+        ),
+      ),
+      roundTripTest(
+        "BuildFile",
+        BuildFile(tool = "maven", content = "<project></project>"),
       ),
       roundTripTest(
         "ProjectConfiguration",
@@ -417,16 +435,16 @@ object ModelsSpec extends ZIOSpecDefault:
     suite("Complex Nested Structures")(
       test("Full SpringBootProject round-trip") {
         val project = SpringBootProject(
-          name = "legacy-migration",
-          packages = List(
-            JavaPackage("com.example.entity", List("Customer", "Order")),
-            JavaPackage("com.example.service", List("CustomerService")),
-          ),
+          projectName = "legacy-migration",
+          sourceProgram = "MAINPROG.cbl",
+          generatedAt = Instant.parse("2026-02-06T00:00:00Z"),
           entities = List(
             JavaEntity(
-              "Customer",
-              List(JavaField("id", "Long", List("@Id"))),
-              List("@Entity"),
+              className = "Customer",
+              packageName = "com.example.customer.entity",
+              fields = List(JavaField("id", "Long", "CUSTOMER-ID", List("@Id"))),
+              annotations = List("@Entity"),
+              sourceCode = "public class Customer {}",
             )
           ),
           services = List(
@@ -442,7 +460,18 @@ object ModelsSpec extends ZIOSpecDefault:
               List(RestEndpoint("/customers", HttpMethod.GET, "getAll")),
             )
           ),
+          repositories = List(
+            JavaRepository(
+              name = "CustomerRepository",
+              entityName = "Customer",
+              idType = "Long",
+              packageName = "com.example.customer.repository",
+              annotations = List("@Repository"),
+              sourceCode = "public interface CustomerRepository {}",
+            )
+          ),
           configuration = ProjectConfiguration("com.example", "app", List("spring-web")),
+          buildFile = BuildFile("maven", "<project></project>"),
         )
 
         val json    = project.toJson

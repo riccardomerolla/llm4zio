@@ -107,6 +107,15 @@ enum MappingError(val message: String) derives JsonCodec:
   case ReportWriteFailed(path: Path, cause: String)
     extends MappingError(s"Failed to write dependency mapping report at $path: $cause")
 
+/** Transformation errors with typed error handling */
+enum TransformError(val message: String) derives JsonCodec:
+  case GeminiFailed(fileName: String, cause: String)
+    extends TransformError(s"Gemini transform failed for $fileName: $cause")
+  case ParseFailed(fileName: String, cause: String)
+    extends TransformError(s"Failed to parse transform output for $fileName: $cause")
+  case WriteFailed(path: Path, cause: String)
+    extends TransformError(s"Failed to write generated output at $path: $cause")
+
 // ============================================================================
 // Gemini Service
 // ============================================================================
@@ -261,13 +270,16 @@ case class JavaPackage(
 case class JavaField(
   name: String,
   javaType: String,
+  cobolSource: String,
   annotations: List[String],
 ) derives JsonCodec
 
 case class JavaEntity(
-  name: String,
+  className: String,
+  packageName: String,
   fields: List[JavaField],
   annotations: List[String],
+  sourceCode: String,
 ) derives JsonCodec
 
 case class JavaParameter(
@@ -299,6 +311,20 @@ case class JavaController(
   endpoints: List[RestEndpoint],
 ) derives JsonCodec
 
+case class JavaRepository(
+  name: String,
+  entityName: String,
+  idType: String,
+  packageName: String,
+  annotations: List[String],
+  sourceCode: String,
+) derives JsonCodec
+
+case class BuildFile(
+  tool: String,
+  content: String,
+) derives JsonCodec
+
 case class ProjectConfiguration(
   groupId: String,
   artifactId: String,
@@ -306,22 +332,28 @@ case class ProjectConfiguration(
 ) derives JsonCodec
 
 case class SpringBootProject(
-  name: String,
-  packages: List[JavaPackage],
+  projectName: String,
+  sourceProgram: String,
+  generatedAt: Instant,
   entities: List[JavaEntity],
   services: List[JavaService],
   controllers: List[JavaController],
+  repositories: List[JavaRepository],
   configuration: ProjectConfiguration,
+  buildFile: BuildFile,
 ) derives JsonCodec
 
 object SpringBootProject:
   def empty: SpringBootProject = SpringBootProject(
-    name = "",
-    packages = List.empty,
+    projectName = "",
+    sourceProgram = "",
+    generatedAt = Instant.EPOCH,
     entities = List.empty,
     services = List.empty,
     controllers = List.empty,
+    repositories = List.empty,
     configuration = ProjectConfiguration("", "", List.empty),
+    buildFile = BuildFile("maven", ""),
   )
 
 // ============================================================================

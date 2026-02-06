@@ -21,3 +21,4 @@ sbt/
 .DS_Store
 
 reports/
+java-output/

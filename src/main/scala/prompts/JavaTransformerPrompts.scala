@@ -63,8 +63,10 @@ object JavaTransformerPrompts:
        |
        |${PromptHelpers.validationRules(
         List(
-          "name (Java class name, CamelCase)",
+          "className (Java class name, CamelCase)",
+          "packageName (Java package)",
           "fields (all COBOL variables converted)",
+          "sourceCode (full Java class source)",
           "annotations (must include @Entity, @Table)",
         )
       )}
@@ -232,13 +234,15 @@ object JavaTransformerPrompts:
          |  { "name": "WS-BALANCE", "level": 1, "dataType": "numeric", "picture": "9(7)V99" }
          |]""",
         """{
-         |  "name": "Customer",
+         |  "className": "Customer",
+         |  "packageName": "com.example.customer.entity",
          |  "fields": [
-         |    { "name": "customerId", "javaType": "Integer", "annotations": ["@Id", "@Column(length = 5)"] },
-         |    { "name": "customerName", "javaType": "String", "annotations": ["@Column(length = 30)"] },
-         |    { "name": "balance", "javaType": "BigDecimal", "annotations": ["@Column(precision = 9, scale = 2)"] }
+         |    { "name": "customerId", "javaType": "Integer", "cobolSource": "WS-CUSTOMER-ID", "annotations": ["@Id", "@Column(length = 5)"] },
+         |    { "name": "customerName", "javaType": "String", "cobolSource": "WS-CUSTOMER-NAME", "annotations": ["@Column(length = 30)"] },
+         |    { "name": "balance", "javaType": "BigDecimal", "cobolSource": "WS-BALANCE", "annotations": ["@Column(precision = 9, scale = 2)"] }
          |  ],
-         |  "annotations": ["@Entity", "@Table(name = \\"customer\\")"]
+         |  "annotations": ["@Entity", "@Table(name = \\"customer\\")"],
+         |  "sourceCode": "public class Customer { ... }"
          |}""",
       )}
        |
@@ -253,14 +257,16 @@ object JavaTransformerPrompts:
          |  { "name": "CITY", "level": 10, "dataType": "alphanumeric", "picture": "X(30)" }
          |]""",
         """{
-         |  "name": "CustomerRecord",
+         |  "className": "CustomerRecord",
+         |  "packageName": "com.example.customer.entity",
          |  "fields": [
-         |    { "name": "custId", "javaType": "Long", "annotations": ["@Id", "@Column(length = 8)"] },
-         |    { "name": "custName", "javaType": "String", "annotations": ["@Column(length = 50)"] },
-         |    { "name": "street", "javaType": "String", "annotations": ["@Column(length = 40)"] },
-         |    { "name": "city", "javaType": "String", "annotations": ["@Column(length = 30)"] }
+         |    { "name": "custId", "javaType": "Long", "cobolSource": "CUST-ID", "annotations": ["@Id", "@Column(length = 8)"] },
+         |    { "name": "custName", "javaType": "String", "cobolSource": "CUST-NAME", "annotations": ["@Column(length = 50)"] },
+         |    { "name": "street", "javaType": "String", "cobolSource": "STREET", "annotations": ["@Column(length = 40)"] },
+         |    { "name": "city", "javaType": "String", "cobolSource": "CITY", "annotations": ["@Column(length = 30)"] }
          |  ],
-         |  "annotations": ["@Entity", "@Table(name = \\"customer_record\\")"]
+         |  "annotations": ["@Entity", "@Table(name = \\"customer_record\\")"],
+         |  "sourceCode": "public class CustomerRecord { ... }"
          |}""",
       )}
        |""".stripMargin

@@ -107,11 +107,13 @@ object OutputSchemas:
   val javaEntity: String =
     """
       |{
-      |  "name": "string (CamelCase class name, e.g., CustomerRecord)",
+      |  "className": "string (CamelCase class name, e.g., CustomerRecord)",
+      |  "packageName": "string (Java package, e.g., com.example.customer.entity)",
       |  "fields": [
       |    {
       |      "name": "string (camelCase field name, e.g., customerId)",
       |      "javaType": "string (Integer | Long | String | BigDecimal | etc.)",
+      |      "cobolSource": "string (original COBOL field name or PIC clause)",
       |      "annotations": [
       |        "string (e.g., @Id, @Column(length = 30), @NotNull)"
       |      ]
@@ -119,7 +121,8 @@ object OutputSchemas:
       |  ],
       |  "annotations": [
       |    "string (class-level annotations: @Entity, @Table(name = \"...\"))"
-      |  ]
+      |  ],
+      |  "sourceCode": "string (full Java class source)"
       |}
       |""".stripMargin
 
