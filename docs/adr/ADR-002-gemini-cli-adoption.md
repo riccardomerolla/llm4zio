@@ -65,7 +65,7 @@ We need to select an AI provider and integration method that balances:
 **Implementation:**
 ```bash
 gemini -p "Analyze this COBOL: $(cat program.cbl)" \
-  --model gemini-2.0-flash \
+  --model gemini-2.5-flash \
   --json-output \
   --max-tokens 32768
 ```
@@ -132,7 +132,7 @@ Non-Interactive Automation:
 
 bash
 # Perfect for ZIO process execution
-gemini -p "$PROMPT" --json-output --model gemini-2.0-flash
+gemini -p "$PROMPT" --json-output --model gemini-2.5-flash
 Context Window:
 
 Gemini 2.0: 32,768 tokens standard, up to 128K extended
@@ -164,7 +164,7 @@ scala
 trait GeminiService {
   def query(
     prompt: String,
-    model: String = "gemini-2.0-flash",
+    model: String = "gemini-2.5-flash",
     maxTokens: Int = 32768
   ): ZIO[Any, GeminiError, String]
 }
@@ -216,7 +216,7 @@ Technical Implementation
 CLI Invocation from Scala/ZIO
 scala
 case class GeminiConfig(
-  model: String = "gemini-2.0-flash",
+  model: String = "gemini-2.5-flash",
   maxTokens: Int = 32768,
   temperature: Double = 0.1,
   timeout: Duration = 300.seconds

@@ -280,7 +280,7 @@ object ConfigLoaderSpec extends ZIOSpecDefault:
           outputDir = Paths.get("/tmp/out"),
         )
         assertTrue(
-          config.geminiModel == "gemini-2.0-flash",
+          config.geminiModel == "gemini-2.5-flash",
           config.geminiMaxRetries == 3,
           config.parallelism == 4,
           config.batchSize == 10,

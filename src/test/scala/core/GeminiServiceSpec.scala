@@ -12,7 +12,7 @@ object GeminiServiceSpec extends ZIOSpecDefault:
 
   /** Helper to create a test MigrationConfig */
   private def createTestConfig(
-    geminiModel: String = "gemini-2.0-flash",
+    geminiModel: String = "gemini-2.5-flash",
     geminiTimeout: Duration = Duration.fromSeconds(60),
     geminiMaxRetries: Int = 3,
   ): MigrationConfig =
@@ -231,7 +231,7 @@ object GeminiServiceSpec extends ZIOSpecDefault:
     // ========================================================================
     suite("Integration with MigrationConfig")(
       test("uses correct model from config") {
-        val config = createTestConfig(geminiModel = "gemini-2.0-flash")
+        val config = createTestConfig(geminiModel = "gemini-2.5-flash")
         for
           response <- GeminiService.execute("Test").provide(
                         GeminiService.live,

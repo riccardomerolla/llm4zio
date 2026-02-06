@@ -310,7 +310,7 @@ Create or edit `src/main/resources/application.conf`:
 
 ```hocon
 gemini {
-  model = "gemini-2.0-flash"
+  model = "gemini-2.5-flash"
   max-tokens = 32768
   temperature = 0.1
   timeout = 300s

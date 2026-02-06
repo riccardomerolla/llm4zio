@@ -35,7 +35,11 @@ inThisBuild(List(
   semanticdbEnabled                := true,
 ))
 
+lazy val It = config("it") extend Test
+
 lazy val root = (project in file("."))
+  .configs(It)
+  .settings(inConfig(It)(Defaults.testSettings): _*)
   .settings(
     name := "zio-legacy-modernization-agent",
     description := "A ZIO Legacy to Modernization Agent built with ZIO and Scala 3",
@@ -51,16 +55,18 @@ lazy val root = (project in file("."))
       "dev.zio" %% "zio-config-magnolia" % "4.0.6",
       "dev.zio" %% "zio-logging" % "2.4.0",
       "dev.zio" %% "zio-logging-slf4j2" % "2.4.0",
+      "ch.qos.logback" % "logback-classic" % "1.5.12",
       "dev.zio" %% "zio-opentelemetry" % "3.0.0",
       "dev.zio" %% "zio-opentelemetry-zio-logging" % "3.0.0",
       "io.opentelemetry" % "opentelemetry-sdk" % "1.44.1",
       "io.opentelemetry" % "opentelemetry-exporter-otlp" % "1.44.1",
       "io.opentelemetry" % "opentelemetry-exporter-logging-otlp" % "1.44.1",
-      "dev.zio" %% "zio-test" % "2.1.24" % Test,
-      "dev.zio" %% "zio-test-sbt" % "2.1.24" % Test,
-      "dev.zio" %% "zio-test-magnolia" % "2.1.24" % Test
+      "dev.zio" %% "zio-test" % "2.1.24" % "test,it",
+      "dev.zio" %% "zio-test-sbt" % "2.1.24" % "test,it",
+      "dev.zio" %% "zio-test-magnolia" % "2.1.24" % "test,it"
     ),
     testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
+    It / testFrameworks ++= (Test / testFrameworks).value,
     coverageExcludedPackages := "<empty>;.*\\.example\\..*",
     coverageExcludedFiles := ".*Main\\.scala",
     coverageMinimumStmtTotal := 80,

@@ -539,8 +539,8 @@ case class MigrationConfig(
   stateDir: Path = Paths.get(".migration-state"),
 
   // Gemini settings
-  geminiModel: String = "gemini-2.0-flash",
-  geminiTimeout: zio.Duration = zio.Duration.fromSeconds(60),
+  geminiModel: String = "gemini-2.5-flash",
+  geminiTimeout: zio.Duration = zio.Duration.fromSeconds(90),
   geminiMaxRetries: Int = 3,
   geminiRequestsPerMinute: Int = 60,
   geminiBurstSize: Int = 10,

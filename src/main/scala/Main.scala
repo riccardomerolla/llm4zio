@@ -29,7 +29,7 @@ object Main extends ZIOAppDefault:
     Options.directory("state-dir").optional ?? "Directory for migration state (default: .migration-state)"
   private val configFileOpt = Options.file("config").alias("c").optional ?? "Configuration file (HOCON or JSON)"
 
-  private val geminiModelOpt   = Options.text("gemini-model").optional ?? "Gemini model name (default: gemini-2.0-flash)"
+  private val geminiModelOpt   = Options.text("gemini-model").optional ?? "Gemini model name (default: gemini-2.5-flash)"
   private val geminiTimeoutOpt =
     Options.integer("gemini-timeout").optional ?? "Gemini API timeout in seconds (default: 60)"
   private val geminiRetriesOpt = Options.integer("gemini-retries").optional ?? "Max Gemini API retries (default: 3)"

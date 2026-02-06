@@ -4,10 +4,11 @@ import java.nio.file.Path
 
 import zio.*
 import zio.json.*
+import zio.json.ast.Json
 import zio.stream.*
 
 import core.{ FileService, GeminiService, Logger, ResponseParser }
-import models.{ AnalysisError, CobolAnalysis, CobolFile, MigrationConfig }
+import models.*
 import prompts.PromptTemplates
 
 /** CobolAnalyzerAgent - Deep structural analysis of COBOL programs using AI
@@ -55,9 +56,7 @@ object CobolAnalyzerAgent:
               response <- geminiService
                             .execute(prompt)
                             .mapError(e => AnalysisError.GeminiFailed(cobolFile.name, e.message))
-              parsed   <- responseParser
-                            .parse[CobolAnalysis](response)
-                            .mapError(e => AnalysisError.ParseFailed(cobolFile.name, e.message))
+              parsed   <- parseAnalysis(response, cobolFile)
               analysis  = parsed.copy(file = cobolFile)
               _        <- writeReport(analysis).tapError(err => Logger.warn(err.message))
               _        <- Logger.info(
@@ -135,5 +134,45 @@ object CobolAnalyzerAgent:
 
           private def safeName(name: String): String =
             name.replaceAll("[^A-Za-z0-9._-]", "_")
+
+          private def parseAnalysis(
+            response: GeminiResponse,
+            cobolFile: CobolFile,
+          ): ZIO[Any, AnalysisError, CobolAnalysis] =
+            responseParser
+              .parse[CobolAnalysis](response)
+              .catchSome { case ParseError.SchemaMismatch(_, _) => parseWithFileOverride(response, cobolFile) }
+              .mapError(e => AnalysisError.ParseFailed(cobolFile.name, e.message))
+
+          private def parseWithFileOverride(
+            response: GeminiResponse,
+            cobolFile: CobolFile,
+          ): ZIO[Any, ParseError, CobolAnalysis] =
+            for
+              jsonText <- responseParser
+                            .extractJson(response)
+                            .mapError(identity)
+              ast      <- ZIO
+                            .fromEither(jsonText.fromJson[Json])
+                            .mapError(err => ParseError.InvalidJson(jsonText, err))
+              patched  <- ZIO
+                            .fromEither(overrideFileAst(ast, cobolFile))
+                            .mapError(err => ParseError.InvalidJson(jsonText, err))
+              analysis <- ZIO
+                            .fromEither(patched.toJson.fromJson[CobolAnalysis])
+                            .mapError(err => ParseError.SchemaMismatch("CobolAnalysis", err))
+            yield analysis
+
+          private def overrideFileAst(value: Json, cobolFile: CobolFile): Either[String, Json] =
+            for
+              fileAst <- cobolFile.toJson.fromJson[Json]
+            yield value match
+              case Json.Obj(fields) =>
+                val updated = fields.map {
+                  case ("file", _) => "file" -> fileAst
+                  case other       => other
+                }
+                Json.Obj(updated)
+              case _                => value
         }
     }

@@ -20,7 +20,7 @@ import models.{ GeminiError, GeminiResponse, MigrationConfig, RateLimitError }
   *
   * CLI Arguments:
   *   - `-p, --prompt`: Non-interactive prompt
-  *   - `-m, --model`: Gemini model to use (e.g., gemini-2.0-flash)
+  *   - `-m, --model`: Gemini model to use (e.g., gemini-2.5-flash)
   *   - `-y, --yolo`: YOLO mode - auto-approve all actions
   *   - `-s, --sandbox`: Run in sandbox mode for safety
   */
@@ -151,23 +151,25 @@ object GeminiService:
           prompt: String,
           config: MigrationConfig,
         ): ZIO[Any, GeminiError, Process] =
-          ZIO
-            .attemptBlocking {
-              val commands = List(
-                "gemini",
-                "-p",
-                prompt,
-                "-m",
-                config.geminiModel,
-                "-y", // YOLO mode: auto-approve all actions
-                "-s", // Run in sandbox mode for safety
-              )
+          val commands = List(
+            "gemini",
+            "-p",
+            prompt,
+            "-m",
+            config.geminiModel,
+            "-y", // YOLO mode: auto-approve all actions
+            "-s", // Run in sandbox mode for safety
+          )
 
-              new ProcessBuilder(commands.asJava)
-                .redirectErrorStream(true) // Merge stderr into stdout
-                .start()
-            }
-            .mapError(e => GeminiError.ProcessStartFailed(e.getMessage))
+          ZIO.logDebug(s"Starting Gemini process: gemini -p <prompt> -m ${config.geminiModel} -y -s") *>
+            ZIO
+              .attemptBlocking {
+                new ProcessBuilder(commands.asJava)
+                  .redirectErrorStream(true) // Merge stderr into stdout
+                  .start()
+              }
+              .mapError(e => GeminiError.ProcessStartFailed(e.getMessage))
+              .tapError(err => ZIO.logError(s"Failed to start Gemini process: ${err.message}"))
 
         /** Read process output with timeout */
         private def readOutput(
@@ -180,8 +182,16 @@ object GeminiService:
               val bytes       = inputStream.readAllBytes()
               new String(bytes, StandardCharsets.UTF_8)
             }
+            .tap(output =>
+              ZIO.logDebug(s"Gemini output received: ${output.take(500)}${if output.length > 500 then "..." else ""}")
+            )
             .mapError(e => GeminiError.OutputReadFailed(e.getMessage))
+            .tapError(err => ZIO.logError(s"Failed to read Gemini output: ${err.message}"))
             .timeoutFail(GeminiError.Timeout(config.geminiTimeout))(config.geminiTimeout)
+            .tapError {
+              case GeminiError.Timeout(d) => ZIO.logError(s"Gemini process timed out after ${d.toSeconds}s")
+              case other                  => ZIO.logError(s"Gemini output read error: ${other.message}")
+            }
 
         /** Wait for process completion */
         private def waitForCompletion(process: Process): ZIO[Any, GeminiError, Int] =
@@ -191,7 +201,11 @@ object GeminiService:
 
         /** Validate the exit code and fail if non-zero */
         private def validateExitCode(exitCode: Int, output: String): ZIO[Any, GeminiError, Unit] =
-          if exitCode != 0 then ZIO.fail(GeminiError.NonZeroExit(exitCode, output))
+          if exitCode != 0 then
+            ZIO.logError(s"Gemini process exited with code $exitCode. Output: ${output.take(500)}${
+                if output.length > 500 then "..." else ""
+              }") *>
+              ZIO.fail(GeminiError.NonZeroExit(exitCode, output))
           else ZIO.unit
 
         private def mapRateLimitError(error: RateLimitError): GeminiError = error match

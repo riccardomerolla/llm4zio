@@ -61,7 +61,9 @@ object RetryPolicy:
           ZIO.logInfo("Retrying after transient failure")
     )
 
-    effect.retry(schedule)
+    effect
+      .tapError(err => ZIO.logWarning(s"Retryable error occurred: $err"))
+      .retry(schedule)
 
   /** Determine if a GeminiError is retryable
     *
