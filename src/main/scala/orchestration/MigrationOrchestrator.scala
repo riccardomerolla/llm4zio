@@ -73,7 +73,7 @@ object MigrationOrchestrator:
 
             // Step 3: Dependency Mapping
             _               <- Logger.info("Step 3: Dependency Mapping")
-            dependencyGraph <- mapperAgent.mapDependencies(analyses)
+            dependencyGraph <- mapperAgent.mapDependencies(analyses).mapError(e => new Exception(e.message))
             _               <- stateService.createCheckpoint(runId, MigrationStep.Mapping).mapError(e => new Exception(e.message))
 
             // Step 4: Code Transformation

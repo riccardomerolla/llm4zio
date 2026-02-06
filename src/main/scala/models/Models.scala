@@ -101,6 +101,12 @@ enum AnalysisError(val message: String) derives JsonCodec:
   case ReportWriteFailed(path: Path, cause: String)
     extends AnalysisError(s"Failed to write analysis report at $path: $cause")
 
+/** Dependency mapping errors with typed error handling */
+enum MappingError(val message: String) derives JsonCodec:
+  case EmptyAnalysis extends MappingError("No COBOL analyses provided for dependency mapping")
+  case ReportWriteFailed(path: Path, cause: String)
+    extends MappingError(s"Failed to write dependency mapping report at $path: $cause")
+
 // ============================================================================
 // Gemini Service
 // ============================================================================
