@@ -9,7 +9,7 @@ import zio.test.*
 
 import core.FileService
 import models.*
-import orchestration.MigrationResult
+import orchestration.{ MigrationResult, MigrationStatus }
 
 object DocumentationAgentSpec extends ZIOSpecDefault:
 
@@ -43,10 +43,19 @@ object DocumentationAgentSpec extends ZIOSpecDefault:
     },
     test("generateDocs fails for invalid result") {
       val invalid = MigrationResult(
-        success = false,
+        runId = "run-invalid",
+        startedAt = Instant.parse("2026-02-06T00:00:00Z"),
+        completedAt = Instant.parse("2026-02-06T00:00:00Z"),
+        config = sampleConfig,
+        inventory = sampleInventory,
+        analyses = List.empty,
+        dependencyGraph = DependencyGraph.empty,
         projects = List.empty,
-        documentation = MigrationDocumentation.empty,
+        validationReport = ValidationReport.empty,
         validationReports = List.empty,
+        documentation = MigrationDocumentation.empty,
+        errors = List.empty,
+        status = MigrationStatus.Failed,
       )
 
       for
@@ -65,10 +74,33 @@ object DocumentationAgentSpec extends ZIOSpecDefault:
 
   private def sampleResult: MigrationResult =
     MigrationResult(
-      success = true,
+      runId = "run-1",
+      startedAt = Instant.parse("2026-02-06T00:00:00Z"),
+      completedAt = Instant.parse("2026-02-06T00:10:00Z"),
+      config = sampleConfig,
+      inventory = sampleInventory,
+      analyses = List.empty,
+      dependencyGraph = DependencyGraph.empty,
       projects = List(sampleProject("CUSTPROG")),
-      documentation = MigrationDocumentation.empty,
+      validationReport = sampleValidationReport("CUSTPROG"),
       validationReports = List(sampleValidationReport("CUSTPROG")),
+      documentation = MigrationDocumentation.empty,
+      errors = List.empty,
+      status = MigrationStatus.Completed,
+    )
+
+  private def sampleConfig: MigrationConfig =
+    MigrationConfig(
+      sourceDir = Path.of("/tmp/source"),
+      outputDir = Path.of("/tmp/output"),
+    )
+
+  private def sampleInventory: FileInventory =
+    FileInventory(
+      discoveredAt = Instant.parse("2026-02-06T00:00:00Z"),
+      sourceDirectory = Path.of("/tmp/source"),
+      files = List.empty,
+      summary = InventorySummary(0, 0, 0, 0, 0L, 0L),
     )
 
   private def sampleProject(name: String): SpringBootProject =
