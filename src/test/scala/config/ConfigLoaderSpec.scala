@@ -1,6 +1,7 @@
 package config
 
-import java.nio.file.Paths
+import java.nio.charset.StandardCharsets
+import java.nio.file.{ Files, Paths }
 
 import zio.*
 import zio.test.*
@@ -228,6 +229,86 @@ object ConfigLoaderSpec extends ZIOSpecDefault:
           result.left.exists(_.contains("Timeout")),
         )
       },
+      test("requires api key for OpenAI cloud endpoints") {
+        val config = validConfig.copy(
+          aiProvider = Some(
+            AIProviderConfig(
+              provider = AIProvider.OpenAi,
+              model = "gpt-4o",
+              baseUrl = Some("https://api.openai.com/v1"),
+              apiKey = None,
+            )
+          )
+        )
+        for result <- ConfigLoader.validate(config).either
+        yield assertTrue(
+          result.isLeft,
+          result.left.exists(_.contains("apiKey")),
+        )
+      },
+      test("does not require api key for OpenAI localhost endpoint") {
+        val config = validConfig.copy(
+          aiProvider = Some(
+            AIProviderConfig(
+              provider = AIProvider.OpenAi,
+              model = "local-model",
+              baseUrl = Some("http://localhost:1234/v1"),
+              apiKey = None,
+            )
+          )
+        )
+        for result <- ConfigLoader.validate(config).either
+        yield assertTrue(result.isRight)
+      },
+      test("rejects invalid AI baseUrl format") {
+        val config = validConfig.copy(
+          aiProvider = Some(
+            AIProviderConfig(
+              provider = AIProvider.OpenAi,
+              model = "gpt-4o",
+              baseUrl = Some("not-a-valid-url"),
+              apiKey = Some("test"),
+            )
+          )
+        )
+        for result <- ConfigLoader.validate(config).either
+        yield assertTrue(
+          result.isLeft,
+          result.left.exists(_.contains("baseUrl")),
+        )
+      },
+      test("rejects AI temperature outside allowed range") {
+        val config = validConfig.copy(
+          aiProvider = Some(
+            AIProviderConfig(
+              provider = AIProvider.GeminiApi,
+              model = "gemini-2.5-flash",
+              temperature = Some(2.5),
+            )
+          )
+        )
+        for result <- ConfigLoader.validate(config).either
+        yield assertTrue(
+          result.isLeft,
+          result.left.exists(_.contains("temperature")),
+        )
+      },
+      test("rejects AI max tokens outside allowed range") {
+        val config = validConfig.copy(
+          aiProvider = Some(
+            AIProviderConfig(
+              provider = AIProvider.GeminiApi,
+              model = "gemini-2.5-flash",
+              maxTokens = Some(0),
+            )
+          )
+        )
+        for result <- ConfigLoader.validate(config).either
+        yield assertTrue(
+          result.isLeft,
+          result.left.exists(_.contains("max tokens")),
+        )
+      },
     ),
     suite("validate - property-based")(
       test("valid parallelism range always passes") {
@@ -305,6 +386,68 @@ object ConfigLoaderSpec extends ZIOSpecDefault:
       test("loadWithEnvOverrides fails when required fields missing") {
         for result <- ConfigLoader.loadWithEnvOverrides.either
         yield assertTrue(result.isLeft)
+      },
+    ),
+    suite("AI config resolution helpers")(
+      test("applyAIEnvironmentOverrides applies MIGRATION_AI_* values") {
+        val env = Map(
+          "MIGRATION_AI_PROVIDER"            -> "openai",
+          "MIGRATION_AI_MODEL"               -> "gpt-4.1",
+          "MIGRATION_AI_BASE_URL"            -> "http://localhost:1234/v1",
+          "MIGRATION_AI_MAX_RETRIES"         -> "5",
+          "MIGRATION_AI_REQUESTS_PER_MINUTE" -> "120",
+          "MIGRATION_AI_TEMPERATURE"         -> "0.3",
+          "MIGRATION_AI_MAX_TOKENS"          -> "4096",
+        )
+        for
+          updated <- ConfigLoader.applyAIEnvironmentOverrides(validConfig, env)
+          ai       = updated.resolvedProviderConfig
+        yield assertTrue(
+          ai.provider == AIProvider.OpenAi,
+          ai.model == "gpt-4.1",
+          ai.baseUrl.contains("http://localhost:1234/v1"),
+          ai.maxRetries == 5,
+          ai.requestsPerMinute == 120,
+          ai.temperature.contains(0.3),
+          ai.maxTokens.contains(4096),
+        )
+      },
+      test("loadAIProviderFromFile reads migration.ai section") {
+        val configContent =
+          """migration {
+            |  ai {
+            |    provider = "anthropic"
+            |    model = "claude-sonnet-4-20250514"
+            |    base-url = "https://api.anthropic.com"
+            |    timeout = 45s
+            |    max-retries = 4
+            |    requests-per-minute = 55
+            |    burst-size = 9
+            |    acquire-timeout = 20s
+            |    temperature = 0.2
+            |    max-tokens = 4096
+            |  }
+            |}
+            |""".stripMargin
+
+        for
+          tempDir <- ZIO.attempt(Files.createTempDirectory("config-loader-ai-test-")).orDie
+          confPath = tempDir.resolve("application.conf")
+          _       <- ZIO.attempt(Files.writeString(confPath, configContent, StandardCharsets.UTF_8)).orDie
+          loaded  <- ConfigLoader.loadAIProviderFromFile(confPath)
+        yield assertTrue(
+          loaded.isDefined,
+          loaded.exists(_.provider == AIProvider.Anthropic),
+          loaded.exists(_.model == "claude-sonnet-4-20250514"),
+          loaded.exists(_.baseUrl.contains("https://api.anthropic.com")),
+          loaded.exists(_.timeout.toSeconds == 45L),
+          loaded.exists(_.maxRetries == 4),
+          loaded.exists(_.requestsPerMinute == 55),
+          loaded.exists(_.burstSize == 9),
+          loaded.exists(_.acquireTimeout.toSeconds == 20L),
+          loaded.exists(_.temperature.contains(0.2)),
+          loaded.exists(_.maxTokens.contains(4096)),
+        )
       },
     ),
     suite("MigrationConfig defaults")(

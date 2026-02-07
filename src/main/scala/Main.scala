@@ -34,6 +34,14 @@ object Main extends ZIOAppDefault:
     Options.integer("gemini-timeout").optional ?? "Gemini API timeout in seconds (default: 60)"
   private val geminiRetriesOpt = Options.integer("gemini-retries").optional ?? "Max Gemini API retries (default: 3)"
 
+  private val aiProviderOpt    =
+    Options.text("ai-provider").optional ?? "AI provider: gemini-cli|gemini-api|openai|anthropic"
+  private val aiModelOpt       = Options.text("ai-model").optional ?? "AI model name (e.g., gpt-4o, gemini-2.5-flash)"
+  private val aiBaseUrlOpt     = Options.text("ai-base-url").optional ?? "AI base URL (e.g., http://localhost:1234/v1)"
+  private val aiApiKeyOpt      = Options.text("ai-api-key").optional ?? "AI API key (sensitive)"
+  private val aiTemperatureOpt = Options.text("ai-temperature").optional ?? "AI temperature (0.0-2.0)"
+  private val aiMaxTokensOpt   = Options.integer("ai-max-tokens").optional ?? "AI max output tokens"
+
   private val discoveryMaxDepthOpt =
     Options.integer("discovery-max-depth").optional ?? "Max discovery scan depth (default: 25)"
   private val discoveryExcludeOpt  =
@@ -58,6 +66,12 @@ object Main extends ZIOAppDefault:
     Option[String],
     Option[BigInt],
     Option[BigInt],
+    Option[String],
+    Option[String],
+    Option[String],
+    Option[String],
+    Option[String],
+    Option[BigInt],
     Option[BigInt],
     Option[String],
     Option[BigInt],
@@ -74,7 +88,8 @@ object Main extends ZIOAppDefault:
     Command(
       "migrate",
       sourceDirOpt ++ outputDirOpt ++ stateDirOpt ++ configFileOpt ++
-        geminiModelOpt ++ geminiTimeoutOpt ++ geminiRetriesOpt ++ discoveryMaxDepthOpt ++
+        geminiModelOpt ++ geminiTimeoutOpt ++ geminiRetriesOpt ++ aiProviderOpt ++ aiModelOpt ++ aiBaseUrlOpt ++
+        aiApiKeyOpt ++ aiTemperatureOpt ++ aiMaxTokensOpt ++ discoveryMaxDepthOpt ++
         discoveryExcludeOpt ++ parallelismOpt ++ batchSizeOpt ++ resumeOpt ++ dryRunOpt ++ verboseOpt,
     ).withHelp("Run the full migration pipeline")
 
@@ -111,6 +126,12 @@ object Main extends ZIOAppDefault:
         opts._12,
         opts._13,
         opts._14,
+        opts._15,
+        opts._16,
+        opts._17,
+        opts._18,
+        opts._19,
+        opts._20,
       )
 
     case opts: StepOpts @unchecked =>
@@ -136,6 +157,12 @@ object Main extends ZIOAppDefault:
     geminiModel: Option[String],
     geminiTimeout: Option[BigInt],
     geminiRetries: Option[BigInt],
+    aiProvider: Option[String],
+    aiModel: Option[String],
+    aiBaseUrl: Option[String],
+    aiApiKey: Option[String],
+    aiTemperature: Option[String],
+    aiMaxTokens: Option[BigInt],
     discoveryMaxDepth: Option[BigInt],
     discoveryExclude: Option[String],
     parallelism: Option[BigInt],
@@ -152,31 +179,63 @@ object Main extends ZIOAppDefault:
                       case None       =>
                         ConfigLoader.loadWithEnvOverrides.orElse(ZIO.succeed(MigrationConfig(sourceDir, outputDir)))
 
-      resolvedProvider = baseConfig.resolvedProviderConfig
+      configSectionProvider <- (configFile match
+                                 case Some(path) => ConfigLoader.loadAIProviderFromFile(path)
+                                 case None       => ConfigLoader.loadAIProviderFromDefaultConfig
+                               )
+                                 .mapError(msg => new IllegalArgumentException(msg))
+
+      withConfigProvider = configSectionProvider match
+                             case Some(p) => baseConfig.copy(aiProvider = Some(p))
+                             case None    => baseConfig
+
+      envResolvedConfig <- ConfigLoader
+                             .applyAIEnvironmentOverrides(withConfigProvider)
+                             .mapError(msg => new IllegalArgumentException(msg))
+
+      parsedAiProvider <- parseAIProviderOption(aiProvider).mapError(msg => new IllegalArgumentException(msg))
+      parsedTemp       <- parseTemperatureOption(aiTemperature).mapError(msg => new IllegalArgumentException(msg))
+
+      _ <- aiApiKey match
+             case Some(_) =>
+               printLineError(
+                 "Warning: passing --ai-api-key on CLI may leak secrets in shell history. Prefer MIGRATION_AI_API_KEY."
+               )
+             case None    => ZIO.unit
+
+      resolvedProvider = envResolvedConfig.resolvedProviderConfig
       providerConfig   = AIProviderConfig.withDefaults(
                            resolvedProvider.copy(
-                             model = geminiModel.getOrElse(resolvedProvider.model),
+                             provider = parsedAiProvider.getOrElse(resolvedProvider.provider),
+                             model = aiModel.orElse(geminiModel).getOrElse(resolvedProvider.model),
+                             baseUrl = aiBaseUrl.orElse(resolvedProvider.baseUrl),
+                             apiKey = aiApiKey.orElse(resolvedProvider.apiKey),
                              timeout = geminiTimeout
                                .map(t => zio.Duration.fromSeconds(t.toLong))
                                .getOrElse(resolvedProvider.timeout),
                              maxRetries = geminiRetries.map(_.toInt).getOrElse(resolvedProvider.maxRetries),
+                             temperature = parsedTemp.orElse(resolvedProvider.temperature),
+                             maxTokens = aiMaxTokens.map(_.toInt).orElse(resolvedProvider.maxTokens),
                            )
                          )
 
       // Override with CLI arguments
-      migrationConfig = baseConfig.copy(
+      migrationConfig = envResolvedConfig.copy(
                           sourceDir = sourceDir,
                           outputDir = outputDir,
-                          stateDir = stateDir.getOrElse(baseConfig.stateDir),
+                          stateDir = stateDir.getOrElse(envResolvedConfig.stateDir),
                           aiProvider = Some(providerConfig),
-                          discoveryMaxDepth = discoveryMaxDepth.map(_.toInt).getOrElse(baseConfig.discoveryMaxDepth),
+                          discoveryMaxDepth =
+                            discoveryMaxDepth.map(_.toInt).getOrElse(envResolvedConfig.discoveryMaxDepth),
                           discoveryExcludePatterns =
-                            parseExcludePatterns(discoveryExclude).getOrElse(baseConfig.discoveryExcludePatterns),
-                          parallelism = parallelism.map(_.toInt).getOrElse(baseConfig.parallelism),
-                          batchSize = batchSize.map(_.toInt).getOrElse(baseConfig.batchSize),
+                            parseExcludePatterns(
+                              discoveryExclude
+                            ).getOrElse(envResolvedConfig.discoveryExcludePatterns),
+                          parallelism = parallelism.map(_.toInt).getOrElse(envResolvedConfig.parallelism),
+                          batchSize = batchSize.map(_.toInt).getOrElse(envResolvedConfig.batchSize),
                           resumeFromCheckpoint = resume,
-                          dryRun = dryRun.getOrElse(baseConfig.dryRun),
-                          verbose = verbose.getOrElse(baseConfig.verbose),
+                          dryRun = dryRun.getOrElse(envResolvedConfig.dryRun),
+                          verbose = verbose.getOrElse(envResolvedConfig.verbose),
                         )
 
       // Validate configuration
@@ -205,13 +264,28 @@ object Main extends ZIOAppDefault:
                       case None       =>
                         ConfigLoader.loadWithEnvOverrides.orElse(ZIO.succeed(MigrationConfig(sourceDir, outputDir)))
 
-      migrationConfig = baseConfig.copy(
+      configSectionProvider <- (configFile match
+                                 case Some(path) => ConfigLoader.loadAIProviderFromFile(path)
+                                 case None       => ConfigLoader.loadAIProviderFromDefaultConfig
+                               )
+                                 .mapError(msg => new IllegalArgumentException(msg))
+
+      withConfigProvider = configSectionProvider match
+                             case Some(p) => baseConfig.copy(aiProvider = Some(p))
+                             case None    => baseConfig
+
+      envResolvedConfig <- ConfigLoader
+                             .applyAIEnvironmentOverrides(withConfigProvider)
+                             .mapError(msg => new IllegalArgumentException(msg))
+
+      migrationConfig = envResolvedConfig.copy(
                           sourceDir = sourceDir,
                           outputDir = outputDir,
-                          verbose = verbose.getOrElse(baseConfig.verbose),
-                          discoveryMaxDepth = discoveryMaxDepth.map(_.toInt).getOrElse(baseConfig.discoveryMaxDepth),
+                          verbose = verbose.getOrElse(envResolvedConfig.verbose),
+                          discoveryMaxDepth =
+                            discoveryMaxDepth.map(_.toInt).getOrElse(envResolvedConfig.discoveryMaxDepth),
                           discoveryExcludePatterns =
-                            parseExcludePatterns(discoveryExclude).getOrElse(baseConfig.discoveryExcludePatterns),
+                            parseExcludePatterns(discoveryExclude).getOrElse(envResolvedConfig.discoveryExcludePatterns),
                         )
 
       validatedConfig <- ConfigLoader.validate(migrationConfig).mapError(msg => new IllegalArgumentException(msg))
@@ -221,6 +295,27 @@ object Main extends ZIOAppDefault:
 
   private def parseExcludePatterns(value: Option[String]): Option[List[String]] =
     value.map(_.split(",").map(_.trim).filter(_.nonEmpty).toList)
+
+  private def parseAIProviderOption(value: Option[String]): IO[String, Option[AIProvider]] =
+    value match
+      case None      => ZIO.succeed(None)
+      case Some(raw) =>
+        raw.trim.toLowerCase match
+          case "gemini-cli" => ZIO.succeed(Some(AIProvider.GeminiCli))
+          case "gemini-api" => ZIO.succeed(Some(AIProvider.GeminiApi))
+          case "openai"     => ZIO.succeed(Some(AIProvider.OpenAi))
+          case "anthropic"  => ZIO.succeed(Some(AIProvider.Anthropic))
+          case other        =>
+            ZIO.fail(s"Invalid --ai-provider '$other'. Expected: gemini-cli|gemini-api|openai|anthropic")
+
+  private def parseTemperatureOption(value: Option[String]): IO[String, Option[Double]] =
+    value match
+      case None      => ZIO.succeed(None)
+      case Some(raw) =>
+        ZIO
+          .attempt(raw.toDouble)
+          .mapError(_ => s"Invalid --ai-temperature '$raw'. Expected decimal between 0.0 and 2.0")
+          .map(Some(_))
 
   private def executeListRuns(stateDir: Option[Path], configFile: Option[Path]): ZIO[Any, Throwable, Unit] =
     for
