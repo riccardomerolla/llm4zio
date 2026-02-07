@@ -347,4 +347,4 @@ object RetryPolicySpec extends ZIOSpecDefault:
         yield assertTrue(result.isLeft)
       } @@ TestAspect.withLiveClock,
     ),
-  )
+  ) @@ TestAspect.sequential

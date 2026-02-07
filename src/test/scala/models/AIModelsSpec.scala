@@ -61,10 +61,11 @@ object AIModelsSpec extends ZIOSpecDefault:
     roundTripTest(
       "AnthropicResponse",
       AnthropicResponse(
-        id = "msg-1",
-        content = List(ContentBlock("text", "Summary")),
-        model = "claude-sonnet-4-20250514",
-        usage = Some(AnthropicUsage(120, 45)),
+        id = Some("msg-1"),
+        content = List(ContentBlock("text", Some("Summary"))),
+        model = Some("claude-sonnet-4-20250514"),
+        usage = Some(AnthropicUsage(Some(120), Some(45))),
+        stop_reason = Some("end_turn"),
       ),
     ),
     roundTripTest(

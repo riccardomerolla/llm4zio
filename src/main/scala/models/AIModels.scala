@@ -43,17 +43,18 @@ case class AnthropicRequest(
 ) derives JsonCodec
 
 case class AnthropicResponse(
-  id: String,
+  id: Option[String] = None,
   content: List[ContentBlock],
-  model: String,
+  model: Option[String] = None,
   usage: Option[AnthropicUsage] = None,
+  stop_reason: Option[String] = None,
 ) derives JsonCodec
 
-case class ContentBlock(`type`: String, text: String) derives JsonCodec
+case class ContentBlock(`type`: String, text: Option[String] = None) derives JsonCodec
 
 case class AnthropicUsage(
-  input_tokens: Int,
-  output_tokens: Int,
+  input_tokens: Option[Int] = None,
+  output_tokens: Option[Int] = None,
 ) derives JsonCodec
 
 // Gemini API-compatible
