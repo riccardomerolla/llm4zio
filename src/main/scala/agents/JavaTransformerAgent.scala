@@ -252,8 +252,9 @@ object JavaTransformerAgent:
           private def renderService(basePkg: String, service: JavaService): String =
             val methods = service.methods.map { m =>
               val params = m.parameters.map(p => s"${p.javaType} ${p.name}").mkString(", ")
+              val body   = normalizeJavaBody(m.body)
               s"""  public ${m.returnType} ${m.name}($params) {
-                 |    ${m.body}
+                 |    ${body}
                  |  }""".stripMargin
             }
             s"""package $basePkg.service;
@@ -267,6 +268,11 @@ object JavaTransformerAgent:
                |${methods.mkString("\n\n")}
                |}
                |""".stripMargin
+
+          private def normalizeJavaBody(body: String): String =
+            body
+              .replace("\\n", "\n")
+              .replace("\\\"", "\"")
 
           private def renderController(
             basePkg: String,
