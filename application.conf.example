@@ -1,0 +1,58 @@
+migration {
+  source-dir = "/path/to/cobol-source"
+  output-dir = "/path/to/java-output"
+
+  # Provider-agnostic AI configuration
+  ai {
+    provider = "openai"
+    model = "gpt-4o"
+    base-url = "https://api.openai.com/v1"
+    api-key = ${?OPENAI_API_KEY}
+    timeout = 90s
+    max-retries = 3
+    temperature = 0.1
+    max-tokens = 32768
+    requests-per-minute = 60
+    burst-size = 10
+    acquire-timeout = 30s
+  }
+
+  # Example: Anthropic cloud
+  # ai {
+  #   provider = "anthropic"
+  #   model = "claude-sonnet-4-20250514"
+  #   base-url = "https://api.anthropic.com"
+  #   api-key = ${?ANTHROPIC_API_KEY}
+  #   timeout = 90s
+  #   max-retries = 3
+  #   requests-per-minute = 60
+  #   burst-size = 10
+  #   acquire-timeout = 30s
+  # }
+
+  # Example: LM Studio (OpenAI-compatible)
+  # ai {
+  #   provider = "openai"
+  #   model = "local-model-name"
+  #   base-url = "http://localhost:1234/v1"
+  #   api-key = "lmstudio"
+  #   timeout = 90s
+  #   max-retries = 3
+  #   requests-per-minute = 120
+  #   burst-size = 20
+  #   acquire-timeout = 30s
+  # }
+
+  # Example: LM Studio (Anthropic-compatible)
+  # ai {
+  #   provider = "anthropic"
+  #   model = "local-model-name"
+  #   base-url = "http://localhost:1234"
+  #   api-key = "lmstudio"
+  #   timeout = 90s
+  #   max-retries = 3
+  #   requests-per-minute = 120
+  #   burst-size = 20
+  #   acquire-timeout = 30s
+  # }
+}
