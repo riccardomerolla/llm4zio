@@ -129,17 +129,17 @@ object Main extends ZIOAppDefault:
     stateDirOpt ++ configFileOpt,
   ).withHelp("List available migration runs and checkpoints")
 
-  private val discoveryCmd: Command[StepBaseOpts] =
+  private val discoveryCmd: Command[StepBaseOpts]      =
     Command("discovery", stepBaseOpts).withHelp("Run discovery step")
-  private val analysisCmd: Command[StepBaseOpts] =
+  private val analysisCmd: Command[StepBaseOpts]       =
     Command("analysis", stepBaseOpts).withHelp("Run analysis step")
-  private val mappingCmd: Command[StepBaseOpts] =
+  private val mappingCmd: Command[StepBaseOpts]        =
     Command("mapping", stepBaseOpts).withHelp("Run mapping step")
   private val transformationCmd: Command[StepBaseOpts] =
     Command("transformation", stepBaseOpts).withHelp("Run transformation step")
-  private val validationCmd: Command[StepBaseOpts] =
+  private val validationCmd: Command[StepBaseOpts]     =
     Command("validation", stepBaseOpts).withHelp("Run validation step")
-  private val documentationCmd: Command[StepBaseOpts] =
+  private val documentationCmd: Command[StepBaseOpts]  =
     Command("documentation", stepBaseOpts).withHelp("Run documentation step")
 
   private val command: Command[CliCommand] =
