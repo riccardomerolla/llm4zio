@@ -2,7 +2,7 @@ package core
 
 import zio.*
 
-import models.GeminiError
+import models.{ AIError, GeminiError }
 
 /** Retry policy configuration for handling transient failures
   *
@@ -85,3 +85,16 @@ object RetryPolicy:
     case GeminiError.NonZeroExit(code, _) if code >= 500 => true // Server error
     case GeminiError.ProcessFailed(_)                    => true // Might be transient
     case _                                               => false
+
+  /** Determine if an AIError is retryable.
+    */
+  def isRetryableAI(error: AIError): Boolean = error match
+    case AIError.Timeout(_)                          => true
+    case AIError.NonZeroExit(code, _) if code == 429 => true
+    case AIError.NonZeroExit(code, _) if code >= 500 => true
+    case AIError.ProcessFailed(_)                    => true
+    case AIError.HttpError(code, _) if code == 429   => true
+    case AIError.HttpError(code, _) if code >= 500   => true
+    case AIError.RateLimitExceeded(_)                => true
+    case AIError.ProviderUnavailable(_, _)           => true
+    case _                                           => false

@@ -273,7 +273,7 @@ object ValidationAgent:
             val prompt      = ValidationPrompts.validateTransformation(cobolSource, javaCode, analysis)
             for
               response   <- geminiService
-                              .execute(prompt)
+                              .executeLegacy(prompt)
                               .mapError(e => ValidationError.SemanticValidationFailed(project.projectName, e.message))
               validation <- responseParser
                               .parse[SemanticValidation](response)

@@ -1,218 +1,90 @@
 package core
 
-import java.nio.charset.StandardCharsets
-
-import scala.jdk.CollectionConverters.*
-
 import zio.*
 
-import models.{ GeminiError, GeminiResponse, MigrationConfig, RateLimitError }
+import models.{ AIError, AIResponse, GeminiError, GeminiResponse, MigrationConfig }
 
-/** GeminiService - Wrapper for Google Gemini CLI non-interactive invocation
-  *
-  * Features:
-  *   - Non-interactive mode execution (`gemini -p "prompt"`)
-  *   - Configurable model selection
-  *   - Process execution with timeout handling
-  *   - Retry logic with exponential backoff
-  *   - Exit code and error handling
-  *   - Environment variable support for API keys
-  *
-  * CLI Arguments:
-  *   - `-p, --prompt`: Non-interactive prompt
-  *   - `-m, --model`: Gemini model to use (e.g., gemini-2.5-flash)
-  *   - `-y, --yolo`: YOLO mode - auto-approve all actions
-  *   - `-s, --sandbox`: Run in sandbox mode for safety
-  */
-trait GeminiService:
-  /** Execute a prompt using the Gemini CLI
-    *
-    * @param prompt
-    *   The prompt to send to Gemini
-    * @return
-    *   ZIO effect containing the Gemini response or an error
-    */
-  def execute(prompt: String): ZIO[Any, GeminiError, GeminiResponse]
+trait GeminiService extends AIService:
+  def executeLegacy(prompt: String): ZIO[Any, GeminiError, GeminiResponse]
 
-  /** Execute a prompt with additional context
-    *
-    * @param prompt
-    *   The prompt to send to Gemini
-    * @param context
-    *   Additional context to include (e.g., code, documentation)
-    * @return
-    *   ZIO effect containing the Gemini response or an error
-    */
-  def executeWithContext(prompt: String, context: String): ZIO[Any, GeminiError, GeminiResponse]
+  def executeWithContextLegacy(prompt: String, context: String): ZIO[Any, GeminiError, GeminiResponse]
 
-  /** Check if Gemini CLI is available in the system PATH
-    *
-    * @return
-    *   ZIO effect that returns true if Gemini is available, false otherwise
-    */
-  def isAvailable: ZIO[Any, Nothing, Boolean]
+  override def execute(prompt: String): ZIO[Any, AIError, AIResponse] =
+    executeLegacy(prompt).map(toAIResponse).mapError(GeminiService.mapGeminiErrorToAIError)
+
+  override def executeWithContext(prompt: String, context: String): ZIO[Any, AIError, AIResponse] =
+    executeWithContextLegacy(prompt, context).map(toAIResponse).mapError(GeminiService.mapGeminiErrorToAIError)
+
+  private def toAIResponse(response: GeminiResponse): AIResponse =
+    AIResponse(
+      output = response.output,
+      metadata = Map(
+        "exitCode" -> response.exitCode.toString,
+        "provider" -> "gemini-cli",
+      ),
+    )
 
 object GeminiService:
-  /** Access the execute method through ZIO service */
+  /** Access the legacy execute method through ZIO service. */
   def execute(prompt: String): ZIO[GeminiService, GeminiError, GeminiResponse] =
-    ZIO.serviceWithZIO[GeminiService](_.execute(prompt))
+    ZIO.serviceWithZIO[GeminiService](_.executeLegacy(prompt))
 
-  /** Access the executeWithContext method through ZIO service */
+  /** Access the legacy executeWithContext method through ZIO service. */
   def executeWithContext(prompt: String, context: String): ZIO[GeminiService, GeminiError, GeminiResponse] =
-    ZIO.serviceWithZIO[GeminiService](_.executeWithContext(prompt, context))
+    ZIO.serviceWithZIO[GeminiService](_.executeWithContextLegacy(prompt, context))
 
-  /** Access the isAvailable method through ZIO service */
+  /** Access the isAvailable method through ZIO service. */
   def isAvailable: ZIO[GeminiService, Nothing, Boolean] =
     ZIO.serviceWithZIO[GeminiService](_.isAvailable)
 
-  /** Live implementation of GeminiService using MigrationConfig and RateLimiter */
+  /** Backward-compatible live layer, delegated to GeminiCliAIService. */
   val live: ZLayer[MigrationConfig & RateLimiter, Nothing, GeminiService] =
-    ZLayer.fromFunction { (config: MigrationConfig, rateLimiter: RateLimiter) =>
-      new GeminiService {
-        override def execute(prompt: String): ZIO[Any, GeminiError, GeminiResponse] =
-          rateLimiter.acquire.mapError(mapRateLimitError) *> executeGeminiCLI(prompt, config)
+    (
+      ZLayer.fromZIO(ZIO.serviceWith[MigrationConfig](_.resolvedProviderConfig)) ++
+        ZLayer.service[RateLimiter]
+    ) >>> GeminiCliAIService.layer >>> bridgeFromAIService
 
-        override def executeWithContext(prompt: String, context: String): ZIO[Any, GeminiError, GeminiResponse] =
-          val combinedPrompt = s"$prompt\n\nContext:\n$context"
-          rateLimiter.acquire.mapError(mapRateLimitError) *> executeGeminiCLI(combinedPrompt, config)
+  private[core] val bridgeFromAIService: ZLayer[AIService, Nothing, GeminiService] =
+    ZLayer.fromFunction((aiService: AIService) =>
+      new GeminiService {
+        override def executeLegacy(prompt: String): ZIO[Any, GeminiError, GeminiResponse] =
+          aiService.execute(prompt).map(toGeminiResponse).mapError(mapAIErrorToGeminiError)
+
+        override def executeWithContextLegacy(prompt: String, context: String): ZIO[Any, GeminiError, GeminiResponse] =
+          aiService.executeWithContext(prompt, context).map(toGeminiResponse).mapError(mapAIErrorToGeminiError)
 
         override def isAvailable: ZIO[Any, Nothing, Boolean] =
-          checkGeminiInstalled.fold(_ => false, _ => true)
-
-        /** Execute the Gemini CLI with retry logic
-          *
-          * @param prompt
-          *   The prompt to execute
-          * @param config
-          *   Migration configuration containing Gemini settings
-          * @return
-          *   ZIO effect with GeminiResponse or GeminiError
-          */
-        private def executeGeminiCLI(
-          prompt: String,
-          config: MigrationConfig,
-        ): ZIO[Any, GeminiError, GeminiResponse] =
-          val providerConfig = config.resolvedProviderConfig
-          val operation      =
-            for
-              _      <- ZIO.logInfo(s"Executing Gemini CLI with model: ${providerConfig.model}")
-              _      <- checkGeminiInstalled
-              result <- runGeminiProcess(prompt, providerConfig)
-              _      <- ZIO.logDebug(s"Gemini execution completed with exit code: ${result.exitCode}")
-            yield result
-
-          // Build retry policy from config
-          val policy = RetryPolicy(
-            maxRetries = providerConfig.maxRetries,
-            baseDelay = Duration.fromSeconds(1),
-            maxDelay = Duration.fromSeconds(30),
-          )
-
-          // Apply retry with exponential backoff on retryable errors
-          RetryPolicy.withRetry(operation, policy, RetryPolicy.isRetryable)
-
-        /** Check if Gemini CLI is installed */
-        private def checkGeminiInstalled: ZIO[Any, GeminiError, Unit] =
-          ZIO
-            .attemptBlocking {
-              val process  = new ProcessBuilder("which", "gemini")
-                .redirectErrorStream(true)
-                .start()
-              val exitCode = process.waitFor()
-              exitCode == 0
-            }
-            .mapError(e => GeminiError.ProcessStartFailed(e.getMessage))
-            .flatMap { installed =>
-              if !installed then ZIO.fail(GeminiError.NotInstalled)
-              else ZIO.unit
-            }
-
-        /** Run the Gemini CLI process
-          *
-          * @param prompt
-          *   The prompt to execute
-          * @param config
-          *   Migration configuration
-          * @return
-          *   GeminiResponse with output and exit code
-          */
-        private def runGeminiProcess(
-          prompt: String,
-          providerConfig: models.AIProviderConfig,
-        ): ZIO[Any, GeminiError, GeminiResponse] =
-          for
-            process  <- startProcess(prompt, providerConfig)
-            output   <- readOutput(process, providerConfig)
-            exitCode <- waitForCompletion(process)
-            _        <- validateExitCode(exitCode, output)
-          yield GeminiResponse(output, exitCode)
-
-        /** Start the Gemini CLI process */
-        private def startProcess(
-          prompt: String,
-          providerConfig: models.AIProviderConfig,
-        ): ZIO[Any, GeminiError, Process] =
-          val commands = List(
-            "gemini",
-            "-p",
-            prompt,
-            "-m",
-            providerConfig.model,
-            "-y", // YOLO mode: auto-approve all actions
-            "-s", // Run in sandbox mode for safety
-          )
-
-          ZIO.logDebug(s"Starting Gemini process: gemini -p <prompt> -m ${providerConfig.model} -y -s") *>
-            ZIO
-              .attemptBlocking {
-                new ProcessBuilder(commands.asJava)
-                  .redirectErrorStream(true) // Merge stderr into stdout
-                  .start()
-              }
-              .mapError(e => GeminiError.ProcessStartFailed(e.getMessage))
-              .tapError(err => ZIO.logError(s"Failed to start Gemini process: ${err.message}"))
-
-        /** Read process output with timeout */
-        private def readOutput(
-          process: Process,
-          providerConfig: models.AIProviderConfig,
-        ): ZIO[Any, GeminiError, String] =
-          ZIO
-            .attemptBlocking {
-              val inputStream = process.getInputStream
-              val bytes       = inputStream.readAllBytes()
-              new String(bytes, StandardCharsets.UTF_8)
-            }
-            .tap(output =>
-              ZIO.logDebug(s"Gemini output received: ${output.take(500)}${if output.length > 500 then "..." else ""}")
-            )
-            .mapError(e => GeminiError.OutputReadFailed(e.getMessage))
-            .tapError(err => ZIO.logError(s"Failed to read Gemini output: ${err.message}"))
-            .timeoutFail(GeminiError.Timeout(providerConfig.timeout))(providerConfig.timeout)
-            .tapError {
-              case GeminiError.Timeout(d) => ZIO.logError(s"Gemini process timed out after ${d.toSeconds}s")
-              case other                  => ZIO.logError(s"Gemini output read error: ${other.message}")
-            }
-
-        /** Wait for process completion */
-        private def waitForCompletion(process: Process): ZIO[Any, GeminiError, Int] =
-          ZIO
-            .attemptBlocking(process.waitFor())
-            .mapError(e => GeminiError.ProcessFailed(e.getMessage))
-
-        /** Validate the exit code and fail if non-zero */
-        private def validateExitCode(exitCode: Int, output: String): ZIO[Any, GeminiError, Unit] =
-          if exitCode != 0 then
-            ZIO.logError(s"Gemini process exited with code $exitCode. Output: ${output.take(500)}${
-                if output.length > 500 then "..." else ""
-              }") *>
-              ZIO.fail(GeminiError.NonZeroExit(exitCode, output))
-          else ZIO.unit
-
-        private def mapRateLimitError(error: RateLimitError): GeminiError = error match
-          case RateLimitError.AcquireTimeout(timeout) =>
-            GeminiError.RateLimitExceeded(timeout)
-          case RateLimitError.InvalidConfig(details)  =>
-            GeminiError.RateLimitMisconfigured(details)
+          aiService.isAvailable
       }
-    }
+    )
+
+  private def toGeminiResponse(response: AIResponse): GeminiResponse =
+    GeminiResponse(
+      output = response.output,
+      exitCode = response.metadata.get("exitCode").flatMap(_.toIntOption).getOrElse(0),
+    )
+
+  private[core] def mapAIErrorToGeminiError(error: AIError): GeminiError = error match
+    case AIError.ProcessStartFailed(cause)            => GeminiError.ProcessStartFailed(cause)
+    case AIError.OutputReadFailed(cause)              => GeminiError.OutputReadFailed(cause)
+    case AIError.Timeout(duration)                    => GeminiError.Timeout(duration)
+    case AIError.NonZeroExit(code, output)            => GeminiError.NonZeroExit(code, output)
+    case AIError.ProcessFailed(cause)                 => GeminiError.ProcessFailed(cause)
+    case AIError.NotAvailable(_)                      => GeminiError.NotInstalled
+    case AIError.InvalidResponse(output)              => GeminiError.InvalidResponse(output)
+    case AIError.RateLimitExceeded(timeout)           => GeminiError.RateLimitExceeded(timeout)
+    case AIError.RateLimitMisconfigured(details)      => GeminiError.RateLimitMisconfigured(details)
+    case AIError.HttpError(statusCode, body)          => GeminiError.NonZeroExit(statusCode, body)
+    case AIError.AuthenticationFailed(provider)       => GeminiError.ProcessFailed(s"Authentication failed for $provider")
+    case AIError.ProviderUnavailable(provider, cause) => GeminiError.ProcessFailed(s"$provider unavailable: $cause")
+
+  private[core] def mapGeminiErrorToAIError(error: GeminiError): AIError = error match
+    case GeminiError.ProcessStartFailed(cause)       => AIError.ProcessStartFailed(cause)
+    case GeminiError.OutputReadFailed(cause)         => AIError.OutputReadFailed(cause)
+    case GeminiError.Timeout(duration)               => AIError.Timeout(duration)
+    case GeminiError.NonZeroExit(code, output)       => AIError.NonZeroExit(code, output)
+    case GeminiError.ProcessFailed(cause)            => AIError.ProcessFailed(cause)
+    case GeminiError.NotInstalled                    => AIError.NotAvailable("gemini-cli")
+    case GeminiError.InvalidResponse(output)         => AIError.InvalidResponse(output)
+    case GeminiError.RateLimitExceeded(timeout)      => AIError.RateLimitExceeded(timeout)
+    case GeminiError.RateLimitMisconfigured(details) => AIError.RateLimitMisconfigured(details)

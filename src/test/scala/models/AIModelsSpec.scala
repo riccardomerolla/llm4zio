@@ -58,4 +58,33 @@ object AIModelsSpec extends ZIOSpecDefault:
         usage = Some(AnthropicUsage(120, 45)),
       ),
     ),
+    roundTripTest(
+      "GeminiGenerateContentRequest",
+      GeminiGenerateContentRequest(
+        contents = List(
+          GeminiContent(
+            parts = List(GeminiPart("Explain this code"))
+          )
+        )
+      ),
+    ),
+    roundTripTest(
+      "GeminiGenerateContentResponse",
+      GeminiGenerateContentResponse(
+        candidates = List(
+          GeminiCandidate(
+            GeminiContent(
+              parts = List(GeminiPart("Here is the explanation"))
+            )
+          )
+        ),
+        usageMetadata = Some(
+          GeminiUsageMetadata(
+            promptTokenCount = Some(100),
+            candidatesTokenCount = Some(40),
+            totalTokenCount = Some(140),
+          )
+        ),
+      ),
+    ),
   )

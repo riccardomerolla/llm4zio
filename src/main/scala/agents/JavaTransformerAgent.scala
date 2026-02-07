@@ -66,7 +66,7 @@ object JavaTransformerAgent:
             val prompt = PromptTemplates.JavaTransformer.generateEntity(analysis)
             for
               response <- geminiService
-                            .execute(prompt)
+                            .executeLegacy(prompt)
                             .mapError(e => TransformError.GeminiFailed(analysis.file.name, e.message))
               entity   <- responseParser
                             .parse[JavaEntity](response)
@@ -82,7 +82,7 @@ object JavaTransformerAgent:
             val prompt = PromptTemplates.JavaTransformer.generateService(analysis, deps)
             for
               response <- geminiService
-                            .execute(prompt)
+                            .executeLegacy(prompt)
                             .mapError(e => TransformError.GeminiFailed(analysis.file.name, e.message))
               service  <- responseParser
                             .parse[JavaService](response)
@@ -96,7 +96,7 @@ object JavaTransformerAgent:
             val prompt = PromptTemplates.JavaTransformer.generateController(analysis, serviceName)
             for
               response   <- geminiService
-                              .execute(prompt)
+                              .executeLegacy(prompt)
                               .mapError(e => TransformError.GeminiFailed(analysis.file.name, e.message))
               controller <- responseParser
                               .parse[JavaController](response)

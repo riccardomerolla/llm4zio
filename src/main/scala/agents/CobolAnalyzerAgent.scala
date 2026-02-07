@@ -54,7 +54,7 @@ object CobolAnalyzerAgent:
                             .mapError(fe => AnalysisError.FileReadFailed(cobolFile.path, fe.message))
               prompt    = PromptTemplates.CobolAnalyzer.analyzeStructure(cobolFile, content)
               response <- geminiService
-                            .execute(prompt)
+                            .executeLegacy(prompt)
                             .mapError(e => AnalysisError.GeminiFailed(cobolFile.name, e.message))
               parsed   <- parseAnalysis(response, cobolFile)
               analysis  = parsed.copy(file = cobolFile)

@@ -52,3 +52,25 @@ case class AnthropicUsage(
   input_tokens: Int,
   output_tokens: Int,
 ) derives JsonCodec
+
+// Gemini API-compatible
+case class GeminiGenerateContentRequest(
+  contents: List[GeminiContent]
+) derives JsonCodec
+
+case class GeminiGenerateContentResponse(
+  candidates: List[GeminiCandidate],
+  usageMetadata: Option[GeminiUsageMetadata] = None,
+) derives JsonCodec
+
+case class GeminiCandidate(content: GeminiContent) derives JsonCodec
+
+case class GeminiContent(parts: List[GeminiPart]) derives JsonCodec
+
+case class GeminiPart(text: String) derives JsonCodec
+
+case class GeminiUsageMetadata(
+  promptTokenCount: Option[Int] = None,
+  candidatesTokenCount: Option[Int] = None,
+  totalTokenCount: Option[Int] = None,
+) derives JsonCodec

@@ -305,11 +305,11 @@ object MigrationOrchestratorSpec extends ZIOSpecDefault:
 
   private val mockGemini: ULayer[GeminiService] =
     ZLayer.succeed(new GeminiService {
-      override def execute(prompt: String): ZIO[Any, GeminiError, GeminiResponse] =
+      override def executeLegacy(prompt: String): ZIO[Any, GeminiError, GeminiResponse] =
         ZIO.succeed(GeminiResponse("{}", 0))
 
-      override def executeWithContext(prompt: String, context: String): ZIO[Any, GeminiError, GeminiResponse] =
-        execute(prompt)
+      override def executeWithContextLegacy(prompt: String, context: String): ZIO[Any, GeminiError, GeminiResponse] =
+        executeLegacy(prompt)
 
       override def isAvailable: ZIO[Any, Nothing, Boolean] =
         ZIO.succeed(true)

@@ -2,15 +2,12 @@ package core
 
 import java.nio.file.Paths
 
-import scala.annotation.nowarn
-
 import zio.*
 import zio.test.*
 import zio.test.Assertion.*
 
 import models.*
 
-@nowarn("cat=deprecation")
 object GeminiServiceSpec extends ZIOSpecDefault:
 
   /** Helper to create a test MigrationConfig */
@@ -35,11 +32,11 @@ object GeminiServiceSpec extends ZIOSpecDefault:
     available: Boolean = true,
   ): ULayer[GeminiService] =
     ZLayer.succeed(new GeminiService {
-      override def execute(prompt: String): ZIO[Any, GeminiError, GeminiResponse] =
+      override def executeLegacy(prompt: String): ZIO[Any, GeminiError, GeminiResponse] =
         if shouldFail then ZIO.fail(GeminiError.ProcessStartFailed("Mock failure"))
         else ZIO.succeed(GeminiResponse(mockOutput, mockExitCode))
 
-      override def executeWithContext(prompt: String, context: String): ZIO[Any, GeminiError, GeminiResponse] =
+      override def executeWithContextLegacy(prompt: String, context: String): ZIO[Any, GeminiError, GeminiResponse] =
         if shouldFail then ZIO.fail(GeminiError.ProcessStartFailed("Mock failure"))
         else ZIO.succeed(GeminiResponse(s"$mockOutput with context", mockExitCode))
 
@@ -328,14 +325,14 @@ object GeminiServiceSpec extends ZIOSpecDefault:
         for
           attemptCount  <- Ref.make(0)
           failingService = ZLayer.succeed(new GeminiService {
-                             override def execute(prompt: String): ZIO[Any, GeminiError, GeminiResponse] =
+                             override def executeLegacy(prompt: String): ZIO[Any, GeminiError, GeminiResponse] =
                                attemptCount.update(_ + 1) *> ZIO.fail(
                                  GeminiError.ProcessStartFailed("Persistent failure")
                                )
 
-                             override def executeWithContext(prompt: String, context: String)
+                             override def executeWithContextLegacy(prompt: String, context: String)
                                : ZIO[Any, GeminiError, GeminiResponse] =
-                               execute(prompt)
+                               executeLegacy(prompt)
 
                              override def isAvailable: ZIO[Any, Nothing, Boolean] =
                                ZIO.succeed(true)

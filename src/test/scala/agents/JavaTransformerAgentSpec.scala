@@ -105,14 +105,14 @@ object JavaTransformerAgentSpec extends ZIOSpecDefault:
       for
         ref <- Ref.make(outputs)
       yield new GeminiService {
-        override def execute(prompt: String): ZIO[Any, GeminiError, GeminiResponse] =
+        override def executeLegacy(prompt: String): ZIO[Any, GeminiError, GeminiResponse] =
           ref.modify {
             case head :: tail => (GeminiResponse(head, 0), tail)
             case Nil          => (GeminiResponse("{}", 0), Nil)
           }
 
-        override def executeWithContext(prompt: String, context: String): ZIO[Any, GeminiError, GeminiResponse] =
-          execute(prompt)
+        override def executeWithContextLegacy(prompt: String, context: String): ZIO[Any, GeminiError, GeminiResponse] =
+          executeLegacy(prompt)
 
         override def isAvailable: ZIO[Any, Nothing, Boolean] =
           ZIO.succeed(true)
