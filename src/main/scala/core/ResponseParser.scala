@@ -4,7 +4,7 @@ import zio.*
 import zio.json.*
 import zio.json.ast.Json
 
-import models.{ GeminiResponse, ParseError }
+import models.{ AIResponse, GeminiResponse, ParseError }
 
 /** ResponseParser - Extract and parse Gemini JSON responses
   *
@@ -16,15 +16,21 @@ import models.{ GeminiResponse, ParseError }
   *   - Logging for debugging malformed responses
   */
 trait ResponseParser:
-  def parse[A: JsonDecoder](response: GeminiResponse): ZIO[Any, ParseError, A]
-  def extractJson(response: GeminiResponse): ZIO[Any, ParseError, String]
+  def parse[A: JsonDecoder](response: AIResponse): ZIO[Any, ParseError, A]
+  def extractJson(response: AIResponse): ZIO[Any, ParseError, String]
 
 object ResponseParser:
-  def parse[A: JsonDecoder](response: GeminiResponse): ZIO[ResponseParser, ParseError, A] =
+  def parse[A: JsonDecoder](response: AIResponse): ZIO[ResponseParser, ParseError, A] =
     ZIO.serviceWithZIO[ResponseParser](_.parse(response))
 
-  def extractJson(response: GeminiResponse): ZIO[ResponseParser, ParseError, String] =
+  def extractJson(response: AIResponse): ZIO[ResponseParser, ParseError, String] =
     ZIO.serviceWithZIO[ResponseParser](_.extractJson(response))
+
+  def parse[A: JsonDecoder](response: GeminiResponse): ZIO[ResponseParser, ParseError, A] =
+    parse[A](AIResponse(response.output))
+
+  def extractJson(response: GeminiResponse): ZIO[ResponseParser, ParseError, String] =
+    extractJson(AIResponse(response.output))
 
   val live: ULayer[ResponseParser] = ZLayer.succeed(new ResponseParserLive)
 
@@ -34,7 +40,7 @@ final class ResponseParserLive extends ResponseParser:
   private val codeBlockPattern = "```\\s*([a-zA-Z0-9_-]+)?\\s*([\\s\\S]*?)```".r
   private val maxLogLength     = 500
 
-  override def extractJson(response: GeminiResponse): ZIO[Any, ParseError, String] =
+  override def extractJson(response: AIResponse): ZIO[Any, ParseError, String] =
     val output     = response.output
     val candidates = extractCandidates(output)
     candidates.headOption match
@@ -44,7 +50,7 @@ final class ResponseParserLive extends ResponseParser:
           .fail(ParseError.NoJsonFound(output))
           .tapError(err => logFailure(err))
 
-  override def parse[A: JsonDecoder](response: GeminiResponse): ZIO[Any, ParseError, A] =
+  override def parse[A: JsonDecoder](response: AIResponse): ZIO[Any, ParseError, A] =
     (for
       json <- extractJson(response)
       _    <- ZIO.fromEither(json.fromJson[Json]).mapError(err => ParseError.InvalidJson(json, err))

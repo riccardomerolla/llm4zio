@@ -5,7 +5,7 @@ import java.nio.file.{ Files, Path }
 import zio.*
 import zio.test.*
 
-import core.{ FileService, GeminiService, ResponseParser }
+import core.{ AIService, FileService, ResponseParser }
 import models.*
 
 object JavaTransformerAgentSpec extends ZIOSpecDefault:
@@ -50,7 +50,7 @@ object JavaTransformerAgentSpec extends ZIOSpecDefault:
                              .provide(
                                FileService.live,
                                ResponseParser.live,
-                               mockGeminiService(List(entityJson, serviceJson, controllerJson)),
+                               mockAIService(List(entityJson, serviceJson, controllerJson)),
                                ZLayer.succeed(MigrationConfig(sourceDir = tempDir, outputDir = tempDir)),
                                JavaTransformerAgent.live,
                              )
@@ -100,19 +100,19 @@ object JavaTransformerAgentSpec extends ZIOSpecDefault:
     }
   )
 
-  private def mockGeminiService(outputs: List[String]): ULayer[GeminiService] =
+  private def mockAIService(outputs: List[String]): ULayer[AIService] =
     ZLayer.fromZIO {
       for
         ref <- Ref.make(outputs)
-      yield new GeminiService {
-        override def executeLegacy(prompt: String): ZIO[Any, GeminiError, GeminiResponse] =
+      yield new AIService {
+        override def execute(prompt: String): ZIO[Any, AIError, AIResponse] =
           ref.modify {
-            case head :: tail => (GeminiResponse(head, 0), tail)
-            case Nil          => (GeminiResponse("{}", 0), Nil)
+            case head :: tail => (AIResponse(head), tail)
+            case Nil          => (AIResponse("{}"), Nil)
           }
 
-        override def executeWithContextLegacy(prompt: String, context: String): ZIO[Any, GeminiError, GeminiResponse] =
-          executeLegacy(prompt)
+        override def executeWithContext(prompt: String, context: String): ZIO[Any, AIError, AIResponse] =
+          execute(prompt)
 
         override def isAvailable: ZIO[Any, Nothing, Boolean] =
           ZIO.succeed(true)

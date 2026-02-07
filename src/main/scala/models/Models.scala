@@ -116,12 +116,16 @@ enum DiscoveryError(val message: String) derives JsonCodec:
 /** Analysis errors with typed error handling */
 enum AnalysisError(val message: String) derives JsonCodec:
   case FileReadFailed(path: Path, cause: String) extends AnalysisError(s"Failed to read COBOL file $path: $cause")
-  case GeminiFailed(fileName: String, cause: String)
-    extends AnalysisError(s"Gemini analysis failed for $fileName: $cause")
+  case AIFailed(fileName: String, cause: String)
+    extends AnalysisError(s"AI analysis failed for $fileName: $cause")
   case ParseFailed(fileName: String, cause: String)
     extends AnalysisError(s"Failed to parse analysis for $fileName: $cause")
   case ReportWriteFailed(path: Path, cause: String)
     extends AnalysisError(s"Failed to write analysis report at $path: $cause")
+
+object AnalysisError:
+  def GeminiFailed(fileName: String, cause: String): AnalysisError =
+    AIFailed(fileName, cause)
 
 /** Dependency mapping errors with typed error handling */
 enum MappingError(val message: String) derives JsonCodec:
@@ -131,12 +135,16 @@ enum MappingError(val message: String) derives JsonCodec:
 
 /** Transformation errors with typed error handling */
 enum TransformError(val message: String) derives JsonCodec:
-  case GeminiFailed(fileName: String, cause: String)
-    extends TransformError(s"Gemini transform failed for $fileName: $cause")
+  case AIFailed(fileName: String, cause: String)
+    extends TransformError(s"AI transform failed for $fileName: $cause")
   case ParseFailed(fileName: String, cause: String)
     extends TransformError(s"Failed to parse transform output for $fileName: $cause")
   case WriteFailed(path: Path, cause: String)
     extends TransformError(s"Failed to write generated output at $path: $cause")
+
+object TransformError:
+  def GeminiFailed(fileName: String, cause: String): TransformError =
+    AIFailed(fileName, cause)
 
 /** Validation errors with typed error handling */
 enum ValidationError(val message: String) derives JsonCodec:

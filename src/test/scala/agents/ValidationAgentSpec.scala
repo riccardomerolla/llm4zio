@@ -6,7 +6,7 @@ import zio.*
 import zio.json.*
 import zio.test.*
 
-import core.{ FileService, GeminiService, ResponseParser }
+import core.{ AIService, FileService, ResponseParser }
 import models.*
 
 object ValidationAgentSpec extends ZIOSpecDefault:
@@ -23,7 +23,7 @@ object ValidationAgentSpec extends ZIOSpecDefault:
                        .provide(
                          FileService.live,
                          ResponseParser.live,
-                         mockGeminiService(
+                         mockAIService(
                            """{
                              |  "businessLogicPreserved": true,
                              |  "confidence": 0.91,
@@ -62,7 +62,7 @@ object ValidationAgentSpec extends ZIOSpecDefault:
                        .provide(
                          FileService.live,
                          ResponseParser.live,
-                         mockGeminiService("""{ "unexpected": true }"""),
+                         mockAIService("""{ "unexpected": true }"""),
                          ZLayer.succeed(MigrationConfig(sourceDir = tempDir, outputDir = tempDir)),
                          ValidationAgent.live,
                        )
@@ -78,13 +78,13 @@ object ValidationAgentSpec extends ZIOSpecDefault:
     },
   ) @@ TestAspect.sequential
 
-  private def mockGeminiService(output: String): ULayer[GeminiService] =
-    ZLayer.succeed(new GeminiService {
-      override def executeLegacy(prompt: String): ZIO[Any, GeminiError, GeminiResponse] =
-        ZIO.succeed(GeminiResponse(output, 0))
+  private def mockAIService(output: String): ULayer[AIService] =
+    ZLayer.succeed(new AIService {
+      override def execute(prompt: String): ZIO[Any, AIError, AIResponse] =
+        ZIO.succeed(AIResponse(output))
 
-      override def executeWithContextLegacy(prompt: String, context: String): ZIO[Any, GeminiError, GeminiResponse] =
-        executeLegacy(prompt)
+      override def executeWithContext(prompt: String, context: String): ZIO[Any, AIError, AIResponse] =
+        execute(prompt)
 
       override def isAvailable: ZIO[Any, Nothing, Boolean] =
         ZIO.succeed(true)

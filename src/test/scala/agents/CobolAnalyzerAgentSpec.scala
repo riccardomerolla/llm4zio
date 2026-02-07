@@ -6,7 +6,7 @@ import zio.*
 import zio.json.*
 import zio.test.*
 
-import core.{ FileService, GeminiService, ResponseParser }
+import core.{ AIService, FileService, ResponseParser }
 import models.*
 
 object CobolAnalyzerAgentSpec extends ZIOSpecDefault:
@@ -59,7 +59,7 @@ object CobolAnalyzerAgentSpec extends ZIOSpecDefault:
                         .provide(
                           FileService.live,
                           ResponseParser.live,
-                          mockGeminiService(sampleAnalysisJson),
+                          mockAIService(sampleAnalysisJson),
                           ZLayer.succeed(MigrationConfig(sourceDir = tempDir, outputDir = tempDir)),
                           CobolAnalyzerAgent.live,
                         )
@@ -106,7 +106,7 @@ object CobolAnalyzerAgentSpec extends ZIOSpecDefault:
                        .provide(
                          FileService.live,
                          ResponseParser.live,
-                         mockGeminiService(sampleAnalysisJson),
+                         mockAIService(sampleAnalysisJson),
                          ZLayer.succeed(MigrationConfig(sourceDir = tempDir, outputDir = tempDir, parallelism = 2)),
                          CobolAnalyzerAgent.live,
                        )
@@ -117,13 +117,13 @@ object CobolAnalyzerAgentSpec extends ZIOSpecDefault:
     },
   ) @@ TestAspect.sequential
 
-  private def mockGeminiService(output: String): ULayer[GeminiService] =
-    ZLayer.succeed(new GeminiService {
-      override def executeLegacy(prompt: String): ZIO[Any, GeminiError, GeminiResponse] =
-        ZIO.succeed(GeminiResponse(output, 0))
+  private def mockAIService(output: String): ULayer[AIService] =
+    ZLayer.succeed(new AIService {
+      override def execute(prompt: String): ZIO[Any, AIError, AIResponse] =
+        ZIO.succeed(AIResponse(output))
 
-      override def executeWithContextLegacy(prompt: String, context: String): ZIO[Any, GeminiError, GeminiResponse] =
-        ZIO.succeed(GeminiResponse(output, 0))
+      override def executeWithContext(prompt: String, context: String): ZIO[Any, AIError, AIResponse] =
+        ZIO.succeed(AIResponse(output))
 
       override def isAvailable: ZIO[Any, Nothing, Boolean] =
         ZIO.succeed(true)

@@ -422,11 +422,12 @@ object AgentsIntegrationSpec extends ZIOSpecDefault:
     ZLayer.fromZIO {
       ZIO.serviceWith[GeminiService] { underlying =>
         new GeminiService {
-          override def execute(prompt: String): ZIO[Any, GeminiError, GeminiResponse] =
-            logPrompt(prompt) *> underlying.execute(prompt).tapBoth(logError, logResponse("execute"))
+          override def executeLegacy(prompt: String): ZIO[Any, GeminiError, GeminiResponse] =
+            logPrompt(prompt) *> underlying.executeLegacy(prompt).tapBoth(logError, logResponse("execute"))
 
-          override def executeWithContext(prompt: String, context: String): ZIO[Any, GeminiError, GeminiResponse] =
-            logPrompt(prompt) *> underlying.executeWithContext(
+          override def executeWithContextLegacy(prompt: String, context: String)
+            : ZIO[Any, GeminiError, GeminiResponse] =
+            logPrompt(prompt) *> underlying.executeWithContextLegacy(
               prompt,
               context,
             ).tapBoth(logError, logResponse("executeWithContext"))

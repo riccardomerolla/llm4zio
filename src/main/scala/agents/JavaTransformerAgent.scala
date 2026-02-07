@@ -5,7 +5,7 @@ import java.nio.file.Path
 import zio.*
 import zio.json.*
 
-import core.{ FileService, GeminiService, Logger, ResponseParser }
+import core.{ AIService, FileService, Logger, ResponseParser }
 import models.*
 import prompts.PromptTemplates
 
@@ -37,10 +37,10 @@ object JavaTransformerAgent:
     ZIO.serviceWithZIO[JavaTransformerAgent](_.transform(analysis, dependencyGraph))
 
   val live
-    : ZLayer[GeminiService & ResponseParser & FileService & MigrationConfig, Nothing, JavaTransformerAgent] =
+    : ZLayer[AIService & ResponseParser & FileService & MigrationConfig, Nothing, JavaTransformerAgent] =
     ZLayer.fromFunction {
       (
-        geminiService: GeminiService,
+        aiService: AIService,
         responseParser: ResponseParser,
         fileService: FileService,
         config: MigrationConfig,
@@ -65,9 +65,9 @@ object JavaTransformerAgent:
           private def generateEntity(analysis: CobolAnalysis): ZIO[Any, TransformError, JavaEntity] =
             val prompt = PromptTemplates.JavaTransformer.generateEntity(analysis)
             for
-              response <- geminiService
-                            .executeLegacy(prompt)
-                            .mapError(e => TransformError.GeminiFailed(analysis.file.name, e.message))
+              response <- aiService
+                            .execute(prompt)
+                            .mapError(e => TransformError.AIFailed(analysis.file.name, e.message))
               entity   <- responseParser
                             .parse[JavaEntity](response)
                             .mapError(e => TransformError.ParseFailed(analysis.file.name, e.message))
@@ -81,9 +81,9 @@ object JavaTransformerAgent:
             val deps   = graph.serviceCandidates
             val prompt = PromptTemplates.JavaTransformer.generateService(analysis, deps)
             for
-              response <- geminiService
-                            .executeLegacy(prompt)
-                            .mapError(e => TransformError.GeminiFailed(analysis.file.name, e.message))
+              response <- aiService
+                            .execute(prompt)
+                            .mapError(e => TransformError.AIFailed(analysis.file.name, e.message))
               service  <- responseParser
                             .parse[JavaService](response)
                             .mapError(e => TransformError.ParseFailed(analysis.file.name, e.message))
@@ -95,9 +95,9 @@ object JavaTransformerAgent:
           ): ZIO[Any, TransformError, JavaController] =
             val prompt = PromptTemplates.JavaTransformer.generateController(analysis, serviceName)
             for
-              response   <- geminiService
-                              .executeLegacy(prompt)
-                              .mapError(e => TransformError.GeminiFailed(analysis.file.name, e.message))
+              response   <- aiService
+                              .execute(prompt)
+                              .mapError(e => TransformError.AIFailed(analysis.file.name, e.message))
               controller <- responseParser
                               .parse[JavaController](response)
                               .mapError(e => TransformError.ParseFailed(analysis.file.name, e.message))

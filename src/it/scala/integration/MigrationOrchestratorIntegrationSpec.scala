@@ -150,10 +150,10 @@ object MigrationOrchestratorIntegrationSpec extends ZIOSpecDefault:
 
   private val stubGeminiLayer: ULayer[GeminiService] =
     ZLayer.succeed(new GeminiService {
-      override def execute(prompt: String): ZIO[Any, GeminiError, GeminiResponse] =
+      override def executeLegacy(prompt: String): ZIO[Any, GeminiError, GeminiResponse] =
         ZIO.succeed(GeminiResponse(selectResponse(prompt), 0))
 
-      override def executeWithContext(prompt: String, context: String): ZIO[Any, GeminiError, GeminiResponse] =
+      override def executeWithContextLegacy(prompt: String, context: String): ZIO[Any, GeminiError, GeminiResponse] =
         ZIO.succeed(GeminiResponse(selectResponse(prompt), 0))
 
       override def isAvailable: ZIO[Any, Nothing, Boolean] =

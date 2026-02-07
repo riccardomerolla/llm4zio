@@ -4,6 +4,7 @@ import zio.*
 import zio.Console.*
 import zio.cli.*
 import zio.cli.HelpDoc.Span.text
+import zio.http.Client
 
 import _root_.config.ConfigLoader
 import agents.*
@@ -382,12 +383,15 @@ object Main extends ZIOAppDefault:
       // Layer 3: Core Services & Config
       FileService.live,
       ZLayer.succeed(config),
+      ZLayer.succeed(config.resolvedProviderConfig),
       ZLayer.succeed(RateLimiterConfig.fromMigrationConfig(config)),
 
       // Layer 2: Service implementations (depend on Layer 3 & Config)
       RateLimiter.live,
       ResponseParser.live,
-      GeminiService.live,
+      Client.default,
+      HttpAIClient.live,
+      AIService.fromConfig.mapError(e => new RuntimeException(e.message)),
       StateService.live(config.stateDir),
 
       // Layer 1: Agent implementations (depend on Layer 2 & 3)

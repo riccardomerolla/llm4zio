@@ -26,7 +26,7 @@ This project implements an AI-powered legacy modernization framework for migrati
 
 - **Core Language:** Scala 3 with latest syntax and features
 - **Effect System:** ZIO 2.x for functional, composable effects
-- **AI Engine:** Google Gemini CLI (non-interactive mode)
+- **AI Engine:** Multi-provider `AIService` (Gemini CLI/API, OpenAI-compatible, Anthropic-compatible)
 - **Target Platform:** Spring Boot microservices (Java 17+)
 - **Build Tool:** sbt 1.9+
 - **Testing:** ZIO Test framework
@@ -143,7 +143,7 @@ All system operations are modeled as ZIO effects:
 Example effect signature for COBOL analysis:
 
 ```scala
-def analyzeCobol(file: CobolFile): ZIO[GeminiService & Logger, AnalysisError, CobolAnalysis]
+def analyzeCobol(file: CobolFile): ZIO[AIService & Logger, AnalysisError, CobolAnalysis]
 ```
 
 ### 2.3 Gemini CLI Integration Strategy
@@ -360,7 +360,7 @@ legacy-modernization-agents/
 
 - Scala 3.3+ and sbt 1.9+
 - Java 17+ (for running generated Spring Boot code)
-- Google Gemini CLI installed and configured
+- Gemini CLI installed and configured (only required for `gemini-cli` provider)
 - Docker (optional, for containerized deployment)
 
 ### 6.2 Installation
@@ -373,8 +373,9 @@ cd legacy-modernization-agents
 # Install dependencies
 sbt update
 
-# Configure Gemini CLI
-export GEMINI_API_KEY="your-api-key"
+# Configure provider credentials (example)
+export MIGRATION_AI_PROVIDER="gemini-cli"
+export MIGRATION_AI_API_KEY="your-api-key"
 
 # Verify installation
 sbt test
@@ -385,14 +386,18 @@ sbt test
 Create or edit `src/main/resources/application.conf`:
 
 ```hocon
-gemini {
-  model = "gemini-2.5-flash"
-  max-tokens = 32768
-  temperature = 0.1
-  timeout = 300s
-}
-
 migration {
+  ai {
+    provider = "gemini-cli" # gemini-cli | gemini-api | openai | anthropic
+    model = "gemini-2.5-flash"
+    base-url = null
+    api-key = null
+    timeout = 90s
+    max-retries = 3
+    temperature = 0.1
+    max-tokens = 32768
+  }
+
   cobol-source = "cobol-source"
   java-output = "java-output"
   reports-dir = "reports"
@@ -407,6 +412,12 @@ cp /path/to/cobol/* cobol-source/
 
 # Run full migration pipeline
 sbt "run migrate --source cobol-source --output java-output"
+
+# Explicit provider selection
+sbt "run migrate --source cobol-source --output java-output --ai-provider gemini-cli"
+
+# LM Studio (OpenAI-compatible local endpoint)
+sbt "run migrate --source cobol-source --output java-output --ai-provider openai --ai-base-url http://localhost:1234/v1 --ai-model <model-name>"
 
 # Or run specific steps individually
 sbt "run step discovery --source cobol-source --output java-output"
@@ -474,6 +485,7 @@ Key documentation files:
 
 - [ADR-001: Scala 3 and ZIO 2.x Adoption](docs/adr/ADR-001-scala3-zio-adoption.md)
 - [ADR-002: Gemini CLI Adoption](docs/adr/ADR-002-gemini-cli-adoption.md)
+- [ADR-003: Multi-Provider AIService](docs/adr/ADR-003-multi-provider-ai-service.md)
 - [Migration Progress Dashboard](docs/progress/overall-progress.md)
 - [Findings and Observations](docs/findings/findings-observations.md)
 

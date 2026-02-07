@@ -31,7 +31,7 @@ object MigrationOrchestratorSpec extends ZIOSpecDefault:
                            mockTransformerAgent,
                            mockValidationAgent,
                            mockDocumentationAgent,
-                           mockGemini,
+                           mockAI,
                            ZLayer.succeed(MigrationConfig(
                              sourceDir = sourceDir,
                              outputDir = outputDir,
@@ -64,7 +64,7 @@ object MigrationOrchestratorSpec extends ZIOSpecDefault:
                            mockTransformerAgent,
                            mockValidationAgent,
                            mockDocumentationAgent,
-                           mockGemini,
+                           mockAI,
                            ZLayer.succeed(MigrationConfig(
                              sourceDir = sourceDir,
                              outputDir = outputDir,
@@ -88,11 +88,11 @@ object MigrationOrchestratorSpec extends ZIOSpecDefault:
           outputDir      <- ZIO.attemptBlocking(Files.createTempDirectory("orchestrator-out-fail"))
           failingAnalyzer = ZLayer.succeed(new CobolAnalyzerAgent {
                               override def analyze(cobolFile: CobolFile): ZIO[Any, AnalysisError, CobolAnalysis] =
-                                ZIO.fail(AnalysisError.GeminiFailed(cobolFile.name, "analysis boom"))
+                                ZIO.fail(AnalysisError.AIFailed(cobolFile.name, "analysis boom"))
                               override def analyzeAll(files: List[CobolFile])
                                 : ZStream[Any, AnalysisError, CobolAnalysis] =
                                 ZStream.fromZIO(
-                                  ZIO.fail(AnalysisError.GeminiFailed(
+                                  ZIO.fail(AnalysisError.AIFailed(
                                     files.headOption.map(_.name).getOrElse("unknown"),
                                     "analysis boom",
                                   ))
@@ -109,7 +109,7 @@ object MigrationOrchestratorSpec extends ZIOSpecDefault:
                                 mockTransformerAgent,
                                 mockValidationAgent,
                                 mockDocumentationAgent,
-                                mockGemini,
+                                mockAI,
                                 ZLayer.succeed(MigrationConfig(
                                   sourceDir = sourceDir,
                                   outputDir = outputDir,
@@ -144,7 +144,7 @@ object MigrationOrchestratorSpec extends ZIOSpecDefault:
                               })
           failingAnalyzer   = ZLayer.succeed(new CobolAnalyzerAgent {
                                 override def analyze(cobolFile: CobolFile): ZIO[Any, AnalysisError, CobolAnalysis] =
-                                  ZIO.fail(AnalysisError.GeminiFailed(cobolFile.name, "analysis boom"))
+                                  ZIO.fail(AnalysisError.AIFailed(cobolFile.name, "analysis boom"))
                                 override def analyzeAll(files: List[CobolFile])
                                   : ZStream[Any, AnalysisError, CobolAnalysis] =
                                   ZStream.empty
@@ -160,7 +160,7 @@ object MigrationOrchestratorSpec extends ZIOSpecDefault:
                                   mockTransformerAgent,
                                   mockValidationAgent,
                                   mockDocumentationAgent,
-                                  mockGemini,
+                                  mockAI,
                                   ZLayer.succeed(MigrationConfig(
                                     sourceDir = sourceDir,
                                     outputDir = outputDir,
@@ -179,7 +179,7 @@ object MigrationOrchestratorSpec extends ZIOSpecDefault:
                                   mockTransformerAgent,
                                   mockValidationAgent,
                                   mockDocumentationAgent,
-                                  mockGemini,
+                                  mockAI,
                                   ZLayer.succeed(MigrationConfig(
                                     sourceDir = sourceDir,
                                     outputDir = outputDir,
@@ -303,13 +303,13 @@ object MigrationOrchestratorSpec extends ZIOSpecDefault:
         ZIO.succeed(sampleDocumentation)
     })
 
-  private val mockGemini: ULayer[GeminiService] =
-    ZLayer.succeed(new GeminiService {
-      override def executeLegacy(prompt: String): ZIO[Any, GeminiError, GeminiResponse] =
-        ZIO.succeed(GeminiResponse("{}", 0))
+  private val mockAI: ULayer[AIService] =
+    ZLayer.succeed(new AIService {
+      override def execute(prompt: String): ZIO[Any, AIError, AIResponse] =
+        ZIO.succeed(AIResponse("{}"))
 
-      override def executeWithContextLegacy(prompt: String, context: String): ZIO[Any, GeminiError, GeminiResponse] =
-        executeLegacy(prompt)
+      override def executeWithContext(prompt: String, context: String): ZIO[Any, AIError, AIResponse] =
+        execute(prompt)
 
       override def isAvailable: ZIO[Any, Nothing, Boolean] =
         ZIO.succeed(true)

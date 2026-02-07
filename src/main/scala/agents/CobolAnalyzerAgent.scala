@@ -7,7 +7,7 @@ import zio.json.*
 import zio.json.ast.Json
 import zio.stream.*
 
-import core.{ FileService, GeminiService, Logger, ResponseParser }
+import core.{ AIService, FileService, Logger, ResponseParser }
 import models.*
 import prompts.PromptTemplates
 
@@ -35,10 +35,10 @@ object CobolAnalyzerAgent:
   def analyzeAll(files: List[CobolFile]): ZStream[CobolAnalyzerAgent, AnalysisError, CobolAnalysis] =
     ZStream.serviceWithStream[CobolAnalyzerAgent](_.analyzeAll(files))
 
-  val live: ZLayer[GeminiService & ResponseParser & FileService & MigrationConfig, Nothing, CobolAnalyzerAgent] =
+  val live: ZLayer[AIService & ResponseParser & FileService & MigrationConfig, Nothing, CobolAnalyzerAgent] =
     ZLayer.fromFunction {
       (
-        geminiService: GeminiService,
+        aiService: AIService,
         responseParser: ResponseParser,
         fileService: FileService,
         config: MigrationConfig,
@@ -53,9 +53,9 @@ object CobolAnalyzerAgent:
                             .readFile(cobolFile.path)
                             .mapError(fe => AnalysisError.FileReadFailed(cobolFile.path, fe.message))
               prompt    = PromptTemplates.CobolAnalyzer.analyzeStructure(cobolFile, content)
-              response <- geminiService
-                            .executeLegacy(prompt)
-                            .mapError(e => AnalysisError.GeminiFailed(cobolFile.name, e.message))
+              response <- aiService
+                            .execute(prompt)
+                            .mapError(e => AnalysisError.AIFailed(cobolFile.name, e.message))
               parsed   <- parseAnalysis(response, cobolFile)
               analysis  = parsed.copy(file = cobolFile)
               _        <- writeReport(analysis).tapError(err => Logger.warn(err.message))
@@ -136,7 +136,7 @@ object CobolAnalyzerAgent:
             name.replaceAll("[^A-Za-z0-9._-]", "_")
 
           private def parseAnalysis(
-            response: GeminiResponse,
+            response: AIResponse,
             cobolFile: CobolFile,
           ): ZIO[Any, AnalysisError, CobolAnalysis] =
             responseParser
@@ -145,7 +145,7 @@ object CobolAnalyzerAgent:
               .mapError(e => AnalysisError.ParseFailed(cobolFile.name, e.message))
 
           private def parseWithFileOverride(
-            response: GeminiResponse,
+            response: AIResponse,
             cobolFile: CobolFile,
           ): ZIO[Any, ParseError, CobolAnalysis] =
             for

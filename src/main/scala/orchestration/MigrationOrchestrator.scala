@@ -41,7 +41,7 @@ object MigrationOrchestrator:
       ValidationAgent &
       DocumentationAgent &
       StateService &
-      GeminiService &
+      AIService &
       MigrationConfig,
     Nothing,
     MigrationOrchestrator,
@@ -54,7 +54,7 @@ object MigrationOrchestrator:
       validationAgent: ValidationAgent,
       documentationAgent: DocumentationAgent,
       stateService: StateService,
-      geminiService: GeminiService,
+      _aiService: AIService,
       config: MigrationConfig,
     ) =>
       new MigrationOrchestrator {

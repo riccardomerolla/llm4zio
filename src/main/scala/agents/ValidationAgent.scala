@@ -5,7 +5,7 @@ import java.nio.file.Path
 import zio.*
 import zio.json.*
 
-import core.{ FileService, GeminiService, Logger, ResponseParser }
+import core.{ AIService, FileService, Logger, ResponseParser }
 import models.*
 import prompts.ValidationPrompts
 
@@ -25,10 +25,10 @@ object ValidationAgent:
     : ZIO[ValidationAgent, ValidationError, ValidationReport] =
     ZIO.serviceWithZIO[ValidationAgent](_.validate(project, analysis))
 
-  val live: ZLayer[GeminiService & ResponseParser & FileService & MigrationConfig, Nothing, ValidationAgent] =
+  val live: ZLayer[AIService & ResponseParser & FileService & MigrationConfig, Nothing, ValidationAgent] =
     ZLayer.fromFunction {
       (
-        geminiService: GeminiService,
+        aiService: AIService,
         responseParser: ResponseParser,
         fileService: FileService,
         config: MigrationConfig,
@@ -272,8 +272,8 @@ object ValidationAgent:
             val javaCode    = renderJavaSnapshot(project)
             val prompt      = ValidationPrompts.validateTransformation(cobolSource, javaCode, analysis)
             for
-              response   <- geminiService
-                              .executeLegacy(prompt)
+              response   <- aiService
+                              .execute(prompt)
                               .mapError(e => ValidationError.SemanticValidationFailed(project.projectName, e.message))
               validation <- responseParser
                               .parse[SemanticValidation](response)

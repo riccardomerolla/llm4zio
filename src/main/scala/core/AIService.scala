@@ -2,7 +2,7 @@ package core
 
 import zio.*
 
-import models.{ AIError, AIResponse }
+import models.{ AIError, AIProvider, AIProviderConfig, AIResponse }
 
 trait AIService:
   def execute(prompt: String): ZIO[Any, AIError, AIResponse]
@@ -20,3 +20,16 @@ object AIService:
 
   def isAvailable: ZIO[AIService, Nothing, Boolean] =
     ZIO.serviceWithZIO[AIService](_.isAvailable)
+
+  val fromConfig: ZLayer[AIProviderConfig & RateLimiter & HttpAIClient, AIError, AIService] =
+    ZLayer.fromZIO {
+      for
+        providerConfig <- ZIO.service[AIProviderConfig]
+        rateLimiter    <- ZIO.service[RateLimiter]
+        httpClient     <- ZIO.service[HttpAIClient]
+      yield providerConfig.provider match
+        case AIProvider.GeminiCli => GeminiCliAIService.make(providerConfig, rateLimiter, GeminiCliExecutor.default)
+        case AIProvider.GeminiApi => GeminiApiAIService.make(providerConfig, rateLimiter, httpClient)
+        case AIProvider.OpenAi    => OpenAICompatAIService(providerConfig, rateLimiter, httpClient)
+        case AIProvider.Anthropic => AnthropicCompatAIService(providerConfig, rateLimiter, httpClient)
+    }
