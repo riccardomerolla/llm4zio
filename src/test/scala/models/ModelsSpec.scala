@@ -77,6 +77,73 @@ object ModelsSpec extends ZIOSpecDefault:
       roundTripTest("MigrationStep.Transformation", MigrationStep.Transformation),
       roundTripTest("AgentType.CobolDiscovery", AgentType.CobolDiscovery),
       roundTripTest("AgentType.JavaTransformer", AgentType.JavaTransformer),
+      roundTripTest("AIProvider.GeminiCli", AIProvider.GeminiCli),
+      roundTripTest("AIProvider.GeminiApi", AIProvider.GeminiApi),
+      roundTripTest("AIProvider.OpenAi", AIProvider.OpenAi),
+      roundTripTest("AIProvider.Anthropic", AIProvider.Anthropic),
+    ),
+    suite("AI Models")(
+      roundTripTest(
+        "AIResponse with metadata",
+        AIResponse(
+          output = "Generated code",
+          metadata = Map(
+            "model"    -> "gemini-2.5-flash",
+            "exitCode" -> "0",
+          ),
+        ),
+      ),
+      roundTripTest(
+        "AIResponse default metadata",
+        AIResponse(
+          output = "Generated summary"
+        ),
+      ),
+      encodingTest(
+        "AIResponse encoding",
+        AIResponse(
+          output = "Done",
+          metadata = Map("model" -> "openai-gpt-4.1"),
+        ),
+        """{"output":"Done","metadata":{"model":"openai-gpt-4.1"}}""",
+      ),
+      test("AIError variants expose meaningful messages") {
+        val timeout = Duration.fromSeconds(30)
+        val errors  = List[AIError](
+          AIError.ProcessStartFailed("command not found"),
+          AIError.OutputReadFailed("stream closed"),
+          AIError.Timeout(timeout),
+          AIError.NonZeroExit(2, "bad args"),
+          AIError.ProcessFailed("io interrupted"),
+          AIError.NotAvailable("GeminiCli"),
+          AIError.InvalidResponse("{malformed}"),
+          AIError.RateLimitExceeded(timeout),
+          AIError.RateLimitMisconfigured("negative permits"),
+          AIError.HttpError(429, "too many requests"),
+          AIError.AuthenticationFailed("OpenAi"),
+          AIError.ProviderUnavailable("Anthropic", "connection reset"),
+        )
+
+        assertTrue(errors.forall(_.message.nonEmpty))
+      },
+      test("AIError Timeout JSON round-trip") {
+        val error   = AIError.Timeout(Duration.fromSeconds(45))
+        val json    = error.toJson
+        val decoded = json.fromJson[AIError]
+        assertTrue(decoded == Right(error))
+      },
+      test("AIError HttpError JSON round-trip") {
+        val error   = AIError.HttpError(500, "upstream failure")
+        val json    = error.toJson
+        val decoded = json.fromJson[AIError]
+        assertTrue(decoded == Right(error))
+      },
+      test("AIError ProviderUnavailable JSON round-trip") {
+        val error   = AIError.ProviderUnavailable("GeminiApi", "service down")
+        val json    = error.toJson
+        val decoded = json.fromJson[AIError]
+        assertTrue(decoded == Right(error))
+      },
     ),
     // ========================================================================
     // Discovery Phase Models

@@ -67,6 +67,24 @@ enum GeminiError(val message: String) derives JsonCodec:
   case RateLimitMisconfigured(details: String)
     extends GeminiError(s"Rate limiter misconfigured: $details")
 
+/** Provider-agnostic AI service errors with typed error handling */
+enum AIError(val message: String) derives JsonCodec:
+  case ProcessStartFailed(cause: String)        extends AIError(s"Failed to start AI process: $cause")
+  case OutputReadFailed(cause: String)          extends AIError(s"Failed to read AI output: $cause")
+  case Timeout(duration: zio.Duration)          extends AIError(s"AI request timed out after ${duration.toSeconds}s")
+  case NonZeroExit(code: Int, output: String)   extends AIError(s"AI process exited with code $code: $output")
+  case ProcessFailed(cause: String)             extends AIError(s"AI process failed: $cause")
+  case NotAvailable(provider: String)           extends AIError(s"AI provider not available: $provider")
+  case InvalidResponse(output: String)          extends AIError(s"Invalid AI response: $output")
+  case RateLimitExceeded(timeout: zio.Duration)
+    extends AIError(s"AI rate limit exceeded after ${timeout.toSeconds}s")
+  case RateLimitMisconfigured(details: String)
+    extends AIError(s"AI rate limiter misconfigured: $details")
+  case HttpError(statusCode: Int, body: String) extends AIError(s"AI provider HTTP error $statusCode: $body")
+  case AuthenticationFailed(provider: String)   extends AIError(s"AI provider authentication failed: $provider")
+  case ProviderUnavailable(provider: String, cause: String)
+    extends AIError(s"AI provider unavailable: $provider. Cause: $cause")
+
 /** Gemini response parsing errors with typed error handling */
 enum ParseError(val message: String) derives JsonCodec:
   case NoJsonFound(response: String)            extends ParseError("No JSON found in Gemini response")
@@ -139,6 +157,15 @@ enum DocError(val message: String) derives JsonCodec:
 // ============================================================================
 // Gemini Service
 // ============================================================================
+
+enum AIProvider derives JsonCodec:
+  case GeminiCli, GeminiApi, OpenAi, Anthropic
+
+/** Provider-agnostic response from AI execution */
+case class AIResponse(
+  output: String,
+  metadata: Map[String, String] = Map.empty,
+) derives JsonCodec
 
 /** Response from Gemini CLI execution */
 case class GeminiResponse(
