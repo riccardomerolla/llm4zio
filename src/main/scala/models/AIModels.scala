@@ -8,27 +8,30 @@ case class ChatCompletionRequest(
   messages: List[ChatMessage],
   temperature: Option[Double] = None,
   max_tokens: Option[Int] = None,
+  max_completion_tokens: Option[Int] = None,
+  stream: Option[Boolean] = None,
 ) derives JsonCodec
 
 case class ChatMessage(role: String, content: String) derives JsonCodec
 
 case class ChatCompletionResponse(
-  id: String,
+  id: Option[String] = None,
   choices: List[ChatChoice],
   usage: Option[TokenUsage] = None,
-  model: String,
+  model: Option[String] = None,
 ) derives JsonCodec
 
 case class ChatChoice(
-  index: Int,
-  message: ChatMessage,
+  index: Int = 0,
+  message: Option[ChatMessage] = None,
+  text: Option[String] = None,
   finish_reason: Option[String] = None,
 ) derives JsonCodec
 
 case class TokenUsage(
-  prompt_tokens: Int,
-  completion_tokens: Int,
-  total_tokens: Int,
+  prompt_tokens: Option[Int] = None,
+  completion_tokens: Option[Int] = None,
+  total_tokens: Option[Int] = None,
 ) derives JsonCodec
 
 // Anthropic-compatible
