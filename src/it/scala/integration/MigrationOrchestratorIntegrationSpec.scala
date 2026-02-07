@@ -40,7 +40,7 @@ object MigrationOrchestratorIntegrationSpec extends ZIOSpecDefault:
                                   JavaTransformerAgent.live,
                                   validationLayer,
                                   DocumentationAgent.live,
-                                  stubGeminiLayer,
+                                  stubAILayer,
                                   ResponseParser.live,
                                   ZLayer.succeed(config),
                                   MigrationOrchestrator.live,
@@ -93,7 +93,7 @@ object MigrationOrchestratorIntegrationSpec extends ZIOSpecDefault:
                                 JavaTransformerAgent.live,
                                 failingValidationLayer,
                                 DocumentationAgent.live,
-                                stubGeminiLayer,
+                                stubAILayer,
                                 ResponseParser.live,
                                 ZLayer.succeed(config),
                                 MigrationOrchestrator.live,
@@ -109,7 +109,7 @@ object MigrationOrchestratorIntegrationSpec extends ZIOSpecDefault:
                                 JavaTransformerAgent.live,
                                 validationLayer,
                                 DocumentationAgent.live,
-                                stubGeminiLayer,
+                                stubAILayer,
                                 ResponseParser.live,
                                 ZLayer.succeed(config.copy(resumeFromCheckpoint = Some(first.runId))),
                                 MigrationOrchestrator.live,
@@ -148,13 +148,13 @@ object MigrationOrchestratorIntegrationSpec extends ZIOSpecDefault:
       }
     }
 
-  private val stubGeminiLayer: ULayer[GeminiService] =
-    ZLayer.succeed(new GeminiService {
-      override def executeLegacy(prompt: String): ZIO[Any, GeminiError, GeminiResponse] =
-        ZIO.succeed(GeminiResponse(selectResponse(prompt), 0))
+  private val stubAILayer: ULayer[AIService] =
+    ZLayer.succeed(new AIService {
+      override def execute(prompt: String): ZIO[Any, AIError, AIResponse] =
+        ZIO.succeed(AIResponse(selectResponse(prompt)))
 
-      override def executeWithContextLegacy(prompt: String, context: String): ZIO[Any, GeminiError, GeminiResponse] =
-        ZIO.succeed(GeminiResponse(selectResponse(prompt), 0))
+      override def executeWithContext(prompt: String, context: String): ZIO[Any, AIError, AIResponse] =
+        ZIO.succeed(AIResponse(selectResponse(prompt)))
 
       override def isAvailable: ZIO[Any, Nothing, Boolean] =
         ZIO.succeed(true)

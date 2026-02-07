@@ -8,7 +8,7 @@ import zio.test.Assertion.*
 
 import models.*
 
-object GeminiServiceSpec extends ZIOSpecDefault:
+object AIServiceSpec extends ZIOSpecDefault:
 
   /** Helper to create a test MigrationConfig */
   private def createTestConfig(
@@ -44,7 +44,21 @@ object GeminiServiceSpec extends ZIOSpecDefault:
         ZIO.succeed(available)
     })
 
-  def spec: Spec[Any, Any] = suite("GeminiServiceSpec")(
+  private def rateLimiterFor(config: AIProviderConfig): ZLayer[Any, Nothing, RateLimiter] =
+    ZLayer.succeed(RateLimiterConfig.fromAIProviderConfig(config)) >>> RateLimiter.live
+
+  private def mockHttpClient(responder: (String, String) => String): ULayer[HttpAIClient] =
+    ZLayer.succeed(new HttpAIClient {
+      override def postJson(
+        url: String,
+        body: String,
+        headers: Map[String, String],
+        timeout: Duration,
+      ): ZIO[Any, AIError, String] =
+        ZIO.succeed(responder(url, body))
+    })
+
+  def spec: Spec[Any, Any] = suite("AIServiceSpec")(
     // ========================================================================
     // execute tests
     // ========================================================================
@@ -343,6 +357,70 @@ object GeminiServiceSpec extends ZIOSpecDefault:
           result.isLeft,
           attempts >= 1,
         )
+      },
+    ),
+    suite("AIService.fromConfig provider selection")(
+      test("selects OpenAI-compatible implementation from provider config") {
+        val config = AIProviderConfig(
+          provider = AIProvider.OpenAi,
+          model = "gpt-test",
+          baseUrl = Some("http://lmstudio.local/v1"),
+          apiKey = Some("test-key"),
+          maxRetries = 0,
+        )
+        val body   =
+          """{"choices":[{"index":0,"message":{"role":"assistant","content":"openai-ok"},"finish_reason":"stop"}],"model":"gpt-test"}"""
+        for
+          response <- AIService
+                        .execute("ping")
+                        .provide(
+                          AIService.fromConfig,
+                          mockHttpClient((url, _) => if url.endsWith("/chat/completions") then body else "{}"),
+                          rateLimiterFor(config),
+                          ZLayer.succeed(config),
+                        )
+        yield assertTrue(response.output == "openai-ok")
+      },
+      test("selects Anthropic-compatible implementation from provider config") {
+        val config = AIProviderConfig(
+          provider = AIProvider.Anthropic,
+          model = "claude-test",
+          baseUrl = Some("http://anthropic.local"),
+          apiKey = Some("test-key"),
+          maxRetries = 0,
+        )
+        val body   =
+          """{"content":[{"type":"text","text":"anthropic-ok"}],"model":"claude-test","stop_reason":"end_turn"}"""
+        for
+          response <- AIService
+                        .execute("ping")
+                        .provide(
+                          AIService.fromConfig,
+                          mockHttpClient((url, _) => if url.endsWith("/v1/messages") then body else "{}"),
+                          rateLimiterFor(config),
+                          ZLayer.succeed(config),
+                        )
+        yield assertTrue(response.output == "anthropic-ok")
+      },
+      test("selects Gemini API implementation from provider config") {
+        val config = AIProviderConfig(
+          provider = AIProvider.GeminiApi,
+          model = "gemini-2.5-flash",
+          baseUrl = Some("http://gemini.local"),
+          apiKey = Some("test-key"),
+          maxRetries = 0,
+        )
+        val body   = """{"candidates":[{"content":{"parts":[{"text":"gemini-api-ok"}]}}]}"""
+        for
+          response <- AIService
+                        .execute("ping")
+                        .provide(
+                          AIService.fromConfig,
+                          mockHttpClient((url, _) => if url.contains(":generateContent") then body else "{}"),
+                          rateLimiterFor(config),
+                          ZLayer.succeed(config),
+                        )
+        yield assertTrue(response.output == "gemini-api-ok")
       },
     ),
   )

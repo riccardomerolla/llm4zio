@@ -4,6 +4,7 @@ import java.nio.file.{ Files, Path }
 import java.time.Instant
 
 import zio.*
+import zio.http.Client
 import zio.logging.backend.SLF4J
 import zio.test.*
 import zio.test.Assertion.*
@@ -36,8 +37,7 @@ object AgentsIntegrationSpec extends ZIOSpecDefault:
                                FileService.live,
                                ResponseParser.live,
                                ZLayer.succeed(config),
-                               rateLimiterLayer(config),
-                               GeminiService.live >>> loggingGeminiLayer,
+                               testProviderLayer(config) >>> loggingAILayer,
                                CobolAnalyzerAgent.live,
                              )
             yield assertTrue(
@@ -62,8 +62,7 @@ object AgentsIntegrationSpec extends ZIOSpecDefault:
                               FileService.live,
                               ResponseParser.live,
                               ZLayer.succeed(config),
-                              rateLimiterLayer(config),
-                              GeminiService.live >>> loggingGeminiLayer,
+                              testProviderLayer(config) >>> loggingAILayer,
                               CobolAnalyzerAgent.live,
                             )
               project  <- JavaTransformerAgent
@@ -72,8 +71,7 @@ object AgentsIntegrationSpec extends ZIOSpecDefault:
                               FileService.live,
                               ResponseParser.live,
                               ZLayer.succeed(config),
-                              rateLimiterLayer(config),
-                              GeminiService.live >>> loggingGeminiLayer,
+                              testProviderLayer(config) >>> loggingAILayer,
                               JavaTransformerAgent.live,
                             )
             yield assertTrue(
@@ -98,8 +96,7 @@ object AgentsIntegrationSpec extends ZIOSpecDefault:
                               FileService.live,
                               ResponseParser.live,
                               ZLayer.succeed(config),
-                              rateLimiterLayer(config),
-                              GeminiService.live >>> loggingGeminiLayer,
+                              testProviderLayer(config) >>> loggingAILayer,
                               CobolAnalyzerAgent.live,
                             )
               project  <- JavaTransformerAgent
@@ -108,8 +105,7 @@ object AgentsIntegrationSpec extends ZIOSpecDefault:
                               FileService.live,
                               ResponseParser.live,
                               ZLayer.succeed(config),
-                              rateLimiterLayer(config),
-                              GeminiService.live >>> loggingGeminiLayer,
+                              testProviderLayer(config) >>> loggingAILayer,
                               JavaTransformerAgent.live,
                             )
               report   <- ValidationAgent
@@ -118,8 +114,7 @@ object AgentsIntegrationSpec extends ZIOSpecDefault:
                               FileService.live,
                               ResponseParser.live,
                               ZLayer.succeed(config),
-                              rateLimiterLayer(config),
-                              GeminiService.live >>> loggingGeminiLayer,
+                              testProviderLayer(config) >>> loggingAILayer,
                               ValidationAgent.live,
                             )
             yield assertTrue(
@@ -144,8 +139,7 @@ object AgentsIntegrationSpec extends ZIOSpecDefault:
                              FileService.live,
                              ResponseParser.live,
                              ZLayer.succeed(config),
-                             rateLimiterLayer(config),
-                             GeminiService.live >>> loggingGeminiLayer,
+                             testProviderLayer(config) >>> loggingAILayer,
                              CobolAnalyzerAgent.live,
                            )
             reportPath = Path.of("reports/analysis").resolve("CUSTOMER-INQUIRY.cbl.json")
@@ -158,7 +152,7 @@ object AgentsIntegrationSpec extends ZIOSpecDefault:
         }
       }
     },
-    test("GeminiService times out with tiny timeout") {
+    test("AIService times out with tiny timeout") {
       ZIO.logLevel(LogLevel.Debug) {
         ZIO.scoped {
           for
@@ -169,15 +163,13 @@ object AgentsIntegrationSpec extends ZIOSpecDefault:
                         geminiTimeout = 1.millis,
                         geminiMaxRetries = 0,
                       )
-            result <- GeminiService
+            result <- AIService
                         .execute("Respond with a short JSON object containing a field named ping.")
                         .provide(
-                          ZLayer.succeed(config),
-                          rateLimiterLayer(config),
-                          GeminiService.live >>> loggingGeminiLayer,
+                          testProviderLayer(config) >>> loggingAILayer
                         )
                         .exit
-          yield assert(result)(fails(isSubtype[GeminiError.Timeout](anything)))
+          yield assert(result)(fails(isSubtype[AIError.Timeout](anything)))
         }
       }
     },
@@ -204,8 +196,7 @@ object AgentsIntegrationSpec extends ZIOSpecDefault:
                              FileService.live,
                              ResponseParser.live,
                              ZLayer.succeed(config),
-                             rateLimiterLayer(config),
-                             GeminiService.live >>> loggingGeminiLayer,
+                             testProviderLayer(config) >>> loggingAILayer,
                              CobolAnalyzerAgent.live,
                            )
           yield assertTrue(
@@ -229,8 +220,7 @@ object AgentsIntegrationSpec extends ZIOSpecDefault:
                              FileService.live,
                              ResponseParser.live,
                              ZLayer.succeed(config),
-                             rateLimiterLayer(config),
-                             GeminiService.live >>> loggingGeminiLayer,
+                             testProviderLayer(config) >>> loggingAILayer,
                              CobolAnalyzerAgent.live,
                            )
             project   <- JavaTransformerAgent
@@ -239,8 +229,7 @@ object AgentsIntegrationSpec extends ZIOSpecDefault:
                              FileService.live,
                              ResponseParser.live,
                              ZLayer.succeed(config),
-                             rateLimiterLayer(config),
-                             GeminiService.live >>> loggingGeminiLayer,
+                             testProviderLayer(config) >>> loggingAILayer,
                              JavaTransformerAgent.live,
                            )
             projectDir = outDir.resolve(project.projectName.toLowerCase)
@@ -284,8 +273,7 @@ object AgentsIntegrationSpec extends ZIOSpecDefault:
                                FileService.live,
                                ResponseParser.live,
                                ZLayer.succeed(config),
-                               rateLimiterLayer(config),
-                               GeminiService.live >>> loggingGeminiLayer,
+                               testProviderLayer(config) >>> loggingAILayer,
                                CobolAnalyzerAgent.live,
                              )
                          }
@@ -316,8 +304,7 @@ object AgentsIntegrationSpec extends ZIOSpecDefault:
                              FileService.live,
                              ResponseParser.live,
                              ZLayer.succeed(config),
-                             rateLimiterLayer(config),
-                             GeminiService.live >>> loggingGeminiLayer,
+                             testProviderLayer(config) >>> loggingAILayer,
                              CobolAnalyzerAgent.live,
                            )
             project    = SpringBootProject(
@@ -337,8 +324,7 @@ object AgentsIntegrationSpec extends ZIOSpecDefault:
                              FileService.live,
                              ResponseParser.live,
                              ZLayer.succeed(config),
-                             rateLimiterLayer(config),
-                             GeminiService.live >>> loggingGeminiLayer,
+                             testProviderLayer(config) >>> loggingAILayer,
                              ValidationAgent.live,
                            )
             reportPath = Path.of("reports/validation").resolve("validation-sample-validation.json")
@@ -365,8 +351,7 @@ object AgentsIntegrationSpec extends ZIOSpecDefault:
                              FileService.live,
                              ResponseParser.live,
                              ZLayer.succeed(config),
-                             rateLimiterLayer(config),
-                             GeminiService.live >>> loggingGeminiLayer,
+                             testProviderLayer(config) >>> loggingAILayer,
                              CobolAnalyzerAgent.live,
                            )
             project   <- JavaTransformerAgent
@@ -375,8 +360,7 @@ object AgentsIntegrationSpec extends ZIOSpecDefault:
                              FileService.live,
                              ResponseParser.live,
                              ZLayer.succeed(config),
-                             rateLimiterLayer(config),
-                             GeminiService.live >>> loggingGeminiLayer,
+                             testProviderLayer(config) >>> loggingAILayer,
                              JavaTransformerAgent.live,
                            )
             result     = MigrationResult(
@@ -418,16 +402,15 @@ object AgentsIntegrationSpec extends ZIOSpecDefault:
     val rateConfig = RateLimiterConfig.fromMigrationConfig(config)
     ZLayer.succeed(rateConfig) >>> RateLimiter.live
 
-  private val loggingGeminiLayer: ZLayer[GeminiService, Nothing, GeminiService] =
+  private val loggingAILayer: ZLayer[AIService, Nothing, AIService] =
     ZLayer.fromZIO {
-      ZIO.serviceWith[GeminiService] { underlying =>
-        new GeminiService {
-          override def executeLegacy(prompt: String): ZIO[Any, GeminiError, GeminiResponse] =
-            logPrompt(prompt) *> underlying.executeLegacy(prompt).tapBoth(logError, logResponse("execute"))
+      ZIO.serviceWith[AIService] { underlying =>
+        new AIService {
+          override def execute(prompt: String): ZIO[Any, AIError, AIResponse] =
+            logPrompt(prompt) *> underlying.execute(prompt).tapBoth(logError, logResponse("execute"))
 
-          override def executeWithContextLegacy(prompt: String, context: String)
-            : ZIO[Any, GeminiError, GeminiResponse] =
-            logPrompt(prompt) *> underlying.executeWithContextLegacy(
+          override def executeWithContext(prompt: String, context: String): ZIO[Any, AIError, AIResponse] =
+            logPrompt(prompt) *> underlying.executeWithContext(
               prompt,
               context,
             ).tapBoth(logError, logResponse("executeWithContext"))
@@ -439,19 +422,58 @@ object AgentsIntegrationSpec extends ZIOSpecDefault:
     }
 
   private def logPrompt(prompt: String): UIO[Unit] =
-    ZIO.logDebug(s"Gemini prompt length=${prompt.length}")
+    ZIO.logDebug(s"AI prompt length=${prompt.length}")
 
-  private def logResponse(label: String)(response: GeminiResponse): UIO[Unit] =
-    ZIO.logDebug(s"Gemini $label output (truncated): ${truncate(response.output)}")
+  private def logResponse(label: String)(response: AIResponse): UIO[Unit] =
+    ZIO.logDebug(s"AI $label output (truncated): ${truncate(response.output)}")
 
-  private def logError(error: GeminiError): UIO[Unit] =
+  private def logError(error: AIError): UIO[Unit] =
     error match
-      case GeminiError.Timeout(d)                =>
-        ZIO.logError(s"Gemini TIMEOUT after ${d.toSeconds}s")
-      case GeminiError.NonZeroExit(code, output) =>
-        ZIO.logError(s"Gemini FAILED with exit code $code. Output: ${truncate(output, 1000)}")
-      case other                                 =>
-        ZIO.logError(s"Gemini ERROR: $error")
+      case AIError.Timeout(d)                =>
+        ZIO.logError(s"AI TIMEOUT after ${d.toSeconds}s")
+      case AIError.NonZeroExit(code, output) =>
+        ZIO.logError(s"AI FAILED with exit code $code. Output: ${truncate(output, 1000)}")
+      case other                             =>
+        ZIO.logError(s"AI ERROR: $other")
+
+  private def testProviderLayer(config: MigrationConfig): ZLayer[Any, Throwable, AIService] =
+    val providerConfig = resolveProviderConfig(config)
+    providerConfig.provider match
+      case AIProvider.GeminiCli =>
+        (ZLayer.succeed(providerConfig) ++ rateLimiterLayer(config)) >>> GeminiCliAIService.layer
+      case AIProvider.GeminiApi =>
+        (ZLayer.succeed(providerConfig) ++ rateLimiterLayer(config) ++ (Client.default >>> HttpAIClient.live)) >>>
+          GeminiApiAIService.layer
+      case AIProvider.OpenAi    =>
+        (ZLayer.succeed(providerConfig) ++ rateLimiterLayer(config) ++ (Client.default >>> HttpAIClient.live)) >>>
+          OpenAICompatAIService.layer
+      case AIProvider.Anthropic =>
+        (ZLayer.succeed(providerConfig) ++ rateLimiterLayer(config) ++ (Client.default >>> HttpAIClient.live)) >>>
+          AnthropicCompatAIService.layer
+
+  private def resolveProviderConfig(config: MigrationConfig): AIProviderConfig =
+    val base = config.resolvedProviderConfig
+    val env  = sys.env
+
+    val provider = env
+      .get("MIGRATION_AI_PROVIDER")
+      .flatMap {
+        case "gemini-cli" => Some(AIProvider.GeminiCli)
+        case "gemini-api" => Some(AIProvider.GeminiApi)
+        case "openai"     => Some(AIProvider.OpenAi)
+        case "anthropic"  => Some(AIProvider.Anthropic)
+        case _            => None
+      }
+      .getOrElse(base.provider)
+
+    AIProviderConfig.withDefaults(
+      base.copy(
+        provider = provider,
+        model = env.get("MIGRATION_AI_MODEL").getOrElse(base.model),
+        baseUrl = env.get("MIGRATION_AI_BASE_URL").orElse(base.baseUrl),
+        apiKey = env.get("MIGRATION_AI_API_KEY").orElse(base.apiKey),
+      )
+    )
 
   private def truncate(value: String, max: Int = 500): String =
     if value.length <= max then value else value.take(max) + "..."
