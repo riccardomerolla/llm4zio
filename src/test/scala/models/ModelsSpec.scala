@@ -75,8 +75,6 @@ object ModelsSpec extends ZIOSpecDefault:
       roundTripTest("HttpMethod.POST", HttpMethod.POST),
       roundTripTest("MigrationStep.Discovery", MigrationStep.Discovery),
       roundTripTest("MigrationStep.Transformation", MigrationStep.Transformation),
-      roundTripTest("AgentType.CobolDiscovery", AgentType.CobolDiscovery),
-      roundTripTest("AgentType.JavaTransformer", AgentType.JavaTransformer),
       roundTripTest("AIProvider.GeminiCli", AIProvider.GeminiCli),
       roundTripTest("AIProvider.GeminiApi", AIProvider.GeminiApi),
       roundTripTest("AIProvider.OpenAi", AIProvider.OpenAi),
@@ -618,21 +616,6 @@ object ModelsSpec extends ZIOSpecDefault:
           state.fileInventory.isEmpty,
         )
       },
-    ),
-    // ========================================================================
-    // Agent Message Models
-    // ========================================================================
-    suite("Agent Message Models")(
-      roundTripTest(
-        "AgentMessage",
-        AgentMessage(
-          id = "msg-123",
-          sourceAgent = AgentType.CobolDiscovery,
-          targetAgent = AgentType.CobolAnalyzer,
-          payload = """{"files": ["PROG1.cbl"]}""",
-          timestamp = Instant.parse("2024-01-15T10:00:00Z"),
-        ),
-      )
     ),
     // ========================================================================
     // Complex Nested Structure Tests

@@ -404,37 +404,13 @@ object ValidationAgent:
                      ValidationError.ReportWriteFailed(reportDir, fe.message)
                    )
               _ <- Logger.debug(s"Writing validation JSON report to $jsonPath")
-              _ <- writeFileAtomic(jsonPath, report.toJsonPretty)
+              _ <- fileService
+                     .writeFileAtomic(jsonPath, report.toJsonPretty)
+                     .mapError(fe => ValidationError.ReportWriteFailed(jsonPath, fe.message))
               _ <- Logger.debug(s"Writing validation markdown report to $mdPath")
-              _ <- writeFileAtomic(mdPath, renderMarkdown(report))
-            yield ()
-
-          private def writeFileAtomic(path: Path, content: String): ZIO[Any, ValidationError, Unit] =
-            for
-              suffix  <- ZIO.attemptBlocking(java.util.UUID.randomUUID().toString)
-                           .mapError(e => ValidationError.ReportWriteFailed(path, e.getMessage))
-              tempPath = path.resolveSibling(s"${path.getFileName}.tmp.$suffix")
-              _       <- fileService.writeFile(tempPath, content)
-                           .mapError(fe => ValidationError.ReportWriteFailed(tempPath, fe.message))
-              _       <- ZIO
-                           .attemptBlocking {
-                             import java.nio.file.StandardCopyOption
-                             try
-                               java.nio.file.Files.move(
-                                 tempPath,
-                                 path,
-                                 StandardCopyOption.REPLACE_EXISTING,
-                                 StandardCopyOption.ATOMIC_MOVE,
-                               )
-                             catch
-                               case _: java.nio.file.AtomicMoveNotSupportedException =>
-                                 java.nio.file.Files.move(
-                                   tempPath,
-                                   path,
-                                   StandardCopyOption.REPLACE_EXISTING,
-                                 )
-                           }
-                           .mapError(e => ValidationError.ReportWriteFailed(path, e.getMessage))
+              _ <- fileService
+                     .writeFileAtomic(mdPath, renderMarkdown(report))
+                     .mapError(fe => ValidationError.ReportWriteFailed(mdPath, fe.message))
             yield ()
 
           private def renderMarkdown(report: ValidationReport): String =

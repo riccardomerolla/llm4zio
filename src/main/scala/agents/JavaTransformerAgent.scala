@@ -138,16 +138,34 @@ object JavaTransformerAgent:
               _ <-
                 fileService.ensureDirectory(mainJava).mapError(fe => TransformError.WriteFailed(mainJava, fe.message))
               _ <- fileService.ensureDirectory(mainRes).mapError(fe => TransformError.WriteFailed(mainRes, fe.message))
-              _ <- writeFileAtomic(projectDir.resolve("pom.xml"), project.buildFile.content)
-              _ <- writeFileAtomic(mainRes.resolve("application.yml"), applicationYaml(project))
-              _ <- writeFileAtomic(
-                     mainJava.resolve(packagePath(basePkg)).resolve("Application.java"),
-                     applicationClass(basePkg),
-                   )
-              _ <- writeFileAtomic(
-                     mainJava.resolve(packagePath(s"$basePkg.config")).resolve("OpenApiConfig.java"),
-                     openApiConfigClass(s"$basePkg.config"),
-                   )
+              _ <- fileService
+                     .writeFileAtomic(projectDir.resolve("pom.xml"), project.buildFile.content)
+                     .mapError(fe => TransformError.WriteFailed(projectDir.resolve("pom.xml"), fe.message))
+              _ <- fileService
+                     .writeFileAtomic(mainRes.resolve("application.yml"), applicationYaml(project))
+                     .mapError(fe => TransformError.WriteFailed(mainRes.resolve("application.yml"), fe.message))
+              _ <- fileService
+                     .writeFileAtomic(
+                       mainJava.resolve(packagePath(basePkg)).resolve("Application.java"),
+                       applicationClass(basePkg),
+                     )
+                     .mapError(fe =>
+                       TransformError.WriteFailed(
+                         mainJava.resolve(packagePath(basePkg)).resolve("Application.java"),
+                         fe.message,
+                       )
+                     )
+              _ <- fileService
+                     .writeFileAtomic(
+                       mainJava.resolve(packagePath(s"$basePkg.config")).resolve("OpenApiConfig.java"),
+                       openApiConfigClass(s"$basePkg.config"),
+                     )
+                     .mapError(fe =>
+                       TransformError.WriteFailed(
+                         mainJava.resolve(packagePath(s"$basePkg.config")).resolve("OpenApiConfig.java"),
+                         fe.message,
+                       )
+                     )
               _ <- writeEntityFiles(project, mainJava, basePkg)
               _ <- writeServiceFiles(project, mainJava, basePkg)
               _ <- writeControllerFiles(project, mainJava, basePkg)
@@ -163,7 +181,7 @@ object JavaTransformerAgent:
               val path    = mainJava.resolve(packagePath(s"$basePkg.entity")).resolve(s"${entity.className}.java")
               val content =
                 if entity.sourceCode.nonEmpty then entity.sourceCode else renderEntity(basePkg, entity)
-              writeFileAtomic(path, content)
+              fileService.writeFileAtomic(path, content).mapError(fe => TransformError.WriteFailed(path, fe.message))
             }
 
           private def writeServiceFiles(
@@ -173,7 +191,9 @@ object JavaTransformerAgent:
           ): ZIO[Any, TransformError, Unit] =
             ZIO.foreachDiscard(project.services) { service =>
               val path = mainJava.resolve(packagePath(s"$basePkg.service")).resolve(s"${service.name}.java")
-              writeFileAtomic(path, renderService(basePkg, service))
+              fileService
+                .writeFileAtomic(path, renderService(basePkg, service))
+                .mapError(fe => TransformError.WriteFailed(path, fe.message))
             }
 
           private def writeControllerFiles(
@@ -183,7 +203,9 @@ object JavaTransformerAgent:
           ): ZIO[Any, TransformError, Unit] =
             ZIO.foreachDiscard(project.controllers) { controller =>
               val path = mainJava.resolve(packagePath(s"$basePkg.controller")).resolve(s"${controller.name}.java")
-              writeFileAtomic(path, renderController(basePkg, controller, project.services.headOption.map(_.name)))
+              fileService
+                .writeFileAtomic(path, renderController(basePkg, controller, project.services.headOption.map(_.name)))
+                .mapError(fe => TransformError.WriteFailed(path, fe.message))
             }
 
           private def writeRepositoryFiles(
@@ -194,38 +216,8 @@ object JavaTransformerAgent:
             ZIO.foreachDiscard(project.repositories) { repo =>
               val path    = mainJava.resolve(packagePath(s"$basePkg.repository")).resolve(s"${repo.name}.java")
               val content = if repo.sourceCode.nonEmpty then repo.sourceCode else renderRepository(basePkg, repo)
-              writeFileAtomic(path, content)
+              fileService.writeFileAtomic(path, content).mapError(fe => TransformError.WriteFailed(path, fe.message))
             }
-
-          private def writeFileAtomic(path: Path, content: String): ZIO[Any, TransformError, Unit] =
-            for
-              suffix  <- ZIO
-                           .attemptBlocking(java.util.UUID.randomUUID().toString)
-                           .mapError(e => TransformError.WriteFailed(path, e.getMessage))
-              tempPath = path.resolveSibling(s"${path.getFileName}.tmp.$suffix")
-              _       <- fileService
-                           .writeFile(tempPath, content)
-                           .mapError(fe => TransformError.WriteFailed(tempPath, fe.message))
-              _       <- ZIO
-                           .attemptBlocking {
-                             import java.nio.file.StandardCopyOption
-                             try
-                               java.nio.file.Files.move(
-                                 tempPath,
-                                 path,
-                                 StandardCopyOption.REPLACE_EXISTING,
-                                 StandardCopyOption.ATOMIC_MOVE,
-                               )
-                             catch
-                               case _: java.nio.file.AtomicMoveNotSupportedException =>
-                                 java.nio.file.Files.move(
-                                   tempPath,
-                                   path,
-                                   StandardCopyOption.REPLACE_EXISTING,
-                                 )
-                           }
-                           .mapError(e => TransformError.WriteFailed(path, e.getMessage))
-            yield ()
 
           private def renderEntity(basePkg: String, entity: JavaEntity): String =
             val fieldLines = entity.fields.map { field =>

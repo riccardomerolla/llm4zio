@@ -181,64 +181,66 @@ object DocumentationAgent:
               fileService.ensureDirectory(reportDir).mapError(fe => DocError.ReportWriteFailed(reportDir, fe.message))
             _ <-
               fileService.ensureDirectory(diagramDir).mapError(fe => DocError.ReportWriteFailed(diagramDir, fe.message))
-            _ <- writeFileAtomic(reportDir.resolve("migration-summary.md"), docs.summaryReport)
-            _ <- writeFileAtomic(
-                   reportDir.resolve("migration-summary.html"),
-                   toHtml("Migration Summary", docs.summaryReport),
-                 )
-            _ <- writeFileAtomic(reportDir.resolve("design-document.md"), docs.designDocument)
+            _ <- fileService
+                   .writeFileAtomic(reportDir.resolve("migration-summary.md"), docs.summaryReport)
+                   .mapError(fe => DocError.ReportWriteFailed(reportDir.resolve("migration-summary.md"), fe.message))
+            _ <- fileService
+                   .writeFileAtomic(
+                     reportDir.resolve("migration-summary.html"),
+                     toHtml("Migration Summary", docs.summaryReport),
+                   )
+                   .mapError(fe => DocError.ReportWriteFailed(reportDir.resolve("migration-summary.html"), fe.message))
+            _ <- fileService
+                   .writeFileAtomic(reportDir.resolve("design-document.md"), docs.designDocument)
+                   .mapError(fe => DocError.ReportWriteFailed(reportDir.resolve("design-document.md"), fe.message))
+            _ <- fileService
+                   .writeFileAtomic(
+                     reportDir.resolve("design-document.html"),
+                     toHtml("Design Document", docs.designDocument),
+                   )
+                   .mapError(fe => DocError.ReportWriteFailed(reportDir.resolve("design-document.html"), fe.message))
+            _ <- fileService
+                   .writeFileAtomic(reportDir.resolve("api-documentation.md"), docs.apiDocumentation)
+                   .mapError(fe => DocError.ReportWriteFailed(reportDir.resolve("api-documentation.md"), fe.message))
+            _ <- fileService
+                   .writeFileAtomic(
+                     reportDir.resolve("api-documentation.html"),
+                     toHtml("API Documentation", docs.apiDocumentation),
+                   )
+                   .mapError(fe => DocError.ReportWriteFailed(reportDir.resolve("api-documentation.html"), fe.message))
             _ <-
-              writeFileAtomic(reportDir.resolve("design-document.html"), toHtml("Design Document", docs.designDocument))
-            _ <- writeFileAtomic(reportDir.resolve("api-documentation.md"), docs.apiDocumentation)
-            _ <- writeFileAtomic(
-                   reportDir.resolve("api-documentation.html"),
-                   toHtml("API Documentation", docs.apiDocumentation),
-                 )
-            _ <- writeFileAtomic(reportDir.resolve("data-mapping-reference.md"), docs.dataMappingReference)
-            _ <- writeFileAtomic(
-                   reportDir.resolve("data-mapping-reference.html"),
-                   toHtml("Data Mapping Reference", docs.dataMappingReference),
-                 )
-            _ <- writeFileAtomic(reportDir.resolve("deployment-guide.md"), docs.deploymentGuide)
-            _ <- writeFileAtomic(
-                   reportDir.resolve("deployment-guide.html"),
-                   toHtml("Deployment Guide", docs.deploymentGuide),
-                 )
-            _ <- writeFileAtomic(reportDir.resolve("documentation.json"), docs.toJsonPretty)
+              fileService
+                .writeFileAtomic(reportDir.resolve("data-mapping-reference.md"), docs.dataMappingReference)
+                .mapError(fe => DocError.ReportWriteFailed(reportDir.resolve("data-mapping-reference.md"), fe.message))
+            _ <- fileService
+                   .writeFileAtomic(
+                     reportDir.resolve("data-mapping-reference.html"),
+                     toHtml("Data Mapping Reference", docs.dataMappingReference),
+                   )
+                   .mapError(fe =>
+                     DocError.ReportWriteFailed(reportDir.resolve("data-mapping-reference.html"), fe.message)
+                   )
+            _ <- fileService
+                   .writeFileAtomic(reportDir.resolve("deployment-guide.md"), docs.deploymentGuide)
+                   .mapError(fe => DocError.ReportWriteFailed(reportDir.resolve("deployment-guide.md"), fe.message))
+            _ <- fileService
+                   .writeFileAtomic(
+                     reportDir.resolve("deployment-guide.html"),
+                     toHtml("Deployment Guide", docs.deploymentGuide),
+                   )
+                   .mapError(fe => DocError.ReportWriteFailed(reportDir.resolve("deployment-guide.html"), fe.message))
+            _ <- fileService
+                   .writeFileAtomic(reportDir.resolve("documentation.json"), docs.toJsonPretty)
+                   .mapError(fe => DocError.ReportWriteFailed(reportDir.resolve("documentation.json"), fe.message))
             _ <- ZIO.foreachDiscard(docs.diagrams) { diagram =>
                    val extension = diagram.diagramType match
                      case DiagramType.Mermaid  => "mmd"
                      case DiagramType.PlantUML => "puml"
-                   writeFileAtomic(diagramDir.resolve(s"${diagram.name}.$extension"), diagram.content)
+                   val path      = diagramDir.resolve(s"${diagram.name}.$extension")
+                   fileService
+                     .writeFileAtomic(path, diagram.content)
+                     .mapError(fe => DocError.ReportWriteFailed(path, fe.message))
                  }
-          yield ()
-
-        private def writeFileAtomic(path: Path, content: String): ZIO[Any, DocError, Unit] =
-          for
-            suffix  <- ZIO.attemptBlocking(java.util.UUID.randomUUID().toString)
-                         .mapError(e => DocError.ReportWriteFailed(path, e.getMessage))
-            tempPath = path.resolveSibling(s"${path.getFileName}.tmp.$suffix")
-            _       <- fileService.writeFile(tempPath, content)
-                         .mapError(fe => DocError.ReportWriteFailed(tempPath, fe.message))
-            _       <- ZIO
-                         .attemptBlocking {
-                           import java.nio.file.StandardCopyOption
-                           try
-                             java.nio.file.Files.move(
-                               tempPath,
-                               path,
-                               StandardCopyOption.REPLACE_EXISTING,
-                               StandardCopyOption.ATOMIC_MOVE,
-                             )
-                           catch
-                             case _: java.nio.file.AtomicMoveNotSupportedException =>
-                               java.nio.file.Files.move(
-                                 tempPath,
-                                 path,
-                                 StandardCopyOption.REPLACE_EXISTING,
-                               )
-                         }
-                         .mapError(e => DocError.ReportWriteFailed(path, e.getMessage))
           yield ()
 
         private def toHtml(title: String, markdown: String): String =

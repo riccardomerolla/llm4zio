@@ -5,6 +5,7 @@ import zio.http.*
 import zio.json.*
 
 import db.*
+import models.*
 import web.ErrorHandlingMiddleware
 import web.views.HtmlViews
 
@@ -42,13 +43,15 @@ final case class GraphControllerLive(
         for
           format <- getStringQuery(req, "format").map(_.toLowerCase)
           deps   <- repository.getDependenciesByRun(runId)
+          graph   = toDependencyGraph(deps)
           resp   <- format match
                       case "json"    => ZIO.succeed(Response.json(deps.toJson))
-                      case "mermaid" => ZIO.succeed(Response.text(toMermaid(deps)))
+                      case "mermaid" => ZIO.succeed(Response.text(DependencyGraphBuilder.toMermaid(graph)))
+                      case "d3"      => ZIO.succeed(Response.json(DependencyGraphBuilder.toD3Json(graph)))
                       case other     => ZIO.fail(
                           PersistenceError.QueryFailed(
                             "graph.export",
-                            s"Unsupported format: $other (expected mermaid|json)",
+                            s"Unsupported format: $other (expected mermaid|json|d3)",
                           )
                         )
         yield resp
@@ -77,9 +80,21 @@ final case class GraphControllerLive(
       .fromOption(req.queryParam(key).map(_.trim).filter(_.nonEmpty))
       .orElseFail(PersistenceError.QueryFailed(s"query:$key", s"Missing query parameter '$key'"))
 
-  private def toMermaid(dependencies: List[DependencyRow]): String =
-    val edges = dependencies.map(dep => s"  ${dep.sourceNode} --> ${dep.targetNode}")
-    ("graph TD" :: edges).mkString("\n")
+  private def toDependencyGraph(dependencies: List[DependencyRow]): DependencyGraph =
+    val nodeIds = dependencies.flatMap(dep => List(dep.sourceNode, dep.targetNode)).distinct
+    val nodes   = nodeIds.map(id => DependencyNode(id = id, name = id, nodeType = NodeType.Program, complexity = 0))
+    val edges   = dependencies.map { dep =>
+      val edgeType = dep.edgeType.toLowerCase match
+        case "includes" => EdgeType.Includes
+        case "uses"     => EdgeType.Uses
+        case _          => EdgeType.Calls
+      DependencyEdge(
+        from = dep.sourceNode,
+        to = dep.targetNode,
+        edgeType = edgeType,
+      )
+    }
+    DependencyGraph(nodes = nodes, edges = edges, serviceCandidates = List.empty)
 
   private def html(content: String): Response =
     Response.text(content).contentType(MediaType.text.html)

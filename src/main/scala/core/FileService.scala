@@ -23,6 +23,7 @@ import models.FileError
 trait FileService:
   def readFile(path: Path): ZIO[Any, FileError, String]
   def writeFile(path: Path, content: String): ZIO[Any, FileError, Unit]
+  def writeFileAtomic(path: Path, content: String): ZIO[Any, FileError, Unit]
   def listFiles(directory: Path, extensions: Set[String]): ZStream[Any, FileError, Path]
   def copyDirectory(src: Path, dest: Path): ZIO[Any, FileError, Unit]
   def ensureDirectory(path: Path): ZIO[Any, FileError, Unit]
@@ -37,6 +38,9 @@ object FileService:
 
   def writeFile(path: Path, content: String): ZIO[FileService, FileError, Unit] =
     ZIO.serviceWithZIO[FileService](_.writeFile(path, content))
+
+  def writeFileAtomic(path: Path, content: String): ZIO[FileService, FileError, Unit] =
+    ZIO.serviceWithZIO[FileService](_.writeFileAtomic(path, content))
 
   def listFiles(directory: Path, extensions: Set[String]): ZStream[FileService, FileError, Path] =
     ZStream.serviceWithStream[FileService](_.listFiles(directory, extensions))
@@ -83,6 +87,32 @@ object FileService:
           _ <- ZIO
                  .attemptBlocking(Files.writeString(path, content, StandardCharsets.UTF_8))
                  .mapError(mapToFileError(path))
+        yield ()
+
+      override def writeFileAtomic(path: Path, content: String): ZIO[Any, FileError, Unit] =
+        for
+          _       <- ensureParentDirectory(path)
+          suffix  <- ZIO.attemptBlocking(java.util.UUID.randomUUID().toString).mapError(mapToFileError(path))
+          tempPath = path.resolveSibling(s"${path.getFileName}.tmp.$suffix")
+          _       <- writeFile(tempPath, content)
+          _       <- ZIO
+                       .attemptBlocking {
+                         try
+                           Files.move(
+                             tempPath,
+                             path,
+                             StandardCopyOption.REPLACE_EXISTING,
+                             StandardCopyOption.ATOMIC_MOVE,
+                           )
+                         catch
+                           case _: AtomicMoveNotSupportedException =>
+                             Files.move(
+                               tempPath,
+                               path,
+                               StandardCopyOption.REPLACE_EXISTING,
+                             )
+                       }
+                       .mapError(mapToFileError(path))
         yield ()
 
       override def listFiles(directory: Path, extensions: Set[String]): ZStream[Any, FileError, Path] =

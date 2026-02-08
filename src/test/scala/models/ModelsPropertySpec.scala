@@ -58,15 +58,6 @@ object ModelsPropertySpec extends ZIOSpecDefault:
     MigrationStep.Documentation,
   )
 
-  private val genAgentType = Gen.elements(
-    AgentType.CobolDiscovery,
-    AgentType.CobolAnalyzer,
-    AgentType.DependencyMapper,
-    AgentType.JavaTransformer,
-    AgentType.Validation,
-    AgentType.Documentation,
-  )
-
   private val genDiagramType = Gen.elements(DiagramType.Mermaid, DiagramType.PlantUML)
 
   private val genCobolFile =
@@ -212,13 +203,6 @@ object ModelsPropertySpec extends ZIOSpecDefault:
           val json    = ms.toJson
           val decoded = json.fromJson[MigrationStep]
           assertTrue(decoded == Right(ms))
-        }
-      },
-      test("all AgentType values survive round-trip") {
-        check(genAgentType) { at =>
-          val json    = at.toJson
-          val decoded = json.fromJson[AgentType]
-          assertTrue(decoded == Right(at))
         }
       },
       test("all DiagramType values survive round-trip") {

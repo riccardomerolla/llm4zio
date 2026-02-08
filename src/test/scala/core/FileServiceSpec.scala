@@ -111,6 +111,27 @@ object FileServiceSpec extends ZIOSpecDefault:
         }
       },
     ),
+    suite("writeFileAtomic")(
+      test("writes file atomically") {
+        withTempDir { tempDir =>
+          val filePath = tempDir.resolve("atomic.txt")
+          for
+            _      <- FileService.writeFileAtomic(filePath, "Atomic content").provide(FileService.live)
+            result <- ZIO.succeed(Files.readString(filePath))
+          yield assertTrue(result == "Atomic content")
+        }
+      },
+      test("overwrites existing file atomically") {
+        withTempDir { tempDir =>
+          val filePath = tempDir.resolve("atomic-overwrite.txt")
+          for
+            _      <- FileService.writeFile(filePath, "Original").provide(FileService.live)
+            _      <- FileService.writeFileAtomic(filePath, "Updated").provide(FileService.live)
+            result <- ZIO.succeed(Files.readString(filePath))
+          yield assertTrue(result == "Updated")
+        }
+      },
+    ),
     // ========================================================================
     // listFiles tests
     // ========================================================================

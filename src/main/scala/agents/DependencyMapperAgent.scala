@@ -122,54 +122,21 @@ object DependencyMapperAgent:
         for
           _ <-
             fileService.ensureDirectory(reportDir).mapError(fe => MappingError.ReportWriteFailed(reportDir, fe.message))
-          _ <- writeFileAtomic(reportDir.resolve("dependency-graph.json"), graph.toJsonPretty)
-          _ <- writeFileAtomic(reportDir.resolve("dependency-diagram.md"), renderMermaid(graph))
-          _ <- writeFileAtomic(reportDir.resolve("migration-order.md"), renderMigrationOrder(graph))
+          _ <- fileService
+                 .writeFileAtomic(reportDir.resolve("dependency-graph.json"), graph.toJsonPretty)
+                 .mapError(fe => MappingError.ReportWriteFailed(reportDir.resolve("dependency-graph.json"), fe.message))
+          _ <- fileService
+                 .writeFileAtomic(
+                   reportDir.resolve("dependency-diagram.md"),
+                   List("```mermaid", DependencyGraphBuilder.toMermaid(graph), "```").mkString("\n"),
+                 )
+                 .mapError(fe =>
+                   MappingError.ReportWriteFailed(reportDir.resolve("dependency-diagram.md"), fe.message)
+                 )
+          _ <- fileService
+                 .writeFileAtomic(reportDir.resolve("migration-order.md"), renderMigrationOrder(graph))
+                 .mapError(fe => MappingError.ReportWriteFailed(reportDir.resolve("migration-order.md"), fe.message))
         yield ()
-
-      private def writeFileAtomic(path: Path, content: String): ZIO[Any, MappingError, Unit] =
-        for
-          suffix  <- ZIO
-                       .attemptBlocking(java.util.UUID.randomUUID().toString)
-                       .mapError(e => MappingError.ReportWriteFailed(path, e.getMessage))
-          tempPath = path.resolveSibling(s"${path.getFileName}.tmp.$suffix")
-          _       <- fileService
-                       .writeFile(tempPath, content)
-                       .mapError(fe => MappingError.ReportWriteFailed(tempPath, fe.message))
-          _       <- ZIO
-                       .attemptBlocking {
-                         import java.nio.file.StandardCopyOption
-                         try
-                           java.nio.file.Files.move(
-                             tempPath,
-                             path,
-                             StandardCopyOption.REPLACE_EXISTING,
-                             StandardCopyOption.ATOMIC_MOVE,
-                           )
-                         catch
-                           case _: java.nio.file.AtomicMoveNotSupportedException =>
-                             java.nio.file.Files.move(
-                               tempPath,
-                               path,
-                               StandardCopyOption.REPLACE_EXISTING,
-                             )
-                       }
-                       .mapError(e => MappingError.ReportWriteFailed(path, e.getMessage))
-        yield ()
-
-      private def renderMermaid(graph: DependencyGraph): String =
-        val nodes = graph.nodes.map { node =>
-          val label = s"${node.name} (${node.nodeType})"
-          s"""  ${node.id}["$label"]"""
-        }
-        val edges = graph.edges.map { edge =>
-          val label = edge.edgeType match
-            case EdgeType.Includes => "includes"
-            case EdgeType.Calls    => "calls"
-            case EdgeType.Uses     => "uses"
-          s"  ${edge.from} -->|$label| ${edge.to}"
-        }
-        (List("```mermaid", "graph TD") ++ nodes ++ edges ++ List("```")).mkString("\n")
 
       private def renderMigrationOrder(graph: DependencyGraph): String =
         val programNodes = graph.nodes.filter(_.nodeType == NodeType.Program).map(_.id)
@@ -230,22 +197,29 @@ object DependencyMapperAgent:
 
       private def detectCycles(programIds: List[String], edges: List[DependencyEdge]): List[List[String]] =
         val graph   = edges.filter(_.edgeType == EdgeType.Calls).groupBy(_.from).view.mapValues(_.map(_.to)).toMap
-        val visited = scala.collection.mutable.Set.empty[String]
-        val stack   = scala.collection.mutable.Set.empty[String]
-        val cycles  = scala.collection.mutable.ListBuffer.empty[List[String]]
+        val initial = CycleState(visited = Set.empty, stack = Set.empty, cycles = List.empty)
 
-        def dfs(node: String, path: List[String]): Unit =
-          if stack.contains(node) then
+        def dfs(node: String, path: List[String], state: CycleState): CycleState =
+          if state.stack.contains(node) then
             val cycleStart = path.indexOf(node)
-            if cycleStart >= 0 then cycles += (path.drop(cycleStart) :+ node)
-          else if !visited.contains(node) then
-            visited += node
-            stack += node
-            graph.getOrElse(node, Nil).foreach(next => dfs(next, path :+ next))
-            stack -= node
+            if cycleStart >= 0 then state.copy(cycles = (path.drop(cycleStart) :+ node) :: state.cycles)
+            else state
+          else if state.visited.contains(node) then state
+          else
+            val entered   = state.copy(
+              visited = state.visited + node,
+              stack = state.stack + node,
+            )
+            val traversed = graph.getOrElse(node, Nil).foldLeft(entered) { (acc, next) =>
+              dfs(next, path :+ next, acc)
+            }
+            traversed.copy(stack = traversed.stack - node)
 
-        programIds.foreach(id => dfs(id, List(id)))
-        cycles.toList
+        programIds
+          .foldLeft(initial)((state, id) => dfs(id, List(id), state))
+          .cycles
+          .reverse
+          .distinct
 
       private def orphanPrograms(programIds: List[String], edges: List[DependencyEdge]): List[String] =
         val linked = edges.filter(_.edgeType == EdgeType.Calls).flatMap(e => List(e.from, e.to)).toSet
@@ -267,5 +241,11 @@ object DependencyMapperAgent:
 
       private def copybookId(name: String): String =
         name.replaceAll("\\.(cpy)$", "").toUpperCase
+
+      private case class CycleState(
+        visited: Set[String],
+        stack: Set[String],
+        cycles: List[List[String]],
+      )
     }
   }

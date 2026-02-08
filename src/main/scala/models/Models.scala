@@ -763,18 +763,3 @@ case class MigrationRunSummary(
   completedSteps: Set[MigrationStep],
   errorCount: Int,
 ) derives JsonCodec
-
-// ============================================================================
-// Agent Messages
-// ============================================================================
-
-enum AgentType derives JsonCodec:
-  case CobolDiscovery, CobolAnalyzer, DependencyMapper, JavaTransformer, Validation, Documentation
-
-case class AgentMessage(
-  id: String,
-  sourceAgent: AgentType,
-  targetAgent: AgentType,
-  payload: String,
-  timestamp: Instant,
-) derives JsonCodec

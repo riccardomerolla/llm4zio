@@ -89,7 +89,9 @@ object CobolAnalyzerAgent:
                           .mapError(fe => AnalysisError.ReportWriteFailed(reportDir, fe.message))
               path    = reportDir.resolve(s"${safeName(analysis.file.name)}.json")
               content = analysis.toJsonPretty
-              _      <- writeFileAtomic(path, content)
+              _      <- fileService
+                          .writeFileAtomic(path, content)
+                          .mapError(fe => AnalysisError.ReportWriteFailed(path, fe.message))
             yield ()
 
           private def writeSummary(analyses: List[CobolAnalysis]): ZIO[Any, AnalysisError, Unit] =
@@ -99,37 +101,9 @@ object CobolAnalyzerAgent:
                           .mapError(fe => AnalysisError.ReportWriteFailed(reportDir, fe.message))
               path    = reportDir.resolve("analysis-summary.json")
               content = analyses.toJsonPretty
-              _      <- writeFileAtomic(path, content)
-            yield ()
-
-          private def writeFileAtomic(path: Path, content: String): ZIO[Any, AnalysisError, Unit] =
-            for
-              suffix  <- ZIO
-                           .attemptBlocking(java.util.UUID.randomUUID().toString)
-                           .mapError(e => AnalysisError.ReportWriteFailed(path, e.getMessage))
-              tempPath = path.resolveSibling(s"${path.getFileName}.tmp.$suffix")
-              _       <- fileService
-                           .writeFile(tempPath, content)
-                           .mapError(fe => AnalysisError.ReportWriteFailed(tempPath, fe.message))
-              _       <- ZIO
-                           .attemptBlocking {
-                             import java.nio.file.StandardCopyOption
-                             try
-                               java.nio.file.Files.move(
-                                 tempPath,
-                                 path,
-                                 StandardCopyOption.REPLACE_EXISTING,
-                                 StandardCopyOption.ATOMIC_MOVE,
-                               )
-                             catch
-                               case _: java.nio.file.AtomicMoveNotSupportedException =>
-                                 java.nio.file.Files.move(
-                                   tempPath,
-                                   path,
-                                   StandardCopyOption.REPLACE_EXISTING,
-                                 )
-                           }
-                           .mapError(e => AnalysisError.ReportWriteFailed(path, e.getMessage))
+              _      <- fileService
+                          .writeFileAtomic(path, content)
+                          .mapError(fe => AnalysisError.ReportWriteFailed(path, fe.message))
             yield ()
 
           private def safeName(name: String): String =

@@ -211,8 +211,12 @@ object CobolDiscoveryAgent:
             _ <- fileService.ensureDirectory(reportDir)
                    .mapError(fe => DiscoveryError.ReportWriteFailed(reportDir, fe.message))
             _ <- validateInventorySchema(inventoryPath, json)
-            _ <- writeFileAtomic(inventoryPath, json)
-            _ <- writeFileAtomic(markdownPath, renderMarkdown(inventory))
+            _ <- fileService
+                   .writeFileAtomic(inventoryPath, json)
+                   .mapError(fe => DiscoveryError.ReportWriteFailed(inventoryPath, fe.message))
+            _ <- fileService
+                   .writeFileAtomic(markdownPath, renderMarkdown(inventory))
+                   .mapError(fe => DiscoveryError.ReportWriteFailed(markdownPath, fe.message))
           yield ()
 
         private def validateInventorySchema(path: Path, json: String): ZIO[Any, DiscoveryError, Unit] =
@@ -220,36 +224,6 @@ object CobolDiscoveryAgent:
             .fromEither(json.fromJson[FileInventory])
             .mapError(error => DiscoveryError.ReportSchemaMismatch(path, error))
             .unit
-
-        private def writeFileAtomic(path: Path, content: String): ZIO[Any, DiscoveryError, Unit] =
-          for
-            suffix  <- ZIO
-                         .attemptBlocking(java.util.UUID.randomUUID().toString)
-                         .mapError(e => DiscoveryError.ReportWriteFailed(path, e.getMessage))
-            tempPath = path.resolveSibling(s"${path.getFileName}.tmp.$suffix")
-            _       <- fileService
-                         .writeFile(tempPath, content)
-                         .mapError(fe => DiscoveryError.ReportWriteFailed(tempPath, fe.message))
-            _       <- ZIO
-                         .attemptBlocking {
-                           import java.nio.file.StandardCopyOption
-                           try
-                             Files.move(
-                               tempPath,
-                               path,
-                               StandardCopyOption.REPLACE_EXISTING,
-                               StandardCopyOption.ATOMIC_MOVE,
-                             )
-                           catch
-                             case _: java.nio.file.AtomicMoveNotSupportedException =>
-                               Files.move(
-                                 tempPath,
-                                 path,
-                                 StandardCopyOption.REPLACE_EXISTING,
-                               )
-                         }
-                         .mapError(e => DiscoveryError.ReportWriteFailed(path, e.getMessage))
-          yield ()
 
         private def renderMarkdown(inventory: FileInventory): String =
           val summary = inventory.summary

@@ -63,7 +63,19 @@ object GraphControllerSpec extends ZIOSpecDefault:
       yield assertTrue(
         response.status == Status.Ok,
         body.contains("graph TD"),
-        body.contains("PROG1 --> COPY1"),
+        body.contains("PROG1 -->|includes| COPY1"),
+      )
+    },
+    test("GET /api/graph/:runId/export?format=d3 returns d3 json") {
+      for
+        repo      <- TestRepository.make
+        controller = GraphControllerLive(repo)
+        response  <- controller.routes.runZIO(Request.get(URL.decode("/api/graph/7/export?format=d3").toOption.get))
+        body      <- response.body.asString
+      yield assertTrue(
+        response.status == Status.Ok,
+        body.contains("\"nodes\""),
+        body.contains("\"links\""),
       )
     },
   )

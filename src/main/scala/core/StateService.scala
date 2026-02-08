@@ -2,7 +2,6 @@ package core
 
 import java.nio.file.Path
 import java.security.MessageDigest
-import java.util.concurrent.TimeUnit
 
 import zio.*
 import zio.json.*
@@ -67,23 +66,14 @@ object StateService:
 
         override def saveState(state: MigrationState): ZIO[Any, StateError, Unit] =
           for
-            _       <- ZIO.logInfo(s"Saving state for run: ${state.runId}")
-            _       <- fileService.ensureDirectory(runDir(state.runId)).mapError(fe => mapFileToStateError(state.runId)(fe))
-            json     = state.toJsonPretty
-            ts      <- Clock.currentTime(TimeUnit.MILLISECONDS)
-            tempPath = statePath(state.runId).resolveSibling(s"state.tmp.$ts")
-            _       <- fileService.writeFile(tempPath, json).mapError(fe => mapFileToStateError(state.runId)(fe))
-            _       <- ZIO.attemptBlocking {
-                         val target = statePath(state.runId)
-                         java.nio.file.Files.move(
-                           tempPath,
-                           target,
-                           java.nio.file.StandardCopyOption.REPLACE_EXISTING,
-                           java.nio.file.StandardCopyOption.ATOMIC_MOVE,
-                         )
-                       }.mapError(e => StateError.WriteError(state.runId, e.getMessage))
-            _       <- updateIndex(state.runId, state).mapError(fe => mapFileToStateError(state.runId)(fe))
-            _       <- ZIO.logInfo(s"State saved successfully for run: ${state.runId}")
+            _   <- ZIO.logInfo(s"Saving state for run: ${state.runId}")
+            _   <- fileService.ensureDirectory(runDir(state.runId)).mapError(fe => mapFileToStateError(state.runId)(fe))
+            json = state.toJsonPretty
+            _   <- fileService
+                     .writeFileAtomic(statePath(state.runId), json)
+                     .mapError(fe => mapFileToStateError(state.runId)(fe))
+            _   <- updateIndex(state.runId, state).mapError(fe => mapFileToStateError(state.runId)(fe))
+            _   <- ZIO.logInfo(s"State saved successfully for run: ${state.runId}")
           yield ()
 
         override def loadState(runId: String): ZIO[Any, StateError, Option[MigrationState]] =
@@ -122,7 +112,7 @@ object StateService:
                          )
             snapshot   = CheckpointSnapshot(checkpoint = checkpoint, state = state)
             _         <- fileService
-                           .writeFile(checkpointPath(runId, step), snapshot.toJsonPretty)
+                           .writeFileAtomic(checkpointPath(runId, step), snapshot.toJsonPretty)
                            .mapError(fe => mapFileToStateError(runId)(fe))
             _         <- ZIO.logInfo(s"Checkpoint created for run $runId, step: $step")
           yield ()
@@ -221,7 +211,7 @@ object StateService:
                         )
             updated   = (summary :: existing.filterNot(_.runId == runId)).sortBy(_.startedAt.toEpochMilli).reverse
             json      = updated.toJsonPretty
-            _        <- fileService.writeFile(indexPath, json)
+            _        <- fileService.writeFileAtomic(indexPath, json)
           yield ()
 
         private def mapFileToStateError(runId: String)(fe: FileError): StateError = fe match
