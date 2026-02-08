@@ -193,6 +193,14 @@ object MigrationOrchestrator:
                        )
 
           analysisFiles = inventory.files.filter(_.fileType == models.FileType.Program)
+          _            <- updateRunStatus(
+                            runId = runId,
+                            status = RunStatus.Running,
+                            currentPhase = Some(MigrationStep.Analysis.toString),
+                            errorMessage = None,
+                            completedAt = None,
+                            totalFiles = Some(analysisFiles.length),
+                          )
           analyses     <- AgentTracker.trackBatch(runId, "analysis", analysisFiles, tracker) { (file, _) =>
                             analyzerAgent.analyze(file).mapError(OrchestratorError.AnalysisFailed(file.name, _))
                           }
@@ -201,6 +209,14 @@ object MigrationOrchestrator:
                               s"saveAnalysisResult(runId=$runId,file=${analysis.file.name})",
                               persister.saveAnalysisResult(runId, analysis),
                             )
+                          )
+          _            <- updateRunStatus(
+                            runId = runId,
+                            status = RunStatus.Running,
+                            currentPhase = Some(MigrationStep.Mapping.toString),
+                            errorMessage = None,
+                            completedAt = None,
+                            processedFiles = Some(analyses.length),
                           )
 
           dependencyGraph <- AgentTracker
@@ -274,12 +290,17 @@ object MigrationOrchestrator:
                                    .mapError(OrchestratorError.DocumentationFailed.apply)
                                )
           finalResult    = baseResult.copy(documentation = documentation)
+          successCount   = projects.length
+          failCount      = analysisFiles.length - successCount
           _             <- updateRunStatus(
                              runId = runId,
                              status = RunStatus.Completed,
                              currentPhase = Some(MigrationStep.Documentation.toString),
                              errorMessage = None,
                              completedAt = Some(completedAt),
+                             processedFiles = Some(analysisFiles.length),
+                             successfulConversions = Some(successCount),
+                             failedConversions = Some(failCount),
                            )
         yield finalResult
 
@@ -313,6 +334,10 @@ object MigrationOrchestrator:
         currentPhase: Option[String],
         errorMessage: Option[String],
         completedAt: Option[Instant],
+        totalFiles: Option[Int] = None,
+        processedFiles: Option[Int] = None,
+        successfulConversions: Option[Int] = None,
+        failedConversions: Option[Int] = None,
       ): IO[OrchestratorError, Unit] =
         for
           row <- repository.getRun(runId).mapError(persistenceAsOrchestrator("getRun", runId.toString))
@@ -326,6 +351,10 @@ object MigrationOrchestrator:
                        currentPhase = currentPhase,
                        errorMessage = errorMessage.orElse(run.errorMessage),
                        completedAt = completedAt.orElse(run.completedAt),
+                       totalFiles = totalFiles.getOrElse(run.totalFiles),
+                       processedFiles = processedFiles.getOrElse(run.processedFiles),
+                       successfulConversions = successfulConversions.getOrElse(run.successfulConversions),
+                       failedConversions = failedConversions.getOrElse(run.failedConversions),
                      )
                    )
                    .mapError(persistenceAsOrchestrator("updateRun", runId.toString))
