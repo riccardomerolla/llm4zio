@@ -13,27 +13,30 @@ import models.*
 /** MigrationOrchestrator - Main workflow orchestrator using ZIO effects.
   */
 trait MigrationOrchestrator:
-  def runFullMigration(sourcePath: Path, outputPath: Path): ZIO[Any, Throwable, MigrationResult]
+  def runFullMigration(sourcePath: Path, outputPath: Path): ZIO[Any, OrchestratorError, MigrationResult]
   def runFullMigrationWithProgress(
     sourcePath: Path,
     outputPath: Path,
     onProgress: ProgressUpdate => UIO[Unit],
-  ): ZIO[Any, Throwable, MigrationResult]
-  def runStep(step: MigrationStep): ZIO[Any, Throwable, StepResult]
+  ): ZIO[Any, OrchestratorError, MigrationResult]
+  def runStep(step: MigrationStep): ZIO[Any, OrchestratorError, StepResult]
 
 object MigrationOrchestrator:
 
-  def runFullMigration(sourcePath: Path, outputPath: Path): ZIO[MigrationOrchestrator, Throwable, MigrationResult] =
+  def runFullMigration(
+    sourcePath: Path,
+    outputPath: Path,
+  ): ZIO[MigrationOrchestrator, OrchestratorError, MigrationResult] =
     ZIO.serviceWithZIO[MigrationOrchestrator](_.runFullMigration(sourcePath, outputPath))
 
   def runFullMigrationWithProgress(
     sourcePath: Path,
     outputPath: Path,
     onProgress: ProgressUpdate => UIO[Unit],
-  ): ZIO[MigrationOrchestrator, Throwable, MigrationResult] =
+  ): ZIO[MigrationOrchestrator, OrchestratorError, MigrationResult] =
     ZIO.serviceWithZIO[MigrationOrchestrator](_.runFullMigrationWithProgress(sourcePath, outputPath, onProgress))
 
-  def runStep(step: MigrationStep): ZIO[MigrationOrchestrator, Throwable, StepResult] =
+  def runStep(step: MigrationStep): ZIO[MigrationOrchestrator, OrchestratorError, StepResult] =
     ZIO.serviceWithZIO[MigrationOrchestrator](_.runStep(step))
 
   val live: ZLayer[
@@ -62,17 +65,20 @@ object MigrationOrchestrator:
     ) =>
       new MigrationOrchestrator {
 
-        override def runFullMigration(sourcePath: Path, outputPath: Path): ZIO[Any, Throwable, MigrationResult] =
+        override def runFullMigration(
+          sourcePath: Path,
+          outputPath: Path,
+        ): ZIO[Any, OrchestratorError, MigrationResult] =
           runPipeline(sourcePath, outputPath, None, _ => ZIO.unit)
 
         override def runFullMigrationWithProgress(
           sourcePath: Path,
           outputPath: Path,
           onProgress: ProgressUpdate => UIO[Unit],
-        ): ZIO[Any, Throwable, MigrationResult] =
+        ): ZIO[Any, OrchestratorError, MigrationResult] =
           runPipeline(sourcePath, outputPath, None, onProgress)
 
-        override def runStep(step: MigrationStep): ZIO[Any, Throwable, StepResult] =
+        override def runStep(step: MigrationStep): ZIO[Any, OrchestratorError, StepResult] =
           runPipeline(config.sourceDir, config.outputDir, Some(step), _ => ZIO.unit)
             .map { result =>
               val success =
@@ -89,7 +95,7 @@ object MigrationOrchestrator:
           outputPath: Path,
           forcedStart: Option[MigrationStep],
           onProgress: ProgressUpdate => UIO[Unit],
-        ): ZIO[Any, Throwable, MigrationResult] =
+        ): ZIO[Any, OrchestratorError, MigrationResult] =
           for
             now         <- Clock.instant
             generatedId <- Clock.currentTime(TimeUnit.MILLISECONDS).map(ts => s"run-$ts")
@@ -118,7 +124,7 @@ object MigrationOrchestrator:
                            )
             errorsRef   <- Ref.make(List.empty[MigrationError])
             _           <- Logger.info(s"Starting migration run: $runId (from $startStep)")
-            _           <- stateRef.get.flatMap(stateService.saveState).mapError(e => new Exception(e.message))
+            _           <- stateRef.get.flatMap(stateService.saveState).mapError(OrchestratorError.StateFailed.apply)
 
             // 1) Discovery
             discovered <- runPhase(
@@ -130,7 +136,9 @@ object MigrationOrchestrator:
                             stateRef = stateRef,
                             errorsRef = errorsRef,
                           ) {
-                            discoveryAgent.discover(sourcePath).mapError(e => new Exception(e.message))
+                            discoveryAgent
+                              .discover(sourcePath)
+                              .mapError(OrchestratorError.DiscoveryFailed.apply)
                           }
 
             inventory = discovered
@@ -168,7 +176,7 @@ object MigrationOrchestrator:
                           ZIO.foreach(inventory.files.filter(_.fileType == FileType.Program)) { file =>
                             analyzerAgent
                               .analyze(file)
-                              .mapError(e => new Exception(e.message))
+                              .mapError(OrchestratorError.AnalysisFailed(file.name, _))
                           }
                         }
 
@@ -188,7 +196,7 @@ object MigrationOrchestrator:
                         stateRef = stateRef,
                         errorsRef = errorsRef,
                       ) {
-                        mapperAgent.mapDependencies(analyses).mapError(e => new Exception(e.message))
+                        mapperAgent.mapDependencies(analyses).mapError(OrchestratorError.MappingFailed.apply)
                       }
 
             dependencyGraph = mapped.orElse(resumeState.flatMap(_.dependencyGraph)).getOrElse(DependencyGraph.empty)
@@ -211,7 +219,7 @@ object MigrationOrchestrator:
                                transformerAgent.transform(
                                  analysis,
                                  dependencyGraph,
-                               ).mapError(e => new Exception(e.message))
+                               ).mapError(OrchestratorError.TransformationFailed(analysis.file.name, _))
                              }
                            }
 
@@ -241,9 +249,9 @@ object MigrationOrchestrator:
                                  }
                                  .unit
                              reports <- ZIO.foreach(projects.zip(analyses)) { (project, analysis) =>
-                                          validationAgent.validate(project, analysis).mapError(e =>
-                                            new Exception(e.message)
-                                          )
+                                          validationAgent
+                                            .validate(project, analysis)
+                                            .mapError(OrchestratorError.ValidationFailed(analysis.file.name, _))
                                         }
                            yield reports
                          }
@@ -281,7 +289,7 @@ object MigrationOrchestrator:
                                 errors = List.empty,
                                 status = MigrationStatus.CompletedWithWarnings,
                               )
-                            ).mapError(e => new Exception(e.message))
+                            ).mapError(OrchestratorError.DocumentationFailed.apply)
                           }
 
             documentation = documented.getOrElse(MigrationDocumentation.empty)
@@ -317,8 +325,8 @@ object MigrationOrchestrator:
           stateRef: Ref[MigrationState],
           errorsRef: Ref[List[MigrationError]],
         )(
-          effect: ZIO[Any, Throwable, A]
-        ): ZIO[Any, Throwable, Option[A]] =
+          effect: ZIO[Any, OrchestratorError, A]
+        ): ZIO[Any, OrchestratorError, Option[A]] =
           if !shouldRun then ZIO.succeed(None)
           else
             for
@@ -327,7 +335,7 @@ object MigrationOrchestrator:
               before <- stateRef.get
               now    <- Clock.instant
               _      <- stateRef.set(before.copy(currentStep = step, lastCheckpoint = now))
-              _      <- stateRef.get.flatMap(stateService.saveState).mapError(e => new Exception(e.message))
+              _      <- stateRef.get.flatMap(stateService.saveState).mapError(OrchestratorError.StateFailed.apply)
               out    <- effect.either
               result <- out match
                           case Right(value) =>
@@ -340,27 +348,31 @@ object MigrationOrchestrator:
                                                   lastCheckpoint = checkpointAt,
                                                 )
                                               )
-                              _            <- stateRef.get.flatMap(stateService.saveState).mapError(e => new Exception(e.message))
-                              _            <- stateService.createCheckpoint(current.runId, step).mapError(e =>
-                                                new Exception(e.message)
-                                              )
+                              _            <- stateRef.get
+                                                .flatMap(stateService.saveState)
+                                                .mapError(OrchestratorError.StateFailed.apply)
+                              _            <- stateService
+                                                .createCheckpoint(current.runId, step)
+                                                .mapError(OrchestratorError.StateFailed.apply)
                               _            <- onProgress(ProgressUpdate(step, s"Completed phase: $name", progress + 10))
                               _            <- Logger.info(s"Completed phase: $name")
                             yield Some(value)
                           case Left(err)    =>
                             for
                               ts <- Clock.instant
-                              _  <- errorsRef.update(_ :+ MigrationError(step, err.getMessage, ts))
+                              _  <- errorsRef.update(_ :+ MigrationError(step, err.message, ts))
                               es <- errorsRef.get
                               st <- stateRef.get
                               _  <- stateRef.set(st.copy(errors = es, lastCheckpoint = ts))
-                              _  <- stateRef.get.flatMap(stateService.saveState).mapError(e => new Exception(e.message))
+                              _  <- stateRef.get
+                                      .flatMap(stateService.saveState)
+                                      .mapError(OrchestratorError.StateFailed.apply)
                               _  <- onProgress(ProgressUpdate(
                                       step,
-                                      s"Phase failed: $name (${err.getMessage})",
+                                      s"Phase failed: $name (${err.message})",
                                       progress + 5,
                                     ))
-                              _  <- Logger.error(s"Phase failed: $name", err)
+                              _  <- Logger.error(s"Phase failed: $name (${err.message})")
                             yield None
             yield result
 
@@ -428,12 +440,16 @@ object MigrationOrchestrator:
           else if projects.nonEmpty then MigrationStatus.PartialFailure
           else MigrationStatus.Failed
 
-        private def loadResumeState(resumeRunId: Option[String]): ZIO[Any, Throwable, Option[MigrationState]] =
+        private def loadResumeState(
+          resumeRunId: Option[String]
+        ): ZIO[Any, OrchestratorError, Option[MigrationState]] =
           resumeRunId match
             case Some(runId) =>
               for
-                _     <- stateService.validateCheckpointIntegrity(runId).mapError(e => new Exception(e.message))
-                state <- stateService.loadState(runId).mapError(e => new Exception(e.message))
+                _     <- stateService
+                           .validateCheckpointIntegrity(runId)
+                           .mapError(OrchestratorError.StateFailed.apply)
+                state <- stateService.loadState(runId).mapError(OrchestratorError.StateFailed.apply)
               yield state
             case None        => ZIO.none
 
@@ -456,7 +472,7 @@ object MigrationOrchestrator:
           dependencyGraph: Option[DependencyGraph] = None,
           projects: Option[List[SpringBootProject]] = None,
           validationReports: Option[List[ValidationReport]] = None,
-        ): ZIO[Any, Throwable, Unit] =
+        ): ZIO[Any, OrchestratorError, Unit] =
           for
             current <- stateRef.get
             updated  = current.copy(
@@ -467,18 +483,18 @@ object MigrationOrchestrator:
                          validationReports = validationReports.getOrElse(current.validationReports),
                        )
             _       <- stateRef.set(updated)
-            _       <- stateService.saveState(updated).mapError(e => new Exception(e.message))
+            _       <- stateService.saveState(updated).mapError(OrchestratorError.StateFailed.apply)
           yield ()
 
         private def finalizeState(
           stateRef: Ref[MigrationState],
           errors: List[MigrationError],
           completedAt: java.time.Instant,
-        ): ZIO[Any, Throwable, Unit] =
+        ): ZIO[Any, OrchestratorError, Unit] =
           for
             st <- stateRef.get
             _  <- stateRef.set(st.copy(errors = errors, lastCheckpoint = completedAt))
-            _  <- stateRef.get.flatMap(stateService.saveState).mapError(e => new Exception(e.message))
+            _  <- stateRef.get.flatMap(stateService.saveState).mapError(OrchestratorError.StateFailed.apply)
           yield ()
       }
   }

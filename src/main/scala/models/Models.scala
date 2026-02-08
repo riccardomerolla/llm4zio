@@ -164,6 +164,37 @@ enum DocError(val message: String) derives JsonCodec:
     extends DocError(s"Failed to write documentation at $path: $cause")
   case RenderFailed(cause: String)   extends DocError(s"Failed to render documentation: $cause")
 
+/** Migration orchestrator errors with typed error handling */
+enum OrchestratorError derives JsonCodec:
+  case DiscoveryFailed(error: DiscoveryError)
+  case AnalysisFailed(file: String, error: AnalysisError)
+  case MappingFailed(error: MappingError)
+  case TransformationFailed(file: String, error: TransformError)
+  case ValidationFailed(file: String, error: ValidationError)
+  case DocumentationFailed(error: DocError)
+  case StateFailed(error: StateError)
+  case Interrupted(message: String)
+
+object OrchestratorError:
+  extension (error: OrchestratorError)
+    def message: String = error match
+      case OrchestratorError.DiscoveryFailed(inner)            =>
+        s"Discovery failed: ${inner.message}"
+      case OrchestratorError.AnalysisFailed(file, inner)       =>
+        s"Analysis failed for $file: ${inner.message}"
+      case OrchestratorError.MappingFailed(inner)              =>
+        s"Mapping failed: ${inner.message}"
+      case OrchestratorError.TransformationFailed(file, inner) =>
+        s"Transformation failed for $file: ${inner.message}"
+      case OrchestratorError.ValidationFailed(file, inner)     =>
+        s"Validation failed for $file: ${inner.message}"
+      case OrchestratorError.DocumentationFailed(inner)        =>
+        s"Documentation failed: ${inner.message}"
+      case OrchestratorError.StateFailed(inner)                =>
+        s"State operation failed: ${inner.message}"
+      case OrchestratorError.Interrupted(msg)                  =>
+        s"Migration interrupted: $msg"
+
 // ============================================================================
 // Gemini Service
 // ============================================================================

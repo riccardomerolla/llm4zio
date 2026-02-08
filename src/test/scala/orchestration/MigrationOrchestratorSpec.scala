@@ -121,6 +121,98 @@ object MigrationOrchestratorSpec extends ZIOSpecDefault:
           result.status == MigrationStatus.Failed,
           result.errors.nonEmpty,
           result.errors.exists(_.step == MigrationStep.Analysis),
+          result.errors.exists(error =>
+            error.step == MigrationStep.Analysis && error.message.contains("Analysis failed for")
+          ),
+        )
+      }
+    },
+    test("discovery phase failure keeps phase-specific orchestrator error information") {
+      ZIO.scoped {
+        for
+          stateDir        <- ZIO.attemptBlocking(Files.createTempDirectory("orchestrator-state-discovery-fail"))
+          sourceDir       <- ZIO.attemptBlocking(Files.createTempDirectory("orchestrator-src-discovery-fail"))
+          outputDir       <- ZIO.attemptBlocking(Files.createTempDirectory("orchestrator-out-discovery-fail"))
+          failingDiscovery = ZLayer.succeed(new CobolDiscoveryAgent {
+                               override def discover(sourcePath: Path): ZIO[Any, DiscoveryError, FileInventory] =
+                                 ZIO.fail(DiscoveryError.ScanFailed(sourcePath, "discovery boom"))
+                             })
+          result          <- MigrationOrchestrator
+                               .runFullMigration(sourceDir, outputDir)
+                               .provide(
+                                 FileService.live,
+                                 StateService.live(stateDir),
+                                 failingDiscovery,
+                                 mockAnalyzerAgent,
+                                 mockMapperAgent,
+                                 mockTransformerAgent,
+                                 mockValidationAgent,
+                                 mockDocumentationAgent,
+                                 mockAI,
+                                 ZLayer.succeed(MigrationConfig(
+                                   sourceDir = sourceDir,
+                                   outputDir = outputDir,
+                                   stateDir = stateDir,
+                                 )),
+                                 MigrationOrchestrator.live,
+                               )
+        yield assertTrue(
+          result.status == MigrationStatus.Failed,
+          result.errors.exists(error =>
+            error.step == MigrationStep.Discovery && error.message.contains("Discovery failed")
+          ),
+        )
+      }
+    },
+    test("state errors propagate as typed orchestrator failures") {
+      ZIO.scoped {
+        for
+          sourceDir        <- ZIO.attemptBlocking(Files.createTempDirectory("orchestrator-src-state-fail"))
+          outputDir        <- ZIO.attemptBlocking(Files.createTempDirectory("orchestrator-out-state-fail"))
+          failingStateLayer = ZLayer.succeed(new StateService {
+                                override def saveState(state: MigrationState): ZIO[Any, StateError, Unit]           =
+                                  ZIO.fail(StateError.WriteError(state.runId, "cannot persist"))
+                                override def loadState(runId: String): ZIO[Any, StateError, Option[MigrationState]] =
+                                  ZIO.succeed(None)
+                                override def createCheckpoint(runId: String, step: MigrationStep)
+                                  : ZIO[Any, StateError, Unit] =
+                                  ZIO.unit
+                                override def getLastCheckpoint(runId: String)
+                                  : ZIO[Any, StateError, Option[MigrationStep]] =
+                                  ZIO.none
+                                override def listCheckpoints(runId: String): ZIO[Any, StateError, List[Checkpoint]] =
+                                  ZIO.succeed(List.empty)
+                                override def validateCheckpointIntegrity(runId: String): ZIO[Any, StateError, Unit] =
+                                  ZIO.unit
+                                override def listRuns(): ZIO[Any, StateError, List[MigrationRunSummary]]            =
+                                  ZIO.succeed(List.empty)
+                              })
+          exit             <- MigrationOrchestrator
+                                .runFullMigration(sourceDir, outputDir)
+                                .provide(
+                                  failingStateLayer,
+                                  mockDiscoveryAgent,
+                                  mockAnalyzerAgent,
+                                  mockMapperAgent,
+                                  mockTransformerAgent,
+                                  mockValidationAgent,
+                                  mockDocumentationAgent,
+                                  mockAI,
+                                  ZLayer.succeed(MigrationConfig(
+                                    sourceDir = sourceDir,
+                                    outputDir = outputDir,
+                                  )),
+                                  MigrationOrchestrator.live,
+                                )
+                                .exit
+        yield assertTrue(
+          exit match
+            case Exit.Failure(cause) =>
+              cause.failureOption.exists {
+                case OrchestratorError.StateFailed(StateError.WriteError(_, "cannot persist")) => true
+                case _                                                                         => false
+              }
+            case Exit.Success(_)     => false
         )
       }
     },

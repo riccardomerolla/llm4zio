@@ -4,12 +4,11 @@ import zio.*
 import zio.Console.*
 import zio.cli.*
 import zio.cli.HelpDoc.Span.text
-import zio.http.Client
 import zio.logging.backend.SLF4J
 
 import _root_.config.ConfigLoader
-import agents.*
 import core.*
+import di.ApplicationDI
 import models.*
 import orchestration.*
 
@@ -323,7 +322,7 @@ object Main extends ZIOAppDefault:
       validatedConfig <- ConfigLoader.validate(migrationConfig).mapError(msg => new IllegalArgumentException(msg))
 
       // Run migration with validated config
-      _ <- runMigrationWithConfig(validatedConfig)
+      _ <- runMigrationWithConfig(validatedConfig).catchAll(handleOrchestratorError)
     yield ()
 
   /** Execute a specific migration step */
@@ -393,7 +392,7 @@ object Main extends ZIOAppDefault:
 
       validatedConfig <- ConfigLoader.validate(migrationConfig).mapError(msg => new IllegalArgumentException(msg))
 
-      _ <- runStepWithConfig(step, validatedConfig)
+      _ <- runStepWithConfig(step, validatedConfig).catchAll(handleOrchestratorError)
     yield ()
 
   private def parseExcludePatterns(value: Option[String]): Option[List[String]] =
@@ -480,64 +479,14 @@ object Main extends ZIOAppDefault:
     yield ()
 
   /** Run migration with validated configuration */
-  private def runMigrationWithConfig(config: MigrationConfig): ZIO[Any, Throwable, Unit] =
-    migrationProgram(config).provide(
-      // Layer 3: Core Services & Config
-      FileService.live,
-      ZLayer.succeed(config),
-      ZLayer.succeed(config.resolvedProviderConfig),
-      ZLayer.succeed(RateLimiterConfig.fromMigrationConfig(config)),
-
-      // Layer 2: Service implementations (depend on Layer 3 & Config)
-      RateLimiter.live,
-      ResponseParser.live,
-      Client.default,
-      HttpAIClient.live,
-      AIService.fromConfig.mapError(e => new RuntimeException(e.message)),
-      StateService.live(config.stateDir),
-
-      // Layer 1: Agent implementations (depend on Layer 2 & 3)
-      CobolDiscoveryAgent.live,
-      CobolAnalyzerAgent.live,
-      DependencyMapperAgent.live,
-      JavaTransformerAgent.live,
-      ValidationAgent.live,
-      DocumentationAgent.live,
-
-      // Layer 0: Orchestrator (depends on all agents)
-      MigrationOrchestrator.live,
-    )
+  private def runMigrationWithConfig(config: MigrationConfig): ZIO[Any, OrchestratorError, Unit] =
+    migrationProgram(config).provide(ApplicationDI.orchestratorLayer(config))
 
   /** Run specific step with validated configuration */
-  private def runStepWithConfig(step: MigrationStep, config: MigrationConfig): ZIO[Any, Throwable, Unit] =
-    stepProgram(step, config).provide(
-      // Layer 3: Core Services & Config
-      FileService.live,
-      ZLayer.succeed(config),
-      ZLayer.succeed(config.resolvedProviderConfig),
-      ZLayer.succeed(RateLimiterConfig.fromMigrationConfig(config)),
+  private def runStepWithConfig(step: MigrationStep, config: MigrationConfig): ZIO[Any, OrchestratorError, Unit] =
+    stepProgram(step, config).provide(ApplicationDI.orchestratorLayer(config))
 
-      // Layer 2: Service implementations
-      RateLimiter.live,
-      ResponseParser.live,
-      Client.default,
-      HttpAIClient.live,
-      AIService.fromConfig.mapError(e => new RuntimeException(e.message)),
-      StateService.live(config.stateDir),
-
-      // Layer 1: Agent implementations
-      CobolDiscoveryAgent.live,
-      CobolAnalyzerAgent.live,
-      DependencyMapperAgent.live,
-      JavaTransformerAgent.live,
-      ValidationAgent.live,
-      DocumentationAgent.live,
-
-      // Layer 0: Orchestrator
-      MigrationOrchestrator.live,
-    )
-
-  private def migrationProgram(config: MigrationConfig): ZIO[MigrationOrchestrator, Throwable, Unit] =
+  private def migrationProgram(config: MigrationConfig): ZIO[MigrationOrchestrator, OrchestratorError, Unit] =
     for
       _ <- printBanner
       _ <- Logger.info("Starting Legacy Modernization Agent System...")
@@ -586,7 +535,8 @@ object Main extends ZIOAppDefault:
       _ <- printMigrationSummary(result)
     yield ()
 
-  private def stepProgram(step: MigrationStep, config: MigrationConfig): ZIO[MigrationOrchestrator, Throwable, Unit] =
+  private def stepProgram(step: MigrationStep, config: MigrationConfig)
+    : ZIO[MigrationOrchestrator, OrchestratorError, Unit] =
     for
       _ <- printBanner
       _ <- Logger.info(s"Running step: ${step}")
@@ -597,8 +547,33 @@ object Main extends ZIOAppDefault:
         if r.success then Logger.info(s"Step ${step} completed")
         else
           Logger.error(s"Step ${step} failed: ${r.error.getOrElse("unknown error")}") *>
-            ZIO.fail(new RuntimeException(r.error.getOrElse(s"Step $step failed")))
+            ZIO.fail(OrchestratorError.Interrupted(r.error.getOrElse(s"Step $step failed")))
     yield ()
+
+  private def handleOrchestratorError(error: OrchestratorError): ZIO[Any, Throwable, Unit] =
+    for
+      _ <- printLineError(renderOrchestratorError(error))
+      _ <- ZIO.fail(new RuntimeException(error.message))
+    yield ()
+
+  private def renderOrchestratorError(error: OrchestratorError): String =
+    error match
+      case OrchestratorError.DiscoveryFailed(inner)            =>
+        s"Discovery failed: ${inner.message}"
+      case OrchestratorError.AnalysisFailed(file, inner)       =>
+        s"Analysis failed for file '$file': ${inner.message}"
+      case OrchestratorError.MappingFailed(inner)              =>
+        s"Dependency mapping failed: ${inner.message}"
+      case OrchestratorError.TransformationFailed(file, inner) =>
+        s"Transformation failed for file '$file': ${inner.message}"
+      case OrchestratorError.ValidationFailed(file, inner)     =>
+        s"Validation failed for file '$file': ${inner.message}"
+      case OrchestratorError.DocumentationFailed(inner)        =>
+        s"Documentation failed: ${inner.message}"
+      case OrchestratorError.StateFailed(inner)                =>
+        s"State management failed: ${inner.message}"
+      case OrchestratorError.Interrupted(message)              =>
+        s"Migration interrupted: $message"
 
   private def printBanner: ZIO[Any, Nothing, Unit] =
     printLine(banner).orDie
