@@ -3,9 +3,11 @@ package web.views
 import java.time.Instant
 
 import zio.*
+import zio.json.*
 import zio.test.*
 
 import db.*
+import models.*
 import scalatags.Text.all.{ StringFrag, p as pTag }
 
 object HtmlViewsSpec extends ZIOSpecDefault:
@@ -49,7 +51,7 @@ object HtmlViewsSpec extends ZIOSpecDefault:
     runId = 1L,
     path = "/src/cobol/PROG1.cbl",
     name = "PROG1.cbl",
-    fileType = FileType.Program,
+    fileType = db.FileType.Program,
     size = 2048L,
     lineCount = 150L,
     encoding = "UTF-8",
@@ -78,6 +80,112 @@ object HtmlViewsSpec extends ZIOSpecDefault:
     sourceNode = "PROG1",
     targetNode = "CPYBOOK1",
     edgeType = "INCLUDES",
+  )
+
+  private val sampleTransformProject = SpringBootProject(
+    projectName = "customer-display",
+    sourceProgram = "CUSTOMER-DISPLAY.cbl",
+    generatedAt = now,
+    entities = List(
+      JavaEntity(
+        className = "CustomerRecord",
+        packageName = "com.example.customerdisplay.entity",
+        fields = List(
+          JavaField(
+            name = "customerId",
+            javaType = "String",
+            cobolSource = "CUST-ID",
+            annotations = List("@Id"),
+          )
+        ),
+        annotations = List("@Entity"),
+        sourceCode = "public class CustomerRecord {}",
+      )
+    ),
+    services = List(
+      JavaService(
+        name = "CustomerService",
+        methods = List(
+          JavaMethod(
+            name = "displayCustomer",
+            returnType = "String",
+            parameters = List(JavaParameter("customerId", "String")),
+            body = """return "OK";""",
+          )
+        ),
+      )
+    ),
+    controllers = List(
+      JavaController(
+        name = "CustomerController",
+        endpoints = List(RestEndpoint("/customers/{id}", HttpMethod.GET, "displayCustomer")),
+        basePath = "/api",
+      )
+    ),
+    repositories = List(
+      JavaRepository(
+        name = "CustomerRepository",
+        packageName = "com.example.customerdisplay.repository",
+        entityName = "CustomerRecord",
+        idType = "String",
+        annotations = List("@Repository"),
+        sourceCode = "interface CustomerRepository {}",
+      )
+    ),
+    configuration = ProjectConfiguration(
+      groupId = "com.example",
+      artifactId = "customer-display",
+      dependencies = List("spring-boot-starter-web", "spring-boot-starter-data-jpa"),
+    ),
+    buildFile = BuildFile("maven", "<project/>"),
+  )
+
+  private val sampleTransformAnalysis = sampleAnalysis.copy(
+    id = 101L,
+    analysisJson = sampleTransformProject.toJsonPretty,
+  )
+
+  private val sampleValidationReport = ValidationReport(
+    projectName = "customer-display",
+    validatedAt = now,
+    compileResult = CompileResult(success = false, exitCode = 1, output = "Compilation failed"),
+    coverageMetrics = CoverageMetrics(
+      variablesCovered = 92.5,
+      proceduresCovered = 88.0,
+      fileSectionCovered = 75.0,
+      unmappedItems = List("WS-AMOUNT"),
+    ),
+    issues = List(
+      ValidationIssue(
+        severity = Severity.ERROR,
+        category = IssueCategory.Compile,
+        message = "Compilation error in service",
+        file = Some("CustomerService.java"),
+        line = Some(42),
+        suggestion = Some("Fix method signature"),
+      )
+    ),
+    semanticValidation = SemanticValidation(
+      businessLogicPreserved = false,
+      confidence = 66.7,
+      summary = "Business rules diverge in one branch",
+      issues = List(
+        ValidationIssue(
+          severity = Severity.WARNING,
+          category = IssueCategory.Semantic,
+          message = "Conditional branch differs from COBOL",
+          file = None,
+          line = None,
+          suggestion = Some("Review branch mapping"),
+        )
+      ),
+    ),
+    overallStatus = ValidationStatus.Failed,
+  )
+
+  private val sampleValidationAnalysis = sampleAnalysis.copy(
+    id = 102L,
+    analysisJson = sampleValidationReport.toJsonPretty,
   )
 
   private val samplePhase = PhaseProgressRow(
@@ -209,6 +317,35 @@ object HtmlViewsSpec extends ZIOSpecDefault:
           html.contains("not-valid-json"),
         )
       },
+      test("detail renders transform report JSON path") {
+        val html = HtmlViews.analysisDetail(sampleFile, sampleTransformAnalysis)
+        assertTrue(
+          html.contains("Transform Report"),
+          html.contains("Entities (1)"),
+          html.contains("Services (1)"),
+          html.contains("Controllers (1)"),
+          html.contains("Repositories (1)"),
+          html.contains("Build Configuration"),
+          html.contains("customer-display"),
+          html.contains("CustomerRepository"),
+          html.contains("displayCustomer"),
+          html.contains("GET"),
+        )
+      },
+      test("detail renders validation report JSON path") {
+        val html = HtmlViews.analysisDetail(sampleFile, sampleValidationAnalysis)
+        assertTrue(
+          html.contains("Validation Report"),
+          html.contains("Compilation Result"),
+          html.contains("Exit code: 1"),
+          html.contains("Coverage Metrics"),
+          html.contains("Unmapped Items"),
+          html.contains("Issues (1)"),
+          html.contains("Semantic Validation"),
+          html.contains("Business rules diverge in one branch"),
+          html.contains("Suggestion: Review branch mapping"),
+        )
+      },
       test("search fragment is bare HTML") {
         val html = HtmlViews.analysisSearchFragment(List(sampleFile))
         assertTrue(
@@ -221,6 +358,39 @@ object HtmlViewsSpec extends ZIOSpecDefault:
         val html = HtmlViews.analysisSearchFragment(List.empty)
         assertTrue(
           html.contains("No files match")
+        )
+      },
+    ),
+    suite("Settings")(
+      test("settings page renders defaults") {
+        val html = HtmlViews.settingsPage(Map.empty, None)
+        assertTrue(
+          html.contains("Settings"),
+          html.contains("AI Provider"),
+          html.contains("Processing"),
+          html.contains("Discovery"),
+          html.contains("Features"),
+          html.contains("""name="ai.provider""""),
+          html.contains("""value="GeminiCli""""),
+          html.contains("""selected="selected""""),
+          html.contains("""name="features.enableCheckpointing""""),
+        )
+      },
+      test("settings page renders flash and custom values") {
+        val html = HtmlViews.settingsPage(
+          Map(
+            "ai.provider"                  -> "OpenAi",
+            "ai.model"                     -> "gpt-4.1",
+            "features.enableCheckpointing" -> "false",
+            "features.verbose"             -> "true",
+          ),
+          flash = Some("Settings saved"),
+        )
+        assertTrue(
+          html.contains("Settings saved"),
+          html.contains("""value="OpenAi""""),
+          html.contains("""value="gpt-4.1""""),
+          html.contains("""name="features.verbose""""),
         )
       },
     ),
@@ -269,8 +439,8 @@ object HtmlViewsSpec extends ZIOSpecDefault:
         assertTrue(bar.contains("width: 0%"))
       },
       test("file type badges render correctly") {
-        val program  = Components.fileTypeBadge(FileType.Program).render
-        val copybook = Components.fileTypeBadge(FileType.Copybook).render
+        val program  = Components.fileTypeBadge(db.FileType.Program).render
+        val copybook = Components.fileTypeBadge(db.FileType.Copybook).render
         assertTrue(
           program.contains("text-indigo-400") && program.contains("Program"),
           copybook.contains("text-purple-400") && copybook.contains("Copybook"),

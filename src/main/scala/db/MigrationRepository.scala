@@ -31,6 +31,11 @@ trait MigrationRepository:
   def getProgress(runId: Long, phase: String): IO[PersistenceError, Option[PhaseProgressRow]]
   def updateProgress(p: PhaseProgressRow): IO[PersistenceError, Unit]
 
+  // Settings
+  def getAllSettings: IO[PersistenceError, List[SettingRow]]
+  def getSetting(key: String): IO[PersistenceError, Option[SettingRow]]
+  def upsertSetting(key: String, value: String): IO[PersistenceError, Unit]
+
 object MigrationRepository:
   def createRun(run: MigrationRunRow): ZIO[MigrationRepository, PersistenceError, Long] =
     ZIO.serviceWithZIO[MigrationRepository](_.createRun(run))
@@ -73,6 +78,15 @@ object MigrationRepository:
 
   def updateProgress(progress: PhaseProgressRow): ZIO[MigrationRepository, PersistenceError, Unit] =
     ZIO.serviceWithZIO[MigrationRepository](_.updateProgress(progress))
+
+  def getAllSettings: ZIO[MigrationRepository, PersistenceError, List[SettingRow]] =
+    ZIO.serviceWithZIO[MigrationRepository](_.getAllSettings)
+
+  def getSetting(key: String): ZIO[MigrationRepository, PersistenceError, Option[SettingRow]] =
+    ZIO.serviceWithZIO[MigrationRepository](_.getSetting(key))
+
+  def upsertSetting(key: String, value: String): ZIO[MigrationRepository, PersistenceError, Unit] =
+    ZIO.serviceWithZIO[MigrationRepository](_.upsertSetting(key, value))
 
   val live: ZLayer[DataSource, Nothing, MigrationRepository] =
     ZLayer.fromZIO {
@@ -354,6 +368,47 @@ final case class MigrationRepositoryLive(
         stmt.setLong(8, p.id)
       }
     }
+
+  override def getAllSettings: IO[PersistenceError, List[SettingRow]] =
+    val sql = "SELECT key, value, updated_at FROM application_settings ORDER BY key ASC"
+    withConnection { conn =>
+      queryMany(conn, sql)(_ => ())(readSettingRow)
+    }
+
+  override def getSetting(key: String): IO[PersistenceError, Option[SettingRow]] =
+    val sql = "SELECT key, value, updated_at FROM application_settings WHERE key = ?"
+    withConnection { conn =>
+      queryOne(conn, sql)(_.setString(1, key))(readSettingRow)
+    }
+
+  override def upsertSetting(key: String, value: String): IO[PersistenceError, Unit] =
+    val sql =
+      """INSERT OR REPLACE INTO application_settings (key, value, updated_at)
+        |VALUES (?, ?, ?)
+        |""".stripMargin
+    withConnection { conn =>
+      withPreparedStatement(conn, sql) { stmt =>
+        for
+          now <- Clock.instant
+          _   <- executeBlocking(sql) {
+                   stmt.setString(1, key)
+                   stmt.setString(2, value)
+                   stmt.setString(3, now.toString)
+                   stmt.executeUpdate()
+                   ()
+                 }
+        yield ()
+      }
+    }
+
+  private def readSettingRow(rs: ResultSet): IO[PersistenceError, SettingRow] =
+    ZIO.succeed(
+      SettingRow(
+        key = rs.getString("key"),
+        value = rs.getString("value"),
+        updatedAt = Instant.parse(rs.getString("updated_at")),
+      )
+    )
 
   private def withConnection[A](use: Connection => IO[PersistenceError, A]): IO[PersistenceError, A] =
     ensureSchemaInitialized *> ZIO.acquireReleaseWith(acquireConnection)(closeConnection)(use)

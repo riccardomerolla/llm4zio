@@ -78,3 +78,9 @@ case class PhaseProgressRow(
   errorCount: Int,
   updatedAt: Instant,
 ) derives JsonCodec
+
+case class SettingRow(
+  key: String,
+  value: String,
+  updatedAt: Instant,
+) derives JsonCodec

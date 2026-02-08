@@ -62,7 +62,7 @@ object Layout:
               ),
             ),
             li(cls := "mt-auto")(
-              navItem("#", "Settings", Icons.cog, currentPath == "/settings")
+              navItem("/settings", "Settings", Icons.cog, currentPath == "/settings")
             ),
           )
         ),

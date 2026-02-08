@@ -30,3 +30,6 @@ object HtmlViews:
 
   def graphPage(runId: Long, deps: List[DependencyRow]): String =
     GraphView.page(runId, deps)
+
+  def settingsPage(settings: Map[String, String], flash: Option[String] = None): String =
+    SettingsView.page(settings, flash)

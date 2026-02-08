@@ -16,6 +16,8 @@ object ApplicationDI:
   type CommonServices =
     FileService &
       MigrationConfig &
+      ResponseParser &
+      HttpAIClient &
       AIService &
       StateService &
       MigrationRepository &
@@ -78,5 +80,6 @@ object ApplicationDI:
       AnalysisController.live,
       GraphController.live,
       DashboardController.live,
+      SettingsController.live,
       WebServer.live,
     )

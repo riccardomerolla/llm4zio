@@ -64,3 +64,9 @@ CREATE INDEX IF NOT EXISTS idx_cobol_files_run_id ON cobol_files(run_id);
 CREATE INDEX IF NOT EXISTS idx_cobol_analyses_run_id ON cobol_analyses(run_id);
 CREATE INDEX IF NOT EXISTS idx_dependencies_run_id ON dependencies(run_id);
 CREATE INDEX IF NOT EXISTS idx_phase_progress_run_id ON phase_progress(run_id);
+
+CREATE TABLE IF NOT EXISTS application_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);

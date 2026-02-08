@@ -68,6 +68,9 @@ object MigrationOrchestrator:
       JavaTransformerAgent &
       ValidationAgent &
       DocumentationAgent &
+      FileService &
+      ResponseParser &
+      HttpAIClient &
       StateService &
       AIService &
       MigrationConfig &
@@ -84,6 +87,9 @@ object MigrationOrchestrator:
       transformerAgent   <- ZIO.service[JavaTransformerAgent]
       validationAgent    <- ZIO.service[ValidationAgent]
       documentationAgent <- ZIO.service[DocumentationAgent]
+      fileService        <- ZIO.service[FileService]
+      responseParser     <- ZIO.service[ResponseParser]
+      httpAIClient       <- ZIO.service[HttpAIClient]
       stateService       <- ZIO.service[StateService]
       _                  <- ZIO.service[AIService]
       config             <- ZIO.service[MigrationConfig]
@@ -179,130 +185,176 @@ object MigrationOrchestrator:
         runId: Long,
         runConfig: MigrationConfig,
       ): ZIO[Any, OrchestratorError, MigrationResult] =
-        for
-          _ <- updateRunStatus(runId, RunStatus.Running, Some(MigrationStep.Discovery.toString), None, None)
+        withRunAgents(runId, runConfig) { (runAnalyzerAgent, runTransformerAgent, runValidationAgent) =>
+          for
+            _ <- updateRunStatus(runId, RunStatus.Running, Some(MigrationStep.Discovery.toString), None, None)
 
-          inventory <-
-            AgentTracker
-              .trackPhase(runId, "discovery", 1, tracker)(
-                discoveryAgent.discover(runConfig.sourceDir).mapError(OrchestratorError.DiscoveryFailed.apply)
-              )
-          _         <- persistIgnoringFailure(
-                         s"saveDiscoveryResult(runId=$runId)",
-                         persister.saveDiscoveryResult(runId, inventory),
-                       )
+            inventory <-
+              AgentTracker
+                .trackPhase(runId, "discovery", 1, tracker)(
+                  discoveryAgent.discover(runConfig.sourceDir).mapError(OrchestratorError.DiscoveryFailed.apply)
+                )
+            _         <- persistIgnoringFailure(
+                           s"saveDiscoveryResult(runId=$runId)",
+                           persister.saveDiscoveryResult(runId, inventory),
+                         )
 
-          analysisFiles = inventory.files.filter(_.fileType == models.FileType.Program)
-          _            <- updateRunStatus(
-                            runId = runId,
-                            status = RunStatus.Running,
-                            currentPhase = Some(MigrationStep.Analysis.toString),
-                            errorMessage = None,
-                            completedAt = None,
-                            totalFiles = Some(analysisFiles.length),
-                          )
-          analyses     <- AgentTracker.trackBatch(runId, "analysis", analysisFiles, tracker) { (file, _) =>
-                            analyzerAgent.analyze(file).mapError(OrchestratorError.AnalysisFailed(file.name, _))
-                          }
-          _            <- ZIO.foreachDiscard(analyses)(analysis =>
-                            persistIgnoringFailure(
-                              s"saveAnalysisResult(runId=$runId,file=${analysis.file.name})",
-                              persister.saveAnalysisResult(runId, analysis),
+            analysisFiles = inventory.files.filter(_.fileType == models.FileType.Program)
+            _            <- updateRunStatus(
+                              runId = runId,
+                              status = RunStatus.Running,
+                              currentPhase = Some(MigrationStep.Analysis.toString),
+                              errorMessage = None,
+                              completedAt = None,
+                              totalFiles = Some(analysisFiles.length),
                             )
-                          )
-          _            <- updateRunStatus(
-                            runId = runId,
-                            status = RunStatus.Running,
-                            currentPhase = Some(MigrationStep.Mapping.toString),
-                            errorMessage = None,
-                            completedAt = None,
-                            processedFiles = Some(analyses.length),
-                          )
+            analyses     <- AgentTracker.trackBatch(runId, "analysis", analysisFiles, tracker) { (file, _) =>
+                              runAnalyzerAgent.analyze(file).mapError(OrchestratorError.AnalysisFailed(file.name, _))
+                            }
+            _            <- ZIO.foreachDiscard(analyses)(analysis =>
+                              persistIgnoringFailure(
+                                s"saveAnalysisResult(runId=$runId,file=${analysis.file.name})",
+                                persister.saveAnalysisResult(runId, analysis),
+                              )
+                            )
+            _            <- updateRunStatus(
+                              runId = runId,
+                              status = RunStatus.Running,
+                              currentPhase = Some(MigrationStep.Mapping.toString),
+                              errorMessage = None,
+                              completedAt = None,
+                              processedFiles = Some(analyses.length),
+                            )
 
-          dependencyGraph <- AgentTracker
-                               .trackPhase(runId, "mapping", 1, tracker)(
-                                 mapperAgent.mapDependencies(analyses).mapError(OrchestratorError.MappingFailed.apply)
-                               )
-          _               <- persistIgnoringFailure(
-                               s"saveDependencyResult(runId=$runId)",
-                               persister.saveDependencyResult(runId, dependencyGraph),
-                             )
-
-          projects <- if runConfig.dryRun then ZIO.succeed(List.empty[SpringBootProject])
-                      else
-                        AgentTracker.trackBatch(runId, "transformation", analyses, tracker) { (analysis, _) =>
-                          transformerAgent
-                            .transform(analysis, dependencyGraph)
-                            .mapError(OrchestratorError.TransformationFailed(analysis.file.name, _))
-                        }
-          _        <- ZIO.foreachDiscard(projects)(project =>
-                        persistIgnoringFailure(
-                          s"saveTransformResult(runId=$runId,project=${project.projectName})",
-                          persister.saveTransformResult(runId, project),
-                        )
-                      )
-
-          validationReports <-
-            if runConfig.dryRun then ZIO.succeed(List.empty[ValidationReport])
-            else
-              AgentTracker.trackBatch(runId, "validation", projects.zip(analyses), tracker) {
-                case ((project, analysis), _) =>
-                  validationAgent
-                    .validate(project, analysis)
-                    .mapError(OrchestratorError.ValidationFailed(analysis.file.name, _))
-              }
-          validationReport   = aggregateValidation(validationReports)
-          _                 <- if runConfig.dryRun then ZIO.unit
-                               else
-                                 persistIgnoringFailure(
-                                   s"saveValidationResult(runId=$runId)",
-                                   persister.saveValidationResult(runId, validationReport),
+            dependencyGraph <- AgentTracker
+                                 .trackPhase(runId, "mapping", 1, tracker)(
+                                   mapperAgent.mapDependencies(analyses).mapError(OrchestratorError.MappingFailed.apply)
                                  )
-
-          completedAt   <- Clock.instant
-          status         = determineStatus(
-                             errors = List.empty,
-                             projects = projects,
-                             dryRun = runConfig.dryRun,
-                             validationReport = validationReport,
-                           )
-          baseResult     = MigrationResult(
-                             runId = runId.toString,
-                             startedAt = completedAt,
-                             completedAt = completedAt,
-                             config = runConfig,
-                             inventory = inventory,
-                             analyses = analyses,
-                             dependencyGraph = dependencyGraph,
-                             projects = projects,
-                             validationReport = validationReport,
-                             validationReports = validationReports,
-                             documentation = MigrationDocumentation.empty,
-                             errors = List.empty,
-                             status = status,
-                           )
-          documentation <- if runConfig.dryRun then ZIO.succeed(MigrationDocumentation.empty)
-                           else
-                             AgentTracker
-                               .trackPhase(runId, "documentation", 1, tracker)(
-                                 documentationAgent
-                                   .generateDocs(baseResult)
-                                   .mapError(OrchestratorError.DocumentationFailed.apply)
+            _               <- persistIgnoringFailure(
+                                 s"saveDependencyResult(runId=$runId)",
+                                 persister.saveDependencyResult(runId, dependencyGraph),
                                )
-          finalResult    = baseResult.copy(documentation = documentation)
-          successCount   = projects.length
-          failCount      = analysisFiles.length - successCount
-          _             <- updateRunStatus(
-                             runId = runId,
-                             status = RunStatus.Completed,
-                             currentPhase = Some(MigrationStep.Documentation.toString),
-                             errorMessage = None,
-                             completedAt = Some(completedAt),
-                             processedFiles = Some(analysisFiles.length),
-                             successfulConversions = Some(successCount),
-                             failedConversions = Some(failCount),
-                           )
-        yield finalResult
+
+            projects <- if runConfig.dryRun then ZIO.succeed(List.empty[SpringBootProject])
+                        else
+                          AgentTracker.trackBatch(runId, "transformation", analyses, tracker) { (analysis, _) =>
+                            runTransformerAgent
+                              .transform(analysis, dependencyGraph)
+                              .mapError(OrchestratorError.TransformationFailed(analysis.file.name, _))
+                          }
+            _        <- ZIO.foreachDiscard(projects)(project =>
+                          persistIgnoringFailure(
+                            s"saveTransformResult(runId=$runId,project=${project.projectName})",
+                            persister.saveTransformResult(runId, project),
+                          )
+                        )
+
+            validationReports <-
+              if runConfig.dryRun then ZIO.succeed(List.empty[ValidationReport])
+              else
+                AgentTracker.trackBatch(runId, "validation", projects.zip(analyses), tracker) {
+                  case ((project, analysis), _) =>
+                    runValidationAgent
+                      .validate(project, analysis)
+                      .mapError(OrchestratorError.ValidationFailed(analysis.file.name, _))
+                }
+            validationReport   = aggregateValidation(validationReports)
+            _                 <- if runConfig.dryRun then ZIO.unit
+                                 else
+                                   persistIgnoringFailure(
+                                     s"saveValidationResult(runId=$runId)",
+                                     persister.saveValidationResult(runId, validationReport),
+                                   )
+
+            completedAt   <- Clock.instant
+            status         = determineStatus(
+                               errors = List.empty,
+                               projects = projects,
+                               dryRun = runConfig.dryRun,
+                               validationReport = validationReport,
+                             )
+            baseResult     = MigrationResult(
+                               runId = runId.toString,
+                               startedAt = completedAt,
+                               completedAt = completedAt,
+                               config = runConfig,
+                               inventory = inventory,
+                               analyses = analyses,
+                               dependencyGraph = dependencyGraph,
+                               projects = projects,
+                               validationReport = validationReport,
+                               validationReports = validationReports,
+                               documentation = MigrationDocumentation.empty,
+                               errors = List.empty,
+                               status = status,
+                             )
+            documentation <- if runConfig.dryRun then ZIO.succeed(MigrationDocumentation.empty)
+                             else
+                               AgentTracker
+                                 .trackPhase(runId, "documentation", 1, tracker)(
+                                   documentationAgent
+                                     .generateDocs(baseResult)
+                                     .mapError(OrchestratorError.DocumentationFailed.apply)
+                                 )
+            finalResult    = baseResult.copy(documentation = documentation)
+            successCount   = projects.length
+            failCount      = analysisFiles.length - successCount
+            _             <- updateRunStatus(
+                               runId = runId,
+                               status = RunStatus.Completed,
+                               currentPhase = Some(MigrationStep.Documentation.toString),
+                               errorMessage = None,
+                               completedAt = Some(completedAt),
+                               processedFiles = Some(analysisFiles.length),
+                               successfulConversions = Some(successCount),
+                               failedConversions = Some(failCount),
+                             )
+          yield finalResult
+        }
+
+      private def withRunAgents[A](
+        runId: Long,
+        runConfig: MigrationConfig,
+      )(
+        effect: (CobolAnalyzerAgent, JavaTransformerAgent, ValidationAgent) => ZIO[Any, OrchestratorError, A]
+      ): ZIO[Any, OrchestratorError, A] =
+        val startupProviderConfig = config.resolvedProviderConfig
+        val runProviderConfig     = runConfig.resolvedProviderConfig
+        if runProviderConfig == startupProviderConfig then
+          effect(analyzerAgent, transformerAgent, validationAgent)
+        else
+          ZIO.scoped {
+            for
+              _             <-
+                Logger.info(
+                  s"Run $runId overrides AI configuration: provider=${runProviderConfig.provider}, model=${runProviderConfig.model}"
+                )
+              env           <- runAgentLayer(runConfig).build.mapError(aiAsOrchestrator(runId))
+              runAnalyzer    = env.get[CobolAnalyzerAgent]
+              runTransformer = env.get[JavaTransformerAgent]
+              runValidation  = env.get[ValidationAgent]
+              result        <- effect(runAnalyzer, runTransformer, runValidation)
+            yield result
+          }
+
+      private def runAgentLayer(
+        runConfig: MigrationConfig
+      ): ZLayer[Any, AIError, CobolAnalyzerAgent & JavaTransformerAgent & ValidationAgent] =
+        val runProviderConfig = runConfig.resolvedProviderConfig
+        val rateLimiterConfig = RateLimiterConfig.fromAIProviderConfig(runProviderConfig)
+        ZLayer.make[CobolAnalyzerAgent & JavaTransformerAgent & ValidationAgent](
+          ZLayer.succeed(runConfig),
+          ZLayer.succeed(runProviderConfig),
+          ZLayer.succeed(rateLimiterConfig),
+          ZLayer.succeed(fileService),
+          ZLayer.succeed(responseParser),
+          ZLayer.succeed(httpAIClient),
+          RateLimiter.live,
+          AIService.fromConfig,
+          CobolAnalyzerAgent.live,
+          JavaTransformerAgent.live,
+          ValidationAgent.live,
+        )
 
       private def handleRunExit(
         runId: Long,
@@ -365,6 +417,11 @@ object MigrationOrchestrator:
 
       private def persistenceAsOrchestrator(action: String, runId: String)(error: PersistenceError): OrchestratorError =
         OrchestratorError.StateFailed(StateError.WriteError(runId, s"$action failed: $error"))
+
+      private def aiAsOrchestrator(runId: Long)(error: AIError): OrchestratorError =
+        OrchestratorError.StateFailed(
+          StateError.InvalidState(runId.toString, s"AI service setup failed: ${error.message}")
+        )
 
       private def runPipeline(
         sourcePath: Path,

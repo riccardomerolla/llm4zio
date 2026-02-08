@@ -80,6 +80,8 @@ object MigrationOrchestratorWebSpec extends ZIOSpecDefault:
       validationLayer,
       documentationLayer,
       aiLayer,
+      ResponseParser.live,
+      stubHttpAIClient,
       ZLayer.succeed(cfg),
       ZLayer.succeed(DatabaseConfig(s"jdbc:sqlite:file:$dbName?mode=memory&cache=shared")),
       Database.live.mapError(err => new RuntimeException(err.toString)).orDie,
@@ -227,4 +229,15 @@ object MigrationOrchestratorWebSpec extends ZIOSpecDefault:
       override def execute(prompt: String): ZIO[Any, AIError, AIResponse]                             = ZIO.succeed(AIResponse("{}"))
       override def executeWithContext(prompt: String, context: String): ZIO[Any, AIError, AIResponse] = execute(prompt)
       override def isAvailable: ZIO[Any, Nothing, Boolean]                                            = ZIO.succeed(true)
+    })
+
+  private val stubHttpAIClient: ULayer[HttpAIClient] =
+    ZLayer.succeed(new HttpAIClient {
+      override def postJson(
+        url: String,
+        body: String,
+        headers: Map[String, String],
+        timeout: Duration,
+      ): ZIO[Any, AIError, String] =
+        ZIO.fail(AIError.ProviderUnavailable(url, "unused in MigrationOrchestratorWebSpec"))
     })

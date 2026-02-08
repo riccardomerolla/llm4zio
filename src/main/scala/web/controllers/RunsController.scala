@@ -66,11 +66,10 @@ final case class RunsControllerLive(
           sourceDir   <- required(form, "sourceDir")
           outputDir   <- required(form, "outputDir")
           dryRun       = form.get("dryRun").exists(_.equalsIgnoreCase("on"))
-          migrationCfg = MigrationConfig(
-                           sourceDir = Paths.get(sourceDir),
-                           outputDir = Paths.get(outputDir),
-                           dryRun = dryRun,
-                         )
+          settings    <- repository.getAllSettings
+                           .map(_.map(s => s.key -> s.value).toMap)
+                           .catchAll(_ => ZIO.succeed(Map.empty[String, String]))
+          migrationCfg = buildConfigFromDefaults(settings, sourceDir, outputDir, dryRun)
           _           <- orchestrator.startMigration(migrationCfg)
         yield Response(
           status = Status.SeeOther,
@@ -125,6 +124,58 @@ final case class RunsControllerLive(
     ZIO
       .fromOption(form.get(key).map(_.trim).filter(_.nonEmpty))
       .orElseFail(OrchestratorError.Interrupted(s"Missing required form field: $key"))
+
+  private def buildConfigFromDefaults(
+    s: Map[String, String],
+    sourceDir: String,
+    outputDir: String,
+    dryRun: Boolean,
+  ): MigrationConfig =
+    val defaults   = AIProviderConfig()
+    val provider   = s.get("ai.provider").flatMap(parseProvider).getOrElse(defaults.provider)
+    val aiProvider = AIProviderConfig(
+      provider = provider,
+      model = s.getOrElse("ai.model", defaults.model),
+      baseUrl = s.get("ai.baseUrl").filter(_.nonEmpty).orElse(AIProvider.defaultBaseUrl(provider)),
+      apiKey = s.get("ai.apiKey").filter(_.nonEmpty),
+      timeout = s.get("ai.timeout").flatMap(_.toLongOption).map(zio.Duration.fromSeconds).getOrElse(defaults.timeout),
+      maxRetries = s.get("ai.maxRetries").flatMap(_.toIntOption).getOrElse(defaults.maxRetries),
+      requestsPerMinute =
+        s.get("ai.requestsPerMinute").flatMap(_.toIntOption).getOrElse(defaults.requestsPerMinute),
+      burstSize = s.get("ai.burstSize").flatMap(_.toIntOption).getOrElse(defaults.burstSize),
+      acquireTimeout =
+        s.get(
+          "ai.acquireTimeout"
+        ).flatMap(_.toLongOption).map(zio.Duration.fromSeconds).getOrElse(defaults.acquireTimeout),
+      temperature = s.get("ai.temperature").flatMap(_.toDoubleOption),
+      maxTokens = s.get("ai.maxTokens").flatMap(_.toIntOption),
+    )
+
+    val excludePatterns = s
+      .get("discovery.excludePatterns")
+      .map(_.split("\n").map(_.trim).filter(_.nonEmpty).toList)
+      .getOrElse(MigrationConfig(sourceDir = Paths.get(""), outputDir = Paths.get("")).discoveryExcludePatterns)
+
+    MigrationConfig(
+      sourceDir = Paths.get(sourceDir),
+      outputDir = Paths.get(outputDir),
+      aiProvider = Some(aiProvider),
+      discoveryMaxDepth = s.get("discovery.maxDepth").flatMap(_.toIntOption).getOrElse(25),
+      discoveryExcludePatterns = excludePatterns,
+      parallelism = s.get("processing.parallelism").flatMap(_.toIntOption).getOrElse(4),
+      batchSize = s.get("processing.batchSize").flatMap(_.toIntOption).getOrElse(10),
+      enableCheckpointing = s.get("features.enableCheckpointing").map(_ == "true").getOrElse(true),
+      verbose = s.get("features.verbose").map(_ == "true").getOrElse(false),
+      dryRun = dryRun,
+    )
+
+  private def parseProvider(value: String): Option[AIProvider] =
+    value match
+      case "GeminiCli" => Some(AIProvider.GeminiCli)
+      case "GeminiApi" => Some(AIProvider.GeminiApi)
+      case "OpenAi"    => Some(AIProvider.OpenAi)
+      case "Anthropic" => Some(AIProvider.Anthropic)
+      case _           => None
 
   private def urlDecode(value: String): String =
     URLDecoder.decode(value, StandardCharsets.UTF_8)

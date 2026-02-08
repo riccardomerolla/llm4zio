@@ -189,6 +189,9 @@ object ResultPersisterSpec extends ZIOSpecDefault:
       ZIO.dieMessage("unused in ResultPersisterSpec")
     override def updateProgress(p: PhaseProgressRow): IO[PersistenceError, Unit]                         =
       ZIO.dieMessage("unused in ResultPersisterSpec")
+    override def getAllSettings: IO[PersistenceError, List[SettingRow]]                                  = ZIO.succeed(Nil)
+    override def getSetting(key: String): IO[PersistenceError, Option[SettingRow]]                       = ZIO.none
+    override def upsertSetting(key: String, value: String): IO[PersistenceError, Unit]                   = ZIO.unit
 
   private val sampleFile = CobolFile(
     path = Paths.get("/tmp/PROG1.cbl"),
