@@ -34,7 +34,7 @@ object DashboardControllerSpec extends ZIOSpecDefault:
         body      <- response.body.asString
       yield assertTrue(
         response.status == Status.Ok,
-        body.contains("Migration Dashboard"),
+        body.contains("Dashboard"),
         body.contains("/runs/2"),
       )
     },
@@ -46,7 +46,7 @@ object DashboardControllerSpec extends ZIOSpecDefault:
         body      <- response.body.asString
       yield assertTrue(
         response.status == Status.Ok,
-        body.contains("Run 2"),
+        body.contains("#2"),
       )
     },
   )

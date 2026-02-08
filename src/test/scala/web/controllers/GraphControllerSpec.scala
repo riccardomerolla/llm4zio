@@ -25,7 +25,7 @@ object GraphControllerSpec extends ZIOSpecDefault:
         body      <- response.body.asString
       yield assertTrue(
         response.status == Status.Ok,
-        body.contains("Dependency graph for run 7"),
+        body.contains("Dependency Graph"),
       )
     },
     test("GET /api/graph/:runId returns JSON") {

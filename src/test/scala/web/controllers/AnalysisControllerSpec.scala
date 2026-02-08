@@ -54,7 +54,7 @@ object AnalysisControllerSpec extends ZIOSpecDefault:
         body      <- response.body.asString
       yield assertTrue(
         response.status == Status.Ok,
-        body.contains("Analysis for run 1"),
+        body.contains("Analysis for Run #1"),
         body.contains("PROGRAM1.cbl"),
       )
     },
