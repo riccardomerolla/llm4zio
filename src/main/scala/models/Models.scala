@@ -592,6 +592,15 @@ case class MigrationError(
   timestamp: Instant,
 ) derives JsonCodec
 
+case class ProgressUpdate(
+  runId: Long,
+  phase: String,
+  itemsProcessed: Int,
+  itemsTotal: Int,
+  message: String,
+  timestamp: Instant,
+) derives JsonCodec
+
 /** Configuration for the migration tool with all necessary settings
   *
   * @param sourceDir
