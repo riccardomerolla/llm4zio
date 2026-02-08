@@ -1,39 +1,14 @@
-<?xml version="1.0" encoding="UTF-8"?>
 <configuration>
+  <!-- This line disables the internal Logback status messages -->
+  <statusListener class="ch.qos.logback.core.status.NopStatusListener" />
 
-    <!-- JSON format for production:structured logging with correlation tracking -->
-    <appender name="JSON" class="ch.qos.logback.core.ConsoleAppender">
-        <encoder class="net.logstash.logback.encoder.LoggingEventCompositeJsonEncoder">
-            <providers>
-                <timestamp>
-                    <fieldName>timestamp</fieldName>
-                    <timeZone>UTC</timeZone>
-                </timestamp>
-                <version/>
-                <threadName>
-                    <fieldName>thread</fieldName>
-                </threadName>
-                <message/>
-                <logLevel>
-                    <fieldName>level</fieldName>
-                </logLevel>
-                <loggerName>
-                    <fieldName>logger</fieldName>
-                </loggerName>
-                <mdc>
-                    <includeMdcKeyName>correlationId</includeMdcKeyName>
-                </mdc>
-                <stackTrace/>
-                <pattern>
-                    <pattern>{"microservice": "legacy-modernization-agent"}</pattern>
-                </pattern>
-            </providers>
-        </encoder>
-    </appender>
+  <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder>
+      <pattern>%d{HH:mm:ss.SSS} %-5level %logger{36} - %msg%n</pattern>
+    </encoder>
+  </appender>
 
-    <!-- Use JSON format for all loggers -->
-    <root level="DEBUG">
-        <appender-ref ref="JSON"/>
-    </root>
-
+  <root level="DEBUG">
+    <appender-ref ref="STDOUT" />
+  </root>
 </configuration>

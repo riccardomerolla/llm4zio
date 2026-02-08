@@ -63,6 +63,7 @@ lazy val root = (project in file("."))
       "io.opentelemetry" % "opentelemetry-sdk" % "1.44.1",
       "io.opentelemetry" % "opentelemetry-exporter-otlp" % "1.44.1",
       "io.opentelemetry" % "opentelemetry-exporter-logging-otlp" % "1.44.1",
+      "org.xerial" % "sqlite-jdbc" % "3.47.2.0",
       "dev.zio" %% "zio-test" % "2.1.24" % "test,it",
       "dev.zio" %% "zio-test-sbt" % "2.1.24" % "test,it",
       "dev.zio" %% "zio-test-magnolia" % "2.1.24" % "test,it"
