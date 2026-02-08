@@ -54,6 +54,7 @@ lazy val root = (project in file("."))
       "dev.zio" %% "zio-config-typesafe" % "4.0.6",
       "dev.zio" %% "zio-config-magnolia" % "4.0.6",
       "dev.zio" %% "zio-http" % "3.8.1",
+      "com.lihaoyi" %% "scalatags" % "0.13.1",
       "dev.zio" %% "zio-logging" % "2.4.0",
       "dev.zio" %% "zio-logging-slf4j2" % "2.4.0",
       "ch.qos.logback" % "logback-classic" % "1.5.12",
