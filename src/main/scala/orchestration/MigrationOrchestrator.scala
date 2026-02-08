@@ -17,7 +17,7 @@ trait MigrationOrchestrator:
   def runFullMigrationWithProgress(
     sourcePath: Path,
     outputPath: Path,
-    onProgress: ProgressUpdate => UIO[Unit],
+    onProgress: PipelineProgressUpdate => UIO[Unit],
   ): ZIO[Any, OrchestratorError, MigrationResult]
   def runStep(step: MigrationStep): ZIO[Any, OrchestratorError, StepResult]
 
@@ -32,7 +32,7 @@ object MigrationOrchestrator:
   def runFullMigrationWithProgress(
     sourcePath: Path,
     outputPath: Path,
-    onProgress: ProgressUpdate => UIO[Unit],
+    onProgress: PipelineProgressUpdate => UIO[Unit],
   ): ZIO[MigrationOrchestrator, OrchestratorError, MigrationResult] =
     ZIO.serviceWithZIO[MigrationOrchestrator](_.runFullMigrationWithProgress(sourcePath, outputPath, onProgress))
 
@@ -74,7 +74,7 @@ object MigrationOrchestrator:
         override def runFullMigrationWithProgress(
           sourcePath: Path,
           outputPath: Path,
-          onProgress: ProgressUpdate => UIO[Unit],
+          onProgress: PipelineProgressUpdate => UIO[Unit],
         ): ZIO[Any, OrchestratorError, MigrationResult] =
           runPipeline(sourcePath, outputPath, None, onProgress)
 
@@ -94,7 +94,7 @@ object MigrationOrchestrator:
           sourcePath: Path,
           outputPath: Path,
           forcedStart: Option[MigrationStep],
-          onProgress: ProgressUpdate => UIO[Unit],
+          onProgress: PipelineProgressUpdate => UIO[Unit],
         ): ZIO[Any, OrchestratorError, MigrationResult] =
           for
             now         <- Clock.instant
@@ -312,7 +312,7 @@ object MigrationOrchestrator:
                               status = status,
                             )
             _            <- finalizeState(stateRef, errors, completedAt)
-            _            <- onProgress(ProgressUpdate(MigrationStep.Documentation, s"Migration completed: $status", 100))
+            _            <- onProgress(PipelineProgressUpdate(MigrationStep.Documentation, s"Migration completed: $status", 100))
             _            <- Logger.info(s"Migration pipeline completed: $status")
           yield result
 
@@ -321,7 +321,7 @@ object MigrationOrchestrator:
           step: MigrationStep,
           shouldRun: Boolean,
           progress: Int,
-          onProgress: ProgressUpdate => UIO[Unit],
+          onProgress: PipelineProgressUpdate => UIO[Unit],
           stateRef: Ref[MigrationState],
           errorsRef: Ref[List[MigrationError]],
         )(
@@ -330,7 +330,7 @@ object MigrationOrchestrator:
           if !shouldRun then ZIO.succeed(None)
           else
             for
-              _      <- onProgress(ProgressUpdate(step, s"Starting phase: $name", progress))
+              _      <- onProgress(PipelineProgressUpdate(step, s"Starting phase: $name", progress))
               _      <- Logger.info(s"Starting phase: $name")
               before <- stateRef.get
               now    <- Clock.instant
@@ -354,7 +354,7 @@ object MigrationOrchestrator:
                               _            <- stateService
                                                 .createCheckpoint(current.runId, step)
                                                 .mapError(OrchestratorError.StateFailed.apply)
-                              _            <- onProgress(ProgressUpdate(step, s"Completed phase: $name", progress + 10))
+                              _            <- onProgress(PipelineProgressUpdate(step, s"Completed phase: $name", progress + 10))
                               _            <- Logger.info(s"Completed phase: $name")
                             yield Some(value)
                           case Left(err)    =>
@@ -367,7 +367,7 @@ object MigrationOrchestrator:
                               _  <- stateRef.get
                                       .flatMap(stateService.saveState)
                                       .mapError(OrchestratorError.StateFailed.apply)
-                              _  <- onProgress(ProgressUpdate(
+                              _  <- onProgress(PipelineProgressUpdate(
                                       step,
                                       s"Phase failed: $name (${err.message})",
                                       progress + 5,
@@ -502,7 +502,7 @@ object MigrationOrchestrator:
 enum MigrationStatus derives JsonCodec:
   case Completed, CompletedWithWarnings, PartialFailure, Failed
 
-case class ProgressUpdate(
+case class PipelineProgressUpdate(
   step: MigrationStep,
   message: String,
   percent: Int,
