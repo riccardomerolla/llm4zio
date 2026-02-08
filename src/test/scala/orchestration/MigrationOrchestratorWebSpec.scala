@@ -141,7 +141,12 @@ object MigrationOrchestratorWebSpec extends ZIOSpecDefault:
         dbName     = s"web-orch-list-${UUID.randomUUID()}"
         appLayer   = layer(dbName, cfg, discoveryFastLayer)
         tuple     <- (for
-                       _     <- ZIO.foreachDiscard(1 to 3)(_ => MigrationOrchestrator.startMigration(cfg))
+                       _     <- ZIO.foreachDiscard(1 to 3) { _ =>
+                                  MigrationOrchestrator
+                                    .startMigration(cfg)
+                                    .retry(Schedule.spaced(50.millis) && Schedule.recurs(5)) *>
+                                    ZIO.sleep(50.millis)
+                                }
                        page1 <- MigrationOrchestrator.listRuns(1, 2)
                        page2 <- MigrationOrchestrator.listRuns(2, 2)
                      yield (page1, page2)).provideLayer(appLayer)
