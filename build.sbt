@@ -31,6 +31,8 @@ inThisBuild(List(
     "-language:existentials",
     "-explain",
     "-Wunused:all",
+    "-Xmax-inlines",
+    "128",
   ),
   semanticdbEnabled                := true,
 ))

@@ -323,7 +323,13 @@ object ValidationAgent:
               _          <- logUnmatchedIssueCategories(project.projectName, response)
               validation <- responseParser
                               .parse[SemanticValidation](response)
-                              .mapError(e => ValidationError.SemanticValidationFailed(project.projectName, e.message))
+                              .catchAll { e =>
+                                val reason = e.message
+                                Logger.warn(
+                                  s"Semantic validation fallback for ${project.projectName}: $reason"
+                                ) *>
+                                  ZIO.succeed(semanticFallback(project.projectName, reason))
+                              }
             yield validation
 
           private def logUnmatchedIssueCategories(projectName: String, response: AIResponse): UIO[Unit] =
@@ -364,6 +370,23 @@ object ValidationAgent:
             if !compileResult.success || issues.exists(_.severity == Severity.ERROR) then ValidationStatus.Failed
             else if issues.exists(_.severity == Severity.WARNING) then ValidationStatus.PassedWithWarnings
             else ValidationStatus.Passed
+
+          private def semanticFallback(projectName: String, reason: String): SemanticValidation =
+            SemanticValidation(
+              businessLogicPreserved = false,
+              confidence = 0.0,
+              summary = s"Semantic validation returned an unparsable response: $reason",
+              issues = List(
+                ValidationIssue(
+                  severity = Severity.WARNING,
+                  category = IssueCategory.Semantic,
+                  message = "Semantic validation response could not be parsed as JSON",
+                  file = Some(s"$projectName.cbl"),
+                  line = None,
+                  suggestion = Some("Retry validation or review generated Java code manually"),
+                )
+              ),
+            )
 
           private def compileIssue(compileResult: CompileResult): List[ValidationIssue] =
             if compileResult.success then Nil

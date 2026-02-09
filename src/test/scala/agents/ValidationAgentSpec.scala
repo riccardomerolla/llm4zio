@@ -51,7 +51,7 @@ object ValidationAgentSpec extends ZIOSpecDefault:
         )
       }
     },
-    test("validate fails with typed error on semantic parse mismatch") {
+    test("validate uses fallback semantic report when semantic response is invalid") {
       ZIO.scoped {
         for
           tempDir <- ZIO.attemptBlocking(Files.createTempDirectory("validation-spec-semantic"))
@@ -66,13 +66,11 @@ object ValidationAgentSpec extends ZIOSpecDefault:
                          ZLayer.succeed(MigrationConfig(sourceDir = tempDir, outputDir = tempDir)),
                          ValidationAgent.live,
                        )
-                       .either
         yield assertTrue(
-          result.isLeft,
-          result.left.exists {
-            case ValidationError.SemanticValidationFailed(projectName, _) => projectName == "BADSEM"
-            case _                                                        => false
-          },
+          result.projectName == "BADSEM",
+          !result.semanticValidation.businessLogicPreserved,
+          result.semanticValidation.issues.exists(_.category == IssueCategory.Semantic),
+          result.semanticValidation.summary.contains("unparsable response"),
         )
       }
     },
