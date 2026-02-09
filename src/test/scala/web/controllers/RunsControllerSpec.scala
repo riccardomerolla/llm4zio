@@ -27,12 +27,18 @@ object RunsControllerSpec extends ZIOSpecDefault:
     currentPhase = Some("analysis"),
     errorMessage = None,
   )
+  private val failedRun = sampleRun.copy(
+    id = 43L,
+    status = RunStatus.Failed,
+    currentPhase = Some("Failed"),
+    errorMessage = Some("analysis failed"),
+  )
 
   def spec: Spec[TestEnvironment & Scope, Any] = suite("RunsControllerSpec")(
     test("GET /runs returns runs list") {
       for
         orchestrator <- TestOrchestrator.make(runs = List(sampleRun))
-        repo         <- TestRepository.make
+        repo         <- TestRepository.make()
         controller    = RunsControllerLive(orchestrator, repo)
         response     <- controller.routes.runZIO(Request.get(URL.decode("/runs?page=1&pageSize=20").toOption.get))
         body         <- response.body.asString
@@ -45,7 +51,7 @@ object RunsControllerSpec extends ZIOSpecDefault:
     test("POST /runs starts migration and redirects to dashboard") {
       for
         orchestrator <- TestOrchestrator.make(startedRunId = 77L)
-        repo         <- TestRepository.make
+        repo         <- TestRepository.make()
         controller    = RunsControllerLive(orchestrator, repo)
         request       = Request
                           .post(
@@ -60,10 +66,36 @@ object RunsControllerSpec extends ZIOSpecDefault:
         started.exists(_.dryRun),
       )
     },
+    test("POST /runs/:id/retry resumes from latest failed phase") {
+      val failedProgress = PhaseProgressRow(
+        id = 1L,
+        runId = failedRun.id,
+        phase = "analysis",
+        status = "Failed",
+        itemTotal = 10,
+        itemProcessed = 4,
+        errorCount = 1,
+        updatedAt = Instant.parse("2026-02-08T00:10:00Z"),
+      )
+      for
+        orchestrator <- TestOrchestrator.make(runs = List(failedRun), startedRunId = 88L)
+        repo         <- TestRepository.make(
+                          progress = Map((failedRun.id, "analysis") -> failedProgress)
+                        )
+        controller    = RunsControllerLive(orchestrator, repo)
+        response     <- controller.routes.runZIO(Request.post(s"/runs/${failedRun.id}/retry", Body.empty))
+        started      <- orchestrator.lastStartedConfig
+      yield assertTrue(
+        response.status == Status.SeeOther,
+        response.rawHeader("location").contains("/"),
+        started.flatMap(_.retryFromRunId).contains(failedRun.id),
+        started.flatMap(_.retryFromStep).contains(MigrationStep.Analysis),
+      )
+    },
     test("DELETE /runs/:id cancels migration") {
       for
         orchestrator <- TestOrchestrator.make()
-        repo         <- TestRepository.make
+        repo         <- TestRepository.make()
         controller    = RunsControllerLive(orchestrator, repo)
         response     <- controller.routes.runZIO(Request.delete("/runs/42"))
         cancelled    <- orchestrator.lastCancelledRunId
@@ -78,7 +110,7 @@ object RunsControllerSpec extends ZIOSpecDefault:
                           ProgressUpdate(1L, "analysis", 2, 10, "working-working-working-working-working", now)
                         )
         orchestrator <- TestOrchestrator.make(progress = Map(1L -> event))
-        repo         <- TestRepository.make
+        repo         <- TestRepository.make()
         controller    = RunsControllerLive(orchestrator, repo)
         response     <- controller.routes.runZIO(Request.get("/runs/1/progress"))
         sseFrame      = RunsController.toSseData(event)
@@ -188,5 +220,7 @@ object RunsControllerSpec extends ZIOSpecDefault:
     override def upsertSetting(key: String, value: String): IO[PersistenceError, Unit]          = ZIO.unit
 
   private object TestRepository:
-    def make: UIO[TestRepository] =
-      Ref.make(Map.empty[(Long, String), PhaseProgressRow]).map(TestRepository.apply)
+    def make(
+      progress: Map[(Long, String), PhaseProgressRow] = Map.empty
+    ): UIO[TestRepository] =
+      Ref.make(progress).map(TestRepository.apply)

@@ -780,6 +780,8 @@ case class MigrationConfig(
   // Features
   enableCheckpointing: Boolean = true,
   resumeFromCheckpoint: Option[String] = None,
+  retryFromRunId: Option[Long] = None,
+  retryFromStep: Option[MigrationStep] = None,
   dryRun: Boolean = false,
   verbose: Boolean = false,
 ) derives JsonCodec:

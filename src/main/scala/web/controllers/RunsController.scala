@@ -77,6 +77,52 @@ final case class RunsControllerLive(
         )
       }
     },
+    Method.POST / "runs" / long("id") / "retry"   -> handler { (runId: Long, _: Request) =>
+      ErrorHandlingMiddleware.fromOrchestrator {
+        for
+          run         <- orchestrator
+                           .getRunStatus(runId)
+                           .mapError(err => OrchestratorError.StateFailed(StateError.ReadError(runId.toString, err.toString)))
+                           .someOrFail(OrchestratorError.StateFailed(StateError.StateNotFound(runId.toString)))
+          _           <- ZIO
+                           .fail(
+                             OrchestratorError.Interrupted(
+                               s"Run $runId is not failed (status=${run.status}); only failed runs can be retried"
+                             )
+                           )
+                           .unless(run.status == RunStatus.Failed)
+          phaseRows   <- ZIO
+                           .foreach(knownPhases)(phase => repository.getProgress(runId, phase))
+                           .map(_.flatten)
+                           .mapError(err =>
+                             OrchestratorError.StateFailed(StateError.ReadError(runId.toString, err.toString))
+                           )
+          failedStep  <- ZIO
+                           .fromOption(latestFailedStep(phaseRows, run))
+                           .orElseFail(
+                             OrchestratorError.StateFailed(
+                               StateError.InvalidState(runId.toString, "Unable to determine failed phase for retry")
+                             )
+                           )
+          settings    <- repository.getAllSettings
+                           .map(_.map(s => s.key -> s.value).toMap)
+                           .catchAll(_ => ZIO.succeed(Map.empty[String, String]))
+          migrationCfg = buildConfigFromDefaults(
+                           settings,
+                           run.sourceDir,
+                           run.outputDir,
+                           dryRun = false,
+                         ).copy(
+                           retryFromRunId = Some(runId),
+                           retryFromStep = Some(failedStep),
+                         )
+          _           <- orchestrator.startMigration(migrationCfg)
+        yield Response(
+          status = Status.SeeOther,
+          headers = Headers(Header.Custom("Location", "/")),
+        )
+      }
+    },
     Method.DELETE / "runs" / long("id")           -> handler { (runId: Long, _: Request) =>
       ErrorHandlingMiddleware.fromOrchestrator {
         orchestrator.cancelMigration(runId).as(Response.status(Status.NoContent))
@@ -176,6 +222,28 @@ final case class RunsControllerLive(
       case "OpenAi"    => Some(AIProvider.OpenAi)
       case "Anthropic" => Some(AIProvider.Anthropic)
       case _           => None
+
+  private def latestFailedStep(phases: List[PhaseProgressRow], run: MigrationRunRow): Option[MigrationStep] =
+    val fromProgress = phases
+      .filter(_.status.equalsIgnoreCase("Failed"))
+      .sortBy(_.updatedAt.toEpochMilli)
+      .lastOption
+      .flatMap(phaseToStep)
+
+    fromProgress.orElse(run.currentPhase.flatMap(parseStep))
+
+  private def phaseToStep(phase: PhaseProgressRow): Option[MigrationStep] =
+    parseStep(phase.phase)
+
+  private def parseStep(value: String): Option[MigrationStep] =
+    value.trim.toLowerCase match
+      case "discovery"      => Some(MigrationStep.Discovery)
+      case "analysis"       => Some(MigrationStep.Analysis)
+      case "mapping"        => Some(MigrationStep.Mapping)
+      case "transformation" => Some(MigrationStep.Transformation)
+      case "validation"     => Some(MigrationStep.Validation)
+      case "documentation"  => Some(MigrationStep.Documentation)
+      case _                => None
 
   private def urlDecode(value: String): String =
     URLDecoder.decode(value, StandardCharsets.UTF_8)

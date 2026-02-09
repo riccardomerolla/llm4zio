@@ -104,6 +104,13 @@ object RunsView:
             attr("hx-confirm") := "Are you sure you want to cancel this run?",
             cls                := "rounded-md bg-red-500/10 px-3 py-2 text-sm font-semibold text-red-400 ring-1 ring-inset ring-red-500/20 hover:bg-red-500/20",
           )("Cancel Run")
+        else if run.status == RunStatus.Failed then
+          tag("form")(method := "post", action := s"/runs/${run.id}/retry")(
+            button(
+              `type` := "submit",
+              cls    := "rounded-md bg-amber-500/10 px-3 py-2 text-sm font-semibold text-amber-300 ring-1 ring-inset ring-amber-500/20 hover:bg-amber-500/20",
+            )("Retry Failed Step")
+          )
         else frag(),
       ),
     )

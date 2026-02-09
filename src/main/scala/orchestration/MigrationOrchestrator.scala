@@ -187,17 +187,27 @@ object MigrationOrchestrator:
       ): ZIO[Any, OrchestratorError, MigrationResult] =
         withRunAgents(runId, runConfig) { (runAnalyzerAgent, runTransformerAgent, runValidationAgent) =>
           for
-            _ <- updateRunStatus(runId, RunStatus.Running, Some(MigrationStep.Discovery.toString), None, None)
+            startStep <- resolveStartStep(runConfig)
+            bootstrap <- loadResumeBootstrap(runConfig, startStep)
+            _         <- seedResumedArtifacts(runId, runConfig, startStep, bootstrap)
+            _         <- updateRunStatus(runId, RunStatus.Running, Some(startStep.toString), None, None)
 
             inventory <-
-              AgentTracker
-                .trackPhase(runId, "discovery", 1, tracker)(
-                  discoveryAgent.discover(runConfig.sourceDir).mapError(OrchestratorError.DiscoveryFailed.apply)
-                )
-            _         <- persistIgnoringFailure(
-                           s"saveDiscoveryResult(runId=$runId)",
-                           persister.saveDiscoveryResult(runId, inventory),
-                         )
+              if shouldExecuteFrom(startStep, MigrationStep.Discovery) then
+                AgentTracker
+                  .trackPhase(runId, "discovery", 1, tracker)(
+                    discoveryAgent.discover(runConfig.sourceDir).mapError(OrchestratorError.DiscoveryFailed.apply)
+                  )
+              else ZIO.succeed(bootstrap.inventory)
+            _         <- if shouldExecuteFrom(startStep, MigrationStep.Discovery) then {
+                           persistIgnoringFailure(
+                             s"saveDiscoveryResult(runId=$runId)",
+                             persister.saveDiscoveryResult(runId, inventory),
+                           )
+                         }
+                         else {
+                           ZIO.unit
+                         }
 
             analysisFiles = inventory.files.filter(_.fileType == models.FileType.Program)
             _            <- updateRunStatus(
@@ -208,15 +218,25 @@ object MigrationOrchestrator:
                               completedAt = None,
                               totalFiles = Some(analysisFiles.length),
                             )
-            analyses     <- AgentTracker.trackBatch(runId, "analysis", analysisFiles, tracker) { (file, _) =>
-                              runAnalyzerAgent.analyze(file).mapError(OrchestratorError.AnalysisFailed(file.name, _))
+            analyses     <- if shouldExecuteFrom(startStep, MigrationStep.Analysis) then {
+                              AgentTracker.trackBatch(runId, "analysis", analysisFiles, tracker) { (file, _) =>
+                                runAnalyzerAgent.analyze(file).mapError(OrchestratorError.AnalysisFailed(file.name, _))
+                              }
                             }
-            _            <- ZIO.foreachDiscard(analyses)(analysis =>
-                              persistIgnoringFailure(
-                                s"saveAnalysisResult(runId=$runId,file=${analysis.file.name})",
-                                persister.saveAnalysisResult(runId, analysis),
+                            else {
+                              ZIO.succeed(bootstrap.analyses)
+                            }
+            _            <- if shouldExecuteFrom(startStep, MigrationStep.Analysis) then {
+                              ZIO.foreachDiscard(analyses)(analysis =>
+                                persistIgnoringFailure(
+                                  s"saveAnalysisResult(runId=$runId,file=${analysis.file.name})",
+                                  persister.saveAnalysisResult(runId, analysis),
+                                )
                               )
-                            )
+                            }
+                            else {
+                              ZIO.unit
+                            }
             _            <- updateRunStatus(
                               runId = runId,
                               status = RunStatus.Running,
@@ -226,40 +246,52 @@ object MigrationOrchestrator:
                               processedFiles = Some(analyses.length),
                             )
 
-            dependencyGraph <- AgentTracker
-                                 .trackPhase(runId, "mapping", 1, tracker)(
-                                   mapperAgent.mapDependencies(analyses).mapError(OrchestratorError.MappingFailed.apply)
+            dependencyGraph <-
+              if shouldExecuteFrom(startStep, MigrationStep.Mapping) then
+                AgentTracker
+                  .trackPhase(runId, "mapping", 1, tracker)(
+                    mapperAgent.mapDependencies(analyses).mapError(OrchestratorError.MappingFailed.apply)
+                  )
+              else ZIO.succeed(bootstrap.dependencyGraph)
+            _               <- if shouldExecuteFrom(startStep, MigrationStep.Mapping) then {
+                                 persistIgnoringFailure(
+                                   s"saveDependencyResult(runId=$runId)",
+                                   persister.saveDependencyResult(runId, dependencyGraph),
                                  )
-            _               <- persistIgnoringFailure(
-                                 s"saveDependencyResult(runId=$runId)",
-                                 persister.saveDependencyResult(runId, dependencyGraph),
-                               )
+                               }
+                               else {
+                                 ZIO.unit
+                               }
 
             projects <- if runConfig.dryRun then ZIO.succeed(List.empty[SpringBootProject])
-                        else
+                        else if shouldExecuteFrom(startStep, MigrationStep.Transformation) then
                           AgentTracker.trackBatch(runId, "transformation", analyses, tracker) { (analysis, _) =>
                             runTransformerAgent
                               .transform(analysis, dependencyGraph)
                               .mapError(OrchestratorError.TransformationFailed(analysis.file.name, _))
                           }
-            _        <- ZIO.foreachDiscard(projects)(project =>
-                          persistIgnoringFailure(
-                            s"saveTransformResult(runId=$runId,project=${project.projectName})",
-                            persister.saveTransformResult(runId, project),
+                        else ZIO.succeed(bootstrap.projects)
+            _        <- if runConfig.dryRun || !shouldExecuteFrom(startStep, MigrationStep.Transformation) then ZIO.unit
+                        else
+                          ZIO.foreachDiscard(projects)(project =>
+                            persistIgnoringFailure(
+                              s"saveTransformResult(runId=$runId,project=${project.projectName})",
+                              persister.saveTransformResult(runId, project),
+                            )
                           )
-                        )
 
             validationReports <-
               if runConfig.dryRun then ZIO.succeed(List.empty[ValidationReport])
-              else
+              else if shouldExecuteFrom(startStep, MigrationStep.Validation) then
                 AgentTracker.trackBatch(runId, "validation", projects.zip(analyses), tracker) {
                   case ((project, analysis), _) =>
                     runValidationAgent
                       .validate(project, analysis)
                       .mapError(OrchestratorError.ValidationFailed(analysis.file.name, _))
                 }
+              else ZIO.succeed(bootstrap.validationReports)
             validationReport   = aggregateValidation(validationReports)
-            _                 <- if runConfig.dryRun then ZIO.unit
+            _                 <- if runConfig.dryRun || !shouldExecuteFrom(startStep, MigrationStep.Validation) then ZIO.unit
                                  else
                                    persistIgnoringFailure(
                                      s"saveValidationResult(runId=$runId)",
@@ -288,14 +320,17 @@ object MigrationOrchestrator:
                                errors = List.empty,
                                status = status,
                              )
-            documentation <- if runConfig.dryRun then ZIO.succeed(MigrationDocumentation.empty)
-                             else
+            documentation <- if runConfig.dryRun || !shouldExecuteFrom(startStep, MigrationStep.Documentation) then {
+                               ZIO.succeed(MigrationDocumentation.empty)
+                             }
+                             else {
                                AgentTracker
                                  .trackPhase(runId, "documentation", 1, tracker)(
                                    documentationAgent
                                      .generateDocs(baseResult)
                                      .mapError(OrchestratorError.DocumentationFailed.apply)
                                  )
+                             }
             finalResult    = baseResult.copy(documentation = documentation)
             successCount   = projects.length
             failCount      = analysisFiles.length - successCount
@@ -311,6 +346,297 @@ object MigrationOrchestrator:
                              )
           yield finalResult
         }
+
+      final private case class ResumeBootstrap(
+        inventory: FileInventory,
+        analyses: List[CobolAnalysis],
+        dependencyGraph: DependencyGraph,
+        projects: List[SpringBootProject],
+        validationReports: List[ValidationReport],
+      )
+
+      private def resolveStartStep(runConfig: MigrationConfig): IO[OrchestratorError, MigrationStep] =
+        ZIO.succeed(runConfig.retryFromStep.getOrElse(MigrationStep.Discovery))
+
+      private def loadResumeBootstrap(
+        runConfig: MigrationConfig,
+        startStep: MigrationStep,
+      ): IO[OrchestratorError, ResumeBootstrap] =
+        runConfig.retryFromRunId match
+          case None           =>
+            ZIO.succeed(
+              ResumeBootstrap(
+                inventory = emptyInventory(runConfig.sourceDir),
+                analyses = List.empty,
+                dependencyGraph = DependencyGraph.empty,
+                projects = List.empty,
+                validationReports = List.empty,
+              )
+            )
+          case Some(previous) =>
+            for
+              inventory <- if shouldExecuteFrom(startStep, MigrationStep.Discovery) then {
+                             ZIO.succeed(emptyInventory(runConfig.sourceDir))
+                           }
+                           else {
+                             loadInventoryFromRun(previous, runConfig.sourceDir)
+                           }
+              analyses  <- if shouldExecuteFrom(startStep, MigrationStep.Analysis) then ZIO.succeed(List.empty)
+                           else loadAnalysesFromRun(previous)
+              graph     <- if shouldExecuteFrom(startStep, MigrationStep.Mapping) then ZIO.succeed(DependencyGraph.empty)
+                           else
+                             mapperAgent
+                               .mapDependencies(analyses)
+                               .mapError(OrchestratorError.MappingFailed.apply)
+              projects  <- if runConfig.dryRun || shouldExecuteFrom(startStep, MigrationStep.Transformation) then
+                             ZIO.succeed(List.empty)
+                           else loadProjectsFromRun(previous)
+              reports   <- if runConfig.dryRun || shouldExecuteFrom(startStep, MigrationStep.Validation) then
+                             ZIO.succeed(List.empty)
+                           else loadValidationReportsFromRun(previous)
+            yield ResumeBootstrap(
+              inventory = inventory,
+              analyses = analyses,
+              dependencyGraph = graph,
+              projects = projects,
+              validationReports = reports,
+            )
+
+      private def seedResumedArtifacts(
+        runId: Long,
+        runConfig: MigrationConfig,
+        startStep: MigrationStep,
+        bootstrap: ResumeBootstrap,
+      ): UIO[Unit] =
+        runConfig.retryFromRunId match
+          case None                => ZIO.unit
+          case Some(previousRunId) =>
+            Logger.info(
+              s"Resuming run $runId from ${startStep.toString} using artifacts from failed run $previousRunId"
+            ) *>
+              (if shouldExecuteFrom(startStep, MigrationStep.Discovery) then ZIO.unit
+               else
+                 persistIgnoringFailure(
+                   s"seedDiscoveryResult(runId=$runId)",
+                   persister.saveDiscoveryResult(runId, bootstrap.inventory),
+                 )) *>
+              (if shouldExecuteFrom(startStep, MigrationStep.Analysis) then ZIO.unit
+               else
+                 ZIO.foreachDiscard(bootstrap.analyses)(analysis =>
+                   persistIgnoringFailure(
+                     s"seedAnalysisResult(runId=$runId,file=${analysis.file.name})",
+                     persister.saveAnalysisResult(runId, analysis),
+                   )
+                 )) *>
+              (if shouldExecuteFrom(startStep, MigrationStep.Mapping) then ZIO.unit
+               else
+                 persistIgnoringFailure(
+                   s"seedDependencyResult(runId=$runId)",
+                   persister.saveDependencyResult(runId, bootstrap.dependencyGraph),
+                 )) *>
+              (if runConfig.dryRun || shouldExecuteFrom(startStep, MigrationStep.Transformation) then ZIO.unit
+               else
+                 ZIO.foreachDiscard(bootstrap.projects)(project =>
+                   persistIgnoringFailure(
+                     s"seedTransformResult(runId=$runId,project=${project.projectName})",
+                     persister.saveTransformResult(runId, project),
+                   )
+                 )) *>
+              (if runConfig.dryRun || shouldExecuteFrom(startStep, MigrationStep.Validation) then ZIO.unit
+               else
+                 persistIgnoringFailure(
+                   s"seedValidationResult(runId=$runId)",
+                   persister.saveValidationResult(runId, aggregateValidation(bootstrap.validationReports)),
+                 ))
+
+      private def shouldExecuteFrom(startStep: MigrationStep, phase: MigrationStep): Boolean =
+        resumeStepOrder(phase) >= resumeStepOrder(startStep)
+
+      private def resumeStepOrder(step: MigrationStep): Int = step match
+        case MigrationStep.Discovery      => 0
+        case MigrationStep.Analysis       => 1
+        case MigrationStep.Mapping        => 2
+        case MigrationStep.Transformation => 3
+        case MigrationStep.Validation     => 4
+        case MigrationStep.Documentation  => 5
+
+      private def emptyInventory(sourceDir: Path): FileInventory =
+        FileInventory(
+          discoveredAt = Instant.EPOCH,
+          sourceDirectory = sourceDir,
+          files = List.empty,
+          summary = InventorySummary(
+            totalFiles = 0,
+            programFiles = 0,
+            copybooks = 0,
+            jclFiles = 0,
+            totalLines = 0L,
+            totalBytes = 0L,
+          ),
+        )
+
+      private def loadInventoryFromRun(previousRunId: Long, sourceDir: Path): IO[OrchestratorError, FileInventory] =
+        for
+          rows  <- repository
+                     .getFilesByRun(previousRunId)
+                     .mapError(persistenceAsOrchestrator("getFilesByRun", previousRunId.toString))
+          base   = rows.filterNot(_.path.startsWith("/virtual/"))
+          _     <- ZIO
+                     .fail(
+                       OrchestratorError.StateFailed(
+                         StateError.InvalidState(previousRunId.toString, "No discovery artifacts available to resume")
+                       )
+                     )
+                     .when(base.isEmpty)
+          files <- ZIO.foreach(base)(rowToCobolFile)
+        yield buildInventory(sourceDir, files)
+
+      private def loadAnalysesFromRun(previousRunId: Long): IO[OrchestratorError, List[CobolAnalysis]] =
+        for
+          files    <- repository
+                        .getFilesByRun(previousRunId)
+                        .mapError(persistenceAsOrchestrator("getFilesByRun", previousRunId.toString))
+          fileById  = files.map(row => row.id -> row).toMap
+          analyses <- repository
+                        .getAnalysesByRun(previousRunId)
+                        .mapError(persistenceAsOrchestrator("getAnalysesByRun", previousRunId.toString))
+          decoded  <- ZIO.foreach(analyses) { row =>
+                        fileById.get(row.fileId) match
+                          case Some(file) if !file.path.startsWith("/virtual/") =>
+                            ZIO
+                              .fromEither(row.analysisJson.fromJson[CobolAnalysis])
+                              .mapError(err =>
+                                OrchestratorError.StateFailed(
+                                  StateError.InvalidState(
+                                    previousRunId.toString,
+                                    s"Invalid saved analysis for file ${file.name}: $err",
+                                  )
+                                )
+                              )
+                              .map(value => Some(value))
+                          case _                                                => ZIO.succeed(Option.empty[CobolAnalysis])
+                      }.map(_.flatten)
+          _        <- ZIO
+                        .fail(
+                          OrchestratorError.StateFailed(
+                            StateError.InvalidState(previousRunId.toString, "No analysis artifacts available to resume")
+                          )
+                        )
+                        .when(decoded.isEmpty)
+        yield decoded
+
+      private def loadProjectsFromRun(previousRunId: Long): IO[OrchestratorError, List[SpringBootProject]] =
+        for
+          files    <- repository
+                        .getFilesByRun(previousRunId)
+                        .mapError(persistenceAsOrchestrator("getFilesByRun", previousRunId.toString))
+          fileById  = files.map(row => row.id -> row).toMap
+          analyses <- repository
+                        .getAnalysesByRun(previousRunId)
+                        .mapError(persistenceAsOrchestrator("getAnalysesByRun", previousRunId.toString))
+          decoded  <- ZIO.foreach(analyses) { row =>
+                        fileById.get(row.fileId) match
+                          case Some(file) if file.path.startsWith("/virtual/transform/") =>
+                            ZIO
+                              .fromEither(row.analysisJson.fromJson[SpringBootProject])
+                              .mapError(err =>
+                                OrchestratorError.StateFailed(
+                                  StateError.InvalidState(
+                                    previousRunId.toString,
+                                    s"Invalid saved transform artifact ${file.name}: $err",
+                                  )
+                                )
+                              )
+                              .map(value => Some(value))
+                          case _                                                         => ZIO.succeed(Option.empty[SpringBootProject])
+                      }.map(_.flatten)
+          _        <- ZIO
+                        .fail(
+                          OrchestratorError.StateFailed(
+                            StateError.InvalidState(previousRunId.toString, "No transform artifacts available to resume")
+                          )
+                        )
+                        .when(decoded.isEmpty)
+        yield decoded
+
+      private def loadValidationReportsFromRun(previousRunId: Long): IO[OrchestratorError, List[ValidationReport]] =
+        for
+          files      <- repository
+                          .getFilesByRun(previousRunId)
+                          .mapError(persistenceAsOrchestrator("getFilesByRun", previousRunId.toString))
+          fileById    = files.map(row => row.id -> row).toMap
+          analyses   <- repository
+                          .getAnalysesByRun(previousRunId)
+                          .mapError(persistenceAsOrchestrator("getAnalysesByRun", previousRunId.toString))
+          validation <- ZIO.foreach(analyses) { row =>
+                          fileById.get(row.fileId) match
+                            case Some(file) if file.path == "/virtual/validation/report.json" =>
+                              ZIO
+                                .fromEither(row.analysisJson.fromJson[ValidationReport])
+                                .mapError(err =>
+                                  OrchestratorError.StateFailed(
+                                    StateError.InvalidState(
+                                      previousRunId.toString,
+                                      s"Invalid saved validation artifact: $err",
+                                    )
+                                  )
+                                )
+                                .map(value => Some(value))
+                            case _                                                            => ZIO.succeed(Option.empty[ValidationReport])
+                        }.map(_.flatten)
+          _          <- ZIO
+                          .fail(
+                            OrchestratorError.StateFailed(
+                              StateError.InvalidState(
+                                previousRunId.toString,
+                                "No validation artifacts available to resume",
+                              )
+                            )
+                          )
+                          .when(validation.isEmpty)
+        yield validation
+
+      private def buildInventory(sourceDir: Path, files: List[CobolFile]): FileInventory =
+        val summary = InventorySummary(
+          totalFiles = files.length,
+          programFiles = files.count(_.fileType == models.FileType.Program),
+          copybooks = files.count(_.fileType == models.FileType.Copybook),
+          jclFiles = files.count(_.fileType == models.FileType.JCL),
+          totalLines = files.map(_.lineCount).sum,
+          totalBytes = files.map(_.size).sum,
+        )
+        FileInventory(
+          discoveredAt =
+            files.map(_.lastModified.toEpochMilli).maxOption.map(Instant.ofEpochMilli).getOrElse(Instant.EPOCH),
+          sourceDirectory = sourceDir,
+          files = files,
+          summary = summary,
+        )
+
+      private def rowToCobolFile(row: CobolFileRow): IO[OrchestratorError, CobolFile] =
+        ZIO.attempt {
+          val domainType = row.fileType match
+            case db.FileType.Program  => models.FileType.Program
+            case db.FileType.Copybook => models.FileType.Copybook
+            case db.FileType.JCL      => models.FileType.JCL
+            case db.FileType.Unknown  => models.FileType.Program
+          CobolFile(
+            path = Path.of(row.path),
+            name = row.name,
+            size = row.size,
+            lineCount = row.lineCount,
+            lastModified = row.createdAt,
+            encoding = row.encoding,
+            fileType = domainType,
+          )
+        }.mapError(err =>
+          OrchestratorError.StateFailed(
+            StateError.InvalidState(
+              row.runId.toString,
+              s"Invalid stored COBOL file row for '${row.path}': ${err.getMessage}",
+            )
+          )
+        )
 
       private def withRunAgents[A](
         runId: Long,

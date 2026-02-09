@@ -254,6 +254,8 @@ object HtmlViewsSpec extends ZIOSpecDefault:
         assertTrue(
           html.contains("Parsing error in PROG1.cbl"),
           html.contains("Error"),
+          html.contains("Retry Failed Step"),
+          html.contains("""action="/runs/3/retry""""),
         )
       },
       test("detail shows cancel button for running runs") {
