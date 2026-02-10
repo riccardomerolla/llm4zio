@@ -9,7 +9,7 @@ import zio.stream.*
 
 import core.{ AIService, FileService, Logger, ResponseParser }
 import models.*
-import prompts.PromptTemplates
+import prompts.{ PromptHelpers, PromptTemplates }
 
 /** CobolAnalyzerAgent - Deep structural analysis of COBOL programs using AI
   *
@@ -70,35 +70,153 @@ object CobolAnalyzerAgent:
           ): ZIO[Any, AnalysisError, CobolAnalysis] = {
             val enrichedPrompt = previousError match
               case Some(err) =>
+                val diagnostic = buildErrorDiagnostic(err)
                 s"""$prompt
                    |
-                   |IMPORTANT — YOUR PREVIOUS RESPONSE FAILED TO PARSE:
+                   |${"=" * 80}
+                   |🚨 CRITICAL ERROR — YOUR PREVIOUS RESPONSE FAILED TO PARSE (Attempt $attempt/$maxAttempts)
+                   |${"=" * 80}
+                   |
+                   |ERROR MESSAGE:
                    |$err
                    |
-                   |Please fix the JSON structure issues described above and try again.
-                   |Remember:
-                   |- "divisions" must be a JSON object with keys: identification, environment, data, procedure (each a string or null)
-                   |- "copybooks" must be a flat array of strings
-                   |- Every variable must have "name" (string), "level" (integer), "dataType" (string)
-                   |- Every statement must have "lineNumber" (integer), "statementType" (string), "content" (string with actual COBOL text)
+                   |$diagnostic
+                   |
+                   |REQUIRED SCHEMA — Your response MUST match this EXACT structure:
+                   |${PromptHelpers.schemaReference("CobolAnalysis")}
+                   |
+                   |CORRECT EXAMPLE (follow this pattern exactly):
+                   |{
+                   |  "file": { "path": "${cobolFile.path}", "name": "${cobolFile.name}", "size": ${cobolFile.size}, "lineCount": ${cobolFile.lineCount}, "lastModified": "${cobolFile.lastModified}", "encoding": "${cobolFile.encoding}", "fileType": "${cobolFile.fileType}" },
+                   |  "divisions": {
+                   |    "identification": "PROGRAM-ID. EXAMPLE.",
+                   |    "environment": null,
+                   |    "data": "WORKING-STORAGE SECTION. 01 VAR PIC X.",
+                   |    "procedure": "DISPLAY 'HELLO'. STOP RUN."
+                   |  },
+                   |  "variables": [
+                   |    { "name": "VAR", "level": 1, "dataType": "alphanumeric", "picture": "X", "usage": null }
+                   |  ],
+                   |  "procedures": [
+                   |    { "name": "MAIN", "paragraphs": ["MAIN"], "statements": [ { "lineNumber": 1, "statementType": "DISPLAY", "content": "DISPLAY 'HELLO'" } ] }
+                   |  ],
+                   |  "copybooks": [],
+                   |  "complexity": { "cyclomaticComplexity": 1, "linesOfCode": 10, "numberOfProcedures": 1 }
+                   |}
+                   |
+                   |${"=" * 80}
+                   |RESPOND WITH THE CORRECTED JSON OBJECT NOW (no markdown, no explanation)
+                   |${"=" * 80}
                    |""".stripMargin
               case None      => prompt
 
             val call =
               for
-                response <- aiService
-                              .execute(enrichedPrompt)
-                              .mapError(e => AnalysisError.AIFailed(cobolFile.name, e.message))
-                parsed   <- parseAnalysis(response, cobolFile)
-              yield parsed
+                response  <- aiService
+                               .execute(enrichedPrompt)
+                               .mapError(e => AnalysisError.AIFailed(cobolFile.name, e.message))
+                parsed    <- parseAnalysis(response, cobolFile)
+                validated <- validateAnalysis(parsed, cobolFile, attempt, maxAttempts)
+              yield validated
 
             call.catchSome {
-              case err @ AnalysisError.ParseFailed(_, _) if attempt < maxAttempts =>
+              case err @ AnalysisError.ParseFailed(_, _) if attempt < maxAttempts      =>
                 Logger.warn(
                   s"Parse failed for ${cobolFile.name} (attempt $attempt/$maxAttempts): ${err.message}. Retrying..."
                 ) *> callAndParse(prompt, cobolFile, attempt + 1, maxAttempts, Some(err.message))
+              case err @ AnalysisError.ValidationFailed(_, _) if attempt < maxAttempts =>
+                Logger.warn(
+                  s"Validation failed for ${cobolFile.name} (attempt $attempt/$maxAttempts): ${err.message}. Retrying..."
+                ) *> callAndParse(prompt, cobolFile, attempt + 1, maxAttempts, Some(err.message))
             }
           }
+
+          private def buildErrorDiagnostic(errorMessage: String): String =
+            if errorMessage.contains("expected '{' got '['") then
+              """|DIAGNOSIS: You returned a JSON ARRAY [...] but we need a JSON OBJECT {...}
+                 |
+                 |WRONG (what you did):
+                 |[
+                 |  { "file": {...}, ... }
+                 |]
+                 |
+                 |CORRECT (what we need):
+                 |{
+                 |  "file": {...},
+                 |  "divisions": {...},
+                 |  "variables": [...],
+                 |  "procedures": [...],
+                 |  "copybooks": [...],
+                 |  "complexity": {...}
+                 |}
+                 |
+                 |⚠️  YOUR RESPONSE MUST START WITH '{' and END WITH '}' — NOT '[' and ']'
+                 |""".stripMargin
+            else if errorMessage.contains("SchemaMismatch") || errorMessage.contains("Schema mismatch") then
+              """|DIAGNOSIS: The JSON structure does not match the expected CobolAnalysis schema.
+                 |
+                 |Common issues:
+                 |1. Missing required fields (file, divisions, variables, procedures, copybooks, complexity)
+                 |2. Wrong data types (e.g., string instead of number, or vice versa)
+                 |3. Nested objects where arrays are expected, or vice versa
+                 |4. Extra fields or typos in field names
+                 |
+                 |⚠️  Verify EVERY field matches the schema exactly
+                 |""".stripMargin
+            else if errorMessage.contains("InvalidJson") then
+              """|DIAGNOSIS: The response is not valid JSON.
+                 |
+                 |Common issues:
+                 |1. Unmatched brackets/braces: every '{' needs a '}', every '[' needs a ']'
+                 |2. Missing or extra commas
+                 |3. Unescaped quotes in strings (use \" inside strings)
+                 |4. Trailing commas before closing braces/brackets
+                 |5. Markdown formatting or text before/after the JSON
+                 |
+                 |⚠️  Use a JSON validator to check syntax before responding
+                 |""".stripMargin
+            else
+              """|DIAGNOSIS: Unknown parsing error. Please ensure:
+                 |1. Response is ONLY valid JSON (no markdown, no explanations)
+                 |2. Response starts with '{' and ends with '}'
+                 |3. All field names match the schema exactly
+                 |4. All data types are correct
+                 |""".stripMargin
+
+          private def validateAnalysis(
+            analysis: CobolAnalysis,
+            cobolFile: CobolFile,
+            attempt: Int,
+            maxAttempts: Int,
+          ): ZIO[Any, AnalysisError, CobolAnalysis] =
+            val divisionIssues = List(
+              analysis.divisions.identification,
+              analysis.divisions.environment,
+              analysis.divisions.data,
+              analysis.divisions.procedure,
+            ).flatten.filter(_.contains("[STRUCTURED_JSON_DETECTED]"))
+
+            val hasStructuredDivisions = divisionIssues.nonEmpty
+            val hasNoData              = analysis.variables.isEmpty && analysis.procedures.isEmpty
+
+            if hasStructuredDivisions then
+              val msg =
+                "AI returned structured JSON objects for divisions instead of plain COBOL text. " +
+                  s"This indicates the AI misunderstood the schema. Found in: ${divisionIssues.size} division(s)."
+              if attempt >= maxAttempts then
+                Logger.warn(s"$msg Final attempt - accepting with warnings.") *> ZIO.succeed(analysis)
+              else
+                ZIO.fail(AnalysisError.ValidationFailed(cobolFile.name, msg))
+            else if hasNoData && cobolFile.lineCount > 20 then
+              val msg =
+                s"Analysis has no extracted variables or procedures, but source has ${cobolFile.lineCount} lines. " +
+                  "This suggests the AI failed to extract data properly."
+              if attempt >= maxAttempts then
+                Logger.warn(s"$msg Final attempt - accepting incomplete analysis.") *> ZIO.succeed(analysis)
+              else
+                ZIO.fail(AnalysisError.ValidationFailed(cobolFile.name, msg))
+            else
+              ZIO.succeed(analysis)
 
           override def analyzeAll(files: List[CobolFile]): ZStream[Any, AnalysisError, CobolAnalysis] =
             val stream = ZStream
@@ -165,6 +283,12 @@ object CobolAnalyzerAgent:
               ast      <- ZIO
                             .fromEither(jsonText.fromJson[Json])
                             .mapError(err => ParseError.InvalidJson(jsonText, err))
+              _        <- ast match
+                            case Json.Arr(elements) =>
+                              Logger.warn(
+                                s"AI returned array with ${elements.size} element(s) for ${cobolFile.name} - unwrapping to object"
+                              )
+                            case _                  => ZIO.unit
               patched  <- ZIO
                             .fromEither(normalizeAst(ast, cobolFile))
                             .mapError(err => ParseError.InvalidJson(jsonText, err))
@@ -177,7 +301,19 @@ object CobolAnalyzerAgent:
             for
               fileAst <- cobolFile.toJson.fromJson[Json]
             yield value match
-              case Json.Obj(fields) =>
+              // 🚨 FIX: AI returned array instead of object - unwrap single element
+              case Json.Arr(elements) if elements.size == 1 =>
+                elements.head match
+                  case obj @ Json.Obj(_) => normalizeAst(obj, cobolFile).getOrElse(obj)
+                  case other             => other
+              case Json.Arr(elements)                       =>
+                // Multiple elements - this is a critical error, but try to recover by using first element
+                // Note: AI returned array with ${elements.size} elements instead of single object - using first
+                elements.headOption match
+                  case Some(obj @ Json.Obj(_)) => normalizeAst(obj, cobolFile).getOrElse(obj)
+                  case Some(other)             => other
+                  case None                    => value
+              case Json.Obj(fields)                         =>
                 val transformed      = fields.map {
                   case ("file", _)       => "file"       -> fileAst
                   case ("divisions", v)  => "divisions"  -> normalizeDivisions(v)
@@ -201,7 +337,7 @@ object CobolAnalyzerAgent:
                   "complexity" -> normalizeComplexity(Json.Obj(Chunk.empty)),
                 )
                 Json.Obj(mergeDefaults(transformed, topLevelDefaults))
-              case _                => value
+              case _                                        => value
 
           private def normalizeArray(value: Json, normalize: Json => Json): Json = value match
             case Json.Arr(elements) => Json.Arr(elements.map(normalize))
@@ -220,7 +356,10 @@ object CobolAnalyzerAgent:
               Json.Obj(fields.map {
                 case (k, Json.Str(s)) => k -> Json.Str(s)
                 case (k, Json.Null)   => k -> Json.Null
-                case (k, other)       => k -> Json.Str(other.toJson)
+                case (k, other)       =>
+                  // WARN: AI returned structured JSON for division instead of plain text
+                  // Convert to string but this indicates prompt/parsing issues
+                  k -> Json.Str(s"[STRUCTURED_JSON_DETECTED] ${other.toJson}")
               })
             case other              => other
 

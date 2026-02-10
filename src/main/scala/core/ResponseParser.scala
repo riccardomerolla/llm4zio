@@ -59,7 +59,8 @@ final class ResponseParserLive extends ResponseParser:
     yield out).tapError(err => logFailure(err))
 
   private def extractCandidates(output: String): List[String] =
-    val blocks = extractBlocks(output)
+    val cleaned = stripCliPrefixes(output)
+    val blocks  = extractBlocks(cleaned)
     if blocks.nonEmpty then
       val jsonBlocks = blocks.filter(block => block.language.exists(isJsonLanguage))
       val preferred  = if jsonBlocks.nonEmpty then jsonBlocks else blocks
@@ -67,10 +68,10 @@ final class ResponseParserLive extends ResponseParser:
         .map(_.content.trim)
         .filter(_.nonEmpty)
     else
-      extractInlineJson(output) match
+      extractInlineJson(cleaned) match
         case Some(inline) => List(inline)
         case None         =>
-          val trimmed = output.trim
+          val trimmed = cleaned.trim
           if trimmed.nonEmpty then List(trimmed) else List.empty
 
   private def extractBlocks(output: String): List[CodeBlock] =
@@ -91,6 +92,26 @@ final class ResponseParserLive extends ResponseParser:
       .flatten
       .distinct
       .find(isValidJson)
+
+  /** Remove common CLI debug messages that appear before JSON output */
+  private def stripCliPrefixes(output: String): String =
+    val lines = output.split("\n").toList
+    lines
+      .dropWhile { line =>
+        val trimmed = line.trim
+        trimmed.isEmpty ||
+        trimmed.startsWith("Loaded cached") ||
+        trimmed.startsWith("YOLO mode") ||
+        trimmed.startsWith("Hook registry") ||
+        trimmed.startsWith("WARNING:") ||
+        trimmed.startsWith("Note:") ||
+        trimmed.startsWith("[info]") ||
+        trimmed.startsWith("[warn]") ||
+        trimmed.startsWith("[debug]") ||
+        trimmed.startsWith("[error]") ||
+        (trimmed.nonEmpty && !trimmed.startsWith("{") && !trimmed.startsWith("["))
+      }
+      .mkString("\n")
 
   private def candidateBetween(input: String, start: Char, end: Char): Option[String] =
     val startIdx = input.indexOf(start)

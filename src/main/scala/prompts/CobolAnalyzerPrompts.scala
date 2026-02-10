@@ -22,12 +22,34 @@ import models.CobolFile
   */
 object CobolAnalyzerPrompts:
 
-  val version: String = "1.0.0"
+  val version: String = "1.1.0"
 
   private val systemPrompt =
     """You are an expert COBOL program analyzer with deep knowledge of mainframe COBOL syntax,
       |including CICS, VSAM, and DB2 programs.
       |Your role is to perform precise structural analysis of COBOL programs.
+      |
+      |Analyze the provided COBOL program and provide a detailed, structured analysis that includes:
+      |
+      |1. Overall program description
+      |2. Data divisions and their purpose
+      |3. Procedure divisions and their purpose
+      |4. Variables (name, level, type, size, group structure)
+      |5. Paragraphs/sections (name, description, logic, variables used, paragraphs called)
+      |6. Copybooks referenced
+      |7. File access (file name, mode, verbs used, status variable, FD linkage)
+      |8. Any embedded SQL or DB2 statements (type, purpose, variables used)
+      |9. Any embedded CICS statements (type, purpose, variables used)
+      |
+      |Your analysis should be structured in a way that can be easily parsed by a Java conversion system.
+      |
+      |
+      |🚨 CRITICAL RESPONSE FORMAT:
+      |- Your response MUST be a SINGLE JSON OBJECT starting with '{' and ending with '}'
+      |- DO NOT return a JSON ARRAY [...] — we need ONE object {...} for ONE COBOL file
+      |- NO markdown code blocks (```) — return raw JSON only
+      |- NO explanations before or after the JSON
+      |- Start your response with '{' (opening brace) immediately
       |
       |CRITICAL REQUIREMENTS:
       |- Always respond with valid, complete JSON only — no markdown, no explanations, no trailing text
@@ -46,7 +68,21 @@ object CobolAnalyzerPrompts:
       |- Every variable MUST include "level" (int), "dataType" (string), and "name" (string)
       |- Every statement MUST include "lineNumber" (int), "statementType" (string), and "content" (string with the full COBOL statement text)
       |
-      |TEMPLATE_VERSION: 1.0.0
+      |CRITICAL - DIVISIONS FORMAT:
+      |- The "divisions" object values MUST be plain COBOL text strings, NOT nested JSON objects
+      |- DO NOT structure divisions as JSON objects with keys like {"programId": "...", ...}
+      |- DO NOT structure divisions as JSON with {"paragraphs": [], "statements": [], ...}
+      |- Instead, each division value should be the RAW COBOL text from that division
+      |- Example: "identification": "PROGRAM-ID. ZBANK. AUTHOR. JOHN DOE."
+      |- Example: "procedure": "MOVE X TO Y. IF A = B THEN..." (raw text, not structured JSON)
+      |
+      |CRITICAL - DATA EXTRACTION:
+      |- Variables MUST be extracted to the TOP-LEVEL "variables" array, NOT embedded in divisions
+      |- Procedures MUST be extracted to the TOP-LEVEL "procedures" array, NOT embedded in divisions
+      |- For programs without named paragraphs (inline code), create a procedure named "MAIN-LOGIC" or "PROCEDURE-DIVISION"
+      |- ALL statements must be in the procedures[].statements array
+      |
+      |TEMPLATE_VERSION: 1.1.0
       |""".stripMargin
 
   /** Analyze complete COBOL program structure
@@ -121,7 +157,26 @@ object CobolAnalyzerPrompts:
        |   - linesOfCode: Total non-comment lines
        |   - numberOfProcedures: Count of paragraphs/sections
        |
-       |Respond with JSON only.
+       |━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+       |🎯 YOUR RESPONSE FORMAT:
+       |━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+       |
+       |Return a SINGLE JSON OBJECT (not an array):
+       |
+       |{
+       |  "file": {...},
+       |  "divisions": {...},
+       |  "variables": [...],
+       |  "procedures": [...],
+       |  "copybooks": [...],
+       |  "complexity": {...}
+       |}
+       |
+       |⚠️  Start with '{' — NOT with '['
+       |⚠️  End with '}' — NOT with ']'
+       |⚠️  ONE object for ONE file
+       |
+       |Respond with the JSON object now (no markdown, no array, no explanation).
        |""".stripMargin
 
   /** Analyze large COBOL file using division-based chunking
@@ -175,7 +230,28 @@ object CobolAnalyzerPrompts:
        |5. COPY statements across all divisions
        |6. Calculate overall complexity metrics
        |
-       |Respond with JSON only.
+       |Combine analysis across all divisions into one complete CobolAnalysis JSON response.
+       |
+       |━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+       |🎯 YOUR RESPONSE FORMAT:
+       |━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+       |
+       |Return a SINGLE JSON OBJECT (not an array):
+       |
+       |{
+       |  "file": {...},
+       |  "divisions": {...},
+       |  "variables": [...],
+       |  "procedures": [...],
+       |  "copybooks": [...],
+       |  "complexity": {...}
+       |}
+       |
+       |⚠️  Start with '{' — NOT with '['
+       |⚠️  End with '}' — NOT with ']'
+       |⚠️  ONE object for ONE file
+       |
+       |Respond with the JSON object now (no markdown, no array, no explanation).
        |""".stripMargin
 
   private val fewShotExamples =
@@ -389,7 +465,7 @@ object CobolAnalyzerPrompts:
       )}
        |
        |${PromptHelpers.fewShotExample(
-        "CICS COBOL program with EXEC CICS and COPY",
+        "CICS COBOL program with named paragraphs",
         """PROGRAM-ID. ZBANK.
          |DATA DIVISION.
          |WORKING-STORAGE SECTION.
@@ -401,6 +477,7 @@ object CobolAnalyzerPrompts:
          |   05 WS-PIN PIC 9(10).
          |01 ACCNO PIC 9(10).
          |PROCEDURE DIVISION.
+         |MAIN-LOGIC.
          |    MOVE LOGACCI TO WS-ACCNO.
          |    EXEC CICS READ DATASET(WS-FILE-NAME)
          |              INTO(WS-FILE-REC)
@@ -444,6 +521,89 @@ object CobolAnalyzerPrompts:
          |  "complexity": {
          |    "cyclomaticComplexity": 2,
          |    "linesOfCode": 22,
+         |    "numberOfProcedures": 1
+         |  }
+         |}""",
+      )}
+       |
+       |${PromptHelpers.fewShotExample(
+        "CICS COBOL with inline code (no named paragraphs)",
+        """PROGRAM-ID. ZBANK3.
+         |DATA DIVISION.
+         |WORKING-STORAGE SECTION.
+         |77 WS-REC-LEN PIC S9(4) COMP.
+         |77 WS-FILE-NAME PIC X(8) VALUE 'VSAMZBNK'.
+         |01 WS-FILE-REC.
+         |   05 WS-ACCNO PIC 9(10).
+         |   05 WS-BALANCE PIC 9(10).
+         |01 ACCNO PIC 9(10).
+         |01 SCREEN-STATE PIC 9 VALUE 0.
+         |01 ACTION PIC X.
+         |PROCEDURE DIVISION.
+         |    PERFORM WITH TEST BEFORE UNTIL ACTION = 'Q'
+         |      IF SCREEN-STATE = 0
+         |        MOVE LOW-VALUES TO ZLOGINO
+         |        EXEC CICS SEND MAP('ZLOGIN') MAPSET('ZBNKSET')
+         |          ERASE
+         |        END-EXEC
+         |        EXEC CICS RECEIVE MAP('ZLOGIN') MAPSET('ZBNKSET')
+         |          INTO(ZLOGINI)
+         |        END-EXEC
+         |        MOVE LOGACCI TO WS-ACCNO
+         |        EXEC CICS READ DATASET(WS-FILE-NAME)
+         |                  INTO(WS-FILE-REC)
+         |                  RIDFLD(WS-ACCNO)
+         |                  LENGTH(WS-REC-LEN)
+         |                  RESP(WS-RESP-CODE)
+         |        END-EXEC
+         |        IF WS-RESP-CODE = ZEROS
+         |          MOVE 1 TO SCREEN-STATE
+         |        END-IF
+         |      END-IF
+         |    END-PERFORM.
+         |    EXEC CICS RETURN END-EXEC.
+         |""",
+        """{
+         |  "file": { "name": "ZBANK3.cbl", "path": "/cobol/ZBANK3.cbl", "size": 3072, "lastModified": "2026-02-10T14:00:00Z", "encoding": "UTF-8", "fileType": "Program" },
+         |  "divisions": {
+         |    "identification": "PROGRAM-ID. ZBANK3.",
+         |    "environment": null,
+         |    "data": "WORKING-STORAGE SECTION. 77 WS-REC-LEN PIC S9(4) COMP...",
+         |    "procedure": "PERFORM WITH TEST BEFORE UNTIL ACTION = 'Q'... EXEC CICS RETURN END-EXEC"
+         |  },
+         |  "variables": [
+         |    { "name": "WS-REC-LEN", "level": 77, "dataType": "numeric", "picture": "S9(4)", "usage": "COMP" },
+         |    { "name": "WS-FILE-NAME", "level": 77, "dataType": "alphanumeric", "picture": "X(8)", "usage": null },
+         |    { "name": "WS-FILE-REC", "level": 1, "dataType": "group", "picture": null, "usage": null },
+         |    { "name": "WS-ACCNO", "level": 5, "dataType": "numeric", "picture": "9(10)", "usage": null },
+         |    { "name": "WS-BALANCE", "level": 5, "dataType": "numeric", "picture": "9(10)", "usage": null },
+         |    { "name": "ACCNO", "level": 1, "dataType": "numeric", "picture": "9(10)", "usage": null },
+         |    { "name": "SCREEN-STATE", "level": 1, "dataType": "numeric", "picture": "9", "usage": null },
+         |    { "name": "ACTION", "level": 1, "dataType": "alphanumeric", "picture": "X", "usage": null }
+         |  ],
+         |  "procedures": [
+         |    {
+         |      "name": "PROCEDURE-DIVISION",
+         |      "paragraphs": ["PROCEDURE-DIVISION"],
+         |      "statements": [
+         |        { "lineNumber": 12, "statementType": "PERFORM", "content": "PERFORM WITH TEST BEFORE UNTIL ACTION = 'Q'" },
+         |        { "lineNumber": 13, "statementType": "IF", "content": "IF SCREEN-STATE = 0" },
+         |        { "lineNumber": 14, "statementType": "MOVE", "content": "MOVE LOW-VALUES TO ZLOGINO" },
+         |        { "lineNumber": 15, "statementType": "EXEC-CICS", "content": "EXEC CICS SEND MAP('ZLOGIN') MAPSET('ZBNKSET') ERASE END-EXEC" },
+         |        { "lineNumber": 18, "statementType": "EXEC-CICS", "content": "EXEC CICS RECEIVE MAP('ZLOGIN') MAPSET('ZBNKSET') INTO(ZLOGINI) END-EXEC" },
+         |        { "lineNumber": 21, "statementType": "MOVE", "content": "MOVE LOGACCI TO WS-ACCNO" },
+         |        { "lineNumber": 22, "statementType": "EXEC-CICS", "content": "EXEC CICS READ DATASET(WS-FILE-NAME) INTO(WS-FILE-REC) RIDFLD(WS-ACCNO) LENGTH(WS-REC-LEN) RESP(WS-RESP-CODE) END-EXEC" },
+         |        { "lineNumber": 27, "statementType": "IF", "content": "IF WS-RESP-CODE = ZEROS" },
+         |        { "lineNumber": 28, "statementType": "MOVE", "content": "MOVE 1 TO SCREEN-STATE" },
+         |        { "lineNumber": 32, "statementType": "END-PERFORM", "content": "END-PERFORM" },
+         |        { "lineNumber": 33, "statementType": "EXEC-CICS", "content": "EXEC CICS RETURN END-EXEC" }
+         |      ]
+         |    }
+         |  ],
+         |  "copybooks": [],
+         |  "complexity": {
+         |    "cyclomaticComplexity": 3,
+         |    "linesOfCode": 33,
          |    "numberOfProcedures": 1
          |  }
          |}""",
