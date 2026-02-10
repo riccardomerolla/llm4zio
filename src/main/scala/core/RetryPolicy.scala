@@ -71,6 +71,7 @@ object RetryPolicy:
     *   - Timeout (transient network issues)
     *   - NonZeroExit with code 429 (rate limited)
     *   - NonZeroExit with code >= 500 (server errors)
+    *   - NonZeroExit with code 1-127 (transient CLI crashes)
     *
     * Non-retryable errors:
     *   - ProcessStartFailed (system issue)
@@ -80,21 +81,23 @@ object RetryPolicy:
     *   - NonZeroExit with 4xx codes except 429 (client errors)
     */
   def isRetryable(error: GeminiError): Boolean = error match
-    case GeminiError.Timeout(_)                          => true
-    case GeminiError.NonZeroExit(code, _) if code == 429 => true // Rate limited
-    case GeminiError.NonZeroExit(code, _) if code >= 500 => true // Server error
-    case GeminiError.ProcessFailed(_)                    => true // Might be transient
-    case _                                               => false
+    case GeminiError.Timeout(_)                                       => true
+    case GeminiError.NonZeroExit(code, _) if code == 429              => true // Rate limited
+    case GeminiError.NonZeroExit(code, _) if code >= 500              => true // Server error
+    case GeminiError.NonZeroExit(code, _) if code >= 1 && code <= 127 => true // CLI crash
+    case GeminiError.ProcessFailed(_)                                 => true // Might be transient
+    case _                                                            => false
 
   /** Determine if an AIError is retryable.
     */
   def isRetryableAI(error: AIError): Boolean = error match
-    case AIError.Timeout(_)                          => true
-    case AIError.NonZeroExit(code, _) if code == 429 => true
-    case AIError.NonZeroExit(code, _) if code >= 500 => true
-    case AIError.ProcessFailed(_)                    => true
-    case AIError.HttpError(code, _) if code == 429   => true
-    case AIError.HttpError(code, _) if code >= 500   => true
-    case AIError.RateLimitExceeded(_)                => true
-    case AIError.ProviderUnavailable(_, _)           => true
-    case _                                           => false
+    case AIError.Timeout(_)                                       => true
+    case AIError.NonZeroExit(code, _) if code == 429              => true
+    case AIError.NonZeroExit(code, _) if code >= 500              => true
+    case AIError.NonZeroExit(code, _) if code >= 1 && code <= 127 => true // CLI crash
+    case AIError.ProcessFailed(_)                                 => true
+    case AIError.HttpError(code, _) if code == 429                => true
+    case AIError.HttpError(code, _) if code >= 500                => true
+    case AIError.RateLimitExceeded(_)                             => true
+    case AIError.ProviderUnavailable(_, _)                        => true
+    case _                                                        => false

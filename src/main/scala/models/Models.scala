@@ -221,7 +221,7 @@ case class AIProviderConfig(
   model: String = "gemini-2.5-flash",
   baseUrl: Option[String] = None,
   apiKey: Option[String] = None,
-  timeout: zio.Duration = 90.seconds,
+  timeout: zio.Duration = 300.seconds,
   maxRetries: Int = 3,
   requestsPerMinute: Int = 60,
   burstSize: Int = 10,
@@ -343,11 +343,42 @@ object CobolAnalysis:
 // Dependency Mapping Phase
 // ============================================================================
 
-enum NodeType derives JsonCodec:
+enum NodeType:
   case Program, Copybook, SharedService
 
-enum EdgeType derives JsonCodec:
+object NodeType:
+  private val known: Map[String, NodeType] = Map(
+    "PROGRAM"       -> NodeType.Program,
+    "COPYBOOK"      -> NodeType.Copybook,
+    "SHAREDSERVICE" -> NodeType.SharedService,
+    "SERVICE"       -> NodeType.SharedService,
+  )
+
+  given JsonCodec[NodeType] = JsonCodec[String].transform(
+    value => known.getOrElse(normalize(value), NodeType.Program),
+    _.toString,
+  )
+
+  private def normalize(value: String): String =
+    value.trim.toUpperCase.replaceAll("[^A-Z0-9]", "")
+
+enum EdgeType:
   case Includes, Calls, Uses
+
+object EdgeType:
+  private val known: Map[String, EdgeType] = Map(
+    "INCLUDES" -> EdgeType.Includes,
+    "CALLS"    -> EdgeType.Calls,
+    "USES"     -> EdgeType.Uses,
+  )
+
+  given JsonCodec[EdgeType] = JsonCodec[String].transform(
+    value => known.getOrElse(normalize(value), EdgeType.Uses),
+    _.toString,
+  )
+
+  private def normalize(value: String): String =
+    value.trim.toUpperCase.replaceAll("[^A-Z0-9]", "")
 
 case class DependencyNode(
   id: String,
@@ -375,8 +406,25 @@ object DependencyGraph:
 // Transformation Phase
 // ============================================================================
 
-enum HttpMethod derives JsonCodec:
+enum HttpMethod:
   case GET, POST, PUT, DELETE, PATCH
+
+object HttpMethod:
+  private val known: Map[String, HttpMethod] = Map(
+    "GET"    -> HttpMethod.GET,
+    "POST"   -> HttpMethod.POST,
+    "PUT"    -> HttpMethod.PUT,
+    "DELETE" -> HttpMethod.DELETE,
+    "PATCH"  -> HttpMethod.PATCH,
+  )
+
+  given JsonCodec[HttpMethod] = JsonCodec[String].transform(
+    value => known.getOrElse(normalize(value), HttpMethod.GET),
+    _.toString,
+  )
+
+  private def normalize(value: String): String =
+    value.trim.toUpperCase.replaceAll("[^A-Z0-9]", "")
 
 case class JavaPackage(
   name: String,
@@ -486,15 +534,20 @@ enum Severity:
   case ERROR, WARNING, INFO
 
 object Severity:
-  given JsonCodec[Severity] = JsonCodec[String].transformOrFail(
-    value =>
-      value.trim.toUpperCase match
-        case "ERROR"   => Right(Severity.ERROR)
-        case "WARNING" => Right(Severity.WARNING)
-        case "INFO"    => Right(Severity.INFO)
-        case other     => Left(s"invalid severity value: $other"),
-    severity => severity.toString,
+  private val known: Map[String, Severity] = Map(
+    "ERROR"   -> Severity.ERROR,
+    "WARNING" -> Severity.WARNING,
+    "WARN"    -> Severity.WARNING,
+    "INFO"    -> Severity.INFO,
   )
+
+  given JsonCodec[Severity] = JsonCodec[String].transform(
+    value => known.getOrElse(normalize(value), Severity.WARNING),
+    _.toString,
+  )
+
+  private def normalize(value: String): String =
+    value.trim.toUpperCase.replaceAll("[^A-Z0-9]", "")
 
 enum IssueCategory:
   case Compile, Coverage, StaticAnalysis, Semantic, Convention, Undefined
@@ -612,8 +665,23 @@ case class SemanticValidation(
   issues: List[ValidationIssue],
 ) derives JsonCodec
 
-enum ValidationStatus derives JsonCodec:
+enum ValidationStatus:
   case Passed, PassedWithWarnings, Failed
+
+object ValidationStatus:
+  private val known: Map[String, ValidationStatus] = Map(
+    "PASSED"             -> ValidationStatus.Passed,
+    "PASSEDWITHWARNINGS" -> ValidationStatus.PassedWithWarnings,
+    "FAILED"             -> ValidationStatus.Failed,
+  )
+
+  given JsonCodec[ValidationStatus] = JsonCodec[String].transform(
+    value => known.getOrElse(normalize(value), ValidationStatus.Failed),
+    _.toString,
+  )
+
+  private def normalize(value: String): String =
+    value.trim.toUpperCase.replaceAll("[^A-Z0-9]", "")
 
 case class ValidationReport(
   projectName: String,
@@ -784,6 +852,12 @@ case class MigrationConfig(
   retryFromStep: Option[MigrationStep] = None,
   dryRun: Boolean = false,
   verbose: Boolean = false,
+
+  // Project generation
+  basePackage: String = "com.example",
+  projectName: Option[String] = None,
+  projectVersion: String = "0.0.1-SNAPSHOT",
+  maxCompileRetries: Int = 3,
 ) derives JsonCodec:
 
   @nowarn("cat=deprecation")

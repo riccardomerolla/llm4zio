@@ -332,6 +332,33 @@ object JavaTransformerPrompts:
       )}
        |""".stripMargin
 
+  def fixCompilationErrors(fileName: String, sourceCode: String, compileErrors: String): String =
+    s"""You are an expert Java developer. The following generated Java source file failed to compile.
+       |Fix the compilation errors and return the COMPLETE corrected source code.
+       |
+       |FILE: $fileName
+       |
+       |CURRENT SOURCE CODE:
+       |```java
+       |$sourceCode
+       |```
+       |
+       |COMPILATION ERRORS:
+       |```
+       |$compileErrors
+       |```
+       |
+       |IMPORTANT:
+       |1. Return ONLY the corrected Java source code, no JSON wrapping
+       |2. Fix ALL compilation errors
+       |3. Do NOT change business logic - only fix syntax and type errors
+       |4. Ensure all imports are present
+       |5. Ensure the package declaration is correct
+       |6. Return the complete file, not just the changed parts
+       |
+       |Respond with the corrected Java source code only.
+       |""".stripMargin
+
   private val controllerExamples =
     s"""
        |${PromptHelpers.fewShotExample(

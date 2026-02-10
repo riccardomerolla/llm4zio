@@ -46,12 +46,14 @@ object JavaTransformerAgentSpec extends ZIOSpecDefault:
           analysis       = sampleAnalysis("CUSTPROG.cbl")
           graph          = DependencyGraph.empty
           project       <- JavaTransformerAgent
-                             .transform(analysis, graph)
+                             .transform(List(analysis), graph)
                              .provide(
                                FileService.live,
                                ResponseParser.live,
                                mockAIService(List(entityJson, serviceJson, controllerJson)),
-                               ZLayer.succeed(MigrationConfig(sourceDir = tempDir, outputDir = tempDir)),
+                               ZLayer.succeed(
+                                 MigrationConfig(sourceDir = tempDir, outputDir = tempDir, maxCompileRetries = 0)
+                               ),
                                JavaTransformerAgent.live,
                              )
           projectDir     = tempDir.resolve(project.projectName.toLowerCase)
@@ -97,7 +99,85 @@ object JavaTransformerAgentSpec extends ZIOSpecDefault:
           yamlExists,
         )
       }
-    }
+    },
+    test("transform sanitizes hyphenated COBOL filenames into valid Java packages") {
+      ZIO.scoped {
+        for
+          tempDir <- ZIO.attemptBlocking(Files.createTempDirectory("transformer-sanitize"))
+          analysis = sampleAnalysis("format-balance.cbl")
+          graph    = DependencyGraph.empty
+          project <- JavaTransformerAgent
+                       .transform(List(analysis), graph)
+                       .provide(
+                         FileService.live,
+                         ResponseParser.live,
+                         mockAIService(List(entityJson, serviceJson, controllerJson)),
+                         ZLayer.succeed(
+                           MigrationConfig(sourceDir = tempDir, outputDir = tempDir, maxCompileRetries = 0)
+                         ),
+                         JavaTransformerAgent.live,
+                       )
+        yield assertTrue(
+          !project.projectName.contains("-"),
+          project.projectName == "FORMATBALANCE",
+        )
+      }
+    },
+    test("transform uses config projectName when provided") {
+      ZIO.scoped {
+        for
+          tempDir <- ZIO.attemptBlocking(Files.createTempDirectory("transformer-override"))
+          analysis = sampleAnalysis("CUSTPROG.cbl")
+          graph    = DependencyGraph.empty
+          project <- JavaTransformerAgent
+                       .transform(List(analysis), graph)
+                       .provide(
+                         FileService.live,
+                         ResponseParser.live,
+                         mockAIService(List(entityJson, serviceJson, controllerJson)),
+                         ZLayer.succeed(
+                           MigrationConfig(
+                             sourceDir = tempDir,
+                             outputDir = tempDir,
+                             projectName = Some("MyCustomProject"),
+                             maxCompileRetries = 0,
+                           )
+                         ),
+                         JavaTransformerAgent.live,
+                       )
+        yield assertTrue(
+          project.projectName == "MyCustomProject"
+        )
+      }
+    },
+    test("transform uses config projectVersion in POM") {
+      ZIO.scoped {
+        for
+          tempDir <- ZIO.attemptBlocking(Files.createTempDirectory("transformer-version"))
+          analysis = sampleAnalysis("CUSTPROG.cbl")
+          graph    = DependencyGraph.empty
+          project <- JavaTransformerAgent
+                       .transform(List(analysis), graph)
+                       .provide(
+                         FileService.live,
+                         ResponseParser.live,
+                         mockAIService(List(entityJson, serviceJson, controllerJson)),
+                         ZLayer.succeed(
+                           MigrationConfig(
+                             sourceDir = tempDir,
+                             outputDir = tempDir,
+                             projectVersion = "1.2.3",
+                             maxCompileRetries = 0,
+                           )
+                         ),
+                         JavaTransformerAgent.live,
+                       )
+        yield assertTrue(
+          project.buildFile.content.contains("<version>1.2.3</version>"),
+          project.buildFile.content.contains("<name>CUSTPROG</name>"),
+        )
+      }
+    },
   )
 
   private def mockAIService(outputs: List[String]): ULayer[AIService] =

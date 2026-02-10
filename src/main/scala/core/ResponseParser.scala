@@ -38,7 +38,6 @@ final class ResponseParserLive extends ResponseParser:
   final private case class CodeBlock(language: Option[String], content: String)
 
   private val codeBlockPattern = "```\\s*([a-zA-Z0-9_-]+)?\\s*([\\s\\S]*?)```".r
-  private val maxLogLength     = 500
 
   override def extractJson(response: AIResponse): ZIO[Any, ParseError, String] =
     val output     = response.output
@@ -113,12 +112,9 @@ final class ResponseParserLive extends ResponseParser:
   private def logFailure(error: ParseError): UIO[Unit] =
     val message = error match
       case ParseError.NoJsonFound(response)            =>
-        s"No JSON found in response. Output: ${truncate(response)}"
+        s"No JSON found in response. Output: ${response}"
       case ParseError.InvalidJson(json, err)           =>
-        s"Invalid JSON. Error: $err. JSON: ${truncate(json)}"
+        s"Invalid JSON. Error: $err. JSON: ${json}"
       case ParseError.SchemaMismatch(expected, actual) =>
         s"Schema mismatch. Expected: $expected. Error: $actual"
     ZIO.logWarning(message)
-
-  private def truncate(value: String): String =
-    if value.length <= maxLogLength then value else value.take(maxLogLength) + "..."

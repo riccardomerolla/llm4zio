@@ -265,11 +265,13 @@ object MigrationOrchestrator:
 
             projects <- if runConfig.dryRun then ZIO.succeed(List.empty[SpringBootProject])
                         else if shouldExecuteFrom(startStep, MigrationStep.Transformation) then
-                          AgentTracker.trackBatch(runId, "transformation", analyses, tracker) { (analysis, _) =>
-                            runTransformerAgent
-                              .transform(analysis, dependencyGraph)
-                              .mapError(OrchestratorError.TransformationFailed(analysis.file.name, _))
-                          }
+                          AgentTracker
+                            .trackPhase(runId, "transformation", 1, tracker)(
+                              runTransformerAgent
+                                .transform(analyses, dependencyGraph)
+                                .mapError(OrchestratorError.TransformationFailed("unified", _))
+                                .map(List(_))
+                            )
                         else ZIO.succeed(bootstrap.projects)
             _        <- if runConfig.dryRun || !shouldExecuteFrom(startStep, MigrationStep.Transformation) then ZIO.unit
                         else
@@ -283,12 +285,14 @@ object MigrationOrchestrator:
             validationReports <-
               if runConfig.dryRun then ZIO.succeed(List.empty[ValidationReport])
               else if shouldExecuteFrom(startStep, MigrationStep.Validation) then
-                AgentTracker.trackBatch(runId, "validation", projects.zip(analyses), tracker) {
-                  case ((project, analysis), _) =>
-                    runValidationAgent
-                      .validate(project, analysis)
-                      .mapError(OrchestratorError.ValidationFailed(analysis.file.name, _))
-                }
+                projects.headOption match
+                  case Some(project) =>
+                    AgentTracker.trackBatch(runId, "validation", analyses, tracker) { (analysis, _) =>
+                      runValidationAgent
+                        .validate(project, analysis)
+                        .mapError(OrchestratorError.ValidationFailed(analysis.file.name, _))
+                    }
+                  case None          => ZIO.succeed(List.empty[ValidationReport])
               else ZIO.succeed(bootstrap.validationReports)
             validationReport   = aggregateValidation(validationReports)
             _                 <- if runConfig.dryRun || !shouldExecuteFrom(startStep, MigrationStep.Validation) then ZIO.unit
@@ -874,12 +878,10 @@ object MigrationOrchestrator:
                            stateRef = stateRef,
                            errorsRef = errorsRef,
                          ) {
-                           ZIO.foreach(analyses) { analysis =>
-                             transformerAgent.transform(
-                               analysis,
-                               dependencyGraph,
-                             ).mapError(OrchestratorError.TransformationFailed(analysis.file.name, _))
-                           }
+                           transformerAgent
+                             .transform(analyses, dependencyGraph)
+                             .mapError(OrchestratorError.TransformationFailed("unified", _))
+                             .map(List(_))
                          }
 
           projects = transformed.orElse(resumeState.map(_.projects)).getOrElse(List.empty)
@@ -907,11 +909,14 @@ object MigrationOrchestrator:
                                  )
                                }
                                .unit
-                           reports <- ZIO.foreach(projects.zip(analyses)) { (project, analysis) =>
-                                        validationAgent
-                                          .validate(project, analysis)
-                                          .mapError(OrchestratorError.ValidationFailed(analysis.file.name, _))
-                                      }
+                           reports <- projects.headOption match
+                                        case Some(project) =>
+                                          ZIO.foreach(analyses) { analysis =>
+                                            validationAgent
+                                              .validate(project, analysis)
+                                              .mapError(OrchestratorError.ValidationFailed(analysis.file.name, _))
+                                          }
+                                        case None          => ZIO.succeed(List.empty[ValidationReport])
                          yield reports
                        }
 

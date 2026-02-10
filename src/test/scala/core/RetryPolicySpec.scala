@@ -4,7 +4,7 @@ import zio.*
 import zio.test.*
 import zio.test.TestAspect.*
 
-import models.GeminiError
+import models.{ AIError, GeminiError }
 
 object RetryPolicySpec extends ZIOSpecDefault:
 
@@ -65,6 +65,14 @@ object RetryPolicySpec extends ZIOSpecDefault:
         val error = GeminiError.ProcessFailed("Connection reset")
         assertTrue(RetryPolicy.isRetryable(error))
       },
+      test("NonZeroExit with code 1 (CLI crash) is retryable") {
+        val error = GeminiError.NonZeroExit(1, "[object Object]")
+        assertTrue(RetryPolicy.isRetryable(error))
+      },
+      test("NonZeroExit with code 127 (command not found at runtime) is retryable") {
+        val error = GeminiError.NonZeroExit(127, "command not found")
+        assertTrue(RetryPolicy.isRetryable(error))
+      },
     ),
     // ========================================================================
     // isRetryable tests - Non-retryable errors
@@ -101,6 +109,43 @@ object RetryPolicySpec extends ZIOSpecDefault:
       test("NonZeroExit with code 404 (not found) is not retryable") {
         val error = GeminiError.NonZeroExit(404, "Not found")
         assertTrue(!RetryPolicy.isRetryable(error))
+      },
+      test("NonZeroExit with code 128 (signal-killed) is not retryable") {
+        val error = GeminiError.NonZeroExit(128, "fatal: signal")
+        assertTrue(!RetryPolicy.isRetryable(error))
+      },
+    ),
+    // ========================================================================
+    // isRetryableAI tests
+    // ========================================================================
+    suite("isRetryableAI")(
+      test("NonZeroExit with code 1 (CLI crash) is retryable") {
+        val error = AIError.NonZeroExit(1, "[object Object]")
+        assertTrue(RetryPolicy.isRetryableAI(error))
+      },
+      test("NonZeroExit with code 2 (generic error) is retryable") {
+        val error = AIError.NonZeroExit(2, "Unexpected error")
+        assertTrue(RetryPolicy.isRetryableAI(error))
+      },
+      test("NonZeroExit with code 127 is retryable") {
+        val error = AIError.NonZeroExit(127, "command not found")
+        assertTrue(RetryPolicy.isRetryableAI(error))
+      },
+      test("NonZeroExit with code 128 is not retryable") {
+        val error = AIError.NonZeroExit(128, "fatal: signal")
+        assertTrue(!RetryPolicy.isRetryableAI(error))
+      },
+      test("NonZeroExit with code 400 is not retryable") {
+        val error = AIError.NonZeroExit(400, "Bad request")
+        assertTrue(!RetryPolicy.isRetryableAI(error))
+      },
+      test("NonZeroExit with code 429 is retryable") {
+        val error = AIError.NonZeroExit(429, "Rate limited")
+        assertTrue(RetryPolicy.isRetryableAI(error))
+      },
+      test("NonZeroExit with code 500 is retryable") {
+        val error = AIError.NonZeroExit(500, "Server error")
+        assertTrue(RetryPolicy.isRetryableAI(error))
       },
     ),
     // ========================================================================

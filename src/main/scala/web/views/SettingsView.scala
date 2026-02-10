@@ -28,6 +28,7 @@ object SettingsView:
           processingSection(settings),
           discoverySection(settings),
           featuresSection(settings),
+          projectSection(settings),
           div(cls := "flex gap-4 pt-2")(
             button(
               `type` := "submit",
@@ -65,7 +66,7 @@ object SettingsView:
           ),
         ),
         div(cls := "grid grid-cols-2 gap-4")(
-          numberField("ai.timeout", "Timeout (seconds)", s, default = "90", min = "1", max = "600"),
+          numberField("ai.timeout", "Timeout (seconds)", s, default = "300", min = "10", max = "900"),
           numberField("ai.maxRetries", "Max Retries", s, default = "3", min = "0", max = "10"),
         ),
         div(cls := "grid grid-cols-2 gap-4")(
@@ -145,6 +146,17 @@ object SettingsView:
           s,
           default = false,
         ),
+      ),
+    )
+
+  private def projectSection(s: Map[String, String]): Frag =
+    tag("section")(cls := sectionCls)(
+      h2(cls := "text-lg font-semibold text-white mb-4")("Project"),
+      div(cls := "space-y-4")(
+        textField("project.basePackage", "Base Package", s, placeholder = "com.example"),
+        textField("project.name", "Project Name", s, placeholder = "Optional — derived from COBOL filename"),
+        textField("project.version", "Project Version", s, placeholder = "0.0.1-SNAPSHOT"),
+        numberField("project.maxCompileRetries", "Max Compile Retries", s, default = "3", min = "0", max = "10"),
       ),
     )
 

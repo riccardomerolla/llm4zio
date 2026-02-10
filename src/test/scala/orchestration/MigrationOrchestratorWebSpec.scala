@@ -205,7 +205,7 @@ object MigrationOrchestratorWebSpec extends ZIOSpecDefault:
   private val transformerLayer: ULayer[JavaTransformerAgent] =
     ZLayer.succeed(new JavaTransformerAgent {
       override def transform(
-        analysis: CobolAnalysis,
+        analyses: List[CobolAnalysis],
         dependencyGraph: DependencyGraph,
       ): ZIO[Any, TransformError, SpringBootProject] =
         ZIO.succeed(sampleProject)

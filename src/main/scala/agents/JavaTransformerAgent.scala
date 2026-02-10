@@ -9,7 +9,7 @@ import core.{ AIService, FileService, Logger, ResponseParser }
 import models.*
 import prompts.PromptTemplates
 
-/** JavaTransformerAgent - Transform COBOL programs into Spring Boot microservices
+/** JavaTransformerAgent - Transform COBOL programs into a unified Spring Boot project
   *
   * Responsibilities:
   *   - Convert COBOL data structures to Java classes/records
@@ -18,6 +18,9 @@ import prompts.PromptTemplates
   *   - Implement REST endpoints for program entry points
   *   - Create Spring Data JPA entities from file definitions
   *   - Handle error scenarios with try-catch blocks
+  *   - Sanitize names to produce valid Java identifiers
+  *   - Verify generated source for hallucinated package declarations
+  *   - Attempt compilation and retry with AI-driven fixes
   *
   * Interactions:
   *   - Input from: CobolAnalyzerAgent, DependencyMapperAgent
@@ -25,16 +28,16 @@ import prompts.PromptTemplates
   */
 trait JavaTransformerAgent:
   def transform(
-    analysis: CobolAnalysis,
+    analyses: List[CobolAnalysis],
     dependencyGraph: DependencyGraph,
   ): ZIO[Any, TransformError, SpringBootProject]
 
 object JavaTransformerAgent:
   def transform(
-    analysis: CobolAnalysis,
+    analyses: List[CobolAnalysis],
     dependencyGraph: DependencyGraph,
   ): ZIO[JavaTransformerAgent, TransformError, SpringBootProject] =
-    ZIO.serviceWithZIO[JavaTransformerAgent](_.transform(analysis, dependencyGraph))
+    ZIO.serviceWithZIO[JavaTransformerAgent](_.transform(analyses, dependencyGraph))
 
   val live
     : ZLayer[AIService & ResponseParser & FileService & MigrationConfig, Nothing, JavaTransformerAgent] =
@@ -47,20 +50,59 @@ object JavaTransformerAgent:
       ) =>
         new JavaTransformerAgent {
           override def transform(
-            analysis: CobolAnalysis,
+            analyses: List[CobolAnalysis],
             dependencyGraph: DependencyGraph,
           ): ZIO[Any, TransformError, SpringBootProject] =
             for
-              _           <- Logger.info(s"Transforming ${analysis.file.name} to Spring Boot")
-              entity      <- generateEntity(analysis)
-              service     <- generateService(analysis, dependencyGraph)
-              controller  <- generateController(analysis, service.name)
-              repositories = generateRepositories(entity)
-              now         <- Clock.instant
-              project      = buildProject(analysis, now, entity, service, controller, repositories)
-              _           <- writeProject(project, config.outputDir)
-              _           <- Logger.info(s"Generated Spring Boot project: ${project.projectName}")
-            yield project
+              _              <- Logger.info(s"Transforming ${analyses.size} COBOL program(s) to unified Spring Boot project")
+              pairs          <- ZIO.foreach(analyses) { analysis =>
+                                  for
+                                    entity     <- generateEntity(analysis)
+                                    service    <- generateService(analysis, dependencyGraph)
+                                    controller <- generateController(analysis, service.name)
+                                    repos       = generateRepositories(entity)
+                                  yield (entity, service, controller, repos)
+                                }
+              now            <- Clock.instant
+              allEntities     = pairs.map(_._1)
+              allServices     = pairs.map(_._2)
+              allControllers  = pairs.map(_._3)
+              allRepositories = pairs.flatMap(_._4)
+              projectName     = config.projectName.getOrElse(deriveProjectName(analyses))
+              project         = buildUnifiedProject(
+                                  projectName,
+                                  analyses,
+                                  now,
+                                  allEntities,
+                                  allServices,
+                                  allControllers,
+                                  allRepositories,
+                                )
+              basePkg         = s"${config.basePackage}.${sanitizeJavaIdentifier(project.projectName).toLowerCase}"
+              mismatches      = verifyPackageDeclarations(project, basePkg)
+              _              <-
+                ZIO.when(mismatches.nonEmpty)(
+                  Logger.warn(
+                    s"Found ${mismatches.size} hallucinated package declaration(s), fixing: ${mismatches.map(_._1).mkString(", ")}"
+                  )
+                )
+              fixedProject    = if mismatches.nonEmpty then fixPackageDeclarations(project, basePkg) else project
+              _              <- writeProject(fixedProject, config.outputDir)
+              projectDir      = config.outputDir.resolve(
+                                  sanitizeJavaIdentifier(fixedProject.projectName).toLowerCase
+                                )
+              finalProject   <- {
+                if config.maxCompileRetries > 0
+                then
+                  compilationRetryLoop(fixedProject, projectDir, basePkg, config.maxCompileRetries)
+                else ZIO.succeed(fixedProject)
+              }
+              _              <- Logger.info(s"Generated unified Spring Boot project: ${finalProject.projectName}")
+            yield finalProject
+
+          // ---------------------------------------------------------------------------
+          // AI generation
+          // ---------------------------------------------------------------------------
 
           private def generateEntity(analysis: CobolAnalysis): ZIO[Any, TransformError, JavaEntity] =
             val prompt = PromptTemplates.JavaTransformer.generateEntity(analysis)
@@ -103,35 +145,216 @@ object JavaTransformerAgent:
                               .mapError(e => TransformError.ParseFailed(analysis.file.name, e.message))
             yield controller
 
-          private def buildProject(
-            analysis: CobolAnalysis,
+          // ---------------------------------------------------------------------------
+          // Name sanitization
+          // ---------------------------------------------------------------------------
+
+          private def sanitizeJavaIdentifier(name: String): String =
+            val stripped = name.replaceAll("\\.(cbl|cob)$", "")
+            val cleaned  = stripped.replaceAll("[^a-zA-Z0-9]", "")
+            val result   = if cleaned.isEmpty then "generated" else cleaned
+            if result.head.isDigit then s"p$result" else result
+
+          private def deriveProjectName(analyses: List[CobolAnalysis]): String =
+            if analyses.size == 1 then programIdFor(analyses.head.file.name)
+            else
+              analyses.headOption
+                .map(a => programIdFor(a.file.name))
+                .getOrElse("MIGRATIONPROJECT")
+
+          // ---------------------------------------------------------------------------
+          // Hallucination check
+          // ---------------------------------------------------------------------------
+
+          private def verifyPackageDeclarations(
+            project: SpringBootProject,
+            basePkg: String,
+          ): List[(String, String, String)] =
+            val packagePattern = """^\s*package\s+([a-zA-Z0-9_.]+)\s*;""".r.unanchored
+
+            def checkSource(
+              label: String,
+              expectedPkg: String,
+              source: String,
+            ): Option[(String, String, String)] =
+              if source.isEmpty then None
+              else
+                packagePattern.findFirstMatchIn(source) match
+                  case Some(m) =>
+                    val actual = m.group(1)
+                    if actual != expectedPkg then Some((label, expectedPkg, actual)) else None
+                  case None    => None
+
+            val entityMismatches = project.entities.flatMap { e =>
+              checkSource(s"Entity ${e.className}", s"$basePkg.entity", e.sourceCode)
+            }
+            val repoMismatches   = project.repositories.flatMap { r =>
+              checkSource(s"Repository ${r.name}", s"$basePkg.repository", r.sourceCode)
+            }
+            entityMismatches ++ repoMismatches
+
+          private def fixPackageDeclarations(
+            project: SpringBootProject,
+            basePkg: String,
+          ): SpringBootProject =
+            val packagePattern = """^\s*package\s+[a-zA-Z0-9_.]+\s*;""".r
+
+            def fixSource(source: String, expectedPkg: String): String =
+              if source.isEmpty then source
+              else packagePattern.replaceFirstIn(source, s"package $expectedPkg;")
+
+            val fixedEntities = project.entities.map { e =>
+              e.copy(sourceCode = fixSource(e.sourceCode, s"$basePkg.entity"))
+            }
+            val fixedRepos    = project.repositories.map { r =>
+              r.copy(sourceCode = fixSource(r.sourceCode, s"$basePkg.repository"))
+            }
+            project.copy(entities = fixedEntities, repositories = fixedRepos)
+
+          // ---------------------------------------------------------------------------
+          // Compilation retry loop
+          // ---------------------------------------------------------------------------
+
+          private def runMavenCompile(
+            projectDir: java.nio.file.Path
+          ): ZIO[Any, TransformError, CompileResult] =
+            ZIO
+              .attemptBlocking {
+                val process = new ProcessBuilder("mvn", "-q", "compile")
+                  .directory(projectDir.toFile)
+                  .redirectErrorStream(true)
+                  .start()
+                val output  = new String(process.getInputStream.readAllBytes())
+                val code    = process.waitFor()
+                CompileResult(success = code == 0, exitCode = code, output = output.take(2000))
+              }
+              .timeout(90.seconds)
+              .mapError(e =>
+                TransformError.WriteFailed(projectDir, Option(e.getMessage).getOrElse("compile failed"))
+              )
+              .map {
+                case Some(result) => result
+                case None         =>
+                  CompileResult(success = false, exitCode = 124, output = "mvn compile timed out")
+              }
+
+          private def compilationRetryLoop(
+            project: SpringBootProject,
+            projectDir: java.nio.file.Path,
+            basePkg: String,
+            maxRetries: Int,
+          ): ZIO[Any, TransformError, SpringBootProject] =
+            def loop(
+              current: SpringBootProject,
+              attempt: Int,
+            ): ZIO[Any, TransformError, SpringBootProject] =
+              for
+                result <- runMavenCompile(projectDir)
+                fixed  <- {
+                  if result.success then
+                    Logger.info(
+                      s"Compilation succeeded for ${project.projectName} (attempt $attempt)"
+                    ) *> ZIO.succeed(current)
+                  else if attempt >= maxRetries then
+                    Logger.warn(
+                      s"Compilation fix exhausted after $maxRetries retries for ${project.projectName}"
+                    ) *> ZIO.succeed(current)
+                  else
+                    for
+                      _       <-
+                        Logger.warn(
+                          s"Compilation failed for ${project.projectName} (attempt $attempt/$maxRetries): ${result.output.take(200)}"
+                        )
+                      updated <- fixSourcesFromErrors(current, basePkg, result.output)
+                      mainJava = projectDir.resolve("src/main/java")
+                      _       <- writeEntityFiles(updated, mainJava, basePkg)
+                      _       <- writeServiceFiles(updated, mainJava, basePkg)
+                      _       <- writeControllerFiles(updated, mainJava, basePkg)
+                      _       <- writeRepositoryFiles(updated, mainJava, basePkg)
+                      next    <- loop(updated, attempt + 1)
+                    yield next
+                }
+              yield fixed
+
+            loop(project, 1)
+
+          private def fixSourcesFromErrors(
+            project: SpringBootProject,
+            basePkg: String,
+            compileOutput: String,
+          ): ZIO[Any, TransformError, SpringBootProject] =
+            for fixedEntities <- ZIO.foreach(project.entities) { entity =>
+                                   val source =
+                                     if entity.sourceCode.nonEmpty then entity.sourceCode
+                                     else renderEntity(basePkg, entity)
+                                   if !compileOutput.contains(entity.className) then ZIO.succeed(entity)
+                                   else
+                                     for
+                                       response <- aiService
+                                                     .execute(
+                                                       PromptTemplates.JavaTransformer.fixCompilationErrors(
+                                                         s"${entity.className}.java",
+                                                         source,
+                                                         compileOutput,
+                                                       )
+                                                     )
+                                                     .mapError(e =>
+                                                       TransformError.AIFailed(entity.className, e.message)
+                                                     )
+                                       cleaned   = stripCodeFences(response.output.trim)
+                                     yield entity.copy(sourceCode = cleaned)
+                                 }
+            yield project.copy(entities = fixedEntities)
+
+          private def stripCodeFences(code: String): String =
+            val lines    = code.linesIterator.toList
+            val stripped =
+              if lines.headOption.exists(_.startsWith("```")) then
+                lines.tail.reverse.dropWhile(_.startsWith("```")).reverse
+              else lines
+            stripped.mkString("\n")
+
+          // ---------------------------------------------------------------------------
+          // Project building
+          // ---------------------------------------------------------------------------
+
+          private def buildUnifiedProject(
+            projectName: String,
+            analyses: List[CobolAnalysis],
             generatedAt: java.time.Instant,
-            entity: JavaEntity,
-            service: JavaService,
-            controller: JavaController,
+            entities: List[JavaEntity],
+            services: List[JavaService],
+            controllers: List[JavaController],
             repositories: List[JavaRepository],
           ): SpringBootProject =
-            val programId = programIdFor(analysis.file.name)
+            val artifactId = sanitizeJavaIdentifier(projectName).toLowerCase
             SpringBootProject(
-              projectName = programId,
-              sourceProgram = analysis.file.name,
+              projectName = projectName,
+              sourceProgram = analyses.map(_.file.name).mkString(","),
               generatedAt = generatedAt,
-              entities = List(entity),
-              services = List(service),
-              controllers = List(controller),
+              entities = entities,
+              services = services,
+              controllers = controllers,
               repositories = repositories,
               configuration = ProjectConfiguration(
-                groupId = "com.example",
-                artifactId = programId.toLowerCase,
+                groupId = config.basePackage,
+                artifactId = artifactId,
                 dependencies =
                   List("spring-boot-starter-web", "spring-boot-starter-data-jpa", "lombok", "springdoc-openapi"),
               ),
-              buildFile = BuildFile("maven", pomXml(programId.toLowerCase)),
+              buildFile = BuildFile(
+                "maven",
+                pomXml(artifactId, config.basePackage, config.projectVersion, projectName),
+              ),
             )
 
+          // ---------------------------------------------------------------------------
+          // File writing
+          // ---------------------------------------------------------------------------
+
           private def writeProject(project: SpringBootProject, outputDir: Path): ZIO[Any, TransformError, Unit] =
-            val projectDir = outputDir.resolve(project.projectName.toLowerCase)
-            val basePkg    = s"com.example.${project.projectName.toLowerCase}"
+            val projectDir = outputDir.resolve(sanitizeJavaIdentifier(project.projectName).toLowerCase)
+            val basePkg    = s"${config.basePackage}.${sanitizeJavaIdentifier(project.projectName).toLowerCase}"
             val mainJava   = projectDir.resolve("src/main/java")
             val mainRes    = projectDir.resolve("src/main/resources")
             for
@@ -218,6 +441,10 @@ object JavaTransformerAgent:
               val content = if repo.sourceCode.nonEmpty then repo.sourceCode else renderRepository(basePkg, repo)
               fileService.writeFileAtomic(path, content).mapError(fe => TransformError.WriteFailed(path, fe.message))
             }
+
+          // ---------------------------------------------------------------------------
+          // Java source rendering
+          // ---------------------------------------------------------------------------
 
           private def renderEntity(basePkg: String, entity: JavaEntity): String =
             val fieldLines = entity.fields.map { field =>
@@ -330,11 +557,12 @@ object JavaTransformerAgent:
                |""".stripMargin
 
           private def applicationYaml(project: SpringBootProject): String =
+            val appName = sanitizeJavaIdentifier(project.projectName).toLowerCase
             s"""spring:
                |  application:
-               |    name: ${project.projectName.toLowerCase}
+               |    name: $appName
                |  datasource:
-               |    url: jdbc:h2:mem:${project.projectName.toLowerCase}
+               |    url: jdbc:h2:mem:$appName
                |    driverClassName: org.h2.Driver
                |    username: sa
                |    password:
@@ -349,13 +577,19 @@ object JavaTransformerAgent:
                |    path: /swagger-ui.html
                |""".stripMargin
 
-          private def pomXml(artifactId: String): String =
+          private def pomXml(
+            artifactId: String,
+            groupId: String,
+            version: String,
+            projectName: String,
+          ): String =
             s"""<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                |  xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
                |  <modelVersion>4.0.0</modelVersion>
-               |  <groupId>com.example</groupId>
+               |  <groupId>$groupId</groupId>
                |  <artifactId>$artifactId</artifactId>
-               |  <version>0.0.1-SNAPSHOT</version>
+               |  <version>$version</version>
+               |  <name>$projectName</name>
                |  <parent>
                |    <groupId>org.springframework.boot</groupId>
                |    <artifactId>spring-boot-starter-parent</artifactId>
@@ -397,11 +631,32 @@ object JavaTransformerAgent:
                |</project>
                |""".stripMargin
 
+          private def openApiConfigClass(pkg: String): String =
+            s"""package $pkg;
+               |
+               |import org.springframework.context.annotation.Bean;
+               |import org.springframework.context.annotation.Configuration;
+               |import io.swagger.v3.oas.models.OpenAPI;
+               |import io.swagger.v3.oas.models.info.Info;
+               |
+               |@Configuration
+               |public class OpenApiConfig {
+               |  @Bean
+               |  public OpenAPI openAPI() {
+               |    return new OpenAPI().info(new Info().title("COBOL Migration API").version("1.0.0"));
+               |  }
+               |}
+               |""".stripMargin
+
+          // ---------------------------------------------------------------------------
+          // Helpers
+          // ---------------------------------------------------------------------------
+
           private def packagePath(pkg: String): Path =
             Path.of(pkg.replace('.', '/'))
 
           private def programIdFor(name: String): String =
-            name.replaceAll("\\.(cbl|cob)$", "").toUpperCase
+            sanitizeJavaIdentifier(name).toUpperCase
 
           private def generateRepositories(entity: JavaEntity): List[JavaRepository] =
             List(
@@ -420,28 +675,11 @@ object JavaTransformerAgent:
               if entity.className.nonEmpty then entity.className else programIdFor(analysis.file.name).capitalize
             val packageName  =
               if entity.packageName.nonEmpty then entity.packageName
-              else s"com.example.${programIdFor(analysis.file.name).toLowerCase}.entity"
+              else s"${config.basePackage}.${programIdFor(analysis.file.name).toLowerCase}.entity"
             val withDefaults = entity.copy(className = className, packageName = packageName)
             val source       =
               if withDefaults.sourceCode.nonEmpty then withDefaults.sourceCode
               else renderEntity(packageName.stripSuffix(".entity"), withDefaults)
             withDefaults.copy(sourceCode = source)
-
-          private def openApiConfigClass(pkg: String): String =
-            s"""package $pkg;
-               |
-               |import org.springframework.context.annotation.Bean;
-               |import org.springframework.context.annotation.Configuration;
-               |import io.swagger.v3.oas.models.OpenAPI;
-               |import io.swagger.v3.oas.models.info.Info;
-               |
-               |@Configuration
-               |public class OpenApiConfig {
-               |  @Bean
-               |  public OpenAPI openAPI() {
-               |    return new OpenAPI().info(new Info().title("COBOL Migration API").version("1.0.0"));
-               |  }
-               |}
-               |""".stripMargin
         }
     }

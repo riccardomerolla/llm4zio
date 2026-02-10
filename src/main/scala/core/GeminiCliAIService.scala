@@ -52,10 +52,9 @@ object GeminiCliExecutor:
           "-m",
           providerConfig.model,
           "-y",
-          "-s",
         )
 
-        ZIO.logDebug(s"Starting Gemini process: gemini -p <prompt> -m ${providerConfig.model} -y -s") *>
+        ZIO.logDebug(s"Starting Gemini process: gemini -p <prompt> -m ${providerConfig.model} -y") *>
           ZIO
             .attemptBlocking {
               new ProcessBuilder(commands.asJava)

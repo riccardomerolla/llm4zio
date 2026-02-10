@@ -64,8 +64,14 @@ object RetryPolicyPropertySpec extends ZIOSpecDefault:
           assertTrue(!RetryPolicy.isRetryable(error))
         }
       },
-      test("low exit codes (1-99) are not retryable") {
-        check(Gen.int(1, 99)) { code =>
+      test("low exit codes (1-127) are retryable (transient CLI crashes)") {
+        check(Gen.int(1, 127)) { code =>
+          val error = GeminiError.NonZeroExit(code, "CLI crash")
+          assertTrue(RetryPolicy.isRetryable(error))
+        }
+      },
+      test("exit codes 128-399 (signal kills and misc) are not retryable") {
+        check(Gen.int(128, 399)) { code =>
           val error = GeminiError.NonZeroExit(code, "other error")
           assertTrue(!RetryPolicy.isRetryable(error))
         }

@@ -213,6 +213,10 @@ final case class RunsControllerLive(
       enableCheckpointing = s.get("features.enableCheckpointing").map(_ == "true").getOrElse(true),
       verbose = s.get("features.verbose").map(_ == "true").getOrElse(false),
       dryRun = dryRun,
+      basePackage = s.get("project.basePackage").filter(_.nonEmpty).getOrElse("com.example"),
+      projectName = s.get("project.name").filter(_.nonEmpty),
+      projectVersion = s.get("project.version").filter(_.nonEmpty).getOrElse("0.0.1-SNAPSHOT"),
+      maxCompileRetries = s.get("project.maxCompileRetries").flatMap(_.toIntOption).getOrElse(3),
     )
 
   private def parseProvider(value: String): Option[AIProvider] =

@@ -1,7 +1,8 @@
 package di
 
 import zio.*
-import zio.http.Client
+import zio.http.netty.NettyConfig
+import zio.http.{ Client, DnsResolver, ZClient }
 
 import agents.*
 import core.*
@@ -41,7 +42,7 @@ object ApplicationDI:
       // Service implementations
       RateLimiter.live,
       ResponseParser.live,
-      Client.default.orDie,
+      httpClientLayer(config).orDie,
       HttpAIClient.live,
       AIService.fromConfig.mapError(e => new RuntimeException(e.message)).orDie,
       StateService.live(config.stateDir),
@@ -59,6 +60,16 @@ object ApplicationDI:
       ValidationAgent.live,
       DocumentationAgent.live,
     )
+
+  private def httpClientLayer(config: MigrationConfig): ZLayer[Any, Throwable, Client] =
+    val timeout      = config.resolvedProviderConfig.timeout
+    val idleTimeout  = timeout + 300.seconds
+    val clientConfig = ZClient.Config.default.copy(
+      idleTimeout = Some(idleTimeout),
+      connectionTimeout = Some(300.seconds),
+    )
+    (ZLayer.succeed(clientConfig) ++ ZLayer.succeed(NettyConfig.defaultWithFastShutdown) ++
+      DnsResolver.default) >>> Client.live
 
   def orchestratorLayer(config: MigrationConfig): ZLayer[Any, Nothing, MigrationOrchestrator] =
     orchestratorLayer(config, config.stateDir.resolve("migration.db"))

@@ -25,15 +25,26 @@ object CobolAnalyzerPrompts:
   val version: String = "1.0.0"
 
   private val systemPrompt =
-    """You are an expert COBOL program analyzer with deep knowledge of mainframe COBOL syntax.
+    """You are an expert COBOL program analyzer with deep knowledge of mainframe COBOL syntax,
+      |including CICS, VSAM, and DB2 programs.
       |Your role is to perform precise structural analysis of COBOL programs.
       |
       |CRITICAL REQUIREMENTS:
-      |- Always respond with valid JSON only, no markdown, no explanations
+      |- Always respond with valid, complete JSON only — no markdown, no explanations, no trailing text
+      |- The JSON response MUST be well-formed: every opening brace/bracket must have a matching closing brace/bracket
+      |- Do NOT truncate the output — return the entire JSON object even if it is large
+      |- Verify that your JSON is syntactically valid before responding
       |- Extract ALL variables, procedures, and copybook references
       |- Calculate accurate complexity metrics
       |- Identify all control flow statements (IF, PERFORM, GOTO, EVALUATE)
       |- Parse PIC clauses correctly for data types
+      |- Handle CICS programs: EXEC CICS statements are statement type "EXEC-CICS"
+      |- Handle level 77 variables (independent items) — they have their own level number
+      |- Handle level 88 condition names
+      |- The "divisions" field MUST be a JSON object (not an array)
+      |- The "copybooks" field MUST be a flat array of strings (not objects)
+      |- Every variable MUST include "level" (int), "dataType" (string), and "name" (string)
+      |- Every statement MUST include "lineNumber" (int), "statementType" (string), and "content" (string with the full COBOL statement text)
       |
       |TEMPLATE_VERSION: 1.0.0
       |""".stripMargin
@@ -94,16 +105,19 @@ object CobolAnalyzerPrompts:
        |1. IDENTIFICATION DIVISION - program-id, author, date-written
        |2. ENVIRONMENT DIVISION - file controls, special-names
        |3. DATA DIVISION:
-       |   - WORKING-STORAGE: All 01-49 level variables with PIC clauses
+       |   - WORKING-STORAGE: All variables (levels 01-49, 77, 88) with PIC clauses
        |   - FILE SECTION: File descriptions (FD)
        |   - LINKAGE SECTION: External parameters
+       |   - For each variable, extract: name, level number, dataType (numeric/alphanumeric/group), picture clause
        |4. PROCEDURE DIVISION:
        |   - All paragraph and section names
-       |   - Statement types (MOVE, COMPUTE, IF, PERFORM, etc.)
+       |   - Statement types: MOVE, COMPUTE, IF, PERFORM, EVALUATE, DISPLAY, READ, WRITE, OPEN, CLOSE, STOP
+       |   - CICS statements: Use statementType "EXEC-CICS" with full EXEC CICS ... END-EXEC as content
        |   - Control flow (PERFORM targets, GO TO targets)
-       |5. COPY statements - extract all copybook names
+       |   - Each statement MUST have: lineNumber (approximate line in source), statementType, content (the full COBOL text)
+       |5. COPY statements - extract all copybook names as a flat list of strings: ["COPY1", "COPY2"]
        |6. Complexity metrics:
-       |   - cyclomaticComplexity: Count decision points (IF, EVALUATE, PERFORM UNTIL)
+       |   - cyclomaticComplexity: Count decision points (IF, EVALUATE, PERFORM UNTIL, EXEC CICS HANDLE)
        |   - linesOfCode: Total non-comment lines
        |   - numberOfProcedures: Count of paragraphs/sections
        |
@@ -369,6 +383,67 @@ object CobolAnalyzerPrompts:
          |  "complexity": {
          |    "cyclomaticComplexity": 5,
          |    "linesOfCode": 24,
+         |    "numberOfProcedures": 1
+         |  }
+         |}""",
+      )}
+       |
+       |${PromptHelpers.fewShotExample(
+        "CICS COBOL program with EXEC CICS and COPY",
+        """PROGRAM-ID. ZBANK.
+         |DATA DIVISION.
+         |WORKING-STORAGE SECTION.
+         |COPY ZBNKSET.
+         |77 WS-REC-LEN PIC S9(4) COMP.
+         |77 WS-FILE-NAME PIC X(8) VALUE 'VSAMZBNK'.
+         |01 WS-FILE-REC.
+         |   05 WS-ACCNO PIC 9(10).
+         |   05 WS-PIN PIC 9(10).
+         |01 ACCNO PIC 9(10).
+         |PROCEDURE DIVISION.
+         |    MOVE LOGACCI TO WS-ACCNO.
+         |    EXEC CICS READ DATASET(WS-FILE-NAME)
+         |              INTO(WS-FILE-REC)
+         |              RIDFLD(WS-ACCNO)
+         |              LENGTH(WS-REC-LEN)
+         |              UPDATE RESP(WS-RESP-CODE)
+         |    END-EXEC.
+         |    IF WS-RESP-CODE NOT = ZEROS
+         |       DISPLAY 'Error reading file'
+         |    END-IF.
+         |""",
+        """{
+         |  "file": { "name": "ZBANK.cbl", "path": "/cobol/ZBANK.cbl", "size": 2048, "lastModified": "2026-01-15T13:00:00Z", "encoding": "UTF-8", "fileType": "Program" },
+         |  "divisions": {
+         |    "identification": "PROGRAM-ID. ZBANK.",
+         |    "environment": null,
+         |    "data": "WORKING-STORAGE SECTION. COPY ZBNKSET. 77 WS-REC-LEN...",
+         |    "procedure": "MOVE LOGACCI TO WS-ACCNO. EXEC CICS READ..."
+         |  },
+         |  "variables": [
+         |    { "name": "WS-REC-LEN", "level": 77, "dataType": "numeric", "picture": "S9(4)", "usage": "COMP" },
+         |    { "name": "WS-FILE-NAME", "level": 77, "dataType": "alphanumeric", "picture": "X(8)", "usage": null },
+         |    { "name": "WS-FILE-REC", "level": 1, "dataType": "group", "picture": null, "usage": null },
+         |    { "name": "WS-ACCNO", "level": 5, "dataType": "numeric", "picture": "9(10)", "usage": null },
+         |    { "name": "WS-PIN", "level": 5, "dataType": "numeric", "picture": "9(10)", "usage": null },
+         |    { "name": "ACCNO", "level": 1, "dataType": "numeric", "picture": "9(10)", "usage": null }
+         |  ],
+         |  "procedures": [
+         |    {
+         |      "name": "MAIN-LOGIC",
+         |      "paragraphs": ["MAIN-LOGIC"],
+         |      "statements": [
+         |        { "lineNumber": 12, "statementType": "MOVE", "content": "MOVE LOGACCI TO WS-ACCNO" },
+         |        { "lineNumber": 13, "statementType": "EXEC-CICS", "content": "EXEC CICS READ DATASET(WS-FILE-NAME) INTO(WS-FILE-REC) RIDFLD(WS-ACCNO) LENGTH(WS-REC-LEN) UPDATE RESP(WS-RESP-CODE) END-EXEC" },
+         |        { "lineNumber": 19, "statementType": "IF", "content": "IF WS-RESP-CODE NOT = ZEROS" },
+         |        { "lineNumber": 20, "statementType": "DISPLAY", "content": "DISPLAY 'Error reading file'" }
+         |      ]
+         |    }
+         |  ],
+         |  "copybooks": ["ZBNKSET"],
+         |  "complexity": {
+         |    "cyclomaticComplexity": 2,
+         |    "linesOfCode": 22,
          |    "numberOfProcedures": 1
          |  }
          |}""",

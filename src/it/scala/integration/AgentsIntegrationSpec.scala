@@ -66,7 +66,7 @@ object AgentsIntegrationSpec extends ZIOSpecDefault:
                               CobolAnalyzerAgent.live,
                             )
               project  <- JavaTransformerAgent
-                            .transform(analysis, DependencyGraph.empty)
+                            .transform(List(analysis), DependencyGraph.empty)
                             .provide(
                               FileService.live,
                               ResponseParser.live,
@@ -100,7 +100,7 @@ object AgentsIntegrationSpec extends ZIOSpecDefault:
                               CobolAnalyzerAgent.live,
                             )
               project  <- JavaTransformerAgent
-                            .transform(analysis, DependencyGraph.empty)
+                            .transform(List(analysis), DependencyGraph.empty)
                             .provide(
                               FileService.live,
                               ResponseParser.live,
@@ -224,7 +224,7 @@ object AgentsIntegrationSpec extends ZIOSpecDefault:
                              CobolAnalyzerAgent.live,
                            )
             project   <- JavaTransformerAgent
-                           .transform(analysis, DependencyGraph.empty)
+                           .transform(List(analysis), DependencyGraph.empty)
                            .provide(
                              FileService.live,
                              ResponseParser.live,
@@ -355,7 +355,7 @@ object AgentsIntegrationSpec extends ZIOSpecDefault:
                              CobolAnalyzerAgent.live,
                            )
             project   <- JavaTransformerAgent
-                           .transform(analysis, DependencyGraph.empty)
+                           .transform(List(analysis), DependencyGraph.empty)
                            .provide(
                              FileService.live,
                              ResponseParser.live,

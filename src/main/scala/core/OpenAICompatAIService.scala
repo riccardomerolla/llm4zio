@@ -41,7 +41,7 @@ final case class OpenAICompatAIService(
     RetryPolicy.withRetry(
       executeOnce(prompt),
       policy,
-      isRetryable,
+      RetryPolicy.isRetryableAI,
     )
 
   private def executeOnce(prompt: String): ZIO[Any, AIError, AIResponse] =
@@ -93,14 +93,6 @@ final case class OpenAICompatAIService(
     (usageMetadata ++ finishReason.toList).toMap ++ Map(
       "model" -> response.model.getOrElse(config.model)
     )
-
-  private def isRetryable(error: AIError): Boolean = error match
-    case AIError.RateLimitExceeded(_)                                        => true
-    case AIError.HttpError(status, _) if status == 429 || status == 500      => true
-    case AIError.HttpError(status, _) if status == 503                       => true
-    case AIError.ProviderUnavailable(_, cause) if cause.contains("HTTP 500") => true
-    case AIError.ProviderUnavailable(_, cause) if cause.contains("HTTP 503") => true
-    case _                                                                   => false
 
   private def authHeaders: Map[String, String] =
     config.apiKey match

@@ -413,10 +413,11 @@ object MigrationOrchestratorSpec extends ZIOSpecDefault:
   private val mockTransformerAgent: ULayer[JavaTransformerAgent] =
     ZLayer.succeed(new JavaTransformerAgent {
       override def transform(
-        analysis: CobolAnalysis,
+        analyses: List[CobolAnalysis],
         dependencyGraph: DependencyGraph,
       ): ZIO[Any, TransformError, SpringBootProject] =
-        ZIO.succeed(sampleProject)
+        if analyses.isEmpty then ZIO.fail(TransformError.AIFailed("empty", "no analyses to transform"))
+        else ZIO.succeed(sampleProject)
     })
 
   private val mockValidationAgent: ULayer[ValidationAgent] =

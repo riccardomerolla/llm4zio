@@ -60,10 +60,6 @@ object ValidationAgent:
               _                  <- Logger.debug(
                                       s"Static heuristic checks for ${project.projectName}: ${staticIssues.size} issues"
                                     )
-              mavenStaticIssues  <- runMavenStaticAnalysis(project)
-              _                  <- Logger.debug(
-                                      s"Maven static checks for ${project.projectName}: ${mavenStaticIssues.size} issues"
-                                    )
               coverageIssues      = coverageUnmapped(coverageMetrics)
               _                  <- Logger.debug(
                                       s"Coverage checks for ${project.projectName}: ${coverageIssues.size} issues"
@@ -77,7 +73,7 @@ object ValidationAgent:
               allIssues           =
                 (compileIssue(
                   compileResult
-                ) ++ staticIssues ++ mavenStaticIssues ++ coverageIssues ++ semanticValidation.issues).distinct
+                ) ++ staticIssues ++ coverageIssues ++ semanticValidation.issues).distinct
               overallStatus       = determineStatus(compileResult, allIssues)
               report              = ValidationReport(
                                       projectName = project.projectName,
@@ -170,61 +166,6 @@ object ValidationAgent:
               fileSectionCovered = fileSectionCoverage,
               unmappedItems = (unmappedVariables ++ unmappedProcedures).distinct,
             )
-
-          private def runMavenStaticAnalysis(project: SpringBootProject)
-            : ZIO[Any, ValidationError, List[ValidationIssue]] =
-            val projectDir = config.outputDir.resolve(project.projectName.toLowerCase)
-            val pomPath    = projectDir.resolve("pom.xml")
-            Logger.debug(
-              s"Maven static analysis for ${project.projectName}: projectDir=$projectDir, pomPath=$pomPath"
-            ) *>
-              ZIO
-                .attemptBlocking(java.nio.file.Files.exists(pomPath))
-                .mapError(e => ValidationError.CompileFailed(project.projectName, e.getMessage))
-                .flatMap { hasPom =>
-                  if !hasPom then
-                    Logger.debug(s"Skipping Maven static analysis for ${project.projectName}: missing pom.xml") *>
-                      ZIO.succeed(Nil)
-                  else
-                    Logger.debug(s"Running Maven checkstyle/spotbugs for ${project.projectName}") *>
-                      ZIO
-                        .attemptBlocking {
-                          val process = new ProcessBuilder("mvn", "-q", "checkstyle:check", "spotbugs:check")
-                            .directory(projectDir.toFile)
-                            .redirectErrorStream(true)
-                            .start()
-                          val output  = new String(process.getInputStream.readAllBytes())
-                          val code    = process.waitFor()
-                          (code, truncate(output))
-                        }
-                        .timeout(120.seconds)
-                        .mapError(e => ValidationError.CompileFailed(project.projectName, e.getMessage))
-                        .map {
-                          case Some((0, _))      => Nil
-                          case Some((_, output)) =>
-                            List(
-                              ValidationIssue(
-                                severity = Severity.WARNING,
-                                category = IssueCategory.StaticAnalysis,
-                                message = "Maven static analysis reported issues (checkstyle/spotbugs)",
-                                file = None,
-                                line = None,
-                                suggestion = Some(output),
-                              )
-                            )
-                          case None              =>
-                            List(
-                              ValidationIssue(
-                                severity = Severity.WARNING,
-                                category = IssueCategory.StaticAnalysis,
-                                message = "Maven static analysis timed out",
-                                file = None,
-                                line = None,
-                                suggestion = Some("Run checkstyle and spotbugs manually for detailed diagnostics"),
-                              )
-                            )
-                        }
-                }
 
           private def runStaticChecks(project: SpringBootProject, analysis: CobolAnalysis): List[ValidationIssue] =
             val entityIssues =

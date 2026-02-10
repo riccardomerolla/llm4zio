@@ -43,6 +43,10 @@ final case class SettingsControllerLive(
     "discovery.excludePatterns",
     "features.enableCheckpointing",
     "features.verbose",
+    "project.basePackage",
+    "project.name",
+    "project.version",
+    "project.maxCompileRetries",
   )
 
   override val routes: Routes[Any, Response] = Routes(

@@ -82,7 +82,7 @@ object PromptTemplates:
     * Output: JavaEntity, JavaService, JavaController JSON
     */
   object JavaTransformer:
-    export JavaTransformerPrompts.{ generateEntity, generateService, generateController, version }
+    export JavaTransformerPrompts.{ generateEntity, generateService, generateController, fixCompilationErrors, version }
 
   /** Validation agent prompts (version: 1.0.0)
     *

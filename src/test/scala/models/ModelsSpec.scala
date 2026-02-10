@@ -97,9 +97,46 @@ object ModelsSpec extends ZIOSpecDefault:
           fallbackDecoded == Right(IssueCategory.Undefined),
         )
       },
-      test("Severity decoder accepts lowercase variants") {
-        val decoded = "\"warning\"".fromJson[Severity]
-        assertTrue(decoded == Right(Severity.WARNING))
+      test("Severity decoder accepts lowercase variants and falls back to WARNING") {
+        assertTrue(
+          "\"warning\"".fromJson[Severity] == Right(Severity.WARNING),
+          "\"WARN\"".fromJson[Severity] == Right(Severity.WARNING),
+          "\"error\"".fromJson[Severity] == Right(Severity.ERROR),
+          "\"UNKNOWN_SEVERITY\"".fromJson[Severity] == Right(Severity.WARNING),
+        )
+      },
+      test("HttpMethod decoder accepts mixed case and falls back to GET") {
+        assertTrue(
+          "\"get\"".fromJson[HttpMethod] == Right(HttpMethod.GET),
+          "\"Post\"".fromJson[HttpMethod] == Right(HttpMethod.POST),
+          "\"DELETE\"".fromJson[HttpMethod] == Right(HttpMethod.DELETE),
+          "\"PATCH\"".fromJson[HttpMethod] == Right(HttpMethod.PATCH),
+          "\"UNKNOWN\"".fromJson[HttpMethod] == Right(HttpMethod.GET),
+        )
+      },
+      test("ValidationStatus decoder accepts mixed case and falls back to Failed") {
+        assertTrue(
+          "\"passed\"".fromJson[ValidationStatus] == Right(ValidationStatus.Passed),
+          "\"PASSED_WITH_WARNINGS\"".fromJson[ValidationStatus] == Right(ValidationStatus.PassedWithWarnings),
+          "\"Failed\"".fromJson[ValidationStatus] == Right(ValidationStatus.Failed),
+          "\"UNKNOWN\"".fromJson[ValidationStatus] == Right(ValidationStatus.Failed),
+        )
+      },
+      test("NodeType decoder accepts mixed case and falls back to Program") {
+        assertTrue(
+          "\"program\"".fromJson[NodeType] == Right(NodeType.Program),
+          "\"Copybook\"".fromJson[NodeType] == Right(NodeType.Copybook),
+          "\"service\"".fromJson[NodeType] == Right(NodeType.SharedService),
+          "\"UNKNOWN\"".fromJson[NodeType] == Right(NodeType.Program),
+        )
+      },
+      test("EdgeType decoder accepts mixed case and falls back to Uses") {
+        assertTrue(
+          "\"includes\"".fromJson[EdgeType] == Right(EdgeType.Includes),
+          "\"Calls\"".fromJson[EdgeType] == Right(EdgeType.Calls),
+          "\"USES\"".fromJson[EdgeType] == Right(EdgeType.Uses),
+          "\"UNKNOWN\"".fromJson[EdgeType] == Right(EdgeType.Uses),
+        )
       },
     ),
     suite("AI Models")(
