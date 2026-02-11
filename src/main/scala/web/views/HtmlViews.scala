@@ -35,8 +35,18 @@ object HtmlViews:
   def settingsPage(settings: Map[String, String], flash: Option[String] = None): String =
     SettingsView.page(settings, flash)
 
-  def agentsPage(agents: List[AgentInfo]): String =
-    AgentsView.list(agents)
+  def agentsPage(agents: List[AgentInfo], flash: Option[String] = None): String =
+    AgentsView.list(agents, flash)
+
+  def newCustomAgentPage(values: Map[String, String] = Map.empty, flash: Option[String] = None): String =
+    AgentsView.newCustomAgentForm(values, flash)
+
+  def editCustomAgentPage(
+    name: String,
+    values: Map[String, String],
+    flash: Option[String] = None,
+  ): String =
+    AgentsView.editCustomAgentForm(name, values, flash)
 
   def agentConfigPage(
     agent: AgentInfo,
@@ -67,5 +77,9 @@ object HtmlViews:
   def issueCreateForm(defaultRunId: Option[Long]): String =
     IssuesView.newForm(defaultRunId)
 
-  def issueDetail(issue: AgentIssue, assignments: List[AgentAssignment]): String =
-    IssuesView.detail(issue, assignments)
+  def issueDetail(
+    issue: AgentIssue,
+    assignments: List[AgentAssignment],
+    availableAgents: List[AgentInfo],
+  ): String =
+    IssuesView.detail(issue, assignments, availableAgents)
