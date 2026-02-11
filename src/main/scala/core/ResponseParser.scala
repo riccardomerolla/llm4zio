@@ -108,8 +108,7 @@ final class ResponseParserLive extends ResponseParser:
         trimmed.startsWith("[info]") ||
         trimmed.startsWith("[warn]") ||
         trimmed.startsWith("[debug]") ||
-        trimmed.startsWith("[error]") ||
-        (trimmed.nonEmpty && !trimmed.startsWith("{") && !trimmed.startsWith("["))
+        trimmed.startsWith("[error]")
       }
       .mkString("\n")
 
