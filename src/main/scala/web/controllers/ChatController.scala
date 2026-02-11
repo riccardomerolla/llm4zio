@@ -11,6 +11,7 @@ import zio.*
 import zio.http.*
 import zio.json.*
 
+import agents.AgentRegistry
 import core.AIService
 import db.{ ChatRepository, MigrationRepository, PersistenceError }
 import models.*
@@ -219,11 +220,14 @@ final case class ChatControllerLive(
     Method.GET / "issues" / long("id")                           -> handler { (id: Long, _: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
-          issue       <- chatRepository
-                           .getIssue(id)
-                           .someOrFail(PersistenceError.NotFound("issue", id))
-          assignments <- chatRepository.listAssignmentsByIssue(id)
-        yield html(HtmlViews.issueDetail(issue, assignments))
+          issue          <- chatRepository
+                              .getIssue(id)
+                              .someOrFail(PersistenceError.NotFound("issue", id))
+          assignments    <- chatRepository.listAssignmentsByIssue(id)
+          customAgents   <- migrationRepository.listCustomAgents
+          enabledCustom   = customAgents.filter(_.enabled)
+          availableAgents = AgentRegistry.allAgents(enabledCustom).filter(_.usesAI)
+        yield html(HtmlViews.issueDetail(issue, assignments, availableAgents))
       }
     },
     Method.POST / "issues" / long("id") / "assign"               -> handler { (id: Long, req: Request) =>

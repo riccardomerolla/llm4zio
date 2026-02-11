@@ -1,19 +1,32 @@
 package web.views
 
-import models.AgentInfo
+import models.{ AgentInfo, AgentType }
 import scalatags.Text.all.*
 
 object AgentsView:
 
-  def list(agents: List[AgentInfo]): String =
+  def list(agents: List[AgentInfo], flash: Option[String] = None): String =
     Layout.page("Agents", "/agents")(
       div(cls := "space-y-6")(
         div(cls := "rounded-xl border border-white/10 bg-slate-900/80 px-5 py-4")(
-          h1(cls := "text-2xl font-bold text-white")("Agents"),
-          p(cls := "mt-1 text-sm text-slate-300")(
-            "Built-in migration agents and their capabilities"
-          ),
+          div(cls := "flex flex-wrap items-center justify-between gap-3")(
+            div(
+              h1(cls := "text-2xl font-bold text-white")("Agents"),
+              p(cls := "mt-1 text-sm text-slate-300")(
+                "Built-in and custom migration agents"
+              ),
+            ),
+            a(
+              href := "/agents/new",
+              cls  := "rounded-md border border-emerald-400/30 bg-emerald-500/20 px-3 py-2 text-sm font-semibold text-emerald-200 hover:bg-emerald-500/30",
+            )("Create Custom Agent"),
+          )
         ),
+        flash.map { msg =>
+          div(cls := "rounded-md border border-emerald-500/30 bg-emerald-500/10 p-4")(
+            p(cls := "text-sm text-emerald-300")(msg)
+          )
+        },
         div(cls := "grid grid-cols-1 gap-4 lg:grid-cols-2")(
           agents.map(agentCard)
         ),
@@ -27,19 +40,48 @@ object AgentsView:
           h2(cls := "text-lg font-semibold text-slate-100")(agent.displayName),
           p(cls := "mt-1 text-sm text-slate-300")(agent.description),
         ),
-        aiBadge(agent.usesAI),
+        div(cls := "flex flex-col items-end gap-2")(
+          typeBadge(agent.agentType),
+          aiBadge(agent.usesAI),
+        ),
       ),
       div(cls := "mt-4 flex flex-wrap gap-2")(
         agent.tags.map(tagBadge)
       ),
-      if agent.usesAI then
-        div(cls := "mt-4")(
+      div(cls := "mt-4 flex flex-wrap gap-2")(
+        if agent.usesAI then
           a(
             href := s"/agents/${agent.name}/config",
             cls  := "inline-flex rounded-md border border-indigo-400/30 bg-indigo-500/20 px-3 py-1.5 text-sm font-semibold text-indigo-200 hover:bg-indigo-500/30",
-          )("Configure")
-        )
-      else (),
+          )("Configure AI")
+        else (),
+        if agent.agentType == AgentType.Custom then
+          List(
+            a(
+              href := s"/agents/${agent.name}/edit",
+              cls  := "inline-flex rounded-md border border-cyan-400/30 bg-cyan-500/20 px-3 py-1.5 text-sm font-semibold text-cyan-200 hover:bg-cyan-500/30",
+            )("Edit"),
+            form(method := "post", action := s"/agents/${agent.name}/delete")(
+              button(
+                `type` := "submit",
+                cls    := "inline-flex rounded-md border border-rose-400/30 bg-rose-500/10 px-3 py-1.5 text-sm font-semibold text-rose-200 hover:bg-rose-500/20",
+              )("Delete")
+            ),
+          )
+        else List.empty[Frag],
+      ),
+    )
+
+  private def typeBadge(agentType: AgentType): Frag =
+    val badgeCls = agentType match
+      case AgentType.BuiltIn =>
+        "rounded-full border border-sky-400/30 bg-sky-500/20 px-2 py-0.5 text-xs font-semibold text-sky-200"
+      case AgentType.Custom  =>
+        "rounded-full border border-violet-400/30 bg-violet-500/20 px-2 py-0.5 text-xs font-semibold text-violet-200"
+    span(cls := badgeCls)(
+      agentType match
+        case AgentType.BuiltIn => "Built-in"
+        case AgentType.Custom  => "Custom"
     )
 
   private def aiBadge(usesAI: Boolean): Frag =
@@ -65,6 +107,130 @@ object AgentsView:
     )
     val idx     = math.abs(tag.toLowerCase.hashCode) % palette.size
     palette(idx)
+
+  def newCustomAgentForm(
+    values: Map[String, String] = Map.empty,
+    flash: Option[String] = None,
+  ): String =
+    customAgentFormPage(
+      title = "Create Custom Agent",
+      formAction = "/agents",
+      values = values,
+      flash = flash,
+      editingName = None,
+    )
+
+  def editCustomAgentForm(
+    name: String,
+    values: Map[String, String],
+    flash: Option[String] = None,
+  ): String =
+    customAgentFormPage(
+      title = s"Edit Custom Agent: $name",
+      formAction = s"/agents/$name/edit",
+      values = values,
+      flash = flash,
+      editingName = Some(name),
+    )
+
+  private def customAgentFormPage(
+    title: String,
+    formAction: String,
+    values: Map[String, String],
+    flash: Option[String],
+    editingName: Option[String],
+  ): String =
+    Layout.page(title, "/agents")(
+      div(cls := "mx-auto max-w-4xl space-y-5")(
+        a(href := "/agents", cls := "text-sm font-medium text-indigo-300 hover:text-indigo-200")("← Back to Agents"),
+        div(cls := "rounded-xl border border-white/10 bg-slate-900/80 px-5 py-4")(
+          h1(cls := "text-2xl font-bold text-white")(title),
+          p(cls := "mt-1 text-sm text-slate-300")(
+            "Define a reusable custom agent for issue assignments."
+          ),
+        ),
+        flash.map { msg =>
+          div(cls := "rounded-md border border-amber-500/30 bg-amber-500/10 p-4")(
+            p(cls := "text-sm text-amber-200")(msg)
+          )
+        },
+        form(method := "post", action := formAction, cls := "space-y-5")(
+          div(cls := "rounded-xl border border-white/10 bg-slate-900/70 p-5")(
+            div(cls := "grid grid-cols-1 gap-4 md:grid-cols-2")(
+              textInputField(
+                fieldName = "name",
+                labelText = "Name",
+                value = values.getOrElse("name", ""),
+                placeholder = "e.g. billingRefactorAgent",
+                readOnly = editingName.isDefined,
+                required = true,
+              ),
+              textInputField(
+                fieldName = "displayName",
+                labelText = "Display Name",
+                value = values.getOrElse("displayName", ""),
+                placeholder = "e.g. Billing Refactor Agent",
+                required = true,
+              ),
+              textInputField(
+                fieldName = "description",
+                labelText = "Description",
+                value = values.getOrElse("description", ""),
+                placeholder = "One-line purpose",
+              ),
+              textInputField(
+                fieldName = "tags",
+                labelText = "Tags (comma separated)",
+                value = values.getOrElse("tags", ""),
+                placeholder = "analysis,refactor,billing",
+              ),
+            ),
+            div(cls := "mt-4")(
+              label(cls := "mb-2 block text-sm font-semibold text-slate-200", `for` := "systemPrompt")("System Prompt"),
+              textarea(
+                id          := "systemPrompt",
+                name        := "systemPrompt",
+                rows        := 14,
+                cls         := "w-full rounded-lg border border-white/15 bg-slate-800/80 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-indigo-400/40 focus:outline-none",
+                placeholder := "You are a specialized migration agent. Follow these rules...",
+                required,
+              )(values.getOrElse("systemPrompt", "")),
+            ),
+          ),
+          div(cls := "flex items-center gap-3")(
+            button(
+              `type` := "submit",
+              cls    := "rounded-md bg-indigo-500 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-400",
+            )(
+              if editingName.isDefined then "Save Changes" else "Create Agent"
+            ),
+            a(href := "/agents", cls := "text-sm font-medium text-slate-300 hover:text-white")("Cancel"),
+          ),
+        ),
+      )
+    )
+
+  private def textInputField(
+    fieldName: String,
+    labelText: String,
+    value: String,
+    placeholder: String,
+    readOnly: Boolean = false,
+    required: Boolean = false,
+  ): Frag =
+    div(
+      label(cls := "mb-2 block text-sm font-semibold text-slate-200", `for` := fieldName)(labelText),
+      input(
+        `type`                   := "text",
+        id                       := fieldName,
+        name                     := fieldName,
+        scalatags.Text.all.value := value,
+        attr("placeholder")      := placeholder,
+        cls                      := "w-full rounded-lg border border-white/15 bg-slate-800/80 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-indigo-400/40 focus:outline-none",
+        if readOnly then readonly := "readonly" else (),
+        if required then scalatags.Text.all.required else (),
+      ),
+    )
 
   def agentConfigPage(
     agent: AgentInfo,

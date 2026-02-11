@@ -135,7 +135,8 @@ final private case class IssueAssignmentOrchestratorLive(
       runMetadata    <- issue.runId match
                           case Some(runId) => migrationRepository.getRun(runId)
                           case None        => ZIO.none
-      prompt          = buildIssueAssignmentPrompt(issue, agentName, runMetadata)
+      customAgent    <- migrationRepository.getCustomAgentByName(agentName)
+      prompt          = buildIssueAssignmentPrompt(issue, agentName, runMetadata, customAgent.map(_.systemPrompt))
       now            <- Clock.instant
       _              <- chatRepository.addMessage(
                           ConversationMessage(
@@ -211,8 +212,9 @@ final private case class IssueAssignmentOrchestratorLive(
     issue: AgentIssue,
     agentName: String,
     run: Option[db.MigrationRunRow],
+    customSystemPrompt: Option[String],
   ): String =
-    val runContext = run match
+    val runContext    = run match
       case Some(value) =>
         s"""Run metadata:
            |- runId: ${value.id}
@@ -222,8 +224,15 @@ final private case class IssueAssignmentOrchestratorLive(
            |- currentPhase: ${value.currentPhase.getOrElse("n/a")}
            |""".stripMargin
       case None        => "Run metadata: not linked"
+    val systemContext = customSystemPrompt.map(_.trim).filter(_.nonEmpty) match
+      case Some(prompt) =>
+        s"""Custom agent system prompt (highest priority):
+           |$prompt
+           |
+           |""".stripMargin
+      case None         => ""
 
-    s"""Issue assignment for agent: $agentName
+    s"""${systemContext}Issue assignment for agent: $agentName
        |
        |Issue title: ${issue.title}
        |Issue type: ${issue.issueType}

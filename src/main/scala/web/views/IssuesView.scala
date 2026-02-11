@@ -100,7 +100,8 @@ object IssuesView:
       )
     )
 
-  def detail(issue: AgentIssue, assignments: List[AgentAssignment]): String =
+  def detail(issue: AgentIssue, assignments: List[AgentAssignment], availableAgents: List[AgentInfo]): String =
+    val selectedAgent = issue.preferredAgent.orElse(issue.assignedAgent).getOrElse("")
     Layout.page(s"Issue #${issue.id.getOrElse(0L)}", "/issues")(
       div(cls := "-mt-6 mx-auto max-w-5xl space-y-4")(
         a(href := "/issues", cls := "text-sm font-medium text-indigo-300 hover:text-indigo-200")("← Back to issues"),
@@ -125,14 +126,9 @@ object IssuesView:
                 method   := "post",
                 action   := s"/issues/${issue.id.getOrElse(0L)}/assign",
                 cls      := "flex items-center gap-2",
-                onsubmit := "const b=this.querySelector('button[type=submit]'); const i=this.querySelector('input[name=agentName]'); if(b){b.disabled=true;b.classList.add('opacity-60','cursor-not-allowed'); b.dataset.originalText=b.textContent; b.textContent='Assigning...';} if(i){i.readOnly=true;i.classList.add('opacity-60');}",
+                onsubmit := "const b=this.querySelector('button[type=submit]'); if(b){b.disabled=true;b.classList.add('opacity-60','cursor-not-allowed'); b.dataset.originalText=b.textContent; b.textContent='Assigning...';}",
               )(
-                input(
-                  `type` := "text",
-                  name   := "agentName",
-                  value  := issue.preferredAgent.orElse(issue.assignedAgent).getOrElse("gemini-cli"),
-                  cls    := "w-40 rounded-md border border-white/15 bg-slate-800/80 px-2 py-1.5 text-sm text-slate-100 placeholder:text-slate-500 focus:border-indigo-400/40 focus:outline-none",
-                ),
+                agentSelect("agentName", selectedAgent, availableAgents),
                 button(
                   `type` := "submit",
                   cls    := "rounded-md border border-emerald-400/30 bg-emerald-500/20 px-3 py-2 text-sm font-semibold text-emerald-200 hover:bg-emerald-500/30",
@@ -275,6 +271,32 @@ object IssuesView:
         cls    := "w-full rounded-lg border border-white/15 bg-slate-800/80 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-indigo-400/40 focus:outline-none",
         if required then scalatags.Text.all.required else (),
       ),
+    )
+
+  private def agentSelect(fieldName: String, selectedAgent: String, agents: List[AgentInfo]): Frag =
+    val options      = agents
+      .filter(_.usesAI)
+      .sortBy(_.displayName.toLowerCase)
+    val knownNames   = options.map(_.name.toLowerCase).toSet
+    val hasSelection = selectedAgent.trim.nonEmpty
+    val unknown      = selectedAgent.trim
+    select(
+      name := fieldName,
+      cls  := "w-64 rounded-md border border-white/15 bg-slate-800/80 px-2 py-1.5 text-sm text-slate-100 focus:border-indigo-400/40 focus:outline-none",
+    )(
+      if !hasSelection then option(value := "", selected := "selected")("Select agent") else (),
+      options.map { agent =>
+        option(
+          value := agent.name,
+          if agent.name.equalsIgnoreCase(selectedAgent) then selected := "selected" else (),
+        )(s"${agent.displayName} (${agent.name})")
+      },
+      if hasSelection && !knownNames.contains(unknown.toLowerCase) then
+        option(
+          value    := unknown,
+          selected := "selected",
+        )(s"$unknown (unknown)")
+      else (),
     )
 
   private def metaItem(labelText: String, value: String): Frag =
