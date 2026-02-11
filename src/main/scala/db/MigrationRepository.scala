@@ -35,6 +35,10 @@ trait MigrationRepository:
   def getAllSettings: IO[PersistenceError, List[SettingRow]]
   def getSetting(key: String): IO[PersistenceError, Option[SettingRow]]
   def upsertSetting(key: String, value: String): IO[PersistenceError, Unit]
+  def getSettingsByPrefix(prefix: String): IO[PersistenceError, List[SettingRow]] =
+    getAllSettings.map(_.filter(_.key.startsWith(prefix)))
+  def deleteSettingsByPrefix(prefix: String): IO[PersistenceError, Unit]          =
+    ZIO.fail(PersistenceError.QueryFailed("deleteSettingsByPrefix", s"Not implemented for prefix: $prefix"))
 
 object MigrationRepository:
   def createRun(run: MigrationRunRow): ZIO[MigrationRepository, PersistenceError, Long] =
@@ -87,6 +91,12 @@ object MigrationRepository:
 
   def upsertSetting(key: String, value: String): ZIO[MigrationRepository, PersistenceError, Unit] =
     ZIO.serviceWithZIO[MigrationRepository](_.upsertSetting(key, value))
+
+  def getSettingsByPrefix(prefix: String): ZIO[MigrationRepository, PersistenceError, List[SettingRow]] =
+    ZIO.serviceWithZIO[MigrationRepository](_.getSettingsByPrefix(prefix))
+
+  def deleteSettingsByPrefix(prefix: String): ZIO[MigrationRepository, PersistenceError, Unit] =
+    ZIO.serviceWithZIO[MigrationRepository](_.deleteSettingsByPrefix(prefix))
 
   val live: ZLayer[DataSource, Nothing, MigrationRepository] =
     ZLayer.fromZIO {
@@ -398,6 +408,24 @@ final case class MigrationRepositoryLive(
                    ()
                  }
         yield ()
+      }
+    }
+
+  override def getSettingsByPrefix(prefix: String): IO[PersistenceError, List[SettingRow]] =
+    val sql = "SELECT key, value, updated_at FROM application_settings WHERE key LIKE ? ORDER BY key ASC"
+    withConnection { conn =>
+      queryMany(conn, sql)(_.setString(1, s"${prefix}%"))(readSettingRow)
+    }
+
+  override def deleteSettingsByPrefix(prefix: String): IO[PersistenceError, Unit] =
+    val sql = "DELETE FROM application_settings WHERE key LIKE ?"
+    withConnection { conn =>
+      withPreparedStatement(conn, sql) { stmt =>
+        executeBlocking(sql) {
+          stmt.setString(1, s"${prefix}%")
+          stmt.executeUpdate()
+          ()
+        }
       }
     }
 

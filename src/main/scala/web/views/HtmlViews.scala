@@ -38,6 +38,14 @@ object HtmlViews:
   def agentsPage(agents: List[AgentInfo]): String =
     AgentsView.list(agents)
 
+  def agentConfigPage(
+    agent: AgentInfo,
+    overrideSettings: Map[String, String],
+    globalSettings: Map[String, String],
+    flash: Option[String] = None,
+  ): String =
+    AgentsView.agentConfigPage(agent, overrideSettings, globalSettings, flash)
+
   def chatDashboard(conversations: List[ChatConversation]): String =
     ChatView.dashboard(conversations)
 
