@@ -84,3 +84,15 @@ case class SettingRow(
   value: String,
   updatedAt: Instant,
 ) derives JsonCodec
+
+case class CustomAgentRow(
+  id: Option[Long] = None,
+  name: String,
+  displayName: String,
+  description: Option[String] = None,
+  systemPrompt: String,
+  tags: Option[String] = None,
+  enabled: Boolean = true,
+  createdAt: Instant,
+  updatedAt: Instant,
+) derives JsonCodec

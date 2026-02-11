@@ -1,5 +1,6 @@
 package agents
 
+import db.CustomAgentRow
 import models.{ AgentInfo, AgentType }
 
 object AgentRegistry:
@@ -64,3 +65,29 @@ object AgentRegistry:
 
   def findByName(name: String): Option[AgentInfo] =
     builtInAgents.find(_.name.equalsIgnoreCase(name.trim))
+
+  def allAgents(customAgents: List[CustomAgentRow]): List[AgentInfo] =
+    val builtInNamesLower = builtInAgents.map(_.name.toLowerCase).toSet
+    val customMapped      = customAgents
+      .filterNot(agent => builtInNamesLower.contains(agent.name.trim.toLowerCase))
+      .groupBy(_.name.trim.toLowerCase)
+      .values
+      .map(_.head)
+      .toList
+      .sortBy(_.displayName.toLowerCase)
+      .map(toAgentInfo)
+
+    builtInAgents ++ customMapped
+
+  private def toAgentInfo(agent: CustomAgentRow): AgentInfo =
+    AgentInfo(
+      name = agent.name,
+      displayName = agent.displayName,
+      description = agent.description.getOrElse("Custom agent"),
+      agentType = AgentType.Custom,
+      usesAI = true,
+      tags = agent.tags.toList.flatMap(splitTags),
+    )
+
+  private def splitTags(raw: String): List[String] =
+    raw.split(",").toList.map(_.trim).filter(_.nonEmpty)
