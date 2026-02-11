@@ -61,6 +61,12 @@ object Layout:
               ),
             ),
             li(
+              div(cls := "text-xs/6 font-semibold text-gray-400")("Agents"),
+              ul(attr("role") := "list", cls := "-mx-2 mt-2 space-y-1")(
+                navItem("/agents", "Agents", Icons.cpuChip, currentPath.startsWith("/agents"))
+              ),
+            ),
+            li(
               div(cls := "text-xs/6 font-semibold text-gray-400")("Collaboration"),
               ul(attr("role") := "list", cls := "-mx-2 mt-2 space-y-1")(
                 navItem("/chat", "Chat", Icons.chat, currentPath.startsWith("/chat")),
@@ -119,6 +125,10 @@ object Layout:
 
     val flag: Frag = icon(
       "M3 3v18m0-12h11.25l-1.5 3 1.5 3H3"
+    )
+
+    val cpuChip: Frag = icon(
+      "M9 3.75H7.5A2.25 2.25 0 0 0 5.25 6v1.5m0 9V18A2.25 2.25 0 0 0 7.5 20.25H9m6-16.5h1.5A2.25 2.25 0 0 1 18.75 6v1.5m0 9V18A2.25 2.25 0 0 1 16.5 20.25H15m-6-13.5h6a1.5 1.5 0 0 1 1.5 1.5v6a1.5 1.5 0 0 1-1.5 1.5H9a1.5 1.5 0 0 1-1.5-1.5v-6A1.5 1.5 0 0 1 9 6.75Zm-3-1.5V9m0 6v2.25m12-12V9m0 6v2.25M3.75 9H6m12 0h2.25M3.75 15H6m12 0h2.25"
     )
 
     val cog: Frag = icon(
