@@ -466,7 +466,7 @@ object HtmlViewsSpec extends ZIOSpecDefault:
         val html = Layout.page("Test", "/runs")(pTag(StringFrag("test body")))
         assertTrue(
           html.contains("A-B-Normal"),
-          html.contains("href=\"/runs\" class=\"group flex gap-x-3 rounded-md bg-white/5")
+          html.contains("href=\"/runs\" class=\"group flex gap-x-3 rounded-md bg-white/5"),
         )
       },
     ),
