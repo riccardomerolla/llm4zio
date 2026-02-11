@@ -40,6 +40,20 @@ trait MigrationRepository:
   def deleteSettingsByPrefix(prefix: String): IO[PersistenceError, Unit]          =
     ZIO.fail(PersistenceError.QueryFailed("deleteSettingsByPrefix", s"Not implemented for prefix: $prefix"))
 
+  // Custom Agents
+  def createCustomAgent(agent: CustomAgentRow): IO[PersistenceError, Long]             =
+    ZIO.fail(PersistenceError.QueryFailed("createCustomAgent", "Not implemented"))
+  def getCustomAgent(id: Long): IO[PersistenceError, Option[CustomAgentRow]]           =
+    ZIO.fail(PersistenceError.QueryFailed("getCustomAgent", "Not implemented"))
+  def getCustomAgentByName(name: String): IO[PersistenceError, Option[CustomAgentRow]] =
+    ZIO.fail(PersistenceError.QueryFailed("getCustomAgentByName", "Not implemented"))
+  def listCustomAgents: IO[PersistenceError, List[CustomAgentRow]]                     =
+    ZIO.fail(PersistenceError.QueryFailed("listCustomAgents", "Not implemented"))
+  def updateCustomAgent(agent: CustomAgentRow): IO[PersistenceError, Unit]             =
+    ZIO.fail(PersistenceError.QueryFailed("updateCustomAgent", "Not implemented"))
+  def deleteCustomAgent(id: Long): IO[PersistenceError, Unit]                          =
+    ZIO.fail(PersistenceError.QueryFailed("deleteCustomAgent", "Not implemented"))
+
 object MigrationRepository:
   def createRun(run: MigrationRunRow): ZIO[MigrationRepository, PersistenceError, Long] =
     ZIO.serviceWithZIO[MigrationRepository](_.createRun(run))
@@ -98,6 +112,24 @@ object MigrationRepository:
   def deleteSettingsByPrefix(prefix: String): ZIO[MigrationRepository, PersistenceError, Unit] =
     ZIO.serviceWithZIO[MigrationRepository](_.deleteSettingsByPrefix(prefix))
 
+  def createCustomAgent(agent: CustomAgentRow): ZIO[MigrationRepository, PersistenceError, Long] =
+    ZIO.serviceWithZIO[MigrationRepository](_.createCustomAgent(agent))
+
+  def getCustomAgent(id: Long): ZIO[MigrationRepository, PersistenceError, Option[CustomAgentRow]] =
+    ZIO.serviceWithZIO[MigrationRepository](_.getCustomAgent(id))
+
+  def getCustomAgentByName(name: String): ZIO[MigrationRepository, PersistenceError, Option[CustomAgentRow]] =
+    ZIO.serviceWithZIO[MigrationRepository](_.getCustomAgentByName(name))
+
+  def listCustomAgents: ZIO[MigrationRepository, PersistenceError, List[CustomAgentRow]] =
+    ZIO.serviceWithZIO[MigrationRepository](_.listCustomAgents)
+
+  def updateCustomAgent(agent: CustomAgentRow): ZIO[MigrationRepository, PersistenceError, Unit] =
+    ZIO.serviceWithZIO[MigrationRepository](_.updateCustomAgent(agent))
+
+  def deleteCustomAgent(id: Long): ZIO[MigrationRepository, PersistenceError, Unit] =
+    ZIO.serviceWithZIO[MigrationRepository](_.deleteCustomAgent(id))
+
   val live: ZLayer[DataSource, Nothing, MigrationRepository] =
     ZLayer.fromZIO {
       for
@@ -110,6 +142,15 @@ final case class MigrationRepositoryLive(
   dataSource: DataSource,
   initialized: Ref.Synchronized[Boolean],
 ) extends MigrationRepository:
+  private val builtInAgentNamesLower: Set[String] = Set(
+    "coboldiscovery",
+    "cobolanalyzer",
+    "businesslogicextractor",
+    "dependencymapper",
+    "javatransformer",
+    "validationagent",
+    "documentationagent",
+  )
 
   override def createRun(run: MigrationRunRow): IO[PersistenceError, Long] =
     val sql =
@@ -429,6 +470,98 @@ final case class MigrationRepositoryLive(
       }
     }
 
+  override def createCustomAgent(agent: CustomAgentRow): IO[PersistenceError, Long] =
+    val sql =
+      """INSERT INTO custom_agents (
+        |  name, display_name, description, system_prompt, tags, enabled, created_at, updated_at
+        |) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        |""".stripMargin
+    for
+      _  <- validateCustomAgentName(agent.name, "createCustomAgent")
+      id <- withConnection { conn =>
+              executeUpdateReturningKey(conn, sql, "custom_agents") { stmt =>
+                stmt.setString(1, agent.name.trim)
+                stmt.setString(2, agent.displayName)
+                setOptionalString(stmt, 3, agent.description.filter(_.nonEmpty))
+                stmt.setString(4, agent.systemPrompt)
+                setOptionalString(stmt, 5, agent.tags.filter(_.nonEmpty))
+                stmt.setInt(6, if agent.enabled then 1 else 0)
+                stmt.setString(7, agent.createdAt.toString)
+                stmt.setString(8, agent.updatedAt.toString)
+              }
+            }
+    yield id
+
+  override def getCustomAgent(id: Long): IO[PersistenceError, Option[CustomAgentRow]] =
+    val sql =
+      """SELECT id, name, display_name, description, system_prompt, tags, enabled, created_at, updated_at
+        |FROM custom_agents
+        |WHERE id = ?
+        |""".stripMargin
+    withConnection { conn =>
+      queryOne(conn, sql)(_.setLong(1, id))(readCustomAgentRow)
+    }
+
+  override def getCustomAgentByName(name: String): IO[PersistenceError, Option[CustomAgentRow]] =
+    val sql =
+      """SELECT id, name, display_name, description, system_prompt, tags, enabled, created_at, updated_at
+        |FROM custom_agents
+        |WHERE lower(name) = lower(?)
+        |LIMIT 1
+        |""".stripMargin
+    withConnection { conn =>
+      queryOne(conn, sql)(_.setString(1, name.trim))(readCustomAgentRow)
+    }
+
+  override def listCustomAgents: IO[PersistenceError, List[CustomAgentRow]] =
+    val sql =
+      """SELECT id, name, display_name, description, system_prompt, tags, enabled, created_at, updated_at
+        |FROM custom_agents
+        |ORDER BY display_name ASC, name ASC
+        |""".stripMargin
+    withConnection { conn =>
+      queryMany(conn, sql)(_ => ())(readCustomAgentRow)
+    }
+
+  override def updateCustomAgent(agent: CustomAgentRow): IO[PersistenceError, Unit] =
+    val sql =
+      """UPDATE custom_agents
+        |SET name = ?,
+        |    display_name = ?,
+        |    description = ?,
+        |    system_prompt = ?,
+        |    tags = ?,
+        |    enabled = ?,
+        |    updated_at = ?
+        |WHERE id = ?
+        |""".stripMargin
+    for
+      id <- ZIO
+              .fromOption(agent.id)
+              .orElseFail(PersistenceError.QueryFailed("updateCustomAgent", "Missing id for custom agent update"))
+      _  <- validateCustomAgentName(agent.name, "updateCustomAgent")
+      _  <- withConnection { conn =>
+              executeUpdateExpectingRows(conn, sql, PersistenceError.NotFound("custom_agents", id)) { stmt =>
+                stmt.setString(1, agent.name.trim)
+                stmt.setString(2, agent.displayName)
+                setOptionalString(stmt, 3, agent.description.filter(_.nonEmpty))
+                stmt.setString(4, agent.systemPrompt)
+                setOptionalString(stmt, 5, agent.tags.filter(_.nonEmpty))
+                stmt.setInt(6, if agent.enabled then 1 else 0)
+                stmt.setString(7, agent.updatedAt.toString)
+                stmt.setLong(8, id)
+              }
+            }
+    yield ()
+
+  override def deleteCustomAgent(id: Long): IO[PersistenceError, Unit] =
+    val sql = "DELETE FROM custom_agents WHERE id = ?"
+    withConnection { conn =>
+      executeUpdateExpectingRows(conn, sql, PersistenceError.NotFound("custom_agents", id)) { stmt =>
+        stmt.setLong(1, id)
+      }
+    }
+
   private def readSettingRow(rs: ResultSet): IO[PersistenceError, SettingRow] =
     ZIO.succeed(
       SettingRow(
@@ -437,6 +570,30 @@ final case class MigrationRepositoryLive(
         updatedAt = Instant.parse(rs.getString("updated_at")),
       )
     )
+
+  private def readCustomAgentRow(rs: ResultSet): IO[PersistenceError, CustomAgentRow] =
+    ZIO.succeed(
+      CustomAgentRow(
+        id = Some(rs.getLong("id")),
+        name = rs.getString("name"),
+        displayName = rs.getString("display_name"),
+        description = optionalString(rs, "description"),
+        systemPrompt = rs.getString("system_prompt"),
+        tags = optionalString(rs, "tags"),
+        enabled = rs.getInt("enabled") == 1,
+        createdAt = Instant.parse(rs.getString("created_at")),
+        updatedAt = Instant.parse(rs.getString("updated_at")),
+      )
+    )
+
+  private def validateCustomAgentName(name: String, context: String): IO[PersistenceError, Unit] =
+    val normalized = name.trim.toLowerCase
+    if normalized.isEmpty then ZIO.fail(PersistenceError.QueryFailed(context, "Custom agent name cannot be empty"))
+    else if builtInAgentNamesLower.contains(normalized) then
+      ZIO.fail(
+        PersistenceError.QueryFailed(context, s"Custom agent name '$name' conflicts with built-in agent name")
+      )
+    else ZIO.unit
 
   private def withConnection[A](use: Connection => IO[PersistenceError, A]): IO[PersistenceError, A] =
     ensureSchemaInitialized *> ZIO.acquireReleaseWith(acquireConnection)(closeConnection)(use)
@@ -463,7 +620,8 @@ final case class MigrationRepositoryLive(
 
   private def initializeSchema: IO[PersistenceError, Unit] =
     for
-      statements <- loadSchemaStatements(List("db/V1__init_schema.sql", "db/V2__chat_and_issues.sql"))
+      statements <-
+        loadSchemaStatements(List("db/V1__init_schema.sql", "db/V2__chat_and_issues.sql", "db/V3__custom_agents.sql"))
       _          <- ZIO.acquireReleaseWith(acquireConnection)(closeConnection) { conn =>
                       ZIO.foreachDiscard(statements) { sql =>
                         withStatement(conn, sql)(stmt => executeBlocking(sql)(stmt.execute(sql)).unit)
