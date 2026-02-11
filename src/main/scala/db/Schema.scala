@@ -38,6 +38,17 @@ case class MigrationRunRow(
   failedConversions: Int,
   currentPhase: Option[String],
   errorMessage: Option[String],
+  workflowId: Option[Long] = None,
+) derives JsonCodec
+
+case class WorkflowRow(
+  id: Option[Long] = None,
+  name: String,
+  description: Option[String] = None,
+  steps: String,
+  isBuiltin: Boolean,
+  createdAt: Instant,
+  updatedAt: Instant,
 ) derives JsonCodec
 
 case class CobolFileRow(

@@ -40,6 +40,20 @@ trait MigrationRepository:
   def deleteSettingsByPrefix(prefix: String): IO[PersistenceError, Unit]          =
     ZIO.fail(PersistenceError.QueryFailed("deleteSettingsByPrefix", s"Not implemented for prefix: $prefix"))
 
+  // Workflows
+  def createWorkflow(workflow: WorkflowRow): IO[PersistenceError, Long]          =
+    ZIO.fail(PersistenceError.QueryFailed("createWorkflow", "Not implemented"))
+  def getWorkflow(id: Long): IO[PersistenceError, Option[WorkflowRow]]           =
+    ZIO.fail(PersistenceError.QueryFailed("getWorkflow", "Not implemented"))
+  def getWorkflowByName(name: String): IO[PersistenceError, Option[WorkflowRow]] =
+    ZIO.fail(PersistenceError.QueryFailed("getWorkflowByName", "Not implemented"))
+  def listWorkflows: IO[PersistenceError, List[WorkflowRow]]                     =
+    ZIO.fail(PersistenceError.QueryFailed("listWorkflows", "Not implemented"))
+  def updateWorkflow(workflow: WorkflowRow): IO[PersistenceError, Unit]          =
+    ZIO.fail(PersistenceError.QueryFailed("updateWorkflow", "Not implemented"))
+  def deleteWorkflow(id: Long): IO[PersistenceError, Unit]                       =
+    ZIO.fail(PersistenceError.QueryFailed("deleteWorkflow", "Not implemented"))
+
   // Custom Agents
   def createCustomAgent(agent: CustomAgentRow): IO[PersistenceError, Long]             =
     ZIO.fail(PersistenceError.QueryFailed("createCustomAgent", "Not implemented"))
@@ -112,6 +126,24 @@ object MigrationRepository:
   def deleteSettingsByPrefix(prefix: String): ZIO[MigrationRepository, PersistenceError, Unit] =
     ZIO.serviceWithZIO[MigrationRepository](_.deleteSettingsByPrefix(prefix))
 
+  def createWorkflow(workflow: WorkflowRow): ZIO[MigrationRepository, PersistenceError, Long] =
+    ZIO.serviceWithZIO[MigrationRepository](_.createWorkflow(workflow))
+
+  def getWorkflow(id: Long): ZIO[MigrationRepository, PersistenceError, Option[WorkflowRow]] =
+    ZIO.serviceWithZIO[MigrationRepository](_.getWorkflow(id))
+
+  def getWorkflowByName(name: String): ZIO[MigrationRepository, PersistenceError, Option[WorkflowRow]] =
+    ZIO.serviceWithZIO[MigrationRepository](_.getWorkflowByName(name))
+
+  def listWorkflows: ZIO[MigrationRepository, PersistenceError, List[WorkflowRow]] =
+    ZIO.serviceWithZIO[MigrationRepository](_.listWorkflows)
+
+  def updateWorkflow(workflow: WorkflowRow): ZIO[MigrationRepository, PersistenceError, Unit] =
+    ZIO.serviceWithZIO[MigrationRepository](_.updateWorkflow(workflow))
+
+  def deleteWorkflow(id: Long): ZIO[MigrationRepository, PersistenceError, Unit] =
+    ZIO.serviceWithZIO[MigrationRepository](_.deleteWorkflow(id))
+
   def createCustomAgent(agent: CustomAgentRow): ZIO[MigrationRepository, PersistenceError, Long] =
     ZIO.serviceWithZIO[MigrationRepository](_.createCustomAgent(agent))
 
@@ -157,8 +189,8 @@ final case class MigrationRepositoryLive(
       """INSERT INTO migration_runs (
         |  source_dir, output_dir, status, started_at, completed_at,
         |  total_files, processed_files, successful_conversions, failed_conversions,
-        |  current_phase, error_message
-        |) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        |  current_phase, error_message, workflow_id
+        |) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         |""".stripMargin
 
     withConnection { conn =>
@@ -174,6 +206,7 @@ final case class MigrationRepositoryLive(
         stmt.setInt(9, run.failedConversions)
         setOptionalString(stmt, 10, run.currentPhase)
         setOptionalString(stmt, 11, run.errorMessage)
+        setOptionalLong(stmt, 12, run.workflowId)
       }
     }
 
@@ -190,7 +223,8 @@ final case class MigrationRepositoryLive(
         |    successful_conversions = ?,
         |    failed_conversions = ?,
         |    current_phase = ?,
-        |    error_message = ?
+        |    error_message = ?,
+        |    workflow_id = ?
         |WHERE id = ?
         |""".stripMargin
 
@@ -207,7 +241,8 @@ final case class MigrationRepositoryLive(
         stmt.setInt(9, run.failedConversions)
         setOptionalString(stmt, 10, run.currentPhase)
         setOptionalString(stmt, 11, run.errorMessage)
-        stmt.setLong(12, run.id)
+        setOptionalLong(stmt, 12, run.workflowId)
+        stmt.setLong(13, run.id)
       }
     }
 
@@ -215,7 +250,7 @@ final case class MigrationRepositoryLive(
     val sql =
       """SELECT id, source_dir, output_dir, status, started_at, completed_at,
         |       total_files, processed_files, successful_conversions, failed_conversions,
-        |       current_phase, error_message
+        |       current_phase, error_message, workflow_id
         |FROM migration_runs
         |WHERE id = ?
         |""".stripMargin
@@ -228,7 +263,7 @@ final case class MigrationRepositoryLive(
     val sql =
       """SELECT id, source_dir, output_dir, status, started_at, completed_at,
         |       total_files, processed_files, successful_conversions, failed_conversions,
-        |       current_phase, error_message
+        |       current_phase, error_message, workflow_id
         |FROM migration_runs
         |ORDER BY started_at DESC
         |LIMIT ? OFFSET ?
@@ -470,6 +505,88 @@ final case class MigrationRepositoryLive(
       }
     }
 
+  override def createWorkflow(workflow: WorkflowRow): IO[PersistenceError, Long] =
+    val sql =
+      """INSERT INTO workflows (
+        |  name, description, steps, is_builtin, created_at, updated_at
+        |) VALUES (?, ?, ?, ?, ?, ?)
+        |""".stripMargin
+    withConnection { conn =>
+      executeUpdateReturningKey(conn, sql, "workflows") { stmt =>
+        stmt.setString(1, workflow.name.trim)
+        setOptionalString(stmt, 2, workflow.description.filter(_.nonEmpty))
+        stmt.setString(3, workflow.steps)
+        stmt.setInt(4, if workflow.isBuiltin then 1 else 0)
+        stmt.setString(5, workflow.createdAt.toString)
+        stmt.setString(6, workflow.updatedAt.toString)
+      }
+    }
+
+  override def getWorkflow(id: Long): IO[PersistenceError, Option[WorkflowRow]] =
+    val sql =
+      """SELECT id, name, description, steps, is_builtin, created_at, updated_at
+        |FROM workflows
+        |WHERE id = ?
+        |""".stripMargin
+    withConnection { conn =>
+      queryOne(conn, sql)(_.setLong(1, id))(readWorkflowRow)
+    }
+
+  override def getWorkflowByName(name: String): IO[PersistenceError, Option[WorkflowRow]] =
+    val sql =
+      """SELECT id, name, description, steps, is_builtin, created_at, updated_at
+        |FROM workflows
+        |WHERE lower(name) = lower(?)
+        |LIMIT 1
+        |""".stripMargin
+    withConnection { conn =>
+      queryOne(conn, sql)(_.setString(1, name.trim))(readWorkflowRow)
+    }
+
+  override def listWorkflows: IO[PersistenceError, List[WorkflowRow]] =
+    val sql =
+      """SELECT id, name, description, steps, is_builtin, created_at, updated_at
+        |FROM workflows
+        |ORDER BY is_builtin DESC, name ASC
+        |""".stripMargin
+    withConnection { conn =>
+      queryMany(conn, sql)(_ => ())(readWorkflowRow)
+    }
+
+  override def updateWorkflow(workflow: WorkflowRow): IO[PersistenceError, Unit] =
+    val sql =
+      """UPDATE workflows
+        |SET name = ?,
+        |    description = ?,
+        |    steps = ?,
+        |    is_builtin = ?,
+        |    updated_at = ?
+        |WHERE id = ?
+        |""".stripMargin
+    for
+      id <- ZIO
+              .fromOption(workflow.id)
+              .orElseFail(PersistenceError.QueryFailed("updateWorkflow", "Missing id for workflow update"))
+      _  <- withConnection { conn =>
+              executeUpdateExpectingRows(conn, sql, PersistenceError.NotFound("workflows", id)) { stmt =>
+                stmt.setString(1, workflow.name.trim)
+                setOptionalString(stmt, 2, workflow.description.filter(_.nonEmpty))
+                stmt.setString(3, workflow.steps)
+                stmt.setInt(4, if workflow.isBuiltin then 1 else 0)
+                stmt.setString(5, workflow.updatedAt.toString)
+                stmt.setLong(6, id)
+              }
+            }
+    yield ()
+
+  override def deleteWorkflow(id: Long): IO[PersistenceError, Unit] =
+    val sql = "DELETE FROM workflows WHERE id = ?"
+    withConnection { conn =>
+      executeUpdateExpectingRows(conn, sql, PersistenceError.NotFound("workflows", id)) { stmt =>
+        stmt.setLong(1, id)
+      }
+    }
+
   override def createCustomAgent(agent: CustomAgentRow): IO[PersistenceError, Long] =
     val sql =
       """INSERT INTO custom_agents (
@@ -571,6 +688,19 @@ final case class MigrationRepositoryLive(
       )
     )
 
+  private def readWorkflowRow(rs: ResultSet): IO[PersistenceError, WorkflowRow] =
+    ZIO.succeed(
+      WorkflowRow(
+        id = Some(rs.getLong("id")),
+        name = rs.getString("name"),
+        description = optionalString(rs, "description"),
+        steps = rs.getString("steps"),
+        isBuiltin = rs.getInt("is_builtin") == 1,
+        createdAt = Instant.parse(rs.getString("created_at")),
+        updatedAt = Instant.parse(rs.getString("updated_at")),
+      )
+    )
+
   private def readCustomAgentRow(rs: ResultSet): IO[PersistenceError, CustomAgentRow] =
     ZIO.succeed(
       CustomAgentRow(
@@ -621,13 +751,29 @@ final case class MigrationRepositoryLive(
   private def initializeSchema: IO[PersistenceError, Unit] =
     for
       statements <-
-        loadSchemaStatements(List("db/V1__init_schema.sql", "db/V2__chat_and_issues.sql", "db/V3__custom_agents.sql"))
+        loadSchemaStatements(
+          List(
+            "db/V1__init_schema.sql",
+            "db/V2__chat_and_issues.sql",
+            "db/V3__custom_agents.sql",
+            "db/V4__workflows.sql",
+          )
+        )
       _          <- ZIO.acquireReleaseWith(acquireConnection)(closeConnection) { conn =>
                       ZIO.foreachDiscard(statements) { sql =>
-                        withStatement(conn, sql)(stmt => executeBlocking(sql)(stmt.execute(sql)).unit)
+                        withStatement(conn, sql)(stmt => executeSchemaStatement(stmt, sql))
                       } *> ensureAgentIssueColumns(conn)
                     }
     yield ()
+
+  private def executeSchemaStatement(stmt: java.sql.Statement, sql: String): IO[PersistenceError, Unit] =
+    executeBlocking(sql)(stmt.execute(sql)).unit.catchAll {
+      case err @ PersistenceError.QueryFailed(_, cause)
+           if sql.toLowerCase.contains("alter table migration_runs add column workflow_id") &&
+           cause.toLowerCase.contains("duplicate column name") =>
+        ZIO.unit
+      case err => ZIO.fail(err)
+    }
 
   private def ensureAgentIssueColumns(conn: Connection): IO[PersistenceError, Unit] =
     for
@@ -869,8 +1015,17 @@ final case class MigrationRepositoryLive(
       case Some(v) => stmt.setString(index, v)
       case None    => stmt.setNull(index, Types.VARCHAR)
 
+  private def setOptionalLong(stmt: java.sql.PreparedStatement, index: Int, value: Option[Long]): Unit =
+    value match
+      case Some(v) => stmt.setLong(index, v)
+      case None    => stmt.setNull(index, Types.BIGINT)
+
   private def optionalString(rs: ResultSet, column: String): Option[String] =
     Option(rs.getString(column))
+
+  private def optionalLong(rs: ResultSet, column: String): Option[Long] =
+    val value = rs.getLong(column)
+    if rs.wasNull() then None else Some(value)
 
   private def parseRunStatus(raw: String, sql: String): IO[PersistenceError, RunStatus] =
     ZIO
@@ -887,6 +1042,7 @@ final case class MigrationRepositoryLive(
       status <- parseRunStatus(rs.getString("status"), sql)
     yield MigrationRunRow(
       id = rs.getLong("id"),
+      workflowId = optionalLong(rs, "workflow_id"),
       sourceDir = rs.getString("source_dir"),
       outputDir = rs.getString("output_dir"),
       status = status,
