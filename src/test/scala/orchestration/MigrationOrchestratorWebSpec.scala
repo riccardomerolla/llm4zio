@@ -5,6 +5,7 @@ import java.time.Instant
 import java.util.UUID
 
 import zio.*
+import zio.json.*
 import zio.test.*
 
 import agents.*
@@ -69,17 +70,20 @@ object MigrationOrchestratorWebSpec extends ZIOSpecDefault:
     dbName: String,
     cfg: MigrationConfig,
     discovery: ULayer[CobolDiscoveryAgent],
-  ): ZLayer[Any, Nothing, MigrationOrchestrator] =
-    ZLayer.make[MigrationOrchestrator](
+    transformer: ULayer[JavaTransformerAgent] = transformerLayer,
+    validation: ULayer[ValidationAgent] = validationLayer,
+    documentation: ULayer[DocumentationAgent] = documentationLayer,
+  ): ZLayer[Any, Nothing, MigrationOrchestrator & MigrationRepository] =
+    ZLayer.make[MigrationOrchestrator & MigrationRepository](
       FileService.live,
       StateService.live(cfg.stateDir),
       discovery,
       analyzerLayer,
       businessLogicLayer,
       mapperLayer,
-      transformerLayer,
-      validationLayer,
-      documentationLayer,
+      transformer,
+      validation,
+      documentation,
       aiLayer,
       ResponseParser.live,
       stubHttpAIClient,
@@ -160,7 +164,71 @@ object MigrationOrchestratorWebSpec extends ZIOSpecDefault:
         page2.length == 1,
       )
     },
+    test("workflow-defined steps skip transformation, validation, and documentation") {
+      for
+        sourceDir          <- ZIO.attemptBlocking(Path.of("/tmp"))
+        outputDir          <- ZIO.attemptBlocking(Path.of("/tmp"))
+        stateDir           <- ZIO.attemptBlocking(java.nio.file.Files.createTempDirectory("web-orch-workflow"))
+        transformCalls     <- Ref.make(0)
+        validationCalls    <- Ref.make(0)
+        documentationCalls <- Ref.make(0)
+        transformer         = ZLayer.succeed(new JavaTransformerAgent {
+                                override def transform(
+                                  analyses: List[CobolAnalysis],
+                                  dependencyGraph: DependencyGraph,
+                                ): ZIO[Any, TransformError, SpringBootProject] =
+                                  transformCalls.update(_ + 1).as(sampleProject)
+                              })
+        validation          = ZLayer.succeed(new ValidationAgent {
+                                override def validate(project: SpringBootProject, analysis: CobolAnalysis)
+                                  : ZIO[Any, ValidationError, ValidationReport] =
+                                  validationCalls.update(_ + 1).as(sampleValidation)
+                              })
+        documentation       = ZLayer.succeed(new DocumentationAgent {
+                                override def generateDocs(result: MigrationResult)
+                                  : ZIO[Any, DocError, MigrationDocumentation] =
+                                  documentationCalls.update(_ + 1).as(MigrationDocumentation.empty)
+                              })
+        dbName              = s"web-orch-workflow-${UUID.randomUUID()}"
+        workflowSteps       = List(MigrationStep.Discovery, MigrationStep.Analysis, MigrationStep.Mapping).toJson
+        cfg                 = config(sourceDir, outputDir, stateDir).copy(dryRun = false)
+        appLayer            = layer(dbName, cfg, discoveryFastLayer, transformer, validation, documentation)
+        runOutcome         <- (for
+                                workflowId <- MigrationRepository.createWorkflow(
+                                                WorkflowRow(
+                                                  name = "Partial Workflow",
+                                                  description = Some("Discovery/Analysis/Mapping only"),
+                                                  steps = workflowSteps,
+                                                  isBuiltin = false,
+                                                  createdAt = now,
+                                                  updatedAt = now,
+                                                )
+                                              )
+                                runId      <- MigrationOrchestrator.startMigration(cfg.copy(workflowId = Some(workflowId)))
+                                status     <- awaitTerminal(runId).timeoutFail("workflow run did not complete")(20.seconds)
+                              yield status).provideLayer(appLayer)
+        transformCount     <- transformCalls.get
+        validationCount    <- validationCalls.get
+        documentationCount <- documentationCalls.get
+      yield assertTrue(
+        runOutcome.exists(_.status == RunStatus.Completed),
+        transformCount == 0,
+        validationCount == 0,
+        documentationCount == 0,
+      )
+    },
   ) @@ TestAspect.sequential @@ TestAspect.withLiveClock
+
+  private def terminal(run: MigrationRunRow): Boolean =
+    run.status == RunStatus.Completed ||
+    run.status == RunStatus.Failed ||
+    run.status == RunStatus.Cancelled
+
+  private def awaitTerminal(runId: Long): ZIO[MigrationOrchestrator, PersistenceError, Option[MigrationRunRow]] =
+    MigrationOrchestrator.getRunStatus(runId).flatMap {
+      case Some(run) if terminal(run) => ZIO.succeed(Some(run))
+      case _                          => ZIO.sleep(50.millis) *> awaitTerminal(runId)
+    }
 
   private val discoveryFastLayer: ULayer[CobolDiscoveryAgent] =
     ZLayer.succeed(new CobolDiscoveryAgent {
