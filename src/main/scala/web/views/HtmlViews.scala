@@ -5,17 +5,25 @@ import models.*
 
 object HtmlViews:
 
-  def dashboard(runs: List[MigrationRunRow]): String =
-    DashboardView.dashboard(runs)
+  def dashboard(runs: List[MigrationRunRow], workflowCount: Int = 0): String =
+    DashboardView.dashboard(runs, workflowCount)
 
   def runsList(runs: List[MigrationRunRow], pageNumber: Int, pageSize: Int): String =
     RunsView.list(runs, pageNumber, pageSize)
 
   def runDetail(run: MigrationRunRow, phases: List[PhaseProgressRow]): String =
-    RunsView.detail(run, phases, workflowName = None)
+    RunsView.detail(run, phases, workflowName = None, workflow = WorkflowDefinition.default)
 
   def runDetail(run: MigrationRunRow, phases: List[PhaseProgressRow], workflowName: Option[String]): String =
-    RunsView.detail(run, phases, workflowName)
+    RunsView.detail(run, phases, workflowName, workflow = WorkflowDefinition.default)
+
+  def runDetail(
+    run: MigrationRunRow,
+    phases: List[PhaseProgressRow],
+    workflowName: Option[String],
+    workflow: WorkflowDefinition,
+  ): String =
+    RunsView.detail(run, phases, workflowName, workflow)
 
   def runForm: String =
     RunsView.form()
@@ -25,6 +33,12 @@ object HtmlViews:
 
   def recentRunsFragment(runs: List[MigrationRunRow]): String =
     RunsView.recentRunsFragment(runs)
+
+  def phaseProgressFragment(phases: List[PhaseProgressRow]): String =
+    RunsView.phaseProgressFragment(phases)
+
+  def runWorkflowDiagramFragment(workflow: WorkflowDefinition, phases: List[PhaseProgressRow]): String =
+    RunsView.workflowDiagramFragment(workflow, phases)
 
   def analysisList(runId: Long, files: List[CobolFileRow], analyses: List[CobolAnalysisRow]): String =
     AnalysisView.list(runId, files, analyses)

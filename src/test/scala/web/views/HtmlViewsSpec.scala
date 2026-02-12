@@ -202,13 +202,15 @@ object HtmlViewsSpec extends ZIOSpecDefault:
   def spec: Spec[TestEnvironment & Scope, Any] = suite("HtmlViewsSpec")(
     suite("Dashboard")(
       test("renders dashboard with summary cards and HTMX refresh") {
-        val html = HtmlViews.dashboard(List(runCompleted, runRunning, runFailed))
+        val html = HtmlViews.dashboard(List(runCompleted, runRunning, runFailed), workflowCount = 4)
         assertTrue(
           html.contains("Dashboard"),
           html.contains("Total Runs"),
           html.contains("Success Rate"),
           html.contains("Files Processed"),
           html.contains("Active Runs"),
+          html.contains("Workflows"),
+          html.contains(">4<"),
           html.contains("""hx-get="/api/runs/recent""""),
           html.contains("""hx-trigger="every 5s""""),
         )
@@ -242,10 +244,19 @@ object HtmlViewsSpec extends ZIOSpecDefault:
         )
       },
       test("detail includes SSE attributes") {
-        val html = HtmlViews.runDetail(runRunning, List(samplePhase))
+        val html = HtmlViews.runDetail(
+          runRunning,
+          List(samplePhase),
+          workflowName = Some("Default Workflow"),
+          workflow = WorkflowDefinition.default,
+        )
         assertTrue(
           html.contains("""hx-ext="sse""""),
           html.contains("""sse-connect="/runs/2/progress""""),
+          html.contains("""sse-swap="phase-progress""""),
+          html.contains("""sse-swap="workflow-diagram""""),
+          html.contains("classDef completed fill:#065f46"),
+          html.contains("classDef running fill:#1e3a5f"),
           html.contains("Run #2"),
         )
       },
@@ -284,6 +295,37 @@ object HtmlViewsSpec extends ZIOSpecDefault:
           html.contains("/runs/1"),
         )
       },
+      test("run form handles one-step custom workflow previews") {
+        val workflow = WorkflowDefinition(
+          id = Some(99L),
+          name = "Single Step",
+          steps = List(MigrationStep.Discovery),
+          isBuiltin = false,
+        )
+        val html     = HtmlViews.runForm(List(workflow))
+        assertTrue(
+          html.contains("Single Step"),
+          html.contains("""value="99""""),
+          html.contains("""step0[\"Discovery\"]"""),
+          html.contains("var previews"),
+          html.contains(""""99": "graph LR"""),
+        )
+      },
+    ),
+    suite("Workflows")(
+      test("workflow detail renders Mermaid for single-step workflows") {
+        val workflow = WorkflowDefinition(
+          id = Some(7L),
+          name = "Only Discovery",
+          steps = List(MigrationStep.Discovery),
+          isBuiltin = false,
+        )
+        val html     = HtmlViews.workflowDetail(workflow)
+        assertTrue(
+          html.contains("Only Discovery"),
+          html.contains("""step0[&quot;Discovery&quot;]"""),
+        )
+      }
     ),
     suite("Analysis")(
       test("list includes HTMX search attributes") {

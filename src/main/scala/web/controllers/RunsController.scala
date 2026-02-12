@@ -9,6 +9,7 @@ import zio.http.*
 import zio.json.*
 import zio.stream.*
 
+import core.Logger
 import db.*
 import models.*
 import orchestration.{ MigrationOrchestrator, WorkflowService, WorkflowServiceError }
@@ -28,6 +29,10 @@ object RunsController:
 
   def toSseData(update: ProgressUpdate): String =
     s"data: ${update.toJson}\n\n"
+
+  def toSseEvent(name: String, payload: String): String =
+    val lines = payload.split('\n').toList.map(line => s"data: $line").mkString("\n")
+    s"event: $name\n$lines\n\n"
 
 final case class RunsControllerLive(
   orchestrator: MigrationOrchestrator,
@@ -64,15 +69,13 @@ final case class RunsControllerLive(
     Method.GET / "runs" / long("id")              -> handler { (runId: Long, _: Request) =>
       ErrorHandlingMiddleware.handle {
         for
-          run          <- orchestrator
-                            .getRunStatus(runId)
-                            .someOrFail(PersistenceError.NotFound("migration_runs", runId))
-          knownPhases  <- knownPhasesForWorkflow(run.workflowId)
-          phaseRows    <- ZIO.foreach(knownPhases)(phase => repository.getProgress(runId, phase)).map(_.flatten)
-          workflowName <- workflowNameForRun(run).mapError(err =>
-                            OrchestratorError.StateFailed(StateError.ReadError(runId.toString, err.toString))
-                          )
-        yield html(HtmlViews.runDetail(run, phaseRows, workflowName))
+          run        <- orchestrator
+                          .getRunStatus(runId)
+                          .someOrFail(PersistenceError.NotFound("migration_runs", runId))
+          workflow   <- workflowForRun(run)
+          knownPhases = knownPhasesForWorkflow(workflow)
+          phaseRows  <- ZIO.foreach(knownPhases)(phase => repository.getProgress(runId, phase)).map(_.flatten)
+        yield html(HtmlViews.runDetail(run, phaseRows, Some(workflow.name), workflow))
       }
     },
     Method.POST / "runs"                          -> handler { (req: Request) =>
@@ -149,12 +152,35 @@ final case class RunsControllerLive(
       }
     },
     Method.GET / "runs" / long("id") / "progress" -> handler { (runId: Long, _: Request) =>
-      val response =
+      val response: IO[OrchestratorError, Response] =
         for
+          run       <- orchestrator
+                         .getRunStatus(runId)
+                         .mapError(err => OrchestratorError.StateFailed(StateError.ReadError(runId.toString, err.toString)))
+                         .someOrFail(OrchestratorError.StateFailed(StateError.StateNotFound(runId.toString)))
+          workflow  <- workflowForRun(run)
           queue     <- orchestrator.subscribeToProgress(runId)
           liveEvents = ZStream
                          .fromQueue(queue)
-                         .map(RunsController.toSseData)
+                         .mapZIO(_ =>
+                           ZIO
+                             .foreach(knownPhasesForWorkflow(workflow))(phase => repository.getProgress(runId, phase))
+                             .map(_.flatten)
+                             .map(phaseRows =>
+                               RunsController.toSseEvent("phase-progress", HtmlViews.phaseProgressFragment(phaseRows)) +
+                                 RunsController.toSseEvent(
+                                   "workflow-diagram",
+                                   HtmlViews.runWorkflowDiagramFragment(workflow, phaseRows),
+                                 )
+                             )
+                             .mapError(err =>
+                               OrchestratorError.StateFailed(StateError.ReadError(runId.toString, err.toString))
+                             )
+                             .catchAll(err =>
+                               Logger.warn(s"Skipping SSE UI refresh for run $runId: ${err.message}").as("")
+                             )
+                         )
+                         .filter(_.nonEmpty)
           heartbeat  = ZStream.repeatWithSchedule(": heartbeat\n\n", Schedule.spaced(15.seconds))
           stream     = liveEvents.mergeHaltLeft(heartbeat)
         yield Response(
@@ -163,7 +189,7 @@ final case class RunsControllerLive(
             Headers(Header.Custom("Content-Type", "text/event-stream"), Header.Custom("Cache-Control", "no-cache")),
         )
 
-      response
+      ErrorHandlingMiddleware.fromOrchestrator(response)
     },
   )
 
@@ -263,23 +289,17 @@ final case class RunsControllerLive(
             case None    => ZIO.fail(OrchestratorError.Interrupted(s"Unknown workflow id: $id"))
           }
 
-  private def workflowNameForRun(run: MigrationRunRow): IO[PersistenceError, Option[String]] =
+  private def workflowForRun(run: MigrationRunRow): IO[OrchestratorError, WorkflowDefinition] =
     run.workflowId match
-      case None     => ZIO.succeed(None)
+      case None     => ZIO.succeed(WorkflowDefinition.default)
       case Some(id) =>
         workflowService
           .getWorkflow(id)
           .map {
-            case Some(workflow) => Some(workflow.name)
-            case None           => Some(s"Workflow #$id")
+            case Some(workflow) => workflow
+            case None           => WorkflowDefinition.default.copy(name = s"Workflow #$id")
           }
-          .mapError {
-            case WorkflowServiceError.PersistenceFailed(err)             => err
-            case WorkflowServiceError.ValidationFailed(errors)           =>
-              PersistenceError.QueryFailed("workflowNameForRun", errors.mkString("; "))
-            case WorkflowServiceError.StepsDecodingFailed(workflow, why) =>
-              PersistenceError.QueryFailed("workflowNameForRun", s"Invalid workflow '$workflow': $why")
-          }
+          .mapError(workflowAsOrchestrator("getWorkflow"))
 
   private def parseProvider(value: String): Option[AIProvider] =
     value match
@@ -319,9 +339,13 @@ final case class RunsControllerLive(
           .getWorkflow(id)
           .mapError(workflowAsOrchestrator("getWorkflow"))
           .map {
-            case Some(workflow) if workflow.steps.nonEmpty => workflow.steps.map(stepToPhase)
-            case _                                         => defaultWorkflowSteps.map(stepToPhase)
+            case Some(workflow) => knownPhasesForWorkflow(workflow)
+            case None           => defaultWorkflowSteps.map(stepToPhase)
           }
+
+  private def knownPhasesForWorkflow(workflow: WorkflowDefinition): List[String] =
+    val steps = if workflow.steps.nonEmpty then workflow.steps else defaultWorkflowSteps
+    steps.map(stepToPhase)
 
   private def stepToPhase(step: MigrationStep): String = step match
     case MigrationStep.Discovery      => "discovery"

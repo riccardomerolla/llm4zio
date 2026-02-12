@@ -155,7 +155,10 @@ object RunsControllerSpec extends ZIOSpecDefault:
         event        <- Clock.instant.map(now =>
                           ProgressUpdate(1L, "analysis", 2, 10, "working-working-working-working-working", now)
                         )
-        orchestrator <- TestOrchestrator.make(progress = Map(1L -> event))
+        orchestrator <- TestOrchestrator.make(
+                          runs = List(sampleRun.copy(id = 1L)),
+                          progress = Map(1L -> event),
+                        )
         repo         <- TestRepository.make()
         controller    = RunsControllerLive(orchestrator, repo, TestWorkflowService.empty)
         response     <- controller.routes.runZIO(Request.get("/runs/1/progress"))
@@ -166,6 +169,14 @@ object RunsControllerSpec extends ZIOSpecDefault:
         sseFrame.startsWith("data: "),
         sseFrame.endsWith("\n\n"),
         sseFrame.contains(event.toJson),
+      )
+    },
+    test("toSseEvent formats named SSE events") {
+      val frame = RunsController.toSseEvent("workflow-diagram", "<div>ok</div>")
+      assertTrue(
+        frame.startsWith("event: workflow-diagram\n"),
+        frame.contains("data: <div>ok</div>"),
+        frame.endsWith("\n\n"),
       )
     },
   )

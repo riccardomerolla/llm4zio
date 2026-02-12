@@ -7,6 +7,8 @@ import zio.http.*
 import zio.test.*
 
 import db.*
+import models.*
+import orchestration.*
 
 object DashboardControllerSpec extends ZIOSpecDefault:
 
@@ -29,19 +31,21 @@ object DashboardControllerSpec extends ZIOSpecDefault:
     test("GET / renders dashboard") {
       for
         repo      <- TestRepository.make
-        controller = DashboardControllerLive(repo)
+        controller = DashboardControllerLive(repo, TestWorkflowService.withCount(3))
         response  <- controller.routes.runZIO(Request.get("/"))
         body      <- response.body.asString
       yield assertTrue(
         response.status == Status.Ok,
         body.contains("Dashboard"),
         body.contains("/runs/2"),
+        body.contains("Workflows"),
+        body.contains(">3<"),
       )
     },
     test("GET /api/runs/recent returns runs fragment") {
       for
         repo      <- TestRepository.make
-        controller = DashboardControllerLive(repo)
+        controller = DashboardControllerLive(repo, TestWorkflowService.withCount(1))
         response  <- controller.routes.runZIO(Request.get("/api/runs/recent"))
         body      <- response.body.asString
       yield assertTrue(
@@ -88,3 +92,33 @@ object DashboardControllerSpec extends ZIOSpecDefault:
 
   private object TestRepository:
     def make: UIO[TestRepository] = ZIO.succeed(TestRepository())
+
+  private object TestWorkflowService:
+    def withCount(count: Int): WorkflowService =
+      new WorkflowService:
+        private val workflows = List.tabulate(count)(index =>
+          WorkflowDefinition(
+            id = Some(index.toLong + 1L),
+            name = s"wf-$index",
+            steps = List(MigrationStep.Discovery),
+            isBuiltin = false,
+          )
+        )
+
+        override def createWorkflow(workflow: WorkflowDefinition): IO[WorkflowServiceError, Long] =
+          ZIO.fail(WorkflowServiceError.ValidationFailed(List("unsupported in test")))
+
+        override def getWorkflow(id: Long): IO[WorkflowServiceError, Option[WorkflowDefinition]] =
+          ZIO.succeed(workflows.find(_.id.contains(id)))
+
+        override def getWorkflowByName(name: String): IO[WorkflowServiceError, Option[WorkflowDefinition]] =
+          ZIO.succeed(workflows.find(_.name == name))
+
+        override def listWorkflows: IO[WorkflowServiceError, List[WorkflowDefinition]] =
+          ZIO.succeed(workflows)
+
+        override def updateWorkflow(workflow: WorkflowDefinition): IO[WorkflowServiceError, Unit] =
+          ZIO.fail(WorkflowServiceError.ValidationFailed(List("unsupported in test")))
+
+        override def deleteWorkflow(id: Long): IO[WorkflowServiceError, Unit] =
+          ZIO.fail(WorkflowServiceError.ValidationFailed(List("unsupported in test")))

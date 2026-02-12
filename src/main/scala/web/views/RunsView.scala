@@ -1,7 +1,7 @@
 package web.views
 
 import db.{ MigrationRunRow, PhaseProgressRow, RunStatus }
-import models.WorkflowDefinition
+import models.{ MigrationStep, WorkflowDefinition }
 import scalatags.Text.all.*
 
 object RunsView:
@@ -52,7 +52,12 @@ object RunsView:
       paginationControls(pageNumber, pageSize, runs.length),
     )
 
-  def detail(run: MigrationRunRow, phases: List[PhaseProgressRow], workflowName: Option[String] = None): String =
+  def detail(
+    run: MigrationRunRow,
+    phases: List[PhaseProgressRow],
+    workflowName: Option[String] = None,
+    workflow: WorkflowDefinition = WorkflowDefinition.default,
+  ): String =
     Layout.page(s"Run #${run.id}", s"/runs/${run.id}")(
       // Header
       div(cls := "mb-8")(
@@ -65,7 +70,7 @@ object RunsView:
       div(cls := "grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-8")(
         infoCard("Source Directory", run.sourceDir),
         infoCard("Output Directory", run.outputDir),
-        infoCard("Workflow", workflowName.getOrElse("Default (all steps)")),
+        infoCard("Workflow", workflowName.getOrElse(workflow.name)),
         infoCard("Started", run.startedAt.toString.take(19).replace("T", " ")),
         infoCard(
           "Files",
@@ -79,10 +84,19 @@ object RunsView:
         attr("sse-connect") := s"/runs/${run.id}/progress",
       )(
         h2(cls := "text-lg font-semibold text-white mb-4")("Phase Progress"),
-        div(id := "phase-progress")(
+        div(id := "phase-progress", attr("sse-swap") := "phase-progress")(
           phaseProgressSection(phases)
         ),
+        div(
+          id               := "workflow-diagram",
+          attr("sse-swap") := "workflow-diagram",
+          cls              := "mt-8",
+        )(
+          workflowDiagramSection(workflow, phases)
+        ),
       ),
+      script(src := "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"),
+      script(raw(runDetailScript)),
       // Error message
       run.errorMessage.map { err =>
         div(cls := "bg-red-500/10 border border-red-500/30 rounded-lg p-4 mb-8")(
@@ -208,6 +222,12 @@ object RunsView:
   def recentRunsFragment(runs: List[MigrationRunRow]): String =
     DashboardView.recentRunsContent(runs).render
 
+  def phaseProgressFragment(phases: List[PhaseProgressRow]): String =
+    phaseProgressSection(phases).render
+
+  def workflowDiagramFragment(workflow: WorkflowDefinition, phases: List[PhaseProgressRow]): String =
+    workflowDiagramSection(workflow, phases).render
+
   // ---------------------------------------------------------------------------
   // Private helpers
   // ---------------------------------------------------------------------------
@@ -247,6 +267,19 @@ object RunsView:
         }
       )
 
+  private def workflowDiagramSection(workflow: WorkflowDefinition, phases: List[PhaseProgressRow]): Frag =
+    div(
+      h2(cls := "text-lg font-semibold text-white mb-4")("Workflow"),
+      p(cls := "text-sm text-gray-400 mb-3")("Execution status overlay by phase."),
+      div(
+        cls := "overflow-auto rounded-lg border border-white/10 bg-slate-950/70 p-4"
+      )(
+        div(cls := "mermaid run-workflow-mermaid text-slate-200")(
+          workflowDiagramMermaid(workflow.steps, phases)
+        )
+      ),
+    )
+
   private def infoCard(label: String, value: String): Frag =
     div(cls := "bg-white/5 ring-1 ring-white/10 rounded-lg p-4")(
       p(cls := "text-xs font-medium text-gray-400 mb-1")(label),
@@ -272,8 +305,41 @@ object RunsView:
 
   private def workflowToMermaid(steps: List[models.MigrationStep]): String =
     val nodes = steps.zipWithIndex.map((step, index) => s"""  step$index["${step.toString}"]""")
-    val edges = steps.indices.sliding(2).map(pair => s"  step${pair(0)} --> step${pair(1)}").toList
+    val edges = (0 until Math.max(steps.length - 1, 0)).map(index => s"  step$index --> step${index + 1}").toList
     ("graph LR" :: nodes ::: edges).mkString("\n")
+
+  private def workflowDiagramMermaid(steps: List[MigrationStep], phases: List[PhaseProgressRow]): String =
+    val nodes = steps.zipWithIndex.map { (step, index) =>
+      s"""  step$index["${step.toString}"]:::${stepStatusClass(step, phases)}"""
+    }
+    val edges = (0 until Math.max(steps.length - 1, 0)).map(index => s"  step$index --> step${index + 1}").toList
+    val defs  = List(
+      "  classDef completed fill:#065f46,stroke:#10b981,color:#fff",
+      "  classDef running fill:#1e3a5f,stroke:#3b82f6,color:#fff",
+      "  classDef failed fill:#7f1d1d,stroke:#ef4444,color:#fff",
+      "  classDef pending fill:#374151,stroke:#6b7280,color:#9ca3af",
+    )
+
+    ("graph LR" :: nodes ::: edges ::: defs).mkString("\n")
+
+  private def stepStatusClass(step: MigrationStep, phases: List[PhaseProgressRow]): String =
+    val maybeStatus = phases
+      .find(progress => progress.phase.equalsIgnoreCase(stepToPhase(step)))
+      .map(_.status.trim.toLowerCase)
+
+    maybeStatus match
+      case Some(status) if status.contains("fail")                                => "failed"
+      case Some(status) if status.contains("run")                                 => "running"
+      case Some(status) if status.contains("done") || status.contains("complete") => "completed"
+      case _                                                                      => "pending"
+
+  private def stepToPhase(step: MigrationStep): String = step match
+    case MigrationStep.Discovery      => "discovery"
+    case MigrationStep.Analysis       => "analysis"
+    case MigrationStep.Mapping        => "mapping"
+    case MigrationStep.Transformation => "transformation"
+    case MigrationStep.Validation     => "validation"
+    case MigrationStep.Documentation  => "documentation"
 
   private def formScript(previews: Map[String, String]): String =
     val previewJson = previews.map {
@@ -318,4 +384,31 @@ object RunsView:
     raw
       .replace("\\", "\\\\")
       .replace("\"", "\\\"")
+      .replace("\r", "\\r")
+      .replace("\n", "\\n")
+
+  private val runDetailScript: String =
+    """
+      |document.addEventListener("DOMContentLoaded", function () {
+      |  if (!window.mermaid) return;
+      |  window.mermaid.initialize({ startOnLoad: false, securityLevel: "loose" });
+      |
+      |  var render = function (root) {
+      |    var scope = root || document;
+      |    var nodes = scope.querySelectorAll(".run-workflow-mermaid");
+      |    if (!nodes || nodes.length === 0) return;
+      |    window.mermaid.run({ nodes: Array.from(nodes) }).catch(function () {});
+      |  };
+      |
+      |  render(document);
+      |
+      |  document.body.addEventListener("htmx:afterSwap", function (event) {
+      |    var target = event && event.detail ? event.detail.target : null;
+      |    if (!target) return;
+      |    if (target.id === "workflow-diagram") {
+      |      render(target);
+      |    }
+      |  });
+      |});
+      |""".stripMargin
       .replace("\n", "\\n")

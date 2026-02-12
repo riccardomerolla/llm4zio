@@ -236,7 +236,7 @@ object WorkflowsView:
 
   def workflowToMermaid(steps: List[MigrationStep]): String =
     val nodes = steps.zipWithIndex.map((step, index) => s"""  step$index["${step.toString}"]""")
-    val edges = steps.indices.sliding(2).map(pair => s"  step${pair(0)} --> step${pair(1)}").toList
+    val edges = (0 until Math.max(steps.length - 1, 0)).map(index => s"  step$index --> step${index + 1}").toList
     ("graph LR" :: nodes ::: edges).mkString("\n")
 
   private def workflowRow(workflow: WorkflowDefinition, agentDisplayByName: Map[String, String]): Frag =
