@@ -145,6 +145,7 @@ object MigrationOrchestrator:
                          failedConversions = 0,
                          currentPhase = Some("Pending"),
                          errorMessage = None,
+                         workflowId = requestConfig.workflowId,
                        )
                      )
                      .mapError(persistenceAsOrchestrator("createRun", "new"))

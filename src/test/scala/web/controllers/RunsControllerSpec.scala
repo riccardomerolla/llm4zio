@@ -9,7 +9,7 @@ import zio.test.*
 
 import db.*
 import models.*
-import orchestration.{ MigrationOrchestrator, MigrationResult, PipelineProgressUpdate, StepResult }
+import orchestration.*
 
 object RunsControllerSpec extends ZIOSpecDefault:
 
@@ -39,7 +39,7 @@ object RunsControllerSpec extends ZIOSpecDefault:
       for
         orchestrator <- TestOrchestrator.make(runs = List(sampleRun))
         repo         <- TestRepository.make()
-        controller    = RunsControllerLive(orchestrator, repo)
+        controller    = RunsControllerLive(orchestrator, repo, TestWorkflowService.empty)
         response     <- controller.routes.runZIO(Request.get(URL.decode("/runs?page=1&pageSize=20").toOption.get))
         body         <- response.body.asString
       yield assertTrue(
@@ -52,7 +52,7 @@ object RunsControllerSpec extends ZIOSpecDefault:
       for
         orchestrator <- TestOrchestrator.make(startedRunId = 77L)
         repo         <- TestRepository.make()
-        controller    = RunsControllerLive(orchestrator, repo)
+        controller    = RunsControllerLive(orchestrator, repo, TestWorkflowService.empty)
         request       = Request
                           .post(
                             "/runs",
@@ -74,7 +74,7 @@ object RunsControllerSpec extends ZIOSpecDefault:
                             SettingRow("features.enableBusinessLogicExtractor", "true", Instant.parse("2026-02-08T00:00:00Z"))
                           )
                         )
-        controller    = RunsControllerLive(orchestrator, repo)
+        controller    = RunsControllerLive(orchestrator, repo, TestWorkflowService.empty)
         request       = Request.post(
                           "/runs",
                           Body.fromString("sourceDir=%2Ftmp%2Fsource&outputDir=%2Ftmp%2Foutput&dryRun=on"),
@@ -102,7 +102,7 @@ object RunsControllerSpec extends ZIOSpecDefault:
         repo         <- TestRepository.make(
                           progress = Map((failedRun.id, "analysis") -> failedProgress)
                         )
-        controller    = RunsControllerLive(orchestrator, repo)
+        controller    = RunsControllerLive(orchestrator, repo, TestWorkflowService.empty)
         response     <- controller.routes.runZIO(Request.post(s"/runs/${failedRun.id}/retry", Body.empty))
         started      <- orchestrator.lastStartedConfig
       yield assertTrue(
@@ -116,7 +116,7 @@ object RunsControllerSpec extends ZIOSpecDefault:
       for
         orchestrator <- TestOrchestrator.make()
         repo         <- TestRepository.make()
-        controller    = RunsControllerLive(orchestrator, repo)
+        controller    = RunsControllerLive(orchestrator, repo, TestWorkflowService.empty)
         response     <- controller.routes.runZIO(Request.delete("/runs/42"))
         cancelled    <- orchestrator.lastCancelledRunId
       yield assertTrue(
@@ -131,7 +131,7 @@ object RunsControllerSpec extends ZIOSpecDefault:
                         )
         orchestrator <- TestOrchestrator.make(progress = Map(1L -> event))
         repo         <- TestRepository.make()
-        controller    = RunsControllerLive(orchestrator, repo)
+        controller    = RunsControllerLive(orchestrator, repo, TestWorkflowService.empty)
         response     <- controller.routes.runZIO(Request.get("/runs/1/progress"))
         sseFrame      = RunsController.toSseData(event)
       yield assertTrue(
@@ -249,3 +249,23 @@ object RunsControllerSpec extends ZIOSpecDefault:
         progressRef <- Ref.make(progress)
         settingsRef <- Ref.make(settings)
       yield TestRepository(progressRef, settingsRef)
+
+  private object TestWorkflowService:
+    val empty: WorkflowService = new WorkflowService:
+      override def createWorkflow(workflow: WorkflowDefinition): IO[WorkflowServiceError, Long] =
+        ZIO.fail(WorkflowServiceError.ValidationFailed(List("unsupported in test")))
+
+      override def getWorkflow(id: Long): IO[WorkflowServiceError, Option[WorkflowDefinition]] =
+        ZIO.succeed(None)
+
+      override def getWorkflowByName(name: String): IO[WorkflowServiceError, Option[WorkflowDefinition]] =
+        ZIO.succeed(None)
+
+      override def listWorkflows: IO[WorkflowServiceError, List[WorkflowDefinition]] =
+        ZIO.succeed(Nil)
+
+      override def updateWorkflow(workflow: WorkflowDefinition): IO[WorkflowServiceError, Unit] =
+        ZIO.fail(WorkflowServiceError.ValidationFailed(List("unsupported in test")))
+
+      override def deleteWorkflow(id: Long): IO[WorkflowServiceError, Unit] =
+        ZIO.fail(WorkflowServiceError.ValidationFailed(List("unsupported in test")))

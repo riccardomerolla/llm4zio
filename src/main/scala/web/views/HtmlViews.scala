@@ -12,10 +12,16 @@ object HtmlViews:
     RunsView.list(runs, pageNumber, pageSize)
 
   def runDetail(run: MigrationRunRow, phases: List[PhaseProgressRow]): String =
-    RunsView.detail(run, phases)
+    RunsView.detail(run, phases, workflowName = None)
+
+  def runDetail(run: MigrationRunRow, phases: List[PhaseProgressRow], workflowName: Option[String]): String =
+    RunsView.detail(run, phases, workflowName)
 
   def runForm: String =
-    RunsView.form
+    RunsView.form()
+
+  def runForm(workflows: List[WorkflowDefinition]): String =
+    RunsView.form(workflows)
 
   def recentRunsFragment(runs: List[MigrationRunRow]): String =
     RunsView.recentRunsFragment(runs)

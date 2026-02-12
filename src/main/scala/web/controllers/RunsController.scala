@@ -11,7 +11,7 @@ import zio.stream.*
 
 import db.*
 import models.*
-import orchestration.MigrationOrchestrator
+import orchestration.{ MigrationOrchestrator, WorkflowService, WorkflowServiceError }
 import web.ErrorHandlingMiddleware
 import web.views.HtmlViews
 
@@ -23,7 +23,7 @@ object RunsController:
   def routes: ZIO[RunsController, Nothing, Routes[Any, Response]] =
     ZIO.serviceWith[RunsController](_.routes)
 
-  val live: ZLayer[MigrationOrchestrator & MigrationRepository, Nothing, RunsController] =
+  val live: ZLayer[MigrationOrchestrator & MigrationRepository & WorkflowService, Nothing, RunsController] =
     ZLayer.fromFunction(RunsControllerLive.apply)
 
   def toSseData(update: ProgressUpdate): String =
@@ -32,6 +32,7 @@ object RunsController:
 final case class RunsControllerLive(
   orchestrator: MigrationOrchestrator,
   repository: MigrationRepository,
+  workflowService: WorkflowService,
 ) extends RunsController:
 
   private val knownPhases = List(
@@ -55,16 +56,23 @@ final case class RunsControllerLive(
       }
     },
     Method.GET / "runs" / "new"                   -> handler {
-      html(HtmlViews.runForm)
+      ErrorHandlingMiddleware.fromOrchestrator {
+        for
+          workflows <- workflowService.listWorkflows.mapError(workflowAsOrchestrator("listWorkflows"))
+        yield html(HtmlViews.runForm(workflows))
+      }
     },
     Method.GET / "runs" / long("id")              -> handler { (runId: Long, _: Request) =>
       ErrorHandlingMiddleware.handle {
         for
-          run       <- orchestrator
-                         .getRunStatus(runId)
-                         .someOrFail(PersistenceError.NotFound("migration_runs", runId))
-          phaseRows <- ZIO.foreach(knownPhases)(phase => repository.getProgress(runId, phase)).map(_.flatten)
-        yield html(HtmlViews.runDetail(run, phaseRows))
+          run          <- orchestrator
+                            .getRunStatus(runId)
+                            .someOrFail(PersistenceError.NotFound("migration_runs", runId))
+          phaseRows    <- ZIO.foreach(knownPhases)(phase => repository.getProgress(runId, phase)).map(_.flatten)
+          workflowName <- workflowNameForRun(run).mapError(err =>
+                            OrchestratorError.StateFailed(StateError.ReadError(runId.toString, err.toString))
+                          )
+        yield html(HtmlViews.runDetail(run, phaseRows, workflowName))
       }
     },
     Method.POST / "runs"                          -> handler { (req: Request) =>
@@ -74,10 +82,12 @@ final case class RunsControllerLive(
           sourceDir   <- required(form, "sourceDir")
           outputDir   <- required(form, "outputDir")
           dryRun       = form.get("dryRun").exists(_.equalsIgnoreCase("on"))
+          workflowId  <- parseWorkflowId(form)
+          _           <- validateWorkflowExists(workflowId)
           settings    <- repository.getAllSettings
                            .map(_.map(s => s.key -> s.value).toMap)
                            .catchAll(_ => ZIO.succeed(Map.empty[String, String]))
-          migrationCfg = buildConfigFromDefaults(settings, sourceDir, outputDir, dryRun)
+          migrationCfg = buildConfigFromDefaults(settings, sourceDir, outputDir, dryRun, workflowId)
           _           <- orchestrator.startMigration(migrationCfg)
         yield Response(
           status = Status.SeeOther,
@@ -120,6 +130,7 @@ final case class RunsControllerLive(
                            run.sourceDir,
                            run.outputDir,
                            dryRun = false,
+                           workflowId = run.workflowId,
                          ).copy(
                            retryFromRunId = Some(runId),
                            retryFromStep = Some(failedStep),
@@ -184,6 +195,7 @@ final case class RunsControllerLive(
     sourceDir: String,
     outputDir: String,
     dryRun: Boolean,
+    workflowId: Option[Long],
   ): MigrationConfig =
     val defaults   = AIProviderConfig()
     val provider   = s.get("ai.provider").flatMap(parseProvider).getOrElse(defaults.provider)
@@ -221,12 +233,52 @@ final case class RunsControllerLive(
       enableCheckpointing = s.get("features.enableCheckpointing").map(_ == "true").getOrElse(true),
       enableBusinessLogicExtractor = s.get("features.enableBusinessLogicExtractor").map(_ == "true").getOrElse(false),
       verbose = s.get("features.verbose").map(_ == "true").getOrElse(false),
+      workflowId = workflowId,
       dryRun = dryRun,
       basePackage = s.get("project.basePackage").filter(_.nonEmpty).getOrElse("com.example"),
       projectName = s.get("project.name").filter(_.nonEmpty),
       projectVersion = s.get("project.version").filter(_.nonEmpty).getOrElse("0.0.1-SNAPSHOT"),
       maxCompileRetries = s.get("project.maxCompileRetries").flatMap(_.toIntOption).getOrElse(3),
     )
+
+  private def parseWorkflowId(form: Map[String, String]): IO[OrchestratorError, Option[Long]] =
+    form.get("workflowId").map(_.trim).filter(_.nonEmpty) match
+      case None      => ZIO.succeed(None)
+      case Some(raw) =>
+        ZIO
+          .fromOption(raw.toLongOption)
+          .orElseFail(OrchestratorError.Interrupted(s"Invalid workflow id: $raw"))
+          .map(Some(_))
+
+  private def validateWorkflowExists(workflowId: Option[Long]): IO[OrchestratorError, Unit] =
+    workflowId match
+      case None     => ZIO.unit
+      case Some(id) =>
+        workflowService
+          .getWorkflow(id)
+          .mapError(workflowAsOrchestrator("getWorkflow"))
+          .flatMap {
+            case Some(_) => ZIO.unit
+            case None    => ZIO.fail(OrchestratorError.Interrupted(s"Unknown workflow id: $id"))
+          }
+
+  private def workflowNameForRun(run: MigrationRunRow): IO[PersistenceError, Option[String]] =
+    run.workflowId match
+      case None     => ZIO.succeed(None)
+      case Some(id) =>
+        workflowService
+          .getWorkflow(id)
+          .map {
+            case Some(workflow) => Some(workflow.name)
+            case None           => Some(s"Workflow #$id")
+          }
+          .mapError {
+            case WorkflowServiceError.PersistenceFailed(err)             => err
+            case WorkflowServiceError.ValidationFailed(errors)           =>
+              PersistenceError.QueryFailed("workflowNameForRun", errors.mkString("; "))
+            case WorkflowServiceError.StepsDecodingFailed(workflow, why) =>
+              PersistenceError.QueryFailed("workflowNameForRun", s"Invalid workflow '$workflow': $why")
+          }
 
   private def parseProvider(value: String): Option[AIProvider] =
     value match
@@ -260,6 +312,17 @@ final case class RunsControllerLive(
 
   private def urlDecode(value: String): String =
     URLDecoder.decode(value, StandardCharsets.UTF_8)
+
+  private def workflowAsOrchestrator(action: String)(error: WorkflowServiceError): OrchestratorError =
+    error match
+      case WorkflowServiceError.PersistenceFailed(err)             =>
+        OrchestratorError.StateFailed(StateError.WriteError("workflow", s"$action failed: $err"))
+      case WorkflowServiceError.ValidationFailed(errors)           =>
+        OrchestratorError.Interrupted(errors.mkString("; "))
+      case WorkflowServiceError.StepsDecodingFailed(workflow, why) =>
+        OrchestratorError.StateFailed(
+          StateError.InvalidState(workflow, s"$action failed: invalid workflow steps payload ($why)")
+        )
 
   private def html(content: String): Response =
     Response.text(content).contentType(MediaType.text.html)

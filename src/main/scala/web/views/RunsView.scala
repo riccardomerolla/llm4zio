@@ -1,6 +1,7 @@
 package web.views
 
 import db.{ MigrationRunRow, PhaseProgressRow, RunStatus }
+import models.WorkflowDefinition
 import scalatags.Text.all.*
 
 object RunsView:
@@ -51,7 +52,7 @@ object RunsView:
       paginationControls(pageNumber, pageSize, runs.length),
     )
 
-  def detail(run: MigrationRunRow, phases: List[PhaseProgressRow]): String =
+  def detail(run: MigrationRunRow, phases: List[PhaseProgressRow], workflowName: Option[String] = None): String =
     Layout.page(s"Run #${run.id}", s"/runs/${run.id}")(
       // Header
       div(cls := "mb-8")(
@@ -64,6 +65,7 @@ object RunsView:
       div(cls := "grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-8")(
         infoCard("Source Directory", run.sourceDir),
         infoCard("Output Directory", run.outputDir),
+        infoCard("Workflow", workflowName.getOrElse("Default (all steps)")),
         infoCard("Started", run.startedAt.toString.take(19).replace("T", " ")),
         infoCard(
           "Files",
@@ -115,7 +117,13 @@ object RunsView:
       ),
     )
 
-  def form: String =
+  def form(workflows: List[WorkflowDefinition] = Nil): String =
+    val customWorkflows = workflows.filter(workflow => !workflow.isBuiltin).sortBy(_.name.toLowerCase)
+    val previews        =
+      (List(("default", workflowToMermaid(WorkflowDefinition.default.steps))) ++
+        customWorkflows.flatMap(workflow => workflow.id.map(id => id.toString -> workflowToMermaid(workflow.steps))))
+        .toMap
+
     Layout.page("New Migration Run", "/runs/new")(
       div(cls := "max-w-2xl")(
         h1(cls := "text-2xl font-bold text-white mb-6")("Start New Migration"),
@@ -153,6 +161,34 @@ object RunsView:
               "Dry run (analyse only, don't write output files)"
             ),
           ),
+          div(
+            label(cls := "block text-sm font-medium text-white mb-2", `for` := "workflowId")("Workflow"),
+            select(
+              name := "workflowId",
+              id   := "workflowId",
+              cls  := "block w-full rounded-md bg-white/5 border-0 py-1.5 text-white shadow-sm ring-1 ring-inset ring-white/10 focus:ring-2 focus:ring-inset focus:ring-indigo-500 sm:text-sm/6 px-3",
+            )(
+              option(value := "")("Default (all steps)"),
+              customWorkflows.flatMap { workflow =>
+                workflow.id.map { id =>
+                  option(value := id.toString)(workflow.name)
+                }
+              },
+            ),
+            p(cls := "mt-2 text-xs text-gray-400")("Choose a custom workflow to run a subset/order of steps."),
+          ),
+          div(
+            h2(cls := "text-sm font-semibold text-white")("Workflow Preview"),
+            p(cls := "mt-1 text-xs text-gray-400")("Mermaid graph for the selected workflow."),
+            div(
+              id  := "run-workflow-preview",
+              cls := "mt-3 overflow-auto rounded-lg border border-white/10 bg-slate-950/70 p-4",
+            )(
+              div(cls := "mermaid text-slate-200", id := "run-workflow-preview-mermaid")(
+                workflowToMermaid(WorkflowDefinition.default.steps)
+              )
+            ),
+          ),
           div(cls := "flex gap-4 pt-2")(
             button(
               `type` := "submit",
@@ -164,6 +200,8 @@ object RunsView:
             )("Cancel"),
           ),
         ),
+        script(src := "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"),
+        script(raw(formScript(previews))),
       )
     )
 
@@ -231,3 +269,53 @@ object RunsView:
         )("Next")
       else span(),
     )
+
+  private def workflowToMermaid(steps: List[models.MigrationStep]): String =
+    val nodes = steps.zipWithIndex.map((step, index) => s"""  step$index["${step.toString}"]""")
+    val edges = steps.indices.sliding(2).map(pair => s"  step${pair(0)} --> step${pair(1)}").toList
+    ("graph LR" :: nodes ::: edges).mkString("\n")
+
+  private def formScript(previews: Map[String, String]): String =
+    val previewJson = previews.map {
+      case (id, graph) =>
+        val safeId    = escapeJs(id)
+        val safeGraph = escapeJs(graph)
+        s""" "$safeId": "$safeGraph" """
+    }.mkString("{", ",", "}")
+
+    s"""
+       |document.addEventListener("DOMContentLoaded", function () {
+       |  var select = document.getElementById("workflowId");
+       |  var preview = document.getElementById("run-workflow-preview");
+       |  if (!select || !preview || !window.mermaid) return;
+       |
+       |  var previews = $previewJson;
+       |  window.mermaid.initialize({ startOnLoad: false, securityLevel: "loose" });
+       |
+       |  var render = function () {
+       |    var key = (select.value && select.value.trim().length > 0) ? select.value.trim() : "default";
+       |    var graph = previews[key] || previews["default"] || "graph LR\\n  empty[\\"No steps\\"]";
+       |    preview.innerHTML = "";
+       |    var node = document.createElement("div");
+       |    node.className = "mermaid text-slate-200";
+       |    node.textContent = graph;
+       |    preview.appendChild(node);
+       |    window.mermaid.run({ nodes: [node] }).catch(function () {
+       |      var fallback = document.createElement("pre");
+       |      fallback.className = "text-sm text-rose-200";
+       |      fallback.textContent = graph;
+       |      preview.innerHTML = "";
+       |      preview.appendChild(fallback);
+       |    });
+       |  };
+       |
+       |  select.addEventListener("change", render);
+       |  render();
+       |});
+       |""".stripMargin
+
+  private def escapeJs(raw: String): String =
+    raw
+      .replace("\\", "\\\\")
+      .replace("\"", "\\\"")
+      .replace("\n", "\\n")

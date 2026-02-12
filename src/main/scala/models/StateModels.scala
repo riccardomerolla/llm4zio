@@ -64,6 +64,7 @@ case class MigrationConfig(
   resumeFromCheckpoint: Option[String] = None,
   retryFromRunId: Option[Long] = None,
   retryFromStep: Option[MigrationStep] = None,
+  workflowId: Option[Long] = None,
   dryRun: Boolean = false,
   verbose: Boolean = false,
   basePackage: String = "com.example",

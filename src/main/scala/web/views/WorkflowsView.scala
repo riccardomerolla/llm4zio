@@ -186,7 +186,7 @@ object WorkflowsView:
           ),
         ),
         script(src := "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"),
-        script(raw(formScript(agentOptions))),
+        script(raw(formScript())),
       )
     )
 
@@ -255,14 +255,14 @@ object WorkflowsView:
                 cls  := "rounded-md border border-cyan-400/30 bg-cyan-500/20 px-2 py-1 text-xs font-semibold text-cyan-200 hover:bg-cyan-500/30",
               )("Edit"),
               button(
-                `type`                          := "button",
-                attr("hx-delete")               := s"/workflows/$id",
-                attr("hx-confirm")              := s"Delete workflow '${workflow.name}'?",
-                attr("hx-target")               := "closest tr",
-                attr("hx-swap")                 := "delete",
-                attr("hx-on:htmx:afterRequest") :=
-                  "if(event.detail.successful){const b=document.getElementById('workflow-feedback');const t=document.getElementById('workflow-feedback-text');if(b&&t){t.textContent='Workflow deleted';b.classList.remove('hidden');}}",
-                cls                             := "rounded-md border border-rose-400/30 bg-rose-500/10 px-2 py-1 text-xs font-semibold text-rose-200 hover:bg-rose-500/20",
+                `type`                       := "button",
+                attr("hx-delete")            := s"/workflows/$id",
+                attr("hx-confirm")           := s"Delete workflow '${workflow.name}'?",
+                attr("hx-target")            := "closest tr",
+                attr("hx-swap")              := "delete",
+                attr("hx-on::after-request") :=
+                  "if(event.detail.successful){window.location.reload();}",
+                cls                          := "rounded-md border border-rose-400/30 bg-rose-500/10 px-2 py-1 text-xs font-semibold text-rose-200 hover:bg-rose-500/20",
               )("Delete"),
             )
           case None     => span(cls := "text-xs text-slate-400")("Built-in")
@@ -316,30 +316,14 @@ object WorkflowsView:
     }
     s"{${entries.mkString(",")}}"
 
-  private def formScript(availableAgents: List[AgentInfo]): String =
-    val optionsJson  = availableAgents
-      .map { agent =>
-        val safeName = agent.name.replace("\\", "\\\\").replace("\"", "\\\"")
-        val safeDisp = agent.displayName.replace("\\", "\\\\").replace("\"", "\\\"")
-        s"""{"name":"$safeName","displayName":"$safeDisp"}"""
-      }
-      .mkString("[", ",", "]")
-    val optionsForJs = optionsJson.replace("\\", "\\\\").replace("\"", "\\\"")
-
+  private def formScript(): String =
     s"""
        |document.addEventListener("DOMContentLoaded", function () {
-       |  if (!window.mermaid) return;
-       |  window.mermaid.initialize({ startOnLoad: false, securityLevel: "loose" });
-       |
        |  var hidden = document.getElementById("orderedSteps");
        |  var agentsHidden = document.getElementById("stepAgentsJson");
        |  var list = document.getElementById("ordered-step-list");
        |  var preview = document.getElementById("workflow-mermaid-preview");
-       |  var staticAgents = document.getElementById("static-step-agents");
        |  if (!hidden || !agentsHidden || !list || !preview) return;
-       |  if (staticAgents) staticAgents.classList.add("hidden");
-       |
-       |  var availableAgents = JSON.parse("$optionsForJs");
        |
        |  var parseCsv = function (value) {
        |    return value.split(",").map(function (x) { return x.trim(); }).filter(function (x) { return x.length > 0; });
@@ -373,31 +357,24 @@ object WorkflowsView:
        |
        |  var toMermaid = function () {
        |    if (steps.length === 0) {
-       |      return "graph LR\n  empty[\"No steps selected\"]";
+       |      return ["graph LR", '  empty["No steps selected"]'].join(String.fromCharCode(10));
        |    }
        |    var escapeStepLabel = function (value) {
        |      return String(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
        |    };
        |    var nodes = steps.map(function (step, idx) {
-       |      return "  step" + idx + "[\"" + escapeStepLabel(step) + "\"]";
+       |      return '  step' + idx + '["' + escapeStepLabel(step) + '"]';
        |    });
        |    var edges = [];
        |    for (var i = 0; i < steps.length - 1; i++) {
        |      edges.push("  step" + i + " --> step" + (i + 1));
        |    }
-       |    return ["graph LR"].concat(nodes).concat(edges).join("\n");
+       |    return ["graph LR"].concat(nodes).concat(edges).join(String.fromCharCode(10));
        |  };
        |
        |  var updateHiddenValues = function () {
        |    hidden.value = steps.join(",");
-       |    var filtered = {};
-       |    steps.forEach(function (step) {
-       |      if (stepAgents[step] && stepAgents[step].trim().length > 0) {
-       |        filtered[step] = stepAgents[step].trim();
-       |      }
-       |    });
-       |    stepAgents = filtered;
-       |    agentsHidden.value = JSON.stringify(stepAgents);
+       |    agentsHidden.value = JSON.stringify(stepAgents || {});
        |  };
        |
        |  var renderPreview = function () {
@@ -447,36 +424,6 @@ object WorkflowsView:
        |      top.appendChild(controls);
        |      li.appendChild(top);
        |
-       |      var agentRow = document.createElement("div");
-       |      agentRow.className = "mt-2";
-       |
-       |      var select = document.createElement("select");
-       |      select.className = "w-full rounded-md border border-white/15 bg-slate-900/70 px-2 py-1.5 text-xs text-slate-100";
-       |
-       |      var noneOpt = document.createElement("option");
-       |      noneOpt.value = "";
-       |      noneOpt.textContent = "No specific agent";
-       |      select.appendChild(noneOpt);
-       |
-       |      availableAgents.forEach(function (agent) {
-       |        var opt = document.createElement("option");
-       |        opt.value = agent.name;
-       |        opt.textContent = agent.displayName + " (" + agent.name + ")";
-       |        select.appendChild(opt);
-       |      });
-       |
-       |      select.value = stepAgents[step] || "";
-       |      select.addEventListener("change", function () {
-       |        if (select.value && select.value.trim().length > 0) {
-       |          stepAgents[step] = select.value.trim();
-       |        } else {
-       |          delete stepAgents[step];
-       |        }
-       |        updateHiddenValues();
-       |      });
-       |
-       |      agentRow.appendChild(select);
-       |      li.appendChild(agentRow);
        |      list.appendChild(li);
        |    });
        |
@@ -484,17 +431,25 @@ object WorkflowsView:
        |
        |    var diagram = toMermaid();
        |    preview.innerHTML = "";
-       |    var div = document.createElement("div");
-       |    div.className = "mermaid text-slate-200";
-       |    div.textContent = diagram;
-       |    preview.appendChild(div);
-       |    window.mermaid.run({ nodes: [div] }).catch(function () {
+       |    if (window.mermaid) {
+       |      window.mermaid.initialize({ startOnLoad: false, securityLevel: "loose" });
+       |      var div = document.createElement("div");
+       |      div.className = "mermaid text-slate-200";
+       |      div.textContent = diagram;
+       |      preview.appendChild(div);
+       |      window.mermaid.run({ nodes: [div] }).catch(function () {
+       |        var pre = document.createElement("pre");
+       |        pre.className = "text-sm text-rose-200";
+       |        pre.textContent = diagram;
+       |        preview.innerHTML = "";
+       |        preview.appendChild(pre);
+       |      });
+       |    } else {
        |      var pre = document.createElement("pre");
-       |      pre.className = "text-sm text-rose-200";
+       |      pre.className = "text-sm text-slate-300";
        |      pre.textContent = diagram;
-       |      preview.innerHTML = "";
        |      preview.appendChild(pre);
-       |    });
+       |    }
        |  };
        |
        |  toggles.forEach(function (toggle) {
