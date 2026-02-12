@@ -35,14 +35,13 @@ final case class RunsControllerLive(
   workflowService: WorkflowService,
 ) extends RunsController:
 
-  private val knownPhases = List(
-    "discovery",
-    "analysis",
-    "mapping",
-    "business-logic-extraction",
-    "transformation",
-    "validation",
-    "documentation",
+  private val defaultWorkflowSteps = List(
+    MigrationStep.Discovery,
+    MigrationStep.Analysis,
+    MigrationStep.Mapping,
+    MigrationStep.Transformation,
+    MigrationStep.Validation,
+    MigrationStep.Documentation,
   )
 
   override val routes: Routes[Any, Response] = Routes(
@@ -68,6 +67,7 @@ final case class RunsControllerLive(
           run          <- orchestrator
                             .getRunStatus(runId)
                             .someOrFail(PersistenceError.NotFound("migration_runs", runId))
+          knownPhases  <- knownPhasesForWorkflow(run.workflowId)
           phaseRows    <- ZIO.foreach(knownPhases)(phase => repository.getProgress(runId, phase)).map(_.flatten)
           workflowName <- workflowNameForRun(run).mapError(err =>
                             OrchestratorError.StateFailed(StateError.ReadError(runId.toString, err.toString))
@@ -109,6 +109,7 @@ final case class RunsControllerLive(
                              )
                            )
                            .unless(run.status == RunStatus.Failed)
+          knownPhases <- knownPhasesForWorkflow(run.workflowId)
           phaseRows   <- ZIO
                            .foreach(knownPhases)(phase => repository.getProgress(runId, phase))
                            .map(_.flatten)
@@ -309,6 +310,26 @@ final case class RunsControllerLive(
       case "validation"     => Some(MigrationStep.Validation)
       case "documentation"  => Some(MigrationStep.Documentation)
       case _                => None
+
+  private def knownPhasesForWorkflow(workflowId: Option[Long]): IO[OrchestratorError, List[String]] =
+    workflowId match
+      case None     => ZIO.succeed(defaultWorkflowSteps.map(stepToPhase))
+      case Some(id) =>
+        workflowService
+          .getWorkflow(id)
+          .mapError(workflowAsOrchestrator("getWorkflow"))
+          .map {
+            case Some(workflow) if workflow.steps.nonEmpty => workflow.steps.map(stepToPhase)
+            case _                                         => defaultWorkflowSteps.map(stepToPhase)
+          }
+
+  private def stepToPhase(step: MigrationStep): String = step match
+    case MigrationStep.Discovery      => "discovery"
+    case MigrationStep.Analysis       => "analysis"
+    case MigrationStep.Mapping        => "mapping"
+    case MigrationStep.Transformation => "transformation"
+    case MigrationStep.Validation     => "validation"
+    case MigrationStep.Documentation  => "documentation"
 
   private def urlDecode(value: String): String =
     URLDecoder.decode(value, StandardCharsets.UTF_8)

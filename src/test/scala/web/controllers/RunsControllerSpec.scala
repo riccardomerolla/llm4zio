@@ -13,7 +13,7 @@ import orchestration.*
 
 object RunsControllerSpec extends ZIOSpecDefault:
 
-  private val sampleRun = MigrationRunRow(
+  private val sampleRun   = MigrationRunRow(
     id = 42L,
     sourceDir = "/tmp/source",
     outputDir = "/tmp/output",
@@ -27,11 +27,15 @@ object RunsControllerSpec extends ZIOSpecDefault:
     currentPhase = Some("analysis"),
     errorMessage = None,
   )
-  private val failedRun = sampleRun.copy(
+  private val failedRun   = sampleRun.copy(
     id = 43L,
     status = RunStatus.Failed,
     currentPhase = Some("Failed"),
     errorMessage = Some("analysis failed"),
+  )
+  private val workflowRun = sampleRun.copy(
+    id = 44L,
+    workflowId = Some(7L),
   )
 
   def spec: Spec[TestEnvironment & Scope, Any] = suite("RunsControllerSpec")(
@@ -110,6 +114,28 @@ object RunsControllerSpec extends ZIOSpecDefault:
         response.rawHeader("location").contains("/"),
         started.flatMap(_.retryFromRunId).contains(failedRun.id),
         started.flatMap(_.retryFromStep).contains(MigrationStep.Analysis),
+      )
+    },
+    test("GET /runs/:id reads only workflow-selected phases") {
+      val workflow = WorkflowDefinition(
+        id = Some(7L),
+        name = "Partial",
+        steps = List(MigrationStep.Discovery, MigrationStep.Analysis, MigrationStep.Mapping),
+        isBuiltin = false,
+      )
+      for
+        orchestrator <- TestOrchestrator.make(runs = List(workflowRun))
+        repo         <- TestRepository.make()
+        controller    = RunsControllerLive(orchestrator, repo, TestWorkflowService.withWorkflows(workflow))
+        response     <- controller.routes.runZIO(Request.get(s"/runs/${workflowRun.id}"))
+        queried      <- repo.queriedPhases
+      yield assertTrue(
+        response.status == Status.Ok,
+        queried == List(
+          (workflowRun.id, "discovery"),
+          (workflowRun.id, "analysis"),
+          (workflowRun.id, "mapping"),
+        ),
       )
     },
     test("DELETE /runs/:id cancels migration") {
@@ -205,10 +231,13 @@ object RunsControllerSpec extends ZIOSpecDefault:
   final private case class TestRepository(
     progressRows: Ref[Map[(Long, String), PhaseProgressRow]],
     settingsRows: Ref[List[SettingRow]],
+    queriedPhasesRef: Ref[List[(Long, String)]],
   ) extends MigrationRepository:
 
+    def queriedPhases: UIO[List[(Long, String)]] = queriedPhasesRef.get
+
     override def getProgress(runId: Long, phase: String): IO[PersistenceError, Option[PhaseProgressRow]] =
-      progressRows.get.map(_.get((runId, phase)))
+      queriedPhasesRef.update(_ :+ (runId, phase)) *> progressRows.get.map(_.get((runId, phase)))
 
     override def createRun(run: MigrationRunRow): IO[PersistenceError, Long]                    =
       ZIO.dieMessage("unused in RunsControllerSpec")
@@ -248,7 +277,8 @@ object RunsControllerSpec extends ZIOSpecDefault:
       for
         progressRef <- Ref.make(progress)
         settingsRef <- Ref.make(settings)
-      yield TestRepository(progressRef, settingsRef)
+        queriedRef  <- Ref.make(List.empty[(Long, String)])
+      yield TestRepository(progressRef, settingsRef, queriedRef)
 
   private object TestWorkflowService:
     val empty: WorkflowService = new WorkflowService:
@@ -269,3 +299,24 @@ object RunsControllerSpec extends ZIOSpecDefault:
 
       override def deleteWorkflow(id: Long): IO[WorkflowServiceError, Unit] =
         ZIO.fail(WorkflowServiceError.ValidationFailed(List("unsupported in test")))
+
+    def withWorkflows(workflows: WorkflowDefinition*): WorkflowService =
+      val byId = workflows.flatMap(workflow => workflow.id.map(_ -> workflow)).toMap
+      new WorkflowService:
+        override def createWorkflow(workflow: WorkflowDefinition): IO[WorkflowServiceError, Long] =
+          ZIO.fail(WorkflowServiceError.ValidationFailed(List("unsupported in test")))
+
+        override def getWorkflow(id: Long): IO[WorkflowServiceError, Option[WorkflowDefinition]] =
+          ZIO.succeed(byId.get(id))
+
+        override def getWorkflowByName(name: String): IO[WorkflowServiceError, Option[WorkflowDefinition]] =
+          ZIO.succeed(workflows.find(_.name == name))
+
+        override def listWorkflows: IO[WorkflowServiceError, List[WorkflowDefinition]] =
+          ZIO.succeed(workflows.toList)
+
+        override def updateWorkflow(workflow: WorkflowDefinition): IO[WorkflowServiceError, Unit] =
+          ZIO.fail(WorkflowServiceError.ValidationFailed(List("unsupported in test")))
+
+        override def deleteWorkflow(id: Long): IO[WorkflowServiceError, Unit] =
+          ZIO.fail(WorkflowServiceError.ValidationFailed(List("unsupported in test")))

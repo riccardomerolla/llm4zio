@@ -12,6 +12,8 @@ import core.*
 import db.*
 import models.*
 
+private case class WorkflowStepsPayload(steps: List[MigrationStep]) derives JsonCodec
+
 /** MigrationOrchestrator - Main workflow orchestrator using ZIO effects.
   */
 trait MigrationOrchestrator:
@@ -191,19 +193,20 @@ object MigrationOrchestrator:
         withRunAgents(runId, runConfig) {
           (runAnalyzerAgent, runBusinessLogicAgent, runTransformerAgent, runValidationAgent) =>
             for
-              startStep <- resolveStartStep(runConfig)
-              bootstrap <- loadResumeBootstrap(runConfig, startStep)
-              _         <- seedResumedArtifacts(runId, runConfig, startStep, bootstrap)
-              _         <- updateRunStatus(runId, RunStatus.Running, Some(startStep.toString), None, None)
+              startStep  <- resolveStartStep(runConfig)
+              stepsToRun <- resolveStepsToRun(runConfig)
+              bootstrap  <- loadResumeBootstrap(runConfig, startStep)
+              _          <- seedResumedArtifacts(runId, runConfig, startStep, bootstrap)
+              _          <- updateRunStatus(runId, RunStatus.Running, Some(startStep.toString), None, None)
 
               inventory <-
-                if shouldExecuteFrom(startStep, MigrationStep.Discovery) then
+                if shouldRunStep(startStep, MigrationStep.Discovery, stepsToRun) then
                   AgentTracker
                     .trackPhase(runId, "discovery", 1, tracker)(
                       discoveryAgent.discover(runConfig.sourceDir).mapError(OrchestratorError.DiscoveryFailed.apply)
                     )
                 else ZIO.succeed(bootstrap.inventory)
-              _         <- if shouldExecuteFrom(startStep, MigrationStep.Discovery) then {
+              _         <- if shouldRunStep(startStep, MigrationStep.Discovery, stepsToRun) then {
                              persistIgnoringFailure(
                                s"saveDiscoveryResult(runId=$runId)",
                                persister.saveDiscoveryResult(runId, inventory),
@@ -222,7 +225,7 @@ object MigrationOrchestrator:
                                 completedAt = None,
                                 totalFiles = Some(analysisFiles.length),
                               )
-              analyses     <- if shouldExecuteFrom(startStep, MigrationStep.Analysis) then {
+              analyses     <- if shouldRunStep(startStep, MigrationStep.Analysis, stepsToRun) then {
                                 AgentTracker.trackBatch(runId, "analysis", analysisFiles, tracker) { (file, _) =>
                                   runAnalyzerAgent.analyze(file).mapError(OrchestratorError.AnalysisFailed(file.name, _))
                                 }
@@ -230,7 +233,7 @@ object MigrationOrchestrator:
                               else {
                                 ZIO.succeed(bootstrap.analyses)
                               }
-              _            <- if shouldExecuteFrom(startStep, MigrationStep.Analysis) then {
+              _            <- if shouldRunStep(startStep, MigrationStep.Analysis, stepsToRun) then {
                                 ZIO.foreachDiscard(analyses)(analysis =>
                                   persistIgnoringFailure(
                                     s"saveAnalysisResult(runId=$runId,file=${analysis.file.name})",
@@ -251,13 +254,13 @@ object MigrationOrchestrator:
                               )
 
               dependencyGraph <-
-                if shouldExecuteFrom(startStep, MigrationStep.Mapping) then
+                if shouldRunStep(startStep, MigrationStep.Mapping, stepsToRun) then
                   AgentTracker
                     .trackPhase(runId, "mapping", 1, tracker)(
                       mapperAgent.mapDependencies(analyses).mapError(OrchestratorError.MappingFailed.apply)
                     )
                 else ZIO.succeed(bootstrap.dependencyGraph)
-              _               <- if shouldExecuteFrom(startStep, MigrationStep.Mapping) then {
+              _               <- if shouldRunStep(startStep, MigrationStep.Mapping, stepsToRun) then {
                                    persistIgnoringFailure(
                                      s"saveDependencyResult(runId=$runId)",
                                      persister.saveDependencyResult(runId, dependencyGraph),
@@ -284,7 +287,7 @@ object MigrationOrchestrator:
                    }
 
               projects <- if runConfig.dryRun then ZIO.succeed(List.empty[SpringBootProject])
-                          else if shouldExecuteFrom(startStep, MigrationStep.Transformation) then
+                          else if shouldRunStep(startStep, MigrationStep.Transformation, stepsToRun) then
                             AgentTracker
                               .trackPhase(runId, "transformation", 1, tracker)(
                                 runTransformerAgent
@@ -293,7 +296,8 @@ object MigrationOrchestrator:
                                   .map(List(_))
                               )
                           else ZIO.succeed(bootstrap.projects)
-              _        <- if runConfig.dryRun || !shouldExecuteFrom(startStep, MigrationStep.Transformation) then ZIO.unit
+              _        <- if runConfig.dryRun || !shouldRunStep(startStep, MigrationStep.Transformation, stepsToRun) then
+                            ZIO.unit
                           else
                             ZIO.foreachDiscard(projects)(project =>
                               persistIgnoringFailure(
@@ -304,7 +308,7 @@ object MigrationOrchestrator:
 
               validationReports <-
                 if runConfig.dryRun then ZIO.succeed(List.empty[ValidationReport])
-                else if shouldExecuteFrom(startStep, MigrationStep.Validation) then
+                else if shouldRunStep(startStep, MigrationStep.Validation, stepsToRun) then
                   projects.headOption match
                     case Some(project) =>
                       AgentTracker.trackBatch(runId, "validation", analyses, tracker) { (analysis, _) =>
@@ -315,12 +319,14 @@ object MigrationOrchestrator:
                     case None          => ZIO.succeed(List.empty[ValidationReport])
                 else ZIO.succeed(bootstrap.validationReports)
               validationReport   = aggregateValidation(validationReports)
-              _                 <- if runConfig.dryRun || !shouldExecuteFrom(startStep, MigrationStep.Validation) then ZIO.unit
-                                   else
-                                     persistIgnoringFailure(
-                                       s"saveValidationResult(runId=$runId)",
-                                       persister.saveValidationResult(runId, validationReport),
-                                     )
+              _                 <-
+                if runConfig.dryRun || !shouldRunStep(startStep, MigrationStep.Validation, stepsToRun)
+                then ZIO.unit
+                else
+                  persistIgnoringFailure(
+                    s"saveValidationResult(runId=$runId)",
+                    persister.saveValidationResult(runId, validationReport),
+                  )
 
               completedAt   <- Clock.instant
               status         = determineStatus(
@@ -344,17 +350,19 @@ object MigrationOrchestrator:
                                  errors = List.empty,
                                  status = status,
                                )
-              documentation <- if runConfig.dryRun || !shouldExecuteFrom(startStep, MigrationStep.Documentation) then {
-                                 ZIO.succeed(MigrationDocumentation.empty)
-                               }
-                               else {
-                                 AgentTracker
-                                   .trackPhase(runId, "documentation", 1, tracker)(
-                                     documentationAgent
-                                       .generateDocs(baseResult)
-                                       .mapError(OrchestratorError.DocumentationFailed.apply)
-                                   )
-                               }
+              documentation <-
+                if runConfig.dryRun || !shouldRunStep(startStep, MigrationStep.Documentation, stepsToRun)
+                then {
+                  ZIO.succeed(MigrationDocumentation.empty)
+                }
+                else {
+                  AgentTracker
+                    .trackPhase(runId, "documentation", 1, tracker)(
+                      documentationAgent
+                        .generateDocs(baseResult)
+                        .mapError(OrchestratorError.DocumentationFailed.apply)
+                    )
+                }
               finalResult    = baseResult.copy(documentation = documentation)
               successCount   = projects.length
               failCount      = analysisFiles.length - successCount
@@ -381,6 +389,34 @@ object MigrationOrchestrator:
 
       private def resolveStartStep(runConfig: MigrationConfig): IO[OrchestratorError, MigrationStep] =
         ZIO.succeed(runConfig.retryFromStep.getOrElse(MigrationStep.Discovery))
+
+      private def resolveStepsToRun(runConfig: MigrationConfig): IO[OrchestratorError, Set[MigrationStep]] =
+        runConfig.workflowId match
+          case None             => ZIO.succeed(MigrationStep.values.toSet)
+          case Some(workflowId) =>
+            repository
+              .getWorkflow(workflowId)
+              .mapError(persistenceAsOrchestrator("getWorkflow", workflowId.toString))
+              .flatMap {
+                case Some(workflow) =>
+                  decodeWorkflowSteps(workflow.id.map(_.toString).getOrElse(workflow.name), workflow.steps).map(_.toSet)
+                case None           =>
+                  ZIO.fail(
+                    OrchestratorError.StateFailed(StateError.StateNotFound(s"workflow-$workflowId"))
+                  )
+              }
+
+      private def decodeWorkflowSteps(workflowRef: String, raw: String): IO[OrchestratorError, List[MigrationStep]] =
+        raw.fromJson[WorkflowStepsPayload] match
+          case Right(payload) => ZIO.succeed(payload.steps)
+          case Left(_)        =>
+            ZIO
+              .fromEither(raw.fromJson[List[MigrationStep]])
+              .mapError(err =>
+                OrchestratorError.StateFailed(
+                  StateError.InvalidState(workflowRef, s"Invalid workflow steps payload: $err")
+                )
+              )
 
       private def loadResumeBootstrap(
         runConfig: MigrationConfig,
@@ -475,6 +511,13 @@ object MigrationOrchestrator:
 
       private def shouldExecuteFrom(startStep: MigrationStep, phase: MigrationStep): Boolean =
         resumeStepOrder(phase) >= resumeStepOrder(startStep)
+
+      private def shouldRunStep(
+        startStep: MigrationStep,
+        phase: MigrationStep,
+        stepsToRun: Set[MigrationStep],
+      ): Boolean =
+        stepsToRun.contains(phase) && shouldExecuteFrom(startStep, phase)
 
       private def resumeStepOrder(step: MigrationStep): Int = step match
         case MigrationStep.Discovery      => 0
