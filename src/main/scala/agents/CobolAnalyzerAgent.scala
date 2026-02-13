@@ -4,12 +4,13 @@ import java.nio.file.Path
 
 import zio.*
 import zio.json.*
-import zio.json.ast.Json
 import zio.stream.*
 
-import core.{ AIService, FileService, Logger, ResponseParser }
+import llm4zio.core.{LlmService, LlmError}
+import llm4zio.tools.JsonSchema
+import core.{FileService, Logger}
 import models.*
-import prompts.{ OutputSchemas, PromptHelpers, PromptTemplates }
+import prompts.{PromptHelpers, PromptTemplates}
 
 /** CobolAnalyzerAgent - Deep structural analysis of COBOL programs using AI
   *
@@ -35,11 +36,10 @@ object CobolAnalyzerAgent:
   def analyzeAll(files: List[CobolFile]): ZStream[CobolAnalyzerAgent, AnalysisError, CobolAnalysis] =
     ZStream.serviceWithStream[CobolAnalyzerAgent](_.analyzeAll(files))
 
-  val live: ZLayer[AIService & ResponseParser & FileService & MigrationConfig, Nothing, CobolAnalyzerAgent] =
+  val live: ZLayer[LlmService & FileService & MigrationConfig, Nothing, CobolAnalyzerAgent] =
     ZLayer.fromFunction {
       (
-        aiService: AIService,
-        responseParser: ResponseParser,
+        llmService: LlmService,
         fileService: FileService,
         config: MigrationConfig,
       ) =>
@@ -110,14 +110,14 @@ object CobolAnalyzerAgent:
                    |""".stripMargin
               case None      => prompt
 
-            val schema = OutputSchemas.jsonSchemaMap("CobolAnalysis")
+            val schema = buildJsonSchema()
             val call   =
               for
-                response  <- aiService
-                               .executeStructured(enrichedPrompt, schema)
-                               .mapError(e => AnalysisError.AIFailed(cobolFile.name, e.message))
-                parsed    <- parseAnalysis(response, cobolFile)
-                validated <- validateAnalysis(parsed, cobolFile, attempt, maxAttempts)
+                analysis  <- llmService
+                               .executeStructured[CobolAnalysis](enrichedPrompt, schema)
+                               .mapError(convertError(cobolFile.name))
+                               .map(_.copy(file = cobolFile))  // Ensure file metadata is correct
+                validated <- validateAnalysis(analysis, cobolFile, attempt, maxAttempts)
               yield validated
 
             call.catchSome {
@@ -183,6 +183,53 @@ object CobolAnalyzerAgent:
                  |3. All field names match the schema exactly
                  |4. All data types are correct
                  |""".stripMargin
+
+          private def buildJsonSchema(): JsonSchema =
+            import zio.json.ast.Json
+            Json.Obj(
+              "type" -> Json.Str("object"),
+              "properties" -> Json.Obj(
+                "file" -> Json.Obj("type" -> Json.Str("object")),
+                "divisions" -> Json.Obj("type" -> Json.Str("object")),
+                "variables" -> Json.Obj("type" -> Json.Str("array")),
+                "procedures" -> Json.Obj("type" -> Json.Str("array")),
+                "copybooks" -> Json.Obj("type" -> Json.Str("array")),
+                "complexity" -> Json.Obj("type" -> Json.Str("object"))
+              ),
+              "required" -> Json.Arr(
+                Json.Str("file"),
+                Json.Str("divisions"),
+                Json.Str("variables"),
+                Json.Str("procedures"),
+                Json.Str("copybooks"),
+                Json.Str("complexity")
+              )
+            )
+
+          private def convertError(fileName: String)(error: LlmError): AnalysisError =
+            error match
+              case LlmError.ProviderError(message, cause) =>
+                AnalysisError.AIFailed(
+                  fileName,
+                  s"Provider error: $message${cause.map(c => s" (${c.getMessage})").getOrElse("")}"
+                )
+              case LlmError.RateLimitError(retryAfter) =>
+                AnalysisError.AIFailed(
+                  fileName,
+                  s"Rate limited${retryAfter.map(d => s", retry after ${d.toSeconds}s").getOrElse("")}"
+                )
+              case LlmError.AuthenticationError(message) =>
+                AnalysisError.AIFailed(fileName, s"Authentication failed: $message")
+              case LlmError.InvalidRequestError(message) =>
+                AnalysisError.AIFailed(fileName, s"Invalid request: $message")
+              case LlmError.TimeoutError(duration) =>
+                AnalysisError.AIFailed(fileName, s"Request timed out after ${duration.toSeconds}s")
+              case LlmError.ParseError(message, raw) =>
+                AnalysisError.ParseFailed(fileName, s"$message\nRaw: ${raw.take(200)}")
+              case LlmError.ToolError(toolName, message) =>
+                AnalysisError.AIFailed(fileName, s"Tool error ($toolName): $message")
+              case LlmError.ConfigError(message) =>
+                AnalysisError.AIFailed(fileName, s"Configuration error: $message")
 
           private def validateAnalysis(
             analysis: CobolAnalysis,
@@ -263,187 +310,5 @@ object CobolAnalyzerAgent:
 
           private def safeName(name: String): String =
             name.replaceAll("[^A-Za-z0-9._-]", "_")
-
-          private def parseAnalysis(
-            response: AIResponse,
-            cobolFile: CobolFile,
-          ): ZIO[Any, AnalysisError, CobolAnalysis] =
-            responseParser
-              .parse[CobolAnalysis](response)
-              .catchSome { case ParseError.SchemaMismatch(_, _) => parseWithFileOverride(response, cobolFile) }
-              .mapError(e => AnalysisError.ParseFailed(cobolFile.name, e.message))
-
-          private def parseWithFileOverride(
-            response: AIResponse,
-            cobolFile: CobolFile,
-          ): ZIO[Any, ParseError, CobolAnalysis] =
-            for
-              jsonText <- responseParser
-                            .extractJson(response)
-                            .mapError(identity)
-              ast      <- ZIO
-                            .fromEither(jsonText.fromJson[Json])
-                            .mapError(err => ParseError.InvalidJson(jsonText, err))
-              _        <- ast match
-                            case Json.Arr(elements) =>
-                              Logger.warn(
-                                s"AI returned array with ${elements.size} element(s) for ${cobolFile.name} - unwrapping to object"
-                              )
-                            case _                  => ZIO.unit
-              patched  <- ZIO
-                            .fromEither(normalizeAst(ast, cobolFile))
-                            .mapError(err => ParseError.InvalidJson(jsonText, err))
-              analysis <- ZIO
-                            .fromEither(patched.toJson.fromJson[CobolAnalysis])
-                            .mapError(err => ParseError.SchemaMismatch("CobolAnalysis", err))
-            yield analysis
-
-          private def normalizeAst(value: Json, cobolFile: CobolFile): Either[String, Json] =
-            for
-              fileAst <- cobolFile.toJson.fromJson[Json]
-            yield value match
-              // 🚨 FIX: AI returned array instead of object - unwrap single element
-              case Json.Arr(elements) if elements.size == 1 =>
-                elements.head match
-                  case obj @ Json.Obj(_) => normalizeAst(obj, cobolFile).getOrElse(obj)
-                  case other             => other
-              case Json.Arr(elements)                       =>
-                // Multiple elements - this is a critical error, but try to recover by using first element
-                // Note: AI returned array with ${elements.size} elements instead of single object - using first
-                elements.headOption match
-                  case Some(obj @ Json.Obj(_)) => normalizeAst(obj, cobolFile).getOrElse(obj)
-                  case Some(other)             => other
-                  case None                    => value
-              case Json.Obj(fields)                         =>
-                val transformed      = fields.map {
-                  case ("file", _)       => "file"       -> fileAst
-                  case ("divisions", v)  => "divisions"  -> normalizeDivisions(v)
-                  case ("variables", v)  => "variables"  -> normalizeArray(v, normalizeVariable)
-                  case ("procedures", v) => "procedures" -> normalizeArray(v, normalizeProcedure)
-                  case ("complexity", v) => "complexity" -> normalizeComplexity(v)
-                  case ("copybooks", v)  => "copybooks"  -> normalizeCopybooks(v)
-                  case other             => other
-                }
-                val topLevelDefaults = Chunk(
-                  "file"       -> fileAst,
-                  "divisions"  -> Json.Obj(Chunk(
-                    "identification" -> Json.Null,
-                    "environment"    -> Json.Null,
-                    "data"           -> Json.Null,
-                    "procedure"      -> Json.Null,
-                  )),
-                  "variables"  -> Json.Arr(),
-                  "procedures" -> Json.Arr(),
-                  "copybooks"  -> Json.Arr(),
-                  "complexity" -> normalizeComplexity(Json.Obj(Chunk.empty)),
-                )
-                Json.Obj(mergeDefaults(transformed, topLevelDefaults))
-              case _                                        => value
-
-          private def normalizeArray(value: Json, normalize: Json => Json): Json = value match
-            case Json.Arr(elements) => Json.Arr(elements.map(normalize))
-            case _                  => value
-
-          private def normalizeDivisions(value: Json): Json = value match
-            case Json.Arr(elements) =>
-              val strings = elements.collect { case Json.Str(s) => s }.toList
-              val keys    = List("identification", "environment", "data", "procedure")
-              val pairs   = keys.zipWithIndex.map {
-                case (key, i) =>
-                  key -> (if i < strings.size then Json.Str(strings(i)) else Json.Null)
-              }
-              Json.Obj(Chunk.from(pairs))
-            case Json.Obj(fields)   =>
-              Json.Obj(fields.map {
-                case (k, Json.Str(s)) => k -> Json.Str(s)
-                case (k, Json.Null)   => k -> Json.Null
-                case (k, other)       =>
-                  // WARN: AI returned structured JSON for division instead of plain text
-                  // Convert to string but this indicates prompt/parsing issues
-                  k -> Json.Str(s"[STRUCTURED_JSON_DETECTED] ${other.toJson}")
-              })
-            case other              => other
-
-          private def normalizeCopybooks(value: Json): Json = value match
-            case Json.Null          => Json.Arr()
-            case Json.Arr(elements) =>
-              val strings = elements.map {
-                case Json.Str(s)      => Json.Str(s)
-                case Json.Obj(fields) =>
-                  fields
-                    .collectFirst {
-                      case ("name", Json.Str(s))     => Json.Str(s)
-                      case ("copybook", Json.Str(s)) => Json.Str(s)
-                    }
-                    .getOrElse(Json.Str(fields.headOption.collect { case (_, Json.Str(s)) => s }.getOrElse("UNKNOWN")))
-                case other            => Json.Str(other.toString)
-              }
-              Json.Arr(strings)
-            case other              => other
-
-          private def normalizeVariable(value: Json): Json = value match
-            case Json.Obj(fields) =>
-              val defaults = Chunk(
-                "name"     -> Json.Str("UNKNOWN"),
-                "level"    -> Json.Num(1),
-                "dataType" -> Json.Str("alphanumeric"),
-              )
-              Json.Obj(mergeDefaults(fields, defaults))
-            case other            => other
-
-          private def normalizeProcedure(value: Json): Json = value match
-            case Json.Obj(fields) =>
-              val nameVal    = fields.collectFirst { case ("name", v) => v }.getOrElse(Json.Str("UNKNOWN"))
-              val defaults   = Chunk(
-                "name"       -> nameVal,
-                "paragraphs" -> Json.Arr(Chunk(nameVal)),
-                "statements" -> Json.Arr(),
-              )
-              val withDefs   = mergeDefaults(fields, defaults)
-              val normalized = withDefs.map {
-                case ("statements", v) =>
-                  "statements" -> filterEmptyStatements(normalizeArray(v, normalizeStatement))
-                case other             => other
-              }
-              Json.Obj(normalized)
-            case other            => other
-
-          private def normalizeStatement(value: Json): Json = value match
-            case Json.Obj(fields) =>
-              val defaults = Chunk(
-                "lineNumber"    -> Json.Num(0),
-                "statementType" -> Json.Str("UNKNOWN"),
-                "content"       -> Json.Str(""),
-              )
-              Json.Obj(mergeDefaults(fields, defaults))
-            case other            => other
-
-          private def filterEmptyStatements(value: Json): Json = value match
-            case Json.Arr(elements) =>
-              Json.Arr(elements.filter {
-                case Json.Obj(fields) =>
-                  val stmtType = fields.collectFirst { case ("statementType", Json.Str(s)) => s }.getOrElse("")
-                  val content  = fields.collectFirst { case ("content", Json.Str(s)) => s }.getOrElse("")
-                  !(stmtType == "UNKNOWN" && content.isEmpty)
-                case _                => true
-              })
-            case other              => other
-
-          private def normalizeComplexity(value: Json): Json = value match
-            case Json.Obj(fields) =>
-              val defaults = Chunk(
-                "cyclomaticComplexity" -> Json.Num(1),
-                "linesOfCode"          -> Json.Num(0),
-                "numberOfProcedures"   -> Json.Num(0),
-              )
-              Json.Obj(mergeDefaults(fields, defaults))
-            case other            => other
-
-          private def mergeDefaults(
-            fields: Chunk[(String, Json)],
-            defaults: Chunk[(String, Json)],
-          ): Chunk[(String, Json)] =
-            val existing = fields.map(_._1).toSet
-            fields ++ defaults.filterNot { case (k, _) => existing.contains(k) }
         }
     }

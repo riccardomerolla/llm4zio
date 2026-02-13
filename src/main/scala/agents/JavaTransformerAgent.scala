@@ -5,9 +5,11 @@ import java.nio.file.Path
 import zio.*
 import zio.json.*
 
-import core.{ AIService, FileService, Logger, ResponseParser }
+import llm4zio.core.{LlmService, LlmError}
+import llm4zio.tools.JsonSchema
+import core.{ FileService, Logger }
 import models.*
-import prompts.{ OutputSchemas, PromptTemplates }
+import prompts.PromptTemplates
 
 /** JavaTransformerAgent - Transform COBOL programs into a unified Spring Boot project
   *
@@ -40,11 +42,10 @@ object JavaTransformerAgent:
     ZIO.serviceWithZIO[JavaTransformerAgent](_.transform(analyses, dependencyGraph))
 
   val live
-    : ZLayer[AIService & ResponseParser & FileService & MigrationConfig, Nothing, JavaTransformerAgent] =
+    : ZLayer[LlmService & FileService & MigrationConfig, Nothing, JavaTransformerAgent] =
     ZLayer.fromFunction {
       (
-        aiService: AIService,
-        responseParser: ResponseParser,
+        llmService: LlmService,
         fileService: FileService,
         config: MigrationConfig,
       ) =>
@@ -106,14 +107,11 @@ object JavaTransformerAgent:
 
           private def generateEntity(analysis: CobolAnalysis): ZIO[Any, TransformError, JavaEntity] =
             val prompt = PromptTemplates.JavaTransformer.generateEntity(analysis)
-            val schema = OutputSchemas.jsonSchemaMap("JavaEntity")
+            val schema = buildJsonSchema()
             for
-              response <- aiService
-                            .executeStructured(prompt, schema)
-                            .mapError(e => TransformError.AIFailed(analysis.file.name, e.message))
-              entity   <- responseParser
-                            .parse[JavaEntity](response)
-                            .mapError(e => TransformError.ParseFailed(analysis.file.name, e.message))
+              entity   <- llmService
+                            .executeStructured[JavaEntity](prompt, schema)
+                            .mapError(convertError(analysis.file.name))
               enriched  = ensureEntityDefaults(entity, analysis)
             yield enriched
 
@@ -123,14 +121,11 @@ object JavaTransformerAgent:
           ): ZIO[Any, TransformError, JavaService] =
             val deps   = graph.serviceCandidates
             val prompt = PromptTemplates.JavaTransformer.generateService(analysis, deps)
-            val schema = OutputSchemas.jsonSchemaMap("JavaService")
+            val schema = buildJsonSchema()
             for
-              response <- aiService
-                            .executeStructured(prompt, schema)
-                            .mapError(e => TransformError.AIFailed(analysis.file.name, e.message))
-              service  <- responseParser
-                            .parse[JavaService](response)
-                            .mapError(e => TransformError.ParseFailed(analysis.file.name, e.message))
+              service  <- llmService
+                            .executeStructured[JavaService](prompt, schema)
+                            .mapError(convertError(analysis.file.name))
             yield service
 
           private def generateController(
@@ -138,15 +133,47 @@ object JavaTransformerAgent:
             serviceName: String,
           ): ZIO[Any, TransformError, JavaController] =
             val prompt = PromptTemplates.JavaTransformer.generateController(analysis, serviceName)
-            val schema = OutputSchemas.jsonSchemaMap("JavaController")
+            val schema = buildJsonSchema()
             for
-              response   <- aiService
-                              .executeStructured(prompt, schema)
-                              .mapError(e => TransformError.AIFailed(analysis.file.name, e.message))
-              controller <- responseParser
-                              .parse[JavaController](response)
-                              .mapError(e => TransformError.ParseFailed(analysis.file.name, e.message))
+              controller <- llmService
+                              .executeStructured[JavaController](prompt, schema)
+                              .mapError(convertError(analysis.file.name))
             yield controller
+
+          // ---------------------------------------------------------------------------
+          // Helper methods
+          // ---------------------------------------------------------------------------
+
+          private def buildJsonSchema(): JsonSchema =
+            import zio.json.ast.Json
+            Json.Obj(
+              "type" -> Json.Str("object")
+            )
+
+          private def convertError(fileName: String)(error: LlmError): TransformError =
+            error match
+              case LlmError.ProviderError(message, cause) =>
+                TransformError.AIFailed(
+                  fileName,
+                  s"Provider error: $message${cause.map(c => s" (${c.getMessage})").getOrElse("")}"
+                )
+              case LlmError.RateLimitError(retryAfter) =>
+                TransformError.AIFailed(
+                  fileName,
+                  s"Rate limited${retryAfter.map(d => s", retry after ${d.toSeconds}s").getOrElse("")}"
+                )
+              case LlmError.AuthenticationError(message) =>
+                TransformError.AIFailed(fileName, s"Authentication failed: $message")
+              case LlmError.InvalidRequestError(message) =>
+                TransformError.AIFailed(fileName, s"Invalid request: $message")
+              case LlmError.TimeoutError(duration) =>
+                TransformError.AIFailed(fileName, s"Request timed out after ${duration.toSeconds}s")
+              case LlmError.ParseError(message, raw) =>
+                TransformError.ParseFailed(fileName, s"$message\nRaw: ${raw.take(200)}")
+              case LlmError.ToolError(toolName, message) =>
+                TransformError.AIFailed(fileName, s"Tool error ($toolName): $message")
+              case LlmError.ConfigError(message) =>
+                TransformError.AIFailed(fileName, s"Configuration error: $message")
 
           // ---------------------------------------------------------------------------
           // Name sanitization
@@ -293,7 +320,7 @@ object JavaTransformerAgent:
                                    if !compileOutput.contains(entity.className) then ZIO.succeed(entity)
                                    else
                                      for
-                                       response <- aiService
+                                       response <- llmService
                                                      .execute(
                                                        PromptTemplates.JavaTransformer.fixCompilationErrors(
                                                          s"${entity.className}.java",
@@ -301,10 +328,8 @@ object JavaTransformerAgent:
                                                          compileOutput,
                                                        )
                                                      )
-                                                     .mapError(e =>
-                                                       TransformError.AIFailed(entity.className, e.message)
-                                                     )
-                                       cleaned   = stripCodeFences(response.output.trim)
+                                                     .mapError(convertError(entity.className))
+                                       cleaned   = stripCodeFences(response.content.trim)
                                      yield entity.copy(sourceCode = cleaned)
                                  }
             yield project.copy(entities = fixedEntities)

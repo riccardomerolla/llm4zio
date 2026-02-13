@@ -4,11 +4,12 @@ import java.nio.file.Path
 
 import zio.*
 import zio.json.*
-import zio.json.ast.Json
 
-import core.{ AIService, FileService, Logger, ResponseParser }
+import llm4zio.core.{LlmService, LlmError}
+import llm4zio.tools.JsonSchema
+import core.{FileService, Logger}
 import models.*
-import prompts.{ OutputSchemas, ValidationPrompts }
+import prompts.ValidationPrompts
 
 /** ValidationAgent - Validate generated Spring Boot code for correctness
   *
@@ -26,11 +27,10 @@ object ValidationAgent:
     : ZIO[ValidationAgent, ValidationError, ValidationReport] =
     ZIO.serviceWithZIO[ValidationAgent](_.validate(project, analysis))
 
-  val live: ZLayer[AIService & ResponseParser & FileService & MigrationConfig, Nothing, ValidationAgent] =
+  val live: ZLayer[LlmService & FileService & MigrationConfig, Nothing, ValidationAgent] =
     ZLayer.fromFunction {
       (
-        aiService: AIService,
-        responseParser: ResponseParser,
+        llmService: LlmService,
         fileService: FileService,
         config: MigrationConfig,
       ) =>
@@ -252,19 +252,15 @@ object ValidationAgent:
                 Logger.debug(
                   s"Running semantic validation for ${project.projectName}: cobolChars=${cobolSource.length}, javaChars=${javaCode.length}, promptChars=${prompt.length}"
                 )
-              schema      = OutputSchemas.jsonSchemaMap("SemanticValidation")
-              response   <-
-                aiService
-                  .executeStructured(prompt, schema)
-                  .tap(resp =>
-                    Logger.debug(
-                      s"Semantic AI response for ${project.projectName}: outputChars=${resp.output.length}, metadata=${resp.metadata.keys.mkString(",")}"
-                    )
-                  )
-                  .mapError(e => ValidationError.SemanticValidationFailed(project.projectName, e.message))
-              _          <- logUnmatchedIssueCategories(project.projectName, response)
-              validation <- responseParser
-                              .parse[SemanticValidation](response)
+              schema      = buildJsonSchema()
+              validation <- llmService
+                              .executeStructured[SemanticValidation](prompt, schema)
+                              .tap(result =>
+                                Logger.debug(
+                                  s"Semantic AI response for ${project.projectName}: parsed successfully"
+                                )
+                              )
+                              .mapError(convertError(project.projectName))
                               .catchAll { e =>
                                 val reason = e.message
                                 Logger.warn(
@@ -274,39 +270,48 @@ object ValidationAgent:
                               }
             yield validation
 
-          private def logUnmatchedIssueCategories(projectName: String, response: AIResponse): UIO[Unit] =
-            (for
-              jsonText <- responseParser.extractJson(response)
-              ast      <- ZIO.fromEither(jsonText.fromJson[Json]).orElseSucceed(Json.Null)
-              raws      = extractIssueCategories(ast)
-              unknowns  = raws.filterNot(IssueCategory.isKnownRaw).distinct
-              _        <-
-                if unknowns.isEmpty then ZIO.unit
-                else
-                  Logger.warn(
-                    s"Semantic validation for $projectName produced unknown issue categories mapped to Undefined: ${unknowns.mkString(", ")}"
-                  )
-            yield ()).catchAll(_ => ZIO.unit)
+          private def buildJsonSchema(): JsonSchema =
+            import zio.json.ast.Json
+            Json.Obj(
+              "type" -> Json.Str("object"),
+              "properties" -> Json.Obj(
+                "businessLogicPreserved" -> Json.Obj("type" -> Json.Str("boolean")),
+                "confidence" -> Json.Obj("type" -> Json.Str("number")),
+                "summary" -> Json.Obj("type" -> Json.Str("string")),
+                "issues" -> Json.Obj("type" -> Json.Str("array"))
+              ),
+              "required" -> Json.Arr(
+                Json.Str("businessLogicPreserved"),
+                Json.Str("confidence"),
+                Json.Str("summary"),
+                Json.Str("issues")
+              )
+            )
 
-          private def extractIssueCategories(ast: Json): List[String] =
-            ast match
-              case Json.Obj(fields) =>
-                fields
-                  .find(_._1 == "issues")
-                  .map(_._2)
-                  .collect {
-                    case Json.Arr(items) =>
-                      items.collect {
-                        case Json.Obj(issueFields) =>
-                          issueFields.find(_._1 == "category").flatMap {
-                            case (_, Json.Str(value)) => Some(value)
-                            case _                    => None
-                          }
-                      }.flatten
-                  }
-                  .getOrElse(Nil)
-                  .toList
-              case _                => Nil
+          private def convertError(projectName: String)(error: LlmError): ValidationError =
+            error match
+              case LlmError.ProviderError(message, cause) =>
+                ValidationError.SemanticValidationFailed(
+                  projectName,
+                  s"Provider error: $message${cause.map(c => s" (${c.getMessage})").getOrElse("")}"
+                )
+              case LlmError.RateLimitError(retryAfter) =>
+                ValidationError.SemanticValidationFailed(
+                  projectName,
+                  s"Rate limited${retryAfter.map(d => s", retry after ${d.toSeconds}s").getOrElse("")}"
+                )
+              case LlmError.AuthenticationError(message) =>
+                ValidationError.SemanticValidationFailed(projectName, s"Authentication failed: $message")
+              case LlmError.InvalidRequestError(message) =>
+                ValidationError.SemanticValidationFailed(projectName, s"Invalid request: $message")
+              case LlmError.TimeoutError(duration) =>
+                ValidationError.SemanticValidationFailed(projectName, s"Request timed out after ${duration.toSeconds}s")
+              case LlmError.ParseError(message, raw) =>
+                ValidationError.SemanticValidationFailed(projectName, s"$message\nRaw: ${raw.take(200)}")
+              case LlmError.ToolError(toolName, message) =>
+                ValidationError.SemanticValidationFailed(projectName, s"Tool error ($toolName): $message")
+              case LlmError.ConfigError(message) =>
+                ValidationError.SemanticValidationFailed(projectName, s"Configuration error: $message")
 
           private def determineStatus(compileResult: CompileResult, issues: List[ValidationIssue]): ValidationStatus =
             if !compileResult.success || issues.exists(_.severity == Severity.ERROR) then ValidationStatus.Failed

@@ -6,6 +6,8 @@ import java.util.concurrent.TimeUnit
 
 import zio.*
 import zio.json.*
+import zio.http.{ Client, DnsResolver, ZClient }
+import zio.http.netty.NettyConfig
 
 import agents.*
 import core.*
@@ -72,7 +74,6 @@ object MigrationOrchestrator:
       ValidationAgent &
       DocumentationAgent &
       FileService &
-      ResponseParser &
       HttpAIClient &
       StateService &
       AIService &
@@ -92,7 +93,6 @@ object MigrationOrchestrator:
       validationAgent    <- ZIO.service[ValidationAgent]
       documentationAgent <- ZIO.service[DocumentationAgent]
       fileService        <- ZIO.service[FileService]
-      responseParser     <- ZIO.service[ResponseParser]
       httpAIClient       <- ZIO.service[HttpAIClient]
       stateService       <- ZIO.service[StateService]
       _                  <- ZIO.service[AIService]
@@ -735,20 +735,29 @@ object MigrationOrchestrator:
             yield result
           }
 
+      private def httpClientLayer(config: MigrationConfig): ZLayer[Any, Throwable, Client] =
+        val timeout      = config.resolvedProviderConfig.timeout
+        val idleTimeout  = timeout + 300.seconds
+        val clientConfig = ZClient.Config.default.copy(
+          idleTimeout = Some(idleTimeout),
+          connectionTimeout = Some(300.seconds),
+        )
+        (ZLayer.succeed(clientConfig) ++ ZLayer.succeed(NettyConfig.defaultWithFastShutdown) ++
+          DnsResolver.default) >>> Client.live
+
       private def runAgentLayer(
         runConfig: MigrationConfig
       ): ZLayer[Any, AIError, CobolAnalyzerAgent & BusinessLogicExtractorAgent & JavaTransformerAgent & ValidationAgent] =
         val runProviderConfig = runConfig.resolvedProviderConfig
-        val rateLimiterConfig = RateLimiterConfig.fromAIProviderConfig(runProviderConfig)
+        val llmConfig = di.ApplicationDI.aiConfigToLlmConfig(runProviderConfig)
         ZLayer.make[CobolAnalyzerAgent & BusinessLogicExtractorAgent & JavaTransformerAgent & ValidationAgent](
           ZLayer.succeed(runConfig),
-          ZLayer.succeed(runProviderConfig),
-          ZLayer.succeed(rateLimiterConfig),
+          ZLayer.succeed(llmConfig),
           ZLayer.succeed(fileService),
-          ZLayer.succeed(responseParser),
-          ZLayer.succeed(httpAIClient),
-          RateLimiter.live,
-          AIService.fromConfig,
+          httpClientLayer(runConfig).orDie,
+          llm4zio.providers.HttpClient.live,
+          llm4zio.providers.GeminiCliExecutor.live,
+          llm4zio.core.LlmService.fromConfig,
           CobolAnalyzerAgent.live,
           BusinessLogicExtractorAgent.live,
           JavaTransformerAgent.live,
