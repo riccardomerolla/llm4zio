@@ -71,6 +71,8 @@ object LlmService:
             case LlmProvider.GeminiApi => GeminiApiProvider.make(cfg, http)
             case LlmProvider.OpenAI    => OpenAIProvider.make(cfg, http)
             case LlmProvider.Anthropic => AnthropicProvider.make(cfg, http)
+            case LlmProvider.LmStudio  => LmStudioProvider.make(cfg, http)
+            case LlmProvider.Ollama    => OllamaProvider.make(cfg, http)
 
         private val provider = buildProvider(config)
 

@@ -11,7 +11,7 @@
 
 ## 🎯 Overview
 
-**llm4zio** is a high-performance, effect-oriented library for integrating Large Language Models (LLMs) with ZIO-powered Scala applications. Inspired by [llm4s](https://github.com/openai/llm4s), it provides type-safe, composable abstractions for LLM interactions built natively on ZIO 2.x.
+**llm4zio** is a high-performance, effect-oriented library for integrating Large Language Models (LLMs) with ZIO-powered Scala applications. Inspired by [llm4s](https://github.com/llm4s/llm4s), it provides type-safe, composable abstractions for LLM interactions built natively on ZIO 2.x.
 
 At its core, llm4zio enables:
 
@@ -63,8 +63,8 @@ llm4zio follows **Effect-Oriented Programming (EOP)** principles:
 
 ### 🚀 Multi-Provider Support
 
-- **OpenAI** (GPT-4, GPT-4o, GPT-3.5-turbo)
-- **Anthropic** (Claude 3, Claude Instant)
+- **OpenAI**
+- **Anthropic**
 - **Google Gemini** (CLI and API modes)
 - **OpenAI-compatible** (LM Studio, Ollama, vLLM, local deployments)
 - **Custom backends** (extensible provider abstraction)
@@ -125,14 +125,14 @@ case class LLMResponse[T](
 Add to your `build.sbt`:
 
 ```scala
-libraryDependencies += "com.example" %% "llm4zio" % "1.0.0"
+libraryDependencies += "io.github.riccardomerolla" %% "llm4zio" % "1.0.0"
 ```
 
 ### Basic Usage
 
 ```scala
 import zio._
-import com.example.llm4zio._
+import io.github.riccardomerolla.llm4zio._
 
 // Define your LLM configuration
 val config = LLMConfig(
@@ -273,7 +273,7 @@ def stream(req: ChatRequest)
 
 ```scala
 import zio._
-import com.example.llm4zio._
+import io.github.riccardomerolla.llm4zio._
 
 def askQuestion(question: String): ZIO[LLMService, LLMError, String] =
   ZIO.serviceWithZIO[LLMService] { service =>
@@ -479,7 +479,7 @@ llm4zio provides test utilities for deterministic testing:
 
 ```scala
 import zio.test._
-import com.example.llm4zio.test._
+import io.github.riccardomerolla.llm4zio.test._
 
 object LLMServiceSpec extends ZIOSpecDefault:
   def spec = suite("LLMService")(
@@ -622,7 +622,7 @@ sbt "runMain examples.BatchProcessingExample"
 ## 🔗 Related Projects
 
 - **[llm4zio](https://github.com/riccardomerolla/llm4zio)** — Multi-purpose agents system built on llm4zio
-- **[llm4s](https://github.com/openai/llm4s)** — Inspiration for the design
+- **[llm4s](https://github.com/llm4s/llm4s)** — Inspiration for the design
 - **[ZIO](https://zio.dev/)** — Effect-oriented programming for Scala
 
 ## 📧 Support
