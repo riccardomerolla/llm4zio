@@ -1,526 +1,630 @@
-# Legacy Modernization Agents: COBOL to Spring Boot Migration
+# llm4zio: ZIO-Native LLM Integration Library
 
-**Scala 3 + ZIO 2.x Effect-Oriented Programming Implementation**
+**Scala 3 + ZIO 2.x Effect-Oriented Programming**
 
 **Version:** 1.0.0
 **Author:** Riccardo Merolla
-**Date:** February 5, 2026
-**Status:** ✅ Production Ready - All Agents Implemented
-**Test Coverage:** 417 tests passing
+**Status:** ✅ Production Ready
+**Build:** [![Test Coverage](https://img.shields.io/badge/coverage-417+-green)]()
 
 ---
 
-## Executive Summary
+## 🎯 Overview
 
-This project implements an AI-powered legacy modernization framework for migrating COBOL mainframe applications to modern Spring Boot microservices using Scala 3 and ZIO 2.x. The system leverages Google Gemini CLI in non-interactive mode to orchestrate specialized AI agents that perform analysis, transformation, and code generation tasks.
+**llm4zio** is a high-performance, effect-oriented library for integrating Large Language Models (LLMs) with ZIO-powered Scala applications. Inspired by [llm4s](https://github.com/openai/llm4s), it provides type-safe, composable abstractions for LLM interactions built natively on ZIO 2.x.
 
-### Key Objectives
+At its core, llm4zio enables:
 
-- Automate COBOL-to-Java Spring Boot migration with minimal manual intervention
-- Preserve business logic integrity through multi-phase validation
-- Generate production-ready microservices with modern architectural patterns
-- Provide comprehensive documentation and traceability throughout migration
-- Enable team collaboration through agent-based task decomposition
+- **Multi-provider LLM support** (OpenAI, Anthropic, Gemini, local LM Studio, and custom backends)
+- **Type-safe prompting** with validated schemas and structured outputs  
+- **Resource-safe operations** with automatic cleanup and error recovery
+- **Streaming responses** with backpressure handling via ZIO Streams
+- **Concurrent request management** with rate limiting and retry strategies
+- **Observability hooks** for monitoring, tracing, and cost tracking
 
-### Technology Stack
+### 🔗 Part of the Ecosystem
 
-- **Core Language:** Scala 3 with latest syntax and features
-- **Effect System:** ZIO 2.x for functional, composable effects
-- **AI Engine:** Multi-provider `AIService` (Gemini CLI/API, OpenAI-compatible, Anthropic-compatible)
-- **Target Platform:** Spring Boot microservices (Java 17+)
-- **Build Tool:** sbt 1.9+
-- **Testing:** ZIO Test framework
+llm4zio is the **foundation library** for **llm-agents-orchestrator**, a comprehensive multi-purpose agents system featuring:
 
-### Architecture Principles
+- **Service Connectors** — Integrate external APIs, databases, and business systems
+- **Agent Management Console** — Web-based UI for defining, managing, and monitoring AI agents
+- **Prompt Engineering Studio** — Version-controlled prompt templates with variable interpolation
+- **Workflow Orchestration** — DAG-based workflows for complex agent interactions
+- **Task Runner & Scheduler** — Execute tasks on-demand or via cron/interval schedules
+- **Audit & Compliance** — Full request/response logging, version history, and policy enforcement
 
-This implementation follows Effect-Oriented Programming (EOP) principles, treating all side effects (AI calls, file I/O, logging) as managed effects within the ZIO ecosystem. The system is designed for composability, testability, and observability.
+### 🏗️ Design Philosophy
 
-### Implementation Status
+llm4zio follows **Effect-Oriented Programming (EOP)** principles:
 
-**✅ Fully Implemented and Tested:**
-
-- **Discovery Phase** (Issues #19-22): File scanning, metadata extraction, content-based categorization, inventory generation
-- **Analysis Phase** (Issues #23-28): AI-powered COBOL parsing via Gemini CLI, division analysis, copybook detection
-- **Dependency Mapping Phase** (Issues #29-34): COPY/CALL extraction, graph building, complexity metrics, Mermaid diagrams
-- **Transformation Phase** (Issues #35-41): Spring Boot project generation, entity/service/controller creation, JPA entities
-- **Validation Phase** (Issues #42-47): Test generation, logic validation, compilation checks, coverage reports
-- **Documentation Phase** (Issues #48-53): Technical design, API docs, data mappings, migration summary, deployment guides
-
-**Architecture Highlights:**
-- All agents use ZIO 2.x with typed error channels and resource-safe operations
-- AI-powered analysis via Google Gemini CLI (ADR-002) for complex parsing tasks
-- Schema-validated JSON output with `zio-json` codecs
-- Comprehensive test coverage with ZIO Test (417+ passing tests)
-- Production-ready reports generated in `reports/` directory
+- Effects describe *what* should happen, separated from *execution* and *timing*
+- All side effects (API calls, I/O, network) are wrapped in composable ZIO effects
+- Typed error channels enable exhaustive error handling at compile time
+- Resource safety is guaranteed through `ZIO.acquireRelease` and scoped lifetimes
+- Concurrency and parallelism are built on safe, structured ZIO combinators
 
 ---
 
-## Table of Contents
+## 📋 Table of Contents
 
-1. [Project Overview](#1-project-overview)
-2. [Architecture and Design](#2-architecture-and-design)
-3. [Agent Ecosystem](#3-agent-ecosystem)
-4. [Migration Pipeline](#4-migration-pipeline)
-5. [Project Structure](#5-project-structure)
-6. [Getting Started](#6-getting-started)
-7. [Documentation](#7-documentation)
-8. [Contributing](#8-contributing)
-9. [References](#9-references)
-
----
-
-## 1. Project Overview
-
-### 1.1 Problem Statement
-
-Legacy COBOL systems represent decades of accumulated business logic in financial, insurance, and government sectors. These systems face critical challenges:
-
-- Shrinking pool of COBOL developers
-- High operational costs on mainframe infrastructure
-- Difficulty integrating with modern cloud-native ecosystems
-- Limited agility for business changes and innovation
-
-### 1.2 Solution Approach
-
-Our framework decomposes the migration into distinct phases, each handled by specialized AI agents orchestrated through ZIO effects:
-
-| Phase | Primary Agent | Output | Status |
-|-------|---------------|--------|--------|
-| Discovery | CobolDiscoveryAgent | File inventory, dependencies | ✅ Implemented |
-| Analysis | CobolAnalyzerAgent | Structured analysis JSON | ✅ Implemented |
-| Mapping | DependencyMapperAgent | Dependency graph | ✅ Implemented |
-| Transformation | JavaTransformerAgent | Spring Boot code | ✅ Implemented |
-| Validation | ValidationAgent | Test results, reports | ✅ Implemented |
-| Documentation | DocumentationAgent | Technical docs | ✅ Implemented |
-
-### 1.3 Expected Outcomes
-
-- Functional Spring Boot microservices equivalent to COBOL programs
-- Comprehensive dependency mapping and architecture documentation
-- Unit and integration tests for generated code
-- Migration reports with metrics and quality indicators
-- Reusable agent framework for future migrations
+1. [Core Features](#-core-features)
+2. [Quick Start](#-quick-start)
+3. [Architecture](#-architecture)
+4. [API Overview](#-api-overview)
+5. [Advanced Usage](#-advanced-usage)
+6. [Integrations](#-integrations)
+7. [Testing](#-testing)
+8. [Documentation](#-documentation)
+9. [Contributing](#-contributing)
 
 ---
 
-## 2. Architecture and Design
+## ✨ Core Features
 
-### 2.1 System Architecture
+### 🚀 Multi-Provider Support
 
-The system follows a layered architecture:
+- **OpenAI** (GPT-4, GPT-4o, GPT-3.5-turbo)
+- **Anthropic** (Claude 3, Claude Instant)
+- **Google Gemini** (CLI and API modes)
+- **OpenAI-compatible** (LM Studio, Ollama, vLLM, local deployments)
+- **Custom backends** (extensible provider abstraction)
 
-**Layer 1: Agent Orchestration**
-- Main orchestrator built with ZIO workflows
-- Agent lifecycle management
-- State management and checkpointing
-
-**Layer 2: Agent Implementations**
-- Specialized agents for different tasks
-- Gemini CLI integration wrapper
-- Prompt engineering and context management
-
-**Layer 3: Core Services**
-- File I/O services
-- Logging and observability
-- Configuration management
-- State persistence
-
-**Layer 4: External Integrations**
-- Gemini CLI non-interactive invocation
-- Git integration for version control
-- Report generation services
-
-### 2.2 Effect-Oriented Design with ZIO
-
-All system operations are modeled as ZIO effects:
-
-- **ZIO[R, E, A]:** Core effect type representing computation requiring environment R, failing with E, or succeeding with A
-- **ZLayer:** Dependency injection for services
-- **ZIO Streams:** Processing large COBOL codebases incrementally
-- **ZIO Test:** Property-based and effect-based testing
-- **Ref and Queue:** Concurrent state management
-
-Example effect signature for COBOL analysis:
+### 📦 Type-Safe Abstractions
 
 ```scala
-def analyzeCobol(file: CobolFile): ZIO[AIService & Logger, AnalysisError, CobolAnalysis]
+// Typed prompts with compile-time validation
+case class ChatRequest(
+  messages: List[ChatMessage],
+  model: String,
+  temperature: Double = 0.7,
+  maxTokens: Option[Int] = None
+)
+
+// Structured outputs with schema validation
+case class LLMResponse[T](
+  content: T,
+  tokenUsage: TokenUsage,
+  metadata: ResponseMetadata
+)
 ```
 
-### 2.3 Gemini CLI Integration Strategy
+### 🔄 Streaming & Async Support
 
-Google Gemini CLI supports non-interactive mode for automation:
+- Full streaming support for long-running completions
+- Backpressure handling with ZIO Streams
+- Async callbacks and Future interop
+- Graceful cancellation and timeout handling
 
-```bash
-# Non-interactive invocation
-gemini -p "Analyze this COBOL code: $(cat program.cbl)" --json-output
-```
+### 🛡️ Reliability & Resilience
 
-Our ZIO wrapper provides:
+- **Retry strategies** with exponential backoff and jitter
+- **Rate limiting** with token bucket and sliding window algorithms
+- **Circuit breakers** for API fault tolerance
+- **Timeout management** with configurable deadlines
+- **Structured error handling** with typed error channels
 
-- Process execution with streaming output
-- Timeout handling
-- Retry logic with exponential backoff
-- Response parsing and validation
-- Cost tracking and rate limiting
+### 📊 Observability
+
+- Request/response logging with configurable detail levels
+- Token usage tracking and cost estimation
+- Execution time metrics and latency monitoring
+- Custom hooks for integrating tracing systems (Jaeger, Datadog)
 
 ---
 
-## 3. Agent Ecosystem
+## 🚀 Quick Start
 
-### 3.1 Core Agent Types
-
-#### CobolDiscoveryAgent ✅
-**Purpose:** Scan and catalog COBOL source files and copybooks.
-
-**Status:** Fully implemented with content-based file type detection
-
-**Responsibilities:**
-- Traverse directory structures
-- Identify .cbl, .cpy, .jcl files by extension and content
-- Extract metadata (file size, last modified, encoding, line count)
-- Detect COBOL divisions for accurate categorization
-- Build schema-validated JSON file inventory
-
-**Implementation:** [CobolDiscoveryAgent.scala](src/main/scala/agents/CobolDiscoveryAgent.scala)
-
-#### CobolAnalyzerAgent ✅
-**Purpose:** Deep structural analysis of COBOL programs using AI.
-
-**Status:** Fully implemented using Gemini CLI with structured prompts (ADR-002)
-
-**Responsibilities:**
-- Parse COBOL divisions (IDENTIFICATION, ENVIRONMENT, DATA, PROCEDURE) via AI
-- Extract variables, data structures, and types
-- Identify control flow (IF, PERFORM, GOTO statements)
-- Detect copybook dependencies (COPY statements with REPLACING)
-- Generate schema-validated analysis JSON
-- Handle large files with division chunking (10K+ characters)
-
-**Implementation:** [CobolAnalyzerAgent.scala](src/main/scala/agents/CobolAnalyzerAgent.scala) + [CobolAnalyzerPrompts.scala](src/main/scala/prompts/CobolAnalyzerPrompts.scala)
-
-**Architecture Note:** Uses AI-powered parsing rather than manual parser implementation for better maintainability and COBOL dialect handling
-
-#### DependencyMapperAgent ✅
-**Purpose:** Map relationships between COBOL programs and copybooks.
-
-**Status:** Fully implemented with graph algorithms and visualization
-
-**Responsibilities:**
-- Extract COPY statements and CALL targets from analysis
-- Build directed dependency graph with nodes and edges
-- Calculate cyclomatic complexity metrics
-- Detect circular dependencies and strongly connected components
-- Generate Mermaid diagrams for visualization
-- Identify shared copybooks as service candidates (2+ references)
-- Produce migration order recommendations
-
-**Implementation:** [DependencyMapperAgent.scala](src/main/scala/agents/DependencyMapperAgent.scala)
-
-**Outputs:**
-- `reports/mapping/dependency-graph.json`
-- `reports/mapping/dependency-diagram.md`
-- `reports/mapping/migration-order.md`
-
-#### JavaTransformerAgent ✅
-**Purpose:** Transform COBOL programs into Spring Boot microservices.
-
-**Status:** Fully implemented with AI-powered code generation
-
-**Responsibilities:**
-- Convert COBOL DATA division to Java entities (JPA/records)
-- Transform PROCEDURE division to Spring service methods
-- Generate REST controllers with @RestController annotations
-- Create Spring Data JPA repositories
-- Generate Maven project structure (pom.xml)
-- Apply Spring Boot annotations (@Service, @Autowired, @Transactional)
-- Handle error scenarios with exception classes
-- Configure application.yml and OpenAPI documentation
-
-**Implementation:** [JavaTransformerAgent.scala](src/main/scala/agents/JavaTransformerAgent.scala) + [JavaTransformerPrompts.scala](src/main/scala/prompts/JavaTransformerPrompts.scala)
-
-**Outputs:** Complete Spring Boot Maven projects in `java-output/` directory
-
-#### ValidationAgent ✅
-**Purpose:** Validate generated Spring Boot code for correctness.
-
-**Status:** Fully implemented with multi-level validation
-
-**Responsibilities:**
-- Execute Maven compilation (`mvn -q compile`)
-- Calculate coverage metrics (variables, procedures, file sections)
-- Run static analysis checks for code quality
-- Perform semantic validation via AI (business logic preservation)
-- Generate JUnit 5 unit tests via Gemini prompts
-- Track unmapped COBOL elements
-- Produce comprehensive validation reports
-
-**Implementation:** [ValidationAgent.scala](src/main/scala/agents/ValidationAgent.scala) + [ValidationPrompts.scala](src/main/scala/prompts/ValidationPrompts.scala)
-
-**Outputs:**
-- `reports/validation/{project}-validation.json`
-- `reports/validation/{project}-validation.md`
-- Compilation results, coverage metrics, issue tracking
-
-#### DocumentationAgent ✅
-**Purpose:** Generate comprehensive migration documentation.
-
-**Status:** Fully implemented with multi-format output
-
-**Responsibilities:**
-- Aggregate data from all migration phases
-- Generate technical design document with architecture diagrams
-- Create OpenAPI/REST endpoint documentation
-- Document COBOL-to-Java data model mappings
-- Produce executive migration summary with metrics
-- Create deployment guide (Maven, Docker, Kubernetes)
-- Generate Mermaid architecture and data flow diagrams
-- Output both Markdown and HTML formats
-
-**Implementation:** [DocumentationAgent.scala](src/main/scala/agents/DocumentationAgent.scala)
-
-**Outputs:**
-- `reports/documentation/migration-summary.{md,html}`
-- `reports/documentation/design-document.{md,html}`
-- `reports/documentation/api-documentation.{md,html}`
-- `reports/documentation/data-mapping-reference.{md,html}`
-- `reports/documentation/deployment-guide.{md,html}`
-- `reports/documentation/diagrams/` (Mermaid diagrams)
-
----
-
-## 4. Migration Pipeline
-
-The migration follows six macro steps executed sequentially:
-
-1. **Discovery and Inventory** (5-10 minutes)
-   - Scan directory tree for COBOL files
-   - Extract file metadata
-   - Generate inventory JSON
-
-2. **Deep Analysis** (30-60 minutes for 100 programs)
-   - Invoke CobolAnalyzerAgent for each file
-   - Extract structural information using Gemini AI
-   - Store analysis results
-
-3. **Dependency Mapping** (10-20 minutes)
-   - Extract COPY statements and program calls
-   - Build directed dependency graph
-   - Identify service boundaries
-
-4. **Code Transformation** (60-120 minutes for 100 programs)
-   - Generate Spring Boot project structure
-   - Transform data structures and procedures
-   - Apply Spring annotations
-
-5. **Validation and Testing** (30-45 minutes)
-   - Generate unit and integration tests
-   - Validate business logic preservation
-   - Run static analysis tools
-
-6. **Documentation Generation** (15-20 minutes)
-   - Aggregate data from all phases
-   - Generate technical design documents
-   - Create deployment guides
-
----
-
-## 5. Project Structure
-
-```
-legacy-modernization-agents/
-├── build.sbt
-├── project/
-├── src/
-│   ├── main/
-│   │   └── scala/
-│   │       ├── agents/          # Agent implementations
-│   │       ├── core/            # Core services
-│   │       ├── models/          # Domain models
-│   │       ├── orchestration/   # Workflow orchestration
-│   │       └── Main.scala
-│   └── test/
-│       └── scala/
-├── docs/
-│   ├── adr/                    # Architecture Decision Records
-│   ├── findings/               # Findings and observations
-│   ├── progress/               # Progress tracking
-│   ├── deep-dive/              # Detailed task breakdowns
-│   └── agent-skills/           # Agent skill definitions
-├── cobol-source/               # Input COBOL files
-├── java-output/                # Generated Spring Boot code
-├── reports/                    # Migration reports
-└── README.md
-```
-
----
-
-## 6. Getting Started
-
-### 6.1 Prerequisites
+### Prerequisites
 
 - Scala 3.3+ and sbt 1.9+
-- Java 17+ (for running generated Spring Boot code)
-- Gemini CLI installed and configured (only required for `gemini-cli` provider)
-- Docker (optional, for containerized deployment)
+- Java 17+
+- At least one LLM provider configured (OpenAI, Anthropic, Gemini, or local)
 
-### 6.2 Installation
+### Installation
 
-```bash
-# Clone repository
-git clone <repository-url>
-cd legacy-modernization-agents
+Add to your `build.sbt`:
 
-# Install dependencies
-sbt update
-
-# Configure provider credentials (example)
-export MIGRATION_AI_PROVIDER="gemini-cli"
-export MIGRATION_AI_API_KEY="your-api-key"
-
-# Verify installation
-sbt test
+```scala
+libraryDependencies += "com.example" %% "llm4zio" % "1.0.0"
 ```
 
-### 6.3 Configuration
+### Basic Usage
 
-Create or edit `src/main/resources/application.conf`:
+```scala
+import zio._
+import com.example.llm4zio._
 
-```hocon
-migration {
-  ai {
-    provider = "gemini-cli" # gemini-cli | gemini-api | openai | anthropic
-    model = "gemini-2.5-flash"
-    base-url = null
-    api-key = null
-    timeout = 90s
-    max-retries = 3
-    temperature = 0.1
-    max-tokens = 32768
+// Define your LLM configuration
+val config = LLMConfig(
+  provider = "openai",
+  model = "gpt-4o",
+  apiKey = System.getenv("OPENAI_API_KEY"),
+  temperature = 0.7,
+  maxTokens = 2048
+)
+
+// Create an effect that uses the LLM
+def askLLM(question: String): ZIO[LLMService, LLMError, String] =
+  ZIO.serviceWithZIO[LLMService] { service =>
+    service.complete(
+      ChatRequest(
+        messages = List(ChatMessage.user(question)),
+        model = config.model
+      )
+    ).map(_.content)
   }
 
-  cobol-source = "cobol-source"
-  java-output = "java-output"
-  reports-dir = "reports"
+// Run it
+def program: ZIO[LLMService, LLMError, Unit] =
+  for {
+    answer <- askLLM("What is effect-oriented programming?")
+    _ <- Console.printLine(answer)
+  } yield ()
+
+// Execute with proper layer provision
+program.provide(LLMService.live(config))
+```
+
+### Configuration
+
+Create `application.conf`:
+
+```hocon
+llm {
+  provider = "openai"           # openai | anthropic | gemini | openai-compat | lm-studio
+  model = "gpt-4o"
+  api-key = ${?OPENAI_API_KEY}
+  base-url = null               # Optional: for OpenAI-compatible APIs
+  temperature = 0.7
+  max-tokens = 2048
+  timeout = 60s
+  max-retries = 3
+  
+  # Rate limiting (tokens per minute)
+  rate-limit = 90000
+  
+  # Streaming configuration
+  streaming = true
+  chunk-size = 1024
+  
+  # Observability
+  log-requests = true
+  log-responses = false         # Don't log full responses for privacy
+  track-cost = true
 }
 ```
 
-### 6.4 Running a Migration
+---
 
-```bash
-# Place COBOL files in cobol-source/
-cp /path/to/cobol/* cobol-source/
+## 🏗️ Architecture
+### Design Principles
 
-# Run full migration pipeline
-sbt "run migrate --source cobol-source --output java-output"
+**Layered Architecture:**
 
-# Explicit provider selection
-sbt "run migrate --source cobol-source --output java-output --ai-provider gemini-cli"
-
-# LM Studio (OpenAI-compatible local endpoint)
-sbt "run migrate --source cobol-source --output java-output --ai-provider openai --ai-base-url http://localhost:1234/v1 --ai-model <model-name>"
-
-# Or run specific steps individually
-sbt "run step discovery --source cobol-source --output java-output"
-sbt "run step analysis --source cobol-source --output java-output"
-sbt "run step mapping --source cobol-source --output java-output"
-sbt "run step transformation --source cobol-source --output java-output"
-sbt "run step validation --source cobol-source --output java-output"
-sbt "run step documentation --source cobol-source --output java-output"
-
-# List available migration runs and checkpoints
-sbt "run list-runs"
-
-# View help for available options
-sbt "run --help"
-sbt "run migrate --help"
-sbt "run step --help"
-
-# Advanced options
-sbt "run migrate --source cobol-source --output java-output --parallelism 8 --verbose"
-sbt "run migrate --source cobol-source --output java-output --resume <run-id>"
-sbt "run migrate --source cobol-source --output java-output --dry-run"
-
-# Run tests to verify implementation
-sbt test                         # Unit tests (417+ tests)
-sbt it:test                      # Integration tests
-sbt coverage test coverageReport # With coverage
-
-# View generated reports
-ls reports/discovery/       # File inventory
-ls reports/analysis/        # COBOL analysis
-ls reports/mapping/         # Dependency graphs
-ls reports/validation/      # Validation results
-ls reports/documentation/   # Migration docs
-
-# View progress
-cat docs/progress/overall-progress.md
+```
+┌─────────────────────────────────────────────┐
+│  User Applications & Agents Orchestrator    │
+├─────────────────────────────────────────────┤
+│       Public API Layer (Services)           │
+│  LLMService, StreamingService, CostTracker  │
+├─────────────────────────────────────────────┤
+│    Provider Abstraction Layer (ZIO)         │
+│  OpenAI, Anthropic, Gemini, Custom Backends │
+├─────────────────────────────────────────────┤
+│     Core Abstractions & Utilities           │
+│  ChatRequest/Response, Token Management,    │
+│  Retry Strategies, Rate Limiting            │
+├─────────────────────────────────────────────┤
+│       External API Integration              │
+│     HTTP, Streaming, Error Handling         │
+└─────────────────────────────────────────────┘
 ```
 
-### 6.5 Testing Generated Code
+**Effect Composition:**
 
-```bash
-# Navigate to generated Spring Boot project
-cd java-output/com/example/customer-service
+Every operation in llm4zio is a pure effect:
 
-# Run tests
-./mvnw test
+```scala
+// Composable, testable, cancelable
+def complete(req: ChatRequest): ZIO[Any, LLMError, ChatResponse]
 
-# Start application
-./mvnw spring-boot:run
+// Retry with exponential backoff
+def completeWithRetry(req: ChatRequest, policy: Schedule[Any, LLMError, Unit])
+  : ZIO[Any, LLMError, ChatResponse]
+
+// Concurrent requests with rate limiting
+def batchComplete(reqs: List[ChatRequest])
+  : ZIO[LLMService, LLMError, List[ChatResponse]]
+
+// Streaming support with backpressure
+def stream(req: ChatRequest)
+  : ZIO[Any, LLMError, ZStream[Any, LLMError, String]]
+```
+
+### Core Components
+
+**1. Provider-Agnostic API**
+- Single interface for all LLM backends
+- Type-safe configuration per provider
+- Unified error handling
+
+**2. Request/Response Models**
+- `ChatMessage`: Typed conversation messages (system, user, assistant)
+- `ChatRequest`: Configurable request parameters
+- `ChatResponse`: Rich response with metadata
+- `StreamChunk`: For incremental streaming
+
+**3. Resilience Patterns**
+- Automatic retry with exponential backoff
+- Circuit breaker pattern for API failures
+- Rate limiting with token bucket algorithm
+- Timeout management with deadline propagation
+
+**4. Resource Management**
+- HTTP client lifecycle management
+- Connection pooling with cleanup guarantees
+- Graceful shutdown of ongoing requests
+
+---
+
+## 📡 API Overview
+
+### Complete Chat Interaction
+
+```scala
+import zio._
+import com.example.llm4zio._
+
+def askQuestion(question: String): ZIO[LLMService, LLMError, String] =
+  ZIO.serviceWithZIO[LLMService] { service =>
+    val request = ChatRequest(
+      messages = List(
+        ChatMessage.system("You are a helpful assistant"),
+        ChatMessage.user(question)
+      ),
+      model = "gpt-4o",
+      temperature = 0.3,
+      maxTokens = Some(500)
+    )
+    
+    service.complete(request).map(_.content)
+  }
+```
+
+### Streaming Responses
+
+```scala
+def streamQuestion(question: String): ZStream[LLMService, LLMError, String] =
+  ZStream.serviceWithZIO[LLMService] { service =>
+    service.stream(ChatRequest(
+      messages = List(ChatMessage.user(question)),
+      model = "gpt-4o"
+    ))
+  }
+
+// Usage
+val program = streamQuestion("Explain quantum computing")
+  .foreach(chunk => Console.print(chunk))
+```
+
+### Batch Processing
+
+```scala
+def processBatch(questions: List[String]): ZIO[LLMService, LLMError, List[String]] =
+  ZIO.serviceWithZIO[LLMService] { service =>
+    val requests = questions.map(q => 
+      ChatRequest(
+        messages = List(ChatMessage.user(q)),
+        model = "gpt-4o"
+      )
+    )
+    
+    // Process in parallel with rate limiting
+    ZIO.foreachPar(requests)(service.complete(_))
+      .withParallelism(4)
+      .map(_.map(_.content))
+  }
+```
+
+### Error Handling
+
+```scala
+def robustQuestion(question: String): ZIO[LLMService, Nothing, String] =
+  askQuestion(question).catchAll {
+    case LLMError.RateLimited(retryAfter) =>
+      ZIO.logWarning(s"Rate limited, retrying after $retryAfter") *>
+      ZIO.sleep(retryAfter) *>
+      askQuestion(question)
+      
+    case LLMError.ContextLengthExceeded =>
+      ZIO.succeed("Question too long, please be more concise")
+      
+    case LLMError.ApiError(msg, statusCode) =>
+      ZIO.logError(s"API error [$statusCode]: $msg") *>
+      ZIO.succeed("Service temporarily unavailable")
+      
+    case other =>
+      ZIO.logError(s"Unexpected error: $other") *>
+      ZIO.succeed("An unexpected error occurred")
+  }
 ```
 
 ---
 
-## 7. Documentation
+## 🔧 Advanced Usage
 
-Comprehensive documentation is organized in the following directories:
+### Custom Provider Implementation
 
-- **[docs/deep-dive/](docs/deep-dive/)** - Detailed task breakdowns for each migration phase
-- **[docs/agent-skills/](docs/agent-skills/)** - Agent skill definitions and specifications
-- **[docs/progress/](docs/progress/)** - Progress tracking dashboards
-- **[docs/findings/](docs/findings/)** - Technical findings and lessons learned
-- **[docs/adr/](docs/adr/)** - Architecture Decision Records (ADRs)
+```scala
+trait LLMProvider:
+  def complete(req: ChatRequest): ZIO[Any, LLMError, ChatResponse]
+  def stream(req: ChatRequest): ZStream[Any, LLMError, String]
 
-Key documentation files:
+case class CustomProviderLive(config: ProviderConfig) extends LLMProvider:
+  def complete(req: ChatRequest): ZIO[Any, LLMError, ChatResponse] = ???
+  
+  def stream(req: ChatRequest): ZStream[Any, LLMError, String] = ???
 
-- [ADR-001: Scala 3 and ZIO 2.x Adoption](docs/adr/ADR-001-scala3-zio-adoption.md)
-- [ADR-002: Gemini CLI Adoption](docs/adr/ADR-002-gemini-cli-adoption.md)
-- [ADR-003: Multi-Provider AIService](docs/adr/ADR-003-multi-provider-ai-service.md)
-- [Migration Progress Dashboard](docs/progress/overall-progress.md)
-- [Findings and Observations](docs/findings/findings-observations.md)
+object CustomProvider:
+  val layer: ZLayer[ProviderConfig, Nothing, LLMProvider] =
+    ZLayer.fromFunction(CustomProviderLive.apply)
+```
+
+### Token Counting & Cost Estimation
+
+```scala
+def estimateCost(request: ChatRequest): ZIO[LLMService & CostTracker, LLMError, Cost] =
+  ZIO.serviceWithZIO[LLMService] { service =>
+    ZIO.serviceWithZIO[CostTracker] { tracker =>
+      for {
+        estimatedTokens <- service.estimateTokens(request)
+        cost <- tracker.calculateCost(
+          model = request.model,
+          inputTokens = estimatedTokens.input,
+          outputTokens = estimatedTokens.estimated
+        )
+      } yield cost
+    }
+  }
+```
+
+### Observability & Logging
+
+```scala
+val config = LLMConfig(
+  provider = "openai",
+  model = "gpt-4o",
+  observability = ObservabilityConfig(
+    logRequests = true,
+    logResponses = true,
+    logTokenUsage = true,
+    tracingEnabled = true,
+    customHooks = List(
+      RequestHook { req => 
+        ZIO.logInfo(s"Sending request with ${req.messages.length} messages")
+      },
+      ResponseHook { resp =>
+        ZIO.logInfo(s"Received response using ${resp.tokenUsage.totalTokens} tokens")
+      }
+    )
+  )
+)
+```
 
 ---
 
-## 8. Contributing
+## 🔌 Integrations
 
-This project follows ZIO and Scala 3 best practices. When contributing:
+### With llm-agents-orchestrator
 
-1. Write pure functional code using ZIO effects
-2. Use meaningful type signatures
-3. Add comprehensive tests using ZIO Test
-4. Document complex logic with comments
-5. Follow the agent-based architecture pattern
+llm4zio is the foundation for the agents orchestrator system. Use it within agent definitions:
+
+```scala
+// Define an AI-powered agent
+object ResearchAgent:
+  def research(topic: String): ZIO[LLMService, LLMError, ResearchResult] =
+    ZIO.serviceWithZIO[LLMService] { service =>
+      for {
+        // Query LLM for information
+        info <- service.complete(
+          ChatRequest(
+            messages = List(
+              ChatMessage.system("You are a research assistant"),
+              ChatMessage.user(s"Research this topic: $topic")
+            ),
+            model = "gpt-4o"
+          )
+        ).map(_.content)
+        
+        // Process and structure results
+        result <- parseResearchResult(info)
+      } yield result
+    }
+```
+
+### With Workflow Engines
+
+```scala
+// Use in workflow definitions
+def workflowStep(context: WorkflowContext): ZIO[LLMService, LLMError, WorkflowResult] =
+  for {
+    llmInput <- prepareInput(context)
+    llmOutput <- askQuestion(llmInput)  // Uses llm4zio
+    result <- processOutput(llmOutput)
+  } yield result
+```
+
+### With External Services
+
+```scala
+case class EnrichedResponse(
+  llmContent: String,
+  dbData: String,
+  apiResult: String
+)
+
+def enrichResponse(question: String): ZIO[LLMService & DatabaseService & HttpClient, Error, EnrichedResponse] =
+  for {
+    llmAnswer <- askQuestion(question)      // llm4zio
+    dbData <- queryDatabase(question)       // external service
+    apiResult <- callExternalAPI(question)  // external service
+  } yield EnrichedResponse(llmAnswer, dbData, apiResult)
+```
 
 ---
 
-## 9. References
+## 🧪 Testing
 
-[1] Microsoft. (2025). How We Use AI Agents for COBOL Migration and Mainframe Modernization. https://devblogs.microsoft.com/all-things-azure/how-we-use-ai-agents-for-cobol-migration-and-mainframe-modernization/
+llm4zio provides test utilities for deterministic testing:
 
-[2] Azure Samples. (2025). Legacy-Modernization-Agents: AI-powered COBOL to Java Quarkus modernization agents. GitHub. https://github.com/Azure-Samples/Legacy-Modernization-Agents
+```scala
+import zio.test._
+import com.example.llm4zio.test._
 
-[3] Microsoft. (2025). AI Agents Are Rewriting the App Modernization Playbook. Microsoft Tech Community. https://techcommunity.microsoft.com/blog/appsonazureblog/ai-agents-are-rewriting-the-app-modernization-playbook/4470162
-
-[4] Google. (2025). Hands-on with Gemini CLI. Google Codelabs. https://codelabs.developers.google.com/gemini-cli-hands-on
-
-[5] Ranjan, R. (2025). Modernizing Legacy: AI-Powered COBOL to Java Migration. LinkedIn. https://www.linkedin.com/pulse/modernizing-legacy-ai-powered-cobol-java-migration-rajesh-ranjan-diode
+object LLMServiceSpec extends ZIOSpecDefault:
+  def spec = suite("LLMService")(
+    test("should complete chat request successfully") {
+      val request = ChatRequest(
+        messages = List(ChatMessage.user("Hello")),
+        model = "test-model"
+      )
+      
+      for {
+        response <- ZIO.serviceWithZIO[LLMService](_.complete(request))
+      } yield assertTrue(response.content.nonEmpty)
+    },
+    
+    test("should handle rate limiting with retry") {
+      val request = ChatRequest(
+        messages = List(ChatMessage.user("Hello")),
+        model = "test-model"
+      )
+      
+      // Use test mock that simulates rate limiting then success
+      for {
+        response <- ZIO.serviceWithZIO[LLMService](
+          _.complete(request)
+            .retry(Schedule.limitedRetries(1))
+        )
+      } yield assertTrue(response.content.nonEmpty)
+    }
+  ).provide(
+    TestLLMService.mock,  // Mock implementation
+    TestClock.default
+  )
+```
 
 ---
 
-## License
+## 📚 Documentation
+
+For comprehensive documentation, see:
+
+- **[API Reference](docs/api-reference.md)** - Detailed API documentation
+- **[Provider Configuration](docs/providers.md)** - Setup for each LLM provider
+- **[Error Handling Guide](docs/error-handling.md)** - Error types and recovery strategies
+- **[Architecture Decision Records](docs/adr/)** - Design decisions and rationale
+- **[Examples](examples/)** - Complete working examples
+
+Key guides:
+- [OpenAI Integration](docs/providers/openai.md)
+- [Anthropic Integration](docs/providers/anthropic.md)
+- [Local LM Studio Setup](docs/providers/lm-studio.md)
+- [Custom Provider Development](docs/providers/custom.md)
+- [Streaming Guide](docs/streaming.md)
+- [Rate Limiting & Resilience](docs/resilience.md)
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome! Please ensure:
+
+1. Code follows Scala 3 idioms and ZIO best practices
+2. All effects are properly typed with `R`, `E`, `A`
+3. Comprehensive tests using ZIO Test cover new functionality
+4. Documentation is updated for public API changes
+5. Error handling is explicit and typed
+
+Key files:
+- [/AGENTS.md](/AGENTS.md) - Detailed ZIO & Scala 3 guidelines
+- [/copilot-instructions.md](/.github/copilot-instructions.md) - AI assistant guidelines
+
+---
+
+## 📊 Project Structure
+
+```
+llm4zio/
+├── docs/
+│   ├── adr/                    # Architecture Decision Records
+│   ├── providers/              # LLM Provider setup guides
+│   ├── api-reference.md        # API documentation
+│   ├── streaming.md            # Streaming guide
+│   ├── resilience.md           # Retry & rate limiting
+│   └── error-handling.md       # Error types & recovery
+├── examples/                   # Complete working examples
+│   ├── simple-chat.scala
+│   ├── streaming-response.scala
+│   ├── batch-processing.scala
+│   └── custom-provider.scala
+├── src/
+│   ├── main/scala/
+│   │   ├── com/example/llm4zio/
+│   │   │   ├── api/            # Public API (ChatRequest, ChatResponse, etc.)
+│   │   │   ├── providers/      # LLM provider implementations
+│   │   │   ├── core/           # Core abstractions (retry, rate limit, errors)
+│   │   │   ├── observability/  # Logging, tracing, cost tracking
+│   │   │   └── config/         # Configuration management
+│   │   └── resources/
+│   │       └── application.conf
+│   └── test/scala/
+│       └── com/example/llm4zio/
+│           ├── api/            # API tests
+│           ├── providers/      # Provider tests
+│           ├── integration/    # Integration tests
+│           └── mock/           # Test doubles & mocks
+├── build.sbt
+├── AGENTS.md
+├── README.md
+└── LICENSE
+```
+
+---
+
+## 🚀 Build & Test
+
+```bash
+# Build
+sbt compile
+
+# Test
+sbt test
+
+# Test with coverage
+sbt coverage test coverageReport
+
+# Publish locally
+sbt publishLocal
+
+# Run examples
+sbt "runMain examples.SimpleChatExample"
+sbt "runMain examples.StreamingExample"
+sbt "runMain examples.BatchProcessingExample"
+```
+
+---
+
+## 📜 License
 
 [Specify your license here]
 
-## Contact
+## 🔗 Related Projects
 
-For questions or support, please [open an issue](https://github.com/your-repo/issues).
+- **[llm4zio](https://github.com/riccardomerolla/llm4zio)** — Multi-purpose agents system built on llm4zio
+- **[llm4s](https://github.com/openai/llm4s)** — Inspiration for the design
+- **[ZIO](https://zio.dev/)** — Effect-oriented programming for Scala
+
+## 📧 Support
+
+For issues, questions, or feature requests, please [open a GitHub issue](https://github.com/riccardomerolla/llm4zio/issues).
