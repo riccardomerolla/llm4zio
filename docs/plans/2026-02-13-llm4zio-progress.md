@@ -6,7 +6,7 @@
 **Design Doc**: [2026-02-13-llm4zio-design.md](./2026-02-13-llm4zio-design.md)
 **Implementation Plan**: [2026-02-13-llm4zio-implementation.md](./2026-02-13-llm4zio-implementation.md)
 
-## Completed Foundation (6/21 Tasks - 30%)
+## Completed Foundation + Observability (9/21 Tasks - 43%)
 
 ### ✅ Task 1: Module Structure
 - Created llm4zio sbt module with proper configuration
@@ -58,12 +58,36 @@
 - ZLayer integration
 - **Commit**: 4dfd155
 
-**Current Status**:
-- **16 tests passing**
-- **Compilation successful**
-- **Foundation is production-ready**
+### ✅ Task 12: Tool Calling Infrastructure
+- Tool[R, E, A] case class with generic execution
+- AnyTool type alias for API boundaries
+- ToolRegistry for registration, listing, and execution
+- ToolResult for execution results
+- JsonSchema type alias
+- **Tests**: 4 tests passing
+- **Commit**: 6bf6612
 
-## Remaining Tasks (15/21 Tasks - 70%)
+### ✅ Task 13: Observability - Metrics
+- LlmMetrics with Ref-based counters
+- Tracks requests, tokens, latency, and errors
+- MetricsSnapshot with computed avg latency
+- ZLayer integration for DI
+- **Tests**: 5 tests passing
+- **Commit**: 6b216b9
+
+### ✅ Task 14: Observability - Logging
+- LlmLogger aspect wraps LlmService operations
+- Logs request/response details with metadata
+- Tracks duration, token counts, message counts
+- Logs stream completion events
+- **Commit**: 1fbd1ef
+
+**Current Status**:
+- **25 tests passing**
+- **Compilation successful**
+- **Foundation + Observability is production-ready**
+
+## Remaining Tasks (12/21 Tasks - 57%)
 
 ### High Priority - Core Functionality
 
@@ -83,15 +107,6 @@
 - Provider routing logic
 - ZLayer integration
 
-**Task 12**: Tool Calling Infrastructure
-- Tool type definition
-- ToolRegistry implementation
-- Tool execution logic
-- **Tests needed**
-
-**Tasks 13-14**: Observability
-- Task 13: LlmMetrics (request count, token usage, latency, errors)
-- Task 14: LlmLogger (structured logging aspect)
 
 ### Medium Priority - Migration
 
