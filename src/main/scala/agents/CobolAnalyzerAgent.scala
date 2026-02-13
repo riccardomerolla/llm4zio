@@ -269,15 +269,44 @@ object CobolAnalyzerAgent:
           override def analyzeAll(files: List[CobolFile]): ZStream[Any, AnalysisError, CobolAnalysis] =
             val stream = ZStream
               .fromIterable(files)
-              .mapZIOParUnordered(config.parallelism) { file =>
-                analyze(file)
-                  .tapError(err => Logger.warn(err.message))
+              .zipWithIndex
+              .mapZIOParUnordered(config.parallelism) {
+                case (file, idx) =>
+                  for
+                    startTime <- Clock.currentTime(java.util.concurrent.TimeUnit.MILLISECONDS)
+                    _         <- Logger.info(s"[${idx + 1}/${files.size}] Starting analysis of ${file.name}")
+                    analysis  <- analyze(file)
+                                   .tapError(err => Logger.warn(err.message))
+                    endTime   <- Clock.currentTime(java.util.concurrent.TimeUnit.MILLISECONDS)
+                    duration   = endTime - startTime
+                    _         <- Logger.info(
+                                   s"[${idx + 1}/${files.size}] Completed ${file.name} in ${duration}ms " +
+                                     s"(${analysis.complexity.linesOfCode} LOC, ${analysis.procedures.size} procedures)"
+                                 )
+                  yield analysis
               }
 
             ZStream.unwrapScoped {
               for
                 analysesRef <- Ref.make(List.empty[CobolAnalysis])
-                result       = stream.tap(analysis => analysesRef.update(analysis :: _))
+                progressRef <- Ref.make(0)
+                startTime   <- Clock.currentTime(java.util.concurrent.TimeUnit.MILLISECONDS)
+                result       = stream
+                                 .tap { analysis =>
+                                   for
+                                     count       <- progressRef.updateAndGet(_ + 1)
+                                     currentTime <- Clock.currentTime(java.util.concurrent.TimeUnit.MILLISECONDS)
+                                     elapsed      = currentTime - startTime
+                                     rate         = if elapsed > 0 then (count.toDouble / elapsed) * 1000 else 0.0
+                                     remaining    = files.size - count
+                                     eta          = if rate > 0 then (remaining / rate).toLong else 0
+                                     _           <- Logger.info(
+                                                      f"[Progress] $count/${files.size} files analyzed " +
+                                                        f"(${rate}%.2f files/sec, ETA ${eta}ms)"
+                                                    )
+                                     _           <- analysesRef.update(analysis :: _)
+                                   yield ()
+                                 }
                 _           <- ZIO.addFinalizer(
                                  analysesRef.get.flatMap(analyses => writeSummary(analyses.reverse).ignore)
                                )

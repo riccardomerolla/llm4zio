@@ -76,7 +76,8 @@ object OllamaProvider:
           LlmChunk(
             delta = response.content,
             finishReason = Some("stop"),
-            usage = response.usage
+            usage = response.usage,
+            metadata = response.metadata
           )
         }
 
@@ -99,7 +100,8 @@ object OllamaProvider:
           LlmChunk(
             delta = response.content,
             finishReason = Some("stop"),
-            usage = response.usage
+            usage = response.usage,
+            metadata = response.metadata
           )
         }
 
