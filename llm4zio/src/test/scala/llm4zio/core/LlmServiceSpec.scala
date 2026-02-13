@@ -4,6 +4,7 @@ import zio.*
 import zio.test.*
 import zio.stream.*
 import zio.json.*
+import llm4zio.tools.{AnyTool, JsonSchema}
 
 object LlmServiceSpec extends ZIOSpecDefault:
   // Mock implementation for testing
@@ -23,7 +24,7 @@ object LlmServiceSpec extends ZIOSpecDefault:
     override def executeStreamWithHistory(messages: List[Message]): Stream[LlmError, LlmChunk] =
       ZStream(LlmChunk(delta = "Stream response", finishReason = Some("stop")))
 
-    override def executeWithTools(prompt: String, tools: List[Tool]): IO[LlmError, ToolCallResponse] =
+    override def executeWithTools(prompt: String, tools: List[AnyTool]): IO[LlmError, ToolCallResponse] =
       ZIO.succeed(ToolCallResponse(content = Some("No tools needed"), toolCalls = List.empty, finishReason = "stop"))
 
     override def executeStructured[A: JsonCodec](prompt: String, schema: JsonSchema): IO[LlmError, A] =

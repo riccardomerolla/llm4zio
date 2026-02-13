@@ -3,10 +3,7 @@ package llm4zio.core
 import zio.*
 import zio.stream.*
 import zio.json.*
-
-// Placeholder for Tool (will be defined in tools package)
-type Tool = Any
-type JsonSchema = Any
+import llm4zio.tools.{AnyTool, JsonSchema}
 
 case class ToolCall(id: String, name: String, arguments: String) derives JsonCodec
 
@@ -28,7 +25,7 @@ trait LlmService:
   def executeStreamWithHistory(messages: List[Message]): Stream[LlmError, LlmChunk]
 
   // Tool calling
-  def executeWithTools(prompt: String, tools: List[Tool]): IO[LlmError, ToolCallResponse]
+  def executeWithTools(prompt: String, tools: List[AnyTool]): IO[LlmError, ToolCallResponse]
 
   // Structured output
   def executeStructured[A: JsonCodec](prompt: String, schema: JsonSchema): IO[LlmError, A]
@@ -50,7 +47,7 @@ object LlmService:
   def executeStreamWithHistory(messages: List[Message]): ZStream[LlmService, LlmError, LlmChunk] =
     ZStream.serviceWithStream[LlmService](_.executeStreamWithHistory(messages))
 
-  def executeWithTools(prompt: String, tools: List[Tool]): ZIO[LlmService, LlmError, ToolCallResponse] =
+  def executeWithTools(prompt: String, tools: List[AnyTool]): ZIO[LlmService, LlmError, ToolCallResponse] =
     ZIO.serviceWithZIO[LlmService](_.executeWithTools(prompt, tools))
 
   def executeStructured[A: JsonCodec](prompt: String, schema: JsonSchema): ZIO[LlmService, LlmError, A] =
