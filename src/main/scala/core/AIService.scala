@@ -33,6 +33,11 @@ object AIService:
   def isAvailable: ZIO[AIService, Nothing, Boolean] =
     ZIO.serviceWithZIO[AIService](_.isAvailable)
 
+  /** Create AIService from AIProviderConfig using old implementations
+    *
+    * NOTE: This is kept for backwards compatibility during migration.
+    * New code should use AIService.fromLlmService via the bridge.
+    */
   val fromConfig: ZLayer[AIProviderConfig & RateLimiter & HttpAIClient, AIError, AIService] =
     ZLayer.fromZIO {
       for
@@ -63,3 +68,11 @@ object AIService:
           build(defaultProviderConfig).isAvailable
       }
     }
+
+  /** Create AIService from LlmService using the bridge
+    *
+    * This is the new way to create AIService using llm4zio.
+    * Call this from your DI layer with a properly configured LlmService.
+    */
+  def fromLlmService(llmService: llm4zio.core.LlmService): AIService =
+    AIServiceBridge.fromLlmService(llmService)
