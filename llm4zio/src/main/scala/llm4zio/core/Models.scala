@@ -4,7 +4,7 @@ import zio.*
 import zio.json.*
 
 enum LlmProvider derives JsonCodec:
-  case GeminiCli, GeminiApi, OpenAI, Anthropic
+  case GeminiCli, GeminiApi, OpenAI, Anthropic, LmStudio, Ollama
 
 object LlmProvider:
   def defaultBaseUrl(provider: LlmProvider): Option[String] = provider match
@@ -12,6 +12,8 @@ object LlmProvider:
     case LlmProvider.GeminiApi => Some("https://generativelanguage.googleapis.com")
     case LlmProvider.OpenAI    => Some("https://api.openai.com/v1")
     case LlmProvider.Anthropic => Some("https://api.anthropic.com")
+    case LlmProvider.LmStudio  => Some("http://localhost:1234/v1")
+    case LlmProvider.Ollama    => Some("http://localhost:11434")
 
 enum MessageRole derives JsonCodec:
   case System, User, Assistant, Tool
