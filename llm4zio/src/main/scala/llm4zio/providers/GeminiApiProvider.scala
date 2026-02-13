@@ -18,7 +18,8 @@ object GeminiApiProvider:
           LlmChunk(
             delta = response.content,
             finishReason = Some("stop"),
-            usage = response.usage
+            usage = response.usage,
+            metadata = response.metadata
           )
         }
 
@@ -34,7 +35,8 @@ object GeminiApiProvider:
           LlmChunk(
             delta = response.content,
             finishReason = Some("stop"),
-            usage = response.usage
+            usage = response.usage,
+            metadata = response.metadata
           )
         }
 

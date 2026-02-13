@@ -18,7 +18,8 @@ object OpenAIProvider:
           LlmChunk(
             delta = response.content,
             finishReason = Some("stop"),
-            usage = response.usage
+            usage = response.usage,
+            metadata = response.metadata
           )
         }
 
@@ -41,7 +42,8 @@ object OpenAIProvider:
           LlmChunk(
             delta = response.content,
             finishReason = Some("stop"),
-            usage = response.usage
+            usage = response.usage,
+            metadata = response.metadata
           )
         }
 
