@@ -16,6 +16,7 @@ import models.*
   *   - Checkpoint management with atomic writes
   *   - Progress tracking across runs
   *   - Run history and summaries
+  *   - Workspace-scoped state isolation (when workspace is provided)
   */
 trait StateService:
   def saveState(state: MigrationState): ZIO[Any, StateError, Unit]
@@ -25,6 +26,12 @@ trait StateService:
   def listCheckpoints(runId: String): ZIO[Any, StateError, List[Checkpoint]]
   def validateCheckpointIntegrity(runId: String): ZIO[Any, StateError, Unit]
   def listRuns(): ZIO[Any, StateError, List[MigrationRunSummary]]
+
+  /** Get state directory for a run (workspace-aware)
+    *
+    * If the run has workspace metadata, returns workspace stateDir. Otherwise returns fallback.
+    */
+  def getStateDirectory(runId: String): ZIO[Any, StateError, Path]
 
 object StateService:
   def saveState(state: MigrationState): ZIO[StateService, StateError, Unit] =
@@ -48,6 +55,9 @@ object StateService:
   def listRuns(): ZIO[StateService, StateError, List[MigrationRunSummary]] =
     ZIO.serviceWithZIO[StateService](_.listRuns())
 
+  def getStateDirectory(runId: String): ZIO[StateService, StateError, Path] =
+    ZIO.serviceWithZIO[StateService](_.getStateDirectory(runId))
+
   /** Live implementation with FileService dependency */
   def live(stateDir: Path): ZLayer[FileService, Nothing, StateService] = ZLayer.fromFunction {
     (fileService: FileService) =>
@@ -63,6 +73,13 @@ object StateService:
 
         private def checkpointPath(runId: String, step: MigrationStep): Path =
           checkpointsDir(runId).resolve(s"${step.toString.toLowerCase}.json")
+
+        /** Resolve state directory (workspace-aware)
+          *
+          * If state has workspace metadata, uses workspace stateDir. Otherwise uses legacy location.
+          */
+        private def resolveStateDir(state: MigrationState): Path =
+          state.workspace.map(_.stateDir).getOrElse(runDir(state.runId))
 
         override def saveState(state: MigrationState): ZIO[Any, StateError, Unit] =
           for
@@ -255,5 +272,14 @@ object StateService:
           val digest = MessageDigest.getInstance("SHA-256")
           val bytes  = digest.digest(content.getBytes(java.nio.charset.StandardCharsets.UTF_8))
           bytes.map("%02x".format(_)).mkString
+
+        override def getStateDirectory(runId: String): ZIO[Any, StateError, Path] =
+          for
+            stateOpt <- loadState(runId)
+            dir      <-
+              stateOpt match
+                case Some(state) => ZIO.succeed(resolveStateDir(state))
+                case None        => ZIO.fail(StateError.StateNotFound(runId))
+          yield dir
       }
   }
