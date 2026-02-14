@@ -73,6 +73,7 @@ object LlmService:
             case LlmProvider.Anthropic => AnthropicProvider.make(cfg, http)
             case LlmProvider.LmStudio  => LmStudioProvider.make(cfg, http)
             case LlmProvider.Ollama    => OllamaProvider.make(cfg, http)
+            case LlmProvider.OpenCode  => OpenCodeProvider.make(cfg, http)
 
         private val provider = buildProvider(config)
 

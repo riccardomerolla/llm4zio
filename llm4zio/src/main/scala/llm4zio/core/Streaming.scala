@@ -74,12 +74,8 @@ object Streaming:
   ): Stream[LlmError, A] =
     stream
       .scan("")(_ + _)  // Accumulate chunks
-      .mapZIO { accumulated =>
-        ZIO
-          .fromEither(accumulated.fromJson[A])
-          .mapError(err => LlmError.ParseError(s"Partial JSON parse failed: $err", accumulated))
-      }
-      .collect { case a => a }  // Filter out parse errors until we get valid object
+      .map(accumulated => accumulated.fromJson[A])
+      .collect { case Right(a) => a } // Emit only when a complete JSON object is available
 
   /** Retry streaming with exponential backoff on specific errors
     *
@@ -154,9 +150,9 @@ object Streaming:
     stream: Stream[LlmError, LlmChunk],
   ): UIO[(Stream[LlmError, LlmChunk], UIO[Unit])] =
     for
-      promise <- Promise.make[LlmError, Unit]
-      cancellableStream = stream.interruptWhen(promise.await.mapError(identity))
-      cancel            = promise.fail(LlmError.ProviderError("Cancelled", None)).unit
+      promise <- Promise.make[Nothing, Unit]
+      cancellableStream = stream.interruptWhen(promise.await)
+      cancel            = promise.succeed(()).unit
     yield (cancellableStream, cancel)
 
   /** Accumulate stream content with periodic snapshots

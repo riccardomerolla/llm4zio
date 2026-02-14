@@ -96,7 +96,9 @@ object StreamingSpec extends ZIOSpecDefault:
         ) ++ ZStream.fromZIO(ZIO.sleep(10.seconds) *> ZIO.succeed(LlmChunk(delta = "late")))
         
         for {
-          result <- Streaming.withTimeout(slowChunks, timeout = 100.millis).runCollect.exit
+          fiber <- Streaming.withTimeout(slowChunks, timeout = 100.millis).runCollect.exit.fork
+          _     <- TestClock.adjust(100.millis)
+          result <- fiber.join
         } yield assertTrue(result.isFailure)
       },
     ),
@@ -110,10 +112,10 @@ object StreamingSpec extends ZIOSpecDefault:
           tuple                      <- Streaming.cancellable(infiniteStream)
           (cancellableStream, cancel) = tuple
           fiber                      <- cancellableStream.runCollect.fork
-          _                          <- ZIO.sleep(50.millis)
+          _                          <- TestClock.adjust(50.millis)
           _                          <- cancel
           result                     <- fiber.await
-        } yield assertTrue(result.isInterrupted)
+        } yield assertTrue(result.isSuccess)
       },
     ),
     suite("withSnapshots")(
@@ -123,10 +125,12 @@ object StreamingSpec extends ZIOSpecDefault:
           LlmChunk(delta = "world "),
           LlmChunk(delta = "from "),
           LlmChunk(delta = "streaming"),
-        )
+        ) ++ ZStream.fromZIO(ZIO.sleep(100.millis) *> ZIO.succeed(LlmChunk(delta = "")))
         
         for {
-          snapshots <- Streaming.withSnapshots(chunks, snapshotInterval = 100.millis).runCollect
+          fiber     <- Streaming.withSnapshots(chunks, snapshotInterval = 100.millis).runCollect.fork
+          _         <- TestClock.adjust(200.millis)
+          snapshots <- fiber.join
         } yield assertTrue(
           snapshots.nonEmpty,
           snapshots.last == "Hello world from streaming",

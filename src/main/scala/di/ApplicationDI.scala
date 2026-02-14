@@ -43,6 +43,7 @@ object ApplicationDI:
       case AIProvider.Anthropic => LlmProvider.Anthropic
       case AIProvider.LmStudio  => LlmProvider.LmStudio
       case AIProvider.Ollama    => LlmProvider.Ollama
+      case AIProvider.OpenCode  => LlmProvider.OpenCode
 
   def aiConfigToLlmConfig(aiConfig: AIProviderConfig): LlmConfig =
     LlmConfig(

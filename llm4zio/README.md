@@ -4,7 +4,7 @@ A ZIO-native framework for working with Large Language Model (LLM) providers.
 
 ## Overview
 
-`llm4zio` provides a unified, type-safe interface for interacting with multiple LLM providers (Gemini, OpenAI, Anthropic) with support for:
+`llm4zio` provides a unified, type-safe interface for interacting with multiple LLM providers (Gemini, OpenAI, Anthropic, OpenCode) with support for:
 
 - **Streaming responses** via ZIO Streams
 - **Conversation history** management
@@ -67,7 +67,7 @@ trait LlmService:
 ```scala
 // Supported providers
 enum LlmProvider:
-  case GeminiCli, GeminiApi, OpenAI, Anthropic
+  case GeminiCli, GeminiApi, OpenAI, Anthropic, OpenCode
 
 // Message role in conversation
 enum MessageRole:
@@ -221,12 +221,13 @@ sbt "llm4zio/testOnly llm4zio.core.ModelsSpec"
 ```
 
 Current test coverage:
-- 25 tests passing
+- 35+ tests passing
 - Core models: 7 tests
 - LlmService: 5 tests
 - RateLimiter: 4 tests
 - ToolRegistry: 4 tests
 - LlmMetrics: 5 tests
+- OpenCodeProvider: 15+ tests
 
 ## Dependencies
 
@@ -245,7 +246,7 @@ libraryDependencies ++= Seq(
 
 **Current Progress: 9/21 tasks (43%)**
 
-✅ Completed:
+ ✅ Completed:
 - Module structure and build configuration
 - Core models and error types
 - Rate limiting and retry policies
@@ -253,6 +254,7 @@ libraryDependencies ++= Seq(
 - HTTP client for provider communication
 - Tool calling infrastructure
 - Observability (metrics + logging)
+- OpenCode provider implementation
 
 🚧 In Progress:
 - Provider implementations (Gemini, OpenAI, Anthropic)
