@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **openclaw Pattern Analysis** (#146) — Comprehensive evaluation of openclaw architectural patterns for Phase 3 enhancement
+  - Analysis document: `docs/plans/2026-02-14-openclaw-pattern-analysis.md`
+  - Architecture Decision Record: `docs/adr/0001-adopt-openclaw-patterns.md`
+  - 5 high-priority patterns identified: Control Plane, Workspace Isolation, Agent Registry, Progress Streaming, Dynamic Workflows
+  - 12-week implementation roadmap with 6 sprints
 - Project template scaffolding for Scala 3 + ZIO 2.x libraries (typed errors, domain model, config helpers, service layer, tests, and sample app).
 - Multi-provider `AIService` runtime factory (`AIService.fromConfig`) with provider selection for `gemini-cli`, `gemini-api`, `openai`, and `anthropic`.
 - ADR-003 documenting the provider-agnostic AI architecture decision.
