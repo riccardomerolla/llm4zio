@@ -21,6 +21,19 @@ enum StateError(val message: String) derives JsonCodec:
   case ReadError(runId: String, cause: String)     extends StateError(s"Failed to read state for run $runId: $cause")
   case LockError(runId: String)                    extends StateError(s"Failed to acquire lock for run: $runId")
 
+enum WorkspaceError(val message: String) derives JsonCodec:
+  case CreationFailed(runId: String, cause: String)
+    extends WorkspaceError(s"Failed to create workspace for run $runId: $cause")
+  case CleanupFailed(runId: String, cause: String)
+    extends WorkspaceError(s"Failed to cleanup workspace for run $runId: $cause")
+  case NotFound(runId: String) extends WorkspaceError(s"Workspace not found for run: $runId")
+  case AlreadyExists(runId: String)
+    extends WorkspaceError(s"Workspace already exists for run: $runId")
+  case InvalidConfiguration(runId: String, reason: String)
+    extends WorkspaceError(s"Invalid workspace configuration for run $runId: $reason")
+  case IOError(runId: String, cause: String)
+    extends WorkspaceError(s"Workspace I/O error for run $runId: $cause")
+
 enum GeminiError(val message: String) derives JsonCodec:
   case ProcessStartFailed(cause: String)      extends GeminiError(s"Failed to start Gemini process: $cause")
   case OutputReadFailed(cause: String)        extends GeminiError(s"Failed to read Gemini output: $cause")

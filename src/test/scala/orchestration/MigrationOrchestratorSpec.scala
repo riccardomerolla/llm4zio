@@ -301,6 +301,8 @@ object MigrationOrchestratorSpec extends ZIOSpecDefault:
                                   ZIO.unit
                                 override def listRuns(): ZIO[Any, StateError, List[MigrationRunSummary]]            =
                                   ZIO.succeed(List.empty)
+                                override def getStateDirectory(runId: String): ZIO[Any, StateError, Path]           =
+                                  ZIO.succeed(outputDir.resolve(".state"))
                               })
           exit             <- MigrationOrchestrator
                                 .runFullMigration(sourceDir, outputDir)

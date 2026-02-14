@@ -10,6 +10,17 @@ import zio.json.*
 
 import models.Codecs.given
 
+/** Metadata for workspace associated with a migration run */
+case class WorkspaceMetadata(
+  runId: String,
+  workspaceRoot: Path,
+  stateDir: Path,
+  reportsDir: Path,
+  outputDir: Path,
+  tempDir: Path,
+  createdAt: Instant,
+) derives JsonCodec
+
 enum MigrationStep derives JsonCodec:
   case Discovery, Analysis, Mapping, Transformation, Validation, Documentation
 
@@ -97,6 +108,7 @@ case class MigrationState(
   artifacts: Map[String, String],
   errors: List[MigrationError],
   config: MigrationConfig,
+  workspace: Option[WorkspaceMetadata] = None, // Workspace info for this run
   fileInventory: Option[FileInventory],
   analyses: List[CobolAnalysis],
   dependencyGraph: Option[DependencyGraph],
