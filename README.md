@@ -592,7 +592,46 @@ llm4zio/
 
 ---
 
-## 🚀 Build & Test
+## �️ Phase 3 Roadmap: openclaw Architecture Patterns
+
+**Status:** Planning Complete ✅ — Implementation Starting 2026-02-14
+
+Based on comprehensive analysis of [openclaw](https://openclaw.ai) architectural patterns, LLM4ZIO Phase 3 will enhance the orchestration layer with 5 high-priority patterns:
+
+### 🎯 High-Priority Patterns
+
+| Pattern | Issue | Status | Benefit |
+|---------|-------|--------|---------|
+| **Orchestrator Control Plane** | [#148](https://github.com/riccardomerolla/llm4zio/issues/148) | Planning | Centralized coordination & event broadcasting |
+| **Run-Based Workspace Isolation** | [#147](https://github.com/riccardomerolla/llm4zio/issues/147) | Planning | Safe parallel execution |
+| **Enhanced Agent Registry** | [#149](https://github.com/riccardomerolla/llm4zio/issues/149) | Planning | Dynamic capability-based routing |
+| **Workflow Progress Streaming** | [#150](https://github.com/riccardomerolla/llm4zio/issues/150) | Planning | Real-time UX with SSE |
+| **Dynamic Workflow Composition** | [#151](https://github.com/riccardomerolla/llm4zio/issues/151) | Planning | DAG-based workflows |
+
+### 📅 Timeline
+
+- **Phase 3A: Foundation** (Weeks 1-4) — Workspace isolation + Control Plane
+- **Phase 3B: Streaming & Registry** (Weeks 5-8) — Agent registry + Progress streaming
+- **Phase 3C: Dynamic Workflows** (Weeks 9-12) — DAG execution + Multi-workspace coordination
+
+**Total Estimated Effort:** 12 weeks (~600 hours)
+
+### 📚 Documentation
+
+- **[openclaw Pattern Analysis](docs/plans/2026-02-14-openclaw-pattern-analysis.md)** — Full pattern evaluation with implementation strategies
+- **[ADR-0001: Adopt openclaw Patterns](docs/adr/0001-adopt-openclaw-patterns.md)** — Architectural decision record
+
+### 🎁 What This Unlocks
+
+- **Custom Agent Support** (#123, #124) — Load external agents dynamically
+- **Parallel Migrations** — Safe concurrent execution with isolation
+- **Real-Time Dashboards** — Live progress, token usage, cost tracking
+- **Workflow Templates** — Reusable patterns with parameters
+- **Agent Marketplace** — Community-contributed agents
+
+---
+
+## �🚀 Build & Test
 
 ```bash
 # Build
