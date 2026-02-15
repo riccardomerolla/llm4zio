@@ -204,6 +204,11 @@ object MigrationOrchestratorSpec extends ZIOSpecDefault:
                                     "analysis boom",
                                   ))
                                 )
+                              override def analyzeAllWithProgress(
+                                files: List[CobolFile],
+                                stepName: String,
+                              ): ZStream[Any, AnalysisError, StepProgressEvent] =
+                                ZStream.empty
                             })
           result         <- MigrationOrchestrator
                               .runFullMigration(sourceDir, outputDir)
@@ -362,6 +367,11 @@ object MigrationOrchestratorSpec extends ZIOSpecDefault:
                                 override def analyzeAll(files: List[CobolFile])
                                   : ZStream[Any, AnalysisError, CobolAnalysis] =
                                   ZStream.empty
+                                override def analyzeAllWithProgress(
+                                  files: List[CobolFile],
+                                  stepName: String,
+                                ): ZStream[Any, AnalysisError, StepProgressEvent] =
+                                  ZStream.empty
                               })
           firstResult      <- MigrationOrchestrator
                                 .runFullMigration(sourceDir, outputDir)
@@ -518,6 +528,11 @@ object MigrationOrchestratorSpec extends ZIOSpecDefault:
         ZIO.succeed(sampleAnalysis.copy(file = cobolFile))
       override def analyzeAll(files: List[CobolFile]): ZStream[Any, AnalysisError, CobolAnalysis] =
         ZStream.fromIterable(files.map(file => sampleAnalysis.copy(file = file)))
+      override def analyzeAllWithProgress(
+        files: List[CobolFile],
+        stepName: String,
+      ): ZStream[Any, AnalysisError, StepProgressEvent] =
+        ZStream.empty
     })
 
   private val mockMapperAgent: ULayer[DependencyMapperAgent] =

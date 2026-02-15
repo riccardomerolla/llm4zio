@@ -261,6 +261,11 @@ object MigrationOrchestratorWebSpec extends ZIOSpecDefault:
         ZIO.succeed(sampleAnalysis.copy(file = cobolFile))
       override def analyzeAll(files: List[CobolFile]): zio.stream.ZStream[Any, AnalysisError, CobolAnalysis] =
         zio.stream.ZStream.fromIterable(files).map(file => sampleAnalysis.copy(file = file))
+      override def analyzeAllWithProgress(
+        files: List[CobolFile],
+        stepName: String,
+      ): zio.stream.ZStream[Any, AnalysisError, StepProgressEvent] =
+        zio.stream.ZStream.empty
     })
 
   private val mapperLayer: ULayer[DependencyMapperAgent] =

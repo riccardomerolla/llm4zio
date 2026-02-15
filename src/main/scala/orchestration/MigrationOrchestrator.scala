@@ -8,6 +8,7 @@ import zio.*
 import zio.http.netty.NettyConfig
 import zio.http.{ Client, DnsResolver, ZClient }
 import zio.json.*
+import zio.stream.*
 
 import agents.*
 import core.*
@@ -26,6 +27,7 @@ trait MigrationOrchestrator:
     onProgress: PipelineProgressUpdate => UIO[Unit],
   ): ZIO[Any, OrchestratorError, MigrationResult]
   def runStep(step: MigrationStep): ZIO[Any, OrchestratorError, StepResult]
+  def runStepStreaming(step: MigrationStep): ZStream[Any, OrchestratorError, StepProgressEvent]
   def startMigration(config: MigrationConfig): IO[OrchestratorError, Long]
   def cancelMigration(runId: Long): IO[OrchestratorError, Unit]
   def getRunStatus(runId: Long): IO[PersistenceError, Option[MigrationRunRow]]
@@ -49,6 +51,11 @@ object MigrationOrchestrator:
 
   def runStep(step: MigrationStep): ZIO[MigrationOrchestrator, OrchestratorError, StepResult] =
     ZIO.serviceWithZIO[MigrationOrchestrator](_.runStep(step))
+
+  def runStepStreaming(
+    step: MigrationStep
+  ): ZStream[MigrationOrchestrator, OrchestratorError, StepProgressEvent] =
+    ZStream.serviceWithStream[MigrationOrchestrator](_.runStepStreaming(step))
 
   def startMigration(config: MigrationConfig): ZIO[MigrationOrchestrator, OrchestratorError, Long] =
     ZIO.serviceWithZIO[MigrationOrchestrator](_.startMigration(config))
@@ -126,6 +133,118 @@ object MigrationOrchestrator:
               if success then None else Some(result.errors.map(_.message).mkString("; ")),
             )
           }
+
+      override def runStepStreaming(step: MigrationStep): ZStream[Any, OrchestratorError, StepProgressEvent] =
+        step match
+          case MigrationStep.Discovery =>
+            // Discovery doesn't have item-level progress yet, emit basic events
+            ZStream.fromZIO {
+              for
+                started   <- Clock.instant
+                inventory <- discoveryAgent
+                               .discover(config.sourceDir)
+                               .mapError(OrchestratorError.DiscoveryFailed.apply)
+                completed <- Clock.instant
+                durationMs = java.time.Duration.between(started, completed).toMillis
+              yield StepProgressEvent.StepCompleted(
+                "Discovery",
+                StepMetrics(
+                  tokensUsed = 0,
+                  latencyMs = durationMs,
+                  cost = 0.0,
+                  itemsProcessed = inventory.files.size,
+                  itemsFailed = 0,
+                ),
+                Some(s"Discovered ${inventory.files.size} files"),
+              )
+            }
+
+          case MigrationStep.Analysis =>
+            // Use the streaming analyzer
+            ZStream.unwrap {
+              for
+                inventory   <- discoveryAgent
+                                 .discover(config.sourceDir)
+                                 .mapError(OrchestratorError.DiscoveryFailed.apply)
+                programFiles = inventory.files.filter(_.fileType == models.FileType.Program)
+              yield analyzerAgent
+                .analyzeAllWithProgress(programFiles, "Analysis")
+                .mapError { err =>
+                  val fileName = err match
+                    case AnalysisError.AIFailed(name, _)          => name
+                    case AnalysisError.ParseFailed(name, _)       => name
+                    case AnalysisError.ValidationFailed(name, _)  => name
+                    case AnalysisError.FileReadFailed(path, _)    => path.toString
+                    case AnalysisError.ReportWriteFailed(path, _) => path.toString
+                  OrchestratorError.AnalysisFailed(fileName, err)
+                }
+            }
+
+          case MigrationStep.Mapping =>
+            // Mapping doesn't have item-level progress yet, emit basic events
+            ZStream.fromZIO {
+              for
+                started     <- Clock.instant
+                inventory   <- discoveryAgent
+                                 .discover(config.sourceDir)
+                                 .mapError(OrchestratorError.DiscoveryFailed.apply)
+                programFiles = inventory.files.filter(_.fileType == models.FileType.Program)
+                analyses    <- ZIO.foreach(programFiles) { file =>
+                                 analyzerAgent
+                                   .analyze(file)
+                                   .mapError(OrchestratorError.AnalysisFailed(file.name, _))
+                               }
+                graph       <- mapperAgent.mapDependencies(analyses).mapError(OrchestratorError.MappingFailed.apply)
+                completed   <- Clock.instant
+                durationMs   = java.time.Duration.between(started, completed).toMillis
+              yield StepProgressEvent.StepCompleted(
+                "Mapping",
+                StepMetrics(
+                  tokensUsed = 0,
+                  latencyMs = durationMs,
+                  cost = 0.0,
+                  itemsProcessed = analyses.size,
+                  itemsFailed = 0,
+                ),
+                Some(s"Mapped ${graph.nodes.size} modules with ${graph.edges.size} dependencies"),
+              )
+            }
+
+          case MigrationStep.Transformation =>
+            // Transformation doesn't have item-level progress yet, emit basic event
+            ZStream.fromZIO {
+              ZIO.succeed(
+                StepProgressEvent.StepCompleted(
+                  "Transformation",
+                  StepMetrics(tokensUsed = 0, latencyMs = 0, cost = 0.0, itemsProcessed = 0, itemsFailed = 0),
+                  Some("Transformation step not yet streamable"),
+                )
+              )
+            }
+
+          case MigrationStep.Validation =>
+            // Validation doesn't have item-level progress yet, emit basic event
+            ZStream.fromZIO {
+              ZIO.succeed(
+                StepProgressEvent.StepCompleted(
+                  "Validation",
+                  StepMetrics(tokensUsed = 0, latencyMs = 0, cost = 0.0, itemsProcessed = 0, itemsFailed = 0),
+                  Some("Validation step not yet streamable"),
+                )
+              )
+            }
+
+          case MigrationStep.Documentation =>
+            // Documentation doesn't have item-level progress yet, emit basic event
+            ZStream.fromZIO {
+              ZIO.succeed(
+                StepProgressEvent.StepCompleted(
+                  "Documentation",
+                  StepMetrics(tokensUsed = 0, latencyMs = 0, cost = 0.0, itemsProcessed = 0, itemsFailed = 0),
+                  Some("Documentation step not yet streamable"),
+                )
+              )
+            }
 
       override def startMigration(requestConfig: MigrationConfig): IO[OrchestratorError, Long] =
         for

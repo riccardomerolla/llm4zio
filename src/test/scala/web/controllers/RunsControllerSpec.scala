@@ -206,6 +206,11 @@ object RunsControllerSpec extends ZIOSpecDefault:
     override def runStep(step: MigrationStep): ZIO[Any, OrchestratorError, StepResult] =
       ZIO.dieMessage("unused in RunsControllerSpec")
 
+    override def runStepStreaming(
+      step: MigrationStep
+    ): zio.stream.ZStream[Any, OrchestratorError, StepProgressEvent] =
+      zio.stream.ZStream.empty
+
     override def startMigration(config: MigrationConfig): IO[OrchestratorError, Long] =
       startedRef.set(Some(config)).as(startedRunId)
 

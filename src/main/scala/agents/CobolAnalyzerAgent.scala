@@ -28,6 +28,10 @@ import prompts.{ PromptHelpers, PromptTemplates }
 trait CobolAnalyzerAgent:
   def analyze(cobolFile: CobolFile): ZIO[Any, AnalysisError, CobolAnalysis]
   def analyzeAll(files: List[CobolFile]): ZStream[Any, AnalysisError, CobolAnalysis]
+  def analyzeAllWithProgress(
+    files: List[CobolFile],
+    stepName: String,
+  ): ZStream[Any, AnalysisError, StepProgressEvent]
 
 object CobolAnalyzerAgent:
   def analyze(cobolFile: CobolFile): ZIO[CobolAnalyzerAgent, AnalysisError, CobolAnalysis] =
@@ -35,6 +39,12 @@ object CobolAnalyzerAgent:
 
   def analyzeAll(files: List[CobolFile]): ZStream[CobolAnalyzerAgent, AnalysisError, CobolAnalysis] =
     ZStream.serviceWithStream[CobolAnalyzerAgent](_.analyzeAll(files))
+
+  def analyzeAllWithProgress(
+    files: List[CobolFile],
+    stepName: String,
+  ): ZStream[CobolAnalyzerAgent, AnalysisError, StepProgressEvent] =
+    ZStream.serviceWithStream[CobolAnalyzerAgent](_.analyzeAllWithProgress(files, stepName))
 
   val live: ZLayer[LlmService & FileService & MigrationConfig, Nothing, CobolAnalyzerAgent] =
     ZLayer.fromFunction {
@@ -311,6 +321,105 @@ object CobolAnalyzerAgent:
                                  analysesRef.get.flatMap(analyses => writeSummary(analyses.reverse).ignore)
                                )
               yield result
+            }
+
+          override def analyzeAllWithProgress(
+            files: List[CobolFile],
+            stepName: String,
+          ): ZStream[Any, AnalysisError, StepProgressEvent] =
+            val totalItems = files.size
+            val metricsRef = Ref.Synchronized.make(
+              StepMetrics(
+                tokensUsed = 0,
+                latencyMs = 0,
+                cost = 0.0,
+                itemsProcessed = 0,
+                itemsFailed = 0,
+              )
+            )
+
+            ZStream.unwrap {
+              for
+                metrics   <- metricsRef
+                startTime <- Clock.currentTime(java.util.concurrent.TimeUnit.MILLISECONDS)
+              yield ZStream
+                .fromIterable(files)
+                .zipWithIndex
+                .flatMap {
+                  case (file, idx) =>
+                    val itemIndex        = idx.toInt
+                    val itemStartedEvent =
+                      StepProgressEvent.ItemStarted(file.name, itemIndex, totalItems, stepName)
+
+                    // Wrap the analysis with progress tracking
+                    val analysisEffect =
+                      for
+                        itemStart <- Clock.currentTime(java.util.concurrent.TimeUnit.MILLISECONDS)
+                        result    <- analyze(file)
+                                       .foldZIO(
+                                         error =>
+                                           for
+                                             _ <- metrics.update(m => m.copy(itemsFailed = m.itemsFailed + 1))
+                                           yield Left(error),
+                                         analysis =>
+                                           for
+                                             itemEnd <- Clock.currentTime(java.util.concurrent.TimeUnit.MILLISECONDS)
+                                             duration = itemEnd - itemStart
+                                             _       <- metrics.update(m =>
+                                                          m.copy(
+                                                            itemsProcessed = m.itemsProcessed + 1,
+                                                            latencyMs = m.latencyMs + duration,
+                                                          )
+                                                        )
+                                           yield Right(analysis),
+                                       )
+                      yield result
+
+                    ZStream.fromZIO(analysisEffect).flatMap {
+                      case Left(error) =>
+                        val failedEvent = StepProgressEvent.ItemFailed(
+                          file.name,
+                          error.message,
+                          None,
+                          isFatal = false,
+                        )
+                        ZStream(itemStartedEvent, failedEvent)
+
+                      case Right(analysis) =>
+                        val resultJson = analysis.toJson.fromJson[zio.json.ast.Json] match
+                          case Left(_)     => zio.json.ast.Json.Null
+                          case Right(json) => json
+
+                        ZStream.fromZIO(metrics.get).flatMap { currentMetrics =>
+                          val itemMetrics    = StepMetrics(
+                            tokensUsed = 0, // Would need to extract from LLM response
+                            latencyMs = currentMetrics.latencyMs,
+                            cost = 0.0,
+                            itemsProcessed = 1,
+                            itemsFailed = 0,
+                          )
+                          val completedEvent =
+                            StepProgressEvent.ItemCompleted(file.name, resultJson, itemMetrics)
+
+                          ZStream(itemStartedEvent, completedEvent)
+                        }
+                    }
+                }
+                ++ ZStream.fromZIO(
+                  for
+                    endTime       <- Clock.currentTime(java.util.concurrent.TimeUnit.MILLISECONDS)
+                    duration       = endTime - startTime
+                    finalMetrics  <- metrics.get
+                    completedEvent = StepProgressEvent.StepCompleted(
+                                       stepName,
+                                       finalMetrics.copy(latencyMs = duration),
+                                       Some(
+                                         s"Analyzed ${finalMetrics.itemsProcessed} files, " +
+                                           s"${finalMetrics.itemsFailed} failures"
+                                       ),
+                                     )
+                  yield completedEvent
+                )
             }
 
           private def writeReport(analysis: CobolAnalysis): ZIO[Any, AnalysisError, Unit] =
