@@ -1,7 +1,10 @@
 package orchestration
 
 import zio.*
+import zio.stream.ZStream
 
+import gateway.MessageRouter
+import gateway.models.SessionScopeStrategy
 import models.*
 
 /** Central control plane for workflow coordination and agent routing
@@ -87,6 +90,9 @@ object OrchestratorControlPlane:
   def subscribeToEvents(runId: String): ZIO[OrchestratorControlPlane & Scope, Nothing, Dequeue[ControlPlaneEvent]] =
     ZIO.serviceWithZIO[OrchestratorControlPlane](_.subscribeToEvents(runId))
 
+  def eventStream(runId: String): ZStream[OrchestratorControlPlane & Scope, Nothing, ControlPlaneEvent] =
+    ZStream.unwrap(subscribeToEvents(runId).map(queue => ZStream.fromQueue(queue)))
+
   def getActiveRuns: ZIO[OrchestratorControlPlane, ControlPlaneError, List[ActiveRun]] =
     ZIO.serviceWithZIO[OrchestratorControlPlane](_.getActiveRuns)
 
@@ -99,6 +105,13 @@ object OrchestratorControlPlane:
 
   def executeCommand(command: ControlCommand): ZIO[OrchestratorControlPlane, ControlPlaneError, Unit] =
     ZIO.serviceWithZIO[OrchestratorControlPlane](_.executeCommand(command))
+
+  def attachMessageRouterMiddleware(
+    runId: String,
+    channelName: String,
+    strategy: SessionScopeStrategy = SessionScopeStrategy.PerRun,
+  ): ZIO[OrchestratorControlPlane & MessageRouter & Scope, gateway.MessageRouterError, Fiber.Runtime[Nothing, Unit]] =
+    MessageRouter.attachControlPlaneRouting(runId, channelName, strategy)
 
   def getResourceState: ZIO[OrchestratorControlPlane, ControlPlaneError, ResourceAllocationState] =
     ZIO.serviceWithZIO[OrchestratorControlPlane](_.getResourceState)

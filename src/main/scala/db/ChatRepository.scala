@@ -38,6 +38,27 @@ trait ChatRepository:
   def listAssignmentsByIssue(issueId: Long): IO[PersistenceError, List[AgentAssignment]]
   def updateAssignment(assignment: AgentAssignment): IO[PersistenceError, Unit]
 
+  // Channel session context storage (gateway integration)
+  def upsertSessionContext(
+    channelName: String,
+    sessionKey: String,
+    contextJson: String,
+    updatedAt: Instant,
+  ): IO[PersistenceError, Unit] =
+    ZIO.fail(PersistenceError.QueryFailed("upsertSessionContext", "Not implemented"))
+
+  def getSessionContext(
+    channelName: String,
+    sessionKey: String,
+  ): IO[PersistenceError, Option[String]] =
+    ZIO.fail(PersistenceError.QueryFailed("getSessionContext", "Not implemented"))
+
+  def deleteSessionContext(
+    channelName: String,
+    sessionKey: String,
+  ): IO[PersistenceError, Unit] =
+    ZIO.fail(PersistenceError.QueryFailed("deleteSessionContext", "Not implemented"))
+
 object ChatRepository:
   def createConversation(conversation: ChatConversation): ZIO[ChatRepository, PersistenceError, Long] =
     ZIO.serviceWithZIO[ChatRepository](_.createConversation(conversation))
@@ -102,6 +123,26 @@ object ChatRepository:
 
   def updateAssignment(assignment: AgentAssignment): ZIO[ChatRepository, PersistenceError, Unit] =
     ZIO.serviceWithZIO[ChatRepository](_.updateAssignment(assignment))
+
+  def upsertSessionContext(
+    channelName: String,
+    sessionKey: String,
+    contextJson: String,
+    updatedAt: Instant,
+  ): ZIO[ChatRepository, PersistenceError, Unit] =
+    ZIO.serviceWithZIO[ChatRepository](_.upsertSessionContext(channelName, sessionKey, contextJson, updatedAt))
+
+  def getSessionContext(
+    channelName: String,
+    sessionKey: String,
+  ): ZIO[ChatRepository, PersistenceError, Option[String]] =
+    ZIO.serviceWithZIO[ChatRepository](_.getSessionContext(channelName, sessionKey))
+
+  def deleteSessionContext(
+    channelName: String,
+    sessionKey: String,
+  ): ZIO[ChatRepository, PersistenceError, Unit] =
+    ZIO.serviceWithZIO[ChatRepository](_.deleteSessionContext(channelName, sessionKey))
 
   val live: ZLayer[DataSource, PersistenceError, ChatRepository] =
     ZLayer.fromZIO {
@@ -487,6 +528,68 @@ final case class ChatRepositoryLive(
                       }
     yield ()
 
+  override def upsertSessionContext(
+    channelName: String,
+    sessionKey: String,
+    contextJson: String,
+    updatedAt: Instant,
+  ): IO[PersistenceError, Unit] =
+    val sql =
+      """INSERT INTO chat_session_context (channel_name, session_key, context_json, updated_at)
+        |VALUES (?, ?, ?, ?)
+        |ON CONFLICT(channel_name, session_key)
+        |DO UPDATE SET context_json = excluded.context_json, updated_at = excluded.updated_at
+        |""".stripMargin
+    withConnection { conn =>
+      withPreparedStatement(conn, sql) { stmt =>
+        for
+          _ <- executeBlocking(sql) {
+                 stmt.setString(1, channelName)
+                 stmt.setString(2, sessionKey)
+                 stmt.setString(3, contextJson)
+                 stmt.setString(4, updatedAt.toString)
+               }
+          _ <- executeBlocking(sql)(stmt.executeUpdate()).unit
+        yield ()
+      }
+    }
+
+  override def getSessionContext(
+    channelName: String,
+    sessionKey: String,
+  ): IO[PersistenceError, Option[String]] =
+    val sql =
+      """SELECT context_json
+        |FROM chat_session_context
+        |WHERE channel_name = ? AND session_key = ?
+        |""".stripMargin
+    withConnection { conn =>
+      queryOne(conn, sql) { stmt =>
+        stmt.setString(1, channelName)
+        stmt.setString(2, sessionKey)
+      }(rs => executeBlocking(sql)(rs.getString("context_json")))
+    }
+
+  override def deleteSessionContext(
+    channelName: String,
+    sessionKey: String,
+  ): IO[PersistenceError, Unit] =
+    val sql =
+      """DELETE FROM chat_session_context
+        |WHERE channel_name = ? AND session_key = ?
+        |""".stripMargin
+    withConnection { conn =>
+      withPreparedStatement(conn, sql) { stmt =>
+        for
+          _ <- executeBlocking(sql) {
+                 stmt.setString(1, channelName)
+                 stmt.setString(2, sessionKey)
+               }
+          _ <- executeBlocking(sql)(stmt.executeUpdate()).unit
+        yield ()
+      }
+    }
+
   private def hydrateConversationMessages(
     conn: Connection,
     conversation: ChatConversation,
@@ -531,9 +634,20 @@ final case class ChatRepositoryLive(
       _          <- ZIO.acquireReleaseWith(acquireConnection)(closeConnection) { conn =>
                       ZIO.foreachDiscard(statements) { sql =>
                         withStatement(conn, sql)(stmt => executeBlocking(sql)(stmt.execute(sql)).unit)
-                      } *> ensureAgentIssueColumns(conn)
+                      } *> ensureAgentIssueColumns(conn) *> ensureSessionContextTable(conn)
                     }
     yield ()
+
+  private def ensureSessionContextTable(conn: Connection): IO[PersistenceError, Unit] =
+    val sql =
+      """CREATE TABLE IF NOT EXISTS chat_session_context (
+        |  channel_name TEXT NOT NULL,
+        |  session_key TEXT NOT NULL,
+        |  context_json TEXT NOT NULL,
+        |  updated_at TEXT NOT NULL,
+        |  PRIMARY KEY (channel_name, session_key)
+        |)""".stripMargin
+    withStatement(conn, sql)(stmt => executeBlocking(sql)(stmt.execute(sql)).unit)
 
   private def ensureAgentIssueColumns(conn: Connection): IO[PersistenceError, Unit] =
     for
