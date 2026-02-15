@@ -13,6 +13,8 @@ import zio.json.*
 
 import agents.AgentRegistry
 import db.{ ChatRepository, MigrationRepository, PersistenceError }
+import gateway.models.{ MessageDirection as GatewayMessageDirection, MessageRole as GatewayMessageRole, * }
+import gateway.{ ChannelRegistry, GatewayService, GatewayServiceError, MessageChannelError }
 import llm4zio.core.{ LlmError, LlmService }
 import models.*
 import orchestration.{ AgentConfigResolver, IssueAssignmentOrchestrator }
@@ -28,7 +30,12 @@ object ChatController:
     ZIO.serviceWith[ChatController](_.routes)
 
   val live
-    : ZLayer[ChatRepository & LlmService & MigrationRepository & IssueAssignmentOrchestrator & AgentConfigResolver, Nothing, ChatController] =
+    : ZLayer[
+      ChatRepository & LlmService & MigrationRepository & IssueAssignmentOrchestrator & AgentConfigResolver &
+        GatewayService & ChannelRegistry,
+      Nothing,
+      ChatController,
+    ] =
     ZLayer.fromFunction(ChatControllerLive.apply)
 
 final case class ChatControllerLive(
@@ -37,6 +44,8 @@ final case class ChatControllerLive(
   migrationRepository: MigrationRepository,
   issueAssignmentOrchestrator: IssueAssignmentOrchestrator,
   configResolver: AgentConfigResolver,
+  gatewayService: GatewayService,
+  channelRegistry: ChannelRegistry,
 ) extends ChatController:
 
   override val routes: Routes[Any, Response] = Routes(
@@ -463,6 +472,14 @@ final case class ChatControllerLive(
                          updatedAt = now,
                        )
                      )
+      userInbound <- toGatewayMessage(
+                       conversationId = conversationId,
+                       senderType = SenderType.User,
+                       content = userContent,
+                       metadata = metadata,
+                       direction = GatewayMessageDirection.Inbound,
+                     )
+      _           <- routeThroughGateway(gatewayService.processInbound(userInbound))
       aiConfig    <- configResolver.resolveConfig("chat")
       llmResponse <- llmService
                        .execute(userContent)
@@ -479,11 +496,61 @@ final case class ChatControllerLive(
                        updatedAt = now2,
                      )
       _           <- chatRepository.addMessage(aiMessage)
+      aiOutbound  <- toGatewayMessage(
+                       conversationId = conversationId,
+                       senderType = SenderType.Assistant,
+                       content = aiMessage.content,
+                       metadata = aiMessage.metadata,
+                       direction = GatewayMessageDirection.Outbound,
+                     )
+      _           <- routeThroughGateway(gatewayService.processOutbound(aiOutbound).unit)
       conv        <- chatRepository
                        .getConversation(conversationId)
                        .someOrFail(PersistenceError.NotFound("conversation", conversationId))
       _           <- chatRepository.updateConversation(conv.copy(updatedAt = now2))
     yield aiMessage
+
+  private def toGatewayMessage(
+    conversationId: Long,
+    senderType: SenderType,
+    content: String,
+    metadata: Option[String],
+    direction: GatewayMessageDirection,
+  ): UIO[NormalizedMessage] =
+    for
+      now <- Clock.instant
+      _   <- ensureWebSocketSession(conversationId)
+    yield NormalizedMessage(
+      id = s"chat-$conversationId-${now.toEpochMilli}-${senderType.toString.toLowerCase}",
+      channelName = "websocket",
+      sessionKey = SessionScopeStrategy.PerConversation.build("websocket", conversationId.toString),
+      direction = direction,
+      role = senderType match
+        case SenderType.User      => GatewayMessageRole.User
+        case SenderType.Assistant => GatewayMessageRole.Assistant
+        case SenderType.System    => GatewayMessageRole.System
+      ,
+      content = content,
+      metadata = Map("conversationId" -> conversationId.toString) ++ metadata.map("raw" -> _).toMap,
+      timestamp = now,
+    )
+
+  private def ensureWebSocketSession(conversationId: Long): UIO[Unit] =
+    val sessionKey = SessionScopeStrategy.PerConversation.build("websocket", conversationId.toString)
+    channelRegistry
+      .get("websocket")
+      .flatMap(_.open(sessionKey))
+      .catchAll {
+        case MessageChannelError.ChannelNotFound(_)       => ZIO.unit
+        case MessageChannelError.UnsupportedSession(_, _) =>
+          ZIO.logWarning("websocket session adapter rejected unsupported session")
+        case MessageChannelError.ChannelClosed(_)         =>
+          ZIO.logWarning("websocket channel is closed while adapting session")
+        case _                                            => ZIO.unit
+      }
+
+  private def routeThroughGateway(effect: IO[GatewayServiceError, Unit]): UIO[Unit] =
+    effect.catchAll(err => ZIO.logWarning(s"gateway routing skipped: $err"))
 
   private def convertLlmError(error: LlmError): PersistenceError =
     error match
