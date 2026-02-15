@@ -14,6 +14,7 @@ import agents.*
 import core.*
 import db.*
 import models.*
+import orchestration.WorkflowOrchestrator.*
 
 private case class WorkflowStepsPayload(steps: List[MigrationStep]) derives JsonCodec
 
@@ -626,16 +627,7 @@ object MigrationOrchestrator:
                    persister.saveValidationResult(runId, aggregateValidation(bootstrap.validationReports)),
                  ))
 
-      private def shouldExecuteFrom(startStep: MigrationStep, phase: MigrationStep): Boolean =
-        resumeStepOrder(phase) >= resumeStepOrder(startStep)
-
-      private def shouldRunStep(
-        startStep: MigrationStep,
-        phase: MigrationStep,
-        stepsToRun: Set[MigrationStep],
-      ): Boolean =
-        stepsToRun.contains(phase) && shouldExecuteFrom(startStep, phase)
-
+      /** Phase ordering for runTrackedMigration (resume-based) workflow. */
       private def resumeStepOrder(step: MigrationStep): Int = step match
         case MigrationStep.Discovery      => 0
         case MigrationStep.Analysis       => 1
@@ -643,6 +635,16 @@ object MigrationOrchestrator:
         case MigrationStep.Transformation => 3
         case MigrationStep.Validation     => 4
         case MigrationStep.Documentation  => 5
+
+      private def shouldExecuteFrom(startStep: MigrationStep, phase: MigrationStep): Boolean =
+        PhaseOrdering.shouldRunFrom(phase, startStep, resumeStepOrder)
+
+      private def shouldRunStep(
+        startStep: MigrationStep,
+        phase: MigrationStep,
+        stepsToRun: Set[MigrationStep],
+      ): Boolean =
+        PhaseOrdering.shouldRunPhase(phase, startStep, stepsToRun, resumeStepOrder)
 
       private def emptyInventory(sourceDir: Path): FileInventory =
         FileInventory(
@@ -1268,9 +1270,7 @@ object MigrationOrchestrator:
                           yield None
           yield result
 
-      private def shouldRunStep(step: MigrationStep, start: MigrationStep): Boolean =
-        stepOrder(step) >= stepOrder(start)
-
+      /** Phase ordering for runPipeline workflow execution. */
       private def stepOrder(step: MigrationStep): Int = step match
         case MigrationStep.Discovery      => 1
         case MigrationStep.Analysis       => 2
@@ -1278,6 +1278,9 @@ object MigrationOrchestrator:
         case MigrationStep.Transformation => 4
         case MigrationStep.Validation     => 5
         case MigrationStep.Documentation  => 6
+
+      private def shouldRunStep(step: MigrationStep, start: MigrationStep): Boolean =
+        PhaseOrdering.shouldRunFrom(step, start, stepOrder)
 
       private def aggregateValidation(reports: List[ValidationReport]): ValidationReport =
         if reports.isEmpty then ValidationReport.empty
@@ -1324,13 +1327,20 @@ object MigrationOrchestrator:
         dryRun: Boolean,
         validationReport: ValidationReport,
       ): MigrationStatus =
-        if errors.isEmpty then
-          if dryRun || !validationReport.semanticValidation.businessLogicPreserved || validationReport.issues.nonEmpty
-          then
-            MigrationStatus.CompletedWithWarnings
-          else MigrationStatus.Completed
-        else if projects.nonEmpty then MigrationStatus.PartialFailure
-        else MigrationStatus.Failed
+        val hasErrors    = errors.nonEmpty
+        val hasArtifacts = projects.nonEmpty
+        val hasWarnings  =
+          dryRun || !validationReport.semanticValidation.businessLogicPreserved || validationReport.issues.nonEmpty
+
+        StatusDetermination.determineStatus(
+          hasErrors,
+          hasArtifacts,
+          hasWarnings,
+          MigrationStatus.Completed,
+          MigrationStatus.CompletedWithWarnings,
+          MigrationStatus.PartialFailure,
+          MigrationStatus.Failed,
+        )
 
       private def loadResumeState(
         resumeRunId: Option[String]
@@ -1391,15 +1401,26 @@ object MigrationOrchestrator:
     }
   }
 
+/** Migration-specific workflow status.
+  */
 enum MigrationStatus derives JsonCodec:
   case Completed, CompletedWithWarnings, PartialFailure, Failed
 
-case class PipelineProgressUpdate(
-  step: MigrationStep,
-  message: String,
-  percent: Int,
-) derives JsonCodec
+/** Type aliases for backward compatibility and domain-specific naming.
+  */
+type PipelineProgressUpdate = PhaseProgressUpdate[MigrationStep]
+type StepResult             = PhaseResult[MigrationStep]
 
+object PipelineProgressUpdate:
+  def apply(step: MigrationStep, message: String, percent: Int): PhaseProgressUpdate[MigrationStep] =
+    PhaseProgressUpdate(step, message, percent)
+
+object StepResult:
+  def apply(step: MigrationStep, success: Boolean, error: Option[String]): PhaseResult[MigrationStep] =
+    PhaseResult(step, success, error)
+
+/** Result of a complete migration workflow execution.
+  */
 case class MigrationResult(
   runId: String,
   startedAt: java.time.Instant,
@@ -1416,9 +1437,3 @@ case class MigrationResult(
   status: MigrationStatus,
 ) derives JsonCodec:
   def success: Boolean = status == MigrationStatus.Completed || status == MigrationStatus.CompletedWithWarnings
-
-case class StepResult(
-  step: MigrationStep,
-  success: Boolean,
-  error: Option[String],
-)

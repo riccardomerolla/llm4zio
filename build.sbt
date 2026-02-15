@@ -2,6 +2,8 @@ ThisBuild / scalaVersion := "3.5.2"
 ThisBuild / organization := "io.github.riccardomerolla"
 ThisBuild / organizationName := "Riccardo Merolla"
 ThisBuild / organizationHomepage := Some(url("https://github.com/riccardomerolla"))
+ThisBuild / excludeDependencies += ExclusionRule("com.lihaoyi", "sourcecode_3")
+ThisBuild / dependencyOverrides += "com.lihaoyi" % "sourcecode_2.13" % "0.4.2"
 
 addCommandAlias("fmt", " ; scalafixAll ; scalafmtAll")
 addCommandAlias("check", "; scalafixAll --check; scalafmtCheckAll")
