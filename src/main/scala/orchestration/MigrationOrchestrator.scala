@@ -91,27 +91,29 @@ object MigrationOrchestrator:
       MigrationConfig &
       MigrationRepository &
       ProgressTracker &
-      ResultPersister,
+      ResultPersister &
+      WorkspaceCoordinator,
     Nothing,
     MigrationOrchestrator,
   ] = ZLayer.scoped {
     for
-      discoveryAgent     <- ZIO.service[CobolDiscoveryAgent]
-      analyzerAgent      <- ZIO.service[CobolAnalyzerAgent]
-      businessLogicAgent <- ZIO.service[BusinessLogicExtractorAgent]
-      mapperAgent        <- ZIO.service[DependencyMapperAgent]
-      transformerAgent   <- ZIO.service[JavaTransformerAgent]
-      validationAgent    <- ZIO.service[ValidationAgent]
-      documentationAgent <- ZIO.service[DocumentationAgent]
-      fileService        <- ZIO.service[FileService]
-      httpAIClient       <- ZIO.service[HttpAIClient]
-      stateService       <- ZIO.service[StateService]
-      config             <- ZIO.service[MigrationConfig]
-      repository         <- ZIO.service[MigrationRepository]
-      tracker            <- ZIO.service[ProgressTracker]
-      persister          <- ZIO.service[ResultPersister]
-      fibers             <- Ref.make(Map.empty[Long, Fiber.Runtime[OrchestratorError, MigrationResult]])
-      backgroundScope    <- ZIO.acquireRelease(Scope.make)(_.close(Exit.unit))
+      discoveryAgent       <- ZIO.service[CobolDiscoveryAgent]
+      analyzerAgent        <- ZIO.service[CobolAnalyzerAgent]
+      businessLogicAgent   <- ZIO.service[BusinessLogicExtractorAgent]
+      mapperAgent          <- ZIO.service[DependencyMapperAgent]
+      transformerAgent     <- ZIO.service[JavaTransformerAgent]
+      validationAgent      <- ZIO.service[ValidationAgent]
+      documentationAgent   <- ZIO.service[DocumentationAgent]
+      fileService          <- ZIO.service[FileService]
+      httpAIClient         <- ZIO.service[HttpAIClient]
+      stateService         <- ZIO.service[StateService]
+      config               <- ZIO.service[MigrationConfig]
+      repository           <- ZIO.service[MigrationRepository]
+      tracker              <- ZIO.service[ProgressTracker]
+      persister            <- ZIO.service[ResultPersister]
+      workspaceCoordinator <- ZIO.service[WorkspaceCoordinator]
+      fibers               <- Ref.make(Map.empty[Long, Fiber.Runtime[OrchestratorError, MigrationResult]])
+      backgroundScope      <- ZIO.acquireRelease(Scope.make)(_.close(Exit.unit))
     yield new MigrationOrchestrator {
 
       override def runFullMigration(
@@ -273,6 +275,18 @@ object MigrationOrchestrator:
                        )
                      )
                      .mapError(persistenceAsOrchestrator("createRun", "new"))
+          _     <- workspaceCoordinator
+                     .acquire(runId, priority = None, request = RunResourceRequest())
+                     .mapError(error => OrchestratorError.ControlPlaneFailed(error.message))
+                     .catchAll { err =>
+                       updateRunStatus(
+                         runId = runId,
+                         status = RunStatus.Failed,
+                         currentPhase = Some("Rejected"),
+                         errorMessage = Some(err.message),
+                         completedAt = Some(now),
+                       ).ignore *> ZIO.fail(err)
+                     }
           fiber <- runTrackedMigration(runId, requestConfig)
                      .onExit(exit => handleRunExit(runId, exit))
                      .forkIn(backgroundScope)
@@ -286,6 +300,7 @@ object MigrationOrchestrator:
                           .fromOption(maybeFiber)
                           .orElseFail(OrchestratorError.StateFailed(StateError.StateNotFound(runId.toString)))
           _          <- fiber.interrupt.unit
+          _          <- workspaceCoordinator.release(runId)
           now        <- Clock.instant
           _          <- updateRunStatus(
                           runId = runId,
@@ -911,6 +926,7 @@ object MigrationOrchestrator:
         exit: Exit[OrchestratorError, MigrationResult],
       ): UIO[Unit] =
         fibers.update(_ - runId) *>
+          workspaceCoordinator.release(runId) *>
           (exit match
             case Exit.Success(_)     =>
               ZIO.unit

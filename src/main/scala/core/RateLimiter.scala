@@ -9,6 +9,9 @@ trait RateLimiter:
   def acquire: ZIO[Any, RateLimitError, Unit]
   def tryAcquire: ZIO[Any, Nothing, Boolean]
   def metrics: ZIO[Any, Nothing, RateLimiterMetrics]
+  def acquireFor(runId: String): ZIO[Any, RateLimitError, Unit]
+  def tryAcquireFor(runId: String): ZIO[Any, Nothing, Boolean]
+  def metricsByRun: ZIO[Any, Nothing, Map[String, RateLimiterMetrics]]
 
 final case class RateLimiterConfig(
   requestsPerMinute: Int = 60,
@@ -42,7 +45,8 @@ object RateLimiter:
       now     <- Clock.nanoTime
       state   <- Ref.make(BucketState(config.burstSize.toDouble, now))
       metrics <- Ref.make(RateLimiterMetrics(0, 0, config.burstSize))
-    yield new RateLimiterLive(state, metrics, config)
+      byRun   <- Ref.make(Map.empty[String, RateLimiterMetrics])
+    yield new RateLimiterLive(state, metrics, byRun, config)
 
   val live: ZLayer[RateLimiterConfig, Nothing, RateLimiter] =
     ZLayer.scoped {
@@ -52,18 +56,26 @@ object RateLimiter:
   final private class RateLimiterLive(
     state: Ref[BucketState],
     metricsRef: Ref[RateLimiterMetrics],
+    runMetricsRef: Ref[Map[String, RateLimiterMetrics]],
     config: RateLimiterConfig,
   ) extends RateLimiter {
     private val nanosPerSecond = 1000000000.0
 
     override def acquire: ZIO[Any, RateLimitError, Unit] =
+      acquireFor("global")
+
+    override def acquireFor(runId: String): ZIO[Any, RateLimitError, Unit] =
       validateConfig *>
         metricsRef.update(m => m.copy(totalRequests = m.totalRequests + 1)) *>
-        loop(throttled = false).timeoutFail(RateLimitError.AcquireTimeout(config.acquireTimeout))(
+        updateRunMetric(runId, totalDelta = 1, throttledDelta = 0, currentTokens = None) *>
+        loop(runId = runId, throttled = false).timeoutFail(RateLimitError.AcquireTimeout(config.acquireTimeout))(
           config.acquireTimeout
         )
 
     override def tryAcquire: ZIO[Any, Nothing, Boolean] =
+      tryAcquireFor("global")
+
+    override def tryAcquireFor(runId: String): ZIO[Any, Nothing, Boolean] =
       if isConfigValid then
         for
           result <- takeToken
@@ -75,6 +87,12 @@ object RateLimiter:
                         throttledRequests = throttled,
                       )
                     }
+          _      <- updateRunMetric(
+                      runId,
+                      totalDelta = 1,
+                      throttledDelta = if result.acquired then 0 else 1,
+                      currentTokens = Some(result.tokensAfter.toInt),
+                    )
         yield result.acquired
       else
         ZIO.logWarning(s"Rate limiter config invalid: ${configErrorDetails}").as(false)
@@ -82,17 +100,26 @@ object RateLimiter:
     override def metrics: ZIO[Any, Nothing, RateLimiterMetrics] =
       metricsRef.get
 
-    private def loop(throttled: Boolean): ZIO[Any, RateLimitError, Unit] =
+    override def metricsByRun: ZIO[Any, Nothing, Map[String, RateLimiterMetrics]] =
+      runMetricsRef.get
+
+    private def loop(runId: String, throttled: Boolean): ZIO[Any, RateLimitError, Unit] =
       for
         result <- takeToken
         _      <- updateCurrentTokens(result.tokensAfter)
+        _      <- updateRunMetric(
+                    runId,
+                    totalDelta = 0,
+                    throttledDelta = if result.acquired || throttled then 0 else 1,
+                    currentTokens = Some(result.tokensAfter.toInt),
+                  )
         _      <-
           if result.acquired then ZIO.unit
           else
             val markThrottled =
               if throttled then ZIO.unit
               else metricsRef.update(m => m.copy(throttledRequests = m.throttledRequests + 1))
-            markThrottled *> waitForToken(result.deficit) *> loop(throttled = true)
+            markThrottled *> waitForToken(result.deficit) *> loop(runId = runId, throttled = true)
       yield ()
 
     private def takeToken: UIO[TakeResult] =
@@ -129,6 +156,27 @@ object RateLimiter:
 
     private def updateCurrentTokens(tokens: Double): UIO[Unit] =
       metricsRef.update(m => m.copy(currentTokens = tokens.toInt))
+
+    private def updateRunMetric(
+      runId: String,
+      totalDelta: Long,
+      throttledDelta: Long,
+      currentTokens: Option[Int],
+    ): UIO[Unit] =
+      runMetricsRef.update { current =>
+        val existing = current.getOrElse(
+          runId,
+          RateLimiterMetrics(totalRequests = 0, throttledRequests = 0, currentTokens = config.burstSize),
+        )
+        current.updated(
+          runId,
+          existing.copy(
+            totalRequests = existing.totalRequests + totalDelta,
+            throttledRequests = existing.throttledRequests + throttledDelta,
+            currentTokens = currentTokens.getOrElse(existing.currentTokens),
+          ),
+        )
+      }
 
     private def validateConfig: ZIO[Any, RateLimitError, Unit] =
       ZIO.fail(RateLimitError.InvalidConfig(configErrorDetails)).unless(isConfigValid).unit

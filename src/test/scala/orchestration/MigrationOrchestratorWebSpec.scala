@@ -91,6 +91,7 @@ object MigrationOrchestratorWebSpec extends ZIOSpecDefault:
       MigrationRepository.live,
       ProgressTracker.live,
       ResultPersister.live,
+      WorkspaceCoordinator.noop,
       MigrationOrchestrator.live,
     )
 

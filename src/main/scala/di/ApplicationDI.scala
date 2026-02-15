@@ -109,6 +109,8 @@ object ApplicationDI:
     : ZLayer[Any, Nothing, MigrationOrchestrator] =
     ZLayer.make[MigrationOrchestrator](
       commonLayers(config, dbPath),
+      WorkspaceCoordinator.quotasLayer(config),
+      WorkspaceCoordinator.live,
 
       // Orchestration
       MigrationOrchestrator.live,
@@ -118,6 +120,8 @@ object ApplicationDI:
     ZLayer.make[WebServer](
       commonLayers(config, dbPath),
       ZLayer.succeed(config.resolvedProviderConfig),
+      WorkspaceCoordinator.quotasLayer(config),
+      WorkspaceCoordinator.live,
       MigrationOrchestrator.live,
       RunsController.live,
       AnalysisController.live,

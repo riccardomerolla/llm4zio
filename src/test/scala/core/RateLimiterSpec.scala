@@ -9,7 +9,9 @@ object RateLimiterSpec extends ZIOSpecDefault:
 
   private def withLimiter[A](config: RateLimiterConfig)(effect: RateLimiter => ZIO[Any, Any, A]): ZIO[Any, Any, A] =
     ZIO.scoped {
-      RateLimiter.make(config).flatMap(effect)
+      RateLimiter.make(config).flatMap { limiter =>
+        TestClock.adjust(1.nanos) *> effect(limiter)
+      }
     }
 
   def spec: Spec[Any, Any] = suite("RateLimiterSpec")(
@@ -72,6 +74,25 @@ object RateLimiterSpec extends ZIOSpecDefault:
         yield assertTrue(
           stats.totalRequests == 2,
           stats.throttledRequests == 1,
+        )
+      }
+    },
+    test("global rate limiter pool tracks per-run metrics") {
+      val config = RateLimiterConfig(requestsPerMinute = 120, burstSize = 2, acquireTimeout = 2.seconds)
+      withLimiter(config) { limiter =>
+        for
+          _     <- limiter.tryAcquireFor("run-a")
+          _     <- limiter.tryAcquireFor("run-a")
+          third <- limiter.tryAcquireFor("run-b")
+          byRun <- limiter.metricsByRun
+          runA   = byRun.getOrElse("run-a", RateLimiterMetrics(0, 0, 0))
+          runB   = byRun.getOrElse("run-b", RateLimiterMetrics(0, 0, 0))
+        yield assertTrue(
+          !third,
+          runA.totalRequests == 2,
+          runA.throttledRequests == 0,
+          runB.totalRequests == 1,
+          runB.throttledRequests == 1,
         )
       }
     },

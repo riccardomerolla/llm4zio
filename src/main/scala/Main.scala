@@ -528,6 +528,8 @@ object Main extends ZIOAppDefault:
   private def orchestratorLayer(config: MigrationConfig, dbPath: Path): ZLayer[Any, Nothing, MigrationOrchestrator] =
     ZLayer.make[MigrationOrchestrator](
       commonLayers(config, dbPath),
+      WorkspaceCoordinator.quotasLayer(config),
+      WorkspaceCoordinator.live,
       MigrationOrchestrator.live,
     )
 

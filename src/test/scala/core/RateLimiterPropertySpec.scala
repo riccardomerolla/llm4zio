@@ -9,6 +9,9 @@ import models.{ AIProvider, AIProviderConfig, RateLimitError }
 /** Property-based tests for RateLimiter and RateLimiterConfig. */
 object RateLimiterPropertySpec extends ZIOSpecDefault:
 
+  private def makeLimiter(config: RateLimiterConfig): ZIO[Scope, Nothing, RateLimiter] =
+    RateLimiter.make(config) <* TestClock.adjust(1.nanos)
+
   def spec: Spec[Any, Any] = suite("RateLimiterPropertySpec")(
     suite("RateLimiterConfig")(
       test("fromAIProviderConfig maps all fields correctly") {
@@ -84,7 +87,7 @@ object RateLimiterPropertySpec extends ZIOSpecDefault:
         check(Gen.int(1, 20)) { burstSize =>
           ZIO.scoped {
             for
-              limiter <- RateLimiter.make(RateLimiterConfig(requestsPerMinute = 600, burstSize = burstSize))
+              limiter <- makeLimiter(RateLimiterConfig(requestsPerMinute = 600, burstSize = burstSize))
               results <- ZIO.foreach(1 to burstSize)(_ => limiter.acquire.either)
             yield assertTrue(results.forall(_.isRight))
           }
@@ -93,7 +96,7 @@ object RateLimiterPropertySpec extends ZIOSpecDefault:
       test("tryAcquire returns true within burst") {
         ZIO.scoped {
           for
-            limiter <- RateLimiter.make(RateLimiterConfig(requestsPerMinute = 600, burstSize = 5))
+            limiter <- makeLimiter(RateLimiterConfig(requestsPerMinute = 600, burstSize = 5))
             results <- ZIO.foreach(1 to 5)(_ => limiter.tryAcquire)
           yield assertTrue(results.forall(_ == true))
         }
@@ -101,7 +104,7 @@ object RateLimiterPropertySpec extends ZIOSpecDefault:
       test("tryAcquire returns false when burst exhausted") {
         ZIO.scoped {
           for
-            limiter <- RateLimiter.make(RateLimiterConfig(requestsPerMinute = 600, burstSize = 2))
+            limiter <- makeLimiter(RateLimiterConfig(requestsPerMinute = 600, burstSize = 2))
             _       <- limiter.acquire
             _       <- limiter.acquire
             result  <- limiter.tryAcquire
@@ -111,7 +114,7 @@ object RateLimiterPropertySpec extends ZIOSpecDefault:
       test("metrics track total requests") {
         ZIO.scoped {
           for
-            limiter <- RateLimiter.make(RateLimiterConfig(requestsPerMinute = 600, burstSize = 10))
+            limiter <- makeLimiter(RateLimiterConfig(requestsPerMinute = 600, burstSize = 10))
             _       <- limiter.acquire
             _       <- limiter.acquire
             _       <- limiter.acquire
@@ -122,7 +125,7 @@ object RateLimiterPropertySpec extends ZIOSpecDefault:
       test("metrics track throttled requests via tryAcquire") {
         ZIO.scoped {
           for
-            limiter <- RateLimiter.make(RateLimiterConfig(requestsPerMinute = 600, burstSize = 1))
+            limiter <- makeLimiter(RateLimiterConfig(requestsPerMinute = 600, burstSize = 1))
             _       <- limiter.tryAcquire // succeeds
             _       <- limiter.tryAcquire // throttled
             m       <- limiter.metrics
@@ -134,7 +137,7 @@ object RateLimiterPropertySpec extends ZIOSpecDefault:
       test("acquire fails with InvalidConfig for zero requestsPerMinute") {
         ZIO.scoped {
           for
-            limiter <- RateLimiter.make(RateLimiterConfig(requestsPerMinute = 0, burstSize = 10))
+            limiter <- makeLimiter(RateLimiterConfig(requestsPerMinute = 0, burstSize = 10))
             result  <- limiter.acquire.either
           yield assertTrue(result.left.exists {
             case RateLimitError.InvalidConfig(_) => true
@@ -145,7 +148,7 @@ object RateLimiterPropertySpec extends ZIOSpecDefault:
       test("acquire fails with InvalidConfig for zero burstSize") {
         ZIO.scoped {
           for
-            limiter <- RateLimiter.make(RateLimiterConfig(requestsPerMinute = 60, burstSize = 0))
+            limiter <- makeLimiter(RateLimiterConfig(requestsPerMinute = 60, burstSize = 0))
             result  <- limiter.acquire.either
           yield assertTrue(result.left.exists {
             case RateLimitError.InvalidConfig(_) => true
@@ -156,7 +159,7 @@ object RateLimiterPropertySpec extends ZIOSpecDefault:
       test("tryAcquire returns false for invalid config") {
         ZIO.scoped {
           for
-            limiter <- RateLimiter.make(RateLimiterConfig(requestsPerMinute = 0, burstSize = 0))
+            limiter <- makeLimiter(RateLimiterConfig(requestsPerMinute = 0, burstSize = 0))
             result  <- limiter.tryAcquire
           yield assertTrue(!result)
         }
@@ -166,7 +169,7 @@ object RateLimiterPropertySpec extends ZIOSpecDefault:
       test("tokens refill over time") {
         ZIO.scoped {
           for
-            limiter <- RateLimiter.make(RateLimiterConfig(requestsPerMinute = 60, burstSize = 2))
+            limiter <- makeLimiter(RateLimiterConfig(requestsPerMinute = 60, burstSize = 2))
             // Exhaust burst
             _       <- limiter.acquire
             _       <- limiter.acquire
@@ -180,7 +183,7 @@ object RateLimiterPropertySpec extends ZIOSpecDefault:
       test("acquire times out when no tokens available and timeout expires") {
         ZIO.scoped {
           for
-            limiter <- RateLimiter.make(
+            limiter <- makeLimiter(
                          RateLimiterConfig(
                            requestsPerMinute = 6, // 0.1 per second - very slow refill
                            burstSize = 1,

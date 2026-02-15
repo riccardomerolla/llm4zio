@@ -42,6 +42,7 @@ object MigrationOrchestratorSpec extends ZIOSpecDefault:
                            noOpRepositoryLayer,
                            noOpTrackerLayer,
                            noOpPersisterLayer,
+                           WorkspaceCoordinator.noop,
                            MigrationOrchestrator.live,
                          )
         yield assertTrue(
@@ -80,6 +81,7 @@ object MigrationOrchestratorSpec extends ZIOSpecDefault:
                            noOpRepositoryLayer,
                            noOpTrackerLayer,
                            noOpPersisterLayer,
+                           WorkspaceCoordinator.noop,
                            MigrationOrchestrator.live,
                          )
         yield assertTrue(
@@ -132,6 +134,7 @@ object MigrationOrchestratorSpec extends ZIOSpecDefault:
                                noOpRepositoryLayer,
                                noOpTrackerLayer,
                                noOpPersisterLayer,
+                               WorkspaceCoordinator.noop,
                                MigrationOrchestrator.live,
                              )
           calls         <- extractionRef.get
@@ -181,6 +184,7 @@ object MigrationOrchestratorSpec extends ZIOSpecDefault:
                                noOpRepositoryLayer,
                                noOpTrackerLayer,
                                noOpPersisterLayer,
+                               WorkspaceCoordinator.noop,
                                MigrationOrchestrator.live,
                              )
           calls         <- extractionRef.get
@@ -231,6 +235,7 @@ object MigrationOrchestratorSpec extends ZIOSpecDefault:
                                 noOpRepositoryLayer,
                                 noOpTrackerLayer,
                                 noOpPersisterLayer,
+                                WorkspaceCoordinator.noop,
                                 MigrationOrchestrator.live,
                               )
         yield assertTrue(
@@ -274,6 +279,7 @@ object MigrationOrchestratorSpec extends ZIOSpecDefault:
                                  noOpRepositoryLayer,
                                  noOpTrackerLayer,
                                  noOpPersisterLayer,
+                                 WorkspaceCoordinator.noop,
                                  MigrationOrchestrator.live,
                                )
         yield assertTrue(
@@ -329,6 +335,7 @@ object MigrationOrchestratorSpec extends ZIOSpecDefault:
                                   noOpRepositoryLayer,
                                   noOpTrackerLayer,
                                   noOpPersisterLayer,
+                                  WorkspaceCoordinator.noop,
                                   MigrationOrchestrator.live,
                                 )
                                 .exit
@@ -394,6 +401,7 @@ object MigrationOrchestratorSpec extends ZIOSpecDefault:
                                   noOpRepositoryLayer,
                                   noOpTrackerLayer,
                                   noOpPersisterLayer,
+                                  WorkspaceCoordinator.noop,
                                   MigrationOrchestrator.live,
                                 )
           resumedResult    <- MigrationOrchestrator
@@ -418,6 +426,7 @@ object MigrationOrchestratorSpec extends ZIOSpecDefault:
                                   noOpRepositoryLayer,
                                   noOpTrackerLayer,
                                   noOpPersisterLayer,
+                                  WorkspaceCoordinator.noop,
                                   MigrationOrchestrator.live,
                                 )
           calls            <- discoveryCalls.get

@@ -99,7 +99,7 @@ object HttpAIClientSpec extends ZIOSpecDefault:
     test("times out long-running requests") {
       val layer = makeClient(_ => ZIO.never)
       for
-        result <- HttpAIClient
+        fiber  <- HttpAIClient
                     .postJson(
                       "https://api.openai.com/v1/chat/completions",
                       """{"model":"gpt-4o"}""",
@@ -107,11 +107,14 @@ object HttpAIClientSpec extends ZIOSpecDefault:
                     )
                     .provide(layer)
                     .either
+                    .fork
+        _      <- TestClock.adjust(200.millis)
+        result <- fiber.join
       yield assertTrue(
         result.left.exists {
           case AIError.Timeout(_) => true
           case _                  => false
         }
       )
-    } @@ TestAspect.withLiveClock,
+    },
   )
