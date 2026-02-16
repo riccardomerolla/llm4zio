@@ -35,6 +35,7 @@ case class TelegramSendMessage(
   text: String,
   parse_mode: Option[String] = None,
   disable_web_page_preview: Option[Boolean] = None,
+  reply_to_message_id: Option[Long] = None,
 ) derives JsonCodec
 
 case class TelegramApiErrorParameters(

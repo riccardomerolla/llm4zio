@@ -80,6 +80,7 @@ final case class TelegramClientLive(
       text = request.text,
       parseMode = request.parse_mode.flatMap(parseModeFromString),
       disableWebPagePreview = request.disable_web_page_preview,
+      replyToMessageId = request.reply_to_message_id.flatMap(longToInt),
     )
     executeFuture(requestHandler.sendRequest(method), timeout).map(fromBotMessage)
 
@@ -141,3 +142,7 @@ final case class TelegramClientLive(
       case "markdownv2" => Some(ParseMode.MarkdownV2)
       case "html"       => Some(ParseMode.HTML)
       case _            => None
+
+  private def longToInt(value: Long): Option[Int] =
+    if value >= Int.MinValue.toLong && value <= Int.MaxValue.toLong then Some(value.toInt)
+    else None
