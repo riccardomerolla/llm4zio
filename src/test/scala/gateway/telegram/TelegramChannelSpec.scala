@@ -29,6 +29,24 @@ object TelegramChannelSpec extends ZIOSpecDefault:
     ): IO[TelegramClientError, TelegramMessage] =
       sentRef.update(_ :+ request) *> ZIO.succeed(response(request))
 
+  final private case class CapturingNotifier(
+    commandsRef: Ref[List[(Long, Option[Long], BotCommand)]],
+    parseErrorsRef: Ref[List[(Long, Option[Long], CommandParseError)]],
+  ) extends WorkflowNotifier:
+    override def notifyCommand(
+      chatId: Long,
+      replyToMessageId: Option[Long],
+      command: BotCommand,
+    ): IO[WorkflowNotifierError, Unit] =
+      commandsRef.update(_ :+ (chatId, replyToMessageId, command)).unit
+
+    override def notifyParseError(
+      chatId: Long,
+      replyToMessageId: Option[Long],
+      error: CommandParseError,
+    ): IO[WorkflowNotifierError, Unit] =
+      parseErrorsRef.update(_ :+ (chatId, replyToMessageId, error)).unit
+
   private def update(
     updateId: Long,
     chatId: Long,
@@ -150,6 +168,35 @@ object TelegramChannelSpec extends ZIOSpecDefault:
         messages.length == 1,
         messages.head.content == "hi",
         messages.head.sessionKey.value == "conversation:10",
+      )
+    },
+    test("ingestUpdate routes commands to notifier and does not enqueue inbound message") {
+      for
+        updatesRef     <- Ref.make(List.empty[TelegramUpdate])
+        sentRef        <- Ref.make(List.empty[TelegramSendMessage])
+        commandsRef    <- Ref.make(List.empty[(Long, Option[Long], BotCommand)])
+        parseErrorsRef <- Ref.make(List.empty[(Long, Option[Long], CommandParseError)])
+        notifier        = CapturingNotifier(commandsRef, parseErrorsRef)
+        client          = StubTelegramClient(
+                            updatesRef = updatesRef,
+                            sentRef = sentRef,
+                            response = req =>
+                              TelegramMessage(
+                                message_id = 900L,
+                                date = 1710000000L,
+                                chat = TelegramChat(id = req.chat_id, `type` = "private"),
+                                text = Some(req.text),
+                              ),
+                          )
+        channel        <- TelegramChannel.make(client, workflowNotifier = notifier)
+        normalized     <-
+          channel.ingestUpdate(update(updateId = 20L, chatId = 55L, messageId = 701L, text = Some("/status 12")))
+        commands       <- commandsRef.get
+        parseErrors    <- parseErrorsRef.get
+      yield assertTrue(
+        normalized.isEmpty,
+        commands == List((55L, Some(701L), BotCommand.Status(12L))),
+        parseErrors.isEmpty,
       )
     },
   ) @@ TestAspect.sequential @@ TestAspect.timeout(10.seconds)
