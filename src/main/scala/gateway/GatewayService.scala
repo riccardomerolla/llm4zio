@@ -1,8 +1,11 @@
 package gateway
 
+import java.util.UUID
+
 import zio.*
 
 import gateway.models.NormalizedMessage
+import gateway.telegram.{ IntentConversationState, IntentDecision, IntentParser }
 
 enum GatewayServiceError:
   case Router(error: MessageRouterError)
@@ -52,8 +55,9 @@ object GatewayService:
         router  <- ZIO.service[MessageRouter]
         queue   <- Queue.unbounded[GatewayQueueCommand]
         metrics <- Ref.make(GatewayMetricsSnapshot())
+        intents <- Ref.make(Map.empty[gateway.models.SessionKey, IntentConversationState])
         _       <- startWorker(queue, router, metrics, None).forkScoped
-      yield GatewayServiceLive(queue, router, metrics, None)
+      yield GatewayServiceLive(queue, router, metrics, None, intents)
     }
 
   val liveWithSteeringQueue: ZLayer[MessageRouter & Queue[NormalizedMessage], Nothing, GatewayService] =
@@ -63,8 +67,9 @@ object GatewayService:
         steeringQueue <- ZIO.service[Queue[NormalizedMessage]]
         queue         <- Queue.unbounded[GatewayQueueCommand]
         metrics       <- Ref.make(GatewayMetricsSnapshot())
+        intents       <- Ref.make(Map.empty[gateway.models.SessionKey, IntentConversationState])
         _             <- startWorker(queue, router, metrics, Some(steeringQueue)).forkScoped
-      yield GatewayServiceLive(queue, router, metrics, Some(steeringQueue))
+      yield GatewayServiceLive(queue, router, metrics, Some(steeringQueue), intents)
     }
 
   private def startWorker(
@@ -119,6 +124,7 @@ final case class GatewayServiceLive(
   router: MessageRouter,
   metricsRef: Ref[GatewayMetricsSnapshot],
   steeringQueue: Option[Queue[NormalizedMessage]],
+  intentStateRef: Ref[Map[gateway.models.SessionKey, IntentConversationState]],
 ) extends GatewayService:
 
   override def enqueueInbound(message: NormalizedMessage): UIO[Unit] =
@@ -137,6 +143,7 @@ final case class GatewayServiceLive(
                q.offer(message).unit *>
                  metricsRef.update(current => current.copy(steeringForwarded = current.steeringForwarded + 1))
       _ <- router.routeInbound(message).mapError(GatewayServiceError.Router.apply)
+      _ <- handleIntentRouting(message)
       _ <- metricsRef.update(current => current.copy(processed = current.processed + 1))
     yield ()
 
@@ -160,3 +167,59 @@ final case class GatewayServiceLive(
 
   override def metrics: UIO[GatewayMetricsSnapshot] =
     metricsRef.get
+
+  private def handleIntentRouting(message: NormalizedMessage): IO[GatewayServiceError, Unit] =
+    if shouldParseIntent(message) then
+      for
+        current <- intentStateRef.get.map(_.getOrElse(message.sessionKey, IntentConversationState()))
+        decision = IntentParser.parse(message.content, current)
+        _       <- decision match
+                     case IntentDecision.Route(agentName, rationale) =>
+                       val text =
+                         s"Routing request to `$agentName` ($rationale). " +
+                           "Send another message if you want to switch agent."
+                       sendAssistantReply(message, text, Some(agentName)) *>
+                         updateIntentState(message, current.copy(pendingOptions = Nil, lastAgent = Some(agentName)))
+                     case IntentDecision.Clarify(question, options)  =>
+                       val numbered = options.zipWithIndex.map { case (option, idx) => s"${idx + 1}. $option" }.mkString("\n")
+                       val text     = s"$question\n$numbered"
+                       sendAssistantReply(message, text, None) *>
+                         updateIntentState(message, current.copy(pendingOptions = options))
+                     case IntentDecision.Unknown                     =>
+                       ZIO.unit
+      yield ()
+    else ZIO.unit
+
+  private def shouldParseIntent(message: NormalizedMessage): Boolean =
+    message.channelName == "telegram" &&
+    message.direction == gateway.models.MessageDirection.Inbound &&
+    message.role == gateway.models.MessageRole.User
+
+  private def sendAssistantReply(
+    inbound: NormalizedMessage,
+    text: String,
+    routedAgent: Option[String],
+  ): IO[GatewayServiceError, Unit] =
+    for
+      now <- Clock.instant
+      msg  = NormalizedMessage(
+               id = s"intent:${now.toEpochMilli}:${UUID.randomUUID().toString.take(8)}",
+               channelName = inbound.channelName,
+               sessionKey = inbound.sessionKey,
+               direction = gateway.models.MessageDirection.Outbound,
+               role = gateway.models.MessageRole.Assistant,
+               content = text,
+               metadata = inbound.metadata ++ routedAgent.map(value => "intent.agent" -> value).toMap,
+               timestamp = now,
+             )
+      _   <- router.routeOutbound(msg).mapError(GatewayServiceError.Router.apply)
+    yield ()
+
+  private def updateIntentState(
+    inbound: NormalizedMessage,
+    state: IntentConversationState,
+  ): UIO[Unit] =
+    intentStateRef.update { current =>
+      val updatedHistory = (state.history :+ inbound.content).takeRight(20)
+      current.updated(inbound.sessionKey, state.copy(history = updatedHistory))
+    }

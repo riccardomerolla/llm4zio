@@ -55,13 +55,14 @@ object GatewayServiceSpec extends ZIOSpecDefault:
     session: SessionKey,
     content: String,
     direction: MessageDirection = MessageDirection.Outbound,
+    role: MessageRole = MessageRole.Assistant,
   ): NormalizedMessage =
     NormalizedMessage(
       id = id,
       channelName = channelName,
       sessionKey = session,
       direction = direction,
-      role = MessageRole.Assistant,
+      role = role,
       content = content,
       timestamp = Instant.EPOCH,
     )
@@ -123,5 +124,63 @@ object GatewayServiceSpec extends ZIOSpecDefault:
         steered.id == "in-1",
         metrics.steeringForwarded >= 1L,
       )).provideSomeLayer[Scope](steeringLayer(dbName))
+    },
+    test("telegram inbound natural language routes to an agent response") {
+      val dbName = s"gateway-intent-route-${UUID.randomUUID()}"
+      (for
+        gateway  <- ZIO.service[GatewayService]
+        registry <- ZIO.service[ChannelRegistry]
+        channel  <- registry.get("telegram")
+        session   = SessionScopeStrategy.PerConversation.build("telegram", "chat-intent-1")
+        _        <- channel.open(session)
+        inbound   = message(
+                      id = "in-nl-1",
+                      channelName = "telegram",
+                      session = session,
+                      content = "please analyze this cobol program",
+                      direction = MessageDirection.Inbound,
+                      role = MessageRole.User,
+                    )
+        fiber    <- channel.outbound(session).take(1).runCollect.fork
+        _        <- gateway.processInbound(inbound)
+        out      <- fiber.join
+      yield assertTrue(
+        out.nonEmpty,
+        out.head.metadata.get("intent.agent").contains("cobolAnalyzer"),
+      )).provideSomeLayer[Scope](baseLayer(dbName))
+    },
+    test("telegram multi-turn clarification routes based on follow-up answer") {
+      val dbName = s"gateway-intent-clarify-${UUID.randomUUID()}"
+      (for
+        gateway  <- ZIO.service[GatewayService]
+        registry <- ZIO.service[ChannelRegistry]
+        channel  <- registry.get("telegram")
+        session   = SessionScopeStrategy.PerConversation.build("telegram", "chat-intent-2")
+        _        <- channel.open(session)
+        first     = message(
+                      id = "in-nl-2",
+                      channelName = "telegram",
+                      session = session,
+                      content = "hello, I need some help",
+                      direction = MessageDirection.Inbound,
+                      role = MessageRole.User,
+                    )
+        second    = message(
+                      id = "in-nl-3",
+                      channelName = "telegram",
+                      session = session,
+                      content = "2",
+                      direction = MessageDirection.Inbound,
+                      role = MessageRole.User,
+                    )
+        fiber    <- channel.outbound(session).take(2).runCollect.fork
+        _        <- gateway.processInbound(first)
+        _        <- gateway.processInbound(second)
+        out      <- fiber.join
+      yield assertTrue(
+        out.length == 2,
+        out.head.content.contains("Which task do you want?"),
+        out(1).metadata.get("intent.agent").contains("dependencyMapper"),
+      )).provideSomeLayer[Scope](baseLayer(dbName))
     },
   ) @@ TestAspect.sequential @@ TestAspect.timeout(20.seconds)
