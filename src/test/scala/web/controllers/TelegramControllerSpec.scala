@@ -5,6 +5,7 @@ import zio.http.*
 import zio.json.*
 import zio.test.*
 
+import _root_.models.TelegramMode
 import gateway.*
 import gateway.models.*
 import gateway.telegram.*
@@ -51,7 +52,14 @@ object TelegramControllerSpec extends ZIOSpecDefault:
       registry     = ChannelRegistryLive(channelsRef)
       telegram    <- TelegramChannel.make(noopTelegramClient)
       _           <- registry.register(telegram)
-      controller  <- TelegramController.make(gateway, registry, expectedBotToken, expectedSecretToken)
+      controller  <- TelegramController.make(
+                       gatewayService = gateway,
+                       channelRegistry = registry,
+                       expectedBotToken = expectedBotToken,
+                       expectedSecretToken = expectedSecretToken,
+                       enabled = true,
+                       mode = TelegramMode.Webhook,
+                     )
     yield (controller, messagesRef)
 
   private def sampleUpdateJson(updateId: Long = 11L): String =

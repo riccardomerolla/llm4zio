@@ -6,7 +6,7 @@ import java.nio.file.{ Files, Paths }
 import zio.*
 import zio.test.*
 
-import models.{ AIProvider, AIProviderConfig, MigrationConfig }
+import models.*
 
 object ConfigLoaderSpec extends ZIOSpecDefault:
 
@@ -309,6 +309,58 @@ object ConfigLoaderSpec extends ZIOSpecDefault:
           result.left.exists(_.contains("max tokens")),
         )
       },
+      test("rejects enabled telegram config without bot token") {
+        val config = validConfig.copy(
+          telegram = TelegramBotConfig(
+            enabled = true,
+            mode = TelegramMode.Polling,
+            botToken = None,
+          )
+        )
+        for result <- ConfigLoader.validate(config).either
+        yield assertTrue(result.left.exists(_.contains("bot token")))
+      },
+      test("rejects webhook mode without webhook URL") {
+        val config = validConfig.copy(
+          telegram = TelegramBotConfig(
+            enabled = true,
+            mode = TelegramMode.Webhook,
+            botToken = Some("123:ABC"),
+            webhookUrl = None,
+          )
+        )
+        for result <- ConfigLoader.validate(config).either
+        yield assertTrue(result.left.exists(_.contains("webhook URL")))
+      },
+      test("rejects polling mode with invalid polling settings") {
+        val config = validConfig.copy(
+          telegram = TelegramBotConfig(
+            enabled = true,
+            mode = TelegramMode.Polling,
+            botToken = Some("123:ABC"),
+            polling = TelegramPollingSettings(interval = Duration.Zero, batchSize = 0, timeoutSeconds = 0),
+          )
+        )
+        for result <- ConfigLoader.validate(config).either
+        yield assertTrue(result.isLeft)
+      },
+      test("accepts valid telegram polling config") {
+        val config = validConfig.copy(
+          telegram = TelegramBotConfig(
+            enabled = true,
+            mode = TelegramMode.Polling,
+            botToken = Some("123:ABC"),
+            polling = TelegramPollingSettings(
+              interval = Duration.fromSeconds(2),
+              batchSize = 50,
+              timeoutSeconds = 15,
+              requestTimeout = Duration.fromSeconds(45),
+            ),
+          )
+        )
+        for result <- ConfigLoader.validate(config)
+        yield assertTrue(result.telegram.polling.batchSize == 50)
+      },
     ),
     suite("validate - property-based")(
       test("valid parallelism range always passes") {
@@ -467,6 +519,7 @@ object ConfigLoaderSpec extends ZIOSpecDefault:
           !config.verbose,
           config.discoveryMaxDepth == 25,
           config.discoveryExcludePatterns.nonEmpty,
+          !config.telegram.enabled,
         )
       }
     ),

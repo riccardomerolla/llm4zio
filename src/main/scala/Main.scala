@@ -1,4 +1,5 @@
 import java.nio.file.{ Path, Paths }
+import java.util.UUID
 
 import zio.*
 import zio.Console.*
@@ -285,9 +286,11 @@ object Main extends ZIOAppDefault:
                              case Some(p) => baseConfig.copy(aiProvider = Some(p))
                              case None    => baseConfig
 
-      envResolvedConfig <- ConfigLoader
-                             .applyAIEnvironmentOverrides(withConfigProvider)
-                             .mapError(msg => new IllegalArgumentException(msg))
+      envResolvedConfig      <- ConfigLoader
+                                  .applyAIEnvironmentOverrides(withConfigProvider)
+                                  .mapError(msg => new IllegalArgumentException(msg))
+      telegramResolvedConfig <- applyTelegramEnvironmentOverrides(envResolvedConfig)
+                                  .mapError(msg => new IllegalArgumentException(msg))
 
       parsedAiProvider <- parseAIProviderOption(aiProvider).mapError(msg => new IllegalArgumentException(msg))
       parsedTemp       <- parseTemperatureOption(aiTemperature).mapError(msg => new IllegalArgumentException(msg))
@@ -299,7 +302,7 @@ object Main extends ZIOAppDefault:
                )
              case None    => ZIO.unit
 
-      resolvedProvider = envResolvedConfig.resolvedProviderConfig
+      resolvedProvider = telegramResolvedConfig.resolvedProviderConfig
       providerConfig   = AIProviderConfig.withDefaults(
                            resolvedProvider.copy(
                              provider = parsedAiProvider.getOrElse(resolvedProvider.provider),
@@ -316,22 +319,22 @@ object Main extends ZIOAppDefault:
                          )
 
       // Override with CLI arguments
-      migrationConfig = envResolvedConfig.copy(
+      migrationConfig = telegramResolvedConfig.copy(
                           sourceDir = sourceDir,
                           outputDir = outputDir,
-                          stateDir = stateDir.getOrElse(envResolvedConfig.stateDir),
+                          stateDir = stateDir.getOrElse(telegramResolvedConfig.stateDir),
                           aiProvider = Some(providerConfig),
                           discoveryMaxDepth =
-                            discoveryMaxDepth.map(_.toInt).getOrElse(envResolvedConfig.discoveryMaxDepth),
+                            discoveryMaxDepth.map(_.toInt).getOrElse(telegramResolvedConfig.discoveryMaxDepth),
                           discoveryExcludePatterns =
                             parseExcludePatterns(
                               discoveryExclude
-                            ).getOrElse(envResolvedConfig.discoveryExcludePatterns),
-                          parallelism = parallelism.map(_.toInt).getOrElse(envResolvedConfig.parallelism),
-                          batchSize = batchSize.map(_.toInt).getOrElse(envResolvedConfig.batchSize),
+                            ).getOrElse(telegramResolvedConfig.discoveryExcludePatterns),
+                          parallelism = parallelism.map(_.toInt).getOrElse(telegramResolvedConfig.parallelism),
+                          batchSize = batchSize.map(_.toInt).getOrElse(telegramResolvedConfig.batchSize),
                           resumeFromCheckpoint = resume,
-                          dryRun = dryRun.getOrElse(envResolvedConfig.dryRun),
-                          verbose = verbose.getOrElse(envResolvedConfig.verbose),
+                          dryRun = dryRun.getOrElse(telegramResolvedConfig.dryRun),
+                          verbose = verbose.getOrElse(telegramResolvedConfig.verbose),
                         )
 
       // Validate configuration
@@ -376,14 +379,16 @@ object Main extends ZIOAppDefault:
                              case Some(p) => baseConfig.copy(aiProvider = Some(p))
                              case None    => baseConfig
 
-      envResolvedConfig <- ConfigLoader
-                             .applyAIEnvironmentOverrides(withConfigProvider)
-                             .mapError(msg => new IllegalArgumentException(msg))
+      envResolvedConfig      <- ConfigLoader
+                                  .applyAIEnvironmentOverrides(withConfigProvider)
+                                  .mapError(msg => new IllegalArgumentException(msg))
+      telegramResolvedConfig <- applyTelegramEnvironmentOverrides(envResolvedConfig)
+                                  .mapError(msg => new IllegalArgumentException(msg))
 
       parsedAiProvider <- parseAIProviderOption(aiProvider).mapError(msg => new IllegalArgumentException(msg))
       parsedTemp       <- parseTemperatureOption(aiTemperature).mapError(msg => new IllegalArgumentException(msg))
 
-      resolvedProvider = envResolvedConfig.resolvedProviderConfig
+      resolvedProvider = telegramResolvedConfig.resolvedProviderConfig
       providerConfig   = AIProviderConfig.withDefaults(
                            resolvedProvider.copy(
                              provider = parsedAiProvider.getOrElse(resolvedProvider.provider),
@@ -395,15 +400,17 @@ object Main extends ZIOAppDefault:
                            )
                          )
 
-      migrationConfig = envResolvedConfig.copy(
+      migrationConfig = telegramResolvedConfig.copy(
                           sourceDir = sourceDir,
                           outputDir = outputDir,
-                          verbose = verbose.getOrElse(envResolvedConfig.verbose),
+                          verbose = verbose.getOrElse(telegramResolvedConfig.verbose),
                           aiProvider = Some(providerConfig),
                           discoveryMaxDepth =
-                            discoveryMaxDepth.map(_.toInt).getOrElse(envResolvedConfig.discoveryMaxDepth),
+                            discoveryMaxDepth.map(_.toInt).getOrElse(telegramResolvedConfig.discoveryMaxDepth),
                           discoveryExcludePatterns =
-                            parseExcludePatterns(discoveryExclude).getOrElse(envResolvedConfig.discoveryExcludePatterns),
+                            parseExcludePatterns(
+                              discoveryExclude
+                            ).getOrElse(telegramResolvedConfig.discoveryExcludePatterns),
                         )
 
       validatedConfig <- ConfigLoader.validate(migrationConfig).mapError(msg => new IllegalArgumentException(msg))
@@ -438,6 +445,81 @@ object Main extends ZIOAppDefault:
           .attempt(raw.toDouble)
           .mapError(_ => s"Invalid --ai-temperature '$raw'. Expected decimal between 0.0 and 2.0")
           .map(Some(_))
+
+  private def applyTelegramEnvironmentOverrides(config: MigrationConfig): IO[String, MigrationConfig] =
+    ZIO.attempt(sys.env.toMap).mapError(_.getMessage).flatMap(env => applyTelegramEnvironmentOverrides(config, env))
+
+  private def applyTelegramEnvironmentOverrides(config: MigrationConfig, env: Map[String, String])
+    : IO[String, MigrationConfig] =
+    val clean = env.collect { case (k, v) if v.trim.nonEmpty => k -> v.trim }
+    val base  = config.telegram
+
+    def parseBoolean(name: String, fallback: Boolean): IO[String, Boolean] =
+      clean.get(name) match
+        case None                                                                      => ZIO.succeed(fallback)
+        case Some(value) if Set("1", "true", "yes", "on").contains(value.toLowerCase)  => ZIO.succeed(true)
+        case Some(value) if Set("0", "false", "no", "off").contains(value.toLowerCase) => ZIO.succeed(false)
+        case Some(value)                                                               => ZIO.fail(s"$name must be boolean, got: $value")
+
+    def parseInt(name: String, fallback: Int): IO[String, Int] =
+      clean.get(name) match
+        case None        => ZIO.succeed(fallback)
+        case Some(value) => ZIO.attempt(value.toInt).mapError(_ => s"$name must be integer, got: $value")
+
+    def parseDurationMillis(name: String, fallback: Duration): IO[String, Duration] =
+      clean.get(name) match
+        case None        => ZIO.succeed(fallback)
+        case Some(value) =>
+          ZIO.attempt(Duration.fromMillis(value.toLong)).mapError(_ => s"$name must be millis integer, got: $value")
+
+    val parsedMode: IO[String, TelegramMode] = clean.get("MIGRATION_TELEGRAM_MODE") match
+      case None            => ZIO.succeed(base.mode)
+      case Some("webhook") => ZIO.succeed(TelegramMode.Webhook)
+      case Some("polling") => ZIO.succeed(TelegramMode.Polling)
+      case Some(other)     => ZIO.fail(s"MIGRATION_TELEGRAM_MODE must be one of: webhook|polling, got: $other")
+
+    for
+      enabled         <- parseBoolean("MIGRATION_TELEGRAM_ENABLED", base.enabled)
+      mode            <- parsedMode
+      pollingInterval <- parseDurationMillis("MIGRATION_TELEGRAM_POLL_INTERVAL_MS", base.polling.interval)
+      pollingBatch    <- parseInt("MIGRATION_TELEGRAM_POLL_BATCH_SIZE", base.polling.batchSize)
+      pollingTimeout  <- parseInt("MIGRATION_TELEGRAM_POLL_TIMEOUT_SECONDS", base.polling.timeoutSeconds)
+      pollingReqTmo   <- parseDurationMillis("MIGRATION_TELEGRAM_POLL_REQUEST_TIMEOUT_MS", base.polling.requestTimeout)
+      secretEnv        = clean
+                           .get("MIGRATION_TELEGRAM_SECRET_TOKEN")
+                           .orElse(clean.get("MIGRATION_TELEGRAM_WEBHOOK_SECRET_TOKEN"))
+    yield config.copy(
+      telegram = base.copy(
+        enabled = enabled,
+        mode = mode,
+        botToken = clean.get("MIGRATION_TELEGRAM_BOT_TOKEN").orElse(base.botToken),
+        secretToken = secretEnv.orElse(base.secretToken),
+        webhookUrl = clean.get("MIGRATION_TELEGRAM_WEBHOOK_URL").orElse(base.webhookUrl),
+        polling = base.polling.copy(
+          interval = pollingInterval,
+          batchSize = pollingBatch,
+          timeoutSeconds = pollingTimeout,
+          requestTimeout = pollingReqTmo,
+        ),
+      )
+    )
+
+  private def finalizeServeTelegramConfig(config: MigrationConfig): IO[Throwable, MigrationConfig] =
+    val telegram = config.telegram
+    if !telegram.enabled || telegram.mode != TelegramMode.Webhook || telegram.secretToken.exists(_.trim.nonEmpty) then
+      ZIO.succeed(config)
+    else
+      telegram.botToken.map(_.trim).filter(_.nonEmpty) match
+        case None        =>
+          ZIO.fail(new IllegalArgumentException("Telegram bot token is required when telegram is enabled"))
+        case Some(token) =>
+          val generated = UUID.randomUUID().toString.replace("-", "")
+          ZIO.logInfo(s"Generated Telegram webhook secret token for bot ${maskToken(token)}") *>
+            ZIO.succeed(config.copy(telegram = telegram.copy(secretToken = Some(generated))))
+
+  private def maskToken(token: String): String =
+    if token.length <= 8 then "********"
+    else s"${token.take(4)}...${token.takeRight(4)}"
 
   private def executeListRuns(stateDir: Option[Path], configFile: Option[Path]): ZIO[Any, Throwable, Unit] =
     for
@@ -487,16 +569,19 @@ object Main extends ZIOAppDefault:
     val dbFile = Paths.get(dbPath)
 
     for
-      baseConfig <- ConfigLoader.loadWithEnvOverrides.orElse(
-                      ZIO.succeed(MigrationConfig(Paths.get("cobol-source"), Paths.get("java-output")))
-                    )
-      stateDir    = Option(dbFile.getParent).getOrElse(baseConfig.stateDir)
-      config      = baseConfig.copy(stateDir = stateDir)
-      _          <- ZIO.logInfo(s"Starting web portal on $host:$port using DB at $dbFile")
-      _          <- WebServer
-                      .start(host, port)
-                      .onInterrupt(ZIO.logInfo("Shutting down web portal..."))
-                      .provide(webServerLayer(config, dbFile))
+      baseConfig   <- ConfigLoader.loadWithEnvOverrides.orElse(
+                        ZIO.succeed(MigrationConfig(Paths.get("cobol-source"), Paths.get("java-output")))
+                      )
+      withTelegram <- applyTelegramEnvironmentOverrides(baseConfig)
+                        .mapError(msg => new IllegalArgumentException(msg))
+      stateDir      = Option(dbFile.getParent).getOrElse(baseConfig.stateDir)
+      config0       = withTelegram.copy(stateDir = stateDir)
+      config       <- finalizeServeTelegramConfig(config0)
+      _            <- ZIO.logInfo(s"Starting web portal on $host:$port using DB at $dbFile")
+      _            <- WebServer
+                        .start(host, port)
+                        .onInterrupt(ZIO.logInfo("Shutting down web portal..."))
+                        .provide(webServerLayer(config, dbFile))
     yield ()
 
   private val banner =

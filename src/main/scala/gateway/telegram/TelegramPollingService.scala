@@ -2,6 +2,7 @@ package gateway.telegram
 
 import zio.*
 
+import _root_.models.{ MigrationConfig, TelegramMode }
 import gateway.*
 
 final case class TelegramPollingConfig(
@@ -19,12 +20,6 @@ trait TelegramPollingService:
   def runLoop: UIO[Nothing]
 
 object TelegramPollingService:
-  private val EnabledEnvKey        = "MIGRATION_TELEGRAM_POLLING_ENABLED"
-  private val IntervalMsEnvKey     = "MIGRATION_TELEGRAM_POLL_INTERVAL_MS"
-  private val BatchSizeEnvKey      = "MIGRATION_TELEGRAM_POLL_BATCH_SIZE"
-  private val TimeoutSecondsEnvKey = "MIGRATION_TELEGRAM_POLL_TIMEOUT_SECONDS"
-  private val RequestTimeoutMsKey  = "MIGRATION_TELEGRAM_POLL_REQUEST_TIMEOUT_MS"
-
   def runOnce: ZIO[TelegramPollingService, Nothing, Int] =
     ZIO.serviceWithZIO[TelegramPollingService](_.runOnce)
 
@@ -38,44 +33,29 @@ object TelegramPollingService:
       yield service
     }
 
-  val live: ZLayer[ChannelRegistry & GatewayService, Nothing, TelegramPollingService] =
+  val live: ZLayer[ChannelRegistry & GatewayService & MigrationConfig, Nothing, TelegramPollingService] =
     ZLayer.scoped {
       for
-        config   <- loadConfig
+        config0  <- ZIO.service[MigrationConfig]
         registry <- ZIO.service[ChannelRegistry]
         gateway  <- ZIO.service[GatewayService]
+        config    = fromMigrationConfig(config0)
         service   = TelegramPollingServiceLive(registry, gateway, config)
         _        <- service.runLoop.forkScoped.when(service.config.enabled)
       yield service
     }
 
-  private def loadConfig: UIO[TelegramPollingConfig] =
-    for
-      enabledRaw        <- System.env(EnabledEnvKey).orDie
-      intervalRaw       <- System.env(IntervalMsEnvKey).orDie
-      batchSizeRaw      <- System.env(BatchSizeEnvKey).orDie
-      timeoutSecondsRaw <- System.env(TimeoutSecondsEnvKey).orDie
-      requestTimeoutRaw <- System.env(RequestTimeoutMsKey).orDie
-    yield sanitizeConfig(
+  private def fromMigrationConfig(config: MigrationConfig): TelegramPollingConfig =
+    val telegram = config.telegram
+    sanitizeConfig(
       TelegramPollingConfig(
-        enabled = enabledRaw.exists(parseBoolean),
-        pollInterval = intervalRaw
-          .flatMap(_.toLongOption)
-          .map(Duration.fromMillis)
-          .getOrElse(1.second),
-        batchSize = batchSizeRaw.flatMap(_.toIntOption).getOrElse(100),
-        timeoutSeconds = timeoutSecondsRaw.flatMap(_.toIntOption).getOrElse(30),
-        requestTimeout = requestTimeoutRaw
-          .flatMap(_.toLongOption)
-          .map(Duration.fromMillis)
-          .getOrElse(70.seconds),
+        enabled = telegram.enabled && telegram.mode == TelegramMode.Polling,
+        pollInterval = telegram.polling.interval,
+        batchSize = telegram.polling.batchSize,
+        timeoutSeconds = telegram.polling.timeoutSeconds,
+        requestTimeout = telegram.polling.requestTimeout,
       )
     )
-
-  private def parseBoolean(raw: String): Boolean =
-    raw.trim.toLowerCase match
-      case "1" | "true" | "yes" | "on" => true
-      case _                           => false
 
   private def sanitizeConfig(config: TelegramPollingConfig): TelegramPollingConfig =
     config.copy(

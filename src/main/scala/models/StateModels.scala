@@ -39,6 +39,26 @@ case class ProgressUpdate(
   timestamp: Instant,
 ) derives JsonCodec
 
+enum TelegramMode derives JsonCodec:
+  case Webhook
+  case Polling
+
+case class TelegramPollingSettings(
+  interval: zio.Duration = 1.second,
+  batchSize: Int = 100,
+  timeoutSeconds: Int = 30,
+  requestTimeout: zio.Duration = 70.seconds,
+) derives JsonCodec
+
+case class TelegramBotConfig(
+  enabled: Boolean = false,
+  mode: TelegramMode = TelegramMode.Webhook,
+  botToken: Option[String] = None,
+  secretToken: Option[String] = None,
+  webhookUrl: Option[String] = None,
+  polling: TelegramPollingSettings = TelegramPollingSettings(),
+) derives JsonCodec
+
 case class MigrationConfig(
   sourceDir: Path,
   outputDir: Path,
@@ -82,6 +102,7 @@ case class MigrationConfig(
   projectName: Option[String] = None,
   projectVersion: String = "0.0.1-SNAPSHOT",
   maxCompileRetries: Int = 3,
+  telegram: TelegramBotConfig = TelegramBotConfig(),
 ) derives JsonCodec:
 
   @nowarn("cat=deprecation")

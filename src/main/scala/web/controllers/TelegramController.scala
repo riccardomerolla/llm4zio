@@ -4,6 +4,7 @@ import zio.*
 import zio.http.*
 import zio.json.*
 
+import _root_.models.{ MigrationConfig, TelegramMode }
 import gateway.*
 import gateway.telegram.{ TelegramChannel, TelegramUpdate }
 
@@ -22,6 +23,8 @@ object TelegramController:
     channelRegistry: ChannelRegistry,
     expectedBotToken: Option[String],
     expectedSecretToken: Option[String],
+    enabled: Boolean,
+    mode: TelegramMode,
   ): UIO[TelegramController] =
     Ref
       .make((Set.empty[Long], List.empty[Long]))
@@ -31,22 +34,28 @@ object TelegramController:
           channelRegistry = channelRegistry,
           expectedBotToken = expectedBotToken.map(_.trim).filter(_.nonEmpty),
           expectedSecretToken = expectedSecretToken.map(_.trim).filter(_.nonEmpty),
+          enabled = enabled,
+          mode = mode,
           processedUpdatesRef = processedUpdates,
           processedUpdatesCapacity = ProcessedUpdatesCapacity,
         )
       )
 
-  val live: ZLayer[GatewayService & ChannelRegistry, Nothing, TelegramController] =
+  val live: ZLayer[GatewayService & ChannelRegistry & MigrationConfig, Nothing, TelegramController] =
     ZLayer.fromZIO {
       for
-        gateway        <- ZIO.service[GatewayService]
-        registry       <- ZIO.service[ChannelRegistry]
-        expectedBot    <- System.env("MIGRATION_TELEGRAM_BOT_TOKEN").orDie
-        expectedSecret <- System
-                            .env("MIGRATION_TELEGRAM_WEBHOOK_SECRET_TOKEN")
-                            .orElse(System.env("MIGRATION_TELEGRAM_WEBHOOK_SECRET"))
-                            .orDie
-        controller     <- make(gateway, registry, expectedBot, expectedSecret)
+        gateway    <- ZIO.service[GatewayService]
+        registry   <- ZIO.service[ChannelRegistry]
+        config     <- ZIO.service[MigrationConfig]
+        telegramCfg = config.telegram
+        controller <- make(
+                        gatewayService = gateway,
+                        channelRegistry = registry,
+                        expectedBotToken = telegramCfg.botToken,
+                        expectedSecretToken = telegramCfg.secretToken,
+                        enabled = telegramCfg.enabled,
+                        mode = telegramCfg.mode,
+                      )
       yield controller
     }
 
@@ -55,6 +64,8 @@ final case class TelegramControllerLive(
   channelRegistry: ChannelRegistry,
   expectedBotToken: Option[String],
   expectedSecretToken: Option[String],
+  enabled: Boolean,
+  mode: TelegramMode,
   processedUpdatesRef: Ref[(Set[Long], List[Long])],
   processedUpdatesCapacity: Int,
 ) extends TelegramController:
@@ -66,7 +77,7 @@ final case class TelegramControllerLive(
   )
 
   private def handleWebhook(botToken: String, req: Request): UIO[Response] =
-    verifyTokens(botToken, req) match
+    verifyAvailability.orElse(verifyTokens(botToken, req)) match
       case Some(response) => ZIO.succeed(response)
       case None           =>
         for
@@ -95,6 +106,14 @@ final case class TelegramControllerLive(
     else if expectedSecretToken.exists(secret => providedSecret.forall(_ != secret)) then
       Some(Response.text("invalid secret token").status(Status.Forbidden))
     else None
+
+  private def verifyAvailability: Option[Response] =
+    if !enabled then Some(Response.text("telegram integration disabled").status(Status.NotFound))
+    else
+      mode match
+        case TelegramMode.Webhook => None
+        case TelegramMode.Polling =>
+          Some(Response.text("telegram webhook disabled while polling mode is active").status(Status.NotFound))
 
   private def parseUpdate(rawBody: String): Either[String, TelegramUpdate] =
     rawBody.fromJson[TelegramUpdate]

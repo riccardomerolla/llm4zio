@@ -9,7 +9,7 @@ import zio.config.magnolia.*
 import zio.config.typesafe.*
 
 import com.typesafe.config.{ Config as TypesafeConfig, ConfigFactory }
-import models.{ AIProvider, AIProviderConfig, MigrationConfig }
+import models.{ AIProvider, AIProviderConfig, MigrationConfig, TelegramMode }
 
 /** Configuration loader using ZIO Config with HOCON support
   *
@@ -196,6 +196,7 @@ object ConfigLoader:
            )
       _ <- validateAIProvider(providerConfig)
       _ <- validateDiscovery(config.discoveryMaxDepth, config.discoveryExcludePatterns)
+      _ <- validateTelegram(config)
     yield config
 
   private def validateParallelism(parallelism: Int): IO[String, Unit] =
@@ -293,6 +294,46 @@ object ConfigLoader:
              .fail("Discovery exclude patterns cannot contain empty values")
              .when(excludes.exists(_.trim.isEmpty))
     yield ()
+
+  private def validateTelegram(config: MigrationConfig): IO[String, Unit] =
+    val telegram = config.telegram
+    if !telegram.enabled then ZIO.unit
+    else
+      for
+        _ <- ZIO
+               .fail("Telegram bot token is required when telegram integration is enabled")
+               .when(telegram.botToken.forall(_.trim.isEmpty))
+        _ <- telegram.mode match
+               case TelegramMode.Webhook =>
+                 for
+                   _ <- ZIO
+                          .fail("Telegram webhook URL is required in webhook mode")
+                          .when(telegram.webhookUrl.forall(_.trim.isEmpty))
+                   _ <- ZIO.foreachDiscard(telegram.webhookUrl.filter(_.trim.nonEmpty))(validateBaseUrl)
+                 yield ()
+               case TelegramMode.Polling =>
+                 for
+                   _ <- ZIO
+                          .fail(
+                            s"Telegram polling interval must be > 0, got ${telegram.polling.interval.toMillis}ms"
+                          )
+                          .when(telegram.polling.interval <= Duration.Zero)
+                   _ <- ZIO
+                          .fail(s"Telegram polling batchSize must be > 0, got ${telegram.polling.batchSize}")
+                          .when(telegram.polling.batchSize <= 0)
+                   _ <- ZIO
+                          .fail(
+                            s"Telegram polling timeoutSeconds must be > 0, got ${telegram.polling.timeoutSeconds}"
+                          )
+                          .when(telegram.polling.timeoutSeconds <= 0)
+                   _ <-
+                     ZIO
+                       .fail(
+                         s"Telegram polling requestTimeout must be > 0, got ${telegram.polling.requestTimeout.toMillis}ms"
+                       )
+                       .when(telegram.polling.requestTimeout <= Duration.Zero)
+                 yield ()
+      yield ()
 
   private def parseAIProviderSection(config: TypesafeConfig): Either[String, Option[AIProviderConfig]] =
     if !config.hasPath(ConfigAiPath) then Right(None)
