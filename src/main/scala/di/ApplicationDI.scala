@@ -13,8 +13,8 @@ import gateway.telegram.*
 import llm4zio.core.{ LlmConfig, LlmProvider, LlmService }
 import llm4zio.providers.{ GeminiCliExecutor, HttpClient }
 import orchestration.*
-import web.WebServer
 import web.controllers.*
+import web.{ WebServer, WebSocketServer }
 
 object ApplicationDI:
 
@@ -146,6 +146,7 @@ object ApplicationDI:
       IssueAssignmentOrchestrator.live,
       ChatController.live,
       TelegramController.live,
+      WebSocketServer.live,
       WebServer.live,
     )
 
