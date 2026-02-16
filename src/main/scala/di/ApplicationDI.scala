@@ -33,6 +33,7 @@ object ApplicationDI:
       ChannelRegistry &
       MessageRouter &
       GatewayService &
+      TelegramPollingService &
       CobolDiscoveryAgent &
       CobolAnalyzerAgent &
       BusinessLogicExtractorAgent &
@@ -91,6 +92,7 @@ object ApplicationDI:
       channelRegistryLayer,
       MessageRouter.live,
       GatewayService.live,
+      TelegramPollingService.live,
 
       // Agent implementations
       CobolDiscoveryAgent.live,
