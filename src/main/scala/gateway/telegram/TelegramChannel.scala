@@ -11,6 +11,7 @@ final case class TelegramChannel(
   scopeStrategy: SessionScopeStrategy,
   client: TelegramClient,
   workflowNotifier: WorkflowNotifier,
+  showMoreRef: Ref[Map[String, String]],
   sessionsRef: Ref[Set[SessionKey]],
   inboundQueue: Queue[NormalizedMessage],
   outboundQueuesRef: Ref[Map[SessionKey, Queue[NormalizedMessage]]],
@@ -60,15 +61,21 @@ final case class TelegramChannel(
       _           <- ensureConnected(message.sessionKey)
       chatId      <- resolveChatId(message.sessionKey, message.metadata)
       replyTo     <- resolveReplyTo(message.sessionKey, message.metadata)
+      formatted    = ResponseFormatter.format(message)
+      _           <- ZIO.foreachDiscard(formatted.continuationToken.zip(formatted.remaining)) {
+                       case (token, remaining) =>
+                         showMoreRef.update(_ + (token -> remaining))
+                     }
       telegramMsg <- client
                        .sendMessage(
                          TelegramSendMessage(
                            chat_id = chatId,
-                           text = message.content,
-                           parse_mode = message.metadata.get("telegram.parse_mode"),
+                           text = formatted.text,
+                           parse_mode = formatted.parseMode,
                            disable_web_page_preview =
                              message.metadata.get("telegram.disable_web_page_preview").flatMap(_.toBooleanOption),
                            reply_to_message_id = replyTo,
+                           reply_markup = formatted.replyMarkup,
                          )
                        )
                        .mapError(err => MessageChannelError.InvalidMessage(s"telegram send failed: $err"))
@@ -250,21 +257,58 @@ final case class TelegramChannel(
         val data       = callback.data.map(_.trim).filter(_.nonEmpty).getOrElse("")
         for
           _ <- open(sessionKey)
-          _ <- InlineKeyboards.parseCallbackData(data) match
-                 case Left(error)      =>
-                   sendCallbackFeedback(
-                     chatId = message.chat.id,
-                     replyToMessageId = message.message_id,
-                     text = s"Invalid callback payload: $error",
-                     markup = None,
-                   )
-                 case Right(keyAction) =>
-                   routeCallbackAction(
-                     chatId = message.chat.id,
-                     replyToMessageId = message.message_id,
-                     action = keyAction,
-                   )
+          _ <-
+            if data.startsWith("more:") then
+              handleShowMoreCallback(
+                chatId = message.chat.id,
+                replyToMessageId = message.message_id,
+                token = data.stripPrefix("more:").trim,
+              )
+            else
+              InlineKeyboards.parseCallbackData(data) match
+                case Left(error)      =>
+                  sendCallbackFeedback(
+                    chatId = message.chat.id,
+                    replyToMessageId = message.message_id,
+                    text = s"Invalid callback payload: $error",
+                    markup = None,
+                  )
+                case Right(keyAction) =>
+                  routeCallbackAction(
+                    chatId = message.chat.id,
+                    replyToMessageId = message.message_id,
+                    action = keyAction,
+                  )
         yield ()
+
+  private def handleShowMoreCallback(
+    chatId: Long,
+    replyToMessageId: Long,
+    token: String,
+  ): IO[MessageChannelError, Unit] =
+    for
+      maybeRemaining <- showMoreRef.modify(current => (current.get(token), current - token))
+      _              <- maybeRemaining match
+                          case None            =>
+                            sendCallbackFeedback(
+                              chatId = chatId,
+                              replyToMessageId = replyToMessageId,
+                              text = "No additional content is available.",
+                              markup = None,
+                            )
+                          case Some(remaining) =>
+                            val formatted = ResponseFormatter.formatContinuation(token, remaining)
+                            ZIO.foreachDiscard(formatted.continuationToken.zip(formatted.remaining)) {
+                              case (nextToken, tail) => showMoreRef.update(_ + (nextToken -> tail))
+                            } *>
+                              sendCallbackFeedback(
+                                chatId = chatId,
+                                replyToMessageId = replyToMessageId,
+                                text = formatted.text,
+                                markup = formatted.replyMarkup,
+                                parseMode = formatted.parseMode,
+                              )
+    yield ()
 
   private def routeCallbackAction(
     chatId: Long,
@@ -338,12 +382,14 @@ final case class TelegramChannel(
     replyToMessageId: Long,
     text: String,
     markup: Option[TelegramInlineKeyboardMarkup],
+    parseMode: Option[String] = None,
   ): IO[MessageChannelError, Unit] =
     client
       .sendMessage(
         TelegramSendMessage(
           chat_id = chatId,
           text = text,
+          parse_mode = parseMode,
           reply_to_message_id = Some(replyToMessageId),
           reply_markup = markup,
         )
@@ -366,6 +412,7 @@ object TelegramChannel:
   ): UIO[TelegramChannel] =
     for
       sessions <- Ref.make(Set.empty[SessionKey])
+      showMore <- Ref.make(Map.empty[String, String])
       inbound  <- Queue.unbounded[NormalizedMessage]
       outbound <- Ref.make(Map.empty[SessionKey, Queue[NormalizedMessage]])
       routing  <- Ref.make(Map.empty[SessionKey, TelegramRoutingState])
@@ -374,6 +421,7 @@ object TelegramChannel:
       scopeStrategy = scopeStrategy,
       client = client,
       workflowNotifier = workflowNotifier,
+      showMoreRef = showMore,
       sessionsRef = sessions,
       inboundQueue = inbound,
       outboundQueuesRef = outbound,

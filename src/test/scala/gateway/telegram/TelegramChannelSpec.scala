@@ -261,4 +261,34 @@ object TelegramChannelSpec extends ZIOSpecDefault:
         sent.exists(msg => msg.reply_markup.exists(_.inline_keyboard.flatten.exists(_.text == "Resume"))),
       )
     },
+    test("send formats long response and supports show more callback") {
+      for
+        updatesRef <- Ref.make(List.empty[TelegramUpdate])
+        sentRef    <- Ref.make(List.empty[TelegramSendMessage])
+        client      = StubTelegramClient(
+                        updatesRef = updatesRef,
+                        sentRef = sentRef,
+                        response = req =>
+                          TelegramMessage(
+                            message_id = req.reply_to_message_id.getOrElse(950L),
+                            date = 1710000000L,
+                            chat = TelegramChat(id = req.chat_id, `type` = "private"),
+                            text = Some(req.text),
+                          ),
+                      )
+        channel    <- TelegramChannel.make(client, workflowNotifier = WorkflowNotifier.noop)
+        _          <- channel.ingestUpdate(update(updateId = 41L, chatId = 88L, messageId = 911L, text = Some("hello")))
+        session     = SessionScopeStrategy.PerConversation.build("telegram", "88")
+        _          <- channel.send(outboundMessage(session, "line\n" * 300))
+        sent1      <- sentRef.get
+        showMore    = sent1.lastOption.flatMap(_.reply_markup).flatMap(_.inline_keyboard.flatten.headOption)
+        token       = showMore.map(_.callback_data.stripPrefix("more:")).getOrElse("missing")
+        _          <- channel.ingestUpdate(callbackUpdate(42L, 88L, 912L, s"more:$token"))
+        sent2      <- sentRef.get
+      yield assertTrue(
+        sent1.nonEmpty,
+        showMore.exists(_.text == "Show More"),
+        sent2.length >= 2,
+      )
+    },
   ) @@ TestAspect.sequential @@ TestAspect.timeout(10.seconds)

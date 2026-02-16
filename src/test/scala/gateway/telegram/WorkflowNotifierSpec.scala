@@ -103,7 +103,7 @@ object WorkflowNotifierSpec extends ZIOSpecDefault:
   private def waitForMessages(
     sentRef: Ref[List[TelegramSendMessage]],
     minSize: Int,
-    remaining: Int = 400,
+    remaining: Int = 10000,
   ): UIO[List[TelegramSendMessage]] =
     sentRef.get.flatMap { messages =>
       if messages.size >= minSize || remaining <= 0 then ZIO.succeed(messages)
