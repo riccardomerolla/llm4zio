@@ -9,6 +9,7 @@ import agents.*
 import core.*
 import db.*
 import gateway.*
+import gateway.telegram.*
 import llm4zio.core.{ LlmConfig, LlmProvider, LlmService }
 import llm4zio.providers.{ GeminiCliExecutor, HttpClient }
 import orchestration.*
@@ -142,6 +143,7 @@ object ApplicationDI:
       AgentConfigResolver.live,
       IssueAssignmentOrchestrator.live,
       ChatController.live,
+      TelegramController.live,
       WebServer.live,
     )
 
@@ -151,6 +153,24 @@ object ApplicationDI:
         ref       <- Ref.Synchronized.make(Map.empty[String, MessageChannel])
         registry   = ChannelRegistryLive(ref)
         websocket <- WebSocketChannel.make()
+        telegram  <- TelegramChannel.make(noopTelegramClient)
         _         <- registry.register(websocket)
+        _         <- registry.register(telegram)
       yield registry
     }
+
+  private val noopTelegramClient: TelegramClient =
+    new TelegramClient:
+      override def getUpdates(
+        offset: Option[Long],
+        limit: Int,
+        timeoutSeconds: Int,
+        timeout: Duration,
+      ): IO[TelegramClientError, List[TelegramUpdate]] =
+        ZIO.succeed(Nil)
+
+      override def sendMessage(
+        request: TelegramSendMessage,
+        timeout: Duration,
+      ): IO[TelegramClientError, TelegramMessage] =
+        ZIO.fail(TelegramClientError.Network("telegram client is not configured"))
