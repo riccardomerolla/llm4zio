@@ -10,6 +10,7 @@ final case class TelegramChannel(
   name: String,
   scopeStrategy: SessionScopeStrategy,
   client: TelegramClient,
+  workflowNotifier: WorkflowNotifier,
   sessionsRef: Ref[Set[SessionKey]],
   inboundQueue: Queue[NormalizedMessage],
   outboundQueuesRef: Ref[Map[SessionKey, Queue[NormalizedMessage]]],
@@ -103,28 +104,25 @@ final case class TelegramChannel(
           case None       => ZIO.none
           case Some(text) =>
             for
-              _         <- open(sessionKey)
-              now       <- Clock.instant
-              metadata   = TelegramMetadata.toMap(TelegramMetadata.inboundToMetadata(update, message))
-              normalized = NormalizedMessage(
-                             id = s"telegram:${update.update_id}:${message.message_id}",
-                             channelName = name,
-                             sessionKey = sessionKey,
-                             direction = MessageDirection.Inbound,
-                             role = MessageRole.User,
-                             content = text,
-                             metadata = metadata,
-                             timestamp = now,
+              _       <- open(sessionKey)
+              now     <- Clock.instant
+              metadata = TelegramMetadata.toMap(TelegramMetadata.inboundToMetadata(update, message))
+              _       <- routingRef.update { current =>
+                           val state = current.getOrElse(sessionKey, TelegramRoutingState())
+                           current.updated(
+                             sessionKey,
+                             state.copy(lastInboundMessage = TelegramMetadata.fromMap(metadata)),
                            )
-              _         <- inboundQueue.offer(normalized).unit
-              _         <- routingRef.update { current =>
-                             val state = current.getOrElse(sessionKey, TelegramRoutingState())
-                             current.updated(
-                               sessionKey,
-                               state.copy(lastInboundMessage = TelegramMetadata.fromMap(normalized.metadata)),
-                             )
-                           }
-            yield Some(normalized)
+                         }
+              routed  <- routeInboundOrCommand(
+                           sessionKey = sessionKey,
+                           update = update,
+                           message = message,
+                           content = text,
+                           metadata = metadata,
+                           now = now,
+                         )
+            yield routed
 
   def pollInbound(
     offset: Option[Long] = None,
@@ -194,9 +192,50 @@ final case class TelegramChannel(
   private def extractMessage(update: TelegramUpdate): Option[TelegramMessage] =
     update.message.orElse(update.edited_message)
 
+  private def routeInboundOrCommand(
+    sessionKey: SessionKey,
+    update: TelegramUpdate,
+    message: TelegramMessage,
+    content: String,
+    metadata: Map[String, String],
+    now: java.time.Instant,
+  ): IO[MessageChannelError, Option[NormalizedMessage]] =
+    CommandParser.parse(content) match
+      case Right(command)                         =>
+        workflowNotifier
+          .notifyCommand(
+            chatId = message.chat.id,
+            replyToMessageId = Some(message.message_id),
+            command = command,
+          )
+          .catchAll(err => ZIO.logWarning(s"telegram command handling failed: $err"))
+          .as(None)
+      case Left(CommandParseError.NotACommand(_)) =>
+        val normalized = NormalizedMessage(
+          id = s"telegram:${update.update_id}:${message.message_id}",
+          channelName = name,
+          sessionKey = sessionKey,
+          direction = MessageDirection.Inbound,
+          role = MessageRole.User,
+          content = content,
+          metadata = metadata,
+          timestamp = now,
+        )
+        inboundQueue.offer(normalized).unit.as(Some(normalized))
+      case Left(parseError)                       =>
+        workflowNotifier
+          .notifyParseError(
+            chatId = message.chat.id,
+            replyToMessageId = Some(message.message_id),
+            error = parseError,
+          )
+          .catchAll(err => ZIO.logWarning(s"telegram parse error notification failed: $err"))
+          .as(None)
+
 object TelegramChannel:
   def make(
     client: TelegramClient,
+    workflowNotifier: WorkflowNotifier = WorkflowNotifier.noop,
     name: String = "telegram",
     scopeStrategy: SessionScopeStrategy = SessionScopeStrategy.PerConversation,
   ): UIO[TelegramChannel] =
@@ -209,6 +248,7 @@ object TelegramChannel:
       name = name,
       scopeStrategy = scopeStrategy,
       client = client,
+      workflowNotifier = workflowNotifier,
       sessionsRef = sessions,
       inboundQueue = inbound,
       outboundQueuesRef = outbound,
