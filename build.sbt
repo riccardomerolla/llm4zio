@@ -23,6 +23,7 @@ val opentelemetryVersion = "1.44.1"
 val sqliteJdbcVersion = "3.47.2.0"
 val proleapCobolVersion = "v2.4.0"
 val scalaMetaVersion = "4.13.6"
+val bot4sTelegramCoreVersion = "7.0.0"
 
 // Common dependencies shared across modules
 val zioCoreDeps = Seq(
@@ -68,6 +69,7 @@ val rootDeps = zioCoreDeps ++ Seq(
   "io.opentelemetry" % "opentelemetry-exporter-logging-otlp" % opentelemetryVersion,
   "org.xerial" % "sqlite-jdbc" % sqliteJdbcVersion,
   "com.github.uwol" % "proleap-cobol-parser" % proleapCobolVersion,
+  "com.bot4s" %% "telegram-core" % bot4sTelegramCoreVersion,
 ) ++ zioLoggingDeps ++ zioTestDeps
 
 inThisBuild(List(
