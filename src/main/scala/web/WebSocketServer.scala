@@ -11,7 +11,7 @@ import db.{ MigrationRepository, MigrationRunRow, PersistenceError }
 import gateway.ChannelRegistry
 import gateway.models.SessionScopeStrategy
 import models.*
-import orchestration.{ MigrationOrchestrator, WorkflowService, WorkflowServiceError }
+import orchestration.{ MigrationOrchestrator, OrchestratorControlPlane, WorkflowService, WorkflowServiceError }
 import web.views.HtmlViews
 import web.ws.{ ClientMessage, ServerMessage, SubscriptionTopic }
 
@@ -25,7 +25,7 @@ object WebSocketServer:
 
   val live: ZLayer[
     MigrationOrchestrator & MigrationRepository & WorkflowService & ChannelRegistry & StreamAbortRegistry &
-      ActivityHub & LogTailer & HealthMonitor,
+      ActivityHub & LogTailer & HealthMonitor & OrchestratorControlPlane,
     Nothing,
     WebSocketServer,
   ] = ZLayer.fromFunction(WebSocketServerLive.apply)
@@ -39,6 +39,7 @@ final case class WebSocketServerLive(
   activityHub: ActivityHub,
   logTailer: LogTailer,
   healthMonitor: HealthMonitor,
+  controlPlane: OrchestratorControlPlane,
 ) extends WebSocketServer:
 
   private val HeartbeatInterval = 30.seconds
@@ -51,6 +52,11 @@ final case class WebSocketServerLive(
     MigrationStep.Validation,
     MigrationStep.Documentation,
   )
+
+  private case class AgentMonitorWsPayload(
+    snapshot: AgentMonitorSnapshot,
+    history: List[AgentExecutionEvent],
+  ) derives zio.json.JsonCodec
 
   override val routes: Routes[Any, Response] = Routes(
     Method.GET / "ws" / "console" -> handler(handleWebSocket.toResponse),
@@ -165,6 +171,7 @@ final case class WebSocketServerLive(
       case SubscriptionTopic.ChatStream(conversationId)   => chatStreamFeed(channel, topic, conversationId)
       case SubscriptionTopic.ActivityFeed                 => activityFeed(channel, topic)
       case SubscriptionTopic.HealthMetrics                => healthFeed(channel, topic)
+      case SubscriptionTopic.AgentsActivity               => agentsActivityFeed(channel, topic)
     feed.catchAll(err => Logger.warn(s"Feed error for $topic: $err")).unit
 
   private def runProgressFeed(channel: WebSocketChannel, topic: String, runId: Long): IO[Any, Unit] =
@@ -263,6 +270,23 @@ final case class WebSocketServerLive(
     healthMonitor.stream(2.seconds).mapZIO { snapshot =>
       sendEvent(channel, topic, "health-snapshot", snapshot.toJson)
     }.runDrain
+
+  private def agentsActivityFeed(channel: WebSocketChannel, topic: String): IO[Any, Unit] =
+    ZStream
+      .repeatWithSchedule((), Schedule.spaced(2.seconds))
+      .mapZIO { _ =>
+        for
+          snapshot <- controlPlane.getAgentMonitorSnapshot.orElseFail(
+                        ControlPlaneError.EventBroadcastFailed("cannot load agent monitor snapshot")
+                      )
+          history  <- controlPlane.getAgentExecutionHistory(120).orElseFail(
+                        ControlPlaneError.EventBroadcastFailed("cannot load agent monitor history")
+                      )
+          payload   = AgentMonitorWsPayload(snapshot = snapshot, history = history).toJson
+          _        <- sendEvent(channel, topic, "agent-monitor", payload)
+        yield ()
+      }
+      .runDrain
 
   private def handleLogsWebSocket(req: Request): WebSocketApp[Any] =
     Handler.webSocket { channel =>

@@ -11,7 +11,7 @@ trait WebServer:
 object WebServer:
 
   val live: ZLayer[
-    RunsController & AnalysisController & GraphController & DashboardController & SettingsController & AgentsController & ChatController & WorkflowsController & TelegramController & ActivityController & HealthController & LogsController & WebSocketServer,
+    RunsController & AnalysisController & GraphController & DashboardController & SettingsController & AgentsController & AgentMonitorController & ChatController & WorkflowsController & TelegramController & ActivityController & HealthController & LogsController & WebSocketServer,
     Nothing,
     WebServer,
   ] = ZLayer {
@@ -22,6 +22,7 @@ object WebServer:
       dashboard   <- ZIO.service[DashboardController]
       settings    <- ZIO.service[SettingsController]
       agents      <- ZIO.service[AgentsController]
+      monitor     <- ZIO.service[AgentMonitorController]
       chat        <- ZIO.service[ChatController]
       workflows   <- ZIO.service[WorkflowsController]
       telegram    <- ZIO.service[TelegramController]
@@ -32,7 +33,7 @@ object WebServer:
       staticRoutes = Routes.serveResources(Path.empty / "static")
     yield new WebServer {
       override val routes: Routes[Any, Response] =
-        dashboard.routes ++ runs.routes ++ analysis.routes ++ graph.routes ++ settings.routes ++ agents.routes ++ chat.routes ++ workflows.routes ++ telegram.routes ++ activity.routes ++ health.routes ++ logs.routes ++ wsServer.routes ++ staticRoutes
+        dashboard.routes ++ runs.routes ++ analysis.routes ++ graph.routes ++ settings.routes ++ agents.routes ++ monitor.routes ++ chat.routes ++ workflows.routes ++ telegram.routes ++ activity.routes ++ health.routes ++ logs.routes ++ wsServer.routes ++ staticRoutes
     }
   }
   private val defaultShutdownTimeout = java.time.Duration.ofSeconds(3L)

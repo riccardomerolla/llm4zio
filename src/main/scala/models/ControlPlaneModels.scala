@@ -138,3 +138,35 @@ case class AgentCapability(
   supportedSteps: List[MigrationStep],
   isEnabled: Boolean = true,
 ) derives JsonCodec
+
+enum AgentExecutionState derives JsonCodec:
+  case Idle, Executing, WaitingForTool, Paused, Aborted, Failed
+
+case class AgentExecutionInfo(
+  agentName: String,
+  state: AgentExecutionState,
+  runId: Option[String],
+  step: Option[MigrationStep],
+  task: Option[String],
+  conversationId: Option[String],
+  tokensUsed: Long,
+  latencyMs: Long,
+  cost: Double,
+  lastUpdatedAt: Instant,
+  message: Option[String],
+) derives JsonCodec
+
+case class AgentExecutionEvent(
+  id: String,
+  agentName: String,
+  state: AgentExecutionState,
+  runId: Option[String],
+  step: Option[MigrationStep],
+  detail: String,
+  timestamp: Instant,
+) derives JsonCodec
+
+case class AgentMonitorSnapshot(
+  generatedAt: Instant,
+  agents: List[AgentExecutionInfo],
+) derives JsonCodec

@@ -96,6 +96,36 @@ object WebSocketServerSpec extends ZIOSpecDefault:
     override def stream(interval: Duration): ZStream[Any, Nothing, HealthSnapshot] =
       ZStream.empty
 
+  private val stubControlPlane: OrchestratorControlPlane = new OrchestratorControlPlane:
+    override def startWorkflow(
+      runId: String,
+      workflowId: Long,
+      definition: WorkflowDefinition,
+    ): ZIO[Any, ControlPlaneError, String] = ZIO.succeed("corr")
+    override def routeStep(
+      runId: String,
+      step: MigrationStep,
+      capabilities: List[AgentCapability],
+    ): ZIO[Any, ControlPlaneError, String] = ZIO.succeed("agent-1")
+    override def allocateResource(runId: String): ZIO[Any, ControlPlaneError, Int]                            = ZIO.succeed(0)
+    override def releaseResource(runId: String, slot: Int): ZIO[Any, ControlPlaneError, Unit]                 = ZIO.unit
+    override def publishEvent(event: ControlPlaneEvent): ZIO[Any, ControlPlaneError, Unit]                    = ZIO.unit
+    override def subscribeToEvents(runId: String): ZIO[Scope, Nothing, Dequeue[ControlPlaneEvent]]            =
+      Queue.unbounded[ControlPlaneEvent].map(identity)
+    override def getActiveRuns: ZIO[Any, ControlPlaneError, List[ActiveRun]]                                  = ZIO.succeed(Nil)
+    override def getRunState(runId: String): ZIO[Any, ControlPlaneError, Option[ActiveRun]]                   = ZIO.none
+    override def updateRunState(runId: String, newState: WorkflowRunState): ZIO[Any, ControlPlaneError, Unit] = ZIO.unit
+    override def executeCommand(command: ControlCommand): ZIO[Any, ControlPlaneError, Unit]                   = ZIO.unit
+    override def getResourceState: ZIO[Any, ControlPlaneError, ResourceAllocationState]                       =
+      ZIO.succeed(ResourceAllocationState(1, 0, Nil, None))
+    override def getAgentMonitorSnapshot: ZIO[Any, ControlPlaneError, AgentMonitorSnapshot]                   =
+      Clock.instant.map(ts => AgentMonitorSnapshot(ts, Nil))
+    override def getAgentExecutionHistory(limit: Int): ZIO[Any, ControlPlaneError, List[AgentExecutionEvent]] =
+      ZIO.succeed(Nil)
+    override def pauseAgentExecution(agentName: String): ZIO[Any, ControlPlaneError, Unit]                    = ZIO.unit
+    override def resumeAgentExecution(agentName: String): ZIO[Any, ControlPlaneError, Unit]                   = ZIO.unit
+    override def abortAgentExecution(agentName: String): ZIO[Any, ControlPlaneError, Unit]                    = ZIO.unit
+
   def spec: Spec[TestEnvironment, Any] = suite("WebSocketServerSpec")(
     test("WebSocketServer creates routes at ws/console") {
       for
@@ -113,6 +143,7 @@ object WebSocketServerSpec extends ZIOSpecDefault:
             stubActivityHub,
             stubLogTailer,
             stubHealthMonitor,
+            stubControlPlane,
           )
       yield assertTrue(server.routes.routes.nonEmpty)
     },

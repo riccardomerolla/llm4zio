@@ -245,4 +245,42 @@ object ControlPlaneSpec extends ZIOSpecDefault:
         !finalState.allocatedSlots.contains(slot),
       )
     },
+    test("agent monitor snapshot and history are populated from step events") {
+      for
+        _        <- OrchestratorControlPlane.startWorkflow("run-monitor", 1L, testWorkflowDef)
+        assigned <- OrchestratorControlPlane.routeStep("run-monitor", MigrationStep.Analysis, testCapabilities)
+        now      <- Clock.instant
+        _        <- OrchestratorControlPlane.publishEvent(
+                      StepProgress(
+                        correlationId = "corr-monitor",
+                        runId = "run-monitor",
+                        step = MigrationStep.Analysis,
+                        itemsProcessed = 1,
+                        itemsTotal = 10,
+                        message = "waiting for tool response",
+                        timestamp = now,
+                      )
+                    )
+        snapshot <- OrchestratorControlPlane.getAgentMonitorSnapshot
+        history  <- OrchestratorControlPlane.getAgentExecutionHistory(10)
+      yield assertTrue(
+        assigned == "agent-1",
+        snapshot.agents.exists(info =>
+          info.agentName == "agent-1" && info.state == AgentExecutionState.WaitingForTool && info.tokensUsed > 0
+        ),
+        history.exists(evt => evt.agentName == "agent-1" && evt.state == AgentExecutionState.WaitingForTool),
+      )
+    },
+    test("agent execution control commands update state and timeline") {
+      for
+        _        <- OrchestratorControlPlane.pauseAgentExecution("agent-control")
+        _        <- OrchestratorControlPlane.resumeAgentExecution("agent-control")
+        _        <- OrchestratorControlPlane.abortAgentExecution("agent-control")
+        snapshot <- OrchestratorControlPlane.getAgentMonitorSnapshot
+        history  <- OrchestratorControlPlane.getAgentExecutionHistory(5)
+      yield assertTrue(
+        snapshot.agents.exists(info => info.agentName == "agent-control" && info.state == AgentExecutionState.Aborted),
+        history.headOption.exists(evt => evt.agentName == "agent-control" && evt.state == AgentExecutionState.Aborted),
+      )
+    },
   ).provide(testLayer) @@ TestAspect.sequential

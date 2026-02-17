@@ -25,6 +25,7 @@ enum SubscriptionTopic:
   case ChatStream(conversationId: Long)
   case ActivityFeed
   case HealthMetrics
+  case AgentsActivity
 
 object SubscriptionTopic:
 
@@ -42,5 +43,7 @@ object SubscriptionTopic:
         Right(ActivityFeed)
       case "health" :: "metrics" :: Nil          =>
         Right(HealthMetrics)
+      case "agents" :: "activity" :: Nil         =>
+        Right(AgentsActivity)
       case _                                     =>
         Left(s"Unknown topic: $raw")
