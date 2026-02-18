@@ -216,10 +216,7 @@ final case class TaskProgressNotifierLive(
           TelegramInlineKeyboardMarkup(
             inline_keyboard = List(
               List(
-                TelegramInlineKeyboardButton(
-                  text = "View Details",
-                  url = Some(s"$baseUrl/tasks/$taskRunId"),
-                ),
+                detailsButton(taskRunId, baseUrl),
                 TelegramInlineKeyboardButton(
                   text = "Retry",
                   callback_data = Some(s"wf:retry:$taskRunId:running"),
@@ -233,10 +230,7 @@ final case class TaskProgressNotifierLive(
           TelegramInlineKeyboardMarkup(
             inline_keyboard = List(
               List(
-                TelegramInlineKeyboardButton(
-                  text = "View Details",
-                  url = Some(s"$baseUrl/tasks/$taskRunId"),
-                )
+                detailsButton(taskRunId, baseUrl)
               )
             )
           )
@@ -246,10 +240,7 @@ final case class TaskProgressNotifierLive(
           TelegramInlineKeyboardMarkup(
             inline_keyboard = List(
               List(
-                TelegramInlineKeyboardButton(
-                  text = "View Details",
-                  url = Some(s"$baseUrl/tasks/$taskRunId"),
-                ),
+                detailsButton(taskRunId, baseUrl),
                 TelegramInlineKeyboardButton(
                   text = "Retry",
                   callback_data = Some(s"wf:retry:$taskRunId:running"),
@@ -259,6 +250,30 @@ final case class TaskProgressNotifierLive(
           )
         )
       case _                                                        => None
+
+  private def detailsButton(taskRunId: Long, baseUrl: String): TelegramInlineKeyboardButton =
+    val url = s"$baseUrl/tasks/$taskRunId"
+    if isTelegramButtonUrlValid(url) then
+      TelegramInlineKeyboardButton(
+        text = "View Details",
+        url = Some(url),
+      )
+    else
+      TelegramInlineKeyboardButton(
+        text = "View Details",
+        callback_data = Some(s"wf:details:$taskRunId:running"),
+      )
+
+  private def isTelegramButtonUrlValid(url: String): Boolean =
+    scala.util.Try(java.net.URI(url)).toOption.exists { uri =>
+      val schemeOk = Option(uri.getScheme).exists(s => s.equalsIgnoreCase("http") || s.equalsIgnoreCase("https"))
+      val host     = Option(uri.getHost).map(_.trim).getOrElse("")
+      val hostOk   =
+        host.nonEmpty &&
+          host.contains(".") &&
+          !host.equalsIgnoreCase("localhost")
+      schemeOk && hostOk
+    }
 
   private def markSeen(key: String): UIO[Boolean] =
     seenEventsRef.modify {

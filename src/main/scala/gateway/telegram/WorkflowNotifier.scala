@@ -153,10 +153,7 @@ final case class WorkflowNotifierLive(
                       TelegramInlineKeyboardMarkup(
                         inline_keyboard = tasks.map(task =>
                           List(
-                            TelegramInlineKeyboardButton(
-                              text = s"View #${task.id} ->",
-                              url = Some(s"$baseUrl/tasks/${task.id}"),
-                            )
+                            detailsButton(task.id, baseUrl, text = s"View #${task.id} ->")
                           )
                         )
                       )
@@ -322,10 +319,7 @@ final case class WorkflowNotifierLive(
     baseUrl: String,
   ): Option[TelegramInlineKeyboardMarkup] =
     val viewRow = List(
-      TelegramInlineKeyboardButton(
-        text = "View ->",
-        url = Some(s"$baseUrl/tasks/${task.id}"),
-      )
+      detailsButton(task.id, baseUrl, text = "View ->")
     )
     val action = task.status match
       case RunStatus.Running | RunStatus.Pending =>
@@ -347,6 +341,30 @@ final case class WorkflowNotifierLive(
       case RunStatus.Completed => "✅"
       case RunStatus.Failed    => "❌"
       case RunStatus.Cancelled => "⛔"
+
+  private def detailsButton(taskId: Long, baseUrl: String, text: String): TelegramInlineKeyboardButton =
+    val url = s"$baseUrl/tasks/$taskId"
+    if isTelegramButtonUrlValid(url) then
+      TelegramInlineKeyboardButton(
+        text = text,
+        url = Some(url),
+      )
+    else
+      TelegramInlineKeyboardButton(
+        text = text,
+        callback_data = Some(s"wf:details:$taskId:running"),
+      )
+
+  private def isTelegramButtonUrlValid(url: String): Boolean =
+    scala.util.Try(java.net.URI(url)).toOption.exists { uri =>
+      val schemeOk = Option(uri.getScheme).exists(s => s.equalsIgnoreCase("http") || s.equalsIgnoreCase("https"))
+      val host     = Option(uri.getHost).map(_.trim).getOrElse("")
+      val hostOk   =
+        host.nonEmpty &&
+          host.contains(".") &&
+          !host.equalsIgnoreCase("localhost")
+      schemeOk && hostOk
+    }
 
   private final case class TaskSummary(
     id: Long,
