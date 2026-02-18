@@ -14,7 +14,7 @@ import zio.json.*
 import agents.AgentRegistry
 import db.{ ChatRepository, PersistenceError, TaskRepository }
 import gateway.models.{ MessageDirection as GatewayMessageDirection, MessageRole as GatewayMessageRole, * }
-import gateway.{ ChannelRegistry, GatewayService, GatewayServiceError, MessageChannelError }
+import gateway.{ ChannelRegistry, GatewayService, GatewayServiceError, MessageChannelError, SessionContext }
 import llm4zio.core.{ LlmError, LlmService, Streaming }
 import models.*
 import orchestration.{ AgentConfigResolver, IssueAssignmentOrchestrator }
@@ -54,9 +54,11 @@ final case class ChatControllerLive(
     // Chat Conversations Web Views
     Method.GET / "chat"                                          -> handler { (_: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
-        chatRepository.listConversations(0, 20).map { conversations =>
-          html(HtmlViews.chatDashboard(conversations))
-        }
+        for
+          conversations <- chatRepository.listConversations(0, 20)
+          enriched      <- enrichConversationsWithChannel(conversations)
+          sessionMeta   <- buildSessionMetaMap(enriched)
+        yield html(HtmlViews.chatDashboard(enriched, sessionMeta))
       }
     },
     Method.POST / "chat"                                         -> handler { (req: Request) =>
@@ -89,7 +91,8 @@ final case class ChatControllerLive(
           conversation <- chatRepository
                             .getConversation(id)
                             .someOrFail(PersistenceError.NotFound("conversation", id))
-        yield html(HtmlViews.chatDetail(conversation))
+          sessionMeta  <- resolveConversationSessionMeta(id)
+        yield html(HtmlViews.chatDetail(conversation, sessionMeta))
       }
     },
     Method.GET / "chat" / long("id") / "messages"                -> handler { (id: Long, _: Request) =>
@@ -118,6 +121,7 @@ final case class ChatControllerLive(
                              updatedAt = now,
                            )
                          )
+          _           <- ensureConversationTitle(id, content, now)
           _           <- activityHub.publish(
                            ActivityEvent(
                              eventType = ActivityEventType.MessageSent,
@@ -496,6 +500,7 @@ final case class ChatControllerLive(
                          updatedAt = now,
                        )
                      )
+      _           <- ensureConversationTitle(conversationId, userContent, now)
       userInbound <- toGatewayMessage(
                        conversationId = conversationId,
                        senderType = SenderType.User,
@@ -640,6 +645,71 @@ final case class ChatControllerLive(
 
   private def routeThroughGateway(effect: IO[GatewayServiceError, Unit]): UIO[Unit] =
     effect.catchAll(err => ZIO.logWarning(s"gateway routing skipped: $err"))
+
+  private def enrichConversationsWithChannel(
+    conversations: List[ChatConversation]
+  ): IO[PersistenceError, List[ChatConversation]] =
+    ZIO.foreach(conversations) { conversation =>
+      conversation.id match
+        case Some(id) =>
+          resolveConversationSessionMeta(id).map { meta =>
+            conversation.copy(channel = meta.map(_.channelName).orElse(conversation.channel))
+          }
+        case None     => ZIO.succeed(conversation)
+    }
+
+  private def buildSessionMetaMap(
+    conversations: List[ChatConversation]
+  ): IO[PersistenceError, Map[Long, ConversationSessionMeta]] =
+    ZIO
+      .foreach(conversations.flatMap(_.id)) { id =>
+        resolveConversationSessionMeta(id).map(meta => id -> meta)
+      }
+      .map(_.collect { case (id, Some(meta)) => id -> meta }.toMap)
+
+  private def resolveConversationSessionMeta(
+    conversationId: Long
+  ): IO[PersistenceError, Option[ConversationSessionMeta]] =
+    chatRepository.getSessionContextByConversation(conversationId).flatMap {
+      case None       => ZIO.none
+      case Some(link) =>
+        parseSessionContext(link.contextJson).map { parsed =>
+          Some(
+            ConversationSessionMeta(
+              channelName = link.channelName,
+              sessionKey = link.sessionKey,
+              linkedTaskRunId = parsed.flatMap(_.runId),
+              updatedAt = link.updatedAt,
+            )
+          )
+        }
+    }
+
+  private def parseSessionContext(raw: String): IO[PersistenceError, Option[SessionContext]] =
+    ZIO
+      .fromEither(raw.fromJson[SessionContext])
+      .map(Some(_))
+      .catchAll(err => ZIO.logWarning(s"invalid session context payload: $err").as(None))
+
+  private def ensureConversationTitle(
+    conversationId: Long,
+    firstUserMessage: String,
+    now: Instant,
+  ): IO[PersistenceError, Unit] =
+    chatRepository
+      .getConversation(conversationId)
+      .flatMap {
+        case None               => ZIO.unit
+        case Some(conversation) =>
+          val isMissing = conversation.title.trim.isEmpty
+          if isMissing then
+            ChatConversation.autoTitleFromFirstMessage(firstUserMessage) match
+              case Some(generated) =>
+                chatRepository.updateConversation(conversation.copy(title = generated, updatedAt = now))
+              case None            =>
+                ZIO.unit
+          else ZIO.unit
+      }
 
   private def convertLlmError(error: LlmError): PersistenceError =
     error match

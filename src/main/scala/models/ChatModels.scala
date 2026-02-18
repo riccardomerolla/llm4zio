@@ -26,12 +26,39 @@ case class ChatConversation(
   id: Option[Long] = None,
   runId: Option[Long] = None,
   title: String,
+  channel: Option[String] = None,
   description: Option[String] = None,
   status: String = "active",
   messages: List[ConversationMessage] = List.empty,
   createdAt: Instant,
   updatedAt: Instant,
   createdBy: Option[String] = None,
+) derives JsonCodec
+
+object ChatConversation:
+  private val MaxAutoTitleLength = 60
+
+  def autoTitleFromFirstMessage(content: String): Option[String] =
+    val compact = content.trim.replaceAll("\\s+", " ")
+    if compact.isEmpty then None
+    else if compact.length <= MaxAutoTitleLength then Some(compact)
+    else Some(compact.take(MaxAutoTitleLength - 3) + "...")
+
+  def normalizeTitle(raw: String): Option[String] =
+    autoTitleFromFirstMessage(raw)
+
+case class SessionContextLink(
+  channelName: String,
+  sessionKey: String,
+  contextJson: String,
+  updatedAt: Instant,
+) derives JsonCodec
+
+case class ConversationSessionMeta(
+  channelName: String,
+  sessionKey: String,
+  linkedTaskRunId: Option[Long],
+  updatedAt: Instant,
 ) derives JsonCodec
 
 enum IssuePriority derives JsonCodec:

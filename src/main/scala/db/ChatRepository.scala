@@ -13,6 +13,7 @@ trait ChatRepository:
   def createConversation(conversation: ChatConversation): IO[PersistenceError, Long]
   def getConversation(id: Long): IO[PersistenceError, Option[ChatConversation]]
   def listConversations(offset: Int, limit: Int): IO[PersistenceError, List[ChatConversation]]
+  def getConversationsByChannel(channelName: String): IO[PersistenceError, List[ChatConversation]]
   def listConversationsByRun(runId: Long): IO[PersistenceError, List[ChatConversation]]
   def updateConversation(conversation: ChatConversation): IO[PersistenceError, Unit]
   def deleteConversation(id: Long): IO[PersistenceError, Unit]
@@ -53,6 +54,9 @@ trait ChatRepository:
   ): IO[PersistenceError, Option[String]] =
     ZIO.fail(PersistenceError.QueryFailed("getSessionContext", "Not implemented"))
 
+  def getSessionContextByConversation(conversationId: Long): IO[PersistenceError, Option[SessionContextLink]] =
+    ZIO.fail(PersistenceError.QueryFailed("getSessionContextByConversation", "Not implemented"))
+
   def deleteSessionContext(
     channelName: String,
     sessionKey: String,
@@ -68,6 +72,9 @@ object ChatRepository:
 
   def listConversations(offset: Int, limit: Int): ZIO[ChatRepository, PersistenceError, List[ChatConversation]] =
     ZIO.serviceWithZIO[ChatRepository](_.listConversations(offset, limit))
+
+  def getConversationsByChannel(channelName: String): ZIO[ChatRepository, PersistenceError, List[ChatConversation]] =
+    ZIO.serviceWithZIO[ChatRepository](_.getConversationsByChannel(channelName))
 
   def listConversationsByRun(runId: Long): ZIO[ChatRepository, PersistenceError, List[ChatConversation]] =
     ZIO.serviceWithZIO[ChatRepository](_.listConversationsByRun(runId))
@@ -138,6 +145,9 @@ object ChatRepository:
   ): ZIO[ChatRepository, PersistenceError, Option[String]] =
     ZIO.serviceWithZIO[ChatRepository](_.getSessionContext(channelName, sessionKey))
 
+  def getSessionContextByConversation(conversationId: Long): ZIO[ChatRepository, PersistenceError, Option[SessionContextLink]] =
+    ZIO.serviceWithZIO[ChatRepository](_.getSessionContextByConversation(conversationId))
+
   def deleteSessionContext(
     channelName: String,
     sessionKey: String,
@@ -207,6 +217,35 @@ final case class ChatRepositoryLive(
                          }(readChatConversationRow(_, sql))
         hydrated      <- ZIO.foreach(conversations)(hydrateConversationMessages(conn, _))
       yield hydrated
+    }
+
+  override def getConversationsByChannel(channelName: String): IO[PersistenceError, List[ChatConversation]] =
+    val contextsSql =
+      """SELECT context_json
+        |FROM chat_session_context
+        |WHERE channel_name = ?
+        |ORDER BY updated_at DESC
+        |""".stripMargin
+
+    withConnection { conn =>
+      for
+        contextJsons <- queryMany(conn, contextsSql)(_.setString(1, channelName.trim))(rs =>
+                         executeBlocking(contextsSql)(rs.getString("context_json"))
+                       )
+        ids           = contextJsons.flatMap(extractConversationId).distinct
+        conversations <- ZIO.foreach(ids) { id =>
+                           val conversationSql =
+                             """SELECT id, run_id, title, description, status, created_at, updated_at, created_by
+                               |FROM chat_conversations
+                               |WHERE id = ?
+                               |""".stripMargin
+                           queryOne(conn, conversationSql)(_.setLong(1, id))(readChatConversationRow(_, conversationSql))
+                             .flatMap {
+                               case Some(value) => hydrateConversationMessages(conn, value).map(Some(_))
+                               case None        => ZIO.none
+                             }
+                         }
+      yield conversations.flatten
     }
 
   override def listConversationsByRun(runId: Long): IO[PersistenceError, List[ChatConversation]] =
@@ -570,6 +609,24 @@ final case class ChatRepositoryLive(
       }(rs => executeBlocking(sql)(rs.getString("context_json")))
     }
 
+  override def getSessionContextByConversation(conversationId: Long): IO[PersistenceError, Option[SessionContextLink]] =
+    val sql =
+      """SELECT channel_name, session_key, context_json, updated_at
+        |FROM chat_session_context
+        |ORDER BY updated_at DESC
+        |""".stripMargin
+
+    withConnection { conn =>
+      queryMany(conn, sql)(_ => ()) { rs =>
+        for
+          channelName <- executeBlocking(sql)(rs.getString("channel_name"))
+          sessionKey  <- executeBlocking(sql)(rs.getString("session_key"))
+          contextJson <- executeBlocking(sql)(rs.getString("context_json"))
+          updatedAt   <- parseInstant(sql, rs.getString("updated_at"))
+        yield SessionContextLink(channelName, sessionKey, contextJson, updatedAt)
+      }.map(_.find(link => extractConversationId(link.contextJson).contains(conversationId)))
+    }
+
   override def deleteSessionContext(
     channelName: String,
     sessionKey: String,
@@ -604,6 +661,17 @@ final case class ChatRepositoryLive(
     for
       messages <- queryMany(conn, sql)(_.setLong(1, conversation.id.getOrElse(0L)))(readConversationMessageRow(_, sql))
     yield conversation.copy(messages = messages)
+
+  private def extractConversationId(contextJson: String): Option[Long] =
+    val marker = "\"conversationId\":"
+    val start  = contextJson.indexOf(marker)
+    if start < 0 then None
+    else
+      val digits = contextJson
+        .drop(start + marker.length)
+        .dropWhile(_.isWhitespace)
+        .takeWhile(_.isDigit)
+      digits.toLongOption
 
   private def withConnection[A](use: Connection => IO[PersistenceError, A]): IO[PersistenceError, A] =
     ensureSchemaInitialized *> ZIO.acquireReleaseWith(acquireConnection)(closeConnection)(use)

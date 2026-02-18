@@ -85,11 +85,17 @@ object HtmlViews:
   ): String =
     AgentsView.agentConfigPage(agent, overrideSettings, globalSettings, flash)
 
-  def chatDashboard(conversations: List[ChatConversation]): String =
-    ChatView.dashboard(conversations)
+  def chatDashboard(
+    conversations: List[ChatConversation],
+    sessionMetaByConversation: Map[Long, ConversationSessionMeta] = Map.empty,
+  ): String =
+    ChatView.dashboard(conversations, sessionMetaByConversation)
 
-  def chatDetail(conversation: ChatConversation): String =
-    ChatView.detail(conversation)
+  def chatDetail(
+    conversation: ChatConversation,
+    sessionMeta: Option[ConversationSessionMeta] = None,
+  ): String =
+    ChatView.detail(conversation, sessionMeta)
 
   def chatMessagesFragment(messages: List[ConversationMessage]): String =
     ChatView.messagesFragment(messages)

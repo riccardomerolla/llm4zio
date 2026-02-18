@@ -1,11 +1,14 @@
 package web.views
 
-import models.{ ChatConversation, ConversationMessage, SenderType }
+import models.{ ChatConversation, ConversationMessage, ConversationSessionMeta, SenderType }
 import scalatags.Text.all.*
 
 object ChatView:
 
-  def dashboard(conversations: List[ChatConversation]): String =
+  def dashboard(
+    conversations: List[ChatConversation],
+    sessionMetaByConversation: Map[Long, ConversationSessionMeta],
+  ): String =
     Layout.page("Chat — COBOL Modernization", "/chat")(
       div(cls := "mb-6")(
         div(cls := "flex items-center justify-between")(
@@ -36,12 +39,16 @@ object ChatView:
       else
         div(cls := "grid grid-cols-1 gap-4")(
           conversations.map { conv =>
-            conversationCard(conv)
+            val meta = conv.id.flatMap(sessionMetaByConversation.get)
+            conversationCard(conv, meta)
           }
         ),
     )
 
-  def detail(conversation: ChatConversation): String =
+  def detail(
+    conversation: ChatConversation,
+    sessionMeta: Option[ConversationSessionMeta],
+  ): String =
     val issuesHref = conversation.runId match
       case Some(runId) => s"/issues?run_id=$runId"
       case None        => "/issues"
@@ -58,6 +65,7 @@ object ChatView:
             if conversation.description.isDefined then
               p(cls := "text-gray-400 text-sm mt-2")(conversation.description.get)
             else (),
+            sessionContextPanel(sessionMeta),
           ),
           div(cls := "inline-flex flex-wrap items-center gap-2 text-xs self-start lg:justify-end")(
             span(
@@ -342,13 +350,27 @@ if (!customElements.get('chat-message-stream')) {
 """))
   // scalafmt: { maxColumn = 120 }
 
-  private def conversationCard(conv: ChatConversation) =
+  private def conversationCard(
+    conv: ChatConversation,
+    sessionMeta: Option[ConversationSessionMeta] = None,
+  ): Frag =
+    val lastMessage = conv.messages.lastOption
+    val preview     = lastMessage.map(_.content.trim).filter(_.nonEmpty).map(compactPreview).getOrElse("No messages yet")
+    val channel     = conv.channel.orElse(sessionMeta.map(_.channelName)).getOrElse("web")
     a(
       href := s"/chat/${conv.id.get}",
       cls  := "bg-white/5 hover:bg-white/10 ring-1 ring-white/10 rounded-lg p-4 transition-all hover:ring-indigo-500/50 cursor-pointer block",
     )(
       div(cls := "flex items-start justify-between mb-2")(
-        h3(cls := "text-lg font-semibold text-white max-w-xs truncate")(conv.title),
+        div(cls := "min-w-0")(
+          h3(cls := "text-lg font-semibold text-white max-w-xs truncate")(conv.title),
+          div(cls := "mt-1 flex items-center gap-2 text-xs")(
+            channelBadge(channel),
+            sessionMeta.filter(_.channelName == "telegram").map(meta =>
+              span(cls := "text-amber-300/90")(s"via Telegram (${meta.sessionKey})")
+            ),
+          ),
+        ),
         span(
           cls := s"inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ${
               if conv.status == "active" then
@@ -364,19 +386,47 @@ if (!customElements.get('chat-message-stream')) {
           conv.status,
         ),
       ),
-      if conv.description.isDefined then
-        div(cls := "pt-2")(
-          p(cls := "text-gray-400 text-sm mb-3 truncate")(conv.description.get)
-        )
-      else (),
+      div(cls := "pt-2")(
+        p(cls := "text-gray-300 text-sm mb-2 truncate")(preview),
+      ),
       div(cls := "flex items-center justify-between text-xs text-gray-500")(
-        span(
-          if conv.messages.nonEmpty then
-            s"${conv.messages.length} message${if conv.messages.length != 1 then "s" else ""}"
-          else "No messages"
-        ),
+        span(s"${conv.messages.length} message${if conv.messages.length != 1 then "s" else ""}"),
         span(cls := "text-right")(
-          conv.updatedAt.toString.take(10)
+          lastMessage.map(_.createdAt).map(formatTimestamp).getOrElse(formatTimestamp(conv.updatedAt))
         ),
       ),
     )
+
+  private def channelBadge(channel: String): Frag =
+    val normalized = channel.trim.toLowerCase
+    val classes    = normalized match
+      case "telegram"  => "bg-sky-500/10 text-sky-300 ring-sky-400/30"
+      case "websocket" => "bg-indigo-500/10 text-indigo-300 ring-indigo-400/30"
+      case _           => "bg-gray-500/10 text-gray-300 ring-gray-400/30"
+    span(cls := s"inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ring-1 ring-inset $classes")(
+      normalized
+    )
+
+  private def sessionContextPanel(sessionMeta: Option[ConversationSessionMeta]): Frag =
+    sessionMeta match
+      case None       => frag()
+      case Some(meta) =>
+        div(cls := "mt-3 rounded-md bg-white/5 ring-1 ring-white/10 p-3 text-xs text-gray-300")(
+          div(cls := "font-semibold text-gray-200 mb-2")("Session Context"),
+          div(cls := "space-y-1")(
+            p(span(cls := "text-gray-400 mr-2")("Channel:"), meta.channelName),
+            p(span(cls := "text-gray-400 mr-2")("Session Key:"), meta.sessionKey),
+            p(
+              span(cls := "text-gray-400 mr-2")("Linked Task:"),
+              meta.linkedTaskRunId.map(id => s"#$id").getOrElse("none")
+            ),
+            p(span(cls := "text-gray-400 mr-2")("Updated:"), formatTimestamp(meta.updatedAt)),
+          ),
+        )
+
+  private def compactPreview(raw: String): String =
+    val compact = raw.replaceAll("\\s+", " ").trim
+    if compact.length <= 90 then compact else compact.take(87) + "..."
+
+  private def formatTimestamp(instant: java.time.Instant): String =
+    instant.toString.take(19).replace("T", " ")
