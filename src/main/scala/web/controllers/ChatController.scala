@@ -106,16 +106,18 @@ final case class ChatControllerLive(
       ErrorHandlingMiddleware.fromPersistence {
         for
           form        <- parseForm(req)
-          content     <- ZIO
+          rawContent  <- ZIO
                            .fromOption(form.get("content").map(_.trim).filter(_.nonEmpty))
                            .orElseFail(PersistenceError.QueryFailed("parseForm", "Missing content"))
+          mention      = parsePreferredAgentMention(rawContent)
+          content       = mention.content
           now         <- Clock.instant
           _           <- chatRepository.addMessage(
                            ConversationMessage(
                              conversationId = id,
                              sender = "user",
-                             senderType = SenderType.User,
-                             content = content,
+                              senderType = SenderType.User,
+                             content = rawContent,
                              messageType = MessageType.Text,
                              createdAt = now,
                              updatedAt = now,
@@ -131,7 +133,14 @@ final case class ChatControllerLive(
                              createdAt = now,
                            )
                          )
-          userInbound <- toGatewayMessage(id, SenderType.User, content, None, GatewayMessageDirection.Inbound)
+          userInbound <- toGatewayMessage(
+                           id,
+                           SenderType.User,
+                           content,
+                           None,
+                           GatewayMessageDirection.Inbound,
+                           additionalMetadata = mention.metadata,
+                         )
           _           <- routeThroughGateway(gatewayService.processInbound(userInbound))
           _           <- streamAssistantResponse(id, content).forkDaemon
           messages    <- chatRepository.getMessages(id)
@@ -487,6 +496,7 @@ final case class ChatControllerLive(
     metadata: Option[String],
   ): IO[PersistenceError, ConversationMessage] =
     for
+      mention     <- ZIO.succeed(parsePreferredAgentMention(userContent))
       now         <- Clock.instant
       _           <- chatRepository.addMessage(
                        ConversationMessage(
@@ -504,14 +514,15 @@ final case class ChatControllerLive(
       userInbound <- toGatewayMessage(
                        conversationId = conversationId,
                        senderType = SenderType.User,
-                       content = userContent,
+                       content = mention.content,
                        metadata = metadata,
                        direction = GatewayMessageDirection.Inbound,
+                       additionalMetadata = mention.metadata,
                      )
       _           <- routeThroughGateway(gatewayService.processInbound(userInbound))
       aiConfig    <- configResolver.resolveConfig("chat")
       llmResponse <- llmService
-                       .execute(userContent)
+                       .execute(mention.content)
                        .mapError(convertLlmError)
       now2        <- Clock.instant
       aiMessage    = ConversationMessage(
@@ -610,6 +621,7 @@ final case class ChatControllerLive(
     content: String,
     metadata: Option[String],
     direction: GatewayMessageDirection,
+    additionalMetadata: Map[String, String] = Map.empty,
   ): UIO[NormalizedMessage] =
     for
       now <- Clock.instant
@@ -625,9 +637,31 @@ final case class ChatControllerLive(
         case SenderType.System    => GatewayMessageRole.System
       ,
       content = content,
-      metadata = Map("conversationId" -> conversationId.toString) ++ metadata.map("raw" -> _).toMap,
+      metadata = Map("conversationId" -> conversationId.toString) ++ metadata.map("raw" -> _).toMap ++ additionalMetadata,
       timestamp = now,
     )
+
+  private final case class PreferredAgentMention(
+    content: String,
+    metadata: Map[String, String],
+  )
+
+  private def parsePreferredAgentMention(rawContent: String): PreferredAgentMention =
+    val MentionPattern = """^\s*@([A-Za-z][A-Za-z0-9_-]*)\b[:\-]?\s*(.*)$""".r
+    rawContent match
+      case MentionPattern(agentName, remainder) if remainder.trim.nonEmpty =>
+        PreferredAgentMention(
+          content = remainder.trim,
+          metadata = Map(
+            "preferredAgent" -> agentName,
+            "intent.agent"   -> agentName,
+          ),
+        )
+      case _                                                       =>
+        PreferredAgentMention(
+          content = rawContent,
+          metadata = Map.empty,
+        )
 
   private def ensureWebSocketSession(conversationId: Long): UIO[Unit] =
     val sessionKey = SessionScopeStrategy.PerConversation.build("websocket", conversationId.toString)

@@ -5,6 +5,7 @@ import java.nio.charset.StandardCharsets
 
 import zio.*
 import zio.http.*
+import zio.json.*
 
 import agents.AgentRegistry
 import db.{ CustomAgentRow, PersistenceError, TaskRepository }
@@ -40,6 +41,14 @@ final case class AgentsControllerLive(repository: TaskRepository) extends Agents
   )
 
   override val routes: Routes[Any, Response] = Routes(
+    Method.GET / "api" / "agents"                                  -> handler { (_: Request) =>
+      ErrorHandlingMiddleware.fromPersistence {
+        for
+          custom <- repository.listCustomAgents
+          all     = AgentRegistry.allAgents(custom)
+        yield Response.json(all.toJson)
+      }
+    },
     Method.GET / "agents"                                        -> handler { (req: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for

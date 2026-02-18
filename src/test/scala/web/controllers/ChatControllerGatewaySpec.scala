@@ -137,6 +137,39 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
         persisted.count(_.senderType == SenderType.Assistant) == 1,
       )).provideSomeLayer[Scope](appLayer(dbName))
     },
+    test("POST /api/chat/:id/messages strips @agent prefix before LLM prompt") {
+      val dbName = s"chat-gateway-mention-${UUID.randomUUID()}"
+      (for
+        chatRepo  <- ZIO.service[ChatRepository]
+        migrRepo  <- ZIO.service[TaskRepository]
+        llm       <- ZIO.service[LlmService]
+        gateway   <- ZIO.service[GatewayService]
+        registry  <- ZIO.service[ChannelRegistry]
+        convId    <- newConversation(chatRepo)
+        abortReg  <- Ref.make(Map.empty[Long, UIO[Unit]]).map(StreamAbortRegistryLive.apply)
+        actHub    <- Ref.make(Set.empty[Queue[ActivityEvent]]).map(subs => ActivityHubLive(stubActivityRepo, subs))
+        controller = ChatControllerLive(
+                       chatRepository = chatRepo,
+                       llmService = llm,
+                       migrationRepository = migrRepo,
+                       issueAssignmentOrchestrator = testIssueAssignment,
+                       configResolver = testConfigResolver,
+                       gatewayService = gateway,
+                       channelRegistry = registry,
+                       streamAbortRegistry = abortReg,
+                       activityHub = actHub,
+                     )
+        request    = Request.post(
+                       s"/api/chat/$convId/messages",
+                       Body.fromString(ConversationMessageRequest(content = "@code-agent fix this module").toJson),
+                     )
+        response  <- controller.routes.runZIO(request)
+        body      <- response.body.asString
+      yield assertTrue(
+        response.status == Status.Ok,
+        body.contains("echo:fix this module"),
+      )).provideSomeLayer[Scope](appLayer(dbName))
+    },
     test("POST /chat/:id/messages (fragment) returns HTML with user message and streams in background") {
       val dbName = s"chat-gateway-web-${UUID.randomUUID()}"
       (for

@@ -115,30 +115,84 @@ object ChatView:
             attr("hx-swap")              := "innerHTML",
             attr("hx-disabled-elt")      := "button[type='submit']",
             attr("hx-on::after-request") := "this.reset()",
-            attr("onsubmit")             := "const i=this.querySelector(\"input[name='content']\");if(i){setTimeout(()=>{i.value='';i.focus();},0);}",
-            cls                          := "flex gap-2",
+            cls                          := "space-y-2",
           )(
             input(`type`  := "hidden", name := "fragment", value := "true"),
-            input(
-              name        := "content",
-              placeholder := "Type your message...",
-              cls         := "flex-1 bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500",
-              required,
+            div(
+              id                           := "chat-composer",
+              cls                          := "space-y-2",
+              attr("data-conversation-id") := conversation.id.get.toString,
+              attr("data-agents-endpoint") := "/api/agents",
+            )(
+              div(cls := "flex flex-wrap items-center gap-2")(
+                button(
+                  `type`            := "button",
+                  cls               := "rounded-md bg-white/10 hover:bg-white/20 px-3 py-1.5 text-xs font-semibold text-gray-200",
+                  attr("data-role") := "mode-toggle",
+                )("Preview"),
+                select(
+                  cls               := "rounded-md bg-white/10 border border-white/20 px-2 py-1.5 text-xs text-gray-100",
+                  attr("data-role") := "code-language",
+                )(
+                  option(value := "plain")("plain"),
+                  option(value := "scala")("scala"),
+                  option(value := "python")("python"),
+                  option(value := "bash")("bash"),
+                  option(value := "json")("json"),
+                  option(value := "yaml")("yaml"),
+                ),
+                button(
+                  `type`            := "button",
+                  cls               := "rounded-md bg-white/10 hover:bg-white/20 px-3 py-1.5 text-xs font-semibold text-gray-200",
+                  attr("data-role") := "insert-code",
+                )("</> Code"),
+                span(cls := "text-xs text-gray-400")("Ctrl/Cmd+Enter send, Ctrl+Shift+P preview, Ctrl+K code"),
+              ),
+              div(cls := "relative")(
+                div(attr("data-role") := "write-pane")(
+                  textarea(
+                    id          := s"chat-input-${conversation.id.get}",
+                    name        := "content",
+                    placeholder := "Type your message... Use @agent-name to route directly.",
+                    rows        := 5,
+                    cls         := "w-full bg-white/10 border border-white/20 rounded-lg px-4 py-3 text-white placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono text-sm",
+                    required,
+                    attr("autocomplete") := "off",
+                    attr("spellcheck")   := "false",
+                  )()
+                ),
+                div(
+                  attr("data-role") := "preview-pane",
+                  cls               := "hidden min-h-[7rem] rounded-lg border border-white/20 bg-black/20 px-4 py-3 text-sm leading-6 text-gray-100 overflow-auto",
+                )(),
+                div(
+                  attr("data-role") := "mentions",
+                  cls               := "hidden absolute left-0 right-0 mt-1 max-h-48 overflow-auto rounded-md border border-white/15 bg-slate-900/95 shadow-lg z-20",
+                )(),
+              ),
             ),
-            button(
-              `type` := "submit",
-              cls    := "px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors",
-            )("Send"),
-            button(
-              id              := s"abort-btn-${conversation.id.get}",
-              `type`          := "button",
-              cls             := "hidden px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors",
-              attr("onclick") := s"document.getElementById('messages-${conversation.id.get}').abort()",
-            )("Stop"),
+            div(cls := "flex items-center gap-2")(
+              button(
+                `type` := "submit",
+                cls    := "px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors",
+              )("Send"),
+              button(
+                id              := s"abort-btn-${conversation.id.get}",
+                `type`          := "button",
+                cls             := "hidden px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors",
+                attr("onclick") := s"document.getElementById('messages-${conversation.id.get}').abort()",
+              )("Stop"),
+            ),
           )
         ),
       ),
       streamingScript(conversation.id.get),
+      JsResources.markedScript,
+      tag("link")(
+        attr("rel")  := "stylesheet",
+        attr("href") := "https://cdn.jsdelivr.net/npm/highlight.js@11.11.1/styles/github-dark.min.css",
+      ),
+      JsResources.inlineModuleScript("/static/client/components/message-composer.js"),
     )
 
   def messagesFragment(messages: List[ConversationMessage]): String =
