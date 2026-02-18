@@ -123,7 +123,7 @@ lazy val root = (project in file("."))
   .configs(It)
   .settings(inConfig(It)(Defaults.testSettings): _*)
   .settings(
-    name := "llm4zio",
+    name := "llm4zio-gateway",
     description := "A LLM 4 ZIO Agent Gateway and Dashboard",
     // Handle version conflicts - prefer newer versions
     libraryDependencySchemes += "dev.zio" %% "zio-json" % VersionScheme.Always,

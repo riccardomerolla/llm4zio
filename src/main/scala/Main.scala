@@ -16,19 +16,18 @@ object Main extends ZIOAppDefault:
   override val bootstrap: ZLayer[ZIOAppArgs, Any, Any] =
     Runtime.removeDefaultLoggers >>> SLF4J.slf4j
 
-  private type ServeOpts = (Option[BigInt], Option[String], Option[String], Option[Path])
+  private type ServeOpts = (Option[BigInt], Option[String], Option[String])
 
-  private val portOpt       = Options.integer("port").optional ?? "HTTP server port (default: 8080)"
-  private val hostOpt       = Options.text("host").optional ?? "HTTP server host (default: 0.0.0.0)"
-  private val dbPathOpt     = Options.text("db-path").optional ?? "SQLite DB path (default: ./migration.db)"
-  private val configFileOpt = Options.file("config").alias("c").optional ?? "Configuration file (HOCON or JSON)"
+  private val portOpt   = Options.integer("port").optional ?? "HTTP server port (default: 8080)"
+  private val hostOpt   = Options.text("host").optional ?? "HTTP server host (default: 0.0.0.0)"
+  private val dbPathOpt = Options.text("db").optional ?? "SQLite DB path (default: ./gateway.db)"
 
   private val serveCmd: Command[ServeOpts] =
-    Command("serve", portOpt ++ hostOpt ++ dbPathOpt ++ configFileOpt)
+    Command("serve", portOpt ++ hostOpt ++ dbPathOpt)
       .withHelp("Start the web portal")
 
   private val cliApp = CliApp.make(
-    name = "zio-legacy-modernization",
+    name = "llm4zio-gateway",
     version = "1.0.0",
     summary = text("Self-hosted AI gateway"),
     command = serveCmd,
@@ -36,27 +35,22 @@ object Main extends ZIOAppDefault:
     executeServe(
       port = opts._1.map(_.toInt).getOrElse(8080),
       host = opts._2.getOrElse("0.0.0.0"),
-      dbPath = Paths.get(opts._3.getOrElse("./migration.db")),
-      configFile = opts._4,
+      dbPath = Paths.get(opts._3.getOrElse("./gateway.db")),
     )
   }
 
-  private def executeServe(port: Int, host: String, dbPath: Path, configFile: Option[Path]): ZIO[Any, Throwable, Unit] =
+  private def executeServe(port: Int, host: String, dbPath: Path): ZIO[Any, Throwable, Unit] =
     for
-      baseConfig <- loadConfig(configFile)
+      baseConfig <- loadConfig
       validated  <- ConfigLoader.validate(baseConfig).mapError(msg => new IllegalArgumentException(msg))
       _          <- printLine(s"Starting web server on http://$host:$port")
       _          <- WebServer.start(host, port).provide(ApplicationDI.webServerLayer(validated, dbPath))
     yield ()
 
-  private def loadConfig(configFile: Option[Path]): ZIO[Any, Throwable, MigrationConfig] =
-    configFile match
-      case Some(path) =>
-        ConfigLoader.loadFromFile(path).mapError(error => new IllegalArgumentException(error.toString))
-      case None       =>
-        ConfigLoader
-          .loadWithEnvOverrides
-          .orElseSucceed(MigrationConfig(sourceDir = Paths.get("."), outputDir = Paths.get("./workspace/output")))
+  private def loadConfig: ZIO[Any, Throwable, MigrationConfig] =
+    ConfigLoader
+      .loadWithEnvOverrides
+      .orElseSucceed(MigrationConfig(sourceDir = Paths.get("."), outputDir = Paths.get("./workspace/output")))
 
   override def run: ZIO[ZIOAppArgs & Scope, Any, Unit] =
     for
