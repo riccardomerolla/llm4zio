@@ -3,8 +3,6 @@ package models
 import java.nio.file.{ Path, Paths }
 import java.time.Instant
 
-import scala.annotation.nowarn
-
 import zio.*
 import zio.json.*
 
@@ -23,18 +21,7 @@ case class WorkspaceMetadata(
 
 type TaskStep = String
 
-object TaskStep:
-  val Discovery: TaskStep      = "Discovery"
-  val Analysis: TaskStep       = "Analysis"
-  val Mapping: TaskStep        = "Mapping"
-  val Transformation: TaskStep = "Transformation"
-  val Validation: TaskStep     = "Validation"
-  val Documentation: TaskStep  = "Documentation"
-
-  // Default built-in steps used by legacy workflow definitions.
-  val values: List[TaskStep] = List(Discovery, Analysis, Mapping, Transformation, Validation, Documentation)
-
-  given JsonCodec[TaskStep] = JsonCodec.string.asInstanceOf[JsonCodec[TaskStep]]
+given JsonCodec[TaskStep] = JsonCodec.string.asInstanceOf[JsonCodec[TaskStep]]
 
 case class TaskError(
   stepName: String,
@@ -76,25 +63,20 @@ case class TelegramBotConfig(
   polling: TelegramPollingSettings = TelegramPollingSettings(),
 ) derives JsonCodec
 
-case class MigrationConfig(
-  sourceDir: Path,
-  outputDir: Path,
-  stateDir: Path = Paths.get(".migration-state"),
+case class GatewayConfig(
   aiProvider: Option[AIProviderConfig] = None,
-  @deprecated("Use aiProvider.model instead", "0.2.0")
-  geminiModel: String = "gemini-2.5-flash",
-  @deprecated("Use aiProvider.timeout instead", "0.2.0")
-  geminiTimeout: zio.Duration = zio.Duration.fromSeconds(90),
-  @deprecated("Use aiProvider.maxRetries instead", "0.2.0")
-  geminiMaxRetries: Int = 3,
-  @deprecated("Use aiProvider.requestsPerMinute instead", "0.2.0")
-  geminiRequestsPerMinute: Int = 60,
-  @deprecated("Use aiProvider.burstSize instead", "0.2.0")
-  geminiBurstSize: Int = 10,
-  @deprecated("Use aiProvider.acquireTimeout instead", "0.2.0")
-  geminiAcquireTimeout: zio.Duration = zio.Duration.fromSeconds(30),
-  discoveryMaxDepth: Int = 25,
-  discoveryExcludePatterns: List[String] = List(
+  dryRun: Boolean = false,
+  verbose: Boolean = false,
+  telegram: TelegramBotConfig = TelegramBotConfig(),
+) derives JsonCodec:
+  def resolvedProviderConfig: AIProviderConfig =
+    aiProvider.map(AIProviderConfig.withDefaults).getOrElse(AIProviderConfig.withDefaults(AIProviderConfig()))
+
+  def sourceDir: Path                        = Paths.get(".")
+  def outputDir: Path                        = Paths.get("./workspace/output")
+  def stateDir: Path                         = Paths.get(".migration-state")
+  def discoveryMaxDepth: Int                 = 25
+  def discoveryExcludePatterns: List[String] = List(
     "**/.git/**",
     "**/target/**",
     "**/node_modules/**",
@@ -104,31 +86,58 @@ case class MigrationConfig(
     "**/*.bak",
     "**/*.tmp",
     "**/*~",
-  ),
-  parallelism: Int = 4,
-  batchSize: Int = 10,
-  enableCheckpointing: Boolean = true,
-  enableBusinessLogicExtractor: Boolean = false,
-  resumeFromCheckpoint: Option[String] = None,
-  retryFromRunId: Option[Long] = None,
-  retryFromStep: Option[TaskStep] = None,
-  workflowId: Option[Long] = None,
-  dryRun: Boolean = false,
-  verbose: Boolean = false,
-  basePackage: String = "com.example",
-  projectName: Option[String] = None,
-  projectVersion: String = "0.0.1-SNAPSHOT",
-  maxCompileRetries: Int = 3,
-  telegram: TelegramBotConfig = TelegramBotConfig(),
-) derives JsonCodec:
+  )
+  def parallelism: Int                       = 4
+  def batchSize: Int                         = 10
+  def enableCheckpointing: Boolean           = true
+  def enableBusinessLogicExtractor: Boolean  = false
+  def resumeFromCheckpoint: Option[String]   = None
+  def retryFromRunId: Option[Long]           = None
+  def retryFromStep: Option[TaskStep]        = None
+  def workflowId: Option[Long]               = None
+  def basePackage: String                    = "com.example"
+  def projectName: Option[String]            = None
+  def projectVersion: String                 = "0.0.1-SNAPSHOT"
+  def maxCompileRetries: Int                 = 3
+  def geminiModel: String                    = resolvedProviderConfig.model
+  def geminiTimeout: zio.Duration            = resolvedProviderConfig.timeout
+  def geminiMaxRetries: Int                  = resolvedProviderConfig.maxRetries
+  def geminiRequestsPerMinute: Int           = resolvedProviderConfig.requestsPerMinute
+  def geminiBurstSize: Int                   = resolvedProviderConfig.burstSize
+  def geminiAcquireTimeout: zio.Duration     = resolvedProviderConfig.acquireTimeout
 
-  @nowarn("cat=deprecation")
-  def resolvedProviderConfig: AIProviderConfig =
-    aiProvider
-      .map(AIProviderConfig.withDefaults)
-      .getOrElse(
-        AIProviderConfig(
-          provider = AIProvider.GeminiCli,
+object GatewayConfig:
+  extension (config: GatewayConfig)
+    def copy(
+      sourceDir: Path = config.sourceDir,
+      outputDir: Path = config.outputDir,
+      stateDir: Path = config.stateDir,
+      discoveryMaxDepth: Int = config.discoveryMaxDepth,
+      discoveryExcludePatterns: List[String] = config.discoveryExcludePatterns,
+      parallelism: Int = config.parallelism,
+      batchSize: Int = config.batchSize,
+      enableCheckpointing: Boolean = config.enableCheckpointing,
+      resumeFromCheckpoint: Option[String] = config.resumeFromCheckpoint,
+      retryFromRunId: Option[Long] = config.retryFromRunId,
+      retryFromStep: Option[TaskStep] = config.retryFromStep,
+      enableBusinessLogicExtractor: Boolean = config.enableBusinessLogicExtractor,
+      basePackage: String = config.basePackage,
+      projectName: Option[String] = config.projectName,
+      projectVersion: String = config.projectVersion,
+      maxCompileRetries: Int = config.maxCompileRetries,
+      geminiModel: String = config.geminiModel,
+      geminiTimeout: zio.Duration = config.geminiTimeout,
+      geminiMaxRetries: Int = config.geminiMaxRetries,
+      geminiRequestsPerMinute: Int = config.geminiRequestsPerMinute,
+      geminiBurstSize: Int = config.geminiBurstSize,
+      geminiAcquireTimeout: zio.Duration = config.geminiAcquireTimeout,
+      aiProvider: Option[AIProviderConfig] = config.aiProvider,
+      dryRun: Boolean = config.dryRun,
+      verbose: Boolean = config.verbose,
+      telegram: TelegramBotConfig = config.telegram,
+    ): GatewayConfig =
+      val providerConfig = AIProviderConfig.withDefaults(
+        aiProvider.getOrElse(config.resolvedProviderConfig).copy(
           model = geminiModel,
           timeout = geminiTimeout,
           maxRetries = geminiMaxRetries,
@@ -138,24 +147,167 @@ case class MigrationConfig(
         )
       )
 
+      GatewayConfig(
+        aiProvider = Some(providerConfig),
+        dryRun = dryRun,
+        verbose = verbose,
+        telegram = telegram,
+      )
+
+type MigrationConfig = GatewayConfig
+
+object MigrationConfig:
+  def apply(
+    sourceDir: Path,
+    outputDir: Path,
+  ): GatewayConfig =
+    GatewayConfig()
+
+  def apply(
+    sourceDir: Path,
+    outputDir: Path,
+    stateDir: Path,
+    parallelism: Int,
+    batchSize: Int,
+    geminiModel: String,
+    geminiTimeout: zio.Duration,
+    geminiMaxRetries: Int,
+    geminiRequestsPerMinute: Int,
+    geminiBurstSize: Int,
+    geminiAcquireTimeout: zio.Duration,
+    discoveryMaxDepth: Int,
+    discoveryExcludePatterns: List[String],
+    dryRun: Boolean,
+    verbose: Boolean,
+    enableCheckpointing: Boolean,
+    enableBusinessLogicExtractor: Boolean,
+    resumeFromCheckpoint: Option[String],
+    retryFromRunId: Option[Long],
+    retryFromStep: Option[TaskStep],
+    basePackage: String,
+    projectName: Option[String],
+    projectVersion: String,
+    maxCompileRetries: Int,
+    aiProvider: Option[AIProviderConfig],
+    telegram: TelegramBotConfig,
+  ): GatewayConfig =
+    GatewayConfig(aiProvider = aiProvider, dryRun = dryRun, verbose = verbose, telegram = telegram).copy(
+      geminiModel = geminiModel,
+      geminiTimeout = geminiTimeout,
+      geminiMaxRetries = geminiMaxRetries,
+      geminiRequestsPerMinute = geminiRequestsPerMinute,
+      geminiBurstSize = geminiBurstSize,
+      geminiAcquireTimeout = geminiAcquireTimeout,
+    )
+
+  def apply(
+    sourceDir: Path = Paths.get("."),
+    outputDir: Path = Paths.get("./workspace/output"),
+    stateDir: Path = Paths.get(".migration-state"),
+    discoveryMaxDepth: Int = 25,
+    discoveryExcludePatterns: List[String] = List(
+      "**/.git/**",
+      "**/target/**",
+      "**/node_modules/**",
+      "**/.idea/**",
+      "**/.vscode/**",
+      "**/backup/**",
+      "**/*.bak",
+      "**/*.tmp",
+      "**/*~",
+    ),
+    parallelism: Int = 4,
+    batchSize: Int = 10,
+    enableCheckpointing: Boolean = true,
+    enableBusinessLogicExtractor: Boolean = false,
+    resumeFromCheckpoint: Option[String] = None,
+    retryFromRunId: Option[Long] = None,
+    retryFromStep: Option[TaskStep] = None,
+    basePackage: String = "com.example",
+    projectName: Option[String] = None,
+    projectVersion: String = "0.0.1-SNAPSHOT",
+    maxCompileRetries: Int = 3,
+    geminiModel: String = AIProviderConfig.withDefaults(AIProviderConfig()).model,
+    geminiTimeout: zio.Duration = AIProviderConfig.withDefaults(AIProviderConfig()).timeout,
+    geminiMaxRetries: Int = AIProviderConfig.withDefaults(AIProviderConfig()).maxRetries,
+    geminiRequestsPerMinute: Int = AIProviderConfig.withDefaults(AIProviderConfig()).requestsPerMinute,
+    geminiBurstSize: Int = AIProviderConfig.withDefaults(AIProviderConfig()).burstSize,
+    geminiAcquireTimeout: zio.Duration = AIProviderConfig.withDefaults(AIProviderConfig()).acquireTimeout,
+    aiProvider: Option[AIProviderConfig] = None,
+    dryRun: Boolean = false,
+    verbose: Boolean = false,
+    telegram: TelegramBotConfig = TelegramBotConfig(),
+  ): GatewayConfig =
+    GatewayConfig(
+      aiProvider = aiProvider,
+      dryRun = dryRun,
+      verbose = verbose,
+      telegram = telegram,
+    ).copy(
+      geminiModel = geminiModel,
+      geminiTimeout = geminiTimeout,
+      geminiMaxRetries = geminiMaxRetries,
+      geminiRequestsPerMinute = geminiRequestsPerMinute,
+      geminiBurstSize = geminiBurstSize,
+      geminiAcquireTimeout = geminiAcquireTimeout,
+    )
+
 case class TaskState(
   taskRunId: Option[Long] = None,
   currentStepName: Option[String] = None,
   status: TaskStatus = TaskStatus.Idle,
-  // Backward-compatible fields retained during migration to task-centric state.
-  runId: String = "run-unknown",
-  startedAt: Instant = Instant.EPOCH,
-  currentStep: TaskStep = TaskStep.Discovery,
-  completedSteps: Set[TaskStep] = Set.empty,
-  artifacts: Map[String, String] = Map.empty,
-  errors: List[TaskError] = List.empty,
-  config: MigrationConfig = MigrationConfig(
-    sourceDir = Paths.get("."),
-    outputDir = Paths.get("./workspace/output"),
-  ),
-  workspace: Option[WorkspaceMetadata] = None,
-  lastCheckpoint: Instant = Instant.EPOCH,
-) derives JsonCodec
+) derives JsonCodec:
+  def runId: String                        = taskRunId.map(_.toString).getOrElse("run-unknown")
+  def startedAt: Instant                   = Instant.EPOCH
+  def currentStep: TaskStep                = currentStepName.getOrElse("unknown")
+  def completedSteps: Set[TaskStep]        = Set.empty
+  def artifacts: Map[String, String]       = Map.empty
+  def errors: List[TaskError]              = List.empty
+  def config: GatewayConfig                = GatewayConfig()
+  def workspace: Option[WorkspaceMetadata] = None
+  def lastCheckpoint: Instant              = Instant.EPOCH
+
+object TaskState:
+  def apply(
+    runId: String,
+    startedAt: Instant,
+    currentStep: TaskStep,
+    completedSteps: Set[TaskStep],
+    artifacts: Map[String, String],
+    errors: List[TaskError],
+    config: GatewayConfig,
+    workspace: Option[WorkspaceMetadata],
+    status: TaskStatus,
+    lastCheckpoint: Instant,
+    taskRunId: Option[Long],
+    currentStepName: Option[String],
+  ): TaskState =
+    TaskState(
+      taskRunId = taskRunId.orElse(runId.toLongOption),
+      currentStepName = currentStepName.orElse(Some(currentStep)),
+      status = status,
+    )
+
+  extension (state: TaskState)
+    def copy(
+      runId: String = state.runId,
+      startedAt: Instant = state.startedAt,
+      currentStep: TaskStep = state.currentStep,
+      completedSteps: Set[TaskStep] = state.completedSteps,
+      artifacts: Map[String, String] = state.artifacts,
+      errors: List[TaskError] = state.errors,
+      config: GatewayConfig = state.config,
+      workspace: Option[WorkspaceMetadata] = state.workspace,
+      lastCheckpoint: Instant = state.lastCheckpoint,
+      taskRunId: Option[Long] = state.taskRunId,
+      currentStepName: Option[String] = state.currentStepName,
+      status: TaskStatus = state.status,
+    ): TaskState =
+      TaskState(
+        taskRunId = taskRunId.orElse(runId.toLongOption),
+        currentStepName = currentStepName.orElse(Some(currentStep)),
+        status = status,
+      )
 
 case class Checkpoint(
   runId: String,
@@ -170,29 +322,14 @@ case class CheckpointSnapshot(
   state: TaskState,
 ) derives JsonCodec
 
-object TaskState:
-  def empty: UIO[TaskState] =
-    Clock.instant.map { now =>
-      TaskState(
-        taskRunId = None,
-        currentStepName = None,
-        status = TaskStatus.Idle,
-        runId = s"run-${now.toEpochMilli}",
-        startedAt = now,
-        currentStep = TaskStep.Discovery,
-        lastCheckpoint = now,
-      )
-    }
-
 case class TaskRunSummary(
-  runId: String,
-  currentStep: TaskStep,
-  completedSteps: Set[TaskStep],
-  errorCount: Int,
-  // Generalized task state fields.
+  errorCount: Int = 0,
   taskRunId: Option[Long] = None,
   currentStepName: Option[String] = None,
   status: TaskStatus = TaskStatus.Idle,
   startedAt: Instant = Instant.EPOCH,
   updatedAt: Instant = Instant.EPOCH,
-) derives JsonCodec
+) derives JsonCodec:
+  def runId: String                 = taskRunId.map(_.toString).getOrElse("run-unknown")
+  def currentStep: TaskStep         = currentStepName.getOrElse("unknown")
+  def completedSteps: Set[TaskStep] = Set.empty

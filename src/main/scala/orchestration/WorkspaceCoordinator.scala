@@ -6,7 +6,7 @@ import zio.*
 import zio.json.*
 
 import core.{ RateLimiter, RateLimiterConfig }
-import models.{ ControlPlaneError, MigrationConfig }
+import models.{ ControlPlaneError, GatewayConfig }
 
 enum RunPriority derives JsonCodec:
   case Low
@@ -36,11 +36,12 @@ case class ResourceQuotas(
 ) derives JsonCodec
 
 object ResourceQuotas:
-  def fromMigrationConfig(config: MigrationConfig): ResourceQuotas =
+  def fromGatewayConfig(config: GatewayConfig): ResourceQuotas =
+    val defaultParallelism = 4
     ResourceQuotas(
-      maxParallelRuns = math.max(1, config.parallelism),
-      maxTotalMemoryGb = math.max(1, config.parallelism * 2),
-      maxDiskGb = math.max(1, config.parallelism * 5),
+      maxParallelRuns = math.max(1, defaultParallelism),
+      maxTotalMemoryGb = math.max(1, defaultParallelism * 2),
+      maxDiskGb = math.max(1, defaultParallelism * 5),
       rateLimit = TokenBucketConfig(
         requestsPerMinute = config.resolvedProviderConfig.requestsPerMinute,
         burstSize = config.resolvedProviderConfig.burstSize,
@@ -125,8 +126,8 @@ object WorkspaceCoordinator:
   def acquireNetworkPermit(runId: Long): ZIO[WorkspaceCoordinator, ControlPlaneError, Unit] =
     ZIO.serviceWithZIO[WorkspaceCoordinator](_.acquireNetworkPermit(runId))
 
-  def quotasLayer(config: MigrationConfig): ULayer[ResourceQuotas] =
-    ZLayer.succeed(ResourceQuotas.fromMigrationConfig(config))
+  def quotasLayer(config: GatewayConfig): ULayer[ResourceQuotas] =
+    ZLayer.succeed(ResourceQuotas.fromGatewayConfig(config))
 
   val noop: ULayer[WorkspaceCoordinator] =
     ZLayer.succeed(

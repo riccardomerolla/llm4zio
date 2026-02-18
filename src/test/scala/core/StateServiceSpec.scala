@@ -44,7 +44,11 @@ object StateServiceSpec extends ZIOSpecDefault:
         sourceDir = Paths.get("cobol-source"),
         outputDir = Paths.get("java-output"),
       ),
+      workspace = None,
+      status = TaskStatus.Running,
       lastCheckpoint = Instant.parse("2024-01-15T10:00:00Z"),
+      taskRunId = None,
+      currentStepName = None,
     )
 
   def spec: Spec[Any, Any] = suite("StateServiceSpec")(

@@ -8,14 +8,7 @@ object WorkflowValidatorSpec extends ZIOSpecDefault:
     id = None,
     name = "Pipeline A",
     description = Some("End-to-end flow"),
-    steps = List(
-      TaskStep.Discovery,
-      TaskStep.Analysis,
-      TaskStep.Mapping,
-      TaskStep.Transformation,
-      TaskStep.Validation,
-      TaskStep.Documentation,
-    ),
+    steps = WorkflowDefinition.defaultSteps,
     isBuiltin = false,
   )
 
@@ -41,41 +34,34 @@ object WorkflowValidatorSpec extends ZIOSpecDefault:
       )
     },
     test("rejects duplicate steps") {
-      val steps  = List(
-        TaskStep.Discovery,
-        TaskStep.Analysis,
-        TaskStep.Analysis,
-      )
+      val steps  = List("TaskA", "TaskB", "TaskB")
       val result = WorkflowValidator.validate(validWorkflow.copy(steps = steps))
       assertTrue(
-        result == Left(List("Duplicate step not allowed: Analysis"))
+        result == Left(List("Duplicate step not allowed: TaskB"))
       )
     },
-    test("rejects missing dependencies") {
-      val steps  = List(TaskStep.Analysis)
+    test("accepts dynamic single-step workflows") {
+      val steps  = List("AnalyzeIntent")
       val result = WorkflowValidator.validate(validWorkflow.copy(steps = steps))
       assertTrue(
-        result == Left(List("Analysis requires Discovery to be present"))
+        result == Right(validWorkflow.copy(steps = steps))
       )
     },
-    test("rejects invalid dependency ordering") {
-      val steps  = List(TaskStep.Analysis, TaskStep.Discovery)
+    test("accepts arbitrary step ordering for dynamic workflows") {
+      val steps  = List("B", "A")
       val result = WorkflowValidator.validate(validWorkflow.copy(steps = steps))
       assertTrue(
-        result == Left(List("Analysis must appear after Discovery"))
+        result == Right(validWorkflow.copy(steps = steps))
       )
     },
     test("returns multiple validation errors in one pass") {
-      val steps  = List(TaskStep.Transformation, TaskStep.Mapping, TaskStep.Mapping)
+      val steps  = List("Transform", "Map", "Map")
       val result = WorkflowValidator.validate(validWorkflow.copy(name = " ", steps = steps))
       assertTrue(
         result == Left(
           List(
             "Workflow name cannot be empty",
-            "Duplicate step not allowed: Mapping",
-            "Transformation requires Analysis to be present",
-            "Transformation must appear after Mapping",
-            "Mapping requires Analysis to be present",
+            "Duplicate step not allowed: Map",
           )
         )
       )

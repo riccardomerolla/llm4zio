@@ -10,7 +10,7 @@ import agents.AgentRegistry
 import com.sun.management.OperatingSystemMXBean
 import db.{ RunStatus, TaskRepository }
 import gateway.{ ChannelRegistry, GatewayService }
-import models.{ AgentHealthStatus, MigrationConfig }
+import models.{ AgentHealthStatus, GatewayConfig }
 
 final case class GatewayHealth(
   uptimeSeconds: Long,
@@ -75,7 +75,7 @@ object HealthMonitor:
     ZStream.serviceWithStream[HealthMonitor](_.stream(interval))
 
   val live
-    : ZLayer[GatewayService & ChannelRegistry & AgentRegistry & TaskRepository & MigrationConfig, Nothing, HealthMonitor] =
+    : ZLayer[GatewayService & ChannelRegistry & AgentRegistry & TaskRepository & GatewayConfig, Nothing, HealthMonitor] =
     ZLayer.fromZIO {
       for
         startedAt  <- Clock.instant
@@ -84,7 +84,7 @@ object HealthMonitor:
         channels   <- ZIO.service[ChannelRegistry]
         agents     <- ZIO.service[AgentRegistry]
         repo       <- ZIO.service[TaskRepository]
-        config     <- ZIO.service[MigrationConfig]
+        config     <- ZIO.service[GatewayConfig]
       yield HealthMonitorLive(startedAt, historyRef, gateway, channels, agents, repo, config)
     }
 
@@ -95,10 +95,7 @@ final case class HealthMonitorLive(
   channelRegistry: ChannelRegistry,
   agentRegistry: AgentRegistry,
   repository: TaskRepository,
-  config: MigrationConfig = MigrationConfig(
-    sourceDir = java.nio.file.Paths.get("."),
-    outputDir = java.nio.file.Paths.get("./workspace/output"),
-  ),
+  config: GatewayConfig = GatewayConfig(),
 ) extends HealthMonitor:
 
   private val HistoryCapacity = 180

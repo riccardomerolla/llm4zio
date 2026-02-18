@@ -168,9 +168,10 @@ final case class WorkflowsControllerLive(
     val raw = form.getOrElse("orderedSteps", "")
     if raw.trim.isEmpty then
       ZIO.succeed(
-        TaskStep.values.toList.filter(step =>
-          form.get(s"step.${step.toString}").exists(_.trim.nonEmpty)
-        )
+        form.toList.collect {
+          case (key, value) if key.startsWith("step.") && value.trim.nonEmpty =>
+            key.stripPrefix("step.").trim
+        }.filter(_.nonEmpty)
       )
     else
       ZIO.foreach(raw.split(",").toList.map(_.trim).filter(_.nonEmpty)) { value =>
@@ -183,14 +184,14 @@ final case class WorkflowsControllerLive(
   ): IO[WorkflowServiceError, List[WorkflowStepAgent]] =
     for
       fromJson   <- parseStepAgentsJson(form.get("stepAgentsJson").map(_.trim).filter(_.nonEmpty))
-      fromFields  = TaskStep.values.toList.flatMap { step =>
-                      form.get(s"agent.${step.toString}").map(_.trim).filter(_.nonEmpty).map(step -> _)
-                    }.toMap
+      fromFields  = selectedSteps.flatMap(step =>
+                      form.get(s"agent.$step").map(_.trim).filter(_.nonEmpty).map(step -> _)
+                    ).toMap
       merged      = fromJson ++ fromFields
       selectedSet = selectedSteps.toSet
-    yield TaskStep.values.toList.flatMap { step =>
+    yield selectedSteps.flatMap(step =>
       if selectedSet.contains(step) then merged.get(step).map(agent => WorkflowStepAgent(step, agent)) else None
-    }
+    )
 
   private def parseStepAgentsJson(
     raw: Option[String]
@@ -213,9 +214,9 @@ final case class WorkflowsControllerLive(
           }
 
   private def parseStep(raw: String): IO[WorkflowServiceError, TaskStep] =
-    TaskStep.values.find(_.toString == raw) match
-      case Some(value) => ZIO.succeed(value)
-      case None        => ZIO.fail(WorkflowServiceError.ValidationFailed(List(s"Unknown migration step: $raw")))
+    val normalized = raw.trim
+    if normalized.nonEmpty then ZIO.succeed(normalized)
+    else ZIO.fail(WorkflowServiceError.ValidationFailed(List("Migration step cannot be empty")))
 
   private def validateForForm(workflow: WorkflowDefinition): IO[WorkflowServiceError, WorkflowDefinition] =
     WorkflowValidator.validate(workflow) match

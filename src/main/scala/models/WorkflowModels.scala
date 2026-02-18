@@ -74,49 +74,24 @@ case class WorkflowDefinition(
 ) derives JsonCodec
 
 object WorkflowDefinition:
+  val defaultSteps: List[TaskStep] = List("chat")
+
   val default: WorkflowDefinition =
     WorkflowDefinition(
       id = None,
-      name = "Default Workflow",
-      description = Some("Built-in end-to-end migration workflow"),
-      steps = List(
-        TaskStep.Discovery,
-        TaskStep.Analysis,
-        TaskStep.Mapping,
-        TaskStep.Transformation,
-        TaskStep.Validation,
-        TaskStep.Documentation,
-      ),
-      stepAgents = Nil,
+      name = "Chat Workflow",
+      description = Some("Built-in single-step conversational workflow"),
+      steps = defaultSteps,
+      stepAgents = List(WorkflowStepAgent("chat", "chat-agent")),
       isBuiltin = true,
       dynamicGraph = Some(
         WorkflowGraph(
-          List(
-            WorkflowNode(id = "discovery", step = TaskStep.Discovery),
-            WorkflowNode(id = "analysis", step = TaskStep.Analysis, dependsOn = List("discovery")),
-            WorkflowNode(id = "mapping", step = TaskStep.Mapping, dependsOn = List("analysis")),
-            WorkflowNode(id = "transformation", step = TaskStep.Transformation, dependsOn = List("mapping")),
-            WorkflowNode(
-              id = "validation",
-              step = TaskStep.Validation,
-              dependsOn = List("transformation"),
-              condition = WorkflowCondition.NotDryRun,
-            ),
-            WorkflowNode(id = "documentation", step = TaskStep.Documentation, dependsOn = List("discovery")),
-          )
+          List(WorkflowNode(id = "chat", step = "chat"))
         )
       ),
     )
 
 object WorkflowValidator:
-  private val dependencies: Map[TaskStep, List[TaskStep]] = Map(
-    TaskStep.Analysis       -> List(TaskStep.Discovery),
-    TaskStep.Mapping        -> List(TaskStep.Analysis),
-    TaskStep.Transformation -> List(TaskStep.Analysis, TaskStep.Mapping),
-    TaskStep.Validation     -> List(TaskStep.Transformation, TaskStep.Analysis),
-    TaskStep.Documentation  -> List(TaskStep.Discovery),
-  )
-
   def validate(workflow: WorkflowDefinition): Either[List[String], WorkflowDefinition] =
     val normalizedName     = workflow.name.trim
     val nameErrors         =
@@ -126,14 +101,13 @@ object WorkflowValidator:
       if workflow.steps.nonEmpty || workflow.dynamicGraph.exists(_.nodes.nonEmpty) then Nil
       else List("Workflow steps cannot be empty")
     val duplicateErrors    = duplicateStepErrors(workflow.steps)
-    val dependencyErrors   = dependencyOrderingErrors(workflow.steps)
     val graphErrors        = invalidGraph(workflow.dynamicGraph)
     val stepAgentErrors    = invalidStepAgents(
       workflow.steps ++ workflow.dynamicGraph.toList.flatMap(_.nodes.map(_.step)),
       workflow.stepAgents,
     )
     val allErrors          =
-      (nameErrors ++ stepPresenceErrors ++ duplicateErrors ++ dependencyErrors ++ graphErrors ++ stepAgentErrors).distinct
+      (nameErrors ++ stepPresenceErrors ++ duplicateErrors ++ graphErrors ++ stepAgentErrors).distinct
 
     if allErrors.isEmpty then Right(workflow.copy(name = normalizedName))
     else Left(allErrors)
@@ -144,21 +118,6 @@ object WorkflowValidator:
       .collect { case (step, instances) if instances.size > 1 => s"Duplicate step not allowed: ${step.toString}" }
       .toList
       .sorted
-
-  private def dependencyOrderingErrors(steps: List[TaskStep]): List[String] =
-    val positions = steps.zipWithIndex.toMap
-    steps.zipWithIndex.flatMap {
-      case (step, stepIndex) =>
-        dependencies.getOrElse(step, Nil).flatMap { requiredStep =>
-          positions.get(requiredStep) match
-            case None                                             =>
-              Some(s"${step.toString} requires ${requiredStep.toString} to be present")
-            case Some(requiredIndex) if requiredIndex > stepIndex =>
-              Some(s"${step.toString} must appear after ${requiredStep.toString}")
-            case _                                                =>
-              None
-        }
-    }.distinct
 
   private def invalidStepAgents(steps: List[TaskStep], stepAgents: List[WorkflowStepAgent]): List[String] =
     val includedSteps        = steps.toSet

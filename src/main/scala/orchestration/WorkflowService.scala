@@ -161,7 +161,7 @@ final case class WorkflowServiceLive(
     raw.fromJson[WorkflowStoragePayload] match
       case Right(payload) =>
         for
-          mapped <- decodeStepAgentMap(workflowName, payload.stepAgents)
+          mapped <- decodeStepAgentMap(payload.stepAgents)
         yield (payload.steps, mapped, payload.dynamicGraph)
       case Left(_)        =>
         // Backward compatibility with rows stored as raw JSON array of steps.
@@ -174,18 +174,6 @@ final case class WorkflowServiceLive(
           .map(steps => (steps, Map.empty[TaskStep, String], Option.empty[WorkflowGraph]))
 
   private def decodeStepAgentMap(
-    workflowName: String,
-    raw: Map[String, String],
+    raw: Map[String, String]
   ): IO[WorkflowServiceError, Map[TaskStep, String]] =
-    ZIO.foldLeft(raw.toList)(Map.empty[TaskStep, String]) {
-      case (acc, (stepRaw, agentRaw)) =>
-        TaskStep.values.find(_.toString == stepRaw) match
-          case Some(step) => ZIO.succeed(acc.updated(step, agentRaw))
-          case None       =>
-            ZIO.fail(
-              WorkflowServiceError.StepsDecodingFailed(
-                workflowName,
-                s"Unknown step in stepAgents payload: $stepRaw",
-              )
-            )
-    }
+    ZIO.succeed(raw.map { case (stepRaw, agentRaw) => stepRaw.trim -> agentRaw })

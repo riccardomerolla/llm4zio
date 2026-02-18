@@ -9,14 +9,14 @@ import zio.config.magnolia.*
 import zio.config.typesafe.*
 
 import com.typesafe.config.{ Config as TypesafeConfig, ConfigFactory }
-import models.{ AIProvider, AIProviderConfig, MigrationConfig, TelegramMode }
+import models.{ AIProvider, AIProviderConfig, GatewayConfig, TelegramMode }
 
 /** Configuration loader using ZIO Config with HOCON support
   *
   * Supports loading configuration from:
   *   - HOCON/JSON configuration files
   *   - Environment variables
-  *   - Default values defined in MigrationConfig
+  *   - Default values defined in GatewayConfig
   *
   * Configuration priority (highest to lowest):
   *   1. Environment variables (prefixed with MIGRATION_)
@@ -31,15 +31,15 @@ object ConfigLoader:
 
   private val LocalHosts: Set[String] = Set("localhost", "127.0.0.1", "0.0.0.0", "::1")
 
-  private val ConfigAiPath = "migration.ai"
+  private val ConfigAiPath = "gateway.ai"
 
   /** Load configuration from default sources (application.conf + environment variables)
     *
     * @return
     *   ZIO effect that loads the configuration or fails with a configuration error
     */
-  def load: IO[Config.Error, MigrationConfig] =
-    ZIO.config(deriveConfig[MigrationConfig].nested("migration"))
+  def load: IO[Config.Error, GatewayConfig] =
+    ZIO.config(deriveConfig[GatewayConfig].nested("gateway"))
 
   /** Load configuration from a specific file path
     *
@@ -48,9 +48,9 @@ object ConfigLoader:
     * @return
     *   ZIO effect that loads the configuration or fails with a configuration error
     */
-  def loadFromFile(configPath: Path): IO[Config.Error, MigrationConfig] =
+  def loadFromFile(configPath: Path): IO[Config.Error, GatewayConfig] =
     ZIO
-      .config(deriveConfig[MigrationConfig].nested("migration"))
+      .config(deriveConfig[GatewayConfig].nested("gateway"))
       .provideLayer(
         ZLayer.succeed(ConfigProvider.fromHoconFile(configPath.toFile))
       )
@@ -65,12 +65,12 @@ object ConfigLoader:
     * @return
     *   ZIO effect that loads the configuration with env var overrides
     */
-  def loadWithEnvOverrides: IO[Config.Error, MigrationConfig] =
-    val envProvider  = ConfigProvider.envProvider.nested("migration")
+  def loadWithEnvOverrides: IO[Config.Error, GatewayConfig] =
+    val envProvider  = ConfigProvider.envProvider.nested("gateway")
     val fileProvider = ConfigProvider.defaultProvider
 
     ZIO
-      .config(deriveConfig[MigrationConfig])
+      .config(deriveConfig[GatewayConfig])
       .provideLayer(ZLayer.succeed(envProvider.orElse(fileProvider)))
 
   /** Load AI provider config section from default application config.
@@ -98,7 +98,7 @@ object ConfigLoader:
     *   - MIGRATION_AI_TEMPERATURE
     *   - MIGRATION_AI_MAX_TOKENS
     */
-  def applyAIEnvironmentOverrides(config: MigrationConfig): IO[String, MigrationConfig] =
+  def applyAIEnvironmentOverrides(config: GatewayConfig): IO[String, GatewayConfig] =
     ZIO
       .attempt(sys.env.toMap)
       .mapError(_.getMessage)
@@ -106,8 +106,8 @@ object ConfigLoader:
 
   /** Apply environment variable overrides from a provided map (testable overload).
     */
-  def applyAIEnvironmentOverrides(config: MigrationConfig, environment: Map[String, String])
-    : IO[String, MigrationConfig] =
+  def applyAIEnvironmentOverrides(config: GatewayConfig, environment: Map[String, String])
+    : IO[String, GatewayConfig] =
     val env = environment.collect {
       case (k, v) if v.trim.nonEmpty => k -> v.trim
     }
@@ -182,11 +182,9 @@ object ConfigLoader:
     * @return
     *   ZIO effect that either succeeds with the config or fails with validation errors
     */
-  def validate(config: MigrationConfig): IO[String, MigrationConfig] =
+  def validate(config: GatewayConfig): IO[String, GatewayConfig] =
     val providerConfig = config.resolvedProviderConfig
     for
-      _ <- validateParallelism(config.parallelism)
-      _ <- validateBatchSize(config.batchSize)
       _ <- validateRetries(providerConfig.maxRetries)
       _ <- validateTimeout(providerConfig.timeout)
       _ <- validateRateLimiter(
@@ -195,21 +193,8 @@ object ConfigLoader:
              providerConfig.acquireTimeout,
            )
       _ <- validateAIProvider(providerConfig)
-      _ <- validateDiscovery(config.discoveryMaxDepth, config.discoveryExcludePatterns)
       _ <- validateTelegram(config)
     yield config
-
-  private def validateParallelism(parallelism: Int): IO[String, Unit] =
-    ZIO
-      .fail(s"Parallelism must be between 1 and 64, got: $parallelism")
-      .when(parallelism < 1 || parallelism > 64)
-      .unit
-
-  private def validateBatchSize(batchSize: Int): IO[String, Unit] =
-    ZIO
-      .fail(s"Batch size must be between 1 and 100, got: $batchSize")
-      .when(batchSize < 1 || batchSize > 100)
-      .unit
 
   private def validateRetries(retries: Int): IO[String, Unit] =
     ZIO
@@ -285,17 +270,7 @@ object ConfigLoader:
       case _                                        =>
         ZIO.unit
 
-  private def validateDiscovery(maxDepth: Int, excludes: List[String]): IO[String, Unit] =
-    for
-      _ <- ZIO
-             .fail(s"Discovery max depth must be between 1 and 100, got: $maxDepth")
-             .when(maxDepth < 1 || maxDepth > 100)
-      _ <- ZIO
-             .fail("Discovery exclude patterns cannot contain empty values")
-             .when(excludes.exists(_.trim.isEmpty))
-    yield ()
-
-  private def validateTelegram(config: MigrationConfig): IO[String, Unit] =
+  private def validateTelegram(config: GatewayConfig): IO[String, Unit] =
     val telegram = config.telegram
     if !telegram.enabled then ZIO.unit
     else

@@ -8,7 +8,7 @@ import zio.logging.backend.SLF4J
 
 import _root_.config.ConfigLoader
 import di.ApplicationDI
-import models.MigrationConfig
+import models.GatewayConfig
 import web.WebServer
 
 object Main extends ZIOAppDefault:
@@ -47,10 +47,10 @@ object Main extends ZIOAppDefault:
       _          <- WebServer.start(host, port).provide(ApplicationDI.webServerLayer(validated, dbPath))
     yield ()
 
-  private def loadConfig: ZIO[Any, Throwable, MigrationConfig] =
+  private def loadConfig: ZIO[Any, Throwable, GatewayConfig] =
     ConfigLoader
       .loadWithEnvOverrides
-      .orElseSucceed(MigrationConfig(sourceDir = Paths.get("."), outputDir = Paths.get("./workspace/output")))
+      .orElseSucceed(GatewayConfig())
 
   override def run: ZIO[ZIOAppArgs & Scope, Any, Unit] =
     for

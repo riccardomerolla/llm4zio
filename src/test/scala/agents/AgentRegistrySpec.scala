@@ -17,8 +17,8 @@ object AgentRegistrySpec extends ZIOSpecDefault:
   def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("AgentRegistry")(
     test("findByName should be case-insensitive and trim input") {
       for
-        found <- AgentRegistry.findByName("  COBOLanalyzer ")
-      yield assertTrue(found.exists(_.name == "cobolAnalyzer"))
+        found <- AgentRegistry.findByName("  CODE-AGENT ")
+      yield assertTrue(found.exists(_.name == "code-agent"))
     },
     test("loadCustomAgents should merge built-in and unique custom agents") {
       val customAgents = List(
@@ -41,7 +41,7 @@ object AgentRegistrySpec extends ZIOSpecDefault:
           updatedAt = now,
         ),
         CustomAgentRow(
-          name = "cobolAnalyzer",
+          name = "code-agent",
           displayName = "Conflicting BuiltIn",
           description = None,
           systemPrompt = "Prompt",
@@ -66,7 +66,7 @@ object AgentRegistrySpec extends ZIOSpecDefault:
         customOnly = all.filter(_.agentType == AgentType.Custom)
       yield assertTrue(
         loaded == 2,
-        all.count(_.name == "cobolAnalyzer") == 1,
+        all.count(_.name == "code-agent") == 1,
         customOnly.map(_.displayName).sorted == List("Alpha Custom", "Zeta Custom"),
         customOnly.exists(a =>
           a.name == "customOne" &&
@@ -82,28 +82,37 @@ object AgentRegistrySpec extends ZIOSpecDefault:
     },
     test("findAgentsWithSkill should filter by skill") {
       for
-        agents <- AgentRegistry.findAgentsWithSkill("cobol-parsing")
+        agents <- AgentRegistry.findAgentsWithSkill("code-generation")
       yield assertTrue(
         agents.nonEmpty,
-        agents.exists(_.name == "cobolAnalyzer"),
+        agents.exists(_.name == "code-agent"),
       )
     },
     test("findAgentsForStep should filter by supported step") {
       for
-        discoveryAgents <- AgentRegistry.findAgentsForStep(TaskStep.Discovery)
-        analysisAgents  <- AgentRegistry.findAgentsForStep(TaskStep.Analysis)
+        _              <- AgentRegistry.registerAgent(
+                            RegisterAgentRequest(
+                              name = "step-aware",
+                              displayName = "Step Aware",
+                              description = "step-aware test agent",
+                              agentType = AgentType.Custom,
+                              usesAI = false,
+                              tags = Nil,
+                              skills = Nil,
+                              supportedSteps = List("analysis"),
+                            )
+                          )
+        analysisAgents <- AgentRegistry.findAgentsForStep("analysis")
       yield assertTrue(
-        discoveryAgents.exists(_.name == "cobolDiscovery"),
-        analysisAgents.exists(_.name == "cobolAnalyzer"),
-        analysisAgents.exists(_.name == "businessLogicExtractor"),
+        analysisAgents.exists(_.name == "step-aware")
       )
     },
     test("findAgentsForTransformation should filter by input/output types") {
       for
-        agents <- AgentRegistry.findAgentsForTransformation("CobolFile", "CobolAnalysis")
+        agents <- AgentRegistry.findAgentsForTransformation("Message", "AgentReply")
       yield assertTrue(
         agents.nonEmpty,
-        agents.exists(_.name == "cobolAnalyzer"),
+        agents.exists(_.name == "chat-agent"),
       )
     },
     test("registerAgent should add new agent") {
@@ -122,7 +131,7 @@ object AgentRegistrySpec extends ZIOSpecDefault:
             outputTypes = List("String"),
           )
         ),
-        supportedSteps = List(TaskStep.Analysis),
+        supportedSteps = List("analysis"),
       )
 
       for
@@ -137,9 +146,9 @@ object AgentRegistrySpec extends ZIOSpecDefault:
     },
     test("recordInvocation should update metrics") {
       for
-        before <- AgentRegistry.getMetrics("cobolAnalyzer")
-        _      <- AgentRegistry.recordInvocation("cobolAnalyzer", success = true, latencyMs = 100)
-        after  <- AgentRegistry.getMetrics("cobolAnalyzer")
+        before <- AgentRegistry.getMetrics("code-agent")
+        _      <- AgentRegistry.recordInvocation("code-agent", success = true, latencyMs = 100)
+        after  <- AgentRegistry.getMetrics("code-agent")
       yield assertTrue(
         before.isDefined,
         after.isDefined,
@@ -149,9 +158,9 @@ object AgentRegistrySpec extends ZIOSpecDefault:
     },
     test("updateHealth should track agent health") {
       for
-        before <- AgentRegistry.getHealth("cobolAnalyzer")
-        _      <- AgentRegistry.updateHealth("cobolAnalyzer", success = false, Some("Test error"))
-        after  <- AgentRegistry.getHealth("cobolAnalyzer")
+        before <- AgentRegistry.getHealth("code-agent")
+        _      <- AgentRegistry.updateHealth("code-agent", success = false, Some("Test error"))
+        after  <- AgentRegistry.getHealth("code-agent")
       yield assertTrue(
         before.isDefined,
         after.isDefined,
@@ -160,36 +169,34 @@ object AgentRegistrySpec extends ZIOSpecDefault:
     },
     test("setAgentEnabled should enable/disable agents") {
       for
-        _        <- AgentRegistry.setAgentEnabled("cobolAnalyzer", enabled = false)
-        disabled <- AgentRegistry.getHealth("cobolAnalyzer")
-        _        <- AgentRegistry.setAgentEnabled("cobolAnalyzer", enabled = true)
-        enabled  <- AgentRegistry.getHealth("cobolAnalyzer")
+        _        <- AgentRegistry.setAgentEnabled("code-agent", enabled = false)
+        disabled <- AgentRegistry.getHealth("code-agent")
+        _        <- AgentRegistry.setAgentEnabled("code-agent", enabled = true)
+        enabled  <- AgentRegistry.getHealth("code-agent")
       yield assertTrue(
         disabled.exists(!_.isEnabled),
         enabled.exists(_.isEnabled),
       )
     },
     test("getRankedAgents should sort by health and performance") {
-      val query = AgentQuery(supportedStep = Some(TaskStep.Analysis))
+      val query = AgentQuery(skill = Some("code-generation"))
       for
         ranked <- AgentRegistry.getRankedAgents(query)
       yield assertTrue(
         ranked.nonEmpty,
-        ranked.forall(a => a.supportedSteps.contains(TaskStep.Analysis)),
+        ranked.forall(a => a.skills.exists(_.skill == "code-generation")),
       )
     },
     test("findAgents with query should filter correctly") {
       val query = AgentQuery(
-        skill = Some("cobol-parsing"),
-        supportedStep = Some(TaskStep.Analysis),
+        skill = Some("code-generation"),
         onlyEnabled = true,
       )
       for
         agents <- AgentRegistry.findAgents(query)
       yield assertTrue(
         agents.nonEmpty,
-        agents.forall(a => a.skills.exists(_.skill == "cobol-parsing")),
-        agents.forall(a => a.supportedSteps.contains(TaskStep.Analysis)),
+        agents.forall(a => a.skills.exists(_.skill == "code-generation")),
       )
     },
   ).provide(testLayer)

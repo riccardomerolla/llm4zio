@@ -75,7 +75,6 @@ object WorkflowsView:
     val orderedCsv     = workflow.steps.map(_.toString).mkString(",")
     val stepAgentsJson = stepAgentsToJson(workflow.stepAgents)
     val agentOptions   = availableAgents.filter(_.usesAI).sortBy(_.displayName.toLowerCase)
-    val stepAgentMap   = workflow.stepAgents.map(assign => assign.step -> assign.agentName).toMap
 
     Layout.page(title, "/workflows")(
       div(cls := "mx-auto max-w-6xl space-y-5")(
@@ -86,7 +85,7 @@ object WorkflowsView:
         div(cls := "rounded-xl border border-white/10 bg-slate-900/80 px-5 py-4")(
           h1(cls := "text-2xl font-bold text-white")(title),
           p(cls := "mt-1 text-sm text-slate-300")(
-            "Select steps, order them, assign optional agents per step, and preview the workflow graph."
+            "Define custom steps, order them, assign optional agents per step, and preview the workflow graph."
           ),
         ),
         flash.map { message =>
@@ -108,57 +107,18 @@ object WorkflowsView:
               ),
               div(cls := "mt-4")(
                 p(cls := "mb-2 text-sm font-semibold text-slate-200")("Steps"),
-                div(cls := "grid grid-cols-1 gap-2 sm:grid-cols-2")(
-                  TaskStep.values.toList.map { step =>
-                    val selected = workflow.steps.contains(step)
-                    label(
-                      cls := "flex items-center gap-2 rounded-md border border-white/10 bg-slate-800/60 px-3 py-2 text-sm text-slate-100"
-                    )(
-                      input(
-                        `type`                   := "checkbox",
-                        attr("data-step-toggle") := step.toString,
-                        name                     := s"step.${step.toString}",
-                        scalatags.Text.all.value := "on",
-                        if selected then checked := "checked" else (),
-                      ),
-                      span(step.toString),
-                    )
-                  }
-                ),
-              ),
-              div(id := "static-step-agents", cls := "mt-4")(
-                p(cls := "mb-2 text-sm font-semibold text-slate-200")("Step Agents"),
-                p(
-                  cls := "mb-2 text-xs text-slate-400"
-                )("Optional fallback fields used when JavaScript is unavailable."),
-                div(cls := "grid grid-cols-1 gap-2 sm:grid-cols-2")(
-                  TaskStep.values.toList.map { step =>
-                    val selectedAgent = stepAgentMap.getOrElse(step, "")
-                    div(cls := "rounded-md border border-white/10 bg-slate-800/50 px-3 py-2")(
-                      label(
-                        cls   := "mb-1 block text-xs font-semibold text-slate-200",
-                        `for` := s"agent-${step.toString}",
-                      )(
-                        step.toString
-                      ),
-                      select(
-                        id   := s"agent-${step.toString}",
-                        name := s"agent.${step.toString}",
-                        cls  := "w-full rounded-md border border-white/15 bg-slate-900/70 px-2 py-1.5 text-xs text-slate-100",
-                      )(
-                        option(
-                          value := "",
-                          if selectedAgent.isEmpty then selected := "selected" else (),
-                        )("No specific agent"),
-                        agentOptions.map { agent =>
-                          option(
-                            value := agent.name,
-                            if selectedAgent == agent.name then selected := "selected" else (),
-                          )(s"${agent.displayName} (${agent.name})")
-                        },
-                      ),
-                    )
-                  }
+                div(cls := "flex gap-2")(
+                  input(
+                    `type`      := "text",
+                    id          := "newStepInput",
+                    placeholder := "Step name (e.g. chat, summarize)",
+                    cls         := "w-full rounded-md border border-white/15 bg-slate-900/70 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500",
+                  ),
+                  button(
+                    `type` := "button",
+                    id     := "addStepButton",
+                    cls    := "rounded-md border border-indigo-400/40 bg-indigo-500/20 px-3 py-2 text-sm font-semibold text-indigo-100 hover:bg-indigo-500/30",
+                  )("Add Step"),
                 ),
               ),
               div(cls := "mt-4")(
@@ -186,7 +146,7 @@ object WorkflowsView:
           ),
         ),
         script(src := "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"),
-        script(raw(formScript())),
+        script(raw(formScript(agentOptions.map(a => a.name -> a.displayName)))),
       )
     )
 
@@ -219,7 +179,7 @@ object WorkflowsView:
             workflow.steps.map { step =>
               val assignedAgent = workflow.stepAgents.find(_.step == step).map(_.agentName)
               li(
-                span(step.toString),
+                span(step),
                 assignedAgent.filter(_.nonEmpty).map(agent =>
                   span(cls := "ml-2 text-xs text-cyan-300")(s"(agent: $agent)")
                 ),
@@ -235,7 +195,7 @@ object WorkflowsView:
     )
 
   def workflowToMermaid(steps: List[TaskStep]): String =
-    val nodes = steps.zipWithIndex.map((step, index) => s"""  step$index["${step.toString}"]""")
+    val nodes = steps.zipWithIndex.map((step, index) => s"""  step$index["$step"]""")
     val edges = (0 until Math.max(steps.length - 1, 0)).map(index => s"  step$index --> step${index + 1}").toList
     ("graph LR" :: nodes ::: edges).mkString("\n")
 
@@ -276,7 +236,7 @@ object WorkflowsView:
           .map {
             case (step, agentName) =>
               val display = agentDisplayByName.getOrElse(agentName, agentName)
-              s"${step.toString}: $display"
+              s"$step: $display"
           }
           .mkString(" · ")
 
@@ -305,7 +265,7 @@ object WorkflowsView:
     val payload = stepAgents
       .collect {
         case WorkflowStepAgent(step, agentName) if agentName.trim.nonEmpty =>
-          step.toString -> agentName.trim
+          step -> agentName.trim
       }
       .toMap
     val entries = payload.toList.sortBy(_._1).map {
@@ -316,14 +276,28 @@ object WorkflowsView:
     }
     s"{${entries.mkString(",")}}"
 
-  private def formScript(): String =
+  private def formScript(agentOptions: List[(String, String)]): String =
+    val agentOptionsJson = {
+      val items = agentOptions.map {
+        case (name, displayName) =>
+          val safeName    = name.replace("\\", "\\\\").replace("\"", "\\\"")
+          val safeDisplay = displayName.replace("\\", "\\\\").replace("\"", "\\\"")
+          s"""{"name":"$safeName","display":"$safeDisplay"}"""
+      }
+      s"[${items.mkString(",")}]"
+    }
+
     s"""
        |document.addEventListener("DOMContentLoaded", function () {
        |  var hidden = document.getElementById("orderedSteps");
        |  var agentsHidden = document.getElementById("stepAgentsJson");
        |  var list = document.getElementById("ordered-step-list");
        |  var preview = document.getElementById("workflow-mermaid-preview");
-       |  if (!hidden || !agentsHidden || !list || !preview) return;
+       |  var newStepInput = document.getElementById("newStepInput");
+       |  var addStepButton = document.getElementById("addStepButton");
+       |  if (!hidden || !agentsHidden || !list || !preview || !newStepInput || !addStepButton) return;
+       |
+       |  var availableAgents = $agentOptionsJson;
        |
        |  var parseCsv = function (value) {
        |    return value.split(",").map(function (x) { return x.trim(); }).filter(function (x) { return x.length > 0; });
@@ -340,20 +314,8 @@ object WorkflowsView:
        |    }
        |  };
        |
-       |  var toggles = Array.prototype.slice.call(document.querySelectorAll("[data-step-toggle]"));
        |  var steps = parseCsv(hidden.value);
        |  var stepAgents = parseStepAgents(agentsHidden.value);
-       |
-       |  if (steps.length === 0) {
-       |    steps = toggles.filter(function (el) { return el.checked; }).map(function (el) { return el.getAttribute("data-step-toggle"); });
-       |  }
-       |
-       |  var synchronizeCheckboxes = function () {
-       |    toggles.forEach(function (toggle) {
-       |      var step = toggle.getAttribute("data-step-toggle");
-       |      toggle.checked = steps.indexOf(step) >= 0;
-       |    });
-       |  };
        |
        |  var toMermaid = function () {
        |    if (steps.length === 0) {
@@ -374,7 +336,30 @@ object WorkflowsView:
        |
        |  var updateHiddenValues = function () {
        |    hidden.value = steps.join(",");
-       |    agentsHidden.value = JSON.stringify(stepAgents || {});
+       |    var filtered = {};
+       |    steps.forEach(function (step) {
+       |      var assigned = stepAgents[step];
+       |      if (assigned && assigned.trim().length > 0) {
+       |        filtered[step] = assigned;
+       |      }
+       |    });
+       |    stepAgents = filtered;
+       |    agentsHidden.value = JSON.stringify(filtered);
+       |  };
+       |
+       |  var removeStep = function (step) {
+       |    steps = steps.filter(function (x) { return x !== step; });
+       |    delete stepAgents[step];
+       |    renderPreview();
+       |  };
+       |
+       |  var addStep = function () {
+       |    var raw = (newStepInput.value || "").trim();
+       |    if (raw.length === 0) return;
+       |    if (steps.indexOf(raw) >= 0) return;
+       |    steps.push(raw);
+       |    newStepInput.value = "";
+       |    renderPreview();
        |  };
        |
        |  var renderPreview = function () {
@@ -424,10 +409,54 @@ object WorkflowsView:
        |      top.appendChild(controls);
        |      li.appendChild(top);
        |
+       |      var agentWrap = document.createElement("div");
+       |      agentWrap.className = "mt-2";
+       |
+       |      var agentLabel = document.createElement("label");
+       |      agentLabel.className = "mb-1 block text-xs font-semibold text-slate-300";
+       |      agentLabel.textContent = "Agent";
+       |      agentWrap.appendChild(agentLabel);
+       |
+       |      var select = document.createElement("select");
+       |      select.className = "w-full rounded-md border border-white/15 bg-slate-900/70 px-2 py-1.5 text-xs text-slate-100";
+       |
+       |      var emptyOption = document.createElement("option");
+       |      emptyOption.value = "";
+       |      emptyOption.textContent = "No specific agent";
+       |      select.appendChild(emptyOption);
+       |
+       |      availableAgents.forEach(function (agent) {
+       |        var option = document.createElement("option");
+       |        option.value = agent.name;
+       |        option.textContent = agent.display + " (" + agent.name + ")";
+       |        select.appendChild(option);
+       |      });
+       |
+       |      select.value = stepAgents[step] || "";
+       |      select.addEventListener("change", function () {
+       |        if (!select.value || select.value.trim().length === 0) {
+       |          delete stepAgents[step];
+       |        } else {
+       |          stepAgents[step] = select.value.trim();
+       |        }
+       |        updateHiddenValues();
+       |      });
+       |
+       |      agentWrap.appendChild(select);
+       |      li.appendChild(agentWrap);
+       |
+       |      var removeWrap = document.createElement("div");
+       |      removeWrap.className = "mt-2 flex justify-end";
+       |      var remove = document.createElement("button");
+       |      remove.type = "button";
+       |      remove.textContent = "Remove";
+       |      remove.className = "rounded border border-rose-400/40 bg-rose-500/10 px-2 py-1 text-xs font-semibold text-rose-200 hover:bg-rose-500/20";
+       |      remove.addEventListener("click", function () { removeStep(step); });
+       |      removeWrap.appendChild(remove);
+       |      li.appendChild(removeWrap);
+       |
        |      list.appendChild(li);
        |    });
-       |
-       |    synchronizeCheckboxes();
        |
        |    var diagram = toMermaid();
        |    preview.innerHTML = "";
@@ -452,16 +481,12 @@ object WorkflowsView:
        |    }
        |  };
        |
-       |  toggles.forEach(function (toggle) {
-       |    toggle.addEventListener("change", function () {
-       |      var step = toggle.getAttribute("data-step-toggle");
-       |      if (toggle.checked && steps.indexOf(step) === -1) {
-       |        steps.push(step);
-       |      } else if (!toggle.checked) {
-       |        steps = steps.filter(function (x) { return x !== step; });
-       |      }
-       |      renderPreview();
-       |    });
+       |  addStepButton.addEventListener("click", addStep);
+       |  newStepInput.addEventListener("keydown", function (event) {
+       |    if (event.key === "Enter") {
+       |      event.preventDefault();
+       |      addStep();
+       |    }
        |  });
        |
        |  renderPreview();

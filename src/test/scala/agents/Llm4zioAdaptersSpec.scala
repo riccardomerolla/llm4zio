@@ -26,16 +26,16 @@ object Llm4zioAdaptersSpec extends ZIOSpecDefault:
       assertTrue(
         mapped.length == AgentRegistry.builtInAgents.length,
         mapped.forall(_.metadata.capabilities.nonEmpty),
-        mapped.exists(_.metadata.name == "cobolAnalyzer"),
+        mapped.exists(_.metadata.name == "code-agent"),
       )
     },
     test("routes existing agent metadata by capability") {
       val agents = Llm4zioAgentAdapters.builtInAsLlm4zioAgents
 
       for
-        selected <- AgentRouter.route("analysis", agents)
+        selected <- AgentRouter.route("code", agents)
       yield assertTrue(
-        selected.metadata.name == "cobolAnalyzer" || selected.metadata.name == "businessLogicExtractor"
+        selected.metadata.name == "code-agent"
       )
     },
     test("persists and retrieves conversation memory via ChatRepository") {

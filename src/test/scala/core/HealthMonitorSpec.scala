@@ -121,7 +121,7 @@ object HealthMonitorSpec extends ZIOSpecDefault:
         monitor   = HealthMonitorLive(started, history, stubGateway, registry, stubAgentRegistry, stubRepo)
         snap     <- monitor.snapshot
       yield assertTrue(
-        snap.gateway.connectionCount == 1,
+        snap.gateway.connectionCount == 2,
         snap.resources.tokenUsageEstimate == 42,
         snap.errors.recentFailures.nonEmpty,
         snap.agents.total == 1,

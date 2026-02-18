@@ -68,7 +68,7 @@ object StateService:
             _     <- fileService
                        .writeFileAtomic(statePath(runId), state.toJsonPretty)
                        .mapError(fe => mapFileToStateError(runId)(fe))
-            _     <- updateIndex(runId, state).mapError(fe => mapFileToStateError(runId)(fe))
+            _     <- updateIndex(state).mapError(fe => mapFileToStateError(runId)(fe))
           yield ()
 
         override def loadState(runId: String): ZIO[Any, StateError, Option[TaskState]] =
@@ -166,14 +166,10 @@ object StateService:
                                         ts <- readRunUpdatedAt(runPath, runId)
                                       yield Some(
                                         TaskRunSummary(
-                                          runId = runId,
-                                          currentStep = state.currentStep,
-                                          completedSteps = state.completedSteps,
-                                          errorCount = state.errors.length,
+                                          errorCount = 0,
                                           taskRunId = state.taskRunId,
-                                          currentStepName = state.currentStepName.orElse(Some(state.currentStep)),
+                                          currentStepName = state.currentStepName,
                                           status = state.status,
-                                          startedAt = state.startedAt,
                                           updatedAt = ts,
                                         )
                                       )
@@ -187,7 +183,7 @@ object StateService:
         override def getStateDirectory(runId: String): ZIO[Any, StateError, Path] =
           ZIO.succeed(runDir(runId))
 
-        private def updateIndex(runId: String, state: TaskState): ZIO[Any, FileError, Unit] =
+        private def updateIndex(state: TaskState): ZIO[Any, FileError, Unit] =
           for
             _        <- fileService.ensureDirectory(stateDir)
             existing <- fileService
@@ -201,27 +197,26 @@ object StateService:
                           }
             now      <- Clock.instant
             summary   = TaskRunSummary(
-                          runId = runId,
-                          currentStep = state.currentStep,
-                          completedSteps = state.completedSteps,
-                          errorCount = state.errors.length,
+                          errorCount = 0,
                           taskRunId = state.taskRunId,
-                          currentStepName = state.currentStepName.orElse(Some(state.currentStep)),
+                          currentStepName = state.currentStepName,
                           status = state.status,
-                          startedAt = state.startedAt,
                           updatedAt = now,
                         )
-            updated   = (summary :: existing.filterNot(_.runId == runId)).sortBy(_.updatedAt.toEpochMilli).reverse
+            updated   = summary.taskRunId match
+                          case Some(taskRunId) =>
+                            (summary :: existing.filterNot(_.taskRunId.contains(taskRunId)))
+                              .sortBy(_.updatedAt.toEpochMilli)
+                              .reverse
+                          case None            =>
+                            (summary :: existing).sortBy(_.updatedAt.toEpochMilli).reverse
             _        <- fileService.writeFileAtomic(indexPath, updated.toJsonPretty)
           yield ()
 
         private def resolveRunId(state: TaskState): IO[StateError, String] =
           state.taskRunId match
             case Some(id) => ZIO.succeed(id.toString)
-            case None     =>
-              if state.runId.trim.nonEmpty then ZIO.succeed(state.runId.trim)
-              else
-                ZIO.fail(StateError.InvalidState("unknown", "TaskState.taskRunId or runId is required for persistence"))
+            case None     => ZIO.fail(StateError.InvalidState("unknown", "TaskState.taskRunId is required for persistence"))
 
         private def readRunUpdatedAt(runPath: Path, runId: String): IO[StateError, java.time.Instant] =
           ZIO

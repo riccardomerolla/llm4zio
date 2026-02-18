@@ -61,7 +61,7 @@ object ProgressTrackerSpec extends ZIOSpecDefault:
                       List.fill(3)(queue.take.timeoutFail("missing terminal-sequence event")(5.seconds))
                     )
         completed = events.find(event =>
-                      event.phase == "Mapping" && event.message.contains("Completed phase")
+                      event.phase == "Mapping" && event.message.contains("Completed step")
                     )
         failed    = events.find(event =>
                       event.phase == "Validation" && event.message == "Validation failed"

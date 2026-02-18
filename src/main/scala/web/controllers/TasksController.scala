@@ -6,10 +6,11 @@ import java.nio.charset.StandardCharsets
 import zio.*
 import zio.http.*
 import zio.json.*
+import zio.stream.ZStream
 
 import db.*
-import models.WorkflowDefinition
-import orchestration.{ WorkflowService, WorkflowServiceError }
+import models.{ WorkflowDefinition, WorkflowRunState }
+import orchestration.{ OrchestratorControlPlane, TaskExecutor, WorkflowService, WorkflowServiceError }
 import web.views.{ TaskListItem, TasksView }
 
 trait TasksController:
@@ -20,16 +21,19 @@ object TasksController:
   def routes: ZIO[TasksController, Nothing, Routes[Any, Response]] =
     ZIO.serviceWith[TasksController](_.routes)
 
-  val live: ZLayer[TaskRepository & WorkflowService, Nothing, TasksController] =
+  val live
+    : ZLayer[TaskRepository & WorkflowService & TaskExecutor & OrchestratorControlPlane, Nothing, TasksController] =
     ZLayer.fromFunction(TasksControllerLive.apply)
 
 final case class TasksControllerLive(
   repository: TaskRepository,
   workflowService: WorkflowService,
+  taskExecutor: TaskExecutor,
+  controlPlane: OrchestratorControlPlane,
 ) extends TasksController:
 
   override val routes: Routes[Any, Response] = Routes(
-    Method.GET / "tasks"              -> handler { (req: Request) =>
+    Method.GET / "tasks"                                   -> handler { (req: Request) =>
       handle {
         for
           runs      <- repository.listRuns(offset = 0, limit = 50)
@@ -39,10 +43,10 @@ final case class TasksControllerLive(
         yield html(TasksView.tasksList(taskItems, workflows, flash))
       }
     },
-    Method.GET / "tasks" / "new"      -> handler {
+    Method.GET / "tasks" / "new"                           -> handler {
       ZIO.succeed(redirect("/tasks"))
     },
-    Method.GET / "tasks" / long("id") -> handler { (id: Long, _: Request) =>
+    Method.GET / "tasks" / long("id")                      -> handler { (id: Long, req: Request) =>
       handle {
         for
           run      <- repository.getRun(id).someOrFail(PersistenceError.NotFound("task_runs", id))
@@ -51,16 +55,31 @@ final case class TasksControllerLive(
                           workflowService.getWorkflow(wid).mapError(workflowAsPersistence("getWorkflow"))
                         case None      => ZIO.none
           task     <- toTaskItem(run, workflow)
-        yield html(TasksView.taskDetail(task))
+          flash     = req.queryParam("flash").map(urlDecode).filter(_.nonEmpty)
+        yield html(TasksView.taskDetail(task, flash))
       }
     },
-    Method.POST / "tasks"             -> handler { (req: Request) =>
+    Method.GET / "api" / "tasks" / long("id") / "progress" -> handler { (id: Long, _: Request) =>
+      handle {
+        for
+          stream <- progressStream(id)
+        yield Response(
+          status = Status.Ok,
+          headers = Headers(
+            Header.ContentType(MediaType.text.`event-stream`),
+            Header.CacheControl.NoCache,
+            Header.Custom("Connection", "keep-alive"),
+          ),
+          body = Body.fromCharSequenceStreamChunked(stream),
+        )
+      }
+    },
+    Method.POST / "tasks"                                  -> handler { (req: Request) =>
       handle {
         for
           form          <- parseForm(req)
           taskName      <- required(form, "name")
-          sourceDir     <- required(form, "sourceDir")
-          outputDir     <- required(form, "outputDir")
+          description    = form.get("description").map(_.trim).filter(_.nonEmpty)
           workflowIdRaw <- required(form, "workflowId")
           workflowId    <- parseLongField("workflowId", workflowIdRaw)
           workflow      <- workflowService
@@ -72,8 +91,8 @@ final case class TasksControllerLive(
           runId         <- repository.createRun(
                              TaskRunRow(
                                id = 0L,
-                               sourceDir = sourceDir,
-                               outputDir = outputDir,
+                               sourceDir = "",
+                               outputDir = "",
                                status = RunStatus.Pending,
                                startedAt = now,
                                completedAt = None,
@@ -86,6 +105,18 @@ final case class TasksControllerLive(
                                workflowId = Some(workflowId),
                              )
                            )
+          _             <- ZIO.foreachDiscard(description) { value =>
+                             repository.saveArtifact(
+                               TaskArtifactRow(
+                                 id = 0L,
+                                 taskRunId = runId,
+                                 stepName = "task",
+                                 key = "task.description",
+                                 value = value,
+                                 createdAt = now,
+                               )
+                             )
+                           }
           _             <- repository.saveArtifact(
                              TaskArtifactRow(
                                id = 0L,
@@ -106,7 +137,54 @@ final case class TasksControllerLive(
                                createdAt = now,
                              )
                            )
+          _             <- taskExecutor.start(runId, workflow)
         yield redirect(s"/tasks?flash=${urlEncode("Task created")}")
+      }
+    },
+    Method.POST / "tasks" / long("id") / "cancel"          -> handler { (id: Long, _: Request) =>
+      handle {
+        for
+          run <- repository.getRun(id).someOrFail(PersistenceError.NotFound("task_runs", id))
+          now <- Clock.instant
+          _   <- repository.updateRun(
+                   run.copy(
+                     status = RunStatus.Cancelled,
+                     completedAt = Some(now),
+                     errorMessage = Some("Cancelled by user"),
+                   )
+                 )
+          _   <- controlPlane.updateRunState(id.toString, WorkflowRunState.Cancelled).ignore
+          _   <- taskExecutor.cancel(id)
+        yield redirect(s"/tasks/$id?flash=${urlEncode("Task cancelled")}")
+      }
+    },
+    Method.POST / "tasks" / long("id") / "retry"           -> handler { (id: Long, _: Request) =>
+      handle {
+        for
+          run        <- repository.getRun(id).someOrFail(PersistenceError.NotFound("task_runs", id))
+          _          <- ZIO
+                          .fail(PersistenceError.QueryFailed("retryTask", "Retry is available only for failed tasks"))
+                          .when(run.status != RunStatus.Failed)
+          workflowId <- ZIO
+                          .fromOption(run.workflowId)
+                          .orElseFail(PersistenceError.QueryFailed("retryTask", "Task has no workflow"))
+          workflow   <- workflowService
+                          .getWorkflow(workflowId)
+                          .mapError(workflowAsPersistence("getWorkflow"))
+                          .someOrFail(PersistenceError.NotFound("workflows", workflowId))
+          _          <- ensureWorkflowHasSteps(workflow)
+          now        <- Clock.instant
+          _          <- repository.updateRun(
+                          run.copy(
+                            status = RunStatus.Pending,
+                            currentPhase = workflow.steps.headOption,
+                            completedAt = None,
+                            errorMessage = None,
+                            startedAt = now,
+                          )
+                        )
+          _          <- taskExecutor.start(id, workflow)
+        yield redirect(s"/tasks/$id?flash=${urlEncode("Task queued for retry")}")
       }
     },
   )
@@ -136,6 +214,40 @@ final case class TasksControllerLive(
       steps = steps,
       workflowName = workflow.map(_.name),
     )
+
+  private case class ProgressSnapshot(html: String, terminal: Boolean)
+
+  private def progressStream(taskId: Long): IO[PersistenceError, ZStream[Any, Nothing, String]] =
+    renderProgressSnapshot(taskId).map { initial =>
+      val runId   = taskId.toString
+      val updates = ZStream.scoped {
+        for queue <- controlPlane.subscribeToEvents(runId)
+        yield ZStream.fromQueue(queue)
+      }.flatten
+        .mapZIO(_ => renderProgressSnapshot(taskId).orElseSucceed(initial))
+
+      (ZStream.succeed(initial) ++ updates)
+        .takeUntil(_.terminal)
+        .map(snapshot => toSse("step-progress", snapshot.html))
+    }
+
+  private def renderProgressSnapshot(taskId: Long): IO[PersistenceError, ProgressSnapshot] =
+    for
+      run      <- repository.getRun(taskId).someOrFail(PersistenceError.NotFound("task_runs", taskId))
+      workflow <- run.workflowId match
+                    case Some(wid) =>
+                      workflowService.getWorkflow(wid).mapError(workflowAsPersistence("getWorkflow"))
+                    case None      => ZIO.none
+      task     <- toTaskItem(run, workflow)
+    yield ProgressSnapshot(
+      html = TasksView.taskProgressContent(task).toString,
+      terminal =
+        run.status == RunStatus.Completed || run.status == RunStatus.Failed || run.status == RunStatus.Cancelled,
+    )
+
+  private def toSse(eventType: String, payload: String): String =
+    val dataLines = payload.linesIterator.map(line => s"data: $line").mkString("\n")
+    s"event: $eventType\n$dataLines\n\n"
 
   private def ensureWorkflowHasSteps(workflow: WorkflowDefinition): IO[PersistenceError, Unit] =
     if workflow.steps.nonEmpty then ZIO.unit
