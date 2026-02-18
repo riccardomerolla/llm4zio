@@ -12,6 +12,7 @@ import agents.AgentRegistry
 import db.*
 import gateway.MessageChannelError
 import gateway.models.*
+import orchestration.TaskExecutor
 
 object TelegramE2ESpec extends ZIOSpecDefault:
 
@@ -74,7 +75,8 @@ object TelegramE2ESpec extends ZIOSpecDefault:
   )
 
   private def makeHarness(
-    notifierFactory: (TelegramClient, AgentRegistry, TaskRepository) => WorkflowNotifier = (_, _, _) =>
+    notifierFactory: (TelegramClient, AgentRegistry, TaskRepository, TaskExecutor) => WorkflowNotifier =
+      (_, _, _, _) =>
       WorkflowNotifier.noop,
     failSendMessage: TelegramSendMessage => Option[TelegramClientError] = _ => None,
     failSendDocument: TelegramSendDocument => Option[TelegramClientError] = _ => None,
@@ -94,9 +96,12 @@ object TelegramE2ESpec extends ZIOSpecDefault:
                           )
       agentRegistry    <- AgentRegistry.live.build.map(_.get[AgentRegistry])
       repository        = TestTaskRepository.empty
+      taskExecutor      = TestTaskExecutor.noop
       channel          <- TelegramChannel.make(
                             client = client,
-                            workflowNotifier = notifierFactory(client, agentRegistry, repository),
+                            workflowNotifier = notifierFactory(client, agentRegistry, repository, taskExecutor),
+                            taskRepository = Some(repository),
+                            taskExecutor = Some(taskExecutor),
                           )
     yield Harness(channel, client, sentMessagesRef, sentDocumentsRef)
 
@@ -141,6 +146,12 @@ object TelegramE2ESpec extends ZIOSpecDefault:
       override def listCustomAgents: IO[PersistenceError, List[CustomAgentRow]]                      = ZIO.succeed(Nil)
       override def updateCustomAgent(agent: CustomAgentRow): IO[PersistenceError, Unit]              = ZIO.unit
       override def deleteCustomAgent(id: Long): IO[PersistenceError, Unit]                           = ZIO.unit
+
+  private object TestTaskExecutor:
+    val noop: TaskExecutor = new TaskExecutor:
+      override def execute(taskRunId: Long, workflow: models.WorkflowDefinition): IO[PersistenceError, Unit] = ZIO.unit
+      override def start(taskRunId: Long, workflow: models.WorkflowDefinition): UIO[Unit]                    = ZIO.unit
+      override def cancel(taskRunId: Long): UIO[Unit]                                                         = ZIO.unit
 
   private def textUpdate(
     updateId: Long,
@@ -275,8 +286,7 @@ object TelegramE2ESpec extends ZIOSpecDefault:
         sentMsgs <- harness.sentMessagesRef.get
       yield assertTrue(
         sentMsgs.exists(_.text.contains("Task #91 was not found")),
-        sentMsgs.exists(_.text.contains("Pause requested for run 91")),
-        sentMsgs.exists(_.text.contains("Resume requested for run 91")),
+        sentMsgs.count(_.text.contains("Task #91 not found")) >= 2,
         sentMsgs.exists(_.text.contains("Run 91 completed successfully")),
       )
     },
@@ -290,7 +300,7 @@ object TelegramE2ESpec extends ZIOSpecDefault:
         sentMsgs <- harness.sentMessagesRef.get
       yield assertTrue(
         sentMsgs.exists(_.text.contains("Invalid task id")),
-        sentMsgs.exists(_.text.contains("Retry requested for run 77")),
+        sentMsgs.exists(_.text.contains("Task #77 not found")),
         sentMsgs.exists(_.text.contains("Retry execution finished successfully")),
       )
     },

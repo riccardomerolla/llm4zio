@@ -10,7 +10,7 @@ given JsonCodec[Instant] = JsonCodec[String].transform(
 )
 
 enum RunStatus derives JsonCodec:
-  case Pending, Running, Completed, Failed, Cancelled
+  case Pending, Running, Paused, Completed, Failed, Cancelled
 
 enum FileType derives JsonCodec:
   case Program, Copybook, JCL, Unknown

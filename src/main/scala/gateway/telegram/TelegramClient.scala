@@ -5,8 +5,9 @@ import scala.concurrent.{ ExecutionContext, Future }
 import zio.*
 
 import com.bot4s.telegram.api.RequestHandler
-import com.bot4s.telegram.methods.{ GetUpdates, ParseMode, SendDocument, SendMessage }
+import com.bot4s.telegram.methods.{ EditMessageReplyMarkup, GetUpdates, ParseMode, SendDocument, SendMessage }
 import com.bot4s.telegram.models.{ Chat as BotChat, Message as BotMessage, Update as BotUpdate, User as BotUser, * }
+import io.circe.Decoder
 
 trait TelegramClient:
   def getUpdates(
@@ -25,6 +26,22 @@ trait TelegramClient:
     request: TelegramSendDocument,
     timeout: Duration = 120.seconds,
   ): IO[TelegramClientError, TelegramMessage]
+
+  def editMessageReplyMarkup(
+    chatId: Long,
+    messageId: Long,
+    replyMarkup: Option[TelegramInlineKeyboardMarkup],
+    timeout: Duration = 30.seconds,
+  ): IO[TelegramClientError, Unit] =
+    sendMessage(
+      TelegramSendMessage(
+        chat_id = chatId,
+        text = "Updated controls.",
+        reply_to_message_id = Some(messageId),
+        reply_markup = replyMarkup,
+      ),
+      timeout,
+    ).unit
 
 object TelegramClient:
   def getUpdates(
@@ -64,6 +81,13 @@ final case class TelegramClientLive(
   requestHandler: RequestHandler[Future]
 )(using ExecutionContext
 ) extends TelegramClient:
+  private given Decoder[Either[Boolean, BotMessage]] =
+    Decoder.instance { cursor =>
+      Decoder[Boolean]
+        .tryDecode(cursor)
+        .map(Left(_))
+        .orElse(Decoder[BotMessage].tryDecode(cursor).map(Right(_)))
+    }
 
   override def getUpdates(
     offset: Option[Long],
@@ -108,6 +132,19 @@ final case class TelegramClientLive(
       replyToMessageId = request.reply_to_message_id,
     )
     executeFuture(requestHandler.sendRequest(method), timeout).map(fromBotMessage)
+
+  override def editMessageReplyMarkup(
+    chatId: Long,
+    messageId: Long,
+    replyMarkup: Option[TelegramInlineKeyboardMarkup],
+    timeout: Duration,
+  ): IO[TelegramClientError, Unit] =
+    val method = EditMessageReplyMarkup(
+      chatId = Some(ChatId(chatId)),
+      messageId = longToInt(messageId),
+      replyMarkup = replyMarkup.map(toBotReplyMarkup),
+    )
+    executeFuture(requestHandler.sendRequest(method), timeout).unit
 
   private def executeFuture[A](
     future: => Future[A],

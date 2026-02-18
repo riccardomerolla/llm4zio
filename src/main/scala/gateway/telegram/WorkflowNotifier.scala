@@ -5,6 +5,7 @@ import zio.json.*
 
 import agents.AgentRegistry
 import db.*
+import orchestration.TaskExecutor
 
 enum WorkflowNotifierError:
   case Telegram(error: TelegramClientError)
@@ -54,19 +55,21 @@ object WorkflowNotifier:
       ): IO[WorkflowNotifierError, Unit] =
         ZIO.unit
 
-  val live: ZLayer[TelegramClient & AgentRegistry & TaskRepository, Nothing, WorkflowNotifier] =
+  val live: ZLayer[TelegramClient & AgentRegistry & TaskRepository & TaskExecutor, Nothing, WorkflowNotifier] =
     ZLayer.fromZIO {
       for
         client        <- ZIO.service[TelegramClient]
         agentRegistry <- ZIO.service[AgentRegistry]
         repository    <- ZIO.service[TaskRepository]
-      yield WorkflowNotifierLive(client, agentRegistry, repository)
+        taskExecutor  <- ZIO.service[TaskExecutor]
+      yield WorkflowNotifierLive(client, agentRegistry, repository, taskExecutor)
     }
 
 final case class WorkflowNotifierLive(
   client: TelegramClient,
   agentRegistry: AgentRegistry,
   repository: TaskRepository,
+  taskExecutor: TaskExecutor,
 ) extends WorkflowNotifier:
 
   override def notifyCommand(
@@ -244,6 +247,7 @@ final case class WorkflowNotifierLive(
                                      )
                                    )
                                    .mapError(WorkflowNotifierError.Persistence.apply)
+                          _   <- taskExecutor.cancel(run.id)
                           _   <- sendText(chatId, s"Task #$taskId cancelled.", replyToMessageId)
                         yield ()
     yield ()
@@ -326,6 +330,8 @@ final case class WorkflowNotifierLive(
     val action = task.status match
       case RunStatus.Running | RunStatus.Pending =>
         List(TelegramInlineKeyboardButton(text = "Cancel", callback_data = Some(s"wf:cancel:${task.id}:running")))
+      case RunStatus.Paused                      =>
+        List(TelegramInlineKeyboardButton(text = "Resume", callback_data = Some(s"wf:toggle:${task.id}:paused")))
       case RunStatus.Failed                      =>
         List(TelegramInlineKeyboardButton(text = "Retry", callback_data = Some(s"wf:retry:${task.id}:running")))
       case _                                     => Nil
@@ -337,6 +343,7 @@ final case class WorkflowNotifierLive(
     status match
       case RunStatus.Pending   => "🟡"
       case RunStatus.Running   => "🟢"
+      case RunStatus.Paused    => "||"
       case RunStatus.Completed => "✅"
       case RunStatus.Failed    => "❌"
       case RunStatus.Cancelled => "⛔"

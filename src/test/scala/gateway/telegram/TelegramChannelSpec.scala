@@ -336,10 +336,8 @@ object TelegramChannelSpec extends ZIOSpecDefault:
         sent           <- sentRef.get
       yield assertTrue(
         commands.contains((77L, Some(801L), BotCommand.Status(90L))),
-        commands.contains((77L, Some(802L), BotCommand.Cancel(90L))),
-        sent.exists(_.text.contains("Pause requested for run 90")),
-        sent.exists(_.text.contains("Retry requested for run 90")),
-        sent.exists(msg => msg.reply_markup.exists(_.inline_keyboard.flatten.exists(_.text == "Resume"))),
+        !commands.contains((77L, Some(802L), BotCommand.Cancel(90L))),
+        sent.count(_.text.contains("Task controls are unavailable for #90.")) == 3,
       )
     },
     test("send formats long response and supports show more callback") {

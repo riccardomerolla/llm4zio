@@ -40,6 +40,8 @@ object ApplicationDI:
       AgentRegistry &
       WorkflowEngine &
       AgentDispatcher &
+      OrchestratorControlPlane &
+      TaskExecutor &
       LogTailer &
       HealthMonitor &
       ConfigValidator &
@@ -101,6 +103,8 @@ object ApplicationDI:
       AgentRegistry.live,
       WorkflowEngine.live,
       AgentDispatcher.live,
+      OrchestratorControlPlane.live,
+      TaskExecutor.live,
       LogTailer.live,
       HealthMonitor.live,
       ConfigValidator.live,
@@ -139,8 +143,6 @@ object ApplicationDI:
     ZLayer.make[WebServer](
       commonLayers(config, dbPath),
       ZLayer.succeed(config.resolvedProviderConfig),
-      OrchestratorControlPlane.live,
-      TaskExecutor.live,
       DashboardController.live,
       TasksController.live,
       ReportsController.live,
@@ -162,12 +164,14 @@ object ApplicationDI:
       WebServer.live,
     )
 
-  private val channelRegistryLayer: ZLayer[Ref[GatewayConfig] & AgentRegistry & TaskRepository, Nothing, ChannelRegistry] =
+  private val channelRegistryLayer
+    : ZLayer[Ref[GatewayConfig] & AgentRegistry & TaskRepository & TaskExecutor, Nothing, ChannelRegistry] =
     ZLayer.scoped {
       for
         configRef     <- ZIO.service[Ref[GatewayConfig]]
         agentRegistry <- ZIO.service[AgentRegistry]
         repository    <- ZIO.service[TaskRepository]
+        taskExecutor  <- ZIO.service[TaskExecutor]
         channels      <- Ref.Synchronized.make(Map.empty[String, MessageChannel])
         runtime       <- Ref.Synchronized.make(Map.empty[String, ChannelRuntime])
         clients       <- Ref.Synchronized.make(Map.empty[String, TelegramClient])
@@ -180,7 +184,9 @@ object ApplicationDI:
         telegramClient = ConfigAwareTelegramClient(configRef, clients, backend)
         telegram      <- TelegramChannel.make(
                            client = telegramClient,
-                           workflowNotifier = WorkflowNotifierLive(telegramClient, agentRegistry, repository),
+                           workflowNotifier = WorkflowNotifierLive(telegramClient, agentRegistry, repository, taskExecutor),
+                           taskRepository = Some(repository),
+                           taskExecutor = Some(taskExecutor),
                          )
         _             <- registry.register(websocket)
         _             <- registry.register(telegram)

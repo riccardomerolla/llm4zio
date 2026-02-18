@@ -223,6 +223,11 @@ object TasksView:
           case Some(i) if i == index => "Running"
           case Some(i) if index < i  => "Completed"
           case _                     => "Pending"
+      case RunStatus.Paused    =>
+        currentIndex match
+          case Some(i) if i == index => "Paused"
+          case Some(i) if index < i  => "Completed"
+          case _                     => "Pending"
       case RunStatus.Cancelled =>
         currentIndex match
           case Some(i) if index <= i => "Cancelled"
@@ -238,6 +243,8 @@ object TasksView:
         cls := "inline-flex items-center rounded-md bg-indigo-500/10 px-2 py-1 text-xs font-medium text-indigo-300 ring-1 ring-indigo-400/20"
       case "Failed"    =>
         cls := "inline-flex items-center rounded-md bg-rose-500/10 px-2 py-1 text-xs font-medium text-rose-300 ring-1 ring-rose-400/20"
+      case "Paused"    =>
+        cls := "inline-flex items-center rounded-md bg-amber-500/10 px-2 py-1 text-xs font-medium text-amber-300 ring-1 ring-amber-400/20"
       case "Cancelled" =>
         cls := "inline-flex items-center rounded-md bg-amber-500/10 px-2 py-1 text-xs font-medium text-amber-300 ring-1 ring-amber-400/20"
       case _           =>

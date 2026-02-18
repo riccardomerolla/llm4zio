@@ -11,6 +11,7 @@ object Components:
     val (bg, text, label) = status match
       case RunStatus.Pending   => ("bg-yellow-500/10 ring-yellow-500/20", "text-yellow-400", "Pending")
       case RunStatus.Running   => ("bg-blue-500/10 ring-blue-500/20", "text-blue-400", "Running")
+      case RunStatus.Paused    => ("bg-amber-500/10 ring-amber-500/20", "text-amber-400", "Paused")
       case RunStatus.Completed => ("bg-green-500/10 ring-green-500/20", "text-green-400", "Completed")
       case RunStatus.Failed    => ("bg-red-500/10 ring-red-500/20", "text-red-400", "Failed")
       case RunStatus.Cancelled => ("bg-gray-500/10 ring-gray-500/20", "text-gray-400", "Cancelled")

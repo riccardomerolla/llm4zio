@@ -1,5 +1,7 @@
 package gateway.telegram
 
+import db.RunStatus
+
 case class InlineKeyboardAction(
   action: String,
   runId: Long,
@@ -37,6 +39,54 @@ object InlineKeyboards:
         ),
       )
     )
+
+  def taskStatusKeyboard(runId: Long, status: RunStatus): Option[TelegramInlineKeyboardMarkup] =
+    status match
+      case RunStatus.Running =>
+        Some(
+          TelegramInlineKeyboardMarkup(
+            inline_keyboard = List(
+              List(
+                TelegramInlineKeyboardButton(text = "Pause", callback_data = Some(encode("toggle", runId, paused = false))),
+                TelegramInlineKeyboardButton(text = "Cancel", callback_data = Some(encode("cancel", runId, paused = false))),
+              )
+            )
+          )
+        )
+      case RunStatus.Pending =>
+        Some(
+          TelegramInlineKeyboardMarkup(
+            inline_keyboard = List(
+              List(
+                TelegramInlineKeyboardButton(text = "Pause", callback_data = Some(encode("toggle", runId, paused = false))),
+                TelegramInlineKeyboardButton(text = "Cancel", callback_data = Some(encode("cancel", runId, paused = false))),
+              )
+            )
+          )
+        )
+      case RunStatus.Paused  =>
+        Some(
+          TelegramInlineKeyboardMarkup(
+            inline_keyboard = List(
+              List(
+                TelegramInlineKeyboardButton(text = "Resume", callback_data = Some(encode("toggle", runId, paused = true))),
+                TelegramInlineKeyboardButton(text = "Cancel", callback_data = Some(encode("cancel", runId, paused = true))),
+              )
+            )
+          )
+        )
+      case RunStatus.Failed  =>
+        Some(
+          TelegramInlineKeyboardMarkup(
+            inline_keyboard = List(
+              List(
+                TelegramInlineKeyboardButton(text = "Retry", callback_data = Some(encode("retry", runId, paused = false)))
+              )
+            )
+          )
+        )
+      case RunStatus.Completed | RunStatus.Cancelled =>
+        None
 
   def parseCallbackData(raw: String): Either[String, InlineKeyboardAction] =
     val parts = raw.trim.split(":").toList

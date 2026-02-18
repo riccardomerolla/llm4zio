@@ -1,10 +1,14 @@
 package gateway.telegram
 
 import zio.*
+import zio.json.*
 import zio.stream.ZStream
 
+import db.*
 import gateway.*
 import gateway.models.{ MessageDirection, MessageRole, NormalizedMessage, SessionKey, SessionScopeStrategy }
+import _root_.models.*
+import orchestration.TaskExecutor
 
 final case class TelegramPollBatch(
   messages: List[NormalizedMessage],
@@ -17,6 +21,8 @@ final case class TelegramChannel(
   client: TelegramClient,
   fileTransfer: FileTransfer,
   workflowNotifier: WorkflowNotifier,
+  taskRepository: Option[TaskRepository],
+  taskExecutor: Option[TaskExecutor],
   showMoreRef: Ref[Map[String, String]],
   sessionsRef: Ref[Set[SessionKey]],
   inboundQueue: Queue[NormalizedMessage],
@@ -361,32 +367,15 @@ final case class TelegramChannel(
   ): IO[MessageChannelError, Unit] =
     action.action.toLowerCase match
       case "details" =>
-        sendInlineControls(chatId, replyToMessageId, action.runId, action.paused) *>
-          workflowNotifier
-            .notifyCommand(chatId, Some(replyToMessageId), BotCommand.Status(action.runId))
-            .mapError(notifierError)
+        workflowNotifier
+          .notifyCommand(chatId, Some(replyToMessageId), BotCommand.Status(action.runId))
+          .mapError(notifierError)
       case "cancel"  =>
-        sendInlineControls(chatId, replyToMessageId, action.runId, action.paused) *>
-          workflowNotifier
-            .notifyCommand(chatId, Some(replyToMessageId), BotCommand.Cancel(action.runId))
-            .mapError(notifierError)
+        handleTaskAction(chatId, replyToMessageId, action.runId, "cancel")
       case "retry"   =>
-        sendCallbackFeedback(
-          chatId = chatId,
-          replyToMessageId = replyToMessageId,
-          text = s"Retry requested for run ${action.runId}. Use /status ${action.runId} for latest updates.",
-          markup = Some(InlineKeyboards.workflowControls(action.runId, paused = false)),
-        )
+        handleTaskAction(chatId, replyToMessageId, action.runId, "retry")
       case "toggle"  =>
-        val nextPaused = !action.paused
-        sendCallbackFeedback(
-          chatId = chatId,
-          replyToMessageId = replyToMessageId,
-          text =
-            s"${if nextPaused then "Pause" else "Resume"} requested for run ${action.runId}. " +
-              "Pause/Resume is not available yet.",
-          markup = Some(InlineKeyboards.workflowControls(action.runId, paused = nextPaused)),
-        )
+        handleTaskAction(chatId, replyToMessageId, action.runId, "toggle")
       case other     =>
         sendCallbackFeedback(
           chatId = chatId,
@@ -402,9 +391,9 @@ final case class TelegramChannel(
   ): IO[MessageChannelError, Unit] =
     command match
       case BotCommand.Status(runId) =>
-        sendInlineControls(chatId, replyToMessageId, runId, paused = false)
+        sendInlineControls(chatId, replyToMessageId, runId)
       case BotCommand.Logs(runId)   =>
-        sendInlineControls(chatId, replyToMessageId, runId, paused = false)
+        sendInlineControls(chatId, replyToMessageId, runId)
       case _                        =>
         ZIO.unit
 
@@ -412,14 +401,296 @@ final case class TelegramChannel(
     chatId: Long,
     replyToMessageId: Long,
     runId: Long,
-    paused: Boolean,
   ): IO[MessageChannelError, Unit] =
-    sendCallbackFeedback(
-      chatId = chatId,
-      replyToMessageId = replyToMessageId,
-      text = s"Workflow controls for run $runId:",
-      markup = Some(InlineKeyboards.workflowControls(runId, paused)),
-    )
+    taskRepository match
+      case None       =>
+        sendCallbackFeedback(
+          chatId = chatId,
+          replyToMessageId = replyToMessageId,
+          text = s"Workflow controls for run $runId:",
+          markup = Some(InlineKeyboards.workflowControls(runId, paused = false)),
+        )
+      case Some(repo) =>
+        repo.getRun(runId).mapError(err => MessageChannelError.InvalidMessage(s"task lookup failed: $err")).flatMap {
+          case None      =>
+            sendCallbackFeedback(
+              chatId = chatId,
+              replyToMessageId = replyToMessageId,
+              text = s"Task #$runId not found.",
+              markup = None,
+            )
+          case Some(run) =>
+            sendCallbackFeedback(
+              chatId = chatId,
+              replyToMessageId = replyToMessageId,
+              text = s"Task controls for #$runId:",
+              markup = InlineKeyboards.taskStatusKeyboard(runId, run.status),
+            )
+        }
+
+  private def handleTaskAction(
+    chatId: Long,
+    replyToMessageId: Long,
+    runId: Long,
+    action: String,
+  ): IO[MessageChannelError, Unit] =
+    (taskRepository, taskExecutor) match
+      case (Some(repo), Some(executor)) =>
+        for
+          runOpt <- repo
+                      .getRun(runId)
+                      .mapError(err => MessageChannelError.InvalidMessage(s"task lookup failed: $err"))
+          _      <- runOpt match
+                      case None      =>
+                        sendCallbackFeedback(
+                          chatId = chatId,
+                          replyToMessageId = replyToMessageId,
+                          text = s"Task #$runId not found.",
+                          markup = None,
+                        )
+                      case Some(run) =>
+                        action.toLowerCase match
+                          case "cancel" =>
+                            cancelTask(chatId, replyToMessageId, run, repo, executor)
+                          case "retry"  =>
+                            retryTask(chatId, replyToMessageId, run, repo, executor)
+                          case "toggle" =>
+                            if run.status == RunStatus.Paused then resumeTask(chatId, replyToMessageId, run, repo, executor)
+                            else pauseTask(chatId, replyToMessageId, run, repo, executor)
+                          case other    =>
+                            sendCallbackFeedback(
+                              chatId = chatId,
+                              replyToMessageId = replyToMessageId,
+                              text = s"Unsupported action '$other'.",
+                              markup = InlineKeyboards.taskStatusKeyboard(runId, run.status),
+                            )
+        yield ()
+      case _                            =>
+        sendCallbackFeedback(
+          chatId = chatId,
+          replyToMessageId = replyToMessageId,
+          text = s"Task controls are unavailable for #$runId.",
+          markup = None,
+        )
+
+  private def cancelTask(
+    chatId: Long,
+    replyToMessageId: Long,
+    run: TaskRunRow,
+    repository: TaskRepository,
+    executor: TaskExecutor,
+  ): IO[MessageChannelError, Unit] =
+    run.status match
+      case RunStatus.Completed | RunStatus.Cancelled =>
+        sendCallbackFeedback(
+          chatId = chatId,
+          replyToMessageId = replyToMessageId,
+          text = s"Task #${run.id} is ${run.status.toString.toLowerCase} and cannot be cancelled.",
+          markup = InlineKeyboards.taskStatusKeyboard(run.id, run.status),
+        )
+      case _                                         =>
+        for
+          now <- Clock.instant
+          _   <- repository
+                   .updateRun(
+                     run.copy(
+                       status = RunStatus.Cancelled,
+                       completedAt = Some(now),
+                       errorMessage = Some("Cancelled from Telegram inline action"),
+                     )
+                   )
+                   .mapError(err => MessageChannelError.InvalidMessage(s"task update failed: $err"))
+          _   <- executor.cancel(run.id)
+          _   <- client
+                   .editMessageReplyMarkup(
+                     chatId = chatId,
+                     messageId = replyToMessageId,
+                     replyMarkup = InlineKeyboards.taskStatusKeyboard(run.id, RunStatus.Cancelled),
+                   )
+                   .ignore
+          _   <- sendCallbackFeedback(
+                   chatId = chatId,
+                   replyToMessageId = replyToMessageId,
+                   text = s"✓ Task #${run.id} cancelled",
+                   markup = InlineKeyboards.taskStatusKeyboard(run.id, RunStatus.Cancelled),
+                 )
+        yield ()
+
+  private def pauseTask(
+    chatId: Long,
+    replyToMessageId: Long,
+    run: TaskRunRow,
+    repository: TaskRepository,
+    executor: TaskExecutor,
+  ): IO[MessageChannelError, Unit] =
+    run.status match
+      case RunStatus.Running | RunStatus.Pending =>
+        for
+          _ <- executor.cancel(run.id)
+          _ <- repository
+                 .updateRun(
+                   run.copy(
+                     status = RunStatus.Paused,
+                     completedAt = None,
+                     errorMessage = None,
+                   )
+                 )
+                 .mapError(err => MessageChannelError.InvalidMessage(s"task update failed: $err"))
+          _ <- client
+                 .editMessageReplyMarkup(
+                   chatId = chatId,
+                   messageId = replyToMessageId,
+                   replyMarkup = InlineKeyboards.taskStatusKeyboard(run.id, RunStatus.Paused),
+                 )
+                 .ignore
+          _ <- sendCallbackFeedback(
+                 chatId = chatId,
+                 replyToMessageId = replyToMessageId,
+                 text = s"⏸ Task #${run.id} paused. Tap Resume to continue.",
+                 markup = InlineKeyboards.taskStatusKeyboard(run.id, RunStatus.Paused),
+               )
+        yield ()
+      case _                                  =>
+        sendCallbackFeedback(
+          chatId = chatId,
+          replyToMessageId = replyToMessageId,
+          text = s"Task #${run.id} is ${run.status.toString.toLowerCase}; pause is not available.",
+          markup = InlineKeyboards.taskStatusKeyboard(run.id, run.status),
+        )
+
+  private def resumeTask(
+    chatId: Long,
+    replyToMessageId: Long,
+    run: TaskRunRow,
+    repository: TaskRepository,
+    executor: TaskExecutor,
+  ): IO[MessageChannelError, Unit] =
+    if run.status != RunStatus.Paused then
+      sendCallbackFeedback(
+        chatId = chatId,
+        replyToMessageId = replyToMessageId,
+        text = s"Task #${run.id} is not paused.",
+        markup = InlineKeyboards.taskStatusKeyboard(run.id, run.status),
+      )
+    else
+      for
+        workflow <- loadWorkflowDefinition(run, repository)
+        _        <- repository
+                      .updateRun(
+                        run.copy(
+                          status = RunStatus.Running,
+                          completedAt = None,
+                          errorMessage = None,
+                        )
+                      )
+                      .mapError(err => MessageChannelError.InvalidMessage(s"task update failed: $err"))
+        _        <- executor.start(run.id, workflow)
+        _        <- client
+                      .editMessageReplyMarkup(
+                        chatId = chatId,
+                        messageId = replyToMessageId,
+                        replyMarkup = InlineKeyboards.taskStatusKeyboard(run.id, RunStatus.Running),
+                      )
+                      .ignore
+        _        <- sendCallbackFeedback(
+                      chatId = chatId,
+                      replyToMessageId = replyToMessageId,
+                      text = s"▶ Task #${run.id} resumed",
+                      markup = InlineKeyboards.taskStatusKeyboard(run.id, RunStatus.Running),
+                    )
+      yield ()
+
+  private def retryTask(
+    chatId: Long,
+    replyToMessageId: Long,
+    run: TaskRunRow,
+    repository: TaskRepository,
+    executor: TaskExecutor,
+  ): IO[MessageChannelError, Unit] =
+    if run.status != RunStatus.Failed then
+      sendCallbackFeedback(
+        chatId = chatId,
+        replyToMessageId = replyToMessageId,
+        text = s"Task #${run.id} is not failed; retry is unavailable.",
+        markup = InlineKeyboards.taskStatusKeyboard(run.id, run.status),
+      )
+    else
+      for
+        workflow <- loadWorkflowDefinition(run, repository)
+        _        <- repository
+                      .updateRun(
+                        run.copy(
+                          status = RunStatus.Pending,
+                          completedAt = None,
+                          errorMessage = None,
+                        )
+                      )
+                      .mapError(err => MessageChannelError.InvalidMessage(s"task update failed: $err"))
+        _        <- executor.start(run.id, workflow)
+        _        <- client
+                      .editMessageReplyMarkup(
+                        chatId = chatId,
+                        messageId = replyToMessageId,
+                        replyMarkup = InlineKeyboards.taskStatusKeyboard(run.id, RunStatus.Running),
+                      )
+                      .ignore
+        _        <- sendCallbackFeedback(
+                      chatId = chatId,
+                      replyToMessageId = replyToMessageId,
+                      text = s"Retry requested for task #${run.id}.",
+                      markup = InlineKeyboards.taskStatusKeyboard(run.id, RunStatus.Running),
+                    )
+      yield ()
+
+  private def loadWorkflowDefinition(
+    run: TaskRunRow,
+    repository: TaskRepository,
+  ): IO[MessageChannelError, WorkflowDefinition] =
+    for
+      workflowId <- ZIO
+                      .fromOption(run.workflowId)
+                      .orElseFail(MessageChannelError.InvalidMessage(s"Task #${run.id} has no workflow"))
+      row        <- repository
+                      .getWorkflow(workflowId)
+                      .mapError(err => MessageChannelError.InvalidMessage(s"workflow lookup failed: $err"))
+                      .someOrFail(MessageChannelError.InvalidMessage(s"Workflow #$workflowId not found"))
+      wf         <- decodeWorkflow(row)
+    yield wf
+
+  private final case class WorkflowStoragePayload(
+    steps: List[TaskStep],
+    stepAgents: Map[String, String] = Map.empty,
+    dynamicGraph: Option[WorkflowGraph] = None,
+  ) derives JsonCodec
+
+  private def decodeWorkflow(row: WorkflowRow): IO[MessageChannelError, WorkflowDefinition] =
+    row.steps.fromJson[WorkflowStoragePayload] match
+      case Right(payload) =>
+        ZIO.succeed(
+          WorkflowDefinition(
+            id = row.id,
+            name = row.name,
+            description = row.description,
+            steps = payload.steps,
+            stepAgents = payload.stepAgents.toList.map { case (step, agent) => WorkflowStepAgent(step, agent) },
+            isBuiltin = row.isBuiltin,
+            dynamicGraph = payload.dynamicGraph,
+          )
+        )
+      case Left(_)        =>
+        row.steps.fromJson[List[TaskStep]] match
+          case Right(steps) =>
+            ZIO.succeed(
+              WorkflowDefinition(
+                id = row.id,
+                name = row.name,
+                description = row.description,
+                steps = steps,
+                isBuiltin = row.isBuiltin,
+              )
+            )
+          case Left(error) =>
+            ZIO.fail(MessageChannelError.InvalidMessage(s"invalid workflow payload for ${row.name}: $error"))
 
   private def sendCallbackFeedback(
     chatId: Long,
@@ -494,6 +765,8 @@ object TelegramChannel:
   def make(
     client: TelegramClient,
     workflowNotifier: WorkflowNotifier = WorkflowNotifier.noop,
+    taskRepository: Option[TaskRepository] = None,
+    taskExecutor: Option[TaskExecutor] = None,
     name: String = "telegram",
     scopeStrategy: SessionScopeStrategy = SessionScopeStrategy.PerConversation,
   ): UIO[TelegramChannel] =
@@ -501,6 +774,8 @@ object TelegramChannel:
       client = client,
       fileTransfer = FileTransferLive(client),
       workflowNotifier = workflowNotifier,
+      taskRepository = taskRepository,
+      taskExecutor = taskExecutor,
       name = name,
       scopeStrategy = scopeStrategy,
     )
@@ -509,6 +784,8 @@ object TelegramChannel:
     client: TelegramClient,
     fileTransfer: FileTransfer,
     workflowNotifier: WorkflowNotifier,
+    taskRepository: Option[TaskRepository],
+    taskExecutor: Option[TaskExecutor],
     name: String,
     scopeStrategy: SessionScopeStrategy,
   ): UIO[TelegramChannel] =
@@ -524,6 +801,8 @@ object TelegramChannel:
       client = client,
       fileTransfer = fileTransfer,
       workflowNotifier = workflowNotifier,
+      taskRepository = taskRepository,
+      taskExecutor = taskExecutor,
       showMoreRef = showMore,
       sessionsRef = sessions,
       inboundQueue = inbound,
@@ -536,6 +815,14 @@ object TelegramChannel:
       for
         client  <- ZIO.service[TelegramClient]
         transfer = FileTransferLive(client)
-        channel <- make(client, transfer, WorkflowNotifier.noop, "telegram", SessionScopeStrategy.PerConversation)
+        channel <- make(
+                     client = client,
+                     fileTransfer = transfer,
+                     workflowNotifier = WorkflowNotifier.noop,
+                     taskRepository = None,
+                     taskExecutor = None,
+                     name = "telegram",
+                     scopeStrategy = SessionScopeStrategy.PerConversation,
+                   )
       yield channel
     }
