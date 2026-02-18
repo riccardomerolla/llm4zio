@@ -646,6 +646,8 @@ final case class TaskRepositoryLive(
 
   private def executeSchemaStatement(stmt: java.sql.Statement, sql: String): IO[PersistenceError, Unit] =
     val normalizedSql = sql.toLowerCase.replaceAll("\\s+", " ").trim
+    val isLegacyRunsRename =
+      normalizedSql.contains("alter table migration_runs rename to task_runs")
     executeBlocking(sql)(stmt.execute(sql)).unit.catchAll {
       case err @ PersistenceError.QueryFailed(_, cause)
            if normalizedSql.startsWith("alter table task_runs add column workflow_id") &&
@@ -653,7 +655,7 @@ final case class TaskRepositoryLive(
         // Existing databases may already include workflow_id.
         ZIO.unit
       case err @ PersistenceError.QueryFailed(_, cause)
-           if normalizedSql == "alter table migration_runs rename to task_runs" &&
+           if isLegacyRunsRename &&
            (cause.toLowerCase.contains("no such table") || cause.toLowerCase.contains("already exists")) =>
         // Fresh DBs define task_runs in V1; existing DBs may already be migrated.
         ZIO.unit

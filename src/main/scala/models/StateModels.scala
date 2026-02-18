@@ -37,10 +37,13 @@ object TaskStep:
   given JsonCodec[TaskStep] = JsonCodec.string.asInstanceOf[JsonCodec[TaskStep]]
 
 case class TaskError(
-  step: TaskStep,
+  stepName: String,
   message: String,
   timestamp: Instant,
 ) derives JsonCodec
+
+enum TaskStatus derives JsonCodec:
+  case Idle, Running, Paused, Done, Failed
 
 case class ProgressUpdate(
   runId: Long,
@@ -49,6 +52,8 @@ case class ProgressUpdate(
   itemsTotal: Int,
   message: String,
   timestamp: Instant,
+  status: String = "Running",
+  percentComplete: Double = 0.0,
 ) derives JsonCodec
 
 enum TelegramMode derives JsonCodec:
@@ -134,20 +139,27 @@ case class MigrationConfig(
       )
 
 case class TaskState(
-  runId: String,
-  startedAt: Instant,
-  currentStep: TaskStep,
-  completedSteps: Set[TaskStep],
-  artifacts: Map[String, String],
-  errors: List[TaskError],
-  config: MigrationConfig,
-  workspace: Option[WorkspaceMetadata] = None, // Workspace info for this run
-  lastCheckpoint: Instant,
+  taskRunId: Option[Long] = None,
+  currentStepName: Option[String] = None,
+  status: TaskStatus = TaskStatus.Idle,
+  // Backward-compatible fields retained during migration to task-centric state.
+  runId: String = "run-unknown",
+  startedAt: Instant = Instant.EPOCH,
+  currentStep: TaskStep = TaskStep.Discovery,
+  completedSteps: Set[TaskStep] = Set.empty,
+  artifacts: Map[String, String] = Map.empty,
+  errors: List[TaskError] = List.empty,
+  config: MigrationConfig = MigrationConfig(
+    sourceDir = Paths.get("."),
+    outputDir = Paths.get("./workspace/output"),
+  ),
+  workspace: Option[WorkspaceMetadata] = None,
+  lastCheckpoint: Instant = Instant.EPOCH,
 ) derives JsonCodec
 
 case class Checkpoint(
   runId: String,
-  step: TaskStep,
+  step: String,
   createdAt: Instant,
   artifactPaths: Map[String, Path],
   checksum: String,
@@ -162,24 +174,25 @@ object TaskState:
   def empty: UIO[TaskState] =
     Clock.instant.map { now =>
       TaskState(
+        taskRunId = None,
+        currentStepName = None,
+        status = TaskStatus.Idle,
         runId = s"run-${now.toEpochMilli}",
         startedAt = now,
         currentStep = TaskStep.Discovery,
-        completedSteps = Set.empty,
-        artifacts = Map.empty,
-        errors = List.empty,
-        config = MigrationConfig(
-          sourceDir = Paths.get("cobol-source"),
-          outputDir = Paths.get("java-output"),
-        ),
         lastCheckpoint = now,
       )
     }
 
 case class TaskRunSummary(
   runId: String,
-  startedAt: Instant,
   currentStep: TaskStep,
   completedSteps: Set[TaskStep],
   errorCount: Int,
+  // Generalized task state fields.
+  taskRunId: Option[Long] = None,
+  currentStepName: Option[String] = None,
+  status: TaskStatus = TaskStatus.Idle,
+  startedAt: Instant = Instant.EPOCH,
+  updatedAt: Instant = Instant.EPOCH,
 ) derives JsonCodec

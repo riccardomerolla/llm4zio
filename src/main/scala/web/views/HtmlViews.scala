@@ -24,11 +24,17 @@ object HtmlViews:
   def reportsList(taskId: Long, reports: List[TaskReportRow]): String =
     ReportsView.reportsList(taskId, reports)
 
+  def reportsHome: String =
+    ReportsView.reportsHome
+
   def reportDetail(report: TaskReportRow): String =
     ReportsView.reportDetail(report)
 
   def graphPage(taskId: Long, graphReports: List[TaskReportRow]): String =
     GraphView.page(taskId, graphReports)
+
+  def graphHome: String =
+    GraphView.home
 
   def settingsPage(settings: Map[String, String], flash: Option[String] = None): String =
     SettingsView.page(settings, flash)

@@ -3,6 +3,17 @@ package models
 import zio.json.*
 import zio.json.ast.Json
 
+enum TaskStepProgressStatus derives JsonCodec:
+  case Running, Completed, Failed
+
+case class TaskStepProgress(
+  taskRunId: Long,
+  stepName: String,
+  percentComplete: Double,
+  message: String,
+  status: TaskStepProgressStatus,
+) derives JsonCodec
+
 /** Metrics captured during step execution.
   *
   * @param tokensUsed

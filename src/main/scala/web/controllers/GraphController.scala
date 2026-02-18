@@ -31,16 +31,17 @@ final case class GraphControllerLive(repository: TaskRepository) extends GraphCo
 
   override val routes: Routes[Any, Response] = Routes(
     Method.GET / "graph"                      -> handler { (req: Request) =>
-      ErrorHandlingMiddleware.fromPersistence {
-        for
-          taskIdRaw <- ZIO
-                         .fromOption(req.queryParam("taskId"))
-                         .orElseFail(PersistenceError.QueryFailed("graph", "Missing query parameter: taskId"))
-          taskId    <- parseLong(taskIdRaw, "taskId")
-          reports   <- repository.getReportsByTask(taskId)
-          graphs     = reports.filter(report => report.reportType.trim.equalsIgnoreCase("graph"))
-        yield html(HtmlViews.graphPage(taskId, graphs))
-      }
+      req.queryParam("taskId") match
+        case Some(taskIdRaw) =>
+          ErrorHandlingMiddleware.fromPersistence {
+            for
+              taskId  <- parseLong(taskIdRaw, "taskId")
+              reports <- repository.getReportsByTask(taskId)
+              graphs   = reports.filter(report => report.reportType.trim.equalsIgnoreCase("graph"))
+            yield html(HtmlViews.graphPage(taskId, graphs))
+          }
+        case None            =>
+          ZIO.succeed(html(HtmlViews.graphHome))
     },
     Method.GET / "api" / "graph" / long("id") -> handler { (id: Long, _: Request) =>
       ErrorHandlingMiddleware.fromPersistence {

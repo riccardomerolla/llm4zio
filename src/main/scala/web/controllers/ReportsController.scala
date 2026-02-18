@@ -22,15 +22,16 @@ final case class ReportsControllerLive(repository: TaskRepository) extends Repor
 
   override val routes: Routes[Any, Response] = Routes(
     Method.GET / "reports"              -> handler { (req: Request) =>
-      ErrorHandlingMiddleware.fromPersistence {
-        for
-          taskIdRaw <- ZIO
-                         .fromOption(req.queryParam("taskId"))
-                         .orElseFail(PersistenceError.QueryFailed("reports", "Missing query parameter: taskId"))
-          taskId    <- parseLong(taskIdRaw, "taskId")
-          reports   <- repository.getReportsByTask(taskId)
-        yield html(HtmlViews.reportsList(taskId, reports))
-      }
+      req.queryParam("taskId") match
+        case Some(taskIdRaw) =>
+          ErrorHandlingMiddleware.fromPersistence {
+            for
+              taskId  <- parseLong(taskIdRaw, "taskId")
+              reports <- repository.getReportsByTask(taskId)
+            yield html(HtmlViews.reportsList(taskId, reports))
+          }
+        case None            =>
+          ZIO.succeed(html(HtmlViews.reportsHome))
     },
     Method.GET / "reports" / long("id") -> handler { (id: Long, _: Request) =>
       ErrorHandlingMiddleware.fromPersistence {

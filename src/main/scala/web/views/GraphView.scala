@@ -5,6 +5,15 @@ import scalatags.Text.all.*
 
 object GraphView:
 
+  def home: String =
+    Layout.page("Graph", "/graph")(
+      h1(cls := "text-2xl font-bold text-white mb-4")("Graph"),
+      div(cls := "rounded-lg bg-white/5 ring-1 ring-white/10 p-6")(
+        p(cls := "text-sm text-gray-300 mb-3")("Select a task to view graph reports."),
+        a(href := "/tasks", cls := "text-indigo-400 hover:text-indigo-300 text-sm font-medium")("Go to Tasks"),
+      ),
+    )
+
   def page(taskId: Long, graphReports: List[TaskReportRow]): String =
     val initial = graphReports.headOption
     Layout.page(s"Graph Reports for Task #$taskId", "/graph")(

@@ -60,6 +60,8 @@ object AgentTracker:
                                         itemsTotal = items.size,
                                         message = s"Processing item ${idx + 1}/${items.size}",
                                         timestamp = now,
+                                        status = "Running",
+                                        percentComplete = (idx + 1).toDouble / items.size.toDouble,
                                       )
                                     ),
                                   )

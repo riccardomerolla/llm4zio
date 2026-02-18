@@ -29,10 +29,10 @@ object ProgressTracker:
   def subscribe(runId: Long): ZIO[ProgressTracker, Nothing, Dequeue[ProgressUpdate]] =
     ZIO.serviceWithZIO[ProgressTracker](_.subscribe(runId))
 
-  final case class PhaseState(
+  final case class StepState(
     status: String,
-    itemTotal: Int,
-    itemProcessed: Int,
+    total: Int,
+    processed: Int,
     errorCount: Int,
   )
 
@@ -42,10 +42,10 @@ object ProgressTracker:
         activityHub <- ZIO.service[ActivityHub]
         hub         <- Hub.bounded[ProgressUpdate](256)
         subscribers <- Ref.make(Map.empty[Long, Set[Queue[ProgressUpdate]]])
-        phaseStates <- Ref.make(Map.empty[(Long, String), PhaseState])
+        stepStates  <- Ref.make(Map.empty[(Long, String), StepState])
         hubQueue    <- hub.subscribe
         _           <- hubQueue.take.flatMap(publishToSubscribers(subscribers, _)).forever.forkScoped
-      yield ProgressTrackerLive(hub, subscribers, phaseStates, activityHub)
+      yield ProgressTrackerLive(hub, subscribers, stepStates, activityHub)
     }
 
   private def publishToSubscribers(
@@ -61,108 +61,85 @@ object ProgressTracker:
 final case class ProgressTrackerLive(
   hub: Hub[ProgressUpdate],
   subscribers: Ref[Map[Long, Set[Queue[ProgressUpdate]]]],
-  phaseStates: Ref[Map[(Long, String), ProgressTracker.PhaseState]],
+  stepStates: Ref[Map[(Long, String), ProgressTracker.StepState]],
   activityHub: ActivityHub,
 ) extends ProgressTracker:
 
   override def startPhase(runId: Long, phase: String, total: Int): IO[PersistenceError, Unit] =
     for
       now <- Clock.instant
-      _   <- phaseStates.update(
-               _.updated((runId, phase), ProgressTracker.PhaseState("Running", total, 0, 0))
-             )
+      _   <- stepStates.update(_.updated((runId, phase), ProgressTracker.StepState("Running", total, 0, 0)))
       _   <- publish(
                ProgressUpdate(
                  runId = runId,
                  phase = phase,
                  itemsProcessed = 0,
                  itemsTotal = total,
-                 message = s"Starting phase: $phase",
+                 message = s"Starting step: $phase",
                  timestamp = now,
+                 status = "Running",
+                 percentComplete = 0.0,
                )
              )
-      _   <- activityHub.publish(
-               ActivityEvent(
-                 eventType = ActivityEventType.RunStarted,
-                 source = "progress-tracker",
-                 runId = Some(runId),
-                 summary = s"Run #$runId started phase: $phase",
-                 createdAt = now,
-               )
-             )
+      _   <- publishActivity(runId, s"Run #$runId started step: $phase", ActivityEventType.RunStarted)
     yield ()
 
   override def updateProgress(update: ProgressUpdate): IO[PersistenceError, Unit] =
     for
-      _ <- phaseStates.update { current =>
+      _ <- stepStates.update { current =>
              val key      = (update.runId, update.phase)
-             val existing = current.getOrElse(key, ProgressTracker.PhaseState("Running", 0, 0, 0))
+             val existing = current.getOrElse(key, ProgressTracker.StepState(update.status, update.itemsTotal, 0, 0))
              current.updated(
                key,
                existing.copy(
-                 status = "Running",
-                 itemTotal = update.itemsTotal,
-                 itemProcessed = update.itemsProcessed,
+                 status = update.status,
+                 total = update.itemsTotal,
+                 processed = update.itemsProcessed,
                ),
              )
            }
-      _ <- publish(update)
+      _ <- publish(
+             update.copy(
+               percentComplete =
+                 if update.itemsTotal <= 0 then update.percentComplete
+                 else update.itemsProcessed.toDouble / update.itemsTotal.toDouble
+             )
+           )
     yield ()
 
   override def completePhase(runId: Long, phase: String): IO[PersistenceError, Unit] =
     for
       now      <- Clock.instant
-      previous <- phaseStates.get.map(_.get((runId, phase)))
-      _        <- phaseStates.update { current =>
-                    val key      = (runId, phase)
-                    val existing = current.getOrElse(key, ProgressTracker.PhaseState("Completed", 0, 0, 0))
-                    current.updated(
-                      key,
-                      existing.copy(
-                        status = "Completed",
-                        itemProcessed = existing.itemTotal,
-                      ),
-                    )
-                  }
-      total     = previous.map(_.itemTotal).getOrElse(0)
+      previous <- stepStates.get.map(_.get((runId, phase)))
+      total     = previous.map(_.total).getOrElse(0)
+      _        <- stepStates.update(_.updated((runId, phase), ProgressTracker.StepState("Completed", total, total, 0)))
       _        <- publish(
                     ProgressUpdate(
                       runId = runId,
                       phase = phase,
                       itemsProcessed = total,
                       itemsTotal = total,
-                      message = s"Completed phase: $phase",
+                      message = s"Completed step: $phase",
                       timestamp = now,
+                      status = "Completed",
+                      percentComplete = 1.0,
                     )
                   )
-      _        <- activityHub.publish(
-                    ActivityEvent(
-                      eventType = ActivityEventType.RunCompleted,
-                      source = "progress-tracker",
-                      runId = Some(runId),
-                      summary = s"Run #$runId completed phase: $phase",
-                      createdAt = now,
-                    )
-                  )
+      _        <- publishActivity(runId, s"Run #$runId completed step: $phase", ActivityEventType.RunCompleted)
     yield ()
 
   override def failPhase(runId: Long, phase: String, error: String): IO[PersistenceError, Unit] =
     for
       now      <- Clock.instant
-      previous <- phaseStates.get.map(_.get((runId, phase)))
-      _        <- phaseStates.update { current =>
-                    val key      = (runId, phase)
-                    val existing = current.getOrElse(key, ProgressTracker.PhaseState("Failed", 0, 0, 0))
-                    current.updated(
-                      key,
-                      existing.copy(
-                        status = "Failed",
-                        errorCount = existing.errorCount + 1,
-                      ),
+      previous <- stepStates.get.map(_.get((runId, phase)))
+      total     = previous.map(_.total).getOrElse(0)
+      done      = previous.map(_.processed).getOrElse(0)
+      _        <- stepStates.update(
+                    _.updated(
+                      (runId, phase),
+                      ProgressTracker.StepState("Failed", total, done, previous.map(_.errorCount).getOrElse(0) + 1),
                     )
-                  }
-      total     = previous.map(_.itemTotal).getOrElse(0)
-      done      = previous.map(_.itemProcessed).getOrElse(0)
+                  )
       _        <- publish(
                     ProgressUpdate(
                       runId = runId,
@@ -171,26 +148,31 @@ final case class ProgressTrackerLive(
                       itemsTotal = total,
                       message = error,
                       timestamp = now,
+                      status = "Failed",
+                      percentComplete = if total <= 0 then 0.0 else done.toDouble / total.toDouble,
                     )
                   )
-      _        <- activityHub.publish(
-                    ActivityEvent(
-                      eventType = ActivityEventType.RunFailed,
-                      source = "progress-tracker",
-                      runId = Some(runId),
-                      summary = s"Run #$runId failed phase: $phase",
-                      createdAt = now,
-                    )
-                  )
+      _        <- publishActivity(runId, s"Run #$runId failed step: $phase", ActivityEventType.RunFailed)
     yield ()
 
   override def subscribe(runId: Long): UIO[Dequeue[ProgressUpdate]] =
     for
       queue <- Queue.bounded[ProgressUpdate](256)
-      _     <- subscribers.update(current =>
-                 current.updated(runId, current.getOrElse(runId, Set.empty) + queue)
-               )
+      _     <- subscribers.update(current => current.updated(runId, current.getOrElse(runId, Set.empty) + queue))
     yield queue
 
   private def publish(update: ProgressUpdate): UIO[Unit] =
     hub.publish(update).unit
+
+  private def publishActivity(runId: Long, summary: String, eventType: ActivityEventType): UIO[Unit] =
+    Clock.instant.flatMap { now =>
+      activityHub.publish(
+        ActivityEvent(
+          eventType = eventType,
+          source = "progress-tracker",
+          runId = Some(runId),
+          summary = summary,
+          createdAt = now,
+        )
+      )
+    }

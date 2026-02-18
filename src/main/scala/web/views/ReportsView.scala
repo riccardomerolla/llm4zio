@@ -5,6 +5,15 @@ import scalatags.Text.all.*
 
 object ReportsView:
 
+  def reportsHome: String =
+    Layout.page("Reports", "/reports")(
+      h1(cls := "text-2xl font-bold text-white mb-4")("Reports"),
+      div(cls := "rounded-lg bg-white/5 ring-1 ring-white/10 p-6")(
+        p(cls := "text-sm text-gray-300 mb-3")("Select a task to view its reports."),
+        a(href := "/tasks", cls := "text-indigo-400 hover:text-indigo-300 text-sm font-medium")("Go to Tasks"),
+      ),
+    )
+
   def reportsList(taskId: Long, reports: List[TaskReportRow]): String =
     Layout.page(s"Reports for Task #$taskId", "/reports")(
       div(cls := "flex items-center justify-between mb-6")(

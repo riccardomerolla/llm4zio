@@ -14,6 +14,7 @@ class HealthDashboard extends LitElement {
     this._ws = null;
     this._history = [];
     this._chart = null;
+    this._pollTimer = null;
   }
 
   createRenderRoot() { return this; }
@@ -29,6 +30,7 @@ class HealthDashboard extends LitElement {
     super.disconnectedCallback();
     if (this._ws) this._ws.close();
     if (this._chart) this._chart.destroy();
+    if (this._pollTimer) clearInterval(this._pollTimer);
   }
 
   _renderShell() {
@@ -66,11 +68,15 @@ class HealthDashboard extends LitElement {
 
   _connect() {
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    this._ws = new WebSocket(proto + '//' + location.host + this.wsUrl);
-    this._ws.onopen = () => {
-      this._ws.send(JSON.stringify({ Subscribe: { topic: 'health:metrics', params: {} } }));
+    const ws = new WebSocket(proto + '//' + location.host + this.wsUrl);
+    this._ws = ws;
+    let opened = false;
+    ws.onopen = () => {
+      opened = true;
+      this._stopPolling();
+      ws.send(JSON.stringify({ Subscribe: { topic: 'health:metrics', params: {} } }));
     };
-    this._ws.onmessage = (e) => {
+    ws.onmessage = (e) => {
       try {
         const msg = JSON.parse(e.data);
         if (!msg.Event || msg.Event.topic !== 'health:metrics') return;
@@ -81,9 +87,33 @@ class HealthDashboard extends LitElement {
         this._renderChart();
       } catch (ignored) {}
     };
-    this._ws.onclose = () => {
+    ws.onerror = () => {
+      this._startPolling();
+    };
+    ws.onclose = () => {
+      if (!opened) this._startPolling();
       setTimeout(() => this._connect(), 2000);
     };
+  }
+
+  _startPolling() {
+    if (this._pollTimer) return;
+    this._pollTimer = setInterval(async () => {
+      try {
+        const res = await fetch('/api/health');
+        const snapshot = await res.json();
+        this._history.push(snapshot);
+        if (this._history.length > 60) this._history = this._history.slice(this._history.length - 60);
+        this._renderFromLatest();
+        this._renderChart();
+      } catch (ignored) {}
+    }, 2000);
+  }
+
+  _stopPolling() {
+    if (!this._pollTimer) return;
+    clearInterval(this._pollTimer);
+    this._pollTimer = null;
   }
 
   _renderFromLatest() {
