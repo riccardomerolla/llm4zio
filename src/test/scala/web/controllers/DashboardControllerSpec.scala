@@ -70,6 +70,8 @@ object DashboardControllerSpec extends ZIOSpecDefault:
       ZIO.dieMessage("unused in DashboardControllerSpec")
     override def saveReport(report: TaskReportRow): IO[PersistenceError, Long]                    =
       ZIO.dieMessage("unused in DashboardControllerSpec")
+    override def getReport(reportId: Long): IO[PersistenceError, Option[TaskReportRow]]           =
+      ZIO.dieMessage("unused in DashboardControllerSpec")
     override def getReportsByTask(taskRunId: Long): IO[PersistenceError, List[TaskReportRow]]     =
       ZIO.dieMessage("unused in DashboardControllerSpec")
     override def saveArtifact(artifact: TaskArtifactRow): IO[PersistenceError, Long]              =

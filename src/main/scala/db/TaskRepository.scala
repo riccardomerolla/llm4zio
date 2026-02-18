@@ -16,6 +16,7 @@ trait TaskRepository:
 
   // Reports and artifacts
   def saveReport(report: TaskReportRow): IO[PersistenceError, Long]
+  def getReport(reportId: Long): IO[PersistenceError, Option[TaskReportRow]]
   def getReportsByTask(taskRunId: Long): IO[PersistenceError, List[TaskReportRow]]
   def saveArtifact(artifact: TaskArtifactRow): IO[PersistenceError, Long]
   def getArtifactsByTask(taskRunId: Long): IO[PersistenceError, List[TaskArtifactRow]]
@@ -75,6 +76,9 @@ object TaskRepository:
 
   def saveReport(report: TaskReportRow): ZIO[TaskRepository, PersistenceError, Long] =
     ZIO.serviceWithZIO[TaskRepository](_.saveReport(report))
+
+  def getReport(reportId: Long): ZIO[TaskRepository, PersistenceError, Option[TaskReportRow]] =
+    ZIO.serviceWithZIO[TaskRepository](_.getReport(reportId))
 
   def getReportsByTask(taskRunId: Long): ZIO[TaskRepository, PersistenceError, List[TaskReportRow]] =
     ZIO.serviceWithZIO[TaskRepository](_.getReportsByTask(taskRunId))
@@ -285,6 +289,17 @@ final case class TaskRepositoryLive(
 
     withConnection { conn =>
       queryMany(conn, sql)(_.setLong(1, taskRunId))(readTaskReportRow)
+    }
+
+  override def getReport(reportId: Long): IO[PersistenceError, Option[TaskReportRow]] =
+    val sql =
+      """SELECT id, task_run_id, step_name, report_type, content, created_at
+        |FROM task_reports
+        |WHERE id = ?
+        |""".stripMargin
+
+    withConnection { conn =>
+      queryOne(conn, sql)(_.setLong(1, reportId))(readTaskReportRow)
     }
 
   override def saveArtifact(artifact: TaskArtifactRow): IO[PersistenceError, Long] =

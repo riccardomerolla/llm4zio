@@ -1,6 +1,6 @@
 package web.views
 
-import db.TaskRunRow
+import db.{ TaskReportRow, TaskRunRow }
 import models.*
 
 object HtmlViews:
@@ -20,6 +20,12 @@ object HtmlViews:
 
   def taskDetail(task: TaskListItem): String =
     TasksView.taskDetail(task)
+
+  def reportsList(taskId: Long, reports: List[TaskReportRow]): String =
+    ReportsView.reportsList(taskId, reports)
+
+  def reportDetail(report: TaskReportRow): String =
+    ReportsView.reportDetail(report)
 
   def settingsPage(settings: Map[String, String], flash: Option[String] = None): String =
     SettingsView.page(settings, flash)

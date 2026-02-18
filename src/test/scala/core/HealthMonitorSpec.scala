@@ -40,6 +40,7 @@ object HealthMonitorSpec extends ZIOSpecDefault:
     override def getRun(id: Long): IO[PersistenceError, Option[TaskRunRow]]                       = ZIO.dieMessage("unused")
     override def deleteRun(id: Long): IO[PersistenceError, Unit]                                  = ZIO.dieMessage("unused")
     override def saveReport(report: TaskReportRow): IO[PersistenceError, Long]                    = ZIO.dieMessage("unused")
+    override def getReport(reportId: Long): IO[PersistenceError, Option[TaskReportRow]]           = ZIO.dieMessage("unused")
     override def getReportsByTask(taskRunId: Long): IO[PersistenceError, List[TaskReportRow]]     = ZIO.dieMessage("unused")
     override def saveArtifact(artifact: TaskArtifactRow): IO[PersistenceError, Long]              = ZIO.dieMessage("unused")
     override def getArtifactsByTask(taskRunId: Long): IO[PersistenceError, List[TaskArtifactRow]] =

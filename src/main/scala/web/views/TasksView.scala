@@ -45,7 +45,12 @@ object TasksView:
           h1(cls := "text-2xl font-bold text-white")(task.name),
           p(cls := "text-sm text-gray-400 mt-1")(s"Task #${run.id}"),
         ),
-        a(href := "/tasks", cls := "text-indigo-400 hover:text-indigo-300 text-sm font-medium")("Back to Tasks"),
+        div(cls := "flex items-center gap-4")(
+          a(href := s"/reports?taskId=${run.id}", cls := "text-indigo-400 hover:text-indigo-300 text-sm font-medium")(
+            "View Reports"
+          ),
+          a(href := "/tasks", cls := "text-indigo-400 hover:text-indigo-300 text-sm font-medium")("Back to Tasks"),
+        ),
       ),
       div(cls := "grid grid-cols-1 lg:grid-cols-3 gap-6")(
         div(cls := "lg:col-span-2 bg-white/5 ring-1 ring-white/10 rounded-lg p-6")(

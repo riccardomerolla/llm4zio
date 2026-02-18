@@ -67,7 +67,7 @@ object Layout:
             li(
               div(cls := "text-xs/6 font-semibold text-gray-400")("Analysis"),
               ul(attr("role") := "list", cls := "-mx-2 mt-2 space-y-1")(
-                navItem("/analysis", "Files", Icons.document, currentPath.startsWith("/analysis")),
+                navItem("/reports", "Reports", Icons.document, currentPath.startsWith("/reports")),
                 navItem("/graph", "Graph", Icons.chart, currentPath.startsWith("/graph")),
               ),
             ),

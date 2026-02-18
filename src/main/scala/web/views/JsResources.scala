@@ -6,6 +6,10 @@ import scalatags.Text.all.*
 
 object JsResources:
 
+  val markedScript: Frag = script(src := "https://cdn.jsdelivr.net/npm/marked/marked.min.js")
+
+  val mermaidScript: Frag = script(src := "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js")
+
   def inlineModuleScript(resourcePath: String): Frag =
     script(attr("type") := "module")(raw(load(resourcePath)))
 

@@ -115,6 +115,7 @@ object ApplicationDI:
       OrchestratorControlPlane.live,
       DashboardController.live,
       TasksController.live,
+      ReportsController.live,
       SettingsController.live,
       ConfigController.live,
       AgentsController.live,
