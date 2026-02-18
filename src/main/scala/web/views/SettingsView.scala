@@ -26,7 +26,7 @@ object SettingsView:
         tag("form")(method := "post", action := "/settings", cls := "space-y-6")(
           aiProviderSection(settings),
           gatewaySection(settings),
-          channelsSection,
+          telegramSection(settings),
           div(cls := "flex gap-4 pt-2")(
             button(
               `type` := "submit",
@@ -34,7 +34,32 @@ object SettingsView:
             )("Save Settings")
           ),
         ),
-      )
+      ),
+      tag("script")(
+        raw("""
+          |document.addEventListener('DOMContentLoaded', function() {
+          |  const modeSelect = document.getElementById('telegram.mode');
+          |  const webhookGroup = document.getElementById('telegram-webhook-group');
+          |  const pollingGroup = document.getElementById('telegram-polling-group');
+          |
+          |  function updateFieldVisibility() {
+          |    const mode = modeSelect.value;
+          |    if (mode === 'Webhook') {
+          |      webhookGroup.style.display = 'block';
+          |      pollingGroup.style.display = 'none';
+          |    } else if (mode === 'Polling') {
+          |      webhookGroup.style.display = 'none';
+          |      pollingGroup.style.display = 'block';
+          |    }
+          |  }
+          |
+          |  if (modeSelect) {
+          |    updateFieldVisibility();
+          |    modeSelect.addEventListener('change', updateFieldVisibility);
+          |  }
+          |});
+        """.stripMargin)
+      ),
     )
 
   private def aiProviderSection(s: Map[String, String]): Frag =
@@ -128,31 +153,68 @@ object SettingsView:
       ),
     )
 
-  private def channelsSection: Frag =
+  private def telegramSection(s: Map[String, String]): Frag =
     tag("section")(cls := sectionCls)(
-      h2(cls := "text-lg font-semibold text-white mb-4")("Channels"),
-      div(cls := "space-y-3")(
-        div(cls := "flex items-center justify-between rounded-md bg-white/5 border border-white/10 p-4")(
-          div(
-            p(cls := "text-sm font-medium text-white")("Telegram"),
-            p(cls := "text-xs text-gray-400")("Webhook endpoint for incoming messages"),
+      h2(cls := "text-lg font-semibold text-white mb-4")("Telegram"),
+      div(cls := "space-y-4")(
+        checkboxField(
+          "telegram.enabled",
+          "Enable Telegram Bot",
+          s,
+          default = false,
+        ),
+        passwordField(
+          "telegram.botToken",
+          "Bot Token",
+          s,
+          placeholder = "Telegram bot token from @BotFather",
+        ),
+        div(
+          label(cls := labelCls, `for` := "telegram.mode")("Mode"),
+          tag("select")(name := "telegram.mode", id := "telegram.mode", cls := selectCls)(
+            modeOption("Webhook", "Webhook", s.get("telegram.mode")),
+            modeOption("Polling", "Polling", s.get("telegram.mode")),
           ),
-          span(
-            cls := "inline-flex items-center rounded-full bg-gray-500/20 px-2.5 py-0.5 text-xs font-medium text-gray-300"
-          )(
-            "Disabled"
+          p(cls := "text-xs text-gray-400 mt-1")("Webhook: Push updates; Polling: Pull updates"),
+        ),
+      ),
+      div(id := "telegram-webhook-group", cls := "space-y-4 mt-4 pt-4 border-t border-white/10")(
+        p(cls := "text-sm font-medium text-gray-300")("Webhook Configuration"),
+        textField("telegram.webhookUrl", "Webhook URL", s, placeholder = "https://your-domain.com/telegram/webhook"),
+        passwordField(
+          "telegram.secretToken",
+          "Secret Token",
+          s,
+          placeholder = "Optional: secret token for webhook validation",
+        ),
+      ),
+      div(id := "telegram-polling-group", cls := "space-y-4 mt-4 pt-4 border-t border-white/10")(
+        p(cls := "text-sm font-medium text-gray-300")("Polling Configuration"),
+        div(cls := "grid grid-cols-2 gap-4")(
+          numberField(
+            "telegram.polling.interval",
+            "Poll Interval (seconds)",
+            s,
+            default = "1",
+            min = "1",
+            max = "60",
+          ),
+          numberField(
+            "telegram.polling.batchSize",
+            "Batch Size",
+            s,
+            default = "100",
+            min = "1",
+            max = "1000",
           ),
         ),
-        div(cls := "flex items-center justify-between rounded-md bg-white/5 border border-white/10 p-4")(
-          div(
-            p(cls := "text-sm font-medium text-white")("WebSocket"),
-            p(cls := "text-xs text-gray-400")("Real-time bidirectional communication"),
-          ),
-          span(
-            cls := "inline-flex items-center rounded-full bg-green-500/20 px-2.5 py-0.5 text-xs font-medium text-green-400"
-          )(
-            "Always Active"
-          ),
+        numberField(
+          "telegram.polling.timeout",
+          "Timeout (seconds)",
+          s,
+          default = "30",
+          min = "1",
+          max = "120",
         ),
       ),
     )
@@ -228,3 +290,28 @@ object SettingsView:
       attr("value") := value,
       if isSelected then attr("selected") := "selected" else (),
     )(labelText)
+
+  private def modeOption(value: String, labelText: String, current: Option[String]): Frag =
+    val isSelected = current.contains(value) || (current.isEmpty && value == "Webhook")
+    tag("option")(
+      attr("value") := value,
+      if isSelected then attr("selected") := "selected" else (),
+    )(labelText)
+
+  private def passwordField(
+    fieldName: String,
+    labelText: String,
+    s: Map[String, String],
+    placeholder: String = "",
+  ): Frag =
+    div(
+      label(cls := labelCls, `for` := fieldName)(labelText),
+      input(
+        `type`              := "password",
+        name                := fieldName,
+        id                  := fieldName,
+        value               := s.getOrElse(fieldName, ""),
+        attr("placeholder") := placeholder,
+        cls                 := inputCls,
+      ),
+    )
