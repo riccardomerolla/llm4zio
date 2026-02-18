@@ -200,6 +200,17 @@ object SettingsView:
             error = errors.get("ai.maxTokens"),
           ),
         ),
+        div(cls := "flex gap-3 pt-4 border-t border-white/10")(
+          button(
+            `type`             := "button",
+            cls                := "rounded-md bg-emerald-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed",
+            attr("hx-post")    := "/api/settings/test-ai",
+            attr("hx-include") := "[name^='ai.']",
+            attr("hx-target")  := "#ai-test-result",
+            attr("hx-swap")    := "innerHTML",
+          )("Test Connection")
+        ),
+        div(id := "ai-test-result", cls := "mt-3")(),
       ),
     )
 
@@ -417,3 +428,18 @@ object SettingsView:
     error.map { msg =>
       p(cls := "text-xs text-red-400 mt-1")(msg)
     }.getOrElse(())
+
+  def testConnectionSuccess(model: String, latencyMs: Long): String =
+    div(cls := "inline-flex items-center gap-2 rounded-full bg-emerald-500/20 border border-emerald-500/50 px-4 py-2")(
+      span(cls := "text-emerald-400 text-sm font-medium")("✓ Connection successful"),
+      span(cls := "text-emerald-300 text-xs")("("),
+      span(cls := "text-emerald-300 text-xs font-mono")(model),
+      span(cls := "text-emerald-300 text-xs")(s", ${latencyMs}ms)"),
+    ).toString
+
+  def testConnectionError(error: String): String =
+    div(cls := "inline-flex items-center gap-2 rounded-full bg-red-500/20 border border-red-500/50 px-4 py-2")(
+      span(cls := "text-red-400 text-sm font-medium")("✗ Connection failed"),
+      span(cls := "text-red-300 text-xs")("–"),
+      span(cls := "text-red-300 text-xs")(error),
+    ).toString
