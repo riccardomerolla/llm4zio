@@ -4,8 +4,10 @@ import java.util.UUID
 
 import zio.*
 
+import agents.AgentRegistry
 import gateway.models.NormalizedMessage
 import gateway.telegram.{ IntentConversationState, IntentDecision, IntentParser }
+import llm4zio.core.LlmService
 
 enum GatewayServiceError:
   case Router(error: MessageRouterError)
@@ -49,27 +51,31 @@ object GatewayService:
   def metrics: ZIO[GatewayService, Nothing, GatewayMetricsSnapshot] =
     ZIO.serviceWithZIO[GatewayService](_.metrics)
 
-  val live: ZLayer[MessageRouter, Nothing, GatewayService] =
-    ZLayer.scoped {
-      for
-        router  <- ZIO.service[MessageRouter]
-        queue   <- Queue.unbounded[GatewayQueueCommand]
-        metrics <- Ref.make(GatewayMetricsSnapshot())
-        intents <- Ref.make(Map.empty[gateway.models.SessionKey, IntentConversationState])
-        _       <- startWorker(queue, router, metrics, None).forkScoped
-      yield GatewayServiceLive(queue, router, metrics, None, intents)
-    }
-
-  val liveWithSteeringQueue: ZLayer[MessageRouter & Queue[NormalizedMessage], Nothing, GatewayService] =
+  val live: ZLayer[MessageRouter & AgentRegistry & LlmService, Nothing, GatewayService] =
     ZLayer.scoped {
       for
         router        <- ZIO.service[MessageRouter]
+        agentRegistry <- ZIO.service[AgentRegistry]
+        llmService    <- ZIO.service[LlmService]
+        queue         <- Queue.unbounded[GatewayQueueCommand]
+        metrics       <- Ref.make(GatewayMetricsSnapshot())
+        intents       <- Ref.make(Map.empty[gateway.models.SessionKey, IntentConversationState])
+        _             <- startWorker(queue, router, metrics, None).forkScoped
+      yield GatewayServiceLive(queue, router, agentRegistry, llmService, metrics, None, intents)
+    }
+
+  val liveWithSteeringQueue: ZLayer[MessageRouter & Queue[NormalizedMessage] & AgentRegistry & LlmService, Nothing, GatewayService] =
+    ZLayer.scoped {
+      for
+        router        <- ZIO.service[MessageRouter]
+        agentRegistry <- ZIO.service[AgentRegistry]
+        llmService    <- ZIO.service[LlmService]
         steeringQueue <- ZIO.service[Queue[NormalizedMessage]]
         queue         <- Queue.unbounded[GatewayQueueCommand]
         metrics       <- Ref.make(GatewayMetricsSnapshot())
         intents       <- Ref.make(Map.empty[gateway.models.SessionKey, IntentConversationState])
         _             <- startWorker(queue, router, metrics, Some(steeringQueue)).forkScoped
-      yield GatewayServiceLive(queue, router, metrics, Some(steeringQueue), intents)
+      yield GatewayServiceLive(queue, router, agentRegistry, llmService, metrics, Some(steeringQueue), intents)
     }
 
   private def startWorker(
@@ -122,6 +128,8 @@ object GatewayService:
 final case class GatewayServiceLive(
   queue: Queue[GatewayQueueCommand],
   router: MessageRouter,
+  agentRegistry: AgentRegistry,
+  llmService: LlmService,
   metricsRef: Ref[GatewayMetricsSnapshot],
   steeringQueue: Option[Queue[NormalizedMessage]],
   intentStateRef: Ref[Map[gateway.models.SessionKey, IntentConversationState]],
@@ -171,8 +179,11 @@ final case class GatewayServiceLive(
   private def handleIntentRouting(message: NormalizedMessage): IO[GatewayServiceError, Unit] =
     if shouldParseIntent(message) then
       for
-        current <- intentStateRef.get.map(_.getOrElse(message.sessionKey, IntentConversationState()))
-        decision = IntentParser.parse(message.content, current)
+        current         <- intentStateRef.get.map(_.getOrElse(message.sessionKey, IntentConversationState()))
+        availableAgents <- agentRegistry.getAllAgents
+        decision        <- IntentParser.parse(message.content, current, availableAgents).provideEnvironment(
+                             ZEnvironment(llmService)
+                           )
         _       <- decision match
                      case IntentDecision.Route(agentName, rationale) =>
                        val text =

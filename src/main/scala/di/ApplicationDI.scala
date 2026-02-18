@@ -161,10 +161,11 @@ object ApplicationDI:
       WebServer.live,
     )
 
-  private val channelRegistryLayer: ZLayer[Ref[GatewayConfig], Nothing, ChannelRegistry] =
+  private val channelRegistryLayer: ZLayer[Ref[GatewayConfig] & AgentRegistry, Nothing, ChannelRegistry] =
     ZLayer.scoped {
       for
         configRef     <- ZIO.service[Ref[GatewayConfig]]
+        agentRegistry <- ZIO.service[AgentRegistry]
         channels      <- Ref.Synchronized.make(Map.empty[String, MessageChannel])
         clients       <- Ref.Synchronized.make(Map.empty[String, TelegramClient])
         backend       <- ZIO.attempt {
@@ -176,7 +177,7 @@ object ApplicationDI:
         telegramClient = ConfigAwareTelegramClient(configRef, clients, backend)
         telegram      <- TelegramChannel.make(
                            client = telegramClient,
-                           workflowNotifier = WorkflowNotifierLive(telegramClient),
+                           workflowNotifier = WorkflowNotifierLive(telegramClient, agentRegistry),
                          )
         _             <- registry.register(websocket)
         _             <- registry.register(telegram)

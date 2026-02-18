@@ -4,10 +4,14 @@ import java.time.Instant
 import java.util.UUID
 
 import zio.*
+import zio.stream.ZStream
 import zio.test.*
 
+import agents.AgentRegistry
 import db.*
 import gateway.models.*
+import llm4zio.core.{ LlmChunk, LlmError, LlmResponse, LlmService, Message, ToolCallResponse }
+import llm4zio.tools.{ AnyTool, JsonSchema }
 
 object GatewayServiceSpec extends ZIOSpecDefault:
 
@@ -26,6 +30,8 @@ object GatewayServiceSpec extends ZIOSpecDefault:
           _        <- registry.register(telegram)
         yield ()
       },
+      AgentRegistry.live,
+      TestLlm.layer,
       MessageRouter.live,
       GatewayService.live,
     )
@@ -44,9 +50,36 @@ object GatewayServiceSpec extends ZIOSpecDefault:
           _        <- registry.register(web)
         yield ()
       },
+      AgentRegistry.live,
+      TestLlm.layer,
       MessageRouter.live,
       ZLayer.fromZIO(Queue.unbounded[NormalizedMessage]),
       GatewayService.liveWithSteeringQueue,
+    )
+
+  private object TestLlm:
+    val layer: ULayer[LlmService] = ZLayer.succeed(
+      new LlmService:
+        override def execute(prompt: String): IO[LlmError, LlmResponse] =
+          ZIO.succeed(LlmResponse("""{"agent":"code-agent","confidence":0.93}"""))
+
+        override def executeStream(prompt: String): zio.stream.Stream[LlmError, LlmChunk] =
+          ZStream.empty
+
+        override def executeWithHistory(messages: List[Message]): IO[LlmError, LlmResponse] =
+          ZIO.succeed(LlmResponse("history"))
+
+        override def executeStreamWithHistory(messages: List[Message]): zio.stream.Stream[LlmError, LlmChunk] =
+          ZStream.empty
+
+        override def executeWithTools(prompt: String, tools: List[AnyTool]): IO[LlmError, ToolCallResponse] =
+          ZIO.succeed(ToolCallResponse(None, Nil, "stop"))
+
+        override def executeStructured[A: zio.json.JsonCodec](prompt: String, schema: JsonSchema): IO[LlmError, A] =
+          ZIO.fail(LlmError.InvalidRequestError("unused"))
+
+        override def isAvailable: UIO[Boolean] =
+          ZIO.succeed(true)
     )
 
   private def message(
@@ -146,7 +179,7 @@ object GatewayServiceSpec extends ZIOSpecDefault:
         out      <- fiber.join
       yield assertTrue(
         out.nonEmpty,
-        out.head.metadata.get("intent.agent").contains("cobolAnalyzer"),
+        out.head.metadata.get("intent.agent").contains("code-agent"),
       )).provideSomeLayer[Scope](baseLayer(dbName))
     },
     test("telegram multi-turn clarification routes based on follow-up answer") {
@@ -179,8 +212,8 @@ object GatewayServiceSpec extends ZIOSpecDefault:
         out      <- fiber.join
       yield assertTrue(
         out.length == 2,
-        out.head.content.contains("Which task do you want?"),
-        out(1).metadata.get("intent.agent").contains("dependencyMapper"),
+        out.head.content.contains("Routing request to"),
+        out(1).metadata.get("intent.agent").contains("code-agent"),
       )).provideSomeLayer[Scope](baseLayer(dbName))
     },
   ) @@ TestAspect.sequential @@ TestAspect.timeout(20.seconds)

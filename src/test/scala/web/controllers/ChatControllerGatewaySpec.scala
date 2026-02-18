@@ -7,6 +7,7 @@ import zio.json.EncoderOps
 import zio.stream.ZStream
 import zio.test.*
 
+import agents.AgentRegistry
 import _root_.models.*
 import db.*
 import gateway.*
@@ -34,6 +35,7 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
           _        <- registry.register(channel)
         yield ()
       },
+      AgentRegistry.live,
       MessageRouter.live,
       GatewayService.live,
       TestLlm.layer,

@@ -2,6 +2,8 @@ package gateway.telegram
 
 import zio.*
 
+import agents.AgentRegistry
+
 enum WorkflowNotifierError:
   case Telegram(error: TelegramClientError)
 
@@ -49,17 +51,28 @@ object WorkflowNotifier:
       ): IO[WorkflowNotifierError, Unit] =
         ZIO.unit
 
-  val live: ZLayer[TelegramClient, Nothing, WorkflowNotifier] =
-    ZLayer.fromFunction(WorkflowNotifierLive.apply)
+  val live: ZLayer[TelegramClient & AgentRegistry, Nothing, WorkflowNotifier] =
+    ZLayer.fromZIO {
+      for
+        client        <- ZIO.service[TelegramClient]
+        agentRegistry <- ZIO.service[AgentRegistry]
+      yield WorkflowNotifierLive(client, agentRegistry)
+    }
 
-final case class WorkflowNotifierLive(client: TelegramClient) extends WorkflowNotifier:
+final case class WorkflowNotifierLive(
+  client: TelegramClient,
+  agentRegistry: AgentRegistry,
+) extends WorkflowNotifier:
 
   override def notifyCommand(
     chatId: Long,
     replyToMessageId: Option[Long],
     command: BotCommand,
   ): IO[WorkflowNotifierError, Unit] =
-    sendText(chatId, commandMessage(command), replyToMessageId)
+    for
+      text <- commandMessage(command)
+      _    <- sendText(chatId, text, replyToMessageId)
+    yield ()
 
   override def notifyParseError(
     chatId: Long,
@@ -84,14 +97,19 @@ final case class WorkflowNotifierLive(client: TelegramClient) extends WorkflowNo
       .mapError(WorkflowNotifierError.Telegram.apply)
       .unit
 
-  private def commandMessage(command: BotCommand): String =
+  private def commandMessage(command: BotCommand): UIO[String] =
     command match
-      case BotCommand.Start      => "Gateway bot is online."
-      case BotCommand.Help       => "Use configured channels to run workflows."
-      case BotCommand.ListRuns   => "Run listing via bot is disabled in gateway mode."
-      case BotCommand.Status(id) => s"Run status via bot is disabled (run=$id)."
-      case BotCommand.Logs(id)   => s"Run logs via bot is disabled (run=$id)."
-      case BotCommand.Cancel(id) => s"Run cancel via bot is disabled (run=$id)."
+      case BotCommand.Start      => ZIO.succeed("Gateway bot is online.")
+      case BotCommand.Help       =>
+        agentRegistry.getAllAgents.map { agents =>
+          val names = agents.map(_.name).sorted
+          if names.isEmpty then "No agents are currently available."
+          else s"Available agents:\n${names.map(name => s"- $name").mkString("\n")}"
+        }
+      case BotCommand.ListRuns   => ZIO.succeed("Run listing via bot is disabled in gateway mode.")
+      case BotCommand.Status(id) => ZIO.succeed(s"Run status via bot is disabled (run=$id).")
+      case BotCommand.Logs(id)   => ZIO.succeed(s"Run logs via bot is disabled (run=$id).")
+      case BotCommand.Cancel(id) => ZIO.succeed(s"Run cancel via bot is disabled (run=$id).")
 
   private def parseErrorMessage(error: CommandParseError): String =
     error match

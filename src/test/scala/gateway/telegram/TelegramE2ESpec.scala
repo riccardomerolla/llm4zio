@@ -8,6 +8,7 @@ import java.util.UUID
 import zio.*
 import zio.test.*
 
+import agents.AgentRegistry
 import gateway.MessageChannelError
 import gateway.models.*
 
@@ -72,10 +73,11 @@ object TelegramE2ESpec extends ZIOSpecDefault:
   )
 
   private def makeHarness(
-    notifierFactory: TelegramClient => WorkflowNotifier = _ => WorkflowNotifier.noop,
+    notifierFactory: (TelegramClient, AgentRegistry) => WorkflowNotifier = (_, _) =>
+      WorkflowNotifier.noop,
     failSendMessage: TelegramSendMessage => Option[TelegramClientError] = _ => None,
     failSendDocument: TelegramSendDocument => Option[TelegramClientError] = _ => None,
-  ): UIO[Harness] =
+  ): ZIO[Scope, Nothing, Harness] =
     for
       updatesRef       <- Ref.make(List.empty[TelegramUpdate])
       sentMessagesRef  <- Ref.make(List.empty[TelegramSendMessage])
@@ -89,9 +91,10 @@ object TelegramE2ESpec extends ZIOSpecDefault:
                             failSendMessage = failSendMessage,
                             failSendDocument = failSendDocument,
                           )
+      agentRegistry    <- AgentRegistry.live.build.map(_.get[AgentRegistry])
       channel          <- TelegramChannel.make(
                             client = client,
-                            workflowNotifier = notifierFactory(client),
+                            workflowNotifier = notifierFactory(client, agentRegistry),
                           )
     yield Harness(channel, client, sentMessagesRef, sentDocumentsRef)
 
