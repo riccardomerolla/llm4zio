@@ -25,10 +25,8 @@ object SettingsView:
         },
         tag("form")(method := "post", action := "/settings", cls := "space-y-6")(
           aiProviderSection(settings),
-          processingSection(settings),
-          discoverySection(settings),
-          featuresSection(settings),
-          projectSection(settings),
+          gatewaySection(settings),
+          channelsSection,
           div(cls := "flex gap-4 pt-2")(
             button(
               `type` := "submit",
@@ -108,56 +106,21 @@ object SettingsView:
       ),
     )
 
-  private def processingSection(s: Map[String, String]): Frag =
+  private def gatewaySection(s: Map[String, String]): Frag =
     tag("section")(cls := sectionCls)(
-      h2(cls := "text-lg font-semibold text-white mb-4")("Processing"),
-      div(cls := "grid grid-cols-2 gap-4")(
-        numberField("processing.parallelism", "Parallelism", s, default = "4", min = "1", max = "64"),
-        numberField("processing.batchSize", "Batch Size", s, default = "10", min = "1", max = "100"),
-      ),
-    )
-
-  private def discoverySection(s: Map[String, String]): Frag =
-    tag("section")(cls := sectionCls)(
-      h2(cls := "text-lg font-semibold text-white mb-4")("Discovery"),
+      h2(cls := "text-lg font-semibold text-white mb-4")("Gateway"),
       div(cls := "space-y-4")(
-        numberField("discovery.maxDepth", "Max Depth", s, default = "25", min = "1", max = "100"),
-        div(
-          label(cls := labelCls, `for` := "discovery.excludePatterns")("Exclude Patterns"),
-          p(cls := "text-xs text-gray-500 mb-2")("One glob pattern per line"),
-          tag("textarea")(
-            name := "discovery.excludePatterns",
-            id   := "discovery.excludePatterns",
-            rows := "6",
-            cls  := inputCls,
-          )(
-            s.getOrElse(
-              "discovery.excludePatterns",
-              "**/.git/**\n**/target/**\n**/node_modules/**\n**/.idea/**\n**/.vscode/**\n**/backup/**\n**/*.bak\n**/*.tmp\n**/*~",
-            )
-          ),
-        ),
+        textField("gateway.name", "Gateway Name", s, placeholder = "My Gateway")
       ),
-    )
-
-  private def featuresSection(s: Map[String, String]): Frag =
-    tag("section")(cls := sectionCls)(
-      h2(cls := "text-lg font-semibold text-white mb-4")("Features"),
-      div(cls := "space-y-3")(
+      div(cls := "space-y-3 mt-4")(
         checkboxField(
-          "features.enableCheckpointing",
-          "Enable Checkpointing",
-          s,
-          default = true,
-        ),
-        checkboxField(
-          "features.enableBusinessLogicExtractor",
-          "Enable Business Logic Extractor in Dry Run",
+          "gateway.dryRun",
+          "Dry Run Mode",
           s,
           default = false,
         ),
         checkboxField(
-          "features.verbose",
+          "gateway.verbose",
           "Verbose Logging",
           s,
           default = false,
@@ -165,14 +128,32 @@ object SettingsView:
       ),
     )
 
-  private def projectSection(s: Map[String, String]): Frag =
+  private def channelsSection: Frag =
     tag("section")(cls := sectionCls)(
-      h2(cls := "text-lg font-semibold text-white mb-4")("Project"),
-      div(cls := "space-y-4")(
-        textField("project.basePackage", "Base Package", s, placeholder = "com.example"),
-        textField("project.name", "Project Name", s, placeholder = "Optional — derived from COBOL filename"),
-        textField("project.version", "Project Version", s, placeholder = "0.0.1-SNAPSHOT"),
-        numberField("project.maxCompileRetries", "Max Compile Retries", s, default = "3", min = "0", max = "10"),
+      h2(cls := "text-lg font-semibold text-white mb-4")("Channels"),
+      div(cls := "space-y-3")(
+        div(cls := "flex items-center justify-between rounded-md bg-white/5 border border-white/10 p-4")(
+          div(
+            p(cls := "text-sm font-medium text-white")("Telegram"),
+            p(cls := "text-xs text-gray-400")("Webhook endpoint for incoming messages"),
+          ),
+          span(
+            cls := "inline-flex items-center rounded-full bg-gray-500/20 px-2.5 py-0.5 text-xs font-medium text-gray-300"
+          )(
+            "Disabled"
+          ),
+        ),
+        div(cls := "flex items-center justify-between rounded-md bg-white/5 border border-white/10 p-4")(
+          div(
+            p(cls := "text-sm font-medium text-white")("WebSocket"),
+            p(cls := "text-xs text-gray-400")("Real-time bidirectional communication"),
+          ),
+          span(
+            cls := "inline-flex items-center rounded-full bg-green-500/20 px-2.5 py-0.5 text-xs font-medium text-green-400"
+          )(
+            "Always Active"
+          ),
+        ),
       ),
     )
 

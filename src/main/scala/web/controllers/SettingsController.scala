@@ -39,18 +39,9 @@ final case class SettingsControllerLive(
     "ai.acquireTimeout",
     "ai.temperature",
     "ai.maxTokens",
-    "processing.parallelism",
-    "processing.batchSize",
-    "discovery.maxDepth",
-    "discovery.excludePatterns",
-    "features.enableCheckpointing",
-    "features.enableBusinessLogicExtractor",
-    "features.verbose",
-    "project.basePackage",
-    "project.name",
-    "project.version",
-    "project.maxCompileRetries",
-    "issues.importFolder",
+    "gateway.name",
+    "gateway.dryRun",
+    "gateway.verbose",
   )
 
   override val routes: Routes[Any, Response] = Routes(
@@ -68,12 +59,12 @@ final case class SettingsControllerLive(
           form <- parseForm(req)
           _    <- ZIO.foreachDiscard(settingsKeys) { key =>
                     val value = key match
-                      case "features.enableCheckpointing" | "features.enableBusinessLogicExtractor" |
-                           "features.verbose" =>
+                      case "gateway.dryRun" | "gateway.verbose" =>
                         if form.get(key).exists(_.equalsIgnoreCase("on")) then "true" else "false"
-                      case _ =>
+                      case _                                    =>
                         form.getOrElse(key, "")
-                    if value.nonEmpty || key.startsWith("ai.") then repository.upsertSetting(key, value)
+                    if value.nonEmpty || key.startsWith("ai.") || key.startsWith("gateway.") then
+                      repository.upsertSetting(key, value)
                     else ZIO.unit
                   }
           now  <- Clock.instant
