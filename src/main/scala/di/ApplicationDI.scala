@@ -116,6 +116,7 @@ object ApplicationDI:
       DashboardController.live,
       TasksController.live,
       ReportsController.live,
+      GraphController.live,
       SettingsController.live,
       ConfigController.live,
       AgentsController.live,
