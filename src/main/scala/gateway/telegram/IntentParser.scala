@@ -30,6 +30,8 @@ object IntentParser:
 
     if normalized.isEmpty || normalized.startsWith("/") then ZIO.succeed(IntentDecision.Unknown)
     else if state.pendingOptions.nonEmpty then ZIO.succeed(resolveClarification(normalized, state.pendingOptions))
+    else if state.lastAgent.nonEmpty then
+      ZIO.succeed(IntentDecision.Route(state.lastAgent.get, "continuing with selected agent"))
     else
       parseWithLLM(message, availableAgents)
         .catchAll(_ => parseFromKeywords(normalized, availableAgents))

@@ -291,7 +291,12 @@ final case class GatewayServiceLive(
                          s"Routing request to `$agentName` ($rationale). " +
                            "Send another message if you want to switch agent."
                        sendAssistantReply(message, text, Some(agentName)) *>
-                         updateIntentState(message, current.copy(pendingOptions = Nil, lastAgent = Some(agentName)))
+                         updateIntentState(message, current.copy(pendingOptions = Nil, lastAgent = Some(agentName))) *>
+                         executeRoutedAgentReply(
+                           inbound = message,
+                           selectedAgent = agentName,
+                           skipExecution = current.pendingOptions.nonEmpty,
+                         )
                      case IntentDecision.Clarify(question, options)  =>
                        val numbered = options.zipWithIndex.map { case (option, idx) => s"${idx + 1}. $option" }.mkString("\n")
                        val text     = s"$question\n$numbered"
@@ -326,6 +331,28 @@ final case class GatewayServiceLive(
              )
       _   <- router.routeOutbound(msg).mapError(GatewayServiceError.Router.apply)
     yield ()
+
+  private def executeRoutedAgentReply(
+    inbound: NormalizedMessage,
+    selectedAgent: String,
+    skipExecution: Boolean,
+  ): IO[GatewayServiceError, Unit] =
+    if skipExecution then ZIO.unit
+    else
+      llmService.execute(inbound.content).foldZIO(
+        error =>
+          sendAssistantReply(
+            inbound,
+            s"Agent `$selectedAgent` failed: ${error.toString}",
+            Some(selectedAgent),
+          ),
+        response =>
+          sendAssistantReply(
+            inbound,
+            response.content,
+            Some(selectedAgent),
+          ),
+      )
 
   private def updateIntentState(
     inbound: NormalizedMessage,

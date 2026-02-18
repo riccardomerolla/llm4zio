@@ -34,11 +34,16 @@ class MessageComposer {
 
     this.input.addEventListener('keydown', (event) => this.handleKeyDown(event));
 
+    this.form.addEventListener('submit', () => {
+      this.notifyStreamPending();
+    });
+
     this.form.addEventListener('htmx:afterRequest', () => {
       this.setMode('write');
       this.hideMentions();
       this.input.focus();
       this.updatePreview();
+      this.notifyStreamPending();
     });
 
     document.addEventListener('click', (event) => {
@@ -46,6 +51,15 @@ class MessageComposer {
     });
 
     this.updatePreview();
+  }
+
+  notifyStreamPending() {
+    const conversationId = this.root.dataset.conversationId;
+    if (!conversationId) return;
+    const stream = document.getElementById(`messages-${conversationId}`);
+    if (stream && typeof stream.markPending === 'function') {
+      stream.markPending();
+    }
   }
 
   async loadAgents() {

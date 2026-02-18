@@ -114,7 +114,12 @@ object ChatView:
             attr("hx-target")            := s"#messages-${conversation.id.get}",
             attr("hx-swap")              := "innerHTML",
             attr("hx-disabled-elt")      := "button[type='submit']",
-            attr("hx-on::after-request") := "this.reset()",
+            attr("hx-on::before-request") := s"""
+              |document.getElementById('messages-${conversation.id.get}')?.markPending?.();
+            """.stripMargin.trim,
+            attr("hx-on::after-request") := s"""
+              |this.reset();
+            """.stripMargin.trim,
             cls                          := "space-y-2",
           )(
             input(`type`  := "hidden", name := "fragment", value := "true"),
@@ -216,7 +221,7 @@ object ChatView:
           "text-slate-300",
         )
 
-    div(cls := containerClasses)(
+    div(cls := containerClasses, attr("data-sender") := (if isUser then "user" else "assistant"))(
       div(cls := bubbleClasses)(
         div(cls := s"text-xs font-semibold mb-2 $senderClasses")(
           message.sender
@@ -262,35 +267,71 @@ class ChatMessageStream extends LitElement {
     super();
     this._streaming = false;
     this._streamBuffer = '';
+    this._assistantCountAtPending = 0;
     this._ws = null;
+    this._wsEnabled = true;
+    this._wsEverOpened = false;
     this._reconnectTimer = null;
+    this._pendingPoll = null;
+    this._backgroundPoll = null;
+    this._thinkingTicker = null;
+    this._thinkingIndex = 0;
+    this._thinkingPhrases = [
+      'Thinking through your request...',
+      'Checking context and dependencies...',
+      'Preparing the best possible answer...',
+      'Running reasoning and validations...',
+      'Finalizing response...'
+    ];
+    this._lastSnapshot = '';
   }
 
   createRenderRoot() { return this; }
 
   connectedCallback() {
     super.connectedCallback();
+    this._lastSnapshot = this._normalizedSnapshot(this.innerHTML);
+    this._assistantCountAtPending = this._countAssistantMessages();
+    this._scrollToBottom();
+    this._backgroundPoll = setInterval(() => {
+      if (!this._streaming) this._refreshMessages();
+    }, 2000);
     this._connect();
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
     if (this._reconnectTimer) clearTimeout(this._reconnectTimer);
+    if (this._pendingPoll) clearInterval(this._pendingPoll);
+    if (this._backgroundPoll) clearInterval(this._backgroundPoll);
+    if (this._thinkingTicker) clearInterval(this._thinkingTicker);
     if (this._ws) this._ws.close();
   }
 
   _connect() {
-    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    this._ws = new WebSocket(protocol + '//' + location.host + this.wsUrl);
-    this._ws.onopen = () => {
-      this._ws.send(JSON.stringify({Subscribe:{topic:'chat:'+this.conversationId+':stream',params:{}}}));
-    };
-    this._ws.onmessage = (e) => {
-      try { this._handleMessage(JSON.parse(e.data)); } catch(ignored) {}
-    };
-    this._ws.onclose = () => {
-      this._reconnectTimer = setTimeout(() => this._connect(), 3000);
-    };
+    if (!this._wsEnabled || !this.wsUrl) return;
+    try {
+      const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      this._ws = new WebSocket(protocol + '//' + location.host + this.wsUrl);
+      this._ws.onopen = () => {
+        this._wsEverOpened = true;
+        this._ws.send(JSON.stringify({Subscribe:{topic:'chat:'+this.conversationId+':stream',params:{}}}));
+      };
+      this._ws.onmessage = (e) => {
+        try { this._handleMessage(JSON.parse(e.data)); } catch(ignored) {}
+      };
+      this._ws.onclose = () => {
+        if (this._wsEnabled) {
+          this._reconnectTimer = setTimeout(() => this._connect(), 3000);
+        }
+      };
+      this._ws.onerror = () => {
+        if (!this._wsEverOpened) {
+          this._wsEnabled = false;
+          if (this._reconnectTimer) clearTimeout(this._reconnectTimer);
+        }
+      };
+    } catch (ignored) {}
   }
 
   _handleMessage(msg) {
@@ -331,7 +372,8 @@ class ChatMessageStream extends LitElement {
     bubble.id = 'stream-bubble';
     bubble.className = 'flex justify-start';
     const inner = document.createElement('div');
-    inner.className = 'max-w-[85%] lg:max-w-[72%] rounded-2xl rounded-bl-md border border-white/15 bg-slate-800/80 px-4 py-3 shadow-lg shadow-black/20';
+    inner.className = 'max-w-[85%] lg:max-w-[72%] rounded-2xl rounded-bl-md border border-indigo-300/25 bg-slate-800/60 px-4 py-3 shadow-lg shadow-black/20';
+    inner.style.backdropFilter = 'blur(2px)';
     const senderEl = document.createElement('div');
     senderEl.className = 'text-xs font-semibold mb-2 text-slate-300';
     senderEl.textContent = 'assistant';
@@ -348,6 +390,7 @@ class ChatMessageStream extends LitElement {
     inner.appendChild(wrapper);
     bubble.appendChild(inner);
     this.appendChild(bubble);
+    this._startThinkingTicker();
     this._scrollToBottom();
   }
 
@@ -362,10 +405,16 @@ class ChatMessageStream extends LitElement {
   _removeStreamBubble() {
     const bubble = this.querySelector('#stream-bubble');
     if (bubble) bubble.remove();
+    this._stopThinkingTicker();
   }
 
   _scrollToBottom() {
-    this.scrollTop = this.scrollHeight;
+    requestAnimationFrame(() => {
+      this.scrollTop = this.scrollHeight;
+      requestAnimationFrame(() => {
+        this.scrollTop = this.scrollHeight;
+      });
+    });
   }
 
   _toggleAbortButton(show) {
@@ -373,10 +422,72 @@ class ChatMessageStream extends LitElement {
     if (btn) btn.classList.toggle('hidden', !show);
   }
 
+  markPending() {
+    const existingBubble = this.querySelector('#stream-bubble');
+    if (this._streaming && existingBubble) {
+      this._toggleAbortButton(true);
+      this._startPendingPoll();
+      this._scrollToBottom();
+      return;
+    }
+    this._lastSnapshot = this._normalizedSnapshot(this.innerHTML);
+    this._assistantCountAtPending = this._countAssistantMessages();
+    this._streaming = true;
+    this._streamBuffer = this._thinkingPhrases[0];
+    this._appendStreamBubble();
+    this._updateStreamBubble();
+    this._toggleAbortButton(true);
+    this._startPendingPoll();
+  }
+
+  _startPendingPoll() {
+    if (this._pendingPoll) clearInterval(this._pendingPoll);
+    this._pendingPoll = setInterval(() => {
+      this._refreshMessages();
+    }, 1200);
+  }
+
+  _stopPendingPoll() {
+    if (this._pendingPoll) {
+      clearInterval(this._pendingPoll);
+      this._pendingPoll = null;
+    }
+  }
+
+  _startThinkingTicker() {
+    this._stopThinkingTicker();
+    this._thinkingIndex = 0;
+    this._streamBuffer = this._thinkingPhrases[this._thinkingIndex] || 'Thinking...';
+    this._updateStreamBubble();
+    this._thinkingTicker = setInterval(() => {
+      this._thinkingIndex = (this._thinkingIndex + 1) % this._thinkingPhrases.length;
+      this._streamBuffer = this._thinkingPhrases[this._thinkingIndex];
+      this._updateStreamBubble();
+    }, 1200);
+  }
+
+  _stopThinkingTicker() {
+    if (this._thinkingTicker) {
+      clearInterval(this._thinkingTicker);
+      this._thinkingTicker = null;
+    }
+  }
+
+  _normalizedSnapshot(value) {
+    return (value || '').replace(/\\s+/g, ' ').trim();
+  }
+
+  _countAssistantMessages() {
+    return this.querySelectorAll('[data-sender="assistant"]').length;
+  }
+
   _refreshMessages() {
     fetch('/chat/$conversationId/messages')
       .then(r => r.text())
       .then(t => {
+        const next = this._normalizedSnapshot(t);
+        const changed = next !== this._lastSnapshot;
+        if (!changed) return;
         const streamBubble = this.querySelector('#stream-bubble');
         const wrapper = document.createElement('div');
         wrapper.className = 'space-y-4 text-gray-100';
@@ -386,14 +497,36 @@ class ChatMessageStream extends LitElement {
         while (this.firstChild) this.removeChild(this.firstChild);
         this.appendChild(wrapper);
         if (streamBubble && this._streaming) this.appendChild(streamBubble);
+        if (this._streaming && !this.querySelector('#stream-bubble')) {
+          this._appendStreamBubble();
+          this._updateStreamBubble();
+        }
+        this._lastSnapshot = next;
+        if (this._streaming) {
+          const assistantCountNow = this._countAssistantMessages();
+          const receivedAssistantReply = assistantCountNow > this._assistantCountAtPending;
+          if (receivedAssistantReply) {
+            this._streaming = false;
+            this._removeStreamBubble();
+            this._toggleAbortButton(false);
+            this._stopPendingPoll();
+          } else {
+            this._toggleAbortButton(true);
+            this._startPendingPoll();
+          }
+        }
         this._scrollToBottom();
       });
   }
 
   abort() {
-    if (this._ws && this._ws.readyState === WebSocket.OPEN) {
+    if (this._wsEnabled && this._ws && this._ws.readyState === WebSocket.OPEN) {
       this._ws.send(JSON.stringify({AbortChat:{conversationId:$conversationId}}));
     }
+    this._streaming = false;
+    this._removeStreamBubble();
+    this._toggleAbortButton(false);
+    this._stopPendingPoll();
     fetch('/api/chat/$conversationId/abort', {method:'POST'});
   }
 }
