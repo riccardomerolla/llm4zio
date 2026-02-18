@@ -59,8 +59,7 @@ final case class TasksControllerLive(
         for
           form          <- parseForm(req)
           taskName      <- required(form, "name")
-          sourceDir     <- required(form, "sourceDir")
-          outputDir     <- required(form, "outputDir")
+          description    = form.get("description").map(_.trim).filter(_.nonEmpty)
           workflowIdRaw <- required(form, "workflowId")
           workflowId    <- parseLongField("workflowId", workflowIdRaw)
           workflow      <- workflowService
@@ -72,8 +71,8 @@ final case class TasksControllerLive(
           runId         <- repository.createRun(
                              TaskRunRow(
                                id = 0L,
-                               sourceDir = sourceDir,
-                               outputDir = outputDir,
+                               sourceDir = "",
+                               outputDir = "",
                                status = RunStatus.Pending,
                                startedAt = now,
                                completedAt = None,
@@ -86,6 +85,18 @@ final case class TasksControllerLive(
                                workflowId = Some(workflowId),
                              )
                            )
+          _             <- ZIO.foreachDiscard(description) { value =>
+                             repository.saveArtifact(
+                               TaskArtifactRow(
+                                 id = 0L,
+                                 taskRunId = runId,
+                                 stepName = "task",
+                                 key = "task.description",
+                                 value = value,
+                                 createdAt = now,
+                               )
+                             )
+                           }
           _             <- repository.saveArtifact(
                              TaskArtifactRow(
                                id = 0L,

@@ -27,8 +27,8 @@ case class DatabaseConfig(
 
 case class TaskRunRow(
   id: Long,
-  sourceDir: String,
-  outputDir: String,
+  sourceDir: String = "",
+  outputDir: String = "",
   status: RunStatus,
   startedAt: Instant,
   completedAt: Option[Instant],

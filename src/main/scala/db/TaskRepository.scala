@@ -173,8 +173,10 @@ final case class TaskRepositoryLive(
 
     withConnection { conn =>
       executeUpdateReturningKey(conn, sql, "task_runs") { stmt =>
-        stmt.setString(1, run.sourceDir)
-        stmt.setString(2, run.outputDir)
+        val sourceDir = Option(run.sourceDir).map(_.trim).getOrElse("")
+        val outputDir = Option(run.outputDir).map(_.trim).getOrElse("")
+        stmt.setString(1, sourceDir)
+        stmt.setString(2, outputDir)
         stmt.setString(3, run.status.toString)
         stmt.setString(4, run.startedAt.toString)
         setOptionalString(stmt, 5, run.completedAt.map(_.toString))
@@ -208,8 +210,10 @@ final case class TaskRepositoryLive(
 
     withConnection { conn =>
       executeUpdateExpectingRows(conn, sql, PersistenceError.NotFound("task_runs", run.id)) { stmt =>
-        stmt.setString(1, run.sourceDir)
-        stmt.setString(2, run.outputDir)
+        val sourceDir = Option(run.sourceDir).map(_.trim).getOrElse("")
+        val outputDir = Option(run.outputDir).map(_.trim).getOrElse("")
+        stmt.setString(1, sourceDir)
+        stmt.setString(2, outputDir)
         stmt.setString(3, run.status.toString)
         stmt.setString(4, run.startedAt.toString)
         setOptionalString(stmt, 5, run.completedAt.map(_.toString))

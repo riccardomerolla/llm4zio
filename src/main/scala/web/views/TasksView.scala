@@ -118,8 +118,7 @@ object TasksView:
       h2(cls := "text-lg font-semibold text-white mb-4")("Create Task"),
       form(action := "/tasks", method := "post", cls := "space-y-4")(
         field("Task Name", "name", "my-task"),
-        field("Source Path", "sourceDir", "./input"),
-        field("Output Path", "outputDir", "./workspace/output"),
+        textAreaField("Description (optional)", "description", "What should this task do?"),
         div(
           label(cls := "block text-sm text-gray-300 mb-1", `for` := "workflowId")("Workflow"),
           select(
@@ -148,6 +147,18 @@ object TasksView:
         placeholder := placeholderText,
         cls         := "w-full rounded-md bg-black/20 ring-1 ring-white/10 px-3 py-2 text-sm text-white placeholder:text-gray-500",
       ),
+    )
+
+  private def textAreaField(labelText: String, nameAttr: String, placeholderText: String): Frag =
+    div(
+      label(cls := "block text-sm text-gray-300 mb-1", `for` := nameAttr)(labelText),
+      textarea(
+        id          := nameAttr,
+        name        := nameAttr,
+        placeholder := placeholderText,
+        rows        := 4,
+        cls         := "w-full rounded-md bg-black/20 ring-1 ring-white/10 px-3 py-2 text-sm text-white placeholder:text-gray-500",
+      )(),
     )
 
   private def metadataRow(labelText: String, valueNode: Frag): Frag =
