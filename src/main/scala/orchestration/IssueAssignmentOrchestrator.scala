@@ -5,7 +5,7 @@ import java.time.Instant
 import zio.*
 import zio.json.*
 
-import db.{ ChatRepository, MigrationRepository, PersistenceError }
+import db.{ ChatRepository, PersistenceError, TaskRepository }
 import llm4zio.core.{ LlmError, LlmService }
 import models.*
 import web.ActivityHub
@@ -20,14 +20,14 @@ object IssueAssignmentOrchestrator:
 
   val live
     : ZLayer[
-      ChatRepository & MigrationRepository & LlmService & AgentConfigResolver & ActivityHub,
+      ChatRepository & TaskRepository & LlmService & AgentConfigResolver & ActivityHub,
       Nothing,
       IssueAssignmentOrchestrator,
     ] =
     ZLayer.scoped {
       for
         chatRepository      <- ZIO.service[ChatRepository]
-        migrationRepository <- ZIO.service[MigrationRepository]
+        migrationRepository <- ZIO.service[TaskRepository]
         llmService          <- ZIO.service[LlmService]
         configResolver      <- ZIO.service[AgentConfigResolver]
         activityHub         <- ZIO.service[ActivityHub]
@@ -53,7 +53,7 @@ final private case class AssignmentTask(
 
 final private case class IssueAssignmentOrchestratorLive(
   chatRepository: ChatRepository,
-  migrationRepository: MigrationRepository,
+  migrationRepository: TaskRepository,
   llmService: LlmService,
   configResolver: AgentConfigResolver,
   activityHub: ActivityHub,
@@ -227,7 +227,7 @@ final private case class IssueAssignmentOrchestratorLive(
   private def buildIssueAssignmentPrompt(
     issue: AgentIssue,
     agentName: String,
-    run: Option[db.MigrationRunRow],
+    run: Option[db.TaskRunRow],
     customSystemPrompt: Option[String],
   ): String =
     val runContext    = run match

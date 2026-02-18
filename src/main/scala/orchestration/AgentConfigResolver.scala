@@ -2,7 +2,7 @@ package orchestration
 
 import zio.*
 
-import db.{ MigrationRepository, PersistenceError }
+import db.{ PersistenceError, TaskRepository }
 import models.*
 
 trait AgentConfigResolver:
@@ -13,11 +13,11 @@ object AgentConfigResolver:
   def resolveConfig(agentName: String): ZIO[AgentConfigResolver, PersistenceError, AIProviderConfig] =
     ZIO.serviceWithZIO[AgentConfigResolver](_.resolveConfig(agentName))
 
-  val live: ZLayer[MigrationRepository & AIProviderConfig, Nothing, AgentConfigResolver] =
+  val live: ZLayer[TaskRepository & AIProviderConfig, Nothing, AgentConfigResolver] =
     ZLayer.fromFunction(AgentConfigResolverLive.apply)
 
 final case class AgentConfigResolverLive(
-  repository: MigrationRepository,
+  repository: TaskRepository,
   startupConfig: AIProviderConfig,
 ) extends AgentConfigResolver:
 

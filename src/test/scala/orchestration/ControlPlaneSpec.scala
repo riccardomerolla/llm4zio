@@ -23,9 +23,9 @@ object ControlPlaneSpec extends ZIOSpecDefault:
     name = "Test Workflow",
     description = Some("Test workflow for control plane"),
     steps = List(
-      MigrationStep.Discovery,
-      MigrationStep.Analysis,
-      MigrationStep.Transformation,
+      TaskStep.Discovery,
+      TaskStep.Analysis,
+      TaskStep.Transformation,
     ),
     stepAgents = Nil,
     isBuiltin = true,
@@ -34,12 +34,12 @@ object ControlPlaneSpec extends ZIOSpecDefault:
   private val testCapabilities = List(
     AgentCapability(
       agentName = "agent-1",
-      supportedSteps = List(MigrationStep.Discovery, MigrationStep.Analysis),
+      supportedSteps = List(TaskStep.Discovery, TaskStep.Analysis),
       isEnabled = true,
     ),
     AgentCapability(
       agentName = "agent-2",
-      supportedSteps = List(MigrationStep.Transformation),
+      supportedSteps = List(TaskStep.Transformation),
       isEnabled = true,
     ),
   )
@@ -77,12 +77,12 @@ object ControlPlaneSpec extends ZIOSpecDefault:
         _      <- OrchestratorControlPlane.startWorkflow("run-route", 1L, testWorkflowDef)
         agent1 <- OrchestratorControlPlane.routeStep(
                     "run-route",
-                    MigrationStep.Discovery,
+                    TaskStep.Discovery,
                     testCapabilities,
                   )
         agent2 <- OrchestratorControlPlane.routeStep(
                     "run-route",
-                    MigrationStep.Transformation,
+                    TaskStep.Transformation,
                     testCapabilities,
                   )
       yield assertTrue(
@@ -95,12 +95,12 @@ object ControlPlaneSpec extends ZIOSpecDefault:
         _      <- OrchestratorControlPlane.startWorkflow("run-cache", 1L, testWorkflowDef)
         agent1 <- OrchestratorControlPlane.routeStep(
                     "run-cache",
-                    MigrationStep.Discovery,
+                    TaskStep.Discovery,
                     testCapabilities,
                   )
         agent2 <- OrchestratorControlPlane.routeStep(
                     "run-cache",
-                    MigrationStep.Discovery,
+                    TaskStep.Discovery,
                     testCapabilities,
                   )
       yield assertTrue(agent1 == agent2)
@@ -111,11 +111,11 @@ object ControlPlaneSpec extends ZIOSpecDefault:
         result <- OrchestratorControlPlane
                     .routeStep(
                       "run-no-agent",
-                      MigrationStep.Discovery,
+                      TaskStep.Discovery,
                       List(
                         AgentCapability(
                           agentName = "disabled-agent",
-                          supportedSteps = List(MigrationStep.Discovery),
+                          supportedSteps = List(TaskStep.Discovery),
                           isEnabled = false,
                         )
                       ),
@@ -248,13 +248,13 @@ object ControlPlaneSpec extends ZIOSpecDefault:
     test("agent monitor snapshot and history are populated from step events") {
       for
         _        <- OrchestratorControlPlane.startWorkflow("run-monitor", 1L, testWorkflowDef)
-        assigned <- OrchestratorControlPlane.routeStep("run-monitor", MigrationStep.Analysis, testCapabilities)
+        assigned <- OrchestratorControlPlane.routeStep("run-monitor", TaskStep.Analysis, testCapabilities)
         now      <- Clock.instant
         _        <- OrchestratorControlPlane.publishEvent(
                       StepProgress(
                         correlationId = "corr-monitor",
                         runId = "run-monitor",
-                        step = MigrationStep.Analysis,
+                        step = TaskStep.Analysis,
                         itemsProcessed = 1,
                         itemsTotal = 10,
                         message = "waiting for tool response",

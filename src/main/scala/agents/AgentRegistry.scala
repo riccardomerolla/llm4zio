@@ -32,7 +32,7 @@ trait AgentRegistry:
 
   /** Find agents for specific migration step
     */
-  def findAgentsForStep(step: MigrationStep): UIO[List[AgentInfo]]
+  def findAgentsForStep(step: TaskStep): UIO[List[AgentInfo]]
 
   /** Find agents that can transform from input type to output type
     */
@@ -87,7 +87,7 @@ object AgentRegistry:
   def findAgentsWithSkill(skill: String): ZIO[AgentRegistry, Nothing, List[AgentInfo]] =
     ZIO.serviceWithZIO[AgentRegistry](_.findAgentsWithSkill(skill))
 
-  def findAgentsForStep(step: MigrationStep): ZIO[AgentRegistry, Nothing, List[AgentInfo]] =
+  def findAgentsForStep(step: TaskStep): ZIO[AgentRegistry, Nothing, List[AgentInfo]] =
     ZIO.serviceWithZIO[AgentRegistry](_.findAgentsForStep(step))
 
   def findAgentsForTransformation(
@@ -144,7 +144,7 @@ object AgentRegistry:
           constraints = List(AgentConstraint.RequiresFileSystem),
         )
       ),
-      supportedSteps = List(MigrationStep.Discovery),
+      supportedSteps = List(TaskStep.Discovery),
       version = "1.0.0",
     ),
     AgentInfo(
@@ -163,7 +163,7 @@ object AgentRegistry:
           constraints = List(AgentConstraint.RequiresAI, AgentConstraint.MaxExecutionSeconds(180)),
         )
       ),
-      supportedSteps = List(MigrationStep.Analysis),
+      supportedSteps = List(TaskStep.Analysis),
       version = "1.0.0",
     ),
     AgentInfo(
@@ -182,7 +182,7 @@ object AgentRegistry:
           constraints = List(AgentConstraint.RequiresAI, AgentConstraint.MaxExecutionSeconds(120)),
         )
       ),
-      supportedSteps = List(MigrationStep.Analysis),
+      supportedSteps = List(TaskStep.Analysis),
       version = "1.0.0",
     ),
     AgentInfo(
@@ -201,7 +201,7 @@ object AgentRegistry:
           constraints = List(AgentConstraint.RequiresDatabase),
         )
       ),
-      supportedSteps = List(MigrationStep.Mapping),
+      supportedSteps = List(TaskStep.Mapping),
       version = "1.0.0",
     ),
     AgentInfo(
@@ -224,7 +224,7 @@ object AgentRegistry:
           ),
         )
       ),
-      supportedSteps = List(MigrationStep.Transformation),
+      supportedSteps = List(TaskStep.Transformation),
       version = "1.0.0",
     ),
     AgentInfo(
@@ -243,7 +243,7 @@ object AgentRegistry:
           constraints = List(AgentConstraint.RequiresAI, AgentConstraint.MaxExecutionSeconds(180)),
         )
       ),
-      supportedSteps = List(MigrationStep.Validation),
+      supportedSteps = List(TaskStep.Validation),
       version = "1.0.0",
     ),
     AgentInfo(
@@ -257,12 +257,12 @@ object AgentRegistry:
         AgentSkill(
           skill = "documentation-generation",
           description = "Generate migration documentation and diagrams",
-          inputTypes = List("MigrationState"),
+          inputTypes = List("TaskState"),
           outputTypes = List("Documentation", "Diagram"),
           constraints = List(AgentConstraint.RequiresFileSystem),
         )
       ),
-      supportedSteps = List(MigrationStep.Documentation),
+      supportedSteps = List(TaskStep.Documentation),
       version = "1.0.0",
     ),
   )
@@ -354,7 +354,7 @@ final private[agents] class AgentRegistryLive(
   override def findAgentsWithSkill(skill: String): UIO[List[AgentInfo]] =
     findAgents(AgentQuery(skill = Some(skill)))
 
-  override def findAgentsForStep(step: MigrationStep): UIO[List[AgentInfo]] =
+  override def findAgentsForStep(step: TaskStep): UIO[List[AgentInfo]] =
     findAgents(AgentQuery(supportedStep = Some(step)))
 
   override def findAgentsForTransformation(inputType: String, outputType: String): UIO[List[AgentInfo]] =

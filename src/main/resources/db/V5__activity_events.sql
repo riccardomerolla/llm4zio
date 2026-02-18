@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS activity_events (
   summary TEXT NOT NULL,
   payload TEXT,
   created_at TEXT NOT NULL,
-  FOREIGN KEY (run_id) REFERENCES migration_runs(id) ON DELETE CASCADE
+  FOREIGN KEY (run_id) REFERENCES task_runs(id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_activity_events_event_type ON activity_events(event_type);

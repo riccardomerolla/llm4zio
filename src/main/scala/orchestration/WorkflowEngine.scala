@@ -9,12 +9,12 @@ enum WorkflowEngineError:
   case InvalidNode(nodeId: String, reason: String)
   case MissingDependency(nodeId: String, dependencyId: String)
   case CircularDependency(nodeIds: List[String])
-  case ForcedAgentUnavailable(step: MigrationStep, agent: String)
-  case NoEligibleAgent(step: MigrationStep)
+  case ForcedAgentUnavailable(step: TaskStep, agent: String)
+  case NoEligibleAgent(step: TaskStep)
 
 case class WorkflowStepPlan(
   nodeId: String,
-  step: MigrationStep,
+  step: TaskStep,
   dependsOn: Set[String],
   assignedAgent: Option[String],
   fallbackAgents: List[String],
@@ -25,7 +25,7 @@ case class WorkflowStepPlan(
 case class WorkflowExecutionPlan(
   batches: List[List[WorkflowStepPlan]]
 ):
-  def orderedSteps: List[MigrationStep] =
+  def orderedSteps: List[TaskStep] =
     batches.flatten.map(_.step)
 
 trait WorkflowEngine:
@@ -83,7 +83,7 @@ object WorkflowEngine:
   def planFromGraph(
     graph: WorkflowGraph,
     context: WorkflowContext,
-    stepAgents: Map[MigrationStep, String] = Map.empty,
+    stepAgents: Map[TaskStep, String] = Map.empty,
     candidates: List[AgentInfo] = Nil,
   ): IO[WorkflowEngineError, WorkflowExecutionPlan] =
     WorkflowEngineLive().buildPlan(
@@ -252,7 +252,7 @@ final private case class WorkflowEngineLive() extends WorkflowEngine:
     loop(dependencies, Set.empty, Nil)
 
   private def resolveAgent(
-    step: MigrationStep,
+    step: TaskStep,
     stepOverride: Option[String],
     policy: Option[WorkflowAgentPolicy],
     candidates: List[AgentInfo],
@@ -289,7 +289,7 @@ final private case class WorkflowEngineLive() extends WorkflowEngine:
     policy: Option[WorkflowAgentPolicy],
     selected: Option[String],
     candidates: List[AgentInfo],
-    step: MigrationStep,
+    step: TaskStep,
   ): List[String] =
     val supportedNames = candidates.filter(_.supportedSteps.contains(step)).map(_.name).toSet
     policy

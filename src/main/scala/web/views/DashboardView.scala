@@ -1,11 +1,11 @@
 package web.views
 
-import db.{ MigrationRunRow, RunStatus }
+import db.{ RunStatus, TaskRunRow }
 import scalatags.Text.all.*
 
 object DashboardView:
 
-  def dashboard(runs: List[MigrationRunRow], workflowCount: Int): String =
+  def dashboard(runs: List[TaskRunRow], workflowCount: Int): String =
     val totalRuns           = runs.length
     val completedRuns       = runs.count(_.status == RunStatus.Completed)
     val successRate         = if totalRuns > 0 then (completedRuns.toDouble / totalRuns * 100).toInt else 0
@@ -81,7 +81,7 @@ object DashboardView:
       ),
     )
 
-  def recentRunsContent(runs: List[MigrationRunRow]): Frag =
+  def recentRunsContent(runs: List[TaskRunRow]): Frag =
     if runs.isEmpty then Components.emptyState("No migration runs yet. Start one from the New Run page.")
     else
       div(cls := "overflow-x-auto")(
@@ -104,7 +104,7 @@ object DashboardView:
         )
       )
 
-  private def runRow(run: MigrationRunRow): Frag =
+  private def runRow(run: TaskRunRow): Frag =
     tr(cls := "hover:bg-white/5")(
       td(cls := "whitespace-nowrap py-4 pl-6 pr-3 text-sm font-medium text-white")(
         a(href := s"/runs/${run.id}", cls := "text-indigo-400 hover:text-indigo-300")(s"#${run.id}")

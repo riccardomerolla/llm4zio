@@ -11,5 +11,5 @@ CREATE TABLE IF NOT EXISTS workflows (
 CREATE INDEX IF NOT EXISTS idx_workflows_name ON workflows(name);
 CREATE INDEX IF NOT EXISTS idx_workflows_is_builtin ON workflows(is_builtin);
 
-ALTER TABLE migration_runs
+ALTER TABLE task_runs
 ADD COLUMN workflow_id INTEGER REFERENCES workflows(id) ON DELETE SET NULL;

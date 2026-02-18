@@ -166,7 +166,7 @@ object ProgressTrackerSpec extends ZIOSpecDefault:
     } @@ TestAspect.samples(20),
   ) @@ TestAspect.sequential @@ TestAspect.withLiveClock
 
-  private def trackerLayer(repo: MigrationRepository): ZLayer[Any, Nothing, ProgressTracker] =
+  private def trackerLayer(repo: TaskRepository): ZLayer[Any, Nothing, ProgressTracker] =
     (ZLayer.succeed(repo) ++ stubActivityHubLayer) >>> ProgressTracker.live
 
   private val stubActivityHubLayer: ULayer[web.ActivityHub] =
@@ -189,7 +189,7 @@ object ProgressTrackerSpec extends ZIOSpecDefault:
     nextProgressId: Ref[Long],
     failWrites: Boolean = false,
     failReads: Boolean = false,
-  ) extends MigrationRepository:
+  ) extends TaskRepository:
 
     override def saveProgress(progress: PhaseProgressRow): IO[PersistenceError, Long] =
       if failWrites then ZIO.fail(PersistenceError.QueryFailed("saveProgress", "forced failure"))
@@ -212,28 +212,28 @@ object ProgressTrackerSpec extends ZIOSpecDefault:
             case None    => ((), current)
         }
 
-    override def createRun(run: MigrationRunRow): IO[PersistenceError, Long]                    =
+    override def createRun(run: TaskRunRow): IO[PersistenceError, Long]                       =
       ZIO.dieMessage("unused in ProgressTrackerSpec")
-    override def updateRun(run: MigrationRunRow): IO[PersistenceError, Unit]                    =
+    override def updateRun(run: TaskRunRow): IO[PersistenceError, Unit]                       =
       ZIO.dieMessage("unused in ProgressTrackerSpec")
-    override def getRun(id: Long): IO[PersistenceError, Option[MigrationRunRow]]                =
+    override def getRun(id: Long): IO[PersistenceError, Option[TaskRunRow]]                   =
       ZIO.dieMessage("unused in ProgressTrackerSpec")
-    override def listRuns(offset: Int, limit: Int): IO[PersistenceError, List[MigrationRunRow]] =
+    override def listRuns(offset: Int, limit: Int): IO[PersistenceError, List[TaskRunRow]]    =
       ZIO.dieMessage("unused in ProgressTrackerSpec")
-    override def deleteRun(id: Long): IO[PersistenceError, Unit]                                =
+    override def deleteRun(id: Long): IO[PersistenceError, Unit]                              =
       ZIO.dieMessage("unused in ProgressTrackerSpec")
-    override def saveFiles(files: List[CobolFileRow]): IO[PersistenceError, Unit]               =
+    override def saveFiles(files: List[CobolFileRow]): IO[PersistenceError, Unit]             =
       ZIO.dieMessage("unused in ProgressTrackerSpec")
-    override def getFilesByRun(runId: Long): IO[PersistenceError, List[CobolFileRow]]           =
+    override def getFilesByRun(runId: Long): IO[PersistenceError, List[CobolFileRow]]         =
       ZIO.dieMessage("unused in ProgressTrackerSpec")
-    override def saveAnalysis(analysis: CobolAnalysisRow): IO[PersistenceError, Long]           =
+    override def saveAnalysis(analysis: CobolAnalysisRow): IO[PersistenceError, Long]         =
       ZIO.dieMessage("unused in ProgressTrackerSpec")
-    override def getAnalysesByRun(runId: Long): IO[PersistenceError, List[CobolAnalysisRow]]    =
+    override def getAnalysesByRun(runId: Long): IO[PersistenceError, List[CobolAnalysisRow]]  =
       ZIO.dieMessage("unused in ProgressTrackerSpec")
-    override def saveDependencies(deps: List[DependencyRow]): IO[PersistenceError, Unit]        =
+    override def saveDependencies(deps: List[DependencyRow]): IO[PersistenceError, Unit]      =
       ZIO.dieMessage("unused in ProgressTrackerSpec")
-    override def getDependenciesByRun(runId: Long): IO[PersistenceError, List[DependencyRow]]   =
+    override def getDependenciesByRun(runId: Long): IO[PersistenceError, List[DependencyRow]] =
       ZIO.dieMessage("unused in ProgressTrackerSpec")
-    override def getAllSettings: IO[PersistenceError, List[SettingRow]]                         = ZIO.succeed(Nil)
-    override def getSetting(key: String): IO[PersistenceError, Option[SettingRow]]              = ZIO.none
-    override def upsertSetting(key: String, value: String): IO[PersistenceError, Unit]          = ZIO.unit
+    override def getAllSettings: IO[PersistenceError, List[SettingRow]]                       = ZIO.succeed(Nil)
+    override def getSetting(key: String): IO[PersistenceError, Option[SettingRow]]            = ZIO.none
+    override def upsertSetting(key: String, value: String): IO[PersistenceError, Unit]        = ZIO.unit

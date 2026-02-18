@@ -3,7 +3,7 @@ package web.controllers
 import zio.*
 import zio.http.*
 
-import db.{ MigrationRepository, PersistenceError }
+import db.{ PersistenceError, TaskRepository }
 import orchestration.{ WorkflowService, WorkflowServiceError }
 import web.ErrorHandlingMiddleware
 import web.views.HtmlViews
@@ -16,11 +16,11 @@ object DashboardController:
   def routes: ZIO[DashboardController, Nothing, Routes[Any, Response]] =
     ZIO.serviceWith[DashboardController](_.routes)
 
-  val live: ZLayer[MigrationRepository & WorkflowService, Nothing, DashboardController] =
+  val live: ZLayer[TaskRepository & WorkflowService, Nothing, DashboardController] =
     ZLayer.fromFunction(DashboardControllerLive.apply)
 
 final case class DashboardControllerLive(
-  repository: MigrationRepository,
+  repository: TaskRepository,
   workflowService: WorkflowService,
 ) extends DashboardController:
 

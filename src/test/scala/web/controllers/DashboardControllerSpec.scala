@@ -12,7 +12,7 @@ import orchestration.*
 
 object DashboardControllerSpec extends ZIOSpecDefault:
 
-  private val sampleRun = MigrationRunRow(
+  private val sampleRun = TaskRunRow(
     id = 2L,
     sourceDir = "/src",
     outputDir = "/out",
@@ -55,16 +55,16 @@ object DashboardControllerSpec extends ZIOSpecDefault:
     },
   )
 
-  final private case class TestRepository() extends MigrationRepository:
+  final private case class TestRepository() extends TaskRepository:
 
-    override def listRuns(offset: Int, limit: Int): IO[PersistenceError, List[MigrationRunRow]] =
+    override def listRuns(offset: Int, limit: Int): IO[PersistenceError, List[TaskRunRow]] =
       ZIO.succeed(List(sampleRun))
 
-    override def createRun(run: MigrationRunRow): IO[PersistenceError, Long]                             =
+    override def createRun(run: TaskRunRow): IO[PersistenceError, Long]                                  =
       ZIO.dieMessage("unused in DashboardControllerSpec")
-    override def updateRun(run: MigrationRunRow): IO[PersistenceError, Unit]                             =
+    override def updateRun(run: TaskRunRow): IO[PersistenceError, Unit]                                  =
       ZIO.dieMessage("unused in DashboardControllerSpec")
-    override def getRun(id: Long): IO[PersistenceError, Option[MigrationRunRow]]                         =
+    override def getRun(id: Long): IO[PersistenceError, Option[TaskRunRow]]                              =
       ZIO.dieMessage("unused in DashboardControllerSpec")
     override def deleteRun(id: Long): IO[PersistenceError, Unit]                                         =
       ZIO.dieMessage("unused in DashboardControllerSpec")
@@ -100,7 +100,7 @@ object DashboardControllerSpec extends ZIOSpecDefault:
           WorkflowDefinition(
             id = Some(index.toLong + 1L),
             name = s"wf-$index",
-            steps = List(MigrationStep.Discovery),
+            steps = List(TaskStep.Discovery),
             isBuiltin = false,
           )
         )

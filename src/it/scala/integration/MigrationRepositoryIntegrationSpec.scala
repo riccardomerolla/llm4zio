@@ -14,14 +14,14 @@ object MigrationRepositoryIntegrationSpec extends ZIOSpecDefault:
   override val bootstrap: ZLayer[Any, Any, TestEnvironment] =
     Runtime.removeDefaultLoggers >>> SLF4J.slf4j >>> testEnvironment
 
-  private def repoLayer(dbName: String): ZLayer[Any, PersistenceError, MigrationRepository] =
+  private def repoLayer(dbName: String): ZLayer[Any, PersistenceError, TaskRepository] =
     ZLayer.succeed(DatabaseConfig(s"jdbc:sqlite:file:$dbName?mode=memory&cache=shared")) >>>
       Database.live >>>
-      MigrationRepository.live
+      TaskRepository.live
 
   private val now = Instant.parse("2026-02-08T00:00:00Z")
 
-  private val baseRun = MigrationRunRow(
+  private val baseRun = TaskRunRow(
     id = 0L,
     sourceDir = "/tmp/it-source",
     outputDir = "/tmp/it-output",
@@ -42,8 +42,8 @@ object MigrationRepositoryIntegrationSpec extends ZIOSpecDefault:
 
       ZIO.scoped {
         (for
-          runId <- MigrationRepository.createRun(baseRun)
-          _     <- MigrationRepository.saveFiles(
+          runId <- TaskRepository.createRun(baseRun)
+          _     <- TaskRepository.saveFiles(
                      List(
                        CobolFileRow(
                          id = 0L,
@@ -58,8 +58,8 @@ object MigrationRepositoryIntegrationSpec extends ZIOSpecDefault:
                        )
                      )
                    )
-          files <- MigrationRepository.getFilesByRun(runId)
-          _     <- MigrationRepository.saveAnalysis(
+          files <- TaskRepository.getFilesByRun(runId)
+          _     <- TaskRepository.saveAnalysis(
                      CobolAnalysisRow(
                        id = 0L,
                        runId = runId,
@@ -68,7 +68,7 @@ object MigrationRepositoryIntegrationSpec extends ZIOSpecDefault:
                        createdAt = now,
                      )
                    )
-          _     <- MigrationRepository.saveDependencies(
+          _     <- TaskRepository.saveDependencies(
                      List(
                        DependencyRow(
                          id = 0L,
@@ -79,7 +79,7 @@ object MigrationRepositoryIntegrationSpec extends ZIOSpecDefault:
                        )
                      )
                    )
-          pid   <- MigrationRepository.saveProgress(
+          pid   <- TaskRepository.saveProgress(
                      PhaseProgressRow(
                        id = 0L,
                        runId = runId,
@@ -91,9 +91,9 @@ object MigrationRepositoryIntegrationSpec extends ZIOSpecDefault:
                        updatedAt = now,
                      )
                    )
-          run   <- MigrationRepository.getRun(runId)
-          deps  <- MigrationRepository.getDependenciesByRun(runId)
-          prog  <- MigrationRepository.getProgress(runId, "Discovery")
+          run   <- TaskRepository.getRun(runId)
+          deps  <- TaskRepository.getDependenciesByRun(runId)
+          prog  <- TaskRepository.getProgress(runId, "Discovery")
         yield assertTrue(
           run.exists(_.currentPhase.contains("Discovery")),
           files.length == 1,
@@ -107,8 +107,8 @@ object MigrationRepositoryIntegrationSpec extends ZIOSpecDefault:
 
       ZIO.scoped {
         (for
-          del <- MigrationRepository.deleteRun(404L).exit
-          upd <- MigrationRepository.updateProgress(
+          del <- TaskRepository.deleteRun(404L).exit
+          upd <- TaskRepository.updateProgress(
                    PhaseProgressRow(
                      id = 404L,
                      runId = 1L,
@@ -122,7 +122,7 @@ object MigrationRepositoryIntegrationSpec extends ZIOSpecDefault:
                  ).exit
         yield assertTrue(
           del match
-            case Exit.Failure(cause) => cause.failureOption.contains(PersistenceError.NotFound("migration_runs", 404L))
+            case Exit.Failure(cause) => cause.failureOption.contains(PersistenceError.NotFound("task_runs", 404L))
             case Exit.Success(_)     => false,
           upd match
             case Exit.Failure(cause) => cause.failureOption.contains(PersistenceError.NotFound("phase_progress", 404L))

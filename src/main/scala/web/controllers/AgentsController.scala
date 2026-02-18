@@ -7,7 +7,7 @@ import zio.*
 import zio.http.*
 
 import agents.AgentRegistry
-import db.{ CustomAgentRow, MigrationRepository, PersistenceError }
+import db.{ CustomAgentRow, PersistenceError, TaskRepository }
 import models.*
 import web.ErrorHandlingMiddleware
 import web.views.HtmlViews
@@ -20,10 +20,10 @@ object AgentsController:
   def routes: ZIO[AgentsController, Nothing, Routes[Any, Response]] =
     ZIO.serviceWith[AgentsController](_.routes)
 
-  val live: ZLayer[MigrationRepository, Nothing, AgentsController] =
+  val live: ZLayer[TaskRepository, Nothing, AgentsController] =
     ZLayer.fromFunction(AgentsControllerLive.apply)
 
-final case class AgentsControllerLive(repository: MigrationRepository) extends AgentsController:
+final case class AgentsControllerLive(repository: TaskRepository) extends AgentsController:
 
   private val aiSettingKeys: List[String] = List(
     "ai.provider",

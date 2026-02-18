@@ -15,11 +15,11 @@ object ProgressTrackerIntegrationSpec extends ZIOSpecDefault:
   override val bootstrap: ZLayer[Any, Any, TestEnvironment] =
     Runtime.removeDefaultLoggers >>> SLF4J.slf4j >>> testEnvironment
 
-  private def liveLayer(dbName: String): ZLayer[Any, PersistenceError, ProgressTracker & MigrationRepository] =
-    ZLayer.make[ProgressTracker & MigrationRepository](
+  private def liveLayer(dbName: String): ZLayer[Any, PersistenceError, ProgressTracker & TaskRepository] =
+    ZLayer.make[ProgressTracker & TaskRepository](
       ZLayer.succeed(DatabaseConfig(s"jdbc:sqlite:file:$dbName?mode=memory&cache=shared")),
       Database.live,
-      MigrationRepository.live,
+      TaskRepository.live,
       ProgressTracker.live,
     )
 
@@ -30,8 +30,8 @@ object ProgressTrackerIntegrationSpec extends ZIOSpecDefault:
 
       ZIO.scoped {
         (for
-          runId <- MigrationRepository.createRun(
-                     MigrationRunRow(
+          runId <- TaskRepository.createRun(
+                     TaskRunRow(
                        id = 0L,
                        sourceDir = "/tmp/it-source",
                        outputDir = "/tmp/it-output",
@@ -63,7 +63,7 @@ object ProgressTrackerIntegrationSpec extends ZIOSpecDefault:
           first  <- queue.take.timeoutFail("missing start event")(1.second)
           second <- queue.take.timeoutFail("missing update event")(1.second)
           third  <- queue.take.timeoutFail("missing completion event")(1.second)
-          row    <- MigrationRepository.getProgress(runId, "Discovery")
+          row    <- TaskRepository.getProgress(runId, "Discovery")
         yield assertTrue(
           first.message.contains("Starting phase"),
           second.itemsProcessed == 2,
@@ -80,8 +80,8 @@ object ProgressTrackerIntegrationSpec extends ZIOSpecDefault:
 
       ZIO.scoped {
         (for
-          runIdA <- MigrationRepository.createRun(
-                      MigrationRunRow(
+          runIdA <- TaskRepository.createRun(
+                      TaskRunRow(
                         id = 0L,
                         sourceDir = "/tmp/it-source-a",
                         outputDir = "/tmp/it-output-a",
@@ -96,8 +96,8 @@ object ProgressTrackerIntegrationSpec extends ZIOSpecDefault:
                         errorMessage = None,
                       )
                     )
-          runIdB <- MigrationRepository.createRun(
-                      MigrationRunRow(
+          runIdB <- TaskRepository.createRun(
+                      TaskRunRow(
                         id = 0L,
                         sourceDir = "/tmp/it-source-b",
                         outputDir = "/tmp/it-output-b",

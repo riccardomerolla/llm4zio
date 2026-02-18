@@ -135,12 +135,12 @@ object MigrationOrchestratorIntegrationSpec extends ZIOSpecDefault:
           first.status == MigrationStatus.PartialFailure || first.status == MigrationStatus.Failed,
           second.status == MigrationStatus.Completed,
           first.runId == second.runId,
-          checkpointSteps.contains(MigrationStep.Discovery),
-          checkpointSteps.contains(MigrationStep.Analysis),
-          checkpointSteps.contains(MigrationStep.Mapping),
-          checkpointSteps.contains(MigrationStep.Transformation),
-          checkpointSteps.contains(MigrationStep.Validation),
-          checkpointSteps.contains(MigrationStep.Documentation),
+          checkpointSteps.contains(TaskStep.Discovery),
+          checkpointSteps.contains(TaskStep.Analysis),
+          checkpointSteps.contains(TaskStep.Mapping),
+          checkpointSteps.contains(TaskStep.Transformation),
+          checkpointSteps.contains(TaskStep.Validation),
+          checkpointSteps.contains(TaskStep.Documentation),
         )
       }
     },
@@ -214,12 +214,12 @@ object MigrationOrchestratorIntegrationSpec extends ZIOSpecDefault:
         )
     })
 
-  private val noOpRepositoryLayer: ULayer[MigrationRepository] =
-    ZLayer.succeed(new MigrationRepository {
-      override def createRun(run: MigrationRunRow): IO[PersistenceError, Long]                             = ZIO.succeed(1L)
-      override def updateRun(run: MigrationRunRow): IO[PersistenceError, Unit]                             = ZIO.unit
-      override def getRun(id: Long): IO[PersistenceError, Option[MigrationRunRow]]                         = ZIO.none
-      override def listRuns(offset: Int, limit: Int): IO[PersistenceError, List[MigrationRunRow]]          =
+  private val noOpRepositoryLayer: ULayer[TaskRepository] =
+    ZLayer.succeed(new TaskRepository {
+      override def createRun(run: TaskRunRow): IO[PersistenceError, Long]                                  = ZIO.succeed(1L)
+      override def updateRun(run: TaskRunRow): IO[PersistenceError, Unit]                                  = ZIO.unit
+      override def getRun(id: Long): IO[PersistenceError, Option[TaskRunRow]]                              = ZIO.none
+      override def listRuns(offset: Int, limit: Int): IO[PersistenceError, List[TaskRunRow]]               =
         ZIO.succeed(List.empty)
       override def deleteRun(id: Long): IO[PersistenceError, Unit]                                         = ZIO.unit
       override def saveFiles(files: List[CobolFileRow]): IO[PersistenceError, Unit]                        = ZIO.unit

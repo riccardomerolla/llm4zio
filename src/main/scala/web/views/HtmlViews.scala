@@ -1,14 +1,14 @@
 package web.views
 
-import db.MigrationRunRow
+import db.TaskRunRow
 import models.*
 
 object HtmlViews:
 
-  def dashboard(runs: List[MigrationRunRow], workflowCount: Int): String =
+  def dashboard(runs: List[TaskRunRow], workflowCount: Int): String =
     DashboardView.dashboard(runs, workflowCount)
 
-  def recentRunsFragment(runs: List[MigrationRunRow]): String =
+  def recentRunsFragment(runs: List[TaskRunRow]): String =
     DashboardView.recentRunsContent(runs).render
 
   def settingsPage(settings: Map[String, String], flash: Option[String] = None): String =

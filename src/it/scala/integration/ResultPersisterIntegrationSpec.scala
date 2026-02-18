@@ -17,11 +17,11 @@ object ResultPersisterIntegrationSpec extends ZIOSpecDefault:
   override val bootstrap: ZLayer[Any, Any, TestEnvironment] =
     Runtime.removeDefaultLoggers >>> SLF4J.slf4j >>> testEnvironment
 
-  private def liveLayer(dbName: String): ZLayer[Any, PersistenceError, ResultPersister & MigrationRepository] =
-    ZLayer.make[ResultPersister & MigrationRepository](
+  private def liveLayer(dbName: String): ZLayer[Any, PersistenceError, ResultPersister & TaskRepository] =
+    ZLayer.make[ResultPersister & TaskRepository](
       ZLayer.succeed(DatabaseConfig(s"jdbc:sqlite:file:$dbName?mode=memory&cache=shared")),
       Database.live,
-      MigrationRepository.live,
+      TaskRepository.live,
       ResultPersister.live,
     )
 
@@ -93,7 +93,7 @@ object ResultPersisterIntegrationSpec extends ZIOSpecDefault:
     overallStatus = ValidationStatus.Passed,
   )
 
-  private val baseRun = MigrationRunRow(
+  private val baseRun = TaskRunRow(
     id = 0L,
     sourceDir = "/tmp/it-source",
     outputDir = "/tmp/it-output",
@@ -114,16 +114,16 @@ object ResultPersisterIntegrationSpec extends ZIOSpecDefault:
 
       ZIO.scoped {
         (for
-          runId <- MigrationRepository.createRun(baseRun)
+          runId <- TaskRepository.createRun(baseRun)
           _     <- ResultPersister.saveDiscoveryResult(runId, sampleInventory)
           _     <- ResultPersister.saveAnalysisResult(runId, sampleAnalysis)
           _     <- ResultPersister.saveDependencyResult(runId, sampleGraph)
           _     <- ResultPersister.saveTransformResult(runId, sampleProject)
           _     <- ResultPersister.saveValidationResult(runId, sampleValidation)
 
-          files     <- MigrationRepository.getFilesByRun(runId)
-          analyses  <- MigrationRepository.getAnalysesByRun(runId)
-          deps      <- MigrationRepository.getDependenciesByRun(runId)
+          files     <- TaskRepository.getFilesByRun(runId)
+          analyses  <- TaskRepository.getAnalysesByRun(runId)
+          deps      <- TaskRepository.getDependenciesByRun(runId)
           sourceOpt  = files.find(_.path == sampleFile.path.toString)
           sourceId   = sourceOpt.map(_.id)
           transform  = analyses.find(_.analysisJson == sampleProject.toJson)
@@ -147,7 +147,7 @@ object ResultPersisterIntegrationSpec extends ZIOSpecDefault:
 
       ZIO.scoped {
         (for
-          runId <- MigrationRepository.createRun(baseRun)
+          runId <- TaskRepository.createRun(baseRun)
           exit  <- ResultPersister.saveAnalysisResult(runId, sampleAnalysis).exit
         yield assertTrue(
           exit match

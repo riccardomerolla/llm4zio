@@ -8,9 +8,9 @@ import orchestration.WorkflowOrchestrator.*
 object WorkflowOrchestratorSpec extends ZIOSpecDefault:
 
   def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("WorkflowOrchestrator")(
-    suite("PhaseProgressUpdate")(
+    suite("StepProgressUpdate")(
       test("creates progress update with correct fields") {
-        val update = PhaseProgressUpdate("Discovery", "Starting phase", 10)
+        val update = StepProgressUpdate("Discovery", "Starting phase", 10)
         assertTrue(
           update.phase == "Discovery",
           update.message == "Starting phase",

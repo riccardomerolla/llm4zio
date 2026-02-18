@@ -42,7 +42,7 @@ case class WorkflowFailed(
 case class StepStarted(
   correlationId: String,
   runId: String,
-  step: MigrationStep,
+  step: TaskStep,
   assignedAgent: String,
   timestamp: Instant,
 ) extends ControlPlaneEvent
@@ -51,7 +51,7 @@ case class StepStarted(
 case class StepProgress(
   correlationId: String,
   runId: String,
-  step: MigrationStep,
+  step: TaskStep,
   itemsProcessed: Int,
   itemsTotal: Int,
   message: String,
@@ -62,7 +62,7 @@ case class StepProgress(
 case class StepCompleted(
   correlationId: String,
   runId: String,
-  step: MigrationStep,
+  step: TaskStep,
   status: WorkflowStatus,
   timestamp: Instant,
 ) extends ControlPlaneEvent
@@ -71,7 +71,7 @@ case class StepCompleted(
 case class StepFailed(
   correlationId: String,
   runId: String,
-  step: MigrationStep,
+  step: TaskStep,
   error: String,
   timestamp: Instant,
 ) extends ControlPlaneEvent
@@ -109,7 +109,7 @@ case class ActiveRun(
   workflowId: Long,
   correlationId: String,
   state: WorkflowRunState,
-  currentStep: Option[MigrationStep],
+  currentStep: Option[TaskStep],
   startTime: Instant,
   lastUpdateTime: Instant,
 ) derives JsonCodec
@@ -135,7 +135,7 @@ case class RateLimitConfig(
   */
 case class AgentCapability(
   agentName: String,
-  supportedSteps: List[MigrationStep],
+  supportedSteps: List[TaskStep],
   isEnabled: Boolean = true,
 ) derives JsonCodec
 
@@ -146,7 +146,7 @@ case class AgentExecutionInfo(
   agentName: String,
   state: AgentExecutionState,
   runId: Option[String],
-  step: Option[MigrationStep],
+  step: Option[TaskStep],
   task: Option[String],
   conversationId: Option[String],
   tokensUsed: Long,
@@ -161,7 +161,7 @@ case class AgentExecutionEvent(
   agentName: String,
   state: AgentExecutionState,
   runId: Option[String],
-  step: Option[MigrationStep],
+  step: Option[TaskStep],
   detail: String,
   timestamp: Instant,
 ) derives JsonCodec

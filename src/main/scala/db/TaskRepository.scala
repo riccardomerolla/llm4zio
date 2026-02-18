@@ -6,12 +6,12 @@ import javax.sql.DataSource
 
 import zio.*
 
-trait MigrationRepository:
+trait TaskRepository:
   // Runs
-  def createRun(run: MigrationRunRow): IO[PersistenceError, Long]
-  def updateRun(run: MigrationRunRow): IO[PersistenceError, Unit]
-  def getRun(id: Long): IO[PersistenceError, Option[MigrationRunRow]]
-  def listRuns(offset: Int, limit: Int): IO[PersistenceError, List[MigrationRunRow]]
+  def createRun(run: TaskRunRow): IO[PersistenceError, Long]
+  def updateRun(run: TaskRunRow): IO[PersistenceError, Unit]
+  def getRun(id: Long): IO[PersistenceError, Option[TaskRunRow]]
+  def listRuns(offset: Int, limit: Int): IO[PersistenceError, List[TaskRunRow]]
   def deleteRun(id: Long): IO[PersistenceError, Unit]
 
   // Files
@@ -68,112 +68,112 @@ trait MigrationRepository:
   def deleteCustomAgent(id: Long): IO[PersistenceError, Unit]                          =
     ZIO.fail(PersistenceError.QueryFailed("deleteCustomAgent", "Not implemented"))
 
-object MigrationRepository:
-  def createRun(run: MigrationRunRow): ZIO[MigrationRepository, PersistenceError, Long] =
-    ZIO.serviceWithZIO[MigrationRepository](_.createRun(run))
+object TaskRepository:
+  def createRun(run: TaskRunRow): ZIO[TaskRepository, PersistenceError, Long] =
+    ZIO.serviceWithZIO[TaskRepository](_.createRun(run))
 
-  def updateRun(run: MigrationRunRow): ZIO[MigrationRepository, PersistenceError, Unit] =
-    ZIO.serviceWithZIO[MigrationRepository](_.updateRun(run))
+  def updateRun(run: TaskRunRow): ZIO[TaskRepository, PersistenceError, Unit] =
+    ZIO.serviceWithZIO[TaskRepository](_.updateRun(run))
 
-  def getRun(id: Long): ZIO[MigrationRepository, PersistenceError, Option[MigrationRunRow]] =
-    ZIO.serviceWithZIO[MigrationRepository](_.getRun(id))
+  def getRun(id: Long): ZIO[TaskRepository, PersistenceError, Option[TaskRunRow]] =
+    ZIO.serviceWithZIO[TaskRepository](_.getRun(id))
 
-  def listRuns(offset: Int, limit: Int): ZIO[MigrationRepository, PersistenceError, List[MigrationRunRow]] =
-    ZIO.serviceWithZIO[MigrationRepository](_.listRuns(offset, limit))
+  def listRuns(offset: Int, limit: Int): ZIO[TaskRepository, PersistenceError, List[TaskRunRow]] =
+    ZIO.serviceWithZIO[TaskRepository](_.listRuns(offset, limit))
 
-  def deleteRun(id: Long): ZIO[MigrationRepository, PersistenceError, Unit] =
-    ZIO.serviceWithZIO[MigrationRepository](_.deleteRun(id))
+  def deleteRun(id: Long): ZIO[TaskRepository, PersistenceError, Unit] =
+    ZIO.serviceWithZIO[TaskRepository](_.deleteRun(id))
 
-  def saveFiles(files: List[CobolFileRow]): ZIO[MigrationRepository, PersistenceError, Unit] =
-    ZIO.serviceWithZIO[MigrationRepository](_.saveFiles(files))
+  def saveFiles(files: List[CobolFileRow]): ZIO[TaskRepository, PersistenceError, Unit] =
+    ZIO.serviceWithZIO[TaskRepository](_.saveFiles(files))
 
-  def getFilesByRun(runId: Long): ZIO[MigrationRepository, PersistenceError, List[CobolFileRow]] =
-    ZIO.serviceWithZIO[MigrationRepository](_.getFilesByRun(runId))
+  def getFilesByRun(runId: Long): ZIO[TaskRepository, PersistenceError, List[CobolFileRow]] =
+    ZIO.serviceWithZIO[TaskRepository](_.getFilesByRun(runId))
 
-  def saveAnalysis(analysis: CobolAnalysisRow): ZIO[MigrationRepository, PersistenceError, Long] =
-    ZIO.serviceWithZIO[MigrationRepository](_.saveAnalysis(analysis))
+  def saveAnalysis(analysis: CobolAnalysisRow): ZIO[TaskRepository, PersistenceError, Long] =
+    ZIO.serviceWithZIO[TaskRepository](_.saveAnalysis(analysis))
 
-  def getAnalysesByRun(runId: Long): ZIO[MigrationRepository, PersistenceError, List[CobolAnalysisRow]] =
-    ZIO.serviceWithZIO[MigrationRepository](_.getAnalysesByRun(runId))
+  def getAnalysesByRun(runId: Long): ZIO[TaskRepository, PersistenceError, List[CobolAnalysisRow]] =
+    ZIO.serviceWithZIO[TaskRepository](_.getAnalysesByRun(runId))
 
-  def saveDependencies(deps: List[DependencyRow]): ZIO[MigrationRepository, PersistenceError, Unit] =
-    ZIO.serviceWithZIO[MigrationRepository](_.saveDependencies(deps))
+  def saveDependencies(deps: List[DependencyRow]): ZIO[TaskRepository, PersistenceError, Unit] =
+    ZIO.serviceWithZIO[TaskRepository](_.saveDependencies(deps))
 
-  def getDependenciesByRun(runId: Long): ZIO[MigrationRepository, PersistenceError, List[DependencyRow]] =
-    ZIO.serviceWithZIO[MigrationRepository](_.getDependenciesByRun(runId))
+  def getDependenciesByRun(runId: Long): ZIO[TaskRepository, PersistenceError, List[DependencyRow]] =
+    ZIO.serviceWithZIO[TaskRepository](_.getDependenciesByRun(runId))
 
-  def saveProgress(progress: PhaseProgressRow): ZIO[MigrationRepository, PersistenceError, Long] =
-    ZIO.serviceWithZIO[MigrationRepository](_.saveProgress(progress))
+  def saveProgress(progress: PhaseProgressRow): ZIO[TaskRepository, PersistenceError, Long] =
+    ZIO.serviceWithZIO[TaskRepository](_.saveProgress(progress))
 
-  def getProgress(runId: Long, phase: String): ZIO[MigrationRepository, PersistenceError, Option[PhaseProgressRow]] =
-    ZIO.serviceWithZIO[MigrationRepository](_.getProgress(runId, phase))
+  def getProgress(runId: Long, phase: String): ZIO[TaskRepository, PersistenceError, Option[PhaseProgressRow]] =
+    ZIO.serviceWithZIO[TaskRepository](_.getProgress(runId, phase))
 
-  def updateProgress(progress: PhaseProgressRow): ZIO[MigrationRepository, PersistenceError, Unit] =
-    ZIO.serviceWithZIO[MigrationRepository](_.updateProgress(progress))
+  def updateProgress(progress: PhaseProgressRow): ZIO[TaskRepository, PersistenceError, Unit] =
+    ZIO.serviceWithZIO[TaskRepository](_.updateProgress(progress))
 
-  def getAllSettings: ZIO[MigrationRepository, PersistenceError, List[SettingRow]] =
-    ZIO.serviceWithZIO[MigrationRepository](_.getAllSettings)
+  def getAllSettings: ZIO[TaskRepository, PersistenceError, List[SettingRow]] =
+    ZIO.serviceWithZIO[TaskRepository](_.getAllSettings)
 
-  def getSetting(key: String): ZIO[MigrationRepository, PersistenceError, Option[SettingRow]] =
-    ZIO.serviceWithZIO[MigrationRepository](_.getSetting(key))
+  def getSetting(key: String): ZIO[TaskRepository, PersistenceError, Option[SettingRow]] =
+    ZIO.serviceWithZIO[TaskRepository](_.getSetting(key))
 
-  def upsertSetting(key: String, value: String): ZIO[MigrationRepository, PersistenceError, Unit] =
-    ZIO.serviceWithZIO[MigrationRepository](_.upsertSetting(key, value))
+  def upsertSetting(key: String, value: String): ZIO[TaskRepository, PersistenceError, Unit] =
+    ZIO.serviceWithZIO[TaskRepository](_.upsertSetting(key, value))
 
-  def getSettingsByPrefix(prefix: String): ZIO[MigrationRepository, PersistenceError, List[SettingRow]] =
-    ZIO.serviceWithZIO[MigrationRepository](_.getSettingsByPrefix(prefix))
+  def getSettingsByPrefix(prefix: String): ZIO[TaskRepository, PersistenceError, List[SettingRow]] =
+    ZIO.serviceWithZIO[TaskRepository](_.getSettingsByPrefix(prefix))
 
-  def deleteSettingsByPrefix(prefix: String): ZIO[MigrationRepository, PersistenceError, Unit] =
-    ZIO.serviceWithZIO[MigrationRepository](_.deleteSettingsByPrefix(prefix))
+  def deleteSettingsByPrefix(prefix: String): ZIO[TaskRepository, PersistenceError, Unit] =
+    ZIO.serviceWithZIO[TaskRepository](_.deleteSettingsByPrefix(prefix))
 
-  def createWorkflow(workflow: WorkflowRow): ZIO[MigrationRepository, PersistenceError, Long] =
-    ZIO.serviceWithZIO[MigrationRepository](_.createWorkflow(workflow))
+  def createWorkflow(workflow: WorkflowRow): ZIO[TaskRepository, PersistenceError, Long] =
+    ZIO.serviceWithZIO[TaskRepository](_.createWorkflow(workflow))
 
-  def getWorkflow(id: Long): ZIO[MigrationRepository, PersistenceError, Option[WorkflowRow]] =
-    ZIO.serviceWithZIO[MigrationRepository](_.getWorkflow(id))
+  def getWorkflow(id: Long): ZIO[TaskRepository, PersistenceError, Option[WorkflowRow]] =
+    ZIO.serviceWithZIO[TaskRepository](_.getWorkflow(id))
 
-  def getWorkflowByName(name: String): ZIO[MigrationRepository, PersistenceError, Option[WorkflowRow]] =
-    ZIO.serviceWithZIO[MigrationRepository](_.getWorkflowByName(name))
+  def getWorkflowByName(name: String): ZIO[TaskRepository, PersistenceError, Option[WorkflowRow]] =
+    ZIO.serviceWithZIO[TaskRepository](_.getWorkflowByName(name))
 
-  def listWorkflows: ZIO[MigrationRepository, PersistenceError, List[WorkflowRow]] =
-    ZIO.serviceWithZIO[MigrationRepository](_.listWorkflows)
+  def listWorkflows: ZIO[TaskRepository, PersistenceError, List[WorkflowRow]] =
+    ZIO.serviceWithZIO[TaskRepository](_.listWorkflows)
 
-  def updateWorkflow(workflow: WorkflowRow): ZIO[MigrationRepository, PersistenceError, Unit] =
-    ZIO.serviceWithZIO[MigrationRepository](_.updateWorkflow(workflow))
+  def updateWorkflow(workflow: WorkflowRow): ZIO[TaskRepository, PersistenceError, Unit] =
+    ZIO.serviceWithZIO[TaskRepository](_.updateWorkflow(workflow))
 
-  def deleteWorkflow(id: Long): ZIO[MigrationRepository, PersistenceError, Unit] =
-    ZIO.serviceWithZIO[MigrationRepository](_.deleteWorkflow(id))
+  def deleteWorkflow(id: Long): ZIO[TaskRepository, PersistenceError, Unit] =
+    ZIO.serviceWithZIO[TaskRepository](_.deleteWorkflow(id))
 
-  def createCustomAgent(agent: CustomAgentRow): ZIO[MigrationRepository, PersistenceError, Long] =
-    ZIO.serviceWithZIO[MigrationRepository](_.createCustomAgent(agent))
+  def createCustomAgent(agent: CustomAgentRow): ZIO[TaskRepository, PersistenceError, Long] =
+    ZIO.serviceWithZIO[TaskRepository](_.createCustomAgent(agent))
 
-  def getCustomAgent(id: Long): ZIO[MigrationRepository, PersistenceError, Option[CustomAgentRow]] =
-    ZIO.serviceWithZIO[MigrationRepository](_.getCustomAgent(id))
+  def getCustomAgent(id: Long): ZIO[TaskRepository, PersistenceError, Option[CustomAgentRow]] =
+    ZIO.serviceWithZIO[TaskRepository](_.getCustomAgent(id))
 
-  def getCustomAgentByName(name: String): ZIO[MigrationRepository, PersistenceError, Option[CustomAgentRow]] =
-    ZIO.serviceWithZIO[MigrationRepository](_.getCustomAgentByName(name))
+  def getCustomAgentByName(name: String): ZIO[TaskRepository, PersistenceError, Option[CustomAgentRow]] =
+    ZIO.serviceWithZIO[TaskRepository](_.getCustomAgentByName(name))
 
-  def listCustomAgents: ZIO[MigrationRepository, PersistenceError, List[CustomAgentRow]] =
-    ZIO.serviceWithZIO[MigrationRepository](_.listCustomAgents)
+  def listCustomAgents: ZIO[TaskRepository, PersistenceError, List[CustomAgentRow]] =
+    ZIO.serviceWithZIO[TaskRepository](_.listCustomAgents)
 
-  def updateCustomAgent(agent: CustomAgentRow): ZIO[MigrationRepository, PersistenceError, Unit] =
-    ZIO.serviceWithZIO[MigrationRepository](_.updateCustomAgent(agent))
+  def updateCustomAgent(agent: CustomAgentRow): ZIO[TaskRepository, PersistenceError, Unit] =
+    ZIO.serviceWithZIO[TaskRepository](_.updateCustomAgent(agent))
 
-  def deleteCustomAgent(id: Long): ZIO[MigrationRepository, PersistenceError, Unit] =
-    ZIO.serviceWithZIO[MigrationRepository](_.deleteCustomAgent(id))
+  def deleteCustomAgent(id: Long): ZIO[TaskRepository, PersistenceError, Unit] =
+    ZIO.serviceWithZIO[TaskRepository](_.deleteCustomAgent(id))
 
-  val live: ZLayer[DataSource, Nothing, MigrationRepository] =
+  val live: ZLayer[DataSource, Nothing, TaskRepository] =
     ZLayer.fromZIO {
       for
         dataSource  <- ZIO.service[DataSource]
         initialized <- Ref.Synchronized.make(false)
-      yield MigrationRepositoryLive(dataSource, initialized)
+      yield TaskRepositoryLive(dataSource, initialized)
     }
 
-final case class MigrationRepositoryLive(
+final case class TaskRepositoryLive(
   dataSource: DataSource,
   initialized: Ref.Synchronized[Boolean],
-) extends MigrationRepository:
+) extends TaskRepository:
   private val builtInAgentNamesLower: Set[String] = Set(
     "coboldiscovery",
     "cobolanalyzer",
@@ -184,9 +184,9 @@ final case class MigrationRepositoryLive(
     "documentationagent",
   )
 
-  override def createRun(run: MigrationRunRow): IO[PersistenceError, Long] =
+  override def createRun(run: TaskRunRow): IO[PersistenceError, Long] =
     val sql =
-      """INSERT INTO migration_runs (
+      """INSERT INTO task_runs (
         |  source_dir, output_dir, status, started_at, completed_at,
         |  total_files, processed_files, successful_conversions, failed_conversions,
         |  current_phase, error_message, workflow_id
@@ -194,7 +194,7 @@ final case class MigrationRepositoryLive(
         |""".stripMargin
 
     withConnection { conn =>
-      executeUpdateReturningKey(conn, sql, "migration_runs") { stmt =>
+      executeUpdateReturningKey(conn, sql, "task_runs") { stmt =>
         stmt.setString(1, run.sourceDir)
         stmt.setString(2, run.outputDir)
         stmt.setString(3, run.status.toString)
@@ -210,9 +210,9 @@ final case class MigrationRepositoryLive(
       }
     }
 
-  override def updateRun(run: MigrationRunRow): IO[PersistenceError, Unit] =
+  override def updateRun(run: TaskRunRow): IO[PersistenceError, Unit] =
     val sql =
-      """UPDATE migration_runs
+      """UPDATE task_runs
         |SET source_dir = ?,
         |    output_dir = ?,
         |    status = ?,
@@ -229,7 +229,7 @@ final case class MigrationRepositoryLive(
         |""".stripMargin
 
     withConnection { conn =>
-      executeUpdateExpectingRows(conn, sql, PersistenceError.NotFound("migration_runs", run.id)) { stmt =>
+      executeUpdateExpectingRows(conn, sql, PersistenceError.NotFound("task_runs", run.id)) { stmt =>
         stmt.setString(1, run.sourceDir)
         stmt.setString(2, run.outputDir)
         stmt.setString(3, run.status.toString)
@@ -246,12 +246,12 @@ final case class MigrationRepositoryLive(
       }
     }
 
-  override def getRun(id: Long): IO[PersistenceError, Option[MigrationRunRow]] =
+  override def getRun(id: Long): IO[PersistenceError, Option[TaskRunRow]] =
     val sql =
       """SELECT id, source_dir, output_dir, status, started_at, completed_at,
         |       total_files, processed_files, successful_conversions, failed_conversions,
         |       current_phase, error_message, workflow_id
-        |FROM migration_runs
+        |FROM task_runs
         |WHERE id = ?
         |""".stripMargin
 
@@ -259,12 +259,12 @@ final case class MigrationRepositoryLive(
       queryOne(conn, sql)(_.setLong(1, id))(readRunRow(_, sql))
     }
 
-  override def listRuns(offset: Int, limit: Int): IO[PersistenceError, List[MigrationRunRow]] =
+  override def listRuns(offset: Int, limit: Int): IO[PersistenceError, List[TaskRunRow]] =
     val sql =
       """SELECT id, source_dir, output_dir, status, started_at, completed_at,
         |       total_files, processed_files, successful_conversions, failed_conversions,
         |       current_phase, error_message, workflow_id
-        |FROM migration_runs
+        |FROM task_runs
         |ORDER BY started_at DESC
         |LIMIT ? OFFSET ?
         |""".stripMargin
@@ -277,10 +277,10 @@ final case class MigrationRepositoryLive(
     }
 
   override def deleteRun(id: Long): IO[PersistenceError, Unit] =
-    val sql = "DELETE FROM migration_runs WHERE id = ?"
+    val sql = "DELETE FROM task_runs WHERE id = ?"
 
     withConnection { conn =>
-      executeUpdateExpectingRows(conn, sql, PersistenceError.NotFound("migration_runs", id)) { stmt =>
+      executeUpdateExpectingRows(conn, sql, PersistenceError.NotFound("task_runs", id)) { stmt =>
         stmt.setLong(1, id)
       }
     }
@@ -757,6 +757,8 @@ final case class MigrationRepositoryLive(
             "db/V2__chat_and_issues.sql",
             "db/V3__custom_agents.sql",
             "db/V4__workflows.sql",
+            "db/V5__activity_events.sql",
+            "db/V6__rename_migration_runs_to_task_runs.sql",
           )
         )
       _          <- ZIO.acquireReleaseWith(acquireConnection)(closeConnection) { conn =>
@@ -770,9 +772,14 @@ final case class MigrationRepositoryLive(
     val normalizedSql = sql.toLowerCase.replaceAll("\\s+", " ").trim
     executeBlocking(sql)(stmt.execute(sql)).unit.catchAll {
       case err @ PersistenceError.QueryFailed(_, cause)
-           if normalizedSql.startsWith("alter table migration_runs add column workflow_id") &&
+           if normalizedSql.startsWith("alter table task_runs add column workflow_id") &&
            cause.toLowerCase.contains("duplicate column name") =>
         // Existing databases may already include workflow_id.
+        ZIO.unit
+      case err @ PersistenceError.QueryFailed(_, cause)
+           if normalizedSql == "alter table migration_runs rename to task_runs" &&
+           (cause.toLowerCase.contains("no such table") || cause.toLowerCase.contains("already exists")) =>
+        // Fresh DBs define task_runs in V1; existing DBs may already be migrated.
         ZIO.unit
       case err => ZIO.fail(err)
     }
@@ -840,7 +847,7 @@ final case class MigrationRepositoryLive(
         |  result_data TEXT,
         |  created_at TEXT NOT NULL,
         |  updated_at TEXT NOT NULL,
-        |  FOREIGN KEY (run_id) REFERENCES migration_runs(id) ON DELETE CASCADE,
+        |  FOREIGN KEY (run_id) REFERENCES task_runs(id) ON DELETE CASCADE,
         |  FOREIGN KEY (conversation_id) REFERENCES chat_conversations(id) ON DELETE SET NULL
         |)""".stripMargin,
       """INSERT INTO agent_issues_new (
@@ -1039,10 +1046,10 @@ final case class MigrationRepositoryLive(
       .fromOption(FileType.values.find(_.toString == raw))
       .orElseFail(PersistenceError.QueryFailed(sql, s"Invalid FileType: $raw"))
 
-  private def readRunRow(rs: ResultSet, sql: String): IO[PersistenceError, MigrationRunRow] =
+  private def readRunRow(rs: ResultSet, sql: String): IO[PersistenceError, TaskRunRow] =
     for
       status <- parseRunStatus(rs.getString("status"), sql)
-    yield MigrationRunRow(
+    yield TaskRunRow(
       id = rs.getLong("id"),
       workflowId = optionalLong(rs, "workflow_id"),
       sourceDir = rs.getString("source_dir"),

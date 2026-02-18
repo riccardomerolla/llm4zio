@@ -10,7 +10,7 @@ import zio.json.*
 
 import models.Codecs.given
 
-/** Metadata for workspace associated with a migration run */
+/** Metadata for workspace associated with a task run */
 case class WorkspaceMetadata(
   runId: String,
   workspaceRoot: Path,
@@ -21,11 +21,23 @@ case class WorkspaceMetadata(
   createdAt: Instant,
 ) derives JsonCodec
 
-enum MigrationStep derives JsonCodec:
-  case Discovery, Analysis, Mapping, Transformation, Validation, Documentation
+type TaskStep = String
 
-case class MigrationError(
-  step: MigrationStep,
+object TaskStep:
+  val Discovery: TaskStep      = "Discovery"
+  val Analysis: TaskStep       = "Analysis"
+  val Mapping: TaskStep        = "Mapping"
+  val Transformation: TaskStep = "Transformation"
+  val Validation: TaskStep     = "Validation"
+  val Documentation: TaskStep  = "Documentation"
+
+  // Default built-in steps used by legacy workflow definitions.
+  val values: List[TaskStep] = List(Discovery, Analysis, Mapping, Transformation, Validation, Documentation)
+
+  given JsonCodec[TaskStep] = JsonCodec.string.asInstanceOf[JsonCodec[TaskStep]]
+
+case class TaskError(
+  step: TaskStep,
   message: String,
   timestamp: Instant,
 ) derives JsonCodec
@@ -94,7 +106,7 @@ case class MigrationConfig(
   enableBusinessLogicExtractor: Boolean = false,
   resumeFromCheckpoint: Option[String] = None,
   retryFromRunId: Option[Long] = None,
-  retryFromStep: Option[MigrationStep] = None,
+  retryFromStep: Option[TaskStep] = None,
   workflowId: Option[Long] = None,
   dryRun: Boolean = false,
   verbose: Boolean = false,
@@ -121,13 +133,13 @@ case class MigrationConfig(
         )
       )
 
-case class MigrationState(
+case class TaskState(
   runId: String,
   startedAt: Instant,
-  currentStep: MigrationStep,
-  completedSteps: Set[MigrationStep],
+  currentStep: TaskStep,
+  completedSteps: Set[TaskStep],
   artifacts: Map[String, String],
-  errors: List[MigrationError],
+  errors: List[TaskError],
   config: MigrationConfig,
   workspace: Option[WorkspaceMetadata] = None, // Workspace info for this run
   lastCheckpoint: Instant,
@@ -135,7 +147,7 @@ case class MigrationState(
 
 case class Checkpoint(
   runId: String,
-  step: MigrationStep,
+  step: TaskStep,
   createdAt: Instant,
   artifactPaths: Map[String, Path],
   checksum: String,
@@ -143,16 +155,16 @@ case class Checkpoint(
 
 case class CheckpointSnapshot(
   checkpoint: Checkpoint,
-  state: MigrationState,
+  state: TaskState,
 ) derives JsonCodec
 
-object MigrationState:
-  def empty: UIO[MigrationState] =
+object TaskState:
+  def empty: UIO[TaskState] =
     Clock.instant.map { now =>
-      MigrationState(
+      TaskState(
         runId = s"run-${now.toEpochMilli}",
         startedAt = now,
-        currentStep = MigrationStep.Discovery,
+        currentStep = TaskStep.Discovery,
         completedSteps = Set.empty,
         artifacts = Map.empty,
         errors = List.empty,
@@ -164,10 +176,10 @@ object MigrationState:
       )
     }
 
-case class MigrationRunSummary(
+case class TaskRunSummary(
   runId: String,
   startedAt: Instant,
-  currentStep: MigrationStep,
-  completedSteps: Set[MigrationStep],
+  currentStep: TaskStep,
+  completedSteps: Set[TaskStep],
   errorCount: Int,
 ) derives JsonCodec

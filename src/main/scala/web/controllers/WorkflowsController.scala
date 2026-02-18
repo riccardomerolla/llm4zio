@@ -8,8 +8,8 @@ import zio.http.*
 import zio.json.*
 
 import agents.AgentRegistry
-import db.{ MigrationRepository, PersistenceError }
-import models.{ AgentInfo, MigrationStep, WorkflowDefinition, WorkflowStepAgent, WorkflowValidator }
+import db.{ PersistenceError, TaskRepository }
+import models.{ AgentInfo, TaskStep, WorkflowDefinition, WorkflowStepAgent, WorkflowValidator }
 import orchestration.{ WorkflowService, WorkflowServiceError }
 import web.views.HtmlViews
 
@@ -21,12 +21,12 @@ object WorkflowsController:
   def routes: ZIO[WorkflowsController, Nothing, Routes[Any, Response]] =
     ZIO.serviceWith[WorkflowsController](_.routes)
 
-  val live: ZLayer[WorkflowService & MigrationRepository, Nothing, WorkflowsController] =
+  val live: ZLayer[WorkflowService & TaskRepository, Nothing, WorkflowsController] =
     ZLayer.fromFunction(WorkflowsControllerLive.apply)
 
 final case class WorkflowsControllerLive(
   service: WorkflowService,
-  repository: MigrationRepository,
+  repository: TaskRepository,
 ) extends WorkflowsController:
 
   override val routes: Routes[Any, Response] = Routes(
@@ -164,11 +164,11 @@ final case class WorkflowsControllerLive(
     val all        = if hasDefault then workflows else WorkflowDefinition.default :: workflows
     all.sortBy(w => (!w.isBuiltin, w.name.toLowerCase))
 
-  private def parseOrderedSteps(form: Map[String, String]): IO[WorkflowServiceError, List[MigrationStep]] =
+  private def parseOrderedSteps(form: Map[String, String]): IO[WorkflowServiceError, List[TaskStep]] =
     val raw = form.getOrElse("orderedSteps", "")
     if raw.trim.isEmpty then
       ZIO.succeed(
-        MigrationStep.values.toList.filter(step =>
+        TaskStep.values.toList.filter(step =>
           form.get(s"step.${step.toString}").exists(_.trim.nonEmpty)
         )
       )
@@ -179,22 +179,22 @@ final case class WorkflowsControllerLive(
 
   private def parseStepAgents(
     form: Map[String, String],
-    selectedSteps: List[MigrationStep],
+    selectedSteps: List[TaskStep],
   ): IO[WorkflowServiceError, List[WorkflowStepAgent]] =
     for
       fromJson   <- parseStepAgentsJson(form.get("stepAgentsJson").map(_.trim).filter(_.nonEmpty))
-      fromFields  = MigrationStep.values.toList.flatMap { step =>
+      fromFields  = TaskStep.values.toList.flatMap { step =>
                       form.get(s"agent.${step.toString}").map(_.trim).filter(_.nonEmpty).map(step -> _)
                     }.toMap
       merged      = fromJson ++ fromFields
       selectedSet = selectedSteps.toSet
-    yield MigrationStep.values.toList.flatMap { step =>
+    yield TaskStep.values.toList.flatMap { step =>
       if selectedSet.contains(step) then merged.get(step).map(agent => WorkflowStepAgent(step, agent)) else None
     }
 
   private def parseStepAgentsJson(
     raw: Option[String]
-  ): IO[WorkflowServiceError, Map[MigrationStep, String]] =
+  ): IO[WorkflowServiceError, Map[TaskStep, String]] =
     raw match
       case None      => ZIO.succeed(Map.empty)
       case Some(txt) =>
@@ -203,7 +203,7 @@ final case class WorkflowsControllerLive(
             WorkflowServiceError.ValidationFailed(List(s"Invalid step agents payload: $error"))
           ))
           .flatMap { values =>
-            ZIO.foldLeft(values.toList)(Map.empty[MigrationStep, String]) {
+            ZIO.foldLeft(values.toList)(Map.empty[TaskStep, String]) {
               case (acc, (stepRaw, agentRaw)) =>
                 parseStep(stepRaw).map { step =>
                   val trimmed = agentRaw.trim
@@ -212,8 +212,8 @@ final case class WorkflowsControllerLive(
             }
           }
 
-  private def parseStep(raw: String): IO[WorkflowServiceError, MigrationStep] =
-    MigrationStep.values.find(_.toString == raw) match
+  private def parseStep(raw: String): IO[WorkflowServiceError, TaskStep] =
+    TaskStep.values.find(_.toString == raw) match
       case Some(value) => ZIO.succeed(value)
       case None        => ZIO.fail(WorkflowServiceError.ValidationFailed(List(s"Unknown migration step: $raw")))
 

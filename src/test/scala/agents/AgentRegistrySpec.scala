@@ -90,8 +90,8 @@ object AgentRegistrySpec extends ZIOSpecDefault:
     },
     test("findAgentsForStep should filter by supported step") {
       for
-        discoveryAgents <- AgentRegistry.findAgentsForStep(MigrationStep.Discovery)
-        analysisAgents  <- AgentRegistry.findAgentsForStep(MigrationStep.Analysis)
+        discoveryAgents <- AgentRegistry.findAgentsForStep(TaskStep.Discovery)
+        analysisAgents  <- AgentRegistry.findAgentsForStep(TaskStep.Analysis)
       yield assertTrue(
         discoveryAgents.exists(_.name == "cobolDiscovery"),
         analysisAgents.exists(_.name == "cobolAnalyzer"),
@@ -122,7 +122,7 @@ object AgentRegistrySpec extends ZIOSpecDefault:
             outputTypes = List("String"),
           )
         ),
-        supportedSteps = List(MigrationStep.Analysis),
+        supportedSteps = List(TaskStep.Analysis),
       )
 
       for
@@ -170,18 +170,18 @@ object AgentRegistrySpec extends ZIOSpecDefault:
       )
     },
     test("getRankedAgents should sort by health and performance") {
-      val query = AgentQuery(supportedStep = Some(MigrationStep.Analysis))
+      val query = AgentQuery(supportedStep = Some(TaskStep.Analysis))
       for
         ranked <- AgentRegistry.getRankedAgents(query)
       yield assertTrue(
         ranked.nonEmpty,
-        ranked.forall(a => a.supportedSteps.contains(MigrationStep.Analysis)),
+        ranked.forall(a => a.supportedSteps.contains(TaskStep.Analysis)),
       )
     },
     test("findAgents with query should filter correctly") {
       val query = AgentQuery(
         skill = Some("cobol-parsing"),
-        supportedStep = Some(MigrationStep.Analysis),
+        supportedStep = Some(TaskStep.Analysis),
         onlyEnabled = true,
       )
       for
@@ -189,7 +189,7 @@ object AgentRegistrySpec extends ZIOSpecDefault:
       yield assertTrue(
         agents.nonEmpty,
         agents.forall(a => a.skills.exists(_.skill == "cobol-parsing")),
-        agents.forall(a => a.supportedSteps.contains(MigrationStep.Analysis)),
+        agents.forall(a => a.supportedSteps.contains(TaskStep.Analysis)),
       )
     },
   ).provide(testLayer)

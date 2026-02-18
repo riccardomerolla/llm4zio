@@ -100,7 +100,7 @@ case class AgentInfo(
   usesAI: Boolean,
   tags: List[String],
   skills: List[AgentSkill] = Nil,
-  supportedSteps: List[MigrationStep] = Nil,
+  supportedSteps: List[TaskStep] = Nil,
   version: String = "1.0.0",
   metrics: AgentMetrics = AgentMetrics(),
   health: AgentHealth = AgentHealth(),
@@ -116,7 +116,7 @@ case class RegisterAgentRequest(
   usesAI: Boolean,
   tags: List[String],
   skills: List[AgentSkill],
-  supportedSteps: List[MigrationStep],
+  supportedSteps: List[TaskStep],
   version: String = "1.0.0",
 ) derives JsonCodec
 
@@ -126,7 +126,7 @@ case class AgentQuery(
   skill: Option[String] = None,
   inputType: Option[String] = None,
   outputType: Option[String] = None,
-  supportedStep: Option[MigrationStep] = None,
+  supportedStep: Option[TaskStep] = None,
   minSuccessRate: Option[Double] = None,
   onlyEnabled: Boolean = true,
 ) derives JsonCodec

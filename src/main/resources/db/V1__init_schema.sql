@@ -1,6 +1,6 @@
 PRAGMA foreign_keys = ON;
 
-CREATE TABLE IF NOT EXISTS migration_runs (
+CREATE TABLE IF NOT EXISTS task_runs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   source_dir TEXT NOT NULL,
   output_dir TEXT NOT NULL,
@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS cobol_files (
   line_count INTEGER NOT NULL,
   encoding TEXT NOT NULL,
   created_at TEXT NOT NULL,
-  FOREIGN KEY (run_id) REFERENCES migration_runs(id) ON DELETE CASCADE
+  FOREIGN KEY (run_id) REFERENCES task_runs(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS cobol_analyses (
@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS cobol_analyses (
   file_id INTEGER NOT NULL,
   analysis_json TEXT NOT NULL,
   created_at TEXT NOT NULL,
-  FOREIGN KEY (run_id) REFERENCES migration_runs(id) ON DELETE CASCADE,
+  FOREIGN KEY (run_id) REFERENCES task_runs(id) ON DELETE CASCADE,
   FOREIGN KEY (file_id) REFERENCES cobol_files(id) ON DELETE CASCADE
 );
 
@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS dependencies (
   source_node TEXT NOT NULL,
   target_node TEXT NOT NULL,
   edge_type TEXT NOT NULL,
-  FOREIGN KEY (run_id) REFERENCES migration_runs(id) ON DELETE CASCADE
+  FOREIGN KEY (run_id) REFERENCES task_runs(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS phase_progress (
@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS phase_progress (
   item_processed INTEGER NOT NULL DEFAULT 0,
   error_count INTEGER NOT NULL DEFAULT 0,
   updated_at TEXT NOT NULL,
-  FOREIGN KEY (run_id) REFERENCES migration_runs(id) ON DELETE CASCADE,
+  FOREIGN KEY (run_id) REFERENCES task_runs(id) ON DELETE CASCADE,
   UNIQUE (run_id, phase)
 );
 

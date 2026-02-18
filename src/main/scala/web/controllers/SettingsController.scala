@@ -19,11 +19,11 @@ object SettingsController:
   def routes: ZIO[SettingsController, Nothing, Routes[Any, Response]] =
     ZIO.serviceWith[SettingsController](_.routes)
 
-  val live: ZLayer[MigrationRepository & ActivityHub, Nothing, SettingsController] =
+  val live: ZLayer[TaskRepository & ActivityHub, Nothing, SettingsController] =
     ZLayer.fromFunction(SettingsControllerLive.apply)
 
 final case class SettingsControllerLive(
-  repository: MigrationRepository,
+  repository: TaskRepository,
   activityHub: ActivityHub,
 ) extends SettingsController:
 

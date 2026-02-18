@@ -20,7 +20,7 @@ object StateServiceIntegrationSpec extends ZIOSpecDefault:
       ZIO.scoped {
         for
           stateDir <- ZIO.attemptBlocking(Files.createTempDirectory("it-state-history"))
-          state     = baseState("run-history", MigrationStep.Analysis)
+          state     = baseState("run-history", TaskStep.Analysis)
           runs     <- (for
                         _    <- StateService.saveState(state)
                         runs <- StateService.listRuns()
@@ -29,7 +29,7 @@ object StateServiceIntegrationSpec extends ZIOSpecDefault:
                         StateService.live(stateDir),
                       )
         yield assertTrue(
-          runs.exists(r => r.runId == "run-history" && r.currentStep == MigrationStep.Analysis)
+          runs.exists(r => r.runId == "run-history" && r.currentStep == TaskStep.Analysis)
         )
       }
     },
@@ -37,10 +37,10 @@ object StateServiceIntegrationSpec extends ZIOSpecDefault:
       ZIO.scoped {
         for
           stateDir    <- ZIO.attemptBlocking(Files.createTempDirectory("it-state-checkpoint"))
-          state        = baseState("run-checkpoint", MigrationStep.Discovery)
+          state        = baseState("run-checkpoint", TaskStep.Discovery)
           checkpoints <- (for
                            _           <- StateService.saveState(state)
-                           _           <- StateService.createCheckpoint("run-checkpoint", MigrationStep.Discovery)
+                           _           <- StateService.createCheckpoint("run-checkpoint", TaskStep.Discovery)
                            _           <- StateService.validateCheckpointIntegrity("run-checkpoint")
                            checkpoints <- StateService.listCheckpoints("run-checkpoint")
                          yield checkpoints).provide(
@@ -49,7 +49,7 @@ object StateServiceIntegrationSpec extends ZIOSpecDefault:
                          )
           steps        = checkpoints.map(_.step).toSet
         yield assertTrue(
-          steps.contains(MigrationStep.Discovery)
+          steps.contains(TaskStep.Discovery)
         )
       }
     },
@@ -58,10 +58,10 @@ object StateServiceIntegrationSpec extends ZIOSpecDefault:
         for
           stateDir <- ZIO.attemptBlocking(Files.createTempDirectory("it-state-corrupt"))
           runId     = "run-corrupt"
-          state     = baseState(runId, MigrationStep.Discovery)
+          state     = baseState(runId, TaskStep.Discovery)
           result   <- (for
                         _   <- StateService.saveState(state)
-                        _   <- StateService.createCheckpoint(runId, MigrationStep.Discovery)
+                        _   <- StateService.createCheckpoint(runId, TaskStep.Discovery)
                         _   <- FileService.writeFile(
                                  stateDir
                                    .resolve("runs")
@@ -84,8 +84,8 @@ object StateServiceIntegrationSpec extends ZIOSpecDefault:
     },
   ) @@ TestAspect.sequential @@ TestAspect.withLiveClock
 
-  private def baseState(runId: String, step: MigrationStep): MigrationState =
-    MigrationState(
+  private def baseState(runId: String, step: TaskStep): TaskState =
+    TaskState(
       runId = runId,
       startedAt = Instant.EPOCH,
       currentStep = step,

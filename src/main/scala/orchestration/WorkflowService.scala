@@ -14,7 +14,7 @@ enum WorkflowServiceError derives JsonCodec:
   case StepsDecodingFailed(workflowName: String, reason: String)
 
 private case class WorkflowStoragePayload(
-  steps: List[MigrationStep],
+  steps: List[TaskStep],
   stepAgents: Map[String, String] = Map.empty,
   dynamicGraph: Option[WorkflowGraph] = None,
 ) derives JsonCodec
@@ -46,11 +46,11 @@ object WorkflowService:
   def deleteWorkflow(id: Long): ZIO[WorkflowService, WorkflowServiceError, Unit] =
     ZIO.serviceWithZIO[WorkflowService](_.deleteWorkflow(id))
 
-  val live: ZLayer[MigrationRepository, Nothing, WorkflowService] =
+  val live: ZLayer[TaskRepository, Nothing, WorkflowService] =
     ZLayer.fromFunction(WorkflowServiceLive.apply)
 
 final case class WorkflowServiceLive(
-  repository: MigrationRepository
+  repository: TaskRepository
 ) extends WorkflowService:
   override def createWorkflow(workflow: WorkflowDefinition): IO[WorkflowServiceError, Long] =
     for
@@ -157,7 +157,7 @@ final case class WorkflowServiceLive(
   private def decodeStorage(
     workflowName: String,
     raw: String,
-  ): IO[WorkflowServiceError, (List[MigrationStep], Map[MigrationStep, String], Option[WorkflowGraph])] =
+  ): IO[WorkflowServiceError, (List[TaskStep], Map[TaskStep, String], Option[WorkflowGraph])] =
     raw.fromJson[WorkflowStoragePayload] match
       case Right(payload) =>
         for
@@ -167,19 +167,19 @@ final case class WorkflowServiceLive(
         // Backward compatibility with rows stored as raw JSON array of steps.
         ZIO
           .fromEither(
-            raw.fromJson[List[MigrationStep]].left.map(error =>
+            raw.fromJson[List[TaskStep]].left.map(error =>
               WorkflowServiceError.StepsDecodingFailed(workflowName, error)
             )
           )
-          .map(steps => (steps, Map.empty[MigrationStep, String], Option.empty[WorkflowGraph]))
+          .map(steps => (steps, Map.empty[TaskStep, String], Option.empty[WorkflowGraph]))
 
   private def decodeStepAgentMap(
     workflowName: String,
     raw: Map[String, String],
-  ): IO[WorkflowServiceError, Map[MigrationStep, String]] =
-    ZIO.foldLeft(raw.toList)(Map.empty[MigrationStep, String]) {
+  ): IO[WorkflowServiceError, Map[TaskStep, String]] =
+    ZIO.foldLeft(raw.toList)(Map.empty[TaskStep, String]) {
       case (acc, (stepRaw, agentRaw)) =>
-        MigrationStep.values.find(_.toString == stepRaw) match
+        TaskStep.values.find(_.toString == stepRaw) match
           case Some(step) => ZIO.succeed(acc.updated(step, agentRaw))
           case None       =>
             ZIO.fail(

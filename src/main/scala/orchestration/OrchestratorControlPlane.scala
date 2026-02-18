@@ -22,7 +22,7 @@ trait OrchestratorControlPlane:
     */
   def routeStep(
     runId: String,
-    step: MigrationStep,
+    step: TaskStep,
     capabilities: List[AgentCapability],
   ): ZIO[Any, ControlPlaneError, String]
 
@@ -93,7 +93,7 @@ object OrchestratorControlPlane:
 
   def routeStep(
     runId: String,
-    step: MigrationStep,
+    step: TaskStep,
     capabilities: List[AgentCapability],
   ): ZIO[OrchestratorControlPlane, ControlPlaneError, String] =
     ZIO.serviceWithZIO[OrchestratorControlPlane](_.routeStep(runId, step, capabilities))
@@ -227,7 +227,7 @@ final private[orchestration] class OrchestratorControlPlaneLive(
 
   override def routeStep(
     runId: String,
-    step: MigrationStep,
+    step: TaskStep,
     capabilities: List[AgentCapability],
   ): ZIO[Any, ControlPlaneError, String] =
     for
@@ -599,7 +599,7 @@ final private[orchestration] class OrchestratorControlPlaneLive(
     agentName: String,
     state: AgentExecutionState,
     runId: Option[String],
-    step: Option[MigrationStep],
+    step: Option[TaskStep],
     task: Option[String],
     message: Option[String],
     tokenDelta: Long,

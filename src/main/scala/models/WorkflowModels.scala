@@ -8,8 +8,8 @@ enum WorkflowCondition derives JsonCodec:
   case NotDryRun
   case ContextFlag(flag: String)
   case MetadataEquals(key: String, value: String)
-  case StepSucceeded(step: MigrationStep)
-  case StepFailed(step: MigrationStep)
+  case StepSucceeded(step: TaskStep)
+  case StepFailed(step: TaskStep)
 
 enum AgentSelectionStrategy derives JsonCodec:
   case CapabilityMatch
@@ -25,7 +25,7 @@ case class WorkflowAgentPolicy(
 
 case class WorkflowNode(
   id: String,
-  step: MigrationStep,
+  step: TaskStep,
   dependsOn: List[String] = Nil,
   condition: WorkflowCondition = WorkflowCondition.Always,
   retryLimit: Int = 0,
@@ -38,7 +38,7 @@ case class WorkflowGraph(
 ) derives JsonCodec
 
 object WorkflowGraph:
-  def fromSequentialSteps(steps: List[MigrationStep]): WorkflowGraph =
+  def fromSequentialSteps(steps: List[TaskStep]): WorkflowGraph =
     WorkflowGraph(
       steps.zipWithIndex.map {
         case (step, index) =>
@@ -54,12 +54,12 @@ case class WorkflowContext(
   dryRun: Boolean = false,
   flags: Set[String] = Set.empty,
   metadata: Map[String, String] = Map.empty,
-  completedSteps: Set[MigrationStep] = Set.empty,
-  failedSteps: Set[MigrationStep] = Set.empty,
+  completedSteps: Set[TaskStep] = Set.empty,
+  failedSteps: Set[TaskStep] = Set.empty,
 ) derives JsonCodec
 
 case class WorkflowStepAgent(
-  step: MigrationStep,
+  step: TaskStep,
   agentName: String,
 ) derives JsonCodec
 
@@ -67,7 +67,7 @@ case class WorkflowDefinition(
   id: Option[Long] = None,
   name: String,
   description: Option[String] = None,
-  steps: List[MigrationStep],
+  steps: List[TaskStep],
   stepAgents: List[WorkflowStepAgent] = Nil,
   isBuiltin: Boolean,
   dynamicGraph: Option[WorkflowGraph] = None,
@@ -80,41 +80,41 @@ object WorkflowDefinition:
       name = "Default Workflow",
       description = Some("Built-in end-to-end migration workflow"),
       steps = List(
-        MigrationStep.Discovery,
-        MigrationStep.Analysis,
-        MigrationStep.Mapping,
-        MigrationStep.Transformation,
-        MigrationStep.Validation,
-        MigrationStep.Documentation,
+        TaskStep.Discovery,
+        TaskStep.Analysis,
+        TaskStep.Mapping,
+        TaskStep.Transformation,
+        TaskStep.Validation,
+        TaskStep.Documentation,
       ),
       stepAgents = Nil,
       isBuiltin = true,
       dynamicGraph = Some(
         WorkflowGraph(
           List(
-            WorkflowNode(id = "discovery", step = MigrationStep.Discovery),
-            WorkflowNode(id = "analysis", step = MigrationStep.Analysis, dependsOn = List("discovery")),
-            WorkflowNode(id = "mapping", step = MigrationStep.Mapping, dependsOn = List("analysis")),
-            WorkflowNode(id = "transformation", step = MigrationStep.Transformation, dependsOn = List("mapping")),
+            WorkflowNode(id = "discovery", step = TaskStep.Discovery),
+            WorkflowNode(id = "analysis", step = TaskStep.Analysis, dependsOn = List("discovery")),
+            WorkflowNode(id = "mapping", step = TaskStep.Mapping, dependsOn = List("analysis")),
+            WorkflowNode(id = "transformation", step = TaskStep.Transformation, dependsOn = List("mapping")),
             WorkflowNode(
               id = "validation",
-              step = MigrationStep.Validation,
+              step = TaskStep.Validation,
               dependsOn = List("transformation"),
               condition = WorkflowCondition.NotDryRun,
             ),
-            WorkflowNode(id = "documentation", step = MigrationStep.Documentation, dependsOn = List("discovery")),
+            WorkflowNode(id = "documentation", step = TaskStep.Documentation, dependsOn = List("discovery")),
           )
         )
       ),
     )
 
 object WorkflowValidator:
-  private val dependencies: Map[MigrationStep, List[MigrationStep]] = Map(
-    MigrationStep.Analysis       -> List(MigrationStep.Discovery),
-    MigrationStep.Mapping        -> List(MigrationStep.Analysis),
-    MigrationStep.Transformation -> List(MigrationStep.Analysis, MigrationStep.Mapping),
-    MigrationStep.Validation     -> List(MigrationStep.Transformation, MigrationStep.Analysis),
-    MigrationStep.Documentation  -> List(MigrationStep.Discovery),
+  private val dependencies: Map[TaskStep, List[TaskStep]] = Map(
+    TaskStep.Analysis       -> List(TaskStep.Discovery),
+    TaskStep.Mapping        -> List(TaskStep.Analysis),
+    TaskStep.Transformation -> List(TaskStep.Analysis, TaskStep.Mapping),
+    TaskStep.Validation     -> List(TaskStep.Transformation, TaskStep.Analysis),
+    TaskStep.Documentation  -> List(TaskStep.Discovery),
   )
 
   def validate(workflow: WorkflowDefinition): Either[List[String], WorkflowDefinition] =
@@ -138,14 +138,14 @@ object WorkflowValidator:
     if allErrors.isEmpty then Right(workflow.copy(name = normalizedName))
     else Left(allErrors)
 
-  private def duplicateStepErrors(steps: List[MigrationStep]): List[String] =
+  private def duplicateStepErrors(steps: List[TaskStep]): List[String] =
     steps
       .groupBy(identity)
       .collect { case (step, instances) if instances.size > 1 => s"Duplicate step not allowed: ${step.toString}" }
       .toList
       .sorted
 
-  private def dependencyOrderingErrors(steps: List[MigrationStep]): List[String] =
+  private def dependencyOrderingErrors(steps: List[TaskStep]): List[String] =
     val positions = steps.zipWithIndex.toMap
     steps.zipWithIndex.flatMap {
       case (step, stepIndex) =>
@@ -160,7 +160,7 @@ object WorkflowValidator:
         }
     }.distinct
 
-  private def invalidStepAgents(steps: List[MigrationStep], stepAgents: List[WorkflowStepAgent]): List[String] =
+  private def invalidStepAgents(steps: List[TaskStep], stepAgents: List[WorkflowStepAgent]): List[String] =
     val includedSteps        = steps.toSet
     val duplicateAssignments = stepAgents
       .groupBy(_.step)

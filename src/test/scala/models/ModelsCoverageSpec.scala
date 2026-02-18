@@ -64,9 +64,9 @@ object ModelsCoverageSpec extends ZIOSpecDefault:
       test("workflow and step events capture fields") {
         val now       = Instant.EPOCH
         val started   = WorkflowStarted("corr", "run-1", 42L, now)
-        val progress  = StepProgress("corr", "run-1", MigrationStep.Analysis, 3, 10, "processing", now)
-        val completed = StepCompleted("corr", "run-1", MigrationStep.Analysis, WorkflowStatus.Completed, now)
-        val failed    = StepFailed("corr", "run-1", MigrationStep.Analysis, "boom", now)
+        val progress  = StepProgress("corr", "run-1", TaskStep.Analysis, 3, 10, "processing", now)
+        val completed = StepCompleted("corr", "run-1", TaskStep.Analysis, WorkflowStatus.Completed, now)
+        val failed    = StepFailed("corr", "run-1", TaskStep.Analysis, "boom", now)
         val allocated = ResourceAllocated("corr", "run-1", 2, now)
         val released  = ResourceReleased("corr", "run-1", 2, now)
 
@@ -80,7 +80,7 @@ object ModelsCoverageSpec extends ZIOSpecDefault:
         )
       },
       test("agent capability defaults to enabled") {
-        val cap = AgentCapability("agent-x", List(MigrationStep.Discovery))
+        val cap = AgentCapability("agent-x", List(TaskStep.Discovery))
         assertTrue(cap.isEnabled)
       },
     ),

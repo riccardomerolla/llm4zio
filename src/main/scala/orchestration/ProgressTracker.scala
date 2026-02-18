@@ -30,10 +30,10 @@ object ProgressTracker:
   def subscribe(runId: Long): ZIO[ProgressTracker, Nothing, Dequeue[ProgressUpdate]] =
     ZIO.serviceWithZIO[ProgressTracker](_.subscribe(runId))
 
-  val live: ZLayer[MigrationRepository & ActivityHub, Nothing, ProgressTracker] =
+  val live: ZLayer[TaskRepository & ActivityHub, Nothing, ProgressTracker] =
     ZLayer.scoped {
       for
-        repository  <- ZIO.service[MigrationRepository]
+        repository  <- ZIO.service[TaskRepository]
         activityHub <- ZIO.service[ActivityHub]
         hub         <- Hub.bounded[ProgressUpdate](256)
         subscribers <- Ref.make(Map.empty[Long, Set[Queue[ProgressUpdate]]])
@@ -53,7 +53,7 @@ object ProgressTracker:
     yield ()
 
 final case class ProgressTrackerLive(
-  repository: MigrationRepository,
+  repository: TaskRepository,
   hub: Hub[ProgressUpdate],
   subscribers: Ref[Map[Long, Set[Queue[ProgressUpdate]]]],
   activityHub: ActivityHub,

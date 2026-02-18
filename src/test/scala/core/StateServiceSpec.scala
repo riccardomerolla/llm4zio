@@ -27,13 +27,13 @@ object StateServiceSpec extends ZIOSpecDefault:
       }
     )(test)
 
-  /** Helper to create a test MigrationState */
+  /** Helper to create a test TaskState */
   private def createTestState(
     runId: String = "test-run-001",
-    currentStep: MigrationStep = MigrationStep.Discovery,
-    completedSteps: Set[MigrationStep] = Set.empty,
-  ): MigrationState =
-    MigrationState(
+    currentStep: TaskStep = TaskStep.Discovery,
+    completedSteps: Set[TaskStep] = Set.empty,
+  ): TaskState =
+    TaskState(
       runId = runId,
       startedAt = Instant.parse("2024-01-15T10:00:00Z"),
       currentStep = currentStep,
@@ -94,8 +94,8 @@ object StateServiceSpec extends ZIOSpecDefault:
       },
       test("overwrites existing state with atomic move") {
         withTempStateDir { stateDir =>
-          val state1 = createTestState(currentStep = MigrationStep.Discovery)
-          val state2 = createTestState(currentStep = MigrationStep.Analysis)
+          val state1 = createTestState(currentStep = TaskStep.Discovery)
+          val state2 = createTestState(currentStep = TaskStep.Analysis)
           for
             _        <- StateService.saveState(state1).provide(
                           StateService.live(stateDir),
@@ -111,7 +111,7 @@ object StateServiceSpec extends ZIOSpecDefault:
                         )
           yield assertTrue(
             reloaded.isDefined,
-            reloaded.get.currentStep == MigrationStep.Analysis,
+            reloaded.get.currentStep == TaskStep.Analysis,
           )
         }
       },
@@ -152,7 +152,7 @@ object StateServiceSpec extends ZIOSpecDefault:
           yield assertTrue(
             loaded.isDefined,
             loaded.get.runId == "test-run-001",
-            loaded.get.currentStep == MigrationStep.Discovery,
+            loaded.get.currentStep == TaskStep.Discovery,
           )
         }
       },
@@ -168,13 +168,13 @@ object StateServiceSpec extends ZIOSpecDefault:
       test("deserializes state with all fields correctly") {
         withTempStateDir { stateDir =>
           val state = createTestState(
-            currentStep = MigrationStep.Analysis,
-            completedSteps = Set(MigrationStep.Discovery),
+            currentStep = TaskStep.Analysis,
+            completedSteps = Set(TaskStep.Discovery),
           ).copy(
             artifacts = Map("discovery" -> "/path/to/inventory.json"),
             errors = List(
-              MigrationError(
-                MigrationStep.Discovery,
+              TaskError(
+                TaskStep.Discovery,
                 "Test error",
                 Instant.parse("2024-01-15T10:30:00Z"),
               )
@@ -191,8 +191,8 @@ object StateServiceSpec extends ZIOSpecDefault:
                       )
           yield assertTrue(
             loaded.isDefined,
-            loaded.get.currentStep == MigrationStep.Analysis,
-            loaded.get.completedSteps == Set(MigrationStep.Discovery),
+            loaded.get.currentStep == TaskStep.Analysis,
+            loaded.get.completedSteps == Set(TaskStep.Discovery),
             loaded.get.artifacts.contains("discovery"),
             loaded.get.errors.length == 1,
           )
@@ -211,7 +211,7 @@ object StateServiceSpec extends ZIOSpecDefault:
                         StateService.live(stateDir),
                         FileService.live,
                       )
-            _      <- StateService.createCheckpoint("test-run-001", MigrationStep.Discovery).provide(
+            _      <- StateService.createCheckpoint("test-run-001", TaskStep.Discovery).provide(
                         StateService.live(stateDir),
                         FileService.live,
                       )
@@ -229,7 +229,7 @@ object StateServiceSpec extends ZIOSpecDefault:
                            StateService.live(stateDir),
                            FileService.live,
                          )
-            _         <- StateService.createCheckpoint("test-run-001", MigrationStep.Discovery).provide(
+            _         <- StateService.createCheckpoint("test-run-001", TaskStep.Discovery).provide(
                            StateService.live(stateDir),
                            FileService.live,
                          )
@@ -240,13 +240,13 @@ object StateServiceSpec extends ZIOSpecDefault:
       },
       test("checkpoint contains full state snapshot") {
         withTempStateDir { stateDir =>
-          val state = createTestState(currentStep = MigrationStep.Discovery)
+          val state = createTestState(currentStep = TaskStep.Discovery)
           for
             _       <- StateService.saveState(state).provide(
                          StateService.live(stateDir),
                          FileService.live,
                        )
-            _       <- StateService.createCheckpoint("test-run-001", MigrationStep.Discovery).provide(
+            _       <- StateService.createCheckpoint("test-run-001", TaskStep.Discovery).provide(
                          StateService.live(stateDir),
                          FileService.live,
                        )
@@ -263,7 +263,7 @@ object StateServiceSpec extends ZIOSpecDefault:
       test("fails when state does not exist") {
         withTempStateDir { stateDir =>
           for result <- StateService
-                          .createCheckpoint("non-existent", MigrationStep.Discovery)
+                          .createCheckpoint("non-existent", TaskStep.Discovery)
                           .provide(
                             StateService.live(stateDir),
                             FileService.live,
@@ -280,11 +280,11 @@ object StateServiceSpec extends ZIOSpecDefault:
                          StateService.live(stateDir),
                          FileService.live,
                        )
-            _       <- StateService.createCheckpoint("test-run-001", MigrationStep.Discovery).provide(
+            _       <- StateService.createCheckpoint("test-run-001", TaskStep.Discovery).provide(
                          StateService.live(stateDir),
                          FileService.live,
                        )
-            _       <- StateService.createCheckpoint("test-run-001", MigrationStep.Analysis).provide(
+            _       <- StateService.createCheckpoint("test-run-001", TaskStep.Analysis).provide(
                          StateService.live(stateDir),
                          FileService.live,
                        )
@@ -310,12 +310,12 @@ object StateServiceSpec extends ZIOSpecDefault:
                              StateService.live(stateDir),
                              FileService.live,
                            )
-            _           <- StateService.createCheckpoint("test-run-001", MigrationStep.Discovery).provide(
+            _           <- StateService.createCheckpoint("test-run-001", TaskStep.Discovery).provide(
                              StateService.live(stateDir),
                              FileService.live,
                            )
             _           <- TestClock.adjust(1.second)
-            _           <- StateService.createCheckpoint("test-run-001", MigrationStep.Analysis).provide(
+            _           <- StateService.createCheckpoint("test-run-001", TaskStep.Analysis).provide(
                              StateService.live(stateDir),
                              FileService.live,
                            )
@@ -324,7 +324,7 @@ object StateServiceSpec extends ZIOSpecDefault:
                              FileService.live,
                            )
           yield assertTrue(
-            checkpoints.map(_.step) == List(MigrationStep.Discovery, MigrationStep.Analysis),
+            checkpoints.map(_.step) == List(TaskStep.Discovery, TaskStep.Analysis),
             checkpoints.forall(_.checksum.nonEmpty),
           )
         }
@@ -351,7 +351,7 @@ object StateServiceSpec extends ZIOSpecDefault:
                            StateService.live(stateDir),
                            FileService.live,
                          )
-            _         <- StateService.createCheckpoint("test-run-001", MigrationStep.Discovery).provide(
+            _         <- StateService.createCheckpoint("test-run-001", TaskStep.Discovery).provide(
                            StateService.live(stateDir),
                            FileService.live,
                          )
@@ -370,7 +370,7 @@ object StateServiceSpec extends ZIOSpecDefault:
                            StateService.live(stateDir),
                            FileService.live,
                          )
-            _         <- StateService.createCheckpoint("test-run-001", MigrationStep.Discovery).provide(
+            _         <- StateService.createCheckpoint("test-run-001", TaskStep.Discovery).provide(
                            StateService.live(stateDir),
                            FileService.live,
                          )
@@ -400,7 +400,7 @@ object StateServiceSpec extends ZIOSpecDefault:
                             StateService.live(stateDir),
                             FileService.live,
                           )
-            _          <- StateService.createCheckpoint("test-run-001", MigrationStep.Discovery).provide(
+            _          <- StateService.createCheckpoint("test-run-001", TaskStep.Discovery).provide(
                             StateService.live(stateDir),
                             FileService.live,
                           )
@@ -410,7 +410,7 @@ object StateServiceSpec extends ZIOSpecDefault:
                           )
           yield assertTrue(
             checkpoint.isDefined,
-            checkpoint.get == MigrationStep.Discovery,
+            checkpoint.get == TaskStep.Discovery,
           )
         }
       },
@@ -483,12 +483,12 @@ object StateServiceSpec extends ZIOSpecDefault:
             state  <- ZIO.succeed(
                         createTestState(
                           runId = "run-with-metadata",
-                          currentStep = MigrationStep.Analysis,
-                          completedSteps = Set(MigrationStep.Discovery),
+                          currentStep = TaskStep.Analysis,
+                          completedSteps = Set(TaskStep.Discovery),
                         ).copy(
                           errors = List(
-                            MigrationError(MigrationStep.Discovery, "Error 1", now),
-                            MigrationError(MigrationStep.Discovery, "Error 2", now),
+                            TaskError(TaskStep.Discovery, "Error 1", now),
+                            TaskError(TaskStep.Discovery, "Error 2", now),
                           )
                         )
                       )
@@ -503,8 +503,8 @@ object StateServiceSpec extends ZIOSpecDefault:
             summary = runs.find(_.runId == "run-with-metadata")
           yield assertTrue(
             summary.isDefined,
-            summary.get.currentStep == MigrationStep.Analysis,
-            summary.get.completedSteps == Set(MigrationStep.Discovery),
+            summary.get.currentStep == TaskStep.Analysis,
+            summary.get.completedSteps == Set(TaskStep.Discovery),
             summary.get.errorCount == 2,
           )
         }
@@ -580,7 +580,7 @@ object StateServiceSpec extends ZIOSpecDefault:
                             FileService.live,
                           )
             // Create checkpoint
-            _          <- StateService.createCheckpoint("integration-run", MigrationStep.Discovery).provide(
+            _          <- StateService.createCheckpoint("integration-run", TaskStep.Discovery).provide(
                             StateService.live(stateDir),
                             FileService.live,
                           )
@@ -598,7 +598,7 @@ object StateServiceSpec extends ZIOSpecDefault:
             loaded.isDefined,
             loaded.get.runId == "integration-run",
             checkpoint.isDefined,
-            checkpoint.get == MigrationStep.Discovery,
+            checkpoint.get == TaskStep.Discovery,
             runs.length == 1,
             runs.head.runId == "integration-run",
           )
@@ -606,16 +606,16 @@ object StateServiceSpec extends ZIOSpecDefault:
       },
       test("multiple runs with different progress") {
         withTempStateDir { stateDir =>
-          val state1 = createTestState(runId = "run-1", currentStep = MigrationStep.Discovery)
+          val state1 = createTestState(runId = "run-1", currentStep = TaskStep.Discovery)
           val state2 = createTestState(
             runId = "run-2",
-            currentStep = MigrationStep.Analysis,
-            completedSteps = Set(MigrationStep.Discovery),
+            currentStep = TaskStep.Analysis,
+            completedSteps = Set(TaskStep.Discovery),
           )
           val state3 = createTestState(
             runId = "run-3",
-            currentStep = MigrationStep.Transformation,
-            completedSteps = Set(MigrationStep.Discovery, MigrationStep.Analysis),
+            currentStep = TaskStep.Transformation,
+            completedSteps = Set(TaskStep.Discovery, TaskStep.Analysis),
           )
           for
             _     <- StateService.saveState(state1).provide(

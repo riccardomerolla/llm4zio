@@ -1,6 +1,6 @@
 package web.views
 
-import models.{ AgentInfo, MigrationStep, WorkflowDefinition, WorkflowStepAgent }
+import models.{ AgentInfo, TaskStep, WorkflowDefinition, WorkflowStepAgent }
 import scalatags.Text.all.*
 
 object WorkflowsView:
@@ -109,7 +109,7 @@ object WorkflowsView:
               div(cls := "mt-4")(
                 p(cls := "mb-2 text-sm font-semibold text-slate-200")("Steps"),
                 div(cls := "grid grid-cols-1 gap-2 sm:grid-cols-2")(
-                  MigrationStep.values.toList.map { step =>
+                  TaskStep.values.toList.map { step =>
                     val selected = workflow.steps.contains(step)
                     label(
                       cls := "flex items-center gap-2 rounded-md border border-white/10 bg-slate-800/60 px-3 py-2 text-sm text-slate-100"
@@ -132,7 +132,7 @@ object WorkflowsView:
                   cls := "mb-2 text-xs text-slate-400"
                 )("Optional fallback fields used when JavaScript is unavailable."),
                 div(cls := "grid grid-cols-1 gap-2 sm:grid-cols-2")(
-                  MigrationStep.values.toList.map { step =>
+                  TaskStep.values.toList.map { step =>
                     val selectedAgent = stepAgentMap.getOrElse(step, "")
                     div(cls := "rounded-md border border-white/10 bg-slate-800/50 px-3 py-2")(
                       label(
@@ -234,7 +234,7 @@ object WorkflowsView:
       )
     )
 
-  def workflowToMermaid(steps: List[MigrationStep]): String =
+  def workflowToMermaid(steps: List[TaskStep]): String =
     val nodes = steps.zipWithIndex.map((step, index) => s"""  step$index["${step.toString}"]""")
     val edges = (0 until Math.max(steps.length - 1, 0)).map(index => s"  step$index --> step${index + 1}").toList
     ("graph LR" :: nodes ::: edges).mkString("\n")

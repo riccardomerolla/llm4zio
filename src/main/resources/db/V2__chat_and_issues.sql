@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS chat_conversations (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   created_by TEXT,
-  FOREIGN KEY (run_id) REFERENCES migration_runs(id) ON DELETE CASCADE
+  FOREIGN KEY (run_id) REFERENCES task_runs(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS chat_messages (
@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS agent_issues (
   result_data TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
-  FOREIGN KEY (run_id) REFERENCES migration_runs(id) ON DELETE CASCADE,
+  FOREIGN KEY (run_id) REFERENCES task_runs(id) ON DELETE CASCADE,
   FOREIGN KEY (conversation_id) REFERENCES chat_conversations(id) ON DELETE SET NULL
 );
 

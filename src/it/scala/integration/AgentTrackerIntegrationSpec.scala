@@ -15,17 +15,17 @@ object AgentTrackerIntegrationSpec extends ZIOSpecDefault:
   override val bootstrap: ZLayer[Any, Any, TestEnvironment] =
     Runtime.removeDefaultLoggers >>> SLF4J.slf4j >>> testEnvironment
 
-  private def liveLayer(dbName: String): ZLayer[Any, PersistenceError, ProgressTracker & MigrationRepository] =
-    ZLayer.make[ProgressTracker & MigrationRepository](
+  private def liveLayer(dbName: String): ZLayer[Any, PersistenceError, ProgressTracker & TaskRepository] =
+    ZLayer.make[ProgressTracker & TaskRepository](
       ZLayer.succeed(DatabaseConfig(s"jdbc:sqlite:file:$dbName?mode=memory&cache=shared")),
       Database.live,
-      MigrationRepository.live,
+      TaskRepository.live,
       ProgressTracker.live,
     )
 
   private val now = Instant.parse("2026-02-08T00:00:00Z")
 
-  private val baseRun = MigrationRunRow(
+  private val baseRun = TaskRunRow(
     id = 0L,
     sourceDir = "/tmp/it-source",
     outputDir = "/tmp/it-output",
@@ -50,13 +50,13 @@ object AgentTrackerIntegrationSpec extends ZIOSpecDefault:
       ZIO.scoped {
         (for
           tracker <- ZIO.service[ProgressTracker]
-          runId   <- MigrationRepository.createRun(baseRun)
+          runId   <- TaskRepository.createRun(baseRun)
           queue   <- tracker.subscribe(runId)
           out     <- AgentTracker.trackBatch(runId, "Analysis", List(1, 2, 3), tracker) { (item, _) =>
                        ZIO.succeed(item * 2)
                      }
           events  <- ZIO.collectAll(List.fill(5)(queue.take.timeoutFail("missing progress event")(1.second)))
-          row     <- MigrationRepository.getProgress(runId, "Analysis")
+          row     <- TaskRepository.getProgress(runId, "Analysis")
         yield assertTrue(
           out == List(2, 4, 6),
           events.head.message.contains("Starting phase"),
@@ -73,11 +73,11 @@ object AgentTrackerIntegrationSpec extends ZIOSpecDefault:
       ZIO.scoped {
         (for
           tracker <- ZIO.service[ProgressTracker]
-          runId   <- MigrationRepository.createRun(baseRun.copy(currentPhase = Some("Validation")))
+          runId   <- TaskRepository.createRun(baseRun.copy(currentPhase = Some("Validation")))
           queue   <- tracker.subscribe(runId)
           exit    <- AgentTracker.trackPhase(runId, "Validation", 1, tracker)(ZIO.fail(TestErr.Boom)).exit
           events  <- ZIO.collectAll(List.fill(2)(queue.take.timeoutFail("missing failure flow event")(1.second)))
-          row     <- MigrationRepository.getProgress(runId, "Validation")
+          row     <- TaskRepository.getProgress(runId, "Validation")
         yield assertTrue(
           exit == Exit.fail(TestErr.Boom),
           events.exists(_.message.contains("Starting phase")),

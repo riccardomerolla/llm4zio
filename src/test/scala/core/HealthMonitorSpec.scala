@@ -14,11 +14,11 @@ import gateway.models.{ NormalizedMessage, SessionKey, SessionScopeStrategy }
 
 object HealthMonitorSpec extends ZIOSpecDefault:
 
-  private val stubRepo: MigrationRepository = new MigrationRepository:
-    override def listRuns(offset: Int, limit: Int): IO[PersistenceError, List[MigrationRunRow]] =
+  private val stubRepo: TaskRepository = new TaskRepository:
+    override def listRuns(offset: Int, limit: Int): IO[PersistenceError, List[TaskRunRow]] =
       ZIO.succeed(
         List(
-          MigrationRunRow(
+          TaskRunRow(
             id = 9L,
             sourceDir = "/src",
             outputDir = "/out",
@@ -35,9 +35,9 @@ object HealthMonitorSpec extends ZIOSpecDefault:
         )
       )
 
-    override def createRun(run: MigrationRunRow): IO[PersistenceError, Long]                             = ZIO.dieMessage("unused")
-    override def updateRun(run: MigrationRunRow): IO[PersistenceError, Unit]                             = ZIO.dieMessage("unused")
-    override def getRun(id: Long): IO[PersistenceError, Option[MigrationRunRow]]                         = ZIO.dieMessage("unused")
+    override def createRun(run: TaskRunRow): IO[PersistenceError, Long]                                  = ZIO.dieMessage("unused")
+    override def updateRun(run: TaskRunRow): IO[PersistenceError, Unit]                                  = ZIO.dieMessage("unused")
+    override def getRun(id: Long): IO[PersistenceError, Option[TaskRunRow]]                              = ZIO.dieMessage("unused")
     override def deleteRun(id: Long): IO[PersistenceError, Unit]                                         = ZIO.dieMessage("unused")
     override def saveFiles(files: List[CobolFileRow]): IO[PersistenceError, Unit]                        = ZIO.dieMessage("unused")
     override def getFilesByRun(runId: Long): IO[PersistenceError, List[CobolFileRow]]                    = ZIO.dieMessage("unused")
@@ -100,7 +100,7 @@ object HealthMonitorSpec extends ZIOSpecDefault:
     override def findAgents(query: AgentQuery): UIO[List[AgentInfo]]                                      = ZIO.succeed(List(sampleAgent))
     override def getAllAgents: UIO[List[AgentInfo]]                                                       = ZIO.succeed(List(sampleAgent))
     override def findAgentsWithSkill(skill: String): UIO[List[AgentInfo]]                                 = ZIO.succeed(Nil)
-    override def findAgentsForStep(step: MigrationStep): UIO[List[AgentInfo]]                             = ZIO.succeed(Nil)
+    override def findAgentsForStep(step: TaskStep): UIO[List[AgentInfo]]                                  = ZIO.succeed(Nil)
     override def findAgentsForTransformation(inputType: String, outputType: String): UIO[List[AgentInfo]] =
       ZIO.succeed(Nil)
     override def recordInvocation(agentName: String, success: Boolean, latencyMs: Long): UIO[Unit]        = ZIO.unit

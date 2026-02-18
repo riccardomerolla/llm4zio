@@ -712,7 +712,7 @@ final case class ChatRepositoryLive(
         |  result_data TEXT,
         |  created_at TEXT NOT NULL,
         |  updated_at TEXT NOT NULL,
-        |  FOREIGN KEY (run_id) REFERENCES migration_runs(id) ON DELETE CASCADE,
+        |  FOREIGN KEY (run_id) REFERENCES task_runs(id) ON DELETE CASCADE,
         |  FOREIGN KEY (conversation_id) REFERENCES chat_conversations(id) ON DELETE SET NULL
         |)""".stripMargin,
       """INSERT INTO agent_issues_new (

@@ -25,7 +25,7 @@ object ApplicationDI:
       LlmService &
       StateService &
       javax.sql.DataSource &
-      MigrationRepository &
+      TaskRepository &
       WorkflowService &
       ActivityRepository &
       ActivityHub &
@@ -82,7 +82,7 @@ object ApplicationDI:
       StateService.live(config.stateDir),
       ZLayer.succeed(DatabaseConfig(s"jdbc:sqlite:$dbPath")),
       Database.live.mapError(err => new RuntimeException(err.toString)).orDie,
-      MigrationRepository.live,
+      TaskRepository.live,
       WorkflowService.live,
       ActivityRepository.live.mapError(err => new RuntimeException(err.toString)).orDie,
       ActivityHub.live,

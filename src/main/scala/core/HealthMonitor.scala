@@ -8,7 +8,7 @@ import zio.stream.*
 
 import agents.AgentRegistry
 import com.sun.management.OperatingSystemMXBean
-import db.{ MigrationRepository, RunStatus }
+import db.{ RunStatus, TaskRepository }
 import gateway.{ ChannelRegistry, GatewayService }
 import models.AgentHealthStatus
 
@@ -74,7 +74,7 @@ object HealthMonitor:
   def stream(interval: Duration = 2.seconds): ZStream[HealthMonitor, Nothing, HealthSnapshot] =
     ZStream.serviceWithStream[HealthMonitor](_.stream(interval))
 
-  val live: ZLayer[GatewayService & ChannelRegistry & AgentRegistry & MigrationRepository, Nothing, HealthMonitor] =
+  val live: ZLayer[GatewayService & ChannelRegistry & AgentRegistry & TaskRepository, Nothing, HealthMonitor] =
     ZLayer.fromZIO {
       for
         startedAt  <- Clock.instant
@@ -82,7 +82,7 @@ object HealthMonitor:
         gateway    <- ZIO.service[GatewayService]
         channels   <- ZIO.service[ChannelRegistry]
         agents     <- ZIO.service[AgentRegistry]
-        repo       <- ZIO.service[MigrationRepository]
+        repo       <- ZIO.service[TaskRepository]
       yield HealthMonitorLive(startedAt, historyRef, gateway, channels, agents, repo)
     }
 
@@ -92,7 +92,7 @@ final case class HealthMonitorLive(
   gatewayService: GatewayService,
   channelRegistry: ChannelRegistry,
   agentRegistry: AgentRegistry,
-  repository: MigrationRepository,
+  repository: TaskRepository,
 ) extends HealthMonitor:
 
   private val HistoryCapacity = 180

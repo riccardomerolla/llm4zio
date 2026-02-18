@@ -25,7 +25,7 @@ case class DatabaseConfig(
   jdbcUrl: String
 ) derives JsonCodec
 
-case class MigrationRunRow(
+case class TaskRunRow(
   id: Long,
   sourceDir: String,
   outputDir: String,

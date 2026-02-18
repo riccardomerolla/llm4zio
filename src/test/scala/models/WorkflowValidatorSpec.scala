@@ -9,12 +9,12 @@ object WorkflowValidatorSpec extends ZIOSpecDefault:
     name = "Pipeline A",
     description = Some("End-to-end flow"),
     steps = List(
-      MigrationStep.Discovery,
-      MigrationStep.Analysis,
-      MigrationStep.Mapping,
-      MigrationStep.Transformation,
-      MigrationStep.Validation,
-      MigrationStep.Documentation,
+      TaskStep.Discovery,
+      TaskStep.Analysis,
+      TaskStep.Mapping,
+      TaskStep.Transformation,
+      TaskStep.Validation,
+      TaskStep.Documentation,
     ),
     isBuiltin = false,
   )
@@ -42,9 +42,9 @@ object WorkflowValidatorSpec extends ZIOSpecDefault:
     },
     test("rejects duplicate steps") {
       val steps  = List(
-        MigrationStep.Discovery,
-        MigrationStep.Analysis,
-        MigrationStep.Analysis,
+        TaskStep.Discovery,
+        TaskStep.Analysis,
+        TaskStep.Analysis,
       )
       val result = WorkflowValidator.validate(validWorkflow.copy(steps = steps))
       assertTrue(
@@ -52,21 +52,21 @@ object WorkflowValidatorSpec extends ZIOSpecDefault:
       )
     },
     test("rejects missing dependencies") {
-      val steps  = List(MigrationStep.Analysis)
+      val steps  = List(TaskStep.Analysis)
       val result = WorkflowValidator.validate(validWorkflow.copy(steps = steps))
       assertTrue(
         result == Left(List("Analysis requires Discovery to be present"))
       )
     },
     test("rejects invalid dependency ordering") {
-      val steps  = List(MigrationStep.Analysis, MigrationStep.Discovery)
+      val steps  = List(TaskStep.Analysis, TaskStep.Discovery)
       val result = WorkflowValidator.validate(validWorkflow.copy(steps = steps))
       assertTrue(
         result == Left(List("Analysis must appear after Discovery"))
       )
     },
     test("returns multiple validation errors in one pass") {
-      val steps  = List(MigrationStep.Transformation, MigrationStep.Mapping, MigrationStep.Mapping)
+      val steps  = List(TaskStep.Transformation, TaskStep.Mapping, TaskStep.Mapping)
       val result = WorkflowValidator.validate(validWorkflow.copy(name = " ", steps = steps))
       assertTrue(
         result == Left(

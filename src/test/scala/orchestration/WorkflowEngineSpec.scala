@@ -9,7 +9,7 @@ object WorkflowEngineSpec extends ZIOSpecDefault:
 
   private val workflow = WorkflowDefinition(
     name = "dynamic",
-    steps = List(MigrationStep.Discovery, MigrationStep.Analysis, MigrationStep.Mapping),
+    steps = List(TaskStep.Discovery, TaskStep.Analysis, TaskStep.Mapping),
     isBuiltin = false,
   )
 
@@ -21,7 +21,7 @@ object WorkflowEngineSpec extends ZIOSpecDefault:
       agentType = AgentType.BuiltIn,
       usesAI = true,
       tags = Nil,
-      supportedSteps = List(MigrationStep.Analysis),
+      supportedSteps = List(TaskStep.Analysis),
       metrics = AgentMetrics(invocations = 20, successCount = 18, failureCount = 2, totalLatencyMs = 8000),
       health = AgentHealth(status = AgentHealthStatus.Healthy, isEnabled = true),
     ),
@@ -32,7 +32,7 @@ object WorkflowEngineSpec extends ZIOSpecDefault:
       agentType = AgentType.BuiltIn,
       usesAI = true,
       tags = Nil,
-      supportedSteps = List(MigrationStep.Analysis),
+      supportedSteps = List(TaskStep.Analysis),
       metrics = AgentMetrics(invocations = 3, successCount = 3, failureCount = 0, totalLatencyMs = 3600),
       health = AgentHealth(status = AgentHealthStatus.Healthy, isEnabled = true),
     ),
@@ -42,11 +42,11 @@ object WorkflowEngineSpec extends ZIOSpecDefault:
     test("buildPlan computes DAG batches with parallel independent nodes") {
       val graph = WorkflowGraph(
         List(
-          WorkflowNode(id = "discovery", step = MigrationStep.Discovery),
-          WorkflowNode(id = "docs", step = MigrationStep.Documentation),
-          WorkflowNode(id = "analysis", step = MigrationStep.Analysis, dependsOn = List("discovery")),
-          WorkflowNode(id = "mapping", step = MigrationStep.Mapping, dependsOn = List("analysis")),
-          WorkflowNode(id = "validation", step = MigrationStep.Validation, dependsOn = List("mapping", "docs")),
+          WorkflowNode(id = "discovery", step = TaskStep.Discovery),
+          WorkflowNode(id = "docs", step = TaskStep.Documentation),
+          WorkflowNode(id = "analysis", step = TaskStep.Analysis, dependsOn = List("discovery")),
+          WorkflowNode(id = "mapping", step = TaskStep.Mapping, dependsOn = List("analysis")),
+          WorkflowNode(id = "validation", step = TaskStep.Validation, dependsOn = List("mapping", "docs")),
         )
       )
       val wf    = workflow.copy(dynamicGraph = Some(graph))
@@ -64,11 +64,11 @@ object WorkflowEngineSpec extends ZIOSpecDefault:
     test("buildPlan evaluates conditional branches from runtime context") {
       val graph = WorkflowGraph(
         List(
-          WorkflowNode(id = "discovery", step = MigrationStep.Discovery),
-          WorkflowNode(id = "analysis", step = MigrationStep.Analysis, dependsOn = List("discovery")),
+          WorkflowNode(id = "discovery", step = TaskStep.Discovery),
+          WorkflowNode(id = "analysis", step = TaskStep.Analysis, dependsOn = List("discovery")),
           WorkflowNode(
             id = "validation",
-            step = MigrationStep.Validation,
+            step = TaskStep.Validation,
             dependsOn = List("analysis"),
             condition =
               WorkflowCondition.NotDryRun,
@@ -81,18 +81,18 @@ object WorkflowEngineSpec extends ZIOSpecDefault:
         dryPlan  <- WorkflowEngine.buildPlan(wf, WorkflowContext(dryRun = true))
         fullPlan <- WorkflowEngine.buildPlan(wf, WorkflowContext(dryRun = false))
       yield assertTrue(
-        dryPlan.orderedSteps == List(MigrationStep.Discovery, MigrationStep.Analysis),
-        fullPlan.orderedSteps == List(MigrationStep.Discovery, MigrationStep.Analysis, MigrationStep.Validation),
+        dryPlan.orderedSteps == List(TaskStep.Discovery, TaskStep.Analysis),
+        fullPlan.orderedSteps == List(TaskStep.Discovery, TaskStep.Analysis, TaskStep.Validation),
       )
     },
     test("supports dynamic graph modification at runtime") {
       val base     = WorkflowGraph(
         List(
-          WorkflowNode(id = "discovery", step = MigrationStep.Discovery),
-          WorkflowNode(id = "analysis", step = MigrationStep.Analysis, dependsOn = List("discovery")),
+          WorkflowNode(id = "discovery", step = TaskStep.Discovery),
+          WorkflowNode(id = "analysis", step = TaskStep.Analysis, dependsOn = List("discovery")),
         )
       )
-      val toInsert = WorkflowNode(id = "mapping", step = MigrationStep.Mapping)
+      val toInsert = WorkflowNode(id = "mapping", step = TaskStep.Mapping)
       val policy   = WorkflowAgentPolicy(
         strategy = AgentSelectionStrategy.PerformanceHistory,
         fallbackAgents = List(
@@ -115,7 +115,7 @@ object WorkflowEngineSpec extends ZIOSpecDefault:
         List(
           WorkflowNode(
             id = "analysis",
-            step = MigrationStep.Analysis,
+            step = TaskStep.Analysis,
             agentPolicy = Some(
               WorkflowAgentPolicy(
                 strategy = AgentSelectionStrategy.LoadBalanced,
@@ -130,7 +130,7 @@ object WorkflowEngineSpec extends ZIOSpecDefault:
       for
         plan <- WorkflowEngine.buildPlan(wf, WorkflowContext(), candidates)
       yield assertTrue(
-        plan.orderedSteps == List(MigrationStep.Analysis),
+        plan.orderedSteps == List(TaskStep.Analysis),
         plan.batches.head.head.assignedAgent.contains("analysis-balanced"),
         plan.batches.head.head.fallbackAgents == List("analysis-fast"),
       )
@@ -140,7 +140,7 @@ object WorkflowEngineSpec extends ZIOSpecDefault:
         List(
           WorkflowNode(
             id = "analysis",
-            step = MigrationStep.Analysis,
+            step = TaskStep.Analysis,
             agentPolicy = Some(
               WorkflowAgentPolicy(
                 strategy = AgentSelectionStrategy.CapabilityMatch,

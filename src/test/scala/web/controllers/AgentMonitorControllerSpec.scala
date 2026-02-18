@@ -15,7 +15,7 @@ object AgentMonitorControllerSpec extends ZIOSpecDefault:
     agentName = "agent-1",
     state = AgentExecutionState.Executing,
     runId = Some("run-1"),
-    step = Some(MigrationStep.Analysis),
+    step = Some(TaskStep.Analysis),
     task = Some("Analysis for run run-1"),
     conversationId = None,
     tokensUsed = 42L,
@@ -33,7 +33,7 @@ object AgentMonitorControllerSpec extends ZIOSpecDefault:
     ): ZIO[Any, ControlPlaneError, String] = ZIO.succeed("corr")
     override def routeStep(
       runId: String,
-      step: MigrationStep,
+      step: TaskStep,
       capabilities: List[AgentCapability],
     ): ZIO[Any, ControlPlaneError, String] = ZIO.succeed("agent-1")
     override def allocateResource(runId: String): ZIO[Any, ControlPlaneError, Int]                            = ZIO.succeed(0)
@@ -57,7 +57,7 @@ object AgentMonitorControllerSpec extends ZIOSpecDefault:
             agentName = "agent-1",
             state = AgentExecutionState.Executing,
             runId = Some("run-1"),
-            step = Some(MigrationStep.Analysis),
+            step = Some(TaskStep.Analysis),
             detail = "Processing",
             timestamp = Instant.EPOCH,
           )

@@ -21,7 +21,7 @@ object WorkflowOrchestrator:
     * @param percent
     *   Progress percentage (0-100)
     */
-  case class PhaseProgressUpdate[Phase](
+  case class StepProgressUpdate[Phase](
     phase: Phase,
     message: String,
     percent: Int,
@@ -91,7 +91,7 @@ object WorkflowOrchestrator:
       phase: Phase,
       shouldRun: Boolean,
       progress: Int,
-      onProgress: PhaseProgressUpdate[Phase] => UIO[Unit],
+      onProgress: StepProgressUpdate[Phase] => UIO[Unit],
       stateRef: Ref[State],
       errorsRef: Ref[List[WorkflowError[Phase]]],
       updateState: (State, Phase, Instant) => State,
@@ -104,7 +104,7 @@ object WorkflowOrchestrator:
       if !shouldRun then ZIO.succeed(None)
       else
         for
-          _      <- onProgress(PhaseProgressUpdate(phase, s"Starting phase: $name", progress))
+          _      <- onProgress(StepProgressUpdate(phase, s"Starting phase: $name", progress))
           _      <- ZIO.logInfo(s"Starting phase: $name")
           before <- stateRef.get
           now    <- Clock.instant
@@ -119,7 +119,7 @@ object WorkflowOrchestrator:
                           _            <- stateRef.set(markCompleted(current, phase, checkpointAt))
                           _            <- stateRef.get.flatMap(saveState)
                           _            <- stateRef.get.flatMap(st => createCheckpoint(st, phase))
-                          _            <- onProgress(PhaseProgressUpdate(phase, s"Completed phase: $name", progress + 10))
+                          _            <- onProgress(StepProgressUpdate(phase, s"Completed phase: $name", progress + 10))
                           _            <- ZIO.logInfo(s"Completed phase: $name")
                         yield Some(value)
 
@@ -131,7 +131,7 @@ object WorkflowOrchestrator:
                           st <- stateRef.get
                           _  <- stateRef.set(updateState(st, phase, ts))
                           _  <- stateRef.get.flatMap(saveState)
-                          _  <- onProgress(PhaseProgressUpdate(phase, s"Phase failed: $name ($err)", progress + 5))
+                          _  <- onProgress(StepProgressUpdate(phase, s"Phase failed: $name ($err)", progress + 5))
                           _  <- ZIO.logError(s"Phase failed: $name ($err)")
                         yield None
         yield result

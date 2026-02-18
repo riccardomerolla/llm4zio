@@ -12,7 +12,7 @@ import zio.http.*
 import zio.json.*
 
 import agents.AgentRegistry
-import db.{ ChatRepository, MigrationRepository, PersistenceError }
+import db.{ ChatRepository, PersistenceError, TaskRepository }
 import gateway.models.{ MessageDirection as GatewayMessageDirection, MessageRole as GatewayMessageRole, * }
 import gateway.{ ChannelRegistry, GatewayService, GatewayServiceError, MessageChannelError }
 import llm4zio.core.{ LlmError, LlmService, Streaming }
@@ -31,7 +31,7 @@ object ChatController:
 
   val live
     : ZLayer[
-      ChatRepository & LlmService & MigrationRepository & IssueAssignmentOrchestrator & AgentConfigResolver &
+      ChatRepository & LlmService & TaskRepository & IssueAssignmentOrchestrator & AgentConfigResolver &
         GatewayService & ChannelRegistry & StreamAbortRegistry & ActivityHub,
       Nothing,
       ChatController,
@@ -41,7 +41,7 @@ object ChatController:
 final case class ChatControllerLive(
   chatRepository: ChatRepository,
   llmService: LlmService,
-  migrationRepository: MigrationRepository,
+  migrationRepository: TaskRepository,
   issueAssignmentOrchestrator: IssueAssignmentOrchestrator,
   configResolver: AgentConfigResolver,
   gatewayService: GatewayService,

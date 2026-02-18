@@ -19,13 +19,13 @@ import models.*
   *   - Workspace-scoped state isolation (when workspace is provided)
   */
 trait StateService:
-  def saveState(state: MigrationState): ZIO[Any, StateError, Unit]
-  def loadState(runId: String): ZIO[Any, StateError, Option[MigrationState]]
-  def createCheckpoint(runId: String, step: MigrationStep): ZIO[Any, StateError, Unit]
-  def getLastCheckpoint(runId: String): ZIO[Any, StateError, Option[MigrationStep]]
+  def saveState(state: TaskState): ZIO[Any, StateError, Unit]
+  def loadState(runId: String): ZIO[Any, StateError, Option[TaskState]]
+  def createCheckpoint(runId: String, step: TaskStep): ZIO[Any, StateError, Unit]
+  def getLastCheckpoint(runId: String): ZIO[Any, StateError, Option[TaskStep]]
   def listCheckpoints(runId: String): ZIO[Any, StateError, List[Checkpoint]]
   def validateCheckpointIntegrity(runId: String): ZIO[Any, StateError, Unit]
-  def listRuns(): ZIO[Any, StateError, List[MigrationRunSummary]]
+  def listRuns(): ZIO[Any, StateError, List[TaskRunSummary]]
 
   /** Get state directory for a run (workspace-aware)
     *
@@ -34,16 +34,16 @@ trait StateService:
   def getStateDirectory(runId: String): ZIO[Any, StateError, Path]
 
 object StateService:
-  def saveState(state: MigrationState): ZIO[StateService, StateError, Unit] =
+  def saveState(state: TaskState): ZIO[StateService, StateError, Unit] =
     ZIO.serviceWithZIO[StateService](_.saveState(state))
 
-  def loadState(runId: String): ZIO[StateService, StateError, Option[MigrationState]] =
+  def loadState(runId: String): ZIO[StateService, StateError, Option[TaskState]] =
     ZIO.serviceWithZIO[StateService](_.loadState(runId))
 
-  def createCheckpoint(runId: String, step: MigrationStep): ZIO[StateService, StateError, Unit] =
+  def createCheckpoint(runId: String, step: TaskStep): ZIO[StateService, StateError, Unit] =
     ZIO.serviceWithZIO[StateService](_.createCheckpoint(runId, step))
 
-  def getLastCheckpoint(runId: String): ZIO[StateService, StateError, Option[MigrationStep]] =
+  def getLastCheckpoint(runId: String): ZIO[StateService, StateError, Option[TaskStep]] =
     ZIO.serviceWithZIO[StateService](_.getLastCheckpoint(runId))
 
   def listCheckpoints(runId: String): ZIO[StateService, StateError, List[Checkpoint]] =
@@ -52,7 +52,7 @@ object StateService:
   def validateCheckpointIntegrity(runId: String): ZIO[StateService, StateError, Unit] =
     ZIO.serviceWithZIO[StateService](_.validateCheckpointIntegrity(runId))
 
-  def listRuns(): ZIO[StateService, StateError, List[MigrationRunSummary]] =
+  def listRuns(): ZIO[StateService, StateError, List[TaskRunSummary]] =
     ZIO.serviceWithZIO[StateService](_.listRuns())
 
   def getStateDirectory(runId: String): ZIO[StateService, StateError, Path] =
@@ -71,17 +71,17 @@ object StateService:
 
         private def checkpointsDir(runId: String): Path = runDir(runId).resolve("checkpoints")
 
-        private def checkpointPath(runId: String, step: MigrationStep): Path =
+        private def checkpointPath(runId: String, step: TaskStep): Path =
           checkpointsDir(runId).resolve(s"${step.toString.toLowerCase}.json")
 
         /** Resolve state directory (workspace-aware)
           *
           * If state has workspace metadata, uses workspace stateDir. Otherwise uses legacy location.
           */
-        private def resolveStateDir(state: MigrationState): Path =
+        private def resolveStateDir(state: TaskState): Path =
           state.workspace.map(_.stateDir).getOrElse(runDir(state.runId))
 
-        override def saveState(state: MigrationState): ZIO[Any, StateError, Unit] =
+        override def saveState(state: TaskState): ZIO[Any, StateError, Unit] =
           for
             _   <- ZIO.logInfo(s"Saving state for run: ${state.runId}")
             _   <- fileService.ensureDirectory(runDir(state.runId)).mapError(fe => mapFileToStateError(state.runId)(fe))
@@ -93,7 +93,7 @@ object StateService:
             _   <- ZIO.logInfo(s"State saved successfully for run: ${state.runId}")
           yield ()
 
-        override def loadState(runId: String): ZIO[Any, StateError, Option[MigrationState]] =
+        override def loadState(runId: String): ZIO[Any, StateError, Option[TaskState]] =
           for
             _      <- ZIO.logInfo(s"Loading state for run: $runId")
             exists <- fileService.exists(statePath(runId)).mapError(fe => mapFileToStateError(runId)(fe))
@@ -102,7 +102,7 @@ object StateService:
                 for
                   json  <- fileService.readFile(statePath(runId)).mapError(fe => mapFileToStateError(runId)(fe))
                   state <- ZIO
-                             .fromEither(json.fromJson[MigrationState])
+                             .fromEither(json.fromJson[TaskState])
                              .mapError(err => StateError.InvalidState(runId, err))
                   _     <- ZIO.logInfo(s"State loaded successfully for run: $runId")
                 yield Some(state)
@@ -110,7 +110,7 @@ object StateService:
                 ZIO.logInfo(s"No state found for run: $runId").as(None)
           yield state
 
-        override def createCheckpoint(runId: String, step: MigrationStep): ZIO[Any, StateError, Unit] =
+        override def createCheckpoint(runId: String, step: TaskStep): ZIO[Any, StateError, Unit] =
           for
             _         <- ZIO.logInfo(s"Creating checkpoint for run $runId, step: $step")
             stateOpt  <- loadState(runId)
@@ -134,7 +134,7 @@ object StateService:
             _         <- ZIO.logInfo(s"Checkpoint created for run $runId, step: $step")
           yield ()
 
-        override def getLastCheckpoint(runId: String): ZIO[Any, StateError, Option[MigrationStep]] =
+        override def getLastCheckpoint(runId: String): ZIO[Any, StateError, Option[TaskStep]] =
           for
             _           <- ZIO.logInfo(s"Getting last checkpoint for run: $runId")
             checkpoints <- listCheckpoints(runId)
@@ -168,7 +168,7 @@ object StateService:
                            }
           yield ()
 
-        override def listRuns(): ZIO[Any, StateError, List[MigrationRunSummary]] =
+        override def listRuns(): ZIO[Any, StateError, List[TaskRunSummary]] =
           for
             _      <- ZIO.logInfo("Listing all migration runs")
             exists <-
@@ -191,7 +191,7 @@ object StateService:
                       loadState(runId).map {
                         case Some(state) =>
                           Some(
-                            MigrationRunSummary(
+                            TaskRunSummary(
                               runId = state.runId,
                               startedAt = state.startedAt,
                               currentStep = state.currentStep,
@@ -207,7 +207,7 @@ object StateService:
             _      <- ZIO.logInfo(s"Found ${runs.length} migration runs")
           yield runs
 
-        private def updateIndex(runId: String, state: MigrationState): ZIO[Any, FileError, Unit] =
+        private def updateIndex(runId: String, state: TaskState): ZIO[Any, FileError, Unit] =
           for
             _        <- fileService.ensureDirectory(stateDir)
             existing <- fileService
@@ -216,10 +216,10 @@ object StateService:
                             if exists then
                               fileService
                                 .readFile(indexPath)
-                                .map(_.fromJson[List[MigrationRunSummary]].getOrElse(List.empty))
+                                .map(_.fromJson[List[TaskRunSummary]].getOrElse(List.empty))
                             else ZIO.succeed(List.empty)
                           }
-            summary   = MigrationRunSummary(
+            summary   = TaskRunSummary(
                           runId = state.runId,
                           startedAt = state.startedAt,
                           currentStep = state.currentStep,

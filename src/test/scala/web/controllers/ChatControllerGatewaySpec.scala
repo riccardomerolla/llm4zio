@@ -20,12 +20,12 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
 
   private def appLayer(
     dbName: String
-  ): ZLayer[Any, Any, ChatRepository & MigrationRepository & GatewayService & ChannelRegistry & LlmService] =
-    ZLayer.make[ChatRepository & MigrationRepository & GatewayService & ChannelRegistry & LlmService](
+  ): ZLayer[Any, Any, ChatRepository & TaskRepository & GatewayService & ChannelRegistry & LlmService] =
+    ZLayer.make[ChatRepository & TaskRepository & GatewayService & ChannelRegistry & LlmService](
       ZLayer.succeed(DatabaseConfig(s"jdbc:sqlite:file:$dbName?mode=memory&cache=shared")),
       Database.live,
       ChatRepository.live,
-      MigrationRepository.live,
+      TaskRepository.live,
       ChannelRegistry.empty,
       ZLayer.fromZIO {
         for
@@ -98,7 +98,7 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
       val dbName = s"chat-gateway-api-${UUID.randomUUID()}"
       (for
         chatRepo  <- ZIO.service[ChatRepository]
-        migrRepo  <- ZIO.service[MigrationRepository]
+        migrRepo  <- ZIO.service[TaskRepository]
         llm       <- ZIO.service[LlmService]
         gateway   <- ZIO.service[GatewayService]
         registry  <- ZIO.service[ChannelRegistry]
@@ -139,7 +139,7 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
       val dbName = s"chat-gateway-web-${UUID.randomUUID()}"
       (for
         chatRepo  <- ZIO.service[ChatRepository]
-        migrRepo  <- ZIO.service[MigrationRepository]
+        migrRepo  <- ZIO.service[TaskRepository]
         llm       <- ZIO.service[LlmService]
         gateway   <- ZIO.service[GatewayService]
         registry  <- ZIO.service[ChannelRegistry]

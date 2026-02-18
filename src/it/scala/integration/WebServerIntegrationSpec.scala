@@ -60,12 +60,12 @@ object WebServerIntegrationSpec extends ZIOSpecDefault:
       body     <- response.body.asString
     yield (response.status.code, body)
 
-  private object TestMigrationRepository extends MigrationRepository:
+  private object TestMigrationRepository extends TaskRepository:
 
-    override def listRuns(offset: Int, limit: Int): IO[PersistenceError, List[MigrationRunRow]] =
+    override def listRuns(offset: Int, limit: Int): IO[PersistenceError, List[TaskRunRow]] =
       ZIO.succeed(
         List(
-          MigrationRunRow(
+          TaskRunRow(
             id = 1L,
             sourceDir = "/tmp/source",
             outputDir = "/tmp/output",
@@ -82,11 +82,11 @@ object WebServerIntegrationSpec extends ZIOSpecDefault:
         )
       )
 
-    override def createRun(run: MigrationRunRow): IO[PersistenceError, Long]                             =
+    override def createRun(run: TaskRunRow): IO[PersistenceError, Long]                                  =
       ZIO.dieMessage("unused in WebServerIntegrationSpec")
-    override def updateRun(run: MigrationRunRow): IO[PersistenceError, Unit]                             =
+    override def updateRun(run: TaskRunRow): IO[PersistenceError, Unit]                                  =
       ZIO.dieMessage("unused in WebServerIntegrationSpec")
-    override def getRun(id: Long): IO[PersistenceError, Option[MigrationRunRow]]                         =
+    override def getRun(id: Long): IO[PersistenceError, Option[TaskRunRow]]                              =
       ZIO.dieMessage("unused in WebServerIntegrationSpec")
     override def deleteRun(id: Long): IO[PersistenceError, Unit]                                         =
       ZIO.dieMessage("unused in WebServerIntegrationSpec")
@@ -121,7 +121,7 @@ object WebServerIntegrationSpec extends ZIOSpecDefault:
     ): ZIO[Any, OrchestratorError, MigrationResult] =
       ZIO.dieMessage("unused in WebServerIntegrationSpec")
 
-    override def runStep(step: MigrationStep): ZIO[Any, OrchestratorError, StepResult] =
+    override def runStep(step: TaskStep): ZIO[Any, OrchestratorError, StepResult] =
       ZIO.dieMessage("unused in WebServerIntegrationSpec")
 
     override def startMigration(config: MigrationConfig): IO[OrchestratorError, Long] =
@@ -130,10 +130,10 @@ object WebServerIntegrationSpec extends ZIOSpecDefault:
     override def cancelMigration(runId: Long): IO[OrchestratorError, Unit] =
       ZIO.dieMessage("unused in WebServerIntegrationSpec")
 
-    override def getRunStatus(runId: Long): IO[PersistenceError, Option[MigrationRunRow]] =
+    override def getRunStatus(runId: Long): IO[PersistenceError, Option[TaskRunRow]] =
       ZIO.dieMessage("unused in WebServerIntegrationSpec")
 
-    override def listRuns(page: Int, pageSize: Int): IO[PersistenceError, List[MigrationRunRow]] =
+    override def listRuns(page: Int, pageSize: Int): IO[PersistenceError, List[TaskRunRow]] =
       ZIO.dieMessage("unused in WebServerIntegrationSpec")
 
     override def subscribeToProgress(runId: Long): UIO[Dequeue[ProgressUpdate]] =
