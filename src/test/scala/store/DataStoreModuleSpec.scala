@@ -89,4 +89,4 @@ object DataStoreModuleSpec extends ZIOSpecDefault:
           yield assertTrue(loaded.contains(row))).provideLayer(layerFor(dir))
         }
       },
-    )
+    ) @@ TestAspect.sequential
