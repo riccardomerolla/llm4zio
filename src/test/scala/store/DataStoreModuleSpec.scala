@@ -1,6 +1,7 @@
 package store
 
 import java.nio.file.{ Files, Path }
+import java.time.Instant
 
 import zio.*
 import zio.test.*
@@ -32,7 +33,8 @@ object DataStoreModuleSpec extends ZIOSpecDefault:
     EclipseStoreError | GigaMapError,
     DataStoreModule.DataStoreService & DataStoreModule.TaskRunsStore &
       DataStoreModule.TaskReportsStore & DataStoreModule.TaskArtifactsStore & DataStoreModule.ConversationsStore &
-      DataStoreModule.MessagesStore & DataStoreModule.SessionContextsStore & DataStoreModule.ActivityEventsStore,
+      DataStoreModule.MessagesStore & DataStoreModule.SessionContextsStore & DataStoreModule.ActivityEventsStore &
+      DataStoreModule.AgentIssuesStore & DataStoreModule.AgentAssignmentsStore,
   ] =
     ZLayer.succeed(
       StoreConfig(
@@ -53,7 +55,7 @@ object DataStoreModuleSpec extends ZIOSpecDefault:
             workflowId = Some("wf-1"),
             currentPhase = Some("analysis"),
             errorMessage = None,
-            startedAt = "2026-02-19T10:00:00Z",
+            startedAt = Instant.parse("2026-02-19T10:00:00Z"),
             completedAt = None,
             totalFiles = 10,
             processedFiles = 4,
@@ -70,20 +72,20 @@ object DataStoreModuleSpec extends ZIOSpecDefault:
       test("conversations map supports put/get round-trip") {
         withTempDir { dir =>
           val row = ConversationRow(
-            id = "conv-1",
+            id = 1L,
             title = "Conversation",
             description = Some("desc"),
             channelName = Some("telegram"),
             status = "active",
-            createdAt = "2026-02-19T10:00:00Z",
-            updatedAt = "2026-02-19T10:01:00Z",
-            runId = Some("run-1"),
+            createdAt = Instant.parse("2026-02-19T10:00:00Z"),
+            updatedAt = Instant.parse("2026-02-19T10:01:00Z"),
+            runId = Some(1L),
             createdBy = Some("system"),
           )
           (for
             map    <- DataStoreModule.conversationsMap
-            _      <- map.put(ConvId("conv-1"), row)
-            loaded <- map.get(ConvId("conv-1"))
+            _      <- map.put(1L, row)
+            loaded <- map.get(1L)
           yield assertTrue(loaded.contains(row))).provideLayer(layerFor(dir))
         }
       },

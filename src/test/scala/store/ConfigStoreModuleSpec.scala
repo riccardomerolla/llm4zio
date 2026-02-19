@@ -1,6 +1,7 @@
 package store
 
 import java.nio.file.{ Files, Path }
+import java.time.Instant
 
 import zio.*
 import zio.test.*
@@ -55,8 +56,8 @@ object ConfigStoreModuleSpec extends ZIOSpecDefault:
             description = Some("Default workflow"),
             stepsJson = "[\"Discovery\",\"Analysis\"]",
             isBuiltin = true,
-            createdAt = "2026-02-19T10:00:00Z",
-            updatedAt = "2026-02-19T10:00:00Z",
+            createdAt = Instant.parse("2026-02-19T10:00:00Z"),
+            updatedAt = Instant.parse("2026-02-19T10:00:00Z"),
           )
 
           val write =
@@ -84,8 +85,8 @@ object ConfigStoreModuleSpec extends ZIOSpecDefault:
             systemPrompt = "Review this code.",
             tagsJson = Some("[\"scala\",\"review\"]"),
             enabled = true,
-            createdAt = "2026-02-19T10:00:00Z",
-            updatedAt = "2026-02-19T10:00:00Z",
+            createdAt = Instant.parse("2026-02-19T10:00:00Z"),
+            updatedAt = Instant.parse("2026-02-19T10:00:00Z"),
           )
           (for
             map    <- ConfigStoreModule.customAgentsMap

@@ -1,6 +1,7 @@
 package store
 
 import java.nio.file.Paths
+import java.time.Instant
 
 import zio.*
 import zio.json.*
@@ -12,14 +13,19 @@ import io.github.riccardomerolla.zio.eclipsestore.gigamap.error.GigaMapError
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.service.GigaMap
 import io.github.riccardomerolla.zio.eclipsestore.service.EclipseStoreService
 
+given configStoreInstantCodec: JsonCodec[Instant] = JsonCodec[String].transform(
+  str => Instant.parse(str),
+  instant => instant.toString,
+)
+
 final case class WorkflowRow(
   id: String,
   name: String,
   description: Option[String],
   stepsJson: String,
   isBuiltin: Boolean,
-  createdAt: String,
-  updatedAt: String,
+  createdAt: Instant,
+  updatedAt: Instant,
 ) derives JsonCodec
 
 final case class CustomAgentRow(
@@ -30,8 +36,8 @@ final case class CustomAgentRow(
   systemPrompt: String,
   tagsJson: Option[String],
   enabled: Boolean,
-  createdAt: String,
-  updatedAt: String,
+  createdAt: Instant,
+  updatedAt: Instant,
 ) derives JsonCodec
 
 object ConfigStoreModule:

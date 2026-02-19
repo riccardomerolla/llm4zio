@@ -1,6 +1,7 @@
 package store
 
 import java.nio.file.Paths
+import java.time.Instant
 
 import zio.*
 import zio.json.*
@@ -12,6 +13,11 @@ import io.github.riccardomerolla.zio.eclipsestore.gigamap.error.GigaMapError
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.service.GigaMap
 import io.github.riccardomerolla.zio.eclipsestore.service.EclipseStoreService
 
+given dataStoreInstantCodec: JsonCodec[Instant] = JsonCodec[String].transform(
+  str => Instant.parse(str),
+  instant => instant.toString,
+)
+
 final case class TaskRunRow(
   id: String,
   sourceDir: String,
@@ -20,8 +26,8 @@ final case class TaskRunRow(
   workflowId: Option[String],
   currentPhase: Option[String],
   errorMessage: Option[String],
-  startedAt: String,
-  completedAt: Option[String],
+  startedAt: Instant,
+  completedAt: Option[Instant],
   totalFiles: Int,
   processedFiles: Int,
   successfulConversions: Int,
@@ -34,7 +40,7 @@ final case class TaskReportRow(
   stepName: String,
   reportType: String,
   content: String,
-  createdAt: String,
+  createdAt: Instant,
 ) derives JsonCodec
 
 final case class TaskArtifactRow(
@@ -43,38 +49,38 @@ final case class TaskArtifactRow(
   stepName: String,
   key: String,
   value: String,
-  createdAt: String,
+  createdAt: Instant,
 ) derives JsonCodec
 
 final case class ConversationRow(
-  id: String,
+  id: Long,
   title: String,
   description: Option[String],
   channelName: Option[String],
   status: String,
-  createdAt: String,
-  updatedAt: String,
-  runId: Option[String],
+  createdAt: Instant,
+  updatedAt: Instant,
+  runId: Option[Long],
   createdBy: Option[String],
 ) derives JsonCodec
 
 final case class ChatMessageRow(
-  id: String,
-  conversationId: String,
+  id: Long,
+  conversationId: Long,
   sender: String,
   senderType: String,
   content: String,
   messageType: String,
   metadata: Option[String],
-  createdAt: String,
-  updatedAt: String,
+  createdAt: Instant,
+  updatedAt: Instant,
 ) derives JsonCodec
 
 final case class SessionContextRow(
   channelName: String,
   sessionKey: String,
   contextJson: String,
-  updatedAt: String,
+  updatedAt: Instant,
 ) derives JsonCodec
 
 final case class ActivityEventRow(
@@ -86,7 +92,41 @@ final case class ActivityEventRow(
   agentName: Option[String],
   summary: String,
   payload: Option[String],
-  createdAt: String,
+  createdAt: Instant,
+) derives JsonCodec
+
+final case class AgentIssueRow(
+  id: Long,
+  runId: Option[Long],
+  conversationId: Option[Long],
+  title: String,
+  description: String,
+  issueType: String,
+  tags: Option[String],
+  preferredAgent: Option[String],
+  contextPath: Option[String],
+  sourceFolder: Option[String],
+  priority: String,
+  status: String,
+  assignedAgent: Option[String],
+  assignedAt: Option[Instant],
+  completedAt: Option[Instant],
+  errorMessage: Option[String],
+  resultData: Option[String],
+  createdAt: Instant,
+  updatedAt: Instant,
+) derives JsonCodec
+
+final case class AgentAssignmentRow(
+  id: Long,
+  issueId: Long,
+  agentName: String,
+  status: String,
+  assignedAt: Instant,
+  startedAt: Option[Instant],
+  completedAt: Option[Instant],
+  executionLog: Option[String],
+  result: Option[String],
 ) derives JsonCodec
 
 object DataStoreModule:
@@ -103,10 +143,10 @@ object DataStoreModule:
     def map: GigaMap[ArtifactId, TaskArtifactRow]
 
   trait ConversationsStore:
-    def map: GigaMap[ConvId, ConversationRow]
+    def map: GigaMap[Long, ConversationRow]
 
   trait MessagesStore:
-    def map: GigaMap[MessageId, ChatMessageRow]
+    def map: GigaMap[Long, ChatMessageRow]
 
   trait SessionContextsStore:
     def map: GigaMap[String, SessionContextRow]
@@ -114,11 +154,29 @@ object DataStoreModule:
   trait ActivityEventsStore:
     def map: GigaMap[EventId, ActivityEventRow]
 
+  trait AgentIssuesStore:
+    def map: GigaMap[Long, AgentIssueRow]
+
+  trait AgentAssignmentsStore:
+    def map: GigaMap[Long, AgentAssignmentRow]
+
   def taskRunsMap: URIO[TaskRunsStore, GigaMap[TaskRunId, TaskRunRow]] =
     ZIO.serviceWith[TaskRunsStore](_.map)
 
-  def conversationsMap: URIO[ConversationsStore, GigaMap[ConvId, ConversationRow]] =
+  def conversationsMap: URIO[ConversationsStore, GigaMap[Long, ConversationRow]] =
     ZIO.serviceWith[ConversationsStore](_.map)
+
+  def messagesMap: URIO[MessagesStore, GigaMap[Long, ChatMessageRow]] =
+    ZIO.serviceWith[MessagesStore](_.map)
+
+  def sessionContextsMap: URIO[SessionContextsStore, GigaMap[String, SessionContextRow]] =
+    ZIO.serviceWith[SessionContextsStore](_.map)
+
+  def agentIssuesMap: URIO[AgentIssuesStore, GigaMap[Long, AgentIssueRow]] =
+    ZIO.serviceWith[AgentIssuesStore](_.map)
+
+  def agentAssignmentsMap: URIO[AgentAssignmentsStore, GigaMap[Long, AgentAssignmentRow]] =
+    ZIO.serviceWith[AgentAssignmentsStore](_.map)
 
   private val taskRunsDefinition = GigaMapDefinition[TaskRunId, TaskRunRow](
     name = "taskRuns",
@@ -143,7 +201,7 @@ object DataStoreModule:
     ),
   )
 
-  private val conversationsDefinition = GigaMapDefinition[ConvId, ConversationRow](
+  private val conversationsDefinition = GigaMapDefinition[Long, ConversationRow](
     name = "conversations",
     indexes = Chunk(
       GigaMapIndex.single("channelName", _.channelName.getOrElse("")),
@@ -151,7 +209,7 @@ object DataStoreModule:
     ),
   )
 
-  private val messagesDefinition = GigaMapDefinition[MessageId, ChatMessageRow](
+  private val messagesDefinition = GigaMapDefinition[Long, ChatMessageRow](
     name = "messages",
     indexes = Chunk(
       GigaMapIndex.single("conversationId", _.conversationId),
@@ -168,6 +226,25 @@ object DataStoreModule:
     indexes = Chunk(
       GigaMapIndex.single("eventType", _.eventType),
       GigaMapIndex.single("createdAt", _.createdAt),
+    ),
+  )
+
+  private val agentIssuesDefinition = GigaMapDefinition[Long, AgentIssueRow](
+    name = "agentIssues",
+    indexes = Chunk(
+      GigaMapIndex.single("runId", _.runId.getOrElse(-1L)),
+      GigaMapIndex.single("conversationId", _.conversationId.getOrElse(-1L)),
+      GigaMapIndex.single("status", _.status),
+      GigaMapIndex.single("assignedAgent", _.assignedAgent.getOrElse("")),
+      GigaMapIndex.single("updatedAt", _.updatedAt),
+    ),
+  )
+
+  private val agentAssignmentsDefinition = GigaMapDefinition[Long, AgentAssignmentRow](
+    name = "agentAssignments",
+    indexes = Chunk(
+      GigaMapIndex.single("issueId", _.issueId),
+      GigaMapIndex.single("assignedAt", _.assignedAt),
     ),
   )
 
@@ -206,15 +283,15 @@ object DataStoreModule:
     )
 
   val conversations: ZLayer[EclipseStoreService, GigaMapError, ConversationsStore] =
-    GigaMap.make(conversationsDefinition) >>> ZLayer.fromFunction((gm: GigaMap[ConvId, ConversationRow]) =>
+    GigaMap.make(conversationsDefinition) >>> ZLayer.fromFunction((gm: GigaMap[Long, ConversationRow]) =>
       new ConversationsStore:
-        override val map: GigaMap[ConvId, ConversationRow] = gm
+        override val map: GigaMap[Long, ConversationRow] = gm
     )
 
   val messages: ZLayer[EclipseStoreService, GigaMapError, MessagesStore] =
-    GigaMap.make(messagesDefinition) >>> ZLayer.fromFunction((gm: GigaMap[MessageId, ChatMessageRow]) =>
+    GigaMap.make(messagesDefinition) >>> ZLayer.fromFunction((gm: GigaMap[Long, ChatMessageRow]) =>
       new MessagesStore:
-        override val map: GigaMap[MessageId, ChatMessageRow] = gm
+        override val map: GigaMap[Long, ChatMessageRow] = gm
     )
 
   val sessionContexts: ZLayer[EclipseStoreService, GigaMapError, SessionContextsStore] =
@@ -229,16 +306,28 @@ object DataStoreModule:
         override val map: GigaMap[EventId, ActivityEventRow] = gm
     )
 
+  val agentIssues: ZLayer[EclipseStoreService, GigaMapError, AgentIssuesStore] =
+    GigaMap.make(agentIssuesDefinition) >>> ZLayer.fromFunction((gm: GigaMap[Long, AgentIssueRow]) =>
+      new AgentIssuesStore:
+        override val map: GigaMap[Long, AgentIssueRow] = gm
+    )
+
+  val agentAssignments: ZLayer[EclipseStoreService, GigaMapError, AgentAssignmentsStore] =
+    GigaMap.make(agentAssignmentsDefinition) >>> ZLayer.fromFunction((gm: GigaMap[Long, AgentAssignmentRow]) =>
+      new AgentAssignmentsStore:
+        override val map: GigaMap[Long, AgentAssignmentRow] = gm
+    )
+
   private val mapsLive: ZLayer[
     EclipseStoreService,
     GigaMapError,
     DataStoreService & TaskRunsStore & TaskReportsStore & TaskArtifactsStore & ConversationsStore & MessagesStore &
-      SessionContextsStore & ActivityEventsStore,
+      SessionContextsStore & ActivityEventsStore & AgentIssuesStore & AgentAssignmentsStore,
   ] =
     ZLayer.makeSome[
       EclipseStoreService,
       DataStoreService & TaskRunsStore & TaskReportsStore & TaskArtifactsStore & ConversationsStore & MessagesStore &
-        SessionContextsStore & ActivityEventsStore,
+        SessionContextsStore & ActivityEventsStore & AgentIssuesStore & AgentAssignmentsStore,
     ](
       dataStore,
       taskRuns,
@@ -248,12 +337,14 @@ object DataStoreModule:
       messages,
       sessionContexts,
       activityEvents,
+      agentIssues,
+      agentAssignments,
     )
 
   val live: ZLayer[
     StoreConfig,
     EclipseStoreError | GigaMapError,
     DataStoreService & TaskRunsStore & TaskReportsStore & TaskArtifactsStore & ConversationsStore & MessagesStore &
-      SessionContextsStore & ActivityEventsStore,
+      SessionContextsStore & ActivityEventsStore & AgentIssuesStore & AgentAssignmentsStore,
   ] =
     baseStore >>> mapsLive
