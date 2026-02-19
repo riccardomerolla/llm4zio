@@ -24,9 +24,11 @@ final case class MemoryRepositoryES(
 
   override def save(entry: MemoryEntry): IO[Throwable, Unit] =
     for
-      _   <- memoryMap.put(StoreMemoryId(entry.id.value), entry).mapError(toThrowable)
-      idx <- ensureIndex
-      _   <- idx.add(entry.id.value.hashCode.toLong, entry).mapError(toThrowable)
+      persisted <- if entry.embedding.nonEmpty then ZIO.succeed(entry)
+                   else embedService.embed(entry.text).map(vec => entry.copy(embedding = vec))
+      _         <- memoryMap.put(StoreMemoryId(persisted.id.value), persisted).mapError(toThrowable)
+      idx       <- ensureIndex
+      _         <- idx.add(persisted.id.value.hashCode.toLong, persisted).mapError(toThrowable)
     yield ()
 
   override def searchRelevant(

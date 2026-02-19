@@ -54,6 +54,10 @@ final case class SettingsControllerLive(
     "telegram.polling.interval",
     "telegram.polling.batchSize",
     "telegram.polling.timeout",
+    "memory.enabled",
+    "memory.maxContextMemories",
+    "memory.summarizationThreshold",
+    "memory.retentionDays",
   )
 
   override val routes: Routes[Any, Response] = Routes(
@@ -71,11 +75,14 @@ final case class SettingsControllerLive(
           form     <- parseForm(req)
           _        <- ZIO.foreachDiscard(settingsKeys) { key =>
                         val value = key match
-                          case "gateway.dryRun" | "gateway.verbose" | "telegram.enabled" =>
+                          case "gateway.dryRun" | "gateway.verbose" | "telegram.enabled" | "memory.enabled" =>
                             if form.get(key).exists(_.equalsIgnoreCase("on")) then "true" else "false"
-                          case _                                                         =>
+                          case _                                                                            =>
                             form.getOrElse(key, "")
-                        if value.nonEmpty || key.startsWith("ai.") || key.startsWith("gateway.") || key.startsWith("telegram.")
+                        if value.nonEmpty || key.startsWith("ai.") || key.startsWith("gateway.") || key.startsWith(
+                            "telegram."
+                          ) || key
+                            .startsWith("memory.")
                         then
                           repository.upsertSetting(key, value)
                         else ZIO.unit

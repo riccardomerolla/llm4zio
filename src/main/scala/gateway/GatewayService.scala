@@ -5,10 +5,12 @@ import java.util.UUID
 import zio.*
 import zio.json.*
 
-import agents.AgentRegistry
+import agents.{ AgentRegistry, ConversationMemory }
+import db.{ ChatRepository, ConfigRepository }
 import gateway.models.NormalizedMessage
 import gateway.telegram.{ IntentConversationState, IntentDecision, IntentParser }
 import llm4zio.core.LlmService
+import memory.{ MemoryEntry, MemoryId, MemoryKind, MemoryRepository }
 
 enum GatewayServiceError:
   case Router(error: MessageRouterError)
@@ -62,32 +64,65 @@ object GatewayService:
   def metrics: ZIO[GatewayService, Nothing, GatewayMetricsSnapshot] =
     ZIO.serviceWithZIO[GatewayService](_.metrics)
 
-  val live: ZLayer[MessageRouter & AgentRegistry & LlmService, Nothing, GatewayService] =
+  val live
+    : ZLayer[MessageRouter & AgentRegistry & LlmService & ConfigRepository & MemoryRepository & ChatRepository, Nothing, GatewayService] =
     ZLayer.scoped {
       for
         router        <- ZIO.service[MessageRouter]
         agentRegistry <- ZIO.service[AgentRegistry]
         llmService    <- ZIO.service[LlmService]
+        configRepo    <- ZIO.service[ConfigRepository]
+        memoryRepo    <- ZIO.service[MemoryRepository]
+        chatRepo      <- ZIO.service[ChatRepository]
         queue         <- Queue.unbounded[GatewayQueueCommand]
         metrics       <- Ref.make(GatewayMetricsSnapshot())
         intents       <- Ref.make(Map.empty[gateway.models.SessionKey, IntentConversationState])
         _             <- startWorker(queue, router, metrics, None).forkScoped
-      yield GatewayServiceLive(queue, router, agentRegistry, llmService, metrics, None, intents)
+      yield GatewayServiceLive(
+        queue,
+        router,
+        agentRegistry,
+        llmService,
+        configRepo,
+        memoryRepo,
+        chatRepo,
+        metrics,
+        None,
+        intents,
+      )
     }
 
   val liveWithSteeringQueue
-    : ZLayer[MessageRouter & Queue[NormalizedMessage] & AgentRegistry & LlmService, Nothing, GatewayService] =
+    : ZLayer[
+      MessageRouter & Queue[NormalizedMessage] & AgentRegistry & LlmService & ConfigRepository & MemoryRepository & ChatRepository,
+      Nothing,
+      GatewayService,
+    ] =
     ZLayer.scoped {
       for
         router        <- ZIO.service[MessageRouter]
         agentRegistry <- ZIO.service[AgentRegistry]
         llmService    <- ZIO.service[LlmService]
+        configRepo    <- ZIO.service[ConfigRepository]
+        memoryRepo    <- ZIO.service[MemoryRepository]
+        chatRepo      <- ZIO.service[ChatRepository]
         steeringQueue <- ZIO.service[Queue[NormalizedMessage]]
         queue         <- Queue.unbounded[GatewayQueueCommand]
         metrics       <- Ref.make(GatewayMetricsSnapshot())
         intents       <- Ref.make(Map.empty[gateway.models.SessionKey, IntentConversationState])
         _             <- startWorker(queue, router, metrics, Some(steeringQueue)).forkScoped
-      yield GatewayServiceLive(queue, router, agentRegistry, llmService, metrics, Some(steeringQueue), intents)
+      yield GatewayServiceLive(
+        queue,
+        router,
+        agentRegistry,
+        llmService,
+        configRepo,
+        memoryRepo,
+        chatRepo,
+        metrics,
+        Some(steeringQueue),
+        intents,
+      )
     }
 
   private def startWorker(
@@ -212,6 +247,9 @@ final case class GatewayServiceLive(
   router: MessageRouter,
   agentRegistry: AgentRegistry,
   llmService: LlmService,
+  configRepository: ConfigRepository,
+  memoryRepository: MemoryRepository,
+  chatRepository: ChatRepository,
   metricsRef: Ref[GatewayMetricsSnapshot],
   steeringQueue: Option[Queue[NormalizedMessage]],
   intentStateRef: Ref[Map[gateway.models.SessionKey, IntentConversationState]],
@@ -246,6 +284,7 @@ final case class GatewayServiceLive(
                  metricsRef.update(current => current.copy(steeringForwarded = current.steeringForwarded + 1))
       _ <- router.routeInbound(message).mapError(GatewayServiceError.Router.apply)
       _ <- handleIntentRouting(message)
+      _ <- maybeScheduleSummarization(message).forkDaemon
       _ <- metricsRef.update(current =>
              GatewayService.markInboundProcessed(
                current.copy(processed = current.processed + 1),
@@ -342,7 +381,11 @@ final case class GatewayServiceLive(
   ): IO[GatewayServiceError, Unit] =
     if skipExecution then ZIO.unit
     else
-      llmService.execute(inbound.content).foldZIO(
+      (for
+        settings <- loadMemorySettings
+        prompt   <- enrichPromptWithMemory(inbound, settings)
+        response <- llmService.execute(prompt)
+      yield response).foldZIO(
         error =>
           sendAssistantReply(
             inbound,
@@ -356,6 +399,90 @@ final case class GatewayServiceLive(
             Some(selectedAgent),
           ),
       )
+
+  private def loadMemorySettings: IO[GatewayServiceError, ConversationMemory.Settings] =
+    configRepository
+      .getSettingsByPrefix("memory.")
+      .map(rows => ConversationMemory.fromSettingsMap(rows.map(r => r.key -> r.value).toMap))
+      .mapError(err => GatewayServiceError.Router(MessageRouterError.Persistence(err)))
+
+  private def enrichPromptWithMemory(
+    inbound: NormalizedMessage,
+    settings: ConversationMemory.Settings,
+  ): IO[GatewayServiceError, String] =
+    if !settings.enabled then ZIO.succeed(inbound.content)
+    else
+      val userId = ConversationMemory.userIdFromSession(inbound.sessionKey)
+      memoryRepository
+        .searchRelevant(
+          userId = userId,
+          query = inbound.content,
+          limit = settings.maxContextMemories,
+          filter = ConversationMemory.memoryFilter(userId),
+        )
+        .orElseSucceed(Nil)
+        .map { memories =>
+          inbound.content + ConversationMemory.memoryContextBlock(memories)
+        }
+
+  private def maybeScheduleSummarization(message: NormalizedMessage): UIO[Unit] =
+    if message.direction == gateway.models.MessageDirection.Inbound && message.role == gateway.models.MessageRole.User
+    then
+      (for
+        settings <- loadMemorySettings
+        _        <- ZIO.when(settings.enabled) {
+                      message.metadata.get("conversationId").flatMap(_.toLongOption) match
+                        case None                 => ZIO.unit
+                        case Some(conversationId) =>
+                          for
+                            messages <- chatRepository
+                                          .getMessages(conversationId)
+                                          .mapError(_ => GatewayServiceError.QueueClosed)
+                            count     = messages.length
+                            _        <- ZIO.when(count > 0 && count % settings.summarizationThreshold == 0) {
+                                          summarizeConversation(conversationId, message.sessionKey)
+                                        }
+                          yield ()
+                    }
+      yield ()).ignore
+    else ZIO.unit
+
+  private def summarizeConversation(
+    conversationId: Long,
+    sessionKey: gateway.models.SessionKey,
+  ): IO[GatewayServiceError, Unit] =
+    for
+      messages <- chatRepository.getMessages(conversationId).mapError(_ => GatewayServiceError.QueueClosed)
+      prompt    = {
+        val transcript = messages
+          .takeRight(50)
+          .map(m => s"[${m.sender}] ${m.content}")
+          .mkString("\n")
+        s"""Summarize the conversation into stable long-term memory.
+                       |Return plain text summary only.
+                       |
+                       |Conversation:
+                       |$transcript
+                       |""".stripMargin
+      }
+      summary  <- llmService.execute(prompt).mapError(_ => GatewayServiceError.QueueClosed)
+      now      <- Clock.instant
+      _        <- memoryRepository
+                    .save(
+                      MemoryEntry(
+                        id = MemoryId.make,
+                        userId = ConversationMemory.userIdFromSession(sessionKey),
+                        sessionId = ConversationMemory.sessionIdFromSession(sessionKey),
+                        text = summary.content,
+                        embedding = Vector.empty,
+                        tags = List("summary", s"conversation:$conversationId"),
+                        kind = MemoryKind.Summary,
+                        createdAt = now,
+                        lastAccessedAt = now,
+                      )
+                    )
+                    .ignore
+    yield ()
 
   private def updateIntentState(
     inbound: NormalizedMessage,

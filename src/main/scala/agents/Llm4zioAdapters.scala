@@ -5,8 +5,10 @@ import java.time.Instant
 import zio.*
 
 import db.{ ChatRepository, PersistenceError }
+import gateway.models.SessionKey
 import llm4zio.agents.*
 import llm4zio.core.{ Message, MessageRole }
+import memory.{ MemoryFilter, ScoredMemory, SessionId as MemorySessionId, UserId as MemoryUserId }
 import models.{ AgentInfo, ChatConversation, ConversationMessage, MessageType, SenderType }
 
 object Llm4zioAgentAdapters:
@@ -30,6 +32,58 @@ object Llm4zioAgentAdapters:
 
   def builtInAsLlm4zioAgents: List[Agent] =
     AgentRegistry.builtInAgents.map(stubAgent(_))
+
+object ConversationMemory:
+  final case class Settings(
+    enabled: Boolean = true,
+    maxContextMemories: Int = 5,
+    summarizationThreshold: Int = 20,
+    retentionDays: Int = 90,
+  )
+
+  def fromSettingsMap(settings: Map[String, String]): Settings =
+    Settings(
+      enabled = settings.get("memory.enabled").forall(parseBoolean(_, default = true)),
+      maxContextMemories = settings
+        .get("memory.maxContextMemories")
+        .flatMap(_.toIntOption)
+        .filter(_ > 0)
+        .getOrElse(5),
+      summarizationThreshold = settings
+        .get("memory.summarizationThreshold")
+        .flatMap(_.toIntOption)
+        .filter(_ > 0)
+        .getOrElse(20),
+      retentionDays = settings
+        .get("memory.retentionDays")
+        .flatMap(_.toIntOption)
+        .filter(_ > 0)
+        .getOrElse(90),
+    )
+
+  def memoryFilter(userId: MemoryUserId): MemoryFilter =
+    MemoryFilter(userId = Some(userId))
+
+  def userIdFromSession(sessionKey: SessionKey): MemoryUserId =
+    val raw = sessionKey.value.trim
+    if raw.startsWith("user:") then MemoryUserId(raw.stripPrefix("user:"))
+    else MemoryUserId(sessionKey.asString)
+
+  def sessionIdFromSession(sessionKey: SessionKey): MemorySessionId =
+    MemorySessionId(sessionKey.asString)
+
+  def memoryContextBlock(memories: List[ScoredMemory]): String =
+    if memories.isEmpty then ""
+    else
+      val body = memories.map(_.entry.text.trim).filter(_.nonEmpty).mkString("\n")
+      if body.isEmpty then ""
+      else s"\n\n<memory>\n$body\n</memory>"
+
+  private def parseBoolean(raw: String, default: Boolean): Boolean =
+    raw.trim.toLowerCase match
+      case "true" | "1" | "yes" | "on"  => true
+      case "false" | "0" | "no" | "off" => false
+      case _                            => default
 
 final case class ChatRepositoryMemoryStore(
   repository: ChatRepository,

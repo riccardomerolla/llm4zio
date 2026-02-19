@@ -39,6 +39,7 @@ object SettingsView:
           aiProviderSection(settings, errors),
           gatewaySection(settings, errors),
           telegramSection(settings, errors),
+          memorySection(settings, errors),
           div(cls := "flex gap-4 pt-2")(
             button(
               `type` := "submit",
@@ -313,6 +314,49 @@ object SettingsView:
           min = "1",
           max = "120",
           error = errors.get("telegram.polling.timeout"),
+        ),
+      ),
+    )
+
+  private def memorySection(s: Map[String, String], errors: Map[String, String] = Map.empty): Frag =
+    tag("section")(cls := sectionCls)(
+      h2(cls := "text-lg font-semibold text-white mb-4")("Memory"),
+      div(cls := "space-y-4")(
+        checkboxField(
+          "memory.enabled",
+          "Enable Memory",
+          s,
+          default = true,
+          error = errors.get("memory.enabled"),
+        ),
+        div(cls := "grid grid-cols-2 gap-4")(
+          numberField(
+            "memory.maxContextMemories",
+            "Max Context Memories",
+            s,
+            default = "5",
+            min = "1",
+            max = "25",
+            error = errors.get("memory.maxContextMemories"),
+          ),
+          numberField(
+            "memory.summarizationThreshold",
+            "Summarization Threshold",
+            s,
+            default = "20",
+            min = "1",
+            max = "200",
+            error = errors.get("memory.summarizationThreshold"),
+          ),
+        ),
+        numberField(
+          "memory.retentionDays",
+          "Retention Days",
+          s,
+          default = "90",
+          min = "1",
+          max = "3650",
+          error = errors.get("memory.retentionDays"),
         ),
       ),
     )

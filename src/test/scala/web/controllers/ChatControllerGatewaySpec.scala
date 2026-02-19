@@ -14,6 +14,7 @@ import gateway.*
 import gateway.models.*
 import llm4zio.core.*
 import llm4zio.tools.{ AnyTool, JsonSchema }
+import memory.*
 import orchestration.*
 import web.{ ActivityHubLive, StreamAbortRegistryLive }
 
@@ -27,6 +28,7 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
       Database.live,
       ChatRepository.live,
       TaskRepository.live,
+      ConfigRepository.fromTaskRepository,
       ChannelRegistry.empty,
       ZLayer.fromZIO {
         for
@@ -37,6 +39,7 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
       },
       AgentRegistry.live,
       MessageRouter.live,
+      EmptyMemoryRepo.layer,
       GatewayService.live,
       TestLlm.layer,
     )
@@ -63,6 +66,30 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
           ZIO.fail(LlmError.InvalidRequestError("unused in test"))
 
         override def isAvailable: UIO[Boolean] = ZIO.succeed(true)
+    )
+
+  private object EmptyMemoryRepo:
+    val layer: ULayer[MemoryRepository] = ZLayer.succeed(
+      new MemoryRepository:
+        override def save(entry: MemoryEntry): IO[Throwable, Unit] = ZIO.unit
+
+        override def searchRelevant(
+          userId: UserId,
+          query: String,
+          limit: Int,
+          filter: MemoryFilter,
+        ): IO[Throwable, List[ScoredMemory]] = ZIO.succeed(Nil)
+
+        override def listForUser(
+          userId: UserId,
+          filter: MemoryFilter,
+          page: Int,
+          pageSize: Int,
+        ): IO[Throwable, List[MemoryEntry]] = ZIO.succeed(Nil)
+
+        override def deleteById(userId: UserId, id: MemoryId): IO[Throwable, Unit] = ZIO.unit
+
+        override def deleteBySession(sessionId: SessionId): IO[Throwable, Unit] = ZIO.unit
     )
 
   private val testIssueAssignment: IssueAssignmentOrchestrator =

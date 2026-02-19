@@ -17,6 +17,7 @@ import gateway.telegram.*
 import llm4zio.core.*
 import llm4zio.providers.{ GeminiCliExecutor, HttpClient }
 import llm4zio.tools.{ AnyTool, JsonSchema }
+import memory.*
 import orchestration.*
 import store.{ DataStoreModule, StoreConfig }
 import sttp.client4.DefaultFutureBackend
@@ -52,7 +53,9 @@ object ApplicationDI:
       MessageRouter &
       GatewayService &
       TelegramPollingService &
-      TaskProgressNotifier
+      TaskProgressNotifier &
+      MemoryRepository &
+      EmbeddingService
 
   def aiProviderToLlmProvider(aiProvider: AIProvider): LlmProvider =
     aiProvider match
@@ -105,6 +108,8 @@ object ApplicationDI:
       // Create runtime config ref with merged DB settings
       configRefLayer,
       configAwareLlmServiceLayer,
+      EmbeddingService.live,
+      MemoryRepositoryES.live,
       WorkflowService.live,
       ActivityRepository.live,
       ActivityHub.live,
@@ -181,6 +186,7 @@ object ApplicationDI:
       StreamAbortRegistry.live,
       ChatController.live,
       ActivityController.live,
+      MemoryController.live,
       ChannelController.live,
       HealthController.live,
       TelegramController.live,

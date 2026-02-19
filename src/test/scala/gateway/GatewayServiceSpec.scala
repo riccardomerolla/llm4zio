@@ -12,6 +12,7 @@ import db.*
 import gateway.models.*
 import llm4zio.core.{ LlmChunk, LlmError, LlmResponse, LlmService, Message, ToolCallResponse }
 import llm4zio.tools.{ AnyTool, JsonSchema }
+import memory.*
 
 object GatewayServiceSpec extends ZIOSpecDefault:
 
@@ -20,6 +21,8 @@ object GatewayServiceSpec extends ZIOSpecDefault:
       ZLayer.succeed(DatabaseConfig(s"jdbc:sqlite:file:$dbName?mode=memory&cache=shared")),
       Database.live,
       ChatRepository.live,
+      TaskRepository.live,
+      ConfigRepository.fromTaskRepository,
       ChannelRegistry.empty,
       ZLayer.fromZIO {
         for
@@ -32,6 +35,7 @@ object GatewayServiceSpec extends ZIOSpecDefault:
       },
       AgentRegistry.live,
       TestLlm.layer,
+      EmptyMemoryRepo.layer,
       MessageRouter.live,
       GatewayService.live,
     )
@@ -42,6 +46,8 @@ object GatewayServiceSpec extends ZIOSpecDefault:
       ZLayer.succeed(DatabaseConfig(s"jdbc:sqlite:file:$dbName?mode=memory&cache=shared")),
       Database.live,
       ChatRepository.live,
+      TaskRepository.live,
+      ConfigRepository.fromTaskRepository,
       ChannelRegistry.empty,
       ZLayer.fromZIO {
         for
@@ -52,6 +58,7 @@ object GatewayServiceSpec extends ZIOSpecDefault:
       },
       AgentRegistry.live,
       TestLlm.layer,
+      EmptyMemoryRepo.layer,
       MessageRouter.live,
       ZLayer.fromZIO(Queue.unbounded[NormalizedMessage]),
       GatewayService.liveWithSteeringQueue,
@@ -80,6 +87,127 @@ object GatewayServiceSpec extends ZIOSpecDefault:
 
         override def isAvailable: UIO[Boolean] =
           ZIO.succeed(true)
+    )
+
+  private object EmptyMemoryRepo:
+    val layer: ULayer[MemoryRepository] = ZLayer.succeed(
+      new MemoryRepository:
+        override def save(entry: MemoryEntry): IO[Throwable, Unit] = ZIO.unit
+
+        override def searchRelevant(
+          userId: UserId,
+          query: String,
+          limit: Int,
+          filter: MemoryFilter,
+        ): IO[Throwable, List[ScoredMemory]] = ZIO.succeed(Nil)
+
+        override def listForUser(
+          userId: UserId,
+          filter: MemoryFilter,
+          page: Int,
+          pageSize: Int,
+        ): IO[Throwable, List[MemoryEntry]] = ZIO.succeed(Nil)
+
+        override def deleteById(userId: UserId, id: MemoryId): IO[Throwable, Unit] = ZIO.unit
+
+        override def deleteBySession(sessionId: SessionId): IO[Throwable, Unit] = ZIO.unit
+    )
+
+  private def memoryInjectionLayer(
+    dbName: String,
+    promptRef: Ref[List[String]],
+  ): ZLayer[Any, Any, GatewayService & ChannelRegistry] =
+    val llmLayer = ZLayer.succeed(
+      new LlmService:
+        override def execute(prompt: String): IO[LlmError, LlmResponse] =
+          if prompt.contains("You are a request router.") then
+            ZIO.succeed(LlmResponse("""{"agent":"code-agent","confidence":0.93}"""))
+          else promptRef.update(_ :+ prompt).as(LlmResponse("ok"))
+
+        override def executeStream(prompt: String): zio.stream.Stream[LlmError, LlmChunk] =
+          ZStream.empty
+
+        override def executeWithHistory(messages: List[Message]): IO[LlmError, LlmResponse] =
+          ZIO.succeed(LlmResponse("history"))
+
+        override def executeStreamWithHistory(messages: List[Message]): zio.stream.Stream[LlmError, LlmChunk] =
+          ZStream.empty
+
+        override def executeWithTools(prompt: String, tools: List[AnyTool]): IO[LlmError, ToolCallResponse] =
+          ZIO.succeed(ToolCallResponse(None, Nil, "stop"))
+
+        override def executeStructured[A: zio.json.JsonCodec](prompt: String, schema: JsonSchema): IO[LlmError, A] =
+          ZIO.fail(LlmError.InvalidRequestError("unused"))
+
+        override def isAvailable: UIO[Boolean] =
+          ZIO.succeed(true)
+    )
+
+    val seededMemoryLayer = ZLayer.succeed(
+      new MemoryRepository:
+        private val seed =
+          MemoryEntry(
+            id = MemoryId("seed-1"),
+            userId = UserId("telegram:conversation:chat-memory-1"),
+            sessionId = SessionId("telegram:conversation:chat-memory-1"),
+            text = "User prefers concise answers",
+            embedding = Vector(0.1f),
+            tags = Nil,
+            kind = MemoryKind.Preference,
+            createdAt = Instant.EPOCH,
+            lastAccessedAt = Instant.EPOCH,
+          )
+
+        override def save(entry: MemoryEntry): IO[Throwable, Unit] = ZIO.unit
+
+        override def searchRelevant(
+          userId: UserId,
+          query: String,
+          limit: Int,
+          filter: MemoryFilter,
+        ): IO[Throwable, List[ScoredMemory]] =
+          if userId == seed.userId then ZIO.succeed(List(ScoredMemory(seed, 0.99f)).take(limit))
+          else ZIO.succeed(Nil)
+
+        override def listForUser(
+          userId: UserId,
+          filter: MemoryFilter,
+          page: Int,
+          pageSize: Int,
+        ): IO[Throwable, List[MemoryEntry]] = ZIO.succeed(Nil)
+
+        override def deleteById(userId: UserId, id: MemoryId): IO[Throwable, Unit] = ZIO.unit
+
+        override def deleteBySession(sessionId: SessionId): IO[Throwable, Unit] = ZIO.unit
+    )
+
+    ZLayer.make[GatewayService & ChannelRegistry](
+      ZLayer.succeed(DatabaseConfig(s"jdbc:sqlite:file:$dbName?mode=memory&cache=shared")),
+      Database.live,
+      ChatRepository.live,
+      TaskRepository.live,
+      ConfigRepository.fromTaskRepository,
+      ZLayer.fromZIO {
+        for
+          repo <- ZIO.service[ConfigRepository]
+          _    <- repo.upsertSetting("memory.enabled", "true")
+          _    <- repo.upsertSetting("memory.maxContextMemories", "5")
+          _    <- repo.upsertSetting("memory.summarizationThreshold", "1000")
+        yield ()
+      },
+      ChannelRegistry.empty,
+      ZLayer.fromZIO {
+        for
+          registry <- ZIO.service[ChannelRegistry]
+          telegram <- WebSocketChannel.make("telegram")
+          _        <- registry.register(telegram)
+        yield ()
+      },
+      AgentRegistry.live,
+      llmLayer,
+      seededMemoryLayer,
+      MessageRouter.live,
+      GatewayService.live,
     )
 
   private def message(
@@ -215,5 +343,34 @@ object GatewayServiceSpec extends ZIOSpecDefault:
         out.head.content.contains("Routing request to"),
         out(1).metadata.get("intent.agent").contains("code-agent"),
       )).provideSomeLayer[Scope](baseLayer(dbName))
+    },
+    test("injects memory context into routed agent execution prompt") {
+      val dbName = s"gateway-memory-context-${UUID.randomUUID()}"
+      for
+        prompts <- Ref.make(List.empty[String])
+        result  <- (for
+                     gateway  <- ZIO.service[GatewayService]
+                     registry <- ZIO.service[ChannelRegistry]
+                     channel  <- registry.get("telegram")
+                     session   = SessionScopeStrategy.PerConversation.build("telegram", "chat-memory-1")
+                     _        <- channel.open(session)
+                     inbound   = message(
+                                   id = "in-memory-1",
+                                   channelName = "telegram",
+                                   session = session,
+                                   content = "please help with this migration",
+                                   direction = MessageDirection.Inbound,
+                                   role = MessageRole.User,
+                                 )
+                     fiber    <- channel.outbound(session).take(2).runCollect.fork
+                     _        <- gateway.processInbound(inbound)
+                     _        <- fiber.join
+                     seen     <- prompts.get
+                   yield assertTrue(
+                     seen.nonEmpty,
+                     seen.exists(_.contains("<memory>")),
+                     seen.exists(_.contains("User prefers concise answers")),
+                   )).provideSomeLayer[Scope](memoryInjectionLayer(dbName, prompts))
+      yield result
     },
   ) @@ TestAspect.sequential @@ TestAspect.timeout(20.seconds)
