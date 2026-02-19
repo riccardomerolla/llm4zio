@@ -39,7 +39,9 @@ object ChatView:
       else
         div(cls := "grid grid-cols-1 gap-4")(
           conversations.map { conv =>
-            val meta = conv.id.flatMap(sessionMetaByConversation.get)
+            val meta = conv.id.flatMap { convId =>
+              sessionMetaByConversation.get(convId)
+            }
             conversationCard(conv, meta)
           }
         ),
@@ -49,11 +51,13 @@ object ChatView:
     conversation: ChatConversation,
     sessionMeta: Option[ConversationSessionMeta],
   ): String =
-    val issuesHref = conversation.runId match
+    val conversationId = conversation.id.getOrElse("unknown")
+    val description    = sanitizeOptional(conversation.description)
+    val issuesHref     = conversation.runId match
       case Some(runId) => s"/issues?run_id=$runId"
       case None        => "/issues"
 
-    Layout.page(s"Chat — ${conversation.title}", s"/chat/${conversation.id.get}")(
+    Layout.page(s"Chat — ${conversation.title}", s"/chat/$conversationId")(
       div(cls := "flex flex-col min-h-[calc(100vh-9rem)]")(
         div(cls := "flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4 mb-4")(
           div(cls := "min-w-0")(
@@ -62,9 +66,7 @@ object ChatView:
               cls  := "text-indigo-400 hover:text-indigo-300 text-sm font-medium mb-3 inline-flex items-center gap-2",
             )("← Back to Chats"),
             h1(cls := "text-2xl font-bold text-white")(conversation.title),
-            if conversation.description.isDefined then
-              p(cls := "text-gray-400 text-sm mt-2")(conversation.description.get)
-            else (),
+            description.fold[Frag](frag())(text => p(cls := "text-gray-400 text-sm mt-2")(text)),
             sessionContextPanel(sessionMeta),
           ),
           div(cls := "inline-flex flex-wrap items-center gap-2 text-xs self-start lg:justify-end")(
@@ -95,9 +97,9 @@ object ChatView:
         div(cls := "flex-1 min-h-0 bg-white/5 ring-1 ring-white/10 rounded-lg overflow-hidden flex flex-col")(
           // Messages list — Lit web component for streaming
           tag("chat-message-stream")(
-            id                      := s"messages-${conversation.id.get}",
+            id                      := s"messages-$conversationId",
             cls                     := "flex-1 min-h-0 overflow-y-auto p-6 space-y-4 block",
-            attr("conversation-id") := conversation.id.get.toString,
+            attr("conversation-id") := conversationId,
             attr("ws-url")          := "/ws/console",
           )(
             raw(messagesFragment(conversation.messages))
@@ -109,13 +111,13 @@ object ChatView:
         )(
           form(
             method                        := "post",
-            action                        := s"/chat/${conversation.id.get}/messages",
-            attr("hx-post")               := s"/chat/${conversation.id.get}/messages",
-            attr("hx-target")             := s"#messages-${conversation.id.get}",
+            action                        := s"/chat/$conversationId/messages",
+            attr("hx-post")               := s"/chat/$conversationId/messages",
+            attr("hx-target")             := s"#messages-$conversationId",
             attr("hx-swap")               := "innerHTML",
             attr("hx-disabled-elt")       := "button[type='submit']",
             attr("hx-on::before-request") := s"""
-              |document.getElementById('messages-${conversation.id.get}')?.markPending?.();
+              |document.getElementById('messages-$conversationId')?.markPending?.();
             """.stripMargin.trim,
             attr("hx-on::after-request")  := """
               |this.reset();
@@ -126,7 +128,7 @@ object ChatView:
             div(
               id                           := "chat-composer",
               cls                          := "space-y-2",
-              attr("data-conversation-id") := conversation.id.get.toString,
+              attr("data-conversation-id") := conversationId,
               attr("data-agents-endpoint") := "/api/agents",
             )(
               div(cls := "flex flex-wrap items-center gap-2")(
@@ -156,7 +158,7 @@ object ChatView:
               div(cls := "relative")(
                 div(attr("data-role") := "write-pane")(
                   textarea(
-                    id                   := s"chat-input-${conversation.id.get}",
+                    id                   := s"chat-input-$conversationId",
                     name                 := "content",
                     placeholder          := "Type your message... Use @agent-name to route directly.",
                     rows                 := 5,
@@ -182,16 +184,16 @@ object ChatView:
                 cls    := "px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors",
               )("Send"),
               button(
-                id              := s"abort-btn-${conversation.id.get}",
+                id              := s"abort-btn-$conversationId",
                 `type`          := "button",
                 cls             := "hidden px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors",
-                attr("onclick") := s"document.getElementById('messages-${conversation.id.get}').abort()",
+                attr("onclick") := s"document.getElementById('messages-$conversationId').abort()",
               )("Stop"),
             ),
           )
         ),
       ),
-      streamingScript(conversation.id.get),
+      streamingScript(conversationId),
       JsResources.markedScript,
       tag("link")(
         attr("rel")  := "stylesheet",
@@ -244,6 +246,7 @@ object ChatView:
   private def looksLikeMarkdown(text: String): Boolean =
     val lines = text.split("\n").toList
     lines.exists(_.trim.startsWith("```")) ||
+    looksLikeMarkdownTable(lines) ||
     lines.exists(line => line.trim.matches("^#{1,6}\\s+.*$")) ||
     lines.exists(line => line.trim.matches("^[-*+]\\s+.*$")) ||
     lines.exists(line => line.trim.matches("^\\d+\\.\\s+.*$")) ||
@@ -251,6 +254,20 @@ object ChatView:
     text.contains("**") ||
     text.contains("`") ||
     text.matches("(?s).*\\[[^\\]]+\\]\\((https?://|/|#)[^)]+\\).*")
+
+  private def looksLikeMarkdownTable(lines: List[String]): Boolean =
+    lines.sliding(2).exists {
+      case List(header, divider) =>
+        val parsedHeader  = parseTableRow(header)
+        val parsedDivider = parseTableRow(divider)
+        parsedHeader.nonEmpty && parsedDivider.length == parsedHeader.length &&
+        parsedDivider.forall(cell => cell.matches("^:?-{3,}:?$"))
+      case _                     => false
+    }
+
+  private def parseTableRow(line: String): List[String] =
+    val stripped = line.trim.stripPrefix("|").stripSuffix("|")
+    stripped.split("\\|", -1).toList.map(_.trim)
 
   // scalafmt: { maxColumn = 500 }
   private def streamingScript(conversationId: String): Frag =
@@ -541,11 +558,12 @@ if (!customElements.get('chat-message-stream')) {
     conv: ChatConversation,
     sessionMeta: Option[ConversationSessionMeta] = None,
   ): Frag =
-    val lastMessage = conv.messages.lastOption
-    val preview     = lastMessage.map(_.content.trim).filter(_.nonEmpty).map(compactPreview).getOrElse("No messages yet")
-    val channel     = conv.channel.orElse(sessionMeta.map(_.channelName)).getOrElse("web")
+    val conversationId = conv.id.getOrElse("unknown")
+    val lastMessage    = conv.messages.lastOption
+    val preview        = lastMessage.map(_.content.trim).filter(_.nonEmpty).map(compactPreview).getOrElse("No messages yet")
+    val channel        = conv.channel.orElse(sessionMeta.map(_.channelName)).getOrElse("web")
     a(
-      href := s"/chat/${conv.id.get}",
+      href := s"/chat/$conversationId",
       cls  := "bg-white/5 hover:bg-white/10 ring-1 ring-white/10 rounded-lg p-4 transition-all hover:ring-indigo-500/50 cursor-pointer block",
     )(
       div(cls := "flex items-start justify-between mb-2")(
@@ -614,6 +632,9 @@ if (!customElements.get('chat-message-stream')) {
   private def compactPreview(raw: String): String =
     val compact = raw.replaceAll("\\s+", " ").trim
     if compact.length <= 90 then compact else compact.take(87) + "..."
+
+  private def sanitizeOptional[A](value: Option[A]): Option[A] =
+    Option(value).flatten
 
   private def formatTimestamp(instant: java.time.Instant): String =
     instant.toString.take(19).replace("T", " ")

@@ -28,11 +28,24 @@ object ResponseFormatterSpec extends ZIOSpecDefault:
         formatted.text.contains("```") || formatted.parseMode.contains("Markdown")
       )
     },
-    test("formats csv-like structured content as markdown table") {
+    test("formats csv-like structured content as fenced monospace table") {
       val formatted = ResponseFormatter.format(message("name,age\nAlice,30\nBob,35", Map("content.type" -> "table")))
       assertTrue(
-        formatted.text.contains("| name | age |"),
-        formatted.text.contains("| Alice | 30 |"),
+        formatted.text.startsWith("```"),
+        formatted.text.contains("name"),
+        formatted.text.contains("Alice"),
+        formatted.parseMode.contains("Markdown"),
+      )
+    },
+    test("formats markdown table content as fenced monospace table") {
+      val formatted = ResponseFormatter.format(
+        message("| name | age |\n| --- | --- |\n| Alice | 30 |\n| Bob | 35 |")
+      )
+      assertTrue(
+        formatted.text.startsWith("```"),
+        formatted.text.contains("name"),
+        formatted.text.contains("Bob"),
+        formatted.parseMode.contains("Markdown"),
       )
     },
     test("appends attachment section for pdf/zip metadata") {

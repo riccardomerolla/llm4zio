@@ -386,6 +386,13 @@ object IssuesView:
         case 4 => h4(cls := s"$headingCls text-base")(renderInline(textValue))
         case _ => h5(cls := s"$headingCls text-sm")(renderInline(textValue))
 
+    def isMarkdownTableHeader(idx: Int): Boolean =
+      if idx + 1 >= lineCount then false
+      else
+        val header = parseMarkdownTableRow(lines(idx))
+        val sep    = parseMarkdownTableRow(lines(idx + 1))
+        header.nonEmpty && isMarkdownTableDivider(sep, header.length)
+
     def parseAt(idx: Int): List[Frag] =
       if idx >= lineCount then Nil
       else
@@ -402,6 +409,10 @@ object IssuesView:
             pre(cls := "overflow-auto px-3 py-3 text-sm leading-6 text-slate-100")(codeLines.mkString("\n")),
           )
           block :: parseAt(next)
+        else if isMarkdownTableHeader(idx) then
+          val (tableLines, next) =
+            collectWhile(idx)(current => Option.when(current.trim.nonEmpty && current.contains("|"))(current))
+          markdownTableFrag(tableLines) :: parseAt(next)
         else
           headingLevel(line) match
             case Some((level, textValue)) =>
@@ -530,3 +541,38 @@ object IssuesView:
     line.trim.startsWith(">") ||
     unorderedItem(line).isDefined ||
     orderedItem(line).isDefined
+
+  private def markdownTableFrag(lines: List[String]): Frag =
+    val parsedRows = lines.map(parseMarkdownTableRow).filter(_.nonEmpty)
+    parsedRows match
+      case header :: divider :: tail if isMarkdownTableDivider(divider, header.length) =>
+        val bodyRows = tail.map(normalizeRow(_, header.length))
+        div(cls := "my-4 overflow-x-auto")(
+          table(cls := "min-w-full divide-y divide-white/10 rounded-lg border border-white/10 bg-black/20 text-sm")(
+            thead(
+              tr(header.map(col => th(cls := "px-3 py-2 text-left font-semibold text-slate-100")(col)))
+            ),
+            tbody(
+              bodyRows.map { row =>
+                tr(
+                  cls := "odd:bg-white/0 even:bg-white/5",
+                  row.map(col => td(cls := "px-3 py-2 text-slate-200")(col)),
+                )
+              }
+            ),
+          )
+        )
+      case _                                                                           =>
+        p(cls := "my-3 whitespace-normal text-sm leading-7 text-slate-100")(lines.mkString("\n"))
+
+  private def parseMarkdownTableRow(line: String): List[String] =
+    val trimmed  = line.trim
+    val stripped = trimmed.stripPrefix("|").stripSuffix("|")
+    stripped.split("\\|", -1).toList.map(_.trim)
+
+  private def isMarkdownTableDivider(row: List[String], expectedCols: Int): Boolean =
+    row.length == expectedCols && row.forall(cell => cell.matches("^:?-{3,}:?$"))
+
+  private def normalizeRow(row: List[String], size: Int): List[String] =
+    if row.length >= size then row.take(size)
+    else row ++ List.fill(size - row.length)("")

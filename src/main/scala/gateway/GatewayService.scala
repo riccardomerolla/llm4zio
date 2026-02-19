@@ -322,7 +322,8 @@ final case class GatewayServiceLive(
   private def handleIntentRouting(message: NormalizedMessage): IO[GatewayServiceError, Unit] =
     if shouldParseIntent(message) then
       for
-        current         <- intentStateRef.get.map(_.getOrElse(message.sessionKey, IntentConversationState()))
+        stateMap        <- intentStateRef.get
+        current          = stateMap.getOrElse(message.sessionKey, IntentConversationState())
         availableAgents <- agentRegistry.getAllAgents
         decision        <- IntentParser.parse(message.content, current, availableAgents).provideEnvironment(
                              ZEnvironment(llmService)

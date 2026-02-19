@@ -5,6 +5,7 @@ import java.time.Instant
 import zio.*
 
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.domain.GigaMapQuery
+import io.github.riccardomerolla.zio.eclipsestore.gigamap.error.GigaMapError
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.service.GigaMap
 import models.*
 import store.*
@@ -27,14 +28,19 @@ final case class ChatRepositoryES(
     for
       maybeConversation <- conversations.get(id).mapError(storeError("getConversation"))
       hydrated          <- ZIO.foreach(maybeConversation) { row =>
-                             getMessages(id).map(messages => fromConversationRow(row).copy(messages = messages))
+                             fromConversationRowSafe(row, "getConversation").flatMap {
+                               case Some(conversation) =>
+                                 getMessages(id).map(messages => Some(conversation.copy(messages = messages)))
+                               case None               => ZIO.succeed(None)
+                             }
                            }
-    yield hydrated
+    yield hydrated.flatten
 
   override def listConversations(offset: Int, limit: Int): IO[PersistenceError, List[ChatConversation]] =
     for
       rows   <- queryAll(conversations, "listConversations")
-      all     = rows.toList.map(fromConversationRow)
+      mapped <- ZIO.foreach(rows.toList)(row => fromConversationRowSafe(row, "listConversations"))
+      all     = mapped.flatten
       page    = all.sortBy(_.createdAt)(Ordering[Instant].reverse).slice(offset, offset + limit)
       filled <- ZIO.foreach(page)(conv =>
                   getMessages(conv.id.flatMap(_.toLongOption).getOrElse(0L)).map(msgs => conv.copy(messages = msgs))
@@ -54,9 +60,11 @@ final case class ChatRepositoryES(
   override def listConversationsByRun(runId: Long): IO[PersistenceError, List[ChatConversation]] =
     for
       rows   <- queryAll(conversations, "listConversationsByRun")
-      all     = rows.toList.map(
-                  fromConversationRow
-                ).filter(_.runId.contains(runId.toString)).sortBy(_.createdAt)(Ordering[Instant].reverse)
+      mapped <- ZIO.foreach(rows.toList)(row => fromConversationRowSafe(row, "listConversationsByRun"))
+      all     = mapped
+                  .flatten
+                  .filter(_.runId.contains(runId.toString))
+                  .sortBy(_.createdAt)(Ordering[Instant].reverse)
       filled <- ZIO.foreach(all)(conv =>
                   getMessages(conv.id.flatMap(_.toLongOption).getOrElse(0L)).map(msgs => conv.copy(messages = msgs))
                 )
@@ -81,8 +89,7 @@ final case class ChatRepositoryES(
       _           <- ZIO
                        .fail(PersistenceError.NotFound("chat_conversations", id))
                        .when(existing.isEmpty)
-      messageRows <-
-        messages.query(GigaMapQuery.ByIndex("conversationId", id)).mapError(storeError("deleteConversation"))
+      messageRows <- queryMessagesByConversation(id, op = "deleteConversation")
       _           <-
         ZIO.foreachDiscard(messageRows)(row => messages.remove(row.id).unit.mapError(storeError("deleteConversation")))
       _           <- conversations.remove(id).unit.mapError(storeError("deleteConversation"))
@@ -95,10 +102,8 @@ final case class ChatRepositoryES(
     yield id
 
   override def getMessages(conversationId: Long): IO[PersistenceError, List[ConversationEntry]] =
-    messages
-      .query(GigaMapQuery.ByIndex("conversationId", conversationId))
+    queryMessagesByConversation(conversationId, op = "getMessages")
       .map(_.toList.map(fromMessageRow).sortBy(_.createdAt))
-      .mapError(storeError("getMessages"))
 
   override def getMessagesSince(conversationId: Long, since: Instant): IO[PersistenceError, List[ConversationEntry]] =
     getMessages(conversationId).map(_.filter(msg => !msg.createdAt.isBefore(since)))
@@ -238,6 +243,19 @@ final case class ChatRepositoryES(
   private def queryAll[K, V](map: GigaMap[K, V], op: String): IO[PersistenceError, Chunk[V]] =
     map.query(GigaMapQuery.All()).mapError(storeError(op))
 
+  private def queryMessagesByConversation(
+    conversationId: Long,
+    op: String,
+  ): IO[PersistenceError, Chunk[ChatMessageRow]] =
+    messages
+      .query(GigaMapQuery.ByIndex("conversationId", conversationId))
+      .catchSome {
+        case GigaMapError.IndexNotDefined("conversationId") =>
+          ZIO.logWarning("messages 'conversationId' index missing; falling back to full scan") *>
+            messages.query(GigaMapQuery.All[ChatMessageRow]()).map(_.filter(_.conversationId == conversationId))
+      }
+      .mapError(storeError(op))
+
   private def nextId(op: String): IO[PersistenceError, Long] =
     ZIO
       .attempt(java.util.UUID.randomUUID().getMostSignificantBits & Long.MaxValue)
@@ -260,15 +278,15 @@ final case class ChatRepositoryES(
   private def fromConversationRow(row: ConversationRow): ChatConversation =
     ChatConversation(
       id = Some(row.id.toString),
-      runId = row.runId.map(_.toString),
+      runId = optionalLongToString(row.runId),
       title = row.title,
-      channel = row.channelName,
-      description = row.description,
+      channel = sanitizeOptional(row.channelName),
+      description = sanitizeOptional(row.description),
       status = row.status,
       messages = Nil,
       createdAt = row.createdAt,
       updatedAt = row.updatedAt,
-      createdBy = row.createdBy,
+      createdBy = sanitizeOptional(row.createdBy),
     )
 
   private def toMessageRow(id: Long, message: ConversationEntry): ChatMessageRow =
@@ -399,6 +417,22 @@ final case class ChatRepositoryES(
 
   private def storeError(op: String)(throwable: Throwable): PersistenceError =
     PersistenceError.QueryFailed(op, Option(throwable.getMessage).getOrElse(throwable.toString))
+
+  private def sanitizeOptional[A](value: Option[A]): Option[A] =
+    Option(value).flatten
+
+  private def optionalLongToString(value: Option[Long]): Option[String] =
+    value.map(_.toString)
+
+  private def fromConversationRowSafe(row: ConversationRow, op: String): UIO[Option[ChatConversation]] =
+    ZIO
+      .attempt(fromConversationRow(row))
+      .tapError(throwable =>
+        ZIO.logWarning(
+          s"Skipping malformed conversation row [op=$op id=${row.id}]: ${Option(throwable.getMessage).getOrElse(throwable.toString)}"
+        )
+      )
+      .option
 
   private def senderTypeToDb(value: SenderType): String = value match
     case SenderType.User      => "user"
