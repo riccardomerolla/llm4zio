@@ -32,8 +32,19 @@ object SessionId:
 
   given JsonCodec[SessionId] = JsonCodec.string.transform(SessionId.apply, _.value)
 
-enum MemoryKind derives JsonCodec:
-  case Preference, Fact, Context, Summary
+opaque type MemoryKind = String
+object MemoryKind:
+  val Preference: MemoryKind = "Preference"
+  val Fact: MemoryKind       = "Fact"
+  val Context: MemoryKind    = "Context"
+  val Summary: MemoryKind    = "Summary"
+
+  def apply(value: String): MemoryKind = value
+
+  extension (kind: MemoryKind)
+    def value: String = kind
+
+  given JsonCodec[MemoryKind] = JsonCodec.string.transform(MemoryKind.apply, _.value)
 
 final case class MemoryEntry(
   id: MemoryId,

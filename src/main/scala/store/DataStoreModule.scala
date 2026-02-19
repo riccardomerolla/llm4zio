@@ -11,7 +11,9 @@ import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.config.{ GigaMapDefinition, GigaMapIndex }
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.error.GigaMapError
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.service.GigaMap
+import io.github.riccardomerolla.zio.eclipsestore.gigamap.vector.VectorIndexService
 import io.github.riccardomerolla.zio.eclipsestore.service.EclipseStoreService
+import memory.MemoryEntry
 
 given dataStoreInstantCodec: JsonCodec[Instant] = JsonCodec[String].transform(
   str => Instant.parse(str),
@@ -160,6 +162,9 @@ object DataStoreModule:
   trait AgentAssignmentsStore:
     def map: GigaMap[Long, AgentAssignmentRow]
 
+  trait MemoryEntriesStore:
+    def map: GigaMap[MemoryId, MemoryEntry]
+
   def taskRunsMap: URIO[TaskRunsStore, GigaMap[TaskRunId, TaskRunRow]] =
     ZIO.serviceWith[TaskRunsStore](_.map)
 
@@ -177,6 +182,9 @@ object DataStoreModule:
 
   def agentAssignmentsMap: URIO[AgentAssignmentsStore, GigaMap[Long, AgentAssignmentRow]] =
     ZIO.serviceWith[AgentAssignmentsStore](_.map)
+
+  def memoryEntriesMap: URIO[MemoryEntriesStore, GigaMap[MemoryId, MemoryEntry]] =
+    ZIO.serviceWith[MemoryEntriesStore](_.map)
 
   private val taskRunsDefinition = GigaMapDefinition[TaskRunId, TaskRunRow](
     name = "taskRuns",
@@ -245,6 +253,14 @@ object DataStoreModule:
     indexes = Chunk(
       GigaMapIndex.single("issueId", _.issueId),
       GigaMapIndex.single("assignedAt", _.assignedAt),
+    ),
+  )
+
+  private val memoryEntriesDefinition = GigaMapDefinition[MemoryId, MemoryEntry](
+    name = "memoryEntries",
+    indexes = Chunk(
+      GigaMapIndex.single("userId", _.userId.value),
+      GigaMapIndex.single("kind", _.kind.value),
     ),
   )
 
@@ -318,16 +334,22 @@ object DataStoreModule:
         override val map: GigaMap[Long, AgentAssignmentRow] = gm
     )
 
+  val memoryEntries: ZLayer[EclipseStoreService, GigaMapError, MemoryEntriesStore] =
+    GigaMap.make(memoryEntriesDefinition) >>> ZLayer.fromFunction((gm: GigaMap[MemoryId, MemoryEntry]) =>
+      new MemoryEntriesStore:
+        override val map: GigaMap[MemoryId, MemoryEntry] = gm
+    )
+
   private val mapsLive: ZLayer[
     EclipseStoreService,
     GigaMapError,
     DataStoreService & TaskRunsStore & TaskReportsStore & TaskArtifactsStore & ConversationsStore & MessagesStore &
-      SessionContextsStore & ActivityEventsStore & AgentIssuesStore & AgentAssignmentsStore,
+      SessionContextsStore & ActivityEventsStore & AgentIssuesStore & AgentAssignmentsStore & MemoryEntriesStore,
   ] =
     ZLayer.makeSome[
       EclipseStoreService,
       DataStoreService & TaskRunsStore & TaskReportsStore & TaskArtifactsStore & ConversationsStore & MessagesStore &
-        SessionContextsStore & ActivityEventsStore & AgentIssuesStore & AgentAssignmentsStore,
+        SessionContextsStore & ActivityEventsStore & AgentIssuesStore & AgentAssignmentsStore & MemoryEntriesStore,
     ](
       dataStore,
       taskRuns,
@@ -339,12 +361,14 @@ object DataStoreModule:
       activityEvents,
       agentIssues,
       agentAssignments,
+      memoryEntries,
     )
 
   val live: ZLayer[
     StoreConfig,
     EclipseStoreError | GigaMapError,
     DataStoreService & TaskRunsStore & TaskReportsStore & TaskArtifactsStore & ConversationsStore & MessagesStore &
-      SessionContextsStore & ActivityEventsStore & AgentIssuesStore & AgentAssignmentsStore,
+      SessionContextsStore & ActivityEventsStore & AgentIssuesStore & AgentAssignmentsStore & MemoryEntriesStore &
+      VectorIndexService,
   ] =
-    baseStore >>> mapsLive
+    baseStore >>> (mapsLive ++ VectorIndexService.live)
