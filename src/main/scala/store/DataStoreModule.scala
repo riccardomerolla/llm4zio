@@ -212,8 +212,18 @@ object DataStoreModule:
   private val conversationsDefinition = GigaMapDefinition[Long, ConversationRow](
     name = "conversations",
     indexes = Chunk(
-      GigaMapIndex.single("channelName", _.channelName.getOrElse("")),
-      GigaMapIndex.single("status", _.status),
+      GigaMapIndex.single(
+        "channelName",
+        r =>
+          try r.channelName.flatMap(Option(_)).getOrElse("")
+          catch case _: Throwable => "",
+      ),
+      GigaMapIndex.single(
+        "status",
+        r =>
+          try Option(r.status).getOrElse("active")
+          catch case _: Throwable => "active",
+      ),
     ),
   )
 
@@ -240,11 +250,36 @@ object DataStoreModule:
   private val agentIssuesDefinition = GigaMapDefinition[Long, AgentIssueRow](
     name = "agentIssues",
     indexes = Chunk(
-      GigaMapIndex.single("runId", _.runId.getOrElse(-1L)),
-      GigaMapIndex.single("conversationId", _.conversationId.getOrElse(-1L)),
-      GigaMapIndex.single("status", _.status),
-      GigaMapIndex.single("assignedAgent", _.assignedAgent.getOrElse("")),
-      GigaMapIndex.single("updatedAt", _.updatedAt),
+      GigaMapIndex.single(
+        "runId",
+        r =>
+          try r.runId.flatMap(v => Option(v)).getOrElse(-1L)
+          catch case _: Throwable => -1L,
+      ),
+      GigaMapIndex.single(
+        "conversationId",
+        r =>
+          try r.conversationId.flatMap(v => Option(v)).getOrElse(-1L)
+          catch case _: Throwable => -1L,
+      ),
+      GigaMapIndex.single(
+        "status",
+        r =>
+          try Option(r.status).getOrElse("open")
+          catch case _: Throwable => "open",
+      ),
+      GigaMapIndex.single(
+        "assignedAgent",
+        r =>
+          try r.assignedAgent.flatMap(Option(_)).getOrElse("")
+          catch case _: Throwable => "",
+      ),
+      GigaMapIndex.single(
+        "updatedAt",
+        r =>
+          try Option(r.updatedAt).getOrElse(Instant.EPOCH)
+          catch case _: Throwable => Instant.EPOCH,
+      ),
     ),
   )
 

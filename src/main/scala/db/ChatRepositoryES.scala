@@ -266,17 +266,21 @@ final case class ChatRepositoryES(
       .mapError(storeErr("nextId"))
       .flatMap(id => if id == 0L then nextId else ZIO.succeed(id))
 
+  /** Normalise an Option that may be `Some(null)` (from EclipseStore) to `None`. */
+  private def norm(opt: Option[String]): Option[String]    = opt.flatMap(Option(_)).filter(_.nonEmpty)
+  private def normI(opt: Option[Instant]): Option[Instant] = opt.flatMap(v => Option(v))
+
   private def toConversationRow(id: Long, conversation: ChatConversation): ConversationRow =
     ConversationRow(
       id = id,
-      title = conversation.title,
-      description = conversation.description,
-      channelName = conversation.channel,
-      status = conversation.status,
+      title = Option(conversation.title).getOrElse(""),
+      description = norm(conversation.description),
+      channelName = norm(conversation.channel),
+      status = Option(conversation.status).getOrElse("active"),
       createdAt = conversation.createdAt,
       updatedAt = conversation.updatedAt,
       runId = conversation.runId.flatMap(_.toLongOption),
-      createdBy = conversation.createdBy,
+      createdBy = norm(conversation.createdBy),
     )
 
   private def toMessageRow(id: Long, message: ConversationEntry): ChatMessageRow =
@@ -333,20 +337,20 @@ final case class ChatRepositoryES(
       id = id,
       runId = issue.runId.flatMap(_.toLongOption),
       conversationId = issue.conversationId.flatMap(_.toLongOption),
-      title = issue.title,
-      description = issue.description,
-      issueType = issue.issueType,
-      tags = issue.tags,
-      preferredAgent = issue.preferredAgent,
-      contextPath = issue.contextPath,
-      sourceFolder = issue.sourceFolder,
+      title = Option(issue.title).getOrElse(""),
+      description = Option(issue.description).getOrElse(""),
+      issueType = Option(issue.issueType).getOrElse(""),
+      tags = norm(issue.tags),
+      preferredAgent = norm(issue.preferredAgent),
+      contextPath = norm(issue.contextPath),
+      sourceFolder = norm(issue.sourceFolder),
       priority = issuePriorityToDb(issue.priority),
       status = issueStatusToDb(issue.status),
-      assignedAgent = issue.assignedAgent,
-      assignedAt = issue.assignedAt,
-      completedAt = issue.completedAt,
-      errorMessage = issue.errorMessage,
-      resultData = issue.resultData,
+      assignedAgent = norm(issue.assignedAgent),
+      assignedAt = normI(issue.assignedAt),
+      completedAt = normI(issue.completedAt),
+      errorMessage = norm(issue.errorMessage),
+      resultData = norm(issue.resultData),
       createdAt = issue.createdAt,
       updatedAt = issue.updatedAt,
     )
@@ -423,13 +427,13 @@ final case class ChatRepositoryES(
     AgentAssignmentRow(
       id = id,
       issueId = assignment.issueId.toLongOption.getOrElse(0L),
-      agentName = assignment.agentName,
-      status = assignment.status,
+      agentName = Option(assignment.agentName).getOrElse(""),
+      status = Option(assignment.status).getOrElse("pending"),
       assignedAt = assignment.assignedAt,
-      startedAt = assignment.startedAt,
-      completedAt = assignment.completedAt,
-      executionLog = assignment.executionLog,
-      result = assignment.result,
+      startedAt = normI(assignment.startedAt),
+      completedAt = normI(assignment.completedAt),
+      executionLog = norm(assignment.executionLog),
+      result = norm(assignment.result),
     )
 
   private def fromAssignmentRow(r: AgentAssignmentRow): IO[PersistenceError, AgentAssignment] =

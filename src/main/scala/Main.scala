@@ -1,7 +1,6 @@
 import java.nio.file.{ Path, Paths }
 
 import zio.*
-import zio.Console.*
 import zio.cli.*
 import zio.cli.HelpDoc.Span.text
 import zio.logging.backend.SLF4J
@@ -48,10 +47,10 @@ object Main extends ZIOAppDefault:
     for
       baseConfig <- loadConfig
       validated  <- ConfigLoader.validate(baseConfig).mapError(msg => new IllegalArgumentException(msg))
-      _          <- printLine(s"Starting web server on http://$host:$port")
-      _          <- printLine(s"Store root: ${Paths.get(storeConfig.dataStorePath).getParent.toAbsolutePath}")
-      _          <- printLine(s"Config store: ${Paths.get(storeConfig.configStorePath).toAbsolutePath}")
-      _          <- printLine(s"Data store: ${Paths.get(storeConfig.dataStorePath).toAbsolutePath}")
+      _          <- ZIO.logInfo(s"Starting web server on http://$host:$port")
+      _          <- ZIO.logInfo(s"Store root: ${Paths.get(storeConfig.dataStorePath).getParent.toAbsolutePath}")
+      _          <- ZIO.logInfo(s"Config store: ${Paths.get(storeConfig.configStorePath).toAbsolutePath}")
+      _          <- ZIO.logInfo(s"Data store: ${Paths.get(storeConfig.dataStorePath).toAbsolutePath}")
       _          <- WebServer.start(host, port).provide(ApplicationDI.webServerLayer(validated, storeConfig))
     yield ()
 
