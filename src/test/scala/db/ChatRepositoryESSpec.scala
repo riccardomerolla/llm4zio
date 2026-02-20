@@ -204,38 +204,37 @@ object ChatRepositoryESSpec extends ZIOSpecDefault:
       },
       test("autoCheckpointInterval persists data to disk within 5 seconds") {
         withTempDir { dir =>
-          val createdAt = Instant.parse("2026-02-19T14:00:00Z")
-          val updatedAt = Instant.parse("2026-02-19T14:00:00Z")
+          val createdAt     = Instant.parse("2026-02-19T14:00:00Z")
+          val updatedAt     = Instant.parse("2026-02-19T14:00:00Z")
           val dataStorePath = dir.resolve("data-store")
 
           val program =
             for
-              repo              <- ZIO.service[ChatRepository]
-              conversationId    <- repo.createConversation(
-                                     ChatConversation(
-                                       title = "checkpoint test",
-                                       description = Some("testing persistence"),
-                                       createdAt = createdAt,
-                                       updatedAt = updatedAt,
-                                       createdBy = Some("spec"),
-                                     )
-                                   )
-              _                 <- ZIO.logInfo(s"Created conversation: $conversationId")
-              
+              repo           <- ZIO.service[ChatRepository]
+              conversationId <- repo.createConversation(
+                                  ChatConversation(
+                                    title = "checkpoint test",
+                                    description = Some("testing persistence"),
+                                    createdAt = createdAt,
+                                    updatedAt = updatedAt,
+                                    createdBy = Some("spec"),
+                                  )
+                                )
+              _              <- ZIO.logInfo(s"Created conversation: $conversationId")
+
               // Wait for auto-checkpoint interval (5 seconds as configured in DataStoreModule)
-              _                 <- TestClock.adjust(6.seconds)
-              _                 <- ZIO.logInfo("Checkpoint interval passed, checking disk persistence")
+              _ <- TestClock.adjust(6.seconds)
+              _ <- ZIO.logInfo("Checkpoint interval passed, checking disk persistence")
 
               // Verify data exists on disk by checking directory structure
-              dataStoreExists   <- ZIO.attemptBlocking(Files.exists(dataStorePath))
-              channelDirExists  <- ZIO.attemptBlocking {
-                                     val channelDir = dataStorePath.resolve("channel_0")
-                                     Files.exists(channelDir)
-                                   }
-              
+              dataStoreExists  <- ZIO.attemptBlocking(Files.exists(dataStorePath))
+              channelDirExists <- ZIO.attemptBlocking {
+                                    val channelDir = dataStorePath.resolve("channel_0")
+                                    Files.exists(channelDir)
+                                  }
+
               // Reload repository and verify data persists
-              reloadedConv      <- repo.getConversation(conversationId)
-              
+              reloadedConv <- repo.getConversation(conversationId)
             yield assertTrue(
               dataStoreExists,
               channelDirExists,

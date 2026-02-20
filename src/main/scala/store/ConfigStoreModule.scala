@@ -11,7 +11,7 @@ import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.config.{ GigaMapDefinition, GigaMapIndex }
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.error.GigaMapError
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.service.GigaMap
-import io.github.riccardomerolla.zio.eclipsestore.service.EclipseStoreService
+import io.github.riccardomerolla.zio.eclipsestore.service.{ EclipseStoreService, LifecycleCommand }
 
 given configStoreInstantCodec: JsonCodec[Instant] = JsonCodec[String].transform(
   str => Instant.parse(str),
@@ -80,6 +80,19 @@ object ConfigStoreModule:
       ),
     )
 
+  /** Passthrough layer that adds a shutdown-checkpoint finalizer on top of `EclipseStoreService`. */
+  private val withShutdownCheckpoint: ZLayer[EclipseStoreService, Nothing, EclipseStoreService] =
+    ZLayer.scoped {
+      for
+        svc <- ZIO.service[EclipseStoreService]
+        _   <- ZIO.addFinalizer(
+                 ZIO.logInfo("Config store: performing shutdown checkpoint...") *>
+                   svc.maintenance(LifecycleCommand.Checkpoint).ignoreLogged *>
+                   ZIO.logInfo("Config store: shutdown checkpoint complete.")
+               )
+      yield svc
+    }
+
   val baseStore: ZLayer[StoreConfig, EclipseStoreError, EclipseStoreService] =
     ZLayer.fromZIO(
       ZIO.serviceWith[StoreConfig] { storeConfig =>
@@ -90,7 +103,7 @@ object ConfigStoreModule:
           autoCheckpointInterval = Some(java.time.Duration.ofSeconds(5L)),
         )
       }
-    ) >>> EclipseStoreService.live
+    ) >>> EclipseStoreService.live >>> withShutdownCheckpoint
 
   val configStore: ZLayer[EclipseStoreService, Nothing, ConfigStoreService] =
     ZLayer.fromFunction((svc: EclipseStoreService) =>
