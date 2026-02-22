@@ -51,19 +51,26 @@ object ConfigStoreModule:
     def store: TypedStore
     def rawStore: EclipseStoreService
 
-  private val withShutdownCheckpoint: ZLayer[EclipseStoreService, Nothing, EclipseStoreService] =
+  private val withShutdownCheckpoint: ZLayer[ConfigStoreRef, EclipseStoreError, ConfigStoreRef] =
     ZLayer.scoped {
       for
-        svc <- ZIO.service[EclipseStoreService]
+        ref <- ZIO.service[ConfigStoreRef]
+        svc  = ref.raw
+        _   <- ZIO.logInfo("Config store: loading persisted roots...") *>
+                 svc.reloadRoots *>
+                 ZIO.logInfo("Config store: roots loaded.")
         _   <- ZIO.addFinalizer(
                  ZIO.logInfo("Config store: performing shutdown checkpoint...") *>
                    svc.maintenance(LifecycleCommand.Checkpoint).ignoreLogged *>
                    ZIO.logInfo("Config store: shutdown checkpoint complete.")
                )
-      yield svc
+      yield ref
     }
 
-  val baseStore: ZLayer[StoreConfig, EclipseStoreError, EclipseStoreService] =
+  private val toConfigStoreRef: ZLayer[EclipseStoreService, Nothing, ConfigStoreRef] =
+    ZLayer.fromFunction(ConfigStoreRef.apply)
+
+  val baseStore: ZLayer[StoreConfig, EclipseStoreError, ConfigStoreRef] =
     ZLayer.fromZIO(
       ZIO.serviceWith[StoreConfig] { cfg =>
         EclipseStoreConfig(
@@ -72,10 +79,11 @@ object ConfigStoreModule:
           customTypeHandlers = configStoreHandlers,
         )
       }
-    ) >>> EclipseStoreService.live >>> withShutdownCheckpoint
+    ) >>> EclipseStoreService.live.fresh >>> toConfigStoreRef >>> withShutdownCheckpoint
 
-  val configStore: ZLayer[EclipseStoreService, Nothing, ConfigStoreService] =
-    ZLayer.fromFunction((esc: EclipseStoreService) =>
+  val configStore: ZLayer[ConfigStoreRef, Nothing, ConfigStoreService] =
+    ZLayer.fromFunction((ref: ConfigStoreRef) =>
+      val esc = ref.raw
       new ConfigStoreService:
         override val store: TypedStore             = TypedStoreLive(esc)
         override val rawStore: EclipseStoreService = esc

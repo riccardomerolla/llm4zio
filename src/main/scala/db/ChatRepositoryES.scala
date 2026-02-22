@@ -17,30 +17,33 @@ final case class ChatRepositoryES(
   private val kv = dataStore.store
 
   // Key helpers — prefix-based KV namespace per entity type
-  private def convKey(id: Long): String          = s"conv:$id"
-  private def msgKey(id: Long): String           = s"msg:$id"
-  private def issueKey(id: Long): String         = s"issue:$id"
-  private def assignmentKey(id: Long): String    = s"assignment:$id"
+  private def convKey(id: String): String        = s"conv:$id"
+  private def msgKey(id: String): String         = s"msg:$id"
+  private def issueKey(id: String): String       = s"issue:$id"
+  private def assignmentKey(id: String): String  = s"assignment:$id"
   private def sessionKey(ch: String, sk: String) = s"session:$ch:$sk"
 
   override def createConversation(conversation: ChatConversation): IO[PersistenceError, Long] =
     for
       id <- nextId
-      _  <- kv.store(convKey(id), toConversationRow(id, conversation)).mapError(storeErr("createConversation"))
+      key = convKey(id.toString)
+      _  <- kv.store(key, toConversationRow(id.toString, conversation)).mapError(storeErr("createConversation"))
       _  <- checkpoint("createConversation")
     yield id
 
   override def getConversation(id: Long): IO[PersistenceError, Option[ChatConversation]] =
     for
-      row      <- kv.fetch[String, ConversationRow](convKey(id)).mapError(storeErr("getConversation"))
-      hydrated <- ZIO.foreach(row)(r => getMessages(r.id).map(msgs => fromConversationRow(r).copy(messages = msgs)))
+      row      <- kv.fetch[String, ConversationRow](convKey(id.toString)).mapError(storeErr("getConversation"))
+      hydrated <- ZIO.foreach(row)(r => getMessages(id).map(msgs => fromConversationRow(r).copy(messages = msgs)))
     yield hydrated
 
   override def listConversations(offset: Int, limit: Int): IO[PersistenceError, List[ChatConversation]] =
     for
       rows  <- fetchAllByPrefix[ConversationRow]("conv:", "listConversations")
       page   = rows.sortBy(_.createdAt)(Ordering[Instant].reverse).slice(offset, offset + limit)
-      convs <- ZIO.foreach(page)(r => getMessages(r.id).map(msgs => fromConversationRow(r).copy(messages = msgs)))
+      convs <- ZIO.foreach(page)(r =>
+                 getMessages(r.id.toLongOption.getOrElse(0L)).map(msgs => fromConversationRow(r).copy(messages = msgs))
+               )
     yield convs
 
   override def getConversationsByChannel(channelName: String): IO[PersistenceError, List[ChatConversation]] =
@@ -56,38 +59,44 @@ final case class ChatRepositoryES(
   override def listConversationsByRun(runId: Long): IO[PersistenceError, List[ChatConversation]] =
     for
       rows  <- fetchAllByPrefix[ConversationRow]("conv:", "listConversationsByRun")
-      page   = rows.filter(_.runId.contains(runId)).sortBy(_.createdAt)(Ordering[Instant].reverse)
-      convs <- ZIO.foreach(page)(r => getMessages(r.id).map(msgs => fromConversationRow(r).copy(messages = msgs)))
+      page   = rows.filter(_.runId.contains(runId.toString)).sortBy(_.createdAt)(Ordering[Instant].reverse)
+      convs <- ZIO.foreach(page)(r =>
+                 getMessages(r.id.toLongOption.getOrElse(0L)).map(msgs => fromConversationRow(r).copy(messages = msgs))
+               )
     yield convs
 
   override def updateConversation(conversation: ChatConversation): IO[PersistenceError, Unit] =
     for
       id <- idFromModel(conversation.id, "updateConversation")
-      _  <- requireExists[ConversationRow](convKey(id), "chat_conversations", "updateConversation")
-      _  <- kv.store(convKey(id), toConversationRow(id, conversation)).mapError(storeErr("updateConversation"))
+      key = convKey(id)
+      _  <- requireExists[ConversationRow](key, "chat_conversations", "updateConversation")
+      _  <- kv.store(key, toConversationRow(id, conversation)).mapError(storeErr("updateConversation"))
       _  <- checkpoint("updateConversation")
     yield ()
 
   override def deleteConversation(id: Long): IO[PersistenceError, Unit] =
     for
-      _    <- requireExists[ConversationRow](convKey(id), "chat_conversations", "deleteConversation")
+      _    <- requireExists[ConversationRow](convKey(id.toString), "chat_conversations", "deleteConversation")
       msgs <- fetchAllByPrefix[ChatMessageRow]("msg:", "deleteConversation")
-                .map(_.filter(_.conversationId == id))
-      _    <- ZIO.foreachDiscard(msgs)(row => kv.remove[String](msgKey(row.id)).mapError(storeErr("deleteConversation")))
-      _    <- kv.remove[String](convKey(id)).mapError(storeErr("deleteConversation"))
+                .map(_.filter(_.conversationId == id.toString))
+      _    <- ZIO.foreachDiscard(msgs) { row =>
+                kv.remove[String](msgKey(row.id)).mapError(storeErr("deleteConversation"))
+              }
+      _    <- kv.remove[String](convKey(id.toString)).mapError(storeErr("deleteConversation"))
       _    <- checkpoint("deleteConversation")
     yield ()
 
   override def addMessage(message: ConversationEntry): IO[PersistenceError, Long] =
     for
       id <- nextId
-      _  <- kv.store(msgKey(id), toMessageRow(id, message)).mapError(storeErr("addMessage"))
+      key = msgKey(id.toString)
+      _  <- kv.store(key, toMessageRow(id.toString, message)).mapError(storeErr("addMessage"))
       _  <- checkpoint("addMessage")
     yield id
 
   override def getMessages(conversationId: Long): IO[PersistenceError, List[ConversationEntry]] =
     fetchAllByPrefix[ChatMessageRow]("msg:", "getMessages")
-      .map(_.filter(_.conversationId == conversationId).map(fromMessageRow).sortBy(_.createdAt))
+      .map(_.filter(_.conversationId == conversationId.toString).map(fromMessageRow).sortBy(_.createdAt))
 
   override def getMessagesSince(conversationId: Long, since: Instant): IO[PersistenceError, List[ConversationEntry]] =
     getMessages(conversationId).map(_.filter(m => !m.createdAt.isBefore(since)))
@@ -95,12 +104,13 @@ final case class ChatRepositoryES(
   override def createIssue(issue: AgentIssue): IO[PersistenceError, Long] =
     for
       id <- nextId
-      _  <- kv.store(issueKey(id), toIssueRow(id, issue)).mapError(storeErr("createIssue"))
+      key = issueKey(id.toString)
+      _  <- kv.store(key, toIssueRow(id.toString, issue)).mapError(storeErr("createIssue"))
       _  <- checkpoint("createIssue")
     yield id
 
   override def getIssue(id: Long): IO[PersistenceError, Option[AgentIssue]] =
-    kv.fetch[String, AgentIssueRow](issueKey(id)).mapError(storeErr("getIssue")).map(_.map(fromIssueRow))
+    kv.fetch[String, AgentIssueRow](issueKey(id.toString)).mapError(storeErr("getIssue")).map(_.map(fromIssueRow))
 
   override def listIssues(offset: Int, limit: Int): IO[PersistenceError, List[AgentIssue]] =
     fetchAllByPrefix[AgentIssueRow]("issue:", "listIssues")
@@ -108,11 +118,11 @@ final case class ChatRepositoryES(
 
   override def listIssuesByRun(runId: Long): IO[PersistenceError, List[AgentIssue]] =
     fetchAllByPrefix[AgentIssueRow]("issue:", "listIssuesByRun")
-      .map(_.filter(_.runId.contains(runId)).map(fromIssueRow).sortBy(_.createdAt)(Ordering[Instant].reverse))
+      .map(_.filter(_.runId.contains(runId.toString)).map(fromIssueRow).sortBy(_.createdAt)(Ordering[Instant].reverse))
 
   override def listIssuesByStatus(status: IssueStatus): IO[PersistenceError, List[AgentIssue]] =
     fetchAllByPrefix[AgentIssueRow]("issue:", "listIssuesByStatus")
-      .map(_.filter(_.status == status).map(fromIssueRow).sortBy(_.createdAt)(Ordering[Instant].reverse))
+      .map(_.filter(_.status == status.toString).map(fromIssueRow).sortBy(_.createdAt)(Ordering[Instant].reverse))
 
   override def listUnassignedIssues(runId: Long): IO[PersistenceError, List[AgentIssue]] =
     listIssuesByRun(runId).map(_.filter(_.assignedAgent.isEmpty))
@@ -120,8 +130,9 @@ final case class ChatRepositoryES(
   override def updateIssue(issue: AgentIssue): IO[PersistenceError, Unit] =
     for
       id <- idFromModel(issue.id, "updateIssue")
-      _  <- requireExists[AgentIssueRow](issueKey(id), "agent_issues", "updateIssue")
-      _  <- kv.store(issueKey(id), toIssueRow(id, issue)).mapError(storeErr("updateIssue"))
+      key = issueKey(id)
+      _  <- requireExists[AgentIssueRow](key, "agent_issues", "updateIssue")
+      _  <- kv.store(key, toIssueRow(id, issue)).mapError(storeErr("updateIssue"))
       _  <- checkpoint("updateIssue")
     yield ()
 
@@ -142,25 +153,28 @@ final case class ChatRepositoryES(
   override def createAssignment(assignment: AgentAssignment): IO[PersistenceError, Long] =
     for
       id <- nextId
-      _  <- kv.store(assignmentKey(id), toAssignmentRow(id, assignment)).mapError(storeErr("createAssignment"))
+      key = assignmentKey(id.toString)
+      _  <- kv.store(key, toAssignmentRow(id.toString, assignment)).mapError(storeErr("createAssignment"))
       _  <- checkpoint("createAssignment")
     yield id
 
   override def getAssignment(id: Long): IO[PersistenceError, Option[AgentAssignment]] =
-    kv.fetch[
-      String,
-      AgentAssignmentRow,
-    ](assignmentKey(id)).mapError(storeErr("getAssignment")).map(_.map(fromAssignmentRow))
+    kv.fetch[String, AgentAssignmentRow](assignmentKey(id.toString))
+      .mapError(storeErr("getAssignment"))
+      .map(_.map(fromAssignmentRow))
 
   override def listAssignmentsByIssue(issueId: Long): IO[PersistenceError, List[AgentAssignment]] =
     fetchAllByPrefix[AgentAssignmentRow]("assignment:", "listAssignmentsByIssue")
-      .map(_.filter(_.issueId == issueId).map(fromAssignmentRow).sortBy(_.assignedAt)(Ordering[Instant].reverse))
+      .map(
+        _.filter(_.issueId == issueId.toString).map(fromAssignmentRow).sortBy(_.assignedAt)(Ordering[Instant].reverse)
+      )
 
   override def updateAssignment(assignment: AgentAssignment): IO[PersistenceError, Unit] =
     for
       id <- idFromModel(assignment.id, "updateAssignment")
-      _  <- requireExists[AgentAssignmentRow](assignmentKey(id), "agent_assignments", "updateAssignment")
-      _  <- kv.store(assignmentKey(id), toAssignmentRow(id, assignment)).mapError(storeErr("updateAssignment"))
+      key = assignmentKey(id)
+      _  <- requireExists[AgentAssignmentRow](key, "agent_assignments", "updateAssignment")
+      _  <- kv.store(key, toAssignmentRow(id, assignment)).mapError(storeErr("updateAssignment"))
       _  <- checkpoint("updateAssignment")
     yield ()
 
@@ -170,12 +184,10 @@ final case class ChatRepositoryES(
     contextJson: String,
     updatedAt: Instant,
   ): IO[PersistenceError, Unit] =
+    val key = this.sessionKey(channelName, sessionKey)
     for
       _ <- kv
-             .store(
-               this.sessionKey(channelName, sessionKey),
-               SessionContextRow(channelName, sessionKey, contextJson, updatedAt),
-             )
+             .store(key, SessionContextRow(channelName, sessionKey, contextJson, updatedAt))
              .mapError(storeErr("upsertSessionContext"))
       _ <- checkpoint("upsertSessionContext")
     yield ()
@@ -192,7 +204,9 @@ final case class ChatRepositoryES(
     allSessionContextLinks.map(_.find(l => extractLongField(l.contextJson, "runId").contains(taskRunId)))
 
   override def deleteSessionContext(channelName: String, sessionKey: String): IO[PersistenceError, Unit] =
-    kv.remove[String](this.sessionKey(channelName, sessionKey)).mapError(storeErr("deleteSessionContext"))
+    val key = this.sessionKey(channelName, sessionKey)
+    kv.remove[String](key).mapError(storeErr("deleteSessionContext")) *>
+      checkpoint("deleteSessionContext")
 
   // ---------------------------------------------------------------------------
   // Internals
@@ -203,20 +217,19 @@ final case class ChatRepositoryES(
       _.map(r => SessionContextLink(r.channelName, r.sessionKey, r.contextJson, r.updatedAt))
     )
 
-  /** Scan all keys with the given prefix and fetch each value. Errors on any single fetch are raised as
-    * PersistenceError; missing keys (None) are silently skipped.
+  /** Scan all keys with the given prefix using streamKeys and fetch each value. This is the same approach
+    * ConfigRepositoryES uses — no secondary index needed.
     */
   private def fetchAllByPrefix[V](prefix: String, op: String)(using Schema[V]): IO[PersistenceError, List[V]] =
-    dataStore.rawStore
-      .streamKeys[String]
-      .filter(_.startsWith(prefix))
-      .runCollect
-      .mapError(storeErr(op))
-      .flatMap { keys =>
-        ZIO
-          .foreach(keys.toList)(k => kv.fetch[String, V](k).mapError(storeErr(op)))
-          .map(_.flatten)
-      }
+    for
+      keys <- dataStore.rawStore
+                .streamKeys[String]
+                .filter(_.startsWith(prefix))
+                .runCollect
+                .map(_.toList)
+                .mapError(storeErr(op))
+      vals <- ZIO.foreach(keys)(k => kv.fetch[String, V](k).mapError(storeErr(op)))
+    yield vals.flatten
 
   private def requireExists[V](key: String, table: String, op: String)(using Schema[V]): IO[PersistenceError, Unit] =
     kv.fetch[String, V](key).mapError(storeErr(op)).flatMap {
@@ -226,10 +239,10 @@ final case class ChatRepositoryES(
       case Some(_) => ZIO.unit
     }
 
-  private def idFromModel(id: Option[String], op: String): IO[PersistenceError, Long] =
+  private def idFromModel(id: Option[String], op: String): IO[PersistenceError, String] =
     ZIO
-      .fromOption(id.flatMap(_.toLongOption))
-      .orElseFail(PersistenceError.QueryFailed(op, "valid numeric ID required"))
+      .fromOption(id)
+      .orElseFail(PersistenceError.QueryFailed(op, "valid ID required"))
 
   private def nextId: IO[PersistenceError, Long] =
     ZIO
@@ -260,7 +273,11 @@ final case class ChatRepositoryES(
       .when(i >= 0)(json.drop(i + marker.length).dropWhile(_.isWhitespace).takeWhile(_.isDigit))
       .flatMap(_.toLongOption)
 
-  private def toConversationRow(id: Long, c: ChatConversation): ConversationRow =
+  // ---------------------------------------------------------------------------
+  // Row ↔ Domain conversions
+  // ---------------------------------------------------------------------------
+
+  private def toConversationRow(id: String, c: ChatConversation): ConversationRow =
     ConversationRow(
       id = id,
       title = c.title,
@@ -269,14 +286,14 @@ final case class ChatRepositoryES(
       status = c.status,
       createdAt = c.createdAt,
       updatedAt = c.updatedAt,
-      runId = c.runId.flatMap(_.toLongOption),
+      runId = c.runId,
       createdBy = c.createdBy,
     )
 
   private def fromConversationRow(r: ConversationRow): ChatConversation =
     ChatConversation(
-      id = Some(r.id.toString),
-      runId = r.runId.map(_.toString),
+      id = Some(r.id),
+      runId = r.runId,
       title = r.title,
       channel = r.channelName,
       description = r.description,
@@ -287,14 +304,14 @@ final case class ChatRepositoryES(
       createdBy = r.createdBy,
     )
 
-  private def toMessageRow(id: Long, m: ConversationEntry): ChatMessageRow =
+  private def toMessageRow(id: String, m: ConversationEntry): ChatMessageRow =
     ChatMessageRow(
       id = id,
-      conversationId = m.conversationId.toLongOption.getOrElse(0L),
+      conversationId = m.conversationId,
       sender = m.sender,
-      senderType = m.senderType,
+      senderType = m.senderType.toString,
       content = m.content,
-      messageType = m.messageType,
+      messageType = m.messageType.toString,
       metadata = m.metadata,
       createdAt = m.createdAt,
       updatedAt = m.updatedAt,
@@ -302,22 +319,22 @@ final case class ChatRepositoryES(
 
   private def fromMessageRow(r: ChatMessageRow): ConversationEntry =
     ConversationEntry(
-      id = Some(r.id.toString),
-      conversationId = r.conversationId.toString,
+      id = Some(r.id),
+      conversationId = r.conversationId,
       sender = r.sender,
-      senderType = r.senderType,
+      senderType = SenderType.values.find(_.toString == r.senderType).getOrElse(SenderType.System),
       content = r.content,
-      messageType = r.messageType,
+      messageType = MessageType.values.find(_.toString == r.messageType).getOrElse(MessageType.Text),
       metadata = r.metadata,
       createdAt = r.createdAt,
       updatedAt = r.updatedAt,
     )
 
-  private def toIssueRow(id: Long, i: AgentIssue): AgentIssueRow =
+  private def toIssueRow(id: String, i: AgentIssue): AgentIssueRow =
     AgentIssueRow(
       id = id,
-      runId = i.runId.flatMap(_.toLongOption),
-      conversationId = i.conversationId.flatMap(_.toLongOption),
+      runId = i.runId,
+      conversationId = i.conversationId,
       title = i.title,
       description = i.description,
       issueType = i.issueType,
@@ -325,8 +342,8 @@ final case class ChatRepositoryES(
       preferredAgent = i.preferredAgent,
       contextPath = i.contextPath,
       sourceFolder = i.sourceFolder,
-      priority = i.priority,
-      status = i.status,
+      priority = i.priority.toString,
+      status = i.status.toString,
       assignedAgent = i.assignedAgent,
       assignedAt = i.assignedAt,
       completedAt = i.completedAt,
@@ -338,9 +355,9 @@ final case class ChatRepositoryES(
 
   private def fromIssueRow(r: AgentIssueRow): AgentIssue =
     AgentIssue(
-      id = Some(r.id.toString),
-      runId = r.runId.map(_.toString),
-      conversationId = r.conversationId.map(_.toString),
+      id = Some(r.id),
+      runId = r.runId,
+      conversationId = r.conversationId,
       title = r.title,
       description = r.description,
       issueType = r.issueType,
@@ -348,8 +365,8 @@ final case class ChatRepositoryES(
       preferredAgent = r.preferredAgent,
       contextPath = r.contextPath,
       sourceFolder = r.sourceFolder,
-      priority = r.priority,
-      status = r.status,
+      priority = IssuePriority.values.find(_.toString == r.priority).getOrElse(IssuePriority.Medium),
+      status = IssueStatus.values.find(_.toString == r.status).getOrElse(IssueStatus.Open),
       assignedAgent = r.assignedAgent,
       assignedAt = r.assignedAt,
       completedAt = r.completedAt,
@@ -359,10 +376,10 @@ final case class ChatRepositoryES(
       updatedAt = r.updatedAt,
     )
 
-  private def toAssignmentRow(id: Long, a: AgentAssignment): AgentAssignmentRow =
+  private def toAssignmentRow(id: String, a: AgentAssignment): AgentAssignmentRow =
     AgentAssignmentRow(
       id = id,
-      issueId = a.issueId.toLongOption.getOrElse(0L),
+      issueId = a.issueId,
       agentName = a.agentName,
       status = a.status,
       assignedAt = a.assignedAt,
@@ -374,8 +391,8 @@ final case class ChatRepositoryES(
 
   private def fromAssignmentRow(r: AgentAssignmentRow): AgentAssignment =
     AgentAssignment(
-      id = Some(r.id.toString),
-      issueId = r.issueId.toString,
+      id = Some(r.id),
+      issueId = r.issueId,
       agentName = r.agentName,
       status = r.status,
       assignedAt = r.assignedAt,

@@ -14,6 +14,27 @@ import store.*
 
 object ChatRepositoryESSpec extends ZIOSpecDefault:
 
+  private def runWithClockAdvance[R, E, A](
+    effect: ZIO[R, E, A],
+    tick: Duration = 1.second,
+    maxTicks: Int = 300,
+  ): ZIO[R, E, A] =
+    def awaitWithClock(fiber: Fiber[E, A], remainingTicks: Int): ZIO[Any, E, A] =
+      fiber.poll.flatMap {
+        case Some(exit) =>
+          exit match
+            case Exit.Success(value) => ZIO.succeed(value)
+            case Exit.Failure(cause) => ZIO.failCause(cause)
+        case None       =>
+          if remainingTicks <= 0 then fiber.interrupt *> ZIO.dieMessage("timed out while advancing TestClock")
+          else TestClock.adjust(tick) *> awaitWithClock(fiber, remainingTicks - 1)
+      }
+
+    for
+      fiber  <- effect.fork
+      result <- awaitWithClock(fiber, maxTicks)
+    yield result
+
   private def withTempDir[R, E, A](use: Path => ZIO[R, E, A]): ZIO[R, E, A] =
     ZIO.acquireReleaseWith(
       ZIO.attemptBlocking(Files.createTempDirectory("chat-repository-es-spec")).orDie
@@ -138,9 +159,9 @@ object ChatRepositoryESSpec extends ZIOSpecDefault:
       },
       test("listConversations tolerates legacy null Option fields") {
         withTempDir { dir =>
-          val legacyNullLong: Option[Long] = None
-          val createdAt                    = Instant.parse("2026-02-19T13:20:00Z")
-          val updatedAt                    = Instant.parse("2026-02-19T13:21:00Z")
+          val legacyNullLong: Option[String] = None
+          val createdAt                      = Instant.parse("2026-02-19T13:20:00Z")
+          val updatedAt                      = Instant.parse("2026-02-19T13:21:00Z")
 
           val program =
             for
@@ -149,7 +170,7 @@ object ChatRepositoryESSpec extends ZIOSpecDefault:
               _         <- dataStore.store.store(
                              "conv:101",
                              ConversationRow(
-                               id = 101L,
+                               id = "101",
                                title = "legacy",
                                description = None,
                                channelName = Some("web"),
@@ -172,9 +193,9 @@ object ChatRepositoryESSpec extends ZIOSpecDefault:
       test("listConversations tolerates malformed legacy Some(null) runId") {
         withTempDir { dir =>
           // Simulate legacy malformed data by using empty string representation
-          val malformedRunId: Option[Long] = None
-          val createdAt                    = Instant.parse("2026-02-19T13:22:00Z")
-          val updatedAt                    = Instant.parse("2026-02-19T13:23:00Z")
+          val malformedRunId: Option[String] = None
+          val createdAt                      = Instant.parse("2026-02-19T13:22:00Z")
+          val updatedAt                      = Instant.parse("2026-02-19T13:23:00Z")
 
           val program =
             for
@@ -183,7 +204,7 @@ object ChatRepositoryESSpec extends ZIOSpecDefault:
               _         <- dataStore.store.store(
                              "conv:102",
                              ConversationRow(
-                               id = 102L,
+                               id = "102",
                                title = "legacy-malformed",
                                description = None,
                                channelName = Some("web"),
@@ -289,14 +310,91 @@ object ChatRepositoryESSpec extends ZIOSpecDefault:
               .provideLayer(layerForWithConversations(dir))
 
           for
-            convId    <- writeAndClose
-            _         <- ZIO.logInfo(s"Store closed. Reopening at ${dir.resolve("data-store")}...")
-            readFiber <- reopenAndRead(convId).fork
-            _         <- TestClock.adjust(6.seconds)
-            reloaded  <- readFiber.join
+            convId   <- runWithClockAdvance(writeAndClose)
+            _        <- ZIO.logInfo(s"Store closed. Reopening at ${dir.resolve("data-store")}...")
+            reloaded <- runWithClockAdvance(reopenAndRead(convId))
           yield assertTrue(
+            reloaded.isDefined,
             reloaded.forall(_.title == "restart-test conv"),
             reloaded.forall(_.description.contains("should survive restart")),
+          )
+        }
+      },
+      test("restart persists chat messages and issues with string IDs") {
+        withTempDir { dir =>
+          val createdAt = Instant.parse("2026-02-19T16:00:00Z")
+          val updatedAt = Instant.parse("2026-02-19T16:00:00Z")
+
+          val writeAndClose =
+            (for
+              repo      <- ZIO.service[ChatRepository]
+              dataStore <- ZIO.service[DataStoreModule.DataStoreService]
+              convId    <- repo.createConversation(
+                             ChatConversation(
+                               runId = Some("run-alpha-1"),
+                               title = "persist me",
+                               description = Some("chat+issue restart regression"),
+                               createdAt = createdAt,
+                               updatedAt = updatedAt,
+                               createdBy = Some("spec"),
+                             )
+                           )
+              _         <- repo.addMessage(
+                             ConversationEntry(
+                               conversationId = convId.toString,
+                               sender = "user",
+                               senderType = SenderType.User,
+                               content = "hello before restart",
+                               messageType = MessageType.Text,
+                               createdAt = createdAt.plusSeconds(1),
+                               updatedAt = createdAt.plusSeconds(1),
+                             )
+                           )
+              issueId   <- repo.createIssue(
+                             AgentIssue(
+                               runId = Some("run-alpha-1"),
+                               conversationId = Some(convId.toString),
+                               title = "Issue survives restart",
+                               description = "validate persistence",
+                               issueType = "bug",
+                               priority = IssuePriority.High,
+                               createdAt = createdAt.plusSeconds(2),
+                               updatedAt = createdAt.plusSeconds(2),
+                             )
+                           )
+              _         <- dataStore.rawStore.maintenance(LifecycleCommand.Checkpoint)
+            yield (convId, issueId)).provideLayer(layerForWithConversations(dir))
+
+          def reopenAndRead(convId: Long, issueId: Long) =
+            (for
+              repo      <- ZIO.service[ChatRepository]
+              dataStore <- ZIO.service[DataStoreModule.DataStoreService]
+              _         <- dataStore.rawStore.reloadRoots
+              conv      <- repo.getConversation(convId)
+              messages  <- repo.getMessages(convId)
+              issue     <- repo.getIssue(issueId)
+              result    <- ZIO
+                             .fromOption(for
+                               c <- conv
+                               i <- issue
+                             yield (c, messages, i))
+                             .orElseFail(())
+                             .retry(Schedule.spaced(100.millis) && Schedule.recurs(50))
+                             .option
+            yield result).provideLayer(layerForWithConversations(dir))
+
+          for
+            saved            <- runWithClockAdvance(writeAndClose)
+            (convId, issueId) = saved
+            reloaded         <- runWithClockAdvance(reopenAndRead(convId, issueId))
+          yield assertTrue(
+            reloaded.isDefined,
+            reloaded.forall(_._1.title == "persist me"),
+            reloaded.forall(_._1.runId.contains("run-alpha-1")),
+            reloaded.forall(_._2.exists(_.content == "hello before restart")),
+            reloaded.forall(_._3.title == "Issue survives restart"),
+            reloaded.forall(_._3.runId.contains("run-alpha-1")),
+            reloaded.forall(_._3.conversationId.contains(convId.toString)),
           )
         }
       },

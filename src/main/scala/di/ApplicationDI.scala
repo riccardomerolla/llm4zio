@@ -23,7 +23,7 @@ import llm4zio.providers.{ GeminiCliExecutor, HttpClient }
 import llm4zio.tools.{ AnyTool, JsonSchema }
 import memory.*
 import orchestration.*
-import store.{ ConfigStoreModule, DataStoreModule, StoreConfig }
+import store.{ ConfigStoreModule, DataStoreModule, MemoryStoreModule, StoreConfig }
 import sttp.client4.DefaultFutureBackend
 import web.controllers.*
 import web.{ ActivityHub, StreamAbortRegistry, WebServer }
@@ -35,7 +35,7 @@ object ApplicationDI:
       StoreConfig &
       ConfigStoreModule.ConfigStoreService &
       DataStoreModule.DataStoreService &
-      DataStoreModule.MemoryEntriesStore &
+      MemoryStoreModule.MemoryEntriesStore &
       GatewayConfig &
       Ref[GatewayConfig] &
       HttpAIClient &
@@ -104,6 +104,7 @@ object ApplicationDI:
       ZLayer.succeed(storeConfig),
       ConfigStoreModule.live.mapError(err => new RuntimeException(err.toString)).orDie,
       DataStoreModule.live.mapError(err => new RuntimeException(err.toString)).orDie,
+      MemoryStoreModule.live.mapError(err => new RuntimeException(err.toString)).orDie,
       ConfigRepository.live,
       TaskRepository.live,
       // Create runtime config ref with merged DB settings

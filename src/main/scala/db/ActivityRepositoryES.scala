@@ -63,7 +63,7 @@ final case class ActivityRepositoryES(
   private def toStoreRow(event: ActivityEvent, id: Long): ActivityEventRow =
     ActivityEventRow(
       id = id.toString,
-      eventType = event.eventType,
+      eventType = event.eventType.toString,
       source = event.source,
       runId = event.runId.map(_.toString),
       conversationId = event.conversationId.map(_.toString),
@@ -76,7 +76,7 @@ final case class ActivityRepositoryES(
   private def fromStoreRow(row: ActivityEventRow): ActivityEvent =
     ActivityEvent(
       id = Some(row.id),
-      eventType = row.eventType,
+      eventType = ActivityEventType.values.find(_.toString == row.eventType).getOrElse(ActivityEventType.RunStarted),
       source = row.source,
       runId = row.runId,
       conversationId = row.conversationId,

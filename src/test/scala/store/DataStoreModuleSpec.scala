@@ -69,14 +69,14 @@ object DataStoreModuleSpec extends ZIOSpecDefault:
       test("conversations map supports put/get round-trip") {
         withTempDir { dir =>
           val row = ConversationRow(
-            id = 1L,
+            id = "1",
             title = "Conversation",
             description = Some("desc"),
             channelName = Some("telegram"),
             status = "active",
             createdAt = Instant.parse("2026-02-19T10:00:00Z"),
             updatedAt = Instant.parse("2026-02-19T10:01:00Z"),
-            runId = Some(1L),
+            runId = Some("1"),
             createdBy = Some("system"),
           )
           (for

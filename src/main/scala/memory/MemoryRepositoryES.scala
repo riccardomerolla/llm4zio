@@ -12,7 +12,7 @@ import io.github.riccardomerolla.zio.eclipsestore.gigamap.vector.{
   VectorIndexService,
   Vectorizer,
 }
-import store.{ DataStoreModule, MemoryId as StoreMemoryId }
+import store.{ MemoryId as StoreMemoryId, MemoryStoreModule }
 
 final case class MemoryRepositoryES(
   memoryMap: GigaMap[StoreMemoryId, MemoryEntry],
@@ -149,10 +149,10 @@ object MemoryRepositoryES:
   private val defaultDimension = 1536
 
   val live
-    : ZLayer[DataStoreModule.MemoryEntriesStore & VectorIndexService & EmbeddingService, Nothing, MemoryRepository] =
+    : ZLayer[MemoryStoreModule.MemoryEntriesStore & VectorIndexService & EmbeddingService, Nothing, MemoryRepository] =
     ZLayer.fromZIO {
       for
-        map <- DataStoreModule.memoryEntriesMap
+        map <- MemoryStoreModule.memoryEntriesMap
         vsi <- ZIO.service[VectorIndexService]
         emb <- ZIO.service[EmbeddingService]
         dim  = sys.env

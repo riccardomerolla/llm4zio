@@ -8,10 +8,11 @@ import zio.stream.ZStream
 import zio.test.*
 
 import db.*
+import io.github.riccardomerolla.zio.eclipsestore.service.LifecycleCommand
 import llm4zio.core.*
 import llm4zio.tools.{ AnyTool, JsonSchema }
 import models.*
-import store.{ ConfigStoreModule, DataStoreModule, StoreConfig }
+import store.{ ConfigStoreModule, ConversationRow, DataStoreModule, MemoryStoreModule, StoreConfig }
 import web.ActivityHub
 
 object SettingsControllerSpec extends ZIOSpecDefault:
@@ -82,7 +83,7 @@ object SettingsControllerSpec extends ZIOSpecDefault:
 
   private def mkLayer
     : UIO[
-      ZLayer[Any, Nothing, SettingsController & ConfigRepository & StoreConfig]
+      ZLayer[Any, Nothing, SettingsController & ConfigRepository & StoreConfig & DataStoreModule.DataStoreService]
     ] =
     for
       tempDir   <- ZIO.attemptBlocking(Files.createTempDirectory("settings-controller-spec")).orDie
@@ -95,10 +96,11 @@ object SettingsControllerSpec extends ZIOSpecDefault:
       hub        = new ActivityHub:
                      override def publish(event: ActivityEvent): UIO[Unit] = ZIO.unit
                      override def subscribe: UIO[Dequeue[ActivityEvent]]   = Queue.unbounded[ActivityEvent].map(identity)
-    yield ZLayer.make[SettingsController & ConfigRepository & StoreConfig](
+    yield ZLayer.make[SettingsController & ConfigRepository & StoreConfig & DataStoreModule.DataStoreService](
       ZLayer.succeed(storeCfg),
       ConfigStoreModule.live.mapError(err => new RuntimeException(err.toString)).orDie,
       DataStoreModule.live.mapError(err => new RuntimeException(err.toString)).orDie,
+      MemoryStoreModule.live.mapError(err => new RuntimeException(err.toString)).orDie,
       ZLayer.succeed(configRepo),
       ZLayer.succeed(hub),
       ZLayer.fromZIO(Ref.make(MigrationConfig())),
@@ -126,6 +128,7 @@ object SettingsControllerSpec extends ZIOSpecDefault:
       ZLayer.succeed(storeCfg),
       ConfigStoreModule.live.mapError(err => new RuntimeException(err.toString)).orDie,
       DataStoreModule.live.mapError(err => new RuntimeException(err.toString)).orDie,
+      MemoryStoreModule.live.mapError(err => new RuntimeException(err.toString)).orDie,
       ConfigRepository.live,
       ActivityRepository.live,
       ActivityHub.live,
@@ -179,6 +182,70 @@ object SettingsControllerSpec extends ZIOSpecDefault:
                         events.exists(event =>
                           event.source == "settings" && event.summary == "Application settings updated"
                         ),
+                      )
+                    }
+        yield result
+      },
+      test("GET /api/store/debug-data returns raw entries and store size") {
+        for
+          layer  <- mkLayer
+          result <- ZIO.scoped {
+                      for
+                        env        <- layer.build
+                        controller <- ZIO.service[SettingsController].provideEnvironment(env)
+                        dataStore  <- ZIO.service[DataStoreModule.DataStoreService].provideEnvironment(env)
+                        _          <- dataStore.store.store(
+                                        "conv:9001",
+                                        ConversationRow(
+                                          id = "9001",
+                                          title = "debug-conversation",
+                                          description = Some("persist-check"),
+                                          channelName = Some("web"),
+                                          status = "active",
+                                          createdAt = java.time.Instant.parse("2026-02-21T12:00:00Z"),
+                                          updatedAt = java.time.Instant.parse("2026-02-21T12:00:00Z"),
+                                          runId = Some("run-debug"),
+                                          createdBy = Some("spec"),
+                                        ),
+                                      )
+                        _          <- dataStore.rawStore.maintenance(LifecycleCommand.Checkpoint)
+                        response   <- controller.routes.runZIO(Request.get("/api/store/debug-data"))
+                        body       <- response.body.asString
+                      yield assertTrue(
+                        response.status == Status.Ok,
+                        body.contains("\"dataStorePath\":"),
+                        body.contains("\"dataStoreInstanceId\":"),
+                        body.contains("\"dataStoreBytes\":"),
+                        body.contains("\"dataStorePrefixCounts\":"),
+                        body.contains("\"dataEntries\":"),
+                        body.contains("\"key\":\"conv:9001\""),
+                        body.contains("\"prefix\":\"conv\""),
+                        body.contains("\"rawValue\":"),
+                        !body.contains("\"configStorePath\":"),
+                        !body.contains("\"configStoreInstanceId\":"),
+                        !body.contains("\"configEntries\":"),
+                      )
+                    }
+        yield result
+      },
+      test("GET /api/store/debug-data includes config store only when requested") {
+        for
+          layer  <- mkLayer
+          result <- ZIO.scoped {
+                      for
+                        env        <- layer.build
+                        controller <- ZIO.service[SettingsController].provideEnvironment(env)
+                        response   <- controller.routes.runZIO(
+                                        Request.get(URL.decode("/api/store/debug-data?includeConfig=true").toOption.get)
+                                      )
+                        body       <- response.body.asString
+                      yield assertTrue(
+                        response.status == Status.Ok,
+                        body.contains("\"configStorePath\":"),
+                        body.contains("\"configStoreInstanceId\":"),
+                        body.contains("\"configStoreBytes\":"),
+                        body.contains("\"configStorePrefixCounts\":"),
+                        body.contains("\"configEntries\":"),
                       )
                     }
         yield result

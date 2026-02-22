@@ -8,7 +8,7 @@ import zio.test.*
 
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.error.GigaMapError
-import store.{ DataStoreModule, StoreConfig }
+import store.{ MemoryStoreModule, StoreConfig }
 
 object MemoryRepositoryESSpec extends ZIOSpecDefault:
 
@@ -47,9 +47,9 @@ object MemoryRepositoryESSpec extends ZIOSpecDefault:
         configStorePath = path.resolve("config-store").toString,
         dataStorePath = path.resolve("data-store").toString,
       )
-    ) >>> DataStoreModule.live) ++ mockEmbedding >>> ZLayer.fromZIO {
+    ) >>> MemoryStoreModule.live) ++ mockEmbedding >>> ZLayer.fromZIO {
       for
-        map <- DataStoreModule.memoryEntriesMap
+        map <- MemoryStoreModule.memoryEntriesMap
         vsi <- ZIO.service[io.github.riccardomerolla.zio.eclipsestore.gigamap.vector.VectorIndexService]
         emb <- ZIO.service[EmbeddingService]
       yield MemoryRepositoryES(map, vsi, emb, dimension = 3)

@@ -8,18 +8,14 @@ import zio.schema.{ Schema, derived }
 
 import io.github.riccardomerolla.zio.eclipsestore.config.{ EclipseStoreConfig, StorageTarget }
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
-import io.github.riccardomerolla.zio.eclipsestore.gigamap.config.{ GigaMapDefinition, GigaMapIndex }
-import io.github.riccardomerolla.zio.eclipsestore.gigamap.error.GigaMapError
-import io.github.riccardomerolla.zio.eclipsestore.gigamap.service.GigaMap
-import io.github.riccardomerolla.zio.eclipsestore.gigamap.vector.VectorIndexService
 import io.github.riccardomerolla.zio.eclipsestore.schema.{ SchemaBinaryCodec, TypedStore, TypedStoreLive }
 import io.github.riccardomerolla.zio.eclipsestore.service.{ EclipseStoreService, LifecycleCommand }
-import memory.MemoryEntry
-import models.{ ActivityEventType, IssuePriority, IssueStatus, MessageType, SenderType }
 
 // ---------------------------------------------------------------------------
-// Store-level row types — persistence-only; use Schema for binary serialization
-// (Option, Instant, typed enums are handled correctly by SchemaBinaryCodec).
+// Store-level row types — persistence-only.
+// All fields use primitive types (String, Int, Boolean, Instant, Option[…])
+// to maximise binary-serialization compatibility with EclipseStore.
+// Enum values are stored as String and converted at the repository boundary.
 // ---------------------------------------------------------------------------
 
 final case class TaskRunRow(
@@ -57,24 +53,24 @@ final case class TaskArtifactRow(
 ) derives Schema
 
 final case class ConversationRow(
-  id: Long,
+  id: String,
   title: String,
   description: Option[String],
   channelName: Option[String],
   status: String,
   createdAt: Instant,
   updatedAt: Instant,
-  runId: Option[Long],
+  runId: Option[String],
   createdBy: Option[String],
 ) derives Schema
 
 final case class ChatMessageRow(
-  id: Long,
-  conversationId: Long,
+  id: String,
+  conversationId: String,
   sender: String,
-  senderType: SenderType,
+  senderType: String,
   content: String,
-  messageType: MessageType,
+  messageType: String,
   metadata: Option[String],
   createdAt: Instant,
   updatedAt: Instant,
@@ -89,7 +85,7 @@ final case class SessionContextRow(
 
 final case class ActivityEventRow(
   id: String,
-  eventType: ActivityEventType,
+  eventType: String,
   source: String,
   runId: Option[String],
   conversationId: Option[String],
@@ -100,9 +96,9 @@ final case class ActivityEventRow(
 ) derives Schema
 
 final case class AgentIssueRow(
-  id: Long,
-  runId: Option[Long],
-  conversationId: Option[Long],
+  id: String,
+  runId: Option[String],
+  conversationId: Option[String],
   title: String,
   description: String,
   issueType: String,
@@ -110,8 +106,8 @@ final case class AgentIssueRow(
   preferredAgent: Option[String],
   contextPath: Option[String],
   sourceFolder: Option[String],
-  priority: IssuePriority,
-  status: IssueStatus,
+  priority: String,
+  status: String,
   assignedAgent: Option[String],
   assignedAt: Option[Instant],
   completedAt: Option[Instant],
@@ -122,8 +118,8 @@ final case class AgentIssueRow(
 ) derives Schema
 
 final case class AgentAssignmentRow(
-  id: Long,
-  issueId: Long,
+  id: String,
+  issueId: String,
   agentName: String,
   status: String,
   assignedAt: Instant,
@@ -134,14 +130,13 @@ final case class AgentAssignmentRow(
 ) derives Schema
 
 // ---------------------------------------------------------------------------
-// Schema binary handlers — registered once at store initialisation so that
-// EclipseStore uses the ZIO-Schema JSON-payload codec for every row type. This
-// correctly handles Option, Instant, and typed enums without reflection-based
-// null surprises.
+// Schema binary handlers — only primitive-field row types needed now.
+// No enum handlers required because all enums are stored as String.
 // ---------------------------------------------------------------------------
 
 private val dataStoreHandlers =
-  SchemaBinaryCodec.handlers(Schema[ConversationRow])
+  SchemaBinaryCodec.handlers(Schema[String])
+    ++ SchemaBinaryCodec.handlers(Schema[ConversationRow])
     ++ SchemaBinaryCodec.handlers(Schema[ChatMessageRow])
     ++ SchemaBinaryCodec.handlers(Schema[SessionContextRow])
     ++ SchemaBinaryCodec.handlers(Schema[AgentIssueRow])
@@ -150,49 +145,37 @@ private val dataStoreHandlers =
     ++ SchemaBinaryCodec.handlers(Schema[TaskRunRow])
     ++ SchemaBinaryCodec.handlers(Schema[TaskReportRow])
     ++ SchemaBinaryCodec.handlers(Schema[TaskArtifactRow])
-    ++ SchemaBinaryCodec.handlers(Schema[SenderType])
-    ++ SchemaBinaryCodec.handlers(Schema[MessageType])
-    ++ SchemaBinaryCodec.handlers(Schema[ActivityEventType])
-    ++ SchemaBinaryCodec.handlers(Schema[IssuePriority])
-    ++ SchemaBinaryCodec.handlers(Schema[IssueStatus])
 
 object DataStoreModule:
 
   /** DataStoreService exposes a TypedStore for schema-validated CRUD and the raw EclipseStoreService for key-prefix
-    * scanning (streamKeys). The GigaMap is retained only for MemoryEntriesStore (vector search).
+    * scanning (streamKeys). Mirrors ConfigStoreModule.ConfigStoreService for consistency.
     */
   trait DataStoreService:
     def store: TypedStore
     def rawStore: EclipseStoreService
 
-  trait MemoryEntriesStore:
-    def map: GigaMap[MemoryId, MemoryEntry]
-
-  def memoryEntriesMap: URIO[MemoryEntriesStore, GigaMap[MemoryId, MemoryEntry]] =
-    ZIO.serviceWith[MemoryEntriesStore](_.map)
-
-  private val memoryEntriesDefinition = GigaMapDefinition[MemoryId, MemoryEntry](
-    name = "memoryEntries",
-    indexes = Chunk(
-      GigaMapIndex.single("userId", _.userId.value),
-      GigaMapIndex.single("kind", _.kind.value),
-    ),
-  )
-
-  /** Shutdown-checkpoint finalizer layered on top of EclipseStoreService. */
-  private val withShutdownCheckpoint: ZLayer[EclipseStoreService, Nothing, EclipseStoreService] =
+  /** Shutdown-checkpoint finalizer layered on top of the data-store service. */
+  private val withShutdownCheckpoint: ZLayer[DataStoreRef, EclipseStoreError, DataStoreRef] =
     ZLayer.scoped {
       for
-        svc <- ZIO.service[EclipseStoreService]
+        ref <- ZIO.service[DataStoreRef]
+        svc  = ref.raw
+        _   <- ZIO.logInfo("Data store: loading persisted roots...") *>
+                 svc.reloadRoots *>
+                 ZIO.logInfo("Data store: roots loaded.")
         _   <- ZIO.addFinalizer(
                  ZIO.logInfo("Data store: performing shutdown checkpoint...") *>
                    svc.maintenance(LifecycleCommand.Checkpoint).ignoreLogged *>
                    ZIO.logInfo("Data store: shutdown checkpoint complete.")
                )
-      yield svc
+      yield ref
     }
 
-  val baseStore: ZLayer[StoreConfig, EclipseStoreError, EclipseStoreService] =
+  private val toDataStoreRef: ZLayer[EclipseStoreService, Nothing, DataStoreRef] =
+    ZLayer.fromFunction(DataStoreRef.apply)
+
+  val baseStore: ZLayer[StoreConfig, EclipseStoreError, DataStoreRef] =
     ZLayer.fromZIO(
       ZIO.serviceWith[StoreConfig] { cfg =>
         EclipseStoreConfig(
@@ -201,24 +184,18 @@ object DataStoreModule:
           customTypeHandlers = dataStoreHandlers,
         )
       }
-    ) >>> EclipseStoreService.live >>> withShutdownCheckpoint
+    ) >>> EclipseStoreService.live.fresh >>> toDataStoreRef >>> withShutdownCheckpoint
 
-  val dataStore: ZLayer[EclipseStoreService, Nothing, DataStoreService] =
-    ZLayer.fromFunction((esc: EclipseStoreService) =>
+  val dataStore: ZLayer[DataStoreRef, Nothing, DataStoreService] =
+    ZLayer.fromFunction((ref: DataStoreRef) =>
+      val esc = ref.raw
       new DataStoreService:
         override val store: TypedStore             = TypedStoreLive(esc)
         override val rawStore: EclipseStoreService = esc
     )
 
-  val memoryEntries: ZLayer[EclipseStoreService, GigaMapError, MemoryEntriesStore] =
-    GigaMap.make(memoryEntriesDefinition) >>> ZLayer.fromFunction((gm: GigaMap[MemoryId, MemoryEntry]) =>
-      new MemoryEntriesStore:
-        override val map: GigaMap[MemoryId, MemoryEntry] = gm
-    )
-
-  val live: ZLayer[
-    StoreConfig,
-    EclipseStoreError | GigaMapError,
-    DataStoreService & MemoryEntriesStore & VectorIndexService,
-  ] =
-    baseStore >>> (dataStore ++ memoryEntries ++ VectorIndexService.live)
+  /** Simplified live layer — produces only DataStoreService (no memory/vector infrastructure). Memory/vector
+    * infrastructure is now provided separately by MemoryStoreModule.
+    */
+  val live: ZLayer[StoreConfig, EclipseStoreError, DataStoreService] =
+    baseStore >>> dataStore
