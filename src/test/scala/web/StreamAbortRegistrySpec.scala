@@ -1,4 +1,4 @@
-package web
+package shared.web
 
 import zio.*
 import zio.test.*

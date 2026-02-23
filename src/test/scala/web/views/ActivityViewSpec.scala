@@ -1,10 +1,10 @@
-package web.views
+package shared.web
 
 import java.time.Instant
 
 import zio.test.*
 
-import models.{ ActivityEvent, ActivityEventType }
+import activity.entity.{ ActivityEvent, ActivityEventType }
 import shared.ids.Ids.{ ConversationId, EventId, TaskRunId }
 
 object ActivityViewSpec extends ZIOSpecDefault:

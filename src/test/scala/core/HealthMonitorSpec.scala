@@ -1,4 +1,4 @@
-package core
+package app.control
 
 import java.time.Instant
 
@@ -7,10 +7,10 @@ import zio.stream.ZStream
 import zio.test.*
 
 import _root_.models.*
-import agents.AgentRegistry
 import db.*
-import gateway.*
-import gateway.models.{ NormalizedMessage, SessionKey, SessionScopeStrategy }
+import gateway.control.*
+import gateway.entity.{ NormalizedMessage, SessionKey, SessionScopeStrategy }
+import orchestration.control.AgentRegistry
 
 object HealthMonitorSpec extends ZIOSpecDefault:
 
@@ -110,7 +110,7 @@ object HealthMonitorSpec extends ZIOSpecDefault:
   private def makeRegistry: UIO[ChannelRegistry] =
     for
       ref        <- Ref.Synchronized.make(Map("websocket" -> channelWithSession))
-      runtimeRef <- Ref.Synchronized.make(Map.empty[String, gateway.ChannelRuntime])
+      runtimeRef <- Ref.Synchronized.make(Map.empty[String, ChannelRuntime])
     yield ChannelRegistryLive(ref, runtimeRef)
 
   def spec: Spec[TestEnvironment & Scope, Any] = suite("HealthMonitorSpec")(

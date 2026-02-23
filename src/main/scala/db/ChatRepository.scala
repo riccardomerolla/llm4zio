@@ -64,7 +64,7 @@ trait ChatRepository:
   ): IO[PersistenceError, Unit] =
     ZIO.fail(PersistenceError.QueryFailed("deleteSessionContext", "Not implemented"))
 
-import store.DataStoreModule
+import shared.store.DataStoreModule
 
 object ChatRepository:
   def createConversation(conversation: ChatConversation): ZIO[ChatRepository, PersistenceError, Long] =

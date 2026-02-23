@@ -1,4 +1,4 @@
-package gateway.telegram
+package gateway.boundary.telegram
 
 import scala.concurrent.{ ExecutionContext, Future }
 

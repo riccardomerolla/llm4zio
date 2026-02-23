@@ -9,8 +9,7 @@ import zio.test.*
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.error.GigaMapError
 import shared.ids.Ids
-import shared.store.EventStore
-import store.{ ChatMessageRow, ConversationRow, DataStoreModule, StoreConfig }
+import shared.store.{ ChatMessageRow, ConversationRow, DataStoreModule, EventStore, StoreConfig }
 
 object ConversationRepositoryESSpec extends ZIOSpecDefault:
 

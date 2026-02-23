@@ -5,6 +5,7 @@ import zio.test.*
 import zio.test.Assertion.*
 
 import models.*
+import orchestration.control.OrchestratorControlPlane
 
 object ControlPlaneSpec extends ZIOSpecDefault:
 

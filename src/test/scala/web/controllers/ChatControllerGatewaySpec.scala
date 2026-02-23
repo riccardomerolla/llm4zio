@@ -7,15 +7,17 @@ import zio.stream.ZStream
 import zio.test.*
 
 import _root_.models.*
-import agents.AgentRegistry
+import activity.control.ActivityHubLive
+import activity.entity.{ ActivityEvent, ActivityEventType, ActivityRepository }
+import conversation.boundary.ChatControllerLive
 import db.*
-import gateway.*
-import gateway.models.*
+import gateway.control.*
+import gateway.entity.*
 import llm4zio.core.*
 import llm4zio.tools.{ AnyTool, JsonSchema }
-import memory.*
-import orchestration.*
-import web.{ ActivityHubLive, StreamAbortRegistryLive }
+import memory.entity.*
+import orchestration.control.{ IssueAssignmentOrchestrator, * }
+import shared.web.StreamAbortRegistryLive
 
 object ChatControllerGatewaySpec extends ZIOSpecDefault:
 
@@ -93,7 +95,7 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
       override def assignIssue(issueId: Long, agentName: String): IO[PersistenceError, AgentIssue] =
         ZIO.fail(PersistenceError.NotFound("issue", issueId))
 
-  private val stubActivityRepo: db.ActivityRepository = new db.ActivityRepository:
+  private val stubActivityRepo: ActivityRepository = new ActivityRepository:
     override def createEvent(
       event: ActivityEvent
     ): IO[PersistenceError, _root_.shared.ids.Ids.EventId] = ZIO.succeed(event.id)

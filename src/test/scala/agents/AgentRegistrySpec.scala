@@ -7,6 +7,7 @@ import zio.test.*
 
 import db.CustomAgentRow
 import models.*
+import orchestration.control.AgentRegistry
 
 object AgentRegistrySpec extends ZIOSpecDefault:
 

@@ -4,7 +4,7 @@ import zio.*
 
 import shared.errors.PersistenceError
 import shared.ids.Ids
-import store.{ DataStoreModule, TaskRunRow }
+import shared.store.{ DataStoreModule, TaskRunRow }
 
 object TaskRunMigration:
 

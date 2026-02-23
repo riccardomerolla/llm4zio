@@ -8,7 +8,7 @@ import zio.test.*
 
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.error.GigaMapError
-import store.{ ConfigStoreModule, StoreConfig }
+import shared.store.{ ConfigStoreModule, StoreConfig }
 
 object ConfigRepositoryESSpec extends ZIOSpecDefault:
 

@@ -8,7 +8,7 @@ import zio.schema.Schema
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.service.{ LifecycleCommand, LifecycleStatus }
 import models.*
-import store.*
+import shared.store.*
 
 final case class ChatRepositoryES(
   dataStore: DataStoreModule.DataStoreService

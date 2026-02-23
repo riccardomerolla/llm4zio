@@ -5,8 +5,11 @@ import java.time.Instant
 import zio.*
 import zio.test.*
 
+import activity.control.{ ActivityHub, ActivityHubLive }
+import activity.entity.{ ActivityEvent, ActivityEventType, ActivityRepository }
 import db.*
 import models.ProgressUpdate
+import orchestration.control.ProgressTracker
 
 object ProgressTrackerSpec extends ZIOSpecDefault:
 
@@ -136,19 +139,19 @@ object ProgressTrackerSpec extends ZIOSpecDefault:
   private def trackerLayer: ZLayer[Any, Nothing, ProgressTracker] =
     stubActivityHubLayer >>> ProgressTracker.live
 
-  private val stubActivityHubLayer: ULayer[web.ActivityHub] =
+  private val stubActivityHubLayer: ULayer[ActivityHub] =
     ZLayer.fromZIO {
-      Ref.make(Set.empty[Queue[_root_.models.ActivityEvent]]).map { subs =>
-        web.ActivityHubLive(stubActivityRepo, subs)
+      Ref.make(Set.empty[Queue[ActivityEvent]]).map { subs =>
+        ActivityHubLive(stubActivityRepo, subs)
       }
     }
 
-  private val stubActivityRepo: db.ActivityRepository = new db.ActivityRepository:
+  private val stubActivityRepo: ActivityRepository = new ActivityRepository:
     override def createEvent(
-      event: _root_.models.ActivityEvent
+      event: ActivityEvent
     ): IO[PersistenceError, _root_.shared.ids.Ids.EventId] = ZIO.succeed(event.id)
     override def listEvents(
-      eventType: Option[_root_.models.ActivityEventType],
+      eventType: Option[ActivityEventType],
       since: Option[java.time.Instant],
       limit: Int,
-    ): IO[PersistenceError, List[_root_.models.ActivityEvent]] = ZIO.succeed(Nil)
+    ): IO[PersistenceError, List[ActivityEvent]] = ZIO.succeed(Nil)

@@ -7,9 +7,11 @@ import zio.http.*
 import zio.json.*
 import zio.test.*
 
+import _root_.config.boundary.ConfigController
+import activity.control.ActivityHub
+import activity.entity.ActivityEvent
 import core.ConfigValidator
 import models.*
-import web.ActivityHub
 
 object ConfigControllerSpec extends ZIOSpecDefault:
 

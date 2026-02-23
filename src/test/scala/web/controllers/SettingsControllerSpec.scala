@@ -7,13 +7,15 @@ import zio.http.*
 import zio.stream.ZStream
 import zio.test.*
 
+import _root_.config.boundary.SettingsController
+import activity.control.ActivityHub
+import activity.entity.{ ActivityEvent, ActivityEventType, ActivityRepository }
 import db.*
 import io.github.riccardomerolla.zio.eclipsestore.service.LifecycleCommand
 import llm4zio.core.*
 import llm4zio.tools.{ AnyTool, JsonSchema }
 import models.*
-import store.{ ConfigStoreModule, ConversationRow, DataStoreModule, MemoryStoreModule, StoreConfig }
-import web.ActivityHub
+import shared.store.{ ConfigStoreModule, ConversationRow, DataStoreModule, MemoryStoreModule, StoreConfig }
 
 object SettingsControllerSpec extends ZIOSpecDefault:
 

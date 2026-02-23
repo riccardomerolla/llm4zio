@@ -1,4 +1,4 @@
-package gateway.telegram
+package gateway.boundary.telegram
 
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
@@ -8,11 +8,10 @@ import java.util.UUID
 import zio.*
 import zio.test.*
 
-import agents.AgentRegistry
 import db.*
-import gateway.MessageChannelError
-import gateway.models.*
-import orchestration.TaskExecutor
+import gateway.control.MessageChannelError
+import gateway.entity.*
+import orchestration.control.{ AgentRegistry, TaskExecutor }
 
 object TelegramE2ESpec extends ZIOSpecDefault:
 

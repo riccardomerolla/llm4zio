@@ -6,7 +6,8 @@ import zio.*
 import zio.stream.ZStream
 import zio.test.*
 
-import gateway.models.*
+import gateway.control.ResponseChunker
+import gateway.entity.*
 
 object ResponseChunkerSpec extends ZIOSpecDefault:
 

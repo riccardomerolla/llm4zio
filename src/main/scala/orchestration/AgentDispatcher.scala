@@ -7,7 +7,7 @@ import zio.*
 import agents.{ AgentRegistry, ConversationMemory }
 import db.{ ConfigRepository, PersistenceError, TaskArtifactRow, TaskReportRow, TaskRepository }
 import llm4zio.core.LlmService
-import memory.*
+import memory.entity.*
 
 final case class StepDispatchResult(
   agentName: String,

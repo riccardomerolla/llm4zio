@@ -1,8 +1,9 @@
-package gateway.telegram
+package gateway.boundary.telegram
 
 import zio.*
 import zio.test.*
 
+import gateway.control.{ IntentConversationState, IntentDecision, IntentParser }
 import llm4zio.core.*
 import models.*
 

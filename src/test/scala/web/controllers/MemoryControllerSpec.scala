@@ -6,7 +6,8 @@ import zio.*
 import zio.http.*
 import zio.test.*
 
-import memory.*
+import memory.boundary.MemoryControllerLive
+import memory.entity.*
 
 object MemoryControllerSpec extends ZIOSpecDefault:
 

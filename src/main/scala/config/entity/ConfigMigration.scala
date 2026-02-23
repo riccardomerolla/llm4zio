@@ -7,7 +7,7 @@ import zio.json.*
 
 import shared.errors.PersistenceError
 import shared.ids.Ids
-import store.{ ConfigStoreModule, CustomAgentRow, WorkflowRow }
+import shared.store.{ ConfigStoreModule, CustomAgentRow, WorkflowRow }
 
 object ConfigMigration:
 

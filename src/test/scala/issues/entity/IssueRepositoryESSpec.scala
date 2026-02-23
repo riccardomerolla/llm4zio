@@ -9,8 +9,7 @@ import zio.test.*
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.error.GigaMapError
 import shared.ids.Ids
-import shared.store.EventStore
-import store.{ AgentAssignmentRow, AgentIssueRow, DataStoreModule, StoreConfig }
+import shared.store.{ AgentAssignmentRow, AgentIssueRow, DataStoreModule, EventStore, StoreConfig }
 
 object IssueRepositoryESSpec extends ZIOSpecDefault:
 

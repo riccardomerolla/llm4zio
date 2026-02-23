@@ -7,12 +7,13 @@ import zio.stream.ZStream
 import zio.test.*
 
 import _root_.models.*
-import agents.AgentRegistry
 import db.*
-import gateway.models.*
+import gateway.control.*
+import gateway.entity.*
 import llm4zio.core.*
 import llm4zio.tools.{ AnyTool, JsonSchema }
-import memory.*
+import memory.entity.*
+import orchestration.control.AgentRegistry
 
 object GatewayServiceSpec extends ZIOSpecDefault:
 

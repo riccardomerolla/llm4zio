@@ -5,7 +5,8 @@ import zio.http.*
 import zio.stream.ZStream
 import zio.test.*
 
-import core.*
+import app.boundary.HealthControllerLive
+import app.control.*
 
 object HealthControllerSpec extends ZIOSpecDefault:
 

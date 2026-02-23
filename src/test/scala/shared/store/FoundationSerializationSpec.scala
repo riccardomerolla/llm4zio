@@ -11,7 +11,6 @@ import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.error.GigaMapError
 import issues.entity.*
 import shared.ids.Ids
-import store.{ DataStoreModule, StoreConfig }
 import taskrun.entity.*
 
 object FoundationSerializationSpec extends ZIOSpecDefault:

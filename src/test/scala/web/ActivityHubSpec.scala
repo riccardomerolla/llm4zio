@@ -5,8 +5,9 @@ import java.time.Instant
 import zio.*
 import zio.test.*
 
-import db.{ ActivityRepository, PersistenceError }
-import models.{ ActivityEvent, ActivityEventType }
+import activity.control.ActivityHubLive
+import activity.entity.{ ActivityEvent, ActivityEventType, ActivityRepository }
+import db.PersistenceError
 import shared.ids.Ids.EventId
 
 object ActivityHubSpec extends ZIOSpecDefault:

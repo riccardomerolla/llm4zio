@@ -54,7 +54,7 @@ trait TaskRepository:
   def deleteCustomAgent(id: Long): IO[PersistenceError, Unit]                          =
     ZIO.fail(PersistenceError.QueryFailed("deleteCustomAgent", "Not implemented"))
 
-import store.{ ConfigStoreModule, DataStoreModule }
+import shared.store.{ ConfigStoreModule, DataStoreModule }
 
 object TaskRepository:
   def createRun(run: TaskRunRow): ZIO[TaskRepository, PersistenceError, Long] =

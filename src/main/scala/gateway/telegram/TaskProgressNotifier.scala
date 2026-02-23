@@ -4,9 +4,9 @@ import zio.*
 import zio.stream.ZStream
 
 import db.{ ChatRepository, PersistenceError, TaskRepository, TaskRunRow }
-import gateway.ChannelRegistry
+import gateway.control.ChannelRegistry
 import models.*
-import orchestration.OrchestratorControlPlane
+import orchestration.control.OrchestratorControlPlane
 
 enum TaskProgressNotifierError:
   case Persistence(error: PersistenceError)

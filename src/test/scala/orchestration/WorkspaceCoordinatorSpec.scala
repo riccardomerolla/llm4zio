@@ -3,6 +3,8 @@ package orchestration
 import zio.*
 import zio.test.*
 
+import orchestration.control.{ ResourceQuotas, RunPriority, TokenBucketConfig, WorkspaceCoordinator }
+
 object WorkspaceCoordinatorSpec extends ZIOSpecDefault:
 
   private val quotas = ResourceQuotas(

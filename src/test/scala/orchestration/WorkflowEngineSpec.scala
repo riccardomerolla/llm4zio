@@ -4,6 +4,7 @@ import zio.*
 import zio.test.*
 
 import models.*
+import orchestration.control.WorkflowEngine
 
 object WorkflowEngineSpec extends ZIOSpecDefault:
 

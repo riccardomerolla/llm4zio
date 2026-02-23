@@ -9,6 +9,7 @@ import db.*
 import llm4zio.agents.*
 import llm4zio.core.{ Message, MessageRole }
 import models.*
+import orchestration.control.{ AgentRegistry, ChatRepositoryMemoryStore, Llm4zioAgentAdapters }
 
 object Llm4zioAdaptersSpec extends ZIOSpecDefault:
 

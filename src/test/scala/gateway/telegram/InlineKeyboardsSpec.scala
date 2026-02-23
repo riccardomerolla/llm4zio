@@ -1,4 +1,4 @@
-package gateway.telegram
+package gateway.boundary.telegram
 
 import zio.test.*
 

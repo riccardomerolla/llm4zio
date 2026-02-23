@@ -5,8 +5,7 @@ import zio.*
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import shared.errors.PersistenceError
 import shared.ids.Ids.TaskRunId
-import shared.store.EventStore
-import store.DataStoreModule
+import shared.store.{ DataStoreModule, EventStore }
 
 final case class TaskRunEventStoreES(dataStore: DataStoreModule.DataStoreService)
   extends EventStore[TaskRunId, TaskRunEvent]:

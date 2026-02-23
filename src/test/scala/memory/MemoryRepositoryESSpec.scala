@@ -8,7 +8,9 @@ import zio.test.*
 
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.error.GigaMapError
-import store.{ MemoryStoreModule, StoreConfig }
+import memory.control.{ EmbeddingService, MemoryRepositoryES }
+import memory.entity.*
+import shared.store.{ MemoryStoreModule, StoreConfig }
 
 object MemoryRepositoryESSpec extends ZIOSpecDefault:
 

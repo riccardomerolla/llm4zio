@@ -7,6 +7,7 @@ import zio.*
 import zio.test.*
 
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
+import shared.store.*
 
 object ConfigStoreModuleSpec extends ZIOSpecDefault:
 

@@ -3,7 +3,7 @@ package orchestration
 import zio.*
 import zio.test.*
 
-import orchestration.WorkflowOrchestrator.*
+import orchestration.control.WorkflowOrchestrator.*
 
 object WorkflowOrchestratorSpec extends ZIOSpecDefault:
 

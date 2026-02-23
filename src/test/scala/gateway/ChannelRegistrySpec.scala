@@ -5,7 +5,8 @@ import java.time.Instant
 import zio.*
 import zio.test.*
 
-import gateway.models.*
+import gateway.control.*
+import gateway.entity.*
 
 object ChannelRegistrySpec extends ZIOSpecDefault:
 

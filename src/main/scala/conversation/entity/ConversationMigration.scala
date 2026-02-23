@@ -4,7 +4,7 @@ import zio.*
 
 import shared.errors.PersistenceError
 import shared.ids.Ids
-import store.{ ChatMessageRow, ConversationRow, DataStoreModule }
+import shared.store.{ ChatMessageRow, ConversationRow, DataStoreModule }
 
 object ConversationMigration:
 

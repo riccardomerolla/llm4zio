@@ -5,7 +5,7 @@ import zio.*
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ AgentId, WorkflowId }
-import store.ConfigStoreModule
+import shared.store.ConfigStoreModule
 
 final case class ConfigRepositoryES(configStore: ConfigStoreModule.ConfigStoreService) extends ConfigRepository:
 

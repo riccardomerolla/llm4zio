@@ -6,7 +6,7 @@ import zio.*
 import zio.json.*
 
 import io.github.riccardomerolla.zio.eclipsestore.service.{ LifecycleCommand, LifecycleStatus }
-import store.ConfigStoreModule
+import shared.store.ConfigStoreModule
 
 trait ConfigRepository:
   // Settings
@@ -183,16 +183,16 @@ final case class ConfigRepositoryES(
 
   override def getWorkflow(id: Long): IO[PersistenceError, Option[WorkflowRow]] =
     kv
-      .fetch[String, store.WorkflowRow](workflowKey(id))
+      .fetch[String, shared.store.WorkflowRow](workflowKey(id))
       .map(_.flatMap(fromStoreWorkflowRow))
       .mapError(storeErr("getWorkflow"))
 
   override def getWorkflowByName(name: String): IO[PersistenceError, Option[WorkflowRow]] =
-    fetchAllByPrefix[store.WorkflowRow]("workflow:", "getWorkflowByName")
+    fetchAllByPrefix[shared.store.WorkflowRow]("workflow:", "getWorkflowByName")
       .map(_.flatMap(fromStoreWorkflowRow).find(_.name.equalsIgnoreCase(name.trim)))
 
   override def listWorkflows: IO[PersistenceError, List[WorkflowRow]] =
-    fetchAllByPrefix[store.WorkflowRow]("workflow:", "listWorkflows")
+    fetchAllByPrefix[shared.store.WorkflowRow]("workflow:", "listWorkflows")
       .map(_.flatMap(fromStoreWorkflowRow).sortBy(w => (!w.isBuiltin, w.name.toLowerCase)))
 
   override def updateWorkflow(workflow: WorkflowRow): IO[PersistenceError, Unit] =
@@ -200,7 +200,7 @@ final case class ConfigRepositoryES(
       id       <- ZIO
                     .fromOption(workflow.id)
                     .orElseFail(PersistenceError.QueryFailed("updateWorkflow", "Missing id for workflow update"))
-      existing <- kv.fetch[String, store.WorkflowRow](workflowKey(id)).mapError(storeErr("updateWorkflow"))
+      existing <- kv.fetch[String, shared.store.WorkflowRow](workflowKey(id)).mapError(storeErr("updateWorkflow"))
       _        <- ZIO
                     .fail(PersistenceError.NotFound("workflows", id))
                     .when(existing.isEmpty)
@@ -211,7 +211,7 @@ final case class ConfigRepositoryES(
 
   override def deleteWorkflow(id: Long): IO[PersistenceError, Unit] =
     for
-      existing <- kv.fetch[String, store.WorkflowRow](workflowKey(id)).mapError(storeErr("deleteWorkflow"))
+      existing <- kv.fetch[String, shared.store.WorkflowRow](workflowKey(id)).mapError(storeErr("deleteWorkflow"))
       _        <- ZIO
                     .fail(PersistenceError.NotFound("workflows", id))
                     .when(existing.isEmpty)
@@ -229,16 +229,16 @@ final case class ConfigRepositoryES(
 
   override def getCustomAgent(id: Long): IO[PersistenceError, Option[CustomAgentRow]] =
     kv
-      .fetch[String, store.CustomAgentRow](agentKey(id))
+      .fetch[String, shared.store.CustomAgentRow](agentKey(id))
       .map(_.flatMap(fromStoreAgentRow))
       .mapError(storeErr("getCustomAgent"))
 
   override def getCustomAgentByName(name: String): IO[PersistenceError, Option[CustomAgentRow]] =
-    fetchAllByPrefix[store.CustomAgentRow]("agent:", "getCustomAgentByName")
+    fetchAllByPrefix[shared.store.CustomAgentRow]("agent:", "getCustomAgentByName")
       .map(_.flatMap(fromStoreAgentRow).find(_.name.equalsIgnoreCase(name.trim)))
 
   override def listCustomAgents: IO[PersistenceError, List[CustomAgentRow]] =
-    fetchAllByPrefix[store.CustomAgentRow]("agent:", "listCustomAgents")
+    fetchAllByPrefix[shared.store.CustomAgentRow]("agent:", "listCustomAgents")
       .map(_.flatMap(fromStoreAgentRow).sortBy(agent => (agent.displayName.toLowerCase, agent.name.toLowerCase)))
 
   override def updateCustomAgent(agent: CustomAgentRow): IO[PersistenceError, Unit] =
@@ -247,7 +247,7 @@ final case class ConfigRepositoryES(
                     .fromOption(agent.id)
                     .orElseFail(PersistenceError.QueryFailed("updateCustomAgent", "Missing id for custom agent update"))
       _        <- validateCustomAgentName(agent.name, "updateCustomAgent")
-      existing <- kv.fetch[String, store.CustomAgentRow](agentKey(id)).mapError(storeErr("updateCustomAgent"))
+      existing <- kv.fetch[String, shared.store.CustomAgentRow](agentKey(id)).mapError(storeErr("updateCustomAgent"))
       _        <- ZIO
                     .fail(PersistenceError.NotFound("custom_agents", id))
                     .when(existing.isEmpty)
@@ -258,7 +258,7 @@ final case class ConfigRepositoryES(
 
   override def deleteCustomAgent(id: Long): IO[PersistenceError, Unit] =
     for
-      existing <- kv.fetch[String, store.CustomAgentRow](agentKey(id)).mapError(storeErr("deleteCustomAgent"))
+      existing <- kv.fetch[String, shared.store.CustomAgentRow](agentKey(id)).mapError(storeErr("deleteCustomAgent"))
       _        <- ZIO
                     .fail(PersistenceError.NotFound("custom_agents", id))
                     .when(existing.isEmpty)
@@ -282,8 +282,8 @@ final case class ConfigRepositoryES(
       .mapError(storeErr(op))
       .flatMap(keys => ZIO.foreach(keys.toList)(k => kv.fetch[String, V](k).mapError(storeErr(op))).map(_.flatten))
 
-  private def toStoreWorkflowRow(workflow: WorkflowRow): store.WorkflowRow =
-    store.WorkflowRow(
+  private def toStoreWorkflowRow(workflow: WorkflowRow): shared.store.WorkflowRow =
+    shared.store.WorkflowRow(
       id = workflow.id.getOrElse(0L).toString,
       name = workflow.name,
       description = workflow.description,
@@ -293,7 +293,7 @@ final case class ConfigRepositoryES(
       updatedAt = workflow.updatedAt,
     )
 
-  private def fromStoreWorkflowRow(workflow: store.WorkflowRow): Option[WorkflowRow] =
+  private def fromStoreWorkflowRow(workflow: shared.store.WorkflowRow): Option[WorkflowRow] =
     workflow.id.toLongOption.map { parsedId =>
       WorkflowRow(
         id = Some(parsedId),
@@ -306,8 +306,8 @@ final case class ConfigRepositoryES(
       )
     }
 
-  private def toStoreAgentRow(agent: CustomAgentRow): store.CustomAgentRow =
-    store.CustomAgentRow(
+  private def toStoreAgentRow(agent: CustomAgentRow): shared.store.CustomAgentRow =
+    shared.store.CustomAgentRow(
       id = agent.id.getOrElse(0L).toString,
       name = agent.name,
       displayName = agent.displayName,
@@ -319,7 +319,7 @@ final case class ConfigRepositoryES(
       updatedAt = agent.updatedAt,
     )
 
-  private def fromStoreAgentRow(agent: store.CustomAgentRow): Option[CustomAgentRow] =
+  private def fromStoreAgentRow(agent: shared.store.CustomAgentRow): Option[CustomAgentRow] =
     agent.id.toLongOption.map { parsedId =>
       CustomAgentRow(
         id = Some(parsedId),

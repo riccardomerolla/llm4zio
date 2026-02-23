@@ -4,6 +4,8 @@ import zio.*
 import zio.http.*
 import zio.test.*
 
+import taskrun.boundary.LogsControllerLive
+
 object LogsControllerSpec extends ZIOSpecDefault:
 
   def spec: Spec[TestEnvironment & Scope, Any] = suite("LogsControllerSpec")(

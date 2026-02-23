@@ -9,6 +9,7 @@ import zio.test.Assertion.*
 
 import core.FileService
 import models.*
+import orchestration.control.WorkspaceService
 
 object WorkspaceServiceIntegrationSpec extends ZIOSpecDefault:
 

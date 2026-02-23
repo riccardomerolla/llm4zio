@@ -6,11 +6,11 @@ import java.time.Instant
 import zio.*
 import zio.test.*
 
+import activity.entity.{ ActivityEvent, ActivityEventType, ActivityRepository, ActivityRepositoryES }
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.error.GigaMapError
-import models.{ ActivityEvent, ActivityEventType }
 import shared.ids.Ids.EventId
-import store.{ DataStoreModule, StoreConfig }
+import shared.store.{ DataStoreModule, StoreConfig }
 
 object ActivityRepositoryESSpec extends ZIOSpecDefault:
 

@@ -1,4 +1,4 @@
-package gateway.telegram
+package gateway.boundary.telegram
 
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
@@ -7,7 +7,7 @@ import java.time.Instant
 import zio.*
 import zio.test.*
 
-import gateway.models.*
+import gateway.entity.*
 
 object TelegramChannelSpec extends ZIOSpecDefault:
 

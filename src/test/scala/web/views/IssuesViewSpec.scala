@@ -1,4 +1,4 @@
-package web.views
+package shared.web
 
 import zio.test.*
 

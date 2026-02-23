@@ -1,10 +1,10 @@
-package gateway.telegram
+package gateway.boundary.telegram
 
 import zio.*
 import zio.test.*
 
-import gateway.*
-import gateway.models.NormalizedMessage
+import gateway.control.*
+import gateway.entity.NormalizedMessage
 
 object TelegramPollingServiceSpec extends ZIOSpecDefault:
 

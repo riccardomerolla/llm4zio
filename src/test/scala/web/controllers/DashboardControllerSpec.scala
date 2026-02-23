@@ -8,7 +8,8 @@ import zio.test.*
 
 import db.*
 import models.*
-import orchestration.*
+import orchestration.control.*
+import taskrun.boundary.DashboardControllerLive
 
 object DashboardControllerSpec extends ZIOSpecDefault:
 

@@ -6,8 +6,9 @@ import zio.*
 import zio.http.*
 import zio.test.*
 
+import app.boundary.AgentMonitorControllerLive
 import models.*
-import orchestration.OrchestratorControlPlane
+import orchestration.control.OrchestratorControlPlane
 
 object AgentMonitorControllerSpec extends ZIOSpecDefault:
 

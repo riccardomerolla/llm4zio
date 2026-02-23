@@ -10,7 +10,7 @@ import zio.test.*
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.error.GigaMapError
 import shared.ids.Ids
-import store.{ ConfigStoreModule, CustomAgentRow, StoreConfig, WorkflowRow }
+import shared.store.{ ConfigStoreModule, CustomAgentRow, StoreConfig, WorkflowRow }
 
 object ConfigRepositoryESSpec extends ZIOSpecDefault:
 

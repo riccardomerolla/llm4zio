@@ -8,7 +8,7 @@ import zio.schema.Schema
 
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.service.{ LifecycleCommand, LifecycleStatus }
-import store.*
+import shared.store.*
 
 final case class TaskRepositoryES(
   dataStore: DataStoreModule.DataStoreService,
@@ -48,7 +48,7 @@ final case class TaskRepositoryES(
 
   override def updateRun(run: db.TaskRunRow): IO[PersistenceError, Unit] =
     for
-      existing <- dkv.fetch[String, store.TaskRunRow](runKey(run.id)).mapError(storeErr("updateRun"))
+      existing <- dkv.fetch[String, shared.store.TaskRunRow](runKey(run.id)).mapError(storeErr("updateRun"))
       _        <- ZIO
                     .fail(PersistenceError.NotFound("task_runs", run.id))
                     .when(existing.isEmpty)
@@ -57,17 +57,17 @@ final case class TaskRepositoryES(
 
   override def getRun(id: Long): IO[PersistenceError, Option[db.TaskRunRow]] =
     dkv
-      .fetch[String, store.TaskRunRow](runKey(id))
+      .fetch[String, shared.store.TaskRunRow](runKey(id))
       .map(_.map(fromStoreRunRow))
       .mapError(storeErr("getRun"))
 
   override def listRuns(offset: Int, limit: Int): IO[PersistenceError, List[db.TaskRunRow]] =
-    fetchAllDataByPrefix[store.TaskRunRow]("run:", "listRuns")
+    fetchAllDataByPrefix[shared.store.TaskRunRow]("run:", "listRuns")
       .map(_.map(fromStoreRunRow).sortBy(_.startedAt)(Ordering[Instant].reverse).slice(offset, offset + limit))
 
   override def deleteRun(id: Long): IO[PersistenceError, Unit] =
     for
-      existing <- dkv.fetch[String, store.TaskRunRow](runKey(id)).mapError(storeErr("deleteRun"))
+      existing <- dkv.fetch[String, shared.store.TaskRunRow](runKey(id)).mapError(storeErr("deleteRun"))
       _        <- ZIO
                     .fail(PersistenceError.NotFound("task_runs", id))
                     .when(existing.isEmpty)
@@ -84,12 +84,12 @@ final case class TaskRepositoryES(
 
   override def getReport(reportId: Long): IO[PersistenceError, Option[db.TaskReportRow]] =
     dkv
-      .fetch[String, store.TaskReportRow](reportKey(reportId))
+      .fetch[String, shared.store.TaskReportRow](reportKey(reportId))
       .map(_.map(fromStoreReportRow))
       .mapError(storeErr("getReport"))
 
   override def getReportsByTask(taskRunId: Long): IO[PersistenceError, List[db.TaskReportRow]] =
-    fetchAllDataByPrefix[store.TaskReportRow]("report:", "getReportsByTask")
+    fetchAllDataByPrefix[shared.store.TaskReportRow]("report:", "getReportsByTask")
       .map(_.filter(_.taskRunId == taskRunId.toString).map(fromStoreReportRow).sortBy(_.createdAt))
 
   override def saveArtifact(artifact: db.TaskArtifactRow): IO[PersistenceError, Long] =
@@ -101,7 +101,7 @@ final case class TaskRepositoryES(
     yield id
 
   override def getArtifactsByTask(taskRunId: Long): IO[PersistenceError, List[db.TaskArtifactRow]] =
-    fetchAllDataByPrefix[store.TaskArtifactRow]("artifact:", "getArtifactsByTask")
+    fetchAllDataByPrefix[shared.store.TaskArtifactRow]("artifact:", "getArtifactsByTask")
       .map(_.filter(_.taskRunId == taskRunId.toString).map(fromStoreArtifactRow).sortBy(_.createdAt))
 
   override def getAllSettings: IO[PersistenceError, List[db.SettingRow]] =
@@ -161,16 +161,16 @@ final case class TaskRepositoryES(
 
   override def getWorkflow(id: Long): IO[PersistenceError, Option[db.WorkflowRow]] =
     ckv
-      .fetch[String, store.WorkflowRow](workflowKey(id))
+      .fetch[String, shared.store.WorkflowRow](workflowKey(id))
       .map(_.flatMap(fromStoreWorkflowRow))
       .mapError(storeErr("getWorkflow"))
 
   override def getWorkflowByName(name: String): IO[PersistenceError, Option[db.WorkflowRow]] =
-    fetchAllConfigByPrefix[store.WorkflowRow]("workflow:", "getWorkflowByName")
+    fetchAllConfigByPrefix[shared.store.WorkflowRow]("workflow:", "getWorkflowByName")
       .map(_.flatMap(fromStoreWorkflowRow).find(_.name.equalsIgnoreCase(name.trim)))
 
   override def listWorkflows: IO[PersistenceError, List[db.WorkflowRow]] =
-    fetchAllConfigByPrefix[store.WorkflowRow]("workflow:", "listWorkflows")
+    fetchAllConfigByPrefix[shared.store.WorkflowRow]("workflow:", "listWorkflows")
       .map(_.flatMap(fromStoreWorkflowRow).sortBy(w => (!w.isBuiltin, w.name.toLowerCase)))
 
   override def updateWorkflow(workflow: db.WorkflowRow): IO[PersistenceError, Unit] =
@@ -178,7 +178,7 @@ final case class TaskRepositoryES(
       id       <- ZIO
                     .fromOption(workflow.id)
                     .orElseFail(PersistenceError.QueryFailed("updateWorkflow", "Missing id for workflow update"))
-      existing <- ckv.fetch[String, store.WorkflowRow](workflowKey(id)).mapError(storeErr("updateWorkflow"))
+      existing <- ckv.fetch[String, shared.store.WorkflowRow](workflowKey(id)).mapError(storeErr("updateWorkflow"))
       _        <- ZIO
                     .fail(PersistenceError.NotFound("workflows", id))
                     .when(existing.isEmpty)
@@ -189,7 +189,7 @@ final case class TaskRepositoryES(
 
   override def deleteWorkflow(id: Long): IO[PersistenceError, Unit] =
     for
-      existing <- ckv.fetch[String, store.WorkflowRow](workflowKey(id)).mapError(storeErr("deleteWorkflow"))
+      existing <- ckv.fetch[String, shared.store.WorkflowRow](workflowKey(id)).mapError(storeErr("deleteWorkflow"))
       _        <- ZIO
                     .fail(PersistenceError.NotFound("workflows", id))
                     .when(existing.isEmpty)
@@ -207,16 +207,16 @@ final case class TaskRepositoryES(
 
   override def getCustomAgent(id: Long): IO[PersistenceError, Option[db.CustomAgentRow]] =
     ckv
-      .fetch[String, store.CustomAgentRow](agentKey(id))
+      .fetch[String, shared.store.CustomAgentRow](agentKey(id))
       .map(_.flatMap(fromStoreAgentRow))
       .mapError(storeErr("getCustomAgent"))
 
   override def getCustomAgentByName(name: String): IO[PersistenceError, Option[db.CustomAgentRow]] =
-    fetchAllConfigByPrefix[store.CustomAgentRow]("agent:", "getCustomAgentByName")
+    fetchAllConfigByPrefix[shared.store.CustomAgentRow]("agent:", "getCustomAgentByName")
       .map(_.flatMap(fromStoreAgentRow).find(_.name.equalsIgnoreCase(name.trim)))
 
   override def listCustomAgents: IO[PersistenceError, List[db.CustomAgentRow]] =
-    fetchAllConfigByPrefix[store.CustomAgentRow]("agent:", "listCustomAgents")
+    fetchAllConfigByPrefix[shared.store.CustomAgentRow]("agent:", "listCustomAgents")
       .map(_.flatMap(fromStoreAgentRow).sortBy(agent => (agent.displayName.toLowerCase, agent.name.toLowerCase)))
 
   override def updateCustomAgent(agent: db.CustomAgentRow): IO[PersistenceError, Unit] =
@@ -225,7 +225,7 @@ final case class TaskRepositoryES(
                     .fromOption(agent.id)
                     .orElseFail(PersistenceError.QueryFailed("updateCustomAgent", "Missing id for custom agent update"))
       _        <- validateCustomAgentName(agent.name, "updateCustomAgent")
-      existing <- ckv.fetch[String, store.CustomAgentRow](agentKey(id)).mapError(storeErr("updateCustomAgent"))
+      existing <- ckv.fetch[String, shared.store.CustomAgentRow](agentKey(id)).mapError(storeErr("updateCustomAgent"))
       _        <- ZIO
                     .fail(PersistenceError.NotFound("custom_agents", id))
                     .when(existing.isEmpty)
@@ -236,7 +236,7 @@ final case class TaskRepositoryES(
 
   override def deleteCustomAgent(id: Long): IO[PersistenceError, Unit] =
     for
-      existing <- ckv.fetch[String, store.CustomAgentRow](agentKey(id)).mapError(storeErr("deleteCustomAgent"))
+      existing <- ckv.fetch[String, shared.store.CustomAgentRow](agentKey(id)).mapError(storeErr("deleteCustomAgent"))
       _        <- ZIO
                     .fail(PersistenceError.NotFound("custom_agents", id))
                     .when(existing.isEmpty)
@@ -300,8 +300,8 @@ final case class TaskRepositoryES(
                   case _                               => ZIO.unit
     yield ()
 
-  private def toStoreRunRow(run: db.TaskRunRow): store.TaskRunRow =
-    store.TaskRunRow(
+  private def toStoreRunRow(run: db.TaskRunRow): shared.store.TaskRunRow =
+    shared.store.TaskRunRow(
       id = run.id.toString,
       sourceDir = run.sourceDir,
       outputDir = run.outputDir,
@@ -317,7 +317,7 @@ final case class TaskRepositoryES(
       failedConversions = run.failedConversions,
     )
 
-  private def fromStoreRunRow(row: store.TaskRunRow): db.TaskRunRow =
+  private def fromStoreRunRow(row: shared.store.TaskRunRow): db.TaskRunRow =
     val parsed = RunStatus.values.find(_.toString == row.status).getOrElse(RunStatus.Failed)
     db.TaskRunRow(
       id = row.id.toLongOption.getOrElse(0L),
@@ -335,8 +335,8 @@ final case class TaskRepositoryES(
       workflowId = row.workflowId.flatMap(_.toLongOption),
     )
 
-  private def toStoreReportRow(report: db.TaskReportRow): store.TaskReportRow =
-    store.TaskReportRow(
+  private def toStoreReportRow(report: db.TaskReportRow): shared.store.TaskReportRow =
+    shared.store.TaskReportRow(
       id = report.id.toString,
       taskRunId = report.taskRunId.toString,
       stepName = report.stepName,
@@ -345,7 +345,7 @@ final case class TaskRepositoryES(
       createdAt = report.createdAt,
     )
 
-  private def fromStoreReportRow(report: store.TaskReportRow): db.TaskReportRow =
+  private def fromStoreReportRow(report: shared.store.TaskReportRow): db.TaskReportRow =
     db.TaskReportRow(
       id = report.id.toLongOption.getOrElse(0L),
       taskRunId = report.taskRunId.toLongOption.getOrElse(0L),
@@ -355,8 +355,8 @@ final case class TaskRepositoryES(
       createdAt = report.createdAt,
     )
 
-  private def toStoreArtifactRow(artifact: db.TaskArtifactRow): store.TaskArtifactRow =
-    store.TaskArtifactRow(
+  private def toStoreArtifactRow(artifact: db.TaskArtifactRow): shared.store.TaskArtifactRow =
+    shared.store.TaskArtifactRow(
       id = artifact.id.toString,
       taskRunId = artifact.taskRunId.toString,
       stepName = artifact.stepName,
@@ -365,7 +365,7 @@ final case class TaskRepositoryES(
       createdAt = artifact.createdAt,
     )
 
-  private def fromStoreArtifactRow(artifact: store.TaskArtifactRow): db.TaskArtifactRow =
+  private def fromStoreArtifactRow(artifact: shared.store.TaskArtifactRow): db.TaskArtifactRow =
     db.TaskArtifactRow(
       id = artifact.id.toLongOption.getOrElse(0L),
       taskRunId = artifact.taskRunId.toLongOption.getOrElse(0L),
@@ -375,8 +375,8 @@ final case class TaskRepositoryES(
       createdAt = artifact.createdAt,
     )
 
-  private def toStoreWorkflowRow(workflow: db.WorkflowRow): store.WorkflowRow =
-    store.WorkflowRow(
+  private def toStoreWorkflowRow(workflow: db.WorkflowRow): shared.store.WorkflowRow =
+    shared.store.WorkflowRow(
       id = workflow.id.getOrElse(0L).toString,
       name = workflow.name,
       description = workflow.description,
@@ -386,7 +386,7 @@ final case class TaskRepositoryES(
       updatedAt = workflow.updatedAt,
     )
 
-  private def fromStoreWorkflowRow(workflow: store.WorkflowRow): Option[db.WorkflowRow] =
+  private def fromStoreWorkflowRow(workflow: shared.store.WorkflowRow): Option[db.WorkflowRow] =
     workflow.id.toLongOption.map { parsedId =>
       db.WorkflowRow(
         id = Some(parsedId),
@@ -399,8 +399,8 @@ final case class TaskRepositoryES(
       )
     }
 
-  private def toStoreAgentRow(agent: db.CustomAgentRow): store.CustomAgentRow =
-    store.CustomAgentRow(
+  private def toStoreAgentRow(agent: db.CustomAgentRow): shared.store.CustomAgentRow =
+    shared.store.CustomAgentRow(
       id = agent.id.getOrElse(0L).toString,
       name = agent.name,
       displayName = agent.displayName,
@@ -412,7 +412,7 @@ final case class TaskRepositoryES(
       updatedAt = agent.updatedAt,
     )
 
-  private def fromStoreAgentRow(agent: store.CustomAgentRow): Option[db.CustomAgentRow] =
+  private def fromStoreAgentRow(agent: shared.store.CustomAgentRow): Option[db.CustomAgentRow] =
     agent.id.toLongOption.map { parsedId =>
       db.CustomAgentRow(
         id = Some(parsedId),

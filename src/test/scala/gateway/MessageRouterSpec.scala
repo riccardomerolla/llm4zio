@@ -8,8 +8,9 @@ import zio.test.*
 
 import _root_.models.*
 import db.*
-import gateway.models.*
-import orchestration.OrchestratorControlPlane
+import gateway.control.*
+import gateway.entity.*
+import orchestration.control.OrchestratorControlPlane
 
 object MessageRouterSpec extends ZIOSpecDefault:
 

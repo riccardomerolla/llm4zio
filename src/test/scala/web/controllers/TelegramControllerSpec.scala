@@ -6,9 +6,10 @@ import zio.json.*
 import zio.test.*
 
 import _root_.models.TelegramMode
-import gateway.*
-import gateway.models.*
-import gateway.telegram.*
+import gateway.boundary.TelegramController
+import gateway.boundary.telegram.*
+import gateway.control.*
+import gateway.entity.*
 
 object TelegramControllerSpec extends ZIOSpecDefault:
 

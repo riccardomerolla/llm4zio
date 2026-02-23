@@ -4,7 +4,7 @@ import zio.*
 
 import shared.errors.PersistenceError
 import shared.ids.Ids
-import store.{ AgentAssignmentRow, AgentIssueRow, DataStoreModule }
+import shared.store.{ AgentAssignmentRow, AgentIssueRow, DataStoreModule }
 
 object IssueMigration:
 

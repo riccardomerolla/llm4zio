@@ -10,7 +10,7 @@ import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.error.GigaMapError
 import io.github.riccardomerolla.zio.eclipsestore.service.LifecycleCommand
 import models.*
-import store.*
+import shared.store.*
 
 object ChatRepositoryESSpec extends ZIOSpecDefault:
 

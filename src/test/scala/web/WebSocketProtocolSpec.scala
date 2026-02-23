@@ -3,7 +3,7 @@ package web
 import zio.json.*
 import zio.test.*
 
-import web.ws.{ ClientMessage, ServerMessage, SubscriptionTopic }
+import shared.web.ws.{ ClientMessage, ServerMessage, SubscriptionTopic }
 
 object WebSocketProtocolSpec extends ZIOSpecDefault:
 
