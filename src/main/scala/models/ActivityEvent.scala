@@ -5,17 +5,28 @@ import java.time.Instant
 import zio.json.*
 import zio.schema.{ Schema, derived }
 
-enum ActivityEventType derives JsonCodec, Schema:
-  case RunStarted, RunCompleted, RunFailed, AgentAssigned, MessageSent, ConfigChanged
+import shared.ids.Ids.{ ConversationId, EventId, TaskRunId }
+
+sealed trait ActivityEventType derives JsonCodec, Schema
+object ActivityEventType:
+  case object RunStarted    extends ActivityEventType
+  case object RunCompleted  extends ActivityEventType
+  case object RunFailed     extends ActivityEventType
+  case object AgentAssigned extends ActivityEventType
+  case object MessageSent   extends ActivityEventType
+  case object ConfigChanged extends ActivityEventType
+
+  val values: Array[ActivityEventType] =
+    Array(RunStarted, RunCompleted, RunFailed, AgentAssigned, MessageSent, ConfigChanged)
 
 case class ActivityEvent(
-  id: Option[String] = None,
+  id: EventId,
   eventType: ActivityEventType,
   source: String,
-  runId: Option[String] = None,
-  conversationId: Option[String] = None,
+  runId: Option[TaskRunId] = None,
+  conversationId: Option[ConversationId] = None,
   agentName: Option[String] = None,
   summary: String,
   payload: Option[String] = None,
   createdAt: Instant,
-) derives JsonCodec
+) derives JsonCodec, Schema

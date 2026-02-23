@@ -144,7 +144,9 @@ object ProgressTrackerSpec extends ZIOSpecDefault:
     }
 
   private val stubActivityRepo: db.ActivityRepository = new db.ActivityRepository:
-    override def createEvent(event: _root_.models.ActivityEvent): IO[PersistenceError, Long] = ZIO.succeed(1L)
+    override def createEvent(
+      event: _root_.models.ActivityEvent
+    ): IO[PersistenceError, _root_.shared.ids.Ids.EventId] = ZIO.succeed(event.id)
     override def listEvents(
       eventType: Option[_root_.models.ActivityEventType],
       since: Option[java.time.Instant],

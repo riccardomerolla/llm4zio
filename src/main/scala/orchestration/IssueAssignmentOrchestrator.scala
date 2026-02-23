@@ -8,6 +8,7 @@ import zio.json.*
 import db.{ ChatRepository, PersistenceError, TaskRepository }
 import llm4zio.core.{ LlmError, LlmService }
 import models.*
+import shared.ids.Ids.{ EventId, TaskRunId }
 import web.ActivityHub
 
 trait IssueAssignmentOrchestrator:
@@ -88,9 +89,10 @@ final private case class IssueAssignmentOrchestratorLive(
                              _            <- queue.offer(AssignmentTask(assignmentId, issueId, agentName))
                              _            <- activityHub.publish(
                                                ActivityEvent(
+                                                 id = EventId.generate,
                                                  eventType = ActivityEventType.AgentAssigned,
                                                  source = "issue-assignment",
-                                                 runId = issue.runId,
+                                                 runId = issue.runId.map(TaskRunId.apply),
                                                  agentName = Some(agentName),
                                                  summary =
                                                    s"Agent '$agentName' assigned to issue #$issueId: ${issue.title}",

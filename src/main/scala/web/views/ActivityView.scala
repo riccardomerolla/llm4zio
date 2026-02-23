@@ -2,6 +2,7 @@ package web.views
 
 import models.{ ActivityEvent, ActivityEventType }
 import scalatags.Text.all.*
+import shared.ids.Ids.TaskRunId
 
 object ActivityView:
 
@@ -66,7 +67,7 @@ object ActivityView:
   private def eventCard(event: ActivityEvent): Frag =
     val (iconColor, iconPath) = eventIcon(event.eventType)
     val safeAgentName         = sanitizeOptional(event.agentName)
-    val safeRunId             = sanitizeOptional(event.runId)
+    val safeRunId             = sanitizeTaskRunId(event.runId)
     val safeSource            = Option(event.source).map(_.trim).filter(_.nonEmpty).getOrElse("system")
     val badges                = Seq(
       Some(
@@ -177,3 +178,6 @@ object ActivityView:
         case _       => None
     catch
       case _: Throwable => None
+
+  private def sanitizeTaskRunId(value: Option[TaskRunId]): Option[String] =
+    Option(value).flatMap(v => sanitizeOptional(v.map(_.value)))

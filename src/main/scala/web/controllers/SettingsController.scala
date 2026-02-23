@@ -17,6 +17,7 @@ import io.github.riccardomerolla.zio.eclipsestore.schema.TypedStore
 import io.github.riccardomerolla.zio.eclipsestore.service.{ LifecycleCommand, LifecycleStatus }
 import llm4zio.core.{ LlmError, LlmService }
 import models.{ ActivityEvent, ActivityEventType, GatewayConfig }
+import shared.ids.Ids.EventId
 import store.{ MemoryStoreModule, * }
 import web.views.{ HtmlViews, SettingsView }
 import web.{ ActivityHub, ErrorHandlingMiddleware }
@@ -138,6 +139,7 @@ final case class SettingsControllerLive(
           now      <- Clock.instant
           _        <- activityHub.publish(
                         ActivityEvent(
+                          id = EventId.generate,
                           eventType = ActivityEventType.ConfigChanged,
                           source = "settings",
                           summary = "Application settings updated",
@@ -154,6 +156,7 @@ final case class SettingsControllerLive(
           now <- Clock.instant
           _   <- activityHub.publish(
                    ActivityEvent(
+                     id = EventId.generate,
                      eventType = ActivityEventType.ConfigChanged,
                      source = "settings",
                      summary = "Operational data store reset",
@@ -254,7 +257,7 @@ final case class SettingsControllerLive(
       case "issue"      => fetchAs[AgentIssueRow](typedStore, key)
       case "assignment" => fetchAs[AgentAssignmentRow](typedStore, key)
       case "session"    => fetchAs[SessionContextRow](typedStore, key)
-      case "activity"   => fetchAs[ActivityEventRow](typedStore, key)
+      case "activity"   => fetchAs[ActivityEvent](typedStore, key)
       case "run"        => fetchAs[store.TaskRunRow](typedStore, key)
       case "report"     => fetchAs[store.TaskReportRow](typedStore, key)
       case "artifact"   => fetchAs[store.TaskArtifactRow](typedStore, key)

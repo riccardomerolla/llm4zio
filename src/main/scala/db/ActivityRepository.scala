@@ -5,10 +5,11 @@ import java.time.Instant
 import zio.*
 
 import models.{ ActivityEvent, ActivityEventType }
+import shared.ids.Ids.EventId
 import store.DataStoreModule
 
 trait ActivityRepository:
-  def createEvent(event: ActivityEvent): IO[PersistenceError, Long]
+  def createEvent(event: ActivityEvent): IO[PersistenceError, EventId]
   def listEvents(
     eventType: Option[ActivityEventType] = None,
     since: Option[Instant] = None,
@@ -17,7 +18,7 @@ trait ActivityRepository:
 
 object ActivityRepository:
 
-  def createEvent(event: ActivityEvent): ZIO[ActivityRepository, PersistenceError, Long] =
+  def createEvent(event: ActivityEvent): ZIO[ActivityRepository, PersistenceError, EventId] =
     ZIO.serviceWithZIO[ActivityRepository](_.createEvent(event))
 
   def listEvents(

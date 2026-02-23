@@ -94,7 +94,9 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
         ZIO.fail(PersistenceError.NotFound("issue", issueId))
 
   private val stubActivityRepo: db.ActivityRepository = new db.ActivityRepository:
-    override def createEvent(event: ActivityEvent): IO[PersistenceError, Long] = ZIO.succeed(1L)
+    override def createEvent(
+      event: ActivityEvent
+    ): IO[PersistenceError, _root_.shared.ids.Ids.EventId] = ZIO.succeed(event.id)
     override def listEvents(
       eventType: Option[ActivityEventType],
       since: Option[java.time.Instant],

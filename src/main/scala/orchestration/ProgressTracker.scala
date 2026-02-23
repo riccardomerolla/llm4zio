@@ -4,6 +4,7 @@ import zio.*
 
 import db.PersistenceError
 import models.{ ActivityEvent, ActivityEventType, ProgressUpdate }
+import shared.ids.Ids.{ EventId, TaskRunId }
 import web.ActivityHub
 
 trait ProgressTracker:
@@ -168,9 +169,10 @@ final case class ProgressTrackerLive(
     Clock.instant.flatMap { now =>
       activityHub.publish(
         ActivityEvent(
+          id = EventId.generate,
           eventType = eventType,
           source = "progress-tracker",
-          runId = Some(runId),
+          runId = Some(TaskRunId(runId)),
           summary = summary,
           createdAt = now,
         )

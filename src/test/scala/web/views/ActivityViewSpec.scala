@@ -5,19 +5,22 @@ import java.time.Instant
 import zio.test.*
 
 import models.{ ActivityEvent, ActivityEventType }
+import shared.ids.Ids.{ ConversationId, EventId, TaskRunId }
 
 object ActivityViewSpec extends ZIOSpecDefault:
 
   def spec: Spec[Any, Nothing] = suite("ActivityViewSpec")(
     test("singleEventFragment handles legacy null Option fields") {
-      val legacyNull: Option[String] = Option.empty[Option[String]].orNull
-      val event                      = ActivityEvent(
-        id = Some("evt-1"),
+      val legacyRunId: Option[TaskRunId]               = Option.empty[Option[TaskRunId]].orNull
+      val legacyConversationId: Option[ConversationId] = Option.empty[Option[ConversationId]].orNull
+      val legacyAgentName: Option[String]              = Option.empty[Option[String]].orNull
+      val event                                        = ActivityEvent(
+        id = EventId("evt-1"),
         eventType = ActivityEventType.ConfigChanged,
         source = "settings",
-        runId = legacyNull,
-        conversationId = legacyNull,
-        agentName = legacyNull,
+        runId = legacyRunId,
+        conversationId = legacyConversationId,
+        agentName = legacyAgentName,
         summary = "Settings updated",
         payload = None,
         createdAt = Instant.parse("2026-02-19T17:42:43Z"),

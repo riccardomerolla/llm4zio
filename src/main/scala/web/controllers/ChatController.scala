@@ -18,6 +18,7 @@ import gateway.{ ChannelRegistry, GatewayService, GatewayServiceError, MessageCh
 import llm4zio.core.{ LlmError, LlmService, Streaming }
 import models.*
 import orchestration.{ AgentConfigResolver, IssueAssignmentOrchestrator }
+import shared.ids.Ids.{ ConversationId, EventId }
 import web.views.HtmlViews
 import web.{ ActivityHub, ErrorHandlingMiddleware, StreamAbortRegistry }
 
@@ -129,9 +130,10 @@ final case class ChatControllerLive(
           _           <- ensureConversationTitle(convId, content, now)
           _           <- activityHub.publish(
                            ActivityEvent(
+                             id = EventId.generate,
                              eventType = ActivityEventType.MessageSent,
                              source = "chat",
-                             conversationId = Some(id.toString),
+                             conversationId = Some(ConversationId(id)),
                              summary = s"Message sent in conversation #$convId",
                              createdAt = now,
                            )

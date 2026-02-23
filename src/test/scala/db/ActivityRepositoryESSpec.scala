@@ -9,6 +9,7 @@ import zio.test.*
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.error.GigaMapError
 import models.{ ActivityEvent, ActivityEventType }
+import shared.ids.Ids.EventId
 import store.{ DataStoreModule, StoreConfig }
 
 object ActivityRepositoryESSpec extends ZIOSpecDefault:
@@ -49,6 +50,7 @@ object ActivityRepositoryESSpec extends ZIOSpecDefault:
               repository <- ZIO.service[ActivityRepository]
               _          <- repository.createEvent(
                               ActivityEvent(
+                                id = EventId("evt-1"),
                                 eventType = ActivityEventType.RunStarted,
                                 source = "orchestrator",
                                 summary = "run started",
@@ -57,6 +59,7 @@ object ActivityRepositoryESSpec extends ZIOSpecDefault:
                             )
               _          <- repository.createEvent(
                               ActivityEvent(
+                                id = EventId("evt-2"),
                                 eventType = ActivityEventType.RunCompleted,
                                 source = "orchestrator",
                                 summary = "run completed",
@@ -65,6 +68,7 @@ object ActivityRepositoryESSpec extends ZIOSpecDefault:
                             )
               _          <- repository.createEvent(
                               ActivityEvent(
+                                id = EventId("evt-3"),
                                 eventType = ActivityEventType.RunCompleted,
                                 source = "orchestrator",
                                 summary = "run completed again",
@@ -96,6 +100,7 @@ object ActivityRepositoryESSpec extends ZIOSpecDefault:
               _            <- ZIO.foreachDiscard(ActivityEventType.values.zipWithIndex) { (eventType, index) =>
                                 repository.createEvent(
                                   ActivityEvent(
+                                    id = EventId(s"evt-$index"),
                                     eventType = eventType,
                                     source = "settings",
                                     summary = s"event-$index",

@@ -10,6 +10,7 @@ import zio.json.*
 
 import core.ConfigValidator
 import models.*
+import shared.ids.Ids.EventId
 import web.ActivityHub
 import web.views.ConfigEditor
 
@@ -140,6 +141,7 @@ final case class ConfigControllerLive(
           _           <- state.configRef.set(parsed)
           _           <- activityHub.publish(
                            ActivityEvent(
+                             id = EventId.generate,
                              eventType = ActivityEventType.ConfigChanged,
                              source = "config-editor",
                              summary = "Gateway configuration updated and hot reloaded",

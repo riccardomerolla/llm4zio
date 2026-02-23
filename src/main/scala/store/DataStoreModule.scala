@@ -12,6 +12,7 @@ import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.schema.{ SchemaBinaryCodec, TypedStore, TypedStoreLive }
 import io.github.riccardomerolla.zio.eclipsestore.service.{ EclipseStoreService, LifecycleCommand }
 import issues.entity.{ AgentIssue, Assignment, IssueEvent }
+import models.ActivityEvent
 import taskrun.entity.{ TaskRun, TaskRunEvent }
 
 // ---------------------------------------------------------------------------
@@ -86,18 +87,6 @@ final case class SessionContextRow(
   updatedAt: Instant,
 ) derives Schema
 
-final case class ActivityEventRow(
-  id: String,
-  eventType: String,
-  source: String,
-  runId: Option[String],
-  conversationId: Option[String],
-  agentName: Option[String],
-  summary: String,
-  payload: Option[String],
-  createdAt: Instant,
-) derives Schema
-
 final case class AgentIssueRow(
   id: String,
   runId: Option[String],
@@ -144,7 +133,7 @@ private val dataStoreHandlers =
     ++ SchemaBinaryCodec.handlers(Schema[SessionContextRow])
     ++ SchemaBinaryCodec.handlers(Schema[AgentIssueRow])
     ++ SchemaBinaryCodec.handlers(Schema[AgentAssignmentRow])
-    ++ SchemaBinaryCodec.handlers(Schema[ActivityEventRow])
+    ++ SchemaBinaryCodec.handlers(Schema[ActivityEvent])
     ++ SchemaBinaryCodec.handlers(Schema[TaskRunRow])
     ++ SchemaBinaryCodec.handlers(Schema[TaskReportRow])
     ++ SchemaBinaryCodec.handlers(Schema[TaskArtifactRow])

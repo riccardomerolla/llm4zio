@@ -6,7 +6,7 @@ import java.time.Instant
 import zio.*
 import zio.schema.{ Schema, derived }
 
-import config.entity.{ CustomAgent, Setting, SettingValue, Workflow }
+import _root_.config.entity.{ CustomAgent, Setting, SettingValue, Workflow }
 import io.github.riccardomerolla.zio.eclipsestore.config.{ EclipseStoreConfig, StorageTarget }
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.schema.{ SchemaBinaryCodec, TypedStore, TypedStoreLive }
