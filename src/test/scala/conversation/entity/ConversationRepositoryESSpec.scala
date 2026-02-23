@@ -9,7 +9,7 @@ import zio.test.*
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.error.GigaMapError
 import shared.ids.Ids
-import shared.store.{ ChatMessageRow, ConversationRow, DataStoreModule, EventStore, StoreConfig }
+import shared.store.{ DataStoreModule, EventStore, StoreConfig }
 
 object ConversationRepositoryESSpec extends ZIOSpecDefault:
 
@@ -74,44 +74,5 @@ object ConversationRepositoryESSpec extends ZIOSpecDefault:
             got.state == ConversationState.Closed(now, now.plusSeconds(3)),
           )).provideLayer(layerFor(path))
         }
-      },
-      test("legacy ConversationRow migration") {
-        withTempDir { path =>
-          val now     = Instant.parse("2026-02-23T14:05:00Z")
-          val convRow = ConversationRow(
-            id = "legacy-conv-1",
-            title = "Legacy chat",
-            description = Some("legacy"),
-            channelName = Some("telegram"),
-            status = "closed",
-            createdAt = now,
-            updatedAt = now.plusSeconds(20),
-            runId = Some("run-legacy-1"),
-            createdBy = Some("legacy-user"),
-          )
-          val msgRow  = ChatMessageRow(
-            id = "legacy-msg-1",
-            conversationId = "legacy-conv-1",
-            sender = "assistant",
-            senderType = "Assistant",
-            content = "ok",
-            messageType = "Text",
-            metadata = None,
-            createdAt = now.plusSeconds(10),
-            updatedAt = now.plusSeconds(10),
-          )
-          (for
-            ds   <- ZIO.service[DataStoreModule.DataStoreService]
-            _    <- ds.store.store("conv:legacy-conv-1", convRow)
-            _    <- ds.store.store("msg:legacy-msg-1", msgRow)
-            _    <- ConversationMigration.migrateLegacyRows
-            repo <- ZIO.service[ConversationRepository]
-            got  <- repo.get(Ids.ConversationId("legacy-conv-1"))
-          yield assertTrue(
-            got.messages.map(_.id) == List(Ids.MessageId("legacy-msg-1")),
-            got.channel == ChannelInfo.Telegram("telegram"),
-            got.state == ConversationState.Closed(now, now.plusSeconds(20)),
-          )).provideLayer(layerFor(path))
-        }
-      },
+      }
     ) @@ TestAspect.sequential

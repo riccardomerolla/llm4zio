@@ -85,9 +85,11 @@ final case class WorkflowServiceLive(
       validated <- validateWorkflow(workflow)
       id        <- ZIO
                      .fromOption(validated.id)
-                     .map(_.toLongOption.getOrElse(0L))
-                     .orElseFail(
-                       WorkflowServiceError.ValidationFailed(List("Workflow id is required for update"))
+                     .orElseFail(WorkflowServiceError.ValidationFailed(List("Workflow id is required for update")))
+                     .flatMap(rawId =>
+                       ZIO
+                         .fromOption(rawId.toLongOption)
+                         .orElseFail(WorkflowServiceError.ValidationFailed(List(s"Invalid workflow id: $rawId")))
                      )
       existing  <- repository
                      .getWorkflow(id)

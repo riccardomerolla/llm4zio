@@ -3,7 +3,6 @@ package db
 import java.time.Instant
 
 import zio.*
-import zio.json.*
 
 import io.github.riccardomerolla.zio.eclipsestore.service.{ LifecycleCommand, LifecycleStatus }
 import shared.store.ConfigStoreModule
@@ -133,29 +132,21 @@ final case class ConfigRepositoryES(
                 .filter(_.startsWith("setting:"))
                 .runCollect
                 .mapError(storeErr("getAllSettings"))
-      now  <- Clock.instant
       rows <- ZIO.foreach(keys.toList) { k =>
                 kv
                   .fetch[String, String](k)
                   .mapError(storeErr("getAllSettings"))
-                  .map(_.map(raw => decodeSetting(k.stripPrefix("setting:"), raw, now)).toList)
+                  .map(_.map(raw => decodeSetting(k.stripPrefix("setting:"), raw)).toList)
               }
     yield rows.flatten.sortBy(_.key)
 
   override def getSetting(key: String): IO[PersistenceError, Option[SettingRow]] =
-    for
-      raw <- kv.fetch[String, String](settingKey(key)).mapError(storeErr("getSetting"))
-      now <- Clock.instant
-    yield raw.map(value => decodeSetting(key, value, now))
+    kv.fetch[String, String](settingKey(key)).mapError(storeErr("getSetting")).map(_.map(value =>
+      decodeSetting(key, value)
+    ))
 
   override def upsertSetting(key: String, value: String): IO[PersistenceError, Unit] =
-    for
-      now <- Clock.instant
-      _   <- kv
-               .store(settingKey(key), StoredSetting(value, now).toJson)
-               .mapError(storeErr("upsertSetting"))
-      _   <- checkpointConfigStore("upsertSetting")
-    yield ()
+    kv.store(settingKey(key), value).mapError(storeErr("upsertSetting")) *> checkpointConfigStore("upsertSetting")
 
   override def deleteSetting(key: String): IO[PersistenceError, Unit] =
     kv.remove[String](settingKey(key)).mapError(storeErr("deleteSetting")) *> checkpointConfigStore("deleteSetting")
@@ -177,7 +168,7 @@ final case class ConfigRepositoryES(
     for
       id <- nextId("createWorkflow")
       _  <- kv
-              .store(workflowKey(id), toStoreWorkflowRow(workflow.copy(id = Some(id))))
+              .store(workflowKey(id), toStoreWorkflowRow(workflow, id))
               .mapError(storeErr("createWorkflow"))
     yield id
 
@@ -205,7 +196,7 @@ final case class ConfigRepositoryES(
                     .fail(PersistenceError.NotFound("workflows", id))
                     .when(existing.isEmpty)
       _        <- kv
-                    .store(workflowKey(id), toStoreWorkflowRow(workflow))
+                    .store(workflowKey(id), toStoreWorkflowRow(workflow, id))
                     .mapError(storeErr("updateWorkflow"))
     yield ()
 
@@ -223,7 +214,7 @@ final case class ConfigRepositoryES(
       _  <- validateCustomAgentName(agent.name, "createCustomAgent")
       id <- nextId("createCustomAgent")
       _  <- kv
-              .store(agentKey(id), toStoreAgentRow(agent.copy(id = Some(id))))
+              .store(agentKey(id), toStoreAgentRow(agent, id))
               .mapError(storeErr("createCustomAgent"))
     yield id
 
@@ -252,7 +243,7 @@ final case class ConfigRepositoryES(
                     .fail(PersistenceError.NotFound("custom_agents", id))
                     .when(existing.isEmpty)
       _        <- kv
-                    .store(agentKey(id), toStoreAgentRow(agent))
+                    .store(agentKey(id), toStoreAgentRow(agent, id))
                     .mapError(storeErr("updateCustomAgent"))
     yield ()
 
@@ -282,9 +273,9 @@ final case class ConfigRepositoryES(
       .mapError(storeErr(op))
       .flatMap(keys => ZIO.foreach(keys.toList)(k => kv.fetch[String, V](k).mapError(storeErr(op))).map(_.flatten))
 
-  private def toStoreWorkflowRow(workflow: WorkflowRow): shared.store.WorkflowRow =
+  private def toStoreWorkflowRow(workflow: WorkflowRow, id: Long): shared.store.WorkflowRow =
     shared.store.WorkflowRow(
-      id = workflow.id.getOrElse(0L).toString,
+      id = id.toString,
       name = workflow.name,
       description = workflow.description,
       stepsJson = workflow.steps,
@@ -306,9 +297,9 @@ final case class ConfigRepositoryES(
       )
     }
 
-  private def toStoreAgentRow(agent: CustomAgentRow): shared.store.CustomAgentRow =
+  private def toStoreAgentRow(agent: CustomAgentRow, id: Long): shared.store.CustomAgentRow =
     shared.store.CustomAgentRow(
-      id = agent.id.getOrElse(0L).toString,
+      id = id.toString,
       name = agent.name,
       displayName = agent.displayName,
       description = agent.description,
@@ -347,12 +338,8 @@ final case class ConfigRepositoryES(
   private def storeErrThrowable(op: String)(t: Throwable): PersistenceError =
     PersistenceError.QueryFailed(op, Option(t.getMessage).getOrElse(t.toString))
 
-  final private case class StoredSetting(value: String, updatedAt: Instant) derives JsonCodec
-
-  private def decodeSetting(key: String, raw: String, fallbackUpdatedAt: Instant): SettingRow =
-    raw.fromJson[StoredSetting] match
-      case Right(stored) => SettingRow(key = key, value = stored.value, updatedAt = stored.updatedAt)
-      case Left(_)       => SettingRow(key = key, value = raw, updatedAt = fallbackUpdatedAt)
+  private def decodeSetting(key: String, raw: String): SettingRow =
+    SettingRow(key = key, value = raw, updatedAt = Instant.EPOCH)
 
   private def checkpointConfigStore(op: String): IO[PersistenceError, Unit] =
     for

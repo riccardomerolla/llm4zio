@@ -4,17 +4,14 @@ import java.nio.file.{ Files, Path }
 import java.time.Instant
 
 import zio.*
-import zio.json.*
 import zio.test.*
 
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.error.GigaMapError
 import shared.ids.Ids
-import shared.store.{ ConfigStoreModule, CustomAgentRow, StoreConfig, WorkflowRow }
+import shared.store.{ ConfigStoreModule, StoreConfig }
 
 object ConfigRepositoryESSpec extends ZIOSpecDefault:
-
-  final private case class LegacyStoredSetting(value: String, updatedAt: Instant) derives JsonCodec
 
   private def withTempDir[R, E, A](use: Path => ZIO[R, E, A]): ZIO[R, E, A] =
     ZIO.acquireReleaseWith(
@@ -80,48 +77,5 @@ object ConfigRepositoryESSpec extends ZIOSpecDefault:
             agents.map(_.id) == List(Ids.AgentId("agent-1")),
           )).provideLayer(layerFor(path))
         }
-      },
-      test("legacy settings/workflow/agent rows migrate to direct-state objects") {
-        withTempDir { path =>
-          val now            = Instant.parse("2026-02-23T15:05:00Z")
-          val legacySetting  = LegacyStoredSetting("gemini-2.5", now).toJson
-          val legacyWorkflow = WorkflowRow(
-            id = "legacy-wf-1",
-            name = "Legacy Wf",
-            description = Some("legacy description"),
-            stepsJson = "[\"chat\"]",
-            isBuiltin = false,
-            createdAt = now,
-            updatedAt = now.plusSeconds(5),
-          )
-          val legacyAgent    = CustomAgentRow(
-            id = "legacy-agent-1",
-            name = "legacy-agent",
-            displayName = "Legacy Agent",
-            description = Some("legacy custom agent"),
-            systemPrompt = "you are legacy",
-            tagsJson = Some("[\"legacy\",\"custom\"]"),
-            enabled = true,
-            createdAt = now,
-            updatedAt = now.plusSeconds(10),
-          )
-
-          (for
-            store      <- ZIO.service[ConfigStoreModule.ConfigStoreService]
-            repository <- ZIO.service[ConfigRepository]
-            _          <- store.store.store("setting:ai.model", legacySetting)
-            _          <- store.store.store("workflow:legacy-wf-1", legacyWorkflow)
-            _          <- store.store.store("agent:legacy-agent-1", legacyAgent)
-            count      <- ConfigMigration.migrateLegacyRows
-            setting    <- repository.getSetting("ai.model")
-            workflows  <- repository.listWorkflows
-            agents     <- repository.listAgents
-          yield assertTrue(
-            count == 3,
-            setting.value == SettingValue.Text("gemini-2.5"),
-            workflows.exists(_.id == Ids.WorkflowId("legacy-wf-1")),
-            agents.exists(_.id == Ids.AgentId("legacy-agent-1")),
-          )).provideLayer(layerFor(path))
-        }
-      },
+      }
     ) @@ TestAspect.sequential

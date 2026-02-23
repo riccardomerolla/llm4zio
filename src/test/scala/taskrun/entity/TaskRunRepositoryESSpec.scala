@@ -9,7 +9,7 @@ import zio.test.*
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.error.GigaMapError
 import shared.ids.Ids
-import shared.store.{ DataStoreModule, EventStore, StoreConfig, TaskRunRow }
+import shared.store.{ DataStoreModule, EventStore, StoreConfig }
 
 object TaskRunRepositoryESSpec extends ZIOSpecDefault:
 
@@ -92,43 +92,6 @@ object TaskRunRepositoryESSpec extends ZIOSpecDefault:
             _          <- eventStore.append(runId, TaskRunEvent.Failed(runId, "boom", now.plusSeconds(8)))
             since1     <- eventStore.eventsSince(runId, 1L)
           yield assertTrue(since1.size == 2)).provideLayer(layerFor(dir))
-        }
-      },
-      test("legacy TaskRunRow migration emits events and snapshot") {
-        withTempDir { dir =>
-          val startedAt = Instant.parse("2026-02-23T12:00:00Z")
-          val legacyRow = TaskRunRow(
-            id = "legacy-run-1",
-            sourceDir = "legacy/src",
-            outputDir = "legacy/out",
-            status = "completed",
-            workflowId = Some("legacy-wf-1"),
-            currentPhase = Some("analysis"),
-            errorMessage = None,
-            startedAt = startedAt,
-            completedAt = Some(startedAt.plusSeconds(30)),
-            totalFiles = 10,
-            processedFiles = 10,
-            successfulConversions = 10,
-            failedConversions = 0,
-          )
-
-          (for
-            dataStore <- ZIO.service[DataStoreModule.DataStoreService]
-            _         <- dataStore.store.store("run:legacy-run-1", legacyRow)
-            migrated  <- TaskRunMigration.migrateLegacyRows
-            repo      <- ZIO.service[TaskRunRepository]
-            run       <- repo.get(Ids.TaskRunId("legacy-run-1"))
-          yield assertTrue(
-            migrated == 1,
-            run.id == Ids.TaskRunId("legacy-run-1"),
-            run.workflowId == Ids.WorkflowId("legacy-wf-1"),
-            run.state == TaskRunState.Completed(
-              startedAt,
-              startedAt.plusSeconds(30),
-              s"legacy completed at ${startedAt.plusSeconds(30)}",
-            ),
-          )).provideLayer(layerFor(dir))
         }
       },
     ) @@ TestAspect.sequential

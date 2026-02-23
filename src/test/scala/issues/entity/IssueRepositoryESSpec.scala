@@ -9,7 +9,7 @@ import zio.test.*
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.error.GigaMapError
 import shared.ids.Ids
-import shared.store.{ AgentAssignmentRow, AgentIssueRow, DataStoreModule, EventStore, StoreConfig }
+import shared.store.{ DataStoreModule, EventStore, StoreConfig }
 
 object IssueRepositoryESSpec extends ZIOSpecDefault:
 
@@ -54,54 +54,5 @@ object IssueRepositoryESSpec extends ZIOSpecDefault:
           yield assertTrue(got.state == IssueState.Completed(Ids.AgentId("agent-1"), now.plusSeconds(10), "done")))
             .provideLayer(layerFor(path))
         }
-      },
-      test("legacy AgentIssueRow migration") {
-        withTempDir { path =>
-          val now           = Instant.parse("2026-02-23T13:05:00Z")
-          val row           = AgentIssueRow(
-            id = "legacy-issue-1",
-            runId = Some("run-1"),
-            conversationId = Some("conv-1"),
-            title = "Legacy",
-            description = "legacy issue",
-            issueType = "bug",
-            tags = Some("legacy"),
-            preferredAgent = None,
-            contextPath = Some("src"),
-            sourceFolder = Some("src/main"),
-            priority = "medium",
-            status = "failed",
-            assignedAgent = Some("agent-x"),
-            assignedAt = Some(now.plusSeconds(2)),
-            completedAt = Some(now.plusSeconds(4)),
-            errorMessage = Some("boom"),
-            resultData = None,
-            createdAt = now,
-            updatedAt = now.plusSeconds(4),
-          )
-          val assignmentRow = AgentAssignmentRow(
-            id = "legacy-assignment-1",
-            issueId = "legacy-issue-1",
-            agentName = "agent-x",
-            status = "completed",
-            assignedAt = now.plusSeconds(2),
-            startedAt = Some(now.plusSeconds(3)),
-            completedAt = Some(now.plusSeconds(4)),
-            executionLog = Some("done"),
-            result = Some("ok"),
-          )
-          (for
-            ds   <- ZIO.service[DataStoreModule.DataStoreService]
-            _    <- ds.store.store("issue:legacy-issue-1", row)
-            _    <- ds.store.store("assignment:legacy-assignment-1", assignmentRow)
-            _    <- IssueMigration.migrateLegacyRows
-            repo <- ZIO.service[IssueRepository]
-            got  <- repo.get(Ids.IssueId("legacy-issue-1"))
-            v2   <- ds.store.fetch[String, Assignment]("assignment:v2:legacy-assignment-1")
-          yield assertTrue(
-            got.state == IssueState.Failed(Ids.AgentId("agent-x"), now.plusSeconds(4), "boom"),
-            v2.exists(_.id == Ids.AssignmentId("legacy-assignment-1")),
-          )).provideLayer(layerFor(path))
-        }
-      },
+      }
     ) @@ TestAspect.sequential

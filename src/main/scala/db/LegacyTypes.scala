@@ -3,14 +3,13 @@ package db
 import java.time.Instant
 
 import zio.json.*
-import zio.schema.{ Schema, derived }
 
 given JsonCodec[Instant] = JsonCodec[String].transform(
   str => Instant.parse(str),
   instant => instant.toString,
 )
 
-enum RunStatus derives JsonCodec, Schema:
+enum RunStatus derives JsonCodec:
   case Pending, Running, Paused, Completed, Failed, Cancelled
 
 enum FileType derives JsonCodec:

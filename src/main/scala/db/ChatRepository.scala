@@ -168,4 +168,4 @@ object ChatRepository:
       Nothing,
       ChatRepository,
     ] =
-    ChatRepositoryES.live
+    ChatRepositoryLive.live

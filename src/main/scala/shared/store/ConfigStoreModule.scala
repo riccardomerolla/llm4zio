@@ -1,10 +1,9 @@
 package shared.store
 
 import java.nio.file.Paths
-import java.time.Instant
 
 import zio.*
-import zio.schema.{ Schema, derived }
+import zio.schema.Schema
 
 import _root_.config.entity.{ CustomAgent, Setting, SettingValue, Workflow }
 import io.github.riccardomerolla.zio.eclipsestore.config.{ EclipseStoreConfig, StorageTarget }
@@ -12,36 +11,8 @@ import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.schema.{ SchemaBinaryCodec, TypedStore, TypedStoreLive }
 import io.github.riccardomerolla.zio.eclipsestore.service.{ EclipseStoreService, LifecycleCommand }
 
-// ---------------------------------------------------------------------------
-// Config-store row types — persistence-only; Schema handles Option/Instant.
-// ---------------------------------------------------------------------------
-
-final case class WorkflowRow(
-  id: String,
-  name: String,
-  description: Option[String],
-  stepsJson: String,
-  isBuiltin: Boolean,
-  createdAt: Instant,
-  updatedAt: Instant,
-) derives Schema
-
-final case class CustomAgentRow(
-  id: String,
-  name: String,
-  displayName: String,
-  description: Option[String],
-  systemPrompt: String,
-  tagsJson: Option[String],
-  enabled: Boolean,
-  createdAt: Instant,
-  updatedAt: Instant,
-) derives Schema
-
 private val configStoreHandlers =
   SchemaBinaryCodec.handlers(Schema[String])
-    ++ SchemaBinaryCodec.handlers(Schema[WorkflowRow])
-    ++ SchemaBinaryCodec.handlers(Schema[CustomAgentRow])
     ++ SchemaBinaryCodec.handlers(Schema[SettingValue])
     ++ SchemaBinaryCodec.handlers(Schema[Setting])
     ++ SchemaBinaryCodec.handlers(Schema[Workflow])

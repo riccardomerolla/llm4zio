@@ -57,7 +57,7 @@ object ChatRepositoryESSpec extends ZIOSpecDefault:
         configStorePath = path.resolve("config-store").toString,
         dataStorePath = path.resolve("data-store").toString,
       )
-    ) >>> DataStoreModule.live) >>> ChatRepositoryES.live
+    ) >>> DataStoreModule.live) >>> ChatRepositoryLive.live
 
   private def layerForWithConversations(
     path: Path
@@ -70,7 +70,7 @@ object ChatRepositoryESSpec extends ZIOSpecDefault:
         )
       ),
       DataStoreModule.live,
-      ChatRepositoryES.live,
+      ChatRepositoryLive.live,
     )
 
   def spec: Spec[TestEnvironment & Scope, Any] =

@@ -120,19 +120,23 @@ final case class ChatRepositoryMemoryStore(
       maybeConversation <- resolveConversation(threadId)
       thread            <- ZIO.foreach(maybeConversation) { conv =>
                              val conversationId = conv.id.getOrElse("0")
-                             repository.getMessages(conversationId.toLongOption.getOrElse(0L)).mapError(toMemoryError).map {
-                               messages =>
-                                 val resolvedThreadId =
-                                   if isManagedTitle(conv.title) then managedTitleToThreadId(conv.title)
-                                   else normalizedThreadId(conversationId)
+                             ZIO
+                               .fromOption(conv.id.flatMap(_.toLongOption))
+                               .orElseFail(toMemoryError(PersistenceError.QueryFailed("loadThread", "Invalid conversation id")))
+                               .flatMap(id =>
+                                 repository.getMessages(id).mapError(toMemoryError).map { messages =>
+                                   val resolvedThreadId =
+                                     if isManagedTitle(conv.title) then managedTitleToThreadId(conv.title)
+                                     else normalizedThreadId(conversationId)
 
-                                 ConversationThread(
-                                   threadId = resolvedThreadId,
-                                   history = messages.map(toLlmMessage).toVector,
-                                   metadata = Map("title" -> conv.title, "status" -> conv.status),
-                                   updatedAt = conv.updatedAt,
-                                 )
-                             }
+                                   ConversationThread(
+                                     threadId = resolvedThreadId,
+                                     history = messages.map(toLlmMessage).toVector,
+                                     metadata = Map("title" -> conv.title, "status" -> conv.status),
+                                     updatedAt = conv.updatedAt,
+                                   )
+                                 }
+                               )
                            }
     yield thread
 
@@ -164,17 +168,23 @@ final case class ChatRepositoryMemoryStore(
         entries       <- ZIO.foreach(conversations) { conversation =>
                            val conversationId = conversation.id.getOrElse("0")
                            val threadId       = normalizedThreadId(conversationId)
-                           repository.getMessages(conversationId.toLongOption.getOrElse(0L)).mapError(toMemoryError).map {
-                             messages =>
-                               messages.collect {
-                                 case message if message.content.toLowerCase.contains(normalized) =>
-                                   MemoryEntry(
-                                     threadId = threadId,
-                                     message = toLlmMessage(message),
-                                     recordedAt = message.createdAt,
-                                   )
+                           ZIO
+                             .fromOption(conversation.id.flatMap(_.toLongOption))
+                             .orElseFail(
+                               toMemoryError(PersistenceError.QueryFailed("searchEntries", "Invalid conversation id"))
+                             )
+                             .flatMap(id =>
+                               repository.getMessages(id).mapError(toMemoryError).map { messages =>
+                                 messages.collect {
+                                   case message if message.content.toLowerCase.contains(normalized) =>
+                                     MemoryEntry(
+                                       threadId = threadId,
+                                       message = toLlmMessage(message),
+                                       recordedAt = message.createdAt,
+                                     )
+                                 }
                                }
-                           }
+                             )
                          }
       yield entries.flatten.sortBy(_.recordedAt).reverse.take(limit)
 
@@ -185,7 +195,12 @@ final case class ChatRepositoryMemoryStore(
         for
           existing <- findConversationByThreadId(threadId)
           id       <- existing match
-                        case Some(conversation) => ZIO.succeed(conversation.id.flatMap(_.toLongOption).getOrElse(0L))
+                        case Some(conversation) =>
+                          ZIO
+                            .fromOption(conversation.id.flatMap(_.toLongOption))
+                            .orElseFail(
+                              toMemoryError(PersistenceError.QueryFailed("ensureConversation", "Invalid conversation id"))
+                            )
                         case None               =>
                           for
                             timestamp <- now

@@ -160,7 +160,10 @@ final private case class IssueAssignmentOrchestratorLive(
           .fromOption(conversationId.toLongOption)
           .orElseFail(PersistenceError.QueryFailed("issue", s"Invalid conversation id: $conversationId"))
       runMetadata     <- issue.runId match
-                           case Some(runId) => migrationRepository.getRun(runId.toLongOption.getOrElse(0L))
+                           case Some(runId) =>
+                             runId.toLongOption match
+                               case Some(parsedId) => migrationRepository.getRun(parsedId)
+                               case None           => ZIO.none
                            case None        => ZIO.none
       customAgent     <- migrationRepository.getCustomAgentByName(agentName)
       prompt           = buildIssueAssignmentPrompt(issue, agentName, runMetadata, customAgent.map(_.systemPrompt))

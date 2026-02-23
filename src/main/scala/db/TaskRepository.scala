@@ -144,6 +144,6 @@ object TaskRepository:
       Nothing,
       TaskRepository,
     ] =
-    TaskRepositoryES.live
+    TaskRepositoryLive.live
 
 end TaskRepository

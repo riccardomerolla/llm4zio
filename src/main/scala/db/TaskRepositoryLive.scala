@@ -3,14 +3,13 @@ package db
 import java.time.Instant
 
 import zio.*
-import zio.json.*
 import zio.schema.Schema
 
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.service.{ LifecycleCommand, LifecycleStatus }
 import shared.store.*
 
-final case class TaskRepositoryES(
+final case class TaskRepositoryLive(
   dataStore: DataStoreModule.DataStoreService,
   configStore: ConfigStoreModule.ConfigStoreService,
 ) extends TaskRepository:
@@ -58,12 +57,12 @@ final case class TaskRepositoryES(
   override def getRun(id: Long): IO[PersistenceError, Option[db.TaskRunRow]] =
     dkv
       .fetch[String, shared.store.TaskRunRow](runKey(id))
-      .map(_.map(fromStoreRunRow))
+      .map(_.flatMap(fromStoreRunRow))
       .mapError(storeErr("getRun"))
 
   override def listRuns(offset: Int, limit: Int): IO[PersistenceError, List[db.TaskRunRow]] =
     fetchAllDataByPrefix[shared.store.TaskRunRow]("run:", "listRuns")
-      .map(_.map(fromStoreRunRow).sortBy(_.startedAt)(Ordering[Instant].reverse).slice(offset, offset + limit))
+      .map(_.flatMap(fromStoreRunRow).sortBy(_.startedAt)(Ordering[Instant].reverse).slice(offset, offset + limit))
 
   override def deleteRun(id: Long): IO[PersistenceError, Unit] =
     for
@@ -85,12 +84,12 @@ final case class TaskRepositoryES(
   override def getReport(reportId: Long): IO[PersistenceError, Option[db.TaskReportRow]] =
     dkv
       .fetch[String, shared.store.TaskReportRow](reportKey(reportId))
-      .map(_.map(fromStoreReportRow))
+      .map(_.flatMap(fromStoreReportRow))
       .mapError(storeErr("getReport"))
 
   override def getReportsByTask(taskRunId: Long): IO[PersistenceError, List[db.TaskReportRow]] =
     fetchAllDataByPrefix[shared.store.TaskReportRow]("report:", "getReportsByTask")
-      .map(_.filter(_.taskRunId == taskRunId.toString).map(fromStoreReportRow).sortBy(_.createdAt))
+      .map(_.filter(_.taskRunId == taskRunId.toString).flatMap(fromStoreReportRow).sortBy(_.createdAt))
 
   override def saveArtifact(artifact: db.TaskArtifactRow): IO[PersistenceError, Long] =
     for
@@ -102,7 +101,7 @@ final case class TaskRepositoryES(
 
   override def getArtifactsByTask(taskRunId: Long): IO[PersistenceError, List[db.TaskArtifactRow]] =
     fetchAllDataByPrefix[shared.store.TaskArtifactRow]("artifact:", "getArtifactsByTask")
-      .map(_.filter(_.taskRunId == taskRunId.toString).map(fromStoreArtifactRow).sortBy(_.createdAt))
+      .map(_.filter(_.taskRunId == taskRunId.toString).flatMap(fromStoreArtifactRow).sortBy(_.createdAt))
 
   override def getAllSettings: IO[PersistenceError, List[db.SettingRow]] =
     for
@@ -111,29 +110,21 @@ final case class TaskRepositoryES(
                 .filter(_.startsWith("setting:"))
                 .runCollect
                 .mapError(storeErr("getAllSettings"))
-      now  <- Clock.instant
       rows <- ZIO.foreach(keys.toList) { k =>
                 ckv
                   .fetch[String, String](k)
                   .mapError(storeErr("getAllSettings"))
-                  .map(_.map(raw => decodeSetting(k.stripPrefix("setting:"), raw, now)).toList)
+                  .map(_.map(raw => decodeSetting(k.stripPrefix("setting:"), raw)).toList)
               }
     yield rows.flatten.sortBy(_.key)
 
   override def getSetting(key: String): IO[PersistenceError, Option[db.SettingRow]] =
-    for
-      raw <- ckv.fetch[String, String](settingKey(key)).mapError(storeErr("getSetting"))
-      now <- Clock.instant
-    yield raw.map(value => decodeSetting(key, value, now))
+    ckv.fetch[String, String](settingKey(key)).mapError(storeErr("getSetting")).map(_.map(value =>
+      decodeSetting(key, value)
+    ))
 
   override def upsertSetting(key: String, value: String): IO[PersistenceError, Unit] =
-    for
-      now <- Clock.instant
-      _   <- ckv
-               .store(settingKey(key), StoredSetting(value, now).toJson)
-               .mapError(storeErr("upsertSetting"))
-      _   <- checkpointConfigStore("upsertSetting")
-    yield ()
+    ckv.store(settingKey(key), value).mapError(storeErr("upsertSetting")) *> checkpointConfigStore("upsertSetting")
 
   override def getSettingsByPrefix(prefix: String): IO[PersistenceError, List[db.SettingRow]] =
     getAllSettings.map(_.filter(_.key.startsWith(prefix)))
@@ -155,7 +146,7 @@ final case class TaskRepositoryES(
     for
       id <- nextId("createWorkflow")
       _  <- ckv
-              .store(workflowKey(id), toStoreWorkflowRow(workflow.copy(id = Some(id))))
+              .store(workflowKey(id), toStoreWorkflowRow(workflow, id))
               .mapError(storeErr("createWorkflow"))
     yield id
 
@@ -183,7 +174,7 @@ final case class TaskRepositoryES(
                     .fail(PersistenceError.NotFound("workflows", id))
                     .when(existing.isEmpty)
       _        <- ckv
-                    .store(workflowKey(id), toStoreWorkflowRow(workflow))
+                    .store(workflowKey(id), toStoreWorkflowRow(workflow, id))
                     .mapError(storeErr("updateWorkflow"))
     yield ()
 
@@ -201,7 +192,7 @@ final case class TaskRepositoryES(
       _  <- validateCustomAgentName(agent.name, "createCustomAgent")
       id <- nextId("createCustomAgent")
       _  <- ckv
-              .store(agentKey(id), toStoreAgentRow(agent.copy(id = Some(id))))
+              .store(agentKey(id), toStoreAgentRow(agent, id))
               .mapError(storeErr("createCustomAgent"))
     yield id
 
@@ -230,7 +221,7 @@ final case class TaskRepositoryES(
                     .fail(PersistenceError.NotFound("custom_agents", id))
                     .when(existing.isEmpty)
       _        <- ckv
-                    .store(agentKey(id), toStoreAgentRow(agent))
+                    .store(agentKey(id), toStoreAgentRow(agent, id))
                     .mapError(storeErr("updateCustomAgent"))
     yield ()
 
@@ -282,12 +273,8 @@ final case class TaskRepositoryES(
   private def storeErrThrowable(op: String)(t: Throwable): PersistenceError =
     PersistenceError.QueryFailed(op, Option(t.getMessage).getOrElse(t.toString))
 
-  final private case class StoredSetting(value: String, updatedAt: Instant) derives JsonCodec
-
-  private def decodeSetting(key: String, raw: String, fallbackUpdatedAt: Instant): db.SettingRow =
-    raw.fromJson[StoredSetting] match
-      case Right(stored) => db.SettingRow(key = key, value = stored.value, updatedAt = stored.updatedAt)
-      case Left(_)       => db.SettingRow(key = key, value = raw, updatedAt = fallbackUpdatedAt)
+  private def decodeSetting(key: String, raw: String): db.SettingRow =
+    db.SettingRow(key = key, value = raw, updatedAt = Instant.EPOCH)
 
   private def checkpointConfigStore(op: String): IO[PersistenceError, Unit] =
     for
@@ -317,13 +304,15 @@ final case class TaskRepositoryES(
       failedConversions = run.failedConversions,
     )
 
-  private def fromStoreRunRow(row: shared.store.TaskRunRow): db.TaskRunRow =
-    val parsed = RunStatus.values.find(_.toString == row.status).getOrElse(RunStatus.Failed)
-    db.TaskRunRow(
-      id = row.id.toLongOption.getOrElse(0L),
+  private def fromStoreRunRow(row: shared.store.TaskRunRow): Option[db.TaskRunRow] =
+    for
+      parsedStatus <- RunStatus.values.find(_.toString == row.status)
+      parsedId     <- row.id.toLongOption
+    yield db.TaskRunRow(
+      id = parsedId,
       sourceDir = row.sourceDir,
       outputDir = row.outputDir,
-      status = parsed,
+      status = parsedStatus,
       startedAt = row.startedAt,
       completedAt = row.completedAt,
       totalFiles = row.totalFiles,
@@ -345,10 +334,13 @@ final case class TaskRepositoryES(
       createdAt = report.createdAt,
     )
 
-  private def fromStoreReportRow(report: shared.store.TaskReportRow): db.TaskReportRow =
-    db.TaskReportRow(
-      id = report.id.toLongOption.getOrElse(0L),
-      taskRunId = report.taskRunId.toLongOption.getOrElse(0L),
+  private def fromStoreReportRow(report: shared.store.TaskReportRow): Option[db.TaskReportRow] =
+    for
+      reportId <- report.id.toLongOption
+      runId    <- report.taskRunId.toLongOption
+    yield db.TaskReportRow(
+      id = reportId,
+      taskRunId = runId,
       stepName = report.stepName,
       reportType = report.reportType,
       content = report.content,
@@ -365,19 +357,22 @@ final case class TaskRepositoryES(
       createdAt = artifact.createdAt,
     )
 
-  private def fromStoreArtifactRow(artifact: shared.store.TaskArtifactRow): db.TaskArtifactRow =
-    db.TaskArtifactRow(
-      id = artifact.id.toLongOption.getOrElse(0L),
-      taskRunId = artifact.taskRunId.toLongOption.getOrElse(0L),
+  private def fromStoreArtifactRow(artifact: shared.store.TaskArtifactRow): Option[db.TaskArtifactRow] =
+    for
+      artifactId <- artifact.id.toLongOption
+      runId      <- artifact.taskRunId.toLongOption
+    yield db.TaskArtifactRow(
+      id = artifactId,
+      taskRunId = runId,
       stepName = artifact.stepName,
       key = artifact.key,
       value = artifact.value,
       createdAt = artifact.createdAt,
     )
 
-  private def toStoreWorkflowRow(workflow: db.WorkflowRow): shared.store.WorkflowRow =
+  private def toStoreWorkflowRow(workflow: db.WorkflowRow, id: Long): shared.store.WorkflowRow =
     shared.store.WorkflowRow(
-      id = workflow.id.getOrElse(0L).toString,
+      id = id.toString,
       name = workflow.name,
       description = workflow.description,
       stepsJson = workflow.steps,
@@ -399,9 +394,9 @@ final case class TaskRepositoryES(
       )
     }
 
-  private def toStoreAgentRow(agent: db.CustomAgentRow): shared.store.CustomAgentRow =
+  private def toStoreAgentRow(agent: db.CustomAgentRow, id: Long): shared.store.CustomAgentRow =
     shared.store.CustomAgentRow(
-      id = agent.id.getOrElse(0L).toString,
+      id = id.toString,
       name = agent.name,
       displayName = agent.displayName,
       description = agent.description,
@@ -427,7 +422,7 @@ final case class TaskRepositoryES(
       )
     }
 
-object TaskRepositoryES:
+object TaskRepositoryLive:
   val live
     : ZLayer[
       DataStoreModule.DataStoreService & ConfigStoreModule.ConfigStoreService,
@@ -438,5 +433,5 @@ object TaskRepositoryES:
       for
         dataStore   <- ZIO.service[DataStoreModule.DataStoreService]
         configStore <- ZIO.service[ConfigStoreModule.ConfigStoreService]
-      yield TaskRepositoryES(dataStore, configStore)
+      yield TaskRepositoryLive(dataStore, configStore)
     }

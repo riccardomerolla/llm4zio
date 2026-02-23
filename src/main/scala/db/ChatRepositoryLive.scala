@@ -3,6 +3,7 @@ package db
 import java.time.Instant
 
 import zio.*
+import zio.json.*
 import zio.schema.Schema
 
 import conversation.entity.api.*
@@ -11,7 +12,7 @@ import io.github.riccardomerolla.zio.eclipsestore.service.{ LifecycleCommand, Li
 import issues.entity.api.{ AgentAssignment, AgentIssue, IssuePriority, IssueStatus }
 import shared.store.*
 
-final case class ChatRepositoryES(
+final case class ChatRepositoryLive(
   dataStore: DataStoreModule.DataStoreService
 ) extends ChatRepository:
 
@@ -43,16 +44,18 @@ final case class ChatRepositoryES(
       rows  <- fetchAllByPrefix[ConversationRow]("conv:", "listConversations")
       page   = rows.sortBy(_.createdAt)(Ordering[Instant].reverse).slice(offset, offset + limit)
       convs <- ZIO.foreach(page)(r =>
-                 getMessages(r.id.toLongOption.getOrElse(0L)).map(msgs => fromConversationRow(r).copy(messages = msgs))
+                 ZIO.foreach(r.id.toLongOption)(id =>
+                   getMessages(id).map(msgs => fromConversationRow(r).copy(messages = msgs))
+                 )
                )
-    yield convs
+    yield convs.flatten
 
   override def getConversationsByChannel(channelName: String): IO[PersistenceError, List[ChatConversation]] =
     for
       links <- allSessionContextLinks
       ids    = links
                  .filter(_.channelName == channelName.trim)
-                 .flatMap(l => extractLongField(l.contextJson, "conversationId"))
+                 .flatMap(l => decodeSessionContext(l.contextJson).flatMap(_.conversationId))
                  .distinct
       convs <- ZIO.foreach(ids)(getConversation).map(_.flatten)
     yield convs.sortBy(_.updatedAt)(Ordering[Instant].reverse)
@@ -62,9 +65,11 @@ final case class ChatRepositoryES(
       rows  <- fetchAllByPrefix[ConversationRow]("conv:", "listConversationsByRun")
       page   = rows.filter(_.runId.contains(runId.toString)).sortBy(_.createdAt)(Ordering[Instant].reverse)
       convs <- ZIO.foreach(page)(r =>
-                 getMessages(r.id.toLongOption.getOrElse(0L)).map(msgs => fromConversationRow(r).copy(messages = msgs))
+                 ZIO.foreach(r.id.toLongOption)(id =>
+                   getMessages(id).map(msgs => fromConversationRow(r).copy(messages = msgs))
+                 )
                )
-    yield convs
+    yield convs.flatten
 
   override def updateConversation(conversation: ChatConversation): IO[PersistenceError, Unit] =
     for
@@ -111,19 +116,21 @@ final case class ChatRepositoryES(
     yield id
 
   override def getIssue(id: Long): IO[PersistenceError, Option[AgentIssue]] =
-    kv.fetch[String, AgentIssueRow](issueKey(id.toString)).mapError(storeErr("getIssue")).map(_.map(fromIssueRow))
+    kv.fetch[String, AgentIssueRow](issueKey(id.toString)).mapError(storeErr("getIssue")).map(_.flatMap(fromIssueRow))
 
   override def listIssues(offset: Int, limit: Int): IO[PersistenceError, List[AgentIssue]] =
     fetchAllByPrefix[AgentIssueRow]("issue:", "listIssues")
-      .map(_.map(fromIssueRow).sortBy(_.updatedAt)(Ordering[Instant].reverse).slice(offset, offset + limit))
+      .map(_.flatMap(fromIssueRow).sortBy(_.updatedAt)(Ordering[Instant].reverse).slice(offset, offset + limit))
 
   override def listIssuesByRun(runId: Long): IO[PersistenceError, List[AgentIssue]] =
     fetchAllByPrefix[AgentIssueRow]("issue:", "listIssuesByRun")
-      .map(_.filter(_.runId.contains(runId.toString)).map(fromIssueRow).sortBy(_.createdAt)(Ordering[Instant].reverse))
+      .map(
+        _.filter(_.runId.contains(runId.toString)).flatMap(fromIssueRow).sortBy(_.createdAt)(Ordering[Instant].reverse)
+      )
 
   override def listIssuesByStatus(status: IssueStatus): IO[PersistenceError, List[AgentIssue]] =
     fetchAllByPrefix[AgentIssueRow]("issue:", "listIssuesByStatus")
-      .map(_.filter(_.status == status.toString).map(fromIssueRow).sortBy(_.createdAt)(Ordering[Instant].reverse))
+      .map(_.filter(_.status == status.toString).flatMap(fromIssueRow).sortBy(_.createdAt)(Ordering[Instant].reverse))
 
   override def listUnassignedIssues(runId: Long): IO[PersistenceError, List[AgentIssue]] =
     listIssuesByRun(runId).map(_.filter(_.assignedAgent.isEmpty))
@@ -199,10 +206,12 @@ final case class ChatRepositoryES(
       .mapError(storeErr("getSessionContext"))
 
   override def getSessionContextByConversation(conversationId: Long): IO[PersistenceError, Option[SessionContextLink]] =
-    allSessionContextLinks.map(_.find(l => extractLongField(l.contextJson, "conversationId").contains(conversationId)))
+    allSessionContextLinks.map(_.find(l =>
+      decodeSessionContext(l.contextJson).flatMap(_.conversationId).contains(conversationId)
+    ))
 
   override def getSessionContextByTaskRunId(taskRunId: Long): IO[PersistenceError, Option[SessionContextLink]] =
-    allSessionContextLinks.map(_.find(l => extractLongField(l.contextJson, "runId").contains(taskRunId)))
+    allSessionContextLinks.map(_.find(l => decodeSessionContext(l.contextJson).flatMap(_.runId).contains(taskRunId)))
 
   override def deleteSessionContext(channelName: String, sessionKey: String): IO[PersistenceError, Unit] =
     val key = this.sessionKey(channelName, sessionKey)
@@ -246,8 +255,10 @@ final case class ChatRepositoryES(
   private def requireExists[V](key: String, table: String, op: String)(using Schema[V]): IO[PersistenceError, Unit] =
     kv.fetch[String, V](key).mapError(storeErr(op)).flatMap {
       case None    =>
-        val id = key.drop(key.indexOf(':') + 1).toLongOption.getOrElse(0L)
-        ZIO.fail(PersistenceError.NotFound(table, id))
+        ZIO
+          .fromOption(key.drop(key.indexOf(':') + 1).toLongOption)
+          .orElseFail(PersistenceError.QueryFailed(op, s"invalid numeric id key: $key"))
+          .flatMap(id => ZIO.fail(PersistenceError.NotFound(table, id)))
       case Some(_) => ZIO.unit
     }
 
@@ -277,13 +288,8 @@ final case class ChatRepositoryES(
   private def storeErr(op: String)(t: Throwable): PersistenceError =
     PersistenceError.QueryFailed(op, Option(t.getMessage).getOrElse(t.toString))
 
-  private def extractLongField(json: String, field: String): Option[Long] =
-    val q      = '"'
-    val marker = s"${q}${field}${q}:"
-    val i      = json.indexOf(marker)
-    Option
-      .when(i >= 0)(json.drop(i + marker.length).dropWhile(_.isWhitespace).takeWhile(_.isDigit))
-      .flatMap(_.toLongOption)
+  private def decodeSessionContext(json: String): Option[SessionContextFields] =
+    json.fromJson[SessionContextFields].toOption
 
   // ---------------------------------------------------------------------------
   // Row ↔ Domain conversions
@@ -330,13 +336,19 @@ final case class ChatRepositoryES(
     )
 
   private def fromMessageRow(r: ChatMessageRow): ConversationEntry =
+    val senderType  = SenderType.values.find(_.toString == r.senderType) match
+      case Some(value) => value
+      case None        => SenderType.System
+    val messageType = MessageType.values.find(_.toString == r.messageType) match
+      case Some(value) => value
+      case None        => MessageType.Text
     ConversationEntry(
       id = Some(r.id),
       conversationId = r.conversationId,
       sender = r.sender,
-      senderType = SenderType.values.find(_.toString == r.senderType).getOrElse(SenderType.System),
+      senderType = senderType,
       content = r.content,
-      messageType = MessageType.values.find(_.toString == r.messageType).getOrElse(MessageType.Text),
+      messageType = messageType,
       metadata = r.metadata,
       createdAt = r.createdAt,
       updatedAt = r.updatedAt,
@@ -365,8 +377,11 @@ final case class ChatRepositoryES(
       updatedAt = i.updatedAt,
     )
 
-  private def fromIssueRow(r: AgentIssueRow): AgentIssue =
-    AgentIssue(
+  private def fromIssueRow(r: AgentIssueRow): Option[AgentIssue] =
+    for
+      priority <- IssuePriority.values.find(_.toString == r.priority)
+      status   <- IssueStatus.values.find(_.toString == r.status)
+    yield AgentIssue(
       id = Some(r.id),
       runId = r.runId,
       conversationId = r.conversationId,
@@ -377,8 +392,8 @@ final case class ChatRepositoryES(
       preferredAgent = r.preferredAgent,
       contextPath = r.contextPath,
       sourceFolder = r.sourceFolder,
-      priority = IssuePriority.values.find(_.toString == r.priority).getOrElse(IssuePriority.Medium),
-      status = IssueStatus.values.find(_.toString == r.status).getOrElse(IssueStatus.Open),
+      priority = priority,
+      status = status,
       assignedAgent = r.assignedAgent,
       assignedAt = r.assignedAt,
       completedAt = r.completedAt,
@@ -414,6 +429,11 @@ final case class ChatRepositoryES(
       result = r.result,
     )
 
-object ChatRepositoryES:
+object ChatRepositoryLive:
   val live: ZLayer[DataStoreModule.DataStoreService, Nothing, ChatRepository] =
-    ZLayer.fromFunction(ChatRepositoryES.apply)
+    ZLayer.fromFunction(ChatRepositoryLive.apply)
+
+final private case class SessionContextFields(
+  conversationId: Option[Long] = None,
+  runId: Option[Long] = None,
+) derives JsonDecoder

@@ -33,7 +33,7 @@ object TaskRepositoryESSpec extends ZIOSpecDefault:
         configStorePath = path.resolve("config-store").toString,
         dataStorePath = path.resolve("data-store").toString,
       )
-    ) >>> (DataStoreModule.live ++ ConfigStoreModule.live)) >>> TaskRepositoryES.live
+    ) >>> (DataStoreModule.live ++ ConfigStoreModule.live)) >>> TaskRepositoryLive.live
 
   def spec: Spec[TestEnvironment & Scope, Any] =
     suite("TaskRepositoryESSpec")(
