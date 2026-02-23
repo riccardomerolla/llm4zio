@@ -6,6 +6,7 @@ import java.time.Instant
 import zio.*
 import zio.schema.{ Schema, derived }
 
+import config.entity.{ CustomAgent, Setting, SettingValue, Workflow }
 import io.github.riccardomerolla.zio.eclipsestore.config.{ EclipseStoreConfig, StorageTarget }
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.schema.{ SchemaBinaryCodec, TypedStore, TypedStoreLive }
@@ -41,6 +42,10 @@ private val configStoreHandlers =
   SchemaBinaryCodec.handlers(Schema[String])
     ++ SchemaBinaryCodec.handlers(Schema[WorkflowRow])
     ++ SchemaBinaryCodec.handlers(Schema[CustomAgentRow])
+    ++ SchemaBinaryCodec.handlers(Schema[SettingValue])
+    ++ SchemaBinaryCodec.handlers(Schema[Setting])
+    ++ SchemaBinaryCodec.handlers(Schema[Workflow])
+    ++ SchemaBinaryCodec.handlers(Schema[CustomAgent])
 
 object ConfigStoreModule:
 
