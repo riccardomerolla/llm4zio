@@ -1,21 +1,17 @@
 package integration
 
 import java.nio.file.{ Files, Path }
-import java.time.Instant
 
 import zio.*
 import zio.test.*
 
-import db.*
+import io.github.riccardomerolla.zio.eclipsestore.config.{ EclipseStoreConfig, StorageTarget }
+import io.github.riccardomerolla.zio.eclipsestore.domain.RootContainer
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
-import io.github.riccardomerolla.zio.eclipsestore.gigamap.error.GigaMapError
-import io.github.riccardomerolla.zio.eclipsestore.service.LifecycleCommand
-import models.*
-import store.{ DataStoreModule, StoreConfig }
+import io.github.riccardomerolla.zio.eclipsestore.service.{ EclipseStoreService, LifecycleCommand }
+import org.eclipse.store.storage.embedded.types.EmbeddedStorage
 
-/** End-to-end test verifying that issue data survives a full store restart. Mirrors the working restart tests in
-  * ChatRepositoryESSpec.
-  */
+/** Diagnostic spec: tests raw EclipseStoreService restart to isolate the persistence bug. */
 object StoreRestartIssueE2ESpec extends ZIOSpecDefault:
 
   private def runWithClockAdvance[R, E, A](
@@ -54,100 +50,74 @@ object StoreRestartIssueE2ESpec extends ZIOSpecDefault:
       }.ignore
     )(use)
 
-  // Exact copy of layerForWithConversations from ChatRepositoryESSpec
-  private def layerForWithConversations(
-    path: Path,
-  ): ZLayer[Any, EclipseStoreError | GigaMapError, ChatRepository & DataStoreModule.DataStoreService] =
-    ZLayer.make[ChatRepository & DataStoreModule.DataStoreService](
-      ZLayer.succeed(
-        StoreConfig(
-          configStorePath = path.resolve("config-store").toString,
-          dataStorePath = path.resolve("data-store").toString,
-        )
-      ),
-      DataStoreModule.live,
-      ChatRepositoryES.live,
-    )
+  private def rawLayer(dir: Path): ZLayer[Any, EclipseStoreError, EclipseStoreService] =
+    ZLayer.succeed(
+      EclipseStoreConfig(
+        storageTarget = StorageTarget.FileSystem(dir),
+        autoCheckpointInterval = Some(java.time.Duration.ofSeconds(5L)),
+      )
+    ) >>> EclipseStoreService.live.fresh
 
   def spec: Spec[TestEnvironment & Scope, Any] =
     suite("StoreRestartIssueE2ESpec")(
-      // Exact copy of the "restart persists chat messages and issues with string IDs" test
-      // from ChatRepositoryESSpec — to verify the same code works from this spec
-      test("issue key survives full store restart") {
+      test("diagnose what storageManager.root() returns after restart") {
         withTempDir { dir =>
-          val createdAt = Instant.parse("2026-02-19T16:00:00Z")
-          val updatedAt = Instant.parse("2026-02-19T16:00:00Z")
+          val storePath = dir.resolve("raw-store")
 
-          val writeAndClose =
+          // Phase 1: Write via EclipseStoreService, checkpoint, close
+          val writePhase =
             (for
-              repo      <- ZIO.service[ChatRepository]
-              dataStore <- ZIO.service[DataStoreModule.DataStoreService]
-              convId    <- repo.createConversation(
-                             ChatConversation(
-                               runId = Some("run-alpha-1"),
-                               title = "persist me",
-                               description = Some("chat+issue restart regression"),
-                               createdAt = createdAt,
-                               updatedAt = updatedAt,
-                               createdBy = Some("spec"),
-                             )
-                           )
-              _         <- repo.addMessage(
-                             ConversationEntry(
-                               conversationId = convId.toString,
-                               sender = "user",
-                               senderType = SenderType.User,
-                               content = "hello before restart",
-                               messageType = MessageType.Text,
-                               createdAt = createdAt.plusSeconds(1),
-                               updatedAt = createdAt.plusSeconds(1),
-                             )
-                           )
-              issueId   <- repo.createIssue(
-                             AgentIssue(
-                               runId = Some("run-alpha-1"),
-                               conversationId = Some(convId.toString),
-                               title = "Issue survives restart",
-                               description = "validate persistence",
-                               issueType = "bug",
-                               priority = IssuePriority.High,
-                               createdAt = createdAt.plusSeconds(2),
-                               updatedAt = createdAt.plusSeconds(2),
-                             )
-                           )
-              _         <- dataStore.rawStore.maintenance(LifecycleCommand.Checkpoint)
-            yield (convId, issueId)).provideLayer(layerForWithConversations(dir))
+              svc <- ZIO.service[EclipseStoreService]
+              _   <- svc.put("key1", "value1")
+              _   <- svc.put("key2", "value2")
+              _   <- svc.maintenance(LifecycleCommand.Checkpoint)
+            yield ()).provideLayer(rawLayer(storePath))
 
-          def reopenAndRead(convId: Long, issueId: Long) =
-            (for
-              repo      <- ZIO.service[ChatRepository]
-              dataStore <- ZIO.service[DataStoreModule.DataStoreService]
-              _         <- dataStore.rawStore.reloadRoots
-              conv      <- repo.getConversation(convId)
-              messages  <- repo.getMessages(convId)
-              issue     <- repo.getIssue(issueId)
-              result    <- ZIO
-                             .fromOption(for
-                               c <- conv
-                               i <- issue
-                             yield (c, messages, i))
-                             .orElseFail(())
-                             .retry(Schedule.spaced(100.millis) && Schedule.recurs(50))
-                             .option
-            yield result).provideLayer(layerForWithConversations(dir))
+          // Phase 2: Open raw EmbeddedStorage directly (no ZIO wrapper) and inspect
+          val inspectPhase = ZIO.attemptBlocking {
+            val sm = EmbeddedStorage.start(storePath)
+            try
+              val root = sm.root()
+              root match
+                case rc: RootContainer =>
+                  // Access private field via reflection
+                  val field = classOf[RootContainer].getDeclaredField("instances")
+                  field.setAccessible(true)
+                  val state =
+                    field.get(rc).asInstanceOf[java.util.concurrent.ConcurrentHashMap[String, AnyRef]]
+                  val stateSize   = state.size()
+                  val stateKeys   =
+                    scala.jdk.CollectionConverters.SetHasAsScala(state.keySet()).asScala.toSet
+                  val kvRootEntry = Option(state.get("kv-root"))
+                  val kvRootClass = kvRootEntry.map(_.getClass.getName)
+                  val kvRootSize  = kvRootEntry.collect {
+                    case m: java.util.concurrent.ConcurrentHashMap[?, ?] => m.size()
+                  }
+                  (s"RootContainer", stateSize, stateKeys, kvRootClass, kvRootSize)
+                case other              =>
+                  (
+                    s"${if other == null then "null" else other.getClass.getName}",
+                    -1,
+                    Set.empty[String],
+                    None: Option[String],
+                    None: Option[Int],
+                  )
+            finally
+              val _ = sm.shutdown()
+          }.orDie
 
           for
-            saved            <- runWithClockAdvance(writeAndClose)
-            (convId, issueId) = saved
-            reloaded         <- runWithClockAdvance(reopenAndRead(convId, issueId))
+            _                                                        <- runWithClockAdvance(writePhase)
+            _                                                        <- ZIO.logInfo("--- Write phase done, store closed ---")
+            result                                                   <- inspectPhase
+            (rootType, stateSize, stateKeys, kvRootClass, kvRootSize) = result
+            _                                                        <- ZIO.logInfo(s"Root type: $rootType")
+            _                                                        <- ZIO.logInfo(s"instanceState size: $stateSize, keys: $stateKeys")
+            _                                                        <- ZIO.logInfo(s"kv-root entry class: $kvRootClass")
+            _                                                        <- ZIO.logInfo(s"kv-root ConcurrentHashMap size: $kvRootSize")
           yield assertTrue(
-            reloaded.isDefined,
-            reloaded.forall(_._1.title == "persist me"),
-            reloaded.forall(_._1.runId.contains("run-alpha-1")),
-            reloaded.forall(_._2.exists(_.content == "hello before restart")),
-            reloaded.forall(_._3.title == "Issue survives restart"),
-            reloaded.forall(_._3.runId.contains("run-alpha-1")),
-            reloaded.forall(_._3.conversationId.contains(convId.toString)),
+            rootType == "RootContainer",
+            kvRootSize.exists(_ > 0), // kv-root should have data
           )
         }
       },
