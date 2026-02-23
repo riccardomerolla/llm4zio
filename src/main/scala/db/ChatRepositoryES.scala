@@ -228,7 +228,18 @@ final case class ChatRepositoryES(
                 .runCollect
                 .map(_.toList)
                 .mapError(storeErr(op))
-      vals <- ZIO.foreach(keys)(k => kv.fetch[String, V](k).mapError(storeErr(op)))
+      vals <- ZIO.foreach(keys) { key =>
+                kv.fetch[String, V](key)
+                  .mapError(storeErr(op))
+                  .catchAllCause { cause =>
+                    val reason = cause.prettyPrint
+                    ZIO.logWarning(s"$op skipped unreadable row '$key': $reason").as(None)
+                  }
+                  .map {
+                    case Some(value) => value :: Nil
+                    case _           => Nil
+                  }
+              }
     yield vals.flatten
 
   private def requireExists[V](key: String, table: String, op: String)(using Schema[V]): IO[PersistenceError, Unit] =

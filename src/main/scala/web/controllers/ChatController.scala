@@ -716,7 +716,7 @@ final case class ChatControllerLive(
     conversations: List[ChatConversation]
   ): IO[PersistenceError, Map[String, ConversationSessionMeta]] =
     ZIO
-      .foreach(conversations.flatMap(_.id)) { id =>
+      .foreach(conversations.flatMap(conv => sanitizeOptional(conv.id))) { id =>
         resolveConversationSessionMeta(id).map(meta => id -> meta)
       }
       .map(_.collect { case (id, Some(meta)) => id -> meta }.toMap)
@@ -730,8 +730,8 @@ final case class ChatControllerLive(
         parseSessionContext(link.contextJson).map { parsed =>
           Some(
             ConversationSessionMeta(
-              channelName = link.channelName,
-              sessionKey = link.sessionKey,
+              channelName = sanitizeString(link.channelName).getOrElse("web"),
+              sessionKey = sanitizeString(link.sessionKey).getOrElse("unknown"),
               linkedTaskRunId = parsed.flatMap(_.runId).map(_.toString),
               updatedAt = link.updatedAt,
             )
@@ -749,6 +749,17 @@ final case class ChatControllerLive(
       .fromEither(raw.fromJson[SessionContext])
       .map(Some(_))
       .catchAll(err => ZIO.logWarning(s"invalid session context payload: $err").as(None))
+
+  private def sanitizeOptional[A](value: Option[A]): Option[A] =
+    try
+      value match
+        case Some(v) => Option(v)
+        case _       => None
+    catch
+      case _: Throwable => None
+
+  private def sanitizeString(value: String): Option[String] =
+    Option(value).map(_.trim).filter(_.nonEmpty)
 
   private def ensureConversationTitle(
     conversationId: Long,

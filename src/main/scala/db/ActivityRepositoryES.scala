@@ -44,7 +44,17 @@ final case class ActivityRepositoryES(
       .mapError(storeErr(op))
       .flatMap { keys =>
         ZIO
-          .foreach(keys.toList)(k => kv.fetch[String, ActivityEventRow](k).mapError(storeErr(op)))
+          .foreach(keys.toList) { key =>
+            kv.fetch[String, ActivityEventRow](key)
+              .mapError(storeErr(op))
+              .catchAllCause { cause =>
+                ZIO.logWarning(s"$op skipped unreadable activity row '$key': ${cause.prettyPrint}").as(None)
+              }
+              .map {
+                case Some(value) => value :: Nil
+                case _           => Nil
+              }
+          }
           .map(_.flatten)
       }
 

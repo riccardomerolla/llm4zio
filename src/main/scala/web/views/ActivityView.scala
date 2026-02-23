@@ -171,4 +171,9 @@ object ActivityView:
 
   // Legacy persisted rows may deserialize Option fields as null; normalize before use in views.
   private def sanitizeOptional(value: Option[String]): Option[String] =
-    Option(value).flatten.map(_.trim).filter(_.nonEmpty)
+    try
+      value match
+        case Some(v) => Option(v).map(_.trim).filter(_.nonEmpty)
+        case _       => None
+    catch
+      case _: Throwable => None

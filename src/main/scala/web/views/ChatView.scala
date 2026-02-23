@@ -39,7 +39,7 @@ object ChatView:
       else
         div(cls := "grid grid-cols-1 gap-4")(
           conversations.map { conv =>
-            val meta = conv.id.flatMap { convId =>
+            val meta = sanitizeOptionalString(conv.id).flatMap { convId =>
               sessionMetaByConversation.get(convId)
             }
             conversationCard(conv, meta)
@@ -51,11 +51,12 @@ object ChatView:
     conversation: ChatConversation,
     sessionMeta: Option[ConversationSessionMeta],
   ): String =
-    val conversationId = conversation.id.getOrElse("unknown")
-    val description    = sanitizeOptional(conversation.description)
-    val issuesHref     = conversation.runId match
-      case Some(runId) => s"/issues?run_id=$runId"
-      case None        => "/issues"
+    val conversationId = sanitizeOptionalString(conversation.id).getOrElse("unknown")
+    val description    = sanitizeOptionalString(conversation.description)
+    val issuesHref     =
+      sanitizeOptionalString(conversation.runId)
+        .map(runId => s"/issues?run_id=$runId")
+        .getOrElse("/issues")
 
     Layout.page(s"Chat — ${conversation.title}", s"/chat/$conversationId")(
       div(cls := "flex flex-col min-h-[calc(100vh-9rem)]")(
@@ -558,13 +559,11 @@ if (!customElements.get('chat-message-stream')) {
     conv: ChatConversation,
     sessionMeta: Option[ConversationSessionMeta] = None,
   ): Frag =
-    val conversationId = conv.id.getOrElse("unknown")
+    val conversationId = sanitizeOptionalString(conv.id).getOrElse("unknown")
     val lastMessage    = conv.messages.lastOption
     val preview        = lastMessage.map(_.content.trim).filter(_.nonEmpty).map(compactPreview).getOrElse("No messages yet")
-    val channel        = conv.channel
-      .orElse(sessionMeta.map(_.channelName))
-      .flatMap(Option(_)) // normalise Some(null) → None
-      .filter(_.nonEmpty)
+    val channel        = sanitizeOptionalString(conv.channel)
+      .orElse(sessionMeta.flatMap(meta => sanitizeString(meta.channelName)))
       .getOrElse("web")
     a(
       href := s"/chat/$conversationId",
@@ -575,9 +574,13 @@ if (!customElements.get('chat-message-stream')) {
           h3(cls := "text-lg font-semibold text-white max-w-xs truncate")(conv.title),
           div(cls := "mt-1 flex items-center gap-2 text-xs")(
             channelBadge(channel),
-            sessionMeta.filter(_.channelName == "telegram").map(meta =>
-              span(cls := "text-amber-300/90")(s"via Telegram (${meta.sessionKey})")
-            ),
+            sessionMeta
+              .filter(meta => sanitizeString(meta.channelName).contains("telegram"))
+              .flatMap(meta =>
+                sanitizeString(meta.sessionKey).map(key =>
+                  span(cls := "text-amber-300/90")(s"via Telegram ($key)")
+                )
+              ),
           ),
         ),
         span(
@@ -607,7 +610,7 @@ if (!customElements.get('chat-message-stream')) {
     )
 
   private def channelBadge(channel: String): Frag =
-    val normalized = channel.trim.toLowerCase
+    val normalized = sanitizeString(channel).map(_.toLowerCase).getOrElse("web")
     val classes    = normalized match
       case "telegram"  => "bg-sky-500/10 text-sky-300 ring-sky-400/30"
       case "websocket" => "bg-indigo-500/10 text-indigo-300 ring-indigo-400/30"
@@ -623,8 +626,8 @@ if (!customElements.get('chat-message-stream')) {
         div(cls := "mt-3 rounded-md bg-white/5 ring-1 ring-white/10 p-3 text-xs text-gray-300")(
           div(cls := "font-semibold text-gray-200 mb-2")("Session Context"),
           div(cls := "space-y-1")(
-            p(span(cls := "text-gray-400 mr-2")("Channel:"), meta.channelName),
-            p(span(cls := "text-gray-400 mr-2")("Session Key:"), meta.sessionKey),
+            p(span(cls := "text-gray-400 mr-2")("Channel:"), sanitizeString(meta.channelName).getOrElse("unknown")),
+            p(span(cls := "text-gray-400 mr-2")("Session Key:"), sanitizeString(meta.sessionKey).getOrElse("unknown")),
             p(
               span(cls := "text-gray-400 mr-2")("Linked Task:"),
               meta.linkedTaskRunId.map(id => s"#$id").getOrElse("none"),
@@ -637,8 +640,16 @@ if (!customElements.get('chat-message-stream')) {
     val compact = raw.replaceAll("\\s+", " ").trim
     if compact.length <= 90 then compact else compact.take(87) + "..."
 
-  private def sanitizeOptional[A](value: Option[A]): Option[A] =
-    Option(value).flatten
+  private def sanitizeString(value: String): Option[String] =
+    Option(value).map(_.trim).filter(_.nonEmpty)
+
+  private def sanitizeOptionalString(value: Option[String]): Option[String] =
+    try
+      value match
+        case Some(v) => sanitizeString(v)
+        case _       => None
+    catch
+      case _: Throwable => None
 
   private def formatTimestamp(instant: java.time.Instant): String =
     instant.toString.take(19).replace("T", " ")

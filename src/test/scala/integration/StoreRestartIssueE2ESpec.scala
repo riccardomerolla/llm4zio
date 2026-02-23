@@ -93,10 +93,10 @@ object StoreRestartIssueE2ESpec extends ZIOSpecDefault:
                   val kvRootSize  = kvRootEntry.collect {
                     case m: java.util.concurrent.ConcurrentHashMap[?, ?] => m.size()
                   }
-                  (s"RootContainer", stateSize, stateKeys, kvRootClass, kvRootSize)
+                  ("RootContainer", stateSize, stateKeys, kvRootClass, kvRootSize)
                 case other              =>
                   (
-                    s"${if other == null then "null" else other.getClass.getName}",
+                    Option(other).fold("null")(_.getClass.getName),
                     -1,
                     Set.empty[String],
                     None: Option[String],
