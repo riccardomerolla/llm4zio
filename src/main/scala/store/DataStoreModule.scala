@@ -11,7 +11,7 @@ import io.github.riccardomerolla.zio.eclipsestore.config.{ EclipseStoreConfig, S
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.schema.{ SchemaBinaryCodec, TypedStore, TypedStoreLive }
 import io.github.riccardomerolla.zio.eclipsestore.service.{ EclipseStoreService, LifecycleCommand }
-import issues.entity.{ AgentIssue, IssueEvent }
+import issues.entity.{ AgentIssue, Assignment, IssueEvent }
 import taskrun.entity.{ TaskRun, TaskRunEvent }
 
 // ---------------------------------------------------------------------------
@@ -151,6 +151,7 @@ private val dataStoreHandlers =
     ++ SchemaBinaryCodec.handlers(Schema[TaskRun])
     ++ SchemaBinaryCodec.handlers(Schema[TaskRunEvent])
     ++ SchemaBinaryCodec.handlers(Schema[AgentIssue])
+    ++ SchemaBinaryCodec.handlers(Schema[Assignment])
     ++ SchemaBinaryCodec.handlers(Schema[IssueEvent])
     ++ SchemaBinaryCodec.handlers(Schema[Conversation])
     ++ SchemaBinaryCodec.handlers(Schema[ConversationEvent])

@@ -28,7 +28,7 @@ object IssueEvent:
     occurredAt: Instant,
   ) extends IssueEvent
 
-  final case class WorkStarted(
+  final case class Started(
     issueId: IssueId,
     agent: AgentId,
     startedAt: Instant,

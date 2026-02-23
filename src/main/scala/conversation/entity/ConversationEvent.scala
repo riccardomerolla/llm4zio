@@ -5,7 +5,7 @@ import java.time.Instant
 import zio.json.JsonCodec
 import zio.schema.{ Schema, derived }
 
-import shared.ids.Ids.ConversationId
+import shared.ids.Ids.{ ConversationId, TaskRunId }
 
 sealed trait ConversationEvent derives JsonCodec, Schema:
   def conversationId: ConversationId
@@ -17,12 +17,14 @@ object ConversationEvent:
     channel: ChannelInfo,
     title: String,
     description: String,
+    runId: Option[TaskRunId],
+    createdBy: Option[String],
     occurredAt: Instant,
   ) extends ConversationEvent
 
-  final case class MessageAdded(
+  final case class MessageSent(
     conversationId: ConversationId,
-    message: ConversationMessage,
+    message: Message,
     occurredAt: Instant,
   ) extends ConversationEvent
 
@@ -32,8 +34,8 @@ object ConversationEvent:
     occurredAt: Instant,
   ) extends ConversationEvent
 
-  final case class Reopened(
+  final case class ChannelChanged(
     conversationId: ConversationId,
-    reopenedAt: Instant,
+    channel: ChannelInfo,
     occurredAt: Instant,
   ) extends ConversationEvent

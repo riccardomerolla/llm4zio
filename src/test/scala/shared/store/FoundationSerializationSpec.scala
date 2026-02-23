@@ -119,11 +119,12 @@ object FoundationSerializationSpec extends ZIOSpecDefault:
       test("conversation ADTs and events round-trip") {
         withTempDir { dir =>
           val createdAt                = Instant.parse("2026-02-23T10:10:00Z")
-          val message                  = ConversationMessage(
+          val message                  = Message(
             id = Ids.MessageId("msg-1"),
             sender = "user",
+            senderType = SenderType.User(),
             content = "hello",
-            messageType = "text",
+            messageType = MessageType.Text(),
             createdAt = createdAt,
             metadata = Map("channel" -> "web"),
           )
@@ -137,7 +138,7 @@ object FoundationSerializationSpec extends ZIOSpecDefault:
             runId = Some(Ids.TaskRunId("run-1")),
             createdBy = Some("system"),
           )
-          val event: ConversationEvent = ConversationEvent.MessageAdded(
+          val event: ConversationEvent = ConversationEvent.MessageSent(
             conversationId = conversation.id,
             message = message,
             occurredAt = createdAt,
