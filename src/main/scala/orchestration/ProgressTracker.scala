@@ -7,26 +7,26 @@ import models.{ ActivityEvent, ActivityEventType, ProgressUpdate }
 import web.ActivityHub
 
 trait ProgressTracker:
-  def startPhase(runId: Long, phase: String, total: Int): IO[PersistenceError, Unit]
+  def startPhase(runId: String, phase: String, total: Int): IO[PersistenceError, Unit]
   def updateProgress(update: ProgressUpdate): IO[PersistenceError, Unit]
-  def completePhase(runId: Long, phase: String): IO[PersistenceError, Unit]
-  def failPhase(runId: Long, phase: String, error: String): IO[PersistenceError, Unit]
-  def subscribe(runId: Long): UIO[Dequeue[ProgressUpdate]]
+  def completePhase(runId: String, phase: String): IO[PersistenceError, Unit]
+  def failPhase(runId: String, phase: String, error: String): IO[PersistenceError, Unit]
+  def subscribe(runId: String): UIO[Dequeue[ProgressUpdate]]
 
 object ProgressTracker:
-  def startPhase(runId: Long, phase: String, total: Int): ZIO[ProgressTracker, PersistenceError, Unit] =
+  def startPhase(runId: String, phase: String, total: Int): ZIO[ProgressTracker, PersistenceError, Unit] =
     ZIO.serviceWithZIO[ProgressTracker](_.startPhase(runId, phase, total))
 
   def updateProgress(update: ProgressUpdate): ZIO[ProgressTracker, PersistenceError, Unit] =
     ZIO.serviceWithZIO[ProgressTracker](_.updateProgress(update))
 
-  def completePhase(runId: Long, phase: String): ZIO[ProgressTracker, PersistenceError, Unit] =
+  def completePhase(runId: String, phase: String): ZIO[ProgressTracker, PersistenceError, Unit] =
     ZIO.serviceWithZIO[ProgressTracker](_.completePhase(runId, phase))
 
-  def failPhase(runId: Long, phase: String, error: String): ZIO[ProgressTracker, PersistenceError, Unit] =
+  def failPhase(runId: String, phase: String, error: String): ZIO[ProgressTracker, PersistenceError, Unit] =
     ZIO.serviceWithZIO[ProgressTracker](_.failPhase(runId, phase, error))
 
-  def subscribe(runId: Long): ZIO[ProgressTracker, Nothing, Dequeue[ProgressUpdate]] =
+  def subscribe(runId: String): ZIO[ProgressTracker, Nothing, Dequeue[ProgressUpdate]] =
     ZIO.serviceWithZIO[ProgressTracker](_.subscribe(runId))
 
   final case class StepState(
@@ -41,15 +41,15 @@ object ProgressTracker:
       for
         activityHub <- ZIO.service[ActivityHub]
         hub         <- Hub.bounded[ProgressUpdate](256)
-        subscribers <- Ref.make(Map.empty[Long, Set[Queue[ProgressUpdate]]])
-        stepStates  <- Ref.make(Map.empty[(Long, String), StepState])
+        subscribers <- Ref.make(Map.empty[String, Set[Queue[ProgressUpdate]]])
+        stepStates  <- Ref.make(Map.empty[(String, String), StepState])
         hubQueue    <- hub.subscribe
         _           <- hubQueue.take.flatMap(publishToSubscribers(subscribers, _)).forever.forkScoped
       yield ProgressTrackerLive(hub, subscribers, stepStates, activityHub)
     }
 
   private def publishToSubscribers(
-    subscribers: Ref[Map[Long, Set[Queue[ProgressUpdate]]]],
+    subscribers: Ref[Map[String, Set[Queue[ProgressUpdate]]]],
     update: ProgressUpdate,
   ): UIO[Unit] =
     for
@@ -60,12 +60,12 @@ object ProgressTracker:
 
 final case class ProgressTrackerLive(
   hub: Hub[ProgressUpdate],
-  subscribers: Ref[Map[Long, Set[Queue[ProgressUpdate]]]],
-  stepStates: Ref[Map[(Long, String), ProgressTracker.StepState]],
+  subscribers: Ref[Map[String, Set[Queue[ProgressUpdate]]]],
+  stepStates: Ref[Map[(String, String), ProgressTracker.StepState]],
   activityHub: ActivityHub,
 ) extends ProgressTracker:
 
-  override def startPhase(runId: Long, phase: String, total: Int): IO[PersistenceError, Unit] =
+  override def startPhase(runId: String, phase: String, total: Int): IO[PersistenceError, Unit] =
     for
       now <- Clock.instant
       _   <- stepStates.update(_.updated((runId, phase), ProgressTracker.StepState("Running", total, 0, 0)))
@@ -107,7 +107,7 @@ final case class ProgressTrackerLive(
            )
     yield ()
 
-  override def completePhase(runId: Long, phase: String): IO[PersistenceError, Unit] =
+  override def completePhase(runId: String, phase: String): IO[PersistenceError, Unit] =
     for
       now      <- Clock.instant
       previous <- stepStates.get.map(_.get((runId, phase)))
@@ -128,7 +128,7 @@ final case class ProgressTrackerLive(
       _        <- publishActivity(runId, s"Run #$runId completed step: $phase", ActivityEventType.RunCompleted)
     yield ()
 
-  override def failPhase(runId: Long, phase: String, error: String): IO[PersistenceError, Unit] =
+  override def failPhase(runId: String, phase: String, error: String): IO[PersistenceError, Unit] =
     for
       now      <- Clock.instant
       previous <- stepStates.get.map(_.get((runId, phase)))
@@ -155,7 +155,7 @@ final case class ProgressTrackerLive(
       _        <- publishActivity(runId, s"Run #$runId failed step: $phase", ActivityEventType.RunFailed)
     yield ()
 
-  override def subscribe(runId: Long): UIO[Dequeue[ProgressUpdate]] =
+  override def subscribe(runId: String): UIO[Dequeue[ProgressUpdate]] =
     for
       queue <- Queue.bounded[ProgressUpdate](256)
       _     <- subscribers.update(current => current.updated(runId, current.getOrElse(runId, Set.empty) + queue))
@@ -164,7 +164,7 @@ final case class ProgressTrackerLive(
   private def publish(update: ProgressUpdate): UIO[Unit] =
     hub.publish(update).unit
 
-  private def publishActivity(runId: Long, summary: String, eventType: ActivityEventType): UIO[Unit] =
+  private def publishActivity(runId: String, summary: String, eventType: ActivityEventType): UIO[Unit] =
     Clock.instant.flatMap { now =>
       activityHub.publish(
         ActivityEvent(

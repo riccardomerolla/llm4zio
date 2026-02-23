@@ -79,7 +79,7 @@ final private case class IssueAssignmentOrchestratorLive(
                              conversation <- ensureIssueConversation(issue, agentName)
                              assignmentId <- chatRepository.createAssignment(
                                                AgentAssignment(
-                                                 issueId = issueId,
+                                                 issueId = issueId.toString,
                                                  agentName = agentName,
                                                  status = "pending",
                                                  assignedAt = now,
@@ -148,56 +148,69 @@ final private case class IssueAssignmentOrchestratorLive(
 
   private def sendIssueContextToAgent(issue: AgentIssue, agentName: String): IO[PersistenceError, Unit] =
     for
-      conversationId <- ZIO
-                          .fromOption(issue.conversationId)
-                          .orElseFail(PersistenceError.QueryFailed("issue", "Issue is missing linked conversation"))
-      runMetadata    <- issue.runId match
-                          case Some(runId) => migrationRepository.getRun(runId)
-                          case None        => ZIO.none
-      customAgent    <- migrationRepository.getCustomAgentByName(agentName)
-      prompt          = buildIssueAssignmentPrompt(issue, agentName, runMetadata, customAgent.map(_.systemPrompt))
-      now            <- Clock.instant
-      _              <- chatRepository.addMessage(
-                          ConversationMessage(
-                            conversationId = conversationId,
-                            sender = "system",
-                            senderType = SenderType.System,
-                            content = prompt,
-                            messageType = MessageType.Status,
-                            createdAt = now,
-                            updatedAt = now,
-                          )
-                        )
-      llmResponse    <- llmService.execute(prompt).mapError(convertLlmError)
-      now2           <- Clock.instant
-      _              <- chatRepository.addMessage(
-                          ConversationMessage(
-                            conversationId = conversationId,
-                            sender = "assistant",
-                            senderType = SenderType.Assistant,
-                            content = llmResponse.content,
-                            messageType = MessageType.Text,
-                            metadata = Some(llmResponse.metadata.toJson),
-                            createdAt = now2,
-                            updatedAt = now2,
-                          )
-                        )
-      conv           <- chatRepository
-                          .getConversation(conversationId)
-                          .someOrFail(PersistenceError.NotFound("conversation", conversationId))
-      _              <- chatRepository.updateConversation(conv.copy(updatedAt = now2))
+      conversationId  <- ZIO
+                           .fromOption(issue.conversationId)
+                           .orElseFail(PersistenceError.QueryFailed("issue", "Issue is missing linked conversation"))
+      conversationKey <-
+        ZIO
+          .fromOption(conversationId.toLongOption)
+          .orElseFail(PersistenceError.QueryFailed("issue", s"Invalid conversation id: $conversationId"))
+      runMetadata     <- issue.runId match
+                           case Some(runId) => migrationRepository.getRun(runId.toLongOption.getOrElse(0L))
+                           case None        => ZIO.none
+      customAgent     <- migrationRepository.getCustomAgentByName(agentName)
+      prompt           = buildIssueAssignmentPrompt(issue, agentName, runMetadata, customAgent.map(_.systemPrompt))
+      now             <- Clock.instant
+      _               <- chatRepository.addMessage(
+                           ConversationEntry(
+                             conversationId = conversationId,
+                             sender = "system",
+                             senderType = SenderType.System,
+                             content = prompt,
+                             messageType = MessageType.Status,
+                             createdAt = now,
+                             updatedAt = now,
+                           )
+                         )
+      llmResponse     <- llmService.execute(prompt).mapError(convertLlmError)
+      now2            <- Clock.instant
+      _               <- chatRepository.addMessage(
+                           ConversationEntry(
+                             conversationId = conversationId,
+                             sender = "assistant",
+                             senderType = SenderType.Assistant,
+                             content = llmResponse.content,
+                             messageType = MessageType.Text,
+                             metadata = Some(llmResponse.metadata.toJson),
+                             createdAt = now2,
+                             updatedAt = now2,
+                           )
+                         )
+      conv            <- chatRepository
+                           .getConversation(conversationKey)
+                           .someOrFail(PersistenceError.NotFound("conversation", conversationKey))
+      _               <- chatRepository.updateConversation(conv.copy(updatedAt = now2))
     yield ()
 
   private def ensureIssueConversation(issue: AgentIssue, agentName: String): IO[PersistenceError, AgentIssue] =
     issue.conversationId match
       case Some(_) =>
-        chatRepository
-          .getIssue(issue.id.getOrElse(0L))
-          .someOrFail(PersistenceError.NotFound("issue", issue.id.getOrElse(0L)))
+        for
+          issueKey <- ZIO
+                        .fromOption(issue.id.flatMap(_.toLongOption))
+                        .orElseFail(PersistenceError.QueryFailed("issue", "Issue ID missing during assignment"))
+          current  <- chatRepository.getIssue(issueKey).someOrFail(PersistenceError.NotFound("issue", issueKey))
+        yield current
       case None    =>
         for
           issueId <- ZIO
                        .fromOption(issue.id)
+                       .flatMap(id =>
+                         ZIO.fromOption(id.toLongOption).orElseFail(PersistenceError.QueryFailed(
+                           "issue",
+                           s"Invalid issue id: $id",
+                         ))
+                       )
                        .orElseFail(PersistenceError.QueryFailed("issue", "Issue ID missing during assignment"))
           now     <- Clock.instant
           convId  <- chatRepository.createConversation(
@@ -212,7 +225,7 @@ final private case class IssueAssignmentOrchestratorLive(
                      )
           _       <- chatRepository.updateIssue(
                        issue.copy(
-                         conversationId = Some(convId),
+                         conversationId = Some(convId.toString),
                          assignedAgent = Some(agentName),
                          assignedAt = Some(now),
                          status = IssueStatus.Assigned,

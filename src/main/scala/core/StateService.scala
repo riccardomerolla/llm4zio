@@ -166,16 +166,20 @@ object StateService:
                                         ts <- readRunUpdatedAt(runPath, runId)
                                       yield Some(
                                         TaskRunSummary(
-                                          errorCount = 0,
+                                          runId = state.runId,
+                                          currentStep = state.currentStep,
+                                          completedSteps = state.completedSteps,
+                                          errorCount = state.errors.size,
                                           taskRunId = state.taskRunId,
                                           currentStepName = state.currentStepName,
                                           status = state.status,
+                                          startedAt = state.startedAt,
                                           updatedAt = ts,
                                         )
                                       )
                                     case None        => ZIO.succeed(None)
                     yield summary
-                  }.map(_.collect { case Some(s) => s }.sortBy(_.updatedAt.toEpochMilli).reverse)
+                  }.map(_.collect { case Some(s) => s }.sortBy(_.startedAt.toEpochMilli).reverse)
                 }
               else ZIO.succeed(List.empty)
           yield runs
@@ -197,10 +201,14 @@ object StateService:
                           }
             now      <- Clock.instant
             summary   = TaskRunSummary(
-                          errorCount = 0,
+                          runId = state.runId,
+                          currentStep = state.currentStep,
+                          completedSteps = state.completedSteps,
+                          errorCount = state.errors.size,
                           taskRunId = state.taskRunId,
                           currentStepName = state.currentStepName,
                           status = state.status,
+                          startedAt = state.startedAt,
                           updatedAt = now,
                         )
             updated   = summary.taskRunId match
@@ -214,9 +222,9 @@ object StateService:
           yield ()
 
         private def resolveRunId(state: TaskState): IO[StateError, String] =
-          state.taskRunId match
-            case Some(id) => ZIO.succeed(id.toString)
-            case None     => ZIO.fail(StateError.InvalidState("unknown", "TaskState.taskRunId is required for persistence"))
+          val runId = state.runId.trim
+          if runId.nonEmpty then ZIO.succeed(runId)
+          else ZIO.fail(StateError.InvalidState("unknown", "TaskState.runId is required for persistence"))
 
         private def readRunUpdatedAt(runPath: Path, runId: String): IO[StateError, java.time.Instant] =
           ZIO

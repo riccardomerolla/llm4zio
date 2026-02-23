@@ -136,7 +136,11 @@ final case class ChannelRegistryLive(
     updateRuntime(channelName)(_.copy(status = ChannelStatus.NotConfigured))
 
   override def markActivity(channelName: String, timestamp: Instant): UIO[Unit] =
-    updateRuntime(channelName)(_.copy(lastActivity = Some(timestamp), status = ChannelStatus.Connected, lastError = None))
+    updateRuntime(channelName)(_.copy(
+      lastActivity = Some(timestamp),
+      status = ChannelStatus.Connected,
+      lastError = None,
+    ))
 
   override def markError(channelName: String, message: String): UIO[Unit] =
     updateRuntime(channelName)(runtime =>
@@ -160,8 +164,10 @@ final case class ChannelRegistryLive(
     }
 
   private def updateRuntime(
-    channelName: String,
-  )(update: ChannelRuntime => ChannelRuntime): UIO[Unit] =
+    channelName: String
+  )(
+    update: ChannelRuntime => ChannelRuntime
+  ): UIO[Unit] =
     runtimeRef.update { current =>
       val existing = current.getOrElse(channelName, ChannelRuntime())
       current.updated(channelName, update(existing))

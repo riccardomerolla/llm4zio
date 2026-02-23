@@ -20,7 +20,8 @@ val scalatagsVersion = "0.13.1"
 val logbackVersion = "1.5.12"
 val logstashLogbackVersion = "7.4"
 val opentelemetryVersion = "1.44.1"
-val sqliteJdbcVersion = "3.47.2.0"
+val zioEclipseStoreVersion = "2.1.3"
+val zioSchemaVersion       = "1.5.0"
 val scalaMetaVersion = "4.13.6"
 val bot4sTelegramCoreVersion = "7.0.0"
 
@@ -66,7 +67,10 @@ val rootDeps = zioCoreDeps ++ Seq(
   "io.opentelemetry" % "opentelemetry-sdk" % opentelemetryVersion,
   "io.opentelemetry" % "opentelemetry-exporter-otlp" % opentelemetryVersion,
   "io.opentelemetry" % "opentelemetry-exporter-logging-otlp" % opentelemetryVersion,
-  "org.xerial" % "sqlite-jdbc" % sqliteJdbcVersion,
+  "io.github.riccardomerolla" %% "zio-eclipsestore" % zioEclipseStoreVersion,
+  "io.github.riccardomerolla" %% "zio-eclipsestore-gigamap" % zioEclipseStoreVersion,
+  "dev.zio" %% "zio-schema"            % zioSchemaVersion,
+  "dev.zio" %% "zio-schema-derivation" % zioSchemaVersion,
   "com.bot4s" %% "telegram-core" % bot4sTelegramCoreVersion,
 ) ++ zioLoggingDeps ++ zioTestDeps
 
@@ -138,6 +142,8 @@ lazy val root = (project in file("."))
     run / fork := true,
     run / javaOptions ++= Seq(
       "--enable-native-access=ALL-UNNAMED",
-      "--add-opens", "java.base/java.lang=ALL-UNNAMED"
+      "--add-opens", "java.base/java.lang=ALL-UNNAMED",
+      "--add-opens", "java.base/java.util=ALL-UNNAMED",
+      "--add-opens", "java.base/java.nio=ALL-UNNAMED",
     ),
   )

@@ -78,12 +78,12 @@ final case class WorkflowNotifierLive(
     command: BotCommand,
   ): IO[WorkflowNotifierError, Unit] =
     command match
-      case BotCommand.Start        => notifyStart(chatId, replyToMessageId)
-      case BotCommand.Help         => notifyHelp(chatId, replyToMessageId)
-      case BotCommand.ListTasks    => notifyTasks(chatId, replyToMessageId)
-      case BotCommand.Status(id)   => notifyStatus(chatId, replyToMessageId, id)
-      case BotCommand.Logs(id)     => notifyLogs(chatId, replyToMessageId, id)
-      case BotCommand.Cancel(id)   => notifyCancel(chatId, replyToMessageId, id)
+      case BotCommand.Start      => notifyStart(chatId, replyToMessageId)
+      case BotCommand.Help       => notifyHelp(chatId, replyToMessageId)
+      case BotCommand.ListTasks  => notifyTasks(chatId, replyToMessageId)
+      case BotCommand.Status(id) => notifyStatus(chatId, replyToMessageId, id)
+      case BotCommand.Logs(id)   => notifyLogs(chatId, replyToMessageId, id)
+      case BotCommand.Cancel(id) => notifyCancel(chatId, replyToMessageId, id)
 
   override def notifyParseError(
     chatId: Long,
@@ -125,7 +125,7 @@ final case class WorkflowNotifierLive(
            |- /tasks to list recent tasks
            |- /status <id> to inspect a task
            |- /help for all commands""".stripMargin
-      _          <- sendText(chatId, text, replyToMessageId)
+      _           <- sendText(chatId, text, replyToMessageId)
     yield ()
 
   private def notifyHelp(chatId: Long, replyToMessageId: Option[Long]): IO[WorkflowNotifierError, Unit] =
@@ -143,22 +143,22 @@ final case class WorkflowNotifierLive(
 
   private def notifyTasks(chatId: Long, replyToMessageId: Option[Long]): IO[WorkflowNotifierError, Unit] =
     for
-      runs     <- repository.listRuns(offset = 0, limit = 5).mapError(WorkflowNotifierError.Persistence.apply)
-      baseUrl  <- taskBaseUrl
-      tasks    <- ZIO.foreach(runs)(toTaskSummary)
-      text      = formatTaskList(tasks)
-      keyboard  = if tasks.isEmpty then None
-                  else
-                    Some(
-                      TelegramInlineKeyboardMarkup(
-                        inline_keyboard = tasks.map(task =>
-                          List(
-                            detailsButton(task.id, baseUrl, text = s"View #${task.id} ->")
-                          )
-                        )
-                      )
-                    )
-      _        <- sendText(chatId, text, replyToMessageId, keyboard)
+      runs    <- repository.listRuns(offset = 0, limit = 5).mapError(WorkflowNotifierError.Persistence.apply)
+      baseUrl <- taskBaseUrl
+      tasks   <- ZIO.foreach(runs)(toTaskSummary)
+      text     = formatTaskList(tasks)
+      keyboard = if tasks.isEmpty then None
+                 else
+                   Some(
+                     TelegramInlineKeyboardMarkup(
+                       inline_keyboard = tasks.map(task =>
+                         List(
+                           detailsButton(task.id, baseUrl, text = s"View #${task.id} ->")
+                         )
+                       )
+                     )
+                   )
+      _       <- sendText(chatId, text, replyToMessageId, keyboard)
     yield ()
 
   private def notifyStatus(
@@ -193,25 +193,25 @@ final case class WorkflowNotifierLive(
     taskId: Long,
   ): IO[WorkflowNotifierError, Unit] =
     for
-      taskOpt  <- repository.getRun(taskId).mapError(WorkflowNotifierError.Persistence.apply)
-      message  <- taskOpt match
-                    case None      =>
-                      ZIO.succeed(s"Task #$taskId was not found.")
-                    case Some(_)   =>
-                      repository
-                        .getReportsByTask(taskId)
-                        .mapError(WorkflowNotifierError.Persistence.apply)
-                        .map { reports =>
-                          val latest = reports.takeRight(5)
-                          if latest.isEmpty then s"No logs available for task #$taskId."
-                          else
-                            val lines = latest.map { report =>
-                              val compact = report.content.trim.replace("\n", " ").take(100)
-                              s"- ${report.stepName}: $compact"
-                            }.mkString("\n")
-                            s"Recent logs for task #$taskId:\n$lines"
-                        }
-      _        <- sendText(chatId, message, replyToMessageId)
+      taskOpt <- repository.getRun(taskId).mapError(WorkflowNotifierError.Persistence.apply)
+      message <- taskOpt match
+                   case None    =>
+                     ZIO.succeed(s"Task #$taskId was not found.")
+                   case Some(_) =>
+                     repository
+                       .getReportsByTask(taskId)
+                       .mapError(WorkflowNotifierError.Persistence.apply)
+                       .map { reports =>
+                         val latest = reports.takeRight(5)
+                         if latest.isEmpty then s"No logs available for task #$taskId."
+                         else
+                           val lines = latest.map { report =>
+                             val compact = report.content.trim.replace("\n", " ").take(100)
+                             s"- ${report.stepName}: $compact"
+                           }.mkString("\n")
+                           s"Recent logs for task #$taskId:\n$lines"
+                       }
+      _       <- sendText(chatId, message, replyToMessageId)
     yield ()
 
   private def notifyCancel(
@@ -262,7 +262,8 @@ final case class WorkflowNotifierLive(
       .map { raw =>
         val normalized = raw.trim
         val withScheme =
-          if normalized.startsWith("http://") || normalized.startsWith("https://") then normalized else s"http://$normalized"
+          if normalized.startsWith("http://") || normalized.startsWith("https://") then normalized
+          else s"http://$normalized"
         withScheme.stripSuffix("/")
       }
 
@@ -321,7 +322,7 @@ final case class WorkflowNotifierLive(
     val viewRow = List(
       detailsButton(task.id, baseUrl, text = "View ->")
     )
-    val action = task.status match
+    val action  = task.status match
       case RunStatus.Running | RunStatus.Pending =>
         List(TelegramInlineKeyboardButton(text = "Cancel", callback_data = Some(s"wf:cancel:${task.id}:running")))
       case RunStatus.Paused                      =>
@@ -361,12 +362,12 @@ final case class WorkflowNotifierLive(
       val host     = Option(uri.getHost).map(_.trim).getOrElse("")
       val hostOk   =
         host.nonEmpty &&
-          host.contains(".") &&
-          !host.equalsIgnoreCase("localhost")
+        host.contains(".") &&
+        !host.equalsIgnoreCase("localhost")
       schemeOk && hostOk
     }
 
-  private final case class TaskSummary(
+  final private case class TaskSummary(
     id: Long,
     name: String,
     status: RunStatus,

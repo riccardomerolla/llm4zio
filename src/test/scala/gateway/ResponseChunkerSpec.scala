@@ -15,7 +15,7 @@ object ResponseChunkerSpec extends ZIOSpecDefault:
     channelName = "telegram",
     sessionKey = SessionKey("telegram", "conversation:42"),
     direction = MessageDirection.Outbound,
-    role = MessageRole.Assistant,
+    role = GatewayMessageRole.Assistant,
     content = "",
     timestamp = Instant.EPOCH,
   )

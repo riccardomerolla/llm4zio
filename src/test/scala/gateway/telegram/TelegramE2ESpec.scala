@@ -77,7 +77,7 @@ object TelegramE2ESpec extends ZIOSpecDefault:
   private def makeHarness(
     notifierFactory: (TelegramClient, AgentRegistry, TaskRepository, TaskExecutor) => WorkflowNotifier =
       (_, _, _, _) =>
-      WorkflowNotifier.noop,
+        WorkflowNotifier.noop,
     failSendMessage: TelegramSendMessage => Option[TelegramClientError] = _ => None,
     failSendDocument: TelegramSendDocument => Option[TelegramClientError] = _ => None,
   ): ZIO[Scope, Nothing, Harness] =
@@ -113,45 +113,45 @@ object TelegramE2ESpec extends ZIOSpecDefault:
         ZIO.fail(PersistenceError.QueryFailed("createRun", "not implemented in test repository"))
       override def updateRun(run: TaskRunRow): IO[PersistenceError, Unit]                           = ZIO.unit
       override def getRun(id: Long): IO[PersistenceError, Option[TaskRunRow]]                       = ZIO.none
-      override def listRuns(offset: Int, limit: Int): IO[PersistenceError, List[TaskRunRow]]       = ZIO.succeed(Nil)
-      override def deleteRun(id: Long): IO[PersistenceError, Unit]                                   = ZIO.unit
-      override def saveReport(report: TaskReportRow): IO[PersistenceError, Long]                     =
+      override def listRuns(offset: Int, limit: Int): IO[PersistenceError, List[TaskRunRow]]        = ZIO.succeed(Nil)
+      override def deleteRun(id: Long): IO[PersistenceError, Unit]                                  = ZIO.unit
+      override def saveReport(report: TaskReportRow): IO[PersistenceError, Long]                    =
         ZIO.fail(PersistenceError.QueryFailed("saveReport", "not implemented in test repository"))
       override def getReport(reportId: Long): IO[PersistenceError, Option[TaskReportRow]]           = ZIO.none
       override def getReportsByTask(taskRunId: Long): IO[PersistenceError, List[TaskReportRow]]     = ZIO.succeed(Nil)
-      override def saveArtifact(artifact: TaskArtifactRow): IO[PersistenceError, Long]               =
+      override def saveArtifact(artifact: TaskArtifactRow): IO[PersistenceError, Long]              =
         ZIO.fail(PersistenceError.QueryFailed("saveArtifact", "not implemented in test repository"))
       override def getArtifactsByTask(taskRunId: Long): IO[PersistenceError, List[TaskArtifactRow]] = ZIO.succeed(Nil)
-      override def getAllSettings: IO[PersistenceError, List[SettingRow]]                             =
+      override def getAllSettings: IO[PersistenceError, List[SettingRow]]                           =
         ZIO.succeed(
           List(
             SettingRow("gateway.name", "Test Gateway", now),
             SettingRow("telegram.enabled", "true", now),
           )
         )
-      override def getSetting(key: String): IO[PersistenceError, Option[SettingRow]]                 =
+      override def getSetting(key: String): IO[PersistenceError, Option[SettingRow]]                =
         getAllSettings.map(_.find(_.key == key))
       override def upsertSetting(key: String, value: String): IO[PersistenceError, Unit]            = ZIO.unit
-      override def createWorkflow(workflow: WorkflowRow): IO[PersistenceError, Long]                  =
+      override def createWorkflow(workflow: WorkflowRow): IO[PersistenceError, Long]                =
         ZIO.fail(PersistenceError.QueryFailed("createWorkflow", "not implemented in test repository"))
-      override def getWorkflow(id: Long): IO[PersistenceError, Option[WorkflowRow]]                  = ZIO.none
-      override def getWorkflowByName(name: String): IO[PersistenceError, Option[WorkflowRow]]        = ZIO.none
-      override def listWorkflows: IO[PersistenceError, List[WorkflowRow]]                            = ZIO.succeed(Nil)
-      override def updateWorkflow(workflow: WorkflowRow): IO[PersistenceError, Unit]                 = ZIO.unit
-      override def deleteWorkflow(id: Long): IO[PersistenceError, Unit]                              = ZIO.unit
-      override def createCustomAgent(agent: CustomAgentRow): IO[PersistenceError, Long]               =
+      override def getWorkflow(id: Long): IO[PersistenceError, Option[WorkflowRow]]                 = ZIO.none
+      override def getWorkflowByName(name: String): IO[PersistenceError, Option[WorkflowRow]]       = ZIO.none
+      override def listWorkflows: IO[PersistenceError, List[WorkflowRow]]                           = ZIO.succeed(Nil)
+      override def updateWorkflow(workflow: WorkflowRow): IO[PersistenceError, Unit]                = ZIO.unit
+      override def deleteWorkflow(id: Long): IO[PersistenceError, Unit]                             = ZIO.unit
+      override def createCustomAgent(agent: CustomAgentRow): IO[PersistenceError, Long]             =
         ZIO.fail(PersistenceError.QueryFailed("createCustomAgent", "not implemented in test repository"))
-      override def getCustomAgent(id: Long): IO[PersistenceError, Option[CustomAgentRow]]            = ZIO.none
-      override def getCustomAgentByName(name: String): IO[PersistenceError, Option[CustomAgentRow]]  = ZIO.none
-      override def listCustomAgents: IO[PersistenceError, List[CustomAgentRow]]                      = ZIO.succeed(Nil)
-      override def updateCustomAgent(agent: CustomAgentRow): IO[PersistenceError, Unit]              = ZIO.unit
-      override def deleteCustomAgent(id: Long): IO[PersistenceError, Unit]                           = ZIO.unit
+      override def getCustomAgent(id: Long): IO[PersistenceError, Option[CustomAgentRow]]           = ZIO.none
+      override def getCustomAgentByName(name: String): IO[PersistenceError, Option[CustomAgentRow]] = ZIO.none
+      override def listCustomAgents: IO[PersistenceError, List[CustomAgentRow]]                     = ZIO.succeed(Nil)
+      override def updateCustomAgent(agent: CustomAgentRow): IO[PersistenceError, Unit]             = ZIO.unit
+      override def deleteCustomAgent(id: Long): IO[PersistenceError, Unit]                          = ZIO.unit
 
   private object TestTaskExecutor:
     val noop: TaskExecutor = new TaskExecutor:
       override def execute(taskRunId: Long, workflow: models.WorkflowDefinition): IO[PersistenceError, Unit] = ZIO.unit
       override def start(taskRunId: Long, workflow: models.WorkflowDefinition): UIO[Unit]                    = ZIO.unit
-      override def cancel(taskRunId: Long): UIO[Unit]                                                         = ZIO.unit
+      override def cancel(taskRunId: Long): UIO[Unit]                                                        = ZIO.unit
 
   private def textUpdate(
     updateId: Long,
@@ -236,7 +236,7 @@ object TelegramE2ESpec extends ZIOSpecDefault:
       channelName = "telegram",
       sessionKey = session,
       direction = MessageDirection.Outbound,
-      role = MessageRole.Assistant,
+      role = GatewayMessageRole.Assistant,
       content = text,
       metadata = metadata,
       timestamp = Instant.EPOCH,

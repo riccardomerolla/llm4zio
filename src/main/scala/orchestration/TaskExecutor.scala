@@ -78,7 +78,7 @@ final case class TaskExecutorLive(
     for
       run           <- repository.getRun(taskRunId).someOrFail(PersistenceError.NotFound("task_runs", taskRunId))
       runId          = taskRunId.toString
-      workflowId     = workflow.id.orElse(run.workflowId).getOrElse(0L)
+      workflowId     = workflow.id.flatMap(_.toLongOption).orElse(run.workflowId).getOrElse(0L)
       correlationId <- controlPlane
                          .startWorkflow(runId, workflowId, workflow)
                          .catchAll(_ => ZIO.succeed(UUID.randomUUID().toString))

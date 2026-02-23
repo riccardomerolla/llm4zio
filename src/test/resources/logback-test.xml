@@ -10,7 +10,7 @@
 
   <logger name="ch.qos.logback" level="ERROR"/>
 
-  <root level="DEBUG">
+  <root level="INFO">
     <appender-ref ref="STDOUT" />
   </root>
 </configuration>

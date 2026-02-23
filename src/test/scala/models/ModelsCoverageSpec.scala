@@ -95,7 +95,7 @@ object ModelsCoverageSpec extends ZIOSpecDefault:
           updatedAt = now,
         )
         val assignment = AgentAssignment(
-          issueId = 42L,
+          issueId = "42",
           agentName = "agent-x",
           assignedAt = now,
         )
@@ -103,7 +103,7 @@ object ModelsCoverageSpec extends ZIOSpecDefault:
         assertTrue(
           issue.title == "Broken parse",
           issue.issueType == "parse",
-          assignment.issueId == 42L,
+          assignment.issueId == "42",
           assignment.status == "pending",
         )
       },

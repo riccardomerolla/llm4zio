@@ -25,3 +25,4 @@ java-output/
 .migration-state/
 migration.db
 gateway.db
+data/

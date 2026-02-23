@@ -90,7 +90,7 @@ object DashboardControllerSpec extends ZIOSpecDefault:
       new WorkflowService:
         private val workflows = List.tabulate(count)(index =>
           WorkflowDefinition(
-            id = Some(index.toLong + 1L),
+            id = Some((index.toLong + 1L).toString),
             name = s"wf-$index",
             steps = List(TaskStep.Discovery),
             isBuiltin = false,
@@ -101,7 +101,7 @@ object DashboardControllerSpec extends ZIOSpecDefault:
           ZIO.fail(WorkflowServiceError.ValidationFailed(List("unsupported in test")))
 
         override def getWorkflow(id: Long): IO[WorkflowServiceError, Option[WorkflowDefinition]] =
-          ZIO.succeed(workflows.find(_.id.contains(id)))
+          ZIO.succeed(workflows.find(_.id.contains(id.toString)))
 
         override def getWorkflowByName(name: String): IO[WorkflowServiceError, Option[WorkflowDefinition]] =
           ZIO.succeed(workflows.find(_.name == name))

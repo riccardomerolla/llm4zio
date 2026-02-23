@@ -8,7 +8,7 @@ import zio.http.*
 import zio.json.*
 
 import agents.AgentRegistry
-import db.{ PersistenceError, TaskRepository }
+import db.{ ConfigRepository, PersistenceError }
 import models.{ AgentInfo, TaskStep, WorkflowDefinition, WorkflowStepAgent, WorkflowValidator }
 import orchestration.{ WorkflowService, WorkflowServiceError }
 import web.views.HtmlViews
@@ -21,12 +21,12 @@ object WorkflowsController:
   def routes: ZIO[WorkflowsController, Nothing, Routes[Any, Response]] =
     ZIO.serviceWith[WorkflowsController](_.routes)
 
-  val live: ZLayer[WorkflowService & TaskRepository, Nothing, WorkflowsController] =
+  val live: ZLayer[WorkflowService & ConfigRepository, Nothing, WorkflowsController] =
     ZLayer.fromFunction(WorkflowsControllerLive.apply)
 
 final case class WorkflowsControllerLive(
   service: WorkflowService,
-  repository: TaskRepository,
+  repository: ConfigRepository,
 ) extends WorkflowsController:
 
   override val routes: Routes[Any, Response] = Routes(

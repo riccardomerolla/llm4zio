@@ -3,16 +3,17 @@ package models
 import java.time.Instant
 
 import zio.json.*
+import zio.schema.{ Schema, derived }
 
-enum MessageType derives JsonCodec:
+enum MessageType derives JsonCodec, Schema:
   case Text, Code, Error, Status
 
-enum SenderType derives JsonCodec:
+enum SenderType derives JsonCodec, Schema:
   case User, Assistant, System
 
-case class ConversationMessage(
-  id: Option[Long] = None,
-  conversationId: Long,
+case class ConversationEntry(
+  id: Option[String] = None,
+  conversationId: String,
   sender: String,
   senderType: SenderType,
   content: String,
@@ -23,13 +24,13 @@ case class ConversationMessage(
 ) derives JsonCodec
 
 case class ChatConversation(
-  id: Option[Long] = None,
-  runId: Option[Long] = None,
+  id: Option[String] = None,
+  runId: Option[String] = None,
   title: String,
   channel: Option[String] = None,
   description: Option[String] = None,
   status: String = "active",
-  messages: List[ConversationMessage] = List.empty,
+  messages: List[ConversationEntry] = List.empty,
   createdAt: Instant,
   updatedAt: Instant,
   createdBy: Option[String] = None,
@@ -57,20 +58,20 @@ case class SessionContextLink(
 case class ConversationSessionMeta(
   channelName: String,
   sessionKey: String,
-  linkedTaskRunId: Option[Long],
+  linkedTaskRunId: Option[String],
   updatedAt: Instant,
 ) derives JsonCodec
 
-enum IssuePriority derives JsonCodec:
+enum IssuePriority derives JsonCodec, Schema:
   case Low, Medium, High, Critical
 
-enum IssueStatus derives JsonCodec:
+enum IssueStatus derives JsonCodec, Schema:
   case Open, Assigned, InProgress, Completed, Failed, Skipped
 
 case class AgentIssue(
-  id: Option[Long] = None,
-  runId: Option[Long] = None,
-  conversationId: Option[Long] = None,
+  id: Option[String] = None,
+  runId: Option[String] = None,
+  conversationId: Option[String] = None,
   title: String,
   description: String,
   issueType: String,
@@ -90,8 +91,8 @@ case class AgentIssue(
 ) derives JsonCodec
 
 case class AgentAssignment(
-  id: Option[Long] = None,
-  issueId: Long,
+  id: Option[String] = None,
+  issueId: String,
   agentName: String,
   status: String = "pending",
   assignedAt: Instant,
@@ -111,11 +112,11 @@ case class ConversationMessageRequest(
 case class ChatConversationCreateRequest(
   title: String,
   description: Option[String] = None,
-  runId: Option[Long] = None,
+  runId: Option[String] = None,
 ) derives JsonCodec
 
 case class AgentIssueCreateRequest(
-  runId: Option[Long] = None,
+  runId: Option[String] = None,
   title: String,
   description: String,
   issueType: String,
@@ -124,7 +125,7 @@ case class AgentIssueCreateRequest(
   contextPath: Option[String] = None,
   sourceFolder: Option[String] = None,
   priority: IssuePriority = IssuePriority.Medium,
-  conversationId: Option[Long] = None,
+  conversationId: Option[String] = None,
 ) derives JsonCodec
 
 case class AssignIssueRequest(

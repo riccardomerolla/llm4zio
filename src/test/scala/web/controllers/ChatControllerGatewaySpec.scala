@@ -1,5 +1,4 @@
 package web.controllers
-import java.util.UUID
 
 import zio.*
 import zio.http.*
@@ -7,26 +6,25 @@ import zio.json.EncoderOps
 import zio.stream.ZStream
 import zio.test.*
 
-import agents.AgentRegistry
 import _root_.models.*
+import agents.AgentRegistry
 import db.*
 import gateway.*
 import gateway.models.*
 import llm4zio.core.*
 import llm4zio.tools.{ AnyTool, JsonSchema }
+import memory.*
 import orchestration.*
 import web.{ ActivityHubLive, StreamAbortRegistryLive }
 
 object ChatControllerGatewaySpec extends ZIOSpecDefault:
 
-  private def appLayer(
-    dbName: String
-  ): ZLayer[Any, Any, ChatRepository & TaskRepository & GatewayService & ChannelRegistry & LlmService] =
+  private def appLayer
+    : ZLayer[Any, Any, ChatRepository & TaskRepository & GatewayService & ChannelRegistry & LlmService] =
     ZLayer.make[ChatRepository & TaskRepository & GatewayService & ChannelRegistry & LlmService](
-      ZLayer.succeed(DatabaseConfig(s"jdbc:sqlite:file:$dbName?mode=memory&cache=shared")),
-      Database.live,
-      ChatRepository.live,
-      TaskRepository.live,
+      InMemoryChatRepo.layer,
+      InMemoryTaskRepo.layer,
+      InMemoryConfigRepo.layer,
       ChannelRegistry.empty,
       ZLayer.fromZIO {
         for
@@ -37,6 +35,7 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
       },
       AgentRegistry.live,
       MessageRouter.live,
+      EmptyMemoryRepo.layer,
       GatewayService.live,
       TestLlm.layer,
     )
@@ -63,6 +62,30 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
           ZIO.fail(LlmError.InvalidRequestError("unused in test"))
 
         override def isAvailable: UIO[Boolean] = ZIO.succeed(true)
+    )
+
+  private object EmptyMemoryRepo:
+    val layer: ULayer[MemoryRepository] = ZLayer.succeed(
+      new MemoryRepository:
+        override def save(entry: MemoryEntry): IO[Throwable, Unit] = ZIO.unit
+
+        override def searchRelevant(
+          userId: UserId,
+          query: String,
+          limit: Int,
+          filter: MemoryFilter,
+        ): IO[Throwable, List[ScoredMemory]] = ZIO.succeed(Nil)
+
+        override def listForUser(
+          userId: UserId,
+          filter: MemoryFilter,
+          page: Int,
+          pageSize: Int,
+        ): IO[Throwable, List[MemoryEntry]] = ZIO.succeed(Nil)
+
+        override def deleteById(userId: UserId, id: MemoryId): IO[Throwable, Unit] = ZIO.unit
+
+        override def deleteBySession(sessionId: SessionId): IO[Throwable, Unit] = ZIO.unit
     )
 
   private val testIssueAssignment: IssueAssignmentOrchestrator =
@@ -95,9 +118,223 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
              )
     yield id
 
+  private object InMemoryConfigRepo:
+    val layer: ULayer[ConfigRepository] =
+      ZLayer.fromZIO(Ref.make(Map.empty[String, String]).map(InMemoryConfigRepoLive.apply))
+
+    final case class InMemoryConfigRepoLive(ref: Ref[Map[String, String]]) extends ConfigRepository:
+      override def getAllSettings: IO[PersistenceError, List[SettingRow]] =
+        for
+          now   <- Clock.instant
+          state <- ref.get
+        yield state.toList.sortBy(_._1).map { case (k, v) => SettingRow(k, v, now) }
+
+      override def getSetting(key: String): IO[PersistenceError, Option[SettingRow]] =
+        for
+          now   <- Clock.instant
+          state <- ref.get
+        yield state.get(key).map(v => SettingRow(key, v, now))
+
+      override def upsertSetting(key: String, value: String): IO[PersistenceError, Unit] =
+        ref.update(_.updated(key, value))
+
+      override def deleteSetting(key: String): IO[PersistenceError, Unit] =
+        ref.update(_ - key)
+
+      override def deleteSettingsByPrefix(prefix: String): IO[PersistenceError, Unit] =
+        ref.update(_.filterNot(_._1.startsWith(prefix)))
+
+      override def createWorkflow(workflow: WorkflowRow): IO[PersistenceError, Long]                =
+        ZIO.fail(PersistenceError.QueryFailed("createWorkflow", "unused"))
+      override def getWorkflow(id: Long): IO[PersistenceError, Option[WorkflowRow]]                 =
+        ZIO.fail(PersistenceError.QueryFailed("getWorkflow", "unused"))
+      override def getWorkflowByName(name: String): IO[PersistenceError, Option[WorkflowRow]]       =
+        ZIO.fail(PersistenceError.QueryFailed("getWorkflowByName", "unused"))
+      override def listWorkflows: IO[PersistenceError, List[WorkflowRow]]                           =
+        ZIO.fail(PersistenceError.QueryFailed("listWorkflows", "unused"))
+      override def updateWorkflow(workflow: WorkflowRow): IO[PersistenceError, Unit]                =
+        ZIO.fail(PersistenceError.QueryFailed("updateWorkflow", "unused"))
+      override def deleteWorkflow(id: Long): IO[PersistenceError, Unit]                             =
+        ZIO.fail(PersistenceError.QueryFailed("deleteWorkflow", "unused"))
+      override def createCustomAgent(agent: CustomAgentRow): IO[PersistenceError, Long]             =
+        ZIO.fail(PersistenceError.QueryFailed("createCustomAgent", "unused"))
+      override def getCustomAgent(id: Long): IO[PersistenceError, Option[CustomAgentRow]]           =
+        ZIO.fail(PersistenceError.QueryFailed("getCustomAgent", "unused"))
+      override def getCustomAgentByName(name: String): IO[PersistenceError, Option[CustomAgentRow]] =
+        ZIO.fail(PersistenceError.QueryFailed("getCustomAgentByName", "unused"))
+      override def listCustomAgents: IO[PersistenceError, List[CustomAgentRow]]                     =
+        ZIO.fail(PersistenceError.QueryFailed("listCustomAgents", "unused"))
+      override def updateCustomAgent(agent: CustomAgentRow): IO[PersistenceError, Unit]             =
+        ZIO.fail(PersistenceError.QueryFailed("updateCustomAgent", "unused"))
+      override def deleteCustomAgent(id: Long): IO[PersistenceError, Unit]                          =
+        ZIO.fail(PersistenceError.QueryFailed("deleteCustomAgent", "unused"))
+
+  private object InMemoryTaskRepo:
+    val layer: ULayer[TaskRepository] = ZLayer.succeed(
+      new TaskRepository:
+        override def createRun(run: TaskRunRow): IO[PersistenceError, Long]                           =
+          ZIO.fail(PersistenceError.QueryFailed("createRun", "unused"))
+        override def updateRun(run: TaskRunRow): IO[PersistenceError, Unit]                           =
+          ZIO.fail(PersistenceError.QueryFailed("updateRun", "unused"))
+        override def getRun(id: Long): IO[PersistenceError, Option[TaskRunRow]]                       =
+          ZIO.fail(PersistenceError.QueryFailed("getRun", "unused"))
+        override def listRuns(offset: Int, limit: Int): IO[PersistenceError, List[TaskRunRow]]        =
+          ZIO.fail(PersistenceError.QueryFailed("listRuns", "unused"))
+        override def deleteRun(id: Long): IO[PersistenceError, Unit]                                  =
+          ZIO.fail(PersistenceError.QueryFailed("deleteRun", "unused"))
+        override def saveReport(report: TaskReportRow): IO[PersistenceError, Long]                    =
+          ZIO.fail(PersistenceError.QueryFailed("saveReport", "unused"))
+        override def getReport(reportId: Long): IO[PersistenceError, Option[TaskReportRow]]           =
+          ZIO.fail(PersistenceError.QueryFailed("getReport", "unused"))
+        override def getReportsByTask(taskRunId: Long): IO[PersistenceError, List[TaskReportRow]]     =
+          ZIO.fail(PersistenceError.QueryFailed("getReportsByTask", "unused"))
+        override def saveArtifact(artifact: TaskArtifactRow): IO[PersistenceError, Long]              =
+          ZIO.fail(PersistenceError.QueryFailed("saveArtifact", "unused"))
+        override def getArtifactsByTask(taskRunId: Long): IO[PersistenceError, List[TaskArtifactRow]] =
+          ZIO.fail(PersistenceError.QueryFailed("getArtifactsByTask", "unused"))
+        override def getAllSettings: IO[PersistenceError, List[SettingRow]]                           = ZIO.succeed(Nil)
+        override def getSetting(key: String): IO[PersistenceError, Option[SettingRow]]                = ZIO.succeed(None)
+        override def upsertSetting(key: String, value: String): IO[PersistenceError, Unit]            = ZIO.unit
+    )
+
+  private object InMemoryChatRepo:
+    final case class State(
+      nextConversationId: Long,
+      nextMessageId: Long,
+      conversations: Map[Long, ChatConversation],
+      messagesByConversation: Map[Long, List[ConversationEntry]],
+      sessionContexts: Map[(String, String), SessionContextLink],
+    )
+
+    val layer: ULayer[ChatRepository] =
+      ZLayer.fromZIO(
+        Ref.make(State(1L, 1L, Map.empty, Map.empty, Map.empty)).map(InMemoryChatRepoLive.apply)
+      )
+
+    final case class InMemoryChatRepoLive(ref: Ref[State]) extends ChatRepository:
+      override def createConversation(conversation: ChatConversation): IO[PersistenceError, Long] =
+        ref.modify { state =>
+          val id      = state.nextConversationId
+          val updated = state.copy(
+            nextConversationId = id + 1,
+            conversations = state.conversations.updated(id, conversation.copy(id = Some(id.toString))),
+          )
+          (id, updated)
+        }
+
+      override def getConversation(id: Long): IO[PersistenceError, Option[ChatConversation]] =
+        ref.get.map(_.conversations.get(id))
+
+      override def listConversations(offset: Int, limit: Int): IO[PersistenceError, List[ChatConversation]] =
+        ref.get.map(_.conversations.values.toList.sortBy(_.id.getOrElse("")).slice(offset, offset + limit))
+
+      override def getConversationsByChannel(channelName: String): IO[PersistenceError, List[ChatConversation]] =
+        ZIO.succeed(Nil)
+
+      override def listConversationsByRun(runId: Long): IO[PersistenceError, List[ChatConversation]] =
+        ref.get.map(_.conversations.values.toList.filter(_.runId.contains(runId.toString)).sortBy(_.id.getOrElse("")))
+
+      override def updateConversation(conversation: ChatConversation): IO[PersistenceError, Unit] =
+        conversation.id match
+          case Some(id) if id.toLongOption.isDefined =>
+            ref.update(state => state.copy(conversations = state.conversations.updated(id.toLong, conversation)))
+          case Some(_)                               => ZIO.fail(PersistenceError.QueryFailed("updateConversation", "Invalid id"))
+          case None                                  => ZIO.fail(PersistenceError.QueryFailed("updateConversation", "Missing id"))
+
+      override def deleteConversation(id: Long): IO[PersistenceError, Unit] =
+        ref.update(state =>
+          state.copy(
+            conversations = state.conversations - id,
+            messagesByConversation = state.messagesByConversation - id,
+          )
+        )
+
+      override def addMessage(message: ConversationEntry): IO[PersistenceError, Long] =
+        ZIO
+          .fromOption(message.conversationId.toLongOption)
+          .orElseFail(PersistenceError.QueryFailed("addMessage", s"Invalid conversationId: ${message.conversationId}"))
+          .flatMap { conversationId =>
+            ref.modify { state =>
+              val id             = state.nextMessageId
+              val updatedMessage = message.copy(id = Some(id.toString))
+              val existing       = state.messagesByConversation.getOrElse(conversationId, Nil)
+              val updated        = state.copy(
+                nextMessageId = id + 1,
+                messagesByConversation =
+                  state.messagesByConversation.updated(conversationId, existing :+ updatedMessage),
+              )
+              (id, updated)
+            }
+          }
+
+      override def getMessages(conversationId: Long): IO[PersistenceError, List[ConversationEntry]] =
+        ref.get.map(_.messagesByConversation.getOrElse(conversationId, Nil))
+
+      override def getMessagesSince(conversationId: Long, since: java.time.Instant)
+        : IO[PersistenceError, List[ConversationEntry]] =
+        getMessages(conversationId).map(_.filter(_.createdAt.isAfter(since)))
+
+      override def upsertSessionContext(
+        channelName: String,
+        sessionKey: String,
+        contextJson: String,
+        updatedAt: java.time.Instant,
+      ): IO[PersistenceError, Unit] =
+        ref.update(state =>
+          state.copy(
+            sessionContexts = state.sessionContexts.updated(
+              (channelName, sessionKey),
+              SessionContextLink(channelName, sessionKey, contextJson, updatedAt),
+            )
+          )
+        )
+
+      override def getSessionContext(
+        channelName: String,
+        sessionKey: String,
+      ): IO[PersistenceError, Option[String]] =
+        ref.get.map(_.sessionContexts.get((channelName, sessionKey)).map(_.contextJson))
+
+      override def getSessionContextByConversation(conversationId: Long)
+        : IO[PersistenceError, Option[SessionContextLink]] =
+        ref.get.map(_.sessionContexts.values.find(_.contextJson.contains(s""""conversationId":$conversationId""")))
+
+      override def getSessionContextByTaskRunId(taskRunId: Long): IO[PersistenceError, Option[SessionContextLink]] =
+        ref.get.map(_.sessionContexts.values.find(_.contextJson.contains(s""""runId":$taskRunId""")))
+
+      override def deleteSessionContext(
+        channelName: String,
+        sessionKey: String,
+      ): IO[PersistenceError, Unit] =
+        ref.update(state => state.copy(sessionContexts = state.sessionContexts - ((channelName, sessionKey))))
+
+      override def createIssue(issue: AgentIssue): IO[PersistenceError, Long]                         =
+        ZIO.fail(PersistenceError.QueryFailed("createIssue", "unused"))
+      override def getIssue(id: Long): IO[PersistenceError, Option[AgentIssue]]                       =
+        ZIO.fail(PersistenceError.QueryFailed("getIssue", "unused"))
+      override def listIssues(offset: Int, limit: Int): IO[PersistenceError, List[AgentIssue]]        =
+        ZIO.fail(PersistenceError.QueryFailed("listIssues", "unused"))
+      override def listIssuesByRun(runId: Long): IO[PersistenceError, List[AgentIssue]]               =
+        ZIO.fail(PersistenceError.QueryFailed("listIssuesByRun", "unused"))
+      override def listIssuesByStatus(status: IssueStatus): IO[PersistenceError, List[AgentIssue]]    =
+        ZIO.fail(PersistenceError.QueryFailed("listIssuesByStatus", "unused"))
+      override def listUnassignedIssues(runId: Long): IO[PersistenceError, List[AgentIssue]]          =
+        ZIO.fail(PersistenceError.QueryFailed("listUnassignedIssues", "unused"))
+      override def updateIssue(issue: AgentIssue): IO[PersistenceError, Unit]                         =
+        ZIO.fail(PersistenceError.QueryFailed("updateIssue", "unused"))
+      override def assignIssueToAgent(issueId: Long, agentName: String): IO[PersistenceError, Unit]   =
+        ZIO.fail(PersistenceError.QueryFailed("assignIssueToAgent", "unused"))
+      override def createAssignment(assignment: AgentAssignment): IO[PersistenceError, Long]          =
+        ZIO.fail(PersistenceError.QueryFailed("createAssignment", "unused"))
+      override def getAssignment(id: Long): IO[PersistenceError, Option[AgentAssignment]]             =
+        ZIO.fail(PersistenceError.QueryFailed("getAssignment", "unused"))
+      override def listAssignmentsByIssue(issueId: Long): IO[PersistenceError, List[AgentAssignment]] =
+        ZIO.fail(PersistenceError.QueryFailed("listAssignmentsByIssue", "unused"))
+      override def updateAssignment(assignment: AgentAssignment): IO[PersistenceError, Unit]          =
+        ZIO.fail(PersistenceError.QueryFailed("updateAssignment", "unused"))
+
   def spec: Spec[TestEnvironment & Scope, Any] = suite("ChatControllerGatewaySpec")(
     test("POST /api/chat/:id/messages preserves API behavior and publishes through gateway") {
-      val dbName = s"chat-gateway-api-${UUID.randomUUID()}"
       (for
         chatRepo  <- ZIO.service[ChatRepository]
         migrRepo  <- ZIO.service[TaskRepository]
@@ -135,10 +372,9 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
         emitted.head.content.contains("echo:hello"),
         persisted.count(_.senderType == SenderType.User) == 1,
         persisted.count(_.senderType == SenderType.Assistant) == 1,
-      )).provideSomeLayer[Scope](appLayer(dbName))
+      )).provideSomeLayer[Scope](appLayer)
     },
     test("POST /api/chat/:id/messages strips @agent prefix before LLM prompt") {
-      val dbName = s"chat-gateway-mention-${UUID.randomUUID()}"
       (for
         chatRepo  <- ZIO.service[ChatRepository]
         migrRepo  <- ZIO.service[TaskRepository]
@@ -168,10 +404,9 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
       yield assertTrue(
         response.status == Status.Ok,
         body.contains("echo:fix this module"),
-      )).provideSomeLayer[Scope](appLayer(dbName))
+      )).provideSomeLayer[Scope](appLayer)
     },
     test("POST /chat/:id/messages (fragment) returns HTML with user message and streams in background") {
-      val dbName = s"chat-gateway-web-${UUID.randomUUID()}"
       (for
         chatRepo  <- ZIO.service[ChatRepository]
         migrRepo  <- ZIO.service[TaskRepository]
@@ -214,6 +449,6 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
         body.contains("user"),
         persisted.count(_.senderType == SenderType.User) == 1,
         streamed.forall(_.count(_.senderType == SenderType.Assistant) == 1),
-      )).provideSomeLayer[Scope](appLayer(dbName))
+      )).provideSomeLayer[Scope](appLayer)
     } @@ TestAspect.withLiveClock,
   ) @@ TestAspect.sequential @@ TestAspect.timeout(20.seconds)

@@ -13,7 +13,7 @@ import zio.json.*
 
 import agents.AgentRegistry
 import db.{ ChatRepository, PersistenceError, TaskRepository }
-import gateway.models.{ MessageDirection as GatewayMessageDirection, MessageRole as GatewayMessageRole, * }
+import gateway.models.{ GatewayMessageRole as GatewayMessageRole, MessageDirection as GatewayMessageDirection, * }
 import gateway.{ ChannelRegistry, GatewayService, GatewayServiceError, MessageChannelError, SessionContext }
 import llm4zio.core.{ LlmError, LlmService, Streaming }
 import models.*
@@ -52,7 +52,7 @@ final case class ChatControllerLive(
 
   override val routes: Routes[Any, Response] = Routes(
     // Chat Conversations Web Views
-    Method.GET / "chat"                                          -> handler { (_: Request) =>
+    Method.GET / "chat"                                            -> handler { (_: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
           conversations <- chatRepository.listConversations(0, 20)
@@ -61,7 +61,7 @@ final case class ChatControllerLive(
         yield html(HtmlViews.chatDashboard(enriched, sessionMeta))
       }
     },
-    Method.POST / "chat"                                         -> handler { (req: Request) =>
+    Method.POST / "chat"                                           -> handler { (req: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
           form           <- parseForm(req)
@@ -69,7 +69,7 @@ final case class ChatControllerLive(
                               .fromOption(form.get("title").map(_.trim).filter(_.nonEmpty))
                               .orElseFail(PersistenceError.QueryFailed("parseForm", "Missing title"))
           description     = form.get("description").map(_.trim).filter(_.nonEmpty)
-          runId           = form.get("run_id").flatMap(_.toLongOption)
+          runId           = form.get("run_id").map(_.trim).filter(_.nonEmpty)
           now            <- Clock.instant
           conversation    = ChatConversation(
                               runId = runId,
@@ -85,56 +85,59 @@ final case class ChatControllerLive(
         )
       }
     },
-    Method.GET / "chat" / long("id")                             -> handler { (id: Long, _: Request) =>
+    Method.GET / "chat" / string("id")                             -> handler { (id: String, _: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
+          convId       <- parseLongId("conversation", id)
           conversation <- chatRepository
-                            .getConversation(id)
-                            .someOrFail(PersistenceError.NotFound("conversation", id))
+                            .getConversation(convId)
+                            .someOrFail(PersistenceError.NotFound("conversation", convId))
           sessionMeta  <- resolveConversationSessionMeta(id)
         yield html(HtmlViews.chatDetail(conversation, sessionMeta))
       }
     },
-    Method.GET / "chat" / long("id") / "messages"                -> handler { (id: Long, _: Request) =>
+    Method.GET / "chat" / string("id") / "messages"                -> handler { (id: String, _: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
-          messages <- chatRepository.getMessages(id)
+          convId   <- parseLongId("conversation", id)
+          messages <- chatRepository.getMessages(convId)
         yield html(HtmlViews.chatMessagesFragment(messages))
       }
     },
-    Method.POST / "chat" / long("id") / "messages"               -> handler { (id: Long, req: Request) =>
+    Method.POST / "chat" / string("id") / "messages"               -> handler { (id: String, req: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
+          convId      <- parseLongId("conversation", id)
           form        <- parseForm(req)
           rawContent  <- ZIO
                            .fromOption(form.get("content").map(_.trim).filter(_.nonEmpty))
                            .orElseFail(PersistenceError.QueryFailed("parseForm", "Missing content"))
           mention      = parsePreferredAgentMention(rawContent)
-          content       = mention.content
+          content      = mention.content
           now         <- Clock.instant
           _           <- chatRepository.addMessage(
-                           ConversationMessage(
+                           ConversationEntry(
                              conversationId = id,
                              sender = "user",
-                              senderType = SenderType.User,
+                             senderType = SenderType.User,
                              content = rawContent,
                              messageType = MessageType.Text,
                              createdAt = now,
                              updatedAt = now,
                            )
                          )
-          _           <- ensureConversationTitle(id, content, now)
+          _           <- ensureConversationTitle(convId, content, now)
           _           <- activityHub.publish(
                            ActivityEvent(
                              eventType = ActivityEventType.MessageSent,
                              source = "chat",
-                             conversationId = Some(id),
-                             summary = s"Message sent in conversation #$id",
+                             conversationId = Some(id.toString),
+                             summary = s"Message sent in conversation #$convId",
                              createdAt = now,
                            )
                          )
           userInbound <- toGatewayMessage(
-                           id,
+                           convId,
                            SenderType.User,
                            content,
                            None,
@@ -142,19 +145,21 @@ final case class ChatControllerLive(
                            additionalMetadata = mention.metadata,
                          )
           _           <- routeThroughGateway(gatewayService.processInbound(userInbound))
-          _           <- streamAssistantResponse(id, content).forkDaemon
-          messages    <- chatRepository.getMessages(id)
+          _           <- streamAssistantResponse(convId, content).forkDaemon
+          messages    <- chatRepository.getMessages(convId)
         yield html(HtmlViews.chatMessagesFragment(messages))
       }
     },
     // Abort streaming
-    Method.POST / "api" / "chat" / long("id") / "abort"          -> handler { (id: Long, _: Request) =>
-      streamAbortRegistry.abort(id).map { aborted =>
-        Response.json(Map("aborted" -> aborted.toString).toJson)
+    Method.POST / "api" / "chat" / string("id") / "abort"          -> handler { (id: String, _: Request) =>
+      ErrorHandlingMiddleware.fromPersistence {
+        parseLongId("conversation", id).flatMap(streamAbortRegistry.abort).map { aborted =>
+          Response.json(Map("aborted" -> aborted.toString).toJson)
+        }
       }
     },
     // Chat API Endpoints
-    Method.POST / "api" / "chat"                                 -> handler { (req: Request) =>
+    Method.POST / "api" / "chat"                                   -> handler { (req: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
           body        <- req.body.asString.mapError(err =>
@@ -178,41 +183,45 @@ final case class ChatControllerLive(
         yield Response.json(created.toJson)
       }
     },
-    Method.GET / "api" / "chat" / long("id")                     -> handler { (id: Long, _: Request) =>
+    Method.GET / "api" / "chat" / string("id")                     -> handler { (id: String, _: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
+          convId       <- parseLongId("conversation", id)
           conversation <- chatRepository
-                            .getConversation(id)
-                            .someOrFail(PersistenceError.NotFound("conversation", id))
+                            .getConversation(convId)
+                            .someOrFail(PersistenceError.NotFound("conversation", convId))
         yield Response.json(conversation.toJson)
       }
     },
-    Method.POST / "api" / "chat" / long("id") / "messages"       -> handler { (id: Long, req: Request) =>
+    Method.POST / "api" / "chat" / string("id") / "messages"       -> handler { (id: String, req: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
+          convId     <- parseLongId("conversation", id)
           body       <- req.body.asString.mapError(err =>
                           PersistenceError.QueryFailed("request_body", err.getMessage)
                         )
           msgRequest <- ZIO
                           .fromEither(body.fromJson[ConversationMessageRequest])
                           .mapError(err => PersistenceError.QueryFailed("json_parse", err))
-          aiMessage  <- addUserAndAssistantMessage(id, msgRequest.content, msgRequest.messageType, msgRequest.metadata)
+          aiMessage  <-
+            addUserAndAssistantMessage(convId, msgRequest.content, msgRequest.messageType, msgRequest.metadata)
         yield Response.json(aiMessage.toJson)
       }
     },
-    Method.GET / "api" / "chat" / long("id") / "messages"        -> handler { (id: Long, req: Request) =>
+    Method.GET / "api" / "chat" / string("id") / "messages"        -> handler { (id: String, req: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         val since = req.queryParam("since").flatMap(s => scala.util.Try(Instant.parse(s)).toOption)
         for
+          convId   <- parseLongId("conversation", id)
           messages <-
-            if since.isDefined then chatRepository.getMessagesSince(id, since.get)
-            else chatRepository.getMessages(id)
+            if since.isDefined then chatRepository.getMessagesSince(convId, since.get)
+            else chatRepository.getMessages(convId)
         yield Response.json(messages.toJson)
       }
     },
     // Issues Web Views
-    Method.GET / "issues"                                        -> handler { (req: Request) =>
-      val runId        = req.queryParam("run_id").flatMap(_.toLongOption)
+    Method.GET / "issues"                                          -> handler { (req: Request) =>
+      val runId        = req.queryParam("run_id").map(_.trim).filter(_.nonEmpty)
       val statusFilter = req.queryParam("status").map(_.trim).filter(_.nonEmpty)
       val query        = req.queryParam("q").map(_.trim).filter(_.nonEmpty)
       val tagFilter    = req.queryParam("tag").map(_.trim).filter(_.nonEmpty)
@@ -224,11 +233,11 @@ final case class ChatControllerLive(
         yield html(HtmlViews.issuesView(runId, filtered, statusFilter, query, tagFilter))
       }
     },
-    Method.GET / "issues" / "new"                                -> handler { (req: Request) =>
-      val runId = req.queryParam("run_id").flatMap(_.toLongOption)
+    Method.GET / "issues" / "new"                                  -> handler { (req: Request) =>
+      val runId = req.queryParam("run_id").map(_.trim).filter(_.nonEmpty)
       ZIO.succeed(html(HtmlViews.issueCreateForm(runId)))
     },
-    Method.POST / "issues"                                       -> handler { (req: Request) =>
+    Method.POST / "issues"                                         -> handler { (req: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
           form    <- parseForm(req)
@@ -236,7 +245,7 @@ final case class ChatControllerLive(
           content <- required(form, "description")
           now     <- Clock.instant
           issue    = AgentIssue(
-                       runId = form.get("runId").flatMap(_.toLongOption),
+                       runId = form.get("runId").map(_.trim).filter(_.nonEmpty),
                        title = title,
                        description = content,
                        issueType = form.get("issueType").map(_.trim).filter(_.nonEmpty).getOrElse("task"),
@@ -253,7 +262,7 @@ final case class ChatControllerLive(
         yield Response(status = Status.SeeOther, headers = Headers(Header.Custom("Location", redirect)))
       }
     },
-    Method.POST / "issues" / "import"                            -> handler { (_: Request) =>
+    Method.POST / "issues" / "import"                              -> handler { (_: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
           imported <- importIssuesFromConfiguredFolder
@@ -263,26 +272,28 @@ final case class ChatControllerLive(
         )
       }
     },
-    Method.GET / "issues" / long("id")                           -> handler { (id: Long, _: Request) =>
+    Method.GET / "issues" / string("id")                           -> handler { (id: String, _: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
+          issueId        <- parseLongId("issue", id)
           issue          <- chatRepository
-                              .getIssue(id)
-                              .someOrFail(PersistenceError.NotFound("issue", id))
-          assignments    <- chatRepository.listAssignmentsByIssue(id)
+                              .getIssue(issueId)
+                              .someOrFail(PersistenceError.NotFound("issue", issueId))
+          assignments    <- chatRepository.listAssignmentsByIssue(issueId)
           customAgents   <- migrationRepository.listCustomAgents
           enabledCustom   = customAgents.filter(_.enabled)
           availableAgents = AgentRegistry.allAgents(enabledCustom).filter(_.usesAI)
         yield html(HtmlViews.issueDetail(issue, assignments, availableAgents))
       }
     },
-    Method.POST / "issues" / long("id") / "assign"               -> handler { (id: Long, req: Request) =>
+    Method.POST / "issues" / string("id") / "assign"               -> handler { (id: String, req: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
+          issueId   <- parseLongId("issue", id)
           form      <- parseForm(req)
           agentName <- required(form, "agentName")
-          updated   <- issueAssignmentOrchestrator.assignIssue(id, agentName)
-          redirectTo = updated.conversationId.map(cid => s"/chat/$cid").getOrElse(s"/issues/$id")
+          updated   <- issueAssignmentOrchestrator.assignIssue(issueId, agentName)
+          redirectTo = updated.conversationId.map(cid => s"/chat/$cid").getOrElse(s"/issues/$issueId")
         yield Response(
           status = Status.SeeOther,
           headers = Headers(Header.Custom("Location", redirectTo)),
@@ -290,7 +301,7 @@ final case class ChatControllerLive(
       }
     },
     // Agent Issues API Endpoints
-    Method.POST / "api" / "issues"                               -> handler { (req: Request) =>
+    Method.POST / "api" / "issues"                                 -> handler { (req: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
           body         <- req.body.asString.mapError(err =>
@@ -321,41 +332,48 @@ final case class ChatControllerLive(
         yield Response.json(created.toJson)
       }
     },
-    Method.GET / "api" / "issues"                                -> handler { (req: Request) =>
-      val runId = req.queryParam("run_id").flatMap(_.toLongOption)
+    Method.GET / "api" / "issues"                                  -> handler { (req: Request) =>
+      val runId = req.queryParam("run_id").map(_.trim).filter(_.nonEmpty)
       ErrorHandlingMiddleware.fromPersistence {
         runId match
-          case Some(value) => chatRepository.listIssuesByRun(value).map(issues => Response.json(issues.toJson))
+          case Some(value) =>
+            for
+              parsed <- parseLongId("run", value)
+              issues <- chatRepository.listIssuesByRun(parsed)
+            yield Response.json(issues.toJson)
           case None        => chatRepository.listIssues(0, 500).map(issues => Response.json(issues.toJson))
       }
     },
-    Method.GET / "api" / "issues" / long("id")                   -> handler { (id: Long, _: Request) =>
+    Method.GET / "api" / "issues" / string("id")                   -> handler { (id: String, _: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
+          issueId     <- parseLongId("issue", id)
           issue       <- chatRepository
-                           .getIssue(id)
-                           .someOrFail(PersistenceError.NotFound("issue", id))
-          assignments <- chatRepository.listAssignmentsByIssue(id)
+                           .getIssue(issueId)
+                           .someOrFail(PersistenceError.NotFound("issue", issueId))
+          assignments <- chatRepository.listAssignmentsByIssue(issueId)
         yield Response.json((issue, assignments).toJson)
       }
     },
-    Method.PATCH / "api" / "issues" / long("id") / "assign"      -> handler { (id: Long, req: Request) =>
+    Method.PATCH / "api" / "issues" / string("id") / "assign"      -> handler { (id: String, req: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
+          issueId       <- parseLongId("issue", id)
           body          <- req.body.asString.mapError(err =>
                              PersistenceError.QueryFailed("request_body", err.getMessage)
                            )
           assignRequest <- ZIO
                              .fromEither(body.fromJson[AssignIssueRequest])
                              .mapError(err => PersistenceError.QueryFailed("json_parse", err))
-          updated       <- issueAssignmentOrchestrator.assignIssue(id, assignRequest.agentName)
+          updated       <- issueAssignmentOrchestrator.assignIssue(issueId, assignRequest.agentName)
         yield Response.json(updated.toJson)
       }
     },
-    Method.GET / "api" / "issues" / "unassigned" / long("runId") -> handler { (runId: Long, _: Request) =>
+    Method.GET / "api" / "issues" / "unassigned" / string("runId") -> handler { (runId: String, _: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
-          issues <- chatRepository.listUnassignedIssues(runId)
+          parsedRunId <- parseLongId("run", runId)
+          issues      <- chatRepository.listUnassignedIssues(parsedRunId)
         yield Response.json(issues.toJson)
       }
     },
@@ -364,14 +382,15 @@ final case class ChatControllerLive(
   private def html(content: String): Response =
     Response.text(content).contentType(MediaType.text.html)
 
-  private def loadIssues(runId: Option[Long], statusFilter: Option[String]): IO[PersistenceError, List[AgentIssue]] =
+  private def loadIssues(runId: Option[String], statusFilter: Option[String]): IO[PersistenceError, List[AgentIssue]] =
     runId match
       case Some(value) =>
-        chatRepository.listIssuesByRun(value).map { issues =>
-          statusFilter match
-            case Some(raw) => issues.filter(matchesStatus(_, raw))
-            case None      => issues
-        }
+        for
+          parsed <- parseLongId("run", value)
+          issues <- chatRepository.listIssuesByRun(parsed)
+        yield statusFilter match
+          case Some(raw) => issues.filter(matchesStatus(_, raw))
+          case None      => issues
       case None        =>
         statusFilter match
           case Some(raw) =>
@@ -483,7 +502,7 @@ final case class ChatControllerLive(
       preferredAgent = metadata("agent"),
       contextPath = metadata("context"),
       sourceFolder = metadata("source"),
-      runId = metadata("run").flatMap(_.toLongOption),
+      runId = metadata("run"),
       priority = parsePriority(metadata("priority").getOrElse("medium")),
       createdAt = now,
       updatedAt = now,
@@ -494,13 +513,13 @@ final case class ChatControllerLive(
     userContent: String,
     messageType: MessageType,
     metadata: Option[String],
-  ): IO[PersistenceError, ConversationMessage] =
+  ): IO[PersistenceError, ConversationEntry] =
     for
       mention     <- ZIO.succeed(parsePreferredAgentMention(userContent))
       now         <- Clock.instant
       _           <- chatRepository.addMessage(
-                       ConversationMessage(
-                         conversationId = conversationId,
+                       ConversationEntry(
+                         conversationId = conversationId.toString,
                          sender = "user",
                          senderType = SenderType.User,
                          content = userContent,
@@ -525,8 +544,8 @@ final case class ChatControllerLive(
                        .execute(mention.content)
                        .mapError(convertLlmError)
       now2        <- Clock.instant
-      aiMessage    = ConversationMessage(
-                       conversationId = conversationId,
+      aiMessage    = ConversationEntry(
+                       conversationId = conversationId.toString,
                        sender = "assistant",
                        senderType = SenderType.Assistant,
                        content = llmResponse.content,
@@ -568,8 +587,8 @@ final case class ChatControllerLive(
         _                          <- streamAbortRegistry.unregister(conversationId)
         _                          <- sendStreamEvent(conversationId, "chat-stream-end", "")
         now                        <- Clock.instant
-        aiMessage                   = ConversationMessage(
-                                        conversationId = conversationId,
+        aiMessage                   = ConversationEntry(
+                                        conversationId = conversationId.toString,
                                         sender = "assistant",
                                         senderType = SenderType.Assistant,
                                         content = accumulated,
@@ -637,11 +656,12 @@ final case class ChatControllerLive(
         case SenderType.System    => GatewayMessageRole.System
       ,
       content = content,
-      metadata = Map("conversationId" -> conversationId.toString) ++ metadata.map("raw" -> _).toMap ++ additionalMetadata,
+      metadata =
+        Map("conversationId" -> conversationId.toString) ++ metadata.map("raw" -> _).toMap ++ additionalMetadata,
       timestamp = now,
     )
 
-  private final case class PreferredAgentMention(
+  final private case class PreferredAgentMention(
     content: String,
     metadata: Map[String, String],
   )
@@ -657,7 +677,7 @@ final case class ChatControllerLive(
             "intent.agent"   -> agentName,
           ),
         )
-      case _                                                       =>
+      case _                                                               =>
         PreferredAgentMention(
           content = rawContent,
           metadata = Map.empty,
@@ -694,36 +714,52 @@ final case class ChatControllerLive(
 
   private def buildSessionMetaMap(
     conversations: List[ChatConversation]
-  ): IO[PersistenceError, Map[Long, ConversationSessionMeta]] =
+  ): IO[PersistenceError, Map[String, ConversationSessionMeta]] =
     ZIO
-      .foreach(conversations.flatMap(_.id)) { id =>
+      .foreach(conversations.flatMap(conv => sanitizeOptional(conv.id))) { id =>
         resolveConversationSessionMeta(id).map(meta => id -> meta)
       }
       .map(_.collect { case (id, Some(meta)) => id -> meta }.toMap)
 
   private def resolveConversationSessionMeta(
-    conversationId: Long
+    conversationId: String
   ): IO[PersistenceError, Option[ConversationSessionMeta]] =
-    chatRepository.getSessionContextByConversation(conversationId).flatMap {
+    parseLongId("conversation", conversationId).flatMap(chatRepository.getSessionContextByConversation).flatMap {
       case None       => ZIO.none
       case Some(link) =>
         parseSessionContext(link.contextJson).map { parsed =>
           Some(
             ConversationSessionMeta(
-              channelName = link.channelName,
-              sessionKey = link.sessionKey,
-              linkedTaskRunId = parsed.flatMap(_.runId),
+              channelName = sanitizeString(link.channelName).getOrElse("web"),
+              sessionKey = sanitizeString(link.sessionKey).getOrElse("unknown"),
+              linkedTaskRunId = parsed.flatMap(_.runId).map(_.toString),
               updatedAt = link.updatedAt,
             )
           )
         }
     }
 
+  private def parseLongId(entity: String, raw: String): IO[PersistenceError, Long] =
+    ZIO
+      .fromOption(raw.toLongOption)
+      .orElseFail(PersistenceError.QueryFailed(s"parse_$entity", s"Invalid $entity id: '$raw'"))
+
   private def parseSessionContext(raw: String): IO[PersistenceError, Option[SessionContext]] =
     ZIO
       .fromEither(raw.fromJson[SessionContext])
       .map(Some(_))
       .catchAll(err => ZIO.logWarning(s"invalid session context payload: $err").as(None))
+
+  private def sanitizeOptional[A](value: Option[A]): Option[A] =
+    try
+      value match
+        case Some(v) => Option(v)
+        case _       => None
+    catch
+      case _: Throwable => None
+
+  private def sanitizeString(value: String): Option[String] =
+    Option(value).map(_.trim).filter(_.nonEmpty)
 
   private def ensureConversationTitle(
     conversationId: Long,

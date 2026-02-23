@@ -21,11 +21,11 @@ object AgentTracker:
     effect: ZIO[R, E, A]
   ): ZIO[R, E, A] =
     for
-      _      <- trackerCall("startPhase", tracker.startPhase(runId, phase, totalItems))
+      _      <- trackerCall("startPhase", tracker.startPhase(runId.toString, phase, totalItems))
       result <- effect.tapError(err =>
-                  trackerCall("failPhase", tracker.failPhase(runId, phase, err.toString))
+                  trackerCall("failPhase", tracker.failPhase(runId.toString, phase, err.toString))
                 )
-      _      <- trackerCall("completePhase", tracker.completePhase(runId, phase))
+      _      <- trackerCall("completePhase", tracker.completePhase(runId.toString, phase))
     yield result
 
   /** Tracks batch processing with per-item progress updates.
@@ -42,33 +42,34 @@ object AgentTracker:
     process: (A, Int) => ZIO[R, E, B]
   ): ZIO[R, E, List[B]] =
     for
-      _       <- trackerCall("startPhase", tracker.startPhase(runId, phase, items.size))
-      results <- ZIO.foreach(items.zipWithIndex) {
-                   case (item, idx) =>
-                     process(item, idx)
-                       .tapError(err => trackerCall("failPhase", tracker.failPhase(runId, phase, err.toString)))
-                       .tap { _ =>
-                         for
-                           now <- Clock.instant
-                           _   <- trackerCall(
-                                    "updateProgress",
-                                    tracker.updateProgress(
-                                      ProgressUpdate(
-                                        runId = runId,
-                                        phase = phase,
-                                        itemsProcessed = idx + 1,
-                                        itemsTotal = items.size,
-                                        message = s"Processing item ${idx + 1}/${items.size}",
-                                        timestamp = now,
-                                        status = "Running",
-                                        percentComplete = (idx + 1).toDouble / items.size.toDouble,
-                                      )
-                                    ),
-                                  )
-                         yield ()
-                       }
-                 }
-      _       <- trackerCall("completePhase", tracker.completePhase(runId, phase))
+      _       <- trackerCall("startPhase", tracker.startPhase(runId.toString, phase, items.size))
+      results <-
+        ZIO.foreach(items.zipWithIndex) {
+          case (item, idx) =>
+            process(item, idx)
+              .tapError(err => trackerCall("failPhase", tracker.failPhase(runId.toString, phase, err.toString)))
+              .tap { _ =>
+                for
+                  now <- Clock.instant
+                  _   <- trackerCall(
+                           "updateProgress",
+                           tracker.updateProgress(
+                             ProgressUpdate(
+                               runId = runId.toString,
+                               phase = phase,
+                               itemsProcessed = idx + 1,
+                               itemsTotal = items.size,
+                               message = s"Processing item ${idx + 1}/${items.size}",
+                               timestamp = now,
+                               status = "Running",
+                               percentComplete = (idx + 1).toDouble / items.size.toDouble,
+                             )
+                           ),
+                         )
+                yield ()
+              }
+        }
+      _       <- trackerCall("completePhase", tracker.completePhase(runId.toString, phase))
     yield results
 
   private def trackerCall(action: String, effect: IO[PersistenceError, Unit]): UIO[Unit] =

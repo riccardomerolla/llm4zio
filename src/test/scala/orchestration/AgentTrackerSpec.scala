@@ -12,10 +12,10 @@ object AgentTrackerSpec extends ZIOSpecDefault:
     case Boom
 
   private enum TrackerEvent:
-    case Started(runId: Long, phase: String, total: Int)
+    case Started(runId: String, phase: String, total: Int)
     case Updated(update: ProgressUpdate)
-    case Completed(runId: Long, phase: String)
-    case Failed(runId: Long, phase: String, error: String)
+    case Completed(runId: String, phase: String)
+    case Failed(runId: String, phase: String, error: String)
 
   def spec: Spec[TestEnvironment & Scope, Any] = suite("AgentTrackerSpec")(
     test("trackPhase reports start and complete on success") {
@@ -26,8 +26,8 @@ object AgentTrackerSpec extends ZIOSpecDefault:
         all     <- events.get
       yield assertTrue(
         value == "ok",
-        all.contains(TrackerEvent.Started(1L, "Discovery", 2)),
-        all.contains(TrackerEvent.Completed(1L, "Discovery")),
+        all.contains(TrackerEvent.Started("1", "Discovery", 2)),
+        all.contains(TrackerEvent.Completed("1", "Discovery")),
       )
     },
     test("trackPhase reports failPhase and preserves original error") {
@@ -39,8 +39,8 @@ object AgentTrackerSpec extends ZIOSpecDefault:
       yield assertTrue(
         exit == Exit.fail(TestErr.Boom),
         all.exists {
-          case TrackerEvent.Failed(2L, "Analysis", msg) => msg.contains("Boom")
-          case _                                        => false
+          case TrackerEvent.Failed("2", "Analysis", msg) => msg.contains("Boom")
+          case _                                         => false
         },
       )
     },
@@ -75,7 +75,7 @@ object AgentTrackerSpec extends ZIOSpecDefault:
         updates.length == 3,
         updates.map(_.itemsProcessed).sorted == List(1, 2, 3),
         updates.forall(_.itemsTotal == 3),
-        all.contains(TrackerEvent.Completed(9L, "Transformation")),
+        all.contains(TrackerEvent.Completed("9", "Transformation")),
       )
     },
     test("trackBatch calls failPhase when one item fails and propagates the process error") {
@@ -89,8 +89,8 @@ object AgentTrackerSpec extends ZIOSpecDefault:
       yield assertTrue(
         exit == Exit.fail(TestErr.Boom),
         all.exists {
-          case TrackerEvent.Failed(10L, "Validation", msg) => msg.contains("Boom")
-          case _                                           => false
+          case TrackerEvent.Failed("10", "Validation", msg) => msg.contains("Boom")
+          case _                                            => false
         },
       )
     },
@@ -104,7 +104,7 @@ object AgentTrackerSpec extends ZIOSpecDefault:
     failFail: Boolean,
   ) extends ProgressTracker:
 
-    override def startPhase(runId: Long, phase: String, total: Int): IO[PersistenceError, Unit] =
+    override def startPhase(runId: String, phase: String, total: Int): IO[PersistenceError, Unit] =
       for
         _ <- events.update(TrackerEvent.Started(runId, phase, total) :: _)
         _ <- if failStart then ZIO.fail(PersistenceError.QueryFailed("startPhase", "forced")) else ZIO.unit
@@ -116,19 +116,19 @@ object AgentTrackerSpec extends ZIOSpecDefault:
         _ <- if failUpdate then ZIO.fail(PersistenceError.QueryFailed("updateProgress", "forced")) else ZIO.unit
       yield ()
 
-    override def completePhase(runId: Long, phase: String): IO[PersistenceError, Unit] =
+    override def completePhase(runId: String, phase: String): IO[PersistenceError, Unit] =
       for
         _ <- events.update(TrackerEvent.Completed(runId, phase) :: _)
         _ <- if failComplete then ZIO.fail(PersistenceError.QueryFailed("completePhase", "forced")) else ZIO.unit
       yield ()
 
-    override def failPhase(runId: Long, phase: String, error: String): IO[PersistenceError, Unit] =
+    override def failPhase(runId: String, phase: String, error: String): IO[PersistenceError, Unit] =
       for
         _ <- events.update(TrackerEvent.Failed(runId, phase, error) :: _)
         _ <- if failFail then ZIO.fail(PersistenceError.QueryFailed("failPhase", "forced")) else ZIO.unit
       yield ()
 
-    override def subscribe(runId: Long): UIO[Dequeue[ProgressUpdate]] =
+    override def subscribe(runId: String): UIO[Dequeue[ProgressUpdate]] =
       Queue.unbounded[ProgressUpdate]
 
   private object TestProgressTracker:

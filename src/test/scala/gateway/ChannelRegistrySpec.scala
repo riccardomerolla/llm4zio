@@ -20,7 +20,7 @@ object ChannelRegistrySpec extends ZIOSpecDefault:
       channelName = "websocket",
       sessionKey = session,
       direction = direction,
-      role = MessageRole.User,
+      role = GatewayMessageRole.User,
       content = content,
       timestamp = Instant.EPOCH,
     )

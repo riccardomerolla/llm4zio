@@ -42,45 +42,66 @@ object InlineKeyboards:
 
   def taskStatusKeyboard(runId: Long, status: RunStatus): Option[TelegramInlineKeyboardMarkup] =
     status match
-      case RunStatus.Running =>
+      case RunStatus.Running                         =>
         Some(
           TelegramInlineKeyboardMarkup(
             inline_keyboard = List(
               List(
-                TelegramInlineKeyboardButton(text = "Pause", callback_data = Some(encode("toggle", runId, paused = false))),
-                TelegramInlineKeyboardButton(text = "Cancel", callback_data = Some(encode("cancel", runId, paused = false))),
+                TelegramInlineKeyboardButton(
+                  text = "Pause",
+                  callback_data = Some(encode("toggle", runId, paused = false)),
+                ),
+                TelegramInlineKeyboardButton(
+                  text = "Cancel",
+                  callback_data = Some(encode("cancel", runId, paused = false)),
+                ),
               )
             )
           )
         )
-      case RunStatus.Pending =>
+      case RunStatus.Pending                         =>
         Some(
           TelegramInlineKeyboardMarkup(
             inline_keyboard = List(
               List(
-                TelegramInlineKeyboardButton(text = "Pause", callback_data = Some(encode("toggle", runId, paused = false))),
-                TelegramInlineKeyboardButton(text = "Cancel", callback_data = Some(encode("cancel", runId, paused = false))),
+                TelegramInlineKeyboardButton(
+                  text = "Pause",
+                  callback_data = Some(encode("toggle", runId, paused = false)),
+                ),
+                TelegramInlineKeyboardButton(
+                  text = "Cancel",
+                  callback_data = Some(encode("cancel", runId, paused = false)),
+                ),
               )
             )
           )
         )
-      case RunStatus.Paused  =>
+      case RunStatus.Paused                          =>
         Some(
           TelegramInlineKeyboardMarkup(
             inline_keyboard = List(
               List(
-                TelegramInlineKeyboardButton(text = "Resume", callback_data = Some(encode("toggle", runId, paused = true))),
-                TelegramInlineKeyboardButton(text = "Cancel", callback_data = Some(encode("cancel", runId, paused = true))),
+                TelegramInlineKeyboardButton(
+                  text = "Resume",
+                  callback_data = Some(encode("toggle", runId, paused = true)),
+                ),
+                TelegramInlineKeyboardButton(
+                  text = "Cancel",
+                  callback_data = Some(encode("cancel", runId, paused = true)),
+                ),
               )
             )
           )
         )
-      case RunStatus.Failed  =>
+      case RunStatus.Failed                          =>
         Some(
           TelegramInlineKeyboardMarkup(
             inline_keyboard = List(
               List(
-                TelegramInlineKeyboardButton(text = "Retry", callback_data = Some(encode("retry", runId, paused = false)))
+                TelegramInlineKeyboardButton(
+                  text = "Retry",
+                  callback_data = Some(encode("retry", runId, paused = false)),
+                )
               )
             )
           )

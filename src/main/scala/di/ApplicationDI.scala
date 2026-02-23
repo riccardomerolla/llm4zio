@@ -1,10 +1,14 @@
 package di
 
+import java.nio.charset.StandardCharsets
+import java.nio.file.{ Files, Paths }
+
 import scala.concurrent.{ ExecutionContext, Future }
 
 import zio.*
 import zio.http.netty.NettyConfig
 import zio.http.{ Client, DnsResolver, ZClient }
+import zio.json.*
 
 import _root_.config.SettingsApplier
 import _root_.models.*
@@ -17,7 +21,9 @@ import gateway.telegram.*
 import llm4zio.core.*
 import llm4zio.providers.{ GeminiCliExecutor, HttpClient }
 import llm4zio.tools.{ AnyTool, JsonSchema }
+import memory.*
 import orchestration.*
+import store.{ ConfigStoreModule, DataStoreModule, MemoryStoreModule, StoreConfig }
 import sttp.client4.DefaultFutureBackend
 import web.controllers.*
 import web.{ ActivityHub, StreamAbortRegistry, WebServer }
@@ -26,13 +32,17 @@ object ApplicationDI:
 
   type CommonServices =
     FileService &
+      StoreConfig &
+      ConfigStoreModule.ConfigStoreService &
+      DataStoreModule.DataStoreService &
+      MemoryStoreModule.MemoryEntriesStore &
       GatewayConfig &
       Ref[GatewayConfig] &
       HttpAIClient &
       LlmService &
       StateService &
-      javax.sql.DataSource &
       TaskRepository &
+      ConfigRepository &
       WorkflowService &
       ActivityRepository &
       ActivityHub &
@@ -50,7 +60,9 @@ object ApplicationDI:
       MessageRouter &
       GatewayService &
       TelegramPollingService &
-      TaskProgressNotifier
+      TaskProgressNotifier &
+      MemoryRepository &
+      EmbeddingService
 
   def aiProviderToLlmProvider(aiProvider: AIProvider): LlmProvider =
     aiProvider match
@@ -77,7 +89,7 @@ object ApplicationDI:
       maxTokens = aiConfig.maxTokens,
     )
 
-  def commonLayers(config: GatewayConfig, dbPath: java.nio.file.Path): ZLayer[Any, Nothing, CommonServices] =
+  def commonLayers(config: GatewayConfig, storeConfig: StoreConfig): ZLayer[Any, Nothing, CommonServices] =
     ZLayer.make[CommonServices](
       // Core services and configuration
       FileService.live,
@@ -89,17 +101,22 @@ object ApplicationDI:
       HttpClient.live,
       GeminiCliExecutor.live,
       StateService.live(config.stateDir),
-      ZLayer.succeed(DatabaseConfig(s"jdbc:sqlite:$dbPath")),
-      Database.live.mapError(err => new RuntimeException(err.toString)).orDie,
+      ZLayer.succeed(storeConfig),
+      ConfigStoreModule.live.mapError(err => new RuntimeException(err.toString)).orDie,
+      DataStoreModule.live.mapError(err => new RuntimeException(err.toString)).orDie,
+      MemoryStoreModule.live.mapError(err => new RuntimeException(err.toString)).orDie,
+      ConfigRepository.live,
       TaskRepository.live,
       // Create runtime config ref with merged DB settings
       configRefLayer,
       configAwareLlmServiceLayer,
+      EmbeddingService.live,
+      MemoryRepositoryES.live,
       WorkflowService.live,
-      ActivityRepository.live.mapError(err => new RuntimeException(err.toString)).orDie,
+      ActivityRepository.live,
       ActivityHub.live,
       ProgressTracker.live,
-      ChatRepository.live.mapError(err => new RuntimeException(err.toString)).orDie,
+      ChatRepository.live,
       AgentRegistry.live,
       WorkflowEngine.live,
       AgentDispatcher.live,
@@ -116,18 +133,32 @@ object ApplicationDI:
     )
 
   /** Create a Ref[GatewayConfig] that reads and merges DB settings on startup */
-  private val configRefLayer: ZLayer[GatewayConfig & TaskRepository, Nothing, Ref[GatewayConfig]] =
+  private val configRefLayer: ZLayer[GatewayConfig & ConfigRepository & StoreConfig, Nothing, Ref[GatewayConfig]] =
     ZLayer.fromZIO {
       for
-        baseConfig  <- ZIO.service[GatewayConfig]
-        repository  <- ZIO.service[TaskRepository]
-        dbSettings  <- repository.getAllSettings
-                         .mapError(_ => ())
-                         .orElseSucceed(Seq.empty)
-        settingsMap  = dbSettings.map(r => r.key -> r.value).toMap
-        mergedConfig = if settingsMap.nonEmpty then SettingsApplier.toGatewayConfig(settingsMap) else baseConfig
-        ref         <- Ref.make(mergedConfig)
+        baseConfig   <- ZIO.service[GatewayConfig]
+        configRepo   <- ZIO.service[ConfigRepository]
+        storeConfig  <- ZIO.service[StoreConfig]
+        dbSettings   <- configRepo.getAllSettings.orElseSucceed(Nil)
+        dbMap         = dbSettings.map(row => row.key -> row.value).toMap
+        snapshotMap  <- loadSettingsSnapshot(storeConfig).orElseSucceed(Map.empty)
+        effectiveMap <-
+          if dbMap.nonEmpty then ZIO.succeed(dbMap)
+          else if snapshotMap.nonEmpty then
+            configRepo.upsertSettings(snapshotMap).orElseSucceed(()) *> ZIO.succeed(snapshotMap)
+          else ZIO.succeed(Map.empty[String, String])
+        mergedConfig  = if effectiveMap.nonEmpty then SettingsApplier.toGatewayConfig(effectiveMap) else baseConfig
+        ref          <- Ref.make(mergedConfig)
       yield ref
+    }
+
+  private def loadSettingsSnapshot(storeConfig: StoreConfig): IO[Throwable, Map[String, String]] =
+    ZIO.attemptBlocking {
+      val snapshot = Paths.get(storeConfig.configStorePath).resolve("settings.snapshot.json")
+      if Files.exists(snapshot) then
+        val raw = Files.readString(snapshot, StandardCharsets.UTF_8)
+        raw.fromJson[Map[String, String]].getOrElse(Map.empty)
+      else Map.empty
     }
 
   private def httpClientLayer(config: GatewayConfig): ZLayer[Any, Throwable, Client] =
@@ -140,7 +171,8 @@ object ApplicationDI:
     (ZLayer.succeed(clientConfig) ++ ZLayer.succeed(NettyConfig.defaultWithFastShutdown) ++
       DnsResolver.default) >>> Client.live
 
-  private val configAwareLlmServiceLayer: ZLayer[Ref[GatewayConfig] & HttpClient & GeminiCliExecutor, Nothing, LlmService] =
+  private val configAwareLlmServiceLayer
+    : ZLayer[Ref[GatewayConfig] & HttpClient & GeminiCliExecutor, Nothing, LlmService] =
     ZLayer.fromZIO {
       for
         configRef <- ZIO.service[Ref[GatewayConfig]]
@@ -150,9 +182,9 @@ object ApplicationDI:
       yield ConfigAwareLlmService(configRef, http, cliExec, cache)
     }
 
-  def webServerLayer(config: GatewayConfig, dbPath: java.nio.file.Path): ZLayer[Any, Nothing, WebServer] =
+  def webServerLayer(config: GatewayConfig, storeConfig: StoreConfig): ZLayer[Any, Nothing, WebServer] =
     ZLayer.make[WebServer](
-      commonLayers(config, dbPath),
+      commonLayers(config, storeConfig),
       ZLayer.succeed(config.resolvedProviderConfig),
       DashboardController.live,
       TasksController.live,
@@ -169,6 +201,7 @@ object ApplicationDI:
       StreamAbortRegistry.live,
       ChatController.live,
       ActivityController.live,
+      MemoryController.live,
       ChannelController.live,
       HealthController.live,
       TelegramController.live,

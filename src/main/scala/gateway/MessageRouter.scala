@@ -172,7 +172,7 @@ final case class MessageRouterLive(
       channelName = channelName,
       sessionKey = sessionKey,
       direction = MessageDirection.Outbound,
-      role = MessageRole.System,
+      role = GatewayMessageRole.System,
       content = event.toJson,
       metadata = Map(
         "eventType" -> event.getClass.getSimpleName,

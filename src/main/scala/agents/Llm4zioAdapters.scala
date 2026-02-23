@@ -5,9 +5,11 @@ import java.time.Instant
 import zio.*
 
 import db.{ ChatRepository, PersistenceError }
+import gateway.models.SessionKey
 import llm4zio.agents.*
 import llm4zio.core.{ Message, MessageRole }
-import models.{ AgentInfo, ChatConversation, ConversationMessage, MessageType, SenderType }
+import memory.{ MemoryFilter, ScoredMemory, SessionId as MemorySessionId, UserId as MemoryUserId }
+import models.{ AgentInfo, ChatConversation, ConversationEntry, MessageType, SenderType }
 
 object Llm4zioAgentAdapters:
   def metadataFromAgentInfo(info: AgentInfo, defaultVersion: String = "1.0.0"): AgentMetadata =
@@ -31,6 +33,58 @@ object Llm4zioAgentAdapters:
   def builtInAsLlm4zioAgents: List[Agent] =
     AgentRegistry.builtInAgents.map(stubAgent(_))
 
+object ConversationMemory:
+  final case class Settings(
+    enabled: Boolean = true,
+    maxContextMemories: Int = 5,
+    summarizationThreshold: Int = 20,
+    retentionDays: Int = 90,
+  )
+
+  def fromSettingsMap(settings: Map[String, String]): Settings =
+    Settings(
+      enabled = settings.get("memory.enabled").forall(parseBoolean(_, default = true)),
+      maxContextMemories = settings
+        .get("memory.maxContextMemories")
+        .flatMap(_.toIntOption)
+        .filter(_ > 0)
+        .getOrElse(5),
+      summarizationThreshold = settings
+        .get("memory.summarizationThreshold")
+        .flatMap(_.toIntOption)
+        .filter(_ > 0)
+        .getOrElse(20),
+      retentionDays = settings
+        .get("memory.retentionDays")
+        .flatMap(_.toIntOption)
+        .filter(_ > 0)
+        .getOrElse(90),
+    )
+
+  def memoryFilter(userId: MemoryUserId): MemoryFilter =
+    MemoryFilter(userId = Some(userId))
+
+  def userIdFromSession(sessionKey: SessionKey): MemoryUserId =
+    val raw = sessionKey.value.trim
+    if raw.startsWith("user:") then MemoryUserId(raw.stripPrefix("user:"))
+    else MemoryUserId(sessionKey.asString)
+
+  def sessionIdFromSession(sessionKey: SessionKey): MemorySessionId =
+    MemorySessionId(sessionKey.asString)
+
+  def memoryContextBlock(memories: List[ScoredMemory]): String =
+    if memories.isEmpty then ""
+    else
+      val body = memories.map(_.entry.text.trim).filter(_.nonEmpty).mkString("\n")
+      if body.isEmpty then ""
+      else s"\n\n<memory>\n$body\n</memory>"
+
+  private def parseBoolean(raw: String, default: Boolean): Boolean =
+    raw.trim.toLowerCase match
+      case "true" | "1" | "yes" | "on"  => true
+      case "false" | "0" | "no" | "off" => false
+      case _                            => default
+
 final case class ChatRepositoryMemoryStore(
   repository: ChatRepository,
   now: UIO[Instant] = Clock.instant,
@@ -46,8 +100,8 @@ final case class ChatRepositoryMemoryStore(
                           for
                             timestamp <- now
                             _         <- repository.addMessage(
-                                           ConversationMessage(
-                                             conversationId = conversationId,
+                                           ConversationEntry(
+                                             conversationId = conversationId.toString,
                                              sender = senderFor(message.role),
                                              senderType = senderTypeFor(message.role),
                                              content = message.content,
@@ -64,18 +118,19 @@ final case class ChatRepositoryMemoryStore(
     for
       maybeConversation <- resolveConversation(threadId)
       thread            <- ZIO.foreach(maybeConversation) { conv =>
-                             val conversationId = conv.id.getOrElse(0L)
-                             repository.getMessages(conversationId).mapError(toMemoryError).map { messages =>
-                               val resolvedThreadId =
-                                 if isManagedTitle(conv.title) then managedTitleToThreadId(conv.title)
-                                 else normalizedThreadId(conversationId)
+                             val conversationId = conv.id.getOrElse("0")
+                             repository.getMessages(conversationId.toLongOption.getOrElse(0L)).mapError(toMemoryError).map {
+                               messages =>
+                                 val resolvedThreadId =
+                                   if isManagedTitle(conv.title) then managedTitleToThreadId(conv.title)
+                                   else normalizedThreadId(conversationId)
 
-                               ConversationThread(
-                                 threadId = resolvedThreadId,
-                                 history = messages.map(toLlmMessage).toVector,
-                                 metadata = Map("title" -> conv.title, "status" -> conv.status),
-                                 updatedAt = conv.updatedAt,
-                               )
+                                 ConversationThread(
+                                   threadId = resolvedThreadId,
+                                   history = messages.map(toLlmMessage).toVector,
+                                   metadata = Map("title" -> conv.title, "status" -> conv.status),
+                                   updatedAt = conv.updatedAt,
+                                 )
                              }
                            }
     yield thread
@@ -85,8 +140,8 @@ final case class ChatRepositoryMemoryStore(
       conversationId <- ensureConversation(entry.threadId)
       _              <- repository
                           .addMessage(
-                            ConversationMessage(
-                              conversationId = conversationId,
+                            ConversationEntry(
+                              conversationId = conversationId.toString,
                               sender = senderFor(entry.message.role),
                               senderType = senderTypeFor(entry.message.role),
                               content = entry.message.content,
@@ -106,16 +161,18 @@ final case class ChatRepositoryMemoryStore(
         conversations <- repository.listConversations(offset = 0, limit = 500).mapError(toMemoryError)
         normalized     = query.toLowerCase
         entries       <- ZIO.foreach(conversations) { conversation =>
-                           val threadId = normalizedThreadId(conversation.id.getOrElse(0L))
-                           repository.getMessages(conversation.id.getOrElse(0L)).mapError(toMemoryError).map { messages =>
-                             messages.collect {
-                               case message if message.content.toLowerCase.contains(normalized) =>
-                                 MemoryEntry(
-                                   threadId = threadId,
-                                   message = toLlmMessage(message),
-                                   recordedAt = message.createdAt,
-                                 )
-                             }
+                           val conversationId = conversation.id.getOrElse("0")
+                           val threadId       = normalizedThreadId(conversationId)
+                           repository.getMessages(conversationId.toLongOption.getOrElse(0L)).mapError(toMemoryError).map {
+                             messages =>
+                               messages.collect {
+                                 case message if message.content.toLowerCase.contains(normalized) =>
+                                   MemoryEntry(
+                                     threadId = threadId,
+                                     message = toLlmMessage(message),
+                                     recordedAt = message.createdAt,
+                                   )
+                               }
                            }
                          }
       yield entries.flatten.sortBy(_.recordedAt).reverse.take(limit)
@@ -127,7 +184,7 @@ final case class ChatRepositoryMemoryStore(
         for
           existing <- findConversationByThreadId(threadId)
           id       <- existing match
-                        case Some(conversation) => ZIO.succeed(conversation.id.getOrElse(0L))
+                        case Some(conversation) => ZIO.succeed(conversation.id.flatMap(_.toLongOption).getOrElse(0L))
                         case None               =>
                           for
                             timestamp <- now
@@ -169,10 +226,10 @@ final case class ChatRepositoryMemoryStore(
   private def managedTitleToThreadId(title: String): String =
     title.stripPrefix("llm4zio:")
 
-  private def normalizedThreadId(conversationId: Long): String =
+  private def normalizedThreadId(conversationId: String): String =
     s"conversation:$conversationId"
 
-  private def toLlmMessage(message: ConversationMessage): Message =
+  private def toLlmMessage(message: ConversationEntry): Message =
     Message(
       role = message.senderType match
         case SenderType.System    => MessageRole.System

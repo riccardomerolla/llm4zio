@@ -4,9 +4,10 @@ import java.time.Instant
 
 import zio.*
 
-import agents.AgentRegistry
-import db.{ PersistenceError, TaskArtifactRow, TaskReportRow, TaskRepository }
+import agents.{ AgentRegistry, ConversationMemory }
+import db.{ ConfigRepository, PersistenceError, TaskArtifactRow, TaskReportRow, TaskRepository }
 import llm4zio.core.LlmService
+import memory.*
 
 final case class StepDispatchResult(
   agentName: String,
@@ -27,13 +28,16 @@ object AgentDispatcher:
   ): ZIO[AgentDispatcher, PersistenceError, StepDispatchResult] =
     ZIO.serviceWithZIO[AgentDispatcher](_.dispatch(stepPlan, taskRunId))
 
-  val live: ZLayer[TaskRepository & AgentRegistry & LlmService, Nothing, AgentDispatcher] =
+  val live
+    : ZLayer[TaskRepository & AgentRegistry & LlmService & MemoryRepository & ConfigRepository, Nothing, AgentDispatcher] =
     ZLayer.fromFunction(AgentDispatcherLive.apply)
 
 final case class AgentDispatcherLive(
   repository: TaskRepository,
   registry: AgentRegistry,
   llmService: LlmService,
+  memoryRepository: MemoryRepository,
+  configRepository: ConfigRepository,
 ) extends AgentDispatcher:
 
   override def dispatch(
@@ -135,6 +139,7 @@ final case class AgentDispatcherLive(
                                                createdAt = completedAt,
                                              )
                                            )
+                           _            <- persistMemoryArtifacts(taskRunId, stepPlan.step, stepPlan.nodeId, response.content).forkDaemon
                          yield StepDispatchResult(
                            agentName = agentInfo.name,
                            content = response.content,
@@ -171,3 +176,67 @@ final case class AgentDispatcherLive(
        |
        |Return a concise markdown result for this step execution.
        |""".stripMargin
+
+  private def persistMemoryArtifacts(
+    taskRunId: Long,
+    stepName: String,
+    nodeId: String,
+    responseContent: String,
+  ): UIO[Unit] =
+    (for
+      settings <- configRepository.getSettingsByPrefix("memory.")
+      cfg       = ConversationMemory.fromSettingsMap(settings.map(v => v.key -> v.value).toMap)
+      _        <- ZIO.when(cfg.enabled) {
+                    for
+                      fromArtifacts <- repository
+                                         .getArtifactsByTask(taskRunId)
+                                         .map(_.filter(a => a.stepName == stepName && a.key.startsWith("memory.")))
+                      fromContent    = parseMemoryLines(responseContent)
+                      allEntries     = (
+                                         fromArtifacts.map(a => MemoryArtifact(a.key, a.value)) ++
+                                           fromContent
+                                       ).filter(_.value.trim.nonEmpty).distinct
+                      _             <- ZIO.foreachDiscard(allEntries) { item =>
+                                         saveMemoryEntry(taskRunId, nodeId, item)
+                                       }
+                    yield ()
+                  }
+    yield ()).ignore
+
+  private def saveMemoryEntry(
+    taskRunId: Long,
+    nodeId: String,
+    artifact: MemoryArtifact,
+  ): IO[Throwable, Unit] =
+    for
+      now <- Clock.instant
+      _   <- memoryRepository.save(
+               MemoryEntry(
+                 id = MemoryId.make,
+                 userId = UserId(s"task-run:$taskRunId"),
+                 sessionId = SessionId(nodeId),
+                 text = artifact.value.trim,
+                 embedding = Vector.empty,
+                 tags = List("workflow", s"task:$taskRunId"),
+                 kind = toMemoryKind(artifact.key),
+                 createdAt = now,
+                 lastAccessedAt = now,
+               )
+             )
+    yield ()
+
+  private def parseMemoryLines(content: String): List[MemoryArtifact] =
+    val Pattern = """(?i)^\s*(memory\.[a-z0-9_-]+)\s*[:=]\s*(.+?)\s*$""".r
+    content.linesIterator.toList.flatMap {
+      case Pattern(key, value) => Some(MemoryArtifact(key, value))
+      case _                   => None
+    }
+
+  private def toMemoryKind(key: String): MemoryKind =
+    key.trim.toLowerCase match
+      case k if k.startsWith("memory.preference") => MemoryKind.Preference
+      case k if k.startsWith("memory.context")    => MemoryKind.Context
+      case k if k.startsWith("memory.summary")    => MemoryKind.Summary
+      case _                                      => MemoryKind.Fact
+
+  final private case class MemoryArtifact(key: String, value: String)

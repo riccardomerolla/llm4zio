@@ -36,18 +36,20 @@ object IntentParserSpec extends ZIOSpecDefault:
   private val unavailableLlm: ULayer[LlmService] =
     ZLayer.succeed(
       new LlmService:
-        override def execute(prompt: String): IO[LlmError, LlmResponse] =
+        override def execute(prompt: String): IO[LlmError, LlmResponse]                                       =
           ZIO.fail(LlmError.ConfigError("unavailable"))
-        override def executeStream(prompt: String): zio.stream.Stream[LlmError, LlmChunk] = zio.stream.ZStream.empty
-        override def executeWithHistory(messages: List[Message]): IO[LlmError, LlmResponse] =
+        override def executeStream(prompt: String): zio.stream.Stream[LlmError, LlmChunk]                     = zio.stream.ZStream.empty
+        override def executeWithHistory(messages: List[Message]): IO[LlmError, LlmResponse]                   =
           ZIO.fail(LlmError.ConfigError("unavailable"))
         override def executeStreamWithHistory(messages: List[Message]): zio.stream.Stream[LlmError, LlmChunk] =
           zio.stream.ZStream.empty
-        override def executeWithTools(prompt: String, tools: List[llm4zio.tools.AnyTool]): IO[LlmError, ToolCallResponse] =
+        override def executeWithTools(prompt: String, tools: List[llm4zio.tools.AnyTool])
+          : IO[LlmError, ToolCallResponse] =
           ZIO.fail(LlmError.ConfigError("unavailable"))
-        override def executeStructured[A: zio.json.JsonCodec](prompt: String, schema: llm4zio.tools.JsonSchema): IO[LlmError, A] =
+        override def executeStructured[A: zio.json.JsonCodec](prompt: String, schema: llm4zio.tools.JsonSchema)
+          : IO[LlmError, A] =
           ZIO.fail(LlmError.ConfigError("unavailable"))
-        override def isAvailable: UIO[Boolean] = ZIO.succeed(false)
+        override def isAvailable: UIO[Boolean]                                                                = ZIO.succeed(false)
     )
 
   def spec: Spec[TestEnvironment, Any] = suite("IntentParserSpec")(
@@ -92,17 +94,20 @@ object IntentParserSpec extends ZIOSpecDefault:
     test("uses LLM decision when available and confident") {
       val llmLayer = ZLayer.succeed(
         new LlmService:
-          override def execute(prompt: String): IO[LlmError, LlmResponse] =
+          override def execute(prompt: String): IO[LlmError, LlmResponse]                                       =
             ZIO.succeed(LlmResponse("""{"agent":"web-search-agent","confidence":0.91}"""))
-          override def executeStream(prompt: String): zio.stream.Stream[LlmError, LlmChunk] = zio.stream.ZStream.empty
-          override def executeWithHistory(messages: List[Message]): IO[LlmError, LlmResponse] = ZIO.succeed(LlmResponse("ok"))
+          override def executeStream(prompt: String): zio.stream.Stream[LlmError, LlmChunk]                     = zio.stream.ZStream.empty
+          override def executeWithHistory(messages: List[Message]): IO[LlmError, LlmResponse]                   =
+            ZIO.succeed(LlmResponse("ok"))
           override def executeStreamWithHistory(messages: List[Message]): zio.stream.Stream[LlmError, LlmChunk] =
             zio.stream.ZStream.empty
-          override def executeWithTools(prompt: String, tools: List[llm4zio.tools.AnyTool]): IO[LlmError, ToolCallResponse] =
+          override def executeWithTools(prompt: String, tools: List[llm4zio.tools.AnyTool])
+            : IO[LlmError, ToolCallResponse] =
             ZIO.succeed(ToolCallResponse(None, Nil, "stop"))
-          override def executeStructured[A: zio.json.JsonCodec](prompt: String, schema: llm4zio.tools.JsonSchema): IO[LlmError, A] =
+          override def executeStructured[A: zio.json.JsonCodec](prompt: String, schema: llm4zio.tools.JsonSchema)
+            : IO[LlmError, A] =
             ZIO.fail(LlmError.InvalidRequestError("unused"))
-          override def isAvailable: UIO[Boolean] = ZIO.succeed(true)
+          override def isAvailable: UIO[Boolean]                                                                = ZIO.succeed(true)
       )
 
       for

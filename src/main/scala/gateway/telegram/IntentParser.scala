@@ -38,9 +38,9 @@ object IntentParser:
         .flatMap {
           case IntentDecision.Route(agent, _) if !options.contains(agent) =>
             parseFromKeywords(normalized, availableAgents)
-          case IntentDecision.Clarify(question, opts) if opts.isEmpty      =>
+          case IntentDecision.Clarify(question, opts) if opts.isEmpty     =>
             ZIO.succeed(IntentDecision.Clarify(question, options))
-          case other                                                       =>
+          case other                                                      =>
             ZIO.succeed(other)
         }
 
@@ -115,7 +115,8 @@ object IntentParser:
         question = parsed.question.filter(_.trim.nonEmpty).getOrElse(
           "I need clarification to route this request. Which agent should handle it?"
         ),
-        options = parsed.options.filter(_.nonEmpty).map(_.filter(options.contains)).filter(_.nonEmpty).getOrElse(options),
+        options =
+          parsed.options.filter(_.nonEmpty).map(_.filter(options.contains)).filter(_.nonEmpty).getOrElse(options),
       )
     else
       (parsed.agent, parsed.confidence) match
@@ -126,7 +127,8 @@ object IntentParser:
             question = parsed.question.filter(_.trim.nonEmpty).getOrElse(
               "I’m not fully confident about the best agent. Please choose one:"
             ),
-            options = parsed.options.filter(_.nonEmpty).map(_.filter(options.contains)).filter(_.nonEmpty).getOrElse(options),
+            options =
+              parsed.options.filter(_.nonEmpty).map(_.filter(options.contains)).filter(_.nonEmpty).getOrElse(options),
           )
 
   private def buildPrompt(message: String, agents: List[AgentInfo]): String =
@@ -172,7 +174,7 @@ object IntentParser:
   private def normalize(value: String): String =
     value.trim.toLowerCase
 
-  private final case class LlmRouterResponse(
+  final private case class LlmRouterResponse(
     agent: Option[String] = None,
     confidence: Option[Double] = None,
     clarify: Option[Boolean] = None,

@@ -1,7 +1,7 @@
 package config
 
 import java.net.URI
-import java.nio.file.{ Path, Paths }
+import java.nio.file.{ Files, Path, Paths }
 
 import zio.*
 import zio.config.*
@@ -31,7 +31,7 @@ object ConfigLoader:
 
   private val LocalHosts: Set[String] = Set("localhost", "127.0.0.1", "0.0.0.0", "::1")
 
-  private val ConfigAiPath = "gateway.ai"
+  private val ConfigAiPaths: List[String] = List("migration.ai", "gateway.ai")
 
   /** Load configuration from default sources (application.conf + environment variables)
     *
@@ -39,7 +39,7 @@ object ConfigLoader:
     *   ZIO effect that loads the configuration or fails with a configuration error
     */
   def load: IO[Config.Error, GatewayConfig] =
-    ZIO.config(deriveConfig[GatewayConfig].nested("gateway"))
+    loadFromProvider(ConfigProvider.defaultProvider)
 
   /** Load configuration from a specific file path
     *
@@ -49,11 +49,8 @@ object ConfigLoader:
     *   ZIO effect that loads the configuration or fails with a configuration error
     */
   def loadFromFile(configPath: Path): IO[Config.Error, GatewayConfig] =
-    ZIO
-      .config(deriveConfig[GatewayConfig].nested("gateway"))
-      .provideLayer(
-        ZLayer.succeed(ConfigProvider.fromHoconFile(configPath.toFile))
-      )
+    if !Files.exists(configPath) then missingRequiredPathConfig
+    else loadFromProvider(ConfigProvider.fromHoconFile(configPath.toFile))
 
   /** Load configuration with environment variable overrides
     *
@@ -69,9 +66,7 @@ object ConfigLoader:
     val envProvider  = ConfigProvider.envProvider.nested("gateway")
     val fileProvider = ConfigProvider.defaultProvider
 
-    ZIO
-      .config(deriveConfig[GatewayConfig])
-      .provideLayer(ZLayer.succeed(envProvider.orElse(fileProvider)))
+    loadFromProvider(envProvider.orElse(fileProvider))
 
   /** Load AI provider config section from default application config.
     */
@@ -185,6 +180,9 @@ object ConfigLoader:
   def validate(config: GatewayConfig): IO[String, GatewayConfig] =
     val providerConfig = config.resolvedProviderConfig
     for
+      _ <- validateParallelism(config.parallelism)
+      _ <- validateBatchSize(config.batchSize)
+      _ <- validateDiscovery(config.discoveryMaxDepth, config.discoveryExcludePatterns)
       _ <- validateRetries(providerConfig.maxRetries)
       _ <- validateTimeout(providerConfig.timeout)
       _ <- validateRateLimiter(
@@ -195,6 +193,28 @@ object ConfigLoader:
       _ <- validateAIProvider(providerConfig)
       _ <- validateTelegram(config)
     yield config
+
+  private def validateParallelism(parallelism: Int): IO[String, Unit] =
+    ZIO
+      .fail(s"Parallelism must be between 1 and 64, got: $parallelism")
+      .when(parallelism < 1 || parallelism > 64)
+      .unit
+
+  private def validateBatchSize(batchSize: Int): IO[String, Unit] =
+    ZIO
+      .fail(s"Batch size must be between 1 and 100, got: $batchSize")
+      .when(batchSize < 1 || batchSize > 100)
+      .unit
+
+  private def validateDiscovery(maxDepth: Int, excludePatterns: List[String]): IO[String, Unit] =
+    for
+      _ <- ZIO
+             .fail(s"Discovery max depth must be between 1 and 100, got: $maxDepth")
+             .when(maxDepth < 1 || maxDepth > 100)
+      _ <- ZIO
+             .fail("Discovery exclude patterns cannot contain empty values")
+             .when(excludePatterns.exists(_.trim.isEmpty))
+    yield ()
 
   private def validateRetries(retries: Int): IO[String, Unit] =
     ZIO
@@ -311,36 +331,60 @@ object ConfigLoader:
       yield ()
 
   private def parseAIProviderSection(config: TypesafeConfig): Either[String, Option[AIProviderConfig]] =
-    if !config.hasPath(ConfigAiPath) then Right(None)
-    else
-      val ai = config.getConfig(ConfigAiPath)
+    ConfigAiPaths.find(config.hasPath) match
+      case None         => Right(None)
+      case Some(aiPath) =>
+        val ai = config.getConfig(aiPath)
 
-      val providerEither =
-        if ai.hasPath("provider") then parseAIProvider(ai.getString("provider"))
-        else Right(AIProvider.GeminiCli)
+        val providerEither =
+          if ai.hasPath("provider") then parseAIProvider(ai.getString("provider"))
+          else Right(AIProvider.GeminiCli)
 
-      providerEither.map { provider =>
-        val providerConfig = AIProviderConfig(
-          provider = provider,
-          model = if ai.hasPath("model") then ai.getString("model") else AIProviderConfig().model,
-          baseUrl = if ai.hasPath("base-url") then Some(ai.getString("base-url")) else None,
-          apiKey = if ai.hasPath("api-key") then Some(ai.getString("api-key")) else None,
-          timeout =
-            if ai.hasPath("timeout") then Duration.fromJava(ai.getDuration("timeout")) else AIProviderConfig().timeout,
-          maxRetries = if ai.hasPath("max-retries") then ai.getInt("max-retries") else AIProviderConfig().maxRetries,
-          requestsPerMinute =
-            if ai.hasPath("requests-per-minute") then ai.getInt("requests-per-minute")
-            else AIProviderConfig().requestsPerMinute,
-          burstSize = if ai.hasPath("burst-size") then ai.getInt("burst-size") else AIProviderConfig().burstSize,
-          acquireTimeout =
-            if ai.hasPath("acquire-timeout") then Duration.fromJava(ai.getDuration("acquire-timeout"))
-            else AIProviderConfig().acquireTimeout,
-          temperature = if ai.hasPath("temperature") then Some(ai.getDouble("temperature")) else None,
-          maxTokens = if ai.hasPath("max-tokens") then Some(ai.getInt("max-tokens")) else None,
-        )
+        providerEither.map { provider =>
+          val providerConfig = AIProviderConfig(
+            provider = provider,
+            model = if ai.hasPath("model") then ai.getString("model") else AIProviderConfig().model,
+            baseUrl = if ai.hasPath("base-url") then Some(ai.getString("base-url")) else None,
+            apiKey = if ai.hasPath("api-key") then Some(ai.getString("api-key")) else None,
+            timeout =
+              if ai.hasPath("timeout") then Duration.fromJava(ai.getDuration("timeout"))
+              else AIProviderConfig().timeout,
+            maxRetries = if ai.hasPath("max-retries") then ai.getInt("max-retries") else AIProviderConfig().maxRetries,
+            requestsPerMinute =
+              if ai.hasPath("requests-per-minute") then ai.getInt("requests-per-minute")
+              else AIProviderConfig().requestsPerMinute,
+            burstSize = if ai.hasPath("burst-size") then ai.getInt("burst-size") else AIProviderConfig().burstSize,
+            acquireTimeout =
+              if ai.hasPath("acquire-timeout") then Duration.fromJava(ai.getDuration("acquire-timeout"))
+              else AIProviderConfig().acquireTimeout,
+            temperature = if ai.hasPath("temperature") then Some(ai.getDouble("temperature")) else None,
+            maxTokens = if ai.hasPath("max-tokens") then Some(ai.getInt("max-tokens")) else None,
+          )
 
-        Some(AIProviderConfig.withDefaults(providerConfig))
-      }
+          Some(AIProviderConfig.withDefaults(providerConfig))
+        }
+
+  private def loadFromProvider(provider: ConfigProvider): IO[Config.Error, GatewayConfig] =
+    for
+      _ <- requireConfiguredSource(provider)
+      c <- ZIO.config(deriveConfig[GatewayConfig].nested("gateway")).provideLayer(ZLayer.succeed(provider))
+    yield c
+
+  private def requireConfiguredSource(provider: ConfigProvider): IO[Config.Error, Unit] =
+    val withProvider = ZLayer.succeed(provider)
+    ZIO
+      .config(Config.string.nested("gateway").nested("source-dir"))
+      .provideLayer(withProvider)
+      .unit
+      .orElse(
+        ZIO
+          .config(Config.string.nested("migration").nested("source-dir"))
+          .provideLayer(withProvider)
+          .unit
+      )
+
+  private def missingRequiredPathConfig: IO[Config.Error, GatewayConfig] =
+    ZIO.config(Config.string.nested("gateway").nested("source-dir")).asInstanceOf[IO[Config.Error, GatewayConfig]]
 
   private def parseAIProvider(raw: String): Either[String, AIProvider] =
     raw.trim.toLowerCase match

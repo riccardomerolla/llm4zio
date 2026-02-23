@@ -19,7 +19,7 @@ object ControlPlaneSpec extends ZIOSpecDefault:
     ZLayer.succeed(testConfig) >>> OrchestratorControlPlane.live
 
   private val testWorkflowDef = WorkflowDefinition(
-    id = Some(1L),
+    id = Some("1"),
     name = "Test Workflow",
     description = Some("Test workflow for control plane"),
     steps = List(

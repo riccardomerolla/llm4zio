@@ -148,7 +148,7 @@ object TelegramChannelSpec extends ZIOSpecDefault:
       channelName = "telegram",
       sessionKey = session,
       direction = MessageDirection.Outbound,
-      role = MessageRole.Assistant,
+      role = GatewayMessageRole.Assistant,
       content = content,
       metadata = metadata,
       timestamp = Instant.EPOCH,
@@ -178,7 +178,7 @@ object TelegramChannelSpec extends ZIOSpecDefault:
       yield assertTrue(
         normalized.exists(_.sessionKey.value == "conversation:42"),
         normalized.exists(_.direction == MessageDirection.Inbound),
-        normalized.exists(_.role == MessageRole.User),
+        normalized.exists(_.role == GatewayMessageRole.User),
         normalized.exists(_.metadata.get("telegram.chat_id").contains("42")),
         normalized.exists(_.metadata.get("telegram.message_id").contains("100")),
         sessions.contains(SessionScopeStrategy.PerConversation.build("telegram", "42")),

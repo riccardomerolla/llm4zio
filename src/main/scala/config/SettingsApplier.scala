@@ -2,6 +2,7 @@ package config
 
 import zio.*
 
+import db.{ ConfigRepository, PersistenceError }
 import models.*
 
 /** Converts flat Map[String, String] (from DB settings) to nested config objects.
@@ -13,6 +14,12 @@ import models.*
   *   4. Update Ref[GatewayConfig] to apply changes immediately
   */
 object SettingsApplier:
+
+  def loadGatewayConfig(baseConfig: GatewayConfig): ZIO[ConfigRepository, PersistenceError, GatewayConfig] =
+    for
+      rows <- ConfigRepository.getAllSettings
+      map   = rows.map(row => row.key -> row.value).toMap
+    yield if map.nonEmpty then toGatewayConfig(map) else baseConfig
 
   /** Convert DB settings map to GatewayConfig
     *

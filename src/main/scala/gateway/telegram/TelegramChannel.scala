@@ -4,10 +4,10 @@ import zio.*
 import zio.json.*
 import zio.stream.ZStream
 
+import _root_.models.*
 import db.*
 import gateway.*
-import gateway.models.{ MessageDirection, MessageRole, NormalizedMessage, SessionKey, SessionScopeStrategy }
-import _root_.models.*
+import gateway.models.{ GatewayMessageRole, MessageDirection, NormalizedMessage, SessionKey, SessionScopeStrategy }
 import orchestration.TaskExecutor
 
 final case class TelegramPollBatch(
@@ -279,7 +279,7 @@ final case class TelegramChannel(
           channelName = name,
           sessionKey = sessionKey,
           direction = MessageDirection.Inbound,
-          role = MessageRole.User,
+          role = GatewayMessageRole.User,
           content = content,
           metadata = metadata,
           timestamp = now,
@@ -550,7 +550,7 @@ final case class TelegramChannel(
                  markup = InlineKeyboards.taskStatusKeyboard(run.id, RunStatus.Paused),
                )
         yield ()
-      case _                                  =>
+      case _                                     =>
         sendCallbackFeedback(
           chatId = chatId,
           replyToMessageId = replyToMessageId,
@@ -657,7 +657,7 @@ final case class TelegramChannel(
       wf         <- decodeWorkflow(row)
     yield wf
 
-  private final case class WorkflowStoragePayload(
+  final private case class WorkflowStoragePayload(
     steps: List[TaskStep],
     stepAgents: Map[String, String] = Map.empty,
     dynamicGraph: Option[WorkflowGraph] = None,
@@ -668,7 +668,7 @@ final case class TelegramChannel(
       case Right(payload) =>
         ZIO.succeed(
           WorkflowDefinition(
-            id = row.id,
+            id = row.id.map(_.toString),
             name = row.name,
             description = row.description,
             steps = payload.steps,
@@ -682,14 +682,14 @@ final case class TelegramChannel(
           case Right(steps) =>
             ZIO.succeed(
               WorkflowDefinition(
-                id = row.id,
+                id = row.id.map(_.toString),
                 name = row.name,
                 description = row.description,
                 steps = steps,
                 isBuiltin = row.isBuiltin,
               )
             )
-          case Left(error) =>
+          case Left(error)  =>
             ZIO.fail(MessageChannelError.InvalidMessage(s"invalid workflow payload for ${row.name}: $error"))
 
   private def sendCallbackFeedback(

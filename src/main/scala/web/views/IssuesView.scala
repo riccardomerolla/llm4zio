@@ -1,12 +1,14 @@
 package web.views
 
+import java.time.Instant
+
 import models.*
 import scalatags.Text.all.*
 
 object IssuesView:
 
   def list(
-    runId: Option[Long],
+    runId: Option[String],
     issues: List[AgentIssue],
     statusFilter: Option[String],
     query: Option[String],
@@ -53,12 +55,15 @@ object IssuesView:
           )
         else
           div(cls := "overflow-hidden rounded-xl border border-white/10 bg-slate-900/60")(
-            issues.sortBy(_.updatedAt).reverse.map(issueRow)
+            issues.sortBy(i =>
+              try i.updatedAt
+              catch case _: Throwable => Instant.EPOCH
+            ).reverse.map(issueRow)
           ),
       )
     )
 
-  def newForm(defaultRunId: Option[Long]): String =
+  def newForm(defaultRunId: Option[String]): String =
     Layout.page("New Issue", "/issues")(
       div(cls := "-mt-6 mx-auto max-w-4xl")(
         div(cls := "mb-5")(
@@ -100,31 +105,65 @@ object IssuesView:
       )
     )
 
+  // ---------------------------------------------------------------------------
+  // Null-safe helpers — EclipseStore's lazy deserialization can leave Option
+  // fields as Some(null) or even corrupt None instances.  Guard every access.
+  // ---------------------------------------------------------------------------
+
+  /** Safely extract a String from an Option that may be corrupted. */
+  private def safe(opt: => Option[String], fallback: String = ""): String =
+    try
+      opt.flatMap(Option(_)).filter(_.nonEmpty).getOrElse(fallback)
+    catch case _: Throwable => fallback
+
+  /** Safely map an Option[String] through a transform, returning fallback on any failure. */
+  private def safeMap(opt: => Option[String], f: String => String, fallback: String = ""): String =
+    try
+      opt.flatMap(Option(_)).map(f).getOrElse(fallback)
+    catch case _: Throwable => fallback
+
+  /** Safely extract a list of tags from an Option[String]. */
+  private def safeTags(opt: => Option[String]): List[String] =
+    try
+      opt.flatMap(Option(_)).filter(_.nonEmpty).toList.flatMap(_.split(",").toList.map(_.trim).filter(_.nonEmpty))
+    catch case _: Throwable => Nil
+
+  /** Safely get a string representation of a field, catching any deserialization exception. */
+  private def safeStr(thunk: => String, fallback: String = ""): String =
+    try
+      Option(thunk).getOrElse(fallback)
+    catch case _: Throwable => fallback
+
   def detail(issue: AgentIssue, assignments: List[AgentAssignment], availableAgents: List[AgentInfo]): String =
-    val selectedAgent = issue.preferredAgent.orElse(issue.assignedAgent).getOrElse("")
-    Layout.page(s"Issue #${issue.id.getOrElse(0L)}", "/issues")(
+    val issueIdStr    = safe(issue.id, "-")
+    val selectedAgent = safe(issue.preferredAgent).match
+      case "" => safe(issue.assignedAgent)
+      case v  => v
+    val convId        = safe(issue.conversationId)
+
+    Layout.page(s"Issue #$issueIdStr", "/issues")(
       div(cls := "-mt-6 mx-auto max-w-5xl space-y-4")(
         a(href := "/issues", cls := "text-sm font-medium text-indigo-300 hover:text-indigo-200")("← Back to issues"),
         div(cls := "rounded-xl border border-white/10 bg-slate-900/70 p-6")(
           div(cls := "flex items-start justify-between gap-4")(
             div(
-              h1(cls := "text-2xl font-bold text-white")(issue.title),
+              h1(cls := "text-2xl font-bold text-white")(safeStr(issue.title, "Untitled")),
               div(cls := "mt-2 flex flex-wrap items-center gap-2")(
-                statusBadge(issue.status.toString),
-                priorityBadge(issue.priority.toString),
-                issue.tags.toList.flatMap(splitTags).map(tagBadge),
+                statusBadge(safeStr(issue.status.toString, "open")),
+                priorityBadge(safeStr(issue.priority.toString, "medium")),
+                safeTags(issue.tags).map(tagBadge),
               ),
             ),
             div(cls := "flex flex-col items-end gap-2")(
-              if issue.conversationId.isDefined then
+              if convId.nonEmpty then
                 a(
-                  href := s"/chat/${issue.conversationId.get}",
+                  href := s"/chat/$convId",
                   cls  := "rounded-md border border-indigo-400/30 bg-indigo-500/20 px-3 py-2 text-sm font-semibold text-indigo-200 hover:bg-indigo-500/30",
                 )("Open linked chat")
               else (),
               form(
                 method   := "post",
-                action   := s"/issues/${issue.id.getOrElse(0L)}/assign",
+                action   := s"/issues/$issueIdStr/assign",
                 cls      := "flex items-center gap-2",
                 onsubmit := "const b=this.querySelector('button[type=submit]'); if(b){b.disabled=true;b.classList.add('opacity-60','cursor-not-allowed'); b.dataset.originalText=b.textContent; b.textContent='Assigning...';}",
               )(
@@ -133,23 +172,23 @@ object IssuesView:
                   `type` := "submit",
                   cls    := "rounded-md border border-emerald-400/30 bg-emerald-500/20 px-3 py-2 text-sm font-semibold text-emerald-200 hover:bg-emerald-500/30",
                 )(
-                  if issue.conversationId.isDefined then "Re-assign & Run" else "Assign & Start Chat"
+                  if convId.nonEmpty then "Re-assign & Run" else "Assign & Start Chat"
                 ),
               ),
             ),
           ),
           div(cls := "mt-5 grid grid-cols-1 gap-4 md:grid-cols-3")(
-            metaItem("Run", issue.runId.map(_.toString).getOrElse("Not linked")),
-            metaItem("Preferred Agent", issue.preferredAgent.getOrElse("Not specified")),
-            metaItem("Assigned Agent", issue.assignedAgent.getOrElse("Unassigned")),
-            metaItem("Context Path", issue.contextPath.getOrElse("Not specified")),
-            metaItem("Source Folder", issue.sourceFolder.getOrElse("Not specified")),
-            metaItem("Updated", issue.updatedAt.toString.take(19).replace('T', ' ')),
+            metaItem("Run", safeMap(issue.runId, identity, "Not linked")),
+            metaItem("Preferred Agent", safe(issue.preferredAgent, "Not specified")),
+            metaItem("Assigned Agent", safe(issue.assignedAgent, "Unassigned")),
+            metaItem("Context Path", safe(issue.contextPath, "Not specified")),
+            metaItem("Source Folder", safe(issue.sourceFolder, "Not specified")),
+            metaItem("Updated", safeStr(issue.updatedAt.toString.take(19).replace('T', ' '), "unknown")),
           ),
           div(cls := "mt-6 rounded-lg border border-white/10 bg-slate-950/70 p-4")(
             p(cls := "mb-2 text-sm font-semibold text-slate-300")("Task markdown"),
             div(cls := "prose prose-invert prose-sm max-w-none text-slate-100")(
-              markdownFragment(issue.description)
+              markdownFragment(safeStr(issue.description))
             ),
           ),
         ),
@@ -158,21 +197,30 @@ object IssuesView:
           if assignments.isEmpty then p(cls := "text-sm text-slate-400")("No assignments yet")
           else
             div(cls := "space-y-3")(
-              assignments.sortBy(_.assignedAt).reverse.map { assignment =>
-                div(cls := "rounded-lg border border-white/10 bg-slate-800/70 p-4")(
-                  div(cls := "flex flex-wrap items-center justify-between gap-2")(
-                    span(cls := "text-sm font-semibold text-slate-100")(assignment.agentName),
-                    span(cls := s"rounded-full px-2 py-0.5 text-xs ${assignmentStatusBadge(assignment.status)}")(
-                      assignment.status
+              assignments.sortBy(a =>
+                try a.assignedAt
+                catch case _: Throwable => Instant.EPOCH
+              ).reverse.map {
+                assignment =>
+                  div(cls := "rounded-lg border border-white/10 bg-slate-800/70 p-4")(
+                    div(cls := "flex flex-wrap items-center justify-between gap-2")(
+                      span(cls := "text-sm font-semibold text-slate-100")(safeStr(assignment.agentName, "unknown")),
+                      span(
+                        cls := s"rounded-full px-2 py-0.5 text-xs ${assignmentStatusBadge(safeStr(assignment.status, "pending"))}"
+                      )(
+                        safeStr(assignment.status, "pending")
+                      ),
                     ),
-                  ),
-                  assignment.executionLog.filter(_.nonEmpty).map { value =>
-                    pre(cls := "mt-3 max-h-48 overflow-auto rounded bg-black/30 p-3 text-xs text-slate-200")(value)
-                  },
-                  assignment.result.filter(_.nonEmpty).map { value =>
-                    pre(cls := "mt-3 max-h-48 overflow-auto rounded bg-black/30 p-3 text-xs text-slate-200")(value)
-                  },
-                )
+                    safe(assignment.executionLog).match
+                      case v if v.nonEmpty =>
+                        pre(cls := "mt-3 max-h-48 overflow-auto rounded bg-black/30 p-3 text-xs text-slate-200")(v)
+                      case _               => ()
+                    ,
+                    safe(assignment.result).match
+                      case v if v.nonEmpty =>
+                        pre(cls := "mt-3 max-h-48 overflow-auto rounded bg-black/30 p-3 text-xs text-slate-200")(v)
+                      case _               => (),
+                  )
               }
             ),
         ),
@@ -180,7 +228,7 @@ object IssuesView:
     )
 
   private def filterBar(
-    runId: Option[Long],
+    runId: Option[String],
     statusFilter: Option[String],
     query: Option[String],
     tagFilter: Option[String],
@@ -232,33 +280,39 @@ object IssuesView:
     )
 
   private def issueRow(issue: AgentIssue): Frag =
+    val issueIdStr = safe(issue.id, "-")
     div(cls := "border-b border-white/10 px-4 py-4 last:border-b-0")(
       div(cls := "flex items-start gap-3")(
         span(cls := "mt-1 inline-block h-3 w-3 rounded-full bg-emerald-400"),
         div(cls := "min-w-0 flex-1")(
           div(cls := "flex flex-wrap items-center gap-2")(
             a(
-              href := s"/issues/${issue.id.getOrElse(0L)}",
+              href := s"/issues/$issueIdStr",
               cls  := "text-base font-semibold text-slate-100 hover:text-indigo-300",
-            )(issue.title),
-            statusBadge(issue.status.toString),
-            priorityBadge(issue.priority.toString),
-            issue.tags.toList.flatMap(splitTags).map(tagBadge),
+            )(safeStr(issue.title, "Untitled")),
+            statusBadge(safeStr(issue.status.toString, "open")),
+            priorityBadge(safeStr(issue.priority.toString, "medium")),
+            safeTags(issue.tags).map(tagBadge),
           ),
-          p(cls := "mt-1 line-clamp-2 text-sm text-slate-300")(issue.description),
+          p(cls := "mt-1 line-clamp-2 text-sm text-slate-300")(safeStr(issue.description)),
           div(cls := "mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-400")(
-            span(s"#${issue.id.getOrElse(0L)}"),
-            span(s"updated ${issue.updatedAt.toString.take(19).replace('T', ' ')}"),
-            issue.runId.map(id => span(s"run:$id")),
-            issue.preferredAgent.map(agent => span(s"agent:$agent")),
-            issue.sourceFolder.map(folder => span(s"source:$folder")),
+            span(s"#$issueIdStr"),
+            span(s"updated ${safeStr(issue.updatedAt.toString.take(19).replace('T', ' '), "unknown")}"),
+            safe(issue.runId).match
+              case v if v.nonEmpty => span(s"run:$v")
+              case _               => ()
+            ,
+            safe(issue.preferredAgent).match
+              case v if v.nonEmpty => span(s"agent:$v")
+              case _               => ()
+            ,
+            safe(issue.sourceFolder).match
+              case v if v.nonEmpty => span(s"source:$v")
+              case _               => (),
           ),
         ),
       )
     )
-
-  private def splitTags(tags: String): List[String] =
-    tags.split(",").toList.map(_.trim).filter(_.nonEmpty)
 
   private def textField(fieldName: String, labelText: String, fieldValue: String, required: Boolean = false): Frag =
     div(
@@ -386,6 +440,13 @@ object IssuesView:
         case 4 => h4(cls := s"$headingCls text-base")(renderInline(textValue))
         case _ => h5(cls := s"$headingCls text-sm")(renderInline(textValue))
 
+    def isMarkdownTableHeader(idx: Int): Boolean =
+      if idx + 1 >= lineCount then false
+      else
+        val header = parseMarkdownTableRow(lines(idx))
+        val sep    = parseMarkdownTableRow(lines(idx + 1))
+        header.nonEmpty && isMarkdownTableDivider(sep, header.length)
+
     def parseAt(idx: Int): List[Frag] =
       if idx >= lineCount then Nil
       else
@@ -402,6 +463,10 @@ object IssuesView:
             pre(cls := "overflow-auto px-3 py-3 text-sm leading-6 text-slate-100")(codeLines.mkString("\n")),
           )
           block :: parseAt(next)
+        else if isMarkdownTableHeader(idx) then
+          val (tableLines, next) =
+            collectWhile(idx)(current => Option.when(current.trim.nonEmpty && current.contains("|"))(current))
+          markdownTableFrag(tableLines) :: parseAt(next)
         else
           headingLevel(line) match
             case Some((level, textValue)) =>
@@ -530,3 +595,49 @@ object IssuesView:
     line.trim.startsWith(">") ||
     unorderedItem(line).isDefined ||
     orderedItem(line).isDefined
+
+  private def markdownTableFrag(lines: List[String]): Frag =
+    val parsedRows = lines.map(parseMarkdownTableRow).filter(_.nonEmpty)
+    parsedRows match
+      case header :: divider :: tail if isMarkdownTableDivider(divider, header.length) =>
+        val bodyRows = tail.map(normalizeRow(_, header.length))
+        div(cls := "my-4 overflow-x-auto")(
+          table(cls := "min-w-full divide-y divide-white/10 rounded-lg border border-white/10 bg-black/20 text-sm")(
+            thead(
+              tr(header.map(col =>
+                th(cls := "px-3 py-2 text-left font-semibold text-slate-100")(inlineWithBreaks(col))
+              ))
+            ),
+            tbody(
+              bodyRows.map { row =>
+                tr(
+                  cls := "odd:bg-white/0 even:bg-white/5",
+                  row.map(col => td(cls := "px-3 py-2 text-slate-200")(inlineWithBreaks(col))),
+                )
+              }
+            ),
+          )
+        )
+      case _                                                                           =>
+        p(cls := "my-3 whitespace-normal text-sm leading-7 text-slate-100")(lines.mkString("\n"))
+
+  private def parseMarkdownTableRow(line: String): List[String] =
+    val trimmed  = line.trim
+    val stripped = trimmed.stripPrefix("|").stripSuffix("|")
+    stripped.split("\\|", -1).toList.map(_.trim)
+
+  private def isMarkdownTableDivider(row: List[String], expectedCols: Int): Boolean =
+    row.length == expectedCols && row.forall(cell => cell.matches("^:?-{3,}:?$"))
+
+  private def normalizeRow(row: List[String], size: Int): List[String] =
+    if row.length >= size then row.take(size)
+    else row ++ List.fill(size - row.length)("")
+
+  private def inlineWithBreaks(text: String): Seq[Frag] =
+    val parts = text.split("(?i)<br\\s*/?>", -1).toList
+    parts.zipWithIndex.flatMap {
+      case (part, idx) =>
+        val rendered = renderInline(part)
+        if idx < parts.length - 1 then rendered :+ br()
+        else rendered
+    }

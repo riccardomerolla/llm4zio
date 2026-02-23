@@ -10,7 +10,7 @@ enum MessageDirection derives JsonCodec:
   case Outbound
   case Internal
 
-enum MessageRole derives JsonCodec:
+enum GatewayMessageRole derives JsonCodec:
   case User
   case Assistant
   case System
@@ -21,7 +21,7 @@ case class NormalizedMessage(
   channelName: String,
   sessionKey: SessionKey,
   direction: MessageDirection,
-  role: MessageRole,
+  role: GatewayMessageRole,
   content: String,
   metadata: Map[String, String] = Map.empty,
   timestamp: Instant,
@@ -41,7 +41,7 @@ object NormalizedMessage:
         channelName = channelName,
         sessionKey = sessionKey,
         direction = MessageDirection.Inbound,
-        role = MessageRole.User,
+        role = GatewayMessageRole.User,
         content = content,
         metadata = metadata,
         timestamp = now,

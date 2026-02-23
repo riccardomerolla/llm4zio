@@ -64,7 +64,7 @@ case class WorkflowStepAgent(
 ) derives JsonCodec
 
 case class WorkflowDefinition(
-  id: Option[Long] = None,
+  id: Option[String] = None,
   name: String,
   description: Option[String] = None,
   steps: List[TaskStep],

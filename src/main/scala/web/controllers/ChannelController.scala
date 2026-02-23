@@ -1,11 +1,13 @@
 package web.controllers
 
+import java.util.concurrent.TimeUnit
+
 import zio.*
 import zio.http.*
 import zio.json.*
 
-import gateway.*
 import _root_.models.GatewayConfig
+import gateway.*
 import web.views.{ ChannelCardData, ChannelView }
 
 trait ChannelController:
@@ -26,16 +28,20 @@ final case class ChannelControllerLive(
 ) extends ChannelController:
 
   override val routes: Routes[Any, Response] = Routes(
-    Method.GET / "channels"       -> handler {
-      buildCards.map(cards => html(ChannelView.page(cards)))
+    Method.GET / "channels"             -> handler {
+      buildCards.flatMap(cards =>
+        Clock.currentTime(TimeUnit.MILLISECONDS).map(now => html(ChannelView.page(cards, now)))
+      )
     },
-    Method.GET / "channels" / "cards" -> handler {
-      buildCards.map(cards => htmlFragment(ChannelView.cardsFragment(cards).render))
+    Method.GET / "channels" / "cards"   -> handler {
+      buildCards.flatMap(cards =>
+        Clock.currentTime(TimeUnit.MILLISECONDS).map(now => htmlFragment(ChannelView.cardsFragment(cards, now).render))
+      )
     },
     Method.GET / "channels" / "summary" -> handler {
       buildCards.map(cards => htmlFragment(ChannelView.summaryWidgetFragment(cards).render))
     },
-    Method.GET / "api" / "channels" -> handler {
+    Method.GET / "api" / "channels"     -> handler {
       buildCards.map(cards => Response.json(cards.toJson))
     },
   )

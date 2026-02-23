@@ -81,10 +81,10 @@ object DashboardView:
       ),
       div(cls := "mt-6")(
         div(
-          id                  := "channels-summary",
-          attr("hx-get")      := "/channels/summary",
-          attr("hx-trigger")  := "load, every 10s",
-          attr("hx-swap")     := "innerHTML",
+          id                   := "channels-summary",
+          attr("hx-get")       := "/channels/summary",
+          attr("hx-trigger")   := "load, every 10s",
+          attr("hx-swap")      := "innerHTML",
           attr("hx-indicator") := "#channels-summary-indicator",
         )(
           div(cls := "rounded-lg bg-white/5 ring-1 ring-white/10 p-4 text-sm text-gray-400")("Loading channels...")

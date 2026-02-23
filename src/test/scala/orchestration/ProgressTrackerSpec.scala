@@ -14,11 +14,11 @@ object ProgressTrackerSpec extends ZIOSpecDefault:
     test("startPhase publishes running update") {
       val layer = trackerLayer
       (for
-        queue  <- ProgressTracker.subscribe(10L)
-        _      <- ProgressTracker.startPhase(10L, "Discovery", 12)
+        queue  <- ProgressTracker.subscribe("10")
+        _      <- ProgressTracker.startPhase("10", "Discovery", 12)
         update <- queue.take.timeoutFail("missing published update")(5.seconds)
       yield assertTrue(
-        update.runId == 10L,
+        update.runId == "10",
         update.phase == "Discovery",
         update.itemsProcessed == 0,
         update.itemsTotal == 12,
@@ -26,7 +26,7 @@ object ProgressTrackerSpec extends ZIOSpecDefault:
     },
     test("subscribe only receives updates for matching runId") {
       val update = ProgressUpdate(
-        runId = 100L,
+        runId = "100",
         phase = "Analysis",
         itemsProcessed = 1,
         itemsTotal = 5,
@@ -36,13 +36,13 @@ object ProgressTrackerSpec extends ZIOSpecDefault:
 
       val layer = trackerLayer
       (for
-        queueA <- ProgressTracker.subscribe(100L)
-        queueB <- ProgressTracker.subscribe(200L)
+        queueA <- ProgressTracker.subscribe("100")
+        queueB <- ProgressTracker.subscribe("200")
         _      <- ProgressTracker.updateProgress(update)
         seenA  <- queueA.take.timeoutFail("matching runId should receive event")(5.seconds)
         seenB  <- queueB.take.timeout(1.second)
       yield assertTrue(
-        seenA.runId == 100L,
+        seenA.runId == "100",
         seenA.phase == "Analysis",
         seenB.isEmpty,
       )).provideLayer(layer)
@@ -50,12 +50,12 @@ object ProgressTrackerSpec extends ZIOSpecDefault:
     test("completePhase and failPhase publish terminal updates") {
       val layer = trackerLayer
       (for
-        queue <- ProgressTracker.subscribe(30L)
-        _     <- ProgressTracker.startPhase(30L, "Mapping", 4)
+        queue <- ProgressTracker.subscribe("30")
+        _     <- ProgressTracker.startPhase("30", "Mapping", 4)
         _     <- queue.take
-        _     <- ProgressTracker.completePhase(30L, "Mapping")
-        _     <- ProgressTracker.startPhase(30L, "Validation", 3)
-        _     <- ProgressTracker.failPhase(30L, "Validation", "Validation failed")
+        _     <- ProgressTracker.completePhase("30", "Mapping")
+        _     <- ProgressTracker.startPhase("30", "Validation", 3)
+        _     <- ProgressTracker.failPhase("30", "Validation", "Validation failed")
 
         events   <- ZIO.collectAll(
                       List.fill(3)(queue.take.timeoutFail("missing terminal-sequence event")(5.seconds))
@@ -74,25 +74,25 @@ object ProgressTrackerSpec extends ZIOSpecDefault:
     test("startPhase always succeeds and publishes") {
       val layer = trackerLayer
       (for
-        queue  <- ProgressTracker.subscribe(50L)
-        exit   <- ProgressTracker.startPhase(50L, "Transformation", 2).exit
+        queue  <- ProgressTracker.subscribe("50")
+        exit   <- ProgressTracker.startPhase("50", "Transformation", 2).exit
         update <- queue.take.timeoutFail("update should still be published")(5.seconds)
       yield assertTrue(
         exit.isSuccess,
-        update.runId == 50L,
+        update.runId == "50",
         update.phase == "Transformation",
       )).provideLayer(layer)
     },
     test("bounded hub applies backpressure for non-draining subscribers") {
       val layer = trackerLayer
       (for
-        _   <- ProgressTracker.subscribe(70L)
+        _   <- ProgressTracker.subscribe("70")
         now  = Instant.parse("2026-02-08T00:00:00Z")
         out <- ZIO
                  .foreachDiscard(1 to 600) { i =>
                    ProgressTracker.updateProgress(
                      ProgressUpdate(
-                       runId = 70L,
+                       runId = "70",
                        phase = "Analysis",
                        itemsProcessed = i,
                        itemsTotal = 1000,
@@ -108,11 +108,11 @@ object ProgressTrackerSpec extends ZIOSpecDefault:
       check(Gen.int(1, 80)) { n =>
         val layer = trackerLayer
         (for
-          queue <- ProgressTracker.subscribe(99L)
+          queue <- ProgressTracker.subscribe("99")
           _     <- ZIO.foreachDiscard(1 to n) { i =>
                      ProgressTracker.updateProgress(
                        ProgressUpdate(
-                         runId = 99L,
+                         runId = "99",
                          phase = "Discovery",
                          itemsProcessed = i,
                          itemsTotal = n,
@@ -126,7 +126,7 @@ object ProgressTrackerSpec extends ZIOSpecDefault:
                    )
         yield assertTrue(
           seen.length == n,
-          seen.forall(_.runId == 99L),
+          seen.forall(_.runId == "99"),
           seen.map(_.itemsProcessed) == (1 to n).toList,
         )).provideLayer(layer)
       }

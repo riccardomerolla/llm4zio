@@ -33,14 +33,14 @@ object TaskProgressNotifier:
     ] =
     ZLayer.scoped {
       for
-        controlPlane <- ZIO.service[OrchestratorControlPlane]
-        chatRepo     <- ZIO.service[ChatRepository]
-        taskRepo     <- ZIO.service[TaskRepository]
+        controlPlane    <- ZIO.service[OrchestratorControlPlane]
+        chatRepo        <- ZIO.service[ChatRepository]
+        taskRepo        <- ZIO.service[TaskRepository]
         channelRegistry <- ZIO.service[ChannelRegistry]
-        configRef    <- ZIO.service[Ref[MigrationConfig]]
-        seenRef      <- Ref.make((Set.empty[String], List.empty[String]))
-        service       = TaskProgressNotifierLive(controlPlane, chatRepo, taskRepo, channelRegistry, configRef, seenRef)
-        _            <- service.runLoop.forkScoped
+        configRef       <- ZIO.service[Ref[MigrationConfig]]
+        seenRef         <- Ref.make((Set.empty[String], List.empty[String]))
+        service          = TaskProgressNotifierLive(controlPlane, chatRepo, taskRepo, channelRegistry, configRef, seenRef)
+        _               <- service.runLoop.forkScoped
       yield service
     }
 
@@ -86,12 +86,12 @@ final case class TaskProgressNotifierLive(
     configRef.get.map { cfg =>
       val telegramEnabled = cfg.telegram.enabled
       val interesting     = event match
-        case _: WorkflowStarted                     => true
-        case StepStarted(_, _, _, _, _)            => true
-        case StepCompleted(_, _, _, _, _)          => true
-        case _: WorkflowFailed                     => true
-        case WorkflowCompleted(_, _, status, _)    => status == WorkflowStatus.Completed
-        case _                                     => false
+        case _: WorkflowStarted                 => true
+        case StepStarted(_, _, _, _, _)         => true
+        case StepCompleted(_, _, _, _, _)       => true
+        case _: WorkflowFailed                  => true
+        case WorkflowCompleted(_, _, status, _) => status == WorkflowStatus.Completed
+        case _                                  => false
       telegramEnabled && interesting
     }
 
@@ -102,17 +102,18 @@ final case class TaskProgressNotifierLive(
                      case Some(value) => ZIO.succeed(value)
                      case None        => ZIO.fail(TaskProgressNotifierError.MissingRun(runIdLong))
                    }
-      context   <- chatRepository.getSessionContextByTaskRunId(runIdLong).mapError(TaskProgressNotifierError.Persistence.apply)
+      context   <-
+        chatRepository.getSessionContextByTaskRunId(runIdLong).mapError(TaskProgressNotifierError.Persistence.apply)
       chatId    <- context match
                      case Some(link) if link.channelName.trim.equalsIgnoreCase("telegram") =>
                        parseChatId(link.sessionKey).orElseFail(TaskProgressNotifierError.MissingTelegramSession(runIdLong))
-                     case _ =>
+                     case _                                                                =>
                        ZIO.fail(TaskProgressNotifierError.MissingTelegramSession(runIdLong))
       taskName  <- resolveTaskName(run)
       baseUrl   <- resolveBaseUrl
       message    = buildMessage(event, taskName, run, baseUrl)
       keyboard   = buildKeyboard(event, run.id, baseUrl)
-      client     <- resolveTelegramClient
+      client    <- resolveTelegramClient
       _         <- client
                      .sendMessage(
                        TelegramSendMessage(
@@ -151,7 +152,7 @@ final case class TaskProgressNotifierLive(
       .getAllSettings
       .mapError(TaskProgressNotifierError.Persistence.apply)
       .map { settings =>
-        val map       = settings.map(s => s.key -> s.value.trim).toMap
+        val map        = settings.map(s => s.key -> s.value.trim).toMap
         val configured =
           List("gateway.url", "gateway.baseUrl", "gateway.publicUrl", "web.baseUrl")
             .flatMap(map.get)
@@ -170,17 +171,17 @@ final case class TaskProgressNotifierLive(
     baseUrl: String,
   ): String =
     event match
-      case WorkflowStarted(_, _, _, _)          =>
-        val header = ResponseFormatter.formatTaskProgress(
+      case WorkflowStarted(_, _, _, _)                       =>
+        val header       = ResponseFormatter.formatTaskProgress(
           WorkflowRunState.Running,
           taskName = taskName,
           stepName = run.currentPhase,
         )
         val workflowLine = run.workflowId.map(id => s"Workflow: #$id").getOrElse("Workflow: N/A")
         s"$header\n$workflowLine"
-      case StepStarted(_, _, step, _, _)        =>
+      case StepStarted(_, _, step, _, _)                     =>
         s"→ Step: ${step.trim} — Running..."
-      case StepCompleted(_, _, step, _, _)      =>
+      case StepCompleted(_, _, step, _, _)                   =>
         s"✓ Step completed: ${step.trim}"
       case WorkflowCompleted(_, _, WorkflowStatus.Failed, _) =>
         val currentStep = run.currentPhase.filter(_.trim.nonEmpty)
@@ -191,10 +192,10 @@ final case class TaskProgressNotifierLive(
         )
         val errorText   = run.errorMessage.filter(_.trim.nonEmpty).map(err => s"\nError: $err").getOrElse("")
         s"$header$errorText\nView details: $baseUrl/tasks/${run.id}"
-      case WorkflowCompleted(_, _, _, _)        =>
+      case WorkflowCompleted(_, _, _, _)                     =>
         s"""${ResponseFormatter.formatTaskProgress(WorkflowRunState.Completed, taskName, None)}
            |View results: $baseUrl/tasks/${run.id}""".stripMargin
-      case WorkflowFailed(_, _, error, _)       =>
+      case WorkflowFailed(_, _, error, _)                    =>
         val currentStep = run.currentPhase.filter(_.trim.nonEmpty)
         val header      = ResponseFormatter.formatTaskProgress(
           WorkflowRunState.Failed,
@@ -202,7 +203,7 @@ final case class TaskProgressNotifierLive(
           stepName = currentStep,
         )
         s"$header\nError: ${error.trim}\nView details: $baseUrl/tasks/${run.id}"
-      case _                                    =>
+      case _                                                 =>
         s"Task update for #${run.id}"
 
   private def buildKeyboard(
@@ -211,7 +212,7 @@ final case class TaskProgressNotifierLive(
     baseUrl: String,
   ): Option[TelegramInlineKeyboardMarkup] =
     event match
-      case WorkflowCompleted(_, _, WorkflowStatus.Failed, _) =>
+      case WorkflowCompleted(_, _, WorkflowStatus.Failed, _)    =>
         Some(
           TelegramInlineKeyboardMarkup(
             inline_keyboard = List(
@@ -235,7 +236,7 @@ final case class TaskProgressNotifierLive(
             )
           )
         )
-      case _: WorkflowFailed =>
+      case _: WorkflowFailed                                    =>
         Some(
           TelegramInlineKeyboardMarkup(
             inline_keyboard = List(
@@ -249,7 +250,7 @@ final case class TaskProgressNotifierLive(
             )
           )
         )
-      case _                                                        => None
+      case _                                                    => None
 
   private def detailsButton(taskRunId: Long, baseUrl: String): TelegramInlineKeyboardButton =
     val url = s"$baseUrl/tasks/$taskRunId"
@@ -270,8 +271,8 @@ final case class TaskProgressNotifierLive(
       val host     = Option(uri.getHost).map(_.trim).getOrElse("")
       val hostOk   =
         host.nonEmpty &&
-          host.contains(".") &&
-          !host.equalsIgnoreCase("localhost")
+        host.contains(".") &&
+        !host.equalsIgnoreCase("localhost")
       schemeOk && hostOk
     }
 
@@ -290,31 +291,31 @@ final case class TaskProgressNotifierLive(
 
   private def eventKey(event: ControlPlaneEvent): IO[TaskProgressNotifierError, String] =
     val key = event match
-      case WorkflowStarted(correlationId, runId, _, ts)     =>
+      case WorkflowStarted(correlationId, runId, _, ts)        =>
         s"workflow-start:$correlationId:$runId:${ts.toEpochMilli}"
-      case StepStarted(correlationId, runId, step, _, ts)   =>
+      case StepStarted(correlationId, runId, step, _, ts)      =>
         s"step-start:$correlationId:$runId:${step.trim}:${ts.toEpochMilli}"
-      case StepCompleted(correlationId, runId, step, _, ts) =>
+      case StepCompleted(correlationId, runId, step, _, ts)    =>
         s"step-done:$correlationId:$runId:${step.trim}:${ts.toEpochMilli}"
-      case WorkflowFailed(correlationId, runId, _, ts)      =>
+      case WorkflowFailed(correlationId, runId, _, ts)         =>
         s"workflow-failed:$correlationId:$runId:${ts.toEpochMilli}"
       case WorkflowCompleted(correlationId, runId, status, ts) =>
         s"workflow-completed:$correlationId:$runId:${status.toString}:${ts.toEpochMilli}"
-      case other                                            =>
+      case other                                               =>
         s"ignored:${other.getClass.getSimpleName}:${other.timestamp.toEpochMilli}"
     ZIO.succeed(key)
 
   private def extractRunId(event: ControlPlaneEvent): String =
     event match
-      case WorkflowStarted(_, runId, _, _)     => runId
-      case WorkflowCompleted(_, runId, _, _)   => runId
-      case WorkflowFailed(_, runId, _, _)      => runId
-      case StepStarted(_, runId, _, _, _)      => runId
+      case WorkflowStarted(_, runId, _, _)       => runId
+      case WorkflowCompleted(_, runId, _, _)     => runId
+      case WorkflowFailed(_, runId, _, _)        => runId
+      case StepStarted(_, runId, _, _, _)        => runId
       case StepProgress(_, runId, _, _, _, _, _) => runId
-      case StepCompleted(_, runId, _, _, _)    => runId
-      case StepFailed(_, runId, _, _, _)       => runId
-      case ResourceAllocated(_, runId, _, _)   => runId
-      case ResourceReleased(_, runId, _, _)    => runId
+      case StepCompleted(_, runId, _, _, _)      => runId
+      case StepFailed(_, runId, _, _, _)         => runId
+      case ResourceAllocated(_, runId, _, _)     => runId
+      case ResourceReleased(_, runId, _, _)      => runId
 
   private def parseRunId(raw: String): IO[TaskProgressNotifierError, Long] =
     ZIO.fromOption(raw.trim.toLongOption).orElseFail(TaskProgressNotifierError.InvalidRunId(raw))

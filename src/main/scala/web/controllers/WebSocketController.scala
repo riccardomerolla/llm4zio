@@ -1,5 +1,7 @@
 package web.controllers
 
+import java.util.concurrent.TimeUnit
+
 import zio.*
 import zio.http.*
 import zio.http.ChannelEvent.Read
@@ -10,8 +12,8 @@ import core.HealthMonitor
 import gateway.models.SessionScopeStrategy
 import gateway.{ ChannelRegistry, MessageChannelError }
 import orchestration.OrchestratorControlPlane
-import web.{ ActivityHub, StreamAbortRegistry }
 import web.ws.{ ClientMessage, ServerMessage, SubscriptionTopic }
+import web.{ ActivityHub, StreamAbortRegistry }
 
 trait WebSocketController:
   def routes: Routes[Any, Response]
@@ -45,8 +47,8 @@ final case class WebSocketControllerLive(
             subscriptions <- Ref.make(Map.empty[String, Fiber.Runtime[Nothing, Unit]])
             _             <- channelRegistry.markConnected("websocket")
             _             <- socket.receiveAll(event => handleChannelEvent(socket, subscriptions, event))
-              .ensuring(stopAllSubscriptions(subscriptions))
-              .ensuring(channelRegistry.markDisconnected("websocket"))
+                               .ensuring(stopAllSubscriptions(subscriptions))
+                               .ensuring(channelRegistry.markDisconnected("websocket"))
           yield ()
         }
       }.toResponse
@@ -59,18 +61,20 @@ final case class WebSocketControllerLive(
     event: ChannelEvent[WebSocketFrame],
   ): UIO[Unit] =
     event match
-      case Read(WebSocketFrame.Text(text)) =>
+      case Read(WebSocketFrame.Text(text))     =>
         handleClientMessage(socket, subscriptions, text)
-      case Read(WebSocketFrame.Close(_, _)) =>
+      case Read(WebSocketFrame.Close(_, _))    =>
         stopAllSubscriptions(subscriptions)
-      case ChannelEvent.Unregistered =>
+      case ChannelEvent.Unregistered           =>
         stopAllSubscriptions(subscriptions)
       case ChannelEvent.ExceptionCaught(cause) =>
-        sendServerMessage(
-          socket,
-          ServerMessage.Error("ws_exception", Option(cause.getMessage).getOrElse(cause.toString), nowMillis)
+        withNow(ts =>
+          sendServerMessage(
+            socket,
+            ServerMessage.Error("ws_exception", Option(cause.getMessage).getOrElse(cause.toString), ts),
+          )
         )
-      case _                               =>
+      case _                                   =>
         ZIO.unit
 
   private def handleClientMessage(
@@ -79,15 +83,15 @@ final case class WebSocketControllerLive(
     raw: String,
   ): UIO[Unit] =
     ZIO.fromEither(raw.fromJson[ClientMessage]).foldZIO(
-      err => sendServerMessage(socket, ServerMessage.Error("invalid_message", err, nowMillis)),
+      err => withNow(ts => sendServerMessage(socket, ServerMessage.Error("invalid_message", err, ts))),
       {
-        case ClientMessage.Ping(ts)              =>
+        case ClientMessage.Ping(ts)            =>
           sendServerMessage(socket, ServerMessage.Pong(ts))
-        case ClientMessage.AbortChat(convId)     =>
+        case ClientMessage.AbortChat(convId)   =>
           handleAbortChat(socket, convId)
-        case ClientMessage.Subscribe(topic, _)   =>
+        case ClientMessage.Subscribe(topic, _) =>
           subscribe(socket, subscriptions, topic)
-        case ClientMessage.Unsubscribe(topic)    =>
+        case ClientMessage.Unsubscribe(topic)  =>
           unsubscribe(socket, subscriptions, topic)
       },
     )
@@ -98,19 +102,23 @@ final case class WebSocketControllerLive(
   ): UIO[Unit] =
     streamAbortRegistry.abort(conversationId).flatMap { aborted =>
       if aborted then
-        sendServerMessage(
-          socket,
-          ServerMessage.Event(
-            topic = s"chat:$conversationId:stream",
-            eventType = "chat-aborted",
-            payload = """{"type":"chat-aborted","delta":""}""",
-            ts = nowMillis,
-          ),
+        withNow(ts =>
+          sendServerMessage(
+            socket,
+            ServerMessage.Event(
+              topic = s"chat:$conversationId:stream",
+              eventType = "chat-aborted",
+              payload = """{"type":"chat-aborted","delta":""}""",
+              ts = ts,
+            ),
+          )
         )
       else
-        sendServerMessage(
-          socket,
-          ServerMessage.Error("abort_not_found", s"No active stream for conversation $conversationId", nowMillis)
+        withNow(ts =>
+          sendServerMessage(
+            socket,
+            ServerMessage.Error("abort_not_found", s"No active stream for conversation $conversationId", ts),
+          )
         )
     }
 
@@ -121,15 +129,15 @@ final case class WebSocketControllerLive(
   ): UIO[Unit] =
     subscriptions.get.flatMap { current =>
       if current.contains(topic) then
-        sendServerMessage(socket, ServerMessage.Subscribed(topic, nowMillis))
+        withNow(ts => sendServerMessage(socket, ServerMessage.Subscribed(topic, ts)))
       else
         SubscriptionTopic.parse(topic) match
           case Left(err)     =>
-            sendServerMessage(socket, ServerMessage.Error("invalid_topic", err, nowMillis))
+            withNow(ts => sendServerMessage(socket, ServerMessage.Error("invalid_topic", err, ts)))
           case Right(parsed) =>
             startSubscription(socket, topic, parsed).flatMap { fiber =>
               subscriptions.update(_ + (topic -> fiber)) *>
-                sendServerMessage(socket, ServerMessage.Subscribed(topic, nowMillis))
+                withNow(ts => sendServerMessage(socket, ServerMessage.Subscribed(topic, ts)))
             }
     }
 
@@ -142,7 +150,7 @@ final case class WebSocketControllerLive(
       .modify(current => (current.get(topic), current - topic))
       .flatMap(fiber => ZIO.foreachDiscard(fiber)(_.interrupt))
       .ignore *>
-      sendServerMessage(socket, ServerMessage.Unsubscribed(topic, nowMillis))
+      withNow(ts => sendServerMessage(socket, ServerMessage.Unsubscribed(topic, ts)))
 
   private def startSubscription(
     socket: zio.http.WebSocketChannel,
@@ -174,15 +182,9 @@ final case class WebSocketControllerLive(
           .mapZIO {
             case Right((snapshot, history)) =>
               val payload = s"""{"snapshot":${snapshot.toJson},"history":${history.toJson}}"""
-              sendServerMessage(
-                socket,
-                ServerMessage.Event(topic, "agents-activity", payload, nowMillis),
-              )
-            case Left(err)                 =>
-              sendServerMessage(
-                socket,
-                ServerMessage.Error("agents_activity_error", err.toString, nowMillis),
-              )
+              withNow(ts => sendServerMessage(socket, ServerMessage.Event(topic, "agents-activity", payload, ts)))
+            case Left(err)                  =>
+              withNow(ts => sendServerMessage(socket, ServerMessage.Error("agents_activity_error", err.toString, ts)))
           }
           .runDrain
           .forkDaemon
@@ -202,15 +204,15 @@ final case class WebSocketControllerLive(
           yield ()
         }.forkDaemon
       case SubscriptionTopic.RunProgress(_)               =>
-        sendServerMessage(
-          socket,
-          ServerMessage.Error("unsupported_topic", s"Topic not wired yet: $topic", nowMillis),
-        ) *> ZIO.never.forkDaemon
+        withNow(ts =>
+          sendServerMessage(socket, ServerMessage.Error("unsupported_topic", s"Topic not wired yet: $topic", ts))
+        ) *>
+          ZIO.never.forkDaemon
       case SubscriptionTopic.DashboardRecentRuns          =>
-        sendServerMessage(
-          socket,
-          ServerMessage.Error("unsupported_topic", s"Topic not wired yet: $topic", nowMillis),
-        ) *> ZIO.never.forkDaemon
+        withNow(ts =>
+          sendServerMessage(socket, ServerMessage.Error("unsupported_topic", s"Topic not wired yet: $topic", ts))
+        ) *>
+          ZIO.never.forkDaemon
 
   private def startChatSubscription(
     socket: zio.http.WebSocketChannel,
@@ -220,42 +222,42 @@ final case class WebSocketControllerLive(
     val sessionKey = SessionScopeStrategy.PerConversation.build("websocket", conversationId.toString)
     channelRegistry.get("websocket").foldZIO(
       err =>
-        sendServerMessage(
-          socket,
-          ServerMessage.Error("channel_error", err.toString, nowMillis),
+        withNow(ts =>
+          sendServerMessage(socket, ServerMessage.Error("channel_error", err.toString, ts))
         ) *> ZIO.never.forkDaemon,
       channel =>
         (for
-          _ <- channel.open(sessionKey)
+          _   <- channel.open(sessionKey)
           now <- Clock.instant
           _   <- channelRegistry.markActivity("websocket", now)
-          _ <- channel.outbound(sessionKey)
-                 .mapZIO(msg =>
-                   sendServerMessage(
-                     socket,
-                     ServerMessage.Event(
-                       topic = topic,
-                       eventType = msg.metadata.getOrElse("streamEventType", "chat-message"),
-                       payload = msg.content,
-                       ts = msg.timestamp.toEpochMilli,
-                     ),
+          _   <- channel.outbound(sessionKey)
+                   .mapZIO(msg =>
+                     sendServerMessage(
+                       socket,
+                       ServerMessage.Event(
+                         topic = topic,
+                         eventType = msg.metadata.getOrElse("streamEventType", "chat-message"),
+                         payload = msg.content,
+                         ts = msg.timestamp.toEpochMilli,
+                       ),
+                     )
                    )
-                 )
-                 .runDrain
+                   .runDrain
         yield ())
           .catchAll {
-            case MessageChannelError.ChannelClosed(name) =>
-              sendServerMessage(
-                socket,
-                ServerMessage.Error("channel_closed", s"Channel $name is closed", nowMillis),
+            case MessageChannelError.ChannelClosed(name)       =>
+              withNow(ts =>
+                sendServerMessage(socket, ServerMessage.Error("channel_closed", s"Channel $name is closed", ts))
               )
             case MessageChannelError.SessionNotConnected(_, _) =>
-              sendServerMessage(
-                socket,
-                ServerMessage.Error("session_not_connected", s"Session not connected for $topic", nowMillis),
+              withNow(ts =>
+                sendServerMessage(
+                  socket,
+                  ServerMessage.Error("session_not_connected", s"Session not connected for $topic", ts),
+                )
               )
-            case err                                    =>
-              sendServerMessage(socket, ServerMessage.Error("stream_error", err.toString, nowMillis))
+            case err                                           =>
+              withNow(ts => sendServerMessage(socket, ServerMessage.Error("stream_error", err.toString, ts)))
           }
           .ensuring(channel.close(sessionKey))
           .forkDaemon,
@@ -275,5 +277,8 @@ final case class WebSocketControllerLive(
   ): UIO[Unit] =
     socket.send(Read(WebSocketFrame.text(message.toJson))).unit.ignore
 
-  private def nowMillis: Long =
-    java.lang.System.currentTimeMillis()
+  private def nowMillis: UIO[Long] =
+    Clock.currentTime(TimeUnit.MILLISECONDS)
+
+  private def withNow(effect: Long => UIO[Unit]): UIO[Unit] =
+    nowMillis.flatMap(effect)

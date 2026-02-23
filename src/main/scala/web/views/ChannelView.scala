@@ -22,7 +22,7 @@ final case class ChannelCardData(
 
 object ChannelView:
 
-  def page(cards: List[ChannelCardData]): String =
+  def page(cards: List[ChannelCardData], nowMs: Long): String =
     Layout.page("Channels", "/channels")(
       div(cls := "flex items-center justify-between mb-6")(
         h1(cls := "text-2xl font-bold text-white")("Channels"),
@@ -35,20 +35,20 @@ object ChannelView:
         "Live channel status and message telemetry. Auto-refresh every 10 seconds."
       ),
       div(
-        id                  := "channels-cards",
-        attr("hx-get")      := "/channels/cards",
-        attr("hx-trigger")  := "every 10s",
-        attr("hx-swap")     := "innerHTML",
+        id                   := "channels-cards",
+        attr("hx-get")       := "/channels/cards",
+        attr("hx-trigger")   := "every 10s",
+        attr("hx-swap")      := "innerHTML",
         attr("hx-indicator") := "#channels-refresh-indicator",
-      )(cardsFragment(cards)),
+      )(cardsFragment(cards, nowMs)),
       div(id := "channels-refresh-indicator", cls := "htmx-indicator text-xs text-gray-500 mt-3")("Refreshing..."),
     )
 
-  def cardsFragment(cards: List[ChannelCardData]): Frag =
+  def cardsFragment(cards: List[ChannelCardData], nowMs: Long): Frag =
     if cards.isEmpty then Components.emptyState("No channels registered.")
     else
       div(cls := "grid grid-cols-1 gap-4 lg:grid-cols-2")(
-        cards.sortBy(_.name).map(channelCard)
+        cards.sortBy(_.name).map(card => channelCard(card, nowMs))
       )
 
   def summaryWidgetFragment(cards: List[ChannelCardData]): Frag =
@@ -57,7 +57,7 @@ object ChannelView:
     val notConfigured = cards.count(_.status == ChannelStatus.NotConfigured)
     val errors        = cards.count {
       case ChannelCardData(_, ChannelStatus.Error(_), _, _, _, _, _, _, _, _) => true
-      case _                                                                    => false
+      case _                                                                  => false
     }
     div(cls := "rounded-lg bg-white/5 ring-1 ring-white/10 p-4")(
       div(cls := "flex items-center justify-between mb-3")(
@@ -78,12 +78,14 @@ object ChannelView:
       div(cls := "text-lg font-semibold leading-none mt-1")(value),
     )
 
-  private def channelCard(card: ChannelCardData): Frag =
+  private def channelCard(card: ChannelCardData, nowMs: Long): Frag =
     val (pillLabel, pillClasses) = statusPill(card.status)
     div(cls := "rounded-lg bg-white/5 ring-1 ring-white/10 p-5")(
       div(cls := "flex items-center justify-between mb-3")(
         h2(cls := "text-lg font-semibold text-white capitalize")(card.name),
-        span(cls := s"inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset $pillClasses")(
+        span(
+          cls := s"inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset $pillClasses"
+        )(
           pillLabel
         ),
       ),
@@ -104,7 +106,7 @@ object ChannelView:
           card.errors.toString,
           "  ",
           span(cls := "text-gray-400")("Last activity: "),
-          relativeTime(card.lastActivityTs),
+          relativeTime(card.lastActivityTs, nowMs),
         ),
       ),
       div(cls := "mt-4")(
@@ -117,17 +119,17 @@ object ChannelView:
 
   private def statusPill(status: ChannelStatus): (String, String) =
     status match
-      case ChannelStatus.Connected    => ("Connected", "bg-emerald-500/10 text-emerald-300 ring-emerald-300/30")
-      case ChannelStatus.Disconnected => ("Disconnected", "bg-red-500/10 text-red-300 ring-red-300/30")
+      case ChannelStatus.Connected     => ("Connected", "bg-emerald-500/10 text-emerald-300 ring-emerald-300/30")
+      case ChannelStatus.Disconnected  => ("Disconnected", "bg-red-500/10 text-red-300 ring-red-300/30")
       case ChannelStatus.NotConfigured =>
         ("Not Configured", "bg-gray-500/10 text-gray-300 ring-gray-300/30")
       case ChannelStatus.Error(_)      => ("Error", "bg-amber-500/10 text-amber-300 ring-amber-300/30")
 
-  private def relativeTime(lastActivityTs: Option[Long]): String =
+  private def relativeTime(lastActivityTs: Option[Long], nowMs: Long): String =
     lastActivityTs match
-      case None           => "never"
+      case None          => "never"
       case Some(epochMs) =>
-        val diff = Duration.between(Instant.ofEpochMilli(epochMs), Instant.now())
+        val diff = Duration.between(Instant.ofEpochMilli(epochMs), Instant.ofEpochMilli(nowMs))
         if diff.isNegative || diff.getSeconds < 5 then "just now"
         else if diff.toMinutes < 1 then s"${diff.getSeconds}s ago"
         else if diff.toHours < 1 then s"${diff.toMinutes} min ago"

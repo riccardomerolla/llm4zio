@@ -65,6 +65,28 @@ object ActivityView:
 
   private def eventCard(event: ActivityEvent): Frag =
     val (iconColor, iconPath) = eventIcon(event.eventType)
+    val safeAgentName         = sanitizeOptional(event.agentName)
+    val safeRunId             = sanitizeOptional(event.runId)
+    val safeSource            = Option(event.source).map(_.trim).filter(_.nonEmpty).getOrElse("system")
+    val badges                = Seq(
+      Some(
+        span(
+          cls := "inline-flex items-center rounded-md bg-white/5 px-1.5 py-0.5 text-xs text-gray-400 ring-1 ring-inset ring-white/10"
+        )(eventTypeLabel(event.eventType))
+      ),
+      safeAgentName.map { name =>
+        span(
+          cls := "inline-flex items-center rounded-md bg-purple-500/10 px-1.5 py-0.5 text-xs text-purple-400 ring-1 ring-inset ring-purple-500/20"
+        )(name)
+      },
+      safeRunId.map { rid =>
+        a(
+          attr("href") := s"/tasks/$rid",
+          cls          := "inline-flex items-center rounded-md bg-blue-500/10 px-1.5 py-0.5 text-xs text-blue-400 ring-1 ring-inset ring-blue-500/20 hover:bg-blue-500/20",
+        )(s"Run #$rid")
+      },
+      Some(span(cls := "text-xs text-gray-500")(safeSource)),
+    ).flatten
     div(
       cls                     := "activity-event flex items-start gap-3 rounded-lg bg-white/5 ring-1 ring-white/10 p-4",
       attr("data-event-type") := toDbEventType(event.eventType),
@@ -92,23 +114,7 @@ object ActivityView:
           span(cls := "text-sm font-medium text-white")(event.summary),
           span(cls := "text-xs text-gray-500")(formatTime(event.createdAt)),
         ),
-        div(cls := "mt-1 flex items-center gap-2")(
-          span(
-            cls := "inline-flex items-center rounded-md bg-white/5 px-1.5 py-0.5 text-xs text-gray-400 ring-1 ring-inset ring-white/10"
-          )(eventTypeLabel(event.eventType)),
-          event.agentName.map { name =>
-            span(
-              cls := "inline-flex items-center rounded-md bg-purple-500/10 px-1.5 py-0.5 text-xs text-purple-400 ring-1 ring-inset ring-purple-500/20"
-            )(name)
-          },
-          event.runId.map { rid =>
-            a(
-              attr("href") := s"/tasks/$rid",
-              cls          := "inline-flex items-center rounded-md bg-blue-500/10 px-1.5 py-0.5 text-xs text-blue-400 ring-1 ring-inset ring-blue-500/20 hover:bg-blue-500/20",
-            )(s"Run #$rid")
-          },
-          span(cls := "text-xs text-gray-500")(event.source),
-        ),
+        div(cls := "mt-1 flex items-center gap-2")(badges),
       ),
     )
 
@@ -162,3 +168,12 @@ object ActivityView:
       .ofPattern("MMM d, HH:mm:ss")
       .withZone(java.time.ZoneId.systemDefault())
     formatter.format(instant)
+
+  // Legacy persisted rows may deserialize Option fields as null; normalize before use in views.
+  private def sanitizeOptional(value: Option[String]): Option[String] =
+    try
+      value match
+        case Some(v) => Option(v).map(_.trim).filter(_.nonEmpty)
+        case _       => None
+    catch
+      case _: Throwable => None

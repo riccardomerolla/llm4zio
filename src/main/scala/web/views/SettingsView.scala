@@ -39,12 +39,26 @@ object SettingsView:
           aiProviderSection(settings, errors),
           gatewaySection(settings, errors),
           telegramSection(settings, errors),
+          memorySection(settings, errors),
           div(cls := "flex gap-4 pt-2")(
             button(
               `type` := "submit",
               cls    := "rounded-md bg-indigo-500 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500",
             )("Save Settings")
           ),
+        ),
+        div(cls := "mt-8 rounded-lg border border-red-500/30 bg-red-950/30 p-5")(
+          h3(cls := "text-lg font-semibold text-red-200")("Reset Operational Data"),
+          p(cls := "mt-2 text-sm text-red-100/90")(
+            "Deletes all tasks, conversations, activity logs, and memory. Configuration is preserved."
+          ),
+          button(
+            `type`             := "button",
+            cls                := "mt-4 rounded-md border border-red-400/40 bg-red-500/20 px-4 py-2 text-sm font-semibold text-red-100 hover:bg-red-500/30",
+            attr("hx-post")    := "/api/store/reset-data",
+            attr("hx-confirm") := "This will permanently delete all tasks and conversations. Are you sure?",
+            attr("hx-swap")    := "none",
+          )("Reset Data Store"),
         ),
         div(cls := "mt-8 pt-6 border-t border-white/10")(
           div(cls := "bg-white/5 ring-1 ring-white/10 rounded-lg p-4")(
@@ -313,6 +327,49 @@ object SettingsView:
           min = "1",
           max = "120",
           error = errors.get("telegram.polling.timeout"),
+        ),
+      ),
+    )
+
+  private def memorySection(s: Map[String, String], errors: Map[String, String] = Map.empty): Frag =
+    tag("section")(cls := sectionCls)(
+      h2(cls := "text-lg font-semibold text-white mb-4")("Memory"),
+      div(cls := "space-y-4")(
+        checkboxField(
+          "memory.enabled",
+          "Enable Memory",
+          s,
+          default = true,
+          error = errors.get("memory.enabled"),
+        ),
+        div(cls := "grid grid-cols-2 gap-4")(
+          numberField(
+            "memory.maxContextMemories",
+            "Max Context Memories",
+            s,
+            default = "5",
+            min = "1",
+            max = "25",
+            error = errors.get("memory.maxContextMemories"),
+          ),
+          numberField(
+            "memory.summarizationThreshold",
+            "Summarization Threshold",
+            s,
+            default = "20",
+            min = "1",
+            max = "200",
+            error = errors.get("memory.summarizationThreshold"),
+          ),
+        ),
+        numberField(
+          "memory.retentionDays",
+          "Retention Days",
+          s,
+          default = "90",
+          min = "1",
+          max = "3650",
+          error = errors.get("memory.retentionDays"),
         ),
       ),
     )
