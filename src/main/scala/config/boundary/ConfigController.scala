@@ -13,7 +13,7 @@ import _root_.config.entity.*
 import activity.control.ActivityHub
 import activity.entity.{ ActivityEvent, ActivityEventType }
 import shared.ids.Ids.EventId
-import shared.web.ConfigEditor
+import shared.web.{ ConfigEditor, HtmlViews }
 
 trait ConfigController:
   def routes: Routes[Any, Response]
@@ -83,6 +83,9 @@ final case class ConfigControllerLive(
 ) extends ConfigController:
 
   override val routes: Routes[Any, Response] = Routes(
+    Method.GET / "settings" / "advanced"                                   -> handler {
+      ZIO.succeed(html(HtmlViews.settingsAdvancedTab))
+    },
     Method.GET / "config"                                                  -> handler {
       ZIO.succeed(html(ConfigEditor.page))
     },
