@@ -1,669 +1,127 @@
-# llm4zio: ZIO-Native LLM Integration Library
+# llm4zio
 
-**Scala 3 + ZIO 2.x Effect-Oriented Programming**
+[![Maven Central](https://img.shields.io/maven-central/v/io.github.riccardomerolla/llm4zio.svg)](https://mvnrepository.com/artifact/io.github.riccardomerolla/llm4zio)
+[![Test Coverage](https://img.shields.io/badge/coverage-417+-green)]()
 
-**Version:** 1.0.0
-**Author:** Riccardo Merolla
-**Status:** ✅ Production Ready
-**Build:** [![Test Coverage](https://img.shields.io/badge/coverage-417+-green)]()
+A purely functional, ZIO-native LLM integration library for Scala 3. 
 
----
+Built from the ground up for **Effect-Oriented Programming**, `llm4zio` provides type-safe, resource-safe, and composable abstractions for interacting with Large Language Models (OpenAI, Anthropic, Gemini, and local providers).
 
-## 🎯 Overview
+## ⚡ Why llm4zio?
 
-**llm4zio** is a high-performance, effect-oriented library for integrating Large Language Models (LLMs) with ZIO-powered Scala applications. Inspired by [llm4s](https://github.com/llm4s/llm4s), it provides type-safe, composable abstractions for LLM interactions built natively on ZIO 2.x.
+- **ZIO Native**: Everything is a `ZIO[R, E, A]`. No hidden side effects, no thrown exceptions.
+- **Typed Errors**: Exhaustive pattern matching on API failures, rate limits, and context length issues via `LLMError`.
+- **Streaming First**: Backpressured token streaming using `ZStream`.
+- **Resource Safe**: Connection pooling and HTTP client lifecycles managed automatically via `Scope` and `ZLayer`.
+- **Resilient**: Built-in support for exponential backoff, circuit breakers, and token-bucket rate limiting.
 
-At its core, llm4zio enables:
-
-- **Multi-provider LLM support** (OpenAI, Anthropic, Gemini, local LM Studio, and custom backends)
-- **Type-safe prompting** with validated schemas and structured outputs  
-- **Resource-safe operations** with automatic cleanup and error recovery
-- **Streaming responses** with backpressure handling via ZIO Streams
-- **Concurrent request management** with rate limiting and retry strategies
-- **Observability hooks** for monitoring, tracing, and cost tracking
-
-### 🔗 Part of the Ecosystem
-
-llm4zio is the **foundation library** for **llm-agents-orchestrator**, a comprehensive multi-purpose agents system featuring:
-
-- **Service Connectors** — Integrate external APIs, databases, and business systems
-- **Agent Management Console** — Web-based UI for defining, managing, and monitoring AI agents
-- **Prompt Engineering Studio** — Version-controlled prompt templates with variable interpolation
-- **Workflow Orchestration** — DAG-based workflows for complex agent interactions
-- **Task Runner & Scheduler** — Execute tasks on-demand or via cron/interval schedules
-- **Audit & Compliance** — Full request/response logging, version history, and policy enforcement
-
-### 🏗️ Design Philosophy
-
-llm4zio follows **Effect-Oriented Programming (EOP)** principles:
-
-- Effects describe *what* should happen, separated from *execution* and *timing*
-- All side effects (API calls, I/O, network) are wrapped in composable ZIO effects
-- Typed error channels enable exhaustive error handling at compile time
-- Resource safety is guaranteed through `ZIO.acquireRelease` and scoped lifetimes
-- Concurrency and parallelism are built on safe, structured ZIO combinators
-
----
-
-## 📋 Table of Contents
-
-1. [Core Features](#-core-features)
-2. [Quick Start](#-quick-start)
-3. [Architecture](#-architecture)
-4. [API Overview](#-api-overview)
-5. [Advanced Usage](#-advanced-usage)
-6. [Integrations](#-integrations)
-7. [Testing](#-testing)
-8. [Documentation](#-documentation)
-9. [Contributing](#-contributing)
-
----
-
-## ✨ Core Features
-
-### 🚀 Multi-Provider Support
-
-- **OpenAI**
-- **Anthropic**
-- **Google Gemini** (CLI and API modes)
-- **OpenAI-compatible** (LM Studio, Ollama, vLLM, local deployments)
-- **Custom backends** (extensible provider abstraction)
-
-### 📦 Type-Safe Abstractions
+## 📦 Installation
 
 ```scala
-// Typed prompts with compile-time validation
-case class ChatRequest(
-  messages: List[ChatMessage],
-  model: String,
-  temperature: Double = 0.7,
-  maxTokens: Option[Int] = None
-)
-
-// Structured outputs with schema validation
-case class LLMResponse[T](
-  content: T,
-  tokenUsage: TokenUsage,
-  metadata: ResponseMetadata
-)
+libraryDependencies += "io.github.riccardomerolla" %% "llm4zio" % "1.0.3"
 ```
-
-### 🔄 Streaming & Async Support
-
-- Full streaming support for long-running completions
-- Backpressure handling with ZIO Streams
-- Async callbacks and Future interop
-- Graceful cancellation and timeout handling
-
-### 🛡️ Reliability & Resilience
-
-- **Retry strategies** with exponential backoff and jitter
-- **Rate limiting** with token bucket and sliding window algorithms
-- **Circuit breakers** for API fault tolerance
-- **Timeout management** with configurable deadlines
-- **Structured error handling** with typed error channels
-
-### 📊 Observability
-
-- Request/response logging with configurable detail levels
-- Token usage tracking and cost estimation
-- Execution time metrics and latency monitoring
-- Custom hooks for integrating tracing systems (Jaeger, Datadog)
-
----
 
 ## 🚀 Quick Start
 
-### Prerequisites
-
-- Scala 3.3+ and sbt 1.9+
-- Java 17+
-- At least one LLM provider configured (OpenAI, Anthropic, Gemini, or local)
-
-### Installation
-
-Add to your `build.sbt`:
-
-```scala
-libraryDependencies += "io.github.riccardomerolla" %% "llm4zio" % "1.0.0"
-```
-
-### Basic Usage
-
 ```scala
 import zio._
+import zio.stream._
 import io.github.riccardomerolla.llm4zio._
 
-// Define your LLM configuration
-val config = LLMConfig(
-  provider = "openai",
-  model = "gpt-4o",
-  apiKey = System.getenv("OPENAI_API_KEY"),
-  temperature = 0.7,
-  maxTokens = 2048
-)
-
-// Create an effect that uses the LLM
-def askLLM(question: String): ZIO[LLMService, LLMError, String] =
-  ZIO.serviceWithZIO[LLMService] { service =>
-    service.complete(
-      ChatRequest(
-        messages = List(ChatMessage.user(question)),
-        model = config.model
-      )
-    ).map(_.content)
-  }
-
-// Run it
-def program: ZIO[LLMService, LLMError, Unit] =
-  for {
-    answer <- askLLM("What is effect-oriented programming?")
-    _ <- Console.printLine(answer)
-  } yield ()
-
-// Execute with proper layer provision
-program.provide(LLMService.live(config))
-```
-
-### Configuration
-
-Create `application.conf`:
-
-```hocon
-llm {
-  provider = "openai"           # openai | anthropic | gemini | openai-compat | lm-studio
-  model = "gpt-4o"
-  api-key = ${?OPENAI_API_KEY}
-  base-url = null               # Optional: for OpenAI-compatible APIs
-  temperature = 0.7
-  max-tokens = 2048
-  timeout = 60s
-  max-retries = 3
-  
-  # Rate limiting (tokens per minute)
-  rate-limit = 90000
-  
-  # Streaming configuration
-  streaming = true
-  chunk-size = 1024
-  
-  # Observability
-  log-requests = true
-  log-responses = false         # Don't log full responses for privacy
-  track-cost = true
-}
-```
-
----
-
-## 🏗️ Architecture
-### Design Principles
-
-**Layered Architecture:**
-
-```
-┌─────────────────────────────────────────────┐
-│  User Applications & Agents Orchestrator    │
-├─────────────────────────────────────────────┤
-│       Public API Layer (Services)           │
-│  LLMService, StreamingService, CostTracker  │
-├─────────────────────────────────────────────┤
-│    Provider Abstraction Layer (ZIO)         │
-│  OpenAI, Anthropic, Gemini, Custom Backends │
-├─────────────────────────────────────────────┤
-│     Core Abstractions & Utilities           │
-│  ChatRequest/Response, Token Management,    │
-│  Retry Strategies, Rate Limiting            │
-├─────────────────────────────────────────────┤
-│       External API Integration              │
-│     HTTP, Streaming, Error Handling         │
-└─────────────────────────────────────────────┘
-```
-
-**Effect Composition:**
-
-Every operation in llm4zio is a pure effect:
-
-```scala
-// Composable, testable, cancelable
-def complete(req: ChatRequest): ZIO[Any, LLMError, ChatResponse]
-
-// Retry with exponential backoff
-def completeWithRetry(req: ChatRequest, policy: Schedule[Any, LLMError, Unit])
-  : ZIO[Any, LLMError, ChatResponse]
-
-// Concurrent requests with rate limiting
-def batchComplete(reqs: List[ChatRequest])
-  : ZIO[LLMService, LLMError, List[ChatResponse]]
-
-// Streaming support with backpressure
-def stream(req: ChatRequest)
-  : ZIO[Any, LLMError, ZStream[Any, LLMError, String]]
-```
-
-### Core Components
-
-**1. Provider-Agnostic API**
-- Single interface for all LLM backends
-- Type-safe configuration per provider
-- Unified error handling
-
-**2. Request/Response Models**
-- `ChatMessage`: Typed conversation messages (system, user, assistant)
-- `ChatRequest`: Configurable request parameters
-- `ChatResponse`: Rich response with metadata
-- `StreamChunk`: For incremental streaming
-
-**3. Resilience Patterns**
-- Automatic retry with exponential backoff
-- Circuit breaker pattern for API failures
-- Rate limiting with token bucket algorithm
-- Timeout management with deadline propagation
-
-**4. Resource Management**
-- HTTP client lifecycle management
-- Connection pooling with cleanup guarantees
-- Graceful shutdown of ongoing requests
-
----
-
-## 📡 API Overview
-
-### Complete Chat Interaction
-
-```scala
-import zio._
-import io.github.riccardomerolla.llm4zio._
-
-def askQuestion(question: String): ZIO[LLMService, LLMError, String] =
-  ZIO.serviceWithZIO[LLMService] { service =>
-    val request = ChatRequest(
-      messages = List(
-        ChatMessage.system("You are a helpful assistant"),
-        ChatMessage.user(question)
-      ),
-      model = "gpt-4o",
-      temperature = 0.3,
-      maxTokens = Some(500)
-    )
-    
-    service.complete(request).map(_.content)
-  }
-```
-
-### Streaming Responses
-
-```scala
-def streamQuestion(question: String): ZStream[LLMService, LLMError, String] =
-  ZStream.serviceWithZIO[LLMService] { service =>
-    service.stream(ChatRequest(
-      messages = List(ChatMessage.user(question)),
+val program: ZIO[LLMService, LLMError, Unit] = for {
+  // 1. Simple Completion
+  response <- ZIO.serviceWithZIO[LLMService](_.complete(
+    ChatRequest(
+      messages = List(ChatMessage.user("What is ZIO?")),
       model = "gpt-4o"
-    ))
-  }
-
-// Usage
-val program = streamQuestion("Explain quantum computing")
-  .foreach(chunk => Console.print(chunk))
-```
-
-### Batch Processing
-
-```scala
-def processBatch(questions: List[String]): ZIO[LLMService, LLMError, List[String]] =
-  ZIO.serviceWithZIO[LLMService] { service =>
-    val requests = questions.map(q => 
-      ChatRequest(
-        messages = List(ChatMessage.user(q)),
-        model = "gpt-4o"
-      )
     )
-    
-    // Process in parallel with rate limiting
-    ZIO.foreachPar(requests)(service.complete(_))
-      .withParallelism(4)
-      .map(_.map(_.content))
-  }
+  ))
+  _ <- Console.printLine(s"Response: ${response.content}")
+
+  // 2. Streaming with Backpressure
+  _ <- ZStream.serviceWithStream[LLMService](_.stream(
+    ChatRequest(
+      messages = List(ChatMessage.user("Write a Scala 3 macro.")),
+      model = "gpt-4o"
+    )
+  )).foreach(chunk => Console.print(chunk))
+} yield ()
+
+// Provide the layer and run
+program.provide(
+  LLMService.live(LLMConfig(
+    provider = "openai",
+    apiKey = sys.env.get("OPENAI_API_KEY"),
+    model = "gpt-4o"
+  ))
+)
 ```
 
-### Error Handling
+## 🛡️ Typed Error Handling
+
+Never catch `Throwable` again. Handle specific LLM failures exhaustively:
 
 ```scala
-def robustQuestion(question: String): ZIO[LLMService, Nothing, String] =
-  askQuestion(question).catchAll {
+def robustCall(req: ChatRequest): ZIO[LLMService, Nothing, String] =
+  ZIO.serviceWithZIO[LLMService](_.complete(req)).map(_.content).catchAll {
     case LLMError.RateLimited(retryAfter) =>
-      ZIO.logWarning(s"Rate limited, retrying after $retryAfter") *>
-      ZIO.sleep(retryAfter) *>
-      askQuestion(question)
-      
+      ZIO.logWarning(s"Rate limited. Retrying in $retryAfter") *>
+      ZIO.sleep(retryAfter) *> robustCall(req)
     case LLMError.ContextLengthExceeded =>
-      ZIO.succeed("Question too long, please be more concise")
-      
-    case LLMError.ApiError(msg, statusCode) =>
-      ZIO.logError(s"API error [$statusCode]: $msg") *>
-      ZIO.succeed("Service temporarily unavailable")
-      
-    case other =>
-      ZIO.logError(s"Unexpected error: $other") *>
-      ZIO.succeed("An unexpected error occurred")
+      ZIO.succeed("Prompt too long. Please truncate.")
+    case LLMError.ApiError(msg, code) =>
+      ZIO.logError(s"API Error $code: $msg") *> ZIO.succeed("Fallback response")
+    case e: LLMError =>
+      ZIO.logError(s"Unexpected LLM error: $e") *> ZIO.succeed("Error")
   }
 ```
-
----
-
-## 🔧 Advanced Usage
-
-### Custom Provider Implementation
-
-```scala
-trait LLMProvider:
-  def complete(req: ChatRequest): ZIO[Any, LLMError, ChatResponse]
-  def stream(req: ChatRequest): ZStream[Any, LLMError, String]
-
-case class CustomProviderLive(config: ProviderConfig) extends LLMProvider:
-  def complete(req: ChatRequest): ZIO[Any, LLMError, ChatResponse] = ???
-  
-  def stream(req: ChatRequest): ZStream[Any, LLMError, String] = ???
-
-object CustomProvider:
-  val layer: ZLayer[ProviderConfig, Nothing, LLMProvider] =
-    ZLayer.fromFunction(CustomProviderLive.apply)
-```
-
-### Token Counting & Cost Estimation
-
-```scala
-def estimateCost(request: ChatRequest): ZIO[LLMService & CostTracker, LLMError, Cost] =
-  ZIO.serviceWithZIO[LLMService] { service =>
-    ZIO.serviceWithZIO[CostTracker] { tracker =>
-      for {
-        estimatedTokens <- service.estimateTokens(request)
-        cost <- tracker.calculateCost(
-          model = request.model,
-          inputTokens = estimatedTokens.input,
-          outputTokens = estimatedTokens.estimated
-        )
-      } yield cost
-    }
-  }
-```
-
-### Observability & Logging
-
-```scala
-val config = LLMConfig(
-  provider = "openai",
-  model = "gpt-4o",
-  observability = ObservabilityConfig(
-    logRequests = true,
-    logResponses = true,
-    logTokenUsage = true,
-    tracingEnabled = true,
-    customHooks = List(
-      RequestHook { req => 
-        ZIO.logInfo(s"Sending request with ${req.messages.length} messages")
-      },
-      ResponseHook { resp =>
-        ZIO.logInfo(s"Received response using ${resp.tokenUsage.totalTokens} tokens")
-      }
-    )
-  )
-)
-```
-
----
-
-## 🔌 Integrations
-
-### With llm-agents-orchestrator
-
-llm4zio is the foundation for the agents orchestrator system. Use it within agent definitions:
-
-```scala
-// Define an AI-powered agent
-object ResearchAgent:
-  def research(topic: String): ZIO[LLMService, LLMError, ResearchResult] =
-    ZIO.serviceWithZIO[LLMService] { service =>
-      for {
-        // Query LLM for information
-        info <- service.complete(
-          ChatRequest(
-            messages = List(
-              ChatMessage.system("You are a research assistant"),
-              ChatMessage.user(s"Research this topic: $topic")
-            ),
-            model = "gpt-4o"
-          )
-        ).map(_.content)
-        
-        // Process and structure results
-        result <- parseResearchResult(info)
-      } yield result
-    }
-```
-
-### With Workflow Engines
-
-```scala
-// Use in workflow definitions
-def workflowStep(context: WorkflowContext): ZIO[LLMService, LLMError, WorkflowResult] =
-  for {
-    llmInput <- prepareInput(context)
-    llmOutput <- askQuestion(llmInput)  // Uses llm4zio
-    result <- processOutput(llmOutput)
-  } yield result
-```
-
-### With External Services
-
-```scala
-case class EnrichedResponse(
-  llmContent: String,
-  dbData: String,
-  apiResult: String
-)
-
-def enrichResponse(question: String): ZIO[LLMService & DatabaseService & HttpClient, Error, EnrichedResponse] =
-  for {
-    llmAnswer <- askQuestion(question)      // llm4zio
-    dbData <- queryDatabase(question)       // external service
-    apiResult <- callExternalAPI(question)  // external service
-  } yield EnrichedResponse(llmAnswer, dbData, apiResult)
-```
-
----
 
 ## 🧪 Testing
 
-llm4zio provides test utilities for deterministic testing:
+`llm4zio` provides `TestLLMService` for deterministic, fast unit testing without hitting real APIs:
 
 ```scala
 import zio.test._
 import io.github.riccardomerolla.llm4zio.test._
 
-object LLMServiceSpec extends ZIOSpecDefault:
-  def spec = suite("LLMService")(
-    test("should complete chat request successfully") {
-      val request = ChatRequest(
-        messages = List(ChatMessage.user("Hello")),
-        model = "test-model"
-      )
-      
+object MyAgentSpec extends ZIOSpecDefault {
+  def spec = suite("MyAgent")(
+    test("handles responses") {
       for {
-        response <- ZIO.serviceWithZIO[LLMService](_.complete(request))
-      } yield assertTrue(response.content.nonEmpty)
-    },
-    
-    test("should handle rate limiting with retry") {
-      val request = ChatRequest(
-        messages = List(ChatMessage.user("Hello")),
-        model = "test-model"
-      )
-      
-      // Use test mock that simulates rate limiting then success
-      for {
-        response <- ZIO.serviceWithZIO[LLMService](
-          _.complete(request)
-            .retry(Schedule.limitedRetries(1))
-        )
-      } yield assertTrue(response.content.nonEmpty)
+        _ <- TestLLMService.setResponse("Mocked LLM response")
+        res <- MyAgent.run("Hello")
+      } yield assertTrue(res == "Mocked LLM response")
     }
-  ).provide(
-    TestLLMService.mock,  // Mock implementation
-    TestClock.default
-  )
+  ).provide(TestLLMService.mock)
+}
 ```
 
----
+## 🔗 Ecosystem
+
+`llm4zio` is the foundational library for the broader LLM4ZIO ecosystem:
+
+- **llm4zio-gateway**: A production-grade HTTP proxy for unified LLM access. Features intelligent routing, SSE streaming, account-level rate limiting, semantic caching, and cost tracking.
+- **llm-agents-orchestrator**: A comprehensive DAG-based workflow engine for building, scheduling, and monitoring complex multi-agent systems.
+
+## 🗺️ Phase 3 Roadmap: openclaw Patterns
+
+We are currently implementing advanced orchestration patterns inspired by [openclaw](https://openclaw.ai):
+
+- **Orchestrator Control Plane** (Centralized coordination)
+- **Run-Based Workspace Isolation** (Safe parallel execution)
+- **Enhanced Agent Registry** (Dynamic capability routing)
+- **Workflow Progress Streaming** (Real-time UX via SSE)
+- **Dynamic Workflow Composition** (DAG execution)
+
+*See [ADR-0001](docs/adr/0001-adopt-openclaw-patterns.md) for architectural details.*
 
 ## 📚 Documentation
 
-For comprehensive documentation, see:
-
-- **[API Reference](docs/api-reference.md)** - Detailed API documentation
-- **[Provider Configuration](docs/providers.md)** - Setup for each LLM provider
-- **[Error Handling Guide](docs/error-handling.md)** - Error types and recovery strategies
-- **[Architecture Decision Records](docs/adr/)** - Design decisions and rationale
-- **[Examples](examples/)** - Complete working examples
-
-Key guides:
-- [OpenAI Integration](docs/providers/openai.md)
-- [Anthropic Integration](docs/providers/anthropic.md)
-- [Local LM Studio Setup](docs/providers/lm-studio.md)
-- [Custom Provider Development](docs/providers/custom.md)
+- [API Reference](docs/api-reference.md)
+- [Provider Setup (OpenAI, Anthropic, Gemini, Local)](docs/providers.md)
 - [Streaming Guide](docs/streaming.md)
-- [Rate Limiting & Resilience](docs/resilience.md)
-
----
+- [Resilience & Rate Limiting](docs/resilience.md)
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please ensure:
-
-1. Code follows Scala 3 idioms and ZIO best practices
-2. All effects are properly typed with `R`, `E`, `A`
-3. Comprehensive tests using ZIO Test cover new functionality
-4. Documentation is updated for public API changes
-5. Error handling is explicit and typed
-
-Key files:
-- [/AGENTS.md](/AGENTS.md) - Detailed ZIO & Scala 3 guidelines
-- [/copilot-instructions.md](/.github/copilot-instructions.md) - AI assistant guidelines
-
----
-
-## 📊 Project Structure
-
-```
-llm4zio/
-├── docs/
-│   ├── adr/                    # Architecture Decision Records
-│   ├── providers/              # LLM Provider setup guides
-│   ├── api-reference.md        # API documentation
-│   ├── streaming.md            # Streaming guide
-│   ├── resilience.md           # Retry & rate limiting
-│   └── error-handling.md       # Error types & recovery
-├── examples/                   # Complete working examples
-│   ├── simple-chat.scala
-│   ├── streaming-response.scala
-│   ├── batch-processing.scala
-│   └── custom-provider.scala
-├── src/
-│   ├── main/scala/
-│   │   ├── com/example/llm4zio/
-│   │   │   ├── api/            # Public API (ChatRequest, ChatResponse, etc.)
-│   │   │   ├── providers/      # LLM provider implementations
-│   │   │   ├── core/           # Core abstractions (retry, rate limit, errors)
-│   │   │   ├── observability/  # Logging, tracing, cost tracking
-│   │   │   └── config/         # Configuration management
-│   │   └── resources/
-│   │       └── application.conf
-│   └── test/scala/
-│       └── com/example/llm4zio/
-│           ├── api/            # API tests
-│           ├── providers/      # Provider tests
-│           ├── integration/    # Integration tests
-│           └── mock/           # Test doubles & mocks
-├── build.sbt
-├── AGENTS.md
-├── README.md
-└── LICENSE
-```
-
----
-
-## �️ Phase 3 Roadmap: openclaw Architecture Patterns
-
-**Status:** Planning Complete ✅ — Implementation Starting 2026-02-14
-
-Based on comprehensive analysis of [openclaw](https://openclaw.ai) architectural patterns, LLM4ZIO Phase 3 will enhance the orchestration layer with 5 high-priority patterns:
-
-### 🎯 High-Priority Patterns
-
-| Pattern | Issue | Status | Benefit |
-|---------|-------|--------|---------|
-| **Orchestrator Control Plane** | [#148](https://github.com/riccardomerolla/llm4zio/issues/148) | Planning | Centralized coordination & event broadcasting |
-| **Run-Based Workspace Isolation** | [#147](https://github.com/riccardomerolla/llm4zio/issues/147) | Planning | Safe parallel execution |
-| **Enhanced Agent Registry** | [#149](https://github.com/riccardomerolla/llm4zio/issues/149) | Planning | Dynamic capability-based routing |
-| **Workflow Progress Streaming** | [#150](https://github.com/riccardomerolla/llm4zio/issues/150) | Planning | Real-time UX with SSE |
-| **Dynamic Workflow Composition** | [#151](https://github.com/riccardomerolla/llm4zio/issues/151) | Planning | DAG-based workflows |
-
-### 📅 Timeline
-
-- **Phase 3A: Foundation** (Weeks 1-4) — Workspace isolation + Control Plane
-- **Phase 3B: Streaming & Registry** (Weeks 5-8) — Agent registry + Progress streaming
-- **Phase 3C: Dynamic Workflows** (Weeks 9-12) — DAG execution + Multi-workspace coordination
-
-**Total Estimated Effort:** 12 weeks (~600 hours)
-
-### 📚 Documentation
-
-- **[openclaw Pattern Analysis](docs/plans/2026-02-14-openclaw-pattern-analysis.md)** — Full pattern evaluation with implementation strategies
-- **[ADR-0001: Adopt openclaw Patterns](docs/adr/0001-adopt-openclaw-patterns.md)** — Architectural decision record
-
-### 🎁 What This Unlocks
-
-- **Custom Agent Support** (#123, #124) — Load external agents dynamically
-- **Parallel Migrations** — Safe concurrent execution with isolation
-- **Real-Time Dashboards** — Live progress, token usage, cost tracking
-- **Workflow Templates** — Reusable patterns with parameters
-- **Agent Marketplace** — Community-contributed agents
-
----
-
-## �🚀 Build & Test
-
-```bash
-# Build
-sbt compile
-
-# Test
-sbt test
-
-# Test with coverage
-sbt coverage test coverageReport
-
-# Publish locally
-sbt publishLocal
-
-# Run examples
-sbt "runMain examples.SimpleChatExample"
-sbt "runMain examples.StreamingExample"
-sbt "runMain examples.BatchProcessingExample"
-```
-
----
-
-## 📜 License
-
-[Specify your license here]
-
-## 🔗 Related Projects
-
-- **[llm4zio](https://github.com/riccardomerolla/llm4zio)** — Multi-purpose agents system built on llm4zio
-- **[llm4s](https://github.com/llm4s/llm4s)** — Inspiration for the design
-- **[ZIO](https://zio.dev/)** — Effect-oriented programming for Scala
-
-## 📧 Support
-
-For issues, questions, or feature requests, please [open a GitHub issue](https://github.com/riccardomerolla/llm4zio/issues).
+We welcome contributions! Please ensure your code follows Scala 3 idioms, uses `ZLayer` for DI, and maintains strict typed error channels (`ZIO[R, E, A]`). See [AGENTS.md](AGENTS.md) for our ZIO coding standards.
