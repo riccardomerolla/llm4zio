@@ -15,7 +15,7 @@ import activity.entity.{ ActivityEvent, ActivityEventType, ActivityRepository }
 import db.*
 import io.github.riccardomerolla.zio.eclipsestore.service.LifecycleCommand
 import llm4zio.core.*
-import llm4zio.tools.{ AnyTool, JsonSchema }
+import llm4zio.tools.{ AnyTool, JsonSchema, ToolRegistry }
 import shared.store.{ ConfigStoreModule, ConversationRow, DataStoreModule, MemoryStoreModule, StoreConfig }
 
 object SettingsControllerSpec extends ZIOSpecDefault:
@@ -115,6 +115,7 @@ object SettingsControllerSpec extends ZIOSpecDefault:
       ZLayer.fromZIO(Ref.make(MigrationConfig())),
       ZLayer.succeed(stubLlmService),
       ZLayer.succeed(stubModelService),
+      ToolRegistry.layer,
       SettingsController.live,
     )
 
@@ -145,6 +146,7 @@ object SettingsControllerSpec extends ZIOSpecDefault:
       ZLayer.fromZIO(Ref.make(MigrationConfig())),
       ZLayer.succeed(stubLlmService),
       ZLayer.succeed(stubModelService),
+      ToolRegistry.layer,
       SettingsController.live,
     )
 

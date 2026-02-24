@@ -1,5 +1,6 @@
 package shared.web
 
+import llm4zio.tools.{ Tool, ToolSandbox }
 import scalatags.Text.all.*
 import scalatags.Text.tags2.nav
 
@@ -112,6 +113,18 @@ object SettingsView:
             ),
           )
         }
+      ),
+      div(cls := "mt-10")(
+        h2(cls := "text-lg font-semibold text-white mb-4")("Available Tools"),
+        p(cls := "text-sm text-slate-300 mb-4")("Built-in tools registered in the tool registry."),
+        div(
+          id                 := "tools-list",
+          attr("hx-get")     := "/settings/ai/tools-fragment",
+          attr("hx-trigger") := "load",
+          attr("hx-swap")    := "innerHTML",
+        )(
+          div(cls := "text-sm text-gray-400")("Loading tools...")
+        ),
       ),
     )
 
@@ -770,3 +783,42 @@ object SettingsView:
       span(cls := "text-red-300 text-xs")("–"),
       span(cls := "text-red-300 text-xs")(error),
     ).toString
+
+  def toolsFragment(tools: List[Tool]): String =
+    if tools.isEmpty then
+      div(cls := "text-sm text-gray-400 py-4")("No tools registered").render
+    else
+      div(cls := "space-y-3")(
+        tools.map { tool =>
+          div(cls := "rounded-lg border border-white/10 bg-slate-900/70 p-4")(
+            div(cls := "flex items-start justify-between gap-3")(
+              div(cls := "min-w-0")(
+                span(cls := "font-mono text-sm font-semibold text-indigo-300")(tool.name),
+                p(cls := "text-xs text-slate-300 mt-1")(tool.description),
+              ),
+              sandboxBadge(tool.sandbox),
+            ),
+            if tool.tags.nonEmpty then
+              div(cls := "mt-2 flex flex-wrap gap-1")(
+                tool.tags.toList.sorted.map { tag =>
+                  span(
+                    cls := "inline-flex items-center rounded-md bg-white/5 ring-1 ring-white/10 px-2 py-0.5 text-[11px] text-gray-400"
+                  )(
+                    tag
+                  )
+                }
+              )
+            else frag(),
+          )
+        }
+      ).render
+
+  private def sandboxBadge(sandbox: ToolSandbox): Frag =
+    val (label, cls_) = sandbox match
+      case ToolSandbox.WorkspaceReadOnly  =>
+        ("WorkspaceReadOnly", "bg-emerald-500/10 text-emerald-300 ring-emerald-400/30")
+      case ToolSandbox.WorkspaceReadWrite => ("WorkspaceReadWrite", "bg-amber-500/10 text-amber-300 ring-amber-400/30")
+      case ToolSandbox.Unrestricted       => ("Unrestricted", "bg-purple-500/10 text-purple-300 ring-purple-400/30")
+    span(cls := s"inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset $cls_")(
+      label
+    )

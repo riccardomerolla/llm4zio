@@ -20,6 +20,7 @@ import db.*
 import io.github.riccardomerolla.zio.eclipsestore.schema.TypedStore
 import io.github.riccardomerolla.zio.eclipsestore.service.{ LifecycleCommand, LifecycleStatus }
 import llm4zio.core.{ LlmError, LlmService }
+import llm4zio.tools.ToolRegistry
 import shared.ids.Ids.EventId
 import shared.store.{ MemoryStoreModule, * }
 import shared.web.{ ErrorHandlingMiddleware, HtmlViews, SettingsView }
@@ -36,7 +37,7 @@ object SettingsController:
     : ZLayer[
       ConfigRepository & ActivityHub & Ref[GatewayConfig] & LlmService & ModelService & ConfigStoreModule.ConfigStoreService &
         DataStoreModule.DataStoreService & StoreConfig &
-        MemoryStoreModule.MemoryEntriesStore,
+        MemoryStoreModule.MemoryEntriesStore & ToolRegistry,
       Nothing,
       SettingsController,
     ] =
@@ -52,6 +53,7 @@ final case class SettingsControllerLive(
   dataStoreService: DataStoreModule.DataStoreService,
   storeConfig: StoreConfig,
   memoryEntriesStore: MemoryStoreModule.MemoryEntriesStore,
+  toolRegistry: ToolRegistry,
 ) extends SettingsController:
 
   private val settingsKeys: List[String] = List(
@@ -108,13 +110,13 @@ final case class SettingsControllerLive(
   ) derives JsonCodec
 
   override val routes: Routes[Any, Response] = Routes(
-    Method.GET / "settings"                      -> handler {
+    Method.GET / "settings"                           -> handler {
       ZIO.succeed(Response(
         status = Status.Found,
         headers = Headers(Header.Location(URL.decode("/settings/ai").getOrElse(URL.root))),
       ))
     },
-    Method.POST / "settings"                     -> handler { (req: Request) =>
+    Method.POST / "settings"                          -> handler { (req: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
           form     <- parseForm(req)
@@ -151,7 +153,7 @@ final case class SettingsControllerLive(
         yield html(HtmlViews.settingsPage(saved, Some("Settings saved successfully.")))
       }
     },
-    Method.POST / "api" / "store" / "reset-data" -> handler { (_: Request) =>
+    Method.POST / "api" / "store" / "reset-data"      -> handler { (_: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
           _   <- resetDataStore
@@ -172,27 +174,27 @@ final case class SettingsControllerLive(
         )
       }
     },
-    Method.GET / "api" / "store" / "debug-data"  -> handler { (req: Request) =>
+    Method.GET / "api" / "store" / "debug-data"       -> handler { (req: Request) =>
       val includeConfig = req.queryParam("includeConfig").exists(_.trim.equalsIgnoreCase("true"))
       val prefixFilter  = req.queryParam("prefix").map(_.trim).filter(_.nonEmpty)
       ErrorHandlingMiddleware.fromPersistence(debugDataStore(includeConfig, prefixFilter))
     },
-    Method.POST / "api" / "settings" / "test-ai" -> handler { (req: Request) =>
+    Method.POST / "api" / "settings" / "test-ai"      -> handler { (req: Request) =>
       testAIConnection(req)
     },
-    Method.GET / "api" / "models"                -> handler {
+    Method.GET / "api" / "models"                     -> handler {
       modelService.listAvailableModels.map(models => Response.json(models.toJson))
     },
-    Method.GET / "api" / "models" / "status"     -> handler {
+    Method.GET / "api" / "models" / "status"          -> handler {
       modelService.probeProviders.map(status => Response.json(status.toJson))
     },
-    Method.GET / "models"                        -> handler {
+    Method.GET / "models"                             -> handler {
       ZIO.succeed(Response(
         status = Status.Found,
         headers = Headers(Header.Location(URL.decode("/settings/ai").getOrElse(URL.root))),
       ))
     },
-    Method.GET / "settings" / "ai"               -> handler {
+    Method.GET / "settings" / "ai"                    -> handler {
       ErrorHandlingMiddleware.fromPersistence {
         for
           rows    <- repository.getAllSettings
@@ -202,7 +204,12 @@ final case class SettingsControllerLive(
         yield html(HtmlViews.settingsAiTab(settings, models, status))
       }
     },
-    Method.POST / "settings" / "ai"              -> handler { (req: Request) =>
+    Method.GET / "settings" / "ai" / "tools-fragment" -> handler { (_: Request) =>
+      toolRegistry.list.map { tools =>
+        htmlFragment(SettingsView.toolsFragment(tools))
+      }
+    },
+    Method.POST / "settings" / "ai"                   -> handler { (req: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
           form     <- parseForm(req)
@@ -231,7 +238,7 @@ final case class SettingsControllerLive(
         yield html(HtmlViews.settingsAiTab(saved, models, status, Some("AI settings saved.")))
       }
     },
-    Method.GET / "settings" / "gateway"          -> handler {
+    Method.GET / "settings" / "gateway"               -> handler {
       ErrorHandlingMiddleware.fromPersistence {
         for
           rows    <- repository.getAllSettings
@@ -239,7 +246,7 @@ final case class SettingsControllerLive(
         yield html(HtmlViews.settingsGatewayTab(settings))
       }
     },
-    Method.POST / "settings" / "gateway"         -> handler { (req: Request) =>
+    Method.POST / "settings" / "gateway"              -> handler { (req: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
           form     <- parseForm(req)
@@ -507,4 +514,7 @@ final case class SettingsControllerLive(
     URLDecoder.decode(value, StandardCharsets.UTF_8)
 
   private def html(bodyContent: String): Response =
+    Response.text(bodyContent).contentType(MediaType.text.html)
+
+  private def htmlFragment(bodyContent: String): Response =
     Response.text(bodyContent).contentType(MediaType.text.html)
