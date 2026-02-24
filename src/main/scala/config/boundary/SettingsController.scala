@@ -225,6 +225,45 @@ final case class SettingsControllerLive(
         yield html(HtmlViews.settingsAiTab(saved, models, status, Some("AI settings saved.")))
       }
     },
+    Method.GET / "settings" / "gateway"  -> handler {
+      ErrorHandlingMiddleware.fromPersistence {
+        for
+          rows    <- repository.getAllSettings
+          settings = rows.map(r => r.key -> r.value).toMap
+        yield html(HtmlViews.settingsGatewayTab(settings))
+      }
+    },
+    Method.POST / "settings" / "gateway" -> handler { (req: Request) =>
+      ErrorHandlingMiddleware.fromPersistence {
+        for
+          form  <- parseForm(req)
+          keys   = settingsKeys.filter(k => k.startsWith("gateway.") || k.startsWith("telegram.") || k.startsWith("memory."))
+          _     <- ZIO.foreachDiscard(keys) { key =>
+                     val value = key match
+                       case "gateway.dryRun" | "gateway.verbose" | "telegram.enabled" | "memory.enabled" =>
+                         if form.get(key).exists(v => v.equalsIgnoreCase("on") || v.equalsIgnoreCase("true")) then "true" else "false"
+                       case _ => form.getOrElse(key, "")
+                     repository.upsertSetting(key, value)
+                   }
+          _     <- checkpointConfigStore
+          rows  <- repository.getAllSettings
+          saved  = rows.map(r => r.key -> r.value).toMap
+          newConfig = SettingsApplier.toGatewayConfig(saved)
+          _     <- configRef.set(newConfig)
+          _     <- writeSettingsSnapshot(saved)
+          now   <- Clock.instant
+          _     <- activityHub.publish(
+                     ActivityEvent(
+                       id = EventId.generate,
+                       eventType = ActivityEventType.ConfigChanged,
+                       source = "settings.gateway",
+                       summary = "Gateway settings updated",
+                       createdAt = now,
+                     )
+                   )
+        yield html(HtmlViews.settingsGatewayTab(saved, Some("Gateway settings saved.")))
+      }
+    },
   )
 
   private def debugDataStore(includeConfig: Boolean, prefixFilter: Option[String]): IO[PersistenceError, Response] =

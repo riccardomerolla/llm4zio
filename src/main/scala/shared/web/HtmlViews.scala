@@ -61,6 +61,13 @@ object HtmlViews:
   ): String =
     SettingsView.channelsTab(cards, nowMs, flash)
 
+  def settingsGatewayTab(settings: Map[String, String], flash: Option[String] = None): String =
+    SettingsView.gatewayTab(settings, flash)
+
+  def settingsSystemTab: String = SettingsView.systemTab
+
+  def settingsAdvancedTab: String = SettingsView.advancedTab
+
   def modelsPage(registry: ModelRegistryResponse, statuses: List[ProviderProbeStatus]): String =
     ModelsView.page(registry, statuses)
 

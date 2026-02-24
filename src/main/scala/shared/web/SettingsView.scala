@@ -168,6 +168,107 @@ object SettingsView:
       div(id := "channels-refresh-indicator", cls := "htmx-indicator text-xs text-gray-500 mt-3")("Refreshing..."),
     )
 
+  def gatewayTab(
+    settings: Map[String, String],
+    flash: Option[String] = None,
+    errors: Map[String, String] = Map.empty,
+  ): String =
+    settingsShell("gateway", "Settings — Gateway")(
+      flash.map { msg =>
+        div(cls := "mb-6 rounded-md bg-green-500/10 border border-green-500/30 p-4")(
+          p(cls := "text-sm text-green-400")(msg)
+        )
+      },
+      if errors.nonEmpty then
+        div(cls := "mb-6 rounded-md bg-red-500/10 border border-red-500/30 p-4")(
+          p(cls := "text-sm font-semibold text-red-400")("Validation Errors"),
+          ul(cls := "text-xs text-red-300 mt-2 space-y-1")(
+            errors.map { case (key, msg) => li(s"$key: $msg") }.toSeq*
+          ),
+        )
+      else (),
+      tag("form")(method := "post", action := "/settings/gateway", cls := "space-y-6 max-w-2xl")(
+        gatewaySection(settings, errors),
+        telegramSection(settings, errors),
+        memorySection(settings, errors),
+        div(cls := "flex gap-4 pt-2")(
+          button(
+            `type` := "submit",
+            cls    := "rounded-md bg-indigo-500 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-400",
+          )("Save Gateway Settings")
+        ),
+      ),
+      div(cls := "mt-10 rounded-lg border border-red-500/30 bg-red-950/30 p-5 max-w-2xl")(
+        h3(cls := "text-lg font-semibold text-red-200")("Reset Operational Data"),
+        p(cls := "mt-2 text-sm text-red-100/90")(
+          "Deletes all tasks, conversations, activity logs, and memory. Configuration is preserved."
+        ),
+        button(
+          `type`             := "button",
+          cls                := "mt-4 rounded-md border border-red-400/40 bg-red-500/20 px-4 py-2 text-sm font-semibold text-red-100 hover:bg-red-500/30",
+          attr("hx-post")    := "/api/store/reset-data",
+          attr("hx-confirm") := "This will permanently delete all tasks and conversations. Are you sure?",
+          attr("hx-swap")    := "none",
+        )("Reset Data Store"),
+      ),
+      tag("script")(
+        raw("""
+          |document.addEventListener('DOMContentLoaded', function() {
+          |  const modeSelect = document.getElementById('telegram.mode');
+          |  const webhookGroup = document.getElementById('telegram-webhook-group');
+          |  const pollingGroup = document.getElementById('telegram-polling-group');
+          |
+          |  function updateFieldVisibility() {
+          |    const mode = modeSelect.value;
+          |    if (mode === 'Webhook') {
+          |      webhookGroup.style.display = 'block';
+          |      pollingGroup.style.display = 'none';
+          |    } else if (mode === 'Polling') {
+          |      webhookGroup.style.display = 'none';
+          |      pollingGroup.style.display = 'block';
+          |    }
+          |  }
+          |
+          |  if (modeSelect) {
+          |    updateFieldVisibility();
+          |    modeSelect.addEventListener('change', updateFieldVisibility);
+          |  }
+          |});
+        """.stripMargin)
+      ),
+    )
+
+  def systemTab: String =
+    settingsShell("system", "Settings — System")(
+      div(cls := "mb-4")(
+        p(cls := "text-sm text-gray-400")("Real-time gateway, agent, channel, and resource telemetry."),
+      ),
+      div(cls := "bg-white/5 ring-1 ring-white/10 rounded-lg p-4")(
+        tag("health-dashboard")(
+          attr("ws-url") := "/ws/console"
+        )()
+      ),
+      JsResources.inlineModuleScript("/static/client/components/health-dashboard.js"),
+    )
+
+  def advancedTab: String =
+    settingsShell("advanced", "Settings — Advanced Config")(
+      div(cls := "mb-4 rounded-md bg-amber-500/10 border border-amber-500/20 p-3")(
+        p(cls := "text-sm text-amber-300")(
+          "Advanced users only. Most settings are configurable via the tabs above with validation and helper text."
+        ),
+      ),
+      div(cls := "bg-white/5 ring-1 ring-white/10 rounded-lg p-4")(
+        tag("config-editor")(attr("api-base") := "/api/config")(),
+      ),
+      script(src := "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"),
+      tag("link")(
+        rel  := "stylesheet",
+        href := "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark.min.css",
+      ),
+      JsResources.inlineModuleScript("/static/client/components/config-editor.js"),
+    )
+
   def page(
     settings: Map[String, String],
     flash: Option[String] = None,
