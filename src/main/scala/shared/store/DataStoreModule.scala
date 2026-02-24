@@ -5,7 +5,6 @@ import java.nio.file.Paths
 import zio.*
 import zio.schema.Schema
 
-import activity.entity.ActivityEvent
 import conversation.entity.{ Conversation, ConversationEvent }
 import io.github.riccardomerolla.zio.eclipsestore.config.{ EclipseStoreConfig, StorageTarget }
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
@@ -16,7 +15,6 @@ import taskrun.entity.{ TaskRun, TaskRunEvent }
 
 private val dataStoreHandlers =
   SchemaBinaryCodec.handlers(Schema[String])
-    ++ SchemaBinaryCodec.handlers(Schema[ActivityEvent])
     ++ SchemaBinaryCodec.handlers(Schema[TaskRun])
     ++ SchemaBinaryCodec.handlers(Schema[TaskRunEvent])
     ++ SchemaBinaryCodec.handlers(Schema[AgentIssue])

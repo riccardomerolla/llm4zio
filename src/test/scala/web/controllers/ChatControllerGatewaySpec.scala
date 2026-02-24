@@ -2,7 +2,7 @@ package web.controllers
 
 import zio.*
 import zio.http.*
-import zio.json.EncoderOps
+import zio.json.*
 import zio.stream.ZStream
 import zio.test.*
 
@@ -10,13 +10,7 @@ import _root_.config.entity.AIProviderConfig
 import activity.control.ActivityHubLive
 import activity.entity.{ ActivityEvent, ActivityEventType, ActivityRepository }
 import conversation.boundary.ChatControllerLive
-import conversation.entity.api.{
-  ChatConversation,
-  ConversationEntry,
-  ConversationMessageRequest,
-  SenderType,
-  SessionContextLink,
-}
+import conversation.entity.api.*
 import db.*
 import gateway.control.*
 import gateway.entity.*
@@ -320,6 +314,9 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
       ): IO[PersistenceError, Unit] =
         ref.update(state => state.copy(sessionContexts = state.sessionContexts - ((channelName, sessionKey))))
 
+      override def listSessionContexts: IO[PersistenceError, List[SessionContextLink]] =
+        ref.get.map(_.sessionContexts.values.toList)
+
       override def createIssue(issue: AgentIssue): IO[PersistenceError, Long]                         =
         ZIO.fail(PersistenceError.QueryFailed("createIssue", "unused"))
       override def getIssue(id: Long): IO[PersistenceError, Option[AgentIssue]]                       =
@@ -461,6 +458,55 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
         body.contains("user"),
         persisted.count(_.senderType == SenderType.User) == 1,
         streamed.forall(_.count(_.senderType == SenderType.Assistant) == 1),
+      )).provideSomeLayer[Scope](appLayer)
+    } @@ TestAspect.withLiveClock,
+    test("GET /api/sessions ignores malformed session context payloads") {
+      (for
+        chatRepo  <- ZIO.service[ChatRepository]
+        migrRepo  <- ZIO.service[TaskRepository]
+        llm       <- ZIO.service[LlmService]
+        gateway   <- ZIO.service[GatewayService]
+        registry  <- ZIO.service[ChannelRegistry]
+        convId    <- newConversation(chatRepo)
+        now       <- Clock.instant
+        _         <- chatRepo.upsertSessionContext(
+                       channelName = "websocket",
+                       sessionKey = "valid-session",
+                       contextJson = StoredSessionContext(
+                         conversationId = Some(convId),
+                         runId = Some(999L),
+                         metadata = Map("preferredAgent" -> "code-agent"),
+                       ).toJson,
+                       updatedAt = now,
+                     )
+        _         <- chatRepo.upsertSessionContext(
+                       channelName = "websocket",
+                       sessionKey = "broken-session",
+                       contextJson = """{"conversationId":{"bad":"shape"}}""",
+                       updatedAt = now,
+                     )
+        abortReg  <- Ref.make(Map.empty[Long, UIO[Unit]]).map(StreamAbortRegistryLive.apply)
+        actHub    <- Ref.make(Set.empty[Queue[ActivityEvent]]).map(subs => ActivityHubLive(stubActivityRepo, subs))
+        controller = ChatControllerLive(
+                       chatRepository = chatRepo,
+                       llmService = llm,
+                       migrationRepository = migrRepo,
+                       issueAssignmentOrchestrator = testIssueAssignment,
+                       configResolver = testConfigResolver,
+                       gatewayService = gateway,
+                       channelRegistry = registry,
+                       streamAbortRegistry = abortReg,
+                       activityHub = actHub,
+                     )
+        response  <- controller.routes.runZIO(Request.get("/api/sessions"))
+        body      <- response.body.asString
+        sessions  <- ZIO
+                       .fromEither(body.fromJson[List[ChatSession]])
+                       .mapError(err => PersistenceError.QueryFailed("json_parse", err))
+      yield assertTrue(
+        response.status == Status.Ok,
+        sessions.exists(_.sessionId == "websocket:valid-session"),
+        sessions.forall(_.sessionId != "websocket:broken-session"),
       )).provideSomeLayer[Scope](appLayer)
     } @@ TestAspect.withLiveClock,
   ) @@ TestAspect.sequential @@ TestAspect.timeout(20.seconds)

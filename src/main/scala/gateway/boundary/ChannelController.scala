@@ -11,6 +11,7 @@ import zio.json.*
 import _root_.config.entity.GatewayConfig
 import db.{ ConfigRepository, PersistenceError }
 import gateway.control.*
+import gateway.entity.SessionScopeStrategy
 import shared.web.{ ChannelCardData, ChannelView, HtmlViews }
 
 trait ChannelController:
@@ -67,8 +68,18 @@ final case class ChannelControllerLive(
         for
           form     <- parseForm(req)
           prefixed  = name match
-                        case "telegram" => form // telegram keys are already prefixed with "telegram."
-                        case _          => form.map { case (k, v) => s"channel.$name.$k" -> v }
+                        case "telegram" =>
+                          form.map {
+                            case ("telegram.sessionScopeStrategy", value) =>
+                              "telegram.sessionScopeStrategy" -> normalizeSessionScopeSetting(value)
+                            case other                                    => other
+                          }
+                        case _          =>
+                          form.map {
+                            case ("sessionScopeStrategy", value) =>
+                              s"channel.$name.sessionScopeStrategy" -> normalizeSessionScopeSetting(value)
+                            case (key, value)                    => s"channel.$name.$key" -> value
+                          }
           _        <- configRepository.upsertSettings(prefixed)
           settings <- getSettingsMap
         yield htmlFragment(ChannelView.channelConfigForm(name, settings).render)
@@ -225,7 +236,10 @@ final case class ChannelControllerLive(
 
   private def channelConfig(name: String, form: Map[String, String]): Map[String, String] =
     val base = Map(
-      s"channel.$name.enabled" -> form.get("enabled").exists(v => v == "on" || v.equalsIgnoreCase("true")).toString
+      s"channel.$name.enabled"              -> form.get("enabled").exists(v => v == "on" || v.equalsIgnoreCase("true")).toString,
+      s"channel.$name.sessionScopeStrategy" -> normalizeSessionScopeSetting(
+        form.getOrElse("sessionScopeStrategy", SessionScopeStrategy.PerConversation.toString)
+      ),
     )
     name match
       case "discord" =>
@@ -248,39 +262,52 @@ final case class ChannelControllerLive(
     name match
       case "discord"   =>
         val token = cfg.getOrElse("channel.discord.botToken", "").trim
+        val scope = parseSessionScopeStrategy(cfg.get("channel.discord.sessionScopeStrategy"))
         if token.isEmpty then
           ZIO.fail(PersistenceError.QueryFailed("addChannel", "Discord bot token is required"))
         else
           DiscordChannel
             .make(
+              scopeStrategy = scope,
               config = DiscordConfig(
                 botToken = token,
                 guildId = cfg.get("channel.discord.guildId").map(_.trim).filter(_.nonEmpty),
                 defaultChannelId = cfg.get("channel.discord.channelId").map(_.trim).filter(_.nonEmpty),
-              )
+              ),
             )
             .map(identity[MessageChannel])
       case "slack"     =>
         val appToken = cfg.getOrElse("channel.slack.appToken", "").trim
+        val scope    = parseSessionScopeStrategy(cfg.get("channel.slack.sessionScopeStrategy"))
         if appToken.isEmpty then
           ZIO.fail(PersistenceError.QueryFailed("addChannel", "Slack app token is required"))
         else
           SlackChannel
             .make(
+              scopeStrategy = scope,
               config = SlackConfig(
                 appToken = appToken,
                 botToken = cfg.get("channel.slack.botToken").map(_.trim).filter(_.nonEmpty),
                 defaultChannelId = cfg.get("channel.slack.channelId").map(_.trim).filter(_.nonEmpty),
                 socketMode = cfg.get("channel.slack.socketMode").exists(_.equalsIgnoreCase("true")),
-              )
+              ),
             )
             .map(identity[MessageChannel])
       case "telegram"  =>
         ZIO.fail(PersistenceError.QueryFailed("addChannel", "Telegram channel is managed from Settings"))
       case "websocket" =>
-        WebSocketChannel.make().map(identity[MessageChannel])
+        val scope = parseSessionScopeStrategy(cfg.get("channel.websocket.sessionScopeStrategy"))
+        WebSocketChannel.make(scopeStrategy = scope).map(identity[MessageChannel])
       case _           =>
         ZIO.fail(PersistenceError.QueryFailed("addChannel", s"Unsupported channel: $name"))
+
+  private def normalizeSessionScopeSetting(raw: String): String =
+    parseSessionScopeStrategy(Some(raw)).toString
+
+  private def parseSessionScopeStrategy(raw: Option[String]): SessionScopeStrategy =
+    raw
+      .flatMap(SessionScopeStrategy.fromString)
+      .getOrElse(SessionScopeStrategy.PerConversation)
 
   private def probeStatuses: UIO[List[gateway.entity.ChannelStatus]] =
     for

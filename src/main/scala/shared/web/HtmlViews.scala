@@ -4,12 +4,13 @@ import config.control.{ ModelRegistryResponse, ProviderProbeStatus }
 import config.entity.{ AgentChannelBinding, AgentInfo, WorkflowDefinition }
 import conversation.entity.api.{ ChatConversation, ConversationEntry, ConversationSessionMeta }
 import db.{ TaskReportRow, TaskRunRow }
+import gateway.entity.ChatSession
 import issues.entity.api.{ AgentAssignment, AgentIssue }
 
 object HtmlViews:
 
-  def dashboard(runs: List[TaskRunRow], workflowCount: Int): String =
-    DashboardView.dashboard(runs, workflowCount)
+  def dashboard(runs: List[TaskRunRow], workflowCount: Int, activeSessionCount: Int): String =
+    DashboardView.dashboard(runs, workflowCount, activeSessionCount)
 
   def channelsPage(cards: List[ChannelCardData], nowMs: Long): String =
     ChannelView.page(cards, nowMs)
@@ -125,8 +126,9 @@ object HtmlViews:
   def chatDashboard(
     conversations: List[ChatConversation],
     sessionMetaByConversation: Map[String, ConversationSessionMeta] = Map.empty,
+    sessions: List[ChatSession] = Nil,
   ): String =
-    ChatView.dashboard(conversations, sessionMetaByConversation)
+    ChatView.dashboard(conversations, sessionMetaByConversation, sessions)
 
   def chatDetail(
     conversation: ChatConversation,

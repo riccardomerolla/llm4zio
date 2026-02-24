@@ -55,6 +55,21 @@ case class SessionContextLink(
   updatedAt: Instant,
 ) derives JsonCodec
 
+case class StoredSessionContext(
+  lastInboundMessageId: Option[String] = None,
+  lastOutboundMessageId: Option[String] = None,
+  conversationId: Option[Long] = None,
+  runId: Option[Long] = None,
+  metadata: Map[String, String] = Map.empty,
+) derives JsonCodec
+
+case class StoredSessionContextLink(
+  channelName: String,
+  sessionKey: String,
+  context: StoredSessionContext,
+  updatedAt: Instant,
+) derives JsonCodec
+
 case class ConversationSessionMeta(
   channelName: String,
   sessionKey: String,

@@ -1,6 +1,9 @@
 package shared.web
 
+import java.net.URLEncoder
+
 import conversation.entity.api.{ ChatConversation, ConversationEntry, ConversationSessionMeta, SenderType }
+import gateway.entity.ChatSession
 import scalatags.Text.all.*
 
 object ChatView:
@@ -8,6 +11,7 @@ object ChatView:
   def dashboard(
     conversations: List[ChatConversation],
     sessionMetaByConversation: Map[String, ConversationSessionMeta],
+    sessions: List[ChatSession],
   ): String =
     Layout.page("Chat — COBOL Modernization", "/chat")(
       div(cls := "mb-6")(
@@ -28,6 +32,7 @@ object ChatView:
         ),
         p(cls := "text-gray-400 text-sm mt-2")("Manage conversations with the AI service"),
       ),
+      sessionsSection(sessions),
       if conversations.isEmpty then
         div(cls := "bg-white/5 ring-1 ring-white/10 rounded-lg p-12 text-center")(
           p(cls := "text-gray-400 mb-4")("No conversations yet"),
@@ -623,6 +628,9 @@ if (!customElements.get('chat-message-stream')) {
     sessionMeta match
       case None       => frag()
       case Some(meta) =>
+        val sessionId =
+          s"${sanitizeString(meta.channelName).getOrElse("unknown")}:${sanitizeString(meta.sessionKey).getOrElse("unknown")}"
+        val encoded   = URLEncoder.encode(sessionId, "UTF-8")
         div(cls := "mt-3 rounded-md bg-white/5 ring-1 ring-white/10 p-3 text-xs text-gray-300")(
           div(cls := "font-semibold text-gray-200 mb-2")("Session Context"),
           div(cls := "space-y-1")(
@@ -634,7 +642,61 @@ if (!customElements.get('chat-message-stream')) {
             ),
             p(span(cls := "text-gray-400 mr-2")("Updated:"), formatTimestamp(meta.updatedAt)),
           ),
+          div(cls := "mt-3")(
+            button(
+              cls                           := "rounded-md bg-red-600 hover:bg-red-500 px-3 py-1.5 text-xs font-semibold text-white",
+              attr("hx-delete")             := s"/api/sessions/$encoded",
+              attr("hx-confirm")            := "End this session?",
+              attr("hx-swap")               := "none",
+              attr("hx-on::after-request")  := "window.location='/chat';",
+              attr("hx-on::response-error") := "window.location='/chat';",
+            )("End Session")
+          ),
         )
+
+  private def sessionsSection(sessions: List[ChatSession]): Frag =
+    div(cls := "mb-6 rounded-lg bg-white/5 ring-1 ring-white/10 p-4")(
+      div(cls := "mb-3 flex items-center justify-between gap-3")(
+        h2(cls := "text-sm font-semibold text-white")("Active Sessions"),
+        span(cls := "text-xs text-gray-400")(s"${sessions.length} active"),
+      ),
+      if sessions.isEmpty then
+        p(cls := "text-xs text-gray-400")("No active sessions.")
+      else
+        div(cls := "overflow-x-auto")(
+          table(cls := "min-w-full text-left text-xs text-gray-200")(
+            thead(
+              tr(cls := "text-gray-400")(
+                th(cls := "py-2 pr-3")("Session"),
+                th(cls := "py-2 pr-3")("Agent"),
+                th(cls := "py-2 pr-3")("Messages"),
+                th(cls := "py-2 pr-3")("Last Activity"),
+                th(cls := "py-2 pr-3")(""),
+              )
+            ),
+            tbody(
+              sessions.map { session =>
+                val encoded = URLEncoder.encode(session.sessionId, "UTF-8")
+                tr(cls := "border-t border-white/10")(
+                  td(cls := "py-2 pr-3 font-mono text-[11px]")(session.sessionId),
+                  td(cls := "py-2 pr-3")(session.agentName.getOrElse("-")),
+                  td(cls := "py-2 pr-3")(session.messageCount.toString),
+                  td(cls := "py-2 pr-3")(formatTimestamp(session.lastActivity)),
+                  td(cls := "py-2 pr-0 text-right")(
+                    button(
+                      cls                := "rounded-md bg-red-600/80 hover:bg-red-500 px-2.5 py-1 text-[11px] font-semibold text-white",
+                      attr("hx-delete")  := s"/api/sessions/$encoded",
+                      attr("hx-confirm") := s"End session ${session.sessionId}?",
+                      attr("hx-target")  := "closest tr",
+                      attr("hx-swap")    := "outerHTML",
+                    )("End")
+                  ),
+                )
+              }
+            ),
+          )
+        ),
+    )
 
   private def compactPreview(raw: String): String =
     val compact = raw.replaceAll("\\s+", " ").trim

@@ -80,4 +80,6 @@ object ChannelRegistrySpec extends ZIOSpecDefault:
         runKey.asString == "websocket:run:7",
       )
     },
-  ).provideLayer(ChannelRegistry.empty) @@ TestAspect.sequential @@ TestAspect.timeout(10.seconds)
+  ).provideLayer(ChannelRegistry.empty) @@ TestAspect.withLiveClock @@ TestAspect.sequential @@ TestAspect.timeout(
+    10.seconds
+  )

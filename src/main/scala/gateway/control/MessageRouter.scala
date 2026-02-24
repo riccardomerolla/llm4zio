@@ -6,6 +6,7 @@ import zio.*
 import zio.json.*
 import zio.stream.ZStream
 
+import conversation.entity.api.StoredSessionContext
 import db.{ ChatRepository, PersistenceError }
 import gateway.entity.*
 import orchestration.control.*
@@ -144,22 +145,39 @@ final case class MessageRouterLive(
   private def loadContext(sessionKey: SessionKey): IO[MessageRouterError, Option[SessionContext]] =
     val (channel, key) = contextStoreKey(sessionKey)
     chatRepository
-      .getSessionContext(channel, key)
+      .getSessionContextStateLink(channel, key)
       .mapError(MessageRouterError.Persistence.apply)
-      .flatMap {
-        case None      => ZIO.none
-        case Some(raw) =>
-          ZIO
-            .fromEither(raw.fromJson[SessionContext])
-            .mapError(err => MessageRouterError.InvalidSession(s"Invalid stored session context: $err"))
-            .map(Some(_))
-      }
+      .map(_.map(link => toRuntimeContext(sessionKey, link.context, link.updatedAt)))
 
   private def saveContext(context: SessionContext): IO[MessageRouterError, Unit] =
     val (channel, key) = contextStoreKey(context.sessionKey)
     chatRepository
-      .upsertSessionContext(channel, key, context.toJson, context.updatedAt)
+      .upsertSessionContextState(channel, key, toStoredContext(context), context.updatedAt)
       .mapError(MessageRouterError.Persistence.apply)
+
+  private def toStoredContext(context: SessionContext): StoredSessionContext =
+    StoredSessionContext(
+      lastInboundMessageId = context.lastInboundMessageId,
+      lastOutboundMessageId = context.lastOutboundMessageId,
+      conversationId = context.conversationId,
+      runId = context.runId,
+      metadata = context.metadata,
+    )
+
+  private def toRuntimeContext(
+    sessionKey: SessionKey,
+    context: StoredSessionContext,
+    updatedAt: Instant,
+  ): SessionContext =
+    SessionContext(
+      sessionKey = sessionKey,
+      lastInboundMessageId = context.lastInboundMessageId,
+      lastOutboundMessageId = context.lastOutboundMessageId,
+      conversationId = context.conversationId,
+      runId = context.runId,
+      metadata = context.metadata,
+      updatedAt = updatedAt,
+    )
 
   private def toControlPlaneMessage(
     event: ControlPlaneEvent,

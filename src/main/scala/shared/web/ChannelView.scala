@@ -202,7 +202,7 @@ object ChannelView:
         case "telegram"  => telegramConfigForm(settings)
         case "discord"   => discordConfigForm(settings)
         case "slack"     => slackConfigForm(settings)
-        case "websocket" => p(cls := "text-xs text-gray-400")("WebSocket is built-in and requires no configuration.")
+        case "websocket" => websocketConfigForm(settings)
         case _           => p(cls := "text-xs text-gray-400")(s"No configuration available for $name.")
     )
 
@@ -275,6 +275,10 @@ object ChannelView:
             cls         := "block w-full rounded-md bg-white/5 border-0 py-1.5 text-white text-sm ring-1 ring-white/10 px-3",
           ),
         ),
+        scopeStrategySelect(
+          fieldName = "telegram.sessionScopeStrategy",
+          selected = settings.getOrElse("telegram.sessionScopeStrategy", "PerConversation"),
+        ),
       ),
       div(cls := "flex items-center gap-3")(
         button(
@@ -314,6 +318,10 @@ object ChannelView:
             cls                 := "block w-full rounded-md bg-white/5 border-0 py-1.5 text-white text-sm ring-1 ring-white/10 px-3",
           ),
         ),
+        scopeStrategySelect(
+          fieldName = "sessionScopeStrategy",
+          selected = settings.getOrElse("channel.discord.sessionScopeStrategy", "PerConversation"),
+        ),
       ),
       button(
         `type` := "submit",
@@ -350,9 +358,52 @@ object ChannelView:
             cls                 := "block w-full rounded-md bg-white/5 border-0 py-1.5 text-white text-sm ring-1 ring-white/10 px-3",
           ),
         ),
+        scopeStrategySelect(
+          fieldName = "sessionScopeStrategy",
+          selected = settings.getOrElse("channel.slack.sessionScopeStrategy", "PerConversation"),
+        ),
       ),
       button(
         `type` := "submit",
         cls    := "rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500",
       )("Save"),
     )
+
+  private def websocketConfigForm(settings: Map[String, String]): Frag =
+    tag("form")(
+      cls                 := "space-y-4",
+      attr("hx-post")     := "/settings/channels/websocket",
+      attr("hx-target")   := "#config-form-websocket",
+      attr("hx-swap")     := "outerHTML",
+      attr("hx-encoding") := "application/x-www-form-urlencoded",
+    )(
+      p(cls := "text-xs text-gray-400")("WebSocket is built-in. You can still customize session scope."),
+      scopeStrategySelect(
+        fieldName = "sessionScopeStrategy",
+        selected = settings.getOrElse("channel.websocket.sessionScopeStrategy", "PerConversation"),
+      ),
+      button(
+        `type` := "submit",
+        cls    := "rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500",
+      )("Save"),
+    )
+
+  private def scopeStrategySelect(fieldName: String, selected: String): Frag =
+    div(
+      label(cls := "block text-xs font-medium text-gray-400 mb-1")("Session Scope"),
+      select(
+        name := fieldName,
+        cls  := "block w-full rounded-md bg-white/5 border-0 py-1.5 text-white text-sm ring-1 ring-white/10 px-3",
+      )(
+        scopeOption("PerConversation", selected),
+        scopeOption("PerRun", selected),
+        scopeOption("PerUser", selected),
+        scopeOption("PerChannel", selected),
+      ),
+    )
+
+  private def scopeOption(optionValue: String, selected: String): Frag =
+    option(
+      value := optionValue,
+      if selected.trim.equalsIgnoreCase(optionValue) then attr("selected") := "selected" else (),
+    )(optionValue)
