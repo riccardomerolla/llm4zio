@@ -1,6 +1,7 @@
 package shared.web
 
 import scalatags.Text.all.*
+import scalatags.Text.tags2.nav
 
 object SettingsView:
 
@@ -13,6 +14,38 @@ object SettingsView:
   private val labelCls = "block text-sm font-medium text-white mb-2"
 
   private val sectionCls = "bg-white/5 ring-1 ring-white/10 rounded-lg p-6 mb-6"
+
+  private val tabs = List(
+    ("ai",       "AI Models"),
+    ("channels", "Channels"),
+    ("gateway",  "Gateway"),
+    ("system",   "System"),
+    ("advanced", "Advanced Config"),
+  )
+
+  def settingsShell(activeTab: String, pageTitle: String)(bodyContent: Frag*): String =
+    Layout.page(pageTitle, s"/settings/$activeTab")(
+      div(cls := "mb-6")(
+        h1(cls := "text-2xl font-bold text-white")("Settings"),
+      ),
+      div(cls := "border-b border-white/10 mb-6")(
+        nav(cls := "-mb-px flex space-x-6", attr("aria-label") := "Settings tabs")(
+          tabs.map { case (tab, label) =>
+            val isActive = tab == activeTab
+            a(
+              href := s"/settings/$tab",
+              cls  :=
+                (if isActive then
+                   "border-b-2 border-indigo-500 py-4 px-1 text-sm font-medium text-white whitespace-nowrap"
+                 else
+                   "border-b-2 border-transparent py-4 px-1 text-sm font-medium text-gray-400 hover:text-white hover:border-white/30 whitespace-nowrap"),
+              if isActive then attr("aria-current") := "page" else (),
+            )(label)
+          }
+        )
+      ),
+      div(bodyContent*)
+    )
 
   def page(
     settings: Map[String, String],
