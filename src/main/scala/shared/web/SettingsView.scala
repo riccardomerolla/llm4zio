@@ -262,9 +262,13 @@ object SettingsView:
         tag("config-editor")(attr("api-base") := "/api/config")(),
       ),
       script(src := "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"),
-      tag("link")(
-        rel  := "stylesheet",
-        href := "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark.min.css",
+      tag("script")(
+        raw("""
+          |const _hlCss = document.createElement('link');
+          |_hlCss.rel = 'stylesheet';
+          |_hlCss.href = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark.min.css';
+          |document.head.appendChild(_hlCss);
+        """.stripMargin)
       ),
       JsResources.inlineModuleScript("/static/client/components/config-editor.js"),
     )
