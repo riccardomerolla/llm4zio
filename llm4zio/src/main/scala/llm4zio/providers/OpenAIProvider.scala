@@ -50,10 +50,47 @@ object OpenAIProvider:
         }
 
       override def executeWithTools(prompt: String, tools: List[AnyTool]): IO[LlmError, ToolCallResponse] =
-        // OpenAI supports tool calling, but not implemented in this basic version
-        ZIO.fail(
-          LlmError.InvalidRequestError("OpenAI provider does not yet support tool calling in this implementation")
-        )
+        for
+          baseUrl <- ZIO.fromOption(config.baseUrl).orElseFail(
+                       LlmError.ConfigError("Missing baseUrl for OpenAI provider")
+                     )
+          _       <- ZIO.fromOption(config.apiKey).orElseFail(
+                       LlmError.AuthenticationError("Missing API key for OpenAI provider")
+                     )
+          openAiTools = tools.map { t =>
+                          OpenAITool(function = OpenAIFunction(
+                            name = t.name,
+                            description = t.description,
+                            parameters = t.parameters,
+                          ))
+                        }
+          request = ChatCompletionRequestWithTools(
+                      model = config.model,
+                      messages = List(ChatMessage(role = "user", content = prompt)),
+                      tools = openAiTools,
+                      temperature = config.temperature.orElse(Some(0.7)),
+                      max_tokens = config.maxTokens,
+                    )
+          url     = s"${baseUrl.stripSuffix("/")}/chat/completions"
+          body   <- httpClient.postJson(
+                      url = url,
+                      body = request.toJson,
+                      headers = authHeaders,
+                      timeout = config.timeout,
+                    )
+          parsed <- ZIO
+                      .fromEither(body.fromJson[ChatCompletionResponseWithTools])
+                      .mapError(err => LlmError.ParseError(s"Failed to decode OpenAI tool response: $err", body))
+        yield
+          val choice    = parsed.choices.headOption
+          val toolCalls = choice.flatMap(_.message).flatMap(_.tool_calls).getOrElse(Nil)
+          val content   = choice.flatMap(_.message).flatMap(_.content)
+          val finish    = choice.flatMap(_.finish_reason).getOrElse("stop")
+          ToolCallResponse(
+            content = content,
+            toolCalls = toolCalls.map(tc => ToolCall(id = tc.id, name = tc.function.name, arguments = tc.function.arguments)),
+            finishReason = finish,
+          )
 
       override def executeStructured[A: JsonCodec](prompt: String, schema: JsonSchema): IO[LlmError, A] =
         val responseFormat = Some(ResponseFormat(
