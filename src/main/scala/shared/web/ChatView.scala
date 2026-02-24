@@ -2,7 +2,7 @@ package shared.web
 
 import java.net.URLEncoder
 
-import conversation.entity.api.{ ChatConversation, ConversationEntry, ConversationSessionMeta, SenderType }
+import conversation.entity.api.{ ChatConversation, ConversationEntry, ConversationSessionMeta, MessageType, SenderType }
 import gateway.entity.ChatSession
 import scalatags.Text.all.*
 
@@ -214,38 +214,78 @@ object ChatView:
     ).render
 
   private def messageCard(message: ConversationEntry): Frag =
-    val isUser                                           = message.senderType == SenderType.User
-    val (containerClasses, bubbleClasses, senderClasses) =
-      if isUser then
-        (
-          "flex justify-end",
-          "max-w-[85%] lg:max-w-[72%] rounded-2xl rounded-br-md border border-indigo-300/20 bg-indigo-500/90 px-4 py-3 shadow-lg shadow-indigo-900/20",
-          "text-indigo-100",
-        )
-      else
-        (
-          "flex justify-start",
-          "max-w-[85%] lg:max-w-[72%] rounded-2xl rounded-bl-md border border-white/15 bg-slate-800/80 px-4 py-3 shadow-lg shadow-black/20",
-          "text-slate-300",
+    message.messageType match
+      case MessageType.ToolCall   => toolCallCard(message)
+      case MessageType.ToolResult => toolResultCard(message)
+      case _                      =>
+        val isUser                                           = message.senderType == SenderType.User
+        val (containerClasses, bubbleClasses, senderClasses) =
+          if isUser then
+            (
+              "flex justify-end",
+              "max-w-[85%] lg:max-w-[72%] rounded-2xl rounded-br-md border border-indigo-300/20 bg-indigo-500/90 px-4 py-3 shadow-lg shadow-indigo-900/20",
+              "text-indigo-100",
+            )
+          else
+            (
+              "flex justify-start",
+              "max-w-[85%] lg:max-w-[72%] rounded-2xl rounded-bl-md border border-white/15 bg-slate-800/80 px-4 py-3 shadow-lg shadow-black/20",
+              "text-slate-300",
+            )
+
+        div(cls := containerClasses, attr("data-sender") := (if isUser then "user" else "assistant"))(
+          div(cls := bubbleClasses)(
+            div(cls := s"text-xs font-semibold mb-2 $senderClasses")(
+              message.sender
+            ),
+            if !isUser && looksLikeMarkdown(message.content) then
+              div(
+                cls := "text-sm leading-6 text-gray-50 [&_p]:my-2 [&_ul]:my-2 [&_ol]:my-2 [&_h1]:mt-2 [&_h2]:mt-2 [&_h3]:mt-2"
+              )(
+                IssuesView.markdownFragment(message.content)
+              )
+            else
+              pre(
+                cls := "whitespace-pre-wrap break-words text-sm leading-6 text-gray-50 font-sans m-0"
+              )(
+                message.content
+              ),
+          )
         )
 
-    div(cls := containerClasses, attr("data-sender") := (if isUser then "user" else "assistant"))(
-      div(cls := bubbleClasses)(
-        div(cls := s"text-xs font-semibold mb-2 $senderClasses")(
-          message.sender
-        ),
-        if !isUser && looksLikeMarkdown(message.content) then
-          div(
-            cls := "text-sm leading-6 text-gray-50 [&_p]:my-2 [&_ul]:my-2 [&_ol]:my-2 [&_h1]:mt-2 [&_h2]:mt-2 [&_h3]:mt-2"
-          )(
-            IssuesView.markdownFragment(message.content)
-          )
-        else
+  private def toolCallCard(message: ConversationEntry): Frag =
+    div(cls := "flex justify-start")(
+      div(
+        cls := "tool-call-block max-w-[85%] lg:max-w-[72%] border border-indigo-400/20 bg-indigo-950/40 rounded-xl px-4 py-3 my-1"
+      )(
+        tag("details")(
+          tag("summary")(cls := "cursor-pointer select-none font-mono text-xs font-semibold text-indigo-300")(
+            "\u2699 Tool call"
+          ),
           pre(
-            cls := "whitespace-pre-wrap break-words text-sm leading-6 text-gray-50 font-sans m-0"
+            cls := "mt-2 text-xs text-indigo-100 whitespace-pre-wrap break-words font-mono bg-black/30 rounded p-2 overflow-auto"
           )(
             message.content
           ),
+        )
+      )
+    )
+
+  private def toolResultCard(message: ConversationEntry): Frag =
+    div(cls := "flex justify-start")(
+      div(
+        cls := "tool-result-block max-w-[85%] lg:max-w-[72%] border border-emerald-400/20 bg-emerald-950/40 rounded-xl px-4 py-3 my-1"
+      )(
+        tag("details")(
+          tag("summary")(cls := "cursor-pointer select-none font-mono text-xs font-semibold text-emerald-300")(
+            "\u2713 Tool result"
+          ),
+          pre(
+            cls := "mt-2 text-xs text-emerald-100 whitespace-pre-wrap break-words font-mono bg-black/30 rounded p-2 overflow-auto"
+          )(
+            message.content
+          ),
+        )
       )
     )
 

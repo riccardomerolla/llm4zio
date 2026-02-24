@@ -4,7 +4,7 @@ import java.time.Instant
 
 import zio.test.*
 
-import conversation.entity.api.ChatConversation
+import conversation.entity.api.{ ChatConversation, ConversationEntry, MessageType, SenderType }
 
 object ChatViewSpec extends ZIOSpecDefault:
 
@@ -29,5 +29,31 @@ object ChatViewSpec extends ZIOSpecDefault:
         html.contains("Legacy Conversation"),
         html.contains("messages-unknown"),
       )
-    }
+    },
+    test("messageCard renders ToolCall entry with tool-call-block class") {
+      val entry = ConversationEntry(
+        conversationId = "1",
+        sender = "assistant",
+        senderType = SenderType.Assistant,
+        content = """{"tool":"read_file","args":{"path":"/tmp/x.txt"}}""",
+        messageType = MessageType.ToolCall,
+        createdAt = Instant.EPOCH,
+        updatedAt = Instant.EPOCH,
+      )
+      val html  = ChatView.messagesFragment(List(entry))
+      assertTrue(html.contains("tool-call-block"))
+    },
+    test("messageCard renders ToolResult entry with tool-result-block class") {
+      val entry = ConversationEntry(
+        conversationId = "1",
+        sender = "assistant",
+        senderType = SenderType.Assistant,
+        content = """{"result":"file content here"}""",
+        messageType = MessageType.ToolResult,
+        createdAt = Instant.EPOCH,
+        updatedAt = Instant.EPOCH,
+      )
+      val html  = ChatView.messagesFragment(List(entry))
+      assertTrue(html.contains("tool-result-block"))
+    },
   )
