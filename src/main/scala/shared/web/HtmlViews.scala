@@ -45,6 +45,14 @@ object HtmlViews:
   def settingsPage(settings: Map[String, String], flash: Option[String] = None): String =
     SettingsView.page(settings, flash)
 
+  def settingsAiTab(
+    settings: Map[String, String],
+    registry: ModelRegistryResponse,
+    statuses: List[ProviderProbeStatus],
+    flash: Option[String] = None,
+  ): String =
+    SettingsView.aiTab(settings, registry, statuses, flash)
+
   def modelsPage(registry: ModelRegistryResponse, statuses: List[ProviderProbeStatus]): String =
     ModelsView.page(registry, statuses)
 

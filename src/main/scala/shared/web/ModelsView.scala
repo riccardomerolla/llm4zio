@@ -52,7 +52,7 @@ object ModelsView:
       )
     )
 
-  private def statusBadge(status: Option[ProviderProbeStatus]): Frag =
+  def statusBadge(status: Option[ProviderProbeStatus]): Frag =
     val (label, classes) = status match
       case Some(s) =>
         s.availability match

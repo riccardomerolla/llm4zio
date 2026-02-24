@@ -109,12 +109,7 @@ final case class SettingsControllerLive(
 
   override val routes: Routes[Any, Response] = Routes(
     Method.GET / "settings"                      -> handler {
-      ErrorHandlingMiddleware.fromPersistence {
-        for
-          rows    <- repository.getAllSettings
-          settings = rows.map(r => r.key -> r.value).toMap
-        yield html(HtmlViews.settingsPage(settings))
-      }
+      ZIO.succeed(Response(status = Status.Found, headers = Headers(Header.Location(URL.decode("/settings/ai").toOption.get))))
     },
     Method.POST / "settings"                     -> handler { (req: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
@@ -189,10 +184,46 @@ final case class SettingsControllerLive(
       modelService.probeProviders.map(status => Response.json(status.toJson))
     },
     Method.GET / "models"                        -> handler {
-      for
-        models <- modelService.listAvailableModels
-        status <- modelService.probeProviders
-      yield html(HtmlViews.modelsPage(models, status))
+      ZIO.succeed(Response(status = Status.Found, headers = Headers(Header.Location(URL.decode("/settings/ai").toOption.get))))
+    },
+    Method.GET / "settings" / "ai"               -> handler {
+      ErrorHandlingMiddleware.fromPersistence {
+        for
+          rows    <- repository.getAllSettings
+          settings = rows.map(r => r.key -> r.value).toMap
+          models  <- modelService.listAvailableModels
+          status  <- modelService.probeProviders
+        yield html(HtmlViews.settingsAiTab(settings, models, status))
+      }
+    },
+    Method.POST / "settings" / "ai"              -> handler { (req: Request) =>
+      ErrorHandlingMiddleware.fromPersistence {
+        for
+          form    <- parseForm(req)
+          _       <- ZIO.foreachDiscard(settingsKeys.filter(_.startsWith("ai."))) { key =>
+                       val value = form.getOrElse(key, "")
+                       if value.nonEmpty then repository.upsertSetting(key, value) else ZIO.unit
+                     }
+          _       <- checkpointConfigStore
+          rows    <- repository.getAllSettings
+          saved    = rows.map(r => r.key -> r.value).toMap
+          newConfig = SettingsApplier.toGatewayConfig(saved)
+          _       <- configRef.set(newConfig)
+          _       <- writeSettingsSnapshot(saved)
+          now     <- Clock.instant
+          _       <- activityHub.publish(
+                       ActivityEvent(
+                         id = EventId.generate,
+                         eventType = ActivityEventType.ConfigChanged,
+                         source = "settings.ai",
+                         summary = "AI settings updated",
+                         createdAt = now,
+                       )
+                     )
+          models  <- modelService.listAvailableModels
+          status  <- modelService.probeProviders
+        yield html(HtmlViews.settingsAiTab(saved, models, status, Some("AI settings saved.")))
+      }
     },
   )
 

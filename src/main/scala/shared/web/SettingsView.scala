@@ -47,6 +47,98 @@ object SettingsView:
       div(bodyContent*)
     )
 
+  def aiTab(
+    settings: Map[String, String],
+    registry: config.control.ModelRegistryResponse,
+    statuses: List[config.control.ProviderProbeStatus],
+    flash: Option[String] = None,
+    errors: Map[String, String] = Map.empty,
+  ): String =
+    val statusMap = statuses.map(ps => ps.provider -> ps).toMap
+    settingsShell("ai", "Settings — AI Models")(
+      flash.map { msg =>
+        div(cls := "mb-6 rounded-md bg-green-500/10 border border-green-500/30 p-4")(
+          p(cls := "text-sm text-green-400")(msg)
+        )
+      },
+      if errors.nonEmpty then
+        div(cls := "mb-6 rounded-md bg-red-500/10 border border-red-500/30 p-4")(
+          p(cls := "text-sm font-semibold text-red-400")("Validation Errors"),
+          ul(cls := "text-xs text-red-300 mt-2 space-y-1")(
+            errors.map { case (key, msg) => li(s"$key: $msg") }.toSeq*
+          ),
+        )
+      else (),
+      tag("form")(method := "post", action := "/settings/ai", cls := "space-y-6 max-w-2xl mb-10")(
+        aiProviderSection(settings, errors),
+        div(cls := "flex gap-4 pt-2")(
+          button(
+            `type` := "submit",
+            cls    := "rounded-md bg-indigo-500 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-400",
+          )("Save AI Settings")
+        ),
+      ),
+      h2(cls := "text-lg font-semibold text-white mb-4")("Available Models"),
+      p(cls := "text-sm text-slate-300 mb-4")(
+        "Models grouped by provider. Configure primary model and fallback chain above."
+      ),
+      div(cls := "space-y-4")(
+        registry.providers.map { group =>
+          val status = statusMap.get(group.provider)
+          div(cls := "rounded-lg border border-white/10 bg-slate-900/70 p-5")(
+            div(cls := "mb-3 flex items-center justify-between")(
+              h3(cls := "text-lg font-semibold text-white")(group.provider.toString),
+              ModelsView.statusBadge(status),
+            ),
+            p(cls := "mb-3 text-xs text-slate-400")(status.map(_.statusMessage).getOrElse("No health probe available")),
+            table(cls := "min-w-full text-left text-sm text-slate-200")(
+              thead(
+                tr(
+                  th(cls := "py-2 pr-4 text-xs font-semibold uppercase text-slate-400")("Model"),
+                  th(cls := "py-2 pr-4 text-xs font-semibold uppercase text-slate-400")("Context"),
+                  th(cls := "py-2 pr-4 text-xs font-semibold uppercase text-slate-400")("Capabilities"),
+                )
+              ),
+              tbody(
+                group.models.map { model =>
+                  tr(cls := "border-t border-white/5")(
+                    td(cls := "py-2 pr-4 font-mono text-xs")(model.modelId),
+                    td(cls := "py-2 pr-4")(model.contextWindow.toString),
+                    td(cls := "py-2 pr-4")(model.capabilities.toList.map(_.toString).sorted.mkString(", ")),
+                  )
+                }
+              ),
+            ),
+          )
+        }
+      ),
+      tag("script")(
+        raw("""
+          |document.addEventListener('DOMContentLoaded', function() {
+          |  const modeSelect = document.getElementById('telegram.mode');
+          |  const webhookGroup = document.getElementById('telegram-webhook-group');
+          |  const pollingGroup = document.getElementById('telegram-polling-group');
+          |
+          |  function updateFieldVisibility() {
+          |    const mode = modeSelect.value;
+          |    if (mode === 'Webhook') {
+          |      webhookGroup.style.display = 'block';
+          |      pollingGroup.style.display = 'none';
+          |    } else if (mode === 'Polling') {
+          |      webhookGroup.style.display = 'none';
+          |      pollingGroup.style.display = 'block';
+          |    }
+          |  }
+          |
+          |  if (modeSelect) {
+          |    updateFieldVisibility();
+          |    modeSelect.addEventListener('change', updateFieldVisibility);
+          |  }
+          |});
+        """.stripMargin)
+      ),
+    )
+
   def page(
     settings: Map[String, String],
     flash: Option[String] = None,
