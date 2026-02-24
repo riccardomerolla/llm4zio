@@ -14,15 +14,8 @@ object GeminiApiProvider:
         executeRequest(prompt, None)
 
       override def executeStream(prompt: String): ZStream[Any, LlmError, LlmChunk] =
-        // Gemini API doesn't support streaming in this implementation, convert to single chunk
-        ZStream.fromZIO(execute(prompt)).map { response =>
-          LlmChunk(
-            delta = response.content,
-            finishReason = Some("stop"),
-            usage = response.usage,
-            metadata = response.metadata,
-          )
-        }
+        val contents = List(GeminiContent(parts = List(GeminiPart(text = Some(prompt)))))
+        executeStreamWithContents(contents)
 
       override def executeWithHistory(messages: List[Message]): IO[LlmError, LlmResponse] =
         // Convert messages to Gemini content format
@@ -32,14 +25,10 @@ object GeminiApiProvider:
         executeRequestWithContents(contents, None)
 
       override def executeStreamWithHistory(messages: List[Message]): ZStream[Any, LlmError, LlmChunk] =
-        ZStream.fromZIO(executeWithHistory(messages)).map { response =>
-          LlmChunk(
-            delta = response.content,
-            finishReason = Some("stop"),
-            usage = response.usage,
-            metadata = response.metadata,
-          )
+        val contents = messages.map { msg =>
+          GeminiContent(parts = List(GeminiPart(text = Some(msg.content))))
         }
+        executeStreamWithContents(contents)
 
       override def executeWithTools(prompt: String, tools: List[AnyTool]): IO[LlmError, ToolCallResponse] =
         for
@@ -151,6 +140,56 @@ object GeminiApiProvider:
           content = output,
           usage = usage,
           metadata = baseMetadata(parsed),
+        )
+
+      private def executeStreamWithContents(
+        contents: List[GeminiContent]
+      ): ZStream[Any, LlmError, LlmChunk] =
+        ZStream.unwrap {
+          for
+            baseUrl <- ZIO.fromOption(config.baseUrl).orElseFail(
+                         LlmError.ConfigError("Missing baseUrl for Gemini API provider")
+                       )
+            apiKey  <- ZIO.fromOption(config.apiKey).orElseFail(
+                         LlmError.AuthenticationError("Missing API key for Gemini API provider")
+                       )
+            request  = GeminiGenerateContentRequest(contents = contents)
+            url      = s"${baseUrl.stripSuffix("/")}/v1beta/models/${config.model}:streamGenerateContent"
+          yield httpClient
+            .postJsonStream(
+              url = url,
+              body = request.toJson,
+              headers = Map("x-goog-api-key" -> apiKey),
+              timeout = config.timeout,
+            )
+            .map(_.trim)
+            .filter(_.nonEmpty)
+            .map(stripStreamPrefix)
+            .filter(payload => payload.nonEmpty && payload != "[DONE]")
+            .mapZIO { payload =>
+              ZIO
+                .fromEither(payload.fromJson[GeminiGenerateContentResponse])
+                .mapError(err => LlmError.ParseError(s"Failed to decode Gemini stream chunk: $err", payload))
+                .map(toStreamChunk)
+            }
+            .filter(chunk => chunk.delta.nonEmpty || chunk.finishReason.nonEmpty || chunk.usage.nonEmpty)
+        }
+
+      private def stripStreamPrefix(payload: String): String =
+        if payload.startsWith("data:") then payload.stripPrefix("data:").trim
+        else payload
+
+      private def toStreamChunk(response: GeminiGenerateContentResponse): LlmChunk =
+        val delta  = response.candidates.headOption.toList
+          .flatMap(_.content.parts)
+          .flatMap(_.text)
+          .mkString
+        val finish = response.candidates.headOption.flatMap(_.finishReason).map(_.toLowerCase)
+        LlmChunk(
+          delta = delta,
+          finishReason = finish,
+          usage = extractUsage(response),
+          metadata = baseMetadata(response),
         )
 
       private def extractText(response: GeminiGenerateContentResponse, rawBody: String): IO[LlmError, String] =
