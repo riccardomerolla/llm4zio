@@ -43,7 +43,7 @@ import gateway.control.{ MessageRouter, * }
 import issues.boundary.IssueController as IssuesIssueController
 import llm4zio.core.*
 import llm4zio.providers.{ GeminiCliExecutor, HttpClient }
-import llm4zio.tools.{ AnyTool, JsonSchema }
+import llm4zio.tools.{ AnyTool, JsonSchema, ToolRegistry }
 import memory.boundary.MemoryController as MemoryBoundaryController
 import memory.control.{ EmbeddingService, MemoryRepositoryES }
 import memory.entity.*
@@ -236,6 +236,7 @@ object ApplicationDI:
       AgentConfigResolver.live,
       OrchestrationIssueAssignmentOrchestrator.live,
       StreamAbortRegistry.live,
+      ToolRegistry.layer,
       ConversationChatController.live,
       IssuesIssueController.live,
       ActivityController.live,

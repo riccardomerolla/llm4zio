@@ -6,7 +6,7 @@ import zio.json.*
 import zio.schema.{ Schema, derived }
 
 enum MessageType derives JsonCodec, Schema:
-  case Text, Code, Error, Status
+  case Text, Code, Error, Status, ToolCall, ToolResult
 
 enum SenderType derives JsonCodec, Schema:
   case User, Assistant, System

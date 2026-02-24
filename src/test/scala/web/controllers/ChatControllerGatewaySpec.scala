@@ -353,6 +353,7 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
         convId    <- newConversation(chatRepo)
         abortReg  <- Ref.make(Map.empty[Long, UIO[Unit]]).map(StreamAbortRegistryLive.apply)
         actHub    <- Ref.make(Set.empty[Queue[ActivityEvent]]).map(subs => ActivityHubLive(stubActivityRepo, subs))
+        toolReg   <- llm4zio.tools.ToolRegistry.make
         controller = ChatControllerLive(
                        chatRepository = chatRepo,
                        llmService = llm,
@@ -363,6 +364,7 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
                        channelRegistry = registry,
                        streamAbortRegistry = abortReg,
                        activityHub = actHub,
+                       toolRegistry = toolReg,
                      )
         request    = Request.post(
                        s"/api/chat/$convId/messages",
@@ -393,6 +395,7 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
         convId    <- newConversation(chatRepo)
         abortReg  <- Ref.make(Map.empty[Long, UIO[Unit]]).map(StreamAbortRegistryLive.apply)
         actHub    <- Ref.make(Set.empty[Queue[ActivityEvent]]).map(subs => ActivityHubLive(stubActivityRepo, subs))
+        toolReg   <- llm4zio.tools.ToolRegistry.make
         controller = ChatControllerLive(
                        chatRepository = chatRepo,
                        llmService = llm,
@@ -403,6 +406,7 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
                        channelRegistry = registry,
                        streamAbortRegistry = abortReg,
                        activityHub = actHub,
+                       toolRegistry = toolReg,
                      )
         request    = Request.post(
                        s"/api/chat/$convId/messages",
@@ -425,6 +429,7 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
         convId    <- newConversation(chatRepo)
         abortReg  <- Ref.make(Map.empty[Long, UIO[Unit]]).map(StreamAbortRegistryLive.apply)
         actHub    <- Ref.make(Set.empty[Queue[ActivityEvent]]).map(subs => ActivityHubLive(stubActivityRepo, subs))
+        toolReg   <- llm4zio.tools.ToolRegistry.make
         controller = ChatControllerLive(
                        chatRepository = chatRepo,
                        llmService = llm,
@@ -435,6 +440,7 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
                        channelRegistry = registry,
                        streamAbortRegistry = abortReg,
                        activityHub = actHub,
+                       toolRegistry = toolReg,
                      )
         request    = Request.post(
                        s"/chat/$convId/messages",
@@ -487,6 +493,7 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
                      )
         abortReg  <- Ref.make(Map.empty[Long, UIO[Unit]]).map(StreamAbortRegistryLive.apply)
         actHub    <- Ref.make(Set.empty[Queue[ActivityEvent]]).map(subs => ActivityHubLive(stubActivityRepo, subs))
+        toolReg   <- llm4zio.tools.ToolRegistry.make
         controller = ChatControllerLive(
                        chatRepository = chatRepo,
                        llmService = llm,
@@ -497,6 +504,7 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
                        channelRegistry = registry,
                        streamAbortRegistry = abortReg,
                        activityHub = actHub,
+                       toolRegistry = toolReg,
                      )
         response  <- controller.routes.runZIO(Request.get("/api/sessions"))
         body      <- response.body.asString
@@ -509,4 +517,46 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
         sessions.forall(_.sessionId != "websocket:broken-session"),
       )).provideSomeLayer[Scope](appLayer)
     } @@ TestAspect.withLiveClock,
+    test("POST /api/chat/:id/messages with toolsEnabled routes through tool loop") {
+      (for
+        chatRepo  <- ZIO.service[ChatRepository]
+        migrRepo  <- ZIO.service[TaskRepository]
+        llm       <- ZIO.service[LlmService]
+        gateway   <- ZIO.service[GatewayService]
+        registry  <- ZIO.service[ChannelRegistry]
+        convId    <- newConversation(chatRepo)
+        abortReg  <- Ref.make(Map.empty[Long, UIO[Unit]]).map(StreamAbortRegistryLive.apply)
+        actHub    <- Ref.make(Set.empty[Queue[ActivityEvent]]).map(subs => ActivityHubLive(stubActivityRepo, subs))
+        toolReg   <- llm4zio.tools.ToolRegistry.make
+        controller = ChatControllerLive(
+                       chatRepository = chatRepo,
+                       llmService = llm,
+                       migrationRepository = migrRepo,
+                       issueAssignmentOrchestrator = testIssueAssignment,
+                       configResolver = testConfigResolver,
+                       gatewayService = gateway,
+                       channelRegistry = registry,
+                       streamAbortRegistry = abortReg,
+                       activityHub = actHub,
+                       toolRegistry = toolReg,
+                     )
+        request    = Request.post(
+                       s"/api/chat/$convId/messages",
+                       Body.fromString(
+                         ConversationMessageRequest(
+                           content = "test with tools",
+                           metadata = Some("""{"toolsEnabled":"true"}"""),
+                         ).toJson
+                       ),
+                     )
+        response  <- controller.routes.runZIO(request)
+        body      <- response.body.asString
+        persisted <- chatRepo.getMessages(convId)
+      yield assertTrue(
+        response.status == Status.Ok,
+        body.contains("ok"),
+        persisted.count(_.senderType == SenderType.User) == 1,
+        persisted.count(_.senderType == SenderType.Assistant) == 1,
+      )).provideSomeLayer[Scope](appLayer)
+    },
   ) @@ TestAspect.sequential @@ TestAspect.timeout(20.seconds)

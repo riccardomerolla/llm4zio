@@ -14,7 +14,8 @@ import conversation.entity.api.*
 import db.{ ChatRepository, PersistenceError, TaskRepository }
 import gateway.control.{ ChannelRegistry, GatewayService, GatewayServiceError, MessageChannelError }
 import gateway.entity.{ GatewayMessageRole as GatewayMessageRole, MessageDirection as GatewayMessageDirection, * }
-import llm4zio.core.{ LlmError, LlmService, Streaming }
+import llm4zio.core.{ ConversationThread, LlmError, LlmService, Streaming, ToolConversationManager }
+import llm4zio.tools.ToolRegistry
 import orchestration.control.{ AgentConfigResolver, IssueAssignmentOrchestrator }
 import shared.ids.Ids.{ ConversationId, EventId }
 import shared.web.{ ErrorHandlingMiddleware, HtmlViews, StreamAbortRegistry }
@@ -30,7 +31,7 @@ object ChatController:
   val live
     : ZLayer[
       ChatRepository & LlmService & TaskRepository & IssueAssignmentOrchestrator & AgentConfigResolver &
-        GatewayService & ChannelRegistry & StreamAbortRegistry & ActivityHub,
+        GatewayService & ChannelRegistry & StreamAbortRegistry & ActivityHub & ToolRegistry,
       Nothing,
       ChatController,
     ] =
@@ -46,6 +47,7 @@ final case class ChatControllerLive(
   channelRegistry: ChannelRegistry,
   streamAbortRegistry: StreamAbortRegistry,
   activityHub: ActivityHub,
+  toolRegistry: ToolRegistry,
 ) extends ChatController:
 
   override val routes: Routes[Any, Response] = Routes(
@@ -277,9 +279,30 @@ final case class ChatControllerLive(
                      )
       _           <- routeThroughGateway(gatewayService.processInbound(userInbound))
       aiConfig    <- configResolver.resolveConfig("chat")
-      llmResponse <- llmService
-                       .execute(mention.content)
-                       .mapError(convertLlmError)
+      toolsEnabled = metadata.flatMap(m => m.fromJson[Map[String, String]].toOption)
+                       .flatMap(_.get("toolsEnabled")).contains("true")
+      llmResponse <-
+        if toolsEnabled then
+          for
+            tools      <- toolRegistry.list
+            threadId   <- ZIO.attempt(java.util.UUID.randomUUID().toString).orDie
+            now3       <- Clock.instant
+            thread      = ConversationThread.create(threadId, now3)
+            toolResult <- ToolConversationManager
+                            .run(
+                              prompt = mention.content,
+                              thread = thread,
+                              llmService = llmService,
+                              toolRegistry = toolRegistry,
+                              tools = tools,
+                              maxIterations = 8,
+                            )
+                            .mapError(convertLlmError)
+          yield toolResult.response
+        else
+          llmService
+            .execute(mention.content)
+            .mapError(convertLlmError)
       now2        <- Clock.instant
       aiMessage    = ConversationEntry(
                        conversationId = conversationId.toString,
