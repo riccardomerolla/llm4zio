@@ -45,3 +45,54 @@ case class OpenAITokenUsage(
   completion_tokens: Option[Int] = None,
   total_tokens: Option[Int] = None,
 ) derives JsonCodec
+
+// Tool calling DTOs
+case class OpenAIFunction(
+  name: String,
+  description: String,
+  parameters: zio.json.ast.Json,
+) derives JsonCodec
+
+case class OpenAITool(
+  `type`: String = "function",
+  function: OpenAIFunction,
+) derives JsonCodec
+
+case class OpenAIToolCall(
+  id: String,
+  `type`: String,
+  function: OpenAIToolCallFunction,
+) derives JsonCodec
+
+case class OpenAIToolCallFunction(
+  name: String,
+  arguments: String,
+) derives JsonCodec
+
+case class ChatMessageWithTools(
+  role: String,
+  content: Option[String] = None,
+  tool_calls: Option[List[OpenAIToolCall]] = None,
+) derives JsonCodec
+
+case class ChatChoiceWithTools(
+  index: Int = 0,
+  message: Option[ChatMessageWithTools] = None,
+  finish_reason: Option[String] = None,
+) derives JsonCodec
+
+case class ChatCompletionResponseWithTools(
+  id: Option[String] = None,
+  choices: List[ChatChoiceWithTools],
+  usage: Option[OpenAITokenUsage] = None,
+  model: Option[String] = None,
+) derives JsonCodec
+
+case class ChatCompletionRequestWithTools(
+  model: String,
+  messages: List[ChatMessage],
+  tools: List[OpenAITool],
+  temperature: Option[Double] = None,
+  max_tokens: Option[Int] = None,
+  stream: Option[Boolean] = Some(false),
+) derives JsonCodec
