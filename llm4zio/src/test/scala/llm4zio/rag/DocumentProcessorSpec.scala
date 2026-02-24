@@ -22,7 +22,7 @@ object DocumentProcessorSpec extends ZIOSpecDefault:
     test("extract metadata includes base fields") {
       for
         processor <- DocumentProcessor.default
-        metadata <- processor.extractMetadata(sample)
+        metadata  <- processor.extractMetadata(sample)
       yield assertTrue(
         metadata.get("documentId").contains("doc-1"),
         metadata.contains("lines"),
@@ -32,7 +32,8 @@ object DocumentProcessorSpec extends ZIOSpecDefault:
     test("fixed-size chunking preserves overlap") {
       for
         processor <- DocumentProcessor.default
-        chunks <- processor.chunk(sample.copy(content = "A" * 50), ChunkingStrategy.FixedSize(maxChars = 20, overlapChars = 5))
+        chunks    <-
+          processor.chunk(sample.copy(content = "A" * 50), ChunkingStrategy.FixedSize(maxChars = 20, overlapChars = 5))
       yield assertTrue(
         chunks.length == 4,
         chunks.head.endOffset > chunks(1).startOffset,
@@ -41,7 +42,7 @@ object DocumentProcessorSpec extends ZIOSpecDefault:
     test("semantic chunking follows paragraph boundaries") {
       for
         processor <- DocumentProcessor.default
-        chunks <- processor.chunk(sample, ChunkingStrategy.Semantic(maxChars = 80))
+        chunks    <- processor.chunk(sample, ChunkingStrategy.Semantic(maxChars = 80))
       yield assertTrue(
         chunks.length >= 2,
         chunks.head.metadata.get("strategy").contains("semantic"),
@@ -50,10 +51,10 @@ object DocumentProcessorSpec extends ZIOSpecDefault:
     test("recursive chunking splits oversized text") {
       for
         processor <- DocumentProcessor.default
-        chunks <- processor.chunk(
-                    sample.copy(content = ("COBOL RULES. " * 400).trim),
-                    ChunkingStrategy.Recursive(maxChars = 240, minChunkChars = 60),
-                  )
+        chunks    <- processor.chunk(
+                       sample.copy(content = ("COBOL RULES. " * 400).trim),
+                       ChunkingStrategy.Recursive(maxChars = 240, minChunkChars = 60),
+                     )
       yield assertTrue(
         chunks.length > 1,
         chunks.forall(_.content.length <= 240),

@@ -5,7 +5,7 @@ import zio.json.*
 import zio.stream.*
 import zio.test.*
 
-import llm4zio.tools.{AnyTool, JsonSchema}
+import llm4zio.tools.{ AnyTool, JsonSchema }
 
 object LlmServiceSpec extends ZIOSpecDefault:
   // Mock implementation for testing
@@ -16,7 +16,7 @@ object LlmServiceSpec extends ZIOSpecDefault:
     override def executeStream(prompt: String): Stream[LlmError, LlmChunk] =
       ZStream(
         LlmChunk(delta = "Hello", finishReason = None),
-        LlmChunk(delta = " world", finishReason = Some("stop"))
+        LlmChunk(delta = " world", finishReason = Some("stop")),
       )
 
     override def executeWithHistory(messages: List[Message]): IO[LlmError, LlmResponse] =
@@ -48,14 +48,14 @@ object LlmServiceSpec extends ZIOSpecDefault:
       } yield assertTrue(
         chunks.size == 2,
         chunks(0).delta == "Hello",
-        chunks(1).finishReason == Some("stop")
+        chunks(1).finishReason == Some("stop"),
       )
     },
     test("executeWithHistory should handle messages") {
-      val service = new MockLlmService()
+      val service  = new MockLlmService()
       val messages = List(
         Message(MessageRole.User, "Hello"),
-        Message(MessageRole.Assistant, "Hi there")
+        Message(MessageRole.Assistant, "Hi there"),
       )
       for {
         response <- service.executeWithHistory(messages)
@@ -71,5 +71,5 @@ object LlmServiceSpec extends ZIOSpecDefault:
       for {
         response <- LlmService.execute("test")
       } yield assertTrue(response.content.nonEmpty)
-    }.provide(ZLayer.succeed[LlmService](new MockLlmService()))
+    }.provide(ZLayer.succeed[LlmService](new MockLlmService())),
   )

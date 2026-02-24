@@ -9,8 +9,7 @@ import llm4zio.tools.{ AnyTool, JsonSchema }
 
 /** OpenCode AI Provider (OpenAI-compatible)
   *
-  * API base: http://localhost:4096
-  * Endpoint pattern: /chat/completions
+  * API base: http://localhost:4096 Endpoint pattern: /chat/completions
   */
 object OpenCodeProvider:
   def make(config: LlmConfig, httpClient: HttpClient): LlmService =
@@ -38,7 +37,9 @@ object OpenCodeProvider:
         ZStream.fromZIO(executeStreamRequest(toChatMessages(messages))).flatMap(chunks => ZStream.fromIterable(chunks))
 
       override def executeWithTools(prompt: String, tools: List[AnyTool]): IO[LlmError, ToolCallResponse] =
-        ZIO.fail(LlmError.InvalidRequestError("OpenCode provider does not yet support tool calling in this implementation"))
+        ZIO.fail(
+          LlmError.InvalidRequestError("OpenCode provider does not yet support tool calling in this implementation")
+        )
 
       override def executeStructured[A: JsonCodec](prompt: String, schema: JsonSchema): IO[LlmError, A] =
         val responseFormat = Some(
@@ -53,9 +54,10 @@ object OpenCodeProvider:
                         messages = List(ChatMessage(role = "user", content = prompt)),
                         responseFormat = responseFormat,
                       )
-          parsed <- ZIO
-                      .fromEither(response.content.fromJson[A])
-                      .mapError(err => LlmError.ParseError(s"Failed to parse structured response: $err", response.content))
+          parsed   <-
+            ZIO
+              .fromEither(response.content.fromJson[A])
+              .mapError(err => LlmError.ParseError(s"Failed to parse structured response: $err", response.content))
         yield parsed
 
       override def isAvailable: UIO[Boolean] =
@@ -80,25 +82,25 @@ object OpenCodeProvider:
       ): IO[LlmError, LlmResponse] =
         for
           baseUrl <- requireBaseUrl
-          _ <- requireApiKey
-          request = OpenCodeCompletionRequest(
-                      model = config.model,
-                      messages = messages,
-                      temperature = config.temperature.orElse(Some(0.7)),
-                      max_tokens = config.maxTokens,
-                      max_completion_tokens = None,
-                      stream = Some(false),
-                      response_format = responseFormat,
-                    )
-          body <- httpClient.postJson(
-                    url = s"${baseUrl.stripSuffix("/")}/chat/completions",
-                    body = request.toJson,
-                    headers = authHeaders,
-                    timeout = config.timeout,
-                  )
-          parsed <- ZIO
-                      .fromEither(body.fromJson[OpenCodeCompletionResponse])
-                      .mapError(err => LlmError.ParseError(s"Failed to decode OpenCode response: $err", body))
+          _       <- requireApiKey
+          request  = OpenCodeCompletionRequest(
+                       model = config.model,
+                       messages = messages,
+                       temperature = config.temperature.orElse(Some(0.7)),
+                       max_tokens = config.maxTokens,
+                       max_completion_tokens = None,
+                       stream = Some(false),
+                       response_format = responseFormat,
+                     )
+          body    <- httpClient.postJson(
+                       url = s"${baseUrl.stripSuffix("/")}/chat/completions",
+                       body = request.toJson,
+                       headers = authHeaders,
+                       timeout = config.timeout,
+                     )
+          parsed  <- ZIO
+                       .fromEither(body.fromJson[OpenCodeCompletionResponse])
+                       .mapError(err => LlmError.ParseError(s"Failed to decode OpenCode response: $err", body))
           content <- extractContent(parsed)
         yield LlmResponse(
           content = content,
@@ -109,23 +111,23 @@ object OpenCodeProvider:
       private def executeStreamRequest(messages: List[ChatMessage]): IO[LlmError, List[LlmChunk]] =
         for
           baseUrl <- requireBaseUrl
-          _ <- requireApiKey
-          request = OpenCodeCompletionRequest(
-                      model = config.model,
-                      messages = messages,
-                      temperature = config.temperature.orElse(Some(0.7)),
-                      max_tokens = config.maxTokens,
-                      max_completion_tokens = None,
-                      stream = Some(true),
-                      response_format = None,
-                    )
-          body <- httpClient.postJson(
-                    url = s"${baseUrl.stripSuffix("/")}/chat/completions",
-                    body = request.toJson,
-                    headers = authHeaders,
-                    timeout = config.timeout,
-                  )
-          chunks <- parseSseBody(body)
+          _       <- requireApiKey
+          request  = OpenCodeCompletionRequest(
+                       model = config.model,
+                       messages = messages,
+                       temperature = config.temperature.orElse(Some(0.7)),
+                       max_tokens = config.maxTokens,
+                       max_completion_tokens = None,
+                       stream = Some(true),
+                       response_format = None,
+                     )
+          body    <- httpClient.postJson(
+                       url = s"${baseUrl.stripSuffix("/")}/chat/completions",
+                       body = request.toJson,
+                       headers = authHeaders,
+                       timeout = config.timeout,
+                     )
+          chunks  <- parseSseBody(body)
         yield chunks
 
       private def parseSseBody(raw: String): IO[LlmError, List[LlmChunk]] =
@@ -151,9 +153,11 @@ object OpenCodeProvider:
           }
 
       private def toChunk(response: OpenCodeCompletionResponse): LlmChunk =
-        val choice = response.choices.headOption
-        val deltaText = choice.flatMap(_.delta.flatMap(_.content)).orElse(choice.flatMap(_.message.map(_.content))).orElse(choice.flatMap(_.text)).getOrElse("")
-        val finish = choice.flatMap(_.finish_reason)
+        val choice    = response.choices.headOption
+        val deltaText = choice.flatMap(
+          _.delta.flatMap(_.content)
+        ).orElse(choice.flatMap(_.message.map(_.content))).orElse(choice.flatMap(_.text)).getOrElse("")
+        val finish    = choice.flatMap(_.finish_reason)
 
         LlmChunk(
           delta = deltaText,
@@ -187,8 +191,8 @@ object OpenCodeProvider:
         val content =
           for
             choice <- response.choices.headOption
-            text <- choice.message.map(_.content).orElse(choice.text)
-            value = text.trim
+            text   <- choice.message.map(_.content).orElse(choice.text)
+            value   = text.trim
             if value.nonEmpty
           yield value
 
@@ -211,7 +215,7 @@ object OpenCodeProvider:
       private def baseMetadata(response: OpenCodeCompletionResponse): Map[String, String] =
         Map(
           "provider" -> "opencode",
-          "model" -> config.model,
+          "model"    -> config.model,
         ) ++
           response.id.map(id => Map("id" -> id)).getOrElse(Map.empty) ++
           response.model.map(model => Map("response_model" -> model)).getOrElse(Map.empty)
@@ -242,7 +246,7 @@ case class OpenCodeCompletionRequest(
 ) derives JsonCodec
 
 case class OpenCodeDelta(
-  content: Option[String] = None,
+  content: Option[String] = None
 ) derives JsonCodec
 
 case class OpenCodeCompletionResponse(

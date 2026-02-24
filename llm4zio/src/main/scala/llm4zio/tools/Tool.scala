@@ -18,11 +18,11 @@ enum ToolExecutionError derives JsonCodec:
 object ToolExecutionError:
   extension (error: ToolExecutionError)
     def message: String = error match
-      case ToolExecutionError.InvalidSchema(msg)       => msg
-      case ToolExecutionError.InvalidParameters(msg)   => msg
-      case ToolExecutionError.DuplicateToolName(name)  => s"Tool already registered: $name"
-      case ToolExecutionError.SandboxViolation(msg)    => msg
-      case ToolExecutionError.ExecutionFailed(msg)     => msg
+      case ToolExecutionError.InvalidSchema(msg)          => msg
+      case ToolExecutionError.InvalidParameters(msg)      => msg
+      case ToolExecutionError.DuplicateToolName(name)     => s"Tool already registered: $name"
+      case ToolExecutionError.SandboxViolation(msg)       => msg
+      case ToolExecutionError.ExecutionFailed(msg)        => msg
       case ToolExecutionError.SchemaGenerationFailed(msg) => msg
 
 enum ToolSandbox derives JsonCodec:
@@ -73,15 +73,16 @@ object ToolSchemaGenerator:
   private def parseParams(signature: String): Either[String, List[Term.Param]] =
     given Dialect = dialects.Scala3
     signature.parse[Stat].toEither.left.map(_.message).flatMap {
-      case definition: Defn.Def => Right(definition.paramss.flatten)
+      case definition: Defn.Def  => Right(definition.paramss.flatten)
       case declaration: Decl.Def => Right(declaration.paramss.flatten)
-      case other                => Left(s"Unsupported signature. Expected a method declaration/definition, got: ${other.productPrefix}")
+      case other                 =>
+        Left(s"Unsupported signature. Expected a method declaration/definition, got: ${other.productPrefix}")
     }
 
   private def buildSchema(params: List[Term.Param]): JsonSchema =
     val properties = params.map { param =>
       val paramName = param.name.value
-      val schema = param.decltpe match
+      val schema    = param.decltpe match
         case Some(tpe) => typeSchema(tpe)
         case None      => Json.Obj("type" -> Json.Str("string"))
       paramName -> schema
@@ -92,9 +93,9 @@ object ToolSchemaGenerator:
     }
 
     Json.Obj(
-      "type" -> Json.Str("object"),
-      "properties" -> Json.Obj(properties*),
-      "required" -> Json.Arr(Chunk.fromIterable(required)),
+      "type"                 -> Json.Str("object"),
+      "properties"           -> Json.Obj(properties*),
+      "required"             -> Json.Arr(Chunk.fromIterable(required)),
       "additionalProperties" -> Json.Bool(false),
     )
 
@@ -102,44 +103,44 @@ object ToolSchemaGenerator:
   private def isOptional(tpe: Option[Type]): Boolean =
     tpe match
       case Some(Type.Apply(Type.Name("Option"), _)) => true
-      case _                                         => false
+      case _                                        => false
 
   @nowarn("msg=method unapply in object Apply is deprecated")
   private def typeSchema(tpe: Type): Json =
     tpe match
-      case Type.Name("String")                                    => primitive("string")
-      case Type.Name("Boolean")                                   => primitive("boolean")
+      case Type.Name("String")                                                                                 => primitive("string")
+      case Type.Name("Boolean")                                                                                => primitive("boolean")
       case Type.Name("Int") | Type.Name("Long") | Type.Name("Short") | Type.Name("Byte") | Type.Name("BigInt") =>
         primitive("integer")
-      case Type.Name("Double") | Type.Name("Float") | Type.Name("BigDecimal") =>
+      case Type.Name("Double") | Type.Name("Float") | Type.Name("BigDecimal")                                  =>
         primitive("number")
-      case Type.Apply(Type.Name("Option"), List(inner))           => typeSchema(inner)
-      case Type.Apply(Type.Name("List"), List(inner)) =>
+      case Type.Apply(Type.Name("Option"), List(inner))                                                        => typeSchema(inner)
+      case Type.Apply(Type.Name("List"), List(inner))                                                          =>
         Json.Obj(
-          "type" -> Json.Str("array"),
+          "type"  -> Json.Str("array"),
           "items" -> typeSchema(inner),
         )
-      case Type.Apply(Type.Name("Seq"), List(inner)) =>
+      case Type.Apply(Type.Name("Seq"), List(inner))                                                           =>
         Json.Obj(
-          "type" -> Json.Str("array"),
+          "type"  -> Json.Str("array"),
           "items" -> typeSchema(inner),
         )
-      case Type.Apply(Type.Name("Vector"), List(inner)) =>
+      case Type.Apply(Type.Name("Vector"), List(inner))                                                        =>
         Json.Obj(
-          "type" -> Json.Str("array"),
+          "type"  -> Json.Str("array"),
           "items" -> typeSchema(inner),
         )
-      case Type.Apply(Type.Name("Set"), List(inner)) =>
+      case Type.Apply(Type.Name("Set"), List(inner))                                                           =>
         Json.Obj(
-          "type" -> Json.Str("array"),
+          "type"  -> Json.Str("array"),
           "items" -> typeSchema(inner),
         )
-      case Type.Apply(Type.Name("Map"), List(_, valueType))       =>
+      case Type.Apply(Type.Name("Map"), List(_, valueType))                                                    =>
         Json.Obj(
-          "type" -> Json.Str("object"),
+          "type"                 -> Json.Str("object"),
           "additionalProperties" -> typeSchema(valueType),
         )
-      case _                                                      => primitive("object")
+      case _                                                                                                   => primitive("object")
 
   private def primitive(jsonType: String): Json =
     Json.Obj("type" -> Json.Str(jsonType))

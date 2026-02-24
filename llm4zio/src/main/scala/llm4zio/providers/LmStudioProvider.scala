@@ -5,20 +5,20 @@ import zio.json.*
 import zio.stream.ZStream
 
 import llm4zio.core.*
-import llm4zio.tools.{AnyTool, JsonSchema}
+import llm4zio.tools.{ AnyTool, JsonSchema }
 
 /** LM Studio Provider - Native API v1
   *
   * LM Studio provides a native API at /api/v1/chat with enhanced features:
-  * - Stateful chat conversations
-  * - Model load/unload management
-  * - MCP (Model Context Protocol) support
-  * - Enhanced streaming events
+  *   - Stateful chat conversations
+  *   - Model load/unload management
+  *   - MCP (Model Context Protocol) support
+  *   - Enhanced streaming events
   *
   * Default endpoint: http://localhost:1234
-  * 
-  * Note: This uses the native LM Studio API, not the OpenAI-compatible endpoint.
-  * For OpenAI compatibility, use the OpenAI provider with LM Studio's /v1 endpoint.
+  *
+  * Note: This uses the native LM Studio API, not the OpenAI-compatible endpoint. For OpenAI compatibility, use the
+  * OpenAI provider with LM Studio's /v1 endpoint.
   */
 object LmStudioProvider:
   def make(config: LlmConfig, httpClient: HttpClient): LlmService =
@@ -33,7 +33,7 @@ object LmStudioProvider:
             delta = response.content,
             finishReason = Some("stop"),
             usage = response.usage,
-            metadata = response.metadata
+            metadata = response.metadata,
           )
         }
 
@@ -44,9 +44,10 @@ object LmStudioProvider:
               case MessageRole.System    => "system"
               case MessageRole.User      => "user"
               case MessageRole.Assistant => "assistant"
-              case MessageRole.Tool      => "tool"
+              case MessageRole.Tool      =>
+                "tool"
             ,
-            content = msg.content
+            content = msg.content,
           )
         }
         executeRequest(lmStudioMessages)
@@ -57,14 +58,16 @@ object LmStudioProvider:
             delta = response.content,
             finishReason = Some("stop"),
             usage = response.usage,
-            metadata = response.metadata
+            metadata = response.metadata,
           )
         }
 
       override def executeWithTools(prompt: String, tools: List[AnyTool]): IO[LlmError, ToolCallResponse] =
         // LM Studio supports tool calling if the underlying model does
         // However, not all models support this, so we fail for now
-        ZIO.fail(LlmError.InvalidRequestError("LmStudio provider does not yet support tool calling in this implementation"))
+        ZIO.fail(
+          LlmError.InvalidRequestError("LmStudio provider does not yet support tool calling in this implementation")
+        )
 
       override def executeStructured[A: JsonCodec](prompt: String, schema: JsonSchema): IO[LlmError, A] =
         // LM Studio native API can use JSON instructions in the prompt
@@ -72,8 +75,9 @@ object LmStudioProvider:
 
         for
           response <- executeRequest(List(LmStudioMessage(role = "user", content = jsonPrompt)))
-          parsed   <- ZIO.fromEither(response.content.fromJson[A])
-                        .mapError(err => LlmError.ParseError(s"Failed to parse structured response: $err", response.content))
+          parsed   <-
+            ZIO.fromEither(response.content.fromJson[A])
+              .mapError(err => LlmError.ParseError(s"Failed to parse structured response: $err", response.content))
         yield parsed
 
       override def isAvailable: UIO[Boolean] =
@@ -94,32 +98,33 @@ object LmStudioProvider:
         messages: List[LmStudioMessage]
       ): IO[LlmError, LlmResponse] =
         for
-          baseUrl <- ZIO.fromOption(config.baseUrl).orElseFail(
-                       LlmError.ConfigError("Missing baseUrl for LmStudio provider")
-                     )
-          normalized = normalizeBaseUrl(baseUrl)
+          baseUrl     <- ZIO.fromOption(config.baseUrl).orElseFail(
+                           LlmError.ConfigError("Missing baseUrl for LmStudio provider")
+                         )
+          normalized   = normalizeBaseUrl(baseUrl)
           inputPayload = renderInputPayload(messages)
           systemPrompt = renderSystemPrompt(messages)
-          request  = LmStudioChatRequest(
-                       model = config.model,
-                       input = inputPayload,
-                       system_prompt = systemPrompt,
-                       temperature = config.temperature.orElse(Some(0.7)),
-                       max_output_tokens = config.maxTokens,
-                       stream = Some(false),
-                     )
-          url      = s"${normalized}/api/v1/chat"
-          body    <- httpClient.postJson(
-                       url = url,
-                       body = request.toJson,
-                       headers = authHeaders,
-                       timeout = config.timeout,
-                     )
-          parsed  <- ZIO
-                       .fromEither(body.fromJson[LmStudioChatResponse])
-                       .mapError(err => LlmError.ParseError(s"Failed to decode LmStudio native API response: $err", body))
-          content <- extractContent(parsed)
-          usage    = extractUsage(parsed)
+          request      = LmStudioChatRequest(
+                           model = config.model,
+                           input = inputPayload,
+                           system_prompt = systemPrompt,
+                           temperature = config.temperature.orElse(Some(0.7)),
+                           max_output_tokens = config.maxTokens,
+                           stream = Some(false),
+                         )
+          url          = s"${normalized}/api/v1/chat"
+          body        <- httpClient.postJson(
+                           url = url,
+                           body = request.toJson,
+                           headers = authHeaders,
+                           timeout = config.timeout,
+                         )
+          parsed      <-
+            ZIO
+              .fromEither(body.fromJson[LmStudioChatResponse])
+              .mapError(err => LlmError.ParseError(s"Failed to decode LmStudio native API response: $err", body))
+          content     <- extractContent(parsed)
+          usage        = extractUsage(parsed)
         yield LlmResponse(
           content = content,
           usage = usage,
@@ -132,7 +137,7 @@ object LmStudioProvider:
 
       private def renderInputPayload(messages: List[LmStudioMessage]): LmStudioInputPayload =
         val nonSystem = messages.filterNot(_.role == "system")
-        val text = renderInputText(if nonSystem.nonEmpty then nonSystem else messages)
+        val text      = renderInputText(if nonSystem.nonEmpty then nonSystem else messages)
         LmStudioInputPayload.Text(text)
 
       private def renderSystemPrompt(messages: List[LmStudioMessage]): Option[String] =
@@ -149,8 +154,8 @@ object LmStudioProvider:
       private def extractContent(response: LmStudioChatResponse): IO[LlmError, String] =
         val content =
           for
-            item <- response.output.find(item => item.`type` == "message" && item.content.exists(_.trim.nonEmpty))
-            text <- item.content
+            item   <- response.output.find(item => item.`type` == "message" && item.content.exists(_.trim.nonEmpty))
+            text   <- item.content
             trimmed = text.trim
             if trimmed.nonEmpty
           yield trimmed
@@ -158,32 +163,32 @@ object LmStudioProvider:
         ZIO.fromOption(content)
           .orElseFail(LlmError.ParseError(
             "LmStudio response missing choices[0].message.content",
-            response.toJson
+            response.toJson,
           ))
 
       private def extractUsage(response: LmStudioChatResponse): Option[TokenUsage] =
         response.stats.map { stats =>
-          val prompt = stats.input_tokens.getOrElse(0)
+          val prompt     = stats.input_tokens.getOrElse(0)
           val completion = stats.total_output_tokens.getOrElse(0)
           TokenUsage(
             prompt = prompt,
             completion = completion,
-            total = prompt + completion
+            total = prompt + completion,
           )
         }
 
       private def baseMetadata(response: LmStudioChatResponse): Map[String, String] =
         val base = Map(
-          "provider" -> "lmstudio",
-          "model"    -> config.model,
+          "provider"          -> "lmstudio",
+          "model"             -> config.model,
           "model_instance_id" -> response.model_instance_id,
         )
 
         val statsMeta = response.stats.map { stats =>
           Map(
-            "tokens_per_second" -> stats.tokens_per_second.map(_.toString).getOrElse(""),
+            "tokens_per_second"           -> stats.tokens_per_second.map(_.toString).getOrElse(""),
             "time_to_first_token_seconds" -> stats.time_to_first_token_seconds.map(_.toString).getOrElse(""),
-            "model_load_time_seconds" -> stats.model_load_time_seconds.map(_.toString).getOrElse(""),
+            "model_load_time_seconds"     -> stats.model_load_time_seconds.map(_.toString).getOrElse(""),
           ).filter(_._2.nonEmpty)
         }.getOrElse(Map.empty)
 

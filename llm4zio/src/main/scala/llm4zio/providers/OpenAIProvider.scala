@@ -5,7 +5,7 @@ import zio.json.*
 import zio.stream.ZStream
 
 import llm4zio.core.*
-import llm4zio.tools.{AnyTool, JsonSchema}
+import llm4zio.tools.{ AnyTool, JsonSchema }
 
 object OpenAIProvider:
   def make(config: LlmConfig, httpClient: HttpClient): LlmService =
@@ -20,7 +20,7 @@ object OpenAIProvider:
             delta = response.content,
             finishReason = Some("stop"),
             usage = response.usage,
-            metadata = response.metadata
+            metadata = response.metadata,
           )
         }
 
@@ -31,9 +31,10 @@ object OpenAIProvider:
               case MessageRole.System    => "system"
               case MessageRole.User      => "user"
               case MessageRole.Assistant => "assistant"
-              case MessageRole.Tool      => "tool"
+              case MessageRole.Tool      =>
+                "tool"
             ,
-            content = msg.content
+            content = msg.content,
           )
         }
         executeRequest(chatMessages, None)
@@ -44,27 +45,30 @@ object OpenAIProvider:
             delta = response.content,
             finishReason = Some("stop"),
             usage = response.usage,
-            metadata = response.metadata
+            metadata = response.metadata,
           )
         }
 
       override def executeWithTools(prompt: String, tools: List[AnyTool]): IO[LlmError, ToolCallResponse] =
         // OpenAI supports tool calling, but not implemented in this basic version
-        ZIO.fail(LlmError.InvalidRequestError("OpenAI provider does not yet support tool calling in this implementation"))
+        ZIO.fail(
+          LlmError.InvalidRequestError("OpenAI provider does not yet support tool calling in this implementation")
+        )
 
       override def executeStructured[A: JsonCodec](prompt: String, schema: JsonSchema): IO[LlmError, A] =
         val responseFormat = Some(ResponseFormat(
           `type` = "json_schema",
           json_schema = Some(JsonSchemaSpec(
             name = "response",
-            schema = schema
-          ))
+            schema = schema,
+          )),
         ))
 
         for
           response <- executeRequest(List(ChatMessage(role = "user", content = prompt)), responseFormat)
-          parsed   <- ZIO.fromEither(response.content.fromJson[A])
-                        .mapError(err => LlmError.ParseError(s"Failed to parse structured response: $err", response.content))
+          parsed   <-
+            ZIO.fromEither(response.content.fromJson[A])
+              .mapError(err => LlmError.ParseError(s"Failed to parse structured response: $err", response.content))
         yield parsed
 
       override def isAvailable: UIO[Boolean] =
@@ -133,7 +137,7 @@ object OpenAIProvider:
         ZIO.fromOption(content)
           .orElseFail(LlmError.ParseError(
             "OpenAI response missing choices[0].message.content",
-            response.toJson
+            response.toJson,
           ))
 
       private def extractUsage(response: ChatCompletionResponse): Option[TokenUsage] =
@@ -141,7 +145,7 @@ object OpenAIProvider:
           TokenUsage(
             prompt = u.prompt_tokens.getOrElse(0),
             completion = u.completion_tokens.getOrElse(0),
-            total = u.total_tokens.getOrElse(0)
+            total = u.total_tokens.getOrElse(0),
           )
         }
 
@@ -151,7 +155,7 @@ object OpenAIProvider:
           "model"    -> config.model,
         )
 
-        val idMeta = response.id.map(id => Map("id" -> id)).getOrElse(Map.empty)
+        val idMeta    = response.id.map(id => Map("id" -> id)).getOrElse(Map.empty)
         val modelMeta = response.model.map(m => Map("response_model" -> m)).getOrElse(Map.empty)
 
         base ++ idMeta ++ modelMeta

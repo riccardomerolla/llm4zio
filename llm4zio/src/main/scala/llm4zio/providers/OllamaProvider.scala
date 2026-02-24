@@ -5,7 +5,7 @@ import zio.json.*
 import zio.stream.ZStream
 
 import llm4zio.core.*
-import llm4zio.tools.{AnyTool, JsonSchema}
+import llm4zio.tools.{ AnyTool, JsonSchema }
 
 // Ollama API models
 case class OllamaGenerateRequest(
@@ -62,7 +62,7 @@ case class OllamaModelInfo(
 ) derives JsonCodec
 
 case class OllamaModelsResponse(
-  models: List[OllamaModelInfo],
+  models: List[OllamaModelInfo]
 ) derives JsonCodec
 
 object OllamaProvider:
@@ -78,7 +78,7 @@ object OllamaProvider:
             delta = response.content,
             finishReason = Some("stop"),
             usage = response.usage,
-            metadata = response.metadata
+            metadata = response.metadata,
           )
         }
 
@@ -91,7 +91,7 @@ object OllamaProvider:
               case MessageRole.Assistant => "assistant"
               case MessageRole.Tool      => "user" // Ollama doesn't have tool role
             ,
-            content = msg.content
+            content = msg.content,
           )
         }
         executeChatRequest(ollamaMessages, None)
@@ -102,7 +102,7 @@ object OllamaProvider:
             delta = response.content,
             finishReason = Some("stop"),
             usage = response.usage,
-            metadata = response.metadata
+            metadata = response.metadata,
           )
         }
 
@@ -115,8 +115,9 @@ object OllamaProvider:
         val jsonPrompt = s"$prompt\n\nPlease respond with valid JSON matching the provided schema."
         for
           response <- executeGenerate(jsonPrompt, Some("json"))
-          parsed   <- ZIO.fromEither(response.content.fromJson[A])
-                        .mapError(err => LlmError.ParseError(s"Failed to parse structured response: $err", response.content))
+          parsed   <-
+            ZIO.fromEither(response.content.fromJson[A])
+              .mapError(err => LlmError.ParseError(s"Failed to parse structured response: $err", response.content))
         yield parsed
 
       override def isAvailable: UIO[Boolean] =
@@ -147,8 +148,8 @@ object OllamaProvider:
                        format = format,
                        options = Some(OllamaOptions(
                          temperature = config.temperature,
-                         num_predict = config.maxTokens
-                       ))
+                         num_predict = config.maxTokens,
+                       )),
                      )
           url      = s"${baseUrl.stripSuffix("/")}/api/generate"
           body    <- httpClient.postJson(
@@ -182,8 +183,8 @@ object OllamaProvider:
                        format = format,
                        options = Some(OllamaOptions(
                          temperature = config.temperature,
-                         num_predict = config.maxTokens
-                       ))
+                         num_predict = config.maxTokens,
+                       )),
                      )
           url      = s"${baseUrl.stripSuffix("/")}/api/chat"
           body    <- httpClient.postJson(
@@ -204,22 +205,22 @@ object OllamaProvider:
 
       private def extractGenerateUsage(response: OllamaGenerateResponse): Option[TokenUsage] =
         for
-          promptTokens <- response.prompt_eval_count
+          promptTokens     <- response.prompt_eval_count
           completionTokens <- response.eval_count
         yield TokenUsage(
           prompt = promptTokens,
           completion = completionTokens,
-          total = promptTokens + completionTokens
+          total = promptTokens + completionTokens,
         )
 
       private def extractChatUsage(response: OllamaChatResponse): Option[TokenUsage] =
         for
-          promptTokens <- response.prompt_eval_count
+          promptTokens     <- response.prompt_eval_count
           completionTokens <- response.eval_count
         yield TokenUsage(
           prompt = promptTokens,
           completion = completionTokens,
-          total = promptTokens + completionTokens
+          total = promptTokens + completionTokens,
         )
 
       private def baseMetadata(model: String): Map[String, String] =

@@ -29,7 +29,7 @@ object ContextManagementSpec extends ZIOSpecDefault:
       important = important,
     )
 
-  private final class ClarificationLlmService extends LlmService:
+  final private class ClarificationLlmService extends LlmService:
     private val counter = new java.util.concurrent.atomic.AtomicInteger(0)
 
     override def execute(prompt: String): IO[LlmError, LlmResponse] =
@@ -55,7 +55,7 @@ object ContextManagementSpec extends ZIOSpecDefault:
 
     override def isAvailable: UIO[Boolean] = ZIO.succeed(true)
 
-  private final class ToolLoopLlmService extends LlmService:
+  final private class ToolLoopLlmService extends LlmService:
     private val counter = new java.util.concurrent.atomic.AtomicInteger(0)
 
     override def execute(prompt: String): IO[LlmError, LlmResponse] = ZIO.succeed(LlmResponse(prompt))
@@ -63,7 +63,8 @@ object ContextManagementSpec extends ZIOSpecDefault:
     override def executeStream(prompt: String): zio.stream.Stream[LlmError, LlmChunk] =
       ZStream.fromZIO(execute(prompt).map(r => LlmChunk(r.content, finishReason = Some("stop"))))
 
-    override def executeWithHistory(messages: List[Message]): IO[LlmError, LlmResponse] = execute(messages.map(_.content).mkString("\n"))
+    override def executeWithHistory(messages: List[Message]): IO[LlmError, LlmResponse] =
+      execute(messages.map(_.content).mkString("\n"))
 
     override def executeStreamWithHistory(messages: List[Message]): zio.stream.Stream[LlmError, LlmChunk] =
       ZStream.fromZIO(executeWithHistory(messages).map(r => LlmChunk(r.content, finishReason = Some("stop"))))
@@ -87,11 +88,11 @@ object ContextManagementSpec extends ZIOSpecDefault:
   def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("ContextManagement")(
     test("token counter returns provider-specific estimates") {
       val counter = TokenCounter.default
-      val text = "A" * 100
+      val text    = "A" * 100
 
-      val openAi = counter.countText(LlmProvider.OpenAI, text)
+      val openAi    = counter.countText(LlmProvider.OpenAI, text)
       val anthropic = counter.countText(LlmProvider.Anthropic, text)
-      val ollama = counter.countText(LlmProvider.Ollama, text)
+      val ollama    = counter.countText(LlmProvider.Ollama, text)
 
       assertTrue(openAi > 0, anthropic > 0, ollama > 0, anthropic >= openAi)
     },
@@ -195,17 +196,17 @@ object ContextManagementSpec extends ZIOSpecDefault:
 
       for
         registry <- ToolRegistry.make
-        _ <- registry.register(echoTool)
-        now <- Clock.instant
-        thread = ConversationThread.create("thread-1", now)
-        result <- ToolConversationManager.run(
-                    prompt = "do stuff",
-                    thread = thread,
-                    llmService = new ToolLoopLlmService,
-                    toolRegistry = registry,
-                    tools = List(echoTool),
-                    maxIterations = 4,
-                  )
+        _        <- registry.register(echoTool)
+        now      <- Clock.instant
+        thread    = ConversationThread.create("thread-1", now)
+        result   <- ToolConversationManager.run(
+                      prompt = "do stuff",
+                      thread = thread,
+                      llmService = new ToolLoopLlmService,
+                      toolRegistry = registry,
+                      tools = List(echoTool),
+                      maxIterations = 4,
+                    )
       yield assertTrue(
         result.response.content == "final",
         result.thread.state == ConversationState.Completed,

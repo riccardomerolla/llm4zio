@@ -11,7 +11,7 @@ import zio.test.*
 import llm4zio.core.*
 
 object ToolCallingExecutorSpec extends ZIOSpecDefault:
-  private final class LoopMockService extends LlmService:
+  final private class LoopMockService extends LlmService:
     private val calls = new AtomicInteger(0)
 
     override def execute(prompt: String): IO[LlmError, LlmResponse] =
@@ -49,9 +49,9 @@ object ToolCallingExecutorSpec extends ZIOSpecDefault:
     name = "echo",
     description = "Echo input",
     parameters = Json.Obj(
-      "type" -> Json.Str("object"),
+      "type"       -> Json.Str("object"),
       "properties" -> Json.Obj("message" -> Json.Obj("type" -> Json.Str("string"))),
-      "required" -> Json.Arr(Chunk(Json.Str("message"))),
+      "required"   -> Json.Arr(Chunk(Json.Str("message"))),
     ),
     execute = args => ZIO.succeed(args),
   )
@@ -60,7 +60,7 @@ object ToolCallingExecutorSpec extends ZIOSpecDefault:
     test("execute multi-turn tool call loop until completion") {
       for
         registry <- ToolRegistry.make
-        _ <- registry.register(echoTool)
+        _        <- registry.register(echoTool)
         response <- ToolCallingExecutor.run(
                       prompt = "say hello",
                       tools = List(echoTool),
@@ -68,5 +68,5 @@ object ToolCallingExecutorSpec extends ZIOSpecDefault:
                       registry = registry,
                     )
       yield assertTrue(response.content == "final answer")
-    },
+    }
   )

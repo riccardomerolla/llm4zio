@@ -13,7 +13,8 @@ object GeminiApiProviderSpec extends ZIOSpecDefault:
     override def get(url: String, headers: Map[String, String], timeout: Duration): IO[LlmError, String] =
       ZIO.succeed("{}")
 
-    override def postJson(url: String, body: String, headers: Map[String, String], timeout: Duration): IO[LlmError, String] =
+    override def postJson(url: String, body: String, headers: Map[String, String], timeout: Duration)
+      : IO[LlmError, String] =
       if shouldSucceed then
         val response = GeminiGenerateContentResponse(
           candidates = List(
@@ -26,8 +27,8 @@ object GeminiApiProviderSpec extends ZIOSpecDefault:
           usageMetadata = Some(GeminiUsageMetadata(
             promptTokenCount = Some(10),
             candidatesTokenCount = Some(5),
-            totalTokenCount = Some(15)
-          ))
+            totalTokenCount = Some(15),
+          )),
         )
         ZIO.succeed(response.toJson)
       else
@@ -35,82 +36,83 @@ object GeminiApiProviderSpec extends ZIOSpecDefault:
 
   def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("GeminiApiProvider")(
     test("execute should return response") {
-      val config = LlmConfig(
+      val config     = LlmConfig(
         provider = LlmProvider.GeminiApi,
         model = "gemini-2.0-flash-exp",
         baseUrl = Some("https://generativelanguage.googleapis.com"),
-        apiKey = Some("test-api-key")
+        apiKey = Some("test-api-key"),
       )
       val httpClient = new MockHttpClient()
-      val provider = GeminiApiProvider.make(config, httpClient)
+      val provider   = GeminiApiProvider.make(config, httpClient)
 
       for {
         response <- provider.execute("test prompt")
       } yield assertTrue(
         response.content == "Test response",
         response.usage.isDefined,
-        response.usage.get.total == 15
+        response.usage.get.total == 15,
       )
     },
     test("execute should fail with missing apiKey") {
-      val config = LlmConfig(
+      val config     = LlmConfig(
         provider = LlmProvider.GeminiApi,
         model = "gemini-2.0-flash-exp",
         baseUrl = Some("https://generativelanguage.googleapis.com"),
-        apiKey = None
+        apiKey = None,
       )
       val httpClient = new MockHttpClient()
-      val provider = GeminiApiProvider.make(config, httpClient)
+      val provider   = GeminiApiProvider.make(config, httpClient)
 
       for {
         result <- provider.execute("test").exit
       } yield assertTrue(result.isFailure)
     },
     test("execute should fail with missing baseUrl") {
-      val config = LlmConfig(
+      val config     = LlmConfig(
         provider = LlmProvider.GeminiApi,
         model = "gemini-2.0-flash-exp",
         baseUrl = None,
-        apiKey = Some("test-api-key")
+        apiKey = Some("test-api-key"),
       )
       val httpClient = new MockHttpClient()
-      val provider = GeminiApiProvider.make(config, httpClient)
+      val provider   = GeminiApiProvider.make(config, httpClient)
 
       for {
         result <- provider.execute("test").exit
       } yield assertTrue(result.isFailure)
     },
     test("executeStructured should use JSON schema") {
-      val config = LlmConfig(
+      val config     = LlmConfig(
         provider = LlmProvider.GeminiApi,
         model = "gemini-2.0-flash-exp",
         baseUrl = Some("https://generativelanguage.googleapis.com"),
-        apiKey = Some("test-api-key")
+        apiKey = Some("test-api-key"),
       )
       val httpClient = new MockHttpClient() {
-        override def postJson(url: String, body: String, headers: Map[String, String], timeout: Duration): IO[LlmError, String] =
+        override def postJson(url: String, body: String, headers: Map[String, String], timeout: Duration)
+          : IO[LlmError, String] =
           // Verify that the request includes response schema
           for {
-            _ <- ZIO.succeed(assertTrue(body.contains("application/json")))
+            _       <- ZIO.succeed(assertTrue(body.contains("application/json")))
             response = GeminiGenerateContentResponse(
-              candidates = List(
-                GeminiCandidate(
-                  content = GeminiContent(
-                    parts = List(GeminiPart(text = """{"name":"Test"}"""))
-                  )
-                )
-              )
-            )
+                         candidates = List(
+                           GeminiCandidate(
+                             content = GeminiContent(
+                               parts = List(GeminiPart(text = """{"name":"Test"}"""))
+                             )
+                           )
+                         )
+                       )
           } yield response.toJson
       }
-      val provider = GeminiApiProvider.make(config, httpClient)
-      val schema = Json.Obj("type" -> Json.Str("object"))
+      val provider   = GeminiApiProvider.make(config, httpClient)
+      val schema     = Json.Obj("type" -> Json.Str("object"))
 
       for {
         result <- provider.executeStructured[Json](
-          "test",
-          schema
-        )
+                    "test",
+                    schema,
+                  )
       } yield assertTrue(result.isInstanceOf[Json])
-    }
+    },
   )

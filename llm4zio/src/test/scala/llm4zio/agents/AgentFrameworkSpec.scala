@@ -50,20 +50,22 @@ object AgentFrameworkSpec extends ZIOSpecDefault:
       )
 
   private val rejectingStore = new PersistentMemoryStore:
-    override def upsertThread(thread: ConversationThread): IO[MemoryError, Unit] = ZIO.unit
-    override def loadThread(threadId: String): IO[MemoryError, Option[ConversationThread]] = ZIO.succeed(None)
-    override def appendEntry(entry: MemoryEntry): IO[MemoryError, Unit] = ZIO.unit
+    override def upsertThread(thread: ConversationThread): IO[MemoryError, Unit]              = ZIO.unit
+    override def loadThread(threadId: String): IO[MemoryError, Option[ConversationThread]]    = ZIO.succeed(None)
+    override def appendEntry(entry: MemoryEntry): IO[MemoryError, Unit]                       = ZIO.unit
     override def searchEntries(query: String, limit: Int): IO[MemoryError, List[MemoryEntry]] = ZIO.succeed(Nil)
 
   def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("AgentFramework")(
     test("routes by capability and resolves conflicts by priority") {
       for
-        selected <- AgentRouter.route("analysis", List(delegatorAgent, analyzerAgent), ConflictResolution.HighestPriority)
+        selected <-
+          AgentRouter.route("analysis", List(delegatorAgent, analyzerAgent), ConflictResolution.HighestPriority)
       yield assertTrue(selected.metadata.name == "analyzer")
     },
     test("fails on capability conflict when strategy is FailOnConflict") {
       for
-        result <- AgentRouter.route("analysis", List(delegatorAgent, analyzerAgent), ConflictResolution.FailOnConflict).either
+        result <-
+          AgentRouter.route("analysis", List(delegatorAgent, analyzerAgent), ConflictResolution.FailOnConflict).either
       yield assertTrue(result.isLeft)
     },
     test("runs handoff between agents") {
@@ -110,9 +112,9 @@ object AgentFrameworkSpec extends ZIOSpecDefault:
     },
     test("supports in-memory history and fork") {
       for
-        memory <- Memory.inMemory
-        _ <- memory.append("t1", Message(MessageRole.User, "hello"))
-        forked <- memory.fork("t1", "t2")
+        memory   <- Memory.inMemory
+        _        <- memory.append("t1", Message(MessageRole.User, "hello"))
+        forked   <- memory.fork("t1", "t2")
         messages <- memory.read("t2")
       yield assertTrue(
         forked.parentThreadId.contains("t1"),
@@ -123,10 +125,10 @@ object AgentFrameworkSpec extends ZIOSpecDefault:
     test("persistent memory delegates to store") {
       for
         inMemory <- Memory.inMemory
-        memory = PersistentMemory(inMemory, rejectingStore)
-        _ <- memory.append("thread-p", Message(MessageRole.User, "persist me"))
-        history <- memory.read("thread-p")
-        entries <- memory.search("persist", limit = 10)
+        memory    = PersistentMemory(inMemory, rejectingStore)
+        _        <- memory.append("thread-p", Message(MessageRole.User, "persist me"))
+        history  <- memory.read("thread-p")
+        entries  <- memory.search("persist", limit = 10)
       yield assertTrue(
         history.exists(_.content == "persist me"),
         entries.nonEmpty,

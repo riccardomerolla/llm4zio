@@ -18,9 +18,9 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
 
   def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("GeminiCliProvider")(
     test("execute should return response") {
-      val config = LlmConfig(
+      val config   = LlmConfig(
         provider = LlmProvider.GeminiCli,
-        model = "gemini-2.0-flash-exp"
+        model = "gemini-2.0-flash-exp",
       )
       val executor = new MockGeminiCliExecutor()
       val provider = GeminiCliProvider.make(config, executor)
@@ -32,9 +32,9 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
       )
     },
     test("isAvailable should check if gemini is installed") {
-      val config = LlmConfig(
+      val config   = LlmConfig(
         provider = LlmProvider.GeminiCli,
-        model = "gemini-2.0-flash-exp"
+        model = "gemini-2.0-flash-exp",
       )
       val executor = new MockGeminiCliExecutor(shouldSucceed = true)
       val provider = GeminiCliProvider.make(config, executor)
@@ -44,9 +44,9 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
       } yield assertTrue(available)
     },
     test("isAvailable should return false when gemini not installed") {
-      val config = LlmConfig(
+      val config   = LlmConfig(
         provider = LlmProvider.GeminiCli,
-        model = "gemini-2.0-flash-exp"
+        model = "gemini-2.0-flash-exp",
       )
       val executor = new MockGeminiCliExecutor(shouldSucceed = false)
       val provider = GeminiCliProvider.make(config, executor)
@@ -56,9 +56,9 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
       } yield assertTrue(!available)
     },
     test("execute should fail when gemini not installed") {
-      val config = LlmConfig(
+      val config   = LlmConfig(
         provider = LlmProvider.GeminiCli,
-        model = "gemini-2.0-flash-exp"
+        model = "gemini-2.0-flash-exp",
       )
       val executor = new MockGeminiCliExecutor(shouldSucceed = false)
       val provider = GeminiCliProvider.make(config, executor)
@@ -66,5 +66,5 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
       for {
         result <- provider.execute("test").exit
       } yield assertTrue(result.isFailure)
-    }
+    },
   )

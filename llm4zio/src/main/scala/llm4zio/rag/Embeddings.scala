@@ -19,10 +19,10 @@ enum EmbeddingError derives JsonCodec:
 object EmbeddingError:
   extension (error: EmbeddingError)
     def message: String = error match
-      case EmbeddingError.ProviderError(msg)    => msg
-      case EmbeddingError.ParseError(msg, _)    => msg
-      case EmbeddingError.InvalidInput(msg)     => msg
-      case EmbeddingError.RateLimited(msg)      => msg
+      case EmbeddingError.ProviderError(msg) => msg
+      case EmbeddingError.ParseError(msg, _) => msg
+      case EmbeddingError.InvalidInput(msg)  => msg
+      case EmbeddingError.RateLimited(msg)   => msg
 
 trait EmbeddingService:
   def embed(text: String): IO[EmbeddingError, Vector[Double]]
@@ -65,36 +65,36 @@ object EmbeddingService:
       OllamaEmbeddingService(httpClient, baseUrl, model, timeout, limiter)
     }
 
-private final case class CachedEmbeddingService(
+final private case class CachedEmbeddingService(
   base: EmbeddingService,
   cache: Ref[Map[String, Vector[Double]]],
 ) extends EmbeddingService:
   override def embed(text: String): IO[EmbeddingError, Vector[Double]] =
     for
-      _ <- ensureNonEmpty(text)
+      _       <- ensureNonEmpty(text)
       current <- cache.get
-      vector <- current.get(text) match
-                  case Some(value) => ZIO.succeed(value)
-                  case None        =>
-                    for
-                      embedded <- base.embed(text)
-                      _ <- cache.update(_.updated(text, embedded))
-                    yield embedded
+      vector  <- current.get(text) match
+                   case Some(value) => ZIO.succeed(value)
+                   case None        =>
+                     for
+                       embedded <- base.embed(text)
+                       _        <- cache.update(_.updated(text, embedded))
+                     yield embedded
     yield vector
 
   override def embedBatch(texts: Chunk[String]): IO[EmbeddingError, Chunk[Vector[Double]]] =
     ZIO.foreach(texts)(embed).map(Chunk.fromIterable)
 
-private final case class DeterministicEmbeddingService(dimensions: Int) extends EmbeddingService:
+final private case class DeterministicEmbeddingService(dimensions: Int) extends EmbeddingService:
   override def embed(text: String): IO[EmbeddingError, Vector[Double]] =
     for
-      _ <- ensureNonEmpty(text)
-      embedding <- ZIO.attempt {
-                     val bytes = sha256(text)
-                     val seed = bytes.foldLeft(0L)((acc, b) => (acc * 31L + (b & 0xff).toLong) & Long.MaxValue)
-                     val random = new java.util.SplittableRandom(seed)
-                     Vector.fill(dimensions)(random.nextDouble() * 2.0 - 1.0)
-                   }.mapError(err => EmbeddingError.ProviderError(err.getMessage))
+      _          <- ensureNonEmpty(text)
+      embedding  <- ZIO.attempt {
+                      val bytes  = sha256(text)
+                      val seed   = bytes.foldLeft(0L)((acc, b) => (acc * 31L + (b & 0xff).toLong) & Long.MaxValue)
+                      val random = new java.util.SplittableRandom(seed)
+                      Vector.fill(dimensions)(random.nextDouble() * 2.0 - 1.0)
+                    }.mapError(err => EmbeddingError.ProviderError(err.getMessage))
       normalized <- normalize(embedding)
     yield normalized
 
@@ -105,7 +105,7 @@ private final case class DeterministicEmbeddingService(dimensions: Int) extends 
     val digest = MessageDigest.getInstance("SHA-256")
     digest.digest(text.getBytes(StandardCharsets.UTF_8))
 
-private final case class OpenAiEmbeddingService(
+final private case class OpenAiEmbeddingService(
   httpClient: HttpClient,
   baseUrl: String,
   apiKey: String,
@@ -122,23 +122,23 @@ private final case class OpenAiEmbeddingService(
 
   override def embedBatch(texts: Chunk[String]): IO[EmbeddingError, Chunk[Vector[Double]]] =
     for
-      _ <- ensureNonEmptyBatch(texts)
-      chunks = texts.grouped(batchSize.max(1)).toList
+      _       <- ensureNonEmptyBatch(texts)
+      chunks   = texts.grouped(batchSize.max(1)).toList
       vectors <- ZIO.foreach(chunks) { batch =>
                    for
-                     _ <- limiter.acquire.mapError(err => EmbeddingError.RateLimited(err.toString))
+                     _      <- limiter.acquire.mapError(err => EmbeddingError.RateLimited(err.toString))
                      request = Json.Obj(
                                  "model" -> Json.Str(model),
                                  "input" -> Json.Arr(Chunk.fromIterable(batch.map(Json.Str(_)))),
                                )
-                     body <- httpClient
-                               .postJson(
-                                 url = s"${baseUrl.stripSuffix("/")}/embeddings",
-                                 body = request.toJson,
-                                 headers = Map("Authorization" -> s"Bearer $apiKey"),
-                                 timeout = timeout,
-                               )
-                               .mapError(toEmbeddingError)
+                     body   <- httpClient
+                                 .postJson(
+                                   url = s"${baseUrl.stripSuffix("/")}/embeddings",
+                                   body = request.toJson,
+                                   headers = Map("Authorization" -> s"Bearer $apiKey"),
+                                   timeout = timeout,
+                                 )
+                                 .mapError(toEmbeddingError)
                      parsed <- parseOpenAi(body)
                    yield parsed
                  }
@@ -154,7 +154,7 @@ private final case class OpenAiEmbeddingService(
         }
       }
 
-private final case class OllamaEmbeddingService(
+final private case class OllamaEmbeddingService(
   httpClient: HttpClient,
   baseUrl: String,
   model: String,
@@ -164,32 +164,32 @@ private final case class OllamaEmbeddingService(
 
   override def embed(text: String): IO[EmbeddingError, Vector[Double]] =
     for
-      _ <- ensureNonEmpty(text)
-      _ <- limiter.acquire.mapError(err => EmbeddingError.RateLimited(err.toString))
-      request = Json.Obj(
-                  "model" -> Json.Str(model),
-                  "prompt" -> Json.Str(text),
-                )
-      body <- httpClient
-                .postJson(
-                  url = s"${baseUrl.stripSuffix("/")}/api/embeddings",
-                  body = request.toJson,
-                  headers = Map.empty,
-                  timeout = timeout,
-                )
-                .mapError(toEmbeddingError)
-      parsed <- ZIO
-                  .fromEither(body.fromJson[OllamaEmbeddingResponse])
-                  .mapError(err => EmbeddingError.ParseError(s"Failed to parse Ollama embeddings: $err", body))
+      _          <- ensureNonEmpty(text)
+      _          <- limiter.acquire.mapError(err => EmbeddingError.RateLimited(err.toString))
+      request     = Json.Obj(
+                      "model"  -> Json.Str(model),
+                      "prompt" -> Json.Str(text),
+                    )
+      body       <- httpClient
+                      .postJson(
+                        url = s"${baseUrl.stripSuffix("/")}/api/embeddings",
+                        body = request.toJson,
+                        headers = Map.empty,
+                        timeout = timeout,
+                      )
+                      .mapError(toEmbeddingError)
+      parsed     <- ZIO
+                      .fromEither(body.fromJson[OllamaEmbeddingResponse])
+                      .mapError(err => EmbeddingError.ParseError(s"Failed to parse Ollama embeddings: $err", body))
       normalized <- normalize(parsed.embedding)
     yield normalized
 
   override def embedBatch(texts: Chunk[String]): IO[EmbeddingError, Chunk[Vector[Double]]] =
     ZIO.foreach(texts)(embed).map(Chunk.fromIterable)
 
-private final case class OpenAiEmbeddingResponse(data: List[OpenAiEmbeddingData]) derives JsonCodec
-private final case class OpenAiEmbeddingData(index: Int, embedding: Vector[Double]) derives JsonCodec
-private final case class OllamaEmbeddingResponse(embedding: Vector[Double]) derives JsonCodec
+final private case class OpenAiEmbeddingResponse(data: List[OpenAiEmbeddingData]) derives JsonCodec
+final private case class OpenAiEmbeddingData(index: Int, embedding: Vector[Double]) derives JsonCodec
+final private case class OllamaEmbeddingResponse(embedding: Vector[Double]) derives JsonCodec
 
 private def ensureNonEmpty(text: String): IO[EmbeddingError, Unit] =
   if text.trim.isEmpty then ZIO.fail(EmbeddingError.InvalidInput("Text for embedding must be non-empty"))
@@ -211,8 +211,10 @@ private def toEmbeddingError(error: LlmError): EmbeddingError =
     case LlmError.ProviderError(message, _)    => EmbeddingError.ProviderError(message)
     case LlmError.AuthenticationError(message) => EmbeddingError.ProviderError(message)
     case LlmError.InvalidRequestError(message) => EmbeddingError.InvalidInput(message)
-    case LlmError.TimeoutError(duration)       => EmbeddingError.ProviderError(s"Embedding request timeout after ${duration.toMillis}ms")
+    case LlmError.TimeoutError(duration)       =>
+      EmbeddingError.ProviderError(s"Embedding request timeout after ${duration.toMillis}ms")
     case LlmError.ParseError(message, raw)     => EmbeddingError.ParseError(message, raw)
     case LlmError.RateLimitError(_)            => EmbeddingError.RateLimited("Embedding provider rate limited request")
     case LlmError.ConfigError(message)         => EmbeddingError.ProviderError(message)
-    case LlmError.ToolError(toolName, message) => EmbeddingError.ProviderError(s"Unexpected tool error ($toolName): $message")
+    case LlmError.ToolError(toolName, message) =>
+      EmbeddingError.ProviderError(s"Unexpected tool error ($toolName): $message")

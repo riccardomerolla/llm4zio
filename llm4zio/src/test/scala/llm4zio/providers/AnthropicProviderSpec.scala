@@ -12,7 +12,8 @@ object AnthropicProviderSpec extends ZIOSpecDefault:
     override def get(url: String, headers: Map[String, String], timeout: Duration): IO[LlmError, String] =
       ZIO.succeed("{}")
 
-    override def postJson(url: String, body: String, headers: Map[String, String], timeout: Duration): IO[LlmError, String] =
+    override def postJson(url: String, body: String, headers: Map[String, String], timeout: Duration)
+      : IO[LlmError, String] =
       if shouldSucceed then
         val response = AnthropicResponse(
           id = Some("msg_123"),
@@ -21,10 +22,10 @@ object AnthropicProviderSpec extends ZIOSpecDefault:
           ),
           usage = Some(AnthropicUsage(
             input_tokens = Some(10),
-            output_tokens = Some(5)
+            output_tokens = Some(5),
           )),
           model = Some("claude-3-5-sonnet-20241022"),
-          stop_reason = Some("end_turn")
+          stop_reason = Some("end_turn"),
         )
         ZIO.succeed(response.toJson)
       else
@@ -32,55 +33,55 @@ object AnthropicProviderSpec extends ZIOSpecDefault:
 
   def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("AnthropicProvider")(
     test("execute should return response") {
-      val config = LlmConfig(
+      val config     = LlmConfig(
         provider = LlmProvider.Anthropic,
         model = "claude-3-5-sonnet-20241022",
         baseUrl = Some("https://api.anthropic.com/v1"),
-        apiKey = Some("test-api-key")
+        apiKey = Some("test-api-key"),
       )
       val httpClient = new MockHttpClient()
-      val provider = AnthropicProvider.make(config, httpClient)
+      val provider   = AnthropicProvider.make(config, httpClient)
 
       for {
         response <- provider.execute("test prompt")
       } yield assertTrue(
         response.content == "Test response",
         response.usage.isDefined,
-        response.usage.get.total == 15
+        response.usage.get.total == 15,
       )
     },
     test("execute should fail with missing apiKey") {
-      val config = LlmConfig(
+      val config     = LlmConfig(
         provider = LlmProvider.Anthropic,
         model = "claude-3-5-sonnet-20241022",
         baseUrl = Some("https://api.anthropic.com/v1"),
-        apiKey = None
+        apiKey = None,
       )
       val httpClient = new MockHttpClient()
-      val provider = AnthropicProvider.make(config, httpClient)
+      val provider   = AnthropicProvider.make(config, httpClient)
 
       for {
         result <- provider.execute("test").exit
       } yield assertTrue(result.isFailure)
     },
     test("executeWithHistory should handle system messages") {
-      val config = LlmConfig(
+      val config     = LlmConfig(
         provider = LlmProvider.Anthropic,
         model = "claude-3-5-sonnet-20241022",
         baseUrl = Some("https://api.anthropic.com/v1"),
-        apiKey = Some("test-api-key")
+        apiKey = Some("test-api-key"),
       )
       val httpClient = new MockHttpClient()
-      val provider = AnthropicProvider.make(config, httpClient)
+      val provider   = AnthropicProvider.make(config, httpClient)
 
       val messages = List(
         Message(MessageRole.System, "You are a helpful assistant"),
         Message(MessageRole.User, "Hello"),
-        Message(MessageRole.Assistant, "Hi there")
+        Message(MessageRole.Assistant, "Hi there"),
       )
 
       for {
         response <- provider.executeWithHistory(messages)
       } yield assertTrue(response.content == "Test response")
-    }
+    },
   )

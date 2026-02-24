@@ -24,7 +24,8 @@ case class ConversationMessage(
 ) derives JsonCodec
 
 object ConversationMessage:
-  def fromCore(message: Message, timestamp: Instant, tokens: Int = 0, metadata: Map[String, String] = Map.empty): ConversationMessage =
+  def fromCore(message: Message, timestamp: Instant, tokens: Int = 0, metadata: Map[String, String] = Map.empty)
+    : ConversationMessage =
     ConversationMessage(
       id = java.util.UUID.randomUUID().toString,
       role = message.role match
@@ -121,8 +122,9 @@ case class PromptTemplate(
   active: Boolean = true,
 ) derives JsonCodec:
   def render(variables: Map[String, String]): String =
-    variables.foldLeft(template) { case (acc, (key, value)) =>
-      acc.replace(s"{{$key}}", value)
+    variables.foldLeft(template) {
+      case (acc, (key, value)) =>
+        acc.replace(s"{{$key}}", value)
     }
 
 case class PromptTemplateRef(
@@ -143,7 +145,7 @@ object PromptRegistry:
   def inMemory: UIO[PromptRegistry] =
     Ref.make(Map.empty[String, Vector[PromptTemplate]]).map(InMemoryPromptRegistry.apply)
 
-private final case class InMemoryPromptRegistry(
+final private case class InMemoryPromptRegistry(
   state: Ref[Map[String, Vector[PromptTemplate]]]
 ) extends PromptRegistry:
 
@@ -161,11 +163,14 @@ private final case class InMemoryPromptRegistry(
   override def resolve(ref: PromptTemplateRef): IO[String, PromptTemplate] =
     state.get.flatMap { current =>
       val templates = current.getOrElse(ref.name, Vector.empty)
-      val resolved = ref.version match
+      val resolved  = ref.version match
         case Some(version) => templates.find(_.version == version)
-        case None          => templates.filter(_.active).sortBy(_.version).lastOption.orElse(templates.sortBy(_.version).lastOption)
+        case None          =>
+          templates.filter(_.active).sortBy(_.version).lastOption.orElse(templates.sortBy(_.version).lastOption)
 
-      ZIO.fromOption(resolved).orElseFail(s"Template not found: ${ref.name}${ref.version.map(v => s"@$v").getOrElse("")}")
+      ZIO.fromOption(
+        resolved
+      ).orElseFail(s"Template not found: ${ref.name}${ref.version.map(v => s"@$v").getOrElse("")}")
     }
 
   override def render(ref: PromptTemplateRef, variables: Map[String, String]): IO[String, String] =
@@ -209,7 +214,7 @@ object ConversationStore:
   def inMemory: UIO[ConversationStore] =
     Ref.make(Map.empty[String, ConversationThread]).map(InMemoryConversationStore.apply)
 
-private final case class InMemoryConversationStore(
+final private case class InMemoryConversationStore(
   state: Ref[Map[String, ConversationThread]]
 ) extends ConversationStore:
   override def save(thread: ConversationThread): IO[String, Unit] =

@@ -42,18 +42,18 @@ case class AgentContext(
     TokenEstimator.estimate(history)
 
   def trim(strategy: ContextTrimStrategy = ContextTrimStrategy.KeepSystemAndLatest): AgentContext =
-    val maxMessages = constraints.maxContextMessages.max(1)
+    val maxMessages    = constraints.maxContextMessages.max(1)
     val byMessageCount =
       if history.length <= maxMessages then history
       else
         strategy match
-          case ContextTrimStrategy.KeepLatest =>
+          case ContextTrimStrategy.KeepLatest          =>
             history.takeRight(maxMessages)
           case ContextTrimStrategy.KeepSystemAndLatest =>
-            val systemMessages = history.filter(_.role == MessageRole.System)
-            val nonSystem = history.filterNot(_.role == MessageRole.System)
+            val systemMessages    = history.filter(_.role == MessageRole.System)
+            val nonSystem         = history.filterNot(_.role == MessageRole.System)
             val slotsForNonSystem = (maxMessages - systemMessages.length).max(0)
-            val latestNonSystem = nonSystem.takeRight(slotsForNonSystem)
+            val latestNonSystem   = nonSystem.takeRight(slotsForNonSystem)
             (systemMessages ++ latestNonSystem).takeRight(maxMessages)
 
     val byTokenBudget =
@@ -87,15 +87,15 @@ case class AgentContext(
       kept
 
     strategy match
-      case ContextTrimStrategy.KeepLatest => consumeReverse(messages)
+      case ContextTrimStrategy.KeepLatest          => consumeReverse(messages)
       case ContextTrimStrategy.KeepSystemAndLatest =>
         val systemMessages = messages.filter(_.role == MessageRole.System)
-        val systemCost = TokenEstimator.estimate(systemMessages)
+        val systemCost     = TokenEstimator.estimate(systemMessages)
         if systemCost >= budget then consumeReverse(systemMessages)
         else
           val nonSystem = messages.filterNot(_.role == MessageRole.System)
-          val tail = consumeReverse(nonSystem)
-          val combined = (systemMessages ++ tail)
+          val tail      = consumeReverse(nonSystem)
+          val combined  = systemMessages ++ tail
           consumeReverse(combined)
 
 object AgentContext:

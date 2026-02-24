@@ -4,7 +4,7 @@ import zio.*
 import zio.json.*
 import zio.stream.*
 
-import llm4zio.tools.{AnyTool, JsonSchema}
+import llm4zio.tools.{ AnyTool, JsonSchema }
 
 case class ToolCall(id: String, name: String, arguments: String) derives JsonCodec
 
@@ -58,12 +58,13 @@ object LlmService:
     ZIO.serviceWithZIO[LlmService](_.isAvailable)
 
   // Factory layer that creates LlmService based on LlmConfig
-  val fromConfig: ZLayer[LlmConfig & llm4zio.providers.HttpClient & llm4zio.providers.GeminiCliExecutor, Nothing, LlmService] =
+  val fromConfig
+    : ZLayer[LlmConfig & llm4zio.providers.HttpClient & llm4zio.providers.GeminiCliExecutor, Nothing, LlmService] =
     ZLayer.fromZIO {
       for
-        config   <- ZIO.service[LlmConfig]
-        http     <- ZIO.service[llm4zio.providers.HttpClient]
-        cliExec  <- ZIO.service[llm4zio.providers.GeminiCliExecutor]
+        config  <- ZIO.service[LlmConfig]
+        http    <- ZIO.service[llm4zio.providers.HttpClient]
+        cliExec <- ZIO.service[llm4zio.providers.GeminiCliExecutor]
       yield new LlmService {
         private def buildProvider(cfg: LlmConfig): LlmService =
           import llm4zio.providers.*

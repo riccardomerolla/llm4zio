@@ -78,7 +78,7 @@ object RetryPolicy:
     *   - ConfigError (permanent - invalid configuration)
     */
   def isRetryable(error: LlmError): Boolean = error match
-    case LlmError.TimeoutError(_)      => true
-    case LlmError.RateLimitError(_)    => true
-    case LlmError.ProviderError(_, _)  => true // Might be transient
-    case _                             => false
+    case LlmError.TimeoutError(_)     => true
+    case LlmError.RateLimitError(_)   => true
+    case LlmError.ProviderError(_, _) => true // Might be transient
+    case _                            => false

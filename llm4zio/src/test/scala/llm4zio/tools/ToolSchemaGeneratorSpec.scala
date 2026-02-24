@@ -13,9 +13,9 @@ object ToolSchemaGeneratorSpec extends ZIOSpecDefault:
         schema <- ToolSchemaGenerator.fromMethodSignature(signature)
       yield schema match
         case Json.Obj(fields) =>
-          val map = fields.toMap
+          val map        = fields.toMap
           val properties = map("properties").asInstanceOf[Json.Obj].fields.toMap
-          val required = map("required").asInstanceOf[Json.Arr].elements.toList
+          val required   = map("required").asInstanceOf[Json.Arr].elements.toList
           assertTrue(
             map.get("type").contains(Json.Str("object")),
             properties.get("code").contains(Json.Obj("type" -> Json.Str("string"))),

@@ -8,7 +8,7 @@ import llm4zio.providers.HttpClient
 
 object LangfuseSpec extends ZIOSpecDefault:
 
-  private final class RecordingHttpClient(calls: Ref[List[(String, String, Map[String, String])]]) extends HttpClient:
+  final private class RecordingHttpClient(calls: Ref[List[(String, String, Map[String, String])]]) extends HttpClient:
     override def postJson(
       url: String,
       body: String,
@@ -36,16 +36,16 @@ object LangfuseSpec extends ZIOSpecDefault:
                    ),
                    new RecordingHttpClient(calls),
                  )
-        _ <- client.track(
-               LangfuseEvent(
-                 correlationId = "corr-1",
-                 traceName = "llm.execute",
-                 input = "prompt",
-                 output = Some("response"),
-                 metadata = Map("provider" -> "openai"),
-               )
-             )
-        sent <- calls.get
+        _     <- client.track(
+                   LangfuseEvent(
+                     correlationId = "corr-1",
+                     traceName = "llm.execute",
+                     input = "prompt",
+                     output = Some("response"),
+                     metadata = Map("provider" -> "openai"),
+                   )
+                 )
+        sent  <- calls.get
       yield assertTrue(
         sent.nonEmpty,
         sent.head._1.contains("/api/public/traces"),

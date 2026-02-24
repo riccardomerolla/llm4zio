@@ -14,11 +14,11 @@ enum AgentError derives JsonCodec:
 object AgentError:
   extension (error: AgentError)
     def message: String = error match
-      case AgentError.ValidationError(msg)     => msg
-      case AgentError.ExecutionError(_, msg)   => msg
-      case AgentError.RoutingError(msg)        => msg
-      case AgentError.NotFound(agent)          => s"Agent not found: $agent"
-      case AgentError.Conflict(msg)            => msg
+      case AgentError.ValidationError(msg)   => msg
+      case AgentError.ExecutionError(_, msg) => msg
+      case AgentError.RoutingError(msg)      => msg
+      case AgentError.NotFound(agent)        => s"Agent not found: $agent"
+      case AgentError.Conflict(msg)          => msg
 
 case class AgentMetadata(
   name: String,
@@ -69,9 +69,9 @@ object AgentRouter:
     val candidates = agents.filter(_.metadata.capabilities.contains(capability))
 
     candidates match
-      case Nil => ZIO.fail(AgentError.RoutingError(s"No agent available for capability: $capability"))
+      case Nil         => ZIO.fail(AgentError.RoutingError(s"No agent available for capability: $capability"))
       case head :: Nil => ZIO.succeed(head)
-      case many =>
+      case many        =>
         strategy match
           case ConflictResolution.HighestPriority =>
             ZIO.succeed(many.maxBy(agent => (agent.metadata.priority, agent.metadata.name)))
@@ -84,7 +84,7 @@ object AgentRouter:
             ZIO.fail(AgentError.Conflict(s"Multiple agents claim capability '$capability': $names"))
 
   private def semanticVersionScore(version: String): Long =
-    val parts = version.split("\\.").toList
+    val parts      = version.split("\\.").toList
     val normalized = (parts ++ List("0", "0", "0")).take(3)
       .map(_.takeWhile(_.isDigit))
       .map(part => if part.isEmpty then 0L else part.toLong)
@@ -126,16 +126,16 @@ object AgentCoordinator:
     else
       for
         result <- current.execute(input, context)
-        next <- result.handoff match
-                  case None          => ZIO.succeed(result)
-                  case Some(handoff) =>
-                    for
-                      target <- ZIO
-                                  .fromOption(agents.find(_.metadata.name == handoff.targetAgent))
-                                  .orElseFail(AgentError.NotFound(handoff.targetAgent))
-                      nextInput = renderHandoffInput(input, result, handoff)
-                      continued <- loop(nextInput, target, context, agents, depth + 1, maxDepth)
-                    yield continued
+        next   <- result.handoff match
+                    case None          => ZIO.succeed(result)
+                    case Some(handoff) =>
+                      for
+                        target    <- ZIO
+                                       .fromOption(agents.find(_.metadata.name == handoff.targetAgent))
+                                       .orElseFail(AgentError.NotFound(handoff.targetAgent))
+                        nextInput  = renderHandoffInput(input, result, handoff)
+                        continued <- loop(nextInput, target, context, agents, depth + 1, maxDepth)
+                      yield continued
       yield next
 
   private def renderHandoffInput(input: String, result: AgentResult, handoff: AgentHandoff): String =
@@ -150,7 +150,7 @@ object AgentCoordinator:
 
   private def defaultAggregation(results: Chunk[AgentResult]): AgentResult =
     val combinedContent = results.map(result => s"[${result.agent}] ${result.content}").mkString("\n")
-    val mergedMetadata = results.foldLeft(Map.empty[String, String])(_ ++ _.metadata)
+    val mergedMetadata  = results.foldLeft(Map.empty[String, String])(_ ++ _.metadata)
 
     AgentResult(
       agent = "parallel-coordinator",

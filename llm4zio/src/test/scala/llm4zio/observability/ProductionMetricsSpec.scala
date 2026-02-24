@@ -9,14 +9,30 @@ object ProductionMetricsSpec extends ZIOSpecDefault:
   def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("ProductionMetrics")(
     test("collects counters, percentiles, and provider health") {
       for
-        metrics <- MetricsCollector.inMemory()
-        labels = RequestLabels(provider = "openai", model = "gpt-4o", agent = Some("cobolAnalyzer"))
-        _ <- metrics.markRequestStarted(labels)
-        _ <- metrics.recordCompleted(RequestMetrics(labels, Some(TokenUsage(100, 40, 140)), latencyMs = 100, success = true))
-        _ <- metrics.markRequestStarted(labels)
-        _ <- metrics.recordCompleted(RequestMetrics(labels, Some(TokenUsage(120, 60, 180)), latencyMs = 350, success = true))
-        _ <- metrics.markRequestStarted(labels)
-        _ <- metrics.recordCompleted(RequestMetrics(labels, None, latencyMs = 900, success = false, errorType = Some("Timeout")))
+        metrics  <- MetricsCollector.inMemory()
+        labels    = RequestLabels(provider = "openai", model = "gpt-4o", agent = Some("cobolAnalyzer"))
+        _        <- metrics.markRequestStarted(labels)
+        _        <- metrics.recordCompleted(RequestMetrics(
+                      labels,
+                      Some(TokenUsage(100, 40, 140)),
+                      latencyMs = 100,
+                      success = true,
+                    ))
+        _        <- metrics.markRequestStarted(labels)
+        _        <- metrics.recordCompleted(RequestMetrics(
+                      labels,
+                      Some(TokenUsage(120, 60, 180)),
+                      latencyMs = 350,
+                      success = true,
+                    ))
+        _        <- metrics.markRequestStarted(labels)
+        _        <- metrics.recordCompleted(RequestMetrics(
+                      labels,
+                      None,
+                      latencyMs = 900,
+                      success = false,
+                      errorType = Some("Timeout"),
+                    ))
         snapshot <- metrics.snapshot
       yield assertTrue(
         snapshot.totalRequests == 3,
@@ -32,17 +48,17 @@ object ProductionMetricsSpec extends ZIOSpecDefault:
     },
     test("estimates cost using pricing table") {
       for
-        metrics <- MetricsCollector.inMemory()
-        labels = RequestLabels(provider = "anthropic", model = "claude")
-        _ <- metrics.markRequestStarted(labels)
-        _ <- metrics.recordCompleted(
-               RequestMetrics(
-                 labels = labels,
-                 tokenUsage = Some(TokenUsage(prompt = 1000, completion = 1000, total = 2000)),
-                 latencyMs = 100,
-                 success = true,
-               )
-             )
+        metrics  <- MetricsCollector.inMemory()
+        labels    = RequestLabels(provider = "anthropic", model = "claude")
+        _        <- metrics.markRequestStarted(labels)
+        _        <- metrics.recordCompleted(
+                      RequestMetrics(
+                        labels = labels,
+                        tokenUsage = Some(TokenUsage(prompt = 1000, completion = 1000, total = 2000)),
+                        latencyMs = 100,
+                        success = true,
+                      )
+                    )
         snapshot <- metrics.snapshot
       yield assertTrue(
         snapshot.estimatedCostUsd > 0.0,
@@ -51,10 +67,11 @@ object ProductionMetricsSpec extends ZIOSpecDefault:
     },
     test("dashboard snapshot exposes aggregated fields") {
       for
-        metrics <- MetricsCollector.inMemory()
-        labels = RequestLabels(provider = "lmstudio", model = "qwen")
-        _ <- metrics.markRequestStarted(labels)
-        _ <- metrics.recordCompleted(RequestMetrics(labels, Some(TokenUsage(50, 25, 75)), latencyMs = 50, success = true))
+        metrics   <- MetricsCollector.inMemory()
+        labels     = RequestLabels(provider = "lmstudio", model = "qwen")
+        _         <- metrics.markRequestStarted(labels)
+        _         <-
+          metrics.recordCompleted(RequestMetrics(labels, Some(TokenUsage(50, 25, 75)), latencyMs = 50, success = true))
         dashboard <- metrics.dashboardSnapshot
       yield assertTrue(
         dashboard.totalRequests == 1,

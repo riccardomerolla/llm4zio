@@ -38,10 +38,14 @@ case class LlmResponse(
 
 /** Streaming chunk from LLM provider
   *
-  * @param delta Text delta (incremental content)
-  * @param finishReason Reason for completion: "stop", "length", "tool_calls", "content_filter", etc.
-  * @param usage Token usage (typically only in final chunk)
-  * @param metadata Provider-specific metadata (model, latency, etc.)
+  * @param delta
+  *   Text delta (incremental content)
+  * @param finishReason
+  *   Reason for completion: "stop", "length", "tool_calls", "content_filter", etc.
+  * @param usage
+  *   Token usage (typically only in final chunk)
+  * @param metadata
+  *   Provider-specific metadata (model, latency, etc.)
   */
 case class LlmChunk(
   delta: String,
@@ -52,10 +56,14 @@ case class LlmChunk(
 
 /** Streaming progress metrics
   *
-  * @param tokensProcessed Total tokens processed so far
-  * @param tokensPerSecond Current throughput
-  * @param elapsedMs Time elapsed since start
-  * @param estimatedRemainingMs Estimated time remaining (if known)
+  * @param tokensProcessed
+  *   Total tokens processed so far
+  * @param tokensPerSecond
+  *   Current throughput
+  * @param elapsedMs
+  *   Time elapsed since start
+  * @param estimatedRemainingMs
+  *   Estimated time remaining (if known)
   */
 case class StreamProgress(
   tokensProcessed: Int,

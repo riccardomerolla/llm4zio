@@ -5,7 +5,7 @@ import zio.json.*
 import zio.stream.ZStream
 
 import llm4zio.core.*
-import llm4zio.tools.{AnyTool, JsonSchema}
+import llm4zio.tools.{ AnyTool, JsonSchema }
 
 object GeminiApiProvider:
   def make(config: LlmConfig, httpClient: HttpClient): LlmService =
@@ -20,7 +20,7 @@ object GeminiApiProvider:
             delta = response.content,
             finishReason = Some("stop"),
             usage = response.usage,
-            metadata = response.metadata
+            metadata = response.metadata,
           )
         }
 
@@ -37,7 +37,7 @@ object GeminiApiProvider:
             delta = response.content,
             finishReason = Some("stop"),
             usage = response.usage,
-            metadata = response.metadata
+            metadata = response.metadata,
           )
         }
 
@@ -48,8 +48,9 @@ object GeminiApiProvider:
       override def executeStructured[A: JsonCodec](prompt: String, schema: JsonSchema): IO[LlmError, A] =
         for
           response <- executeRequest(prompt, Some(schema))
-          parsed   <- ZIO.fromEither(response.content.fromJson[A])
-                        .mapError(err => LlmError.ParseError(s"Failed to parse structured response: $err", response.content))
+          parsed   <-
+            ZIO.fromEither(response.content.fromJson[A])
+              .mapError(err => LlmError.ParseError(s"Failed to parse structured response: $err", response.content))
         yield parsed
 
       override def isAvailable: UIO[Boolean] =
@@ -113,7 +114,7 @@ object GeminiApiProvider:
         ZIO.fromOption(text)
           .orElseFail(LlmError.ParseError(
             "Gemini API response missing candidates[0].content.parts[0].text",
-            response.toJson
+            response.toJson,
           ))
 
       private def extractUsage(response: GeminiGenerateContentResponse): Option[TokenUsage] =
@@ -121,7 +122,7 @@ object GeminiApiProvider:
           TokenUsage(
             prompt = meta.promptTokenCount.getOrElse(0),
             completion = meta.candidatesTokenCount.getOrElse(0),
-            total = meta.totalTokenCount.getOrElse(0)
+            total = meta.totalTokenCount.getOrElse(0),
           )
         }
 

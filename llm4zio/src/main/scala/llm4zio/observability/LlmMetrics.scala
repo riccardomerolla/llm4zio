@@ -35,7 +35,7 @@ case class MetricsSnapshot(
   errors: Long,
 ):
   def avgLatencyMs: Double =
-    if (requests == 0) 0.0 else totalLatencyMs.toDouble / requests
+    if requests == 0 then 0.0 else totalLatencyMs.toDouble / requests
 
 object LlmMetrics:
   val layer: ULayer[LlmMetrics] = ZLayer.fromZIO {

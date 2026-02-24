@@ -15,9 +15,9 @@ enum MemoryError derives JsonCodec:
 object MemoryError:
   extension (error: MemoryError)
     def message: String = error match
-      case MemoryError.NotFound(threadId)       => s"Thread not found: $threadId"
-      case MemoryError.PersistenceFailed(msg)   => msg
-      case MemoryError.InvalidInput(msg)        => msg
+      case MemoryError.NotFound(threadId)     => s"Thread not found: $threadId"
+      case MemoryError.PersistenceFailed(msg) => msg
+      case MemoryError.InvalidInput(msg)      => msg
 
 case class MemoryEntry(
   threadId: String,
@@ -77,16 +77,16 @@ final case class InMemoryMemory(
   override def appendAll(threadId: String, messages: Iterable[Message]): IO[MemoryError, Unit] =
     for
       now <- Clock.instant
-      _ <- state.update { current =>
-             val existing = current.getOrElse(threadId, ConversationThread(threadId = threadId))
-             current.updated(
-               threadId,
-               existing.copy(
-                 history = existing.history ++ messages,
-                 updatedAt = now,
-               ),
-             )
-           }
+      _   <- state.update { current =>
+               val existing = current.getOrElse(threadId, ConversationThread(threadId = threadId))
+               current.updated(
+                 threadId,
+                 existing.copy(
+                   history = existing.history ++ messages,
+                   updatedAt = now,
+                 ),
+               )
+             }
     yield ()
 
   override def read(threadId: String): IO[MemoryError, Vector[Message]] =
@@ -102,26 +102,26 @@ final case class InMemoryMemory(
       source <- state.get.flatMap { current =>
                   ZIO.fromOption(current.get(fromThreadId)).orElseFail(MemoryError.NotFound(fromThreadId))
                 }
-      now <- Clock.instant
-      forked = source.copy(
-                 threadId = newThreadId,
-                 parentThreadId = Some(fromThreadId),
-                 updatedAt = now,
-               )
-      _ <- upsert(forked)
+      now    <- Clock.instant
+      forked  = source.copy(
+                  threadId = newThreadId,
+                  parentThreadId = Some(fromThreadId),
+                  updatedAt = now,
+                )
+      _      <- upsert(forked)
     yield forked
 
   override def search(query: String, limit: Int = 20): IO[MemoryError, List[MemoryEntry]] =
     if query.trim.isEmpty then ZIO.fail(MemoryError.InvalidInput("Search query must be non-empty"))
     else
       for
-        threads <- state.get
+        threads   <- state.get
         normalized = query.toLowerCase
-        entries = threads.values.toList.flatMap { thread =>
-                    thread.history
-                      .filter(message => message.content.toLowerCase.contains(normalized))
-                      .map(message => MemoryEntry(thread.threadId, message, thread.updatedAt))
-                  }
+        entries    = threads.values.toList.flatMap { thread =>
+                       thread.history
+                         .filter(message => message.content.toLowerCase.contains(normalized))
+                         .map(message => MemoryEntry(thread.threadId, message, thread.updatedAt))
+                     }
       yield entries.sortBy(_.recordedAt).reverse.take(limit)
 
 trait PersistentMemoryStore:
@@ -139,13 +139,13 @@ final case class PersistentMemory(
 
   override def appendAll(threadId: String, messages: Iterable[Message]): IO[MemoryError, Unit] =
     for
-      _ <- inMemory.appendAll(threadId, messages)
-      now <- Clock.instant
-      _ <- ZIO.foreachDiscard(messages) { message =>
-             store.appendEntry(MemoryEntry(threadId, message, now))
-           }
+      _      <- inMemory.appendAll(threadId, messages)
+      now    <- Clock.instant
+      _      <- ZIO.foreachDiscard(messages) { message =>
+                  store.appendEntry(MemoryEntry(threadId, message, now))
+                }
       thread <- loadFromFastMemoryOrStore(threadId)
-      _ <- store.upsertThread(thread)
+      _      <- store.upsertThread(thread)
     yield ()
 
   override def read(threadId: String): IO[MemoryError, Vector[Message]] =
@@ -164,12 +164,12 @@ final case class PersistentMemory(
   override def fork(fromThreadId: String, newThreadId: String): IO[MemoryError, ConversationThread] =
     for
       forked <- inMemory.fork(fromThreadId, newThreadId)
-      _ <- store.upsertThread(forked)
+      _      <- store.upsertThread(forked)
     yield forked
 
   override def search(query: String, limit: Int = 20): IO[MemoryError, List[MemoryEntry]] =
     inMemory.search(query, limit).catchAll {
-      case MemoryError.NotFound(_) => store.searchEntries(query, limit)
+      case MemoryError.NotFound(_)       => store.searchEntries(query, limit)
       case MemoryError.InvalidInput(msg) => ZIO.fail(MemoryError.InvalidInput(msg))
       case _                             => store.searchEntries(query, limit)
     }

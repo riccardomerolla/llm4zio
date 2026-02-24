@@ -49,5 +49,5 @@ object LlmMetricsSpec extends ZIOSpecDefault:
         _        <- metrics.recordError
         snapshot <- metrics.snapshot
       } yield assertTrue(snapshot.errors == 2)
-    }.provide(LlmMetrics.layer)
+    }.provide(LlmMetrics.layer),
   )

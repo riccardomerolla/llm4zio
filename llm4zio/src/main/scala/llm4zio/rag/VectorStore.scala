@@ -12,8 +12,8 @@ object VectorStoreError:
   extension (error: VectorStoreError)
     def message: String = error match
       case VectorStoreError.InvalidInput(msg) => msg
-      case VectorStoreError.NotFound(id)       => s"Vector document not found: $id"
-      case VectorStoreError.BackendError(msg)  => msg
+      case VectorStoreError.NotFound(id)      => s"Vector document not found: $id"
+      case VectorStoreError.BackendError(msg) => msg
 
 case class VectorDocument(
   id: String,
@@ -66,16 +66,17 @@ final case class InMemoryVectorStore(
     metadataFilter: Map[String, String] = Map.empty,
   ): IO[VectorStoreError, List[VectorSearchResult]] =
     for
-      _ <- validateEmbedding(queryEmbedding)
-      _ <- ZIO.fail(VectorStoreError.InvalidInput("topK must be > 0")).when(topK <= 0)
+      _       <- validateEmbedding(queryEmbedding)
+      _       <- ZIO.fail(VectorStoreError.InvalidInput("topK must be > 0")).when(topK <= 0)
       current <- state.get
       filtered = current.values.filter(matchesFilter(_, metadataFilter)).toList
-      scored <- ZIO.foreach(filtered) { document =>
-                  if document.embedding.length != queryEmbedding.length then
-                    ZIO.fail(VectorStoreError.InvalidInput(s"Embedding dimension mismatch for document '${document.id}'"))
-                  else
-                    ZIO.succeed(VectorSearchResult(document, similarity(queryEmbedding, document.embedding)))
-                }
+      scored  <-
+        ZIO.foreach(filtered) { document =>
+          if document.embedding.length != queryEmbedding.length then
+            ZIO.fail(VectorStoreError.InvalidInput(s"Embedding dimension mismatch for document '${document.id}'"))
+          else
+            ZIO.succeed(VectorSearchResult(document, similarity(queryEmbedding, document.embedding)))
+        }
     yield scored.sortBy(result => -result.score).take(topK)
 
   override def delete(id: String): IO[VectorStoreError, Unit] =
@@ -107,7 +108,8 @@ final case class InMemoryVectorStore(
 
 private def validateDocument(document: VectorDocument): IO[VectorStoreError, Unit] =
   if document.id.trim.isEmpty then ZIO.fail(VectorStoreError.InvalidInput("Document id must be non-empty"))
-  else if document.content.trim.isEmpty then ZIO.fail(VectorStoreError.InvalidInput(s"Document '${document.id}' content must be non-empty"))
+  else if document.content.trim.isEmpty then
+    ZIO.fail(VectorStoreError.InvalidInput(s"Document '${document.id}' content must be non-empty"))
   else validateEmbedding(document.embedding)
 
 private def validateEmbedding(embedding: Vector[Double]): IO[VectorStoreError, Unit] =

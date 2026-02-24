@@ -1,7 +1,7 @@
 package llm4zio.tools
 
 import java.nio.charset.StandardCharsets
-import java.nio.file.{FileSystems, Files, Path, StandardOpenOption}
+import java.nio.file.{ FileSystems, Files, Path, StandardOpenOption }
 
 import scala.jdk.CollectionConverters.*
 
@@ -31,30 +31,30 @@ object BuiltInTools:
       name = "read_file",
       description = "Read a file from the workspace",
       parameters = Json.Obj(
-        "type" -> Json.Str("object"),
+        "type"       -> Json.Str("object"),
         "properties" -> Json.Obj(
-          "path" -> Json.Obj("type" -> Json.Str("string")),
+          "path" -> Json.Obj("type" -> Json.Str("string"))
         ),
-        "required" -> Json.Arr(Chunk(Json.Str("path"))),
+        "required"   -> Json.Arr(Chunk(Json.Str("path"))),
       ),
       tags = Set("file", "read", "workspace"),
       sandbox = ToolSandbox.WorkspaceReadOnly,
       execute = args =>
         for
-          path <- requireString(args, "path")
+          path     <- requireString(args, "path")
           resolved <- resolveInWorkspace(config, path)
-          _ <- ensureRegularFile(resolved)
-          size <- ZIO
-                    .attemptBlocking(Files.size(resolved))
-                    .mapError(err => ToolExecutionError.ExecutionFailed(s"Failed to get file size: ${err.getMessage}"))
-          _ <- ZIO.fail(ToolExecutionError.InvalidParameters(s"File too large: $size bytes"))
-                 .when(size > config.maxReadBytes)
-          content <- ZIO
-                       .attemptBlocking(Files.readString(resolved, StandardCharsets.UTF_8))
-                       .mapError(err => ToolExecutionError.ExecutionFailed(s"Failed to read file: ${err.getMessage}"))
+          _        <- ensureRegularFile(resolved)
+          size     <- ZIO
+                        .attemptBlocking(Files.size(resolved))
+                        .mapError(err => ToolExecutionError.ExecutionFailed(s"Failed to get file size: ${err.getMessage}"))
+          _        <- ZIO.fail(ToolExecutionError.InvalidParameters(s"File too large: $size bytes"))
+                        .when(size > config.maxReadBytes)
+          content  <- ZIO
+                        .attemptBlocking(Files.readString(resolved, StandardCharsets.UTF_8))
+                        .mapError(err => ToolExecutionError.ExecutionFailed(s"Failed to read file: ${err.getMessage}"))
         yield Json.Obj(
-          "path" -> Json.Str(config.root.relativize(resolved).toString),
-          "bytes" -> Json.Num(BigDecimal(size)),
+          "path"    -> Json.Str(config.root.relativize(resolved).toString),
+          "bytes"   -> Json.Num(BigDecimal(size)),
           "content" -> Json.Str(content),
         ),
     )
@@ -64,31 +64,31 @@ object BuiltInTools:
       name = "write_file",
       description = "Write text content to a file in the workspace",
       parameters = Json.Obj(
-        "type" -> Json.Str("object"),
+        "type"       -> Json.Str("object"),
         "properties" -> Json.Obj(
-          "path" -> Json.Obj("type" -> Json.Str("string")),
+          "path"    -> Json.Obj("type" -> Json.Str("string")),
           "content" -> Json.Obj("type" -> Json.Str("string")),
-          "append" -> Json.Obj("type" -> Json.Str("boolean")),
+          "append"  -> Json.Obj("type" -> Json.Str("boolean")),
         ),
-        "required" -> Json.Arr(Chunk(Json.Str("path"), Json.Str("content"))),
+        "required"   -> Json.Arr(Chunk(Json.Str("path"), Json.Str("content"))),
       ),
       tags = Set("file", "write", "workspace"),
       sandbox = ToolSandbox.WorkspaceReadWrite,
       execute = args =>
         for
-          path <- requireString(args, "path")
-          content <- requireString(args, "content")
-          append = requireBooleanOrDefault(args, "append", default = false)
-          bytes = content.getBytes(StandardCharsets.UTF_8)
-          _ <- ZIO.fail(ToolExecutionError.InvalidParameters(s"Content too large: ${bytes.length} bytes"))
-                 .when(bytes.length > config.maxWriteBytes)
+          path     <- requireString(args, "path")
+          content  <- requireString(args, "content")
+          append    = requireBooleanOrDefault(args, "append", default = false)
+          bytes     = content.getBytes(StandardCharsets.UTF_8)
+          _        <- ZIO.fail(ToolExecutionError.InvalidParameters(s"Content too large: ${bytes.length} bytes"))
+                        .when(bytes.length > config.maxWriteBytes)
           resolved <- resolveInWorkspace(config, path)
-          _ <- ensureParentDirectory(resolved)
-          _ <- writeBytes(resolved, bytes, append)
+          _        <- ensureParentDirectory(resolved)
+          _        <- writeBytes(resolved, bytes, append)
         yield Json.Obj(
-          "path" -> Json.Str(config.root.relativize(resolved).toString),
+          "path"          -> Json.Str(config.root.relativize(resolved).toString),
           "bytes_written" -> Json.Num(BigDecimal(bytes.length)),
-          "appended" -> Json.Bool(append),
+          "appended"      -> Json.Bool(append),
         ),
     )
 
@@ -97,10 +97,10 @@ object BuiltInTools:
       name = "discover_files",
       description = "Discover files in a workspace subtree",
       parameters = Json.Obj(
-        "type" -> Json.Str("object"),
+        "type"       -> Json.Str("object"),
         "properties" -> Json.Obj(
-          "path" -> Json.Obj("type" -> Json.Str("string")),
-          "glob" -> Json.Obj("type" -> Json.Str("string")),
+          "path"        -> Json.Obj("type" -> Json.Str("string")),
+          "glob"        -> Json.Obj("type" -> Json.Str("string")),
           "max_results" -> Json.Obj("type" -> Json.Str("integer")),
         ),
       ),
@@ -109,24 +109,26 @@ object BuiltInTools:
       execute = args =>
         for
           relativePath <- optionalString(args, "path").map(_.getOrElse("."))
-          glob <- optionalString(args, "glob").map(_.getOrElse("**/*"))
-          maxResults <- optionalInt(args, "max_results").map(_.getOrElse(100))
-          root <- resolveInWorkspace(config, relativePath)
-          matcher = FileSystems.getDefault.getPathMatcher(s"glob:$glob")
-          paths <- ZIO
-                     .attemptBlocking {
-                       val stream = Files.walk(root)
-                       try
-                         stream
-                           .iterator()
-                           .asScala
-                           .filter(Files.isRegularFile(_))
-                           .filter(path => matcher.matches(root.relativize(path)))
-                           .take(maxResults)
-                           .toList
-                       finally stream.close()
-                     }
-                     .mapError(err => ToolExecutionError.ExecutionFailed(s"Failed to discover files: ${err.getMessage}"))
+          glob         <- optionalString(args, "glob").map(_.getOrElse("**/*"))
+          maxResults   <- optionalInt(args, "max_results").map(_.getOrElse(100))
+          root         <- resolveInWorkspace(config, relativePath)
+          matcher       = FileSystems.getDefault.getPathMatcher(s"glob:$glob")
+          paths        <- ZIO
+                            .attemptBlocking {
+                              val stream = Files.walk(root)
+                              try
+                                stream
+                                  .iterator()
+                                  .asScala
+                                  .filter(Files.isRegularFile(_))
+                                  .filter(path => matcher.matches(root.relativize(path)))
+                                  .take(maxResults)
+                                  .toList
+                              finally stream.close()
+                            }
+                            .mapError(err =>
+                              ToolExecutionError.ExecutionFailed(s"Failed to discover files: ${err.getMessage}")
+                            )
         yield Json.Obj(
           "count" -> Json.Num(BigDecimal(paths.length)),
           "files" -> Json.Arr(Chunk.fromIterable(paths.map(path => Json.Str(config.root.relativize(path).toString)))),
@@ -138,28 +140,28 @@ object BuiltInTools:
       name = "search_in_files",
       description = "Search text in workspace files",
       parameters = Json.Obj(
-        "type" -> Json.Str("object"),
+        "type"       -> Json.Str("object"),
         "properties" -> Json.Obj(
-          "query" -> Json.Obj("type" -> Json.Str("string")),
-          "path" -> Json.Obj("type" -> Json.Str("string")),
+          "query"       -> Json.Obj("type" -> Json.Str("string")),
+          "path"        -> Json.Obj("type" -> Json.Str("string")),
           "max_results" -> Json.Obj("type" -> Json.Str("integer")),
         ),
-        "required" -> Json.Arr(Chunk(Json.Str("query"))),
+        "required"   -> Json.Arr(Chunk(Json.Str("query"))),
       ),
       tags = Set("search", "grep", "analysis"),
       sandbox = ToolSandbox.WorkspaceReadOnly,
       execute = args =>
         for
-          query <- requireString(args, "query")
+          query        <- requireString(args, "query")
           relativePath <- optionalString(args, "path").map(_.getOrElse("."))
-          maxResults <- optionalInt(args, "max_results").map(_.getOrElse(50))
-          root <- resolveInWorkspace(config, relativePath)
-          results <- ZIO
-                       .attemptBlocking(searchOccurrences(config, root, query, maxResults))
-                       .mapError(err => ToolExecutionError.ExecutionFailed(s"Search failed: ${err.getMessage}"))
+          maxResults   <- optionalInt(args, "max_results").map(_.getOrElse(50))
+          root         <- resolveInWorkspace(config, relativePath)
+          results      <- ZIO
+                            .attemptBlocking(searchOccurrences(config, root, query, maxResults))
+                            .mapError(err => ToolExecutionError.ExecutionFailed(s"Search failed: ${err.getMessage}"))
         yield Json.Obj(
-          "query" -> Json.Str(query),
-          "count" -> Json.Num(BigDecimal(results.length)),
+          "query"   -> Json.Str(query),
+          "count"   -> Json.Num(BigDecimal(results.length)),
           "matches" -> Json.Arr(Chunk.fromIterable(results)),
         ),
     )
@@ -169,29 +171,30 @@ object BuiltInTools:
       name = "validate_cobol_syntax",
       description = "Run lightweight COBOL syntax validation",
       parameters = Json.Obj(
-        "type" -> Json.Str("object"),
+        "type"       -> Json.Str("object"),
         "properties" -> Json.Obj(
-          "path" -> Json.Obj("type" -> Json.Str("string")),
+          "path" -> Json.Obj("type" -> Json.Str("string"))
         ),
-        "required" -> Json.Arr(Chunk(Json.Str("path"))),
+        "required"   -> Json.Arr(Chunk(Json.Str("path"))),
       ),
       tags = Set("validation", "cobol"),
       sandbox = ToolSandbox.WorkspaceReadOnly,
       execute = args =>
         for
-          path <- requireString(args, "path")
+          path     <- requireString(args, "path")
           resolved <- resolveInWorkspace(config, path)
-          _ <- ensureRegularFile(resolved)
-          content <- ZIO
-                       .attemptBlocking(Files.readString(resolved, StandardCharsets.UTF_8))
-                       .mapError(err => ToolExecutionError.ExecutionFailed(s"Failed to read COBOL file: ${err.getMessage}"))
-          missing = List(
-            "IDENTIFICATION DIVISION" -> content.toUpperCase.contains("IDENTIFICATION DIVISION"),
-            "PROGRAM-ID" -> content.toUpperCase.contains("PROGRAM-ID"),
-          ).collect { case (token, false) => token }
+          _        <- ensureRegularFile(resolved)
+          content  <-
+            ZIO
+              .attemptBlocking(Files.readString(resolved, StandardCharsets.UTF_8))
+              .mapError(err => ToolExecutionError.ExecutionFailed(s"Failed to read COBOL file: ${err.getMessage}"))
+          missing   = List(
+                        "IDENTIFICATION DIVISION" -> content.toUpperCase.contains("IDENTIFICATION DIVISION"),
+                        "PROGRAM-ID"              -> content.toUpperCase.contains("PROGRAM-ID"),
+                      ).collect { case (token, false) => token }
         yield Json.Obj(
-          "path" -> Json.Str(config.root.relativize(resolved).toString),
-          "valid" -> Json.Bool(missing.isEmpty),
+          "path"   -> Json.Str(config.root.relativize(resolved).toString),
+          "valid"  -> Json.Bool(missing.isEmpty),
           "errors" -> Json.Arr(Chunk.fromIterable(missing.map(token => Json.Str(s"Missing required section: $token")))),
         ),
     )
@@ -201,23 +204,23 @@ object BuiltInTools:
       name = "validate_java_compilation",
       description = "Compile Java sources with javac and report diagnostics",
       parameters = Json.Obj(
-        "type" -> Json.Str("object"),
+        "type"       -> Json.Str("object"),
         "properties" -> Json.Obj(
-          "path" -> Json.Obj("type" -> Json.Str("string")),
+          "path" -> Json.Obj("type" -> Json.Str("string"))
         ),
-        "required" -> Json.Arr(Chunk(Json.Str("path"))),
+        "required"   -> Json.Arr(Chunk(Json.Str("path"))),
       ),
       tags = Set("validation", "java", "compile"),
       sandbox = ToolSandbox.WorkspaceReadOnly,
       execute = args =>
         for
-          path <- requireString(args, "path")
+          path     <- requireString(args, "path")
           resolved <- resolveInWorkspace(config, path)
-          sources <- collectJavaSources(resolved)
-          _ <- ZIO
-                 .fail(ToolExecutionError.InvalidParameters("No .java files found for validation"))
-                 .when(sources.isEmpty)
-          output <- runJavac(config.root, sources)
+          sources  <- collectJavaSources(resolved)
+          _        <- ZIO
+                        .fail(ToolExecutionError.InvalidParameters("No .java files found for validation"))
+                        .when(sources.isEmpty)
+          output   <- runJavac(config.root, sources)
         yield output,
     )
 
@@ -241,23 +244,28 @@ object BuiltInTools:
 
   private def runJavac(root: Path, sources: List[Path]): IO[ToolExecutionError, Json] =
     for
-      tempDir <- ZIO
-                   .attemptBlocking(Files.createTempDirectory("llm4zio-javac-"))
-                   .mapError(err => ToolExecutionError.ExecutionFailed(s"Failed to create temporary directory: ${err.getMessage}"))
+      tempDir       <- ZIO
+                         .attemptBlocking(Files.createTempDirectory("llm4zio-javac-"))
+                         .mapError(err =>
+                           ToolExecutionError.ExecutionFailed(s"Failed to create temporary directory: ${err.getMessage}")
+                         )
       compileResult <- ZIO
                          .attemptBlocking {
-                           val command = List("javac", "-d", tempDir.toString) ++ sources.map(_.toString)
-                           val process = new ProcessBuilder(command*).directory(root.toFile).redirectErrorStream(true).start()
-                           val output = new String(process.getInputStream.readAllBytes(), StandardCharsets.UTF_8)
+                           val command  = List("javac", "-d", tempDir.toString) ++ sources.map(_.toString)
+                           val process  =
+                             new ProcessBuilder(command*).directory(root.toFile).redirectErrorStream(true).start()
+                           val output   = new String(process.getInputStream.readAllBytes(), StandardCharsets.UTF_8)
                            val exitCode = process.waitFor()
                            (exitCode, output)
                          }
-                         .mapError(err => ToolExecutionError.ExecutionFailed(s"javac execution failed: ${err.getMessage}"))
-      _ <- deleteDirectory(tempDir)
+                         .mapError(err =>
+                           ToolExecutionError.ExecutionFailed(s"javac execution failed: ${err.getMessage}")
+                         )
+      _             <- deleteDirectory(tempDir)
     yield Json.Obj(
-      "valid" -> Json.Bool(compileResult._1 == 0),
-      "exit_code" -> Json.Num(BigDecimal(compileResult._1)),
-      "output" -> Json.Str(compileResult._2),
+      "valid"         -> Json.Bool(compileResult._1 == 0),
+      "exit_code"     -> Json.Num(BigDecimal(compileResult._1)),
+      "output"        -> Json.Str(compileResult._2),
       "files_checked" -> Json.Num(BigDecimal(sources.length)),
     )
 
@@ -268,7 +276,7 @@ object BuiltInTools:
     maxResults: Int,
   ): List[Json] =
     val normalizedQuery = query.toLowerCase
-    val stream = Files.walk(root)
+    val stream          = Files.walk(root)
     try
       stream
         .iterator()
@@ -283,8 +291,8 @@ object BuiltInTools:
             lines.zipWithIndex.collect {
               case (line, idx) if line.toLowerCase.contains(normalizedQuery) =>
                 Json.Obj(
-                  "path" -> Json.Str(config.root.relativize(path).toString),
-                  "line" -> Json.Num(BigDecimal(idx + 1)),
+                  "path"    -> Json.Str(config.root.relativize(path).toString),
+                  "line"    -> Json.Num(BigDecimal(idx + 1)),
                   "content" -> Json.Str(line.trim),
                 )
             }
@@ -309,7 +317,9 @@ object BuiltInTools:
       case Some(parent) =>
         ZIO
           .attemptBlocking(Files.createDirectories(parent))
-          .mapError(err => ToolExecutionError.ExecutionFailed(s"Failed to create parent directories: ${err.getMessage}"))
+          .mapError(err =>
+            ToolExecutionError.ExecutionFailed(s"Failed to create parent directories: ${err.getMessage}")
+          )
           .unit
 
   private def deleteDirectory(path: Path): UIO[Unit] =
@@ -348,10 +358,10 @@ object BuiltInTools:
               .attempt(value.intValueExact())
               .map(valueAsInt => Some(valueAsInt))
               .mapError(_ => ToolExecutionError.InvalidParameters(s"Field out of range for Int: $field"))
-          case Some(Json.Num(_))                         =>
+          case Some(Json.Num(_))                                              =>
             ZIO.fail(ToolExecutionError.InvalidParameters(s"Invalid integer field: $field"))
-          case Some(_)                                   => ZIO.fail(ToolExecutionError.InvalidParameters(s"Invalid integer field: $field"))
-          case None                                      => ZIO.succeed(None)
+          case Some(_)                                                        => ZIO.fail(ToolExecutionError.InvalidParameters(s"Invalid integer field: $field"))
+          case None                                                           => ZIO.succeed(None)
       case _                => ZIO.fail(ToolExecutionError.InvalidParameters("Arguments must be an object"))
 
   private def requireBooleanOrDefault(args: Json, field: String, default: Boolean): Boolean =
@@ -368,24 +378,30 @@ object BuiltInTools:
     for
       resolved <- ZIO
                     .attempt(normalizedRoot.resolve(rawPath).normalize())
-                    .mapError(err => ToolExecutionError.InvalidParameters(s"Invalid path '$rawPath': ${err.getMessage}"))
-      _ <- ZIO
-             .fail(ToolExecutionError.SandboxViolation(s"Path escapes workspace root: $rawPath"))
-             .when(!resolved.startsWith(normalizedRoot))
+                    .mapError(err =>
+                      ToolExecutionError.InvalidParameters(s"Invalid path '$rawPath': ${err.getMessage}")
+                    )
+      _        <- ZIO
+                    .fail(ToolExecutionError.SandboxViolation(s"Path escapes workspace root: $rawPath"))
+                    .when(!resolved.startsWith(normalizedRoot))
     yield resolved
 
   private def ensureRegularFile(path: Path): IO[ToolExecutionError, Unit] =
     for
-      exists <- ZIO
-                  .attemptBlocking(Files.exists(path))
-                  .mapError(err => ToolExecutionError.ExecutionFailed(s"Failed to check file existence: ${err.getMessage}"))
-      _ <- ZIO
-             .fail(ToolExecutionError.InvalidParameters(s"File not found: $path"))
-             .when(!exists)
+      exists        <- ZIO
+                         .attemptBlocking(Files.exists(path))
+                         .mapError(err =>
+                           ToolExecutionError.ExecutionFailed(s"Failed to check file existence: ${err.getMessage}")
+                         )
+      _             <- ZIO
+                         .fail(ToolExecutionError.InvalidParameters(s"File not found: $path"))
+                         .when(!exists)
       isRegularFile <- ZIO
                          .attemptBlocking(Files.isRegularFile(path))
-                         .mapError(err => ToolExecutionError.ExecutionFailed(s"Failed to check file type: ${err.getMessage}"))
-      _ <- ZIO
-             .fail(ToolExecutionError.InvalidParameters(s"Not a regular file: $path"))
-             .when(!isRegularFile)
+                         .mapError(err =>
+                           ToolExecutionError.ExecutionFailed(s"Failed to check file type: ${err.getMessage}")
+                         )
+      _             <- ZIO
+                         .fail(ToolExecutionError.InvalidParameters(s"Not a regular file: $path"))
+                         .when(!isRegularFile)
     yield ()

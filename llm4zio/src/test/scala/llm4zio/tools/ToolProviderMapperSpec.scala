@@ -11,9 +11,9 @@ object ToolProviderMapperSpec extends ZIOSpecDefault:
     name = "lookup_customer",
     description = "Lookup customer by id",
     parameters = Json.Obj(
-      "type" -> Json.Str("object"),
+      "type"       -> Json.Str("object"),
       "properties" -> Json.Obj("customerId" -> Json.Obj("type" -> Json.Str("string"))),
-      "required" -> Json.Arr(Chunk(Json.Str("customerId"))),
+      "required"   -> Json.Arr(Chunk(Json.Str("customerId"))),
     ),
     execute = _ => ZIO.succeed(Json.Obj("status" -> Json.Str("ok"))),
   )
@@ -25,7 +25,7 @@ object ToolProviderMapperSpec extends ZIOSpecDefault:
         case Json.Arr(values) =>
           val first = values.head.asInstanceOf[Json.Obj].fields.toMap
           assertTrue(
-            first.get("type").contains(Json.Str("function")),
+            first.get("type").contains(Json.Str("function"))
           )
         case _                => assertTrue(false)
     },

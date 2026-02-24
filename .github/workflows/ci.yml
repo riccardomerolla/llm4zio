@@ -35,8 +35,8 @@ jobs:
 
       - name: Check formatting and run tests
         run: |
-          sbt check
-          sbt test
+          sbt "project llm4zio" check
+          sbt "project llm4zio" test
 
   publish:
     name: Publish to Maven Central
@@ -68,7 +68,7 @@ jobs:
           passphrase: ${{ secrets.PGP_PASSPHRASE }}
 
       - name: Publish llm4zio to Maven Central
-        run: sbt --batch --no-colors "llm4zio/publishSigned" "sonatypeCentralRelease"
+        run: sbt --batch --no-colors "project llm4zio" ci-release 
         env:
           PGP_PASSPHRASE: ${{ secrets.PGP_PASSPHRASE }}
           PGP_SECRET: ${{ secrets.PGP_SECRET }}

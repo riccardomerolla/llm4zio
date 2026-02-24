@@ -44,7 +44,9 @@ object ToolRegistry:
 
       override def select(prompt: String, limit: Int = 8): UIO[List[Tool]] =
         val words = prompt.toLowerCase.split("[^a-z0-9_]+").toSet.filter(_.nonEmpty)
-        list.map(_.map(tool => (tool, score(tool, words))).filter(_._2 > 0).sortBy((_, toolScore) => -toolScore).take(limit).map(_._1))
+        list.map(_.map(tool => (tool, score(tool, words))).filter(
+          _._2 > 0
+        ).sortBy((_, toolScore) => -toolScore).take(limit).map(_._1))
 
       override def validate(call: ToolCall): IO[LlmError, (Tool, Json)] =
         for
@@ -57,14 +59,14 @@ object ToolRegistry:
 
       override def execute(call: ToolCall): IO[LlmError, ToolResult] =
         for
-          validated <- validate(call)
+          validated   <- validate(call)
           (tool, args) = validated
-          result <- tool.execute(args)
-                      .mapBoth(
-                        err => LlmError.ToolError(tool.name, err.message),
-                        identity,
-                      )
-                      .either
+          result      <- tool.execute(args)
+                           .mapBoth(
+                             err => LlmError.ToolError(tool.name, err.message),
+                             identity,
+                           )
+                           .either
         yield ToolResult(
           toolCallId = call.id,
           result = result.left.map(toMessage),
@@ -82,8 +84,8 @@ object ToolRegistry:
     if words.isEmpty then 0
     else
       words.foldLeft(0) { (acc, word) =>
-        val nameBoost = if tool.name.toLowerCase.contains(word) then 5 else 0
-        val tagBoost = if tool.tags.exists(_.toLowerCase == word) then 4 else 0
+        val nameBoost        = if tool.name.toLowerCase.contains(word) then 5 else 0
+        val tagBoost         = if tool.tags.exists(_.toLowerCase == word) then 4 else 0
         val descriptionBoost = if tool.description.toLowerCase.contains(word) then 2 else 0
         acc + nameBoost + tagBoost + descriptionBoost
       }
@@ -102,9 +104,9 @@ object ToolSchemaValidator:
   def validate(schema: JsonSchema, args: Json): IO[ToolExecutionError, Unit] =
     for
       schemaFields <- asObject(schema, "Tool schema must be a JSON object")
-      argFields <- asObject(args, "Tool arguments must be a JSON object")
-      _ <- validateRequired(schemaFields, argFields)
-      _ <- validateTypes(schemaFields, argFields)
+      argFields    <- asObject(args, "Tool arguments must be a JSON object")
+      _            <- validateRequired(schemaFields, argFields)
+      _            <- validateTypes(schemaFields, argFields)
     yield ()
 
   private def validateRequired(
@@ -117,7 +119,10 @@ object ToolSchemaValidator:
 
     val missing = required.diff(argFields.keySet)
     if missing.isEmpty then ZIO.unit
-    else ZIO.fail(ToolExecutionError.InvalidParameters(s"Missing required parameters: ${missing.toList.sorted.mkString(", ")}"))
+    else
+      ZIO.fail(
+        ToolExecutionError.InvalidParameters(s"Missing required parameters: ${missing.toList.sorted.mkString(", ")}")
+      )
 
   private def validateTypes(
     schemaFields: Map[String, Json],
@@ -127,13 +132,14 @@ object ToolSchemaValidator:
       case Some(Json.Obj(fields)) => fields.toMap
       case _                      => Map.empty[String, Json]
 
-    ZIO.foreachDiscard(argFields.toList) { case (name, value) =>
-      properties.get(name) match
-        case None         => ZIO.unit
-        case Some(schema) =>
-          val expectedType = extractType(schema)
-          if isOfType(value, expectedType) then ZIO.unit
-          else ZIO.fail(ToolExecutionError.InvalidParameters(s"Invalid type for '$name'. Expected: $expectedType"))
+    ZIO.foreachDiscard(argFields.toList) {
+      case (name, value) =>
+        properties.get(name) match
+          case None         => ZIO.unit
+          case Some(schema) =>
+            val expectedType = extractType(schema)
+            if isOfType(value, expectedType) then ZIO.unit
+            else ZIO.fail(ToolExecutionError.InvalidParameters(s"Invalid type for '$name'. Expected: $expectedType"))
     }
 
   private def asObject(json: Json, message: String): IO[ToolExecutionError, Map[String, Json]] =
@@ -154,12 +160,12 @@ object ToolSchemaValidator:
       case "string"  => value.isInstanceOf[Json.Str]
       case "boolean" => value.isInstanceOf[Json.Bool]
       case "integer" => value match
-        case Json.Num(number) => number.stripTrailingZeros.scale() <= 0
-        case _                => false
+          case Json.Num(number) => number.stripTrailingZeros.scale() <= 0
+          case _                => false
       case "number"  => value.isInstanceOf[Json.Num]
       case "array"   => value.isInstanceOf[Json.Arr]
       case "object"  => value.isInstanceOf[Json.Obj]
-      case _          => true
+      case _         => true
 
 object ToolProviderMapper:
   def toProviderFormat(provider: LlmProvider, tools: List[Tool]): Json =
@@ -172,11 +178,11 @@ object ToolProviderMapper:
   def toOpenAI(tools: List[Tool]): Json =
     Json.Arr(Chunk.fromIterable(tools.map { tool =>
       Json.Obj(
-        "type" -> Json.Str("function"),
+        "type"     -> Json.Str("function"),
         "function" -> Json.Obj(
-          "name" -> Json.Str(tool.name),
+          "name"        -> Json.Str(tool.name),
           "description" -> Json.Str(tool.description),
-          "parameters" -> tool.parameters,
+          "parameters"  -> tool.parameters,
         ),
       )
     }))
@@ -184,8 +190,8 @@ object ToolProviderMapper:
   def toAnthropic(tools: List[Tool]): Json =
     Json.Arr(Chunk.fromIterable(tools.map { tool =>
       Json.Obj(
-        "name" -> Json.Str(tool.name),
-        "description" -> Json.Str(tool.description),
+        "name"         -> Json.Str(tool.name),
+        "description"  -> Json.Str(tool.description),
         "input_schema" -> tool.parameters,
       )
     }))
@@ -194,11 +200,11 @@ object ToolProviderMapper:
     Json.Obj(
       "functionDeclarations" -> Json.Arr(Chunk.fromIterable(tools.map { tool =>
         Json.Obj(
-          "name" -> Json.Str(tool.name),
+          "name"        -> Json.Str(tool.name),
           "description" -> Json.Str(tool.description),
-          "parameters" -> tool.parameters,
+          "parameters"  -> tool.parameters,
         )
-      })),
+      }))
     )
 
 case class ToolLoopConfig(maxIterations: Int = 8)
@@ -225,21 +231,21 @@ object ToolCallingExecutor:
       ZIO.fail(LlmError.InvalidRequestError(s"Tool call loop reached max iterations (${config.maxIterations})"))
     else
       for
-        response <- llmService.executeWithTools(prompt, tools)
+        response      <- llmService.executeWithTools(prompt, tools)
         finalResponse <-
           if response.toolCalls.isEmpty then
             ZIO.succeed(
               LlmResponse(
                 content = response.content.getOrElse(""),
                 metadata = Map(
-                  "finish_reason" -> response.finishReason,
+                  "finish_reason"   -> response.finishReason,
                   "tool_iterations" -> iteration.toString,
                 ),
               )
             )
           else
             for
-              results <- registry.executeAll(response.toolCalls)
+              results   <- registry.executeAll(response.toolCalls)
               nextPrompt = buildFollowUpPrompt(prompt, response, results)
               continued <- loop(
                              prompt = nextPrompt,

@@ -10,18 +10,26 @@ import llm4zio.tools.{ AnyTool, JsonSchema }
 
 object TracingLoggingSpec extends ZIOSpecDefault:
 
-  private final class SuccessService extends LlmService:
+  final private class SuccessService extends LlmService:
     override def execute(prompt: String): IO[LlmError, LlmResponse] =
-      ZIO.succeed(LlmResponse("ok", usage = Some(TokenUsage(10, 5, 15)), metadata = Map("provider" -> "openai", "model" -> "gpt-4o")))
+      ZIO.succeed(LlmResponse(
+        "ok",
+        usage = Some(TokenUsage(10, 5, 15)),
+        metadata = Map("provider" -> "openai", "model" -> "gpt-4o"),
+      ))
 
     override def executeStream(prompt: String): zio.stream.Stream[LlmError, LlmChunk] =
-      ZStream.fromZIO(execute(prompt).map(r => LlmChunk(r.content, finishReason = Some("stop"), usage = r.usage, metadata = r.metadata)))
+      ZStream.fromZIO(execute(prompt).map(r =>
+        LlmChunk(r.content, finishReason = Some("stop"), usage = r.usage, metadata = r.metadata)
+      ))
 
     override def executeWithHistory(messages: List[Message]): IO[LlmError, LlmResponse] =
       execute(messages.map(_.content).mkString("\n"))
 
     override def executeStreamWithHistory(messages: List[Message]): zio.stream.Stream[LlmError, LlmChunk] =
-      ZStream.fromZIO(executeWithHistory(messages).map(r => LlmChunk(r.content, finishReason = Some("stop"), usage = r.usage, metadata = r.metadata)))
+      ZStream.fromZIO(executeWithHistory(messages).map(r =>
+        LlmChunk(r.content, finishReason = Some("stop"), usage = r.usage, metadata = r.metadata)
+      ))
 
     override def executeWithTools(prompt: String, tools: List[AnyTool]): IO[LlmError, ToolCallResponse] =
       ZIO.succeed(ToolCallResponse(content = Some("ok"), toolCalls = Nil, finishReason = "stop"))
@@ -31,7 +39,7 @@ object TracingLoggingSpec extends ZIOSpecDefault:
 
     override def isAvailable: UIO[Boolean] = ZIO.succeed(true)
 
-  private final class FailingService extends LlmService:
+  final private class FailingService extends LlmService:
     override def execute(prompt: String): IO[LlmError, LlmResponse] =
       ZIO.fail(LlmError.TimeoutError(2.seconds))
 
@@ -57,12 +65,12 @@ object TracingLoggingSpec extends ZIOSpecDefault:
       ZIO.scoped {
         for
           tracing <- TracingService.inMemory
-          _ <- tracing.withCorrelationId(Some("corr-test")) {
-                 tracing.inSpan("outer") {
-                   tracing.inSpan("inner")(ZIO.succeed("done"))
-                 }
-               }
-          spans <- tracing.recordedSpans
+          _       <- tracing.withCorrelationId(Some("corr-test")) {
+                       tracing.inSpan("outer") {
+                         tracing.inSpan("inner")(ZIO.succeed("done"))
+                       }
+                     }
+          spans   <- tracing.recordedSpans
         yield assertTrue(
           spans.length == 2,
           spans.forall(_.correlationId == "corr-test"),
@@ -73,16 +81,16 @@ object TracingLoggingSpec extends ZIOSpecDefault:
     test("logs and metrics include same correlation id for success path") {
       ZIO.scoped {
         for
-          tracing <- TracingService.inMemory
-          metrics <- MetricsCollector.inMemory()
-          sinkPair <- StructuredLogSink.inMemory
+          tracing         <- TracingService.inMemory
+          metrics         <- MetricsCollector.inMemory()
+          sinkPair        <- StructuredLogSink.inMemory
           (sink, readLogs) = sinkPair
-          observed = ProductionLogging.observed(new SuccessService, tracing, metrics, sink)
-          _ <- observed.execute("SELECT CUSTOMER")
-          logs <- readLogs
-          spans <- tracing.recordedSpans
-          snapshot <- metrics.snapshot
-          correlationIds = logs.map(_.correlationId).toSet
+          observed         = ProductionLogging.observed(new SuccessService, tracing, metrics, sink)
+          _               <- observed.execute("SELECT CUSTOMER")
+          logs            <- readLogs
+          spans           <- tracing.recordedSpans
+          snapshot        <- metrics.snapshot
+          correlationIds   = logs.map(_.correlationId).toSet
         yield assertTrue(
           logs.nonEmpty,
           spans.nonEmpty,
@@ -96,14 +104,14 @@ object TracingLoggingSpec extends ZIOSpecDefault:
     test("logs errors and marks failures in metrics") {
       ZIO.scoped {
         for
-          tracing <- TracingService.inMemory
-          metrics <- MetricsCollector.inMemory()
-          sinkPair <- StructuredLogSink.inMemory
+          tracing         <- TracingService.inMemory
+          metrics         <- MetricsCollector.inMemory()
+          sinkPair        <- StructuredLogSink.inMemory
           (sink, readLogs) = sinkPair
-          observed = ProductionLogging.observed(new FailingService, tracing, metrics, sink)
-          _ <- observed.execute("FAIL").either
-          logs <- readLogs
-          snapshot <- metrics.snapshot
+          observed         = ProductionLogging.observed(new FailingService, tracing, metrics, sink)
+          _               <- observed.execute("FAIL").either
+          logs            <- readLogs
+          snapshot        <- metrics.snapshot
         yield assertTrue(
           logs.exists(_.level == StructuredLogLevel.Error),
           snapshot.totalRequests == 1,

@@ -47,14 +47,15 @@ object HttpClient:
         timeout: Duration,
       ): ZIO[Any, LlmError, String] =
         for
-          urlObj       <- ZIO
-                            .fromEither(URL.decode(url).left.map(err => LlmError.InvalidRequestError(s"Invalid URL '$url': $err")))
+          urlObj       <-
+            ZIO
+              .fromEither(URL.decode(url).left.map(err => LlmError.InvalidRequestError(s"Invalid URL '$url': $err")))
           request       = addHeaders(Request.get(urlObj), headers)
           response     <- execute(request)
                             .timeoutFail(LlmError.TimeoutError(timeout))(timeout)
                             .mapError {
-                              case llm: LlmError  => llm
-                              case e: Throwable =>
+                              case llm: LlmError => llm
+                              case e: Throwable  =>
                                 LlmError.ProviderError(s"Provider unavailable: $url", Some(e))
                             }
           responseBody <- response.body.asString.mapError(err => LlmError.ParseError(err.getMessage, ""))
@@ -78,8 +79,9 @@ object HttpClient:
         timeout: Duration,
       ): ZIO[Any, LlmError, String] =
         for
-          urlObj       <- ZIO
-                            .fromEither(URL.decode(url).left.map(err => LlmError.InvalidRequestError(s"Invalid URL '$url': $err")))
+          urlObj       <-
+            ZIO
+              .fromEither(URL.decode(url).left.map(err => LlmError.InvalidRequestError(s"Invalid URL '$url': $err")))
           request       = addHeaders(
                             Request.post(urlObj, Body.fromString(body))
                               .addHeader(Header.ContentType(MediaType.application.json)),
@@ -88,8 +90,8 @@ object HttpClient:
           response     <- execute(request)
                             .timeoutFail(LlmError.TimeoutError(timeout))(timeout)
                             .mapError {
-                              case llm: LlmError  => llm
-                              case e: Throwable =>
+                              case llm: LlmError => llm
+                              case e: Throwable  =>
                                 LlmError.ProviderError(s"Provider unavailable: $url", Some(e))
                             }
           responseBody <- response.body.asString.mapError(err => LlmError.ParseError(err.getMessage, ""))

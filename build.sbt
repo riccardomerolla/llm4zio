@@ -76,8 +76,6 @@ val rootDeps = zioCoreDeps ++ Seq(
 
 inThisBuild(List(
   organization := "io.github.riccardomerolla",
-  sonatypeCredentialHost := "central.sonatype.com",
-  sonatypeRepository := "https://central.sonatype.com/api/v1/publisher",
   homepage := Some(url("https://github.com/riccardomerolla/llm4zio")),
   licenses := Seq(
     "MIT" -> url("https://opensource.org/license/mit")

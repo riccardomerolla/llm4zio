@@ -13,7 +13,8 @@ object OpenAIProviderSpec extends ZIOSpecDefault:
       if shouldSucceed then ZIO.succeed("""{"data":[]}""")
       else ZIO.fail(LlmError.ProviderError("HTTP GET failed", None))
 
-    override def postJson(url: String, body: String, headers: Map[String, String], timeout: Duration): IO[LlmError, String] =
+    override def postJson(url: String, body: String, headers: Map[String, String], timeout: Duration)
+      : IO[LlmError, String] =
       if shouldSucceed then
         val response = ChatCompletionResponse(
           id = Some("chatcmpl-123"),
@@ -21,15 +22,15 @@ object OpenAIProviderSpec extends ZIOSpecDefault:
             ChatChoice(
               index = 0,
               message = Some(ChatMessage(role = "assistant", content = "Test response")),
-              finish_reason = Some("stop")
+              finish_reason = Some("stop"),
             )
           ),
           usage = Some(OpenAITokenUsage(
             prompt_tokens = Some(10),
             completion_tokens = Some(5),
-            total_tokens = Some(15)
+            total_tokens = Some(15),
           )),
-          model = Some("gpt-4")
+          model = Some("gpt-4"),
         )
         ZIO.succeed(response.toJson)
       else
@@ -37,68 +38,68 @@ object OpenAIProviderSpec extends ZIOSpecDefault:
 
   def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("OpenAIProvider")(
     test("execute should return response") {
-      val config = LlmConfig(
+      val config     = LlmConfig(
         provider = LlmProvider.OpenAI,
         model = "gpt-4",
         baseUrl = Some("https://api.openai.com/v1"),
-        apiKey = Some("test-api-key")
+        apiKey = Some("test-api-key"),
       )
       val httpClient = new MockHttpClient()
-      val provider = OpenAIProvider.make(config, httpClient)
+      val provider   = OpenAIProvider.make(config, httpClient)
 
       for {
         response <- provider.execute("test prompt")
       } yield assertTrue(
         response.content == "Test response",
         response.usage.isDefined,
-        response.usage.get.total == 15
+        response.usage.get.total == 15,
       )
     },
     test("execute should fail with missing apiKey") {
-      val config = LlmConfig(
+      val config     = LlmConfig(
         provider = LlmProvider.OpenAI,
         model = "gpt-4",
         baseUrl = Some("https://api.openai.com/v1"),
-        apiKey = None
+        apiKey = None,
       )
       val httpClient = new MockHttpClient()
-      val provider = OpenAIProvider.make(config, httpClient)
+      val provider   = OpenAIProvider.make(config, httpClient)
 
       for {
         result <- provider.execute("test").exit
       } yield assertTrue(result.isFailure)
     },
     test("execute should fail with missing baseUrl") {
-      val config = LlmConfig(
+      val config     = LlmConfig(
         provider = LlmProvider.OpenAI,
         model = "gpt-4",
         baseUrl = None,
-        apiKey = Some("test-api-key")
+        apiKey = Some("test-api-key"),
       )
       val httpClient = new MockHttpClient()
-      val provider = OpenAIProvider.make(config, httpClient)
+      val provider   = OpenAIProvider.make(config, httpClient)
 
       for {
         result <- provider.execute("test").exit
       } yield assertTrue(result.isFailure)
     },
     test("executeWithHistory should convert messages") {
-      val config = LlmConfig(
+      val config     = LlmConfig(
         provider = LlmProvider.OpenAI,
         model = "gpt-4",
         baseUrl = Some("https://api.openai.com/v1"),
-        apiKey = Some("test-api-key")
+        apiKey = Some("test-api-key"),
       )
       val httpClient = new MockHttpClient()
-      val provider = OpenAIProvider.make(config, httpClient)
+      val provider   = OpenAIProvider.make(config, httpClient)
 
       val messages = List(
         Message(MessageRole.User, "Hello"),
-        Message(MessageRole.Assistant, "Hi there")
+        Message(MessageRole.Assistant, "Hi there"),
       )
 
       for {
         response <- provider.executeWithHistory(messages)
       } yield assertTrue(response.content == "Test response")
-    }
+    },
   )

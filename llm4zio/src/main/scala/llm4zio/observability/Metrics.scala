@@ -67,26 +67,26 @@ trait MetricsCollector:
 
 object MetricsCollector:
   val defaultPricing: Map[String, LlmPricing] = Map(
-    "openai" -> LlmPricing(inputUsdPer1k = 0.005, outputUsdPer1k = 0.015),
-    "anthropic" -> LlmPricing(inputUsdPer1k = 0.003, outputUsdPer1k = 0.015),
+    "openai"     -> LlmPricing(inputUsdPer1k = 0.005, outputUsdPer1k = 0.015),
+    "anthropic"  -> LlmPricing(inputUsdPer1k = 0.003, outputUsdPer1k = 0.015),
     "gemini-api" -> LlmPricing(inputUsdPer1k = 0.00075, outputUsdPer1k = 0.003),
     "gemini-cli" -> LlmPricing(inputUsdPer1k = 0.0, outputUsdPer1k = 0.0),
-    "lmstudio" -> LlmPricing(inputUsdPer1k = 0.0, outputUsdPer1k = 0.0),
-    "ollama" -> LlmPricing(inputUsdPer1k = 0.0, outputUsdPer1k = 0.0),
-    "unknown" -> LlmPricing(inputUsdPer1k = 0.0, outputUsdPer1k = 0.0),
+    "lmstudio"   -> LlmPricing(inputUsdPer1k = 0.0, outputUsdPer1k = 0.0),
+    "ollama"     -> LlmPricing(inputUsdPer1k = 0.0, outputUsdPer1k = 0.0),
+    "unknown"    -> LlmPricing(inputUsdPer1k = 0.0, outputUsdPer1k = 0.0),
   )
 
   def inMemory(pricing: Map[String, LlmPricing] = defaultPricing): UIO[MetricsCollector] =
     for
-      activeRequests <- Ref.make(0L)
-      requests <- Ref.make(0L)
-      errors <- Ref.make(0L)
-      promptTokens <- Ref.make(0L)
+      activeRequests   <- Ref.make(0L)
+      requests         <- Ref.make(0L)
+      errors           <- Ref.make(0L)
+      promptTokens     <- Ref.make(0L)
       completionTokens <- Ref.make(0L)
-      latencies <- Ref.make(List.empty[Long])
-      costs <- Ref.make(0.0)
-      providerRows <- Ref.make(List.empty[RequestMetrics])
-      byAgent <- Ref.make(Map.empty[String, Long])
+      latencies        <- Ref.make(List.empty[Long])
+      costs            <- Ref.make(0.0)
+      providerRows     <- Ref.make(List.empty[RequestMetrics])
+      byAgent          <- Ref.make(Map.empty[String, Long])
     yield InMemoryMetricsCollector(
       activeRequests,
       requests,
@@ -106,7 +106,7 @@ object MetricsCollector:
     (usage.prompt.toDouble / 1000.0 * pricing.inputUsdPer1k) +
       (usage.completion.toDouble / 1000.0 * pricing.outputUsdPer1k)
 
-private final case class InMemoryMetricsCollector(
+final private case class InMemoryMetricsCollector(
   activeRequests: Ref[Long],
   requests: Ref[Long],
   errors: Ref[Long],
@@ -129,9 +129,9 @@ private final case class InMemoryMetricsCollector(
 
   override def recordCompleted(metrics: RequestMetrics): UIO[Unit] =
     val providerPricing = pricing.getOrElse(metrics.labels.provider, pricing.getOrElse("unknown", LlmPricing(0.0, 0.0)))
-    val resolvedCost = metrics.tokenUsage match
+    val resolvedCost    = metrics.tokenUsage match
       case Some(usage) if metrics.estimatedCostUsd <= 0.0 => MetricsCollector.estimateCost(usage, providerPricing)
-      case _                                               => metrics.estimatedCostUsd
+      case _                                              => metrics.estimatedCostUsd
 
     val normalized = metrics.copy(estimatedCostUsd = resolvedCost)
 
@@ -146,18 +146,18 @@ private final case class InMemoryMetricsCollector(
 
   override def snapshot: UIO[ObservabilitySnapshot] =
     for
-      active <- activeRequests.get
-      reqs <- requests.get
-      errs <- errors.get
-      prompt <- promptTokens.get
-      completion <- completionTokens.get
+      active        <- activeRequests.get
+      reqs          <- requests.get
+      errs          <- errors.get
+      prompt        <- promptTokens.get
+      completion    <- completionTokens.get
       latencyValues <- latencies.get
-      totalCost <- costs.get
-      rows <- providerRows.get
-      byAgentCount <- byAgent.get
-      p50 = percentile(latencyValues, 50)
-      p95 = percentile(latencyValues, 95)
-      p99 = percentile(latencyValues, 99)
+      totalCost     <- costs.get
+      rows          <- providerRows.get
+      byAgentCount  <- byAgent.get
+      p50            = percentile(latencyValues, 50)
+      p95            = percentile(latencyValues, 95)
+      p99            = percentile(latencyValues, 99)
       providerHealth = summarizeProviders(rows)
     yield ObservabilitySnapshot(
       totalRequests = reqs,
@@ -186,28 +186,29 @@ private final case class InMemoryMetricsCollector(
     }
 
   private def summarizeProviders(rows: List[RequestMetrics]): Map[String, ProviderHealth] =
-    rows.groupBy(_.labels.provider).map { case (provider, grouped) =>
-      val reqCount = grouped.length.toLong
-      val successCount = grouped.count(_.success).toDouble
-      val successRate = if reqCount == 0 then 0.0 else successCount / reqCount.toDouble
-      val latency = grouped.map(_.latencyMs)
-      val avgLatency = if latency.isEmpty then 0.0 else latency.sum.toDouble / latency.length.toDouble
-      val p95 = percentile(latency, 95)
-      val totalCost = grouped.map(_.estimatedCostUsd).sum
+    rows.groupBy(_.labels.provider).map {
+      case (provider, grouped) =>
+        val reqCount     = grouped.length.toLong
+        val successCount = grouped.count(_.success).toDouble
+        val successRate  = if reqCount == 0 then 0.0 else successCount / reqCount.toDouble
+        val latency      = grouped.map(_.latencyMs)
+        val avgLatency   = if latency.isEmpty then 0.0 else latency.sum.toDouble / latency.length.toDouble
+        val p95          = percentile(latency, 95)
+        val totalCost    = grouped.map(_.estimatedCostUsd).sum
 
-      provider -> ProviderHealth(
-        provider = provider,
-        requestCount = reqCount,
-        successRate = successRate,
-        avgLatencyMs = avgLatency,
-        p95LatencyMs = p95,
-        estimatedCostUsd = totalCost,
-      )
+        provider -> ProviderHealth(
+          provider = provider,
+          requestCount = reqCount,
+          successRate = successRate,
+          avgLatencyMs = avgLatency,
+          p95LatencyMs = p95,
+          estimatedCostUsd = totalCost,
+        )
     }
 
   private def percentile(values: List[Long], p: Int): Double =
     if values.isEmpty then 0.0
     else
       val sorted = values.sorted
-      val rank = (((p.toDouble / 100.0) * sorted.length.toDouble).ceil.toInt - 1).max(0).min(sorted.length - 1)
+      val rank   = (((p.toDouble / 100.0) * sorted.length.toDouble).ceil.toInt - 1).max(0).min(sorted.length - 1)
       sorted(rank).toDouble

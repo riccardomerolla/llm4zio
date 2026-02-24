@@ -9,7 +9,7 @@ import zio.json.*
 import zio.stream.ZStream
 
 import llm4zio.core.*
-import llm4zio.tools.{AnyTool, JsonSchema}
+import llm4zio.tools.{ AnyTool, JsonSchema }
 
 trait GeminiCliExecutor:
   def checkGeminiInstalled: IO[LlmError, Unit]
@@ -120,7 +120,7 @@ object GeminiCliProvider:
             delta = response.content,
             finishReason = Some("stop"),
             usage = response.usage,
-            metadata = response.metadata
+            metadata = response.metadata,
           )
         }
 
@@ -137,7 +137,7 @@ object GeminiCliProvider:
             delta = response.content,
             finishReason = Some("stop"),
             usage = response.usage,
-            metadata = response.metadata
+            metadata = response.metadata,
           )
         }
 
@@ -150,7 +150,9 @@ object GeminiCliProvider:
         for
           response <- execute(prompt)
           parsed   <- ZIO.fromEither(response.content.fromJson[A])
-                        .mapError(err => LlmError.ParseError(s"Failed to parse response as structured output: $err", response.content))
+                        .mapError(err =>
+                          LlmError.ParseError(s"Failed to parse response as structured output: $err", response.content)
+                        )
         yield parsed
 
       override def isAvailable: UIO[Boolean] =

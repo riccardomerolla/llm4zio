@@ -5,8 +5,8 @@ import zio.json.ast.Json
 
 /** Native LM Studio API v1 models
   *
-  * These models are for the LM Studio native API at /api/v1/chat
-  * (not the OpenAI-compatible endpoint at /v1/chat/completions)
+  * These models are for the LM Studio native API at /api/v1/chat (not the OpenAI-compatible endpoint at
+  * /v1/chat/completions)
   */
 
 case class LmStudioChatRequest(
@@ -115,7 +115,7 @@ case class LmStudioModel(
 ) derives JsonCodec
 
 case class LmStudioModelsResponse(
-  models: List[LmStudioModel],
+  models: List[LmStudioModel]
 ) derives JsonCodec
 
 case class LmStudioLoadModelRequest(

@@ -29,9 +29,12 @@ object StructuredLogSink:
       override def publish(event: StructuredLogEvent): UIO[Unit] =
         val renderedFields = event.fields.map { case (k, v) => s"$k=$v" }.mkString(" ")
         event.level match
-          case StructuredLogLevel.Debug => ZIO.logDebug(s"${event.message} correlation_id=${event.correlationId} $renderedFields")
-          case StructuredLogLevel.Info  => ZIO.logInfo(s"${event.message} correlation_id=${event.correlationId} $renderedFields")
-          case StructuredLogLevel.Error => ZIO.logError(s"${event.message} correlation_id=${event.correlationId} $renderedFields")
+          case StructuredLogLevel.Debug =>
+            ZIO.logDebug(s"${event.message} correlation_id=${event.correlationId} $renderedFields")
+          case StructuredLogLevel.Info  =>
+            ZIO.logInfo(s"${event.message} correlation_id=${event.correlationId} $renderedFields")
+          case StructuredLogLevel.Error =>
+            ZIO.logError(s"${event.message} correlation_id=${event.correlationId} $renderedFields")
 
   def inMemory: UIO[(StructuredLogSink, UIO[List[StructuredLogEvent]])] =
     Ref.make(List.empty[StructuredLogEvent]).map { ref =>
@@ -106,34 +109,34 @@ object ProductionLogging:
       override def executeWithTools(prompt: String, tools: List[AnyTool]): IO[LlmError, ToolCallResponse] =
         for
           correlationId <- tracing.correlationId
-          now <- Clock.instant
-          _ <- sink.publish(
-                 StructuredLogEvent(
-                   level = StructuredLogLevel.Info,
-                   message = "llm.executeWithTools.request",
-                   correlationId = correlationId,
-                   timestamp = now,
-                   fields = Map(
-                     "tool_count" -> tools.length.toString,
-                     "operation" -> "executeWithTools",
-                   ),
-                 )
-               )
-          response <- service.executeWithTools(prompt, tools)
-          completedAt <- Clock.instant
-          _ <- sink.publish(
-                 StructuredLogEvent(
-                   level = StructuredLogLevel.Info,
-                   message = "llm.executeWithTools.response",
-                   correlationId = correlationId,
-                   timestamp = completedAt,
-                   fields = Map(
-                     "tool_calls" -> response.toolCalls.length.toString,
-                     "finish_reason" -> response.finishReason,
-                     "operation" -> "executeWithTools",
-                   ),
-                 )
-               )
+          now           <- Clock.instant
+          _             <- sink.publish(
+                             StructuredLogEvent(
+                               level = StructuredLogLevel.Info,
+                               message = "llm.executeWithTools.request",
+                               correlationId = correlationId,
+                               timestamp = now,
+                               fields = Map(
+                                 "tool_count" -> tools.length.toString,
+                                 "operation"  -> "executeWithTools",
+                               ),
+                             )
+                           )
+          response      <- service.executeWithTools(prompt, tools)
+          completedAt   <- Clock.instant
+          _             <- sink.publish(
+                             StructuredLogEvent(
+                               level = StructuredLogLevel.Info,
+                               message = "llm.executeWithTools.response",
+                               correlationId = correlationId,
+                               timestamp = completedAt,
+                               fields = Map(
+                                 "tool_calls"    -> response.toolCalls.length.toString,
+                                 "finish_reason" -> response.finishReason,
+                                 "operation"     -> "executeWithTools",
+                               ),
+                             )
+                           )
         yield response
 
       override def executeStructured[A: JsonCodec](prompt: String, schema: JsonSchema): IO[LlmError, A] =
@@ -155,140 +158,149 @@ object ProductionLogging:
         tracing.withCorrelationId(None) {
           for
             correlationId <- tracing.correlationId
-            provider = providerHint.getOrElse("unknown")
-            model = modelHint.getOrElse("unknown")
-            labels = RequestLabels(provider = provider, model = model, agent = agent, runId = runId, workflowStep = step)
-            _ <- metrics.markRequestStarted(labels)
-            startedAt <- Clock.nanoTime
-            requestTime <- Clock.instant
-            _ <- sink.publish(
-                   StructuredLogEvent(
-                     level = StructuredLogLevel.Info,
-                     message = s"llm.$operation.request",
-                     correlationId = correlationId,
-                     timestamp = requestTime,
-                     fields = Map(
-                       "provider" -> provider,
-                       "model" -> model,
-                       "prompt_hash" -> TracingService.promptHash(prompt),
-                     ) ++ debugPayloadFields(prompt, None),
-                   )
-                 )
-            response <- tracing.inSpan(
-                          name = s"llm.$operation",
-                          attributes = TraceAttributes(
-                            provider = Some(provider),
-                            model = Some(model),
-                            promptHash = Some(TracingService.promptHash(prompt)),
-                            agentName = agent,
-                            runId = runId,
-                            workflowStep = step,
-                          ),
-                        )(executeEffect).either
-            endedAt <- Clock.nanoTime
-            latencyMs = ((endedAt - startedAt) / 1_000_000L).max(0L)
-            output <- response match
-                        case Right(success) =>
-                          val usage = success.usage
-                          val metric = RequestMetrics(
-                            labels = labels,
-                            tokenUsage = usage,
-                            latencyMs = latencyMs,
-                            success = true,
-                          )
-                          for
-                            _ <- metrics.recordCompleted(metric)
-                            completionAt <- Clock.instant
-                            _ <- sink.publish(
-                                   StructuredLogEvent(
-                                     level = StructuredLogLevel.Info,
-                                     message = s"llm.$operation.response",
-                                     correlationId = correlationId,
-                                     timestamp = completionAt,
-                                     fields = Map(
-                                       "provider" -> provider,
-                                       "model" -> model,
-                                       "latency_ms" -> latencyMs.toString,
-                                       "tokens_total" -> usage.map(_.total.toString).getOrElse("0"),
-                                       "success" -> "true",
-                                     ) ++ debugPayloadFields(prompt, Some(success.content)),
-                                   )
+            provider       = providerHint.getOrElse("unknown")
+            model          = modelHint.getOrElse("unknown")
+            labels         =
+              RequestLabels(provider = provider, model = model, agent = agent, runId = runId, workflowStep = step)
+            _             <- metrics.markRequestStarted(labels)
+            startedAt     <- Clock.nanoTime
+            requestTime   <- Clock.instant
+            _             <- sink.publish(
+                               StructuredLogEvent(
+                                 level = StructuredLogLevel.Info,
+                                 message = s"llm.$operation.request",
+                                 correlationId = correlationId,
+                                 timestamp = requestTime,
+                                 fields = Map(
+                                   "provider"    -> provider,
+                                   "model"       -> model,
+                                   "prompt_hash" -> TracingService.promptHash(prompt),
+                                 ) ++ debugPayloadFields(prompt, None),
+                               )
+                             )
+            response      <- tracing.inSpan(
+                               name = s"llm.$operation",
+                               attributes = TraceAttributes(
+                                 provider = Some(provider),
+                                 model = Some(model),
+                                 promptHash = Some(TracingService.promptHash(prompt)),
+                                 agentName = agent,
+                                 runId = runId,
+                                 workflowStep = step,
+                               ),
+                             )(executeEffect).either
+            endedAt       <- Clock.nanoTime
+            latencyMs      = ((endedAt - startedAt) / 1_000_000L).max(0L)
+            output        <- response match
+                               case Right(success) =>
+                                 val usage  = success.usage
+                                 val metric = RequestMetrics(
+                                   labels = labels,
+                                   tokenUsage = usage,
+                                   latencyMs = latencyMs,
+                                   success = true,
                                  )
-                            _ <- ZIO.foreachDiscard(langfuse) { client =>
-                                   client
-                                     .track(
-                                       LangfuseEvent(
-                                         correlationId = correlationId,
-                                         traceName = s"llm.$operation",
-                                         input = truncate(prompt),
-                                         output = Some(truncate(success.content)),
-                                         metadata = Map(
-                                           "provider" -> provider,
-                                           "model" -> model,
-                                           "latency_ms" -> latencyMs.toString,
-                                         ),
-                                         usage = usage.map(u => Map("prompt" -> u.prompt.toLong, "completion" -> u.completion.toLong, "total" -> u.total.toLong)),
-                                         success = true,
-                                       )
-                                     )
-                                     .ignore
-                                 }
-                          yield success
+                                 for
+                                   _            <- metrics.recordCompleted(metric)
+                                   completionAt <- Clock.instant
+                                   _            <- sink.publish(
+                                                     StructuredLogEvent(
+                                                       level = StructuredLogLevel.Info,
+                                                       message = s"llm.$operation.response",
+                                                       correlationId = correlationId,
+                                                       timestamp = completionAt,
+                                                       fields = Map(
+                                                         "provider"     -> provider,
+                                                         "model"        -> model,
+                                                         "latency_ms"   -> latencyMs.toString,
+                                                         "tokens_total" -> usage.map(_.total.toString).getOrElse("0"),
+                                                         "success"      -> "true",
+                                                       ) ++ debugPayloadFields(prompt, Some(success.content)),
+                                                     )
+                                                   )
+                                   _            <- ZIO.foreachDiscard(langfuse) { client =>
+                                                     client
+                                                       .track(
+                                                         LangfuseEvent(
+                                                           correlationId = correlationId,
+                                                           traceName = s"llm.$operation",
+                                                           input = truncate(prompt),
+                                                           output = Some(truncate(success.content)),
+                                                           metadata = Map(
+                                                             "provider"   -> provider,
+                                                             "model"      -> model,
+                                                             "latency_ms" -> latencyMs.toString,
+                                                           ),
+                                                           usage = usage.map(u =>
+                                                             Map(
+                                                               "prompt"     -> u.prompt.toLong,
+                                                               "completion" -> u.completion.toLong,
+                                                               "total"      -> u.total.toLong,
+                                                             )
+                                                           ),
+                                                           success = true,
+                                                         )
+                                                       )
+                                                       .ignore
+                                                   }
+                                 yield success
 
-                        case Left(error)    =>
-                          val metric = RequestMetrics(
-                            labels = labels,
-                            tokenUsage = None,
-                            latencyMs = latencyMs,
-                            success = false,
-                            errorType = Some(error.getClass.getSimpleName),
-                          )
-                          for
-                            _ <- metrics.recordCompleted(metric)
-                            failureAt <- Clock.instant
-                            _ <- sink.publish(
-                                   StructuredLogEvent(
-                                     level = StructuredLogLevel.Error,
-                                     message = s"llm.$operation.error",
-                                     correlationId = correlationId,
-                                     timestamp = failureAt,
-                                     fields = Map(
-                                       "provider" -> provider,
-                                       "model" -> model,
-                                       "latency_ms" -> latencyMs.toString,
-                                       "error" -> error.toString,
-                                       "success" -> "false",
-                                     ) ++ debugPayloadFields(prompt, None),
-                                   )
+                               case Left(error) =>
+                                 val metric = RequestMetrics(
+                                   labels = labels,
+                                   tokenUsage = None,
+                                   latencyMs = latencyMs,
+                                   success = false,
+                                   errorType = Some(error.getClass.getSimpleName),
                                  )
-                            _ <- ZIO.foreachDiscard(langfuse) { client =>
-                                   client
-                                     .track(
-                                       LangfuseEvent(
-                                         correlationId = correlationId,
-                                         traceName = s"llm.$operation",
-                                         input = truncate(prompt),
-                                         output = None,
-                                         metadata = Map(
-                                           "provider" -> provider,
-                                           "model" -> model,
-                                           "latency_ms" -> latencyMs.toString,
-                                           "error" -> error.toString,
-                                         ),
-                                         success = false,
-                                       )
-                                     )
-                                     .ignore
-                                 }
-                            failed <- ZIO.fail(error)
-                          yield failed
+                                 for
+                                   _         <- metrics.recordCompleted(metric)
+                                   failureAt <- Clock.instant
+                                   _         <- sink.publish(
+                                                  StructuredLogEvent(
+                                                    level = StructuredLogLevel.Error,
+                                                    message = s"llm.$operation.error",
+                                                    correlationId = correlationId,
+                                                    timestamp = failureAt,
+                                                    fields = Map(
+                                                      "provider"   -> provider,
+                                                      "model"      -> model,
+                                                      "latency_ms" -> latencyMs.toString,
+                                                      "error"      -> error.toString,
+                                                      "success"    -> "false",
+                                                    ) ++ debugPayloadFields(prompt, None),
+                                                  )
+                                                )
+                                   _         <- ZIO.foreachDiscard(langfuse) { client =>
+                                                  client
+                                                    .track(
+                                                      LangfuseEvent(
+                                                        correlationId = correlationId,
+                                                        traceName = s"llm.$operation",
+                                                        input = truncate(prompt),
+                                                        output = None,
+                                                        metadata = Map(
+                                                          "provider"   -> provider,
+                                                          "model"      -> model,
+                                                          "latency_ms" -> latencyMs.toString,
+                                                          "error"      -> error.toString,
+                                                        ),
+                                                        success = false,
+                                                      )
+                                                    )
+                                                    .ignore
+                                                }
+                                   failed    <- ZIO.fail(error)
+                                 yield failed
           yield output
         }
 
       private def debugPayloadFields(prompt: String, response: Option[String]): Map[String, String] =
         if !config.includePayloadsAtDebug then Map.empty
         else
-          Map("prompt" -> truncate(prompt)) ++ response.map(content => Map("response" -> truncate(content))).getOrElse(Map.empty)
+          Map(
+            "prompt" -> truncate(prompt)
+          ) ++ response.map(content => Map("response" -> truncate(content))).getOrElse(Map.empty)
 
       private def truncate(value: String): String =
         if value.length <= config.redactLargePayloadThreshold then value
