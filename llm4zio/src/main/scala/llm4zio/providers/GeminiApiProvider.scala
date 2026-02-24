@@ -42,8 +42,52 @@ object GeminiApiProvider:
         }
 
       override def executeWithTools(prompt: String, tools: List[AnyTool]): IO[LlmError, ToolCallResponse] =
-        // Gemini API doesn't support tool calling in this basic implementation
-        ZIO.fail(LlmError.InvalidRequestError("Gemini API provider does not yet support tool calling"))
+        for
+          baseUrl <- ZIO.fromOption(config.baseUrl).orElseFail(
+                       LlmError.ConfigError("Missing baseUrl for Gemini API provider")
+                     )
+          apiKey  <- ZIO.fromOption(config.apiKey).orElseFail(
+                       LlmError.AuthenticationError("Missing API key for Gemini API provider")
+                     )
+          geminiTools = List(GeminiToolDef(
+                          functionDeclarations = tools.map { t =>
+                            GeminiFunctionDeclaration(
+                              name = t.name,
+                              description = t.description,
+                              parameters = t.parameters,
+                            )
+                          }
+                        ))
+          request = GeminiGenerateContentRequestWithTools(
+                      contents = List(GeminiContent(parts = List(GeminiPart(text = prompt)))),
+                      tools = geminiTools,
+                    )
+          url     = s"${baseUrl.stripSuffix("/")}/v1beta/models/${config.model}:generateContent"
+          body   <- httpClient.postJson(
+                      url = url,
+                      body = request.toJson,
+                      headers = Map("x-goog-api-key" -> apiKey),
+                      timeout = config.timeout,
+                    )
+          parsed <- ZIO
+                      .fromEither(body.fromJson[GeminiGenerateContentResponseFull])
+                      .mapError(err => LlmError.ParseError(s"Failed to decode Gemini tool response: $err", body))
+        yield
+          val parts     = parsed.candidates.headOption.toList.flatMap(_.content.parts)
+          val fnCalls   = parts.flatMap(_.functionCall)
+          val textParts = parts.flatMap(_.text)
+          val finish    = parsed.candidates.headOption.flatMap(_.finishReason).getOrElse("STOP")
+          ToolCallResponse(
+            content = textParts.headOption,
+            toolCalls = fnCalls.zipWithIndex.map { case (fc, i) =>
+              ToolCall(
+                id = s"gemini_call_$i",
+                name = fc.name,
+                arguments = fc.args.toJson,
+              )
+            },
+            finishReason = finish,
+          )
 
       override def executeStructured[A: JsonCodec](prompt: String, schema: JsonSchema): IO[LlmError, A] =
         for
