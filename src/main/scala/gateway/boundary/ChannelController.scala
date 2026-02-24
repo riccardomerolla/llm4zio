@@ -11,7 +11,7 @@ import zio.json.*
 import _root_.config.entity.GatewayConfig
 import db.{ ConfigRepository, PersistenceError }
 import gateway.control.*
-import shared.web.{ ChannelCardData, ChannelView }
+import shared.web.{ ChannelCardData, ChannelView, HtmlViews }
 
 trait ChannelController:
   def routes: Routes[Any, Response]
@@ -34,9 +34,7 @@ final case class ChannelControllerLive(
 
   override val routes: Routes[Any, Response] = Routes(
     Method.GET / "channels"                     -> handler {
-      buildCards.flatMap(cards =>
-        Clock.currentTime(TimeUnit.MILLISECONDS).map(now => html(ChannelView.page(cards, now)))
-      )
+      ZIO.succeed(Response(status = Status.Found, headers = Headers(Header.Location(URL.decode("/settings/channels").getOrElse(URL.root)))))
     },
     Method.GET / "channels" / "cards"           -> handler {
       buildCards.flatMap(cards =>
@@ -45,6 +43,34 @@ final case class ChannelControllerLive(
     },
     Method.GET / "channels" / "summary"         -> handler {
       buildCards.map(cards => htmlFragment(ChannelView.summaryWidgetFragment(cards).render))
+    },
+    // Settings tab: channels view
+    Method.GET / "settings" / "channels"        -> handler {
+      buildChannelsTabPage(None)
+    },
+    Method.GET / "settings" / "channels" / "cards" -> handler {
+      for
+        cards    <- buildCards
+        now      <- Clock.currentTime(TimeUnit.MILLISECONDS)
+        settings <- getSettingsMap
+      yield htmlFragment(ChannelView.cardsFragment(cards, now, settings).render)
+    },
+    // Per-channel inline config form (HTMX fragment)
+    Method.GET / "settings" / "channels" / string("name") / "config-form" -> handler { (name: String, _: Request) =>
+      getSettingsMap.map(settings => htmlFragment(ChannelView.channelConfigForm(name, settings).render))
+    },
+    // Save per-channel config
+    Method.POST / "settings" / "channels" / string("name") -> handler { (name: String, req: Request) =>
+      ErrorHandling.fromPersistence {
+        for
+          form     <- parseForm(req)
+          prefixed  = name match
+                        case "telegram" => form  // telegram keys are already prefixed with "telegram."
+                        case _          => form.map { case (k, v) => s"channel.$name.$k" -> v }
+          _        <- configRepository.upsertSettings(prefixed)
+          settings <- getSettingsMap
+        yield htmlFragment(ChannelView.channelConfigForm(name, settings).render)
+      }
     },
     Method.GET / "api" / "channels"             -> handler {
       buildCards.map(cards => Response.json(cards.toJson))
@@ -109,6 +135,18 @@ final case class ChannelControllerLive(
                     }
                   }
     yield cards.sortBy(_.name)
+
+  private def getSettingsMap: UIO[Map[String, String]] =
+    configRepository.getAllSettings
+      .map(_.map(r => r.key -> r.value).toMap)
+      .catchAll(_ => ZIO.succeed(Map.empty))
+
+  private def buildChannelsTabPage(flash: Option[String]): UIO[Response] =
+    for
+      cards    <- buildCards
+      now      <- Clock.currentTime(TimeUnit.MILLISECONDS)
+      settings <- getSettingsMap
+    yield html(HtmlViews.settingsChannelsTab(cards, now, settings, flash))
 
   private def effectiveStatus(
     channelName: String,

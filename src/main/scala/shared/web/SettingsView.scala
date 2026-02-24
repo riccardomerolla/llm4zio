@@ -114,6 +114,61 @@ object SettingsView:
       ),
     )
 
+  def channelsTab(
+    cards: List[ChannelCardData],
+    nowMs: Long,
+    settings: Map[String, String],
+    flash: Option[String] = None,
+  ): String =
+    settingsShell("channels", "Settings — Channels")(
+      flash.map { msg =>
+        div(cls := "mb-6 rounded-md bg-green-500/10 border border-green-500/30 p-4")(
+          p(cls := "text-sm text-green-400")(msg)
+        )
+      },
+      div(cls := "flex items-center justify-between mb-4")(
+        p(cls := "text-sm text-gray-400")("Live channel status and configuration. Auto-refresh every 10 seconds."),
+        a(
+          href := "/api/channels/status",
+          cls  := "inline-flex items-center rounded-md bg-white/5 px-3 py-1.5 text-xs font-semibold text-gray-300 ring-1 ring-white/10 hover:bg-white/10",
+        )("Status API \u2197"),
+      ),
+      div(cls := "mb-6 rounded-lg bg-white/5 ring-1 ring-white/10 p-4")(
+        p(cls := "text-xs font-semibold uppercase tracking-wide text-gray-400 mb-3")("Add Channel"),
+        tag("form")(
+          cls                 := "flex items-center gap-2",
+          attr("hx-post")     := "/api/channels/add",
+          attr("hx-target")   := "#channels-cards",
+          attr("hx-swap")     := "innerHTML",
+          attr("hx-encoding") := "application/x-www-form-urlencoded",
+        )(
+          select(name := "name", cls := "rounded-md bg-gray-900 px-3 py-2 text-sm text-white ring-1 ring-white/10")(
+            option(value := "discord")("Discord"),
+            option(value := "slack")("Slack"),
+            option(value := "websocket")("WebSocket"),
+          ),
+          input(
+            `type`              := "password",
+            name                := "botToken",
+            attr("placeholder") := "Bot / App token",
+            cls                 := "flex-1 rounded-md bg-gray-900 px-3 py-2 text-sm text-white ring-1 ring-white/10",
+          ),
+          button(
+            `type` := "submit",
+            cls    := "rounded-md bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-500",
+          )("Add"),
+        ),
+      ),
+      div(
+        id                   := "channels-cards",
+        attr("hx-get")       := "/settings/channels/cards",
+        attr("hx-trigger")   := "every 10s",
+        attr("hx-swap")      := "innerHTML",
+        attr("hx-indicator") := "#channels-refresh-indicator",
+      )(ChannelView.cardsFragment(cards, nowMs, settings)),
+      div(id := "channels-refresh-indicator", cls := "htmx-indicator text-xs text-gray-500 mt-3")("Refreshing..."),
+    )
+
   def page(
     settings: Map[String, String],
     flash: Option[String] = None,

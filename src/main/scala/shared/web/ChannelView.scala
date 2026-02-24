@@ -102,7 +102,7 @@ object ChannelView:
       ),
     )
 
-  def cardsFragment(cards: List[ChannelCardData], nowMs: Long): Frag =
+  def cardsFragment(cards: List[ChannelCardData], nowMs: Long, settings: Map[String, String] = Map.empty): Frag =
     if cards.isEmpty then Components.emptyState("No channels registered.")
     else
       div(cls := "grid grid-cols-1 gap-4 lg:grid-cols-2")(
@@ -120,7 +120,7 @@ object ChannelView:
     div(cls := "rounded-lg bg-white/5 ring-1 ring-white/10 p-4")(
       div(cls := "flex items-center justify-between mb-3")(
         h3(cls := "text-sm font-semibold text-white")("Channels"),
-        a(href := "/channels", cls := "text-xs text-indigo-400 hover:text-indigo-300")("Open"),
+        a(href := "/settings/channels", cls := "text-xs text-indigo-400 hover:text-indigo-300")("Open"),
       ),
       div(cls := "grid grid-cols-2 gap-2 text-xs")(
         summaryChip("Connected", connected.toString, "bg-emerald-500/10 text-emerald-300 ring-emerald-300/30"),
@@ -138,19 +138,14 @@ object ChannelView:
 
   private def channelCard(card: ChannelCardData, nowMs: Long): Frag =
     val (pillLabel, pillClasses) = statusPill(card.status)
+    val configId                 = s"config-panel-${card.name}"
     div(cls := "rounded-lg bg-white/5 ring-1 ring-white/10 p-5")(
       div(cls := "flex items-center justify-between mb-3")(
         h2(cls := "text-lg font-semibold text-white capitalize")(card.name),
-        span(
-          cls := s"inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset $pillClasses"
-        )(
-          pillLabel
-        ),
+        span(cls := s"inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset $pillClasses")(pillLabel),
       ),
       div(cls := "text-sm text-gray-300 space-y-1")(
         card.mode.map(mode => p(span(cls := "text-gray-400")("Mode: "), mode)),
-        if card.name == "telegram" then p(span(cls := "text-gray-400")("Bot: "), card.botUsername.getOrElse("unknown"))
-        else frag(),
         p(span(cls := "text-gray-400")("Active connections: "), card.activeConnections.toString),
         p(
           span(cls := "text-gray-400")("Messages received: "),
@@ -167,12 +162,20 @@ object ChannelView:
           relativeTime(card.lastActivityTs, nowMs),
         ),
       ),
-      div(cls := "mt-4")(
+      div(cls := "mt-4 flex items-center justify-between")(
         a(
           href := card.configureUrl,
           cls  := "text-xs font-medium text-indigo-400 hover:text-indigo-300",
-        )("Configure ->")
+        )("Configure ->"),
+        button(
+          cls                   := "text-xs font-medium text-indigo-400 hover:text-indigo-300",
+          attr("hx-get")        := s"/settings/channels/${card.name}/config-form",
+          attr("hx-target")     := s"#$configId",
+          attr("hx-swap")       := "innerHTML",
+          attr("hx-push-url")   := "false",
+        )("Configure \u25be"),
       ),
+      div(id := configId)(),
     )
 
   private def statusPill(status: ChannelStatus): (String, String) =
@@ -192,3 +195,155 @@ object ChannelView:
         else if diff.toMinutes < 1 then s"${diff.getSeconds}s ago"
         else if diff.toHours < 1 then s"${diff.toMinutes} min ago"
         else s"${diff.toHours}h ago"
+
+  // Config form for a specific channel, returned as HTML fragment
+  def channelConfigForm(name: String, settings: Map[String, String]): Frag =
+    val formId = s"config-form-$name"
+    div(id := formId, cls := "mt-4 border-t border-white/10 pt-4")(
+      name match
+        case "telegram"  => telegramConfigForm(settings)
+        case "discord"   => discordConfigForm(settings)
+        case "slack"     => slackConfigForm(settings)
+        case "websocket" => p(cls := "text-xs text-gray-400")("WebSocket is built-in and requires no configuration.")
+        case _           => p(cls := "text-xs text-gray-400")(s"No configuration available for $name.")
+    )
+
+  private def telegramConfigForm(settings: Map[String, String]): Frag =
+    tag("form")(
+      cls                 := "space-y-4",
+      attr("hx-post")     := "/settings/channels/telegram",
+      attr("hx-target")   := "#config-form-telegram",
+      attr("hx-swap")     := "outerHTML",
+      attr("hx-encoding") := "application/x-www-form-urlencoded",
+    )(
+      div(cls := "grid grid-cols-1 gap-4 sm:grid-cols-2")(
+        div(
+          label(cls := "block text-xs font-medium text-gray-400 mb-1")("Bot Token"),
+          input(
+            `type`              := "password",
+            name                := "telegram.botToken",
+            value               := settings.getOrElse("telegram.botToken", ""),
+            attr("placeholder") := "123456:ABC-token",
+            cls                 := "block w-full rounded-md bg-white/5 border-0 py-1.5 text-white text-sm ring-1 ring-white/10 focus:ring-2 focus:ring-indigo-500 px-3",
+          ),
+        ),
+        div(
+          label(cls := "block text-xs font-medium text-gray-400 mb-1")("Mode"),
+          select(
+            name := "telegram.mode",
+            id   := "telegram-mode-inline",
+            cls  := "block w-full rounded-md bg-gray-900 border-0 py-1.5 text-white text-sm ring-1 ring-white/10 px-3",
+          )(
+            option(
+              value := "Polling",
+              if settings.getOrElse("telegram.mode", "Polling") == "Polling" then attr("selected") := "selected" else (),
+            )("Polling"),
+            option(
+              value := "Webhook",
+              if settings.getOrElse("telegram.mode", "Polling") == "Webhook" then attr("selected") := "selected" else (),
+            )("Webhook"),
+          ),
+        ),
+        div(
+          label(cls := "block text-xs font-medium text-gray-400 mb-1")("Poll Interval (s)"),
+          input(
+            `type`      := "number",
+            name        := "telegram.polling.interval",
+            value       := settings.getOrElse("telegram.polling.interval", "1"),
+            attr("min") := "1",
+            attr("max") := "60",
+            cls         := "block w-full rounded-md bg-white/5 border-0 py-1.5 text-white text-sm ring-1 ring-white/10 px-3",
+          ),
+        ),
+        div(
+          label(cls := "block text-xs font-medium text-gray-400 mb-1")("Batch Size"),
+          input(
+            `type`      := "number",
+            name        := "telegram.polling.batchSize",
+            value       := settings.getOrElse("telegram.polling.batchSize", "100"),
+            attr("min") := "1",
+            attr("max") := "1000",
+            cls         := "block w-full rounded-md bg-white/5 border-0 py-1.5 text-white text-sm ring-1 ring-white/10 px-3",
+          ),
+        ),
+      ),
+      div(cls := "flex items-center gap-3")(
+        button(
+          `type` := "submit",
+          cls    := "rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500",
+        )("Save"),
+        span(id := "save-status-telegram", cls := "text-xs text-gray-400")(""),
+      ),
+    )
+
+  private def discordConfigForm(settings: Map[String, String]): Frag =
+    tag("form")(
+      cls                 := "space-y-4",
+      attr("hx-post")     := "/settings/channels/discord",
+      attr("hx-target")   := "#config-form-discord",
+      attr("hx-swap")     := "outerHTML",
+      attr("hx-encoding") := "application/x-www-form-urlencoded",
+    )(
+      div(cls := "grid grid-cols-1 gap-4 sm:grid-cols-2")(
+        div(
+          label(cls := "block text-xs font-medium text-gray-400 mb-1")("Bot Token"),
+          input(
+            `type`              := "password",
+            name                := "botToken",
+            value               := settings.getOrElse("channel.discord.botToken", ""),
+            attr("placeholder") := "Bot token",
+            cls                 := "block w-full rounded-md bg-white/5 border-0 py-1.5 text-white text-sm ring-1 ring-white/10 px-3",
+          ),
+        ),
+        div(
+          label(cls := "block text-xs font-medium text-gray-400 mb-1")("Guild ID (optional)"),
+          input(
+            `type`              := "text",
+            name                := "guildId",
+            value               := settings.getOrElse("channel.discord.guildId", ""),
+            attr("placeholder") := "Server ID",
+            cls                 := "block w-full rounded-md bg-white/5 border-0 py-1.5 text-white text-sm ring-1 ring-white/10 px-3",
+          ),
+        ),
+      ),
+      button(
+        `type` := "submit",
+        cls    := "rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500",
+      )("Save"),
+    )
+
+  private def slackConfigForm(settings: Map[String, String]): Frag =
+    tag("form")(
+      cls                 := "space-y-4",
+      attr("hx-post")     := "/settings/channels/slack",
+      attr("hx-target")   := "#config-form-slack",
+      attr("hx-swap")     := "outerHTML",
+      attr("hx-encoding") := "application/x-www-form-urlencoded",
+    )(
+      div(cls := "grid grid-cols-1 gap-4 sm:grid-cols-2")(
+        div(
+          label(cls := "block text-xs font-medium text-gray-400 mb-1")("App Token"),
+          input(
+            `type`              := "password",
+            name                := "appToken",
+            value               := settings.getOrElse("channel.slack.appToken", ""),
+            attr("placeholder") := "xapp-...",
+            cls                 := "block w-full rounded-md bg-white/5 border-0 py-1.5 text-white text-sm ring-1 ring-white/10 px-3",
+          ),
+        ),
+        div(
+          label(cls := "block text-xs font-medium text-gray-400 mb-1")("Bot Token"),
+          input(
+            `type`              := "password",
+            name                := "botToken",
+            value               := settings.getOrElse("channel.slack.botToken", ""),
+            attr("placeholder") := "xoxb-...",
+            cls                 := "block w-full rounded-md bg-white/5 border-0 py-1.5 text-white text-sm ring-1 ring-white/10 px-3",
+          ),
+        ),
+      ),
+      button(
+        `type` := "submit",
+        cls    := "rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500",
+      )("Save"),
+    )
