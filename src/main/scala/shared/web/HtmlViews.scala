@@ -61,8 +61,12 @@ object HtmlViews:
   ): String =
     SettingsView.channelsTab(cards, nowMs, flash)
 
-  def settingsGatewayTab(settings: Map[String, String], flash: Option[String] = None): String =
-    SettingsView.gatewayTab(settings, flash)
+  def settingsGatewayTab(
+    settings: Map[String, String],
+    flash: Option[String] = None,
+    errors: Map[String, String] = Map.empty,
+  ): String =
+    SettingsView.gatewayTab(settings, flash, errors)
 
   def settingsSystemTab: String = SettingsView.systemTab
 
