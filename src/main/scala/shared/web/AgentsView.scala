@@ -1,11 +1,15 @@
 package shared.web
 
-import _root_.config.entity.{ AgentInfo, AgentType }
+import _root_.config.entity.{ AgentChannelBinding, AgentInfo, AgentType }
 import scalatags.Text.all.*
 
 object AgentsView:
 
-  def list(agents: List[AgentInfo], flash: Option[String] = None): String =
+  def list(
+    agents: List[AgentInfo],
+    bindingsByAgent: Map[String, List[AgentChannelBinding]],
+    flash: Option[String] = None,
+  ): String =
     Layout.page("Agents", "/agents")(
       div(cls := "space-y-6")(
         div(cls := "rounded-xl border border-white/10 bg-slate-900/80 px-5 py-4")(
@@ -28,17 +32,18 @@ object AgentsView:
           )
         },
         div(cls := "grid grid-cols-1 gap-4 lg:grid-cols-2")(
-          agents.map(agentCard)
+          agents.map(agent => agentCard(agent, bindingsByAgent.getOrElse(agent.name, Nil)))
         ),
       )
     )
 
-  private def agentCard(agent: AgentInfo): Frag =
+  private def agentCard(agent: AgentInfo, bindings: List[AgentChannelBinding]): Frag =
     div(cls := "rounded-xl border border-white/10 bg-slate-900/70 p-5")(
       div(cls := "flex items-start justify-between gap-3")(
         div(
           h2(cls := "text-lg font-semibold text-slate-100")(agent.displayName),
           p(cls := "mt-1 text-sm text-slate-300")(agent.description),
+          p(cls := "mt-1 font-mono text-xs text-indigo-300")(s"@${effectiveHandle(agent)}"),
         ),
         div(cls := "flex flex-col items-end gap-2")(
           typeBadge(agent.agentType),
@@ -70,7 +75,58 @@ object AgentsView:
           )
         else List.empty[Frag],
       ),
+      div(cls := "mt-4 border-t border-white/10 pt-3")(
+        p(cls := "mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400")("Channel Bindings"),
+        if bindings.isEmpty then p(cls := "text-xs text-slate-500")("No bindings")
+        else
+          ul(cls := "mb-2 space-y-1 text-xs text-slate-300")(
+            bindings.map { binding =>
+              val channel = binding.channelName.trim
+              val account = binding.accountId.map(_.trim).filter(_.nonEmpty)
+              val label   =
+                if channel.nonEmpty then s"$channel${account.map(id => s" ($id)").getOrElse("")}"
+                else s"(missing channel)${account.map(id => s" ($id)").getOrElse("")}"
+              li(cls := "flex items-center justify-between gap-2")(
+                span(cls := "flex-1 break-all text-slate-200")(label),
+                form(method := "post", action := s"/agents/${agent.name}/bindings/remove")(
+                  input(`type` := "hidden", name := "channelName", value := binding.channelName),
+                  input(
+                    `type`     := "hidden",
+                    name       := "accountId",
+                    value      := binding.accountId.getOrElse(""),
+                  ),
+                  button(
+                    `type` := "submit",
+                    cls    := "rounded border border-rose-400/30 bg-rose-500/10 px-2 py-0.5 text-[10px] font-semibold text-rose-200",
+                  )("Unbind"),
+                ),
+              )
+            }
+          )
+        ,
+        form(method := "post", action := s"/agents/${agent.name}/bindings", cls := "mt-2 flex gap-2")(
+          input(
+            `type`      := "text",
+            name        := "channelName",
+            placeholder := "channel (e.g. telegram)",
+            cls         := "w-full rounded-md border border-white/10 bg-slate-800/80 px-2 py-1 text-xs text-slate-100",
+          ),
+          input(
+            `type`      := "text",
+            name        := "accountId",
+            placeholder := "accountId (optional)",
+            cls         := "w-full rounded-md border border-white/10 bg-slate-800/80 px-2 py-1 text-xs text-slate-100",
+          ),
+          button(
+            `type` := "submit",
+            cls    := "rounded-md border border-emerald-400/30 bg-emerald-500/20 px-2 py-1 text-xs font-semibold text-emerald-200",
+          )("Bind"),
+        ),
+      ),
     )
+
+  private def effectiveHandle(agent: AgentInfo): String =
+    Option(agent.handle).map(_.trim).filter(_.nonEmpty).getOrElse(agent.name)
 
   private def typeBadge(agentType: AgentType): Frag =
     val badgeCls = agentType match

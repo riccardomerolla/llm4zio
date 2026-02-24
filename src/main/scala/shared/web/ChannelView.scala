@@ -142,7 +142,9 @@ object ChannelView:
     div(cls := "rounded-lg bg-white/5 ring-1 ring-white/10 p-5")(
       div(cls := "flex items-center justify-between mb-3")(
         h2(cls := "text-lg font-semibold text-white capitalize")(card.name),
-        span(cls := s"inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset $pillClasses")(pillLabel),
+        span(
+          cls := s"inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset $pillClasses"
+        )(pillLabel),
       ),
       div(cls := "text-sm text-gray-300 space-y-1")(
         card.mode.map(mode => p(span(cls := "text-gray-400")("Mode: "), mode)),
@@ -164,12 +166,12 @@ object ChannelView:
       ),
       div(cls := "mt-4 flex justify-end")(
         button(
-          cls                   := "text-xs font-medium text-indigo-400 hover:text-indigo-300",
-          attr("hx-get")        := s"/settings/channels/${card.name}/config-form",
-          attr("hx-target")     := s"#$configId",
-          attr("hx-swap")       := "innerHTML",
-          attr("hx-push-url")   := "false",
-        )("Configure \u25be"),
+          cls                 := "text-xs font-medium text-indigo-400 hover:text-indigo-300",
+          attr("hx-get")      := s"/settings/channels/${card.name}/config-form",
+          attr("hx-target")   := s"#$configId",
+          attr("hx-swap")     := "innerHTML",
+          attr("hx-push-url") := "false",
+        )("Configure \u25be")
       ),
       div(id := configId)(),
     )

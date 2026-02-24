@@ -1,5 +1,6 @@
 package orchestration.control
 
+import java.nio.file.{ Files, Paths }
 import java.time.Instant
 
 import zio.*
@@ -82,63 +83,74 @@ final case class AgentDispatcherLive(
       startedAtNanos  <- Clock.nanoTime
       attemptedName   <- ZIO.succeed(agentName)
       result          <- (for
-                           now          <- Clock.instant
-                           agentInfo    <- registry.findByName(attemptedName).flatMap {
-                                             case Some(value) => ZIO.succeed(value)
-                                             case None        =>
-                                               ZIO.fail(
-                                                 PersistenceError.QueryFailed(
-                                                   "dispatch",
-                                                   s"Agent '$attemptedName' not found in registry",
+                           now            <- Clock.instant
+                           agentInfo      <- registry.findByName(attemptedName).flatMap {
+                                               case Some(value) => ZIO.succeed(value)
+                                               case None        =>
+                                                 ZIO.fail(
+                                                   PersistenceError.QueryFailed(
+                                                     "dispatch",
+                                                     s"Agent '$attemptedName' not found in registry",
+                                                   )
                                                  )
+                                             }
+                           customPrompt   <- repository
+                                               .getCustomAgentByName(agentInfo.name)
+                                               .map(_.map(_.systemPrompt).filter(_.trim.nonEmpty))
+                           run            <- repository.getRun(taskRunId).someOrFail(PersistenceError.NotFound("task_runs", taskRunId))
+                           agentWorkspace <- ensureAgentWorkspace(taskRunId, agentInfo.name)
+                           prompt          = buildPrompt(
+                                               systemPrompt = customPrompt,
+                                               step = stepPlan.step,
+                                               taskRunId = taskRunId,
+                                               workflowId = run.workflowId,
+                                               currentPhase = run.currentPhase,
+                                             )
+                           response       <- llmService
+                                               .execute(prompt)
+                                               .mapError(err => PersistenceError.QueryFailed("llm.execute", err.toString))
+                           completedAt    <- Clock.instant
+                           _              <- repository.saveReport(
+                                               TaskReportRow(
+                                                 id = 0L,
+                                                 taskRunId = taskRunId,
+                                                 stepName = stepPlan.step,
+                                                 reportType = "markdown",
+                                                 content = response.content,
+                                                 createdAt = completedAt,
                                                )
-                                           }
-                           customPrompt <- repository
-                                             .getCustomAgentByName(agentInfo.name)
-                                             .map(_.map(_.systemPrompt).filter(_.trim.nonEmpty))
-                           run          <- repository.getRun(taskRunId).someOrFail(PersistenceError.NotFound("task_runs", taskRunId))
-                           prompt        = buildPrompt(
-                                             systemPrompt = customPrompt,
-                                             step = stepPlan.step,
-                                             taskRunId = taskRunId,
-                                             workflowId = run.workflowId,
-                                             currentPhase = run.currentPhase,
-                                           )
-                           response     <- llmService
-                                             .execute(prompt)
-                                             .mapError(err => PersistenceError.QueryFailed("llm.execute", err.toString))
-                           completedAt  <- Clock.instant
-                           _            <- repository.saveReport(
-                                             TaskReportRow(
-                                               id = 0L,
-                                               taskRunId = taskRunId,
-                                               stepName = stepPlan.step,
-                                               reportType = "markdown",
-                                               content = response.content,
-                                               createdAt = completedAt,
                                              )
-                                           )
-                           _            <- repository.saveArtifact(
-                                             TaskArtifactRow(
-                                               id = 0L,
-                                               taskRunId = taskRunId,
-                                               stepName = stepPlan.step,
-                                               key = "step.agent",
-                                               value = agentInfo.name,
-                                               createdAt = completedAt,
+                           _              <- repository.saveArtifact(
+                                               TaskArtifactRow(
+                                                 id = 0L,
+                                                 taskRunId = taskRunId,
+                                                 stepName = stepPlan.step,
+                                                 key = "step.agent",
+                                                 value = agentInfo.name,
+                                                 createdAt = completedAt,
+                                               )
                                              )
-                                           )
-                           _            <- repository.saveArtifact(
-                                             TaskArtifactRow(
-                                               id = 0L,
-                                               taskRunId = taskRunId,
-                                               stepName = stepPlan.step,
-                                               key = "step.nodeId",
-                                               value = stepPlan.nodeId,
-                                               createdAt = completedAt,
+                           _              <- repository.saveArtifact(
+                                               TaskArtifactRow(
+                                                 id = 0L,
+                                                 taskRunId = taskRunId,
+                                                 stepName = stepPlan.step,
+                                                 key = "step.nodeId",
+                                                 value = stepPlan.nodeId,
+                                                 createdAt = completedAt,
+                                               )
                                              )
-                                           )
-                           _            <- persistMemoryArtifacts(taskRunId, stepPlan.step, stepPlan.nodeId, response.content).forkDaemon
+                           _              <- repository.saveArtifact(
+                                               TaskArtifactRow(
+                                                 id = 0L,
+                                                 taskRunId = taskRunId,
+                                                 stepName = stepPlan.step,
+                                                 key = "step.agentWorkspace",
+                                                 value = agentWorkspace.path.toString,
+                                                 createdAt = completedAt,
+                                               )
+                                             )
+                           _              <- persistMemoryArtifacts(taskRunId, stepPlan.step, stepPlan.nodeId, response.content).forkDaemon
                          yield StepDispatchResult(
                            agentName = agentInfo.name,
                            content = response.content,
@@ -175,6 +187,32 @@ final case class AgentDispatcherLive(
        |
        |Return a concise markdown result for this step execution.
        |""".stripMargin
+
+  private def ensureAgentWorkspace(
+    taskRunId: Long,
+    agentName: String,
+  ): IO[PersistenceError, AgentWorkspace] =
+    for
+      now  <- Clock.instant
+      path <- ZIO
+                .attemptBlocking {
+                  val p =
+                    Paths.get(".migration-state", "agent-workspaces", sanitizeForPath(agentName), taskRunId.toString)
+                  Files.createDirectories(p)
+                  p
+                }
+                .mapError(err =>
+                  PersistenceError.QueryFailed("agentWorkspace", Option(err.getMessage).getOrElse(err.toString))
+                )
+    yield AgentWorkspace(
+      agentId = shared.ids.Ids.AgentId(agentName),
+      path = path.toString,
+      createdAt = now,
+      sizeBytes = 0L,
+    )
+
+  private def sanitizeForPath(value: String): String =
+    value.trim.toLowerCase.replaceAll("[^a-z0-9._-]+", "-")
 
   private def persistMemoryArtifacts(
     taskRunId: Long,

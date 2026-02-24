@@ -87,7 +87,10 @@ final case class ConfigControllerLive(
       ZIO.succeed(html(HtmlViews.settingsAdvancedTab))
     },
     Method.GET / "config"                                                  -> handler {
-      ZIO.succeed(Response(status = Status.Found, headers = Headers(Header.Location(URL.decode("/settings/advanced").getOrElse(URL.root)))))
+      ZIO.succeed(Response(
+        status = Status.Found,
+        headers = Headers(Header.Location(URL.decode("/settings/advanced").getOrElse(URL.root))),
+      ))
     },
     Method.GET / "api" / "config" / "current"                              -> handler {
       currentDocumentResponse

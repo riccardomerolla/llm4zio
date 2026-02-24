@@ -1,7 +1,7 @@
 package shared.web
 
 import config.control.{ ModelRegistryResponse, ProviderProbeStatus }
-import config.entity.{ AgentInfo, WorkflowDefinition }
+import config.entity.{ AgentChannelBinding, AgentInfo, WorkflowDefinition }
 import conversation.entity.api.{ ChatConversation, ConversationEntry, ConversationSessionMeta }
 import db.{ TaskReportRow, TaskRunRow }
 import issues.entity.api.{ AgentAssignment, AgentIssue }
@@ -94,8 +94,12 @@ object HtmlViews:
   def workflowDetail(workflow: WorkflowDefinition): String =
     WorkflowsView.detail(workflow)
 
-  def agentsPage(agents: List[AgentInfo], flash: Option[String] = None): String =
-    AgentsView.list(agents, flash)
+  def agentsPage(
+    agents: List[AgentInfo],
+    bindingsByAgent: Map[String, List[AgentChannelBinding]],
+    flash: Option[String] = None,
+  ): String =
+    AgentsView.list(agents, bindingsByAgent, flash)
 
   def newCustomAgentPage(
     values: Map[String, String] = Map.empty,

@@ -6,10 +6,13 @@ import java.nio.charset.StandardCharsets
 import zio.*
 import zio.http.*
 import zio.json.*
+import zio.stream.ZStream
 
-import _root_.config.entity.AgentInfo
+import _root_.config.entity.{ AgentChannelBinding, AgentInfo }
 import db.{ ConfigRepository, CustomAgentRow, PersistenceError }
+import llm4zio.core.{ LlmError, LlmService }
 import orchestration.control.AgentRegistry
+import shared.ids.Ids.AgentId
 import shared.web.{ ErrorHandlingMiddleware, HtmlViews }
 
 trait AgentsController:
@@ -20,10 +23,13 @@ object AgentsController:
   def routes: ZIO[AgentsController, Nothing, Routes[Any, Response]] =
     ZIO.serviceWith[AgentsController](_.routes)
 
-  val live: ZLayer[ConfigRepository, Nothing, AgentsController] =
+  val live: ZLayer[ConfigRepository & LlmService, Nothing, AgentsController] =
     ZLayer.fromFunction(AgentsControllerLive.apply)
 
-final case class AgentsControllerLive(repository: ConfigRepository) extends AgentsController:
+final case class AgentsControllerLive(
+  repository: ConfigRepository,
+  llmService: LlmService,
+) extends AgentsController:
 
   private val aiSettingKeys: List[String] = List(
     "ai.provider",
@@ -41,7 +47,7 @@ final case class AgentsControllerLive(repository: ConfigRepository) extends Agen
   )
 
   override val routes: Routes[Any, Response] = Routes(
-    Method.GET / "api" / "agents"                                -> handler { (_: Request) =>
+    Method.GET / "api" / "agents"                                   -> handler { (_: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
           custom <- repository.listCustomAgents
@@ -49,18 +55,19 @@ final case class AgentsControllerLive(repository: ConfigRepository) extends Agen
         yield Response.json(all.toJson)
       }
     },
-    Method.GET / "agents"                                        -> handler { (req: Request) =>
+    Method.GET / "agents"                                           -> handler { (req: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
-          custom <- repository.listCustomAgents
-          flash   = req.queryParam("flash").map(urlDecode).filter(_.nonEmpty)
-        yield html(HtmlViews.agentsPage(AgentRegistry.allAgents(custom), flash))
+          custom   <- repository.listCustomAgents
+          bindings <- repository.listAgentChannelBindings
+          flash     = req.queryParam("flash").map(urlDecode).filter(_.nonEmpty)
+        yield html(HtmlViews.agentsPage(AgentRegistry.allAgents(custom), bindingsByAgent(bindings), flash))
       }
     },
-    Method.GET / "agents" / "new"                                -> handler { (_: Request) =>
+    Method.GET / "agents" / "new"                                   -> handler { (_: Request) =>
       ZIO.succeed(html(HtmlViews.newCustomAgentPage()))
     },
-    Method.POST / "agents"                                       -> handler { (req: Request) =>
+    Method.POST / "agents"                                          -> handler { (req: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
           form         <- parseForm(req)
@@ -84,7 +91,7 @@ final case class AgentsControllerLive(repository: ConfigRepository) extends Agen
         yield redirectToAgents(s"Custom agent '$displayName' created.")
       }
     },
-    Method.GET / "agents" / string("name") / "edit"              -> handler { (name: String, req: Request) =>
+    Method.GET / "agents" / string("name") / "edit"                 -> handler { (name: String, req: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
           agent <- repository
@@ -100,7 +107,7 @@ final case class AgentsControllerLive(repository: ConfigRepository) extends Agen
         )
       }
     },
-    Method.POST / "agents" / string("name") / "edit"             -> handler { (name: String, req: Request) =>
+    Method.POST / "agents" / string("name") / "edit"                -> handler { (name: String, req: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
           existing <- repository
@@ -127,7 +134,7 @@ final case class AgentsControllerLive(repository: ConfigRepository) extends Agen
         yield redirectToAgents(s"Custom agent '${updated.displayName}' updated.")
       }
     },
-    Method.POST / "agents" / string("name") / "delete"           -> handler { (name: String, _: Request) =>
+    Method.POST / "agents" / string("name") / "delete"              -> handler { (name: String, _: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
           existing <- repository
@@ -141,7 +148,7 @@ final case class AgentsControllerLive(repository: ConfigRepository) extends Agen
         yield redirectToAgents(s"Custom agent '${existing.displayName}' deleted.")
       }
     },
-    Method.GET / "agents" / string("name") / "config"            -> handler { (name: String, req: Request) =>
+    Method.GET / "agents" / string("name") / "config"               -> handler { (name: String, req: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
           agent <- findAnyAgent(name)
@@ -171,7 +178,7 @@ final case class AgentsControllerLive(repository: ConfigRepository) extends Agen
         yield out
       }
     },
-    Method.POST / "agents" / string("name") / "config"           -> handler { (name: String, req: Request) =>
+    Method.POST / "agents" / string("name") / "config"              -> handler { (name: String, req: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
           agent <- findAnyAgent(name)
@@ -198,7 +205,7 @@ final case class AgentsControllerLive(repository: ConfigRepository) extends Agen
         yield out
       }
     },
-    Method.POST / "agents" / string("name") / "config" / "reset" -> handler { (name: String, _: Request) =>
+    Method.POST / "agents" / string("name") / "config" / "reset"    -> handler { (name: String, _: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
           agent <- findAnyAgent(name)
@@ -218,6 +225,41 @@ final case class AgentsControllerLive(repository: ConfigRepository) extends Agen
                        ZIO.succeed(Response.text(s"Unknown agent: $name").status(Status.NotFound))
         yield out
       }
+    },
+    Method.POST / "agents" / string("name") / "bindings"            -> handler { (name: String, req: Request) =>
+      ErrorHandlingMiddleware.fromPersistence {
+        for
+          agent <-
+            findAnyAgent(name).someOrFail(PersistenceError.QueryFailed("agent_bindings", s"Unknown agent: $name"))
+          form  <- parseForm(req)
+          _     <- repository.upsertAgentChannelBinding(
+                     AgentChannelBinding(
+                       agentId = AgentId(agent.name),
+                       channelName = form.getOrElse("channelName", "").trim,
+                       accountId = form.get("accountId").map(_.trim).filter(_.nonEmpty),
+                     )
+                   )
+        yield redirectToAgents(s"Channel binding saved for ${agent.displayName}.")
+      }
+    },
+    Method.POST / "agents" / string("name") / "bindings" / "remove" -> handler { (name: String, req: Request) =>
+      ErrorHandlingMiddleware.fromPersistence {
+        for
+          agent <-
+            findAnyAgent(name).someOrFail(PersistenceError.QueryFailed("agent_bindings", s"Unknown agent: $name"))
+          form  <- parseForm(req)
+          _     <- repository.deleteAgentChannelBinding(
+                     AgentChannelBinding(
+                       agentId = AgentId(agent.name),
+                       channelName = form.getOrElse("channelName", "").trim,
+                       accountId = form.get("accountId").map(_.trim).filter(_.nonEmpty),
+                     )
+                   )
+        yield redirectToAgents(s"Channel binding removed for ${agent.displayName}.")
+      }
+    },
+    Method.POST / "api" / "agent" / "invoke"                        -> handler { (req: Request) =>
+      invokeAgent(req)
     },
   )
 
@@ -245,6 +287,9 @@ final case class AgentsControllerLive(repository: ConfigRepository) extends Agen
         case suffix if suffix.nonEmpty => Some(s"ai.$suffix" -> row.value)
         case _                         => None
     }.toMap
+
+  private def bindingsByAgent(bindings: List[AgentChannelBinding]): Map[String, List[AgentChannelBinding]] =
+    bindings.groupBy(_.agentId.value)
 
   private def parseForm(req: Request): IO[PersistenceError, Map[String, String]] =
     req.body.asString
@@ -296,7 +341,87 @@ final case class AgentsControllerLive(repository: ConfigRepository) extends Agen
   private def findAnyAgent(name: String): IO[PersistenceError, Option[AgentInfo]] =
     for
       custom <- repository.listCustomAgents
-    yield AgentRegistry.allAgents(custom).find(_.name.equalsIgnoreCase(name.trim))
+    yield AgentRegistry.allAgents(custom).find { agent =>
+      agent.name.equalsIgnoreCase(name.trim) || agent.handle.equalsIgnoreCase(name.trim)
+    }
+
+  final private case class AgentInvokeRequest(
+    message: String,
+    agentName: String,
+    sessionId: String,
+  ) derives JsonCodec
+
+  final private case class AgentInvokeEvent(
+    agentName: String,
+    delta: String,
+    done: Boolean = false,
+  ) derives JsonCodec
+
+  private def invokeAgent(req: Request): UIO[Response] =
+    val effect =
+      for
+        body         <- req.body.asString.mapError(err => PersistenceError.QueryFailed("agent_invoke", err.getMessage))
+        invokeReq    <- ZIO.fromEither(body.fromJson[AgentInvokeRequest]).mapError(err =>
+                          PersistenceError.QueryFailed("agent_invoke", s"Invalid JSON body: $err")
+                        )
+        targetAgent  <- findAnyAgent(invokeReq.agentName)
+                          .someOrFail(
+                            PersistenceError.QueryFailed("agent_invoke", s"Unknown agent '${invokeReq.agentName}'")
+                          )
+        customPrompt <- repository
+                          .getCustomAgentByName(targetAgent.name)
+                          .map(_.map(_.systemPrompt).filter(_.trim.nonEmpty))
+        prompt        = buildAgentPrompt(customPrompt, invokeReq.message, invokeReq.sessionId, targetAgent.name)
+        stream        =
+          llmService
+            .executeStream(prompt)
+            .map(chunk =>
+              s"data: ${AgentInvokeEvent(agentName = targetAgent.name, delta = chunk.delta).toJson}\n\n"
+            )
+            .catchAll(err =>
+              ZStream.succeed(
+                s"data: ${AgentInvokeEvent(targetAgent.name, delta = formatLlmError(err), done = true).toJson}\n\n"
+              )
+            ) ++
+            ZStream.succeed(
+              s"data: ${AgentInvokeEvent(targetAgent.name, delta = "", done = true).toJson}\n\n"
+            )
+      yield Response(
+        status = Status.Ok,
+        headers = Headers(
+          Header.ContentType(MediaType.text.`event-stream`),
+          Header.CacheControl.NoCache,
+          Header.Custom("Connection", "keep-alive"),
+        ),
+        body = Body.fromCharSequenceStreamChunked(stream),
+      )
+
+    effect.catchAll(err => ZIO.succeed(Response.text(err.toString).status(Status.BadRequest)))
+
+  private def buildAgentPrompt(
+    systemPrompt: Option[String],
+    message: String,
+    sessionId: String,
+    agentName: String,
+  ): String =
+    val custom = systemPrompt.map(_.trim).filter(_.nonEmpty).map(v => s"$v\n\n").getOrElse("")
+    s"""${custom}You are agent '$agentName'.
+       |Session: $sessionId
+       |
+       |User message:
+       |$message
+       |""".stripMargin
+
+  private def formatLlmError(error: LlmError): String =
+    error match
+      case LlmError.ProviderError(message, _)    => message
+      case LlmError.RateLimitError(_)            => "Rate limited"
+      case LlmError.AuthenticationError(message) => s"Authentication failed: $message"
+      case LlmError.InvalidRequestError(message) => s"Invalid request: $message"
+      case LlmError.TimeoutError(duration)       => s"Timed out after ${duration.toSeconds}s"
+      case LlmError.ParseError(message, _)       => s"Parse error: $message"
+      case LlmError.ToolError(toolName, message) => s"Tool error ($toolName): $message"
+      case LlmError.ConfigError(message)         => s"Configuration error: $message"
 
   private def urlDecode(value: String): String =
     URLDecoder.decode(value, StandardCharsets.UTF_8)

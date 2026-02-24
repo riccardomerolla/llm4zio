@@ -96,6 +96,7 @@ case class AgentHealth(
 
 case class AgentInfo(
   name: String,
+  handle: String = "",
   displayName: String,
   description: String,
   agentType: AgentType,
@@ -112,6 +113,7 @@ case class AgentInfo(
   */
 case class RegisterAgentRequest(
   name: String,
+  handle: Option[String] = None,
   displayName: String,
   description: String,
   agentType: AgentType,

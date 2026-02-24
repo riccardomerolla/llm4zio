@@ -4,7 +4,9 @@ import java.time.Instant
 
 import zio.*
 
+import _root_.config.entity.AgentChannelBinding
 import io.github.riccardomerolla.zio.eclipsestore.service.{ LifecycleCommand, LifecycleStatus }
+import shared.ids.Ids.AgentId
 import shared.store.ConfigStoreModule
 
 trait ConfigRepository:
@@ -18,6 +20,40 @@ trait ConfigRepository:
   def getSettingsByPrefix(prefix: String): IO[PersistenceError, List[SettingRow]] =
     getAllSettings.map(_.filter(_.key.startsWith(prefix)))
   def deleteSettingsByPrefix(prefix: String): IO[PersistenceError, Unit]
+
+  // Agent/channel bindings persisted in settings under:
+  //   agent.binding.<agentId>.<channelName>[.<accountId>] = true
+  def listAgentChannelBindings: IO[PersistenceError, List[AgentChannelBinding]] =
+    getSettingsByPrefix("agent.binding.").map { rows =>
+      rows.flatMap { row =>
+        parseBindingKey(row.key)
+      }
+    }
+
+  def upsertAgentChannelBinding(binding: AgentChannelBinding): IO[PersistenceError, Unit] =
+    upsertSetting(bindingKey(binding), "true")
+
+  def deleteAgentChannelBinding(binding: AgentChannelBinding): IO[PersistenceError, Unit] =
+    deleteSetting(bindingKey(binding))
+
+  private def bindingKey(binding: AgentChannelBinding): String =
+    val base = s"agent.binding.${binding.agentId.value}.${binding.channelName.trim.toLowerCase}"
+    binding.accountId.map(_.trim).filter(_.nonEmpty).map(id => s"$base.$id").getOrElse(base)
+
+  private def parseBindingKey(key: String): Option[AgentChannelBinding] =
+    key.stripPrefix("agent.binding.").split("\\.", -1).toList match
+      case agentId :: channelName :: Nil                                   =>
+        Some(AgentChannelBinding(AgentId(agentId), channelName, None))
+      case agentId :: channelName :: accountParts if accountParts.nonEmpty =>
+        val accountId = accountParts.mkString(".").trim
+        Some(
+          AgentChannelBinding(
+            agentId = AgentId(agentId),
+            channelName = channelName,
+            accountId = Option.when(accountId.nonEmpty)(accountId),
+          )
+        )
+      case _                                                               => None
 
   // Workflows
   def createWorkflow(workflow: WorkflowRow): IO[PersistenceError, Long]
@@ -57,6 +93,15 @@ object ConfigRepository:
 
   def deleteSettingsByPrefix(prefix: String): ZIO[ConfigRepository, PersistenceError, Unit] =
     ZIO.serviceWithZIO[ConfigRepository](_.deleteSettingsByPrefix(prefix))
+
+  def listAgentChannelBindings: ZIO[ConfigRepository, PersistenceError, List[AgentChannelBinding]] =
+    ZIO.serviceWithZIO[ConfigRepository](_.listAgentChannelBindings)
+
+  def upsertAgentChannelBinding(binding: AgentChannelBinding): ZIO[ConfigRepository, PersistenceError, Unit] =
+    ZIO.serviceWithZIO[ConfigRepository](_.upsertAgentChannelBinding(binding))
+
+  def deleteAgentChannelBinding(binding: AgentChannelBinding): ZIO[ConfigRepository, PersistenceError, Unit] =
+    ZIO.serviceWithZIO[ConfigRepository](_.deleteAgentChannelBinding(binding))
 
   // Workflows
   def createWorkflow(workflow: WorkflowRow): ZIO[ConfigRepository, PersistenceError, Long] =

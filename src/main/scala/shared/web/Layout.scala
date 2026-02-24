@@ -72,9 +72,9 @@ object Layout:
                   "Settings",
                   Icons.cog,
                   currentPath.startsWith("/settings") || currentPath.startsWith("/config") ||
-                    currentPath.startsWith("/models") || currentPath.startsWith("/channels") ||
-                    currentPath.startsWith("/health"),
-                ),
+                  currentPath.startsWith("/models") || currentPath.startsWith("/channels") ||
+                  currentPath.startsWith("/health"),
+                )
               )
             ),
           )

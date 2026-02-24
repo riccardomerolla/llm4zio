@@ -131,6 +131,7 @@ object AgentRegistry:
   val builtInAgents: List[AgentInfo] = List(
     AgentInfo(
       name = "chat-agent",
+      handle = "chat-agent",
       displayName = "Chat Agent",
       description = "Handles conversational AI interactions from any messaging channel.",
       agentType = AgentType.BuiltIn,
@@ -150,6 +151,7 @@ object AgentRegistry:
     ),
     AgentInfo(
       name = "code-agent",
+      handle = "code-agent",
       displayName = "Code Agent",
       description = "Assists with coding tasks: generation, review, debugging, and explanation.",
       agentType = AgentType.BuiltIn,
@@ -176,6 +178,7 @@ object AgentRegistry:
     ),
     AgentInfo(
       name = "task-planner",
+      handle = "task-planner",
       displayName = "Task Planner",
       description = "Breaks down complex user requests into structured task steps.",
       agentType = AgentType.BuiltIn,
@@ -195,6 +198,7 @@ object AgentRegistry:
     ),
     AgentInfo(
       name = "web-search-agent",
+      handle = "web-search-agent",
       displayName = "Web Search Agent",
       description = "Searches the web and returns summarised results.",
       agentType = AgentType.BuiltIn,
@@ -216,6 +220,7 @@ object AgentRegistry:
     ),
     AgentInfo(
       name = "file-agent",
+      handle = "file-agent",
       displayName = "File Agent",
       description = "Reads and writes files in the workspace.",
       agentType = AgentType.BuiltIn,
@@ -242,6 +247,7 @@ object AgentRegistry:
     ),
     AgentInfo(
       name = "report-agent",
+      handle = "report-agent",
       displayName = "Report Agent",
       description = "Generates markdown reports and mermaid diagrams from task artifacts.",
       agentType = AgentType.BuiltIn,
@@ -261,6 +267,7 @@ object AgentRegistry:
     ),
     AgentInfo(
       name = "router-agent",
+      handle = "router-agent",
       displayName = "Router Agent",
       description = "Classifies user intent and routes to the appropriate agent or workflow.",
       agentType = AgentType.BuiltIn,
@@ -298,6 +305,7 @@ object AgentRegistry:
   private[control] def toCustomAgentInfo(agent: CustomAgentRow): AgentInfo =
     AgentInfo(
       name = agent.name,
+      handle = sanitizeHandle(agent.name),
       displayName = agent.displayName,
       description = agent.description.getOrElse("Custom agent"),
       agentType = AgentType.Custom,
@@ -312,6 +320,9 @@ object AgentRegistry:
 
   private def splitTags(raw: String): List[String] =
     raw.split(",").toList.map(_.trim).filter(_.nonEmpty)
+
+  private[control] def sanitizeHandle(raw: String): String =
+    raw.trim.toLowerCase.replaceAll("[^a-z0-9_-]+", "-")
 
   val live: ZLayer[Any, Nothing, AgentRegistry] = ZLayer {
     for
@@ -328,6 +339,7 @@ final private[control] class AgentRegistryLive(
   override def registerAgent(request: RegisterAgentRequest): UIO[AgentInfo] =
     val agentInfo = AgentInfo(
       name = request.name,
+      handle = request.handle.getOrElse(AgentRegistry.sanitizeHandle(request.name)),
       displayName = request.displayName,
       description = request.description,
       agentType = request.agentType,

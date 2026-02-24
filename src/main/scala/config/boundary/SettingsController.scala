@@ -109,7 +109,10 @@ final case class SettingsControllerLive(
 
   override val routes: Routes[Any, Response] = Routes(
     Method.GET / "settings"                      -> handler {
-      ZIO.succeed(Response(status = Status.Found, headers = Headers(Header.Location(URL.decode("/settings/ai").getOrElse(URL.root)))))
+      ZIO.succeed(Response(
+        status = Status.Found,
+        headers = Headers(Header.Location(URL.decode("/settings/ai").getOrElse(URL.root))),
+      ))
     },
     Method.POST / "settings"                     -> handler { (req: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
@@ -184,7 +187,10 @@ final case class SettingsControllerLive(
       modelService.probeProviders.map(status => Response.json(status.toJson))
     },
     Method.GET / "models"                        -> handler {
-      ZIO.succeed(Response(status = Status.Found, headers = Headers(Header.Location(URL.decode("/settings/ai").getOrElse(URL.root)))))
+      ZIO.succeed(Response(
+        status = Status.Found,
+        headers = Headers(Header.Location(URL.decode("/settings/ai").getOrElse(URL.root))),
+      ))
     },
     Method.GET / "settings" / "ai"               -> handler {
       ErrorHandlingMiddleware.fromPersistence {
@@ -199,33 +205,33 @@ final case class SettingsControllerLive(
     Method.POST / "settings" / "ai"              -> handler { (req: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
-          form    <- parseForm(req)
-          _       <- ZIO.foreachDiscard(settingsKeys.filter(_.startsWith("ai."))) { key =>
-                       val value = form.getOrElse(key, "")
-                       repository.upsertSetting(key, value)
-                     }
-          _       <- checkpointConfigStore
-          rows    <- repository.getAllSettings
-          saved    = rows.map(r => r.key -> r.value).toMap
+          form     <- parseForm(req)
+          _        <- ZIO.foreachDiscard(settingsKeys.filter(_.startsWith("ai."))) { key =>
+                        val value = form.getOrElse(key, "")
+                        repository.upsertSetting(key, value)
+                      }
+          _        <- checkpointConfigStore
+          rows     <- repository.getAllSettings
+          saved     = rows.map(r => r.key -> r.value).toMap
           newConfig = SettingsApplier.toGatewayConfig(saved)
-          _       <- configRef.set(newConfig)
-          _       <- writeSettingsSnapshot(saved)
-          now     <- Clock.instant
-          _       <- activityHub.publish(
-                       ActivityEvent(
-                         id = EventId.generate,
-                         eventType = ActivityEventType.ConfigChanged,
-                         source = "settings.ai",
-                         summary = "AI settings updated",
-                         createdAt = now,
-                       )
-                     )
-          models  <- modelService.listAvailableModels
-          status  <- modelService.probeProviders
+          _        <- configRef.set(newConfig)
+          _        <- writeSettingsSnapshot(saved)
+          now      <- Clock.instant
+          _        <- activityHub.publish(
+                        ActivityEvent(
+                          id = EventId.generate,
+                          eventType = ActivityEventType.ConfigChanged,
+                          source = "settings.ai",
+                          summary = "AI settings updated",
+                          createdAt = now,
+                        )
+                      )
+          models   <- modelService.listAvailableModels
+          status   <- modelService.probeProviders
         yield html(HtmlViews.settingsAiTab(saved, models, status, Some("AI settings saved.")))
       }
     },
-    Method.GET / "settings" / "gateway"  -> handler {
+    Method.GET / "settings" / "gateway"          -> handler {
       ErrorHandlingMiddleware.fromPersistence {
         for
           rows    <- repository.getAllSettings
@@ -233,34 +239,36 @@ final case class SettingsControllerLive(
         yield html(HtmlViews.settingsGatewayTab(settings))
       }
     },
-    Method.POST / "settings" / "gateway" -> handler { (req: Request) =>
+    Method.POST / "settings" / "gateway"         -> handler { (req: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
-          form  <- parseForm(req)
-          keys   = settingsKeys.filter(k => k.startsWith("gateway.") || k.startsWith("telegram.") || k.startsWith("memory."))
-          _     <- ZIO.foreachDiscard(keys) { key =>
-                     val value = key match
-                       case "gateway.dryRun" | "gateway.verbose" | "telegram.enabled" | "memory.enabled" =>
-                         if form.get(key).exists(v => v.equalsIgnoreCase("on") || v.equalsIgnoreCase("true")) then "true" else "false"
-                       case _ => form.getOrElse(key, "")
-                     repository.upsertSetting(key, value)
-                   }
-          _     <- checkpointConfigStore
-          rows  <- repository.getAllSettings
-          saved  = rows.map(r => r.key -> r.value).toMap
+          form     <- parseForm(req)
+          keys      =
+            settingsKeys.filter(k => k.startsWith("gateway.") || k.startsWith("telegram.") || k.startsWith("memory."))
+          _        <- ZIO.foreachDiscard(keys) { key =>
+                        val value = key match
+                          case "gateway.dryRun" | "gateway.verbose" | "telegram.enabled" | "memory.enabled" =>
+                            if form.get(key).exists(v => v.equalsIgnoreCase("on") || v.equalsIgnoreCase("true")) then "true"
+                            else "false"
+                          case _                                                                            => form.getOrElse(key, "")
+                        repository.upsertSetting(key, value)
+                      }
+          _        <- checkpointConfigStore
+          rows     <- repository.getAllSettings
+          saved     = rows.map(r => r.key -> r.value).toMap
           newConfig = SettingsApplier.toGatewayConfig(saved)
-          _     <- configRef.set(newConfig)
-          _     <- writeSettingsSnapshot(saved)
-          now   <- Clock.instant
-          _     <- activityHub.publish(
-                     ActivityEvent(
-                       id = EventId.generate,
-                       eventType = ActivityEventType.ConfigChanged,
-                       source = "settings.gateway",
-                       summary = "Gateway settings updated",
-                       createdAt = now,
-                     )
-                   )
+          _        <- configRef.set(newConfig)
+          _        <- writeSettingsSnapshot(saved)
+          now      <- Clock.instant
+          _        <- activityHub.publish(
+                        ActivityEvent(
+                          id = EventId.generate,
+                          eventType = ActivityEventType.ConfigChanged,
+                          source = "settings.gateway",
+                          summary = "Gateway settings updated",
+                          createdAt = now,
+                        )
+                      )
         yield html(HtmlViews.settingsGatewayTab(saved, Some("Gateway settings saved.")))
       }
     },

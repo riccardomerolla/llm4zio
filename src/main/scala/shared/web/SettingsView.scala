@@ -16,35 +16,36 @@ object SettingsView:
   private val sectionCls = "bg-white/5 ring-1 ring-white/10 rounded-lg p-6 mb-6"
 
   private val tabs = List(
-    ("ai",       "AI Models"),
+    ("ai", "AI Models"),
     ("channels", "Channels"),
-    ("gateway",  "Gateway"),
-    ("system",   "System"),
+    ("gateway", "Gateway"),
+    ("system", "System"),
     ("advanced", "Advanced Config"),
   )
 
   def settingsShell(activeTab: String, pageTitle: String)(bodyContent: Frag*): String =
     Layout.page(pageTitle, s"/settings/$activeTab")(
       div(cls := "mb-6")(
-        h1(cls := "text-2xl font-bold text-white")("Settings"),
+        h1(cls := "text-2xl font-bold text-white")("Settings")
       ),
       div(cls := "border-b border-white/10 mb-6")(
         nav(cls := "-mb-px flex space-x-6", attr("aria-label") := "Settings tabs")(
-          tabs.map { case (tab, label) =>
-            val isActive = tab == activeTab
-            a(
-              href := s"/settings/$tab",
-              cls  :=
-                (if isActive then
-                   "border-b-2 border-indigo-500 py-4 px-1 text-sm font-medium text-white whitespace-nowrap"
-                 else
-                   "border-b-2 border-transparent py-4 px-1 text-sm font-medium text-gray-400 hover:text-white hover:border-white/30 whitespace-nowrap"),
-              if isActive then attr("aria-current") := "page" else (),
-            )(label)
+          tabs.map {
+            case (tab, label) =>
+              val isActive = tab == activeTab
+              a(
+                href := s"/settings/$tab",
+                cls  :=
+                  (if isActive then
+                     "border-b-2 border-indigo-500 py-4 px-1 text-sm font-medium text-white whitespace-nowrap"
+                   else
+                     "border-b-2 border-transparent py-4 px-1 text-sm font-medium text-gray-400 hover:text-white hover:border-white/30 whitespace-nowrap"),
+                if isActive then attr("aria-current") := "page" else (),
+              )(label)
           }
         )
       ),
-      div(bodyContent*)
+      div(bodyContent*),
     )
 
   def aiTab(
@@ -241,7 +242,7 @@ object SettingsView:
   def systemTab: String =
     settingsShell("system", "Settings — System")(
       div(cls := "mb-4")(
-        p(cls := "text-sm text-gray-400")("Real-time gateway, agent, channel, and resource telemetry."),
+        p(cls := "text-sm text-gray-400")("Real-time gateway, agent, channel, and resource telemetry.")
       ),
       div(cls := "bg-white/5 ring-1 ring-white/10 rounded-lg p-4")(
         tag("health-dashboard")(
@@ -256,10 +257,10 @@ object SettingsView:
       div(cls := "mb-4 rounded-md bg-amber-500/10 border border-amber-500/20 p-3")(
         p(cls := "text-sm text-amber-300")(
           "Advanced users only. Most settings are configurable via the tabs above with validation and helper text."
-        ),
+        )
       ),
       div(cls := "bg-white/5 ring-1 ring-white/10 rounded-lg p-4")(
-        tag("config-editor")(attr("api-base") := "/api/config")(),
+        tag("config-editor")(attr("api-base") := "/api/config")()
       ),
       script(src := "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"),
       tag("script")(

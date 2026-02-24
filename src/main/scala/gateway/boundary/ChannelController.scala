@@ -33,22 +33,25 @@ final case class ChannelControllerLive(
 ) extends ChannelController:
 
   override val routes: Routes[Any, Response] = Routes(
-    Method.GET / "channels"                     -> handler {
-      ZIO.succeed(Response(status = Status.Found, headers = Headers(Header.Location(URL.decode("/settings/channels").getOrElse(URL.root)))))
+    Method.GET / "channels"                                               -> handler {
+      ZIO.succeed(Response(
+        status = Status.Found,
+        headers = Headers(Header.Location(URL.decode("/settings/channels").getOrElse(URL.root))),
+      ))
     },
-    Method.GET / "channels" / "cards"           -> handler {
+    Method.GET / "channels" / "cards"                                     -> handler {
       buildCards.flatMap(cards =>
         Clock.currentTime(TimeUnit.MILLISECONDS).map(now => htmlFragment(ChannelView.cardsFragment(cards, now).render))
       )
     },
-    Method.GET / "channels" / "summary"         -> handler {
+    Method.GET / "channels" / "summary"                                   -> handler {
       buildCards.map(cards => htmlFragment(ChannelView.summaryWidgetFragment(cards).render))
     },
     // Settings tab: channels view
-    Method.GET / "settings" / "channels"        -> handler {
+    Method.GET / "settings" / "channels"                                  -> handler {
       buildChannelsTabPage(None)
     },
-    Method.GET / "settings" / "channels" / "cards" -> handler {
+    Method.GET / "settings" / "channels" / "cards"                        -> handler {
       for
         cards <- buildCards
         now   <- Clock.currentTime(TimeUnit.MILLISECONDS)
@@ -59,29 +62,29 @@ final case class ChannelControllerLive(
       getSettingsMap.map(settings => htmlFragment(ChannelView.channelConfigForm(name, settings).render))
     },
     // Save per-channel config
-    Method.POST / "settings" / "channels" / string("name") -> handler { (name: String, req: Request) =>
+    Method.POST / "settings" / "channels" / string("name")                -> handler { (name: String, req: Request) =>
       ErrorHandling.fromPersistence {
         for
           form     <- parseForm(req)
           prefixed  = name match
-                        case "telegram" => form  // telegram keys are already prefixed with "telegram."
+                        case "telegram" => form // telegram keys are already prefixed with "telegram."
                         case _          => form.map { case (k, v) => s"channel.$name.$k" -> v }
           _        <- configRepository.upsertSettings(prefixed)
           settings <- getSettingsMap
         yield htmlFragment(ChannelView.channelConfigForm(name, settings).render)
       }
     },
-    Method.GET / "api" / "channels"             -> handler {
+    Method.GET / "api" / "channels"                                       -> handler {
       buildCards.map(cards => Response.json(cards.toJson))
     },
-    Method.GET / "api" / "channels" / "status"  -> handler {
+    Method.GET / "api" / "channels" / "status"                            -> handler {
       probeStatuses.map(items => Response.json(items.toJson))
     },
-    Method.GET / "api" / "channels" / "logs"    -> handler { (req: Request) =>
+    Method.GET / "api" / "channels" / "logs"                              -> handler { (req: Request) =>
       val limit = req.queryParam("limit").flatMap(_.toIntOption).getOrElse(50).max(1)
       channelLogs(limit).map(entries => Response.json(entries.toJson))
     },
-    Method.POST / "api" / "channels" / "add"    -> handler { (req: Request) =>
+    Method.POST / "api" / "channels" / "add"                              -> handler { (req: Request) =>
       ErrorHandling.fromPersistence {
         for
           form  <- parseForm(req)
@@ -91,7 +94,7 @@ final case class ChannelControllerLive(
         yield htmlFragment(ChannelView.cardsFragment(cards, now).render)
       }
     },
-    Method.POST / "api" / "channels" / "remove" -> handler { (req: Request) =>
+    Method.POST / "api" / "channels" / "remove"                           -> handler { (req: Request) =>
       ErrorHandling.fromPersistence {
         for
           form  <- parseForm(req)

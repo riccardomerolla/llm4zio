@@ -26,7 +26,10 @@ final case class HealthControllerLive(
 
   override val routes: Routes[Any, Response] = Routes(
     Method.GET / "health"                       -> handler {
-      ZIO.succeed(Response(status = Status.Found, headers = Headers(Header.Location(URL.decode("/settings/system").getOrElse(URL.root)))))
+      ZIO.succeed(Response(
+        status = Status.Found,
+        headers = Headers(Header.Location(URL.decode("/settings/system").getOrElse(URL.root))),
+      ))
     },
     Method.GET / "settings" / "system"          -> handler {
       ZIO.succeed(html(HtmlViews.settingsSystemTab))

@@ -5,6 +5,7 @@ import java.util.UUID
 import zio.*
 import zio.json.*
 
+import _root_.config.entity.AgentInfo
 import db.{ ChatRepository, ConfigRepository }
 import gateway.entity.NormalizedMessage
 import llm4zio.core.LlmService
@@ -319,40 +320,111 @@ final case class GatewayServiceLive(
     metricsRef.get
 
   private def handleIntentRouting(message: NormalizedMessage): IO[GatewayServiceError, Unit] =
-    if shouldParseIntent(message) then
+    if isRoutableInbound(message) then
       for
-        stateMap        <- intentStateRef.get
-        current          = stateMap.getOrElse(message.sessionKey, IntentConversationState())
         availableAgents <- agentRegistry.getAllAgents
-        decision        <- IntentParser.parse(message.content, current, availableAgents).provideEnvironment(
-                             ZEnvironment(llmService)
-                           )
-        _               <- decision match
-                             case IntentDecision.Route(agentName, rationale) =>
-                               val text =
-                                 s"Routing request to `$agentName` ($rationale). " +
-                                   "Send another message if you want to switch agent."
-                               sendAssistantReply(message, text, Some(agentName)) *>
-                                 updateIntentState(message, current.copy(pendingOptions = Nil, lastAgent = Some(agentName))) *>
+        directRoute      = parseDirectAgentRoute(message.content, availableAgents)
+        channelBound    <- boundAgentForChannel(message, availableAgents)
+        selectedDirect   = directRoute.orElse(channelBound)
+        _               <- selectedDirect match
+                             case Some((agentName, normalizedPrompt)) =>
+                               val current = IntentConversationState()
+                               updateIntentState(message, current.copy(lastAgent = Some(agentName), pendingOptions = Nil)) *>
                                  executeRoutedAgentReply(
-                                   inbound = message,
+                                   inbound = message.copy(content = normalizedPrompt),
                                    selectedAgent = agentName,
-                                   skipExecution = current.pendingOptions.nonEmpty,
+                                   skipExecution = false,
                                  )
-                             case IntentDecision.Clarify(question, options)  =>
-                               val numbered = options.zipWithIndex.map { case (option, idx) => s"${idx + 1}. $option" }.mkString("\n")
-                               val text     = s"$question\n$numbered"
-                               sendAssistantReply(message, text, None) *>
-                                 updateIntentState(message, current.copy(pendingOptions = options))
-                             case IntentDecision.Unknown                     =>
-                               ZIO.unit
+                             case None                                =>
+                               routeWithIntentParser(message, availableAgents)
       yield ()
     else ZIO.unit
 
-  private def shouldParseIntent(message: NormalizedMessage): Boolean =
-    message.channelName == "telegram" &&
+  private def routeWithIntentParser(
+    message: NormalizedMessage,
+    availableAgents: List[AgentInfo],
+  ): IO[GatewayServiceError, Unit] =
+    if shouldParseIntent(message) then
+      for
+        stateMap <- intentStateRef.get
+        current   = stateMap.getOrElse(message.sessionKey, IntentConversationState())
+        decision <- IntentParser.parse(message.content, current, availableAgents).provideEnvironment(
+                      ZEnvironment(llmService)
+                    )
+        _        <- decision match
+                      case IntentDecision.Route(agentName, rationale) =>
+                        val text =
+                          s"Routing request to `$agentName` ($rationale). " +
+                            "Send another message if you want to switch agent."
+                        sendAssistantReply(message, text, Some(agentName)) *>
+                          updateIntentState(message, current.copy(pendingOptions = Nil, lastAgent = Some(agentName))) *>
+                          executeRoutedAgentReply(
+                            inbound = message,
+                            selectedAgent = agentName,
+                            skipExecution = current.pendingOptions.nonEmpty,
+                          )
+                      case IntentDecision.Clarify(question, options)  =>
+                        val numbered = options.zipWithIndex.map { case (option, idx) => s"${idx + 1}. $option" }.mkString("\n")
+                        val text     = s"$question\n$numbered"
+                        sendAssistantReply(message, text, None) *>
+                          updateIntentState(message, current.copy(pendingOptions = options))
+                      case IntentDecision.Unknown                     =>
+                        ZIO.unit
+      yield ()
+    else ZIO.unit
+
+  private def boundAgentForChannel(
+    message: NormalizedMessage,
+    agents: List[AgentInfo],
+  ): IO[GatewayServiceError, Option[(String, String)]] =
+    configRepository
+      .listAgentChannelBindings
+      .map { bindings =>
+        val accountKeys = List(
+          message.metadata.get("accountId"),
+          message.metadata.get("telegram.user_id"),
+          message.metadata.get("discord.user_id"),
+          message.metadata.get("slack.user_id"),
+        ).flatten
+
+        val matches = bindings.filter { binding =>
+          binding.channelName.equalsIgnoreCase(message.channelName) &&
+          (binding.accountId.isEmpty || binding.accountId.exists(accountKeys.contains))
+        }
+
+        val byId = agents.map(agent => agent.name -> agent).toMap
+        matches
+          .flatMap(binding => byId.get(binding.agentId.value).map(agent => (agent.name, message.content)))
+          .headOption
+      }
+      .mapError(err => GatewayServiceError.Router(MessageRouterError.Persistence(err)))
+
+  private def parseDirectAgentRoute(
+    content: String,
+    availableAgents: List[AgentInfo],
+  ): Option[(String, String)] =
+    val trimmed = content.trim
+    if !trimmed.startsWith("@") then None
+    else
+      val firstToken = trimmed.takeWhile(ch => !ch.isWhitespace)
+      val handleRaw  = firstToken.stripPrefix("@").trim.toLowerCase
+      val rest       = trimmed.drop(firstToken.length).trim
+      if handleRaw.isEmpty then None
+      else
+        availableAgents
+          .find(agent =>
+            agent.handle.trim.toLowerCase == handleRaw ||
+            agent.name.trim.toLowerCase == handleRaw
+          )
+          .map(agent => (agent.name, if rest.nonEmpty then rest else content))
+
+  private def isRoutableInbound(message: NormalizedMessage): Boolean =
     message.direction == gateway.entity.MessageDirection.Inbound &&
     message.role == gateway.entity.GatewayMessageRole.User
+
+  private def shouldParseIntent(message: NormalizedMessage): Boolean =
+    message.channelName == "telegram" &&
+    isRoutableInbound(message)
 
   private def sendAssistantReply(
     inbound: NormalizedMessage,

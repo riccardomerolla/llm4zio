@@ -21,6 +21,9 @@ val AgentHealth = config.entity.AgentHealth
 type AgentInfo = config.entity.AgentInfo
 val AgentInfo = config.entity.AgentInfo
 
+type AgentChannelBinding = config.entity.AgentChannelBinding
+val AgentChannelBinding = config.entity.AgentChannelBinding
+
 type RegisterAgentRequest = config.entity.RegisterAgentRequest
 val RegisterAgentRequest = config.entity.RegisterAgentRequest
 
