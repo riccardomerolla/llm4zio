@@ -50,8 +50,9 @@ object HtmlViews:
     registry: ModelRegistryResponse,
     statuses: List[ProviderProbeStatus],
     flash: Option[String] = None,
+    errors: Map[String, String] = Map.empty,
   ): String =
-    SettingsView.aiTab(settings, registry, statuses, flash)
+    SettingsView.aiTab(settings, registry, statuses, flash, errors)
 
   def modelsPage(registry: ModelRegistryResponse, statuses: List[ProviderProbeStatus]): String =
     ModelsView.page(registry, statuses)

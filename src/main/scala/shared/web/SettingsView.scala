@@ -112,31 +112,6 @@ object SettingsView:
           )
         }
       ),
-      tag("script")(
-        raw("""
-          |document.addEventListener('DOMContentLoaded', function() {
-          |  const modeSelect = document.getElementById('telegram.mode');
-          |  const webhookGroup = document.getElementById('telegram-webhook-group');
-          |  const pollingGroup = document.getElementById('telegram-polling-group');
-          |
-          |  function updateFieldVisibility() {
-          |    const mode = modeSelect.value;
-          |    if (mode === 'Webhook') {
-          |      webhookGroup.style.display = 'block';
-          |      pollingGroup.style.display = 'none';
-          |    } else if (mode === 'Polling') {
-          |      webhookGroup.style.display = 'none';
-          |      pollingGroup.style.display = 'block';
-          |    }
-          |  }
-          |
-          |  if (modeSelect) {
-          |    updateFieldVisibility();
-          |    modeSelect.addEventListener('change', updateFieldVisibility);
-          |  }
-          |});
-        """.stripMargin)
-      ),
     )
 
   def page(
