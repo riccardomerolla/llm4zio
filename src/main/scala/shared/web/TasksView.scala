@@ -77,6 +77,9 @@ object TasksView:
           a(href := s"/reports?taskId=${run.id}", cls := "text-indigo-400 hover:text-indigo-300 text-sm font-medium")(
             "View Reports"
           ),
+          a(href := s"/graph?taskId=${run.id}", cls := "text-indigo-400 hover:text-indigo-300 text-sm font-medium")(
+            "View Graph"
+          ),
           a(href := "/tasks", cls := "text-indigo-400 hover:text-indigo-300 text-sm font-medium")("Back to Tasks"),
         ),
       ),
