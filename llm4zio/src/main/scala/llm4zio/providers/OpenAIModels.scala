@@ -94,5 +94,5 @@ case class ChatCompletionRequestWithTools(
   tools: List[OpenAITool],
   temperature: Option[Double] = None,
   max_tokens: Option[Int] = None,
-  stream: Option[Boolean] = Some(false),
+  stream: Option[Boolean] = None,
 ) derives JsonCodec

@@ -70,6 +70,7 @@ object OpenAIProvider:
                       tools = openAiTools,
                       temperature = config.temperature.orElse(Some(0.7)),
                       max_tokens = config.maxTokens,
+                      stream = Some(false),
                     )
           url     = s"${baseUrl.stripSuffix("/")}/chat/completions"
           body   <- httpClient.postJson(

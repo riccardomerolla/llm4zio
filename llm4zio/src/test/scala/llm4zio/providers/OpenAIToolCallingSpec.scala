@@ -2,6 +2,7 @@ package llm4zio.providers
 
 import zio.*
 import zio.json.*
+import zio.json.ast.Json
 import zio.test.*
 
 import llm4zio.core.*
@@ -12,8 +13,8 @@ object OpenAIToolCallingSpec extends ZIOSpecDefault:
   private val stubTool = Tool(
     name = "get_time",
     description = "Returns the current time",
-    parameters = """{"type":"object","properties":{},"required":[]}""".fromJson[zio.json.ast.Json].toOption.get,
-    execute = _ => ZIO.succeed("""{"time":"12:00"}""".fromJson[zio.json.ast.Json].toOption.get),
+    parameters = Json.Obj("type" -> Json.Str("object"), "properties" -> Json.Obj(), "required" -> Json.Arr()),
+    execute = _ => ZIO.succeed(Json.Obj("time" -> Json.Str("12:00"))),
   )
 
   private val toolCallHttpClient: HttpClient = new HttpClient:
@@ -52,7 +53,7 @@ object OpenAIToolCallingSpec extends ZIOSpecDefault:
   private val config = LlmConfig(
     provider = LlmProvider.OpenAI,
     model = "gpt-4o",
-    baseUrl = Some("https://api.openai.com"),
+    baseUrl = Some("https://api.openai.com/v1"),
     apiKey = Some("sk-test"),
   )
 
