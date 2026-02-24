@@ -12,7 +12,7 @@ import activity.control.ActivityHub
 import activity.entity.{ ActivityEvent, ActivityEventType }
 import conversation.entity.api.*
 import db.{ ChatRepository, PersistenceError, TaskRepository }
-import gateway.control.{ ChannelRegistry, GatewayService, GatewayServiceError, MessageChannelError, SessionContext }
+import gateway.control.{ ChannelRegistry, GatewayService, GatewayServiceError, MessageChannelError }
 import gateway.entity.{ GatewayMessageRole as GatewayMessageRole, MessageDirection as GatewayMessageDirection, * }
 import llm4zio.core.{ LlmError, LlmService, Streaming }
 import orchestration.control.{ AgentConfigResolver, IssueAssignmentOrchestrator }
@@ -56,7 +56,8 @@ final case class ChatControllerLive(
           conversations <- chatRepository.listConversations(0, 20)
           enriched      <- enrichConversationsWithChannel(conversations)
           sessionMeta   <- buildSessionMetaMap(enriched)
-        yield html(HtmlViews.chatDashboard(enriched, sessionMeta))
+          sessions      <- listChatSessions
+        yield html(HtmlViews.chatDashboard(enriched, sessionMeta, sessions))
       }
     },
     Method.POST / "chat"                                     -> handler { (req: Request) =>
@@ -216,6 +217,27 @@ final case class ChatControllerLive(
             if since.isDefined then chatRepository.getMessagesSince(convId, since.get)
             else chatRepository.getMessages(convId)
         yield Response.json(messages.toJson)
+      }
+    },
+    Method.GET / "api" / "sessions"                          -> handler { (_: Request) =>
+      ErrorHandlingMiddleware.fromPersistence {
+        listChatSessions.map(sessions => Response.json(sessions.toJson))
+      }
+    },
+    Method.GET / "api" / "sessions" / string("id")           -> handler { (id: String, _: Request) =>
+      ErrorHandlingMiddleware.fromPersistence {
+        val decoded = urlDecode(id)
+        for
+          session <- getChatSession(decoded)
+        yield Response.json(session.toJson)
+      }
+    },
+    Method.DELETE / "api" / "sessions" / string("id")        -> handler { (id: String, _: Request) =>
+      ErrorHandlingMiddleware.fromPersistence {
+        val decoded = urlDecode(id)
+        for
+          _ <- endSession(decoded)
+        yield Response.json(SessionDeleteResponse(deleted = true, sessionId = decoded).toJson)
       }
     },
   )
@@ -381,6 +403,11 @@ final case class ChatControllerLive(
     metadata: Map[String, String],
   )
 
+  final private case class SessionDeleteResponse(
+    deleted: Boolean,
+    sessionId: String,
+  ) derives JsonCodec
+
   private def parsePreferredAgentMention(rawContent: String): PreferredAgentMention =
     val MentionPattern = """^\s*@([A-Za-z][A-Za-z0-9_-]*)\b[:\-]?\s*(.*)$""".r
     rawContent match
@@ -439,31 +466,131 @@ final case class ChatControllerLive(
   private def resolveConversationSessionMeta(
     conversationId: String
   ): IO[PersistenceError, Option[ConversationSessionMeta]] =
-    parseLongId("conversation", conversationId).flatMap(chatRepository.getSessionContextByConversation).flatMap {
-      case None       => ZIO.none
-      case Some(link) =>
-        parseSessionContext(link.contextJson).map { parsed =>
-          Some(
-            ConversationSessionMeta(
-              channelName = sanitizeString(link.channelName).getOrElse("web"),
-              sessionKey = sanitizeString(link.sessionKey).getOrElse("unknown"),
-              linkedTaskRunId = parsed.flatMap(_.runId).map(_.toString),
-              updatedAt = link.updatedAt,
-            )
-          )
-        }
+    parseLongId("conversation", conversationId).flatMap(chatRepository.getSessionContextStateByConversation).map(
+      _.map(link =>
+        ConversationSessionMeta(
+          channelName = sanitizeString(link.channelName).getOrElse("web"),
+          sessionKey = sanitizeString(link.sessionKey).getOrElse("unknown"),
+          linkedTaskRunId = link.context.runId.map(_.toString),
+          updatedAt = link.updatedAt,
+        )
+      )
+    )
+
+  private def listChatSessions: IO[PersistenceError, List[ChatSession]] =
+    for
+      links         <- chatRepository.listSessionContextStates
+      conversations <- chatRepository.listConversations(0, Int.MaxValue)
+      convById       = conversations.flatMap(conversation => safeConversationId(conversation).map(_ -> conversation)).toMap
+      sessions      <- ZIO.foreach(links)(buildChatSession(_, convById))
+    yield sessions
+      .filterNot(_.state.equalsIgnoreCase("closed"))
+      .sortBy(_.lastActivity)(Ordering[Instant].reverse)
+
+  private def buildChatSession(
+    link: StoredSessionContextLink,
+    convById: Map[Long, ChatConversation],
+  ): UIO[ChatSession] =
+    val context               = link.context
+    val conversationFromStore = safeOption(context.conversationId) match
+      case Some(conversationId) => convById.get(conversationId)
+      case None                 => None
+    val sessionId             = s"${link.channelName.trim}:${link.sessionKey.trim}"
+    val runIdFromConversation = conversationFromStore match
+      case Some(conversation) => safeLongFromStringOption(safeOption(conversation.runId))
+      case None               => None
+    val resolvedRunId         = safeOption(context.runId).orElse(runIdFromConversation)
+    val resolvedState         = conversationFromStore.map(_.status).getOrElse("active")
+    val resolvedCount         = conversationFromStore.map(_.messages.length).getOrElse(0)
+    val resolvedConversation  =
+      safeOption(context.conversationId).orElse {
+        conversationFromStore match
+          case Some(conversation) => safeConversationId(conversation)
+          case None               => None
+      }
+    ZIO.succeed(
+      ChatSession(
+        sessionId = sessionId,
+        channel = sanitizeString(link.channelName).getOrElse("unknown"),
+        sessionKey = link.sessionKey,
+        agentName = resolveAgentName(context.metadata),
+        messageCount = resolvedCount,
+        lastActivity = link.updatedAt,
+        state = resolvedState,
+        conversationId = resolvedConversation,
+        runId = resolvedRunId,
+      )
+    )
+
+  private def safeOption[A](value: Option[A]): Option[A] =
+    try
+      value match
+        case Some(inner) => Option(inner)
+        case None        => None
+    catch
+      case _: Throwable => None
+
+  private def safeLongFromStringOption(value: Option[String]): Option[Long] =
+    safeOption(value) match
+      case Some(raw) => raw.toLongOption
+      case None      => None
+
+  private def safeConversationId(conversation: ChatConversation): Option[Long] =
+    Option(conversation) match
+      case Some(conv) => safeLongFromStringOption(safeOption(conv.id))
+      case None       => None
+
+  private def getChatSession(sessionId: String): IO[PersistenceError, ChatSession] =
+    listChatSessions.flatMap { sessions =>
+      sessions
+        .find(_.sessionId == sessionId)
+        .fold[IO[PersistenceError, ChatSession]](
+          ZIO.fail(PersistenceError.QueryFailed("get_session", s"Session not found: $sessionId"))
+        )(ZIO.succeed(_))
     }
+
+  private def endSession(sessionId: String): IO[PersistenceError, Unit] =
+    for
+      ids      <- parseSessionId(sessionId)
+      (ch, key) = ids
+      now      <- Clock.instant
+      context  <- chatRepository.getSessionContextState(ch, key)
+      _        <- ZIO.foreachDiscard(context.flatMap(_.conversationId)) { conversationId =>
+                    chatRepository.getConversation(conversationId).flatMap {
+                      case Some(conversation) =>
+                        chatRepository.updateConversation(conversation.copy(status = "closed", updatedAt = now))
+                      case None               => ZIO.unit
+                    }
+                  }
+      _        <- chatRepository.deleteSessionContext(ch, key)
+      _        <- channelRegistry.get(ch).flatMap(_.close(SessionKey(ch, key))).catchAll(_ => ZIO.unit)
+    yield ()
+
+  private def parseSessionId(sessionId: String): IO[PersistenceError, (String, String)] =
+    val normalized = sessionId.trim
+    val idx        = normalized.indexOf(':')
+    if idx <= 0 || idx >= normalized.length - 1 then
+      ZIO.fail(PersistenceError.QueryFailed("parse_session_id", s"Invalid session id '$sessionId'"))
+    else
+      val channel    = normalized.take(idx).trim
+      val sessionKey = normalized.drop(idx + 1).trim
+      if channel.isEmpty || sessionKey.isEmpty then
+        ZIO.fail(PersistenceError.QueryFailed("parse_session_id", s"Invalid session id '$sessionId'"))
+      else ZIO.succeed((channel, sessionKey))
+
+  private def resolveAgentName(metadata: Map[String, String]): Option[String] =
+    metadata
+      .get("preferredAgent")
+      .orElse(metadata.get("intent.agent"))
+      .orElse(metadata.get("agentName"))
+      .orElse(metadata.get("assignedAgent"))
+      .map(_.trim)
+      .filter(_.nonEmpty)
 
   private def parseLongId(entity: String, raw: String): IO[PersistenceError, Long] =
     ZIO
       .fromOption(raw.toLongOption)
       .orElseFail(PersistenceError.QueryFailed(s"parse_$entity", s"Invalid $entity id: '$raw'"))
-
-  private def parseSessionContext(raw: String): IO[PersistenceError, Option[SessionContext]] =
-    ZIO
-      .fromEither(raw.fromJson[SessionContext])
-      .map(Some(_))
-      .catchAll(err => ZIO.logWarning(s"invalid session context payload: $err").as(None))
 
   private def sanitizeOptional[A](value: Option[A]): Option[A] =
     try

@@ -213,6 +213,9 @@ final case class ChatRepositoryLive(
   override def getSessionContextByTaskRunId(taskRunId: Long): IO[PersistenceError, Option[SessionContextLink]] =
     allSessionContextLinks.map(_.find(l => decodeSessionContext(l.contextJson).flatMap(_.runId).contains(taskRunId)))
 
+  override def listSessionContexts: IO[PersistenceError, List[SessionContextLink]] =
+    allSessionContextLinks
+
   override def deleteSessionContext(channelName: String, sessionKey: String): IO[PersistenceError, Unit] =
     val key = this.sessionKey(channelName, sessionKey)
     kv.remove[String](key).mapError(storeErr("deleteSessionContext")) *>

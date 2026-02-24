@@ -18,6 +18,27 @@ enum SessionScopeStrategy derives JsonCodec:
       case SessionScopeStrategy.PerChannel      => SessionKey(channelName, "channel:global")
       case SessionScopeStrategy.Custom(prefix)  => SessionKey(channelName, s"${prefix.trim}:$normalized")
 
+object SessionScopeStrategy:
+  val selectable: List[SessionScopeStrategy] = List(
+    SessionScopeStrategy.PerConversation,
+    SessionScopeStrategy.PerRun,
+    SessionScopeStrategy.PerUser,
+    SessionScopeStrategy.PerChannel,
+  )
+
+  def fromString(raw: String): Option[SessionScopeStrategy] =
+    val value = raw.trim
+    value.toLowerCase match
+      case "perconversation" | "per_conversation" => Some(SessionScopeStrategy.PerConversation)
+      case "perrun" | "per_run"                   => Some(SessionScopeStrategy.PerRun)
+      case "peruser" | "per_user"                 => Some(SessionScopeStrategy.PerUser)
+      case "perchannel" | "per_channel"           => Some(SessionScopeStrategy.PerChannel)
+      case _                                      =>
+        if value.startsWith("Custom(") && value.endsWith(")") then
+          val prefix = value.drop("Custom(".length).dropRight(1).trim
+          if prefix.nonEmpty then Some(SessionScopeStrategy.Custom(prefix)) else None
+        else None
+
 case class SessionKey(
   channelName: String,
   value: String,

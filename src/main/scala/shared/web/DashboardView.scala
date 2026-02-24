@@ -5,7 +5,7 @@ import scalatags.Text.all.*
 
 object DashboardView:
 
-  def dashboard(runs: List[TaskRunRow], workflowCount: Int): String =
+  def dashboard(runs: List[TaskRunRow], workflowCount: Int, activeSessionCount: Int): String =
     val totalRuns           = runs.length
     val completedRuns       = runs.count(_.status == RunStatus.Completed)
     val successRate         = if totalRuns > 0 then (completedRuns.toDouble / totalRuns * 100).toInt else 0
@@ -15,7 +15,7 @@ object DashboardView:
     Layout.page("Dashboard", "/")(
       h1(cls := "text-2xl font-bold text-white mb-6")("Dashboard"),
       // Summary cards
-      div(cls := "grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5 mb-8")(
+      div(cls := "grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-6 mb-8")(
         Components.summaryCard(
           "Total Runs",
           totalRuns.toString,
@@ -40,6 +40,11 @@ object DashboardView:
           "Workflows",
           workflowCount.toString,
           "M4.5 6h6.75m-6.75 6h6.75m-6.75 6h6.75m3.75-10.5L18 6m0 0 2.25 1.5M18 6v4.5m0 3L18 18m0 0 2.25-1.5M18 18v-4.5",
+        ),
+        Components.summaryCard(
+          "Active Sessions",
+          activeSessionCount.toString,
+          "M17.25 6.75v10.5A2.25 2.25 0 0 1 15 19.5H6a2.25 2.25 0 0 1-2.25-2.25V6.75M8.25 9h4.5m-4.5 3h7.5m-7.5 3h3",
         ),
       ),
       // Recent tasks with HTMX auto-refresh

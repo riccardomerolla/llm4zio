@@ -154,7 +154,7 @@ final case class ChannelRegistryLive(
   override def publish(channelName: String, message: NormalizedMessage): IO[MessageChannelError, Unit] =
     get(channelName).flatMap(_.send(message)).tapBoth(
       err => markError(channelName, err.toString),
-      _ => Clock.instant.flatMap(now => markActivity(channelName, now)),
+      _ => markActivity(channelName, message.timestamp),
     )
 
   override def inboundMerged: ZStream[Any, MessageChannelError, NormalizedMessage] =

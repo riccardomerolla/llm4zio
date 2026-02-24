@@ -302,6 +302,9 @@ object GatewayServiceSpec extends ZIOSpecDefault:
       ): IO[PersistenceError, Unit] =
         ref.update(state => state.copy(sessionContexts = state.sessionContexts - ((channelName, sessionKey))))
 
+      override def listSessionContexts: IO[PersistenceError, List[SessionContextLink]] =
+        ref.get.map(_.sessionContexts.values.toList)
+
       override def createConversation(conversation: ChatConversation): IO[PersistenceError, Long]               =
         ZIO.fail(PersistenceError.QueryFailed("createConversation", "unused"))
       override def getConversation(id: Long): IO[PersistenceError, Option[ChatConversation]]                    =
@@ -503,4 +506,4 @@ object GatewayServiceSpec extends ZIOSpecDefault:
                    )).provideSomeLayer[Scope](memoryInjectionLayer(prompts))
       yield result
     },
-  ) @@ TestAspect.sequential @@ TestAspect.timeout(20.seconds)
+  ) @@ TestAspect.withLiveClock @@ TestAspect.sequential @@ TestAspect.timeout(20.seconds)

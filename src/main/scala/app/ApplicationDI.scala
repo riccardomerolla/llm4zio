@@ -264,29 +264,37 @@ object ApplicationDI:
                            DefaultFutureBackend()
                          }.orDie
         registry       = ChannelRegistryLive(channels, runtime)
-        websocket     <- WebSocketChannel.make()
+        settings      <- configRepo.getAllSettings.orElseSucceed(Nil)
+        settingMap     = settings.map(row => row.key -> row.value).toMap
+        websocket     <- WebSocketChannel.make(
+                           scopeStrategy = parseSessionScopeStrategy(
+                             settingMap.get("channel.websocket.sessionScopeStrategy")
+                           )
+                         )
         telegramClient = ConfigAwareTelegramClient(configRef, clients, backend)
         telegram      <- TelegramChannel.make(
                            client = telegramClient,
                            workflowNotifier = WorkflowNotifierLive(telegramClient, agentRegistry, repository, taskExecutor),
                            taskRepository = Some(repository),
                            taskExecutor = Some(taskExecutor),
+                           scopeStrategy = parseSessionScopeStrategy(settingMap.get("telegram.sessionScopeStrategy")),
                          )
         _             <- registry.register(websocket)
         _             <- registry.register(telegram)
-        settings      <- configRepo.getSettingsByPrefix("channel.").orElseSucceed(Nil)
-        settingMap     = settings.map(row => row.key -> row.value).toMap
         _             <- registerOptionalExternalChannel(
                            registry = registry,
                            name = "discord",
                            enabled = settingMap.get("channel.discord.enabled").exists(_.equalsIgnoreCase("true")),
                            channel =
                              DiscordChannel.make(
+                               scopeStrategy = parseSessionScopeStrategy(
+                                 settingMap.get("channel.discord.sessionScopeStrategy")
+                               ),
                                config = DiscordConfig(
                                  botToken = settingMap.getOrElse("channel.discord.botToken", ""),
                                  guildId = settingMap.get("channel.discord.guildId").map(_.trim).filter(_.nonEmpty),
                                  defaultChannelId = settingMap.get("channel.discord.channelId").map(_.trim).filter(_.nonEmpty),
-                               )
+                               ),
                              ),
                          )
         _             <- registerOptionalExternalChannel(
@@ -295,12 +303,13 @@ object ApplicationDI:
                            enabled = settingMap.get("channel.slack.enabled").exists(_.equalsIgnoreCase("true")),
                            channel =
                              SlackChannel.make(
+                               scopeStrategy = parseSessionScopeStrategy(settingMap.get("channel.slack.sessionScopeStrategy")),
                                config = SlackConfig(
                                  appToken = settingMap.getOrElse("channel.slack.appToken", ""),
                                  botToken = settingMap.get("channel.slack.botToken").map(_.trim).filter(_.nonEmpty),
                                  defaultChannelId = settingMap.get("channel.slack.channelId").map(_.trim).filter(_.nonEmpty),
                                  socketMode = settingMap.get("channel.slack.socketMode").exists(_.equalsIgnoreCase("true")),
-                               )
+                               ),
                              ),
                          )
       yield registry
@@ -315,6 +324,11 @@ object ApplicationDI:
     if enabled then
       channel.flatMap(registry.register)
     else registry.markNotConfigured(name)
+
+  private def parseSessionScopeStrategy(raw: Option[String]): gateway.entity.SessionScopeStrategy =
+    raw
+      .flatMap(gateway.entity.SessionScopeStrategy.fromString)
+      .getOrElse(gateway.entity.SessionScopeStrategy.PerConversation)
 
   final private case class ConfigAwareTelegramClient(
     configRef: Ref[GatewayConfig],

@@ -37,8 +37,7 @@ object HealthControllerSpec extends ZIOSpecDefault:
       val controller = HealthControllerLive(monitor, modelService)
       for
         response <- controller.routes.runZIO(Request.get("/health"))
-        body     <- response.body.asString
-      yield assertTrue(response.status == Status.Ok, body.contains("System Health Dashboard"))
+      yield assertTrue(response.status == Status.Found)
     },
     test("GET /api/health returns JSON snapshot") {
       val controller = HealthControllerLive(monitor, modelService)

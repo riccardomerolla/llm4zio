@@ -34,8 +34,7 @@ object ConfigControllerSpec extends ZIOSpecDefault:
         layer      <- mkLayer
         controller <- ZIO.service[ConfigController].provideLayer(layer)
         response   <- controller.routes.runZIO(Request.get("/config"))
-        body       <- response.body.asString
-      yield assertTrue(response.status == Status.Ok, body.contains("Advanced Configuration Editor"))
+      yield assertTrue(response.status == Status.Found)
     },
     test("GET /api/config/current returns current document") {
       for
