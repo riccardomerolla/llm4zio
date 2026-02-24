@@ -2,6 +2,7 @@ package llm4zio.providers
 
 import zio.*
 import zio.http.*
+import zio.stream.{ ZPipeline, ZStream }
 
 import llm4zio.core.LlmError
 
@@ -20,6 +21,16 @@ trait HttpClient:
     timeout: Duration,
   ): ZIO[Any, LlmError, String]
 
+  def postJsonStream(
+    url: String,
+    body: String,
+    headers: Map[String, String] = Map.empty,
+    timeout: Duration,
+  ): ZStream[Any, LlmError, String] =
+    ZStream.fromZIO(postJson(url, body, headers, timeout)).flatMap { raw =>
+      ZStream.fromIterable(raw.split("\\r?\\n").toList)
+    }
+
 object HttpClient:
   def get(
     url: String,
@@ -35,6 +46,14 @@ object HttpClient:
     timeout: Duration,
   ): ZIO[HttpClient, LlmError, String] =
     ZIO.serviceWithZIO[HttpClient](_.postJson(url, body, headers, timeout))
+
+  def postJsonStream(
+    url: String,
+    body: String,
+    headers: Map[String, String] = Map.empty,
+    timeout: Duration,
+  ): ZStream[HttpClient, LlmError, String] =
+    ZStream.serviceWithStream[HttpClient](_.postJsonStream(url, body, headers, timeout))
 
   val live: ZLayer[Client, Nothing, HttpClient] =
     ZLayer.fromFunction((client: Client) => fromRequestExecutor(request => client.batched(request)))
@@ -107,6 +126,56 @@ object HttpClient:
                             case status                                  =>
                               ZIO.fail(LlmError.ProviderError(s"HTTP $status: $responseBody", None))
         yield result
+
+      override def postJsonStream(
+        url: String,
+        body: String,
+        headers: Map[String, String],
+        timeout: Duration,
+      ): ZStream[Any, LlmError, String] =
+        ZStream.unwrap {
+          for
+            urlObj   <- ZIO
+                          .fromEither(URL.decode(url).left.map(err =>
+                            LlmError.InvalidRequestError(
+                              s"Invalid URL '$url': $err"
+                            )
+                          ))
+            request   = addHeaders(
+                          Request.post(urlObj, Body.fromString(body))
+                            .addHeader(Header.ContentType(MediaType.application.json)),
+                          headers,
+                        )
+            response <- execute(request)
+                          .timeoutFail(LlmError.TimeoutError(timeout))(timeout)
+                          .mapError {
+                            case llm: LlmError => llm
+                            case e: Throwable  =>
+                              LlmError.ProviderError(s"Provider unavailable: $url", Some(e))
+                          }
+          yield response.status.code match
+            case 200                                     =>
+              response.body.asStream
+                .via(ZPipeline.utf8Decode)
+                .via(ZPipeline.splitLines)
+                .mapError(err => LlmError.ProviderError(s"Failed to read streaming response from $url", Some(err)))
+            case 401 | 403                               =>
+              ZStream.fail(LlmError.AuthenticationError(url))
+            case 429                                     =>
+              ZStream.fail(LlmError.RateLimitError(Some(retryAfterDuration(response, timeout))))
+            case status if status >= 400 && status < 500 =>
+              ZStream.fromZIO(
+                response.body.asString.mapError(err => LlmError.ParseError(err.getMessage, ""))
+              ).flatMap(body => ZStream.fail(LlmError.InvalidRequestError(s"HTTP $status: $body")))
+            case status if status >= 500                 =>
+              ZStream.fromZIO(
+                response.body.asString.mapError(err => LlmError.ParseError(err.getMessage, ""))
+              ).flatMap(body => ZStream.fail(LlmError.ProviderError(s"HTTP $status: $body", None)))
+            case status                                  =>
+              ZStream.fromZIO(
+                response.body.asString.mapError(err => LlmError.ParseError(err.getMessage, ""))
+              ).flatMap(body => ZStream.fail(LlmError.ProviderError(s"HTTP $status: $body", None)))
+        }
     }
 
   private def addHeaders(request: Request, headers: Map[String, String]): Request =
