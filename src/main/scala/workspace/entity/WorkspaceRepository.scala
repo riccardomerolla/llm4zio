@@ -22,7 +22,7 @@ object WorkspaceRepository:
     ZLayer.fromFunction(WorkspaceRepositoryES.apply)
 
 final case class WorkspaceRepositoryES(
-  configStore: ConfigStoreModule.ConfigStoreService,
+  configStore: ConfigStoreModule.ConfigStoreService
 ) extends WorkspaceRepository:
 
   private val ts = configStore.store
@@ -69,7 +69,8 @@ final case class WorkspaceRepositoryES(
   private def fetchByPrefix[V](
     prefix: String,
     op: String,
-  )(using zio.schema.Schema[V]): IO[PersistenceError, List[V]] =
+  )(using zio.schema.Schema[V]
+  ): IO[PersistenceError, List[V]] =
     configStore.rawStore
       .streamKeys[String]
       .filter(_.startsWith(prefix))

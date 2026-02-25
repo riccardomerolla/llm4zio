@@ -94,20 +94,20 @@ object WorkspaceRepositorySpec extends ZIOSpecDefault:
       test("WorkspaceRepository get returns None for missing id") {
         withTempDir { dir =>
           (for
-            svc  <- ZIO.service[ConfigStoreModule.ConfigStoreService]
-            repo  = WorkspaceRepositoryES(svc)
-            got  <- repo.get("missing")
+            svc <- ZIO.service[ConfigStoreModule.ConfigStoreService]
+            repo = WorkspaceRepositoryES(svc)
+            got <- repo.get("missing")
           yield assertTrue(got.isEmpty)).provideLayer(layerFor(dir))
         }
       },
       test("WorkspaceRepository delete removes entry") {
         withTempDir { dir =>
           (for
-            svc  <- ZIO.service[ConfigStoreModule.ConfigStoreService]
-            repo  = WorkspaceRepositoryES(svc)
-            _    <- repo.save(sampleWs)
-            _    <- repo.delete("ws-1")
-            got  <- repo.get("ws-1")
+            svc <- ZIO.service[ConfigStoreModule.ConfigStoreService]
+            repo = WorkspaceRepositoryES(svc)
+            _   <- repo.save(sampleWs)
+            _   <- repo.delete("ws-1")
+            got <- repo.get("ws-1")
           yield assertTrue(got.isEmpty)).provideLayer(layerFor(dir))
         }
       },
@@ -124,8 +124,17 @@ object WorkspaceRepositorySpec extends ZIOSpecDefault:
       test("WorkspaceRepository listRuns returns only runs for the given workspace") {
         withTempDir { dir =>
           val run2 = WorkspaceRun(
-            "r2", "ws-2", "#2", "opencode", "p", "c2", "/wt2", "b2", RunStatus.Failed,
-            Instant.parse("2026-02-24T10:00:00Z"), Instant.parse("2026-02-24T10:00:00Z"),
+            "r2",
+            "ws-2",
+            "#2",
+            "opencode",
+            "p",
+            "c2",
+            "/wt2",
+            "b2",
+            RunStatus.Failed,
+            Instant.parse("2026-02-24T10:00:00Z"),
+            Instant.parse("2026-02-24T10:00:00Z"),
           )
           (for
             svc  <- ZIO.service[ConfigStoreModule.ConfigStoreService]

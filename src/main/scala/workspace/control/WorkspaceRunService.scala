@@ -3,12 +3,13 @@ package workspace.control
 import java.nio.file.Paths
 
 import zio.*
+import zio.json.*
 
 import conversation.entity.api.{ ChatConversation, ConversationEntry, MessageType, SenderType }
 import db.ChatRepository
 import workspace.entity.*
 
-case class AssignRunRequest(issueRef: String, prompt: String, agentName: String)
+case class AssignRunRequest(issueRef: String, prompt: String, agentName: String) derives JsonCodec
 
 trait WorkspaceRunService:
   def assign(workspaceId: String, req: AssignRunRequest): IO[WorkspaceError, WorkspaceRun]

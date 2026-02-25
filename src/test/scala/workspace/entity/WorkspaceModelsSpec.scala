@@ -2,13 +2,14 @@ package workspace.entity
 
 import java.time.Instant
 
+import zio.Scope
 import zio.json.*
 import zio.test.*
 
 object WorkspaceModelsSpec extends ZIOSpecDefault:
-  def spec = suite("WorkspaceModelsSpec")(
+  def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("WorkspaceModelsSpec")(
     test("Workspace round-trips through JSON") {
-      val ws = Workspace(
+      val ws      = Workspace(
         id = "ws-1",
         name = "my-api",
         localPath = "/home/user/projects/my-api",
@@ -23,7 +24,7 @@ object WorkspaceModelsSpec extends ZIOSpecDefault:
       assertTrue(decoded == Right(ws))
     },
     test("WorkspaceRun round-trips through JSON") {
-      val run = WorkspaceRun(
+      val run     = WorkspaceRun(
         id = "run-1",
         workspaceId = "ws-1",
         issueRef = "#42",
