@@ -54,6 +54,12 @@ object Layout:
               ul(attr("role") := "list", cls := "-mx-2 mt-2 space-y-1")(
                 navItem("/chat", "Chat", Icons.chat, currentPath.startsWith("/chat")),
                 navItem("/issues", "Issues", Icons.flag, currentPath.startsWith("/issues")),
+                navItem(
+                  "/workspaces",
+                  "Workspaces",
+                  Icons.folder,
+                  currentPath.startsWith("/workspaces") || currentPath.startsWith("/settings/workspaces"),
+                ),
                 navItem("/activity", "Activity", Icons.activity, currentPath.startsWith("/activity")),
                 navItem("/memory", "Memory", Icons.archive, currentPath.startsWith("/memory")),
               ),

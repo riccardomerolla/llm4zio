@@ -62,6 +62,8 @@ import taskrun.boundary.{
   ReportsController as TaskRunReportsController,
   TasksController as TaskRunTasksController,
 }
+import workspace.control.WorkspaceRunService
+import workspace.entity.WorkspaceRepository
 
 object ApplicationDI:
 
@@ -240,6 +242,8 @@ object ApplicationDI:
       OrchestrationIssueAssignmentOrchestrator.live,
       StreamAbortRegistry.live,
       ToolRegistry.layer,
+      WorkspaceRepository.live,
+      WorkspaceRunService.live,
       ConversationChatController.live,
       IssuesIssueController.live,
       ActivityController.live,

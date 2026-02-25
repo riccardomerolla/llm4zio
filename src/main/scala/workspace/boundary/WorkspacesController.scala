@@ -13,6 +13,16 @@ object WorkspacesController:
 
   def routes(repo: WorkspaceRepository, runSvc: WorkspaceRunService): Routes[Any, Response] =
     Routes(
+      // Redirect /workspaces → /settings/workspaces
+      Method.GET / "workspaces" -> handler { (_: Request) =>
+        ZIO.succeed(
+          Response(
+            status = Status.Found,
+            headers = Headers(Header.Location(URL.decode("/settings/workspaces").getOrElse(URL.root))),
+          )
+        )
+      },
+
       // Full page
       Method.GET / "settings" / "workspaces" -> handler { (_: Request) =>
         repo.list
