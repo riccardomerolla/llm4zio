@@ -1,7 +1,7 @@
 package shared.web
 
 import scalatags.Text.all.*
-import workspace.entity.{ RunStatus, Workspace, WorkspaceRun }
+import workspace.entity.{ RunMode, RunStatus, Workspace, WorkspaceRun }
 
 object WorkspacesView:
 
@@ -63,6 +63,7 @@ object WorkspacesView:
           ws.defaultAgent.map(a =>
             p(cls := "mt-1 text-xs text-slate-500")(s"Default agent: $a")
           ).getOrElse(frag()),
+          p(cls := "mt-1 text-xs text-slate-500")(runModeLabel(ws.runMode)),
           ws.description.map(d =>
             p(cls := "mt-1 text-sm text-slate-400")(d)
           ).getOrElse(frag()),
@@ -110,6 +111,11 @@ object WorkspacesView:
       ws = Some(ws),
     )
 
+  private def runModeLabel(runMode: RunMode): String =
+    runMode match
+      case RunMode.Host                     => "Run mode: Host"
+      case RunMode.Docker(image, _, _, _)   => s"Run mode: \uD83D\uDC33 Docker ($image)"
+
   private def modalForm(
     title: String,
     formId: String,
@@ -141,6 +147,7 @@ object WorkspacesView:
         formField("localPath", "Local path", ws.flatMap(v => Some(v.localPath)).getOrElse(""), required = true),
         formField("defaultAgent", "Default agent", ws.flatMap(_.defaultAgent).getOrElse(""), required = false),
         formField("description", "Description", ws.flatMap(_.description).getOrElse(""), required = false),
+        runModeField(ws.map(_.runMode).getOrElse(RunMode.Host), formId),
         div(cls := "flex gap-3 pt-2")(
           button(
             `type` := "submit",
@@ -153,6 +160,80 @@ object WorkspacesView:
         ),
       ),
     ).render
+
+  private def runModeField(currentMode: RunMode, scopeId: String): Frag =
+    val isDocker = currentMode.isInstanceOf[RunMode.Docker]
+    val (dockerImage, dockerNetwork, dockerMount) = currentMode match
+      case RunMode.Docker(img, _, mount, net) => (img, net.getOrElse(""), mount)
+      case RunMode.Host                       => ("", "", true)
+    div(cls := "space-y-2")(
+      label(cls := "mb-1 block text-sm font-semibold text-slate-200")("Run mode"),
+      div(cls := "flex gap-4")(
+        label(cls := "flex items-center gap-1.5 text-sm text-slate-200")(
+          input(
+            `type` := "radio",
+            name   := s"runModeType-$scopeId",
+            value  := "host",
+            if !isDocker then checked else (),
+            attr("onchange") := s"document.getElementById('docker-fields-$scopeId').style.display='none'",
+          ),
+          "Host",
+        ),
+        label(cls := "flex items-center gap-1.5 text-sm text-slate-200")(
+          input(
+            `type` := "radio",
+            name   := s"runModeType-$scopeId",
+            value  := "docker",
+            if isDocker then checked else (),
+            attr("onchange") := s"document.getElementById('docker-fields-$scopeId').style.display='block'",
+          ),
+          "Docker",
+        ),
+      ),
+      div(
+        id    := s"docker-fields-$scopeId",
+        style := s"display:${if isDocker then "block" else "none"}",
+        cls   := "space-y-2 pl-2 border-l border-white/10",
+      )(
+        div(
+          label(cls := "mb-1 block text-xs font-semibold text-slate-300", `for` := s"dockerImage-$scopeId")(
+            "Docker image"
+          ),
+          input(
+            `type`       := "text",
+            id           := s"dockerImage-$scopeId",
+            name         := s"dockerImage-$scopeId",
+            value        := dockerImage,
+            placeholder  := "e.g. ghcr.io/opencode-ai/opencode:latest",
+            cls          := "w-full rounded-lg border border-white/15 bg-slate-800/80 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-indigo-400/40 focus:outline-none",
+          ),
+        ),
+        div(cls := "flex items-center gap-2")(
+          input(
+            `type` := "checkbox",
+            id     := s"dockerMount-$scopeId",
+            name   := s"dockerMount-$scopeId",
+            if dockerMount then checked else (),
+          ),
+          label(cls := "text-xs text-slate-300", `for` := s"dockerMount-$scopeId")(
+            "Mount worktree at /workspace"
+          ),
+        ),
+        div(
+          label(cls := "mb-1 block text-xs font-semibold text-slate-300", `for` := s"dockerNetwork-$scopeId")(
+            "Network (optional)"
+          ),
+          input(
+            `type`      := "text",
+            id          := s"dockerNetwork-$scopeId",
+            name        := s"dockerNetwork-$scopeId",
+            value       := dockerNetwork,
+            placeholder := "e.g. none",
+            cls         := "w-full rounded-lg border border-white/15 bg-slate-800/80 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-indigo-400/40 focus:outline-none",
+          ),
+        ),
+      ),
+    )
 
   private def formField(fieldName: String, labelText: String, fieldValue: String, required: Boolean): Frag =
     div(

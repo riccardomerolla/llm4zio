@@ -52,6 +52,8 @@ final case class WorkspaceRunServiceLive(
   // Injectable for testing: (repoPath, worktreePath, branch) => effect
   worktreeAdd: (String, String, String) => IO[WorkspaceError, Unit] = WorkspaceRunServiceLive.defaultWorktreeAdd,
   worktreeRemove: String => Task[Unit] = WorkspaceRunServiceLive.defaultWorktreeRemove,
+  // Injectable for testing: checks Docker availability
+  dockerCheck: IO[WorkspaceError, Unit] = DockerSupport.requireDocker,
 ) extends WorkspaceRunService:
 
   override def assign(workspaceId: String, req: AssignRunRequest): IO[WorkspaceError, WorkspaceRun] =
@@ -63,6 +65,9 @@ final case class WorkspaceRunServiceLive(
                     _.fold[IO[WorkspaceError, Workspace]](ZIO.fail(WorkspaceError.NotFound(workspaceId)))(ZIO.succeed)
                   )
       _      <- ZIO.unless(ws.enabled)(ZIO.fail(WorkspaceError.Disabled(workspaceId)))
+      _      <- ws.runMode match
+                  case RunMode.Docker(_, _, _, _) => dockerCheck
+                  case RunMode.Host               => ZIO.unit
       runId   = java.util.UUID.randomUUID().toString
       short   = runId.take(8)
       branch  = s"agent/${req.issueRef.stripPrefix("#")}-$short"
@@ -94,7 +99,7 @@ final case class WorkspaceRunServiceLive(
       _      <- wsRepo
                   .saveRun(run)
                   .mapError(e => WorkspaceError.PersistenceFailure(RuntimeException(e.toString)))
-      _      <- executeInFiber(run).forkDaemon
+      _      <- executeInFiber(run, ws.runMode).forkDaemon
     yield run
 
   override def continueRun(runId: String, followUpPrompt: String): IO[WorkspaceError, Unit] =
@@ -105,11 +110,17 @@ final case class WorkspaceRunServiceLive(
                .flatMap(
                  _.fold[IO[WorkspaceError, WorkspaceRun]](ZIO.fail(WorkspaceError.NotFound(runId)))(ZIO.succeed)
                )
-      _   <- executeInFiber(run.copy(prompt = followUpPrompt)).forkDaemon
+      ws  <- wsRepo
+               .get(run.workspaceId)
+               .mapError(e => WorkspaceError.PersistenceFailure(RuntimeException(e.toString)))
+               .flatMap(
+                 _.fold[IO[WorkspaceError, Workspace]](ZIO.fail(WorkspaceError.NotFound(run.workspaceId)))(ZIO.succeed)
+               )
+      _   <- executeInFiber(run.copy(prompt = followUpPrompt), ws.runMode).forkDaemon
     yield ()
 
-  private def executeInFiber(run: WorkspaceRun): IO[WorkspaceError, Unit] =
-    val argv = CliAgentRunner.buildArgv(run.agentName, run.prompt, run.worktreePath)
+  private def executeInFiber(run: WorkspaceRun, runMode: RunMode): IO[WorkspaceError, Unit] =
+    val argv = CliAgentRunner.buildArgv(run.agentName, run.prompt, run.worktreePath, runMode)
     for
       _                <- wsRepo
                             .updateRunStatus(run.id, RunStatus.Running)

@@ -8,6 +8,23 @@ import zio.test.*
 
 object WorkspaceModelsSpec extends ZIOSpecDefault:
   def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("WorkspaceModelsSpec")(
+    test("RunMode.Host round-trips through JSON") {
+      val mode: RunMode = RunMode.Host
+      assertTrue(mode.toJson.fromJson[RunMode] == Right(mode))
+    },
+    test("RunMode.Docker round-trips through JSON with all optional fields") {
+      val mode: RunMode = RunMode.Docker(
+        image = "ghcr.io/opencode-ai/opencode:latest",
+        extraArgs = List("--env", "FOO=bar"),
+        mountWorktree = true,
+        network = Some("none"),
+      )
+      assertTrue(mode.toJson.fromJson[RunMode] == Right(mode))
+    },
+    test("RunMode.Docker round-trips through JSON with defaults") {
+      val mode: RunMode = RunMode.Docker(image = "gemini:latest")
+      assertTrue(mode.toJson.fromJson[RunMode] == Right(mode))
+    },
     test("Workspace round-trips through JSON") {
       val ws      = Workspace(
         id = "ws-1",
@@ -16,6 +33,22 @@ object WorkspaceModelsSpec extends ZIOSpecDefault:
         defaultAgent = Some("gemini-cli"),
         description = None,
         enabled = true,
+        createdAt = Instant.parse("2026-02-24T10:00:00Z"),
+        updatedAt = Instant.parse("2026-02-24T10:00:00Z"),
+      )
+      val json    = ws.toJson
+      val decoded = json.fromJson[Workspace]
+      assertTrue(decoded == Right(ws))
+    },
+    test("Workspace with RunMode.Docker round-trips through JSON") {
+      val ws      = Workspace(
+        id = "ws-docker",
+        name = "sandboxed-api",
+        localPath = "/home/user/projects/sandboxed-api",
+        defaultAgent = Some("opencode"),
+        description = None,
+        enabled = true,
+        runMode = RunMode.Docker(image = "ghcr.io/opencode-ai/opencode:latest", network = Some("none")),
         createdAt = Instant.parse("2026-02-24T10:00:00Z"),
         updatedAt = Instant.parse("2026-02-24T10:00:00Z"),
       )

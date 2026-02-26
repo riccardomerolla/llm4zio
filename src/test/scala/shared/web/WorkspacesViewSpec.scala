@@ -4,10 +4,10 @@ import java.time.Instant
 
 import zio.test.*
 
-import workspace.entity.{ RunStatus, Workspace, WorkspaceRun }
+import workspace.entity.{ RunMode, RunStatus, Workspace, WorkspaceRun }
 
 object WorkspacesViewSpec extends ZIOSpecDefault:
-  private val sampleWs  = Workspace(
+  private val sampleWs = Workspace(
     id = "ws-1",
     name = "my-api",
     localPath = "/home/user/my-api",
@@ -16,6 +16,11 @@ object WorkspacesViewSpec extends ZIOSpecDefault:
     enabled = true,
     createdAt = Instant.parse("2026-02-24T10:00:00Z"),
     updatedAt = Instant.parse("2026-02-24T10:00:00Z"),
+  )
+
+  private val dockerWs = sampleWs.copy(
+    id = "ws-docker",
+    runMode = RunMode.Docker(image = "gemini:latest", network = Some("none")),
   )
   private val sampleRun = WorkspaceRun(
     id = "run-1",
@@ -56,5 +61,13 @@ object WorkspacesViewSpec extends ZIOSpecDefault:
     test("runsFragment renders empty state") {
       val html = WorkspacesView.runsFragment(List.empty)
       assertTrue(html.contains("No runs"))
+    },
+    test("workspace card with RunMode.Host renders 'Host'") {
+      val html = WorkspacesView.page(List(sampleWs))
+      assertTrue(html.contains("Host"))
+    },
+    test("workspace card with RunMode.Docker renders 'Docker' and image name") {
+      val html = WorkspacesView.page(List(dockerWs))
+      assertTrue(html.contains("Docker") && html.contains("gemini:latest"))
     },
   )

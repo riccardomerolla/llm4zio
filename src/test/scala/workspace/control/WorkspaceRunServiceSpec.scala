@@ -66,13 +66,22 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
     updatedAt = Instant.parse("2026-02-24T10:00:00Z"),
   )
 
+  private val dockerWs = sampleWs.copy(
+    id = "ws-docker",
+    runMode = RunMode.Docker(image = "my-agent:latest"),
+  )
+
   // Stub git ops: worktree add is a no-op, remove is a no-op
   private val noopWorktreeAdd: (String, String, String) => IO[WorkspaceError, Unit] =
     (_, _, _) => ZIO.unit
   private val noopWorktreeRemove: String => Task[Unit]                              =
     _ => ZIO.unit
 
-  private def makeService(ws: Workspace = sampleWs) =
+  private val dockerAvailable: IO[WorkspaceError, Unit]   = ZIO.unit
+  private val dockerUnavailable: IO[WorkspaceError, Unit] =
+    ZIO.fail(WorkspaceError.DockerNotAvailable("docker not available (stubbed)"))
+
+  private def makeService(ws: Workspace = sampleWs, dockerCheck: IO[WorkspaceError, Unit] = dockerAvailable) =
     for
       messages <- Ref.make(List.empty[String])
       wsMap    <- Ref.make(Map(ws.id -> ws))
@@ -80,7 +89,13 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
       chatRepo  = StubChatRepo(messages)
       wsRepo    = StubWorkspaceRepo(wsMap, runMap)
       svc       =
-        WorkspaceRunServiceLive(wsRepo, chatRepo, worktreeAdd = noopWorktreeAdd, worktreeRemove = noopWorktreeRemove)
+        WorkspaceRunServiceLive(
+          wsRepo,
+          chatRepo,
+          worktreeAdd = noopWorktreeAdd,
+          worktreeRemove = noopWorktreeRemove,
+          dockerCheck = dockerCheck,
+        )
     yield (svc, wsRepo, messages)
 
   def spec: Spec[TestEnvironment & Scope, Any] = suite("WorkspaceRunServiceSpec")(
@@ -147,4 +162,20 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
       // Status is either Failed (timeout fired) or Pending (git worktree add failed before fork)
       yield assertTrue(runs.isEmpty || runs.forall(r => r.status == RunStatus.Failed || r.status == RunStatus.Pending))
     } @@ TestAspect.withLiveClock,
+    test("assign succeeds when workspace has RunMode.Host even when dockerCheck would fail") {
+      for
+        (svc, _, _) <- makeService(sampleWs, dockerCheck = dockerUnavailable)
+        req          = AssignRunRequest(issueRef = "#1", prompt = "echo hello", agentName = "echo")
+        run         <- svc.assign("ws-1", req)
+      yield assertTrue(run.workspaceId == "ws-1")
+    },
+    test("assign fails with DockerNotAvailable when RunMode.Docker and Docker is unavailable") {
+      for
+        (svc, _, _) <- makeService(dockerWs, dockerCheck = dockerUnavailable)
+        req          = AssignRunRequest(issueRef = "#1", prompt = "echo hello", agentName = "echo")
+        result      <- svc.assign("ws-docker", req).either
+      yield assertTrue(result match
+        case Left(WorkspaceError.DockerNotAvailable(_)) => true
+        case _                                          => false)
+    },
   )

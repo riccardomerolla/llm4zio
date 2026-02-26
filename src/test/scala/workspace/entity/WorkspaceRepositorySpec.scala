@@ -45,6 +45,18 @@ object WorkspaceRepositorySpec extends ZIOSpecDefault:
     updatedAt = Instant.parse("2026-02-24T10:00:00Z"),
   )
 
+  private val dockerWs = Workspace(
+    id = "ws-docker",
+    name = "sandboxed-api",
+    localPath = "/tmp/sandboxed-api",
+    defaultAgent = Some("opencode"),
+    description = None,
+    enabled = true,
+    runMode = RunMode.Docker("my-image:latest", Nil, mountWorktree = true, network = Some("none")),
+    createdAt = Instant.parse("2026-02-24T10:00:00Z"),
+    updatedAt = Instant.parse("2026-02-24T10:00:00Z"),
+  )
+
   private val sampleRun = WorkspaceRun(
     id = "run-1",
     workspaceId = "ws-1",
@@ -154,6 +166,15 @@ object WorkspaceRepositorySpec extends ZIOSpecDefault:
             _      <- repo.updateRunStatus("run-1", RunStatus.Completed)
             loaded <- repo.getRun("run-1")
           yield assertTrue(loaded.exists(_.status == RunStatus.Completed))).provideLayer(layerFor(dir))
+        }
+      },
+      test("Workspace with RunMode.Docker round-trips through TypedStore") {
+        withTempDir { dir =>
+          (for
+            svc    <- ZIO.service[ConfigStoreModule.ConfigStoreService]
+            _      <- svc.store.store("workspace:ws-docker", dockerWs)
+            loaded <- svc.store.fetch[String, Workspace]("workspace:ws-docker")
+          yield assertTrue(loaded.contains(dockerWs))).provideLayer(layerFor(dir))
         }
       },
     )

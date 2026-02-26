@@ -70,6 +70,7 @@ object WorkspacesController:
                      defaultAgent = patch.defaultAgent,
                      description = patch.description,
                      enabled = true,
+                     runMode = patch.runMode,
                      createdAt = now,
                      updatedAt = now,
                    )
@@ -95,6 +96,7 @@ object WorkspacesController:
                             localPath = patch.localPath,
                             defaultAgent = patch.defaultAgent,
                             description = patch.description,
+                            runMode = patch.runMode,
                             updatedAt = now,
                           )
                           for
@@ -164,4 +166,5 @@ case class WorkspaceCreateRequest(
   localPath: String,
   defaultAgent: Option[String],
   description: Option[String],
+  runMode: RunMode = RunMode.Host,
 ) derives JsonCodec

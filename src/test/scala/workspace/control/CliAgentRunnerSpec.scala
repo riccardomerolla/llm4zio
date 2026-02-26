@@ -3,8 +3,11 @@ package workspace.control
 import zio.*
 import zio.test.*
 
+import workspace.entity.RunMode
+
 object CliAgentRunnerSpec extends ZIOSpecDefault:
   def spec: Spec[TestEnvironment & Scope, Any] = suite("CliAgentRunnerSpec")(
+    // RunMode.Host — same as before
     test("buildArgv for echo agent returns [echo, prompt]") {
       val argv = CliAgentRunner.buildArgv("echo", "hello world", "/tmp/wt")
       assertTrue(argv == List("echo", "hello world"))
@@ -32,6 +35,41 @@ object CliAgentRunnerSpec extends ZIOSpecDefault:
     test("buildArgv for unknown agent passes prompt as single arg") {
       val argv = CliAgentRunner.buildArgv("my-agent", "do something", "/tmp/wt")
       assertTrue(argv == List("my-agent", "do something"))
+    },
+    test("buildArgv with RunMode.Host is identical to default") {
+      val argvDefault  = CliAgentRunner.buildArgv("gemini-cli", "fix it", "/tmp/wt")
+      val argvExplicit = CliAgentRunner.buildArgv("gemini-cli", "fix it", "/tmp/wt", RunMode.Host)
+      assertTrue(argvDefault == argvExplicit)
+    },
+    test("buildArgv with RunMode.Docker wraps in docker run with mount and workdir") {
+      val argv = CliAgentRunner.buildArgv(
+        "gemini-cli",
+        "fix it",
+        "/tmp/wt",
+        RunMode.Docker("gemini:latest", Nil, mountWorktree = true, None),
+      )
+      assertTrue(
+        argv == List("docker", "run", "--rm", "-v", "/tmp/wt:/workspace", "--workdir", "/workspace", "gemini:latest",
+          "gemini", "-p", "fix it", "/workspace")
+      )
+    },
+    test("buildArgv with RunMode.Docker and network includes --network flag") {
+      val argv = CliAgentRunner.buildArgv(
+        "gemini-cli",
+        "fix it",
+        "/tmp/wt",
+        RunMode.Docker("gemini:latest", Nil, mountWorktree = true, network = Some("none")),
+      )
+      assertTrue(argv.containsSlice(List("--network", "none")))
+    },
+    test("buildArgv with RunMode.Docker and mountWorktree=false omits -v and --workdir") {
+      val argv = CliAgentRunner.buildArgv(
+        "gemini-cli",
+        "fix it",
+        "/tmp/wt",
+        RunMode.Docker("gemini:latest", Nil, mountWorktree = false, None),
+      )
+      assertTrue(!argv.contains("-v") && !argv.contains("--workdir"))
     },
     test("runProcess with echo collects output line and returns exit 0") {
       for

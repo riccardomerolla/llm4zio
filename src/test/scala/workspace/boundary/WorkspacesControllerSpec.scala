@@ -4,6 +4,7 @@ import java.time.Instant
 
 import zio.*
 import zio.http.*
+import zio.json.*
 import zio.test.*
 
 import workspace.control.{ AssignRunRequest, WorkspaceRunService }
@@ -78,5 +79,26 @@ object WorkspacesControllerSpec extends ZIOSpecDefault:
         req    = Request.get(URL(Path.decode("/api/workspaces/ws-1/runs")))
         resp  <- routes.runZIO(req)
       yield assertTrue(resp.status == Status.Ok)
+    },
+    test("WorkspaceCreateRequest with default RunMode.Host round-trips through JSON") {
+      val req     = WorkspaceCreateRequest(
+        name = "my-api",
+        localPath = "/tmp/my-api",
+        defaultAgent = Some("gemini-cli"),
+        description = None,
+      )
+      val decoded = req.toJson.fromJson[WorkspaceCreateRequest]
+      assertTrue(decoded == Right(req) && decoded.exists(_.runMode == RunMode.Host))
+    },
+    test("WorkspaceCreateRequest with RunMode.Docker round-trips through JSON") {
+      val req     = WorkspaceCreateRequest(
+        name = "sandboxed",
+        localPath = "/tmp/sandboxed",
+        defaultAgent = Some("opencode"),
+        description = None,
+        runMode = RunMode.Docker(image = "opencode:latest", network = Some("none")),
+      )
+      val decoded = req.toJson.fromJson[WorkspaceCreateRequest]
+      assertTrue(decoded == Right(req))
     },
   )
