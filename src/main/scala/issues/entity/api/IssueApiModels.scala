@@ -11,7 +11,7 @@ enum IssuePriority derives JsonCodec, Schema:
 enum IssueStatus derives JsonCodec, Schema:
   case Open, Assigned, InProgress, Completed, Failed, Skipped
 
-case class AgentIssue(
+case class AgentIssueView(
   id: Option[String] = None,
   runId: Option[String] = None,
   conversationId: Option[String] = None,
@@ -33,7 +33,7 @@ case class AgentIssue(
   updatedAt: Instant,
 ) derives JsonCodec
 
-case class AgentAssignment(
+case class AgentAssignmentView(
   id: Option[String] = None,
   issueId: String,
   agentName: String,
