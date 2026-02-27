@@ -7,6 +7,8 @@ import zio.json.*
 
 import conversation.entity.api.{ ChatConversation, ConversationEntry, MessageType, SenderType }
 import db.ChatRepository
+import issues.entity.{ AgentIssue as DomainIssue, IssueRepository }
+import shared.ids.Ids.IssueId
 import workspace.entity.*
 
 case class AssignRunRequest(issueRef: String, prompt: String, agentName: String) derives JsonCodec
@@ -16,9 +18,9 @@ trait WorkspaceRunService:
   def continueRun(runId: String, followUpPrompt: String): IO[WorkspaceError, Unit]
 
 object WorkspaceRunService:
-  val live: ZLayer[WorkspaceRepository & ChatRepository, Nothing, WorkspaceRunService] =
-    ZLayer.fromFunction((repo: WorkspaceRepository, chat: ChatRepository) =>
-      WorkspaceRunServiceLive(repo, chat)
+  val live: ZLayer[WorkspaceRepository & ChatRepository & IssueRepository, Nothing, WorkspaceRunService] =
+    ZLayer.fromFunction((repo: WorkspaceRepository, chat: ChatRepository, issueRepo: IssueRepository) =>
+      WorkspaceRunServiceLive(repo, chat, issueRepo)
     )
 
 object WorkspaceRunServiceLive:
@@ -48,6 +50,7 @@ object WorkspaceRunServiceLive:
 final case class WorkspaceRunServiceLive(
   wsRepo: WorkspaceRepository,
   chatRepo: ChatRepository,
+  issueRepo: IssueRepository,
   timeoutSeconds: Long = 1800,
   // Injectable for testing: (repoPath, worktreePath, branch) => effect
   worktreeAdd: (String, String, String) => IO[WorkspaceError, Unit] = WorkspaceRunServiceLive.defaultWorktreeAdd,
@@ -68,11 +71,21 @@ final case class WorkspaceRunServiceLive(
       _      <- ws.runMode match
                   case RunMode.Docker(_, _, _, _) => dockerCheck
                   case RunMode.Host               => ZIO.unit
+      issue  <- {
+                  val refStr = req.issueRef.stripPrefix("#")
+                  if refStr.isEmpty then ZIO.succeed(None)
+                  else
+                    issueRepo.get(IssueId(refStr))
+                      .map(Some(_))
+                      .mapError(e => WorkspaceError.PersistenceFailure(RuntimeException(e.toString)))
+                      .catchAll(_ => ZIO.succeed(None))
+                }
       runId   = java.util.UUID.randomUUID().toString
       short   = runId.take(8)
       branch  = s"agent/${req.issueRef.stripPrefix("#")}-$short"
       wtPath  = s"${sys.props("user.home")}/.cache/agent-worktrees/${ws.name}/$runId"
       _      <- worktreeAdd(ws.localPath, wtPath, branch)
+      prompt  = buildPrompt(req, issue, ws.localPath, wtPath)
       now    <- Clock.instant
       conv    = ChatConversation(
                   title = s"[${ws.name}] ${req.issueRef}",
@@ -89,29 +102,34 @@ final case class WorkspaceRunServiceLive(
                       conversationId = convId.toString,
                       sender = "user",
                       senderType = SenderType.User,
-                      content = req.prompt,
+                      content = prompt,
                       messageType = MessageType.Text,
                       createdAt = now,
                       updatedAt = now,
                     )
                   )
                   .mapError(e => WorkspaceError.PersistenceFailure(RuntimeException(e.toString)))
-      run     = WorkspaceRun(
-                  id = runId,
-                  workspaceId = workspaceId,
-                  issueRef = req.issueRef,
-                  agentName = req.agentName,
-                  prompt = req.prompt,
-                  conversationId = convId.toString,
-                  worktreePath = wtPath,
-                  branchName = branch,
-                  status = RunStatus.Pending,
-                  createdAt = now,
-                  updatedAt = now,
-                )
       _      <- wsRepo
-                  .saveRun(run)
+                  .appendRun(
+                    WorkspaceRunEvent.Assigned(
+                      runId = runId,
+                      workspaceId = workspaceId,
+                      issueRef = req.issueRef,
+                      agentName = req.agentName,
+                      prompt = prompt,
+                      conversationId = convId.toString,
+                      worktreePath = wtPath,
+                      branchName = branch,
+                      occurredAt = now,
+                    )
+                  )
                   .mapError(e => WorkspaceError.PersistenceFailure(RuntimeException(e.toString)))
+      run    <- wsRepo
+                  .getRun(runId)
+                  .mapError(e => WorkspaceError.PersistenceFailure(RuntimeException(e.toString)))
+                  .flatMap(
+                    _.fold[IO[WorkspaceError, WorkspaceRun]](ZIO.fail(WorkspaceError.NotFound(runId)))(ZIO.succeed)
+                  )
       _      <- chatRepo
                   .addMessage(
                     ConversationEntry(
@@ -146,13 +164,44 @@ final case class WorkspaceRunServiceLive(
       _   <- executeInFiber(run.copy(prompt = followUpPrompt), ws.runMode, ws.cliTool).forkDaemon
     yield ()
 
+  private def buildPrompt(
+    req: AssignRunRequest,
+    issue: Option[DomainIssue],
+    repoPath: String,
+    worktreePath: String,
+  ): String =
+    issue match
+      case None    =>
+        // No issue record found; fall back to the raw title from the UI
+        s"""Issue: ${req.issueRef}
+           |Task: ${req.prompt}
+           |
+           |Repository: $repoPath
+           |Working directory: $worktreePath""".stripMargin
+      case Some(i) =>
+        s"""Issue ${req.issueRef}: ${i.title}${
+          if i.description.nonEmpty then s"\nDescription:\n${i.description}" else ""
+        }${
+          if i.contextPath.nonEmpty then s"\nContext path: ${i.contextPath}" else ""
+        }${
+          if i.sourceFolder.nonEmpty then s"\nSource folder: ${i.sourceFolder}" else ""
+        }
+        Repository: $repoPath
+        Working directory: $worktreePath"""
+
+  private def updateRunStatus(runId: String, status: RunStatus): IO[WorkspaceError, Unit] =
+    for
+      now <- Clock.instant
+      _   <- wsRepo
+               .appendRun(WorkspaceRunEvent.StatusChanged(runId, status, now))
+               .mapError(e => WorkspaceError.PersistenceFailure(RuntimeException(e.toString)))
+    yield ()
+
   private def executeInFiber(run: WorkspaceRun, runMode: RunMode, cliTool: String): IO[WorkspaceError, Unit] =
     val argv    = CliAgentRunner.buildArgv(cliTool, run.prompt, run.worktreePath, runMode)
     val argvStr = argv.map(a => if a.contains(" ") then s"'$a'" else a).mkString(" ")
     for
-      _                <- wsRepo
-                            .updateRunStatus(run.id, RunStatus.Running)
-                            .mapError(e => WorkspaceError.PersistenceFailure(RuntimeException(e.toString)))
+      _                <- updateRunStatus(run.id, RunStatus.Running)
       _                <- ZIO.logInfo(s"[run:${run.id}] launching: $argvStr  (cwd=${run.worktreePath})")
       resultOrTimeout  <- CliAgentRunner
                             .runProcess(argv, run.worktreePath)
@@ -166,9 +215,7 @@ final case class WorkspaceRunServiceLive(
                             .when(resultOrTimeout.isDefined)
       _                <- streamLinesToConversation(run.conversationId, lines)
       status            = if resultOrTimeout.isDefined && exitCode == 0 then RunStatus.Completed else RunStatus.Failed
-      _                <- wsRepo
-                            .updateRunStatus(run.id, status)
-                            .mapError(e => WorkspaceError.PersistenceFailure(RuntimeException(e.toString)))
+      _                <- updateRunStatus(run.id, status)
       _                <- ZIO.logInfo(s"[run:${run.id}] status=$status")
       _                <- worktreeRemove(run.worktreePath).ignore
     yield ()

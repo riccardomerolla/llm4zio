@@ -41,6 +41,7 @@ import gateway.boundary.{
 }
 import gateway.control.{ MessageRouter, * }
 import issues.boundary.IssueController as IssuesIssueController
+import issues.entity.IssueRepositoryES
 import llm4zio.core.*
 import llm4zio.providers.{ GeminiCliExecutor, HttpClient }
 import llm4zio.tools.{ AnyTool, JsonSchema, ToolRegistry }
@@ -243,6 +244,7 @@ object ApplicationDI:
       StreamAbortRegistry.live,
       ToolRegistry.layer,
       WorkspaceRepository.live,
+      IssueRepositoryES.live,
       WorkspaceRunService.live,
       ConversationChatController.live,
       IssuesIssueController.live,
