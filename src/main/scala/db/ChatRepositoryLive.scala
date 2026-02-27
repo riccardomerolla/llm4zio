@@ -9,7 +9,6 @@ import zio.schema.Schema
 import conversation.entity.api.*
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.service.{ LifecycleCommand, LifecycleStatus }
-import issues.entity.api.{ AgentAssignment, AgentIssue, IssuePriority, IssueStatus }
 import shared.store.*
 
 final case class ChatRepositoryLive(
@@ -21,8 +20,6 @@ final case class ChatRepositoryLive(
   // Key helpers — prefix-based KV namespace per entity type
   private def convKey(id: String): String        = s"conv:$id"
   private def msgKey(id: String): String         = s"msg:$id"
-  private def issueKey(id: String): String       = s"issue:$id"
-  private def assignmentKey(id: String): String  = s"assignment:$id"
   private def sessionKey(ch: String, sk: String) = s"session:$ch:$sk"
 
   override def createConversation(conversation: ChatConversation): IO[PersistenceError, Long] =
@@ -106,92 +103,6 @@ final case class ChatRepositoryLive(
 
   override def getMessagesSince(conversationId: Long, since: Instant): IO[PersistenceError, List[ConversationEntry]] =
     getMessages(conversationId).map(_.filter(m => !m.createdAt.isBefore(since)))
-
-  override def createIssue(issue: AgentIssue): IO[PersistenceError, Long] =
-    for
-      id <- nextId
-      key = issueKey(id.toString)
-      _  <- kv.store(key, toIssueRow(id.toString, issue)).mapError(storeErr("createIssue"))
-      _  <- checkpoint("createIssue")
-    yield id
-
-  override def getIssue(id: Long): IO[PersistenceError, Option[AgentIssue]] =
-    kv.fetch[String, AgentIssueRow](issueKey(id.toString)).mapError(storeErr("getIssue")).map(_.flatMap(fromIssueRow))
-
-  override def listIssues(offset: Int, limit: Int): IO[PersistenceError, List[AgentIssue]] =
-    fetchAllByPrefix[AgentIssueRow]("issue:", "listIssues")
-      .map(_.flatMap(fromIssueRow).sortBy(_.updatedAt)(Ordering[Instant].reverse).slice(offset, offset + limit))
-
-  override def listIssuesByRun(runId: Long): IO[PersistenceError, List[AgentIssue]] =
-    fetchAllByPrefix[AgentIssueRow]("issue:", "listIssuesByRun")
-      .map(
-        _.filter(_.runId.contains(runId.toString)).flatMap(fromIssueRow).sortBy(_.createdAt)(Ordering[Instant].reverse)
-      )
-
-  override def listIssuesByStatus(status: IssueStatus): IO[PersistenceError, List[AgentIssue]] =
-    fetchAllByPrefix[AgentIssueRow]("issue:", "listIssuesByStatus")
-      .map(_.filter(_.status == status.toString).flatMap(fromIssueRow).sortBy(_.createdAt)(Ordering[Instant].reverse))
-
-  override def listUnassignedIssues(runId: Long): IO[PersistenceError, List[AgentIssue]] =
-    listIssuesByRun(runId).map(_.filter(_.assignedAgent.isEmpty))
-
-  override def updateIssue(issue: AgentIssue): IO[PersistenceError, Unit] =
-    for
-      id <- idFromModel(issue.id, "updateIssue")
-      key = issueKey(id)
-      _  <- requireExists[AgentIssueRow](key, "agent_issues", "updateIssue")
-      _  <- kv.store(key, toIssueRow(id, issue)).mapError(storeErr("updateIssue"))
-      _  <- checkpoint("updateIssue")
-    yield ()
-
-  override def deleteIssue(id: Long): IO[PersistenceError, Unit] =
-    for
-      _ <- requireExists[AgentIssueRow](issueKey(id.toString), "agent_issues", "deleteIssue")
-      _ <- kv.remove[String](issueKey(id.toString)).mapError(storeErr("deleteIssue"))
-      _ <- checkpoint("deleteIssue")
-    yield ()
-
-  override def assignIssueToAgent(issueId: Long, agentName: String): IO[PersistenceError, Unit] =
-    for
-      now      <- Clock.instant
-      existing <- getIssue(issueId).someOrFail(PersistenceError.NotFound("agent_issues", issueId))
-      _        <- updateIssue(
-                    existing.copy(
-                      assignedAgent = Some(agentName),
-                      assignedAt = Some(now),
-                      status = IssueStatus.Assigned,
-                      updatedAt = now,
-                    )
-                  )
-    yield ()
-
-  override def createAssignment(assignment: AgentAssignment): IO[PersistenceError, Long] =
-    for
-      id <- nextId
-      key = assignmentKey(id.toString)
-      _  <- kv.store(key, toAssignmentRow(id.toString, assignment)).mapError(storeErr("createAssignment"))
-      _  <- checkpoint("createAssignment")
-    yield id
-
-  override def getAssignment(id: Long): IO[PersistenceError, Option[AgentAssignment]] =
-    kv.fetch[String, AgentAssignmentRow](assignmentKey(id.toString))
-      .mapError(storeErr("getAssignment"))
-      .map(_.map(fromAssignmentRow))
-
-  override def listAssignmentsByIssue(issueId: Long): IO[PersistenceError, List[AgentAssignment]] =
-    fetchAllByPrefix[AgentAssignmentRow]("assignment:", "listAssignmentsByIssue")
-      .map(
-        _.filter(_.issueId == issueId.toString).map(fromAssignmentRow).sortBy(_.assignedAt)(Ordering[Instant].reverse)
-      )
-
-  override def updateAssignment(assignment: AgentAssignment): IO[PersistenceError, Unit] =
-    for
-      id <- idFromModel(assignment.id, "updateAssignment")
-      key = assignmentKey(id)
-      _  <- requireExists[AgentAssignmentRow](key, "agent_assignments", "updateAssignment")
-      _  <- kv.store(key, toAssignmentRow(id, assignment)).mapError(storeErr("updateAssignment"))
-      _  <- checkpoint("updateAssignment")
-    yield ()
 
   override def upsertSessionContext(
     channelName: String,
@@ -362,81 +273,6 @@ final case class ChatRepositoryLive(
       metadata = r.metadata,
       createdAt = r.createdAt,
       updatedAt = r.updatedAt,
-    )
-
-  private def toIssueRow(id: String, i: AgentIssue): AgentIssueRow =
-    AgentIssueRow(
-      id = id,
-      runId = i.runId,
-      conversationId = i.conversationId,
-      title = i.title,
-      description = i.description,
-      issueType = i.issueType,
-      tags = i.tags,
-      preferredAgent = i.preferredAgent,
-      contextPath = i.contextPath,
-      sourceFolder = i.sourceFolder,
-      priority = i.priority.toString,
-      status = i.status.toString,
-      assignedAgent = i.assignedAgent,
-      assignedAt = i.assignedAt,
-      completedAt = i.completedAt,
-      errorMessage = i.errorMessage,
-      resultData = i.resultData,
-      createdAt = i.createdAt,
-      updatedAt = i.updatedAt,
-    )
-
-  private def fromIssueRow(r: AgentIssueRow): Option[AgentIssue] =
-    for
-      priority <- IssuePriority.values.find(_.toString == r.priority)
-      status   <- IssueStatus.values.find(_.toString == r.status)
-    yield AgentIssue(
-      id = Some(r.id),
-      runId = r.runId,
-      conversationId = r.conversationId,
-      title = r.title,
-      description = r.description,
-      issueType = r.issueType,
-      tags = r.tags,
-      preferredAgent = r.preferredAgent,
-      contextPath = r.contextPath,
-      sourceFolder = r.sourceFolder,
-      priority = priority,
-      status = status,
-      assignedAgent = r.assignedAgent,
-      assignedAt = r.assignedAt,
-      completedAt = r.completedAt,
-      errorMessage = r.errorMessage,
-      resultData = r.resultData,
-      createdAt = r.createdAt,
-      updatedAt = r.updatedAt,
-    )
-
-  private def toAssignmentRow(id: String, a: AgentAssignment): AgentAssignmentRow =
-    AgentAssignmentRow(
-      id = id,
-      issueId = a.issueId,
-      agentName = a.agentName,
-      status = a.status,
-      assignedAt = a.assignedAt,
-      startedAt = a.startedAt,
-      completedAt = a.completedAt,
-      executionLog = a.executionLog,
-      result = a.result,
-    )
-
-  private def fromAssignmentRow(r: AgentAssignmentRow): AgentAssignment =
-    AgentAssignment(
-      id = Some(r.id),
-      issueId = r.issueId,
-      agentName = r.agentName,
-      status = r.status,
-      assignedAt = r.assignedAt,
-      startedAt = r.startedAt,
-      completedAt = r.completedAt,
-      executionLog = r.executionLog,
-      result = r.result,
     )
 
 object ChatRepositoryLive:

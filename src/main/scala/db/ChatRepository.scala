@@ -6,7 +6,6 @@ import zio.*
 import zio.json.*
 
 import conversation.entity.api.*
-import issues.entity.api.{ AgentAssignment, AgentIssue, IssueStatus }
 
 trait ChatRepository:
   // Chat Conversations
@@ -22,23 +21,6 @@ trait ChatRepository:
   def addMessage(message: ConversationEntry): IO[PersistenceError, Long]
   def getMessages(conversationId: Long): IO[PersistenceError, List[ConversationEntry]]
   def getMessagesSince(conversationId: Long, since: Instant): IO[PersistenceError, List[ConversationEntry]]
-
-  // Agent Issues
-  def createIssue(issue: AgentIssue): IO[PersistenceError, Long]
-  def getIssue(id: Long): IO[PersistenceError, Option[AgentIssue]]
-  def listIssues(offset: Int, limit: Int): IO[PersistenceError, List[AgentIssue]]
-  def listIssuesByRun(runId: Long): IO[PersistenceError, List[AgentIssue]]
-  def listIssuesByStatus(status: IssueStatus): IO[PersistenceError, List[AgentIssue]]
-  def listUnassignedIssues(runId: Long): IO[PersistenceError, List[AgentIssue]]
-  def updateIssue(issue: AgentIssue): IO[PersistenceError, Unit]
-  def deleteIssue(id: Long): IO[PersistenceError, Unit]
-  def assignIssueToAgent(issueId: Long, agentName: String): IO[PersistenceError, Unit]
-
-  // Agent Assignments
-  def createAssignment(assignment: AgentAssignment): IO[PersistenceError, Long]
-  def getAssignment(id: Long): IO[PersistenceError, Option[AgentAssignment]]
-  def listAssignmentsByIssue(issueId: Long): IO[PersistenceError, List[AgentAssignment]]
-  def updateAssignment(assignment: AgentAssignment): IO[PersistenceError, Unit]
 
   // Channel session context storage (gateway integration)
   def upsertSessionContext(
@@ -180,45 +162,6 @@ object ChatRepository:
   def getMessagesSince(conversationId: Long, since: Instant)
     : ZIO[ChatRepository, PersistenceError, List[ConversationEntry]] =
     ZIO.serviceWithZIO[ChatRepository](_.getMessagesSince(conversationId, since))
-
-  def createIssue(issue: AgentIssue): ZIO[ChatRepository, PersistenceError, Long] =
-    ZIO.serviceWithZIO[ChatRepository](_.createIssue(issue))
-
-  def getIssue(id: Long): ZIO[ChatRepository, PersistenceError, Option[AgentIssue]] =
-    ZIO.serviceWithZIO[ChatRepository](_.getIssue(id))
-
-  def listIssues(offset: Int, limit: Int): ZIO[ChatRepository, PersistenceError, List[AgentIssue]] =
-    ZIO.serviceWithZIO[ChatRepository](_.listIssues(offset, limit))
-
-  def listIssuesByRun(runId: Long): ZIO[ChatRepository, PersistenceError, List[AgentIssue]] =
-    ZIO.serviceWithZIO[ChatRepository](_.listIssuesByRun(runId))
-
-  def listIssuesByStatus(status: IssueStatus): ZIO[ChatRepository, PersistenceError, List[AgentIssue]] =
-    ZIO.serviceWithZIO[ChatRepository](_.listIssuesByStatus(status))
-
-  def listUnassignedIssues(runId: Long): ZIO[ChatRepository, PersistenceError, List[AgentIssue]] =
-    ZIO.serviceWithZIO[ChatRepository](_.listUnassignedIssues(runId))
-
-  def updateIssue(issue: AgentIssue): ZIO[ChatRepository, PersistenceError, Unit] =
-    ZIO.serviceWithZIO[ChatRepository](_.updateIssue(issue))
-
-  def deleteIssue(id: Long): ZIO[ChatRepository, PersistenceError, Unit] =
-    ZIO.serviceWithZIO[ChatRepository](_.deleteIssue(id))
-
-  def assignIssueToAgent(issueId: Long, agentName: String): ZIO[ChatRepository, PersistenceError, Unit] =
-    ZIO.serviceWithZIO[ChatRepository](_.assignIssueToAgent(issueId, agentName))
-
-  def createAssignment(assignment: AgentAssignment): ZIO[ChatRepository, PersistenceError, Long] =
-    ZIO.serviceWithZIO[ChatRepository](_.createAssignment(assignment))
-
-  def getAssignment(id: Long): ZIO[ChatRepository, PersistenceError, Option[AgentAssignment]] =
-    ZIO.serviceWithZIO[ChatRepository](_.getAssignment(id))
-
-  def listAssignmentsByIssue(issueId: Long): ZIO[ChatRepository, PersistenceError, List[AgentAssignment]] =
-    ZIO.serviceWithZIO[ChatRepository](_.listAssignmentsByIssue(issueId))
-
-  def updateAssignment(assignment: AgentAssignment): ZIO[ChatRepository, PersistenceError, Unit] =
-    ZIO.serviceWithZIO[ChatRepository](_.updateAssignment(assignment))
 
   def upsertSessionContext(
     channelName: String,
