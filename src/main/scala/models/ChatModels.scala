@@ -30,11 +30,11 @@ val IssuePriority = issues.entity.api.IssuePriority
 type IssueStatus = issues.entity.api.IssueStatus
 val IssueStatus = issues.entity.api.IssueStatus
 
-type AgentIssue = issues.entity.api.AgentIssue
-val AgentIssue = issues.entity.api.AgentIssue
+type AgentIssueView = issues.entity.api.AgentIssueView
+val AgentIssueView = issues.entity.api.AgentIssueView
 
-type AgentAssignment = issues.entity.api.AgentAssignment
-val AgentAssignment = issues.entity.api.AgentAssignment
+type AgentAssignmentView = issues.entity.api.AgentAssignmentView
+val AgentAssignmentView = issues.entity.api.AgentAssignmentView
 
 type AgentIssueCreateRequest = issues.entity.api.AgentIssueCreateRequest
 val AgentIssueCreateRequest = issues.entity.api.AgentIssueCreateRequest
