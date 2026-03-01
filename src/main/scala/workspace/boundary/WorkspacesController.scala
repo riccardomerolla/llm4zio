@@ -16,6 +16,7 @@ object WorkspacesController:
     repo: WorkspaceRepository,
     runSvc: WorkspaceRunService,
     agentRegistry: AgentRegistry,
+    issueRepo: issues.entity.IssueRepository,
   ): Routes[Any, Response] =
     Routes(
       // Redirect /workspaces → /settings/workspaces
@@ -183,8 +184,41 @@ object WorkspacesController:
         },
 
       // Issue search — returns open/unassigned issues matching ?q= for the assign-run search dropdown
-      Method.GET / "api" / "workspaces" / "issues" / "search" -> handler { (_: Request) =>
-        ZIO.succeed(html(WorkspacesView.issueSearchResults(List.empty)))
+      Method.GET / "api" / "workspaces" / "issues" / "search" -> handler { (req: Request) =>
+        val q = req.queryParam("q").map(_.trim.toLowerCase).filter(_.nonEmpty)
+        issueRepo
+          .list(
+            issues.entity.IssueFilter(
+              states = Set(issues.entity.IssueStateTag.Open),
+              limit = 20,
+            )
+          )
+          .map { all =>
+            val filtered = q match
+              case None       => all
+              case Some(term) =>
+                all.filter(i =>
+                  i.title.toLowerCase.contains(term) ||
+                  i.description.toLowerCase.contains(term) ||
+                  i.id.value.contains(term)
+                )
+            val views    = filtered.map(i =>
+              issues.entity.api.AgentIssueView(
+                id = Some(i.id.value),
+                title = i.title,
+                description = i.description,
+                issueType = i.issueType,
+                priority = issues.entity.api.IssuePriority.values
+                  .find(_.toString.equalsIgnoreCase(i.priority))
+                  .getOrElse(issues.entity.api.IssuePriority.Medium),
+                status = issues.entity.api.IssueStatus.Open,
+                createdAt = java.time.Instant.EPOCH,
+                updatedAt = java.time.Instant.EPOCH,
+              )
+            )
+            html(WorkspacesView.issueSearchResults(views))
+          }
+          .catchAll(_ => ZIO.succeed(html(WorkspacesView.issueSearchResults(List.empty))))
       },
     )
 

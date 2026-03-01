@@ -8,7 +8,9 @@ import zio.json.*
 import zio.test.*
 
 import _root_.config.entity.*
+import issues.entity.{ AgentIssue, IssueEvent, IssueFilter, IssueRepository }
 import orchestration.control.AgentRegistry
+import shared.ids.Ids.IssueId
 import taskrun.entity.TaskStep
 import workspace.control.{ AssignRunRequest, WorkspaceRunService }
 import workspace.entity.*
@@ -75,11 +77,19 @@ object WorkspacesControllerSpec extends ZIOSpecDefault:
     def loadCustomAgents(rows: List[db.CustomAgentRow]): UIO[Int]               = ZIO.succeed(0)
     def getRankedAgents(q: AgentQuery): UIO[List[AgentInfo]]                    = ZIO.succeed(Nil)
 
+  private object StubIssueRepository extends IssueRepository:
+    def append(event: IssueEvent): IO[shared.errors.PersistenceError, Unit]             = ZIO.unit
+    def get(id: IssueId): IO[shared.errors.PersistenceError, AgentIssue]                =
+      ZIO.fail(shared.errors.PersistenceError.NotFound("issue", id.value))
+    def list(filter: IssueFilter): IO[shared.errors.PersistenceError, List[AgentIssue]] = ZIO.succeed(Nil)
+    def delete(id: IssueId): IO[shared.errors.PersistenceError, Unit]                   = ZIO.unit
+
   private def makeRoutes(wsRef: Ref[Map[String, Workspace]]) =
     WorkspacesController.routes(
       StubWorkspaceRepo(wsRef),
       StubRunService(),
       StubAgentRegistry,
+      StubIssueRepository,
     )
 
   def spec: Spec[TestEnvironment & Scope, Any] = suite("WorkspacesControllerSpec")(

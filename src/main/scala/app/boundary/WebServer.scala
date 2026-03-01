@@ -20,6 +20,7 @@ import gateway.boundary.{
   TelegramController as GatewayTelegramController,
 }
 import issues.boundary.IssueController as IssuesIssueController
+import issues.entity.IssueRepository
 import memory.boundary.MemoryController as MemoryBoundaryController
 import orchestration.control.AgentRegistry
 import taskrun.boundary.{
@@ -38,7 +39,7 @@ trait WebServer:
 object WebServer:
 
   val live: ZLayer[
-    TaskRunDashboardController & TaskRunTasksController & TaskRunReportsController & TaskRunGraphController & SettingsBoundaryController & ConfigBoundaryController & ConfigAgentsController & AppAgentMonitorController & ConversationChatController & IssuesIssueController & ConfigWorkflowsController & GatewayTelegramController & ActivityController & MemoryBoundaryController & GatewayChannelController & AppHealthController & TaskRunLogsController & ConversationWebSocketController & WorkspaceRepository & WorkspaceRunService & AgentRegistry,
+    TaskRunDashboardController & TaskRunTasksController & TaskRunReportsController & TaskRunGraphController & SettingsBoundaryController & ConfigBoundaryController & ConfigAgentsController & AppAgentMonitorController & ConversationChatController & IssuesIssueController & ConfigWorkflowsController & GatewayTelegramController & ActivityController & MemoryBoundaryController & GatewayChannelController & AppHealthController & TaskRunLogsController & ConversationWebSocketController & WorkspaceRepository & WorkspaceRunService & AgentRegistry & IssueRepository,
     Nothing,
     WebServer,
   ] = ZLayer {
@@ -64,6 +65,7 @@ object WebServer:
       wsRepo      <- ZIO.service[WorkspaceRepository]
       wsRunSvc    <- ZIO.service[WorkspaceRunService]
       agentReg    <- ZIO.service[AgentRegistry]
+      issueRepo   <- ZIO.service[IssueRepository]
       staticRoutes = Routes.serveResources(Path.empty / "static")
     yield new WebServer {
       override val routes: Routes[Any, Response] =
@@ -71,6 +73,7 @@ object WebServer:
           wsRepo,
           wsRunSvc,
           agentReg,
+          issueRepo,
         ) ++ staticRoutes
     }
   }

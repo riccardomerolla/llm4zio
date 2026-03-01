@@ -164,8 +164,10 @@ final case class IssueControllerLive(
           .map(issues => Response.json(issues.map(domainToView).toJson))
       }
     },
-    Method.DELETE / "api" / "issues" / string("id")                -> handler { (_: String, _: Request) =>
-      ZIO.succeed(Response(status = Status.NotImplemented))
+    Method.DELETE / "api" / "issues" / string("id")                -> handler { (id: String, _: Request) =>
+      ErrorHandlingMiddleware.fromPersistence {
+        issueRepository.delete(IssueId(id)).mapError(mapIssueRepoError).as(Response(status = Status.NoContent))
+      }
     },
   )
 

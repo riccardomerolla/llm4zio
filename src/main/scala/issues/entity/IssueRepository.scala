@@ -30,6 +30,7 @@ trait IssueRepository:
   def append(event: IssueEvent): IO[PersistenceError, Unit]
   def get(id: IssueId): IO[PersistenceError, AgentIssue]
   def list(filter: IssueFilter): IO[PersistenceError, List[AgentIssue]]
+  def delete(id: IssueId): IO[PersistenceError, Unit]
 
 object IssueRepository:
   def append(event: IssueEvent): ZIO[IssueRepository, PersistenceError, Unit] =
@@ -40,3 +41,6 @@ object IssueRepository:
 
   def list(filter: IssueFilter): ZIO[IssueRepository, PersistenceError, List[AgentIssue]] =
     ZIO.serviceWithZIO[IssueRepository](_.list(filter))
+
+  def delete(id: IssueId): ZIO[IssueRepository, PersistenceError, Unit] =
+    ZIO.serviceWithZIO[IssueRepository](_.delete(id))

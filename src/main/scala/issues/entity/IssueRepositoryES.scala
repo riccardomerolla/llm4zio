@@ -96,7 +96,7 @@ final case class IssueRepositoryES(
         ZIO.logDebug(s"Recovered ${all.size} issue object(s) from store") *>
           ZIO.foreachDiscard(all) { i =>
             ZIO.logDebug(
-              s"  issue[${i.id.value}] state=${i.state.getClass.getSimpleName}" +
+              s"issue[${i.id.value}] state=${i.state.getClass.getSimpleName}" +
                 s" runId=${i.runId} (${i.runId.getClass.getSimpleName})" +
                 s" conversationId=${i.conversationId} (${i.conversationId.getClass.getSimpleName})" +
                 s" priority=${i.priority} tags=${i.tags}" +
@@ -105,6 +105,22 @@ final case class IssueRepositoryES(
           }
       }
       .map(_.filter(issueMatches(filter, _)).slice(filter.offset.max(0), filter.offset.max(0) + filter.limit.max(0)))
+
+  override def delete(id: IssueId): IO[PersistenceError, Unit] =
+    val eventPrefix = s"events:issue:${id.value}:"
+    for
+      _         <- ZIO.logDebug(s"Deleting issue ${id.value}: removing snapshot and events")
+      _         <- dataStore.remove[String](snapshotKey(id)).mapError(storeErr("deleteIssueSnapshot"))
+      eventKeys <- dataStore.rawStore
+                     .streamKeys[String]
+                     .filter(_.startsWith(eventPrefix))
+                     .runCollect
+                     .mapError(storeErr("deleteIssueEvents"))
+      _         <- ZIO.foreachDiscard(eventKeys)(key =>
+                     dataStore.remove[String](key).mapError(storeErr("deleteIssueEvents"))
+                   )
+      _         <- ZIO.logDebug(s"Deleted issue ${id.value}: removed snapshot + ${eventKeys.size} event(s)")
+    yield ()
 
   private def issueMatches(filter: IssueFilter, issue: AgentIssue): Boolean =
     val runMatches   = filter.runId.forall(expected => issue.runId.contains(expected))
