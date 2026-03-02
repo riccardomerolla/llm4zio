@@ -127,6 +127,23 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
     override def runGeminiProcess(prompt: String, config: LlmConfig): IO[LlmError, String] =
       ZIO.fail(LlmError.ProviderError("unused in tests", None))
 
+  private val stubWorkspaceRepo: workspace.entity.WorkspaceRepository = new workspace.entity.WorkspaceRepository:
+    override def append(event: workspace.entity.WorkspaceEvent): IO[shared.errors.PersistenceError, Unit]       =
+      ZIO.unit
+    override def list: IO[shared.errors.PersistenceError, List[workspace.entity.Workspace]]                     =
+      ZIO.succeed(Nil)
+    override def get(id: String): IO[shared.errors.PersistenceError, Option[workspace.entity.Workspace]]        =
+      ZIO.none
+    override def delete(id: String): IO[shared.errors.PersistenceError, Unit]                                   =
+      ZIO.unit
+    override def appendRun(event: workspace.entity.WorkspaceRunEvent): IO[shared.errors.PersistenceError, Unit] =
+      ZIO.unit
+    override def listRuns(workspaceId: String)
+      : IO[shared.errors.PersistenceError, List[workspace.entity.WorkspaceRun]] =
+      ZIO.succeed(Nil)
+    override def getRun(id: String): IO[shared.errors.PersistenceError, Option[workspace.entity.WorkspaceRun]]  =
+      ZIO.none
+
   private def newConversation(chatRepository: ChatRepository): IO[PersistenceError, Long] =
     for
       now <- Clock.instant
@@ -357,6 +374,7 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
                        toolRegistry = toolReg,
                        httpClient = stubHttpClient,
                        cliExecutor = stubCliExecutor,
+                       workspaceRepository = stubWorkspaceRepo,
                      )
         request    = Request.post(
                        s"/api/chat/$convId/messages",
@@ -401,6 +419,7 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
                        toolRegistry = toolReg,
                        httpClient = stubHttpClient,
                        cliExecutor = stubCliExecutor,
+                       workspaceRepository = stubWorkspaceRepo,
                      )
         request    = Request.post(
                        s"/api/chat/$convId/messages",
@@ -452,6 +471,7 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
                             toolRegistry = toolReg,
                             httpClient = stubHttpClient,
                             cliExecutor = stubCliExecutor,
+                            workspaceRepository = stubWorkspaceRepo,
                           )
         request         = Request.post(
                             s"/api/chat/$convId/messages",
@@ -488,6 +508,7 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
                        toolRegistry = toolReg,
                        httpClient = stubHttpClient,
                        cliExecutor = stubCliExecutor,
+                       workspaceRepository = stubWorkspaceRepo,
                      )
         request    = Request.post(
                        s"/chat/$convId/messages",
@@ -554,6 +575,7 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
                        toolRegistry = toolReg,
                        httpClient = stubHttpClient,
                        cliExecutor = stubCliExecutor,
+                       workspaceRepository = stubWorkspaceRepo,
                      )
         response  <- controller.routes.runZIO(Request.get("/api/sessions"))
         body      <- response.body.asString
@@ -590,6 +612,7 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
                        toolRegistry = toolReg,
                        httpClient = stubHttpClient,
                        cliExecutor = stubCliExecutor,
+                       workspaceRepository = stubWorkspaceRepo,
                      )
         request    = Request.post(
                        s"/api/chat/$convId/messages",

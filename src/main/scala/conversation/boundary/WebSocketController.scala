@@ -15,6 +15,7 @@ import gateway.entity.SessionScopeStrategy
 import orchestration.control.OrchestratorControlPlane
 import shared.web.StreamAbortRegistry
 import shared.web.ws.{ ClientMessage, ServerMessage, SubscriptionTopic }
+import workspace.control.RunSessionManager
 
 trait WebSocketController:
   def routes: Routes[Any, Response]
@@ -26,7 +27,7 @@ object WebSocketController:
 
   val live
     : ZLayer[
-      ChannelRegistry & StreamAbortRegistry & HealthMonitor & OrchestratorControlPlane & ActivityHub,
+      ChannelRegistry & StreamAbortRegistry & HealthMonitor & OrchestratorControlPlane & ActivityHub & RunSessionManager,
       Nothing,
       WebSocketController,
     ] =
@@ -38,6 +39,7 @@ final case class WebSocketControllerLive(
   healthMonitor: HealthMonitor,
   controlPlane: OrchestratorControlPlane,
   activityHub: ActivityHub,
+  runSessionManager: RunSessionManager,
 ) extends WebSocketController:
 
   override val routes: Routes[Any, Response] = Routes(
@@ -45,9 +47,10 @@ final case class WebSocketControllerLive(
       Handler.webSocket { socket =>
         ZIO.scoped {
           for
+            userId        <- Random.nextUUID.map(uuid => s"ws-user-${uuid.toString.take(8)}")
             subscriptions <- Ref.make(Map.empty[String, Fiber.Runtime[Nothing, Unit]])
             _             <- channelRegistry.markConnected("websocket")
-            _             <- socket.receiveAll(event => handleChannelEvent(socket, subscriptions, event))
+            _             <- socket.receiveAll(event => handleChannelEvent(socket, userId, subscriptions, event))
                                .ensuring(stopAllSubscriptions(subscriptions))
                                .ensuring(channelRegistry.markDisconnected("websocket"))
           yield ()
@@ -58,12 +61,13 @@ final case class WebSocketControllerLive(
 
   private def handleChannelEvent(
     socket: zio.http.WebSocketChannel,
+    userId: String,
     subscriptions: Ref[Map[String, Fiber.Runtime[Nothing, Unit]]],
     event: ChannelEvent[WebSocketFrame],
   ): UIO[Unit] =
     event match
       case Read(WebSocketFrame.Text(text))     =>
-        handleClientMessage(socket, subscriptions, text)
+        handleClientMessage(socket, userId, subscriptions, text)
       case Read(WebSocketFrame.Close(_, _))    =>
         stopAllSubscriptions(subscriptions)
       case ChannelEvent.Unregistered           =>
@@ -80,20 +84,140 @@ final case class WebSocketControllerLive(
 
   private def handleClientMessage(
     socket: zio.http.WebSocketChannel,
+    userId: String,
     subscriptions: Ref[Map[String, Fiber.Runtime[Nothing, Unit]]],
     raw: String,
   ): UIO[Unit] =
     ZIO.fromEither(raw.fromJson[ClientMessage]).foldZIO(
       err => withNow(ts => sendServerMessage(socket, ServerMessage.Error("invalid_message", err, ts))),
       {
-        case ClientMessage.Ping(ts)            =>
+        case ClientMessage.Ping(ts)                       =>
           sendServerMessage(socket, ServerMessage.Pong(ts))
-        case ClientMessage.AbortChat(convId)   =>
+        case ClientMessage.AbortChat(convId)              =>
           handleAbortChat(socket, convId)
-        case ClientMessage.Subscribe(topic, _) =>
+        case ClientMessage.Subscribe(topic, _)            =>
           subscribe(socket, subscriptions, topic)
-        case ClientMessage.Unsubscribe(topic)  =>
+        case ClientMessage.Unsubscribe(topic)             =>
           unsubscribe(socket, subscriptions, topic)
+        case ClientMessage.AttachToRun(runId)             =>
+          handleAttachToRun(socket, userId, runId)
+        case ClientMessage.DetachFromRun(runId)           =>
+          handleDetachFromRun(socket, userId, runId)
+        case ClientMessage.InterruptRun(runId)            =>
+          handleInterruptRun(socket, userId, runId)
+        case ClientMessage.ContinueRun(runId, prompt)     =>
+          handleContinueRun(socket, userId, runId, prompt)
+        case ClientMessage.SendRunMessage(runId, content) =>
+          handleSendRunMessage(socket, userId, runId, content)
+      },
+    )
+
+  private def handleAttachToRun(socket: zio.http.WebSocketChannel, userId: String, runId: String): UIO[Unit] =
+    (for
+      oldState <- runSessionManager.getSession(runId).map(_.status.toString)
+      session  <- runSessionManager.attach(runId, userId)
+      _        <- withNow(ts =>
+                    sendServerMessage(
+                      socket,
+                      ServerMessage.RunStateChanged(runId, oldState, session.status.toString, ts),
+                    )
+                  )
+    yield ()).foldZIO(
+      err =>
+        withNow(ts =>
+          sendServerMessage(socket, ServerMessage.RunInputRejected(runId, s"Attach failed: ${workspaceError(err)}", ts))
+        ),
+      _ => ZIO.unit,
+    )
+
+  private def handleDetachFromRun(socket: zio.http.WebSocketChannel, userId: String, runId: String): UIO[Unit] =
+    (for
+      oldState <- runSessionManager.getSession(runId).map(_.status.toString)
+      _        <- runSessionManager.detach(runId, userId)
+      newState <- runSessionManager.getSession(runId).map(_.status.toString)
+      _        <- withNow(ts =>
+                    sendServerMessage(
+                      socket,
+                      ServerMessage.RunStateChanged(runId, oldState, newState, ts),
+                    )
+                  )
+    yield ()).foldZIO(
+      err =>
+        withNow(ts =>
+          sendServerMessage(socket, ServerMessage.RunInputRejected(runId, s"Detach failed: ${workspaceError(err)}", ts))
+        ),
+      _ => ZIO.unit,
+    )
+
+  private def handleInterruptRun(socket: zio.http.WebSocketChannel, userId: String, runId: String): UIO[Unit] =
+    (for
+      oldState <- runSessionManager.getSession(runId).map(_.status.toString)
+      _        <- runSessionManager.interrupt(runId, userId)
+      newState <- runSessionManager.getSession(runId).map(_.status.toString)
+      _        <- withNow(ts =>
+                    sendServerMessage(
+                      socket,
+                      ServerMessage.RunStateChanged(runId, oldState, newState, ts),
+                    )
+                  )
+    yield ()).foldZIO(
+      err =>
+        withNow(ts =>
+          sendServerMessage(
+            socket,
+            ServerMessage.RunInputRejected(runId, s"Interrupt failed: ${workspaceError(err)}", ts),
+          )
+        ),
+      _ => ZIO.unit,
+    )
+
+  private def handleContinueRun(
+    socket: zio.http.WebSocketChannel,
+    userId: String,
+    runId: String,
+    prompt: String,
+  ): UIO[Unit] =
+    (for
+      oldState <- runSessionManager.getSession(runId).map(_.status.toString)
+      _        <- runSessionManager.resume(runId, userId, prompt)
+      newState <- runSessionManager.getSession(runId).map(_.status.toString)
+      _        <- withNow(ts =>
+                    sendServerMessage(
+                      socket,
+                      ServerMessage.RunStateChanged(runId, oldState, newState, ts),
+                    )
+                  )
+    yield ()).foldZIO(
+      err =>
+        withNow(ts =>
+          sendServerMessage(
+            socket,
+            ServerMessage.RunInputRejected(runId, s"Continue failed: ${workspaceError(err)}", ts),
+          )
+        ),
+      _ => ZIO.unit,
+    )
+
+  private def handleSendRunMessage(
+    socket: zio.http.WebSocketChannel,
+    userId: String,
+    runId: String,
+    content: String,
+  ): UIO[Unit] =
+    runSessionManager.sendMessage(runId, userId, content).foldZIO(
+      err =>
+        withNow(ts =>
+          sendServerMessage(socket, ServerMessage.RunInputRejected(runId, workspaceError(err), ts))
+        ),
+      {
+        case Right(accepted) =>
+          withNow(ts =>
+            sendServerMessage(socket, ServerMessage.RunInputAccepted(runId, accepted.messageId.toString, ts))
+          )
+        case Left(rejected)  =>
+          withNow(ts =>
+            sendServerMessage(socket, ServerMessage.RunInputRejected(runId, rejected.reason, ts))
+          )
       },
     )
 
@@ -283,3 +407,15 @@ final case class WebSocketControllerLive(
 
   private def withNow(effect: Long => UIO[Unit]): UIO[Unit] =
     nowMillis.flatMap(effect)
+
+  private def workspaceError(err: workspace.entity.WorkspaceError): String =
+    err match
+      case workspace.entity.WorkspaceError.NotFound(id)                                   => s"Run not found: $id"
+      case workspace.entity.WorkspaceError.Disabled(id)                                   => s"Workspace disabled: $id"
+      case workspace.entity.WorkspaceError.WorktreeError(message)                         => message
+      case workspace.entity.WorkspaceError.InvalidRunState(_, _, actual)                  => s"Invalid run state: $actual"
+      case workspace.entity.WorkspaceError.ControllerConflict(_, controller, requestedBy) =>
+        s"Run is controlled by $controller (requested by $requestedBy)"
+      case workspace.entity.WorkspaceError.InteractiveProcessUnavailable(runId)           =>
+        s"Interactive process unavailable for $runId"
+      case other                                                                          => other.toString

@@ -8,6 +8,11 @@ enum ClientMessage derives JsonCodec:
   case Unsubscribe(topic: String)
   case Ping(ts: Long)
   case AbortChat(conversationId: Long)
+  case SendRunMessage(runId: String, content: String)
+  case InterruptRun(runId: String)
+  case ContinueRun(runId: String, prompt: String)
+  case AttachToRun(runId: String)
+  case DetachFromRun(runId: String)
 
 // Server -> Client
 enum ServerMessage derives JsonCodec:
@@ -16,6 +21,9 @@ enum ServerMessage derives JsonCodec:
   case Pong(ts: Long)
   case Subscribed(topic: String, ts: Long)
   case Unsubscribed(topic: String, ts: Long)
+  case RunStateChanged(runId: String, oldState: String, newState: String, ts: Long)
+  case RunInputAccepted(runId: String, messageId: String, ts: Long)
+  case RunInputRejected(runId: String, reason: String, ts: Long)
 
 // Subscription topic patterns
 enum SubscriptionTopic:

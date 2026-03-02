@@ -27,6 +27,7 @@ class ChatMessageStream extends LitElement {
       'Put... the candle... back!'
     ];
     this._lastSnapshot = '';
+    this._shouldAutoScroll = true;
   }
 
   createRenderRoot() {
@@ -37,7 +38,11 @@ class ChatMessageStream extends LitElement {
     super.connectedCallback();
     this._lastSnapshot = this._normalizedSnapshot(this.innerHTML);
     this._assistantCountAtPending = this._countAssistantMessages();
-    this._scrollToBottom();
+    this.addEventListener('scroll', () => {
+      this._shouldAutoScroll = this._isNearBottom();
+      this._updateScrollButton();
+    });
+    this._scrollToBottom(true);
     this._backgroundPoll = setInterval(() => {
       if (!this._streaming) this._refreshMessages();
     }, 2000);
@@ -160,13 +165,39 @@ class ChatMessageStream extends LitElement {
     this._stopThinkingTicker();
   }
 
-  _scrollToBottom() {
+  _scrollButton() {
+    return this.conversationId ? document.getElementById(`scroll-bottom-${this.conversationId}`) : null;
+  }
+
+  _isNearBottom() {
+    const gap = this.scrollHeight - this.scrollTop - this.clientHeight;
+    return gap < 80;
+  }
+
+  _updateScrollButton() {
+    const button = this._scrollButton();
+    if (!button) return;
+    button.classList.toggle('hidden', this._shouldAutoScroll || this._isNearBottom());
+  }
+
+  _scrollToBottom(force = false) {
+    if (!force && !this._shouldAutoScroll) {
+      this._updateScrollButton();
+      return;
+    }
     requestAnimationFrame(() => {
       this.scrollTop = this.scrollHeight;
       requestAnimationFrame(() => {
         this.scrollTop = this.scrollHeight;
+        this._shouldAutoScroll = true;
+        this._updateScrollButton();
       });
     });
+  }
+
+  scrollToLatest() {
+    this._shouldAutoScroll = true;
+    this._scrollToBottom(true);
   }
 
   _abortButtonId() {

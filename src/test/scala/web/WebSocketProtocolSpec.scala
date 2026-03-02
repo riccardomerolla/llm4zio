@@ -33,6 +33,36 @@ object WebSocketProtocolSpec extends ZIOSpecDefault:
         val decoded = json.fromJson[ClientMessage]
         assertTrue(decoded == Right(msg))
       },
+      test("round-trips SendRunMessage") {
+        val msg     = ClientMessage.SendRunMessage("run-123", "continue with step 2")
+        val json    = msg.toJson
+        val decoded = json.fromJson[ClientMessage]
+        assertTrue(decoded == Right(msg))
+      },
+      test("round-trips InterruptRun") {
+        val msg     = ClientMessage.InterruptRun("run-123")
+        val json    = msg.toJson
+        val decoded = json.fromJson[ClientMessage]
+        assertTrue(decoded == Right(msg))
+      },
+      test("round-trips ContinueRun") {
+        val msg     = ClientMessage.ContinueRun("run-123", "resume with tests")
+        val json    = msg.toJson
+        val decoded = json.fromJson[ClientMessage]
+        assertTrue(decoded == Right(msg))
+      },
+      test("round-trips AttachToRun") {
+        val msg     = ClientMessage.AttachToRun("run-123")
+        val json    = msg.toJson
+        val decoded = json.fromJson[ClientMessage]
+        assertTrue(decoded == Right(msg))
+      },
+      test("round-trips DetachFromRun") {
+        val msg     = ClientMessage.DetachFromRun("run-123")
+        val json    = msg.toJson
+        val decoded = json.fromJson[ClientMessage]
+        assertTrue(decoded == Right(msg))
+      },
     ),
     suite("ServerMessage JSON codec")(
       test("round-trips Event") {
@@ -61,6 +91,24 @@ object WebSocketProtocolSpec extends ZIOSpecDefault:
       },
       test("round-trips Unsubscribed") {
         val msg     = ServerMessage.Unsubscribed("runs:1:progress", 500L)
+        val json    = msg.toJson
+        val decoded = json.fromJson[ServerMessage]
+        assertTrue(decoded == Right(msg))
+      },
+      test("round-trips RunStateChanged") {
+        val msg     = ServerMessage.RunStateChanged("run-123", "autonomous", "interactive", 600L)
+        val json    = msg.toJson
+        val decoded = json.fromJson[ServerMessage]
+        assertTrue(decoded == Right(msg))
+      },
+      test("round-trips RunInputAccepted") {
+        val msg     = ServerMessage.RunInputAccepted("run-123", "101", 700L)
+        val json    = msg.toJson
+        val decoded = json.fromJson[ServerMessage]
+        assertTrue(decoded == Right(msg))
+      },
+      test("round-trips RunInputRejected") {
+        val msg     = ServerMessage.RunInputRejected("run-123", "Run is autonomous", 800L)
         val json    = msg.toJson
         val decoded = json.fromJson[ServerMessage]
         assertTrue(decoded == Right(msg))

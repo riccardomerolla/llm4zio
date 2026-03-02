@@ -61,6 +61,7 @@ object WorkspaceRepositorySpec extends ZIOSpecDefault:
   private val assignedRun = WorkspaceRunEvent.Assigned(
     runId = "run-1",
     workspaceId = "ws-1",
+    parentRunId = None,
     issueRef = "#42",
     agentName = "gemini",
     prompt = "fix it",
@@ -156,7 +157,9 @@ object WorkspaceRepositorySpec extends ZIOSpecDefault:
           yield assertTrue(
             loaded.isDefined &&
             loaded.get.issueRef == "#42" &&
-            loaded.get.status == RunStatus.Pending
+            loaded.get.status == RunStatus.Pending &&
+            loaded.get.attachedUsers.isEmpty &&
+            loaded.get.controllerUserId.isEmpty
           )).provideLayer(layerFor(dir))
         }
       },
@@ -176,6 +179,7 @@ object WorkspaceRepositorySpec extends ZIOSpecDefault:
           val run2 = WorkspaceRunEvent.Assigned(
             runId = "run-2",
             workspaceId = "ws-2",
+            parentRunId = Some("run-1"),
             issueRef = "#2",
             agentName = "opencode",
             prompt = "p",

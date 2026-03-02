@@ -40,6 +40,7 @@ object WorkspacesViewSpec extends ZIOSpecDefault:
   private val sampleRun = WorkspaceRun(
     id = "run-1",
     workspaceId = "ws-1",
+    parentRunId = None,
     issueRef = "#42",
     agentName = "gemini-cli",
     prompt = "fix the bug",
@@ -47,6 +48,8 @@ object WorkspacesViewSpec extends ZIOSpecDefault:
     worktreePath = "/tmp/wt",
     branchName = "agent/42-run1",
     status = RunStatus.Completed,
+    attachedUsers = Set.empty,
+    controllerUserId = None,
     createdAt = Instant.parse("2026-02-24T10:00:00Z"),
     updatedAt = Instant.parse("2026-02-24T10:00:00Z"),
   )

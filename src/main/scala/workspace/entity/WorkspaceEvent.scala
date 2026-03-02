@@ -51,6 +51,7 @@ object WorkspaceRunEvent:
   final case class Assigned(
     runId: String,
     workspaceId: String,
+    parentRunId: Option[String] = None,
     issueRef: String,
     agentName: String,
     prompt: String,
@@ -63,5 +64,30 @@ object WorkspaceRunEvent:
   final case class StatusChanged(
     runId: String,
     status: RunStatus,
+    occurredAt: Instant,
+  ) extends WorkspaceRunEvent
+
+  final case class UserAttached(
+    runId: String,
+    userId: String,
+    occurredAt: Instant,
+  ) extends WorkspaceRunEvent
+
+  final case class UserDetached(
+    runId: String,
+    userId: String,
+    occurredAt: Instant,
+  ) extends WorkspaceRunEvent
+
+  final case class RunInterrupted(
+    runId: String,
+    userId: String,
+    occurredAt: Instant,
+  ) extends WorkspaceRunEvent
+
+  final case class RunResumed(
+    runId: String,
+    userId: String,
+    prompt: String,
     occurredAt: Instant,
   ) extends WorkspaceRunEvent

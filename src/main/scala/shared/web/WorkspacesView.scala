@@ -3,7 +3,7 @@ package shared.web
 import config.entity.AgentInfo
 import issues.entity.api.AgentIssueView
 import scalatags.Text.all.*
-import workspace.entity.{ RunMode, RunStatus, Workspace, WorkspaceRun }
+import workspace.entity.{ RunMode, RunSessionMode, RunStatus, Workspace, WorkspaceRun }
 
 object WorkspacesView:
 
@@ -296,6 +296,7 @@ object WorkspacesView:
                 th(cls := "py-2 pl-4 pr-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-400")(
                   "Issue"
                 ),
+                th(cls := "px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-400")("Chain"),
                 th(cls := "px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-400")("Agent"),
                 th(cls := "px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-400")(
                   "Status"
@@ -315,7 +316,9 @@ object WorkspacesView:
     runRow(run).render
 
   private def runRow(run: WorkspaceRun): Frag =
-    val isActive  = run.status == RunStatus.Pending || run.status == RunStatus.Running
+    val isActive  = run.status match
+      case RunStatus.Pending | RunStatus.Running(_) => true
+      case _                                        => false
     val pollUrl   = s"/api/workspaces/${run.workspaceId}/runs/${run.id}/row"
     val baseAttrs = Seq(
       cls := "hover:bg-white/5",
@@ -331,6 +334,9 @@ object WorkspacesView:
     else Seq.empty
     tr((baseAttrs ++ pollAttrs)*)(
       td(cls := "py-2 pl-4 pr-3 text-sm font-medium text-white")(run.issueRef),
+      td(cls := "px-3 py-2 text-xs text-slate-400 font-mono")(
+        run.parentRunId.map(parent => s"$parent -> ${run.id}").getOrElse(run.id)
+      ),
       td(cls := "px-3 py-2 text-sm text-slate-300")(run.agentName),
       td(cls := "px-3 py-2 text-sm")(
         if isActive then
@@ -344,7 +350,10 @@ object WorkspacesView:
         a(href := s"/chat/${run.conversationId}", cls := "text-indigo-400 hover:text-indigo-300 hover:underline mr-3")(
           "View Chat"
         ),
-        if run.status == RunStatus.Running then
+        if run.status match
+            case RunStatus.Running(_) => true
+            case _                    => false
+        then
           button(
             cls                := "rounded px-2 py-0.5 text-xs font-semibold border border-rose-400/40 bg-rose-500/20 text-rose-300 hover:bg-rose-500/30",
             attr("hx-delete")  := s"/api/workspaces/${run.workspaceId}/runs/${run.id}",
@@ -352,17 +361,32 @@ object WorkspacesView:
             attr("hx-target")  := s"#run-row-${run.id}",
             attr("hx-swap")    := "outerHTML",
           )("Stop")
+        else if run.status == RunStatus.Completed || run.status == RunStatus.Failed then
+          button(
+            cls               := "rounded px-2 py-0.5 text-xs font-semibold border border-emerald-400/40 bg-emerald-500/20 text-emerald-200 hover:bg-emerald-500/30",
+            attr("hx-post")   := s"/api/workspaces/${run.workspaceId}/runs/${run.id}/continue",
+            attr("hx-target") := s"#runs-${run.workspaceId}",
+            attr("hx-swap")   := "innerHTML",
+            attr(
+              "hx-vals"
+            )                 := s"""js:{prompt: (window.prompt("Continue instructions for run ${run.id}") || "").trim()}""",
+          )("Continue")
         else frag(),
       ),
     )
 
   private def statusBadge(status: RunStatus): Frag =
     val (label, colour) = status match
-      case RunStatus.Pending   => ("Pending", "border-slate-400/30 bg-slate-500/20 text-slate-300")
-      case RunStatus.Running   => ("Running", "border-blue-400/30 bg-blue-500/20 text-blue-200")
-      case RunStatus.Completed => ("Completed", "border-emerald-400/30 bg-emerald-500/20 text-emerald-200")
-      case RunStatus.Failed    => ("Failed", "border-rose-400/30 bg-rose-500/20 text-rose-200")
-      case RunStatus.Cancelled => ("Cancelled", "border-orange-400/30 bg-orange-500/20 text-orange-200")
+      case RunStatus.Pending                             => ("Pending", "border-slate-400/30 bg-slate-500/20 text-slate-300")
+      case RunStatus.Running(RunSessionMode.Autonomous)  =>
+        ("Running (Autonomous)", "border-blue-400/30 bg-blue-500/20 text-blue-200")
+      case RunStatus.Running(RunSessionMode.Interactive) =>
+        ("Running (Interactive)", "border-cyan-400/30 bg-cyan-500/20 text-cyan-200")
+      case RunStatus.Running(RunSessionMode.Paused)      =>
+        ("Paused", "border-amber-400/30 bg-amber-500/20 text-amber-200")
+      case RunStatus.Completed                           => ("Completed", "border-emerald-400/30 bg-emerald-500/20 text-emerald-200")
+      case RunStatus.Failed                              => ("Failed", "border-rose-400/30 bg-rose-500/20 text-rose-200")
+      case RunStatus.Cancelled                           => ("Cancelled", "border-orange-400/30 bg-orange-500/20 text-orange-200")
     span(cls := s"rounded-full border px-2 py-0.5 text-xs font-semibold $colour")(label)
 
   private def assignForm(workspaceId: String, defaultAgent: Option[String], agents: List[AgentInfo]): Frag =

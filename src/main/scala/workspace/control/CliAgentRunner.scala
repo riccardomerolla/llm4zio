@@ -7,6 +7,20 @@ import workspace.entity.RunMode
 
 object CliAgentRunner:
 
+  enum InteractionSupport:
+    case InteractiveStdin, ContinuationOnly
+
+  def interactionSupport(cliTool: String): InteractionSupport =
+    cliTool.toLowerCase match
+      // Supports stdin conversation when not using --print.
+      case "claude"                => InteractionSupport.InteractiveStdin
+      // Gemini CLI supports interactive sessions; we still pass include-directories.
+      case "gemini"                => InteractionSupport.InteractiveStdin
+      // Conservative defaults for tools where stdin conversation is not guaranteed.
+      case "opencode" | "copilot"  => InteractionSupport.ContinuationOnly
+      case "codex" | "echo" | "sh" => InteractionSupport.InteractiveStdin
+      case _                       => InteractionSupport.ContinuationOnly
+
   /** Map CLI tool name → argv list for host execution. `cliTool` is the binary to invoke (e.g. "claude", "gemini",
     * "opencode"). All agents use the process `cwd` (set to `worktreePath`) for directory context.
     *
@@ -21,6 +35,18 @@ object CliAgentRunner:
       case "codex"    => List("codex", prompt)
       case "copilot"  => List("gh", "copilot", "suggest", "-t", "shell", prompt)
       case other      => List(other, prompt)
+
+  /** Host argv for interactive sessions.
+    *
+    * For tools that do not support stdin conversations, callers should degrade to continuation runs.
+    */
+  private def buildInteractiveArgvForHost(cliTool: String, repoPath: String): List[String] =
+    cliTool match
+      case "gemini"   => List("gemini", "--include-directories", repoPath)
+      case "claude"   => List("claude")
+      case "codex"    => List("codex")
+      case "opencode" => List("opencode", "run")
+      case other      => List(other)
 
   /** Build the full argv list, wrapping in `docker run` when `runMode` is `RunMode.Docker`. `cliTool` is the CLI binary
     * to invoke (from the workspace's `cliTool` setting). `repoPath` is the original workspace `localPath`; it is added
@@ -42,7 +68,28 @@ object CliAgentRunner:
         val mountFlags   = if mountWorktree then List("-v", s"$worktreePath:/workspace", "--workdir", "/workspace")
         else List.empty
         val networkFlags = network.map(n => List("--network", n)).getOrElse(List.empty)
-        List("docker", "run", "--rm") ++ mountFlags ++ networkFlags ++ extraArgs ++ List(image) ++ innerArgv
+        List("docker", "run", "--rm", "-i") ++ mountFlags ++ networkFlags ++ extraArgs ++ List(image) ++ innerArgv
+
+  /** Build argv for long-lived interactive sessions.
+    *
+    * Callers should check [[interactionSupport]] and degrade to continuation-only if needed.
+    */
+  def buildInteractiveArgv(
+    cliTool: String,
+    worktreePath: String,
+    runMode: RunMode = RunMode.Host,
+    repoPath: String = "",
+  ): List[String] =
+    val effectiveRepoPath = if repoPath.nonEmpty then repoPath else worktreePath
+    runMode match
+      case RunMode.Host                                             =>
+        buildInteractiveArgvForHost(cliTool, effectiveRepoPath)
+      case RunMode.Docker(image, extraArgs, mountWorktree, network) =>
+        val innerArgv    = buildInteractiveArgvForHost(cliTool, effectiveRepoPath)
+        val mountFlags   = if mountWorktree then List("-v", s"$worktreePath:/workspace", "--workdir", "/workspace")
+        else List.empty
+        val networkFlags = network.map(n => List("--network", n)).getOrElse(List.empty)
+        List("docker", "run", "--rm", "-i") ++ mountFlags ++ networkFlags ++ extraArgs ++ List(image) ++ innerArgv
 
   /** Run argv as a subprocess with `cwd` as working directory. Returns (stdout+stderr lines, exit code). Merges stderr
     * into stdout via redirectErrorStream. Runs blocking IO on ZIO's blocking thread pool.

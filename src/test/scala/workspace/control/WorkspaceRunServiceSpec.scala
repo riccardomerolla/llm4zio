@@ -83,10 +83,11 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
 
     def appendRun(event: WorkspaceRunEvent): IO[PersistenceError, Unit] =
       event match
-        case e: WorkspaceRunEvent.Assigned      =>
+        case e: WorkspaceRunEvent.Assigned       =>
           val run = WorkspaceRun(
             id = e.runId,
             workspaceId = e.workspaceId,
+            parentRunId = e.parentRunId,
             issueRef = e.issueRef,
             agentName = e.agentName,
             prompt = e.prompt,
@@ -94,13 +95,67 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
             worktreePath = e.worktreePath,
             branchName = e.branchName,
             status = RunStatus.Pending,
+            attachedUsers = Set.empty,
+            controllerUserId = None,
             createdAt = e.occurredAt,
             updatedAt = e.occurredAt,
           )
           runRef.update(_ + (run.id -> run))
-        case e: WorkspaceRunEvent.StatusChanged =>
+        case e: WorkspaceRunEvent.StatusChanged  =>
           runRef.update(m =>
             m.get(e.runId).fold(m)(r => m + (e.runId -> r.copy(status = e.status, updatedAt = e.occurredAt)))
+          )
+        case e: WorkspaceRunEvent.UserAttached   =>
+          runRef.update(m =>
+            m.get(e.runId).fold(m)(r =>
+              m + (
+                e.runId -> r.copy(
+                  attachedUsers = r.attachedUsers + e.userId,
+                  controllerUserId = r.controllerUserId.orElse(Some(e.userId)),
+                  updatedAt = e.occurredAt,
+                )
+              )
+            )
+          )
+        case e: WorkspaceRunEvent.UserDetached   =>
+          runRef.update(m =>
+            m.get(e.runId).fold(m)(r =>
+              m + (
+                e.runId -> r.copy(
+                  attachedUsers = r.attachedUsers - e.userId,
+                  controllerUserId = if r.controllerUserId.contains(e.userId) then
+                    (r.attachedUsers - e.userId).headOption
+                  else r.controllerUserId,
+                  updatedAt = e.occurredAt,
+                )
+              )
+            )
+          )
+        case e: WorkspaceRunEvent.RunInterrupted =>
+          runRef.update(m =>
+            m.get(e.runId).fold(m)(r =>
+              m + (
+                e.runId -> r.copy(
+                  status = RunStatus.Running(RunSessionMode.Paused),
+                  attachedUsers = r.attachedUsers + e.userId,
+                  controllerUserId = Some(e.userId),
+                  updatedAt = e.occurredAt,
+                )
+              )
+            )
+          )
+        case e: WorkspaceRunEvent.RunResumed     =>
+          runRef.update(m =>
+            m.get(e.runId).fold(m)(r =>
+              m + (
+                e.runId -> r.copy(
+                  status = RunStatus.Running(RunSessionMode.Interactive),
+                  attachedUsers = r.attachedUsers + e.userId,
+                  controllerUserId = Some(e.userId),
+                  updatedAt = e.occurredAt,
+                )
+              )
+            )
           )
 
     def listRuns(wid: String): IO[PersistenceError, List[WorkspaceRun]] =
@@ -135,7 +190,11 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
   private val dockerUnavailable: IO[WorkspaceError, Unit] =
     ZIO.fail(WorkspaceError.DockerNotAvailable("docker not available (stubbed)"))
 
-  private def makeService(ws: Workspace = sampleWs, dockerCheck: IO[WorkspaceError, Unit] = dockerAvailable) =
+  private def makeService(
+    ws: Workspace = sampleWs,
+    dockerCheck: IO[WorkspaceError, Unit] = dockerAvailable,
+    runCliAgent: (List[String], String, String => Task[Unit]) => Task[Int] = CliAgentRunner.runProcessStreaming,
+  ) =
     for
       messages <- Ref.make(List.empty[String])
       wsMap    <- Ref.make(Map(ws.id -> ws))
@@ -151,6 +210,7 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
           worktreeAdd = noopWorktreeAdd,
           worktreeRemove = noopWorktreeRemove,
           dockerCheck = dockerCheck,
+          runCliAgent = runCliAgent,
           fiberRegistry = registry,
         )
     yield (svc, wsRepo, messages)
@@ -195,7 +255,9 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
         run              <- svc.assign("ws-1", req)
         _                <- ZIO.sleep(500.millis)
         saved            <- wsRepo.getRun(run.id)
-      yield assertTrue(saved.exists(r => r.status == RunStatus.Completed || r.status == RunStatus.Running))
+      yield assertTrue(saved.exists(r =>
+        r.status == RunStatus.Completed || r.status == RunStatus.Running(RunSessionMode.Autonomous)
+      ))
     } @@ TestAspect.withLiveClock,
     test("executeInFiber respects timeout and marks run Failed") {
       for
@@ -274,4 +336,20 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
         case Left(WorkspaceError.NotFound("no-such-run")) => true
         case _                                            => false)
     },
+    test("continueRun creates a child run reusing parent worktree and branch") {
+      val instantCliAgent: (List[String], String, String => Task[Unit]) => Task[Int] =
+        (_, _, _) => ZIO.succeed(0)
+      for
+        (svc, wsRepo, _) <- makeService(runCliAgent = instantCliAgent)
+        req               = AssignRunRequest(issueRef = "#100", prompt = "initial", agentName = "echo")
+        parent           <- svc.assign("ws-1", req)
+        _                <- ZIO.sleep(200.millis)
+        child            <- svc.continueRun(parent.id, "follow-up instructions")
+        saved            <- wsRepo.getRun(child.id)
+      yield assertTrue(
+        saved.exists(_.parentRunId.contains(parent.id)),
+        saved.exists(_.worktreePath == parent.worktreePath),
+        saved.exists(_.branchName == parent.branchName),
+      )
+    } @@ TestAspect.withLiveClock,
   )

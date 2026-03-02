@@ -63,6 +63,7 @@ object WorkspaceModelsSpec extends ZIOSpecDefault:
       val run     = WorkspaceRun(
         id = "run-1",
         workspaceId = "ws-1",
+        parentRunId = Some("run-0"),
         issueRef = "#42",
         agentName = "gemini-cli",
         prompt = "Fix the null pointer in UserService",
@@ -70,6 +71,8 @@ object WorkspaceModelsSpec extends ZIOSpecDefault:
         worktreePath = "/tmp/agent-worktrees/my-api/run-1",
         branchName = "agent/42-run-1abc",
         status = RunStatus.Pending,
+        attachedUsers = Set.empty,
+        controllerUserId = None,
         createdAt = Instant.parse("2026-02-24T10:00:00Z"),
         updatedAt = Instant.parse("2026-02-24T10:00:00Z"),
       )
@@ -78,7 +81,42 @@ object WorkspaceModelsSpec extends ZIOSpecDefault:
       assertTrue(decoded == Right(run))
     },
     test("RunStatus values round-trip through JSON") {
-      val statuses: List[RunStatus] = List(RunStatus.Pending, RunStatus.Running, RunStatus.Completed, RunStatus.Failed)
+      val statuses: List[RunStatus] = List(
+        RunStatus.Pending,
+        RunStatus.Running(RunSessionMode.Autonomous),
+        RunStatus.Running(RunSessionMode.Interactive),
+        RunStatus.Running(RunSessionMode.Paused),
+        RunStatus.Completed,
+        RunStatus.Failed,
+      )
       assertTrue(statuses.forall(s => s.toJson.fromJson[RunStatus] == Right(s)))
+    },
+    test("WorkspaceRun events apply interactive session transitions") {
+      val now    = Instant.parse("2026-03-02T08:00:00Z")
+      val events = List[WorkspaceRunEvent](
+        WorkspaceRunEvent.Assigned(
+          runId = "run-evt",
+          workspaceId = "ws-1",
+          parentRunId = None,
+          issueRef = "#1",
+          agentName = "claude",
+          prompt = "fix",
+          conversationId = "conv-1",
+          worktreePath = "/tmp/wt",
+          branchName = "agent/1",
+          occurredAt = now,
+        ),
+        WorkspaceRunEvent.StatusChanged("run-evt", RunStatus.Running(RunSessionMode.Autonomous), now.plusSeconds(1)),
+        WorkspaceRunEvent.UserAttached("run-evt", "alice", now.plusSeconds(2)),
+        WorkspaceRunEvent.RunInterrupted("run-evt", "alice", now.plusSeconds(3)),
+        WorkspaceRunEvent.RunResumed("run-evt", "alice", "continue", now.plusSeconds(4)),
+        WorkspaceRunEvent.UserDetached("run-evt", "alice", now.plusSeconds(5)),
+      )
+      val run    = WorkspaceRun.fromEvents(events)
+      assertTrue(
+        run.exists(_.status == RunStatus.Running(RunSessionMode.Autonomous)),
+        run.exists(_.attachedUsers.isEmpty),
+        run.exists(_.controllerUserId.isEmpty),
+      )
     },
   )

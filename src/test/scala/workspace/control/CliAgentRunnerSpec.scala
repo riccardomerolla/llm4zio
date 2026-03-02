@@ -40,6 +40,16 @@ object CliAgentRunnerSpec extends ZIOSpecDefault:
       val argv = CliAgentRunner.buildArgv("my-tool", "do something", "/tmp/wt")
       assertTrue(argv == List("my-tool", "do something"))
     },
+    test("interactionSupport marks unsupported CLIs as continuation-only") {
+      assertTrue(
+        CliAgentRunner.interactionSupport("opencode") == CliAgentRunner.InteractionSupport.ContinuationOnly,
+        CliAgentRunner.interactionSupport("copilot") == CliAgentRunner.InteractionSupport.ContinuationOnly,
+      )
+    },
+    test("buildInteractiveArgv for claude uses non --print mode") {
+      val argv = CliAgentRunner.buildInteractiveArgv("claude", "/tmp/wt")
+      assertTrue(argv == List("claude"))
+    },
     test("buildArgv with RunMode.Host is identical to default") {
       val argvDefault  = CliAgentRunner.buildArgv("gemini", "fix it", "/tmp/wt")
       val argvExplicit = CliAgentRunner.buildArgv("gemini", "fix it", "/tmp/wt", RunMode.Host)
@@ -57,6 +67,7 @@ object CliAgentRunnerSpec extends ZIOSpecDefault:
           "docker",
           "run",
           "--rm",
+          "-i",
           "-v",
           "/tmp/wt:/workspace",
           "--workdir",
@@ -77,7 +88,7 @@ object CliAgentRunnerSpec extends ZIOSpecDefault:
         "/tmp/wt",
         RunMode.Docker("gemini:latest", Nil, mountWorktree = true, network = Some("none")),
       )
-      assertTrue(argv.containsSlice(List("--network", "none")))
+      assertTrue(argv.containsSlice(List("--network", "none")) && argv.contains("-i"))
     },
     test("buildArgv with RunMode.Docker and mountWorktree=false omits -v and --workdir") {
       val argv = CliAgentRunner.buildArgv(

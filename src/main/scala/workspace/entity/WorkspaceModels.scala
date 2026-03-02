@@ -20,11 +20,17 @@ object RunMode:
 
 sealed trait RunStatus derives JsonCodec, Schema
 object RunStatus:
-  case object Pending   extends RunStatus
-  case object Running   extends RunStatus
-  case object Completed extends RunStatus
-  case object Failed    extends RunStatus
-  case object Cancelled extends RunStatus
+  case object Pending                            extends RunStatus
+  final case class Running(mode: RunSessionMode) extends RunStatus
+  case object Completed                          extends RunStatus
+  case object Failed                             extends RunStatus
+  case object Cancelled                          extends RunStatus
+
+sealed trait RunSessionMode derives JsonCodec, Schema
+object RunSessionMode:
+  case object Autonomous  extends RunSessionMode
+  case object Interactive extends RunSessionMode
+  case object Paused      extends RunSessionMode
 
 /** Read-side projection of the Workspace aggregate. Rebuilt by folding [[WorkspaceEvent]]s. Never persisted directly as
   * a mutable record — only as a snapshot cache for fast reads.
@@ -115,6 +121,7 @@ object Workspace:
 case class WorkspaceRun(
   id: String,
   workspaceId: String,
+  parentRunId: Option[String],
   issueRef: String,
   agentName: String,
   prompt: String,
@@ -122,9 +129,32 @@ case class WorkspaceRun(
   worktreePath: String,
   branchName: String,
   status: RunStatus,
+  attachedUsers: Set[String],
+  controllerUserId: Option[String],
   createdAt: Instant,
   updatedAt: Instant,
 ) derives JsonCodec, Schema
+
+final case class AgentProcessRef(runId: String) derives JsonCodec, Schema
+final case class RunSession(
+  runId: String,
+  status: RunStatus,
+  attachedUsers: Set[String],
+  controllerUserId: Option[String],
+) derives JsonCodec,
+    Schema
+final case class RunInputAccepted(
+  runId: String,
+  messageId: Long,
+  queuedForContinuation: Boolean = false,
+) derives JsonCodec,
+    Schema
+final case class RunInputRejected(
+  runId: String,
+  reason: String,
+  queuedMessageId: Option[Long] = None,
+) derives JsonCodec,
+    Schema
 
 object WorkspaceRun:
   def fromEvents(events: List[WorkspaceRunEvent]): Either[String, WorkspaceRun] =
@@ -154,6 +184,7 @@ object WorkspaceRun:
                 WorkspaceRun(
                   id = e.runId,
                   workspaceId = e.workspaceId,
+                  parentRunId = e.parentRunId,
                   issueRef = e.issueRef,
                   agentName = e.agentName,
                   prompt = e.prompt,
@@ -161,6 +192,8 @@ object WorkspaceRun:
                   worktreePath = e.worktreePath,
                   branchName = e.branchName,
                   status = RunStatus.Pending,
+                  attachedUsers = Set.empty,
+                  controllerUserId = None,
                   createdAt = e.occurredAt,
                   updatedAt = e.occurredAt,
                 )
@@ -172,6 +205,78 @@ object WorkspaceRun:
           .toRight(s"WorkspaceRun ${e.runId} not initialised before StatusChanged event")
           .map(run => Some(run.copy(status = e.status, updatedAt = e.occurredAt)))
 
+      case e: WorkspaceRunEvent.UserAttached =>
+        current
+          .toRight(s"WorkspaceRun ${e.runId} not initialised before UserAttached event")
+          .map { run =>
+            val updatedUsers   = run.attachedUsers + e.userId
+            val nextController = run.controllerUserId.orElse(Some(e.userId))
+            val nextStatus     = run.status match
+              case RunStatus.Running(RunSessionMode.Autonomous) =>
+                RunStatus.Running(RunSessionMode.Interactive)
+              case other                                        => other
+            Some(
+              run.copy(
+                status = nextStatus,
+                attachedUsers = updatedUsers,
+                controllerUserId = nextController,
+                updatedAt = e.occurredAt,
+              )
+            )
+          }
+
+      case e: WorkspaceRunEvent.UserDetached =>
+        current
+          .toRight(s"WorkspaceRun ${e.runId} not initialised before UserDetached event")
+          .map { run =>
+            val updatedUsers   = run.attachedUsers - e.userId
+            val nextController =
+              run.controllerUserId match
+                case Some(currentController) if currentController == e.userId =>
+                  updatedUsers.headOption
+                case other                                                    => other
+            val nextStatus     = run.status match
+              case RunStatus.Running(RunSessionMode.Interactive) if updatedUsers.isEmpty =>
+                RunStatus.Running(RunSessionMode.Autonomous)
+              case other                                                                 => other
+            Some(
+              run.copy(
+                status = nextStatus,
+                attachedUsers = updatedUsers,
+                controllerUserId = nextController,
+                updatedAt = e.occurredAt,
+              )
+            )
+          }
+
+      case e: WorkspaceRunEvent.RunInterrupted =>
+        current
+          .toRight(s"WorkspaceRun ${e.runId} not initialised before RunInterrupted event")
+          .map { run =>
+            Some(
+              run.copy(
+                status = RunStatus.Running(RunSessionMode.Paused),
+                attachedUsers = run.attachedUsers + e.userId,
+                controllerUserId = Some(e.userId),
+                updatedAt = e.occurredAt,
+              )
+            )
+          }
+
+      case e: WorkspaceRunEvent.RunResumed =>
+        current
+          .toRight(s"WorkspaceRun ${e.runId} not initialised before RunResumed event")
+          .map { run =>
+            Some(
+              run.copy(
+                status = RunStatus.Running(RunSessionMode.Interactive),
+                attachedUsers = run.attachedUsers + e.userId,
+                controllerUserId = Some(e.userId),
+                updatedAt = e.occurredAt,
+              )
+            )
+          }
+
 enum WorkspaceError:
   case NotFound(id: String)
   case Disabled(id: String)
@@ -180,3 +285,6 @@ enum WorkspaceError:
   case RunTimeout(runId: String)
   case PersistenceFailure(cause: Throwable)
   case DockerNotAvailable(reason: String)
+  case InvalidRunState(runId: String, expected: String, actual: String)
+  case ControllerConflict(runId: String, controller: String, requestedBy: String)
+  case InteractiveProcessUnavailable(runId: String)

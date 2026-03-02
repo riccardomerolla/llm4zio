@@ -194,6 +194,26 @@ object WorkspacesController:
             }
         },
 
+      // Continue run
+      Method.POST / "api" / "workspaces" / string("wsId") / "runs" / string("runId") / "continue" ->
+        handler { (wsId: String, runId: String, req: Request) =>
+          val wantsHtml = req.header(Header.Accept).exists(_.renderedValue.toLowerCase.contains("text/html"))
+          parseContinueBody(req)
+            .flatMap(body => runSvc.continueRun(runId, body.prompt))
+            .flatMap { continued =>
+              if wantsHtml then
+                repo.listRuns(wsId).mapError(persistErr).map(runs => html(WorkspacesView.runsFragment(runs)))
+              else
+                ZIO.succeed(Response.json(s"""{"runId":"${continued.id}"}"""))
+            }
+            .catchAll {
+              case WorkspaceError.NotFound(_)                   => ZIO.succeed(Response(status = Status.NotFound))
+              case WorkspaceError.InvalidRunState(_, _, actual) =>
+                ZIO.succeed(html(WorkspacesView.assignErrorFragment(actual)))
+              case other                                        => ZIO.succeed(Response.internalServerError(other.toString))
+            }
+        },
+
       // Issue search — returns open/unassigned issues matching ?q= for the assign-run search dropdown
       Method.GET / "api" / "workspaces" / "issues" / "search" -> handler { (req: Request) =>
         val q = req.queryParam("q").map(_.trim.toLowerCase).filter(_.nonEmpty)
@@ -288,6 +308,23 @@ object WorkspacesController:
         else ZIO.succeed(AssignRunRequest(issueRef, prompt, agentName))
       }
 
+  private def parseContinueBody(req: Request): IO[WorkspaceError, ContinueRunRequest] =
+    req.body.asString
+      .mapError(_ => WorkspaceError.WorktreeError("body read failed"))
+      .flatMap { body =>
+        val fields = body
+          .split("&")
+          .collect {
+            case s if s.contains("=") =>
+              val idx = s.indexOf('=')
+              urlDecode(s.substring(0, idx)) -> urlDecode(s.substring(idx + 1))
+          }
+          .toMap
+        val prompt = fields.getOrElse("prompt", body).trim
+        if prompt.nonEmpty then ZIO.succeed(ContinueRunRequest(prompt))
+        else ZIO.fail(WorkspaceError.WorktreeError("prompt is required"))
+      }
+
   private def urlDecode(s: String): String =
     java.net.URLDecoder.decode(s, java.nio.charset.StandardCharsets.UTF_8)
 
@@ -305,3 +342,5 @@ case class WorkspaceCreateRequest(
   runMode: RunMode = RunMode.Host,
   cliTool: String = "claude",
 ) derives JsonCodec
+
+case class ContinueRunRequest(prompt: String) derives JsonCodec

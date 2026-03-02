@@ -19,8 +19,10 @@ import llm4zio.core.{ ConversationThread, LlmError, LlmService, Streaming, ToolC
 import llm4zio.providers.{ GeminiCliExecutor, HttpClient }
 import llm4zio.tools.ToolRegistry
 import orchestration.control.{ AgentConfigResolver, IssueAssignmentOrchestrator }
+import shared.errors.PersistenceError as WorkspacePersistenceError
 import shared.ids.Ids.{ ConversationId, EventId }
-import shared.web.{ ErrorHandlingMiddleware, HtmlViews, StreamAbortRegistry }
+import shared.web.{ ErrorHandlingMiddleware, HtmlViews, RunChainItem, RunSessionUiMeta, StreamAbortRegistry }
+import workspace.entity.WorkspaceRepository
 
 trait ChatController:
   def routes: Routes[Any, Response]
@@ -34,7 +36,7 @@ object ChatController:
     : ZLayer[
       ChatRepository & LlmService & TaskRepository & IssueAssignmentOrchestrator & AgentConfigResolver &
         GatewayService & ChannelRegistry & StreamAbortRegistry & ActivityHub & ToolRegistry & HttpClient &
-        GeminiCliExecutor,
+        GeminiCliExecutor & WorkspaceRepository,
       Nothing,
       ChatController,
     ] =
@@ -53,6 +55,7 @@ final case class ChatControllerLive(
   toolRegistry: ToolRegistry,
   httpClient: HttpClient,
   cliExecutor: GeminiCliExecutor,
+  workspaceRepository: WorkspaceRepository,
 ) extends ChatController:
 
   override val routes: Routes[Any, Response] = Routes(
@@ -99,7 +102,8 @@ final case class ChatControllerLive(
                             .getConversation(convId)
                             .someOrFail(PersistenceError.NotFound("conversation", convId))
           sessionMeta  <- resolveConversationSessionMeta(id)
-        yield html(HtmlViews.chatDetail(conversation, sessionMeta))
+          runMeta      <- resolveRunSessionMeta(conversation)
+        yield html(HtmlViews.chatDetail(conversation, sessionMeta, runMeta))
       }
     },
     Method.GET / "chat" / string("id") / "messages"          -> handler { (id: String, _: Request) =>
@@ -513,6 +517,59 @@ final case class ChatControllerLive(
         )
       )
     )
+
+  private def resolveRunSessionMeta(conversation: ChatConversation): IO[PersistenceError, Option[RunSessionUiMeta]] =
+    sanitizeOptional(conversation.runId) match
+      case None        => ZIO.none
+      case Some(runId) =>
+        workspaceRepository.getRun(runId).mapError(mapWorkspaceRepoError).flatMap {
+          case None      => ZIO.none
+          case Some(run) =>
+            workspaceRepository.listRuns(run.workspaceId).mapError(mapWorkspaceRepoError).map { runs =>
+              val byId       = runs.map(r => r.id -> r).toMap
+              val parentItem = run.parentRunId.flatMap(byId.get).map(toChainItem)
+              val nextItem   = runs.find(_.parentRunId.contains(run.id)).map(toChainItem)
+              val breadcrumb = buildRunBreadcrumb(run, byId)
+              Some(
+                RunSessionUiMeta(
+                  runId = run.id,
+                  workspaceId = run.workspaceId,
+                  status = run.status,
+                  attachedUsersCount = run.attachedUsers.size,
+                  parent = parentItem,
+                  next = nextItem,
+                  breadcrumb = breadcrumb,
+                )
+              )
+            }
+        }
+
+  private def buildRunBreadcrumb(
+    current: workspace.entity.WorkspaceRun,
+    byId: Map[String, workspace.entity.WorkspaceRun],
+  ): List[RunChainItem] =
+    @annotation.tailrec
+    def loop(
+      cursor: Option[workspace.entity.WorkspaceRun],
+      acc: List[RunChainItem],
+      seen: Set[String],
+      depth: Int,
+    ): List[RunChainItem] =
+      cursor match
+        case None                                              => acc
+        case Some(run) if depth >= 32 || seen.contains(run.id) =>
+          RunChainItem(run.id, run.conversationId) :: acc
+        case Some(run)                                         =>
+          val parent = run.parentRunId.flatMap(byId.get)
+          loop(parent, RunChainItem(run.id, run.conversationId) :: acc, seen + run.id, depth + 1)
+
+    loop(Some(current), Nil, Set.empty, 0)
+
+  private def toChainItem(run: workspace.entity.WorkspaceRun): RunChainItem =
+    RunChainItem(run.id, run.conversationId)
+
+  private def mapWorkspaceRepoError(err: WorkspacePersistenceError): PersistenceError =
+    PersistenceError.QueryFailed("workspace_repository", err.toString)
 
   private def listChatSessions: IO[PersistenceError, List[ChatSession]] =
     for
