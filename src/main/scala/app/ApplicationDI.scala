@@ -63,7 +63,7 @@ import taskrun.boundary.{
   ReportsController as TaskRunReportsController,
   TasksController as TaskRunTasksController,
 }
-import workspace.control.{ InteractiveAgentRunner, RunSessionManager, WorkspaceRunService }
+import workspace.control.{ GitService, GitWatcher, InteractiveAgentRunner, RunSessionManager, WorkspaceRunService }
 import workspace.entity.WorkspaceRepository
 
 object ApplicationDI:
@@ -105,6 +105,8 @@ object ApplicationDI:
       AgentConfigResolver &
       MemoryRepository &
       EmbeddingService
+      & GitService &
+      GitWatcher
 
   def aiProviderToLlmProvider(aiProvider: AIProvider): LlmProvider =
     aiProvider match
@@ -156,6 +158,8 @@ object ApplicationDI:
       ModelService.live,
       configAwareLlmServiceLayer,
       EmbeddingService.live,
+      GitService.live,
+      GitWatcher.live,
       MemoryRepositoryES.live,
       WorkflowService.live,
       ActivityRepository.live,

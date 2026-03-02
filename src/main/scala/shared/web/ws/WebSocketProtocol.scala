@@ -28,6 +28,7 @@ enum ServerMessage derives JsonCodec:
 // Subscription topic patterns
 enum SubscriptionTopic:
   case RunProgress(runId: Long)
+  case RunGit(runId: String)
   case DashboardRecentRuns
   case ChatMessages(conversationId: Long)
   case ChatStream(conversationId: Long)
@@ -41,6 +42,9 @@ object SubscriptionTopic:
     raw.split(":").toList match
       case "runs" :: runId :: "progress" :: Nil  =>
         runId.toLongOption.toRight(s"Invalid runId: $runId").map(RunProgress.apply)
+      case "runs" :: runId :: "git" :: Nil       =>
+        if runId.trim.nonEmpty then Right(RunGit(runId))
+        else Left("Invalid runId: empty")
       case "dashboard" :: "recent-runs" :: Nil   =>
         Right(DashboardRecentRuns)
       case "chat" :: convId :: "messages" :: Nil =>

@@ -10,6 +10,7 @@ addCommandAlias("check", "; scalafixAll --check; scalafmtCheckAll")
 
 // Centralized version management
 val zioVersion = "2.1.24"
+val zioProcessVersion = "0.7.2"
 val zioJsonVersion = "0.9.0"
 val zioHttpVersion = "3.8.1"
 val zioLoggingVersion = "2.4.0"
@@ -29,6 +30,7 @@ val bot4sTelegramCoreVersion = "7.0.0"
 val zioCoreDeps = Seq(
   "dev.zio" %% "zio" % zioVersion,
   "dev.zio" %% "zio-streams" % zioVersion,
+  "dev.zio" %% "zio-process" % zioProcessVersion,
 )
 
 val zioJsonDep = "dev.zio" %% "zio-json" % zioJsonVersion

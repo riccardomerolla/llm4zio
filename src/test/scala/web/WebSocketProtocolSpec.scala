@@ -121,6 +121,9 @@ object WebSocketProtocolSpec extends ZIOSpecDefault:
       test("parses dashboard recent-runs topic") {
         assertTrue(SubscriptionTopic.parse("dashboard:recent-runs") == Right(SubscriptionTopic.DashboardRecentRuns))
       },
+      test("parses run git topic") {
+        assertTrue(SubscriptionTopic.parse("runs:run-123:git") == Right(SubscriptionTopic.RunGit("run-123")))
+      },
       test("parses chat messages topic") {
         assertTrue(SubscriptionTopic.parse("chat:7:messages") == Right(SubscriptionTopic.ChatMessages(7L)))
       },

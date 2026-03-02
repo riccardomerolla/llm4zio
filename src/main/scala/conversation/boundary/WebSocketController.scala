@@ -15,7 +15,7 @@ import gateway.entity.SessionScopeStrategy
 import orchestration.control.OrchestratorControlPlane
 import shared.web.StreamAbortRegistry
 import shared.web.ws.{ ClientMessage, ServerMessage, SubscriptionTopic }
-import workspace.control.RunSessionManager
+import workspace.control.{ GitWatcher, GitWatcherEvent, RunSessionManager }
 
 trait WebSocketController:
   def routes: Routes[Any, Response]
@@ -27,7 +27,7 @@ object WebSocketController:
 
   val live
     : ZLayer[
-      ChannelRegistry & StreamAbortRegistry & HealthMonitor & OrchestratorControlPlane & ActivityHub & RunSessionManager,
+      ChannelRegistry & StreamAbortRegistry & HealthMonitor & OrchestratorControlPlane & ActivityHub & RunSessionManager & GitWatcher,
       Nothing,
       WebSocketController,
     ] =
@@ -40,6 +40,7 @@ final case class WebSocketControllerLive(
   controlPlane: OrchestratorControlPlane,
   activityHub: ActivityHub,
   runSessionManager: RunSessionManager,
+  gitWatcher: GitWatcher,
 ) extends WebSocketController:
 
   override val routes: Routes[Any, Response] = Routes(
@@ -333,6 +334,37 @@ final case class WebSocketControllerLive(
           sendServerMessage(socket, ServerMessage.Error("unsupported_topic", s"Topic not wired yet: $topic", ts))
         ) *>
           ZIO.never.forkDaemon
+      case SubscriptionTopic.RunGit(runId)                =>
+        ZIO
+          .scoped {
+            gitWatcher.subscribe(runId).flatMap { queue =>
+              ZStream
+                .fromQueue(queue)
+                .mapZIO {
+                  case GitWatcherEvent.StatusUpdated(status) =>
+                    withNow(ts =>
+                      sendServerMessage(
+                        socket,
+                        ServerMessage.Event(topic, "git-status-update", status.toJson, ts),
+                      )
+                    )
+                  case GitWatcherEvent.NewCommit(commit)     =>
+                    withNow(ts =>
+                      sendServerMessage(
+                        socket,
+                        ServerMessage.Event(topic, "git-new-commit", commit.toJson, ts),
+                      )
+                    )
+                }
+                .runDrain
+            }
+          }
+          .catchAll { err =>
+            withNow(ts =>
+              sendServerMessage(socket, ServerMessage.Error("run_git_subscription_error", err, ts))
+            )
+          }
+          .forkDaemon
       case SubscriptionTopic.DashboardRecentRuns          =>
         withNow(ts =>
           sendServerMessage(socket, ServerMessage.Error("unsupported_topic", s"Topic not wired yet: $topic", ts))

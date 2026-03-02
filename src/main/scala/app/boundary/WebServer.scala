@@ -31,7 +31,7 @@ import taskrun.boundary.{
   TasksController as TaskRunTasksController,
 }
 import workspace.boundary.WorkspacesController
-import workspace.control.WorkspaceRunService
+import workspace.control.{ GitService, WorkspaceRunService }
 import workspace.entity.WorkspaceRepository
 trait WebServer:
   def routes: Routes[Any, Response]
@@ -39,7 +39,7 @@ trait WebServer:
 object WebServer:
 
   val live: ZLayer[
-    TaskRunDashboardController & TaskRunTasksController & TaskRunReportsController & TaskRunGraphController & SettingsBoundaryController & ConfigBoundaryController & ConfigAgentsController & AppAgentMonitorController & ConversationChatController & IssuesIssueController & ConfigWorkflowsController & GatewayTelegramController & ActivityController & MemoryBoundaryController & GatewayChannelController & AppHealthController & TaskRunLogsController & ConversationWebSocketController & WorkspaceRepository & WorkspaceRunService & AgentRegistry & IssueRepository,
+    TaskRunDashboardController & TaskRunTasksController & TaskRunReportsController & TaskRunGraphController & SettingsBoundaryController & ConfigBoundaryController & ConfigAgentsController & AppAgentMonitorController & ConversationChatController & IssuesIssueController & ConfigWorkflowsController & GatewayTelegramController & ActivityController & MemoryBoundaryController & GatewayChannelController & AppHealthController & TaskRunLogsController & ConversationWebSocketController & WorkspaceRepository & WorkspaceRunService & GitService & AgentRegistry & IssueRepository,
     Nothing,
     WebServer,
   ] = ZLayer {
@@ -64,6 +64,7 @@ object WebServer:
       websocket   <- ZIO.service[ConversationWebSocketController]
       wsRepo      <- ZIO.service[WorkspaceRepository]
       wsRunSvc    <- ZIO.service[WorkspaceRunService]
+      gitService  <- ZIO.service[GitService]
       agentReg    <- ZIO.service[AgentRegistry]
       issueRepo   <- ZIO.service[IssueRepository]
       staticRoutes = Routes.serveResources(Path.empty / "static")
@@ -74,6 +75,7 @@ object WebServer:
           wsRunSvc,
           agentReg,
           issueRepo,
+          gitService,
         ) ++ staticRoutes
     }
   }

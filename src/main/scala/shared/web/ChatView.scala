@@ -145,6 +145,7 @@ object ChatView:
             attr("onclick") := s"document.getElementById('messages-$conversationId')?.scrollToLatest?.()",
           )("Scroll to bottom"),
         ),
+        runSessionMeta.fold[Frag](frag())(meta => runGitPanel(meta, conversationId)),
         runSessionMeta.fold[Frag](standardChatComposer(conversationId))(meta =>
           runInteractionComposer(
             conversationId = conversationId,
@@ -153,6 +154,7 @@ object ChatView:
           )
         ),
       ),
+      runSessionMeta.fold[Frag](frag())(_ => gitPanelStyles),
       JsResources.markedScript,
       tag("link")(
         attr("rel")  := "stylesheet",
@@ -160,7 +162,10 @@ object ChatView:
       ),
       JsResources.inlineModuleScript("/static/client/components/chat-message-stream.js"),
       runSessionMeta.fold[Frag](JsResources.inlineModuleScript("/static/client/components/message-composer.js"))(_ =>
-        JsResources.inlineModuleScript("/static/client/components/run-session-controls.js")
+        frag(
+          JsResources.inlineModuleScript("/static/client/components/run-session-controls.js"),
+          JsResources.inlineModuleScript("/static/client/components/git-panel.js"),
+        )
       ),
     )
 
@@ -442,6 +447,109 @@ object ChatView:
           )("Send to Run"),
         ),
       ),
+    )
+
+  private def runGitPanel(meta: RunSessionUiMeta, conversationId: String): Frag =
+    val basePath = s"/api/workspaces/${meta.workspaceId}/runs/${meta.runId}/git"
+    tag("details")(
+      id                           := s"git-panel-$conversationId",
+      cls                          := "mt-3 rounded-lg bg-white/5 ring-1 ring-white/10 overflow-hidden",
+      attr("open")                 := "open",
+      attr("data-role")            := "git-panel",
+      attr("data-workspace-id")    := meta.workspaceId,
+      attr("data-run-id")          := meta.runId,
+      attr("data-conversation-id") := conversationId,
+      attr("data-run-status")      := runModeLabel(meta.status),
+      attr("data-status-endpoint") := s"$basePath/status",
+      attr("data-diff-endpoint")   := s"$basePath/diff",
+      attr("data-log-endpoint")    := s"$basePath/log",
+      attr("data-branch-endpoint") := s"$basePath/branch",
+      attr("data-topic")           := s"runs:${meta.runId}:git",
+    )(
+      tag("summary")(
+        cls := "cursor-pointer select-none px-4 py-3 text-sm font-semibold text-white bg-white/5 border-b border-white/10"
+      )(
+        "Changes"
+      ),
+      div(cls := "grid gap-3 p-3 lg:grid-cols-3")(
+        div(cls := "lg:col-span-2 rounded-lg border border-white/10 bg-black/20 p-3 space-y-3")(
+          h3(cls := "text-sm font-semibold text-gray-100")("Files Changed"),
+          p(
+            cls               := "text-xs text-gray-400",
+            attr("data-role") := "summary",
+          )("Loading changes..."),
+          div(cls := "space-y-3", attr("data-role") := "files-groups")(),
+          div(
+            cls               := "hidden rounded-lg border border-white/10 bg-black/30 p-3",
+            attr("data-role") := "diff-viewer",
+          )(
+            div(cls := "mb-2 flex items-center justify-between gap-2")(
+              h4(cls := "text-xs font-semibold text-gray-200", attr("data-role") := "diff-title")("Diff"),
+              button(
+                `type`          := "button",
+                cls             := "rounded bg-white/10 px-2 py-1 text-[11px] text-gray-200 hover:bg-white/20",
+                attr("onclick") := "this.closest('[data-role=\"diff-viewer\"]').classList.add('hidden')",
+              )("Close"),
+            ),
+            pre(
+              cls               := "git-diff-lines text-xs overflow-auto rounded bg-black/40 p-2",
+              attr("data-role") := "diff-content",
+            )(),
+          ),
+        ),
+        div(cls := "space-y-3")(
+          div(cls := "rounded-lg border border-white/10 bg-black/20 p-3 space-y-2")(
+            h3(cls := "text-sm font-semibold text-gray-100")("Branch Info"),
+            div(cls := "text-xs text-gray-300", attr("data-role") := "branch-current")("Loading branch..."),
+            div(cls := "text-xs text-gray-400", attr("data-role") := "ahead-behind")(),
+            div(
+              cls               := "text-xs text-gray-400",
+              attr("data-role") := "run-status",
+            )(s"Run status: ${runModeLabel(meta.status)}"),
+          ),
+          div(cls := "rounded-lg border border-white/10 bg-black/20 p-3 space-y-2")(
+            h3(cls := "text-sm font-semibold text-gray-100")("Commit Log"),
+            div(cls := "space-y-2", attr("data-role") := "commit-log")(
+              p(cls := "text-xs text-gray-400")("Loading commits...")
+            ),
+          ),
+        ),
+      ),
+    )
+
+  private def gitPanelStyles: Frag =
+    tag("style")(
+      raw("""
+      .git-diff-lines {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      }
+      .git-diff-line {
+        display: grid;
+        grid-template-columns: 3.5rem 1fr;
+        gap: 0.75rem;
+        padding: 0.15rem 0.35rem;
+        border-radius: 0.25rem;
+        white-space: pre;
+      }
+      .git-diff-line .line-no {
+        color: #9ca3af;
+        text-align: right;
+        user-select: none;
+      }
+      .git-diff-line.added {
+        background: rgba(16, 185, 129, 0.18);
+      }
+      .git-diff-line.deleted {
+        background: rgba(244, 63, 94, 0.2);
+      }
+      .git-file-row.flash {
+        animation: git-flash 1.2s ease-out;
+      }
+      @keyframes git-flash {
+        0% { background: rgba(99, 102, 241, 0.35); }
+        100% { background: transparent; }
+      }
+      """)
     )
 
   private def runModeLabel(status: RunStatus): String = status match
