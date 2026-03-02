@@ -1,5 +1,7 @@
 package workspace.boundary
 
+import java.nio.file.{ Files, Paths }
+
 import zio.*
 import zio.http.*
 import zio.json.*
@@ -7,7 +9,7 @@ import zio.json.*
 import orchestration.control.AgentRegistry
 import shared.errors.PersistenceError
 import shared.web.WorkspacesView
-import workspace.control.{ AssignRunRequest, WorkspaceRunService }
+import workspace.control.{ AssignRunRequest, GitService, WorkspaceRunService }
 import workspace.entity.*
 
 object WorkspacesController:
@@ -17,6 +19,7 @@ object WorkspacesController:
     runSvc: WorkspaceRunService,
     agentRegistry: AgentRegistry,
     issueRepo: issues.entity.IssueRepository,
+    gitService: GitService,
   ): Routes[Any, Response] =
     Routes(
       // Redirect /workspaces → /settings/workspaces
@@ -214,6 +217,83 @@ object WorkspacesController:
             }
         },
 
+      // Git status for run worktree
+      Method.GET / "api" / "workspaces" / string("wsId") / "runs" / string("runId") / "git" / "status" ->
+        handler { (wsId: String, runId: String, _: Request) =>
+          resolveRunWorktree(repo, wsId, runId).flatMap {
+            case Left(resp)        => ZIO.succeed(resp)
+            case Right((_, _, wt)) =>
+              gitService.status(wt).map(status => Response.json(status.toJson)).catchAll(err =>
+                ZIO.succeed(gitErr(err))
+              )
+          }
+        },
+
+      // Git diff stat (unstaged default, staged with ?staged=true)
+      Method.GET / "api" / "workspaces" / string("wsId") / "runs" / string("runId") / "git" / "diff" ->
+        handler { (wsId: String, runId: String, req: Request) =>
+          val staged = req.queryParam("staged").exists(_.trim.equalsIgnoreCase("true"))
+          resolveRunWorktree(repo, wsId, runId).flatMap {
+            case Left(resp)        => ZIO.succeed(resp)
+            case Right((_, _, wt)) =>
+              gitService
+                .diffStat(wt, staged = staged)
+                .map(diff => Response.json(diff.toJson))
+                .catchAll(err => ZIO.succeed(gitErr(err)))
+          }
+        },
+
+      // Git file diff (URL-encoded file path segment)
+      Method.GET / "api" / "workspaces" / string("wsId") / "runs" / string("runId") / "git" / "diff" / string(
+        "filePath"
+      ) ->
+        handler { (wsId: String, runId: String, filePath: String, _: Request) =>
+          val decoded = urlDecode(filePath)
+          validateGitFilePath(decoded).flatMap {
+            case Left(resp) => ZIO.succeed(resp)
+            case Right(fp)  =>
+              resolveRunWorktree(repo, wsId, runId).flatMap {
+                case Left(resp)        => ZIO.succeed(resp)
+                case Right((_, _, wt)) =>
+                  gitService
+                    .diffFile(wt, fp)
+                    .map(diff => Response.text(diff).contentType(MediaType.text.plain))
+                    .catchAll(err => ZIO.succeed(gitErr(err)))
+              }
+          }
+        },
+
+      // Git log
+      Method.GET / "api" / "workspaces" / string("wsId") / "runs" / string("runId") / "git" / "log" ->
+        handler { (wsId: String, runId: String, req: Request) =>
+          parseLimit(req.queryParam("limit")).flatMap {
+            case Left(resp)   => ZIO.succeed(resp)
+            case Right(limit) =>
+              resolveRunWorktree(repo, wsId, runId).flatMap {
+                case Left(resp)        => ZIO.succeed(resp)
+                case Right((_, _, wt)) =>
+                  gitService.log(wt, limit).map(log => Response.json(log.toJson)).catchAll(err =>
+                    ZIO.succeed(gitErr(err))
+                  )
+              }
+          }
+        },
+
+      // Git branch + ahead/behind main
+      Method.GET / "api" / "workspaces" / string("wsId") / "runs" / string("runId") / "git" / "branch" ->
+        handler { (wsId: String, runId: String, _: Request) =>
+          val baseBranch = "main"
+          resolveRunWorktree(repo, wsId, runId).flatMap {
+            case Left(resp)        => ZIO.succeed(resp)
+            case Right((_, _, wt)) =>
+              (for
+                info        <- gitService.branchInfo(wt)
+                aheadBehind <- gitService.aheadBehind(wt, baseBranch)
+              yield Response.json(GitBranchView(info, aheadBehind, baseBranch).toJson))
+                .catchAll(err => ZIO.succeed(gitErr(err)))
+          }
+        },
+
       // Issue search — returns open/unassigned issues matching ?q= for the assign-run search dropdown
       Method.GET / "api" / "workspaces" / "issues" / "search" -> handler { (req: Request) =>
         val q = req.queryParam("q").map(_.trim.toLowerCase).filter(_.nonEmpty)
@@ -325,6 +405,51 @@ object WorkspacesController:
         else ZIO.fail(WorkspaceError.WorktreeError("prompt is required"))
       }
 
+  private def parseLimit(limitRaw: Option[String]): UIO[Either[Response, Int]] =
+    limitRaw.map(_.trim).filter(_.nonEmpty) match
+      case None        => ZIO.succeed(Right(20))
+      case Some(value) =>
+        value.toIntOption match
+          case Some(v) if v > 0 => ZIO.succeed(Right(v))
+          case _                => ZIO.succeed(Left(Response.badRequest("Invalid limit query param")))
+
+  private def validateGitFilePath(filePath: String): UIO[Either[Response, String]] =
+    val trimmed = filePath.trim
+    if trimmed.isEmpty then ZIO.succeed(Left(Response.badRequest("Invalid file path")))
+    else
+      val normalized = Paths.get(trimmed).normalize
+      val isAbsolute = normalized.isAbsolute || trimmed.startsWith("/")
+      val escapes    = normalized.iterator().hasNext && normalized.startsWith("..")
+      if isAbsolute || escapes then ZIO.succeed(Left(Response.badRequest("Invalid file path")))
+      else ZIO.succeed(Right(normalized.toString))
+
+  private def resolveRunWorktree(
+    repo: WorkspaceRepository,
+    workspaceId: String,
+    runId: String,
+  ): UIO[Either[Response, (Workspace, WorkspaceRun, String)]] =
+    (for
+      wsOpt  <- repo.get(workspaceId).mapError(persistErr)
+      ws     <- wsOpt match
+                  case Some(value) => ZIO.succeed(value)
+                  case None        => ZIO.fail(Response(status = Status.NotFound))
+      runOpt <- repo.getRun(runId).mapError(persistErr)
+      run    <- runOpt match
+                  case Some(value) if value.workspaceId == workspaceId => ZIO.succeed(value)
+                  case _                                               => ZIO.fail(Response(status = Status.NotFound))
+      wtPath <- ZIO.succeed(run.worktreePath.trim)
+      _      <- ZIO.when(wtPath.isEmpty || !Files.exists(Paths.get(wtPath))) {
+                  ZIO.fail(Response.text("Run worktree not found (likely cleaned up)").status(Status.NotFound))
+                }
+    yield (ws, run, wtPath)).either
+
+  private def gitErr(err: GitError): Response =
+    err match
+      case GitError.NotAGitRepository(_) => Response.text("Worktree is not a git repository").status(Status.NotFound)
+      case GitError.InvalidReference(_)  => Response.badRequest("Invalid git reference")
+      case GitError.ParseFailure(_, _)   => Response.internalServerError("Failed to parse git output")
+      case GitError.CommandFailed(_, _)  => Response.internalServerError("Git command failed")
+
   private def urlDecode(s: String): String =
     java.net.URLDecoder.decode(s, java.nio.charset.StandardCharsets.UTF_8)
 
@@ -344,3 +469,9 @@ case class WorkspaceCreateRequest(
 ) derives JsonCodec
 
 case class ContinueRunRequest(prompt: String) derives JsonCodec
+
+case class GitBranchView(
+  branch: GitBranchInfo,
+  aheadBehind: AheadBehind,
+  baseBranch: String,
+) derives JsonCodec

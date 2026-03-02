@@ -21,19 +21,22 @@ trait WorkspaceRunService:
   def cancelRun(runId: String): IO[WorkspaceError, Unit]
 
 object WorkspaceRunService:
-  val live: ZLayer[WorkspaceRepository & ChatRepository & IssueRepository & ActivityHub, Nothing, WorkspaceRunService] =
+  val live
+    : ZLayer[WorkspaceRepository & ChatRepository & IssueRepository & ActivityHub & GitWatcher, Nothing, WorkspaceRunService] =
     ZLayer {
       for
         repo      <- ZIO.service[WorkspaceRepository]
         chat      <- ZIO.service[ChatRepository]
         issueRepo <- ZIO.service[IssueRepository]
         activity  <- ZIO.service[ActivityHub]
+        watcher   <- ZIO.service[GitWatcher]
         registry  <- Ref.make(Map.empty[String, Fiber[WorkspaceError, Unit]])
       yield WorkspaceRunServiceLive(
         repo,
         chat,
         issueRepo,
         activityPublish = event => activity.publish(event),
+        gitWatcher = watcher,
         fiberRegistry = registry,
       )
     }
@@ -79,6 +82,7 @@ final case class WorkspaceRunServiceLive(
   runCliAgent: (List[String], String, String => Task[Unit]) => Task[Int] = CliAgentRunner.runProcessStreaming,
   // Injectable for testing: publishes workspace run lifecycle events to ActivityHub/WebSocket subscribers
   activityPublish: ActivityEvent => UIO[Unit] = _ => ZIO.unit,
+  gitWatcher: GitWatcher = GitWatcher.noop,
   // Tracks live run fibers by runId for cancellation; defaults to an empty registry
   fiberRegistry: Ref[Map[String, Fiber[WorkspaceError, Unit]]] =
     zio.Unsafe.unsafe(implicit u =>
@@ -364,8 +368,9 @@ final case class WorkspaceRunServiceLive(
     : IO[WorkspaceError, Unit] =
     val argv    = CliAgentRunner.buildArgv(cliTool, run.prompt, run.worktreePath, runMode, repoPath)
     val argvStr = argv.map(a => if a.contains(" ") then s"'$a'" else a).mkString(" ")
-    for
+    (for
       _        <- updateRunStatus(run.id, RunStatus.Running(RunSessionMode.Autonomous))
+      _        <- gitWatcher.registerRun(run.id, run.worktreePath)
       _        <- ZIO.logInfo(s"[run:${run.id}] launching: $argvStr  (cwd=${run.worktreePath})")
       linesRef <- Ref.make(0)
       exitOpt  <- runCliAgent(
@@ -392,7 +397,7 @@ final case class WorkspaceRunServiceLive(
       _        <- updateRunStatus(run.id, status)
       _        <- maybeCleanupWorktree(run, status)
       _        <- ZIO.logInfo(s"[run:${run.id}] status=$status")
-    yield ()
+    yield ()).ensuring(gitWatcher.unregisterRun(run.id))
 
   private def appendToConversation(conversationId: String, line: String): IO[WorkspaceError, Unit] =
     for

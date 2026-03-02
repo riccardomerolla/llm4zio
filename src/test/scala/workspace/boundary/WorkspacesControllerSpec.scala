@@ -12,7 +12,7 @@ import issues.entity.{ AgentIssue, IssueEvent, IssueFilter, IssueRepository }
 import orchestration.control.AgentRegistry
 import shared.ids.Ids.IssueId
 import taskrun.entity.TaskStep
-import workspace.control.{ AssignRunRequest, WorkspaceRunService }
+import workspace.control.{ AssignRunRequest, GitService, WorkspaceRunService }
 import workspace.entity.*
 
 object WorkspacesControllerSpec extends ZIOSpecDefault:
@@ -30,7 +30,25 @@ object WorkspacesControllerSpec extends ZIOSpecDefault:
     updatedAt = Instant.parse("2026-02-24T10:00:00Z"),
   )
 
-  private class StubWorkspaceRepo(ref: Ref[Map[String, Workspace]]) extends WorkspaceRepository:
+  private val sampleRun = WorkspaceRun(
+    id = "run-1",
+    workspaceId = "ws-1",
+    parentRunId = None,
+    issueRef = "#1",
+    agentName = "code-agent",
+    prompt = "do work",
+    conversationId = "42",
+    worktreePath = sys.props("user.dir"),
+    branchName = "agent/1-run",
+    status = RunStatus.Running(RunSessionMode.Autonomous),
+    attachedUsers = Set.empty,
+    controllerUserId = None,
+    createdAt = Instant.parse("2026-02-24T10:00:00Z"),
+    updatedAt = Instant.parse("2026-02-24T10:00:00Z"),
+  )
+
+  private class StubWorkspaceRepo(ref: Ref[Map[String, Workspace]], runRef: Ref[Map[String, WorkspaceRun]])
+    extends WorkspaceRepository:
     def append(event: WorkspaceEvent): IO[shared.errors.PersistenceError, Unit]       =
       event match
         case e: WorkspaceEvent.Created =>
@@ -52,8 +70,8 @@ object WorkspacesControllerSpec extends ZIOSpecDefault:
     def get(id: String): IO[shared.errors.PersistenceError, Option[Workspace]]        = ref.get.map(_.get(id))
     def delete(id: String): IO[shared.errors.PersistenceError, Unit]                  = ref.update(_ - id)
     def appendRun(event: WorkspaceRunEvent): IO[shared.errors.PersistenceError, Unit] = ZIO.unit
-    def listRuns(wid: String): IO[shared.errors.PersistenceError, List[WorkspaceRun]] = ZIO.succeed(Nil)
-    def getRun(id: String): IO[shared.errors.PersistenceError, Option[WorkspaceRun]]  = ZIO.succeed(None)
+    def listRuns(wid: String): IO[shared.errors.PersistenceError, List[WorkspaceRun]] = runRef.get.map(_.values.toList)
+    def getRun(id: String): IO[shared.errors.PersistenceError, Option[WorkspaceRun]]  = runRef.get.map(_.get(id))
 
   private class StubRunService extends WorkspaceRunService:
     def assign(wid: String, req: AssignRunRequest): IO[WorkspaceError, WorkspaceRun]   =
@@ -86,46 +104,86 @@ object WorkspacesControllerSpec extends ZIOSpecDefault:
     def list(filter: IssueFilter): IO[shared.errors.PersistenceError, List[AgentIssue]] = ZIO.succeed(Nil)
     def delete(id: IssueId): IO[shared.errors.PersistenceError, Unit]                   = ZIO.unit
 
-  private def makeRoutes(wsRef: Ref[Map[String, Workspace]]) =
+  private object StubGitService extends GitService:
+    def status(repoPath: String): IO[GitError, GitStatus]                                   =
+      ZIO.succeed(
+        GitStatus(
+          branch = "feature/test",
+          staged = List(FileChange("A.scala", ChangeStatus.Modified)),
+          unstaged = List(FileChange("B.scala", ChangeStatus.Added)),
+          untracked = List("README.md"),
+        )
+      )
+    def diff(repoPath: String, staged: Boolean): IO[GitError, GitDiff]                      =
+      ZIO.succeed(GitDiff(Nil))
+    def diffStat(repoPath: String, staged: Boolean): IO[GitError, GitDiffStat]              =
+      ZIO.succeed(GitDiffStat(List(DiffFileStat("A.scala", 5, 2))))
+    def diffFile(repoPath: String, filePath: String, staged: Boolean): IO[GitError, String] =
+      ZIO.succeed(s"diff --git a/$filePath b/$filePath")
+    def log(repoPath: String, limit: Int): IO[GitError, List[GitLogEntry]]                  =
+      ZIO.succeed(
+        List(
+          GitLogEntry(
+            hash = "abc123",
+            shortHash = "abc123",
+            author = "riccardo",
+            message = "feat: test",
+            date = Instant.parse("2026-03-02T08:00:00Z"),
+          )
+        )
+      )
+    def branchInfo(repoPath: String): IO[GitError, GitBranchInfo]                           =
+      ZIO.succeed(GitBranchInfo("feature/test", List("main", "feature/test"), isDetached = false))
+    def showFile(repoPath: String, filePath: String, ref: String): IO[GitError, String]     =
+      ZIO.succeed("file-content")
+    def aheadBehind(repoPath: String, baseBranch: String): IO[GitError, AheadBehind]        =
+      ZIO.succeed(AheadBehind(ahead = 3, behind = 1))
+
+  private def makeRoutes(wsRef: Ref[Map[String, Workspace]], runRef: Ref[Map[String, WorkspaceRun]]) =
     WorkspacesController.routes(
-      StubWorkspaceRepo(wsRef),
+      StubWorkspaceRepo(wsRef, runRef),
       StubRunService(),
       StubAgentRegistry,
       StubIssueRepository,
+      StubGitService,
     )
 
   def spec: Spec[TestEnvironment & Scope, Any] = suite("WorkspacesControllerSpec")(
     test("GET /settings/workspaces returns 200") {
       for
-        wsRef <- Ref.make(Map("ws-1" -> sampleWs))
-        routes = makeRoutes(wsRef)
-        req    = Request.get(URL(Path.decode("/settings/workspaces")))
-        resp  <- routes.runZIO(req)
+        wsRef  <- Ref.make(Map("ws-1" -> sampleWs))
+        runRef <- Ref.make(Map("run-1" -> sampleRun))
+        routes  = makeRoutes(wsRef, runRef)
+        req     = Request.get(URL(Path.decode("/settings/workspaces")))
+        resp   <- routes.runZIO(req)
       yield assertTrue(resp.status == Status.Ok)
     },
     test("GET /api/workspaces returns JSON list") {
       for
-        wsRef <- Ref.make(Map("ws-1" -> sampleWs))
-        routes = makeRoutes(wsRef)
-        req    = Request.get(URL(Path.decode("/api/workspaces")))
-        resp  <- routes.runZIO(req)
-        body  <- resp.body.asString
+        wsRef  <- Ref.make(Map("ws-1" -> sampleWs))
+        runRef <- Ref.make(Map("run-1" -> sampleRun))
+        routes  = makeRoutes(wsRef, runRef)
+        req     = Request.get(URL(Path.decode("/api/workspaces")))
+        resp   <- routes.runZIO(req)
+        body   <- resp.body.asString
       yield assertTrue(resp.status == Status.Ok && body.contains("my-api"))
     },
     test("DELETE /api/workspaces/:id returns 204") {
       for
-        wsRef <- Ref.make(Map("ws-1" -> sampleWs))
-        routes = makeRoutes(wsRef)
-        req    = Request(method = Method.DELETE, url = URL(Path.decode("/api/workspaces/ws-1")))
-        resp  <- routes.runZIO(req)
+        wsRef  <- Ref.make(Map("ws-1" -> sampleWs))
+        runRef <- Ref.make(Map("run-1" -> sampleRun))
+        routes  = makeRoutes(wsRef, runRef)
+        req     = Request(method = Method.DELETE, url = URL(Path.decode("/api/workspaces/ws-1")))
+        resp   <- routes.runZIO(req)
       yield assertTrue(resp.status == Status.NoContent)
     },
     test("GET /api/workspaces/:id/runs returns 200") {
       for
-        wsRef <- Ref.make(Map("ws-1" -> sampleWs))
-        routes = makeRoutes(wsRef)
-        req    = Request.get(URL(Path.decode("/api/workspaces/ws-1/runs")))
-        resp  <- routes.runZIO(req)
+        wsRef  <- Ref.make(Map("ws-1" -> sampleWs))
+        runRef <- Ref.make(Map("run-1" -> sampleRun))
+        routes  = makeRoutes(wsRef, runRef)
+        req     = Request.get(URL(Path.decode("/api/workspaces/ws-1/runs")))
+        resp   <- routes.runZIO(req)
       yield assertTrue(resp.status == Status.Ok)
     },
     test("WorkspaceCreateRequest with default RunMode.Host round-trips through JSON") {
@@ -148,5 +206,64 @@ object WorkspacesControllerSpec extends ZIOSpecDefault:
       )
       val decoded = req.toJson.fromJson[WorkspaceCreateRequest]
       assertTrue(decoded == Right(req))
+    },
+    test("GET git status endpoint returns GitStatus JSON") {
+      for
+        wsRef  <- Ref.make(Map("ws-1" -> sampleWs))
+        runRef <- Ref.make(Map("run-1" -> sampleRun))
+        routes  = makeRoutes(wsRef, runRef)
+        req     = Request.get(URL(Path.decode("/api/workspaces/ws-1/runs/run-1/git/status")))
+        resp   <- routes.runZIO(req)
+        body   <- resp.body.asString
+      yield assertTrue(resp.status == Status.Ok && body.contains("feature/test"))
+    },
+    test("GET git diff endpoint supports staged query") {
+      for
+        wsRef  <- Ref.make(Map("ws-1" -> sampleWs))
+        runRef <- Ref.make(Map("run-1" -> sampleRun))
+        routes  = makeRoutes(wsRef, runRef)
+        req     = Request.get(URL.decode("/api/workspaces/ws-1/runs/run-1/git/diff?staged=true").getOrElse(URL.root))
+        resp   <- routes.runZIO(req)
+        body   <- resp.body.asString
+      yield assertTrue(resp.status == Status.Ok && body.contains("A.scala"))
+    },
+    test("GET git file diff endpoint returns text/plain") {
+      for
+        wsRef  <- Ref.make(Map("ws-1" -> sampleWs))
+        runRef <- Ref.make(Map("run-1" -> sampleRun))
+        routes  = makeRoutes(wsRef, runRef)
+        req     = Request.get(URL(Path.decode("/api/workspaces/ws-1/runs/run-1/git/diff/src%2Fmain%2Fscala%2FA.scala")))
+        resp   <- routes.runZIO(req)
+        body   <- resp.body.asString
+      yield assertTrue(resp.status == Status.Ok && body.contains("diff --git"))
+    },
+    test("GET git log endpoint returns entries") {
+      for
+        wsRef  <- Ref.make(Map("ws-1" -> sampleWs))
+        runRef <- Ref.make(Map("run-1" -> sampleRun))
+        routes  = makeRoutes(wsRef, runRef)
+        req     = Request.get(URL.decode("/api/workspaces/ws-1/runs/run-1/git/log?limit=10").getOrElse(URL.root))
+        resp   <- routes.runZIO(req)
+        body   <- resp.body.asString
+      yield assertTrue(resp.status == Status.Ok && body.contains("feat: test"))
+    },
+    test("GET git branch endpoint returns branch and ahead/behind") {
+      for
+        wsRef  <- Ref.make(Map("ws-1" -> sampleWs))
+        runRef <- Ref.make(Map("run-1" -> sampleRun))
+        routes  = makeRoutes(wsRef, runRef)
+        req     = Request.get(URL(Path.decode("/api/workspaces/ws-1/runs/run-1/git/branch")))
+        resp   <- routes.runZIO(req)
+        body   <- resp.body.asString
+      yield assertTrue(resp.status == Status.Ok && body.contains("\"ahead\":3") && body.contains("\"behind\":1"))
+    },
+    test("GET git file diff endpoint rejects invalid file path") {
+      for
+        wsRef  <- Ref.make(Map("ws-1" -> sampleWs))
+        runRef <- Ref.make(Map("run-1" -> sampleRun))
+        routes  = makeRoutes(wsRef, runRef)
+        req     = Request.get(URL(Path.decode("/api/workspaces/ws-1/runs/run-1/git/diff/..%2Fsecret")))
+        resp   <- routes.runZIO(req)
+      yield assertTrue(resp.status == Status.BadRequest)
     },
   )
