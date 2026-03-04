@@ -264,6 +264,7 @@ object ApplicationDI:
       AppHealthController.live,
       GatewayTelegramController.live,
       ConversationWebSocketController.live,
+      mcp.McpService.live,
       WebServer.live,
     )
 
