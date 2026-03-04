@@ -84,18 +84,21 @@ Why not pure MCP for everything? MCP is designed for LLM↔tool integration, not
 
 **Goal:** External MCP tool interface + multi-gateway coordination.
 
-### MCP Server (external interface)
+### MCP Server — Library Layer (llm4zio)
 
-Each gateway exposes an MCP server with tools:
-- `assign_issue(title, description, workspace?, agent?, priority?)` — create and optionally assign an issue
-- `run_agent(workspace_id, agent, prompt)` — trigger an agent run
-- `get_run_status(run_id)` — query run status, output, git changes
-- `list_agents()` — available agents with capabilities
-- `list_workspaces()` — registered workspaces
-- `search_conversations(query)` — search conversation history
-- `get_metrics()` — LLM usage, agent performance
+ZIO-native MCP implementation in `llm4zio/src/main/scala/llm4zio/mcp/`:
 
-Transport: stdio (for local LLM clients) and SSE (for remote access).
+- **JSON-RPC 2.0 protocol** (`mcp/jsonrpc/`): request/response/error types, ZIO JSON codecs, `JsonRpcHandler` trait
+- **MCP message types** (`mcp/protocol/`): initialize, tools/list, tools/call, notifications, `McpContent` ADT, bridge from existing `Tool` → MCP schema
+- **McpServer** (`mcp/server/`): registers tools from `ToolRegistry`, handles MCP lifecycle, emits tool change notifications
+- **Stdio transport** (`mcp/transport/`): stdin/stdout newline-delimited JSON framing for local clients (Claude Code, Cursor)
+- **SSE transport** (`mcp/transport/`): HTTP POST for requests + SSE stream for responses, session management, API key auth
+
+### MCP Server — Gateway Layer
+
+Wire `McpServer` into the gateway, registering gateway-specific tools:
+- `assign_issue`, `run_agent`, `get_run_status`, `list_agents`, `list_workspaces`, `search_conversations`, `get_metrics`
+- Mount SSE routes on existing HTTP server, add `--mcp-stdio` CLI flag
 
 ### Gateway Federation (internal coordination)
 
@@ -107,15 +110,20 @@ Transport: stdio (for local LLM clients) and SSE (for remote access).
   - Workspace locality (prefer peer that has the repo cloned)
 - **Status Reporting**: peers push run status updates to leader via webhook. Leader aggregates for the federation dashboard.
 
-| Priority | Issue | Title |
-|----------|-------|-------|
-| P0 | NEW | MCP Server — expose gateway tools via stdio + SSE |
-| P0 | NEW | Gateway Registry — peer discovery and registration |
-| P1 | NEW | Leader Election — lightweight leader/follower protocol |
-| P1 | NEW | Task Delegation — dispatch issues to best-fit peer |
-| P2 | NEW | Federation Dashboard — view peers, agents, load, delegated tasks |
-| P2 | #278 | Security and approvals (agent action gates) |
-| P2 | #275 | Pairing system (user approval for channel access) |
+| Priority | Issue | Title | Layer |
+|----------|-------|-------|-------|
+| P0 | #390 | [llm4zio] JSON-RPC 2.0 protocol — codec, request/response/error types | library |
+| P0 | #391 | [llm4zio] MCP message types — initialize, tools/list, tools/call, notifications | library |
+| P0 | #392 | [llm4zio] McpServer trait — register tools, handle MCP lifecycle | library |
+| P1 | #393 | [llm4zio] Stdio transport — stdin/stdout JSON-RPC framing | library |
+| P1 | #394 | [llm4zio] SSE transport — HTTP MCP endpoint for remote clients | library |
+| P0 | #385 | MCP Server — wire gateway tools and start MCP endpoint | gateway |
+| P0 | #386 | Gateway Registry — peer discovery and registration | gateway |
+| P1 | #387 | Leader Election — lightweight leader/follower protocol | gateway |
+| P1 | #388 | Task Delegation — dispatch issues to best-fit peer | gateway |
+| P2 | #389 | Federation Dashboard — view peers, agents, load, delegated tasks | gateway |
+| P2 | #278 | Security and approvals (agent action gates) | gateway |
+| P2 | #275 | Pairing system (user approval for channel access) | gateway |
 
 ---
 
