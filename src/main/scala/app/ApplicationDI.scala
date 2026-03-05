@@ -35,6 +35,7 @@ import conversation.boundary.{
   WebSocketController as ConversationWebSocketController,
 }
 import db.*
+import gateway.boundary.discord.DiscordGatewayService
 import gateway.boundary.telegram.*
 import gateway.boundary.{
   ChannelController as GatewayChannelController,
@@ -102,6 +103,7 @@ object ApplicationDI:
       MessageRouter &
       GatewayService &
       TelegramPollingService &
+      DiscordGatewayService &
       TaskProgressNotifier &
       AgentConfigResolver &
       MemoryRepository &
@@ -179,6 +181,7 @@ object ApplicationDI:
       MessageRouter.live,
       GatewayService.live,
       TelegramPollingService.live,
+      DiscordGatewayService.live,
       TaskProgressNotifier.live,
     )
 

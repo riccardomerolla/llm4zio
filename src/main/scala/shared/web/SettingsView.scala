@@ -143,6 +143,16 @@ object SettingsView:
           p(cls := "text-sm text-green-400")(msg)
         )
       },
+      div(cls := "mb-5 rounded-lg border border-indigo-400/20 bg-indigo-500/10 p-4 text-sm text-indigo-100")(
+        p("Telegram settings are managed only in "),
+        a(
+          href := "/settings/gateway",
+          cls  := "font-semibold underline decoration-indigo-300/50 hover:text-white",
+        )("/settings/gateway"),
+        p(cls := "mt-2 text-indigo-200")(
+          "For Discord: create a bot in the Discord Developer Portal, enable MESSAGE CONTENT intent, invite the bot to your server, then save Bot Token and optional Guild/Channel IDs below."
+        ),
+      ),
       div(cls := "flex items-center justify-between mb-4")(
         p(cls := "text-sm text-gray-400")("Live channel status and configuration. Auto-refresh every 10 seconds."),
         a(

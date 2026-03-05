@@ -199,94 +199,20 @@ object ChannelView:
     val formId = s"config-form-$name"
     div(id := formId, cls := "mt-4 border-t border-white/10 pt-4")(
       name match
-        case "telegram"  => telegramConfigForm(settings)
+        case "telegram"  => telegramConfigForm
         case "discord"   => discordConfigForm(settings)
         case "slack"     => slackConfigForm(settings)
         case "websocket" => websocketConfigForm(settings)
         case _           => p(cls := "text-xs text-gray-400")(s"No configuration available for $name.")
     )
 
-  private def telegramConfigForm(settings: Map[String, String]): Frag =
-    tag("form")(
-      cls                 := "space-y-4",
-      attr("hx-post")     := "/settings/channels/telegram",
-      attr("hx-target")   := "#config-form-telegram",
-      attr("hx-swap")     := "outerHTML",
-      attr("hx-encoding") := "application/x-www-form-urlencoded",
-    )(
-      div(cls := "grid grid-cols-1 gap-4 sm:grid-cols-2")(
-        div(
-          label(cls := "block text-xs font-medium text-gray-400 mb-1")("Bot Token"),
-          input(
-            `type`              := "password",
-            name                := "telegram.botToken",
-            value               := settings.getOrElse("telegram.botToken", ""),
-            attr("placeholder") := "123456:ABC-token",
-            cls                 := "block w-full rounded-md bg-white/5 border-0 py-1.5 text-white text-sm ring-1 ring-white/10 focus:ring-2 focus:ring-indigo-500 px-3",
-          ),
-        ),
-        div(
-          label(cls := "block text-xs font-medium text-gray-400 mb-1")("Mode"),
-          select(
-            name := "telegram.mode",
-            id   := "telegram-mode-inline",
-            cls  := "block w-full rounded-md bg-gray-900 border-0 py-1.5 text-white text-sm ring-1 ring-white/10 px-3",
-          )(
-            option(
-              value := "Polling",
-              if settings.getOrElse("telegram.mode", "Polling") == "Polling" then attr("selected") := "selected" else (),
-            )("Polling"),
-            option(
-              value := "Webhook",
-              if settings.getOrElse("telegram.mode", "Polling") == "Webhook" then attr("selected") := "selected" else (),
-            )("Webhook"),
-          ),
-        ),
-        div(
-          label(cls := "block text-xs font-medium text-gray-400 mb-1")("Poll Interval (s)"),
-          input(
-            `type`      := "number",
-            name        := "telegram.polling.interval",
-            value       := settings.getOrElse("telegram.polling.interval", "1"),
-            attr("min") := "1",
-            attr("max") := "60",
-            cls         := "block w-full rounded-md bg-white/5 border-0 py-1.5 text-white text-sm ring-1 ring-white/10 px-3",
-          ),
-        ),
-        div(
-          label(cls := "block text-xs font-medium text-gray-400 mb-1")("Batch Size"),
-          input(
-            `type`      := "number",
-            name        := "telegram.polling.batchSize",
-            value       := settings.getOrElse("telegram.polling.batchSize", "100"),
-            attr("min") := "1",
-            attr("max") := "1000",
-            cls         := "block w-full rounded-md bg-white/5 border-0 py-1.5 text-white text-sm ring-1 ring-white/10 px-3",
-          ),
-        ),
-        div(
-          label(cls := "block text-xs font-medium text-gray-400 mb-1")("Poll Timeout (s)"),
-          input(
-            `type`      := "number",
-            name        := "telegram.polling.timeout",
-            value       := settings.getOrElse("telegram.polling.timeout", "30"),
-            attr("min") := "1",
-            attr("max") := "120",
-            cls         := "block w-full rounded-md bg-white/5 border-0 py-1.5 text-white text-sm ring-1 ring-white/10 px-3",
-          ),
-        ),
-        scopeStrategySelect(
-          fieldName = "telegram.sessionScopeStrategy",
-          selected = settings.getOrElse("telegram.sessionScopeStrategy", "PerConversation"),
-        ),
-      ),
-      div(cls := "flex items-center gap-3")(
-        button(
-          `type` := "submit",
-          cls    := "rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500",
-        )("Save"),
-        span(id := "save-status-telegram", cls := "text-xs text-gray-400")(""),
-      ),
+  private def telegramConfigForm: Frag =
+    div(cls := "rounded-md border border-indigo-400/20 bg-indigo-500/10 p-4 text-sm text-indigo-100")(
+      p("Telegram channel configuration is managed from Gateway settings."),
+      a(
+        href := "/settings/gateway",
+        cls  := "mt-3 inline-flex items-center rounded-md border border-indigo-300/40 bg-indigo-500/20 px-3 py-1.5 text-xs font-semibold text-indigo-100 hover:bg-indigo-500/30",
+      )("Open /settings/gateway"),
     )
 
   private def discordConfigForm(settings: Map[String, String]): Frag =
@@ -297,6 +223,15 @@ object ChannelView:
       attr("hx-swap")     := "outerHTML",
       attr("hx-encoding") := "application/x-www-form-urlencoded",
     )(
+      enabledField("enabled", "channel.discord.enabled", settings, default = false),
+      div(cls := "rounded-md border border-white/10 bg-slate-900/60 p-3 text-xs text-slate-300")(
+        p(cls := "font-semibold text-slate-200")("Discord Setup"),
+        ol(cls := "mt-2 list-decimal space-y-1 pl-4")(
+          li("Create a bot in Discord Developer Portal and copy the bot token."),
+          li("Enable required intents (at least MESSAGE CONTENT)."),
+          li("Invite the bot to your server with Send Messages permission."),
+        ),
+      ),
       div(cls := "grid grid-cols-1 gap-4 sm:grid-cols-2")(
         div(
           label(cls := "block text-xs font-medium text-gray-400 mb-1")("Bot Token"),
@@ -315,6 +250,16 @@ object ChannelView:
             name                := "guildId",
             value               := settings.getOrElse("channel.discord.guildId", ""),
             attr("placeholder") := "Server ID",
+            cls                 := "block w-full rounded-md bg-white/5 border-0 py-1.5 text-white text-sm ring-1 ring-white/10 px-3",
+          ),
+        ),
+        div(
+          label(cls := "block text-xs font-medium text-gray-400 mb-1")("Default Channel ID (optional)"),
+          input(
+            `type`              := "text",
+            name                := "channelId",
+            value               := settings.getOrElse("channel.discord.channelId", ""),
+            attr("placeholder") := "Text channel ID",
             cls                 := "block w-full rounded-md bg-white/5 border-0 py-1.5 text-white text-sm ring-1 ring-white/10 px-3",
           ),
         ),
@@ -337,6 +282,7 @@ object ChannelView:
       attr("hx-swap")     := "outerHTML",
       attr("hx-encoding") := "application/x-www-form-urlencoded",
     )(
+      enabledField("enabled", "channel.slack.enabled", settings, default = false),
       div(cls := "grid grid-cols-1 gap-4 sm:grid-cols-2")(
         div(
           label(cls := "block text-xs font-medium text-gray-400 mb-1")("App Token"),
@@ -355,6 +301,16 @@ object ChannelView:
             name                := "botToken",
             value               := settings.getOrElse("channel.slack.botToken", ""),
             attr("placeholder") := "xoxb-...",
+            cls                 := "block w-full rounded-md bg-white/5 border-0 py-1.5 text-white text-sm ring-1 ring-white/10 px-3",
+          ),
+        ),
+        div(
+          label(cls := "block text-xs font-medium text-gray-400 mb-1")("Default Channel ID (optional)"),
+          input(
+            `type`              := "text",
+            name                := "channelId",
+            value               := settings.getOrElse("channel.slack.channelId", ""),
+            attr("placeholder") := "C1234567890",
             cls                 := "block w-full rounded-md bg-white/5 border-0 py-1.5 text-white text-sm ring-1 ring-white/10 px-3",
           ),
         ),
@@ -377,6 +333,7 @@ object ChannelView:
       attr("hx-swap")     := "outerHTML",
       attr("hx-encoding") := "application/x-www-form-urlencoded",
     )(
+      enabledField("enabled", "channel.websocket.enabled", settings, default = true),
       p(cls := "text-xs text-gray-400")("WebSocket is built-in. You can still customize session scope."),
       scopeStrategySelect(
         fieldName = "sessionScopeStrategy",
@@ -386,6 +343,22 @@ object ChannelView:
         `type` := "submit",
         cls    := "rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500",
       )("Save"),
+    )
+
+  private def enabledField(fieldName: String, settingsKey: String, settings: Map[String, String], default: Boolean)
+    : Frag =
+    val isEnabled = settings.get(settingsKey).map(_.equalsIgnoreCase("true")).getOrElse(default)
+    val elementId = s"${settingsKey.replace('.', '-')}-enabled"
+    div(cls := "flex items-center gap-2")(
+      input(
+        `type` := "checkbox",
+        id     := elementId,
+        name   := fieldName,
+        value  := "true",
+        if isEnabled then attr("checked") := "checked" else (),
+        cls    := "h-4 w-4 rounded border-white/20 bg-slate-900 text-indigo-500",
+      ),
+      label(`for` := elementId, cls := "text-xs font-medium text-slate-300")("Enabled"),
     )
 
   private def scopeStrategySelect(fieldName: String, selected: String): Frag =

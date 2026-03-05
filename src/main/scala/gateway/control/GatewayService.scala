@@ -325,7 +325,8 @@ final case class GatewayServiceLive(
         availableAgents <- agentRegistry.getAllAgents
         directRoute      = parseDirectAgentRoute(message.content, availableAgents)
         channelBound    <- boundAgentForChannel(message, availableAgents)
-        selectedDirect   = directRoute.orElse(channelBound)
+        defaultRoute     = defaultChannelRoute(message, availableAgents)
+        selectedDirect   = directRoute.orElse(channelBound).orElse(defaultRoute)
         _               <- selectedDirect match
                              case Some((agentName, normalizedPrompt)) =>
                                val current = IntentConversationState()
@@ -418,13 +419,32 @@ final case class GatewayServiceLive(
           )
           .map(agent => (agent.name, if rest.nonEmpty then rest else content))
 
+  private def defaultChannelRoute(
+    message: NormalizedMessage,
+    availableAgents: List[AgentInfo],
+  ): Option[(String, String)] =
+    val isDiscordInbound =
+      message.channelName == "discord" &&
+      isRoutableInbound(message) &&
+      (message.metadata.get("discord.is_dm").contains("true") ||
+      message.metadata.get("discord.mentions_bot").contains("true"))
+    if !isDiscordInbound then None
+    else
+      availableAgents
+        .find(_.name == "chat-agent")
+        .map(_ => ("chat-agent", message.content))
+
   private def isRoutableInbound(message: NormalizedMessage): Boolean =
     message.direction == gateway.entity.MessageDirection.Inbound &&
     message.role == gateway.entity.GatewayMessageRole.User
 
   private def shouldParseIntent(message: NormalizedMessage): Boolean =
-    message.channelName == "telegram" &&
-    isRoutableInbound(message)
+    isRoutableInbound(message) &&
+    (message.channelName == "telegram" ||
+    (message.channelName == "discord" && (
+      message.metadata.get("discord.is_dm").contains("true") ||
+      message.metadata.get("discord.mentions_bot").contains("true")
+    )))
 
   private def sendAssistantReply(
     inbound: NormalizedMessage,

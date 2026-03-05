@@ -64,26 +64,18 @@ final case class ChannelControllerLive(
     },
     // Save per-channel config
     Method.POST / "settings" / "channels" / string("name")                -> handler { (name: String, req: Request) =>
-      ErrorHandling.fromPersistence {
-        for
-          form     <- parseForm(req)
-          prefixed  = name match
-                        case "telegram" =>
-                          form.map {
-                            case ("telegram.sessionScopeStrategy", value) =>
-                              "telegram.sessionScopeStrategy" -> normalizeSessionScopeSetting(value)
-                            case other                                    => other
-                          }
-                        case _          =>
-                          form.map {
-                            case ("sessionScopeStrategy", value) =>
-                              s"channel.$name.sessionScopeStrategy" -> normalizeSessionScopeSetting(value)
-                            case (key, value)                    => s"channel.$name.$key" -> value
-                          }
-          _        <- configRepository.upsertSettings(prefixed)
-          settings <- getSettingsMap
-        yield htmlFragment(ChannelView.channelConfigForm(name, settings).render)
-      }
+      if name.equalsIgnoreCase("telegram") then
+        ZIO.succeed(Response.badRequest("Telegram settings are managed from /settings/gateway"))
+      else
+        ErrorHandling.fromPersistence {
+          for
+            form     <- parseForm(req)
+            cfg       = channelConfig(name, form)
+            _        <- configRepository.upsertSettings(cfg)
+            _        <- reconcileChannelRuntime(name, cfg)
+            settings <- getSettingsMap
+          yield htmlFragment(ChannelView.channelConfigForm(name, settings).render)
+        }
     },
     Method.GET / "api" / "channels"                                       -> handler {
       buildCards.map(cards => Response.json(cards.toJson))
@@ -230,7 +222,6 @@ final case class ChannelControllerLive(
     value match
       case "discord"   => Some("discord")
       case "slack"     => Some("slack")
-      case "telegram"  => Some("telegram")
       case "websocket" => Some("websocket")
       case _           => None
 
@@ -300,6 +291,15 @@ final case class ChannelControllerLive(
         WebSocketChannel.make(scopeStrategy = scope).map(identity[MessageChannel])
       case _           =>
         ZIO.fail(PersistenceError.QueryFailed("addChannel", s"Unsupported channel: $name"))
+
+  private def reconcileChannelRuntime(
+    name: String,
+    cfg: Map[String, String],
+  ): IO[PersistenceError, Unit] =
+    val enabled = cfg.get(s"channel.$name.enabled").exists(_.equalsIgnoreCase("true"))
+    if enabled then
+      instantiateChannel(name, cfg).flatMap(channel => channelRegistry.register(channel))
+    else channelRegistry.markNotConfigured(name)
 
   private def normalizeSessionScopeSetting(raw: String): String =
     parseSessionScopeStrategy(Some(raw)).toString
