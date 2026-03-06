@@ -5,8 +5,10 @@ import java.time.Instant
 import zio.json.*
 
 import config.entity.AgentInfo
+import issues.entity.IssueWorkReport
 import issues.entity.api.{ AgentAssignmentView, AgentIssueView, IssueStatus, IssueTemplate }
 import scalatags.Text.all.*
+import shared.ids.Ids.IssueId
 
 object IssuesView:
   private val boardStatuses: List[(IssueStatus, String)] = List(
@@ -89,15 +91,22 @@ object IssuesView:
     priorityFilter: Option[String],
     tagFilter: Option[String],
     query: Option[String],
+    workReports: Map[IssueId, IssueWorkReport] = Map.empty,
+    hasProofFilter: Option[Boolean] = None,
   ): String =
-    val queryParts  = List(
+    val filteredIssues = hasProofFilter match
+      case Some(true) => BoardStats.hasProofFilter(issues, workReports)
+      case _          => issues
+    val stats          = BoardStats.compute(issues, workReports)
+    val queryParts     = List(
       workspaceFilter.filter(_.nonEmpty).map(v => s"workspace=${urlEncode(v)}"),
       agentFilter.filter(_.nonEmpty).map(v => s"agent=${urlEncode(v)}"),
       priorityFilter.filter(_.nonEmpty).map(v => s"priority=${urlEncode(v)}"),
       tagFilter.filter(_.nonEmpty).map(v => s"tag=${urlEncode(v)}"),
       query.filter(_.nonEmpty).map(v => s"q=${urlEncode(v)}"),
+      hasProofFilter.filter(identity).map(_ => "hasProof=true"),
     ).flatten
-    val fragmentUrl =
+    val fragmentUrl    =
       if queryParts.isEmpty then "/issues/board/fragment"
       else s"/issues/board/fragment?${queryParts.mkString("&")}"
 
@@ -127,7 +136,8 @@ object IssuesView:
           )
         ),
         bulkToolbar("board"),
-        boardFilterBar(workspaces, workspaceFilter, agentFilter, priorityFilter, tagFilter, query),
+        raw(BoardStats.statsBar(stats)),
+        boardFilterBar(workspaces, workspaceFilter, agentFilter, priorityFilter, tagFilter, query, hasProofFilter),
         div(
           id                           := "issues-board-root",
           attr("data-fragment-url")    := fragmentUrl,
@@ -139,7 +149,7 @@ object IssuesView:
           cls                          := "min-h-[32rem]",
           attr("data-bulk-scope")      := "board",
         )(
-          raw(boardColumnsFragment(issues, workspaces))
+          raw(boardColumnsFragment(filteredIssues, workspaces, workReports))
         ),
       ),
       JsResources.inlineModuleScript("/static/client/components/issues-board.js"),
@@ -147,6 +157,13 @@ object IssuesView:
     )
 
   def boardColumnsFragment(issues: List[AgentIssueView], workspaces: List[(String, String)]): String =
+    boardColumnsFragment(issues, workspaces, Map.empty)
+
+  def boardColumnsFragment(
+    issues: List[AgentIssueView],
+    workspaces: List[(String, String)],
+    workReports: Map[IssueId, IssueWorkReport],
+  ): String =
     div(
       cls := "grid grid-cols-1 gap-3 lg:grid-cols-5"
     )(
@@ -173,11 +190,32 @@ object IssuesView:
             if columnIssues.isEmpty then
               p(cls := "rounded border border-dashed border-white/10 px-2 py-3 text-xs text-slate-500")("No issues")
             else
-              columnIssues.map(issue => boardCard(issue, workspaces))
+              columnIssues.map { issue =>
+                val report = issue.id.flatMap(id => workReports.get(IssueId(id)))
+                boardCard(issue, workspaces, report)
+              }
           ),
         )
       }
     ).render
+
+  /** Public entry point for rendering a single board card (used in tests and fragment endpoints). */
+  def boardCardFragment(
+    issue: AgentIssueView,
+    workspaces: List[(String, String)],
+    workReport: Option[IssueWorkReport],
+  ): String =
+    boardCard(issue, workspaces, workReport).render
+
+  /** Render the issue detail page with an optional proof-of-work panel. */
+  def detailWithProofOfWork(
+    issue: AgentIssueView,
+    assignments: List[AgentAssignmentView],
+    availableAgents: List[AgentInfo],
+    workspaces: List[(String, String)],
+    workReport: Option[IssueWorkReport],
+  ): String =
+    detailPage(issue, assignments, availableAgents, workspaces, workReport)
 
   def newForm(defaultRunId: Option[String], workspaces: List[(String, String)], templates: List[IssueTemplate])
     : String =
@@ -280,6 +318,15 @@ object IssuesView:
     availableAgents: List[AgentInfo],
     workspaces: List[(String, String)],
   ): String =
+    detailPage(issue, assignments, availableAgents, workspaces, workReport = None)
+
+  private def detailPage(
+    issue: AgentIssueView,
+    assignments: List[AgentAssignmentView],
+    availableAgents: List[AgentInfo],
+    workspaces: List[(String, String)],
+    workReport: Option[IssueWorkReport],
+  ): String =
     val issueIdStr    = safe(issue.id, "-")
     val selectedAgent = safe(issue.preferredAgent).match
       case "" => safe(issue.assignedAgent)
@@ -377,6 +424,11 @@ object IssuesView:
             ),
           ),
         ),
+        workReport
+          .map(r => ProofOfWorkView.panel(r, collapsed = false))
+          .filter(_.nonEmpty)
+          .map(html => div(cls := "rounded-xl border border-white/10 bg-slate-900/60 p-6")(raw(html)))
+          .getOrElse(()),
         div(cls := "rounded-xl border border-white/10 bg-slate-900/60 p-6")(
           h2(cls := "mb-3 text-lg font-semibold text-white")("Execution history"),
           if assignments.isEmpty then p(cls := "text-sm text-slate-400")("No assignments yet")
@@ -548,6 +600,7 @@ object IssuesView:
     priorityFilter: Option[String],
     tagFilter: Option[String],
     query: Option[String],
+    hasProofFilter: Option[Boolean] = None,
   ): Frag =
     form(method := "get", action := "/issues/board", cls := "rounded-xl border border-white/10 bg-slate-900/60 p-4")(
       div(cls := "grid grid-cols-1 gap-3 md:grid-cols-6")(
@@ -595,7 +648,17 @@ object IssuesView:
           placeholder := "Tag",
           cls         := "rounded-md border border-white/15 bg-slate-800/70 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500",
         ),
-        div(cls := "flex gap-2")(
+        div(cls := "flex flex-wrap items-center gap-2")(
+          label(cls := "flex items-center gap-1.5 text-xs text-slate-300")(
+            input(
+              `type` := "checkbox",
+              name   := "hasProof",
+              value  := "true",
+              cls    := "h-4 w-4 rounded border-white/30 bg-slate-800 text-indigo-500",
+              if hasProofFilter.contains(true) then checked := "checked" else (),
+            ),
+            span("Has proof"),
+          ),
           button(
             `type` := "submit",
             cls    := "rounded-md bg-indigo-500 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-400",
@@ -667,7 +730,11 @@ object IssuesView:
       )
     )
 
-  private def boardCard(issue: AgentIssueView, workspaces: List[(String, String)]): Frag =
+  private def boardCard(
+    issue: AgentIssueView,
+    workspaces: List[(String, String)],
+    workReport: Option[IssueWorkReport] = None,
+  ): Frag =
     val issueId       = safe(issue.id, "-")
     val workspaceId   = safe(issue.workspaceId)
     val workspaceName = workspaceNameOf(workspaces, workspaceId).getOrElse(workspaceId)
@@ -677,8 +744,8 @@ object IssuesView:
     val runState      =
       if issue.status == IssueStatus.InProgress && safe(issue.runId).nonEmpty then Some("Run active")
       else None
-    a(
-      href                        := s"/issues/$issueId",
+    val powHtml       = workReport.map(r => ProofOfWorkView.panel(r, collapsed = true)).getOrElse("")
+    div(
       cls                         := "block rounded-lg border border-white/10 bg-slate-800/80 p-3 hover:border-indigo-400/40 hover:bg-slate-800",
       attr("draggable")           := "true",
       attr("data-issue-id")       := issueId,
@@ -689,30 +756,33 @@ object IssuesView:
       attr("data-tags")           := safe(issue.tags),
       attr("data-workspace-id")   := workspaceId,
     )(
-      div(cls := "mb-2 flex items-center justify-between")(
-        input(
-          `type`                   := "checkbox",
-          cls                      := "h-4 w-4 rounded border-white/30 bg-slate-800 text-indigo-500 focus:ring-indigo-400",
-          attr("data-bulk-select") := "board",
-          attr("data-issue-id")    := issueId,
-          attr("aria-label")       := s"Select issue $issueId",
+      a(href := s"/issues/$issueId", cls := "block")(
+        div(cls := "mb-2 flex items-center justify-between")(
+          input(
+            `type`                   := "checkbox",
+            cls                      := "h-4 w-4 rounded border-white/30 bg-slate-800 text-indigo-500 focus:ring-indigo-400",
+            attr("data-bulk-select") := "board",
+            attr("data-issue-id")    := issueId,
+            attr("aria-label")       := s"Select issue $issueId",
+          ),
+          span(cls := "text-[10px] uppercase tracking-wide text-slate-500")("Select"),
         ),
-        span(cls := "text-[10px] uppercase tracking-wide text-slate-500")("Select"),
-      ),
-      p(cls := "text-sm font-semibold text-slate-100 line-clamp-2")(titleText),
-      p(cls := "mt-1 text-xs text-slate-400 line-clamp-2")(descText),
-      div(cls := "mt-2 flex flex-wrap items-center gap-1.5")(
-        priorityBadge(safeStr(issue.priority.toString, "medium")),
-        safe(issue.assignedAgent).match
-          case v if v.nonEmpty =>
-            span(cls := "rounded-full bg-indigo-500/20 px-2 py-0.5 text-[11px] text-indigo-200")(v)
-          case _               => (),
-        if workspaceName.nonEmpty then workspaceBadge(workspaceName) else (),
-        runState.map(v =>
-          span(cls := "rounded-full bg-emerald-500/20 px-2 py-0.5 text-[11px] text-emerald-200")(v)
+        p(cls := "text-sm font-semibold text-slate-100 line-clamp-2")(titleText),
+        p(cls := "mt-1 text-xs text-slate-400 line-clamp-2")(descText),
+        div(cls := "mt-2 flex flex-wrap items-center gap-1.5")(
+          priorityBadge(safeStr(issue.priority.toString, "medium")),
+          safe(issue.assignedAgent).match
+            case v if v.nonEmpty =>
+              span(cls := "rounded-full bg-indigo-500/20 px-2 py-0.5 text-[11px] text-indigo-200")(v)
+            case _               => (),
+          if workspaceName.nonEmpty then workspaceBadge(workspaceName) else (),
+          runState.map(v =>
+            span(cls := "rounded-full bg-emerald-500/20 px-2 py-0.5 text-[11px] text-emerald-200")(v)
+          ),
         ),
+        p(cls := "mt-2 text-[11px] text-slate-500")(s"Updated $updatedLabel"),
       ),
-      p(cls := "mt-2 text-[11px] text-slate-500")(s"Updated $updatedLabel"),
+      if powHtml.nonEmpty then raw(powHtml) else (),
     )
 
   private def bulkToolbar(scope: String): Frag =
