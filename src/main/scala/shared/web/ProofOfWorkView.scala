@@ -91,6 +91,38 @@ object ProofOfWorkView:
         ),
       ).render
 
+  /** Render a compact expandable evidence bar for use on board cards.
+    *
+    * Returns an empty string when the report has no signals. Uses a native HTML `<details>`/`<summary>` element so no
+    * JavaScript is required for expand/collapse.
+    */
+  def evidenceBar(report: IssueWorkReport): String =
+    if !hasAnySignal(report) then ""
+    else
+      val chips: Seq[Frag] = Seq(
+        report.prStatus.map(s => prStatusBadge(s)),
+        report.ciStatus.map(ci => ciStatusBadge(ci)),
+        report.diffStats.map(ds =>
+          span(cls := "rounded-full bg-slate-700/60 px-2 py-0.5 text-[10px] text-slate-300")(
+            s"${ds.filesChanged} files"
+          )
+        ),
+      ).flatten
+
+      tag("details")(
+        cls := "mt-2 border-t border-white/10 pt-2"
+      )(
+        tag("summary")(
+          cls := "flex cursor-pointer list-none flex-wrap items-center gap-1.5 text-[10px] text-slate-400 hover:text-slate-200"
+        )(
+          span(cls := "mr-1 text-slate-500")("Evidence"),
+          chips,
+        ),
+        div(cls := "mt-2")(
+          raw(panel(report, collapsed = false))
+        ),
+      ).render
+
   private def hasAnySignal(r: IssueWorkReport): Boolean =
     r.walkthrough.isDefined ||
     r.agentSummary.isDefined ||

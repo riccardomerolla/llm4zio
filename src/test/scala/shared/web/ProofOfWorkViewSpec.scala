@@ -83,4 +83,35 @@ object ProofOfWorkViewSpec extends ZIOSpecDefault:
         val html   = ProofOfWorkView.panel(report, collapsed = false)
         assertTrue(html.contains("Agent completed 5 steps."))
       },
+      test("evidenceBar returns empty string when report has no signals") {
+        val html = ProofOfWorkView.evidenceBar(emptyReport)
+        assertTrue(html.isEmpty)
+      },
+      test("evidenceBar renders a details element with summary chips when signals present") {
+        val report = emptyReport.copy(
+          prLink = Some("https://github.com/org/repo/pull/1"),
+          prStatus = Some(PrStatus.Open),
+          ciStatus = Some(CiStatus.Passed),
+        )
+        val html   = ProofOfWorkView.evidenceBar(report)
+        assertTrue(
+          html.contains("<details"),
+          html.contains("<summary"),
+          html.contains("Open"),
+          html.contains("Passed"),
+        )
+      },
+      test("evidenceBar includes diff count chip when diffStats present") {
+        val report = emptyReport.copy(diffStats = Some(DiffStats(4, 30, 8)))
+        val html   = ProofOfWorkView.evidenceBar(report)
+        assertTrue(
+          html.contains("4"),
+          html.contains("<details"),
+        )
+      },
+      test("evidenceBar body contains the full panel content") {
+        val report = emptyReport.copy(walkthrough = Some("Refactored login."))
+        val html   = ProofOfWorkView.evidenceBar(report)
+        assertTrue(html.contains("Refactored login."))
+      },
     )
