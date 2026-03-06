@@ -739,14 +739,22 @@ object IssuesView:
     val workspaceId   = safe(issue.workspaceId)
     val workspaceName = workspaceNameOf(workspaces, workspaceId).getOrElse(workspaceId)
     val titleText     = safeStr(issue.title, "Untitled")
-    val descText      = safeStr(issue.description)
     val updatedLabel  = prettyRelativeTime(issue.updatedAt)
-    val runState      =
-      if issue.status == IssueStatus.InProgress && safe(issue.runId).nonEmpty then Some("Run active")
-      else None
-    val powHtml       = workReport.map(r => ProofOfWorkView.panel(r, collapsed = true)).getOrElse("")
+    val isInProgress  = issue.status == IssueStatus.InProgress
+    val agentName     =
+      safe(issue.assignedAgent) match
+        case v if v.nonEmpty => v
+        case _               => safe(issue.preferredAgent)
+    val borderCls     = issue.status match
+      case IssueStatus.Open       => "border-l-4 border-l-indigo-400"
+      case IssueStatus.Assigned   => "border-l-4 border-l-amber-400"
+      case IssueStatus.InProgress => "border-l-4 border-l-emerald-400"
+      case IssueStatus.Completed  => "border-l-4 border-l-teal-400"
+      case IssueStatus.Failed     => "border-l-4 border-l-rose-500"
+      case _                      => "border-l-4 border-l-slate-600"
+    val powHtml       = workReport.map(r => ProofOfWorkView.evidenceBar(r)).getOrElse("")
     div(
-      cls                         := "block rounded-lg border border-white/10 bg-slate-800/80 p-3 hover:border-indigo-400/40 hover:bg-slate-800",
+      cls                         := s"block rounded-lg border border-white/10 bg-slate-800/80 p-3 hover:border-indigo-400/40 hover:bg-slate-800 $borderCls",
       attr("draggable")           := "true",
       attr("data-issue-id")       := issueId,
       attr("data-bulk-card")      := "true",
@@ -757,30 +765,25 @@ object IssuesView:
       attr("data-workspace-id")   := workspaceId,
     )(
       a(href := s"/issues/$issueId", cls := "block")(
-        div(cls := "mb-2 flex items-center justify-between")(
-          input(
-            `type`                   := "checkbox",
-            cls                      := "h-4 w-4 rounded border-white/30 bg-slate-800 text-indigo-500 focus:ring-indigo-400",
-            attr("data-bulk-select") := "board",
-            attr("data-issue-id")    := issueId,
-            attr("aria-label")       := s"Select issue $issueId",
-          ),
-          span(cls := "text-[10px] uppercase tracking-wide text-slate-500")("Select"),
+        div(cls := "mb-1 flex items-start justify-between gap-2")(
+          p(cls := "flex-1 text-sm font-semibold text-slate-100 line-clamp-2")(titleText),
+          if isInProgress then
+            span(cls := "mt-1 h-2 w-2 flex-shrink-0 rounded-full bg-emerald-400 animate-pulse")
+          else (),
         ),
-        p(cls := "text-sm font-semibold text-slate-100 line-clamp-2")(titleText),
-        p(cls := "mt-1 text-xs text-slate-400 line-clamp-2")(descText),
-        div(cls := "mt-2 flex flex-wrap items-center gap-1.5")(
+        div(cls := "mt-1.5 flex flex-wrap items-center gap-1.5")(
           priorityBadge(safeStr(issue.priority.toString, "medium")),
-          safe(issue.assignedAgent).match
-            case v if v.nonEmpty =>
-              span(cls := "rounded-full bg-indigo-500/20 px-2 py-0.5 text-[11px] text-indigo-200")(v)
-            case _               => (),
+          safeTags(issue.tags).take(2).map(tagBadge),
           if workspaceName.nonEmpty then workspaceBadge(workspaceName) else (),
-          runState.map(v =>
-            span(cls := "rounded-full bg-emerald-500/20 px-2 py-0.5 text-[11px] text-emerald-200")(v)
-          ),
         ),
-        p(cls := "mt-2 text-[11px] text-slate-500")(s"Updated $updatedLabel"),
+        div(cls := "mt-2 flex items-center justify-between")(
+          if agentName.nonEmpty then
+            span(cls := "rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-slate-300")(
+              agentName.take(12)
+            )
+          else span(),
+          p(cls := "text-[11px] text-slate-500")(s"Updated $updatedLabel"),
+        ),
       ),
       if powHtml.nonEmpty then raw(powHtml) else (),
     )

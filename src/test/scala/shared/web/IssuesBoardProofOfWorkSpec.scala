@@ -41,13 +41,13 @@ object IssuesBoardProofOfWorkSpec extends ZIOSpecDefault:
         val html = IssuesView.boardCardFragment(baseIssue, Nil, workReport = None)
         assertTrue(!html.contains("data-proof-of-work"))
       },
-      test("board card with proof-of-work walkthrough renders collapsed panel") {
+      test("board card with proof-of-work walkthrough renders evidence bar (details element)") {
         val report = IssueWorkReport.empty(issueId, now).copy(walkthrough = Some("Auth refactored."))
         val html   = IssuesView.boardCardFragment(baseIssue, Nil, workReport = Some(report))
         assertTrue(
-          html.contains("data-proof-of-work"),
-          html.contains("data-pow-collapsed"),
+          html.contains("<details"),
           html.contains("Auth refactored."),
+          !html.contains("data-pow-collapsed"),
         )
       },
       test("detail view with proof-of-work renders expanded panel") {
@@ -63,6 +63,44 @@ object IssuesBoardProofOfWorkSpec extends ZIOSpecDefault:
           !html.contains("data-pow-collapsed"),
           html.contains("Changed 3 files."),
           html.contains("3"),
+        )
+      },
+      test("board card for InProgress issue has emerald left border class") {
+        val issue = baseIssue.copy(status = IssueStatus.InProgress)
+        val html  = IssuesView.boardCardFragment(issue, Nil, workReport = None)
+        assertTrue(html.contains("border-l-emerald-400"))
+      },
+      test("board card for Open issue has indigo left border class") {
+        val issue = baseIssue.copy(status = IssueStatus.Open)
+        val html  = IssuesView.boardCardFragment(issue, Nil, workReport = None)
+        assertTrue(html.contains("border-l-indigo-400"))
+      },
+      test("board card for Failed issue has rose left border class") {
+        val issue = baseIssue.copy(status = IssueStatus.Failed)
+        val html  = IssuesView.boardCardFragment(issue, Nil, workReport = None)
+        assertTrue(html.contains("border-l-rose-500"))
+      },
+      test("board card for InProgress issue shows animate-pulse dot") {
+        val issue = baseIssue.copy(status = IssueStatus.InProgress)
+        val html  = IssuesView.boardCardFragment(issue, Nil, workReport = None)
+        assertTrue(html.contains("animate-pulse"))
+      },
+      test("board card for Completed issue does not show animate-pulse dot") {
+        val issue = baseIssue.copy(status = IssueStatus.Completed)
+        val html  = IssuesView.boardCardFragment(issue, Nil, workReport = None)
+        assertTrue(!html.contains("animate-pulse"))
+      },
+      test("board card shows agent chip when assignedAgent is present") {
+        val issue = baseIssue.copy(assignedAgent = Some("claude-3-5-sonnet"))
+        val html  = IssuesView.boardCardFragment(issue, Nil, workReport = None)
+        assertTrue(html.contains("claude-3-5"))
+      },
+      test("board card uses evidenceBar (details element) instead of collapsed panel") {
+        val report = IssueWorkReport.empty(issueId, now).copy(walkthrough = Some("Done."))
+        val html   = IssuesView.boardCardFragment(baseIssue, Nil, workReport = Some(report))
+        assertTrue(
+          html.contains("<details"),
+          !html.contains("data-pow-collapsed"),
         )
       },
       test("boardColumnsWithReports includes proof panels for issues that have reports") {
