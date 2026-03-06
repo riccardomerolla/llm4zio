@@ -14,6 +14,18 @@ enum TaskRunState derives JsonCodec, Schema:
   case Failed(startedAt: Instant, failedAt: Instant, errorMessage: String)
   case Cancelled(cancelledAt: Instant, reason: String)
 
+enum PrStatus derives JsonCodec, Schema:
+  case Open, Merged, Closed, Draft
+
+enum CiStatus derives JsonCodec, Schema:
+  case Pending, Running, Passed, Failed
+
+final case class TokenUsage(
+  inputTokens: Long,
+  outputTokens: Long,
+  totalTokens: Long,
+) derives JsonCodec, Schema
+
 final case class TaskReport(
   id: ReportId,
   stepName: String,
@@ -38,6 +50,12 @@ final case class TaskRun(
   source: String,
   reports: List[TaskReport],
   artifacts: List[TaskArtifact],
+  walkthrough: Option[String] = None,
+  prLink: Option[String] = None,
+  prStatus: Option[PrStatus] = None,
+  ciStatus: Option[CiStatus] = None,
+  tokenUsage: Option[TokenUsage] = None,
+  runtimeSeconds: Option[Long] = None,
 ) derives JsonCodec, Schema
 
 object TaskRun:
@@ -132,3 +150,28 @@ object TaskRun:
         current
           .toRight(s"TaskRun ${cancelled.runId.value} not initialized before Cancelled event")
           .map(run => Some(run.copy(state = TaskRunState.Cancelled(cancelled.occurredAt, cancelled.reason))))
+
+      case e: TaskRunEvent.WalkthroughGenerated =>
+        current
+          .toRight(s"TaskRun ${e.runId.value} not initialized before WalkthroughGenerated event")
+          .map(run => Some(run.copy(walkthrough = Some(e.summary))))
+
+      case e: TaskRunEvent.PrLinked =>
+        current
+          .toRight(s"TaskRun ${e.runId.value} not initialized before PrLinked event")
+          .map(run => Some(run.copy(prLink = Some(e.prUrl), prStatus = Some(e.prStatus))))
+
+      case e: TaskRunEvent.CiStatusUpdated =>
+        current
+          .toRight(s"TaskRun ${e.runId.value} not initialized before CiStatusUpdated event")
+          .map(run => Some(run.copy(ciStatus = Some(e.ciStatus))))
+
+      case e: TaskRunEvent.TokenUsageRecorded =>
+        current
+          .toRight(s"TaskRun ${e.runId.value} not initialized before TokenUsageRecorded event")
+          .map(run =>
+            Some(run.copy(
+              tokenUsage = Some(TokenUsage(e.inputTokens, e.outputTokens, e.inputTokens + e.outputTokens)),
+              runtimeSeconds = Some(e.runtimeSeconds),
+            ))
+          )

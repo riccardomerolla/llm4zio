@@ -61,3 +61,30 @@ object TaskRunEvent:
     reason: String,
     occurredAt: Instant,
   ) extends TaskRunEvent
+
+  final case class WalkthroughGenerated(
+    runId: TaskRunId,
+    summary: String,
+    occurredAt: Instant,
+  ) extends TaskRunEvent
+
+  final case class PrLinked(
+    runId: TaskRunId,
+    prUrl: String,
+    prStatus: PrStatus,
+    occurredAt: Instant,
+  ) extends TaskRunEvent
+
+  final case class CiStatusUpdated(
+    runId: TaskRunId,
+    ciStatus: CiStatus,
+    occurredAt: Instant,
+  ) extends TaskRunEvent
+
+  final case class TokenUsageRecorded(
+    runId: TaskRunId,
+    inputTokens: Long,
+    outputTokens: Long,
+    runtimeSeconds: Long,
+    occurredAt: Instant,
+  ) extends TaskRunEvent

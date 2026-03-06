@@ -75,13 +75,14 @@ final case class TaskRunRepositoryES(
             val stateMatches    = filter.states.isEmpty || filter.states.contains(TaskRunStateTag.fromState(run.state))
             workflowMatches && agentMatches && stateMatches
           }
-          .sortBy {
-            case TaskRun(_, _, TaskRunState.Pending(createdAt), _, _, _, _)           => createdAt
-            case TaskRun(_, _, TaskRunState.Running(startedAt, _), _, _, _, _)        => startedAt
-            case TaskRun(_, _, TaskRunState.Completed(_, completedAt, _), _, _, _, _) => completedAt
-            case TaskRun(_, _, TaskRunState.Failed(_, failedAt, _), _, _, _, _)       => failedAt
-            case TaskRun(_, _, TaskRunState.Cancelled(cancelledAt, _), _, _, _, _)    => cancelledAt
-          }(Ordering[java.time.Instant].reverse)
+          .sortBy(run =>
+            run.state match
+              case TaskRunState.Pending(createdAt)           => createdAt
+              case TaskRunState.Running(startedAt, _)        => startedAt
+              case TaskRunState.Completed(_, completedAt, _) => completedAt
+              case TaskRunState.Failed(_, failedAt, _)       => failedAt
+              case TaskRunState.Cancelled(cancelledAt, _)    => cancelledAt
+          )(Ordering[java.time.Instant].reverse)
           .slice(filter.offset.max(0), filter.offset.max(0) + filter.limit.max(0))
       }
 
