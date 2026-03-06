@@ -53,7 +53,13 @@ object Layout:
               div(cls := "text-xs/6 font-semibold text-gray-400")("Workspace"),
               ul(attr("role") := "list", cls := "-mx-2 mt-2 space-y-1")(
                 navItem("/chat", "Chat", Icons.chat, currentPath.startsWith("/chat")),
-                navItem("/issues", "Issues", Icons.flag, currentPath.startsWith("/issues")),
+                navItem(
+                  "/issues",
+                  "Issues",
+                  Icons.flag,
+                  currentPath.startsWith("/issues") && !currentPath.startsWith("/issues/board"),
+                ),
+                navItem("/issues/board", "Board", Icons.tableColumns, currentPath.startsWith("/issues/board")),
                 navItem("/runs", "Runs", Icons.pulse, currentPath.startsWith("/runs")),
                 navItem(
                   "/workspaces",
@@ -165,6 +171,10 @@ object Layout:
 
     val archive: Frag = icon(
       "M3 7.5A2.25 2.25 0 0 1 5.25 5.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25A2.25 2.25 0 0 1 18.75 21H5.25A2.25 2.25 0 0 1 3 18.75V7.5Zm0 0h18M9 12h6"
+    )
+
+    val tableColumns: Frag = icon(
+      "M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5Zm2 4h6V7H5v2Zm0 4h6v-2H5v2Zm0 4h6v-2H5v2Zm8-8h6V7h-6v2Zm0 4h6v-2h-6v2Zm0 4h6v-2h-6v2Z"
     )
 
     val cog: Frag = icon(
