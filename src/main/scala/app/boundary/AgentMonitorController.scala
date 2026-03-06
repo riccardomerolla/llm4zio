@@ -3,10 +3,11 @@ package app.boundary
 import zio.*
 import zio.http.*
 import zio.json.*
+import zio.stream.ZStream
 
 import orchestration.control.OrchestratorControlPlane
 import shared.errors.ControlPlaneError
-import shared.web.AgentMonitor
+import shared.web.{ AgentMonitor, AgentMonitorView }
 
 trait AgentMonitorController:
   def routes: Routes[Any, Response]
@@ -26,6 +27,30 @@ final case class AgentMonitorControllerLive(
   override val routes: Routes[Any, Response] = Routes(
     Method.GET / "agent-monitor"                                                 -> handler {
       ZIO.succeed(html(AgentMonitor.page))
+    },
+    Method.GET / "agent-monitor" / "stream"                                      -> handler {
+      val stream: ZStream[Any, Nothing, String] =
+        ZStream
+          .repeatZIOWithSchedule(
+            controlPlane.getAgentMonitorSnapshot.either,
+            Schedule.spaced(2.seconds),
+          )
+          .collect { case Right(snapshot) => snapshot }
+          .map { snapshot =>
+            val tableHtml = AgentMonitorView.table(AgentMonitorView.fromSnapshot(snapshot))
+            s"event: agent-table\ndata: $tableHtml\n\n"
+          }
+      ZIO.succeed(
+        Response(
+          status = Status.Ok,
+          headers = Headers(
+            Header.ContentType(MediaType.text.`event-stream`),
+            Header.CacheControl.NoCache,
+            Header.Custom("Connection", "keep-alive"),
+          ),
+          body = Body.fromCharSequenceStreamChunked(stream),
+        )
+      )
     },
     Method.GET / "api" / "agent-monitor" / "snapshot"                            -> handler {
       controlPlane
