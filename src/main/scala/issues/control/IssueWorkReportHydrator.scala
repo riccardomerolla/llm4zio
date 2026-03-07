@@ -2,18 +2,7 @@ package issues.control
 
 import zio.*
 
-import issues.entity.{
-  AgentIssue,
-  IssueArtifact,
-  IssueCiStatus,
-  IssueFilter,
-  IssueReport,
-  IssuePrStatus,
-  IssueRepository,
-  IssueState,
-  IssueWorkReportProjection,
-  TokenUsage,
-}
+import issues.entity.*
 import taskrun.entity.{ TaskRun, TaskRunFilter, TaskRunRepository, TaskRunState }
 
 /** Hydrates `IssueWorkReportProjection` from historical state on application startup.

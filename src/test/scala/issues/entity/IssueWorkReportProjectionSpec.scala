@@ -77,7 +77,12 @@ object IssueWorkReportProjectionSpec extends ZIOSpecDefault:
         for
           proj   <- freshProjection
           _      <- proj.updatePrLink(issueId, "https://github.com/owner/repo/pull/42", IssuePrStatus.Open, now)
-          _      <- proj.updatePrLink(issueId, "https://github.com/owner/repo/pull/42", IssuePrStatus.Merged, now.plusSeconds(60))
+          _      <- proj.updatePrLink(
+                      issueId,
+                      "https://github.com/owner/repo/pull/42",
+                      IssuePrStatus.Merged,
+                      now.plusSeconds(60),
+                    )
           result <- proj.get(issueId)
         yield assertTrue(result.get.prStatus == Some(IssuePrStatus.Merged))
       },

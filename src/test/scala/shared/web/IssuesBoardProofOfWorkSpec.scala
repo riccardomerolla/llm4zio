@@ -4,8 +4,8 @@ import java.time.Instant
 
 import zio.test.*
 
-import issues.entity.{ IssueDiffStats, IssueWorkReport }
 import issues.entity.api.{ AgentIssueView, IssuePriority, IssueStatus }
+import issues.entity.{ IssueDiffStats, IssueWorkReport }
 import shared.ids.Ids.IssueId
 
 /** Tests that the board card and detail view correctly embed the ProofOfWork panel. */

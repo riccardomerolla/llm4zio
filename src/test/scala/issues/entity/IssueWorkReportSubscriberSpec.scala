@@ -131,7 +131,13 @@ object IssueWorkReportSubscriberSpec extends ZIOSpecDefault:
             _                       <- waitUntil(proj.get(issueId).map(_.exists(_.reports.nonEmpty)))
             result                  <- proj.get(issueId)
           yield assertTrue(
-            result.get.reports == List(IssueReport(report.id, report.stepName, report.reportType, report.content, report.createdAt))
+            result.get.reports == List(IssueReport(
+              report.id,
+              report.stepName,
+              report.reportType,
+              report.content,
+              report.createdAt,
+            ))
           )
         }
       },
@@ -145,7 +151,13 @@ object IssueWorkReportSubscriberSpec extends ZIOSpecDefault:
             _                       <- waitUntil(proj.get(issueId).map(_.exists(_.artifacts.nonEmpty)))
             result                  <- proj.get(issueId)
           yield assertTrue(
-            result.get.artifacts == List(IssueArtifact(artifact.id, artifact.stepName, artifact.key, artifact.value, artifact.createdAt))
+            result.get.artifacts == List(IssueArtifact(
+              artifact.id,
+              artifact.stepName,
+              artifact.key,
+              artifact.value,
+              artifact.createdAt,
+            ))
           )
         }
       },
@@ -176,8 +188,8 @@ object IssueWorkReportSubscriberSpec extends ZIOSpecDefault:
         val stats             = orchestration.entity.DiffStats(4, 87, 23)
         val parallelIssueId   = IssueId("issue-parallel-1")
         val parallelIssueRepo = new IssueRepository:
-          def append(event: IssueEvent): IO[shared.errors.PersistenceError, Unit] = ZIO.unit
-          def get(id: IssueId): IO[shared.errors.PersistenceError, AgentIssue]    =
+          def append(event: IssueEvent): IO[shared.errors.PersistenceError, Unit]             = ZIO.unit
+          def get(id: IssueId): IO[shared.errors.PersistenceError, AgentIssue]                =
             ZIO.fail(shared.errors.PersistenceError.NotFound("issue", id.value))
           def list(filter: IssueFilter): IO[shared.errors.PersistenceError, List[AgentIssue]] =
             ZIO.succeed(List(
@@ -196,7 +208,7 @@ object IssueWorkReportSubscriberSpec extends ZIOSpecDefault:
                 sourceFolder = "",
               )
             ))
-          def delete(id: IssueId): IO[shared.errors.PersistenceError, Unit] = ZIO.unit
+          def delete(id: IssueId): IO[shared.errors.PersistenceError, Unit]                   = ZIO.unit
 
         ZIO.scoped {
           for

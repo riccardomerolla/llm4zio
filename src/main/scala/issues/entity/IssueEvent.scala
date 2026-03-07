@@ -4,6 +4,7 @@ import java.time.Instant
 
 import zio.json.JsonCodec
 import zio.schema.{ Schema, derived }
+import zio.schema.annotation.fieldDefaultValue
 
 import shared.ids.Ids.{ AgentId, IssueId }
 
@@ -19,7 +20,7 @@ object IssueEvent:
     issueType: String,
     priority: String,
     occurredAt: Instant,
-    requiredCapabilities: List[String] = Nil,
+    @fieldDefaultValue(Nil) requiredCapabilities: List[String] = Nil,
   ) extends IssueEvent
 
   final case class Assigned(

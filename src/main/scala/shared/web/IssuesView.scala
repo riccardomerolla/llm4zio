@@ -398,206 +398,264 @@ object IssuesView:
     val convId        = safe(issue.conversationId)
     val workspaceId   = safe(issue.workspaceId)
     val workspaceName = workspaceNameOf(workspaces, workspaceId).getOrElse(workspaceId)
+    val isRunning     = issue.status == IssueStatus.InProgress || issue.status == IssueStatus.Assigned
+    val statusToken   = issueStatusToken(issue.status)
 
     Layout.page(s"Issue #$issueIdStr", "/issues")(
-      div(cls := "mt-2 mx-auto max-w-5xl space-y-4")(
-        a(href := "/issues", cls := "text-sm font-medium text-indigo-300 hover:text-indigo-200")("← Back to issues"),
-        div(cls := "rounded-xl border border-white/10 bg-slate-900/70 p-6")(
-          div(cls := "flex items-start justify-between gap-4")(
-            div(
-              h1(cls := "text-2xl font-bold text-white")(safeStr(issue.title, "Untitled")),
-              div(cls := "mt-2 flex flex-wrap items-center gap-2")(
-                statusBadge(safeStr(issue.status.toString, "open")),
-                priorityBadge(safeStr(issue.priority.toString, "medium")),
-                if workspaceId.nonEmpty then workspaceBadge(workspaceName) else (),
-                safeTags(issue.tags).map(tagBadge),
+      div(cls := "mt-2 mx-auto max-w-6xl space-y-4")(
+        // ── breadcrumb ──────────────────────────────────────────────────────
+        div(cls := "flex items-center gap-3")(
+          a(href := "/issues", cls := "text-sm font-medium text-indigo-300 hover:text-indigo-200")("← Issues"),
+          span(cls := "text-slate-600")("/"),
+          span(cls := "text-sm text-slate-400")(s"#$issueIdStr"),
+        ),
+        // ── main two-column layout ───────────────────────────────────────
+        div(cls := "flex flex-col gap-4 lg:flex-row lg:items-start")(
+          // ── LEFT: title + content ──────────────────────────────────────
+          div(cls := "min-w-0 flex-1 space-y-4")(
+            // title card
+            div(cls := "rounded-xl border border-white/10 bg-slate-900/70 p-6")(
+              div(cls := "flex flex-wrap items-start justify-between gap-3")(
+                div(cls := "min-w-0 flex-1")(
+                  h1(cls := "text-2xl font-bold leading-tight text-white")(safeStr(issue.title, "Untitled")),
+                  div(cls := "mt-2 flex flex-wrap items-center gap-2")(
+                    statusBadge(statusToken),
+                    priorityBadge(safeStr(issue.priority.toString, "medium")),
+                    safeTags(issue.tags).map(tagBadge),
+                  ),
+                ),
+                // edit button
+                a(
+                  href := s"/issues/$issueIdStr/edit",
+                  cls  := "shrink-0 rounded-md border border-white/20 px-3 py-1.5 text-sm font-medium text-slate-300 hover:border-white/30 hover:text-white",
+                )("Edit"),
+              )
+            ),
+            // task description
+            div(cls := "rounded-xl border border-white/10 bg-slate-900/70 p-6")(
+              p(cls := "mb-3 text-sm font-semibold text-slate-300")("Description"),
+              div(cls := "prose prose-invert prose-sm max-w-none text-slate-100")(
+                markdownFragment(safeStr(issue.description))
               ),
             ),
-            div(cls := "flex flex-col items-end gap-2")(
-              if convId.nonEmpty then
-                a(
-                  href := s"/chat/$convId",
-                  cls  := "rounded-md border border-indigo-400/30 bg-indigo-500/20 px-3 py-2 text-sm font-semibold text-indigo-200 hover:bg-indigo-500/30",
-                )("Open linked chat")
-              else (),
+            // proof-of-work (when available)
+            workReport
+              .map(r => ProofOfWorkView.panel(r, collapsed = false))
+              .filter(_.nonEmpty)
+              .map(html => div(cls := "rounded-xl border border-white/10 bg-slate-900/60 p-6")(raw(html)))
+              .getOrElse(()),
+            // execution history
+            div(cls := "rounded-xl border border-white/10 bg-slate-900/60 p-6")(
+              h2(cls := "mb-3 text-base font-semibold text-white")("Execution history"),
+              if assignments.isEmpty then
+                p(cls := "text-sm text-slate-400")("No runs yet.")
+              else
+                div(cls := "space-y-3")(
+                  assignments.sortBy(a =>
+                    try a.assignedAt
+                    catch case _: Throwable => Instant.EPOCH
+                  ).reverse.map { assignment =>
+                    div(cls := "rounded-lg border border-white/10 bg-slate-800/70 p-4")(
+                      div(cls := "flex flex-wrap items-center justify-between gap-2")(
+                        span(cls := "text-sm font-semibold text-slate-100")(safeStr(assignment.agentName, "unknown")),
+                        span(
+                          cls := s"rounded-full px-2 py-0.5 text-xs ${assignmentStatusBadge(safeStr(assignment.status, "pending"))}"
+                        )(safeStr(assignment.status, "pending")),
+                      ),
+                      safe(assignment.executionLog).match
+                        case v if v.nonEmpty =>
+                          pre(cls := "mt-3 max-h-48 overflow-auto rounded bg-black/30 p-3 text-xs text-slate-200")(v)
+                        case _               => (),
+                      safe(assignment.result).match
+                        case v if v.nonEmpty =>
+                          pre(cls := "mt-3 max-h-48 overflow-auto rounded bg-black/30 p-3 text-xs text-slate-200")(v)
+                        case _               => (),
+                    )
+                  }
+                ),
+            ),
+          ),
+          // ── RIGHT: sidebar ─────────────────────────────────────────────
+          div(cls := "w-full shrink-0 space-y-4 lg:w-72")(
+            // ── Run card ─────────────────────────────────────────────────
+            div(cls := "rounded-xl border border-white/10 bg-slate-900/70 p-4")(
+              p(cls := "mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400")("Run with agent"),
               form(
                 method                       := "post",
                 action                       := s"/issues/$issueIdStr/assign",
-                cls                          := "flex items-center gap-2",
+                cls                          := "space-y-3",
                 attr("data-assignment-form") := "true",
                 attr("data-issue-id")        := issueIdStr,
-                onsubmit                     := "const b=this.querySelector('button[type=submit]'); if(b){b.disabled=true;b.classList.add('opacity-60','cursor-not-allowed'); b.dataset.originalText=b.textContent; b.textContent='Assigning...';}",
+                onsubmit                     := "const b=this.querySelector('button[type=submit]'); if(b){b.disabled=true;b.classList.add('opacity-60','cursor-not-allowed'); b.textContent='Starting...';}",
               )(
+                // workspace row
                 if workspaceId.nonEmpty then
                   frag(
                     input(`type` := "hidden", name := "workspaceId", value := workspaceId),
-                    span(
-                      cls := "rounded-md border border-cyan-400/30 bg-cyan-500/20 px-2 py-1.5 text-xs text-cyan-200"
-                    )(s"Workspace: $workspaceName"),
+                    div(cls := "flex items-center gap-2 text-xs text-slate-400")(
+                      span("Workspace:"),
+                      span(cls := "font-medium text-cyan-300")(workspaceName),
+                    ),
                   )
                 else
-                  workspaceSelect(
-                    fieldName = "workspaceId",
-                    labelText = "",
-                    workspaces = workspaces,
-                    selectedWorkspaceId = None,
-                    includeLabel = false,
-                    compact = true,
+                  div(
+                    label(cls := "mb-1 block text-xs text-slate-400")("Workspace"),
+                    workspaceSelect(
+                      fieldName = "workspaceId",
+                      labelText = "",
+                      workspaces = workspaces,
+                      selectedWorkspaceId = None,
+                      includeLabel = false,
+                      compact = true,
+                    ),
                   )
                 ,
-                agentSelect("agentName", selectedAgent, availableAgents),
-                button(
-                  `type` := "submit",
-                  cls    := "rounded-md border border-emerald-400/30 bg-emerald-500/20 px-3 py-2 text-sm font-semibold text-emerald-200 hover:bg-emerald-500/30",
-                )(
-                  if convId.nonEmpty then "Re-assign & Run" else "Assign & Start Chat"
+                // agent select
+                div(
+                  label(cls := "mb-1 block text-xs text-slate-400")("Agent"),
+                  agentSelect("agentName", selectedAgent, availableAgents),
+                ),
+                // hidden suggestions anchor (JS still resolves suggestions but we don't show the noisy text)
+                div(
+                  attr("data-assignment-suggestions") := "true",
+                  attr("data-required-capabilities")  := requiredCaps.mkString(","),
+                  cls                                 := "hidden",
+                )(),
+                // action buttons
+                div(cls := "flex gap-2")(
+                  button(
+                    `type` := "submit",
+                    cls    := "flex-1 rounded-md border border-emerald-400/30 bg-emerald-500/20 px-3 py-2 text-sm font-semibold text-emerald-200 hover:bg-emerald-500/30",
+                  )(if isRunning then "Re-run" else "Run"),
+                  button(
+                    `type`                       := "button",
+                    cls                          := "rounded-md border border-slate-600 bg-slate-800 px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-700",
+                    attr("data-auto-assign-btn") := "true",
+                    attr("title")                := "Let the system pick the best agent based on required capabilities",
+                  )("Auto"),
+                ),
+              ),
+              // open chat link (if conversation exists)
+              if convId.nonEmpty then
+                div(cls := "mt-3 border-t border-white/10 pt-3")(
+                  a(
+                    href := s"/chat/$convId",
+                    cls  := "block text-center text-sm font-medium text-indigo-300 hover:text-indigo-200",
+                  )("Open agent chat →")
+                )
+              else (),
+            ),
+            // ── Status card ───────────────────────────────────────────────
+            div(cls := "rounded-xl border border-white/10 bg-slate-900/70 p-4")(
+              p(cls := "mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400")("Status"),
+              form(method := "post", action := s"/issues/$issueIdStr/status")(
+                div(cls := "flex items-center gap-2")(
+                  select(
+                    name := "status",
+                    cls  := "flex-1 rounded-md border border-white/15 bg-slate-800/80 px-2 py-1.5 text-sm text-slate-100 focus:border-indigo-400/40 focus:outline-none",
+                  )(
+                    statusOption("open", "Open", Some(statusToken)),
+                    statusOption("assigned", "Assigned", Some(statusToken)),
+                    statusOption("in_progress", "In Progress", Some(statusToken)),
+                    statusOption("completed", "Completed", Some(statusToken)),
+                    statusOption("failed", "Failed", Some(statusToken)),
+                    statusOption("skipped", "Skipped", Some(statusToken)),
+                  ),
+                  button(
+                    `type` := "submit",
+                    cls    := "rounded-md border border-white/20 bg-slate-800 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-700",
+                  )("Set"),
+                )
+              ),
+            ),
+            // ── Metadata card ─────────────────────────────────────────────
+            div(cls := "rounded-xl border border-white/10 bg-slate-900/70 p-4 space-y-3")(
+              p(cls := "text-xs font-semibold uppercase tracking-wide text-slate-400")("Details"),
+              sidebarMeta("Workspace", if workspaceName.nonEmpty then workspaceName else "—"),
+              sidebarMeta("Assigned agent", safe(issue.assignedAgent, "—")),
+              sidebarMeta("Preferred agent", safe(issue.preferredAgent, "—")),
+              sidebarMeta("Run", safeMap(issue.runId, identity, "—")),
+              if requiredCaps.nonEmpty then sidebarMeta("Capabilities", requiredCaps.mkString(", ")) else (),
+              if safe(issue.contextPath).nonEmpty then sidebarMeta("Context path", safe(issue.contextPath)) else (),
+              if safe(issue.sourceFolder).nonEmpty then sidebarMeta("Source folder", safe(issue.sourceFolder)) else (),
+              sidebarMeta("Updated", safeStr(issue.updatedAt.toString.take(19).replace('T', ' '), "—")),
+            ),
+            // ── Pipeline (collapsed) ─────────────────────────────────────
+            tag("details")(
+              cls                              := "rounded-xl border border-white/10 bg-slate-900/70",
+              attr("data-issue-pipeline-root") := "true",
+              attr("data-issue-id")            := issueIdStr,
+              attr("data-workspace-id")        := workspaceId,
+            )(
+              tag("summary")(
+                cls := "cursor-pointer select-none px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-400 hover:text-slate-300"
+              )("Multi-agent pipeline"),
+              div(cls := "space-y-3 px-4 pb-4 pt-2")(
+                div(cls := "grid grid-cols-1 gap-2")(
+                  div(
+                    label(cls := "mb-1 block text-xs text-slate-400")("Pipeline"),
+                    select(
+                      cls                          := "w-full rounded border border-white/15 bg-slate-800/80 px-2 py-1.5 text-xs text-slate-100",
+                      attr("data-pipeline-select") := "true",
+                    )(),
+                  ),
+                  div(
+                    label(cls := "mb-1 block text-xs text-slate-400")("Mode"),
+                    select(
+                      cls                        := "w-full rounded border border-white/15 bg-slate-800/80 px-2 py-1.5 text-xs text-slate-100",
+                      attr("data-pipeline-mode") := "true",
+                    )(
+                      option(value := "Sequential", selected := "selected")("Sequential"),
+                      option(value := "Parallel")("Parallel"),
+                    ),
+                  ),
+                  div(
+                    label(cls := "mb-1 block text-xs text-slate-400")("Workspace"),
+                    input(
+                      `type`                          := "text",
+                      value                           := workspaceId,
+                      cls                             := "w-full rounded border border-white/15 bg-slate-800/80 px-2 py-1.5 text-xs text-slate-100",
+                      attr("data-pipeline-workspace") := "true",
+                      attr("placeholder")             := "workspace id",
+                    ),
+                  ),
                 ),
                 button(
-                  `type`                       := "button",
-                  cls                          := "rounded-md border border-indigo-300/30 bg-indigo-500/20 px-3 py-2 text-sm font-semibold text-indigo-200 hover:bg-indigo-500/30",
-                  attr("data-auto-assign-btn") := "true",
-                )("Auto-Assign"),
-              ),
-              div(
-                cls                                 := "mt-2 w-full max-w-xl",
-                attr("data-assignment-suggestions") := "true",
-                attr("data-required-capabilities")  := requiredCaps.mkString(","),
-              )(
-                p(cls := "text-xs text-slate-400")("Loading capability-based suggestions...")
-              ),
-            ),
-          ),
-          div(cls := "mt-5 grid grid-cols-1 gap-4 md:grid-cols-3")(
-            metaItem("Run", safeMap(issue.runId, identity, "Not linked")),
-            metaItem(
-              "Required Capabilities",
-              if requiredCaps.isEmpty then "Not specified" else requiredCaps.mkString(", "),
-            ),
-            metaItem("Preferred Agent", safe(issue.preferredAgent, "Not specified")),
-            metaItem("Assigned Agent", safe(issue.assignedAgent, "Unassigned")),
-            metaItem("Workspace", if workspaceName.nonEmpty then workspaceName else "Not linked"),
-            metaItem("Context Path", safe(issue.contextPath, "Not specified")),
-            metaItem("Source Folder", safe(issue.sourceFolder, "Not specified")),
-            metaItem("Updated", safeStr(issue.updatedAt.toString.take(19).replace('T', ' '), "unknown")),
-          ),
-          div(cls := "mt-6 rounded-lg border border-white/10 bg-slate-950/70 p-4")(
-            p(cls := "mb-2 text-sm font-semibold text-slate-300")("Task markdown"),
-            div(cls := "prose prose-invert prose-sm max-w-none text-slate-100")(
-              markdownFragment(safeStr(issue.description))
-            ),
-          ),
-        ),
-        workReport
-          .map(r => ProofOfWorkView.panel(r, collapsed = false))
-          .filter(_.nonEmpty)
-          .map(html => div(cls := "rounded-xl border border-white/10 bg-slate-900/60 p-6")(raw(html)))
-          .getOrElse(()),
-        div(cls := "rounded-xl border border-white/10 bg-slate-900/60 p-6")(
-          h2(cls := "mb-3 text-lg font-semibold text-white")("Execution history"),
-          if assignments.isEmpty then p(cls := "text-sm text-slate-400")("No assignments yet")
-          else
-            div(cls := "space-y-3")(
-              assignments.sortBy(a =>
-                try a.assignedAt
-                catch case _: Throwable => Instant.EPOCH
-              ).reverse.map {
-                assignment =>
-                  div(cls := "rounded-lg border border-white/10 bg-slate-800/70 p-4")(
-                    div(cls := "flex flex-wrap items-center justify-between gap-2")(
-                      span(cls := "text-sm font-semibold text-slate-100")(safeStr(assignment.agentName, "unknown")),
-                      span(
-                        cls := s"rounded-full px-2 py-0.5 text-xs ${assignmentStatusBadge(safeStr(assignment.status, "pending"))}"
-                      )(
-                        safeStr(assignment.status, "pending")
-                      ),
+                  `type`                    := "button",
+                  cls                       := "rounded border border-indigo-400/30 bg-indigo-500/20 px-3 py-1.5 text-xs font-semibold text-indigo-200 hover:bg-indigo-500/30",
+                  attr("data-run-pipeline") := "true",
+                )("Run Pipeline"),
+                tag("details")(cls := "rounded border border-white/10")(
+                  tag("summary")(cls := "cursor-pointer px-3 py-2 text-xs text-slate-400 hover:text-slate-300")(
+                    "Builder"
+                  ),
+                  div(cls := "space-y-2 p-3")(
+                    input(
+                      `type`                     := "text",
+                      cls                        := "w-full rounded border border-white/15 bg-slate-800/80 px-2 py-1.5 text-xs text-slate-100",
+                      attr("data-pipeline-name") := "true",
+                      attr("placeholder")        := "Pipeline name",
                     ),
-                    safe(assignment.executionLog).match
-                      case v if v.nonEmpty =>
-                        pre(cls := "mt-3 max-h-48 overflow-auto rounded bg-black/30 p-3 text-xs text-slate-200")(v)
-                      case _               => ()
-                    ,
-                    safe(assignment.result).match
-                      case v if v.nonEmpty =>
-                        pre(cls := "mt-3 max-h-48 overflow-auto rounded bg-black/30 p-3 text-xs text-slate-200")(v)
-                      case _               => (),
-                  )
-              }
-            ),
-        ),
-        div(
-          cls                              := "rounded-xl border border-white/10 bg-slate-900/60 p-6 space-y-3",
-          attr("data-issue-pipeline-root") := "true",
-          attr("data-issue-id")            := issueIdStr,
-          attr("data-workspace-id")        := workspaceId,
-        )(
-          h2(cls := "text-lg font-semibold text-white")("Multi-Agent Pipeline"),
-          p(cls := "text-xs text-slate-400")(
-            "Create ordered pipeline steps and run sequentially (continuation) or in parallel."
-          ),
-          div(cls := "grid grid-cols-1 gap-3 md:grid-cols-3")(
-            div(
-              label(cls := "mb-1 block text-xs font-semibold text-slate-300")("Pipeline"),
-              select(
-                cls                          := "w-full rounded border border-white/15 bg-slate-800/80 px-2 py-1.5 text-xs text-slate-100",
-                attr("data-pipeline-select") := "true",
-              )(),
-            ),
-            div(
-              label(cls := "mb-1 block text-xs font-semibold text-slate-300")("Mode"),
-              select(
-                cls                        := "w-full rounded border border-white/15 bg-slate-800/80 px-2 py-1.5 text-xs text-slate-100",
-                attr("data-pipeline-mode") := "true",
-              )(
-                option(value := "Sequential", selected := "selected")("Sequential"),
-                option(value := "Parallel")("Parallel"),
-              ),
-            ),
-            div(
-              label(cls := "mb-1 block text-xs font-semibold text-slate-300")("Workspace"),
-              input(
-                `type`                          := "text",
-                value                           := workspaceId,
-                cls                             := "w-full rounded border border-white/15 bg-slate-800/80 px-2 py-1.5 text-xs text-slate-100",
-                attr("data-pipeline-workspace") := "true",
-                attr("placeholder")             := "workspace id",
+                    textarea(
+                      rows                        := 4,
+                      cls                         := "w-full rounded border border-white/15 bg-slate-800/80 px-2 py-1.5 text-xs text-slate-100",
+                      attr("data-pipeline-steps") := "true",
+                      attr("placeholder")         := "agent-id|prompt override|continueOnFailure\nreview-agent||true",
+                    )(),
+                    button(
+                      `type`                       := "button",
+                      cls                          := "rounded border border-emerald-400/30 bg-emerald-500/20 px-3 py-1.5 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/30",
+                      attr("data-create-pipeline") := "true",
+                    )("Create Pipeline"),
+                  ),
+                ),
+                pre(
+                  cls                          := "max-h-40 overflow-auto rounded border border-white/10 bg-black/30 p-2 text-[11px] text-slate-300",
+                  attr("data-pipeline-output") := "true",
+                )(""),
               ),
             ),
           ),
-          div(cls := "flex items-center gap-2")(
-            button(
-              `type`                    := "button",
-              cls                       := "rounded border border-indigo-400/30 bg-indigo-500/20 px-3 py-1.5 text-xs font-semibold text-indigo-200 hover:bg-indigo-500/30",
-              attr("data-run-pipeline") := "true",
-            )("Run Pipeline")
-          ),
-          div(cls := "rounded border border-white/10 bg-slate-950/60 p-3")(
-            h3(cls := "text-xs font-semibold text-slate-200")("Pipeline Builder"),
-            div(cls := "mt-2 grid grid-cols-1 gap-2 md:grid-cols-2")(
-              input(
-                `type`                     := "text",
-                cls                        := "rounded border border-white/15 bg-slate-800/80 px-2 py-1.5 text-xs text-slate-100",
-                attr("data-pipeline-name") := "true",
-                attr("placeholder")        := "Pipeline name",
-              ),
-              textarea(
-                rows                        := 4,
-                cls                         := "rounded border border-white/15 bg-slate-800/80 px-2 py-1.5 text-xs text-slate-100",
-                attr("data-pipeline-steps") := "true",
-                attr(
-                  "placeholder"
-                )                           := "agent-id|optional prompt override|continueOnFailure(true/false)\nreview-agent||true",
-              )(),
-            ),
-            button(
-              `type`                       := "button",
-              cls                          := "mt-2 rounded border border-emerald-400/30 bg-emerald-500/20 px-3 py-1.5 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/30",
-              attr("data-create-pipeline") := "true",
-            )("Create Pipeline"),
-          ),
-          pre(
-            cls                          := "max-h-56 overflow-auto rounded border border-white/10 bg-black/30 p-2 text-[11px] text-slate-300",
-            attr("data-pipeline-output") := "true",
-          )(""),
         ),
         JsResources.inlineModuleScript("/static/client/components/issue-pipeline.js"),
         JsResources.inlineModuleScript("/static/client/components/issue-assignment-suggestions.js"),
@@ -1079,10 +1137,10 @@ object IssuesView:
       else (),
     )
 
-  private def metaItem(labelText: String, value: String): Frag =
-    div(cls := "rounded border border-white/10 bg-slate-800/60 p-3")(
-      p(cls := "text-xs uppercase tracking-wide text-slate-400")(labelText),
-      p(cls := "mt-1 text-sm text-slate-100")(value),
+  private def sidebarMeta(labelText: String, value: String): Frag =
+    div(cls := "flex items-baseline justify-between gap-2")(
+      span(cls := "shrink-0 text-xs text-slate-400")(labelText),
+      span(cls := "truncate text-right text-xs font-medium text-slate-200")(value),
     )
 
   private def statusOption(value: String, labelText: String, current: Option[String]): Frag =

@@ -13,10 +13,10 @@ object CliAgentRunnerSpec extends ZIOSpecDefault:
   def spec: Spec[TestEnvironment & Scope, Any] = suite("CliAgentRunnerSpec")(
     // RunMode.Host
     test("buildArgv for unknown cli tool passes prompt as single arg") {
-      val argv = CliAgentRunner.buildArgv("echo", "hello world", "/tmp/wt")
+      val argv = CliAgentRunner.buildArgv("echo", "hello llm4zio", "/tmp/wt")
       assertTrue(
-        if isWindowsHost then argv == List("cmd", "/c", "echo", "hello world")
-        else argv == List("echo", "hello world")
+        if isWindowsHost then argv == List("cmd", "/c", "echo", "hello llm4zio")
+        else argv == List("echo", "hello llm4zio")
       )
     },
     test("buildArgvForHost uses cmd.exe for echo on Windows") {

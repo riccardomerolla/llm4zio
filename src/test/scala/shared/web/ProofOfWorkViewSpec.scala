@@ -4,7 +4,7 @@ import java.time.Instant
 
 import zio.test.*
 
-import issues.entity.{ IssueCiStatus, IssueDiffStats, IssueReport, IssuePrStatus, IssueWorkReport, TokenUsage }
+import issues.entity.*
 import shared.ids.Ids.{ IssueId, ReportId }
 
 object ProofOfWorkViewSpec extends ZIOSpecDefault:
@@ -45,7 +45,10 @@ object ProofOfWorkViewSpec extends ZIOSpecDefault:
         assertTrue(html.contains("Passed"))
       },
       test("renders token usage") {
-        val report = emptyReport.copy(tokenUsage = Some(TokenUsage(inputTokens = 1000L, outputTokens = 500L, totalTokens = 1500L)), runtimeSeconds = Some(30L))
+        val report = emptyReport.copy(
+          tokenUsage = Some(TokenUsage(inputTokens = 1000L, outputTokens = 500L, totalTokens = 1500L)),
+          runtimeSeconds = Some(30L),
+        )
         val html   = ProofOfWorkView.panel(report, collapsed = false)
         assertTrue(
           html.contains("1500"),

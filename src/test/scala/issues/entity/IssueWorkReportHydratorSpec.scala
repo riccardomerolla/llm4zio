@@ -106,9 +106,19 @@ object IssueWorkReportHydratorSpec extends ZIOSpecDefault:
           result.get.prLink == Some("https://github.com/pr/42"),
           result.get.prStatus == Some(IssuePrStatus.Open),
           result.get.ciStatus == Some(IssueCiStatus.Passed),
-          result.get.tokenUsage == Some(issues.entity.TokenUsage(usage.inputTokens, usage.outputTokens, usage.totalTokens)),
+          result.get.tokenUsage == Some(issues.entity.TokenUsage(
+            usage.inputTokens,
+            usage.outputTokens,
+            usage.totalTokens,
+          )),
           result.get.runtimeSeconds == Some(45L),
-          result.get.reports == List(IssueReport(report.id, report.stepName, report.reportType, report.content, report.createdAt)),
+          result.get.reports == List(IssueReport(
+            report.id,
+            report.stepName,
+            report.reportType,
+            report.content,
+            report.createdAt,
+          )),
         )
       },
       test("hydrating skips issues with no linked run") {

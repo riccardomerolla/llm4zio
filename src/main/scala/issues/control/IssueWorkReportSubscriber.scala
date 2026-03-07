@@ -2,22 +2,10 @@ package issues.control
 
 import zio.*
 
-import issues.entity.{
-  AgentIssue,
-  IssueArtifact,
-  IssueCiStatus,
-  IssueDiffStats,
-  IssueEvent,
-  IssueFilter,
-  IssueReport,
-  IssuePrStatus,
-  IssueRepository,
-  IssueWorkReportProjection,
-  TokenUsage,
-}
+import issues.entity.*
 import orchestration.control.{ ParallelSessionEvent, WorkReportEventBus }
 import shared.ids.Ids.{ IssueId, TaskRunId }
-import taskrun.entity.*
+import taskrun.entity.TaskRunEvent
 
 /** Subscribes to domain event streams and updates `IssueWorkReportProjection` in real-time.
   *

@@ -32,6 +32,13 @@ final case class AgentIssue(
 ) derives JsonCodec, Schema
 
 object AgentIssue:
+  /** Safely iterate a list that may be null or contain null elements due to EclipseStore schema evolution. */
+  private def safeList[A](list: List[A]): List[A] =
+    try
+      if list == null then Nil
+      else list.filter(_ != null)
+    catch case _: Throwable => Nil
+
   def fromEvents(events: List[IssueEvent]): Either[String, AgentIssue] =
     events match
       case Nil => Left("Cannot rebuild AgentIssue from an empty event stream")
@@ -59,7 +66,8 @@ object AgentIssue:
                   description = created.description,
                   issueType = created.issueType,
                   priority = created.priority,
-                  requiredCapabilities = created.requiredCapabilities.map(_.trim).filter(_.nonEmpty).distinct,
+                  requiredCapabilities = safeList(created.requiredCapabilities)
+                    .flatMap(s => Option(s)).map(_.trim).filter(_.nonEmpty).distinct,
                   state = IssueState.Open(created.occurredAt),
                   tags = Nil,
                   contextPath = "",
@@ -109,7 +117,7 @@ object AgentIssue:
       case tagsUpdated: IssueEvent.TagsUpdated =>
         current
           .toRight(s"Issue ${tagsUpdated.issueId.value} not initialized before TagsUpdated event")
-          .map(issue => Some(issue.copy(tags = tagsUpdated.tags)))
+          .map(issue => Some(issue.copy(tags = safeList(tagsUpdated.tags))))
 
       case reopened: IssueEvent.Reopened =>
         current
