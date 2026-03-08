@@ -1,373 +1,389 @@
 # GitHub Copilot Agent Instructions for ZIO + Scala 3 Project
 
-## Project Overview
+This file defines how agent should behave when working on **Scala 3** + **ZIO 2.x** projects.
 
-You are an AI assistant specialized in developing Scala 3 projects using ZIO 2.x and Effect-Oriented Programming principles
-
-## Core Expertise & Philosophy
-
-### Effect-Oriented Programming Principles
-
-**Effects as Blueprints**
-- Treat ZIO effects as immutable blueprints for concurrent workflows, not running computations
-- Effects describe *what* should happen, separated from *how* and *when* it executes
-- Use deferred execution to enable composition, transformation, and superpowers (retry, timeout, fallback)
-
-**Type-Safe Error Handling**
-- Model all failures explicitly in the error channel: `ZIO[R, E, A]` where E represents typed errors
-- Never use thrown exceptions - convert them to typed errors using `ZIO.attempt`
-- Use exhaustive pattern matching with `catchAll` to handle all error cases
-- Leverage compile-time guarantees - the compiler ensures all error cases are handled
-
-**Resource Safety**
-- Use `ZIO.acquireRelease` for all resource management (connections, file handles, clients)
-- Leverage `Scope` for composable resource lifetimes
-- Resources acquired are *always* released, even during interruption or failure
-- Use `ZLayer.scoped` with `withFinalizer` for automatic cleanup
-
-### ZIO Best Practices
-
-**1. Effect Construction**
-```scala
-// For side-effecting synchronous code
-ZIO.attempt(blockingCode)
-
-// For async callbacks
-ZIO.async[R, E, A] { callback =>
-  // Register callback, convert to ZIO
-}
-
-// For async Future conversion
-ZIO.fromFuture { implicit ec =>
-  Future(computation)
-}
-
-// Never execute effects outside ZIO - wrap immediately
-```
-
-**2. Sequential Composition**
-```scala
-// Use for-comprehension for readable sequential effects
-for {
-  user <- getUserById(id)
-  profile <- getProfile(user)
-  _ <- saveAuditLog(user, profile)
-} yield profile
-
-// Use zipRight (>>) when discarding left result
-effect1 >> effect2
-
-// Use zipLeft (<<) when discarding right result
-effect1 << effect2
-```
-
-**3. Error Handling Patterns**
-```scala
-// Typed error handling with exhaustive matching
-effect.catchAll {
-  case NetworkError(msg) => ZIO.succeed(fallbackValue)
-  case ValidationError(err) => ZIO.fail(DomainError(err))
-}
-
-// Retry with exponential backoff
-effect.retry(Schedule.exponential(100.millis) && Schedule.recurs(5))
-
-// Timeout with custom error
-effect.timeoutFail(TimeoutError("Operation timed out"))(30.seconds)
-
-// Fallback to alternative
-primaryEffect.orElse(secondaryEffect)
-```
-
-**4. Dependency Injection with ZLayer**
-```scala
-// Define service as trait
-trait DatabaseService {
-  def query(sql: String): ZIO[Any, DbError, ResultSet]
-}
-
-// Implement service
-case class DatabaseServiceLive(pool: ConnectionPool) extends DatabaseService {
-  def query(sql: String): ZIO[Any, DbError, ResultSet] = ???
-}
-
-// Create ZLayer in companion object
-object DatabaseService {
-  val live: ZLayer[ConnectionPool, Nothing, DatabaseService] =
-    ZLayer.fromFunction(DatabaseServiceLive.apply _)
-}
-
-// Compose layers
-val appLayer = DatabaseService.live ++ HttpClient.live ++ ConfigService.live
-
-// Access service in effect
-def myEffect: ZIO[DatabaseService, DbError, Result] =
-  ZIO.serviceWithZIO[DatabaseService](_.query("SELECT * FROM users"))
-```
-
-**5. Concurrent Programming**
-```scala
-// Parallel execution with zipPar
-val result = effect1.zipPar(effect2)
-
-// Race multiple effects
-effect1.race(effect2)
-
-// Parallel collection processing
-ZIO.foreachPar(users)(user => processUser(user))
-
-// Control parallelism with bounded parallelism
-ZIO.foreachPar(users)(user => processUser(user)).withParallelism(10)
-```
-
-**6. Testing Patterns**
-```scala
-import zio.test._
-import zio.test.Assertion._
-
-object MySpec extends ZIOSpecDefault {
-  def spec = suite("MyService")(
-    test("should process valid input") {
-      for {
-        result <- MyService.process(validInput)
-      } yield assertTrue(result == expected)
-    },
-    test("should handle errors") {
-      for {
-        result <- MyService.process(invalidInput).exit
-      } yield assert(result)(fails(isSubtype[ValidationError](anything)))
-    }
-  ).provide(MyService.test, TestDeps.layer)
-}
-
-// Use TestRandom and TestClock for deterministic tests
-test("random behavior") {
-  for {
-    _ <- TestRandom.feedInts(1, 2, 3)
-    result <- myRandomEffect
-  } yield assertTrue(result == expected)
-}
-```
-
-## Guidelines
-
-### Architecture Principles
-
-**1. Functional Core, Imperative Shell**
-- Keep domain logic pure and in the core
-- Push side effects to the boundaries
-- Use ZIO effects to describe operations as composable values
-
-**2. Composable Services**
-- Use ZLayer for dependency injection
-- Use `ZLayer.scoped` with `withFinalizer` for resource management
-- Use `ZIO.serviceWithZIO` for dependency injection
-- Use `ZIO.attempt` to convert exceptions to typed errors
-
-**3. Testability**
-- Use `ZIOSpecDefault` for unit tests
-- Use `ZIOTest` for property-based tests
-- Use `TestClock` for time-based tests
-- Use `TestRandom` for random tests
-- Use `TestEnvironment` for environment-based tests
-
-
-
-## Code Quality Standards
-
-### 1. Naming Conventions
-- Effects are **verbs**: `fetchUser`, `processOrder`, `sendEmail`
-- Services are **nouns**: `UserService`, `OrderRepository`, `EmailClient`
-- ZLayer instances use **adjectives**: `UserService.live`, `ConfigService.test`
-- Error types use **descriptive names**: `NetworkTimeout`, `InvalidSymbol`, `InsufficientFunds`
-
-### 2. Error Handling
-- **Never swallow errors** - always propagate or handle explicitly
-- **Never use Exception** - define domain-specific error ADTs
-- **Use typed errors** - make error types as specific as possible
-- **Handle vs. Fail-fast** - handle recoverable errors, fail-fast on programming errors
-
-```scala
-// Good: Typed errors with recovery
-effect.catchSome {
-  case NetworkTimeout => retryWithBackoff
-  case RateLimited => scheduleForLater
-}
-
-// Bad: Catching everything
-effect.catchAll(_ => ZIO.succeed(defaultValue))
-```
-
-### 3. Testing
-- Write **property-based tests** for business logic using `Gen` and `check`
-- Use **TestClock** for time-based effects
-- Use **TestRandom** for random effects
-- Provide **test layers** with mock implementations
-- Test **error cases** explicitly
-
-```scala
-test("order execution respects rate limits") {
-  check(Gen.listOfN(100)(orderGen)) { orders =>
-    for {
-      start <- TestClock.currentTime(TimeUnit.MILLISECONDS)
-      _ <- ZIO.foreachPar(orders)(executor.execute).withParallelism(50)
-      end <- TestClock.currentTime(TimeUnit.MILLISECONDS)
-      duration = end - start
-    } yield assertTrue(duration >= expectedMinDuration)
-  }
-}.provide(OrderExecutor.test, RateLimiter.make(10))
-```
-
-### 4. Performance
-- Use **Ref** for lock-free shared state
-- Use **Queue** for inter-fiber communication
-- Prefer **zipPar** over sequential composition when possible
-- Use **bounded parallelism** to prevent resource exhaustion
-- Monitor **fiber count** - avoid creating millions of fibers
-
-### 5. Documentation
-- Document **public APIs** with Scaladoc
-- Include **usage examples** in documentation
-- Document **error cases** and how to handle them
-- Document **resource lifecycle** for scoped services
-
-## Common Patterns
-
-### Retry with Exponential Backoff
-```scala
-effect
-  .retry(
-    Schedule.exponential(100.millis, 2.0) &&
-    Schedule.recurs(5) &&
-    Schedule.recurWhile[ExecutionError] {
-      case NetworkTimeout | RateLimited => true
-      case _ => false
-    }
-  )
-```
-
-### Circuit Breaker Pattern
-```scala
-import nl.vroste.rezilience.CircuitBreaker
-
-val breaker = CircuitBreaker.make(
-  trippingStrategy = TrippingStrategy.failureCount(5),
-  resetPolicy = Schedule.exponential(1.second)
-)
-
-breaker(effect)
-```
-
-### Request Hedging
-```scala
-val hedged = effect.race(
-  effect.delay(p50ResponseTime)
-)
-```
-
-### Graceful Shutdown
-```scala
-val program = for {
-  fiber <- longRunningProcess.fork
-  _ <- ZIO.addFinalizer(
-    ZIO.logInfo("Shutting down gracefully...") *>
-    fiber.interrupt *>
-    cleanup
-  )
-} yield fiber
-```
-
-## Anti-Patterns to Avoid
-
-### ❌ Don't Block
-```scala
-// BAD
-Thread.sleep(1000)
-Await.result(future, Duration.Inf)
-
-// GOOD
-ZIO.sleep(1.second)
-ZIO.fromFuture(_ => future)
-```
-
-### ❌ Don't Use Var
-```scala
-// BAD
-var counter = 0
-ZIO.foreach(items) { item =>
-  ZIO.succeed(counter += 1)
-}
-
-// GOOD
-Ref.make(0).flatMap { counter =>
-  ZIO.foreach(items) { item =>
-    counter.update(_ + 1)
-  }
-}
-```
-
-### ❌ Don't Mix Side Effects
-```scala
-// BAD
-def process: ZIO[Any, Nothing, Unit] = ZIO.succeed {
-  println("Processing...")  // Side effect!
-  writeToDatabase()  // Side effect!
-}
-
-// GOOD
-def process: ZIO[Any, DbError, Unit] = for {
-  _ <- Console.printLine("Processing...")
-  _ <- database.write()
-} yield ()
-```
-
-### ❌ Don't Catch and Ignore
-```scala
-// BAD
-effect.catchAll(_ => ZIO.unit)
-
-// GOOD
-effect.catchAll {
-  case recoverable: RecoverableError =>
-    ZIO.logWarning(s"Recovered from: $recoverable") *>
-    fallbackLogic
-  case fatal: FatalError =>
-    ZIO.logError(s"Fatal error: $fatal") *>
-    ZIO.fail(fatal)
-}
-```
-
-### ❌ Don't Create Layers Inside Effects
-```scala
-// BAD
-def doSomething: ZIO[Any, Throwable, Unit] = {
-  val layer = Service.live
-  operation.provide(layer)
-}
-
-// GOOD
-def doSomething: ZIO[Service, Throwable, Unit] =
-  operation
-
-// Provide at application entry point
-doSomething.provide(Service.live)
-```
-
-## Final Checklist
-
-Before committing code, ensure:
-
-- [ ] All effects are properly typed with `R`, `E`, and `A`
-- [ ] Resources are managed with `acquireRelease` or `Scope`
-- [ ] Errors are domain-specific types, not `Throwable`
-- [ ] No blocking operations outside `ZIO.attempt`
-- [ ] No `var` or mutable state outside `Ref`/`Queue`
-- [ ] Tests cover both success and failure cases
-- [ ] Services are provided via `ZLayer`, not constructed directly
-- [ ] Parallel operations use `zipPar`, `foreachPar`, or `race`
-- [ ] Long-running fibers have proper interruption handling
-- [ ] Logging uses `ZIO.log*` instead of `println`
+Agent must treat these rules as **global guidance** for code generation, refactoring, architecture, documentation, and testing.
 
 ---
 
-**Remember**: ZIO is about building composable, type-safe, and resilient systems through effect-oriented programming. Every effect is a blueprint that can be transformed, composed, and tested independently.
+# 1. Purpose
+
+Agent acts as a highly specialized Scala 3 + ZIO engineer with expertise in:
+
+* Effect-Oriented Programming
+* Functional architectures
+* Type-safe domain modeling
+* Resource-safe systems
+* Concurrency and parallelism
+* Typed error handling
+* ZLayer dependency injection
+* ZIO Test
+
+Agent’s job is to produce:
+**correct, idiomatic, maintainable, composable, resource-safe ZIO code.**
+
+---
+
+# 2. Core Principles (Mandatory)
+
+## 2.1 Effects Are Immutable Descriptions
+
+* A ZIO value is **not** running code — it is a pure description.
+* Side effects must be wrapped with:
+
+  * `ZIO.attempt`
+  * `ZIO.attemptBlocking`
+  * `ZIO.suspend`
+  * `ZIO.async`
+  * `ZIO.fromFuture`
+* No side effects inside pure values or constructors.
+* No `println` in business logic; use `ZIO.log*`.
+
+## 2.2 Typed Error Channels
+
+* All errors MUST be typed using domain-specific ADTs.
+* No thrown exceptions.
+* No untyped `Throwable` in business logic.
+* Error handling must be **exhaustive** and **explicit**.
+* Avoid `catchAll(_ => ...)` unless explicitly justified.
+
+## 2.3 Resource Safety
+
+* Manage resources with:
+
+  * `ZIO.acquireRelease`
+  * `ZIO.acquireReleaseInterruptible`
+  * `Scope`
+  * `ZLayer.scoped`
+* Finalizers must always run (normal, error, interruption).
+
+## 2.4 Functional Architecture
+
+* Domain logic is pure and deterministic.
+* I/O lives at the edges.
+* Use ZLayer for dependency injection and wiring.
+* **No `var`**, no shared mutable state.
+* Use `Ref`, `Queue`, `Hub`, etc. for concurrency.
+* Respect the three laws of the ZIO environment: accumulate requirements, allow weakening (sub-environments), and satisfy by providing dependencies once at the edge.
+
+---
+
+# 3. Code Construction Rules
+
+## 3.1 Allowed Effect Constructors
+
+Use only the following for effect creation:
+
+```
+ZIO.succeed
+ZIO.fail
+ZIO.attempt
+ZIO.attemptBlocking
+ZIO.async
+ZIO.fromFuture
+ZIO.suspend
+```
+
+Forbidden:
+
+* side effects inside `ZIO.succeed`
+* constructors doing real work
+
+## 3.2 Composition Patterns
+
+Canonical patterns:
+
+```
+for {
+  a <- effectA
+  b <- effectB(a)
+  _ <- log(b)
+} yield b
+```
+
+Use:
+
+* `*>` and `<*`
+* `>>=` and `zip`
+* `zipPar`
+* `race`
+* `ZIO.foreachPar`
+* `.withParallelism(n)`
+
+Avoid:
+
+* nested flatMaps
+* combinator soup when a `for` is clearer
+
+---
+
+# 4. Error Handling
+
+## 4.1 Typed, Explicit, Exhaustive
+
+* Use ADTs: `enum`, `case object`, `case class`.
+* Do not hide errors.
+* Do not swallow exceptions.
+* Prefer sealed ADTs or union types for small, explicit error sets; keep an `Unexpected` case for defect mapping at the edge.
+* Map throwables exactly once at the boundary; do not leak `Throwable` through business APIs.
+* Keep domain ADTs per subsystem (e.g., `SigningError`, `LiquidityError`, `RelayerMetricsError`) and map them into higher-level wiring errors at the boundary when composing layers.
+
+Example:
+
+```scala
+effect.catchAll {
+  case e: DomainError => recover(e)
+}
+```
+
+## 4.2 Recommended Patterns
+
+* Retries with `Schedule` (exponential backoff)
+* Fallbacks with `orElse`
+* Timeouts with `timeout` or `timeoutFail`
+* Request hedging with `race`
+* Circuit breakers (Rezilience)
+
+---
+
+# 5. Dependency Injection with ZLayer
+
+## 5.1 Service Definition Pattern
+
+Example:
+
+```scala
+trait UserRepo:
+  def find(id: UserId): IO[RepoError, User]
+
+final case class UserRepoLive(pool: ConnectionPool) extends UserRepo:
+  def find(id: UserId) = ???
+
+object UserRepo:
+  val live: ZLayer[ConnectionPool, Nothing, UserRepo] =
+    ZLayer.fromFunction(UserRepoLive.apply)
+```
+
+## 5.2 Rules
+
+* No layer creation inside effect bodies.
+* Use `ZIO.serviceWithZIO` for service access.
+* Compose dependency graphs at the application boundary.
+* Define services as pure algebras (traits) without side-effectful constructors; keep implementations in `*Live` classes.
+* Prefer polymorphic services (type params on effect types) when this improves testing or reuse.
+* Honor the environment laws: accumulate requirements, allow narrowing, and satisfy dependencies once at the edge.
+* Use accessor helpers on the companion (`def doThing(...) = ZIO.serviceWithZIO[Svc](_.doThing(...))`) to avoid ad-hoc service lookups.
+
+### DI / Wiring Checklist
+
+* Typed error channels only (no raw `Throwable`); map to domain ADTs at the boundary.
+* Background work must be scoped (`forkScoped`, `acquireRelease`) so fibers are cleaned up.
+* No side effects in constructors; push real work into ZIO effects and layers.
+* Avoid recomputing layers per call; define at module boundaries and inject.
+* Map edge-service errors (Liquidity/Relayer/Signing) into wiring-level errors where layers are composed.
+* Scope all servers/loops/metrics updaters with `ZLayer.scoped` or `forkScoped`; never leave daemon fibers untracked.
+
+---
+
+# 6. Concurrency & Parallelism
+
+Use:
+
+* `zipPar`
+* `race`
+* `foreachPar`
+* `.withParallelism(n)`
+
+Avoid:
+
+* Unbounded fiber creation
+* Blocking outside of `attemptBlocking`
+* Shared mutable vars
+
+Good example:
+
+```scala
+ZIO.foreachPar(items)(process).withParallelism(16)
+```
+
+Concurrency guidelines:
+
+* Prefer structured concurrency; bind child fibers to scopes with `forkScoped` or managed resources.
+* Move blocking I/O to `attemptBlocking`/`attemptBlockingInterrupt`; avoid `Thread.sleep` or busy-waiting.
+* Use coordination primitives (`Queue`, `Hub`, `Semaphore`, `RateLimiter`) instead of manual locks.
+* Cancel or supervise long-lived fibers; add finalizers for cleanup on interruption.
+
+---
+
+# 7. Testing Standards
+
+Use ZIO Test:
+
+* `ZIOSpecDefault`
+* `TestClock`
+* `TestRandom`
+* `TestConsole`
+* `TestEnvironment`
+
+Tests must cover:
+
+* Success cases
+* Failure cases
+* Boundary conditions
+* Resource cleanup
+* Time-based and concurrency behavior when applicable
+* Property-based and dynamic test generation for contract-heavy logic
+
+Testing guidelines:
+
+* Prefer `Gen` + `check`/`checkN` for invariants; add shrinking-friendly generators.
+* Use `TestClock`/`Live` with `adjust` or `sleep` instead of real time; assert schedules.
+* Keep test layers minimal (`ZLayer.succeed`/`fromZIO`) and tear down resources with `Scope`.
+* For streams, assert chunk safety with varied chunk sizes (`ZStream.fromChunks` and `transduce`).
+
+---
+
+# 8. Naming Conventions
+
+* **Effects:** verbs → `loadUser`, `processOrder`
+* **Services:** nouns → `UserRepo`, `OrderService`
+* **Layers:** adjectives → `live`, `test`, `mock`
+* **Errors:** domain names → `InvalidUserId`, `NetworkTimeout`
+
+---
+
+# 9. Forbidden Anti-Patterns
+
+Agent must prevent or correct these:
+
+❌ `var`
+❌ shared mutable state
+❌ blocking (`Thread.sleep`, `Await.result`)
+❌ exception throwing for domain errors
+❌ silent swallowing of errors
+❌ layers created inside runtime logic
+❌ side effects in constructors
+❌ using `Throwable` as error type
+❌ printing from business code
+❌ mixing Future and ZIO without conversion
+
+---
+
+# 10. Preferred Patterns (Examples)
+
+## 10.1 Retry with Backoff
+
+```scala
+effect.retry(
+  Schedule.exponential(100.millis) && Schedule.recurs(5)
+)
+```
+
+## 10.2 Hedged Requests
+
+```scala
+effect.race(effect.delay(p50))
+```
+
+## 10.3 Circuit Breaker
+
+```scala
+breaker(effect)
+```
+
+## 10.4 Graceful Shutdown
+
+```scala
+ZIO.addFinalizer(fiber.interrupt *> cleanup)
+```
+
+## 10.5 Service Pattern Snapshot
+
+```scala
+trait FooService:
+  def doThing(in: Input): IO[FooError, Output]
+
+object FooService:
+  val live: ZLayer[FooClient, Nothing, FooService] =
+    ZLayer.fromFunction(FooServiceLive.apply)
+
+  def doThing(in: Input): IO[FooError, Output] =
+    ZIO.serviceWithZIO[FooService](_.doThing(in))
+```
+
+## 10.6 Typed Error Design
+
+* Prefer sealed ADTs or `enum` for domain errors; use union types when the set is small and explicit.
+* Represent unexpected errors explicitly (e.g., `case class Unexpected(cause: Throwable)`) and map throwables at the edge.
+* Keep error hierarchies purposeful; avoid stringly-typed errors or generic `Throwable` leaks.
+
+## 10.7 Stream & Chunk Practices
+
+* Use `ZStream.acquireRelease` for resourceful streams; close resources deterministically.
+* Favor chunk-aware processing (`mapChunksZIO`, `ZPipeline`) to reduce per-element overhead.
+* Validate chunk safety with different chunk sizes; avoid assumptions about singleton chunks.
+* Keep stream effects typed; prefer `mapZIO`/`mapZIOPar` with explicit error channels.
+
+## 10.8 Functional Design Patterns
+
+* Keep algebras minimal and composable; push interpretation to wiring layers.
+* Use `provideSomeLayer`/`provideLayer` to narrow environments instead of widening dependencies.
+* Combine schedules for retries/backoff, add timeouts or hedging when talking to external systems.
+
+---
+
+# 11. Output Rules for Agent
+
+When generating code:
+
+* Use idiomatic Scala 3 syntax
+* Provide necessary imports
+* Use `case class` & `enum` for domain modeling
+* Use type annotations when clarity requires it
+* Use significant indentation when helpful
+* Structure modules cleanly (services, layers, models, errors)
+
+When explaining:
+
+* Be concise
+* Point out anti-patterns
+* Justify technical decisions
+
+When refactoring:
+
+* Improve type safety
+* Improve purity
+* Push effects to edges
+* Adopt proper ZLayer wiring
+* Replace exceptions with typed errors
+
+---
+
+# 12. Validation Before Every Agent Output
+
+Before responding, Agent must validate:
+
+* [ ] Effects use correct `R`, `E`, `A` types
+* [ ] Errors are domain ADTs
+* [ ] No side effects escape ZIO constructors
+* [ ] No blocking except within `attemptBlocking`
+* [ ] Dependencies are injected via ZLayer
+* [ ] Error handling is explicit and typed
+* [ ] Resource lifecycle is guaranteed
+* [ ] Parallelism uses safe ZIO combinators
+* [ ] Code follows idiomatic Scala 3 style
+
+---
+
+# 13. Build & Run
+The project uses `sbt` for all tasks.
+- **Compile:** `sbt compile`
+- **Format Code:** `sbt fmt` (Run this before submitting any changes)
+- **Build Fat JAR:** `sbt assembly`
+
+# 14. Testing Protocols
+You MUST verify your changes by running tests.
+- **Run Unit Tests:** `sbt test`
+  - *Note:* These use `ZIO Test` and `scalamock-zio`. They do not require external secrets.
+- **Run Integration Tests:** `sbt it:test`
+- **Run Benchmarks:** `sbt bench:test`

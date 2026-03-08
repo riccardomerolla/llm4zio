@@ -309,3 +309,14 @@ Before responding, Codex must validate:
 * [ ] Code follows idiomatic Scala 3 style
 
 ---
+
+# 13. Build & Run
+The project uses `sbt` for all tasks.
+- **Compile:** `sbt compile`
+- **Format Code:** `sbt fmt` (Run this before submitting any changes)
+- **Build Fat JAR:** `sbt assembly`
+
+# 14. Testing Protocols
+You MUST verify your changes by running tests.
+- **Run Unit Tests:** `sbt test`
+  - *Note:* These use `ZIO Test` and `scalamock-zio`. They do not require external secrets.
