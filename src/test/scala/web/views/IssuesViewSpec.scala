@@ -124,7 +124,8 @@ object IssuesViewSpec extends ZIOSpecDefault:
         workspaces = List("ws-1" -> "Main Workspace"),
       )
       assertTrue(
-        html.contains("workspace:Main Workspace"),
+        html.contains("Workspace:"),
+        html.contains("Main Workspace"),
         html.contains("name=\"workspaceId\" value=\"ws-1\""),
         !html.contains("No workspace linked"),
       )
