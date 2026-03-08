@@ -182,13 +182,30 @@ final case class GitServiceLive() extends GitService:
     yield GitDiff(files)
 
   override def diffStat(repoPath: String, staged: Boolean = false): IO[GitError, GitDiffStat] =
-    ensureRepo(repoPath) *>
-      runGit(repoPath, "diff", if staged then "--cached" else "", "--numstat")
-        .flatMap(raw => ZIO.fromEither(GitParsers.parseDiffNumStat(raw)))
+    for
+      _            <- ensureRepo(repoPath)
+      tracked      <- runGit(repoPath, "diff", if staged then "--cached" else "", "--numstat")
+                        .flatMap(raw => ZIO.fromEither(GitParsers.parseDiffNumStat(raw)))
+      untrackedRaw <- if staged then ZIO.succeed("")
+                      else
+                        runGit(repoPath, "ls-files", "--others", "--exclude-standard")
+                          .catchAll(_ => ZIO.succeed(""))
+      trackedPaths  = tracked.files.map(_.path).toSet
+      untracked     = untrackedRaw.linesIterator.map(_.trim)
+                        .filter(p => p.nonEmpty && !trackedPaths.contains(p))
+                        .map(p => DiffFileStat(p, 0, 0)).toList
+    yield GitDiffStat(tracked.files ++ untracked)
 
   override def diffFile(repoPath: String, filePath: String, staged: Boolean = false): IO[GitError, String] =
     ensureRepo(repoPath) *>
       runGit(repoPath, "diff", if staged then "--cached" else "", "--no-color", "--", filePath)
+        .flatMap { out =>
+          if out.nonEmpty then ZIO.succeed(out)
+          else
+            // File may be untracked — produce a new-file diff via --no-index
+            runGit(repoPath, "diff", "--no-index", "--no-color", "/dev/null", filePath)
+              .catchAll(_ => ZIO.succeed(out)) // --no-index exits non-zero for new files; ignore error
+        }
 
   override def log(repoPath: String, limit: Int = 20): IO[GitError, List[GitLogEntry]] =
     ensureRepo(repoPath) *>
@@ -223,5 +240,20 @@ final case class GitServiceLive() extends GitService:
 
   override def aheadBehind(repoPath: String, baseBranch: String): IO[GitError, AheadBehind] =
     ensureRepo(repoPath) *>
-      runGit(repoPath, "rev-list", "--left-right", "--count", s"$baseBranch...HEAD")
-        .flatMap(raw => ZIO.fromEither(GitParsers.parseAheadBehind(raw)))
+      resolveRef(repoPath, baseBranch).flatMap {
+        case None      => ZIO.succeed(AheadBehind(ahead = 0, behind = 0))
+        case Some(ref) =>
+          runGit(repoPath, "rev-list", "--left-right", "--count", s"$ref...HEAD")
+            .flatMap(raw => ZIO.fromEither(GitParsers.parseAheadBehind(raw)))
+      }
+
+  /** Returns the first resolvable ref from the candidates, or None if none exist in this repo/worktree. */
+  private def resolveRef(repoPath: String, branch: String): IO[GitError, Option[String]] =
+    val candidates = List(branch, s"origin/$branch")
+    ZIO.foldLeft(candidates)(Option.empty[String]) { (found, ref) =>
+      if found.isDefined then ZIO.succeed(found)
+      else
+        runGit(repoPath, "rev-parse", "--verify", ref)
+          .as(Some(ref))
+          .catchAll(_ => ZIO.succeed(None))
+    }

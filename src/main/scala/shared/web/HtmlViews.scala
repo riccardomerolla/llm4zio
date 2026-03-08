@@ -208,3 +208,6 @@ object HtmlViews:
     workspaces: List[(String, String)],
   ): String =
     IssuesView.detail(issue, assignments, availableAgents, workspaces)
+
+  def issueEditForm(issue: AgentIssueView, workspaces: List[(String, String)]): String =
+    IssuesView.editForm(issue, workspaces)

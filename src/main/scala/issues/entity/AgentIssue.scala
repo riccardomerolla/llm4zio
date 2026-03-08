@@ -35,8 +35,7 @@ object AgentIssue:
   /** Safely iterate a list that may be null or contain null elements due to EclipseStore schema evolution. */
   private def safeList[A](list: List[A]): List[A] =
     try
-      if list == null then Nil
-      else list.filter(_ != null)
+      Option(list).fold(Nil)(_.filter(a => Option(a).isDefined))
     catch case _: Throwable => Nil
 
   def fromEvents(events: List[IssueEvent]): Either[String, AgentIssue] =
@@ -123,3 +122,21 @@ object AgentIssue:
         current
           .toRight(s"Issue ${reopened.issueId.value} not initialized before Reopened event")
           .map(issue => Some(issue.copy(state = IssueState.Open(reopened.reopenedAt))))
+
+      case updated: IssueEvent.MetadataUpdated =>
+        current
+          .toRight(s"Issue ${updated.issueId.value} not initialized before MetadataUpdated event")
+          .map(issue =>
+            Some(
+              issue.copy(
+                title = updated.title,
+                description = updated.description,
+                issueType = updated.issueType,
+                priority = updated.priority,
+                requiredCapabilities = safeList(updated.requiredCapabilities)
+                  .flatMap(s => Option(s)).map(_.trim).filter(_.nonEmpty).distinct,
+                contextPath = updated.contextPath,
+                sourceFolder = updated.sourceFolder,
+              )
+            )
+          )

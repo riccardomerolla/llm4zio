@@ -196,6 +196,82 @@ final case class IssueControllerLive(
         )
       }
     },
+    Method.GET / "issues" / string("id") / "edit"                    -> handler { (id: String, _: Request) =>
+      ErrorHandlingMiddleware.fromPersistence {
+        for
+          issue      <- issueRepository.get(IssueId(id)).mapError(mapIssueRepoError)
+          workspaces <- workspaceRepository.list.mapError(mapIssueRepoError)
+        yield html(HtmlViews.issueEditForm(domainToView(issue), workspaces.map(ws => ws.id -> ws.name)))
+      }
+    },
+    Method.POST / "issues" / string("id") / "edit"                   -> handler { (id: String, req: Request) =>
+      ErrorHandlingMiddleware.fromPersistence {
+        for
+          form    <- parseForm(req)
+          title   <- required(form, "title")
+          content <- required(form, "description")
+          now     <- Clock.instant
+          issueId  = IssueId(id)
+          caps     = parseCapabilityList(form.get("requiredCapabilities"))
+          event    = IssueEvent.MetadataUpdated(
+                       issueId = issueId,
+                       title = title,
+                       description = content,
+                       issueType = form.get("issueType").map(_.trim).filter(_.nonEmpty).getOrElse("task"),
+                       priority = form.get("priority").map(_.trim).filter(_.nonEmpty).getOrElse("medium"),
+                       requiredCapabilities = caps,
+                       contextPath = form.get("contextPath").map(_.trim).getOrElse(""),
+                       sourceFolder = form.get("sourceFolder").map(_.trim).getOrElse(""),
+                       occurredAt = now,
+                     )
+          _       <- issueRepository.append(event).mapError(mapIssueRepoError)
+          tags     = parseTagList(form.get("tags"))
+          _       <- issueRepository.append(IssueEvent.TagsUpdated(issueId, tags, now)).mapError(mapIssueRepoError)
+          _       <- parseWorkspaceSelection(form) match
+                       case Some(wsId) =>
+                         for
+                           _ <- ensureWorkspaceExists(wsId)
+                           _ <- issueRepository
+                                  .append(IssueEvent.WorkspaceLinked(issueId, wsId, now))
+                                  .mapError(mapIssueRepoError)
+                         yield ()
+                       case None       =>
+                         issueRepository
+                           .append(IssueEvent.WorkspaceUnlinked(issueId, now))
+                           .mapError(mapIssueRepoError)
+        yield Response(status = Status.SeeOther, headers = Headers(Header.Custom("Location", s"/issues/$id")))
+      }
+    },
+    Method.POST / "issues" / string("id") / "status"                 -> handler { (id: String, req: Request) =>
+      ErrorHandlingMiddleware.fromPersistence {
+        for
+          form         <- parseForm(req)
+          rawStatus     = form.get("status").map(_.trim).filter(_.nonEmpty).getOrElse("open")
+          issueId       = IssueId(id)
+          issue        <- issueRepository.get(issueId).mapError(mapIssueRepoError)
+          now          <- Clock.instant
+          agentFallback = Option(issue.state).flatMap {
+                            case IssueState.Assigned(a, _)     => Some(a.value)
+                            case IssueState.InProgress(a, _)   => Some(a.value)
+                            case IssueState.Completed(a, _, _) => Some(a.value)
+                            case IssueState.Failed(a, _, _)    => Some(a.value)
+                            case _                             => None
+                          }.getOrElse("manual")
+          status       <- ZIO
+                            .fromOption(parseIssueStateTag(rawStatus).map {
+                              case IssueStateTag.Open       => IssueStatus.Open
+                              case IssueStateTag.Assigned   => IssueStatus.Assigned
+                              case IssueStateTag.InProgress => IssueStatus.InProgress
+                              case IssueStateTag.Completed  => IssueStatus.Completed
+                              case IssueStateTag.Failed     => IssueStatus.Failed
+                              case IssueStateTag.Skipped    => IssueStatus.Skipped
+                            })
+                            .orElseFail(PersistenceError.QueryFailed("status_parse", s"Unknown status: $rawStatus"))
+          event        <- statusToEvent(issueId, IssueStatusUpdateRequest(status = status), agentFallback, now)
+          _            <- issueRepository.append(event).mapError(mapIssueRepoError)
+        yield Response(status = Status.SeeOther, headers = Headers(Header.Custom("Location", s"/issues/$id")))
+      }
+    },
     Method.POST / "issues" / string("id") / "assign"                 -> handler { (id: String, req: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for

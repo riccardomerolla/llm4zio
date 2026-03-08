@@ -3,8 +3,8 @@ package issues.entity
 import java.time.Instant
 
 import zio.json.JsonCodec
-import zio.schema.{ Schema, derived }
 import zio.schema.annotation.fieldDefaultValue
+import zio.schema.{ Schema, derived }
 
 import shared.ids.Ids.{ AgentId, IssueId }
 
@@ -80,5 +80,17 @@ object IssueEvent:
   final case class Reopened(
     issueId: IssueId,
     reopenedAt: Instant,
+    occurredAt: Instant,
+  ) extends IssueEvent
+
+  final case class MetadataUpdated(
+    issueId: IssueId,
+    title: String,
+    description: String,
+    issueType: String,
+    priority: String,
+    requiredCapabilities: List[String],
+    contextPath: String,
+    sourceFolder: String,
     occurredAt: Instant,
   ) extends IssueEvent

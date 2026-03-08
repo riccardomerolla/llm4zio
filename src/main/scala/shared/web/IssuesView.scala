@@ -346,6 +346,56 @@ object IssuesView:
       )
     )
 
+  def editForm(issue: AgentIssueView, workspaces: List[(String, String)]): String =
+    val issueIdStr = safe(issue.id, "-")
+    Layout.page(s"Edit Issue #$issueIdStr", "/issues")(
+      div(cls := "-mt-6 mx-auto max-w-4xl")(
+        div(cls := "mb-5 flex items-center gap-3")(
+          a(
+            href := s"/issues/$issueIdStr",
+            cls  := "text-sm font-medium text-indigo-300 hover:text-indigo-200",
+          )("← Back"),
+          h1(cls := "text-2xl font-bold text-white")(s"Edit issue #$issueIdStr"),
+        ),
+        form(method := "post", action := s"/issues/$issueIdStr/edit", cls := "space-y-5")(
+          div(cls := "rounded-xl border border-white/10 bg-slate-900/70 p-5")(
+            div(cls := "grid grid-cols-1 gap-4 md:grid-cols-2")(
+              textField("title", "Title", safeStr(issue.title), required = true),
+              textField("issueType", "Type", safeStr(issue.issueType, "task"), required = true),
+              textField("priority", "Priority", safeStr(issue.priority.toString, "medium")),
+              textField("tags", "Tags (comma separated)", safe(issue.tags)),
+              capabilityEditor("requiredCapabilities", "Required Capabilities", safe(issue.requiredCapabilities)),
+              textField("contextPath", "Context Path", safe(issue.contextPath)),
+              textField("sourceFolder", "Source Folder", safe(issue.sourceFolder)),
+              workspaceSelect(
+                fieldName = "workspaceId",
+                labelText = "Linked Workspace",
+                workspaces = workspaces,
+                selectedWorkspaceId = issue.workspaceId.filter(_.nonEmpty),
+              ),
+            ),
+            div(cls := "mt-4")(
+              label(cls := "mb-2 block text-sm font-semibold text-slate-200", `for` := "description")("Description"),
+              textarea(
+                id   := "description",
+                name := "description",
+                rows := 14,
+                cls  := "w-full rounded-lg border border-white/15 bg-slate-800/80 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-indigo-400/40 focus:outline-none",
+              )(safeStr(issue.description)),
+            ),
+          ),
+          div(cls := "flex items-center gap-3")(
+            button(
+              `type` := "submit",
+              cls    := "rounded-md bg-indigo-500 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-400",
+            )("Save changes"),
+            a(href := s"/issues/$issueIdStr", cls := "text-sm font-medium text-slate-300 hover:text-white")("Cancel"),
+          ),
+        ),
+        JsResources.inlineModuleScript("/static/client/components/capability-tag-editor.js"),
+      )
+    )
+
   // ---------------------------------------------------------------------------
   // Null-safe helpers — EclipseStore's lazy deserialization can leave Option
   // fields as Some(null) or even corrupt None instances.  Guard every access.
