@@ -115,10 +115,10 @@ object IssuesView:
       hasProofFilter.filter(identity).map(_ => "hasProof=true"),
     ).flatten
     val fragmentUrl    =
-      if queryParts.isEmpty then "/issues/board/fragment"
-      else s"/issues/board/fragment?${queryParts.mkString("&")}"
+      if queryParts.isEmpty then "/board/fragment"
+      else s"/board/fragment?${queryParts.mkString("&")}"
 
-    Layout.page("Issue Board", "/issues/board")(
+    Layout.page("Issue Board", "/board")(
       div(cls := "space-y-4")(
         div(cls := "rounded-xl border border-white/10 bg-slate-900/80 px-5 py-4")(
           div(cls := "flex flex-wrap items-center justify-between gap-3")(
@@ -779,7 +779,7 @@ object IssuesView:
       "rounded-full border border-white/15 bg-slate-800/70 px-3 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none"
     form(
       method := "get",
-      action := "/issues/board",
+      action := "/board",
       cls    := "rounded-xl border border-white/10 bg-slate-900/60 px-4 py-3",
     )(
       div(cls := "flex flex-wrap items-center gap-2")(
@@ -846,7 +846,7 @@ object IssuesView:
           cls    := "rounded-full bg-indigo-500 px-4 py-1.5 text-xs font-semibold text-white hover:bg-indigo-400",
         )("Apply"),
         a(
-          href := "/issues/board",
+          href := "/board",
           cls  := "rounded-full border border-white/20 px-3 py-1.5 text-xs text-slate-300 hover:bg-white/5",
         )("Reset"),
       )

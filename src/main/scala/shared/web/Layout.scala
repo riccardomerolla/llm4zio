@@ -18,12 +18,39 @@ object Layout:
         script(src   := "https://unpkg.com/htmx-ext-sse@2.0.0/sse.js"),
       ),
       body(cls := "h-full")(
+        mobileSidebar(currentPath),
         desktopSidebar(currentPath),
+        mobileTopbar(pageTitleText),
         div(cls := "lg:pl-72")(
           tag("main")(cls := "py-4")(
             div(cls := "px-4 sm:px-6 lg:px-8")(bodyContent)
           )
         ),
+        script(raw(
+          """(function () {
+            |  const sidebar = document.getElementById("mobile-sidebar");
+            |  const openBtn = document.getElementById("mobile-sidebar-open");
+            |  const closeBtn = document.getElementById("mobile-sidebar-close");
+            |  const backdrop = document.getElementById("mobile-sidebar-backdrop");
+            |
+            |  if (!sidebar || !openBtn || !closeBtn || !backdrop) return;
+            |
+            |  const openSidebar = function () {
+            |    sidebar.classList.remove("hidden");
+            |    document.body.classList.add("overflow-hidden");
+            |  };
+            |
+            |  const closeSidebar = function () {
+            |    sidebar.classList.add("hidden");
+            |    document.body.classList.remove("overflow-hidden");
+            |  };
+            |
+            |  openBtn.addEventListener("click", openSidebar);
+            |  closeBtn.addEventListener("click", closeSidebar);
+            |  backdrop.addEventListener("click", closeSidebar);
+            |})();
+            |""".stripMargin
+        )),
       ),
     ).render
 
@@ -31,66 +58,91 @@ object Layout:
   // Sidebar
   // ---------------------------------------------------------------------------
 
+  private def mobileTopbar(pageTitleText: String): Frag =
+    div(
+      cls := "sticky top-0 z-40 flex items-center gap-x-4 bg-gray-900/95 px-4 py-4 backdrop-blur after:pointer-events-none after:absolute after:inset-0 after:border-b after:border-white/10 lg:hidden"
+    )(
+      button(
+        id     := "mobile-sidebar-open",
+        `type` := "button",
+        cls    := "-m-2.5 p-2.5 text-gray-300 hover:text-white",
+      )(
+        span(cls := "sr-only")("Open sidebar"),
+        Icons.menu,
+      ),
+      div(cls := "text-sm font-semibold text-white")(pageTitleText),
+    )
+
+  private def mobileSidebar(currentPath: String): Frag =
+    div(id := "mobile-sidebar", cls := "hidden lg:hidden")(
+      div(id := "mobile-sidebar-backdrop", cls := "fixed inset-0 z-40 bg-gray-900/80")(),
+      div(cls := "fixed inset-y-0 left-0 z-50 w-full max-w-xs")(
+        div(
+          cls := "relative flex h-full flex-col gap-y-5 overflow-y-auto border-r border-white/10 bg-gray-900 px-6 pb-4 pt-4"
+        )(
+          div(cls := "flex items-center justify-between")(
+            span(cls := "text-xl font-bold text-white")("A-B-Normal"),
+            button(
+              id     := "mobile-sidebar-close",
+              `type` := "button",
+              cls    := "-m-2.5 p-2.5 text-gray-300 hover:text-white",
+            )(
+              span(cls := "sr-only")("Close sidebar"),
+              Icons.xMark,
+            ),
+          ),
+          sidebarNav(currentPath),
+        )
+      ),
+    )
+
   private def desktopSidebar(currentPath: String): Frag =
     div(
-      cls := "hidden bg-gray-900 ring-1 ring-white/10 lg:fixed lg:inset-y-0 lg:z-50 lg:flex lg:w-72 lg:flex-col"
+      cls := "hidden bg-gray-900 lg:fixed lg:inset-y-0 lg:z-50 lg:flex lg:w-72 lg:flex-col"
     )(
-      div(cls := "flex grow flex-col gap-y-5 overflow-y-auto bg-black/10 px-6 pb-4")(
+      div(cls := "flex grow flex-col gap-y-5 overflow-y-auto border-r border-white/10 bg-black/10 px-6 pb-4")(
         div(cls := "flex h-16 shrink-0 items-center")(
           span(cls := "text-xl font-bold text-white")("A-B-Normal")
         ),
-        nav(cls := "flex flex-1 flex-col")(
-          ul(attr("role") := "list", cls := "flex flex-1 flex-col gap-y-7")(
-            li(
-              div(cls := "text-xs/6 font-semibold text-gray-400")("Main"),
-              ul(attr("role") := "list", cls := "-mx-2 mt-2 space-y-1")(
-                navItem("/", "Dashboard", Icons.home, currentPath == "/"),
-                navItem("/tasks", "Tasks", Icons.folder, currentPath.startsWith("/tasks")),
-                navItem("/workflows", "Workflows", Icons.workflow, currentPath.startsWith("/workflows")),
-              ),
+        sidebarNav(currentPath),
+      )
+    )
+
+  private def sidebarNav(currentPath: String): Frag =
+    nav(cls := "flex flex-1 flex-col")(
+      ul(attr("role") := "list", cls := "flex flex-1 flex-col gap-y-7")(
+        li(
+          div(cls := "text-xs/6 font-semibold uppercase tracking-wide text-gray-400")("Operate"),
+          ul(attr("role") := "list", cls := "-mx-2 mt-2 space-y-1")(
+            navItem("/", "Command Center", Icons.home, currentPath == "/"),
+            navItem(
+              "/board",
+              "Board",
+              Icons.tableColumns,
+              currentPath.startsWith("/board") || currentPath.startsWith("/issues/board"),
             ),
-            li(
-              div(cls := "text-xs/6 font-semibold text-gray-400")("Workspace"),
-              ul(attr("role") := "list", cls := "-mx-2 mt-2 space-y-1")(
-                navItem("/chat", "Chat", Icons.chat, currentPath.startsWith("/chat")),
-                navItem(
-                  "/issues",
-                  "Issues",
-                  Icons.flag,
-                  currentPath.startsWith("/issues") && !currentPath.startsWith("/issues/board"),
-                ),
-                navItem("/issues/board", "Board", Icons.tableColumns, currentPath.startsWith("/issues/board")),
-                navItem("/runs", "Runs", Icons.pulse, currentPath.startsWith("/runs")),
-                navItem(
-                  "/workspaces",
-                  "Workspaces",
-                  Icons.folder,
-                  currentPath.startsWith("/workspaces") || currentPath.startsWith("/settings/workspaces"),
-                ),
-                navItem("/activity", "Activity", Icons.activity, currentPath.startsWith("/activity")),
-                navItem("/memory", "Memory", Icons.archive, currentPath.startsWith("/memory")),
-              ),
+            navItem("/chat", "Chat", Icons.chat, currentPath.startsWith("/chat")),
+          ),
+        ),
+        li(
+          div(cls := "text-xs/6 font-semibold uppercase tracking-wide text-gray-400")("Configure"),
+          ul(attr("role") := "list", cls := "-mx-2 mt-2 space-y-1")(
+            navItem(
+              "/workspaces",
+              "Workspaces",
+              Icons.folder,
+              currentPath.startsWith("/workspaces") || currentPath.startsWith("/settings/workspaces"),
             ),
-            li(
-              div(cls := "text-xs/6 font-semibold text-gray-400")("Agents"),
-              ul(attr("role") := "list", cls := "-mx-2 mt-2 space-y-1")(
-                navItem("/agents", "Agents", Icons.cpuChip, currentPath.startsWith("/agents")),
-                navItem("/agent-monitor", "Agent Monitor", Icons.monitor, currentPath.startsWith("/agent-monitor")),
-              ),
+            navItem("/agents", "Agents", Icons.cpuChip, currentPath.startsWith("/agents")),
+            navItem(
+              "/settings",
+              "Settings",
+              Icons.cog,
+              currentPath.startsWith("/settings") || currentPath.startsWith("/config") ||
+              currentPath.startsWith("/models") || currentPath.startsWith("/channels") ||
+              currentPath.startsWith("/health"),
             ),
-            li(cls := "mt-auto")(
-              ul(attr("role") := "list", cls := "-mx-2 space-y-1")(
-                navItem(
-                  "/settings/ai",
-                  "Settings",
-                  Icons.cog,
-                  currentPath.startsWith("/settings") || currentPath.startsWith("/config") ||
-                  currentPath.startsWith("/models") || currentPath.startsWith("/channels") ||
-                  currentPath.startsWith("/health"),
-                )
-              )
-            ),
-          )
+          ),
         ),
       )
     )
@@ -139,6 +191,14 @@ object Layout:
 
     val chat: Frag = icon(
       "M2.25 12a8.25 8.25 0 1 1 14.59 5.28L21.75 21l-4.38-2.19A8.21 8.21 0 0 1 12 20.25 8.25 8.25 0 0 1 2.25 12Z"
+    )
+
+    val menu: Frag = icon(
+      "M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"
+    )
+
+    val xMark: Frag = icon(
+      "M6 18 18 6M6 6l12 12"
     )
 
     val flag: Frag = icon(

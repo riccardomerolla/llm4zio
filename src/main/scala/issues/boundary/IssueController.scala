@@ -69,46 +69,17 @@ final case class IssueControllerLive(
         yield html(HtmlViews.issuesView(runId, filtered, statusFilter, query, tagFilter))
       }
     },
+    Method.GET / "board"                                             -> handler { (req: Request) =>
+      boardPage(req)
+    },
+    Method.GET / "board" / "fragment"                                -> handler { (req: Request) =>
+      boardFragment(req)
+    },
     Method.GET / "issues" / "board"                                  -> handler { (req: Request) =>
-      val query           = req.queryParam("q").map(_.trim).filter(_.nonEmpty)
-      val tagFilter       = req.queryParam("tag").map(_.trim).filter(_.nonEmpty)
-      val workspaceFilter = req.queryParam("workspace").map(_.trim).filter(_.nonEmpty)
-      val agentFilter     = req.queryParam("agent").map(_.trim).filter(_.nonEmpty)
-      val priorityFilter  = req.queryParam("priority").map(_.trim.toLowerCase).filter(_.nonEmpty)
-      ErrorHandlingMiddleware.fromPersistence {
-        for
-          workspaces <- workspaceRepository.list.mapError(mapIssueRepoError)
-          issues     <- loadBoardIssues(query, tagFilter, workspaceFilter, agentFilter, priorityFilter)
-        yield html(
-          HtmlViews.issuesBoard(
-            issues = issues,
-            workspaces = workspaces.map(ws => ws.id -> ws.name),
-            workspaceFilter = workspaceFilter,
-            agentFilter = agentFilter,
-            priorityFilter = priorityFilter,
-            tagFilter = tagFilter,
-            query = query,
-          )
-        )
-      }
+      boardPage(req)
     },
     Method.GET / "issues" / "board" / "fragment"                     -> handler { (req: Request) =>
-      val query           = req.queryParam("q").map(_.trim).filter(_.nonEmpty)
-      val tagFilter       = req.queryParam("tag").map(_.trim).filter(_.nonEmpty)
-      val workspaceFilter = req.queryParam("workspace").map(_.trim).filter(_.nonEmpty)
-      val agentFilter     = req.queryParam("agent").map(_.trim).filter(_.nonEmpty)
-      val priorityFilter  = req.queryParam("priority").map(_.trim.toLowerCase).filter(_.nonEmpty)
-      ErrorHandlingMiddleware.fromPersistence {
-        for
-          workspaces <- workspaceRepository.list.mapError(mapIssueRepoError)
-          issues     <- loadBoardIssues(query, tagFilter, workspaceFilter, agentFilter, priorityFilter)
-        yield html(
-          HtmlViews.issuesBoardColumns(
-            issues = issues,
-            workspaces = workspaces.map(ws => ws.id -> ws.name),
-          )
-        )
-      }
+      boardFragment(req)
     },
     Method.GET / "issues" / "new"                                    -> handler { (req: Request) =>
       val runId = req.queryParam("run_id").map(_.trim).filter(_.nonEmpty)
@@ -765,6 +736,47 @@ final case class IssueControllerLive(
       }
     },
   )
+
+  private def boardPage(req: Request): UIO[Response] =
+    val query           = req.queryParam("q").map(_.trim).filter(_.nonEmpty)
+    val tagFilter       = req.queryParam("tag").map(_.trim).filter(_.nonEmpty)
+    val workspaceFilter = req.queryParam("workspace").map(_.trim).filter(_.nonEmpty)
+    val agentFilter     = req.queryParam("agent").map(_.trim).filter(_.nonEmpty)
+    val priorityFilter  = req.queryParam("priority").map(_.trim.toLowerCase).filter(_.nonEmpty)
+    ErrorHandlingMiddleware.fromPersistence {
+      for
+        workspaces <- workspaceRepository.list.mapError(mapIssueRepoError)
+        issues     <- loadBoardIssues(query, tagFilter, workspaceFilter, agentFilter, priorityFilter)
+      yield html(
+        HtmlViews.issuesBoard(
+          issues = issues,
+          workspaces = workspaces.map(ws => ws.id -> ws.name),
+          workspaceFilter = workspaceFilter,
+          agentFilter = agentFilter,
+          priorityFilter = priorityFilter,
+          tagFilter = tagFilter,
+          query = query,
+        )
+      )
+    }
+
+  private def boardFragment(req: Request): UIO[Response] =
+    val query           = req.queryParam("q").map(_.trim).filter(_.nonEmpty)
+    val tagFilter       = req.queryParam("tag").map(_.trim).filter(_.nonEmpty)
+    val workspaceFilter = req.queryParam("workspace").map(_.trim).filter(_.nonEmpty)
+    val agentFilter     = req.queryParam("agent").map(_.trim).filter(_.nonEmpty)
+    val priorityFilter  = req.queryParam("priority").map(_.trim.toLowerCase).filter(_.nonEmpty)
+    ErrorHandlingMiddleware.fromPersistence {
+      for
+        workspaces <- workspaceRepository.list.mapError(mapIssueRepoError)
+        issues     <- loadBoardIssues(query, tagFilter, workspaceFilter, agentFilter, priorityFilter)
+      yield html(
+        HtmlViews.issuesBoardColumns(
+          issues = issues,
+          workspaces = workspaces.map(ws => ws.id -> ws.name),
+        )
+      )
+    }
 
   private def html(content: String): Response =
     Response.text(content).contentType(MediaType.text.html)
