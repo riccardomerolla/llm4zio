@@ -526,17 +526,43 @@ object WorkspacesView:
           dateTo,
           limit,
         ),
-        div(
-          id                        := "runs-dashboard-root",
-          attr("data-fragment-url") := fragmentUrl,
-          attr("hx-get")            := fragmentUrl,
-          attr("hx-trigger")        := "load, every 10s",
-          attr("hx-swap")           := "innerHTML",
-        )(
-          raw(runsDashboardRowsFragment(runs, workspaceNameById))
+        runsDashboardRoot(
+          fragmentUrl = fragmentUrl,
+          initialContent = raw(runsDashboardRowsFragment(runs, workspaceNameById)),
         ),
       ),
       JsResources.inlineModuleScript("/static/client/components/run-dashboard.js"),
+    )
+
+  def runsDashboardRoot(fragmentUrl: String, initialContent: Frag): Frag =
+    div(
+      id                        := "runs-dashboard-root",
+      attr("data-fragment-url") := fragmentUrl,
+      attr("hx-get")            := fragmentUrl,
+      attr("hx-trigger")        := "load, every 10s",
+      attr("hx-swap")           := "innerHTML",
+    )(
+      initialContent
+    )
+
+  def runsDashboardCollapsibleSection(fragmentUrl: String): Frag =
+    tag("details")(
+      cls := "rounded-lg border border-white/10 bg-slate-950/50"
+    )(
+      tag("summary")(
+        cls := "cursor-pointer px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-300"
+      )(
+        "Show Runs Table"
+      ),
+      div(cls := "border-t border-white/10 p-3")(
+        runsDashboardRoot(
+          fragmentUrl = fragmentUrl,
+          initialContent =
+            div(cls := "rounded-lg border border-white/10 bg-slate-950/60 p-4 text-sm text-slate-400")(
+              "Loading runs..."
+            ),
+        )
+      ),
     )
 
   def runsDashboardRowsFragment(runs: List[WorkspaceRun], workspaceNameById: Map[String, String]): String =

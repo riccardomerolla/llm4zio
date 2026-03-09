@@ -110,15 +110,7 @@ object CommandCenterView:
   private def activeRunsCard(): Frag =
     val fragmentUrl = "/runs/fragment?scope=active&sort=last_activity&limit=12"
     panel("Active Runs", "Embedded runs dashboard rows")(
-      div(
-        id                        := "runs-dashboard-root",
-        attr("data-fragment-url") := fragmentUrl,
-        attr("hx-get")            := fragmentUrl,
-        attr("hx-trigger")        := "load, every 10s",
-        attr("hx-swap")           := "innerHTML",
-      )(
-        div(cls := "rounded-lg border border-white/10 bg-slate-950/60 p-4 text-sm text-slate-400")("Loading runs...")
-      )
+      WorkspacesView.runsDashboardCollapsibleSection(fragmentUrl)
     )
 
   private def recentActivityCard(): Frag                                  =
