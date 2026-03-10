@@ -77,9 +77,9 @@ object DashboardView:
             p(cls := "text-xs text-gray-400 mt-1")("Runs, success rate, average duration, and active load by agent."),
           ),
           a(
-            href := "/agents/registry",
+            href := "/agents",
             cls  := "inline-flex items-center rounded-md bg-indigo-500/20 px-3 py-2 text-xs font-semibold text-indigo-100 ring-1 ring-indigo-300/30 hover:bg-indigo-500/30",
-          )("Open Registry"),
+          )("Open Agents"),
         ),
         div(
           id                                   := "dashboard-agent-metrics",
