@@ -1,5 +1,7 @@
 package shared.web
 
+import java.net.URLEncoder
+
 import scalatags.Text.all.*
 import scalatags.Text.svgAttrs.{ d, viewBox }
 import scalatags.Text.svgTags.{ path, svg }
@@ -7,7 +9,29 @@ import scalatags.Text.tags2.{ nav, title as titleTag }
 
 object Layout:
 
-  def page(pageTitleText: String, currentPath: String = "/")(bodyContent: Frag*): String =
+  final case class ChatNavItem(
+    conversationId: String,
+    title: String,
+    href: String,
+    active: Boolean,
+  )
+
+  final case class ChatWorkspaceGroup(
+    id: String,
+    label: String,
+    chats: List[ChatNavItem],
+    expanded: Boolean = false,
+  )
+
+  final case class ChatWorkspaceNav(groups: List[ChatWorkspaceGroup], showNewChat: Boolean = true)
+
+  def page(
+    pageTitleText: String,
+    currentPath: String = "/",
+    chatWorkspaceNav: Option[ChatWorkspaceNav] = None,
+  )(
+    bodyContent: Frag*
+  ): String =
     "<!DOCTYPE html>" + html(cls := "h-full bg-gray-900")(
       head(
         meta(charset := "utf-8"),
@@ -17,11 +41,18 @@ object Layout:
         script(src   := "https://unpkg.com/htmx.org@2.0.4"),
         script(src   := "https://unpkg.com/htmx-ext-sse@2.0.0/sse.js"),
       ),
-      body(cls := "h-full")(
-        mobileSidebar(currentPath),
-        desktopSidebar(currentPath),
+      body(cls := "h-full text-[12px] leading-5 text-gray-200")(
+        mobileSidebar(currentPath, chatWorkspaceNav),
+        desktopSidebar(currentPath, chatWorkspaceNav),
         mobileTopbar(pageTitleText),
-        div(cls := "lg:pl-72")(
+        button(
+          id                    := "desktop-sidebar-restore",
+          `type`                := "button",
+          cls                   := "hidden fixed left-3 top-3 z-40 rounded p-1.5 text-gray-300 hover:bg-white/10 hover:text-white lg:block",
+          attr("aria-label")    := "Restore sidebar",
+          attr("aria-expanded") := "false",
+        )(Icons.menu),
+        div(id := "app-main-shell", cls := "transition-all duration-150 lg:pl-72")(
           tag("main")(cls := "py-4")(
             div(cls := "px-4 sm:px-6 lg:px-8")(bodyContent)
           )
@@ -48,6 +79,33 @@ object Layout:
             |  openBtn.addEventListener("click", openSidebar);
             |  closeBtn.addEventListener("click", closeSidebar);
             |  backdrop.addEventListener("click", closeSidebar);
+            |
+            |  const desktopSidebar = document.getElementById("desktop-sidebar");
+            |  const desktopToggle = document.getElementById("desktop-sidebar-toggle");
+            |  const desktopRestore = document.getElementById("desktop-sidebar-restore");
+            |  const mainShell = document.getElementById("app-main-shell");
+            |  if (desktopSidebar && desktopToggle && desktopRestore && mainShell) {
+            |    const key = "abnormal.sidebar.collapsed";
+            |    const apply = function (collapsed) {
+            |      desktopSidebar.classList.toggle("lg:hidden", collapsed);
+            |      mainShell.classList.toggle("lg:pl-72", !collapsed);
+            |      mainShell.classList.toggle("lg:pl-0", collapsed);
+            |      desktopToggle.setAttribute("aria-expanded", String(!collapsed));
+            |      desktopRestore.classList.toggle("hidden", !collapsed);
+            |      desktopRestore.setAttribute("aria-expanded", String(!collapsed));
+            |    };
+            |    const restore = window.localStorage ? window.localStorage.getItem(key) === "1" : false;
+            |    apply(restore);
+            |    desktopToggle.addEventListener("click", function () {
+            |      const collapsed = !desktopSidebar.classList.contains("lg:hidden");
+            |      apply(collapsed);
+            |      if (window.localStorage) window.localStorage.setItem(key, collapsed ? "1" : "0");
+            |    });
+            |    desktopRestore.addEventListener("click", function () {
+            |      apply(false);
+            |      if (window.localStorage) window.localStorage.setItem(key, "0");
+            |    });
+            |  }
             |})();
             |""".stripMargin
         )),
@@ -73,7 +131,7 @@ object Layout:
       div(cls := "text-sm font-semibold text-white")(pageTitleText),
     )
 
-  private def mobileSidebar(currentPath: String): Frag =
+  private def mobileSidebar(currentPath: String, chatWorkspaceNav: Option[ChatWorkspaceNav]): Frag =
     div(id := "mobile-sidebar", cls := "hidden lg:hidden")(
       div(id := "mobile-sidebar-backdrop", cls := "fixed inset-0 z-40 bg-gray-900/80")(),
       div(cls := "fixed inset-y-0 left-0 z-50 w-full max-w-xs")(
@@ -91,24 +149,32 @@ object Layout:
               Icons.xMark,
             ),
           ),
-          sidebarNav(currentPath),
+          sidebarNav(currentPath, chatWorkspaceNav),
         )
       ),
     )
 
-  private def desktopSidebar(currentPath: String): Frag =
+  private def desktopSidebar(currentPath: String, chatWorkspaceNav: Option[ChatWorkspaceNav]): Frag =
     div(
-      cls := "hidden bg-gray-900 lg:fixed lg:inset-y-0 lg:z-50 lg:flex lg:w-72 lg:flex-col"
+      id  := "desktop-sidebar",
+      cls := "hidden bg-gray-900 lg:fixed lg:inset-y-0 lg:z-50 lg:flex lg:w-72 lg:flex-col",
     )(
       div(cls := "flex grow flex-col gap-y-5 overflow-y-auto border-r border-white/10 bg-black/10 px-6 pb-4")(
-        div(cls := "flex h-16 shrink-0 items-center")(
-          span(cls := "text-xl font-bold text-white")("A-B-Normal")
+        div(cls := "flex h-16 shrink-0 items-center justify-between")(
+          span(cls := "text-xl font-bold text-white")("A-B-Normal"),
+          button(
+            id                    := "desktop-sidebar-toggle",
+            `type`                := "button",
+            cls                   := "rounded p-1.5 text-gray-300 hover:bg-white/10 hover:text-white",
+            attr("aria-label")    := "Toggle sidebar",
+            attr("aria-expanded") := "true",
+          )(Icons.menu),
         ),
-        sidebarNav(currentPath),
+        sidebarNav(currentPath, chatWorkspaceNav),
       )
     )
 
-  private def sidebarNav(currentPath: String): Frag =
+  private def sidebarNav(currentPath: String, chatWorkspaceNav: Option[ChatWorkspaceNav]): Frag =
     nav(cls := "flex flex-1 flex-col")(
       ul(attr("role") := "list", cls := "flex flex-1 flex-col gap-y-7")(
         li(
@@ -121,7 +187,7 @@ object Layout:
               Icons.tableColumns,
               currentPath.startsWith("/board") || currentPath.startsWith("/issues/board"),
             ),
-            navItem("/chat", "Chat", Icons.chat, currentPath.startsWith("/chat")),
+            chatWorkspaceNav.fold[Frag](deferredChatWorkspacesTree(currentPath))(chatWorkspacesTree),
           ),
         ),
         li(
@@ -145,6 +211,100 @@ object Layout:
           ),
         ),
       )
+    )
+
+  def chatWorkspacesTree(nav: ChatWorkspaceNav): Frag =
+    div(cls := "mt-2 space-y-1")(
+      div(cls := "mx-1 flex items-center justify-between gap-1")(
+        div(cls := "px-1 text-xs/6 font-semibold uppercase tracking-wide text-gray-500")("Workspaces"),
+        div(cls := "flex items-center gap-1")(
+          if nav.showNewChat then
+            a(
+              href := "/chat/new",
+              cls  := "inline-flex items-center px-1 py-0.5 text-[10px] font-semibold text-gray-300 hover:text-white",
+            )(Icons.plusCircle)
+          else frag(),
+          tag("details")(cls := "relative")(
+            tag("summary")(
+              cls := "list-none cursor-pointer p-1 text-gray-300 hover:text-white"
+            )(
+              Icons.ellipsisVertical
+            ),
+            div(
+              cls := "absolute right-0 z-40 mt-1 w-44 rounded-md border border-white/10 bg-slate-900/95 p-1 shadow-xl"
+            )(
+              p(cls := "px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-gray-500")("Organize"),
+              button(
+                `type` := "button",
+                cls    := "w-full rounded px-2 py-1 text-left text-[11px] text-gray-200 hover:bg-white/10",
+              )(
+                "By project"
+              ),
+              button(
+                `type` := "button",
+                cls    := "w-full rounded px-2 py-1 text-left text-[11px] text-gray-200 hover:bg-white/10",
+              )(
+                "Chronological list"
+              ),
+              hr(cls := "my-1 border-white/10"),
+              p(cls := "px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-gray-500")("Sort by"),
+              button(
+                `type` := "button",
+                cls    := "w-full rounded px-2 py-1 text-left text-[11px] text-gray-200 hover:bg-white/10",
+              )(
+                "Created"
+              ),
+              button(
+                `type` := "button",
+                cls    := "w-full rounded px-2 py-1 text-left text-[11px] text-gray-200 hover:bg-white/10",
+              )(
+                "Updated"
+              ),
+            ),
+          ),
+        ),
+      ),
+      if nav.groups.isEmpty then
+        p(cls := "px-2 py-1 text-[11px] text-gray-500")("No workspace chats")
+      else
+        nav.groups.map { group =>
+          val body = frag(
+            tag("summary")(cls := "cursor-pointer select-none truncate px-2 text-[11px] font-semibold text-gray-300")(
+              s"${group.label} (${group.chats.length})"
+            ),
+            ul(cls := "mt-1 space-y-0.5")(
+              group.chats.map(chat =>
+                li(
+                  a(
+                    href          := chat.href,
+                    cls           := s"mx-1 block truncate rounded-md px-2 py-1 text-[11px] ${
+                        if chat.active then "bg-white/10 text-white"
+                        else "text-gray-400 hover:bg-white/5 hover:text-white"
+                      }",
+                    attr("title") := chat.title,
+                  )(chat.title)
+                )
+              )
+            ),
+          )
+          if group.expanded then
+            tag("details")(
+              attr("open") := "open",
+              cls          := "rounded-md py-1",
+            )(body)
+          else
+            tag("details")(cls := "rounded-md py-1")(body)
+        },
+    )
+
+  private def deferredChatWorkspacesTree(currentPath: String): Frag =
+    div(
+      attr("hx-get")     := s"/chat/sidebar-nav?path=${URLEncoder.encode(currentPath, "UTF-8")}",
+      attr("hx-trigger") := "load",
+      attr("hx-swap")    := "innerHTML",
+      cls                := "mt-2",
+    )(
+      p(cls := "px-2 py-1 text-[11px] text-gray-500")("Loading workspace chats...")
     )
 
   private def navItem(href: String, label: String, icon: Frag, active: Boolean): Frag =
@@ -181,16 +341,16 @@ object Layout:
       "M4.5 6h6.75m-6.75 6h6.75m-6.75 6h6.75m3.75-10.5L18 6m0 0 2.25 1.5M18 6v4.5m0 3L18 18m0 0 2.25-1.5M18 18v-4.5"
     )
 
+    val ellipsisVertical: Frag = icon(
+      "M12 6.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5Zm0 6a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5Zm0 6a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5Z"
+    )
+
     val document: Frag = icon(
       "M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z"
     )
 
     val chart: Frag = icon(
       "M10.5 6a7.5 7.5 0 1 0 7.5 7.5h-7.5V6Z M13.5 10.5H21A7.5 7.5 0 0 0 13.5 3v7.5Z"
-    )
-
-    val chat: Frag = icon(
-      "M2.25 12a8.25 8.25 0 1 1 14.59 5.28L21.75 21l-4.38-2.19A8.21 8.21 0 0 1 12 20.25 8.25 8.25 0 0 1 2.25 12Z"
     )
 
     val menu: Frag = icon(

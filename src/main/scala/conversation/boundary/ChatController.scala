@@ -64,11 +64,51 @@ final case class ChatControllerLive(
     Method.GET / "chat"                                      -> handler { (_: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
-          conversations <- chatRepository.listConversations(0, 20)
+          conversations <- chatRepository.listConversations(0, 80)
           enriched      <- enrichConversationsWithChannel(conversations)
-          sessionMeta   <- buildSessionMetaMap(enriched)
-          sessions      <- listChatSessions
-        yield html(HtmlViews.chatDashboard(enriched, sessionMeta, sessions))
+          latestId       = enriched.sortBy(_.updatedAt)(Ordering[Instant].reverse).flatMap(conv =>
+                             sanitizeOptional(conv.id)
+                           ).headOption
+        yield latestId match
+          case Some(id) =>
+            Response(
+              status = Status.SeeOther,
+              headers = Headers(Header.Custom("Location", s"/chat/$id")),
+            )
+          case None     =>
+            Response(
+              status = Status.SeeOther,
+              headers = Headers(Header.Custom("Location", "/chat/new")),
+            )
+      }
+    },
+    Method.GET / "chat" / "new"                              -> handler { (_: Request) =>
+      ErrorHandlingMiddleware.fromPersistence {
+        for
+          conversations   <- chatRepository.listConversations(0, 80)
+          enriched        <- enrichConversationsWithChannel(conversations)
+          workspaceGroups <- buildWorkspaceFolders(enriched)
+          workspaces      <- workspaceRepository.list.mapError(mapWorkspaceRepoError)
+        yield html(
+          HtmlViews.chatNew(
+            workspaceFolders = workspaceGroups,
+            workspaces = workspaces
+              .sortBy(ws => ws.name.toLowerCase)
+              .map(ws => ws.id -> ws.name),
+          )
+        )
+      }
+    },
+    Method.GET / "chat" / "sidebar-nav"                      -> handler { (req: Request) =>
+      ErrorHandlingMiddleware.fromPersistence {
+        for
+          conversations      <- chatRepository.listConversations(0, 80)
+          enriched           <- enrichConversationsWithChannel(conversations)
+          workspaceGroups    <- buildWorkspaceFolders(enriched)
+          currentPath         = req.url.queryParams.getAll("path").headOption.flatMap(sanitizeString)
+          currentConversation = currentPath.flatMap(parseCurrentConversationIdFromPath)
+          nav                 = toLayoutWorkspaceNav(workspaceGroups, currentConversation)
+        yield html(Layout.chatWorkspacesTree(nav).render)
       }
     },
     Method.POST / "chat"                                     -> handler { (req: Request) =>
@@ -95,17 +135,69 @@ final case class ChatControllerLive(
         )
       }
     },
+    Method.POST / "chat" / "new"                             -> handler { (req: Request) =>
+      ErrorHandlingMiddleware.fromPersistence {
+        for
+          form          <- parseForm(req)
+          rawContent    <- ZIO
+                             .fromOption(form.get("content").map(_.trim).filter(_.nonEmpty))
+                             .orElseFail(PersistenceError.QueryFailed("parseForm", "Missing content"))
+          workspaceIdRaw = form.get("workspace_id").flatMap(sanitizeString)
+          workspaceId   <- resolveSelectedWorkspaceId(workspaceIdRaw)
+          now           <- Clock.instant
+          conversation   = ChatConversation(
+                             runId = None,
+                             title = "",
+                             description = workspaceId.map(workspaceMarkerDescription),
+                             createdAt = now,
+                             updatedAt = now,
+                           )
+          convId        <- chatRepository.createConversation(conversation)
+          mention        = parsePreferredAgentMention(rawContent)
+          content        = mention.content
+          preferred     <- resolvePreferredAgent(convId, mention.metadata.get("preferredAgent"))
+          _             <- chatRepository.addMessage(
+                             ConversationEntry(
+                               conversationId = convId.toString,
+                               sender = "user",
+                               senderType = SenderType.User,
+                               content = rawContent,
+                               messageType = MessageType.Text,
+                               createdAt = now,
+                               updatedAt = now,
+                             )
+                           )
+          _             <- ensureConversationTitle(convId, content, now)
+          userInbound   <- toGatewayMessage(
+                             convId,
+                             SenderType.User,
+                             content,
+                             None,
+                             GatewayMessageDirection.Inbound,
+                             additionalMetadata = withPreferredAgentMetadata(mention.metadata, preferred),
+                           )
+          _             <- routeThroughGateway(gatewayService.processInbound(userInbound))
+          _             <- streamAssistantResponse(convId, content, preferred).forkDaemon
+        yield Response(
+          status = Status.SeeOther,
+          headers = Headers(Header.Custom("Location", s"/chat/$convId")),
+        )
+      }
+    },
     Method.GET / "chat" / string("id")                       -> handler { (id: String, _: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
-          convId        <- parseLongId("conversation", id)
-          conversation  <- chatRepository
-                             .getConversation(convId)
-                             .someOrFail(PersistenceError.NotFound("conversation", convId))
-          sessionMeta   <- resolveConversationSessionMeta(id)
-          runMeta       <- resolveRunSessionMeta(conversation)
-          detailContext <- resolveChatDetailContext(conversation, sessionMeta)
-        yield html(HtmlViews.chatDetail(conversation, sessionMeta, runMeta, detailContext))
+          convId           <- parseLongId("conversation", id)
+          conversation     <- chatRepository
+                                .getConversation(convId)
+                                .someOrFail(PersistenceError.NotFound("conversation", convId))
+          sessionMeta      <- resolveConversationSessionMeta(id)
+          runMeta          <- resolveRunSessionMeta(conversation)
+          detailContext    <- resolveChatDetailContext(conversation, sessionMeta)
+          allConversations <- chatRepository.listConversations(0, 80)
+          enrichedAll      <- enrichConversationsWithChannel(allConversations)
+          workspaceGroups  <- buildWorkspaceFolders(enrichedAll)
+        yield html(HtmlViews.chatDetail(conversation, sessionMeta, runMeta, workspaceGroups, detailContext))
       }
     },
     Method.GET / "chat" / string("id") / "messages"          -> handler { (id: String, _: Request) =>
@@ -497,15 +589,6 @@ final case class ChatControllerLive(
         case None     => ZIO.succeed(conversation)
     }
 
-  private def buildSessionMetaMap(
-    conversations: List[ChatConversation]
-  ): IO[PersistenceError, Map[String, ConversationSessionMeta]] =
-    ZIO
-      .foreach(conversations.flatMap(conv => sanitizeOptional(conv.id))) { id =>
-        resolveConversationSessionMeta(id).map(meta => id -> meta)
-      }
-      .map(_.collect { case (id, Some(meta)) => id -> meta }.toMap)
-
   private def resolveConversationSessionMeta(
     conversationId: String
   ): IO[PersistenceError, Option[ConversationSessionMeta]] =
@@ -648,6 +731,114 @@ final case class ChatControllerLive(
 
   private def mapWorkspaceRepoError(err: WorkspacePersistenceError): PersistenceError =
     PersistenceError.QueryFailed("workspace_repository", err.toString)
+
+  private def resolveSelectedWorkspaceId(raw: Option[String]): IO[PersistenceError, Option[String]] =
+    raw match
+      case None                           => ZIO.none
+      case Some(value) if value == "chat" => ZIO.none
+      case Some(workspaceId)              =>
+        workspaceRepository.get(workspaceId).mapError(mapWorkspaceRepoError).flatMap {
+          case Some(_) => ZIO.succeed(Some(workspaceId))
+          case None    => ZIO.fail(PersistenceError.QueryFailed("workspace", s"Workspace not found: $workspaceId"))
+        }
+
+  private def workspaceMarkerDescription(workspaceId: String): String =
+    s"workspace:$workspaceId"
+
+  private def parseWorkspaceMarkerDescription(raw: Option[String]): Option[String] =
+    raw.flatMap { description =>
+      sanitizeString(description).flatMap { value =>
+        val Prefix = "workspace:"
+        if value.startsWith(Prefix) then sanitizeString(value.drop(Prefix.length))
+        else None
+      }
+    }
+
+  private def buildWorkspaceFolders(
+    conversations: List[ChatConversation]
+  ): IO[PersistenceError, List[ChatView.ChatWorkspaceFolder]] =
+    for
+      workspaces      <- workspaceRepository.list.mapError(mapWorkspaceRepoError)
+      runsByWs        <- ZIO
+                           .foreach(workspaces)(ws =>
+                             workspaceRepository
+                               .listRuns(ws.id)
+                               .mapError(mapWorkspaceRepoError)
+                               .map(runs => ws.id -> runs)
+                           )
+      runIdToWorkspace = runsByWs.toMap.flatMap { (workspaceId, runs) =>
+                           runs.map(run => run.id -> workspaceId)
+                         }
+      workspaceById    = workspaces.map(ws => ws.id -> ws).toMap
+      grouped          = conversations.foldLeft(Map.empty[String, List[ChatConversation]]) { (acc, conversation) =>
+                           val folderId =
+                             sanitizeOptional(conversation.runId)
+                               .flatMap(runIdToWorkspace.get)
+                               .orElse(parseWorkspaceMarkerDescription(conversation.description).filter(workspaceById.contains))
+                               .getOrElse("chat")
+                           val existing = acc.getOrElse(folderId, Nil)
+                           acc.updated(folderId, conversation :: existing)
+                         }
+      workspaceFolders =
+        grouped.toList
+          .filter(_._1 != "chat")
+          .sortBy {
+            case (folderId, _) =>
+              workspaceById.get(folderId).flatMap(ws => sanitizeString(ws.name)).getOrElse(folderId).toLowerCase
+          }
+          .map {
+            case (workspaceId, chats) =>
+              ChatView.ChatWorkspaceFolder(
+                id = workspaceId,
+                label = workspaceById
+                  .get(workspaceId)
+                  .flatMap(ws => sanitizeString(ws.name))
+                  .getOrElse(workspaceId),
+                chats = chats.sortBy(_.updatedAt)(Ordering[Instant].reverse),
+              )
+          }
+      chatFolder       = grouped.get("chat").map(chats =>
+                           ChatView.ChatWorkspaceFolder(
+                             id = "chat",
+                             label = "Chat",
+                             chats = chats.sortBy(_.updatedAt)(Ordering[Instant].reverse),
+                           )
+                         )
+    yield workspaceFolders ++ chatFolder.toList
+
+  private def toLayoutWorkspaceNav(
+    workspaceFolders: List[ChatView.ChatWorkspaceFolder],
+    currentConversationId: Option[String],
+  ): Layout.ChatWorkspaceNav =
+    Layout.ChatWorkspaceNav(
+      groups = workspaceFolders.map { folder =>
+        val chats = folder.chats
+          .sortBy(_.updatedAt)(Ordering[java.time.Instant].reverse)
+          .take(80)
+          .map { chat =>
+            val conversationId = sanitizeOptional(chat.id).getOrElse("unknown")
+            Layout.ChatNavItem(
+              conversationId = conversationId,
+              title = sanitizeString(chat.title).getOrElse("Untitled chat"),
+              href = s"/chat/$conversationId",
+              active = currentConversationId.contains(conversationId),
+            )
+          }
+        Layout.ChatWorkspaceGroup(
+          id = folder.id,
+          label = folder.label,
+          chats = chats,
+          expanded = chats.exists(_.active) || folder.id == "chat",
+        )
+      },
+      showNewChat = true,
+    )
+
+  private def parseCurrentConversationIdFromPath(path: String): Option[String] =
+    if path.startsWith("/chat/") then
+      val id = path.stripPrefix("/chat/").takeWhile(_ != '/').takeWhile(_ != '?')
+      sanitizeString(id)
+    else None
 
   private def listChatSessions: IO[PersistenceError, List[ChatSession]] =
     for

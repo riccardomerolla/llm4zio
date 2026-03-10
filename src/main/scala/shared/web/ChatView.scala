@@ -10,137 +10,184 @@ import workspace.entity.{ RunSessionMode, RunStatus }
 
 object ChatView:
 
+  final case class ChatWorkspaceFolder(
+    id: String,
+    label: String,
+    chats: List[ChatConversation],
+  )
+
   def dashboard(
     conversations: List[ChatConversation],
     sessionMetaByConversation: Map[String, ConversationSessionMeta],
     sessions: List[ChatSession],
+    workspaceFolders: List[ChatWorkspaceFolder],
   ): String =
-    Layout.page("Chat", "/chat")(
-      div(cls := "mb-6")(
-        div(cls := "flex items-center justify-between")(
-          h1(cls := "text-2xl font-bold text-white")("Chat Interface"),
-          form(method := "post", action := "/chat", cls := "flex items-center gap-2")(
-            input(
-              name        := "title",
-              placeholder := "New chat title",
-              cls         := "bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500",
-              required,
-            ),
-            button(
-              `type` := "submit",
-              cls    := "inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors",
-            )("+ New Chat"),
+    val latestHref = conversations.sortBy(_.updatedAt)(Ordering[java.time.Instant].reverse).flatMap(_.id).headOption
+      .map(id => s"/chat/$id")
+      .getOrElse("/chat")
+    Layout.page(
+      "Chat",
+      "/chat",
+      chatWorkspaceNav = Some(buildWorkspaceNav(workspaceFolders, None, showNewChat = true)),
+    )(
+      div(cls := "rounded-lg border border-white/10 bg-slate-950/70 p-4 space-y-3")(
+        div(
+          h1(cls := "text-sm font-semibold text-white")("Chat"),
+          p(cls := "text-[11px] text-gray-400")("Select a workspace chat from the left navigation."),
+        ),
+        a(
+          href := latestHref,
+          cls  := "inline-flex rounded bg-indigo-600 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-indigo-700",
+        )("Open Latest Chat"),
+        sessionsSection(sessions),
+      )
+    )
+
+  def emptyState(workspaceFolders: List[ChatWorkspaceFolder]): String =
+    Layout.page(
+      "Chat",
+      "/chat",
+      chatWorkspaceNav = Some(buildWorkspaceNav(workspaceFolders, None, showNewChat = true)),
+    )(
+      div(cls := "rounded-lg border border-white/10 bg-slate-950/70 p-6 text-center")(
+        h1(cls := "text-sm font-semibold text-white")("No chats yet"),
+        p(cls := "mt-1 text-[11px] text-gray-400")("Use the left navigation to create a new chat."),
+      )
+    )
+
+  def newConversation(
+    workspaceFolders: List[ChatWorkspaceFolder],
+    workspaces: List[(String, String)],
+  ): String =
+    Layout.page(
+      "New Chat",
+      "/chat/new",
+      chatWorkspaceNav = Some(buildWorkspaceNav(workspaceFolders, None, showNewChat = true)),
+    )(
+      div(cls := "mx-auto flex min-h-[calc(100vh-9rem)] max-w-3xl items-center justify-center")(
+        div(cls := "w-full space-y-4 rounded-xl border border-white/10 bg-slate-950/70 p-4")(
+          div(cls := "text-center")(
+            h1(cls := "text-2xl font-semibold text-white")("New chat"),
+            p(cls := "mt-1 text-[11px] text-gray-400")("Pick a workspace and send your first message."),
           ),
-        ),
-        p(cls := "text-gray-400 text-sm mt-2")("Manage conversations with the AI service"),
-      ),
-      sessionsSection(sessions),
-      if conversations.isEmpty then
-        div(cls := "bg-white/5 ring-1 ring-white/10 rounded-lg p-12 text-center")(
-          p(cls := "text-gray-400 mb-4")("No conversations yet"),
-          a(
-            href := "/chat",
-            cls  := "inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg",
-          )("Start New Conversation"),
+          form(action := "/chat/new", method := "post", cls := "space-y-3")(
+            label(cls := "block text-[11px] font-semibold uppercase tracking-wide text-gray-400")(
+              "Workspace",
+              select(
+                name := "workspace_id",
+                cls  := "mt-1 w-full rounded border border-white/10 bg-black/20 px-3 py-2 text-[12px] text-gray-100",
+              )(
+                option(value := "chat")("Chat (no workspace)"),
+                workspaces.map { (id, name) =>
+                  option(value := id)(name)
+                },
+              ),
+            ),
+            label(cls := "block text-[11px] font-semibold uppercase tracking-wide text-gray-400")(
+              "Message",
+              textarea(
+                name              := "content",
+                required          := "required",
+                rows              := 6,
+                cls               := "mt-1 w-full rounded border border-white/10 bg-black/20 px-3 py-2 text-[12px] text-gray-100 placeholder:text-gray-500 focus:border-indigo-400 focus:outline-none",
+                placeholder       := "Ask anything...",
+                attr("autofocus") := "autofocus",
+              )(),
+            ),
+            div(cls := "flex items-center justify-end gap-2")(
+              a(
+                href := "/chat",
+                cls  := "px-3 py-1.5 text-[11px] font-semibold text-gray-400 hover:text-white",
+              )("Cancel"),
+              button(
+                `type` := "submit",
+                cls    := "rounded bg-indigo-600 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-indigo-700",
+              )("Start chat"),
+            ),
+          ),
         )
-      else
-        div(cls := "grid grid-cols-1 gap-4")(
-          conversations.map { conv =>
-            val meta = sanitizeOptionalString(conv.id).flatMap { convId =>
-              sessionMetaByConversation.get(convId)
-            }
-            conversationCard(conv, meta)
-          }
-        ),
+      )
     )
 
   def detail(
     conversation: ChatConversation,
     sessionMeta: Option[ConversationSessionMeta],
     runSessionMeta: Option[RunSessionUiMeta],
+    workspaceFolders: List[ChatWorkspaceFolder] = Nil,
     detailContext: ChatDetailContext = ChatDetailContext.empty,
   ): String =
     val conversationId = sanitizeOptionalString(conversation.id).getOrElse("unknown")
-    val description    = sanitizeOptionalString(conversation.description)
+    val description    = sanitizeOptionalString(conversation.description).flatMap(stripWorkspaceMarker)
     val runControlId   = s"run-session-controls-$conversationId"
     val issuesHref     =
       sanitizeOptionalString(conversation.runId)
         .map(runId => s"/issues?run_id=$runId")
         .getOrElse("/issues")
 
-    Layout.page(s"Chat — ${conversation.title}", s"/chat/$conversationId")(
-      div(cls := "flex flex-col min-h-[calc(100vh-9rem)] gap-4")(
-        div(cls := "flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4")(
+    Layout.page(
+      s"Chat — ${conversation.title}",
+      s"/chat/$conversationId",
+      chatWorkspaceNav = Some(buildWorkspaceNav(workspaceFolders, Some(conversationId), showNewChat = true)),
+    )(
+      div(cls := "flex flex-col min-h-[calc(100vh-8rem)] gap-3 rounded-lg border border-white/10 bg-slate-950/70 p-3")(
+        div(cls := "mb-1 flex items-center justify-between gap-3")(
           div(cls := "min-w-0")(
-            a(
-              href := "/chat",
-              cls  := "text-indigo-400 hover:text-indigo-300 text-sm font-medium mb-3 inline-flex items-center gap-2",
-            )("← Back to Chats"),
-            h1(cls := "text-2xl font-bold text-white")(conversation.title),
-            description.fold[Frag](frag())(text => p(cls := "text-gray-400 text-sm mt-2")(text)),
-            sessionContextPanel(sessionMeta),
-            runSessionMeta.fold[Frag](frag())(meta => runChainPanel(meta)),
+            h1(cls := "truncate text-sm font-semibold text-white")(conversation.title),
+            description.fold[Frag](frag())(text => p(cls := "mt-0.5 text-[11px] text-gray-400")(text)),
           ),
-          div(cls := "inline-flex flex-wrap items-center gap-2 text-xs self-start lg:justify-end")(
-            span(
-              cls := "inline-flex items-center rounded-md bg-white/5 ring-1 ring-white/10 px-3 py-1.5 text-gray-200"
-            )(
-              span(cls := "text-gray-400 mr-1")("Status:"),
-              span(cls := "font-semibold capitalize")(conversation.status),
-            ),
-            span(
-              cls := "inline-flex items-center rounded-md bg-white/5 ring-1 ring-white/10 px-3 py-1.5 text-gray-200"
-            )(
-              span(cls := "text-gray-400 mr-1")("Messages:"),
-              span(cls := "font-semibold")(conversation.messages.length.toString),
-            ),
-            span(
-              cls := "inline-flex items-center rounded-md bg-white/5 ring-1 ring-white/10 px-3 py-1.5 text-gray-200"
-            )(
-              span(cls := "text-gray-400 mr-1")("Created:"),
-              span(cls := "font-semibold")(conversation.createdAt.toString.take(19)),
-            ),
-            a(
-              href := issuesHref,
-              cls  := "inline-flex items-center rounded-md bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 font-semibold transition-colors",
-            )("View Related Issues"),
-            runSessionMeta.fold[Frag](frag()) { meta =>
-              frag(
-                span(
-                  id  := s"run-mode-badge-$conversationId",
-                  cls := s"inline-flex items-center rounded-md border px-3 py-1.5 font-semibold ${runModeBadgeClass(meta.status)}",
-                )(runModeLabel(meta.status)),
-                span(
-                  id  := s"run-attached-count-$conversationId",
-                  cls := "inline-flex items-center rounded-md bg-white/5 ring-1 ring-white/10 px-3 py-1.5 text-gray-200",
-                )(
-                  span(cls := "text-gray-400 mr-1")("Attached:"),
-                  span(cls := "font-semibold", attr("data-role") := "count")(meta.attachedUsersCount.toString),
-                ),
-                span(
-                  id  := s"run-active-indicator-$conversationId",
-                  cls := s"inline-flex items-center gap-1.5 rounded-md bg-white/5 ring-1 ring-white/10 px-3 py-1.5 text-gray-200 ${
-                      if isRunActive(meta.status) then "" else "hidden"
-                    }",
-                )(
-                  span(cls := "h-2 w-2 rounded-full bg-emerald-400 animate-pulse"),
-                  span("Live"),
-                ),
-              )
-            },
-          ),
+          a(
+            href := issuesHref,
+            cls  := "rounded bg-indigo-600 px-2 py-1 text-[11px] font-semibold text-white hover:bg-indigo-700",
+          )("Issues"),
         ),
+        div(cls := "mb-2 flex flex-wrap items-center gap-2 text-[11px]")(
+          span(cls := "rounded border border-white/10 bg-white/5 px-2 py-1 text-gray-300")(
+            span(cls := "mr-1 text-gray-400")("Status"),
+            span(cls := "font-semibold capitalize")(conversation.status),
+          ),
+          span(cls := "rounded border border-white/10 bg-white/5 px-2 py-1 text-gray-300")(
+            span(cls := "mr-1 text-gray-400")("Messages"),
+            span(cls := "font-semibold")(conversation.messages.length.toString),
+          ),
+          span(cls := "rounded border border-white/10 bg-white/5 px-2 py-1 text-gray-300")(
+            span(cls := "mr-1 text-gray-400")("Created"),
+            span(cls := "font-semibold")(conversation.createdAt.toString.take(19)),
+          ),
+          runSessionMeta.fold[Frag](frag()) { meta =>
+            frag(
+              span(
+                id  := s"run-mode-badge-$conversationId",
+                cls := s"rounded border px-2 py-1 font-semibold ${runModeBadgeClass(meta.status)}",
+              )(runModeLabel(meta.status)),
+              span(
+                id  := s"run-attached-count-$conversationId",
+                cls := "rounded border border-white/10 bg-white/5 px-2 py-1 text-gray-300",
+              )(
+                span(cls := "mr-1 text-gray-400")("Attached"),
+                span(cls := "font-semibold", attr("data-role") := "count")(meta.attachedUsersCount.toString),
+              ),
+              span(
+                id  := s"run-active-indicator-$conversationId",
+                cls := s"rounded border border-white/10 bg-white/5 px-2 py-1 text-gray-300 ${
+                    if isRunActive(meta.status) then "" else "hidden"
+                  }",
+              )("Live"),
+            )
+          },
+        ),
+        sessionContextPanel(sessionMeta),
+        runSessionMeta.fold[Frag](frag())(meta => runChainPanel(meta)),
         detailContext.proofOfWork.fold[Frag](frag())(report => raw(ProofOfWorkView.panel(report, collapsed = false))),
         reportsPanel(detailContext.reports),
         graphPanel(detailContext.graphReports, conversationId),
-        div(cls := "flex flex-1 min-h-0 flex-col gap-4 lg:flex-row")(
+        div(cls := "mt-1 flex flex-1 min-h-0 flex-col gap-3 lg:flex-row")(
           div(cls := "flex-1 min-h-0 flex flex-col gap-3")(
             div(
-              cls := "relative flex-1 min-h-0 bg-white/5 ring-1 ring-white/10 rounded-lg overflow-hidden flex flex-col"
+              cls := "relative flex-1 min-h-0 rounded border border-white/10 bg-black/20 overflow-hidden flex flex-col"
             )(
               tag("chat-message-stream")(
                 id                      := s"messages-$conversationId",
-                cls                     := "flex-1 min-h-0 overflow-y-auto p-6 space-y-4 block",
+                cls                     := "flex-1 min-h-0 overflow-y-auto p-3 space-y-3 block",
                 attr("conversation-id") := conversationId,
                 attr("ws-url")          := "/ws/console",
               )(
@@ -149,9 +196,9 @@ object ChatView:
               button(
                 id              := s"scroll-bottom-$conversationId",
                 `type`          := "button",
-                cls             := "hidden absolute bottom-6 right-6 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 text-xs font-semibold shadow-lg",
+                cls             := "hidden absolute bottom-3 right-3 rounded bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-1 text-[11px] font-semibold",
                 attr("onclick") := s"document.getElementById('messages-$conversationId')?.scrollToLatest?.()",
-              )("Scroll to bottom"),
+              )("Bottom"),
             ),
             runSessionMeta.fold[Frag](frag())(meta => runGitPanel(meta, conversationId)),
             runSessionMeta.fold[Frag](standardChatComposer(conversationId))(meta =>
@@ -183,6 +230,35 @@ object ChatView:
         )
       ),
       if detailContext.graphReports.nonEmpty then graphPanelScript(conversationId) else frag(),
+    )
+
+  private def buildWorkspaceNav(
+    workspaceFolders: List[ChatWorkspaceFolder],
+    currentConversationId: Option[String],
+    showNewChat: Boolean,
+  ): Layout.ChatWorkspaceNav =
+    Layout.ChatWorkspaceNav(
+      groups = workspaceFolders.map { folder =>
+        val chats = folder.chats
+          .sortBy(_.updatedAt)(Ordering[java.time.Instant].reverse)
+          .take(80)
+          .map { chat =>
+            val conversationId = sanitizeOptionalString(chat.id).getOrElse("unknown")
+            Layout.ChatNavItem(
+              conversationId = conversationId,
+              title = sanitizeString(chat.title).getOrElse("Untitled chat"),
+              href = s"/chat/$conversationId",
+              active = currentConversationId.contains(conversationId),
+            )
+          }
+        Layout.ChatWorkspaceGroup(
+          id = folder.id,
+          label = folder.label,
+          chats = chats,
+          expanded = chats.exists(_.active) || folder.id == "chat",
+        )
+      },
+      showNewChat = showNewChat,
     )
 
   def messagesFragment(messages: List[ConversationEntry]): String =
@@ -789,88 +865,6 @@ object ChatView:
     val stripped = line.trim.stripPrefix("|").stripSuffix("|")
     stripped.split("\\|", -1).toList.map(_.trim)
 
-  private def conversationCard(
-    conv: ChatConversation,
-    sessionMeta: Option[ConversationSessionMeta] = None,
-  ): Frag =
-    val conversationId = sanitizeOptionalString(conv.id).getOrElse("unknown")
-    val lastMessage    = conv.messages.lastOption
-    val preview        = lastMessage.map(_.content.trim).filter(_.nonEmpty).map(compactPreview).getOrElse("No messages yet")
-    val channel        = sanitizeOptionalString(conv.channel)
-      .orElse(sessionMeta.flatMap(meta => sanitizeString(meta.channelName)))
-      .getOrElse("web")
-    div(
-      id  := s"conv-card-$conversationId",
-      cls := "bg-white/5 hover:bg-white/10 ring-1 ring-white/10 rounded-lg p-4 transition-all hover:ring-indigo-500/50",
-    )(
-      a(
-        href := s"/chat/$conversationId",
-        cls  := "block cursor-pointer",
-      )(
-        div(cls := "flex items-start justify-between mb-2")(
-          div(cls := "min-w-0")(
-            h3(cls := "text-lg font-semibold text-white max-w-xs truncate")(conv.title),
-            div(cls := "mt-1 flex items-center gap-2 text-xs")(
-              channelBadge(channel),
-              sessionMeta
-                .filter(meta => sanitizeString(meta.channelName).contains("telegram"))
-                .flatMap(meta =>
-                  sanitizeString(meta.sessionKey).map(key =>
-                    span(cls := "text-amber-300/90")(s"via Telegram ($key)")
-                  )
-                ),
-            ),
-          ),
-          span(
-            cls := s"inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ${
-                if conv.status == "active" then
-                  "bg-green-500/10 text-green-400 ring-1 ring-inset ring-green-500/20"
-                else
-                  "bg-gray-500/10 text-gray-400 ring-1 ring-inset ring-gray-500/20"
-              }"
-          )(
-            span(
-              cls   := "w-1.5 h-1.5 rounded-full mr-1.5",
-              style := s"background-color: ${if conv.status == "active" then "#10b981" else "#6b7280"}",
-            ),
-            conv.status,
-          ),
-        ),
-        div(cls := "pt-2")(
-          p(cls := "text-gray-300 text-sm mb-2 truncate")(preview)
-        ),
-      ),
-      div(cls := "flex items-center justify-between text-xs text-gray-500")(
-        span(s"${conv.messages.length} message${if conv.messages.length != 1 then "s" else ""}"),
-        div(cls := "flex items-center gap-2")(
-          span(cls := "text-right")(
-            lastMessage.map(_.createdAt).map(formatTimestamp).getOrElse(formatTimestamp(conv.updatedAt))
-          ),
-          button(
-            cls                          := "flex h-8 w-8 items-center justify-center rounded-md bg-red-600/20 text-red-400 transition-colors hover:bg-red-500 hover:text-white",
-            attr("hx-delete")            := s"/api/conversations/$conversationId",
-            attr("hx-confirm")           := s"Delete conversation '${conv.title}'?",
-            attr("hx-on::after-request") := "if(event.detail.successful){window.location.reload();}",
-            attr("title")                := "Delete conversation",
-          )(
-            raw(
-              """<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>"""
-            )
-          ),
-        ),
-      ),
-    )
-
-  private def channelBadge(channel: String): Frag =
-    val normalized = sanitizeString(channel).map(_.toLowerCase).getOrElse("web")
-    val classes    = normalized match
-      case "telegram"  => "bg-sky-500/10 text-sky-300 ring-sky-400/30"
-      case "websocket" => "bg-indigo-500/10 text-indigo-300 ring-indigo-400/30"
-      case _           => "bg-gray-500/10 text-gray-300 ring-gray-400/30"
-    span(cls := s"inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ring-1 ring-inset $classes")(
-      normalized
-    )
-
   private def sessionContextPanel(sessionMeta: Option[ConversationSessionMeta]): Frag =
     sessionMeta match
       case None       => frag()
@@ -945,10 +939,6 @@ object ChatView:
         ),
     )
 
-  private def compactPreview(raw: String): String =
-    val compact = raw.replaceAll("\\s+", " ").trim
-    if compact.length <= 90 then compact else compact.take(87) + "..."
-
   private def sanitizeString(value: String): Option[String] =
     Option(value).map(_.trim).filter(_.nonEmpty)
 
@@ -959,6 +949,11 @@ object ChatView:
         case _       => None
     catch
       case _: Throwable => None
+
+  private def stripWorkspaceMarker(value: String): Option[String] =
+    val Prefix = "workspace:"
+    if value.startsWith(Prefix) then None
+    else Some(value)
 
   private def formatTimestamp(instant: java.time.Instant): String =
     instant.toString.take(19).replace("T", " ")

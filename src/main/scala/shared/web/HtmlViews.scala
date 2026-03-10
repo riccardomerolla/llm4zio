@@ -147,16 +147,29 @@ object HtmlViews:
     conversations: List[ChatConversation],
     sessionMetaByConversation: Map[String, ConversationSessionMeta] = Map.empty,
     sessions: List[ChatSession] = Nil,
+    workspaceFolders: List[ChatView.ChatWorkspaceFolder] = Nil,
   ): String =
-    ChatView.dashboard(conversations, sessionMetaByConversation, sessions)
+    ChatView.dashboard(conversations, sessionMetaByConversation, sessions, workspaceFolders)
+
+  def chatEmpty(
+    workspaceFolders: List[ChatView.ChatWorkspaceFolder] = Nil
+  ): String =
+    ChatView.emptyState(workspaceFolders)
+
+  def chatNew(
+    workspaceFolders: List[ChatView.ChatWorkspaceFolder] = Nil,
+    workspaces: List[(String, String)] = Nil,
+  ): String =
+    ChatView.newConversation(workspaceFolders, workspaces)
 
   def chatDetail(
     conversation: ChatConversation,
     sessionMeta: Option[ConversationSessionMeta] = None,
     runSessionMeta: Option[RunSessionUiMeta] = None,
+    workspaceFolders: List[ChatView.ChatWorkspaceFolder] = Nil,
     detailContext: ChatDetailContext = ChatDetailContext.empty,
   ): String =
-    ChatView.detail(conversation, sessionMeta, runSessionMeta, detailContext)
+    ChatView.detail(conversation, sessionMeta, runSessionMeta, workspaceFolders, detailContext)
 
   def chatMessagesFragment(messages: List[ConversationEntry]): String =
     ChatView.messagesFragment(messages)
