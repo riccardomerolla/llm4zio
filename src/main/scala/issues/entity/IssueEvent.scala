@@ -94,3 +94,16 @@ object IssueEvent:
     sourceFolder: String,
     occurredAt: Instant,
   ) extends IssueEvent
+
+  final case class ExternalRefLinked(
+    issueId: IssueId,
+    externalRef: String,
+    externalUrl: Option[String],
+    occurredAt: Instant,
+  ) extends IssueEvent
+
+  final case class ExternalRefSynced(
+    issueId: IssueId,
+    @fieldDefaultValue(Map.empty) updatedFields: Map[String, String] = Map.empty,
+    occurredAt: Instant,
+  ) extends IssueEvent

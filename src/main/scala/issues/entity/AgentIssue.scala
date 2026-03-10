@@ -29,6 +29,8 @@ final case class AgentIssue(
   contextPath: String,
   sourceFolder: String,
   workspaceId: Option[String] = None,
+  externalRef: Option[String] = None,
+  externalUrl: Option[String] = None,
 ) derives JsonCodec, Schema
 
 object AgentIssue:
@@ -72,6 +74,8 @@ object AgentIssue:
                   contextPath = "",
                   sourceFolder = "",
                   workspaceId = None,
+                  externalRef = None,
+                  externalUrl = None,
                 )
               )
             )
@@ -140,3 +144,34 @@ object AgentIssue:
               )
             )
           )
+
+      case linked: IssueEvent.ExternalRefLinked =>
+        current
+          .toRight(s"Issue ${linked.issueId.value} not initialized before ExternalRefLinked event")
+          .map(issue =>
+            Some(
+              issue.copy(
+                externalRef = Option(linked.externalRef).map(_.trim).filter(_.nonEmpty),
+                externalUrl = linked.externalUrl.flatMap(v => Option(v).map(_.trim).filter(_.nonEmpty)),
+              )
+            )
+          )
+
+      case synced: IssueEvent.ExternalRefSynced =>
+        current
+          .toRight(s"Issue ${synced.issueId.value} not initialized before ExternalRefSynced event")
+          .map { issue =>
+            val fields = Option(synced.updatedFields).getOrElse(Map.empty).collect {
+              case (k, v) if Option(k).exists(_.trim.nonEmpty) => k.trim.toLowerCase -> Option(v).getOrElse("").trim
+            }
+            Some(
+              issue.copy(
+                title = fields.get("title").filter(_.nonEmpty).getOrElse(issue.title),
+                description = fields.get("description").filter(_.nonEmpty).getOrElse(issue.description),
+                issueType = fields.get("issuetype").filter(_.nonEmpty).getOrElse(issue.issueType),
+                priority = fields.get("priority").filter(_.nonEmpty).getOrElse(issue.priority),
+                externalRef = fields.get("externalref").filter(_.nonEmpty).orElse(issue.externalRef),
+                externalUrl = fields.get("externalurl").filter(_.nonEmpty).orElse(issue.externalUrl),
+              )
+            )
+          }

@@ -186,14 +186,61 @@ object HtmlViews:
     priorityFilter: Option[String],
     tagFilter: Option[String],
     query: Option[String],
+    statusFilter: Option[String] = None,
+    availableAgents: List[AgentInfo] = Nil,
+    autoDispatchEnabled: Boolean = false,
+    syncStatus: IssuesView.SyncStatus = IssuesView.SyncStatus(None, 0, 0),
+    agentUsage: Option[(Int, Int)] = None,
+    hasProofFilter: Option[Boolean] = None,
   ): String =
-    IssuesView.board(issues, workspaces, workspaceFilter, agentFilter, priorityFilter, tagFilter, query)
+    IssuesView.board(
+      issues = issues,
+      workspaces = workspaces,
+      workspaceFilter = workspaceFilter,
+      agentFilter = agentFilter,
+      priorityFilter = priorityFilter,
+      tagFilter = tagFilter,
+      query = query,
+      statusFilter = statusFilter,
+      availableAgents = availableAgents,
+      autoDispatchEnabled = autoDispatchEnabled,
+      syncStatus = syncStatus,
+      agentUsage = agentUsage,
+      hasProofFilter = hasProofFilter,
+    )
 
   def issuesBoardColumns(
     issues: List[AgentIssueView],
     workspaces: List[(String, String)],
+    availableAgents: List[AgentInfo] = Nil,
+    hasProofFilter: Option[Boolean] = None,
   ): String =
-    IssuesView.boardColumnsFragment(issues, workspaces)
+    IssuesView.boardColumnsFragment(
+      issues = issues,
+      workspaces = workspaces,
+      workReports = Map.empty,
+      availableAgents = availableAgents,
+      hasProofFilter = hasProofFilter,
+    )
+
+  def issuesBoardList(
+    issues: List[AgentIssueView],
+    statusFilter: Option[String],
+    query: Option[String],
+    tagFilter: Option[String],
+    workspaceFilter: Option[String],
+    agentFilter: Option[String],
+    priorityFilter: Option[String],
+  ): String =
+    IssuesView.boardListMode(
+      issues = issues,
+      statusFilter = statusFilter,
+      query = query,
+      tagFilter = tagFilter,
+      workspaceFilter = workspaceFilter,
+      agentFilter = agentFilter,
+      priorityFilter = priorityFilter,
+    )
 
   def issueCreateForm(
     runId: Option[String],

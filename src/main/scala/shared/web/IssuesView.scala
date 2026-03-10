@@ -11,6 +11,12 @@ import scalatags.Text.all.*
 import shared.ids.Ids.IssueId
 
 object IssuesView:
+  final case class SyncStatus(
+    lastSyncAt: Option[String],
+    syncedCount: Int,
+    errorCount: Int,
+  )
+
   private val boardStatuses: List[(IssueStatus, String)] = List(
     IssueStatus.Open       -> "Open",
     IssueStatus.Assigned   -> "Assigned",
@@ -99,14 +105,19 @@ object IssuesView:
     priorityFilter: Option[String],
     tagFilter: Option[String],
     query: Option[String],
+    statusFilter: Option[String] = None,
+    availableAgents: List[AgentInfo] = Nil,
+    autoDispatchEnabled: Boolean = false,
+    syncStatus: SyncStatus = SyncStatus(None, 0, 0),
+    agentUsage: Option[(Int, Int)] = None,
     workReports: Map[IssueId, IssueWorkReport] = Map.empty,
     hasProofFilter: Option[Boolean] = None,
   ): String =
-    val filteredIssues = hasProofFilter match
+    val filteredIssues              = hasProofFilter match
       case Some(true) => BoardStats.hasProofFilter(issues, workReports)
       case _          => issues
-    val stats          = BoardStats.compute(issues, workReports)
-    val queryParts     = List(
+    val stats                       = BoardStats.compute(issues, workReports)
+    val queryParts                  = List(
       workspaceFilter.filter(_.nonEmpty).map(v => s"workspace=${urlEncode(v)}"),
       agentFilter.filter(_.nonEmpty).map(v => s"agent=${urlEncode(v)}"),
       priorityFilter.filter(_.nonEmpty).map(v => s"priority=${urlEncode(v)}"),
@@ -114,9 +125,23 @@ object IssuesView:
       query.filter(_.nonEmpty).map(v => s"q=${urlEncode(v)}"),
       hasProofFilter.filter(identity).map(_ => "hasProof=true"),
     ).flatten
-    val fragmentUrl    =
+    val fragmentUrl                 =
       if queryParts.isEmpty then "/board/fragment"
       else s"/board/fragment?${queryParts.mkString("&")}"
+    val pipelineCounts              = boardStatuses.map { (status, label) =>
+      val token = issueStatusToken(status)
+      val count = filteredIssues.count(_.status == status)
+      (token, label, count)
+    }
+    val throughputPct               =
+      if filteredIssues.isEmpty then 0
+      else
+        ((filteredIssues.count(_.status == IssueStatus.Completed).toDouble / filteredIssues.size.toDouble) * 100).toInt
+    val (activeAgents, totalAgents) = agentUsage.getOrElse(0 -> math.max(availableAgents.size, 1))
+    val syncStateCls                =
+      if syncStatus.errorCount > 0 then "bg-rose-400"
+      else if syncStatus.lastSyncAt.isEmpty then "bg-amber-400"
+      else "bg-emerald-400"
 
     Layout.page("Issue Board", "/board")(
       div(cls := "space-y-4")(
@@ -127,6 +152,42 @@ object IssuesView:
               p(cls := "mt-1 text-sm text-slate-300")("Kanban view for issue workflow"),
             ),
             div(cls := "flex items-center gap-3")(
+              modeToggle(
+                "board",
+                workspaceFilter,
+                agentFilter,
+                priorityFilter,
+                tagFilter,
+                query,
+                statusFilter,
+                hasProofFilter,
+              ),
+              form(method := "post", action := "/board/auto-dispatch", cls := "flex items-center gap-2")(
+                input(
+                  `type` := "hidden",
+                  name   := "returnTo",
+                  value  := currentBoardUrl(
+                    mode = "board",
+                    workspaceFilter = workspaceFilter,
+                    agentFilter = agentFilter,
+                    priorityFilter = priorityFilter,
+                    tagFilter = tagFilter,
+                    query = query,
+                    statusFilter = statusFilter,
+                    hasProofFilter = hasProofFilter,
+                  ),
+                ),
+                label(cls := "flex cursor-pointer items-center gap-1.5 text-xs text-slate-300")(
+                  input(
+                    `type`   := "checkbox",
+                    name     := "enabled",
+                    cls      := "h-4 w-4 rounded border-white/20 bg-slate-900 text-indigo-500 focus:ring-indigo-400",
+                    if autoDispatchEnabled then checked := "checked" else (),
+                    onchange := "this.form.requestSubmit();",
+                  ),
+                  span(if autoDispatchEnabled then "Auto dispatch on" else "Auto dispatch off"),
+                ),
+              ),
               label(cls := "flex items-center gap-2 text-xs text-slate-300")(
                 input(
                   `type`                       := "checkbox",
@@ -136,12 +197,37 @@ object IssuesView:
                 ),
                 span("Select all visible"),
               ),
-              a(
-                href := "/issues",
-                cls  := "rounded-md border border-indigo-400/30 bg-indigo-500/20 px-3 py-2 text-sm font-semibold text-indigo-200 hover:bg-indigo-500/30",
-              )("Back to list"),
             ),
-          )
+          ),
+          div(cls := "mt-3 flex flex-wrap items-center gap-2 text-xs")(
+            pipelineCounts.map { (token, label, count) =>
+              a(
+                href := currentBoardUrl(
+                  mode = "board",
+                  workspaceFilter = workspaceFilter,
+                  agentFilter = agentFilter,
+                  priorityFilter = priorityFilter,
+                  tagFilter = tagFilter,
+                  query = query,
+                  statusFilter = Some(token),
+                  hasProofFilter = hasProofFilter,
+                ),
+                cls  := "rounded-full border border-white/15 bg-slate-800/60 px-3 py-1 text-slate-200 hover:border-indigo-300/50",
+              )(s"$label: $count")
+            },
+            span(cls := "rounded-full border border-white/15 bg-slate-800/60 px-3 py-1 text-slate-200")(
+              s"Throughput: $throughputPct%"
+            ),
+            span(cls := "rounded-full border border-white/15 bg-slate-800/60 px-3 py-1 text-slate-200")(
+              s"Agents: $activeAgents/$totalAgents"
+            ),
+            span(
+              cls := "inline-flex items-center gap-1 rounded-full border border-white/15 bg-slate-800/60 px-3 py-1 text-slate-200"
+            )(
+              span(cls := s"h-2 w-2 rounded-full $syncStateCls"),
+              s"Sync ${syncStatus.syncedCount}/${syncStatus.errorCount}",
+            ),
+          ),
         ),
         bulkToolbar("board"),
         raw(BoardStats.statsBar(stats)),
@@ -157,26 +243,67 @@ object IssuesView:
           cls                          := "min-h-[32rem]",
           attr("data-bulk-scope")      := "board",
         )(
-          raw(boardColumnsFragment(filteredIssues, workspaces, workReports))
+          raw(boardColumnsFragment(filteredIssues, workspaces, workReports, availableAgents))
         ),
       ),
       JsResources.inlineModuleScript("/static/client/components/issues-board.js"),
       JsResources.inlineModuleScript("/static/client/components/issues-bulk-actions.js"),
     )
 
+  def boardListMode(
+    issues: List[AgentIssueView],
+    statusFilter: Option[String],
+    query: Option[String],
+    tagFilter: Option[String],
+    workspaceFilter: Option[String],
+    agentFilter: Option[String],
+    priorityFilter: Option[String],
+  ): String =
+    Layout.page("Issue Board", "/board")(
+      div(cls := "space-y-4")(
+        div(cls := "rounded-xl border border-white/10 bg-slate-900/80 px-5 py-4")(
+          div(cls := "flex flex-wrap items-center justify-between gap-3")(
+            div(
+              h1(cls := "text-2xl font-bold text-white")("Issue Board"),
+              p(cls := "mt-1 text-sm text-slate-300")("Table view of issue workflow"),
+            ),
+            modeToggle("list", workspaceFilter, agentFilter, priorityFilter, tagFilter, query, statusFilter, None),
+          )
+        ),
+        boardListFilterBar(statusFilter, query, tagFilter, workspaceFilter, agentFilter, priorityFilter),
+        if issues.isEmpty then
+          div(cls := "rounded-xl border border-white/10 bg-slate-900/60 px-6 py-16 text-center")(
+            p(cls := "text-base text-slate-300")("No matching issues found")
+          )
+        else
+          div(cls := "overflow-hidden rounded-xl border border-white/10 bg-slate-900/60")(
+            issues.sortBy(i =>
+              try i.updatedAt
+              catch case _: Throwable => Instant.EPOCH
+            ).reverse.map(issueRow)
+          ),
+      ),
+      JsResources.inlineModuleScript("/static/client/components/issues-bulk-actions.js"),
+    )
+
   def boardColumnsFragment(issues: List[AgentIssueView], workspaces: List[(String, String)]): String =
-    boardColumnsFragment(issues, workspaces, Map.empty)
+    boardColumnsFragment(issues, workspaces, Map.empty, Nil)
 
   def boardColumnsFragment(
     issues: List[AgentIssueView],
     workspaces: List[(String, String)],
     workReports: Map[IssueId, IssueWorkReport],
+    availableAgents: List[AgentInfo] = Nil,
+    hasProofFilter: Option[Boolean] = None,
   ): String =
+    val filteredIssues = hasProofFilter match
+      case Some(true) => BoardStats.hasProofFilter(issues, workReports)
+      case _          => issues
     div(
       cls := "grid grid-cols-1 gap-3 lg:grid-cols-5"
     )(
       boardStatuses.map { (status, label) =>
-        val columnIssues = issues
+        val columnIssues = filteredIssues
           .filter(_.status == status)
           .sortBy(i =>
             try i.updatedAt
@@ -255,7 +382,7 @@ object IssuesView:
             else
               columnIssues.map { issue =>
                 val report = issue.id.flatMap(id => workReports.get(IssueId(id)))
-                boardCard(issue, workspaces, report)
+                boardCard(issue, workspaces, report, availableAgents)
               }
           ),
         )
@@ -267,8 +394,9 @@ object IssuesView:
     issue: AgentIssueView,
     workspaces: List[(String, String)],
     workReport: Option[IssueWorkReport],
+    availableAgents: List[AgentInfo] = Nil,
   ): String =
-    boardCard(issue, workspaces, workReport).render
+    boardCard(issue, workspaces, workReport, availableAgents).render
 
   /** Render the issue detail page with an optional proof-of-work panel. */
   def detailWithProofOfWork(
@@ -624,6 +752,17 @@ object IssuesView:
               sidebarMeta("Workspace", if workspaceName.nonEmpty then workspaceName else "—"),
               sidebarMeta("Assigned agent", safe(issue.assignedAgent, "—")),
               sidebarMeta("Preferred agent", safe(issue.preferredAgent, "—")),
+              if safe(issue.externalRef).nonEmpty then
+                div(cls := "flex items-baseline justify-between gap-2")(
+                  span(cls := "shrink-0 text-xs text-slate-400")("External"),
+                  a(
+                    href   := safe(issue.externalUrl, "#"),
+                    target := "_blank",
+                    rel    := "noopener noreferrer",
+                    cls    := "truncate text-right text-xs font-medium text-indigo-300 hover:text-indigo-200",
+                  )(safe(issue.externalRef)),
+                )
+              else (),
               sidebarMeta("Run", safeMap(issue.runId, identity, "—")),
               if requiredCaps.nonEmpty then sidebarMeta("Capabilities", requiredCaps.mkString(", ")) else (),
               if safe(issue.contextPath).nonEmpty then sidebarMeta("Context path", safe(issue.contextPath)) else (),
@@ -852,6 +991,79 @@ object IssuesView:
       )
     )
 
+  private def boardListFilterBar(
+    statusFilter: Option[String],
+    query: Option[String],
+    tagFilter: Option[String],
+    workspaceFilter: Option[String],
+    agentFilter: Option[String],
+    priorityFilter: Option[String],
+  ): Frag =
+    form(method := "get", action := "/board", cls := "rounded-xl border border-white/10 bg-slate-900/60 p-4")(
+      input(`type` := "hidden", name := "mode", value := "list"),
+      div(cls := "grid grid-cols-1 gap-3 md:grid-cols-3 lg:grid-cols-6")(
+        input(
+          `type`      := "text",
+          name        := "q",
+          value       := query.getOrElse(""),
+          placeholder := "Search",
+          cls         := "rounded-md border border-white/15 bg-slate-800/70 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500",
+        ),
+        input(
+          `type`      := "text",
+          name        := "tag",
+          value       := tagFilter.getOrElse(""),
+          placeholder := "Tag",
+          cls         := "rounded-md border border-white/15 bg-slate-800/70 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500",
+        ),
+        input(
+          `type`      := "text",
+          name        := "workspace",
+          value       := workspaceFilter.getOrElse(""),
+          placeholder := "Workspace",
+          cls         := "rounded-md border border-white/15 bg-slate-800/70 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500",
+        ),
+        input(
+          `type`      := "text",
+          name        := "agent",
+          value       := agentFilter.getOrElse(""),
+          placeholder := "Agent",
+          cls         := "rounded-md border border-white/15 bg-slate-800/70 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500",
+        ),
+        select(
+          name := "priority",
+          cls  := "rounded-md border border-white/15 bg-slate-800/70 px-3 py-2 text-sm text-slate-100",
+        )(
+          statusOption("", "Any priority", priorityFilter),
+          statusOption("critical", "Critical", priorityFilter),
+          statusOption("high", "High", priorityFilter),
+          statusOption("medium", "Medium", priorityFilter),
+          statusOption("low", "Low", priorityFilter),
+        ),
+        select(
+          name := "status",
+          cls  := "rounded-md border border-white/15 bg-slate-800/70 px-3 py-2 text-sm text-slate-100",
+        )(
+          statusOption("", "Any status", statusFilter),
+          statusOption("open", "Open", statusFilter),
+          statusOption("assigned", "Assigned", statusFilter),
+          statusOption("in_progress", "In progress", statusFilter),
+          statusOption("completed", "Completed", statusFilter),
+          statusOption("failed", "Failed", statusFilter),
+        ),
+      ),
+      div(cls := "mt-3 flex items-center gap-2")(
+        button(
+          `type` := "submit",
+          cls    := "rounded-md bg-indigo-500 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-400",
+        )("Apply"),
+        a(
+          href := "/board?mode=list",
+          cls  := "rounded-md border border-white/20 px-3 py-2 text-sm text-slate-200 hover:bg-white/5",
+        )("Reset"),
+      ),
+    )
+
   private def issueRow(issue: AgentIssueView): Frag =
     val issueIdStr = safe(issue.id, "-")
     val workspace  = safe(issue.workspaceId)
@@ -873,6 +1085,8 @@ object IssuesView:
             )(safeStr(issue.title, "Untitled")),
             statusBadge(safeStr(issue.status.toString, "open")),
             priorityBadge(safeStr(issue.priority.toString, "medium")),
+            if safe(issue.externalRef).nonEmpty then externalBadge(safe(issue.externalRef), safe(issue.externalUrl))
+            else (),
             if workspace.nonEmpty then workspaceBadge(workspace) else (),
             safeTags(issue.tags).map(tagBadge),
           ),
@@ -915,6 +1129,7 @@ object IssuesView:
     issue: AgentIssueView,
     workspaces: List[(String, String)],
     workReport: Option[IssueWorkReport] = None,
+    availableAgents: List[AgentInfo] = Nil,
   ): Frag =
     val issueId       = safe(issue.id, "-")
     val workspaceId   = safe(issue.workspaceId)
@@ -941,6 +1156,10 @@ object IssuesView:
       case _                      => "rounded-full bg-slate-500"
     val shortId       = s"#${issueId.take(8)}"
     val powHtml       = workReport.map(r => ProofOfWorkView.evidenceBar(r)).getOrElse("")
+    val requiredCaps  = safeTags(issue.requiredCapabilities)
+    val quickAgents   = eligibleAgents(availableAgents, requiredCaps)
+    val externalRef   = safe(issue.externalRef)
+    val externalUrl   = safe(issue.externalUrl)
     div(
       cls                         := s"block rounded-lg border border-white/10 bg-slate-800/80 p-3 hover:border-indigo-400/40 hover:bg-slate-800 $borderCls",
       attr("draggable")           := "true",
@@ -951,11 +1170,15 @@ object IssuesView:
       attr("data-priority")       := safeStr(issue.priority.toString).toLowerCase,
       attr("data-tags")           := safe(issue.tags),
       attr("data-workspace-id")   := workspaceId,
+      attr("data-required-caps")  := requiredCaps.mkString(","),
     )(
       a(href := s"/issues/$issueId", cls := "block")(
         div(cls := "mb-1.5 flex items-center gap-1.5")(
           span(cls := s"inline-block h-2.5 w-2.5 flex-shrink-0 $statusDotCls"),
           span(cls := "text-[10px] font-mono text-slate-500")(shortId),
+          if externalRef.nonEmpty then
+            externalBadge(externalRef, externalUrl)
+          else (),
         ),
         p(cls := "mb-2 text-sm font-semibold text-slate-100 line-clamp-2")(titleText),
         div(cls := "flex flex-wrap items-center gap-1")(
@@ -972,6 +1195,23 @@ object IssuesView:
           else span(),
         ),
       ),
+      if quickAgents.nonEmpty then
+        div(cls := "mt-2 flex items-center gap-1.5")(
+          select(
+            cls                             := "min-w-0 flex-1 rounded border border-white/15 bg-slate-900/80 px-1.5 py-1 text-[11px] text-slate-100",
+            attr("data-quick-assign-agent") := issueId,
+          )(
+            quickAgents.map { agent =>
+              option(value := agent.name)(agent.displayName)
+            }
+          ),
+          button(
+            `type`                           := "button",
+            cls                              := "rounded border border-emerald-400/30 bg-emerald-500/20 px-2 py-1 text-[11px] font-semibold text-emerald-200 hover:bg-emerald-500/30",
+            attr("data-quick-assign-action") := issueId,
+          )("Assign"),
+        )
+      else (),
       if powHtml.nonEmpty then raw(powHtml) else (),
     )
 
@@ -1247,6 +1487,104 @@ object IssuesView:
       case IssueStatus.Completed  => "completed"
       case IssueStatus.Failed     => "failed"
       case IssueStatus.Skipped    => "skipped"
+
+  private def modeToggle(
+    currentMode: String,
+    workspaceFilter: Option[String],
+    agentFilter: Option[String],
+    priorityFilter: Option[String],
+    tagFilter: Option[String],
+    query: Option[String],
+    statusFilter: Option[String],
+    hasProofFilter: Option[Boolean],
+  ): Frag =
+    div(cls := "inline-flex items-center rounded-lg border border-white/10 bg-slate-900/60 p-1")(
+      a(
+        href := currentBoardUrl(
+          mode = "board",
+          workspaceFilter = workspaceFilter,
+          agentFilter = agentFilter,
+          priorityFilter = priorityFilter,
+          tagFilter = tagFilter,
+          query = query,
+          statusFilter = statusFilter,
+          hasProofFilter = hasProofFilter,
+        ),
+        cls  := (if currentMode == "board" then
+                  "rounded-md bg-indigo-500/30 px-2.5 py-1 text-xs font-semibold text-indigo-100"
+                else
+                  "rounded-md px-2.5 py-1 text-xs text-slate-300 hover:text-white"),
+      )("Board"),
+      a(
+        href := currentBoardUrl(
+          mode = "list",
+          workspaceFilter = workspaceFilter,
+          agentFilter = agentFilter,
+          priorityFilter = priorityFilter,
+          tagFilter = tagFilter,
+          query = query,
+          statusFilter = statusFilter,
+          hasProofFilter = None,
+        ),
+        cls  := (if currentMode == "list" then
+                  "rounded-md bg-indigo-500/30 px-2.5 py-1 text-xs font-semibold text-indigo-100"
+                else
+                  "rounded-md px-2.5 py-1 text-xs text-slate-300 hover:text-white"),
+      )("List"),
+    )
+
+  private def currentBoardUrl(
+    mode: String,
+    workspaceFilter: Option[String],
+    agentFilter: Option[String],
+    priorityFilter: Option[String],
+    tagFilter: Option[String],
+    query: Option[String],
+    statusFilter: Option[String],
+    hasProofFilter: Option[Boolean],
+  ): String =
+    val params = List(
+      Some("mode" -> mode),
+      workspaceFilter.filter(_.nonEmpty).map("workspace" -> _),
+      agentFilter.filter(_.nonEmpty).map("agent" -> _),
+      priorityFilter.filter(_.nonEmpty).map("priority" -> _),
+      tagFilter.filter(_.nonEmpty).map("tag" -> _),
+      query.filter(_.nonEmpty).map("q" -> _),
+      statusFilter.filter(_.nonEmpty).map("status" -> _),
+      hasProofFilter.filter(identity).map(_ => "hasProof" -> "true"),
+    ).flatten
+    if params.isEmpty then "/board"
+    else
+      "/board?" + params.map { case (k, v) => s"${urlEncode(k)}=${urlEncode(v)}" }.mkString("&")
+
+  private def eligibleAgents(agents: List[AgentInfo], requiredCaps: List[String]): List[AgentInfo] =
+    val required = requiredCaps.map(_.trim.toLowerCase).filter(_.nonEmpty).distinct
+    val active   = agents.filter(_.usesAI)
+    if required.isEmpty then active.sortBy(_.displayName.toLowerCase)
+    else
+      active.filter { agent =>
+        val tags   = agent.tags.map(_.trim.toLowerCase).filter(_.nonEmpty)
+        val skills = agent.skills.map(_.skill.trim.toLowerCase).filter(_.nonEmpty)
+        required.forall(cap => tags.contains(cap) || skills.contains(cap))
+      }.sortBy(_.displayName.toLowerCase)
+
+  private def externalBadge(externalRef: String, externalUrl: String): Frag =
+    val kind = externalRef.takeWhile(_ != ':').trim.toUpperCase match
+      case "GH" | "GITHUB" => "GH"
+      case "LINEAR"        => "LN"
+      case "JIRA"          => "JR"
+      case _               => "EXT"
+    if externalUrl.nonEmpty then
+      a(
+        href   := externalUrl,
+        target := "_blank",
+        rel    := "noopener noreferrer",
+        cls    := "rounded-full border border-cyan-400/30 bg-cyan-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-cyan-200 hover:bg-cyan-500/30",
+      )(kind)
+    else
+      span(
+        cls := "rounded-full border border-cyan-400/30 bg-cyan-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-cyan-200"
+      )(kind)
 
   private def prettyRelativeTime(ts: Instant): String =
     val now         = java.time.Clock.systemUTC().instant()

@@ -52,6 +52,7 @@ final case class WorkflowsControllerLive(
               name = "",
               steps = Nil,
               stepAgents = Nil,
+              autoDispatchEnabled = false,
               isBuiltin = false,
             ),
             availableAgents = agents,
@@ -110,6 +111,7 @@ final case class WorkflowsControllerLive(
                             description = description,
                             steps = steps,
                             stepAgents = stepAgents,
+                            autoDispatchEnabled = isChecked(form, "autoDispatchEnabled"),
                             isBuiltin = false,
                           )
             _          <- validateForForm(workflow)
@@ -140,6 +142,7 @@ final case class WorkflowsControllerLive(
                             description = optional(form, "description"),
                             steps = steps,
                             stepAgents = stepAgents,
+                            autoDispatchEnabled = isChecked(form, "autoDispatchEnabled"),
                           )
             _          <- validateForForm(workflow)
             _          <- service.updateWorkflow(workflow)
@@ -251,6 +254,9 @@ final case class WorkflowsControllerLive(
 
   private def optional(form: Map[String, String], field: String): Option[String] =
     form.get(field).map(_.trim).filter(_.nonEmpty)
+
+  private def isChecked(form: Map[String, String], field: String): Boolean =
+    form.get(field).exists(v => Option(v).getOrElse("").trim.equalsIgnoreCase("on"))
 
   private def availableAgents: IO[WorkflowServiceError, List[AgentInfo]] =
     repository

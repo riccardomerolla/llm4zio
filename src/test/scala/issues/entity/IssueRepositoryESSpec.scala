@@ -130,4 +130,34 @@ object IssueRepositoryESSpec extends ZIOSpecDefault:
           )).provideLayer(layerFor(path))
         }
       },
+      test("external reference events update issue projection") {
+        withTempDir { path =>
+          val id  = Ids.IssueId("issue-6")
+          val now = Instant.parse("2026-03-02T09:40:00Z")
+          (for
+            repo <- ZIO.service[IssueRepository]
+            _    <- repo.append(IssueEvent.Created(id, "Task", "Do work", "task", "medium", now))
+            _    <- repo.append(
+                      IssueEvent.ExternalRefLinked(
+                        issueId = id,
+                        externalRef = "GH:owner/repo#42",
+                        externalUrl = Some("https://github.com/owner/repo/issues/42"),
+                        occurredAt = now.plusSeconds(1),
+                      )
+                    )
+            _    <- repo.append(
+                      IssueEvent.ExternalRefSynced(
+                        issueId = id,
+                        updatedFields = Map("title" -> "Task updated from tracker"),
+                        occurredAt = now.plusSeconds(2),
+                      )
+                    )
+            got  <- repo.get(id)
+          yield assertTrue(
+            got.externalRef.contains("GH:owner/repo#42"),
+            got.externalUrl.contains("https://github.com/owner/repo/issues/42"),
+            got.title == "Task updated from tracker",
+          )).provideLayer(layerFor(path))
+        }
+      },
     ) @@ TestAspect.sequential

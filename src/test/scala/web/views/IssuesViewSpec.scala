@@ -155,6 +155,8 @@ object IssuesViewSpec extends ZIOSpecDefault:
       )
       assertTrue(
         html.contains("Issue Board"),
+        html.contains("Board"),
+        html.contains("List"),
         html.contains("issues-select-all-board"),
         html.contains("Open"),
         html.contains("Assigned"),
@@ -164,6 +166,32 @@ object IssuesViewSpec extends ZIOSpecDefault:
         html.contains("issues-board-root"),
         html.contains("data-drop-status=\"in_progress\""),
         html.contains("issues-bulk-toolbar-board"),
+      )
+    },
+    test("detail renders external tracker link when issue has external ref") {
+      val now   = Instant.parse("2026-03-02T10:00:00Z")
+      val issue = AgentIssueView(
+        id = Some("ext-1"),
+        title = "External linked issue",
+        description = "Task",
+        issueType = "task",
+        priority = IssuePriority.Medium,
+        status = IssueStatus.Open,
+        externalRef = Some("GH:owner/repo#42"),
+        externalUrl = Some("https://github.com/owner/repo/issues/42"),
+        createdAt = now,
+        updatedAt = now,
+      )
+      val html  = IssuesView.detail(
+        issue = issue,
+        assignments = Nil,
+        availableAgents = Nil,
+        workspaces = Nil,
+      )
+      assertTrue(
+        html.contains("External"),
+        html.contains("GH:owner/repo#42"),
+        html.contains("https://github.com/owner/repo/issues/42"),
       )
     },
   )

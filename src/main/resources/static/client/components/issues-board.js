@@ -1,7 +1,7 @@
 class IssuesBoard {
   constructor(root) {
     this.root = root;
-    this.fragmentUrl = root?.dataset?.fragmentUrl || '/issues/board/fragment';
+    this.fragmentUrl = root?.dataset?.fragmentUrl || '/board/fragment';
     this.wsTopic = root?.dataset?.wsTopic || 'activity:feed';
     this.dragIssueId = null;
     this.dragCard = null;
@@ -14,6 +14,7 @@ class IssuesBoard {
     this.bindPointerDrag();
     this.bindCollapse();
     this.bindQuickAdd();
+    this.bindQuickDispatch();
     this.connectWs();
   }
 
@@ -188,6 +189,34 @@ class IssuesBoard {
       }
     };
     document.addEventListener('click', this._quickAddOutsideHandler);
+  }
+
+  bindQuickDispatch() {
+    if (this._quickAssignBound) return;
+    this._quickAssignBound = true;
+
+    this.root.addEventListener('click', async (event) => {
+      const btn = event.target.closest('[data-quick-assign-action]');
+      if (!btn) return;
+
+      const issueId = btn.dataset.quickAssignAction || '';
+      if (!issueId) return;
+
+      const select = this.root.querySelector(`[data-quick-assign-agent="${CSS.escape(issueId)}"]`);
+      const agentName = select?.value?.trim() || '';
+      if (!agentName) return;
+
+      btn.disabled = true;
+      const original = btn.textContent;
+      btn.textContent = '...';
+      try {
+        await this.quickAssign(issueId, agentName);
+        this.refreshBoard(issueId);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = original || 'Assign';
+      }
+    });
   }
 
   _openQuickAdd(statusToken) {
@@ -455,6 +484,18 @@ class IssuesBoard {
     }
   }
 
+  async quickAssign(issueId, agentName) {
+    try {
+      await fetch(`/api/issues/${encodeURIComponent(issueId)}/assign`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ agentName }),
+      });
+    } catch (_ignored) {
+      // Best effort; next board refresh remains source of truth
+    }
+  }
+
   toIssueStatus(statusToken) {
     switch (String(statusToken || '').toLowerCase()) {
       case 'open': return 'Open';
@@ -484,6 +525,7 @@ class IssuesBoard {
         this.bindDragDrop();
         this.bindCollapse();
         this.bindQuickAdd();
+        this.bindQuickDispatch();
         this._flashLandedCard(landedIssueId);
       });
       return;
@@ -497,6 +539,7 @@ class IssuesBoard {
         this.bindDragDrop();
         this.bindCollapse();
         this.bindQuickAdd();
+        this.bindQuickDispatch();
         this._flashLandedCard(landedIssueId);
       })
       .catch(() => {});

@@ -57,17 +57,7 @@ final case class IssueControllerLive(
 
   override val routes: Routes[Any, Response] = Routes(
     Method.GET / "issues"                                            -> handler { (req: Request) =>
-      val runId        = req.queryParam("run_id").map(_.trim).filter(_.nonEmpty)
-      val statusFilter = req.queryParam("status").map(_.trim).filter(_.nonEmpty)
-      val query        = req.queryParam("q").map(_.trim).filter(_.nonEmpty)
-      val tagFilter    = req.queryParam("tag").map(_.trim).filter(_.nonEmpty)
-
-      ErrorHandlingMiddleware.fromPersistence {
-        for
-          issues  <- loadIssues(runId, statusFilter)
-          filtered = filterIssues(issues, query, tagFilter)
-        yield html(HtmlViews.issuesView(runId, filtered, statusFilter, query, tagFilter))
-      }
+      ZIO.succeed(redirectPermanent(withQuery("/board?mode=list", req)))
     },
     Method.GET / "board"                                             -> handler { (req: Request) =>
       boardPage(req)
@@ -76,10 +66,10 @@ final case class IssueControllerLive(
       boardFragment(req)
     },
     Method.GET / "issues" / "board"                                  -> handler { (req: Request) =>
-      boardPage(req)
+      ZIO.succeed(redirectPermanent(withQuery("/board", req)))
     },
     Method.GET / "issues" / "board" / "fragment"                     -> handler { (req: Request) =>
-      boardFragment(req)
+      ZIO.succeed(redirectPermanent(withQuery("/board/fragment", req)))
     },
     Method.GET / "issues" / "new"                                    -> handler { (req: Request) =>
       val runId = req.queryParam("run_id").map(_.trim).filter(_.nonEmpty)
@@ -136,7 +126,7 @@ final case class IssueControllerLive(
                                 .mapError(mapIssueRepoError)
                        yield ()
                      }
-          redirect = form.get("runId").map(id => s"/issues?run_id=$id").getOrElse("/issues")
+          redirect = form.get("runId").map(id => s"/board?mode=list&run_id=$id").getOrElse("/board?mode=list")
         yield Response(status = Status.SeeOther, headers = Headers(Header.Custom("Location", redirect)))
       }
     },
@@ -146,7 +136,7 @@ final case class IssueControllerLive(
           imported <- importIssuesFromConfiguredFolder
         yield Response(
           status = Status.SeeOther,
-          headers = Headers(Header.Custom("Location", s"/issues?imported=$imported")),
+          headers = Headers(Header.Custom("Location", s"/board?mode=list&imported=$imported")),
         )
       }
     },
@@ -615,6 +605,19 @@ final case class IssueControllerLive(
         yield Response.json(response.toJson)
       }
     },
+    Method.POST / "board" / "auto-dispatch"                          -> handler { (req: Request) =>
+      ErrorHandlingMiddleware.fromPersistence {
+        for
+          form    <- parseForm(req)
+          enabled  = form.get("enabled").exists(v => Option(v).getOrElse("").trim.equalsIgnoreCase("on"))
+          returnTo = form.get("returnTo").map(_.trim).filter(v => v.nonEmpty && v.startsWith("/")).getOrElse("/board")
+          _       <- configRepository.upsertSetting("issues.autoDispatch.enabled", enabled.toString)
+        yield Response(
+          status = Status.SeeOther,
+          headers = Headers(Header.Custom("Location", returnTo)),
+        )
+      }
+    },
     Method.POST / "api" / "issues" / string("id") / "run-pipeline"   -> handler { (id: String, req: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
@@ -738,27 +741,57 @@ final case class IssueControllerLive(
   )
 
   private def boardPage(req: Request): UIO[Response] =
+    val mode            = req.queryParam("mode").map(_.trim.toLowerCase).filter(_.nonEmpty).getOrElse("board")
     val query           = req.queryParam("q").map(_.trim).filter(_.nonEmpty)
     val tagFilter       = req.queryParam("tag").map(_.trim).filter(_.nonEmpty)
     val workspaceFilter = req.queryParam("workspace").map(_.trim).filter(_.nonEmpty)
     val agentFilter     = req.queryParam("agent").map(_.trim).filter(_.nonEmpty)
     val priorityFilter  = req.queryParam("priority").map(_.trim.toLowerCase).filter(_.nonEmpty)
     val statusFilter    = req.queryParam("status").map(_.trim.toLowerCase).filter(_.nonEmpty)
+    val hasProofFilter  = req.queryParam("hasProof").exists(_.trim.equalsIgnoreCase("true"))
     ErrorHandlingMiddleware.fromPersistence {
       for
-        workspaces <- workspaceRepository.list.mapError(mapIssueRepoError)
-        issues     <- loadBoardIssues(query, tagFilter, workspaceFilter, agentFilter, priorityFilter, statusFilter)
-      yield html(
-        HtmlViews.issuesBoard(
-          issues = issues,
-          workspaces = workspaces.map(ws => ws.id -> ws.name),
-          workspaceFilter = workspaceFilter,
-          agentFilter = agentFilter,
-          priorityFilter = priorityFilter,
-          tagFilter = tagFilter,
-          query = query,
-        )
-      )
+        workspaces          <- workspaceRepository.list.mapError(mapIssueRepoError)
+        issues              <- loadBoardIssues(query, tagFilter, workspaceFilter, agentFilter, priorityFilter, statusFilter)
+        allAgents           <- agentRepository.list().mapError(mapIssueRepoError)
+        availableAgents      = allAgents.filter(_.enabled).map(registryAgentToAgentInfo)
+        autoDispatchEnabled <- settingBoolean("issues.autoDispatch.enabled", default = false)
+        syncStatus          <- loadTrackerSyncStatus
+        activeByAgent       <- activeRunsByAgent.mapError(mapIssueRepoError)
+        activeAgents         = activeByAgent.values.count(_ > 0)
+        enabledAgentsTotal   = math.max(availableAgents.size, 1)
+        rendered            <- mode match
+                                 case "list" =>
+                                   ZIO.succeed(
+                                     HtmlViews.issuesBoardList(
+                                       issues = issues,
+                                       statusFilter = statusFilter,
+                                       query = query,
+                                       tagFilter = tagFilter,
+                                       workspaceFilter = workspaceFilter,
+                                       agentFilter = agentFilter,
+                                       priorityFilter = priorityFilter,
+                                     )
+                                   )
+                                 case _      =>
+                                   ZIO.succeed(
+                                     HtmlViews.issuesBoard(
+                                       issues = issues,
+                                       workspaces = workspaces.map(ws => ws.id -> ws.name),
+                                       workspaceFilter = workspaceFilter,
+                                       agentFilter = agentFilter,
+                                       priorityFilter = priorityFilter,
+                                       tagFilter = tagFilter,
+                                       query = query,
+                                       statusFilter = statusFilter,
+                                       availableAgents = availableAgents,
+                                       autoDispatchEnabled = autoDispatchEnabled,
+                                       syncStatus = syncStatus,
+                                       agentUsage = Some(activeAgents -> enabledAgentsTotal),
+                                       hasProofFilter = if hasProofFilter then Some(true) else None,
+                                     )
+                                   )
+      yield html(rendered)
     }
 
   private def boardFragment(req: Request): UIO[Response] =
@@ -768,14 +801,19 @@ final case class IssueControllerLive(
     val agentFilter     = req.queryParam("agent").map(_.trim).filter(_.nonEmpty)
     val priorityFilter  = req.queryParam("priority").map(_.trim.toLowerCase).filter(_.nonEmpty)
     val statusFilter    = req.queryParam("status").map(_.trim.toLowerCase).filter(_.nonEmpty)
+    val hasProofFilter  = req.queryParam("hasProof").exists(_.trim.equalsIgnoreCase("true"))
     ErrorHandlingMiddleware.fromPersistence {
       for
-        workspaces <- workspaceRepository.list.mapError(mapIssueRepoError)
-        issues     <- loadBoardIssues(query, tagFilter, workspaceFilter, agentFilter, priorityFilter, statusFilter)
+        workspaces     <- workspaceRepository.list.mapError(mapIssueRepoError)
+        issues         <- loadBoardIssues(query, tagFilter, workspaceFilter, agentFilter, priorityFilter, statusFilter)
+        allAgents      <- agentRepository.list().mapError(mapIssueRepoError)
+        availableAgents = allAgents.filter(_.enabled).map(registryAgentToAgentInfo)
       yield html(
         HtmlViews.issuesBoardColumns(
           issues = issues,
           workspaces = workspaces.map(ws => ws.id -> ws.name),
+          availableAgents = availableAgents,
+          hasProofFilter = if hasProofFilter then Some(true) else None,
         )
       )
     }
@@ -819,6 +857,8 @@ final case class IssueControllerLive(
       contextPath = Option(i.contextPath).filter(_.nonEmpty),
       sourceFolder = Option(i.sourceFolder).filter(_.nonEmpty),
       workspaceId = i.workspaceId,
+      externalRef = i.externalRef,
+      externalUrl = i.externalUrl,
       priority = priority,
       status = status,
       assignedAgent = assignedAgent,
@@ -828,34 +868,6 @@ final case class IssueControllerLive(
       createdAt = createdAt,
       updatedAt = assignedAt.orElse(completedAt).getOrElse(createdAt),
     )
-
-  private def loadIssues(runId: Option[String], statusFilter: Option[String])
-    : IO[PersistenceError, List[AgentIssueView]] =
-    val filter = IssueFilter(
-      runId = runId.map(TaskRunId.apply),
-      states = statusFilter.flatMap(parseIssueStateTag).map(Set(_)).getOrElse(Set.empty),
-    )
-    issueRepository
-      .list(filter)
-      .mapError(mapIssueRepoError)
-      .flatMap { issues =>
-        ZIO.foreach(issues) { i =>
-          ZIO
-            .attempt(domainToView(i))
-            .tapError(err =>
-              ZIO.logError(
-                s"domainToView failed for issue[${i.id.value}]" +
-                  s" state=${i.state.getClass.getSimpleName}" +
-                  s" runId=${i.runId} conversationId=${i.conversationId}" +
-                  s" priority=${Option(i.priority).getOrElse("<null>")}" +
-                  s" tags=${i.tags} contextPath=${Option(i.contextPath).getOrElse("<null>")}" +
-                  s" sourceFolder=${Option(i.sourceFolder).getOrElse("<null>")}" +
-                  s" cause: $err"
-              )
-            )
-            .mapError(err => PersistenceError.QueryFailed("domainToView", err.getMessage))
-        }
-      }
 
   private def loadBoardIssues(
     query: Option[String],
@@ -1762,20 +1774,31 @@ final case class IssueControllerLive(
       items   <- previewGitHubIssues(request)
       results <- ZIO.foreach(items) { item =>
                    (for
-                     now <- Clock.instant
-                     _   <- issueRepository
-                              .append(
-                                IssueEvent.Created(
-                                  issueId = IssueId.generate,
-                                  title = s"[GH#${item.number}] ${item.title}",
-                                  description = item.body,
-                                  issueType = "github",
-                                  priority = "medium",
-                                  occurredAt = now,
-                                  requiredCapabilities = Nil,
-                                )
-                              )
-                              .mapError(mapIssueRepoError)
+                     now    <- Clock.instant
+                     issueId = IssueId.generate
+                     _      <- issueRepository
+                                 .append(
+                                   IssueEvent.Created(
+                                     issueId = issueId,
+                                     title = s"[GH#${item.number}] ${item.title}",
+                                     description = item.body,
+                                     issueType = "github",
+                                     priority = "medium",
+                                     occurredAt = now,
+                                     requiredCapabilities = Nil,
+                                   )
+                                 )
+                                 .mapError(mapIssueRepoError)
+                     _      <- issueRepository
+                                 .append(
+                                   IssueEvent.ExternalRefLinked(
+                                     issueId = issueId,
+                                     externalRef = s"GH:${request.repo}#${item.number}",
+                                     externalUrl = Some(item.url),
+                                     occurredAt = now,
+                                   )
+                                 )
+                                 .mapError(mapIssueRepoError)
                    yield ()).either
                  }
     yield toBulkResponse(items.size, results)
@@ -1930,6 +1953,57 @@ final case class IssueControllerLive(
         parseCapabilityList(metadata("required_capabilities").orElse(metadata("required-capabilities"))),
     )
 
+  private def settingBoolean(key: String, default: Boolean): IO[PersistenceError, Boolean] =
+    configRepository
+      .getSetting(key)
+      .map(_.exists(v => Option(v.value).getOrElse("").trim.equalsIgnoreCase("true")))
+      .orElseSucceed(default)
+
+  private def settingLong(key: String): IO[PersistenceError, Option[Long]] =
+    configRepository
+      .getSetting(key)
+      .map(_.flatMap(v => Option(v.value).map(_.trim).filter(_.nonEmpty).flatMap(_.toLongOption)))
+      .orElseSucceed(None)
+
+  private def settingString(key: String): IO[PersistenceError, Option[String]] =
+    configRepository
+      .getSetting(key)
+      .map(_.flatMap(v => Option(v.value).map(_.trim).filter(_.nonEmpty)))
+      .orElseSucceed(None)
+
+  private def loadTrackerSyncStatus: IO[PersistenceError, shared.web.IssuesView.SyncStatus] =
+    for
+      lastSync <- settingString("trackers.sync.lastAt")
+                    .flatMap {
+                      case some @ Some(_) => ZIO.succeed(some)
+                      case None           => settingString("trackers.lastSyncAt")
+                    }
+      synced   <- settingLong("trackers.sync.syncedCount")
+                    .flatMap {
+                      case some @ Some(_) => ZIO.succeed(some)
+                      case None           => settingLong("trackers.syncedCount")
+                    }
+      errors   <- settingLong("trackers.sync.errorCount")
+                    .flatMap {
+                      case some @ Some(_) => ZIO.succeed(some)
+                      case None           => settingLong("trackers.errorCount")
+                    }
+    yield shared.web.IssuesView.SyncStatus(lastSync, synced.getOrElse(0L).toInt, errors.getOrElse(0L).toInt)
+
+  private def withQuery(basePath: String, req: Request): String =
+    val knownKeys = List("mode", "run_id", "status", "q", "tag", "workspace", "agent", "priority", "hasProof")
+    knownKeys.flatMap(key => req.queryParam(key).map(v => s"${urlEncode(key)}=${urlEncode(v)}")) match
+      case Nil    => basePath
+      case params =>
+        val sep = if basePath.contains("?") then "&" else "?"
+        s"$basePath$sep${params.mkString("&")}"
+
+  private def redirectPermanent(path: String): Response =
+    Response(
+      status = Status.MovedPermanently,
+      headers = Headers(Header.Location(URL.decode(path).getOrElse(URL.root))),
+    )
+
   private def parseForm(req: Request): IO[PersistenceError, Map[String, String]] =
     req.body.asString
       .map { body =>
@@ -1948,3 +2022,6 @@ final case class IssueControllerLive(
 
   private def urlDecode(value: String): String =
     URLDecoder.decode(value, StandardCharsets.UTF_8)
+
+  private def urlEncode(value: String): String =
+    java.net.URLEncoder.encode(value, StandardCharsets.UTF_8)

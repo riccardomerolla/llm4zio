@@ -27,6 +27,8 @@ case class AgentIssueView(
   contextPath: Option[String] = None,
   sourceFolder: Option[String] = None,
   workspaceId: Option[String] = None,
+  externalRef: Option[String] = None,
+  externalUrl: Option[String] = None,
   priority: IssuePriority = IssuePriority.Medium,
   status: IssueStatus = IssueStatus.Open,
   assignedAgent: Option[String] = None,

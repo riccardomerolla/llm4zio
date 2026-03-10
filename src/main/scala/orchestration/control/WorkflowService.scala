@@ -17,6 +17,7 @@ enum WorkflowServiceError derives JsonCodec:
 private case class WorkflowStoragePayload(
   steps: List[TaskStep],
   stepAgents: Map[String, String] = Map.empty,
+  autoDispatchEnabled: Boolean = false,
   dynamicGraph: Option[WorkflowGraph] = None,
 ) derives JsonCodec
 
@@ -132,6 +133,7 @@ final case class WorkflowServiceLive(
             case (step, agentName) =>
               WorkflowStepAgent(step, agentName)
           },
+          autoDispatchEnabled = payloadAutoDispatch(row.steps).getOrElse(false),
           isBuiltin = row.isBuiltin,
           dynamicGraph = parsedGraph,
         )
@@ -146,6 +148,7 @@ final case class WorkflowServiceLive(
             step.toString -> agent.trim
         }
         .toMap,
+      autoDispatchEnabled = workflow.autoDispatchEnabled,
       dynamicGraph = workflow.dynamicGraph,
     )
     WorkflowRow(
@@ -157,6 +160,9 @@ final case class WorkflowServiceLive(
       createdAt = createdAt,
       updatedAt = updatedAt,
     )
+
+  private def payloadAutoDispatch(raw: String): Option[Boolean] =
+    raw.fromJson[WorkflowStoragePayload].toOption.map(_.autoDispatchEnabled)
 
   private def decodeStorage(
     workflowName: String,

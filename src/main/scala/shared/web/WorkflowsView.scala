@@ -49,6 +49,7 @@ object WorkflowsView:
                   cls := "py-3 pl-6 pr-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-400"
                 )("Name"),
                 th(cls := "px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-400")("Steps"),
+                th(cls := "px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-400")("Mode"),
                 th(cls := "px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-400")(
                   "Description"
                 ),
@@ -103,6 +104,17 @@ object WorkflowsView:
             div(cls := "rounded-xl border border-white/10 bg-slate-900/70 p-5")(
               textField("name", "Name", workflow.name, required = true),
               textField("description", "Description", workflow.description.getOrElse(""), required = false),
+              div(cls := "mt-3")(
+                label(cls := "flex items-center gap-2 text-sm font-semibold text-slate-200")(
+                  input(
+                    `type` := "checkbox",
+                    name   := "autoDispatchEnabled",
+                    cls    := "h-4 w-4 rounded border-white/20 bg-slate-900 text-indigo-500 focus:ring-indigo-400",
+                    if workflow.autoDispatchEnabled then checked := "checked" else (),
+                  ),
+                  span("Enable auto-dispatch for this workflow"),
+                )
+              ),
               input(`type`               := "hidden", id := "orderedSteps", name := "orderedSteps", value := orderedCsv),
               input(
                 `type`                   := "hidden",
@@ -176,6 +188,11 @@ object WorkflowsView:
             )(
               if workflow.isBuiltin then "Built-in" else "Custom"
             ),
+            if workflow.autoDispatchEnabled then
+              span(
+                cls := "rounded-full border border-emerald-400/30 bg-emerald-500/20 px-2 py-0.5 text-xs font-semibold text-emerald-200"
+              )("Auto")
+            else (),
           ),
           div(cls := "mt-4 rounded-lg border border-white/10 bg-slate-950/70 p-4")(
             div(cls := "mermaid text-slate-200")(workflowToMermaid(workflow.steps))
@@ -248,6 +265,14 @@ object WorkflowsView:
     tr(cls := "hover:bg-white/5")(
       td(cls := "py-4 pl-6 pr-3 text-sm font-medium text-white")(workflow.name),
       td(cls := "px-3 py-4 text-sm text-slate-300")(workflow.steps.length.toString),
+      td(cls := "px-3 py-4 text-xs text-slate-300")(
+        if workflow.autoDispatchEnabled then
+          span(
+            cls := "rounded-full border border-emerald-400/30 bg-emerald-500/20 px-2 py-0.5 text-xs font-semibold text-emerald-200"
+          )("Auto")
+        else
+          span("Manual")
+      ),
       td(cls := "px-3 py-4 text-sm text-slate-300")(workflow.description.getOrElse("—")),
       td(cls := "px-3 py-4 text-xs text-slate-300")(agentSummary),
       td(cls := "py-4 pl-3 pr-6 text-right text-sm")(actions),

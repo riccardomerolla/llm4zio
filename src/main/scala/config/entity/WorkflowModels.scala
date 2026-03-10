@@ -73,6 +73,7 @@ case class WorkflowDefinition(
   stepAgents: List[WorkflowStepAgent] = Nil,
   isBuiltin: Boolean,
   dynamicGraph: Option[WorkflowGraph] = None,
+  autoDispatchEnabled: Boolean = false,
 ) derives JsonCodec
 
 object WorkflowDefinition:
@@ -91,6 +92,7 @@ object WorkflowDefinition:
           List(WorkflowNode(id = "chat", step = "chat"))
         )
       ),
+      autoDispatchEnabled = false,
     )
 
 object WorkflowValidator:
