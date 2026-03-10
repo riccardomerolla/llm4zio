@@ -30,7 +30,7 @@ final case class MemoryControllerLive(
     Method.GET / "memory"                           -> handler { (req: Request) =>
       execute {
         val userId = readUserIdOpt(req)
-        val filter = MemoryFilter(userId = userId)
+        val filter = baseFilter(req, userId)
         for
           entries <- listEntries(filter, page = 0, pageSize = defaultPageSize)
           total   <- listEntries(filter, page = 0, pageSize = 10000).map(_.size)
@@ -44,7 +44,7 @@ final case class MemoryControllerLive(
         val userId = readUserIdOpt(req)
         val q      = req.queryParam("q").map(_.trim).getOrElse("")
         val limit  = req.queryParam("limit").flatMap(_.toIntOption).map(v => Math.max(1, v)).getOrElse(defaultLimit)
-        val filter = MemoryFilter(userId = userId, kind = parseKind(req.queryParam("kind")))
+        val filter = baseFilter(req, userId)
 
         val effect =
           if q.isEmpty then
@@ -77,7 +77,7 @@ final case class MemoryControllerLive(
         val page     = req.queryParam("page").flatMap(_.toIntOption).map(v => Math.max(0, v)).getOrElse(0)
         val pageSize =
           req.queryParam("pageSize").flatMap(_.toIntOption).map(v => Math.max(1, v)).getOrElse(defaultPageSize)
-        val filter   = MemoryFilter(userId = userId, kind = parseKind(req.queryParam("kind")))
+        val filter   = baseFilter(req, userId)
         listEntries(filter, page, pageSize).map { entries =>
           req.queryParam("format").map(_.trim.toLowerCase) match
             case Some("html") => html(MemoryView.entriesFragment(entries, userId))
@@ -110,6 +110,16 @@ final case class MemoryControllerLive(
 
   private def readUserIdOpt(req: Request): Option[UserId] =
     req.queryParam("userId").map(_.trim).filter(_.nonEmpty).map(UserId.apply)
+
+  private def readSessionIdOpt(req: Request): Option[SessionId] =
+    req.queryParam("sessionId").map(_.trim).filter(_.nonEmpty).map(SessionId.apply)
+
+  private def baseFilter(req: Request, userId: Option[UserId]): MemoryFilter =
+    MemoryFilter(
+      userId = userId,
+      sessionId = readSessionIdOpt(req),
+      kind = parseKind(req.queryParam("kind")),
+    )
 
   private def listEntries(
     filter: MemoryFilter,
