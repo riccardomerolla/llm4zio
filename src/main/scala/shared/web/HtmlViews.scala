@@ -1,10 +1,8 @@
 package shared.web
 
 import activity.entity.ActivityEvent
-import agent.entity.Agent
-import agent.entity.api.{ AgentActiveRun, AgentMetricsHistoryPoint, AgentMetricsSummary, AgentRunHistoryItem }
 import config.control.{ ModelRegistryResponse, ProviderProbeStatus }
-import config.entity.{ AgentChannelBinding, AgentInfo, WorkflowDefinition }
+import config.entity.{ AgentInfo, WorkflowDefinition }
 import conversation.entity.api.{ ChatConversation, ConversationEntry, ConversationSessionMeta }
 import db.{ TaskReportRow, TaskRunRow }
 import gateway.entity.ChatSession
@@ -104,18 +102,14 @@ object HtmlViews:
   def workflowDetail(workflow: WorkflowDefinition): String =
     WorkflowsView.detail(workflow)
 
-  def agentsPage(
-    agents: List[AgentInfo],
-    bindingsByAgent: Map[String, List[AgentChannelBinding]],
-    flash: Option[String] = None,
-  ): String =
-    AgentsView.list(agents, bindingsByAgent, flash)
+  def agentsPage(cards: List[AgentsView.AgentCard], flash: Option[String] = None): String =
+    AgentsView.list(cards, flash)
 
-  def newCustomAgentPage(
+  def newAgentPage(
     values: Map[String, String] = Map.empty,
     flash: Option[String] = None,
   ): String =
-    AgentsView.newCustomAgentForm(values, flash)
+    AgentsView.newAgentForm(values, flash)
 
   def editCustomAgentPage(
     name: String,
@@ -124,25 +118,22 @@ object HtmlViews:
   ): String =
     AgentsView.editCustomAgentForm(name, values, flash)
 
-  def agentRegistryListPage(agents: List[Agent], flash: Option[String] = None): String =
-    AgentRegistryView.list(agents, flash)
-
-  def agentRegistryDetailPage(
-    agent: Agent,
-    metrics: AgentMetricsSummary,
-    runs: List[AgentRunHistoryItem],
-    activeRuns: List[AgentActiveRun],
-    history: List[AgentMetricsHistoryPoint],
-    flash: Option[String] = None,
-  ): String =
-    AgentRegistryView.detail(agent, metrics, runs, activeRuns, history, flash)
-
   def agentRegistryFormPage(
     title: String,
     action: String,
     values: Map[String, String],
   ): String =
-    AgentRegistryView.form(title, action, values)
+    AgentsView.registryForm(title, action, values)
+
+  def agentDetailPage(
+    registryAgent: agent.entity.Agent,
+    metrics: agent.entity.api.AgentMetricsSummary,
+    runs: List[agent.entity.api.AgentRunHistoryItem],
+    activeRuns: List[agent.entity.api.AgentActiveRun],
+    history: List[agent.entity.api.AgentMetricsHistoryPoint],
+    flash: Option[String] = None,
+  ): String =
+    AgentsView.detail(registryAgent, metrics, runs, activeRuns, history, flash)
 
   def agentConfigPage(
     agent: AgentInfo,
