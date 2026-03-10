@@ -263,6 +263,7 @@ object ChatView:
       ),
       JsResources.inlineModuleScript("/static/client/components/ab-side-panel.js"),
       JsResources.inlineModuleScript("/static/client/components/ab-icon-button.js"),
+      JsResources.inlineModuleScript("/static/client/components/ab-tool-waterfall.js"),
       JsResources.inlineModuleScript("/static/client/components/chat-message-stream.js"),
       runSessionMeta.fold[Frag](JsResources.inlineModuleScript("/static/client/components/message-composer.js"))(_ =>
         frag(
@@ -302,11 +303,57 @@ object ChatView:
       showNewChat = showNewChat,
     )
 
+  /** Groups consecutive ToolCall entries together. Non-ToolCall entries (including ToolResult) are
+    * left as individual Left values. A run of 2+ consecutive ToolCall entries becomes a single
+    * Right value containing the list. A lone ToolCall stays as Left so it renders with the existing
+    * individual card.
+    */
+  private def groupToolCalls(
+    messages: List[ConversationEntry]
+  ): List[Either[ConversationEntry, List[ConversationEntry]]] =
+    messages.foldRight(List.empty[Either[ConversationEntry, List[ConversationEntry]]]) {
+      case (msg, acc) if msg.messageType == MessageType.ToolCall =>
+        acc match
+          // The head of acc is already an accumulated group — extend it
+          case Right(group) :: tail => Right(msg :: group) :: tail
+          // Start a new group with just this message (will be promoted to Right if 2+)
+          case _                    => Right(List(msg)) :: acc
+      case (msg, acc) =>
+        // Demote a solo ToolCall group (size == 1) back to a regular Left card
+        val normalised = acc match
+          case Right(List(single)) :: tail => Left(single) :: tail
+          case _                           => acc
+        Left(msg) :: normalised
+    } match
+      // Final pass: demote any trailing solo group
+      case Right(List(single)) :: tail => Left(single) :: tail
+      case result                      => result
+
   def messagesFragment(messages: List[ConversationEntry]): String =
+    val grouped = groupToolCalls(messages)
     div(cls := "space-y-2 text-gray-100")(
-      messages.zipWithIndex.map { case (msg, idx) =>
-        val prevSender = if idx > 0 then Some(messages(idx - 1).senderType) else None
-        messageCard(msg, prevSender)
+      grouped.zipWithIndex.map { case (entry, idx) =>
+        entry match
+          case Right(toolCalls) =>
+            val toolsJson = toolCalls.map { m =>
+              val name     = extractToolSummary(m.content)
+              val subtitle = m.content.linesIterator.take(3).mkString(" ").take(80).replace("\"", "'").replace("\n", " ")
+              val input    = m.content.take(400).replace("\"", "'").replace("\n", "\\n")
+              s"""{"name":"${name.replace("\"", "'")}","subtitle":"$subtitle","input":"$input"}"""
+            }.mkString("[", ",", "]")
+            div(cls := "flex justify-start my-0.5")(
+              tag("ab-tool-waterfall")(
+                attr("tools") := toolsJson,
+              )()
+            )
+          case Left(msg) =>
+            val prevSender =
+              if idx > 0 then
+                grouped(idx - 1) match
+                  case Left(prev)            => Some(prev.senderType)
+                  case Right(prevGroup)      => prevGroup.lastOption.map(_.senderType)
+              else None
+            messageCard(msg, prevSender)
       }
     ).render
 
