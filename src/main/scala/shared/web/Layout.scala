@@ -14,6 +14,8 @@ object Layout:
     title: String,
     href: String,
     active: Boolean,
+    messageCount: Int = 0,
+    createdAt: java.time.Instant = java.time.Instant.EPOCH,
   )
 
   final case class ChatWorkspaceGroup(
@@ -57,6 +59,10 @@ object Layout:
             div(cls := "px-4 sm:px-6 lg:px-8")(bodyContent)
           )
         ),
+        tag("ab-command-palette")(),
+        JsResources.inlineModuleScript("/static/client/components/ab-command-palette.js"),
+        tag("ab-keyboard-shortcuts")(),
+        JsResources.inlineModuleScript("/static/client/components/ab-keyboard-shortcuts.js"),
         script(raw(
           """(function () {
             |  const sidebar = document.getElementById("mobile-sidebar");
@@ -213,6 +219,21 @@ object Layout:
       )
     )
 
+  private def relativeTime(instant: java.time.Instant): String =
+    val now     = java.time.Instant.now()
+    val minutes = java.time.temporal.ChronoUnit.MINUTES.between(instant, now)
+    val hours   = java.time.temporal.ChronoUnit.HOURS.between(instant, now)
+    val days    = java.time.temporal.ChronoUnit.DAYS.between(instant, now)
+    if minutes < 1 then "just now"
+    else if minutes < 60 then s"${minutes}m ago"
+    else if hours < 24 then s"${hours}h ago"
+    else if days < 2 then "yesterday"
+    else if days < 7 then s"${days}d ago"
+    else
+      val ldt   = instant.atZone(java.time.ZoneOffset.UTC).toLocalDate
+      val month = ldt.getMonth.getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.ENGLISH)
+      s"$month ${ldt.getDayOfMonth}"
+
   def chatWorkspacesTree(nav: ChatWorkspaceNav): Frag =
     div(cls := "mt-2 space-y-1")(
       div(cls := "mx-1 flex items-center justify-between gap-1")(
@@ -276,13 +297,19 @@ object Layout:
               group.chats.map(chat =>
                 li(
                   a(
-                    href          := chat.href,
-                    cls           := s"mx-1 block truncate rounded-md px-2 py-1 text-[11px] ${
-                        if chat.active then "bg-white/10 text-white"
-                        else "text-gray-400 hover:bg-white/5 hover:text-white"
+                    href                      := chat.href,
+                    cls                       := s"flex flex-col gap-0.5 block border-l-2 pl-3 py-2 rounded-r-md transition-colors ${
+                        if chat.active then "border-indigo-500 bg-indigo-500/10"
+                        else "border-transparent hover:border-indigo-400/50 hover:bg-white/5"
                       }",
-                    attr("title") := chat.title,
-                  )(chat.title)
+                    attr("title")             := chat.title,
+                    attr("data-palette-chat") := "true",
+                  )(
+                    div(cls := "truncate text-sm font-medium text-white leading-snug")(chat.title),
+                    div(cls := "flex items-center gap-1.5 text-[10px] text-gray-500 leading-none")(
+                      s"${chat.messageCount} msgs · ${relativeTime(chat.createdAt)}"
+                    ),
+                  )
                 )
               )
             ),

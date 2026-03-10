@@ -130,90 +130,136 @@ object ChatView:
       chatWorkspaceNav = Some(buildWorkspaceNav(workspaceFolders, Some(conversationId), showNewChat = true)),
     )(
       div(cls := "flex flex-col min-h-[calc(100vh-8rem)] gap-3 rounded-lg border border-white/10 bg-slate-950/70 p-3")(
-        div(cls := "mb-1 flex items-center justify-between gap-3")(
-          div(cls := "min-w-0")(
+        div(cls := "mb-1 flex items-center gap-2")(
+          tag("ab-icon-button")(
+            attr("icon")    := "M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18",
+            attr("tooltip") := "Back to chats",
+            attr("href")    := "/chat",
+            attr("size")    := "sm",
+          )(),
+          div(cls := "min-w-0 flex-1")(
             h1(cls := "truncate text-sm font-semibold text-white")(conversation.title),
-            description.fold[Frag](frag())(text => p(cls := "mt-0.5 text-[11px] text-gray-400")(text)),
+            description.fold[Frag](frag())(text =>
+              p(cls := "mt-0 text-[10px] text-gray-500 truncate")(text)
+            ),
           ),
-          a(
-            href := issuesHref,
-            cls  := "rounded bg-indigo-600 px-2 py-1 text-[11px] font-semibold text-white hover:bg-indigo-700",
-          )("Issues"),
+          div(cls := "flex items-center gap-0.5 flex-shrink-0")(
+            tag("ab-icon-button")(
+              attr("icon")    := "M21 21l-5.197-5.197m0 0A7.5 7.5 0 1 0 5.197 5.197a7.5 7.5 0 0 0 10.606 10.606Z",
+              attr("tooltip") := "Search messages",
+              attr("size")    := "sm",
+              attr("onclick") := """(function(){window.dispatchEvent(new CustomEvent('ab-panel-open',{detail:{panelId:'context-panel',title:'Search Messages'}}));setTimeout(function(){var c=document.getElementById('panel-context-panel-content');if(c&&!c.querySelector('ab-message-search')){var el=document.createElement('ab-message-search');c.replaceChildren(el);}setTimeout(function(){var i=document.querySelector('ab-message-search input');if(i)i.focus();},50);},50);})()""",
+            )(),
+            tag("ab-icon-button")(
+              attr("icon")    := "M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z",
+              attr("tooltip") := "Memory & Context",
+              attr("size")    := "sm",
+              attr("onclick") := """window.dispatchEvent(new CustomEvent('ab-panel-open', {detail:{panelId:'context-panel', title:'Memory & Context'}}))""",
+            )(),
+            tag("ab-icon-button")(
+              attr("icon")    := "M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z",
+              attr("tooltip") := "Reports",
+              attr("size")    := "sm",
+              attr("onclick") := """window.dispatchEvent(new CustomEvent('ab-panel-open', {detail:{panelId:'context-panel', title:'Reports'}}))""",
+            )(),
+            tag("ab-icon-button")(
+              attr("icon")    := "M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5",
+              attr("tooltip") := "Git changes",
+              attr("size")    := "sm",
+              attr("onclick") := """window.dispatchEvent(new CustomEvent('ab-panel-open', {detail:{panelId:'context-panel', title:'Git Changes'}}))""",
+            )(),
+            tag("ab-icon-button")(
+              attr("icon")    := "M11.35 3.836c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 0 0 .75-.75 2.25 2.25 0 0 0-.1-.664m-5.8 0A2.251 2.251 0 0 1 13.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m8.9-4.414c.376.023.75.05 1.124.08 1.131.094 1.976 1.057 1.976 2.192V16.5A2.25 2.25 0 0 1 18 18.75h-2.25m-7.5-10.5H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V18.75m-7.5-10.5h6.375c.621 0 1.125.504 1.125 1.125v9.375m-8.25-3 1.5 1.5 3-3.75",
+              attr("tooltip") := "View issues",
+              attr("href")    := issuesHref,
+            )(),
+          ),
         ),
-        div(cls := "mb-2 flex flex-wrap items-center gap-2 text-[11px]")(
-          span(cls := "rounded border border-white/10 bg-white/5 px-2 py-1 text-gray-300")(
-            span(cls := "mr-1 text-gray-400")("Status"),
-            span(cls := "font-semibold capitalize")(conversation.status),
-          ),
-          span(cls := "rounded border border-white/10 bg-white/5 px-2 py-1 text-gray-300")(
-            span(cls := "mr-1 text-gray-400")("Messages"),
-            span(cls := "font-semibold")(conversation.messages.length.toString),
-          ),
-          span(cls := "rounded border border-white/10 bg-white/5 px-2 py-1 text-gray-300")(
-            span(cls := "mr-1 text-gray-400")("Created"),
-            span(cls := "font-semibold")(conversation.createdAt.toString.take(19)),
+        div(cls := "mb-2 flex flex-wrap items-center gap-1.5 text-[11px]")(
+          statusDot(conversation.status),
+          span(cls := "rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-gray-300")(
+            s"${conversation.messages.length} msgs"
           ),
           runSessionMeta.fold[Frag](frag()) { meta =>
             frag(
               span(
                 id  := s"run-mode-badge-$conversationId",
-                cls := s"rounded border px-2 py-1 font-semibold ${runModeBadgeClass(meta.status)}",
+                cls := s"rounded-full border px-2 py-0.5 font-semibold ${runModeBadgeClass(meta.status)}",
               )(runModeLabel(meta.status)),
               span(
                 id  := s"run-attached-count-$conversationId",
-                cls := "rounded border border-white/10 bg-white/5 px-2 py-1 text-gray-300",
+                cls := "rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-gray-300",
               )(
-                span(cls := "mr-1 text-gray-400")("Attached"),
-                span(cls := "font-semibold", attr("data-role") := "count")(meta.attachedUsersCount.toString),
+                span(cls := "mr-1 text-gray-400")(""),
+                span(attr("data-role") := "count")(meta.attachedUsersCount.toString),
+                " attached",
               ),
               span(
                 id  := s"run-active-indicator-$conversationId",
-                cls := s"rounded border border-white/10 bg-white/5 px-2 py-1 text-gray-300 ${
+                cls := s"rounded-full border border-emerald-400/40 bg-emerald-500/15 px-2 py-0.5 text-emerald-300 ${
                     if isRunActive(meta.status) then "" else "hidden"
                   }",
-              )("Live"),
+              )("● Live"),
             )
           },
         ),
-        sessionContextPanel(sessionMeta),
-        runSessionMeta.fold[Frag](frag())(meta => runChainPanel(meta)),
-        detailContext.proofOfWork.fold[Frag](frag())(report => raw(ProofOfWorkView.panel(report, collapsed = false))),
-        reportsPanel(detailContext.reports),
-        graphPanel(detailContext.graphReports, conversationId),
-        div(cls := "mt-1 flex flex-1 min-h-0 flex-col gap-3 lg:flex-row")(
-          div(cls := "flex-1 min-h-0 flex flex-col gap-3")(
-            div(
-              cls := "relative flex-1 min-h-0 rounded border border-white/10 bg-black/20 overflow-hidden flex flex-col"
-            )(
-              tag("chat-message-stream")(
-                id                      := s"messages-$conversationId",
-                cls                     := "flex-1 min-h-0 overflow-y-auto p-3 space-y-3 block",
-                attr("conversation-id") := conversationId,
-                attr("ws-url")          := "/ws/console",
-              )(
-                raw(messagesFragment(conversation.messages))
-              ),
-              button(
-                id              := s"scroll-bottom-$conversationId",
-                `type`          := "button",
-                cls             := "hidden absolute bottom-3 right-3 rounded bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-1 text-[11px] font-semibold",
-                attr("onclick") := s"document.getElementById('messages-$conversationId')?.scrollToLatest?.()",
-              )("Bottom"),
-            ),
-            runSessionMeta.fold[Frag](frag())(meta => runGitPanel(meta, conversationId)),
-            runSessionMeta.fold[Frag](standardChatComposer(conversationId))(meta =>
-              runInteractionComposer(
-                conversationId = conversationId,
-                runControlId = runControlId,
-                meta = meta,
-              )
-            ),
-          ),
-          memorySidebar(
-            conversationId = conversationId,
-            memorySessionId = detailContext.memorySessionId,
+        runSessionMeta.fold[Frag](frag())(meta => runBreadcrumb(meta, conversationId)),
+        div(
+          id      := s"token-gauge-$conversationId",
+          cls     := "relative w-full cursor-pointer group overflow-visible h-[3px]",
+          attr("onclick") := s"""window.dispatchEvent(new CustomEvent('ab-panel-open', {{detail:{{panelId:'context-panel', title:'Token Usage'}}}}))""",
+          role    := "progressbar",
+          attr("aria-label") := "Context window usage",
+          attr("aria-valuenow") := "0",
+          attr("aria-valuemax") := "100",
+        )(
+          div(cls := "absolute inset-0 rounded-full bg-white/5")(),
+          div(
+            id    := s"token-gauge-bar-$conversationId",
+            cls   := "absolute inset-y-0 left-0 rounded-full bg-emerald-500 transition-all duration-500",
+            style := "width:0%",
+          )(),
+          div(cls := "absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none")(
+            span(
+              id  := s"token-gauge-label-$conversationId",
+              cls := "text-[10px] text-gray-300 bg-slate-900/90 px-2 py-0.5 rounded-full pointer-events-none",
+            )(""),
           ),
         ),
+        div(cls := "mt-1 flex flex-1 min-h-0 flex-col gap-3")(
+          div(
+            cls := "relative flex-1 min-h-0 rounded border border-white/10 bg-black/20 overflow-hidden flex flex-col"
+          )(
+            tag("chat-message-stream")(
+              id                      := s"messages-$conversationId",
+              cls                     := "flex-1 min-h-0 overflow-y-auto p-3 space-y-3 block",
+              attr("conversation-id") := conversationId,
+              attr("ws-url")          := "/ws/console",
+            )(
+              raw(messagesFragment(conversation.messages, Some(conversationId)))
+            ),
+            button(
+              id              := s"scroll-bottom-$conversationId",
+              `type`          := "button",
+              cls             := "hidden absolute bottom-3 right-3 rounded bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-1 text-[11px] font-semibold",
+              attr("onclick") := s"document.getElementById('messages-$conversationId')?.scrollToLatest?.()",
+            )("Bottom"),
+          ),
+          inlineTimelineEvents(detailContext, runSessionMeta),
+          activityIndicator(conversationId),
+          runSessionMeta.fold[Frag](standardChatComposer(conversationId))(meta =>
+            runInteractionComposer(
+              conversationId = conversationId,
+              runControlId = runControlId,
+              meta = meta,
+            )
+          ),
+        ),
+        tag("ab-side-panel")(
+          attr("panel-id") := "context-panel",
+          attr("title")    := "Context",
+          attr("width")    := "400px",
+        )(),
       ),
       runSessionMeta.fold[Frag](frag())(_ => gitPanelStyles),
       JsResources.markedScript,
@@ -222,11 +268,16 @@ object ChatView:
         attr("rel")  := "stylesheet",
         attr("href") := "https://cdn.jsdelivr.net/npm/highlight.js@11.11.1/styles/github-dark.min.css",
       ),
+      JsResources.inlineModuleScript("/static/client/components/ab-side-panel.js"),
+      JsResources.inlineModuleScript("/static/client/components/ab-message-search.js"),
+      JsResources.inlineModuleScript("/static/client/components/ab-icon-button.js"),
+      JsResources.inlineModuleScript("/static/client/components/ab-tool-waterfall.js"),
       JsResources.inlineModuleScript("/static/client/components/chat-message-stream.js"),
       runSessionMeta.fold[Frag](JsResources.inlineModuleScript("/static/client/components/message-composer.js"))(_ =>
         frag(
           JsResources.inlineModuleScript("/static/client/components/run-session-controls.js"),
           JsResources.inlineModuleScript("/static/client/components/git-panel.js"),
+          JsResources.inlineModuleScript("/static/client/components/ab-git-summary.js"),
         )
       ),
       if detailContext.graphReports.nonEmpty then graphPanelScript(conversationId) else frag(),
@@ -261,12 +312,61 @@ object ChatView:
       showNewChat = showNewChat,
     )
 
-  def messagesFragment(messages: List[ConversationEntry]): String =
-    div(cls := "space-y-4 text-gray-100")(
-      messages.map(messageCard)
+  /** Groups consecutive ToolCall entries together. Non-ToolCall entries (including ToolResult) are
+    * left as individual Left values. A run of 2+ consecutive ToolCall entries becomes a single
+    * Right value containing the list. A lone ToolCall stays as Left so it renders with the existing
+    * individual card.
+    */
+  private def groupToolCalls(
+    messages: List[ConversationEntry]
+  ): List[Either[ConversationEntry, List[ConversationEntry]]] =
+    messages.foldRight(List.empty[Either[ConversationEntry, List[ConversationEntry]]]) {
+      case (msg, acc) if msg.messageType == MessageType.ToolCall =>
+        acc match
+          // The head of acc is already an accumulated group — extend it
+          case Right(group) :: tail => Right(msg :: group) :: tail
+          // Start a new group with just this message (will be promoted to Right if 2+)
+          case _                    => Right(List(msg)) :: acc
+      case (msg, acc) =>
+        // Demote a solo ToolCall group (size == 1) back to a regular Left card
+        val normalised = acc match
+          case Right(List(single)) :: tail => Left(single) :: tail
+          case _                           => acc
+        Left(msg) :: normalised
+    } match
+      // Final pass: demote any trailing solo group
+      case Right(List(single)) :: tail => Left(single) :: tail
+      case result                      => result
+
+  def messagesFragment(messages: List[ConversationEntry], conversationId: Option[String] = None): String =
+    val grouped = groupToolCalls(messages)
+    div(cls := "space-y-2 text-gray-100")(
+      grouped.zipWithIndex.map { case (entry, idx) =>
+        entry match
+          case Right(toolCalls) =>
+            val toolsJson = toolCalls.map { m =>
+              val name     = extractToolSummary(m.content)
+              val subtitle = m.content.linesIterator.take(3).mkString(" ").take(80).replace("\"", "'").replace("\n", " ")
+              val input    = m.content.take(400).replace("\"", "'").replace("\n", "\\n")
+              s"""{"name":"${name.replace("\"", "'")}","subtitle":"$subtitle","input":"$input"}"""
+            }.mkString("[", ",", "]")
+            div(cls := "flex justify-start my-0.5")(
+              tag("ab-tool-waterfall")(
+                attr("tools") := toolsJson,
+              )()
+            )
+          case Left(msg) =>
+            val prevSender =
+              if idx > 0 then
+                grouped(idx - 1) match
+                  case Left(prev)            => Some(prev.senderType)
+                  case Right(prevGroup)      => prevGroup.lastOption.map(_.senderType)
+              else None
+            messageCard(msg, prevSender, conversationId)
+      }
     ).render
 
-  private def messageCard(message: ConversationEntry): Frag =
+  private def messageCard(message: ConversationEntry, prevSender: Option[SenderType] = None, conversationId: Option[String] = None): Frag =
     message.messageType match
       case MessageType.ToolCall   => toolCallCard(message)
       case MessageType.ToolResult => toolResultCard(message)
@@ -275,32 +375,57 @@ object ChatView:
           case SenderType.System =>
             div(cls := "flex justify-center", attr("data-sender") := "system")(
               div(
-                cls := "max-w-[90%] rounded-lg border border-amber-300/25 bg-amber-500/15 px-4 py-2 text-xs text-amber-100"
+                cls := "rounded-full px-3 py-0.5 text-[10px] bg-amber-500/10 text-amber-300 border border-amber-500/20"
               )(
                 message.content
               )
             )
           case sender            =>
-            val isUser                                           = sender == SenderType.User
-            val (containerClasses, bubbleClasses, senderClasses) =
+            val isUser             = sender == SenderType.User
+            val showSenderLabel    = prevSender != Some(sender)
+            val (containerClasses, bubbleClasses) =
               if isUser then
                 (
-                  "flex justify-end",
-                  "max-w-[85%] lg:max-w-[72%] rounded-2xl rounded-br-md border border-indigo-300/20 bg-indigo-500/90 px-4 py-3 shadow-lg shadow-indigo-900/20",
-                  "text-indigo-100",
+                  "flex justify-end items-center group",
+                  "max-w-[85%] lg:max-w-[72%] rounded-2xl rounded-br-md border border-indigo-400/25 bg-indigo-500/15 px-4 py-3 text-gray-100",
                 )
               else
                 (
                   "flex justify-start",
-                  "max-w-[85%] lg:max-w-[72%] rounded-2xl rounded-bl-md border border-white/15 bg-slate-800/80 px-4 py-3 shadow-lg shadow-black/20",
-                  "text-slate-300",
+                  "max-w-[85%] lg:max-w-[72%] border-l-2 border-indigo-400/50 pl-4 py-2",
                 )
 
+            val inputSelector = conversationId
+              .map(cid => s"document.getElementById('chat-input-$cid')")
+              .getOrElse("document.querySelector('[id^=\"chat-input-\"]')")
+
             div(cls := containerClasses, attr("data-sender") := (if isUser then "user" else "assistant"))(
+              if isUser then
+                button(
+                  `type`          := "button",
+                  cls             := "opacity-0 group-hover:opacity-100 transition-opacity mr-1.5 flex-shrink-0 p-1 rounded hover:bg-white/10",
+                  attr("title")   := "Edit and re-send",
+                  attr("onclick") := s"""(function(btn) {
+  var t = $inputSelector;
+  if (!t) return;
+  var bubble = btn.closest('[data-sender="user"]').querySelector('pre, p');
+  if (!bubble) return;
+  t.value = bubble.textContent.trim();
+  t.dispatchEvent(new Event('input', {bubbles:true}));
+  t.scrollIntoView({behavior:'smooth', block:'end'});
+  t.focus();
+})(this)""",
+                )(
+                  raw("""<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" class="text-gray-500 group-hover:text-indigo-400 transition-colors"><path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10"/></svg>""")
+                )
+              else frag(),
               div(cls := bubbleClasses)(
-                div(cls := s"text-xs font-semibold mb-2 $senderClasses")(
-                  message.sender
-                ),
+                if showSenderLabel then
+                  div(cls := s"text-xs font-semibold mb-2 ${if isUser then "text-indigo-300" else "text-slate-400"}")(
+                    message.sender
+                  )
+                else
+                  frag(),
                 if !isUser && looksLikeMarkdown(message.content) then
                   div(
                     cls := "text-sm leading-6 text-gray-50 [&_p]:my-2 [&_ul]:my-2 [&_ol]:my-2 [&_h1]:mt-2 [&_h2]:mt-2 [&_h3]:mt-2"
@@ -316,41 +441,117 @@ object ChatView:
               )
             )
 
+  private def extractToolSummary(content: String): String =
+    val nameLine = content.linesIterator.find(_.trim.startsWith("name:"))
+    nameLine.map(_.trim.stripPrefix("name:").trim).filter(_.nonEmpty)
+      .getOrElse(content.take(60).replaceAll("\n", " "))
+
   private def toolCallCard(message: ConversationEntry): Frag =
-    div(cls := "flex justify-start")(
-      div(
-        cls := "tool-call-block max-w-[85%] lg:max-w-[72%] border border-indigo-400/20 bg-indigo-950/40 rounded-xl px-4 py-3 my-1"
-      )(
-        tag("details")(
-          tag("summary")(cls := "cursor-pointer select-none font-mono text-xs font-semibold text-indigo-300")(
-            "\u2699 Tool call"
-          ),
-          pre(
-            cls := "mt-2 text-xs text-indigo-100 whitespace-pre-wrap break-words font-mono bg-black/30 rounded p-2 overflow-auto"
-          )(
-            message.content
-          ),
-        )
-      )
+    val summary = extractToolSummary(message.content)
+    div(cls := "flex justify-start my-0.5")(
+      tag("ab-timeline-event")(
+        attr("event-type") := "tool",
+        attr("title")      := summary,
+        attr("expandable") := "true",
+        attr("subtitle")   := message.content.take(500),
+      )()
     )
 
   private def toolResultCard(message: ConversationEntry): Frag =
-    div(cls := "flex justify-start")(
-      div(
-        cls := "tool-result-block max-w-[85%] lg:max-w-[72%] border border-emerald-400/20 bg-emerald-950/40 rounded-xl px-4 py-3 my-1"
-      )(
-        tag("details")(
-          tag("summary")(cls := "cursor-pointer select-none font-mono text-xs font-semibold text-emerald-300")(
-            "\u2713 Tool result"
-          ),
-          pre(
-            cls := "mt-2 text-xs text-emerald-100 whitespace-pre-wrap break-words font-mono bg-black/30 rounded p-2 overflow-auto"
-          )(
-            message.content
-          ),
-        )
-      )
+    val firstLine = message.content.linesIterator.nextOption().getOrElse("").take(120)
+    div(cls := "flex justify-start my-0.5")(
+      tag("ab-timeline-event")(
+        attr("event-type") := "tool",
+        attr("title")      := s"\u2192 $firstLine",
+        attr("expandable") := "true",
+        attr("subtitle")   := message.content.take(500),
+      )()
     )
+
+  private def runBreadcrumb(meta: RunSessionUiMeta, conversationId: String): Frag =
+    div(cls := "flex items-center gap-2 text-[11px] text-gray-400 mb-1 px-1")(
+      span(cls := "text-gray-500")("Run:"),
+      span(
+        cls := s"font-mono font-semibold ${runModeBadgeClass(meta.status).replace("rounded-full border", "").trim}"
+      )(
+        runModeLabel(meta.status)
+      ),
+      if meta.breadcrumb.nonEmpty then
+        frag(
+          meta.breadcrumb.take(3).zipWithIndex.map {
+            case (item, idx) =>
+              frag(
+                if idx > 0 then span(cls := "text-gray-600")("→") else frag(),
+                a(
+                  href := s"/chat/${item.conversationId}",
+                  cls  := (
+                    if item.runId == meta.runId then
+                      "font-mono text-indigo-300 hover:text-indigo-200"
+                    else "font-mono text-gray-400 hover:text-gray-200"
+                  ),
+                )(item.runId.take(8)),
+              )
+          }*
+        )
+      else
+        span(cls := "font-mono text-gray-500")(meta.runId.take(8)),
+      span(cls := "ml-auto")(
+        tag("ab-icon-button")(
+          attr("icon")    := "M3.75 9h16.5m-16.5 6.75h16.5",
+          attr("tooltip") := "Run chain details",
+          attr("size")    := "sm",
+          attr("onclick") := """window.dispatchEvent(new CustomEvent('ab-panel-open', {detail:{panelId:'context-panel', title:'Run Chain'}}))""",
+        )()
+      ),
+    )
+
+  private def inlineTimelineEvents(
+    detailContext: ChatDetailContext,
+    runSessionMeta: Option[RunSessionUiMeta],
+  ): Frag =
+    val hasContent = detailContext.proofOfWork.isDefined ||
+      detailContext.reports.nonEmpty ||
+      detailContext.graphReports.nonEmpty ||
+      runSessionMeta.isDefined
+    if !hasContent then frag()
+    else
+      div(cls := "space-y-1")(
+        runSessionMeta.map { meta =>
+          val basePath = s"/api/workspaces/${meta.workspaceId}/runs/${meta.runId}/git"
+          tag("ab-git-summary")(
+            attr("status-url")   := s"$basePath/status",
+            attr("diff-url")     := s"$basePath/diff",
+            attr("panel-target") := "context-panel",
+          )()
+        }.getOrElse(frag()),
+        if detailContext.reports.nonEmpty then
+          tag("ab-timeline-event")(
+            attr("event-type") := "tool",
+            attr("title")      := s"Run Reports (${detailContext.reports.size})",
+            attr("subtitle")   := "Click to view reports",
+            attr("expandable") := "true",
+            attr("onclick")    := """window.dispatchEvent(new CustomEvent('ab-panel-open', {detail:{panelId:'context-panel', title:'Reports'}}))""",
+          )()
+        else frag(),
+        if detailContext.graphReports.nonEmpty then
+          tag("ab-timeline-event")(
+            attr("event-type") := "tool",
+            attr("title")      := s"Run Graphs (${detailContext.graphReports.size})",
+            attr("subtitle")   := "Click to view graphs",
+            attr("expandable") := "true",
+            attr("onclick")    := """window.dispatchEvent(new CustomEvent('ab-panel-open', {detail:{panelId:'context-panel', title:'Graphs'}}))""",
+          )()
+        else frag(),
+        detailContext.proofOfWork.map { _ =>
+          tag("ab-timeline-event")(
+            attr("event-type") := "tool",
+            attr("title")      := "Proof of Work",
+            attr("subtitle")   := "Click to view proof of work report",
+            attr("expandable") := "true",
+            attr("onclick")    := """window.dispatchEvent(new CustomEvent('ab-panel-open', {detail:{panelId:'context-panel', title:'Proof of Work'}}))""",
+          )()
+        }.getOrElse(frag()),
+      )
 
   private def runChainPanel(meta: RunSessionUiMeta): Frag =
     div(cls := "mt-3 flex flex-wrap items-center gap-2 text-xs")(
@@ -439,46 +640,7 @@ object ChatView:
       )
 
   private def memorySidebar(conversationId: String, memorySessionId: Option[String]): Frag =
-    tag("details")(cls := "w-full lg:w-80 lg:flex-shrink-0 rounded-lg border border-white/10 bg-slate-900/70 p-3")(
-      tag("summary")(cls := "cursor-pointer select-none text-sm font-semibold text-slate-200")("Memory Search"),
-      div(id := s"chat-memory-filters-$conversationId", cls := "mt-3 space-y-2")(
-        input(
-          `type`             := "text",
-          name               := "q",
-          placeholder        := "Search memory...",
-          cls                := "w-full rounded-md border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-100",
-          attr("hx-get")     := "/api/memory/search",
-          attr("hx-trigger") := "input changed delay:300ms, search",
-          attr("hx-target")  := s"#chat-memory-results-$conversationId",
-          attr("hx-include") := s"#chat-memory-filters-$conversationId",
-          attr("hx-vals")    := "{\"format\":\"html\",\"limit\":\"8\"}",
-          attr("hx-swap")    := "innerHTML",
-        ),
-        input(`type`         := "hidden", name := "sessionId", value := memorySessionId.getOrElse("")),
-        select(
-          name               := "kind",
-          cls                := "w-full rounded-md border border-white/10 bg-black/20 px-3 py-2 text-xs text-slate-100",
-          attr("hx-get")     := "/api/memory/search",
-          attr("hx-trigger") := "change",
-          attr("hx-target")  := s"#chat-memory-results-$conversationId",
-          attr("hx-include") := s"#chat-memory-filters-$conversationId",
-          attr("hx-vals")    := "{\"format\":\"html\",\"limit\":\"8\"}",
-          attr("hx-swap")    := "innerHTML",
-        )(
-          option(value := "")("All kinds"),
-          option(value := "Preference")("Preference"),
-          option(value := "Fact")("Fact"),
-          option(value := "Context")("Context"),
-          option(value := "Summary")("Summary"),
-        ),
-      ),
-      div(
-        id  := s"chat-memory-results-$conversationId",
-        cls := "mt-3 max-h-[60vh] overflow-y-auto space-y-2",
-      )(
-        p(cls := "text-xs text-slate-400")("Type to search memory entries.")
-      ),
-    )
+    frag()
 
   private def graphPanelScript(conversationId: String): Frag =
     script(
@@ -499,9 +661,19 @@ object ChatView:
       )
     )
 
+  private def activityIndicator(conversationId: String): Frag =
+    div(
+      id  := s"activity-indicator-$conversationId",
+      cls := "hidden px-4 py-2 flex items-center gap-2 text-[11px] text-gray-400 border-t border-white/5 bg-slate-950/70 transition-all",
+    )(
+      span(id := s"activity-icon-$conversationId", cls := "text-indigo-400")("\u2699"),
+      span(id := s"activity-text-$conversationId", cls := "truncate")("Thinking..."),
+      span(cls := "ml-auto animate-pulse text-gray-600")("\u25cf"),
+    )
+
   private def standardChatComposer(conversationId: String): Frag =
     div(
-      cls := "sticky bottom-0 mt-3 rounded-lg bg-gray-900/95 ring-1 ring-white/10 p-3 backdrop-blur"
+      cls := "sticky bottom-0 mt-2 rounded-xl bg-slate-900/98 ring-1 ring-white/10 backdrop-blur"
     )(
       form(
         method                        := "post",
@@ -510,79 +682,95 @@ object ChatView:
         attr("hx-target")             := s"#messages-$conversationId",
         attr("hx-swap")               := "innerHTML",
         attr("hx-disabled-elt")       := "button[type='submit']",
-        attr("hx-on::before-request") := s"""
-          |document.getElementById('messages-$conversationId')?.markPending?.();
-        """.stripMargin.trim,
-        attr("hx-on::after-request")  := """
-          |this.reset();
-        """.stripMargin.trim,
-        cls                           := "space-y-2",
+        attr("hx-on::before-request") := s"""document.getElementById('messages-$conversationId')?.markPending?.();""",
+        attr("hx-on::after-request")  := """this.reset();""",
       )(
         input(`type` := "hidden", name := "fragment", value := "true"),
+        // Textarea
         div(
           id                           := "chat-composer",
-          cls                          := "space-y-2",
+          cls                          := "px-4 pt-3 pb-2",
           attr("data-conversation-id") := conversationId,
           attr("data-agents-endpoint") := "/api/agents",
         )(
-          div(cls := "flex flex-wrap items-center gap-2")(
-            button(
-              `type`            := "button",
-              cls               := "rounded-md bg-white/10 hover:bg-white/20 px-3 py-1.5 text-xs font-semibold text-gray-200",
-              attr("data-role") := "mode-toggle",
-            )("Preview"),
-            select(
-              cls               := "rounded-md bg-white/10 border border-white/20 px-2 py-1.5 text-xs text-gray-100",
-              attr("data-role") := "code-language",
-            )(
-              option(value := "plain")("plain"),
-              option(value := "scala")("scala"),
-              option(value := "python")("python"),
-              option(value := "bash")("bash"),
-              option(value := "json")("json"),
-              option(value := "yaml")("yaml"),
-            ),
-            button(
-              `type`            := "button",
-              cls               := "rounded-md bg-white/10 hover:bg-white/20 px-3 py-1.5 text-xs font-semibold text-gray-200",
-              attr("data-role") := "insert-code",
-            )("</> Code"),
-            span(cls := "text-xs text-gray-400")("Ctrl/Cmd+Enter send, Ctrl+Shift+P preview, Ctrl+K code"),
-          ),
           div(cls := "relative")(
             div(attr("data-role") := "write-pane")(
               textarea(
                 id                   := s"chat-input-$conversationId",
                 name                 := "content",
-                placeholder          := "Type your message... Use @agent-name to route directly.",
-                rows                 := 5,
-                cls                  := "w-full bg-white/10 border border-white/20 rounded-lg px-4 py-3 text-white placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono text-sm",
+                placeholder          := "Message...",
+                rows                 := 1,
+                cls                  := "w-full resize-none bg-transparent border-none text-white placeholder:text-gray-500 focus:outline-none text-sm leading-6 min-h-[1.5rem] max-h-48 overflow-y-auto",
                 required,
                 attr("autocomplete") := "off",
                 attr("spellcheck")   := "false",
+                attr("data-role")    := "auto-grow",
               )()
             ),
             div(
               attr("data-role") := "preview-pane",
-              cls               := "hidden min-h-[7rem] rounded-lg border border-white/20 bg-black/20 px-4 py-3 text-sm leading-6 text-gray-100 overflow-auto",
+              cls               := "hidden min-h-[1.5rem] max-h-48 text-sm leading-6 text-gray-100 overflow-auto",
             )(),
             div(
               attr("data-role") := "mentions",
-              cls               := "hidden absolute left-0 right-0 mt-1 max-h-48 overflow-auto rounded-md border border-white/15 bg-slate-900/95 shadow-lg z-20",
+              cls               := "hidden absolute left-0 right-0 bottom-full mb-1 max-h-48 overflow-auto rounded-md border border-white/15 bg-slate-900/95 shadow-lg z-20",
             )(),
           ),
         ),
-        div(cls := "flex items-center gap-2")(
-          button(
-            `type` := "submit",
-            cls    := "px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors",
-          )("Send"),
-          button(
-            id              := s"abort-btn-$conversationId",
-            `type`          := "button",
-            cls             := "hidden px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors",
-            attr("onclick") := s"document.getElementById('messages-$conversationId').abort()",
-          )("Stop"),
+        // Bottom toolbar
+        div(cls := "flex items-center justify-between px-3 pb-2 gap-2")(
+          // Left: icon tools
+          div(cls := "flex items-center gap-0.5")(
+            tag("ab-icon-button")(
+              attr("icon")      := "M6 18L18 6",
+              attr("tooltip")   := "Slash commands (/)",
+              attr("size")      := "sm",
+              attr("data-role") := "slash-command",
+            )(),
+            tag("ab-icon-button")(
+              attr("icon")      := "M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5",
+              attr("tooltip")   := "Insert code block (Ctrl+K)",
+              attr("size")      := "sm",
+              attr("data-role") := "insert-code",
+            )(),
+            tag("ab-icon-button")(
+              attr("icon")      := "M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0ZM12 14a7 7 0 0 0-7 7h14a7 7 0 0 0-7-7Z",
+              attr("tooltip")   := "Mention agent (@)",
+              attr("size")      := "sm",
+              attr("data-role") := "mention-trigger",
+            )(),
+            tag("ab-icon-button")(
+              attr("icon")      := "M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z",
+              attr("tooltip")   := "Preview markdown (Ctrl+P)",
+              attr("size")      := "sm",
+              attr("data-role") := "mode-toggle",
+            )(),
+          ),
+          // Right: model selector + send + abort
+          div(cls := "flex items-center gap-1.5")(
+            tag("ab-badge-select")(
+              attr("value")   := "claude-opus-4-6",
+              attr("options") := """[{"value":"claude-opus-4-6","label":"Opus 4.6"},{"value":"claude-sonnet-4-6","label":"Sonnet 4.6"},{"value":"claude-haiku-4-5","label":"Haiku 4.5"}]""",
+              attr("label")   := "Model",
+              id              := "model-selector",
+            )(),
+            // Abort button (hidden by default, shown when streaming)
+            button(
+              id              := s"abort-btn-$conversationId",
+              `type`          := "button",
+              cls             := "hidden rounded-md bg-rose-600/20 border border-rose-500/30 hover:bg-rose-600/30 text-rose-300 px-2 py-1 text-[11px] font-semibold transition-colors",
+              attr("onclick") := s"document.getElementById('messages-$conversationId').abort()",
+            )("Stop"),
+            // Send button (icon, turns indigo when text present)
+            button(
+              `type`        := "submit",
+              id            := s"send-btn-$conversationId",
+              cls           := "rounded-md bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white p-1.5 transition-colors",
+              attr("title") := "Send message (Ctrl+Enter)",
+            )(
+              raw("""<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>""")
+            ),
+          ),
         ),
       )
     )
@@ -792,6 +980,19 @@ object ChatView:
         100% { background: transparent; }
       }
       """)
+    )
+
+  private def statusDot(status: String): Frag =
+    val (dotColor, label) = status.toLowerCase match
+      case s if s.contains("running") => ("text-blue-400", "Running")
+      case "completed"                => ("text-emerald-400", "Completed")
+      case "failed"                   => ("text-rose-400", "Failed")
+      case "cancelled"                => ("text-orange-400", "Cancelled")
+      case "pending"                  => ("text-amber-400", "Pending")
+      case _                          => ("text-gray-400", status.capitalize)
+    span(cls := "inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-gray-300")(
+      span(cls := s"text-[10px] $dotColor")("●"),
+      label,
     )
 
   private def runModeLabel(status: RunStatus): String = status match

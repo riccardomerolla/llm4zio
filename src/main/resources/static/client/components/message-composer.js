@@ -5,9 +5,6 @@ class MessageComposer {
     this.input = root.querySelector('textarea[name="content"]');
     this.writePane = root.querySelector('[data-role="write-pane"]');
     this.previewPane = root.querySelector('[data-role="preview-pane"]');
-    this.toggleBtn = root.querySelector('[data-role="mode-toggle"]');
-    this.insertCodeBtn = root.querySelector('[data-role="insert-code"]');
-    this.languageSelect = root.querySelector('[data-role="code-language"]');
     this.mentionsEl = root.querySelector('[data-role="mentions"]');
 
     this.agentsEndpoint = root.dataset.agentsEndpoint || '/api/agents';
@@ -24,12 +21,26 @@ class MessageComposer {
   }
 
   bind() {
-    this.toggleBtn?.addEventListener('click', () => this.togglePreview());
-    this.insertCodeBtn?.addEventListener('click', () => this.insertCodeBlock());
+    // Wire ab-icon-button elements (they emit native click events)
+    const slashCommandBtn = this.root.querySelector('[data-role="slash-command"]');
+    const insertCodeBtn = this.root.querySelector('[data-role="insert-code"]');
+    const mentionTrigger = this.root.querySelector('[data-role="mention-trigger"]');
+    const modeToggle = this.root.querySelector('[data-role="mode-toggle"]');
+
+    slashCommandBtn?.addEventListener('click', () => this._triggerSlash());
+    insertCodeBtn?.addEventListener('click', () => this.insertCodeBlock());
+    mentionTrigger?.addEventListener('click', () => this._triggerMention());
+    modeToggle?.addEventListener('click', () => this.togglePreview());
+
+    // Send button visual state
+    this.sendBtn = this.form.querySelector('button[type="submit"]');
+    this._updateSendState();
 
     this.input.addEventListener('input', () => {
       this.updatePreview();
       this.refreshMentions();
+      this._autoGrow();
+      this._updateSendState();
     });
 
     this.input.addEventListener('keydown', (event) => this.handleKeyDown(event));
@@ -44,6 +55,7 @@ class MessageComposer {
       this.input.focus();
       this.updatePreview();
       this.notifyStreamPending();
+      this._autoGrow();
     });
 
     document.addEventListener('click', (event) => {
@@ -51,6 +63,49 @@ class MessageComposer {
     });
 
     this.updatePreview();
+    this._autoGrow();
+  }
+
+  _autoGrow() {
+    if (!this.input) return;
+    this.input.style.height = 'auto';
+    this.input.style.height = Math.min(this.input.scrollHeight, 192) + 'px'; // max ~12 lines
+  }
+
+  _triggerMention() {
+    if (!this.input) return;
+    const current = this.input.value;
+    const caret = this.input.selectionStart ?? current.length;
+    const before = current.slice(0, caret);
+    const after = current.slice(caret);
+    const needsSpace = before.length > 0 && !before.endsWith(' ');
+    const insert = (needsSpace ? ' ' : '') + '@';
+    this.input.value = before + insert + after;
+    const newCaret = caret + insert.length;
+    this.input.setSelectionRange(newCaret, newCaret);
+    this.input.focus();
+    this.refreshMentions();
+  }
+
+  _triggerSlash() {
+    if (!this.input) return;
+    const current = this.input.value;
+    const caret = this.input.selectionStart ?? current.length;
+    const before = current.slice(0, caret);
+    const after = current.slice(caret);
+    const needsSpace = before.length > 0 && !before.endsWith(' ') && !before.endsWith('\n');
+    const insert = (needsSpace ? ' ' : '') + '/';
+    this.input.value = before + insert + after;
+    const newCaret = caret + insert.length;
+    this.input.setSelectionRange(newCaret, newCaret);
+    this.input.focus();
+    this._updateSendState();
+  }
+
+  _updateSendState() {
+    if (!this.sendBtn) return;
+    const hasContent = this.input?.value?.trim().length > 0;
+    this.sendBtn.classList.toggle('opacity-40', !hasContent);
   }
 
   notifyStreamPending() {
@@ -91,7 +146,7 @@ class MessageComposer {
       return;
     }
 
-    if (ctrlOrCmd && event.shiftKey && (event.key === 'P' || event.key === 'p')) {
+    if (ctrlOrCmd && !event.shiftKey && (event.key === 'P' || event.key === 'p')) {
       event.preventDefault();
       this.togglePreview();
       return;
@@ -142,7 +197,6 @@ class MessageComposer {
 
     this.writePane?.classList.toggle('hidden', previewOn);
     this.previewPane?.classList.toggle('hidden', !previewOn);
-    if (this.toggleBtn) this.toggleBtn.textContent = previewOn ? 'Write' : 'Preview';
 
     this.updatePreview();
     if (!previewOn) this.input.focus();
@@ -257,25 +311,15 @@ class MessageComposer {
     const start = this.input.selectionStart ?? value.length;
     const end = this.input.selectionEnd ?? value.length;
     const selected = value.slice(start, end);
-
-    let language = this.languageSelect?.value || 'plain';
-    if (language === 'plain') {
-      language = this.detectLanguage(selected);
-      if (this.languageSelect && language !== 'plain') this.languageSelect.value = language;
-    }
-
+    const language = this.detectLanguage(selected);
     const langTag = language === 'plain' ? '' : language;
     const snippetBody = selected || 'code';
     const block = `\n\`\`\`${langTag}\n${snippetBody}\n\`\`\`\n`;
-
     this.input.setRangeText(block, start, end, 'end');
-
     if (!selected) {
       const bodyStart = start + 5 + langTag.length;
-      const bodyEnd = bodyStart + 4;
-      this.input.setSelectionRange(bodyStart, bodyEnd);
+      this.input.setSelectionRange(bodyStart, bodyStart + 4);
     }
-
     this.updatePreview();
     this.input.focus();
   }
