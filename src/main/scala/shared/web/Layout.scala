@@ -61,6 +61,8 @@ object Layout:
         ),
         tag("ab-command-palette")(),
         JsResources.inlineModuleScript("/static/client/components/ab-command-palette.js"),
+        tag("ab-keyboard-shortcuts")(),
+        JsResources.inlineModuleScript("/static/client/components/ab-keyboard-shortcuts.js"),
         script(raw(
           """(function () {
             |  const sidebar = document.getElementById("mobile-sidebar");
