@@ -269,6 +269,7 @@ object ChatView:
         frag(
           JsResources.inlineModuleScript("/static/client/components/run-session-controls.js"),
           JsResources.inlineModuleScript("/static/client/components/git-panel.js"),
+          JsResources.inlineModuleScript("/static/client/components/ab-git-summary.js"),
         )
       ),
       if detailContext.graphReports.nonEmpty then graphPanelScript(conversationId) else frag(),
@@ -485,12 +486,11 @@ object ChatView:
     else
       div(cls := "space-y-1")(
         runSessionMeta.map { meta =>
-          tag("ab-timeline-event")(
-            attr("event-type") := "git",
-            attr("title")      := "Git changes",
-            attr("subtitle")   := "Click to view diff",
-            attr("expandable") := "true",
-            attr("onclick")    := """window.dispatchEvent(new CustomEvent('ab-panel-open', {detail:{panelId:'context-panel', title:'Git Changes'}}))""",
+          val basePath = s"/api/workspaces/${meta.workspaceId}/runs/${meta.runId}/git"
+          tag("ab-git-summary")(
+            attr("status-url")   := s"$basePath/status",
+            attr("diff-url")     := s"$basePath/diff",
+            attr("panel-target") := "context-panel",
           )()
         }.getOrElse(frag()),
         if detailContext.reports.nonEmpty then
