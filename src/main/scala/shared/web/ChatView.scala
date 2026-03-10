@@ -198,6 +198,28 @@ object ChatView:
           },
         ),
         runSessionMeta.fold[Frag](frag())(meta => runBreadcrumb(meta, conversationId)),
+        div(
+          id      := s"token-gauge-$conversationId",
+          cls     := "relative w-full cursor-pointer group overflow-visible h-[3px]",
+          attr("onclick") := s"""window.dispatchEvent(new CustomEvent('ab-panel-open', {{detail:{{panelId:'context-panel', title:'Token Usage'}}}}))""",
+          role    := "progressbar",
+          attr("aria-label") := "Context window usage",
+          attr("aria-valuenow") := "0",
+          attr("aria-valuemax") := "100",
+        )(
+          div(cls := "absolute inset-0 rounded-full bg-white/5")(),
+          div(
+            id    := s"token-gauge-bar-$conversationId",
+            cls   := "absolute inset-y-0 left-0 rounded-full bg-emerald-500 transition-all duration-500",
+            style := "width:0%",
+          )(),
+          div(cls := "absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none")(
+            span(
+              id  := s"token-gauge-label-$conversationId",
+              cls := "text-[10px] text-gray-300 bg-slate-900/90 px-2 py-0.5 rounded-full pointer-events-none",
+            )(""),
+          ),
+        ),
         div(cls := "mt-1 flex flex-1 min-h-0 flex-col gap-3")(
           div(
             cls := "relative flex-1 min-h-0 rounded border border-white/10 bg-black/20 overflow-hidden flex flex-col"

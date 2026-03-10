@@ -119,6 +119,19 @@ class ChatMessageStream extends LitElement {
         if (!this._streaming) this._refreshMessages();
         break;
     }
+    // Update token gauge if payload carries usage data.
+    // Supported field names: tokenCount, totalTokens, contextUsage, inputTokens, usedTokens.
+    const used =
+      parsed.tokenCount ??
+      parsed.totalTokens ??
+      parsed.contextUsage ??
+      parsed.inputTokens ??
+      parsed.usedTokens ??
+      null;
+    const max = parsed.maxTokens ?? parsed.contextMax ?? null;
+    if (used !== null && this.conversationId) {
+      window.updateTokenGauge(this.conversationId, used, max ?? 200000);
+    }
   }
 
   _appendStreamBubble() {
@@ -324,3 +337,51 @@ class ChatMessageStream extends LitElement {
 if (!customElements.get('chat-message-stream')) {
   customElements.define('chat-message-stream', ChatMessageStream);
 }
+
+/**
+ * Update the token gauge bar for a given conversation.
+ *
+ * @param {string|number} conversationId - the conversation ID used in element IDs
+ * @param {number} used  - tokens used so far
+ * @param {number} max   - total context window size (default 200 000)
+ *
+ * Color thresholds:
+ *   0-60%  → bg-emerald-500
+ *   60-85% → bg-amber-400
+ *   85-100% → bg-rose-500
+ */
+window.updateTokenGauge = function updateTokenGauge(conversationId, used, max = 200000) {
+  const bar   = document.getElementById('token-gauge-bar-'   + conversationId);
+  const label = document.getElementById('token-gauge-label-' + conversationId);
+  if (!bar || !label) return;
+
+  const safeUsed = Math.max(0, Number(used)  || 0);
+  const safeMax  = Math.max(1, Number(max));
+  const pct      = Math.min(100, (safeUsed / safeMax) * 100);
+
+  let colorClass;
+  if (pct < 60) {
+    colorClass = 'bg-emerald-500';
+  } else if (pct < 85) {
+    colorClass = 'bg-amber-400';
+  } else {
+    colorClass = 'bg-rose-500';
+  }
+
+  if (bar) {
+    bar.style.width = pct.toFixed(2) + '%';
+    bar.className = bar.className
+      .replace(/\bbg-emerald-500\b|\bbg-amber-400\b|\bbg-rose-500\b/g, '')
+      .trim() + ' ' + colorClass;
+  }
+
+  const gauge = document.getElementById(`token-gauge-${conversationId}`);
+  if (gauge) gauge.setAttribute('aria-valuenow', Math.round(pct).toString());
+
+  if (label) {
+    const usedFmt = safeUsed.toLocaleString();
+    const maxFmt  = safeMax.toLocaleString();
+    const pctFmt  = pct.toFixed(0);
+    label.textContent = usedFmt + ' / ' + maxFmt + ' tokens (' + pctFmt + '%)';
+  }
+};
