@@ -3,6 +3,7 @@ package shared.web
 import java.net.URLEncoder
 
 import conversation.entity.api.{ ChatConversation, ConversationEntry, ConversationSessionMeta, MessageType, SenderType }
+import db.TaskReportRow
 import gateway.entity.ChatSession
 import scalatags.Text.all.*
 import workspace.entity.{ RunSessionMode, RunStatus }
@@ -57,6 +58,7 @@ object ChatView:
     conversation: ChatConversation,
     sessionMeta: Option[ConversationSessionMeta],
     runSessionMeta: Option[RunSessionUiMeta],
+    detailContext: ChatDetailContext = ChatDetailContext.empty,
   ): String =
     val conversationId = sanitizeOptionalString(conversation.id).getOrElse("unknown")
     val description    = sanitizeOptionalString(conversation.description)
@@ -67,8 +69,8 @@ object ChatView:
         .getOrElse("/issues")
 
     Layout.page(s"Chat — ${conversation.title}", s"/chat/$conversationId")(
-      div(cls := "flex flex-col min-h-[calc(100vh-9rem)]")(
-        div(cls := "flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4 mb-4")(
+      div(cls := "flex flex-col min-h-[calc(100vh-9rem)] gap-4")(
+        div(cls := "flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4")(
           div(cls := "min-w-0")(
             a(
               href := "/chat",
@@ -128,34 +130,47 @@ object ChatView:
             },
           ),
         ),
-        div(cls := "relative flex-1 min-h-0 bg-white/5 ring-1 ring-white/10 rounded-lg overflow-hidden flex flex-col")(
-          // Messages list — Lit web component for streaming
-          tag("chat-message-stream")(
-            id                      := s"messages-$conversationId",
-            cls                     := "flex-1 min-h-0 overflow-y-auto p-6 space-y-4 block",
-            attr("conversation-id") := conversationId,
-            attr("ws-url")          := "/ws/console",
-          )(
-            raw(messagesFragment(conversation.messages))
+        detailContext.proofOfWork.fold[Frag](frag())(report => raw(ProofOfWorkView.panel(report, collapsed = false))),
+        reportsPanel(detailContext.reports),
+        graphPanel(detailContext.graphReports, conversationId),
+        div(cls := "flex flex-1 min-h-0 flex-col gap-4 lg:flex-row")(
+          div(cls := "flex-1 min-h-0 flex flex-col gap-3")(
+            div(
+              cls := "relative flex-1 min-h-0 bg-white/5 ring-1 ring-white/10 rounded-lg overflow-hidden flex flex-col"
+            )(
+              tag("chat-message-stream")(
+                id                      := s"messages-$conversationId",
+                cls                     := "flex-1 min-h-0 overflow-y-auto p-6 space-y-4 block",
+                attr("conversation-id") := conversationId,
+                attr("ws-url")          := "/ws/console",
+              )(
+                raw(messagesFragment(conversation.messages))
+              ),
+              button(
+                id              := s"scroll-bottom-$conversationId",
+                `type`          := "button",
+                cls             := "hidden absolute bottom-6 right-6 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 text-xs font-semibold shadow-lg",
+                attr("onclick") := s"document.getElementById('messages-$conversationId')?.scrollToLatest?.()",
+              )("Scroll to bottom"),
+            ),
+            runSessionMeta.fold[Frag](frag())(meta => runGitPanel(meta, conversationId)),
+            runSessionMeta.fold[Frag](standardChatComposer(conversationId))(meta =>
+              runInteractionComposer(
+                conversationId = conversationId,
+                runControlId = runControlId,
+                meta = meta,
+              )
+            ),
           ),
-          button(
-            id              := s"scroll-bottom-$conversationId",
-            `type`          := "button",
-            cls             := "hidden absolute bottom-6 right-6 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 text-xs font-semibold shadow-lg",
-            attr("onclick") := s"document.getElementById('messages-$conversationId')?.scrollToLatest?.()",
-          )("Scroll to bottom"),
-        ),
-        runSessionMeta.fold[Frag](frag())(meta => runGitPanel(meta, conversationId)),
-        runSessionMeta.fold[Frag](standardChatComposer(conversationId))(meta =>
-          runInteractionComposer(
+          memorySidebar(
             conversationId = conversationId,
-            runControlId = runControlId,
-            meta = meta,
-          )
+            memorySessionId = detailContext.memorySessionId,
+          ),
         ),
       ),
       runSessionMeta.fold[Frag](frag())(_ => gitPanelStyles),
       JsResources.markedScript,
+      if detailContext.graphReports.nonEmpty then JsResources.mermaidScript else frag(),
       tag("link")(
         attr("rel")  := "stylesheet",
         attr("href") := "https://cdn.jsdelivr.net/npm/highlight.js@11.11.1/styles/github-dark.min.css",
@@ -167,6 +182,7 @@ object ChatView:
           JsResources.inlineModuleScript("/static/client/components/git-panel.js"),
         )
       ),
+      if detailContext.graphReports.nonEmpty then graphPanelScript(conversationId) else frag(),
     )
 
   def messagesFragment(messages: List[ConversationEntry]): String =
@@ -293,6 +309,118 @@ object ChatView:
           cls  := "rounded border border-white/15 px-2 py-1 text-gray-300 hover:text-white",
         )("Next run")
       ),
+    )
+
+  private def reportsPanel(reports: List[TaskReportRow]): Frag =
+    if reports.isEmpty then frag()
+    else
+      tag("details")(cls := "rounded-lg border border-white/10 bg-slate-900/60 p-3")(
+        tag("summary")(cls := "cursor-pointer select-none text-sm font-semibold text-slate-200")(
+          s"Run Reports (${reports.size})"
+        ),
+        div(cls := "mt-3 space-y-3")(
+          reports.sortBy(_.createdAt).reverse.take(20).map { report =>
+            tag("details")(cls := "rounded-md border border-white/10 bg-black/20 p-3")(
+              tag("summary")(cls := "cursor-pointer select-none text-xs font-semibold text-slate-200")(
+                s"${report.stepName} • ${report.reportType} • ${report.createdAt.toString.take(19).replace("T", " ")}"
+              ),
+              div(cls := "mt-2 text-sm text-slate-100")(
+                if report.reportType.trim.equalsIgnoreCase("markdown") then
+                  IssuesView.markdownFragment(report.content)
+                else pre(cls := "whitespace-pre-wrap break-words text-xs text-slate-200")(report.content)
+              ),
+            )
+          }
+        ),
+      )
+
+  private def graphPanel(graphReports: List[TaskReportRow], conversationId: String): Frag =
+    if graphReports.isEmpty then frag()
+    else
+      tag("details")(cls := "rounded-lg border border-white/10 bg-slate-900/60 p-3")(
+        tag("summary")(cls := "cursor-pointer select-none text-sm font-semibold text-slate-200")(
+          s"Run Graphs (${graphReports.size})"
+        ),
+        div(cls := "mt-3 space-y-3")(
+          graphReports.sortBy(_.createdAt).reverse.take(10).zipWithIndex.map {
+            case (report, idx) =>
+              div(cls := "rounded-md border border-white/10 bg-black/20 p-3")(
+                p(cls := "text-xs font-semibold text-slate-200")(
+                  s"${report.stepName} • ${report.createdAt.toString.take(19).replace("T", " ")}"
+                ),
+                div(
+                  cls                               := "mt-2 overflow-auto rounded border border-white/10 bg-slate-950/70 p-2",
+                  attr("data-chat-graph-container") := s"$conversationId-$idx",
+                )(
+                  div(
+                    cls                         := "mermaid text-slate-200",
+                    attr("data-chat-graph-src") := report.content,
+                  )(report.content)
+                ),
+              )
+          }
+        ),
+      )
+
+  private def memorySidebar(conversationId: String, memorySessionId: Option[String]): Frag =
+    tag("details")(cls := "w-full lg:w-80 lg:flex-shrink-0 rounded-lg border border-white/10 bg-slate-900/70 p-3")(
+      tag("summary")(cls := "cursor-pointer select-none text-sm font-semibold text-slate-200")("Memory Search"),
+      div(id := s"chat-memory-filters-$conversationId", cls := "mt-3 space-y-2")(
+        input(
+          `type`             := "text",
+          name               := "q",
+          placeholder        := "Search memory...",
+          cls                := "w-full rounded-md border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-100",
+          attr("hx-get")     := "/api/memory/search",
+          attr("hx-trigger") := "input changed delay:300ms, search",
+          attr("hx-target")  := s"#chat-memory-results-$conversationId",
+          attr("hx-include") := s"#chat-memory-filters-$conversationId",
+          attr("hx-vals")    := "{\"format\":\"html\",\"limit\":\"8\"}",
+          attr("hx-swap")    := "innerHTML",
+        ),
+        input(`type`         := "hidden", name := "sessionId", value := memorySessionId.getOrElse("")),
+        select(
+          name               := "kind",
+          cls                := "w-full rounded-md border border-white/10 bg-black/20 px-3 py-2 text-xs text-slate-100",
+          attr("hx-get")     := "/api/memory/search",
+          attr("hx-trigger") := "change",
+          attr("hx-target")  := s"#chat-memory-results-$conversationId",
+          attr("hx-include") := s"#chat-memory-filters-$conversationId",
+          attr("hx-vals")    := "{\"format\":\"html\",\"limit\":\"8\"}",
+          attr("hx-swap")    := "innerHTML",
+        )(
+          option(value := "")("All kinds"),
+          option(value := "Preference")("Preference"),
+          option(value := "Fact")("Fact"),
+          option(value := "Context")("Context"),
+          option(value := "Summary")("Summary"),
+        ),
+      ),
+      div(
+        id  := s"chat-memory-results-$conversationId",
+        cls := "mt-3 max-h-[60vh] overflow-y-auto space-y-2",
+      )(
+        p(cls := "text-xs text-slate-400")("Type to search memory entries.")
+      ),
+    )
+
+  private def graphPanelScript(conversationId: String): Frag =
+    script(
+      raw(
+        s"""document.addEventListener('DOMContentLoaded', function () {
+           |  if (!window.mermaid) return;
+           |  window.mermaid.initialize({ startOnLoad: false, securityLevel: 'loose' });
+           |  var nodes = Array.from(document.querySelectorAll('[data-chat-graph-container^="${conversationId}-"] .mermaid'));
+           |  if (nodes.length === 0) return;
+           |  window.mermaid.run({ nodes: nodes }).catch(function () {
+           |    nodes.forEach(function (node) {
+           |      var source = node.getAttribute('data-chat-graph-src') || node.textContent || '';
+           |      node.textContent = source;
+           |    });
+           |  });
+           |});
+           |""".stripMargin
+      )
     )
 
   private def standardChatComposer(conversationId: String): Frag =

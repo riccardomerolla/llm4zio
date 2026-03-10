@@ -154,8 +154,9 @@ object HtmlViews:
     conversation: ChatConversation,
     sessionMeta: Option[ConversationSessionMeta] = None,
     runSessionMeta: Option[RunSessionUiMeta] = None,
+    detailContext: ChatDetailContext = ChatDetailContext.empty,
   ): String =
-    ChatView.detail(conversation, sessionMeta, runSessionMeta)
+    ChatView.detail(conversation, sessionMeta, runSessionMeta, detailContext)
 
   def chatMessagesFragment(messages: List[ConversationEntry]): String =
     ChatView.messagesFragment(messages)

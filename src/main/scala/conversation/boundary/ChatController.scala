@@ -15,13 +15,14 @@ import conversation.entity.api.*
 import db.{ ChatRepository, PersistenceError, TaskRepository }
 import gateway.control.{ ChannelRegistry, GatewayService, GatewayServiceError, MessageChannelError }
 import gateway.entity.{ GatewayMessageRole as GatewayMessageRole, MessageDirection as GatewayMessageDirection, * }
+import issues.entity.{ IssueReport, IssueWorkReport }
 import llm4zio.core.{ ConversationThread, LlmError, LlmService, Streaming, ToolConversationManager }
 import llm4zio.providers.{ GeminiCliExecutor, HttpClient }
 import llm4zio.tools.ToolRegistry
 import orchestration.control.{ AgentConfigResolver, IssueAssignmentOrchestrator }
 import shared.errors.PersistenceError as WorkspacePersistenceError
-import shared.ids.Ids.{ ConversationId, EventId }
-import shared.web.{ ErrorHandlingMiddleware, HtmlViews, RunChainItem, RunSessionUiMeta, StreamAbortRegistry }
+import shared.ids.Ids.{ ConversationId, EventId, IssueId, ReportId }
+import shared.web.*
 import workspace.entity.WorkspaceRepository
 
 trait ChatController:
@@ -97,13 +98,14 @@ final case class ChatControllerLive(
     Method.GET / "chat" / string("id")                       -> handler { (id: String, _: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
-          convId       <- parseLongId("conversation", id)
-          conversation <- chatRepository
-                            .getConversation(convId)
-                            .someOrFail(PersistenceError.NotFound("conversation", convId))
-          sessionMeta  <- resolveConversationSessionMeta(id)
-          runMeta      <- resolveRunSessionMeta(conversation)
-        yield html(HtmlViews.chatDetail(conversation, sessionMeta, runMeta))
+          convId        <- parseLongId("conversation", id)
+          conversation  <- chatRepository
+                             .getConversation(convId)
+                             .someOrFail(PersistenceError.NotFound("conversation", convId))
+          sessionMeta   <- resolveConversationSessionMeta(id)
+          runMeta       <- resolveRunSessionMeta(conversation)
+          detailContext <- resolveChatDetailContext(conversation, sessionMeta)
+        yield html(HtmlViews.chatDetail(conversation, sessionMeta, runMeta, detailContext))
       }
     },
     Method.GET / "chat" / string("id") / "messages"          -> handler { (id: String, _: Request) =>
@@ -544,12 +546,62 @@ final case class ChatControllerLive(
             }
         }
 
+  private def resolveChatDetailContext(
+    conversation: ChatConversation,
+    sessionMeta: Option[ConversationSessionMeta],
+  ): IO[PersistenceError, ChatDetailContext] =
+    sanitizeOptional(conversation.runId).flatMap(_.toLongOption) match
+      case None        =>
+        ZIO.succeed(ChatDetailContext.empty.copy(memorySessionId = sessionMeta.map(_.sessionKey)))
+      case Some(runId) =>
+        migrationRepository.getReportsByTask(runId).map { reports =>
+          val graphReports = reports.filter(report => report.reportType.trim.equalsIgnoreCase("graph"))
+          val proofOfWork  = toSyntheticProofOfWork(conversation, runId, reports)
+          ChatDetailContext(
+            proofOfWork = proofOfWork,
+            reports = reports,
+            graphReports = graphReports,
+            memorySessionId = sessionMeta.map(_.sessionKey),
+          )
+        }
+
+  private def toSyntheticProofOfWork(
+    conversation: ChatConversation,
+    runId: Long,
+    reports: List[db.TaskReportRow],
+  ): Option[IssueWorkReport] =
+    val issueId = issueIdFromConversation(conversation, runId)
+    if reports.isEmpty then None
+    else
+      val createdAt = reports.map(_.createdAt).maxOption.getOrElse(conversation.updatedAt)
+      Some(
+        IssueWorkReport.empty(issueId, createdAt).copy(
+          reports = reports.sortBy(_.createdAt).map(report =>
+            IssueReport(
+              id = ReportId(report.id.toString),
+              stepName = report.stepName,
+              reportType = report.reportType,
+              content = report.content,
+              createdAt = report.createdAt,
+            )
+          ),
+          runtimeSeconds = None,
+          lastUpdated = createdAt,
+        )
+      )
+
+  private def issueIdFromConversation(conversation: ChatConversation, runId: Long): IssueId =
+    val candidate = sanitizeOptional(conversation.runId)
+      .orElse(sanitizeOptional(conversation.id))
+      .getOrElse(runId.toString)
+    IssueId(candidate)
+
   private def buildRunBreadcrumb(
     current: workspace.entity.WorkspaceRun,
     byId: Map[String, workspace.entity.WorkspaceRun],
   ): List[RunChainItem] =
     @annotation.tailrec
-    def loop(
+    def collectParents(
       cursor: Option[workspace.entity.WorkspaceRun],
       acc: List[RunChainItem],
       seen: Set[String],
@@ -561,9 +613,35 @@ final case class ChatControllerLive(
           RunChainItem(run.id, run.conversationId) :: acc
         case Some(run)                                         =>
           val parent = run.parentRunId.flatMap(byId.get)
-          loop(parent, RunChainItem(run.id, run.conversationId) :: acc, seen + run.id, depth + 1)
+          collectParents(parent, RunChainItem(run.id, run.conversationId) :: acc, seen + run.id, depth + 1)
 
-    loop(Some(current), Nil, Set.empty, 0)
+    @annotation.tailrec
+    def collectChildren(
+      cursor: workspace.entity.WorkspaceRun,
+      acc: List[RunChainItem],
+      seen: Set[String],
+      depth: Int,
+    ): List[RunChainItem] =
+      if depth >= 32 || seen.contains(cursor.id) then acc
+      else
+        val nextChild = byId.values
+          .filter(_.parentRunId.contains(cursor.id))
+          .toList
+          .sortBy(_.createdAt)
+          .headOption
+        nextChild match
+          case None      => acc
+          case Some(run) =>
+            collectChildren(
+              run,
+              acc :+ RunChainItem(run.id, run.conversationId),
+              seen + cursor.id,
+              depth + 1,
+            )
+
+    val parentToCurrent = collectParents(Some(current), Nil, Set.empty, 0)
+    val childTail       = collectChildren(current, Nil, Set.empty, 0)
+    parentToCurrent ++ childTail
 
   private def toChainItem(run: workspace.entity.WorkspaceRun): RunChainItem =
     RunChainItem(run.id, run.conversationId)
