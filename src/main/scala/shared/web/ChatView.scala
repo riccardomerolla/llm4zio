@@ -236,7 +236,7 @@ object ChatView:
               attr("conversation-id") := conversationId,
               attr("ws-url")          := "/ws/console",
             )(
-              raw(messagesFragment(conversation.messages))
+              raw(messagesFragment(conversation.messages, Some(conversationId)))
             ),
             button(
               id              := s"scroll-bottom-$conversationId",
@@ -338,7 +338,7 @@ object ChatView:
       case Right(List(single)) :: tail => Left(single) :: tail
       case result                      => result
 
-  def messagesFragment(messages: List[ConversationEntry]): String =
+  def messagesFragment(messages: List[ConversationEntry], conversationId: Option[String] = None): String =
     val grouped = groupToolCalls(messages)
     div(cls := "space-y-2 text-gray-100")(
       grouped.zipWithIndex.map { case (entry, idx) =>
@@ -362,11 +362,11 @@ object ChatView:
                   case Left(prev)            => Some(prev.senderType)
                   case Right(prevGroup)      => prevGroup.lastOption.map(_.senderType)
               else None
-            messageCard(msg, prevSender)
+            messageCard(msg, prevSender, conversationId)
       }
     ).render
 
-  private def messageCard(message: ConversationEntry, prevSender: Option[SenderType] = None): Frag =
+  private def messageCard(message: ConversationEntry, prevSender: Option[SenderType] = None, conversationId: Option[String] = None): Frag =
     message.messageType match
       case MessageType.ToolCall   => toolCallCard(message)
       case MessageType.ToolResult => toolResultCard(message)
@@ -386,7 +386,7 @@ object ChatView:
             val (containerClasses, bubbleClasses) =
               if isUser then
                 (
-                  "flex justify-end",
+                  "flex justify-end items-center group",
                   "max-w-[85%] lg:max-w-[72%] rounded-2xl rounded-br-md border border-indigo-400/25 bg-indigo-500/15 px-4 py-3 text-gray-100",
                 )
               else
@@ -395,7 +395,30 @@ object ChatView:
                   "max-w-[85%] lg:max-w-[72%] border-l-2 border-indigo-400/50 pl-4 py-2",
                 )
 
+            val inputSelector = conversationId
+              .map(cid => s"document.getElementById('chat-input-$cid')")
+              .getOrElse("document.querySelector('[id^=\"chat-input-\"]')")
+
             div(cls := containerClasses, attr("data-sender") := (if isUser then "user" else "assistant"))(
+              if isUser then
+                button(
+                  `type`          := "button",
+                  cls             := "opacity-0 group-hover:opacity-100 transition-opacity mr-1.5 flex-shrink-0 p-1 rounded hover:bg-white/10",
+                  attr("title")   := "Edit and re-send",
+                  attr("onclick") := s"""(function(btn) {
+  var t = $inputSelector;
+  if (!t) return;
+  var bubble = btn.closest('[data-sender="user"]').querySelector('pre, p');
+  if (!bubble) return;
+  t.value = bubble.textContent.trim();
+  t.dispatchEvent(new Event('input', {bubbles:true}));
+  t.scrollIntoView({behavior:'smooth', block:'end'});
+  t.focus();
+})(this)""",
+                )(
+                  raw("""<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" class="text-gray-500 group-hover:text-indigo-400 transition-colors"><path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10"/></svg>""")
+                )
+              else frag(),
               div(cls := bubbleClasses)(
                 if showSenderLabel then
                   div(cls := s"text-xs font-semibold mb-2 ${if isUser then "text-indigo-300" else "text-slate-400"}")(
