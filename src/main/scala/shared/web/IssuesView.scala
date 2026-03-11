@@ -41,6 +41,12 @@ object IssuesView:
     case IssueStatus.Duplicated  => "bg-slate-500"
     case _                       => "bg-slate-500"
 
+  private def hideableBoardColumn(status: IssueStatus): Boolean = status match
+    case IssueStatus.HumanReview | IssueStatus.Rework | IssueStatus.Merging | IssueStatus.Done | IssueStatus.Canceled |
+        IssueStatus.Duplicated =>
+      true
+    case _                                                                                                               => false
+
   def list(
     runId: Option[String],
     issues: List[AgentIssueView],
@@ -308,7 +314,7 @@ object IssuesView:
       case Some(true) => BoardStats.hasProofFilter(issues, workReports)
       case _          => issues
     div(
-      cls := "grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5"
+      cls := "flex gap-3 overflow-x-auto pb-2 snap-x snap-mandatory"
     )(
       boardStatuses.map { (status, label) =>
         val columnIssues = filteredIssues
@@ -320,17 +326,15 @@ object IssuesView:
           .reverse
         val statusToken  = issueStatusToken(status)
         div(
-          cls                         := "rounded-xl border border-white/10 bg-slate-900/70 p-3",
+          cls                         := "w-[19rem] min-w-[19rem] flex-shrink-0 rounded-xl border border-white/10 bg-slate-900/70 p-3 snap-start",
           attr("data-drop-status")    := statusToken,
           attr("data-column-status")  := statusToken,
           attr("data-column-label")   := label,
           attr("data-drop-highlight") := "false",
         )(
           div(cls := "mb-2 flex items-center justify-between gap-1")(
-            button(
-              cls                          := "flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 bg-transparent border-0 p-0 text-left",
-              attr("data-collapse-toggle") := statusToken,
-              `type`                       := "button",
+            div(
+              cls := "flex min-w-0 flex-1 items-center gap-1.5",
             )(
               span(cls := s"inline-block h-2 w-2 flex-shrink-0 rounded-full ${columnStatusDotCls(status)}"),
               h3(cls := "text-sm font-semibold text-slate-100 truncate")(label),
@@ -339,12 +343,22 @@ object IssuesView:
                 attr("data-column-count") := statusToken,
               )(columnIssues.size.toString),
             ),
-            button(
-              `type`                        := "button",
-              cls                           := "flex-shrink-0 rounded p-0.5 text-slate-400 hover:bg-white/10 hover:text-slate-100",
-              title                         := s"Quick-add $label issue",
-              attr("data-quick-add-toggle") := statusToken,
-            )("+"),
+            div(cls := "flex items-center gap-1")(
+              if hideableBoardColumn(status) then
+                button(
+                  `type`                        := "button",
+                  cls                           := "flex-shrink-0 rounded p-0.5 text-slate-400 hover:bg-white/10 hover:text-slate-100",
+                  title                         := s"Hide $label column",
+                  attr("data-collapse-toggle")  := statusToken,
+                )("−")
+              else (),
+              button(
+                `type`                        := "button",
+                cls                           := "flex-shrink-0 rounded p-0.5 text-slate-400 hover:bg-white/10 hover:text-slate-100",
+                title                         := s"Quick-add $label issue",
+                attr("data-quick-add-toggle") := statusToken,
+              )("+"),
+            ),
           ),
           div(
             cls                         := "mb-2 hidden rounded-lg border border-white/10 bg-slate-800/60 p-2",
@@ -394,7 +408,25 @@ object IssuesView:
               }
           ),
         )
-      }
+      },
+      div(
+        cls                                := "w-[19rem] min-w-[19rem] flex-shrink-0 rounded-xl border border-white/10 bg-slate-900/70 p-3 snap-start",
+        attr("data-hidden-columns-column") := "true",
+      )(
+        div(cls := "mb-2 flex items-center justify-between gap-1")(
+          h3(cls := "text-sm font-semibold text-slate-100")("Hidden Columns"),
+          span(
+            cls                               := "rounded-full bg-white/10 px-2 py-0.5 text-xs text-slate-300",
+            attr("data-hidden-columns-count") := "true",
+          )("0"),
+        ),
+        div(
+          cls                               := "space-y-1 max-h-[65vh] overflow-y-auto",
+          attr("data-hidden-columns-list")  := "true",
+        )(
+          p(cls := "rounded border border-dashed border-white/10 px-2 py-3 text-xs text-slate-500")("No hidden columns")
+        ),
+      ),
     ).render
 
   /** Public entry point for rendering a single board card (used in tests and fragment endpoints). */

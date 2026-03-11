@@ -12,6 +12,8 @@ class IssuesBoard {
     this._refreshInFlight = false;
     this._refreshPending = false;
     this._pointerDragging = false;
+    this._visibleColumns = new Set();
+    this._customVisibleColumns = null;
 
     this.bindDragDrop();
     this.bindPointerDrag();
@@ -306,94 +308,157 @@ class IssuesBoard {
       event.preventDefault();
       this._refreshPending = true;
     });
+
+    // HTMX polling swaps board HTML directly; re-apply client-side visibility state
+    // so hidden columns stay hidden across fragment refreshes.
+    this.root.addEventListener('htmx:afterSwap', (event) => {
+      const requestTarget = event?.detail?.target;
+      if (requestTarget !== this.root) return;
+      this.bindCollapse();
+    });
   }
 
   // ---------------------------------------------------------------------------
-  // Column collapse / expand (persisted in localStorage)
+  // Column visibility / hidden columns lane (persisted in localStorage)
   // ---------------------------------------------------------------------------
 
   bindCollapse() {
-    this.root.querySelectorAll('[data-collapse-toggle]').forEach((btn) => {
-      const statusToken = btn.dataset.collapseToggle;
-      const cardsArea = this.root.querySelector(`[data-column-cards="${statusToken}"]`);
-      if (!cardsArea) return;
+    if (!this._columnVisibilityBound) {
+      this._columnVisibilityBound = true;
 
-      // Restore persisted state
-      if (this._isCollapsed(statusToken)) {
-        cardsArea.classList.add('hidden');
-      }
+      this.root.addEventListener('click', (event) => {
+        const hideBtn = event.target.closest('[data-collapse-toggle]');
+        if (hideBtn) {
+          const statusToken = hideBtn.dataset.collapseToggle;
+          this._hideColumn(statusToken);
+          return;
+        }
 
-      btn.addEventListener('click', () => {
-        const collapsed = cardsArea.classList.toggle('hidden');
-        this._setCollapsed(statusToken, collapsed);
-        this._renderHiddenPanel();
+        const showBtn = event.target.closest('[data-show-column]');
+        if (showBtn) {
+          const statusToken = showBtn.dataset.showColumn;
+          this._showColumn(statusToken);
+        }
+      });
+
+      this._customVisibleColumns = this._loadVisibleColumns();
+      window.addEventListener('resize', () => {
+        if (this._customVisibleColumns) return;
+        this._syncVisibleColumns();
+      });
+    }
+
+    this._syncVisibleColumns();
+  }
+
+  _visibleColumnsKey() {
+    return 'board-visible-columns:v1';
+  }
+
+  _allBoardColumns() {
+    return Array.from(this.root.querySelectorAll('[data-column-status]'));
+  }
+
+  _defaultVisibleColumns() {
+    const showHumanReview = window.matchMedia('(min-width: 1280px)').matches;
+    return showHumanReview
+      ? ['backlog', 'todo', 'in_progress', 'human_review']
+      : ['backlog', 'todo', 'in_progress'];
+  }
+
+  _canHideColumn(statusToken) {
+    return ['human_review', 'rework', 'merging', 'done', 'canceled', 'duplicated'].includes(String(statusToken || ''));
+  }
+
+  _loadVisibleColumns() {
+    try {
+      const raw = localStorage.getItem(this._visibleColumnsKey());
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return null;
+      return parsed.map((v) => String(v || '').trim()).filter((v) => v.length > 0);
+    } catch (_ignored) {
+      return null;
+    }
+  }
+
+  _saveVisibleColumns() {
+    localStorage.setItem(this._visibleColumnsKey(), JSON.stringify(Array.from(this._visibleColumns)));
+  }
+
+  _syncVisibleColumns() {
+    const statusTokens = this._allBoardColumns()
+      .map((col) => col.dataset.columnStatus)
+      .filter((v) => v && v.length > 0);
+    const source = this._customVisibleColumns || this._defaultVisibleColumns();
+    const visible = source.filter((status) => statusTokens.includes(status));
+
+    this._visibleColumns = new Set(visible);
+    this._applyColumnVisibility();
+  }
+
+  _applyColumnVisibility() {
+    this._allBoardColumns().forEach((col) => {
+      const statusToken = col.dataset.columnStatus;
+      col.classList.toggle('hidden', !this._visibleColumns.has(statusToken));
+    });
+    this._renderHiddenColumnLane();
+  }
+
+  _hideColumn(statusToken) {
+    if (!statusToken || !this._visibleColumns.has(statusToken)) return;
+    if (!this._canHideColumn(statusToken)) return;
+    if (this._visibleColumns.size <= 3) return;
+
+    this._visibleColumns.delete(statusToken);
+    this._customVisibleColumns = Array.from(this._visibleColumns);
+    this._saveVisibleColumns();
+    this._applyColumnVisibility();
+  }
+
+  _showColumn(statusToken) {
+    if (!statusToken || this._visibleColumns.has(statusToken)) return;
+    this._visibleColumns.add(statusToken);
+    this._customVisibleColumns = Array.from(this._visibleColumns);
+    this._saveVisibleColumns();
+    this._applyColumnVisibility();
+  }
+
+  _renderHiddenColumnLane() {
+    const lane = this.root.querySelector('[data-hidden-columns-column]');
+    const list = this.root.querySelector('[data-hidden-columns-list]');
+    const countNode = this.root.querySelector('[data-hidden-columns-count]');
+    if (!lane || !list || !countNode) return;
+
+    const hiddenColumns = [];
+    this._allBoardColumns().forEach((col) => {
+      const statusToken = col.dataset.columnStatus || '';
+      if (!statusToken || this._visibleColumns.has(statusToken)) return;
+      hiddenColumns.push({
+        statusToken,
+        label: col.dataset.columnLabel || statusToken,
+        count: col.querySelector(`[data-column-count="${statusToken}"]`)?.textContent || '0',
       });
     });
 
-    this._renderHiddenPanel();
-  }
+    countNode.textContent = String(hiddenColumns.length);
+    list.textContent = '';
 
-  _collapseKey(statusToken) {
-    return `board-col-collapsed:${statusToken}`;
-  }
-
-  _isCollapsed(statusToken) {
-    return localStorage.getItem(this._collapseKey(statusToken)) === 'true';
-  }
-
-  _setCollapsed(statusToken, collapsed) {
-    if (collapsed) localStorage.setItem(this._collapseKey(statusToken), 'true');
-    else localStorage.removeItem(this._collapseKey(statusToken));
-  }
-
-  _renderHiddenPanel() {
-    let panel = this.root.parentElement?.querySelector('[data-hidden-columns-panel]');
-
-    const collapsedColumns = [];
-    this.root.querySelectorAll('[data-column-status]').forEach((col) => {
-      const statusToken = col.dataset.columnStatus;
-      const cardsArea = col.querySelector(`[data-column-cards="${statusToken}"]`);
-      if (cardsArea?.classList.contains('hidden')) {
-        const label = col.dataset.columnLabel || statusToken;
-        const count = col.querySelector(`[data-column-count="${statusToken}"]`)?.textContent || '0';
-        collapsedColumns.push({ statusToken, label, count });
-      }
-    });
-
-    if (collapsedColumns.length === 0) {
-      panel?.remove();
+    if (hiddenColumns.length === 0) {
+      const empty = document.createElement('p');
+      empty.className = 'rounded border border-dashed border-white/10 px-2 py-3 text-xs text-slate-500';
+      empty.textContent = 'No hidden columns';
+      list.appendChild(empty);
       return;
     }
 
-    if (!panel) {
-      panel = document.createElement('div');
-      panel.dataset.hiddenColumnsPanel = 'true';
-      panel.className = 'mt-3 flex flex-wrap gap-2 px-1';
-      this.root.after(panel);
-    }
-
-    // Build chips for each hidden column
-    panel.textContent = ''; // clear safely
-    const label = document.createElement('span');
-    label.className = 'text-xs text-slate-400 self-center';
-    label.textContent = 'Hidden:';
-    panel.appendChild(label);
-
-    collapsedColumns.forEach(({ statusToken, label: colLabel, count }) => {
-      const chip = document.createElement('button');
-      chip.type = 'button';
-      chip.className = 'flex items-center gap-1 rounded-full border border-white/15 bg-slate-800/70 px-3 py-1 text-xs text-slate-300 hover:bg-slate-700';
-      chip.dataset.uncollapse = statusToken;
-      chip.textContent = `${colLabel} (${count})`;
-      chip.addEventListener('click', () => {
-        const cardsArea = this.root.querySelector(`[data-column-cards="${statusToken}"]`);
-        if (cardsArea) {
-          cardsArea.classList.remove('hidden');
-          this._setCollapsed(statusToken, false);
-          this._renderHiddenPanel();
-        }
-      });
-      panel.appendChild(chip);
+    hiddenColumns.forEach(({ statusToken, label, count }) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'w-full rounded border border-white/10 bg-slate-800/70 px-2 py-1.5 text-left text-xs text-slate-200 hover:bg-slate-700';
+      button.dataset.showColumn = statusToken;
+      button.textContent = `${label} (${count})`;
+      list.appendChild(button);
     });
   }
 
