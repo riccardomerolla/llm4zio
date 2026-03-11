@@ -3,7 +3,6 @@ package shared.web
 import java.net.URLEncoder
 
 import conversation.entity.api.{ ChatConversation, ConversationEntry, ConversationSessionMeta, MessageType, SenderType }
-import db.TaskReportRow
 import gateway.entity.ChatSession
 import scalatags.Text.all.*
 import workspace.entity.{ RunSessionMode, RunStatus }
@@ -203,11 +202,11 @@ object ChatView:
             )
           },
         ),
-        runSessionMeta.fold[Frag](frag())(meta => runBreadcrumb(meta, conversationId)),
+        runSessionMeta.fold[Frag](frag())(meta => runBreadcrumb(meta)),
         div(
           id      := s"token-gauge-$conversationId",
           cls     := "relative w-full cursor-pointer group overflow-visible h-[3px]",
-          attr("onclick") := s"""window.dispatchEvent(new CustomEvent('ab-panel-open', {{detail:{{panelId:'context-panel', title:'Token Usage'}}}}))""",
+          attr("onclick") := """window.dispatchEvent(new CustomEvent('ab-panel-open', {{detail:{{panelId:'context-panel', title:'Token Usage'}}}}))""",
           role    := "progressbar",
           attr("aria-label") := "Context window usage",
           attr("aria-valuenow") := "0",
@@ -468,7 +467,7 @@ object ChatView:
       )()
     )
 
-  private def runBreadcrumb(meta: RunSessionUiMeta, conversationId: String): Frag =
+  private def runBreadcrumb(meta: RunSessionUiMeta): Frag =
     div(cls := "flex items-center gap-2 text-[11px] text-gray-400 mb-1 px-1")(
       span(cls := "text-gray-500")("Run:"),
       span(
@@ -552,95 +551,6 @@ object ChatView:
           )()
         }.getOrElse(frag()),
       )
-
-  private def runChainPanel(meta: RunSessionUiMeta): Frag =
-    div(cls := "mt-3 flex flex-wrap items-center gap-2 text-xs")(
-      span(cls := "text-gray-400 font-semibold")("Run chain:"),
-      if meta.breadcrumb.isEmpty then
-        span(cls := "text-gray-300 font-mono")(meta.runId.take(8))
-      else
-        frag(meta.breadcrumb.zipWithIndex.map {
-          case (item, idx) =>
-            frag(
-              if idx > 0 then span(cls := "text-gray-500")("→") else frag(),
-              a(
-                href := s"/chat/${item.conversationId}",
-                cls  := (
-                  if item.runId == meta.runId then
-                    "rounded bg-indigo-500/30 px-2 py-1 text-indigo-100 font-mono"
-                  else "rounded bg-white/5 px-2 py-1 text-gray-300 hover:text-white font-mono"
-                ),
-              )(item.runId.take(8)),
-            )
-        }*)
-      ,
-      meta.parent.fold[Frag](frag())(prev =>
-        a(
-          href := s"/chat/${prev.conversationId}",
-          cls  := "rounded border border-white/15 px-2 py-1 text-gray-300 hover:text-white",
-        )("Previous run")
-      ),
-      meta.next.fold[Frag](frag())(next =>
-        a(
-          href := s"/chat/${next.conversationId}",
-          cls  := "rounded border border-white/15 px-2 py-1 text-gray-300 hover:text-white",
-        )("Next run")
-      ),
-    )
-
-  private def reportsPanel(reports: List[TaskReportRow]): Frag =
-    if reports.isEmpty then frag()
-    else
-      tag("details")(cls := "rounded-lg border border-white/10 bg-slate-900/60 p-3")(
-        tag("summary")(cls := "cursor-pointer select-none text-sm font-semibold text-slate-200")(
-          s"Run Reports (${reports.size})"
-        ),
-        div(cls := "mt-3 space-y-3")(
-          reports.sortBy(_.createdAt).reverse.take(20).map { report =>
-            tag("details")(cls := "rounded-md border border-white/10 bg-black/20 p-3")(
-              tag("summary")(cls := "cursor-pointer select-none text-xs font-semibold text-slate-200")(
-                s"${report.stepName} • ${report.reportType} • ${report.createdAt.toString.take(19).replace("T", " ")}"
-              ),
-              div(cls := "mt-2 text-sm text-slate-100")(
-                if report.reportType.trim.equalsIgnoreCase("markdown") then
-                  IssuesView.markdownFragment(report.content)
-                else pre(cls := "whitespace-pre-wrap break-words text-xs text-slate-200")(report.content)
-              ),
-            )
-          }
-        ),
-      )
-
-  private def graphPanel(graphReports: List[TaskReportRow], conversationId: String): Frag =
-    if graphReports.isEmpty then frag()
-    else
-      tag("details")(cls := "rounded-lg border border-white/10 bg-slate-900/60 p-3")(
-        tag("summary")(cls := "cursor-pointer select-none text-sm font-semibold text-slate-200")(
-          s"Run Graphs (${graphReports.size})"
-        ),
-        div(cls := "mt-3 space-y-3")(
-          graphReports.sortBy(_.createdAt).reverse.take(10).zipWithIndex.map {
-            case (report, idx) =>
-              div(cls := "rounded-md border border-white/10 bg-black/20 p-3")(
-                p(cls := "text-xs font-semibold text-slate-200")(
-                  s"${report.stepName} • ${report.createdAt.toString.take(19).replace("T", " ")}"
-                ),
-                div(
-                  cls                               := "mt-2 overflow-auto rounded border border-white/10 bg-slate-950/70 p-2",
-                  attr("data-chat-graph-container") := s"$conversationId-$idx",
-                )(
-                  div(
-                    cls                         := "mermaid text-slate-200",
-                    attr("data-chat-graph-src") := report.content,
-                  )(report.content)
-                ),
-              )
-          }
-        ),
-      )
-
-  private def memorySidebar(conversationId: String, memorySessionId: Option[String]): Frag =
-    frag()
 
   private def graphPanelScript(conversationId: String): Frag =
     script(
@@ -841,83 +751,6 @@ object ChatView:
       ),
     )
 
-  private def runGitPanel(meta: RunSessionUiMeta, conversationId: String): Frag =
-    val basePath = s"/api/workspaces/${meta.workspaceId}/runs/${meta.runId}/git"
-    tag("details")(
-      id                           := s"git-panel-$conversationId",
-      cls                          := "mt-3 rounded-lg bg-white/5 ring-1 ring-white/10 overflow-hidden",
-      attr("open")                 := "open",
-      attr("data-role")            := "git-panel",
-      attr("data-workspace-id")    := meta.workspaceId,
-      attr("data-run-id")          := meta.runId,
-      attr("data-conversation-id") := conversationId,
-      attr("data-run-status")      := runModeLabel(meta.status),
-      attr("data-status-endpoint") := s"$basePath/status",
-      attr("data-diff-endpoint")   := s"$basePath/diff",
-      attr("data-log-endpoint")    := s"$basePath/log",
-      attr("data-branch-endpoint") := s"$basePath/branch",
-      attr("data-apply-endpoint")  := s"/api/workspaces/${meta.workspaceId}/runs/${meta.runId}/apply",
-      attr("data-topic")           := s"runs:${meta.runId}:git",
-    )(
-      tag("summary")(
-        cls := "cursor-pointer select-none px-4 py-3 text-sm font-semibold text-white bg-white/5 border-b border-white/10"
-      )(
-        "Changes"
-      ),
-      div(cls := "grid gap-3 p-3 lg:grid-cols-3")(
-        div(cls := "lg:col-span-2 rounded-lg border border-white/10 bg-black/20 p-3 space-y-3")(
-          h3(cls := "text-sm font-semibold text-gray-100")("Files Changed"),
-          p(
-            cls               := "text-xs text-gray-400",
-            attr("data-role") := "summary",
-          )("Loading changes..."),
-          div(cls := "space-y-3", attr("data-role") := "files-groups")(),
-          div(
-            cls               := "hidden rounded-lg border border-white/10 bg-black/30 p-3",
-            attr("data-role") := "diff-viewer",
-          )(
-            div(cls := "mb-2 flex items-center justify-between gap-2")(
-              h4(cls := "text-xs font-semibold text-gray-200", attr("data-role") := "diff-title")("Diff"),
-              button(
-                `type`          := "button",
-                cls             := "rounded bg-white/10 px-2 py-1 text-[11px] text-gray-200 hover:bg-white/20",
-                attr("onclick") := "this.closest('[data-role=\"diff-viewer\"]').classList.add('hidden')",
-              )("Close"),
-            ),
-            pre(
-              cls               := "git-diff-lines text-xs overflow-auto rounded bg-black/40 p-2",
-              attr("data-role") := "diff-content",
-            )(),
-          ),
-        ),
-        div(cls := "space-y-3")(
-          div(cls := "rounded-lg border border-white/10 bg-black/20 p-3 space-y-2")(
-            h3(cls := "text-sm font-semibold text-gray-100")("Branch Info"),
-            div(cls := "text-xs text-gray-300", attr("data-role") := "branch-current")("Loading branch..."),
-            div(cls := "text-xs text-gray-400", attr("data-role") := "ahead-behind")(),
-            div(cls := "pt-1")(
-              button(
-                `type`            := "button",
-                cls               := "rounded bg-emerald-600 px-2 py-1 text-[11px] font-semibold text-white hover:bg-emerald-500",
-                attr("data-role") := "apply-button",
-              )("Apply to repo")
-            ),
-            div(cls := "text-xs text-gray-400", attr("data-role") := "apply-feedback")(),
-            div(
-              cls               := "text-xs text-gray-400",
-              attr("data-role") := "run-status",
-            )(s"Run status: ${runModeLabel(meta.status)}"),
-          ),
-          div(cls := "rounded-lg border border-white/10 bg-black/20 p-3 space-y-2")(
-            h3(cls := "text-sm font-semibold text-gray-100")("Commit Log"),
-            div(cls := "space-y-2", attr("data-role") := "commit-log")(
-              p(cls := "text-xs text-gray-400")("Loading commits...")
-            ),
-          ),
-        ),
-      ),
-    )
-
   private def gitPanelStyles: Frag =
     tag("style")(
       raw("""
@@ -1065,36 +898,6 @@ object ChatView:
   private def parseTableRow(line: String): List[String] =
     val stripped = line.trim.stripPrefix("|").stripSuffix("|")
     stripped.split("\\|", -1).toList.map(_.trim)
-
-  private def sessionContextPanel(sessionMeta: Option[ConversationSessionMeta]): Frag =
-    sessionMeta match
-      case None       => frag()
-      case Some(meta) =>
-        val sessionId =
-          s"${sanitizeString(meta.channelName).getOrElse("unknown")}:${sanitizeString(meta.sessionKey).getOrElse("unknown")}"
-        val encoded   = URLEncoder.encode(sessionId, "UTF-8")
-        div(cls := "mt-3 rounded-md bg-white/5 ring-1 ring-white/10 p-3 text-xs text-gray-300")(
-          div(cls := "font-semibold text-gray-200 mb-2")("Session Context"),
-          div(cls := "space-y-1")(
-            p(span(cls := "text-gray-400 mr-2")("Channel:"), sanitizeString(meta.channelName).getOrElse("unknown")),
-            p(span(cls := "text-gray-400 mr-2")("Session Key:"), sanitizeString(meta.sessionKey).getOrElse("unknown")),
-            p(
-              span(cls := "text-gray-400 mr-2")("Linked Task:"),
-              meta.linkedTaskRunId.map(id => s"#$id").getOrElse("none"),
-            ),
-            p(span(cls := "text-gray-400 mr-2")("Updated:"), formatTimestamp(meta.updatedAt)),
-          ),
-          div(cls := "mt-3")(
-            button(
-              cls                           := "rounded-md bg-red-600 hover:bg-red-500 px-3 py-1.5 text-xs font-semibold text-white",
-              attr("hx-delete")             := s"/api/sessions/$encoded",
-              attr("hx-confirm")            := "End this session?",
-              attr("hx-swap")               := "none",
-              attr("hx-on::after-request")  := "window.location='/chat';",
-              attr("hx-on::response-error") := "window.location='/chat';",
-            )("End Session")
-          ),
-        )
 
   private def sessionsSection(sessions: List[ChatSession]): Frag =
     div(cls := "mb-6 rounded-lg bg-white/5 ring-1 ring-white/10 p-4")(

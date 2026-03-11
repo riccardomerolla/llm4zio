@@ -56,20 +56,14 @@ object ChatViewSpec extends ZIOSpecDefault:
         html.contains("Interrupt"),
         html.contains("Continue"),
         html.contains("Cancel"),
-        html.contains("Changes"),
-        html.contains("Files Changed"),
-        html.contains("Commit Log"),
-        html.contains("Branch Info"),
-        html.contains("Apply to repo"),
-        html.contains("/api/workspaces/ws-1/runs/run-42/apply"),
-        html.contains("runs:run-42:git"),
+        html.contains("Run chain details"),
         html.contains("/api/workspaces/ws-1/runs/run-42/git/status"),
-        html.contains("Previous run"),
-        html.contains("Next run"),
+        html.contains("/api/workspaces/ws-1/runs/run-42/git/diff"),
+        html.contains("/chat/41"),
         html.contains("Attach to interact"),
       )
     },
-    test("messageCard renders ToolCall entry with tool-call-block class") {
+    test("messageCard renders ToolCall entry with timeline event") {
       val entry = ConversationEntry(
         conversationId = "1",
         sender = "assistant",
@@ -80,9 +74,9 @@ object ChatViewSpec extends ZIOSpecDefault:
         updatedAt = Instant.EPOCH,
       )
       val html  = ChatView.messagesFragment(List(entry))
-      assertTrue(html.contains("tool-call-block"))
+      assertTrue(html.contains("ab-timeline-event"))
     },
-    test("messageCard renders ToolResult entry with tool-result-block class") {
+    test("messageCard renders ToolResult entry with timeline event") {
       val entry = ConversationEntry(
         conversationId = "1",
         sender = "assistant",
@@ -93,6 +87,6 @@ object ChatViewSpec extends ZIOSpecDefault:
         updatedAt = Instant.EPOCH,
       )
       val html  = ChatView.messagesFragment(List(entry))
-      assertTrue(html.contains("tool-result-block"))
+      assertTrue(html.contains("ab-timeline-event"))
     },
   )
