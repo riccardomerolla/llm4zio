@@ -330,6 +330,7 @@ class ChatMessageStream extends LitElement {
           }
         }
         this._scrollToBottom();
+        window.renderMarkdownEls?.();
       });
   }
 

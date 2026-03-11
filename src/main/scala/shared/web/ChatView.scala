@@ -132,8 +132,8 @@ object ChatView:
         div(cls := "mb-1 flex items-center gap-2")(
           tag("ab-icon-button")(
             attr("icon")    := "M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18",
-            attr("tooltip") := "Back to chats",
-            attr("href")    := "/chat",
+            attr("tooltip") := "Back to Home",
+            attr("href")    := "/",
             attr("size")    := "sm",
           )(),
           div(cls := "min-w-0 flex-1")(
@@ -264,6 +264,7 @@ object ChatView:
       chatDetailStyles,
       runSessionMeta.fold[Frag](frag())(_ => gitPanelStyles),
       JsResources.markedScript,
+      markdownRenderScript,
       if detailContext.graphReports.nonEmpty then JsResources.mermaidScript else frag(),
       tag("link")(
         attr("rel")  := "stylesheet",
@@ -303,6 +304,8 @@ object ChatView:
               title = sanitizeString(chat.title).getOrElse("Untitled chat"),
               href = s"/chat/$conversationId",
               active = currentConversationId.contains(conversationId),
+              messageCount = chat.messages.length,
+              createdAt = chat.updatedAt,
             )
           }
         Layout.ChatWorkspaceGroup(
@@ -341,8 +344,53 @@ object ChatView:
       case Right(List(single)) :: tail => Left(single) :: tail
       case result                      => result
 
+  /** Merges consecutive assistant Text entries that form a split fenced code block.
+    *
+    * Some LLM streaming backends persist code blocks as individual lines:
+    *   Entry("```rust"), Entry("fn main() {"), Entry("}"), Entry("```")
+    * This pass stitches them back into one entry with the full fenced block content so
+    * the markdown renderer can produce a proper code block.
+    */
+  private def isAgentTextMessage(entry: ConversationEntry): Boolean =
+    entry.messageType != MessageType.ToolCall && entry.messageType != MessageType.ToolResult
+
+  private def isFenceOpen(content: String): Boolean =
+    val t = content.trim
+    t.startsWith("```") && !t.drop(3).contains("`") && !t.drop(3).contains("\n")
+
+  private def collectFenceBody(
+    senderType: SenderType,
+    messages: List[ConversationEntry],
+  ): (List[String], List[ConversationEntry]) =
+    messages match
+      case head :: tail
+          if head.senderType == senderType
+          && isAgentTextMessage(head)
+          && head.content.trim == "```" =>
+        (Nil, tail) // found closing fence
+      case head :: tail
+          if head.senderType == senderType
+          && isAgentTextMessage(head)
+          && !isFenceOpen(head.content) =>
+        val (rest, after) = collectFenceBody(senderType, tail)
+        (head.content :: rest, after)
+      case _ => (Nil, messages) // bail — unexpected entry
+
+  private def mergeCodeBlockFragments(messages: List[ConversationEntry]): List[ConversationEntry] =
+    messages match
+      case Nil => Nil
+      case head :: tail
+          if isAgentTextMessage(head)
+          && head.senderType != SenderType.User
+          && isFenceOpen(head.content) =>
+        val lang              = head.content.trim.drop(3).trim
+        val (codeLines, rest) = collectFenceBody(head.senderType, tail)
+        val mergedContent     = s"```${lang}\n${codeLines.mkString("\n")}\n```"
+        head.copy(content = mergedContent, messageType = MessageType.Text) :: mergeCodeBlockFragments(rest)
+      case head :: tail => head :: mergeCodeBlockFragments(tail)
+
   def messagesFragment(messages: List[ConversationEntry], conversationId: Option[String] = None): String =
-    val grouped = groupToolCalls(messages)
+    val grouped = groupToolCalls(mergeCodeBlockFragments(messages))
     div(cls := "space-y-2 text-gray-100")(
       grouped.zipWithIndex.map { case (entry, idx) =>
         entry match
@@ -431,10 +479,9 @@ object ChatView:
                   frag(),
                 if !isUser && looksLikeMarkdown(message.content) then
                   div(
-                    cls := "text-sm leading-6 text-gray-50 [&_p]:my-2 [&_ul]:my-2 [&_ol]:my-2 [&_h1]:mt-2 [&_h2]:mt-2 [&_h3]:mt-2"
-                  )(
-                    IssuesView.markdownFragment(message.content)
-                  )
+                    cls             := "md-chat text-sm leading-6 text-gray-50 [&_p]:my-2 [&_p]:leading-7 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-0.5 [&_h1]:mt-4 [&_h1]:mb-1 [&_h1]:text-xl [&_h1]:font-semibold [&_h2]:mt-3 [&_h2]:mb-1 [&_h2]:text-lg [&_h2]:font-semibold [&_h3]:mt-2 [&_h3]:mb-1 [&_h3]:font-medium [&_a]:text-indigo-300 [&_a]:underline [&_a]:underline-offset-2 [&_blockquote]:my-2 [&_blockquote]:border-l-4 [&_blockquote]:border-indigo-400/40 [&_blockquote]:pl-3 [&_blockquote]:text-slate-300 [&_table]:my-3 [&_table]:w-full [&_table]:text-sm [&_th]:text-left [&_th]:font-semibold [&_th]:pb-1 [&_td]:py-1 [&_td]:pr-4 [&_hr]:my-3 [&_hr]:border-white/20",
+                    attr("data-raw-md") := message.content,
+                  )()
                 else
                   pre(
                     cls := "whitespace-pre-wrap break-words text-sm leading-6 text-gray-50 font-sans m-0"
@@ -555,6 +602,44 @@ object ChatView:
           )()
         }.getOrElse(frag()),
       )
+
+  private val markdownRenderScript: Frag =
+    script(raw("""(function () {
+  var _markedConfigured = false;
+  window.renderMarkdownEls = function () {
+    document.querySelectorAll('[data-raw-md]:not([data-md-done])').forEach(function (el) {
+      el.setAttribute('data-md-done', '1');
+      var md = el.getAttribute('data-raw-md') || '';
+      try {
+        el.innerHTML = window.marked ? window.marked.parse(md) : '<pre>' + md.replace(/&/g,'&amp;').replace(/</g,'&lt;') + '</pre>';
+      } catch (e) { el.textContent = md; }
+    });
+  };
+  function setupMarked() {
+    if (!window.marked) { setTimeout(setupMarked, 30); return; }
+    if (!_markedConfigured) {
+      _markedConfigured = true;
+      try {
+        window.marked.use({ renderer: {
+          code: function (token) {
+            var text = typeof token === 'object' ? (token.text || '') : String(token || '');
+            var lang = (typeof token === 'object' ? (token.lang || '') : '').trim();
+            var hdr = lang ? '<div class="border-b border-white/15 px-3 py-1 text-xs uppercase tracking-wide text-slate-400">' + lang + '</div>' : '';
+            return '<div class="my-4 rounded-lg border border-white/20 bg-slate-800 p-0">' + hdr +
+              '<pre class="overflow-auto px-3 py-3 text-sm leading-6 text-slate-100 m-0 whitespace-pre"><code>' + text + '</code></pre></div>';
+          },
+          codespan: function (token) {
+            var text = typeof token === 'object' ? (token.text || '') : String(token || '');
+            return '<code class="rounded bg-slate-700/60 px-1 py-0.5 text-slate-100 text-[0.85em]">' + text + '</code>';
+          }
+        }});
+      } catch (_) {}
+    }
+    window.renderMarkdownEls();
+  }
+  if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', setupMarked); }
+  else { setupMarked(); }
+})();"""))
 
   private def graphPanelScript(conversationId: String): Frag =
     script(

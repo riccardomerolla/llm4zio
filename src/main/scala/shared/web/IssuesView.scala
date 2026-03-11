@@ -1661,9 +1661,9 @@ object IssuesView:
           val lang                  = line.trim.stripPrefix("```").trim
           val (codeLines, fenceIdx) = collectUntil(idx + 1, l => l.trim.startsWith("```"))
           val next                  = if fenceIdx < lineCount then fenceIdx + 1 else fenceIdx
-          val block                 = div(cls := "my-4 rounded-lg border border-white/10 bg-black/30 p-0")(
+          val block                 = div(cls := "my-4 rounded-lg border border-white/20 bg-slate-800 p-0")(
             if lang.nonEmpty then
-              div(cls := "border-b border-white/10 px-3 py-1 text-xs uppercase tracking-wide text-slate-400")(lang)
+              div(cls := "border-b border-white/15 px-3 py-1 text-xs uppercase tracking-wide text-slate-400")(lang)
             else (),
             pre(cls := "overflow-auto px-3 py-3 text-sm leading-6 text-slate-100")(codeLines.mkString("\n")),
           )

@@ -571,11 +571,24 @@ object WorkspacesController:
                        }
         branch      <- runGit(repoPath, List("rev-parse", "--abbrev-ref", "HEAD"))
         _           <- ZIO.when(branch._1 != 0) {
-                         ZIO.fail(
-                           fail(Status.InternalServerError, "Unable to determine target branch.", Some(branch._2))
-                         )
+                         val detail = branch._2.trim
+                         val msg    =
+                           if detail.nonEmpty then s"Unable to determine target branch: $detail"
+                           else "Unable to determine target branch."
+                         ZIO.fail(fail(Status.InternalServerError, msg))
                        }
         target       = branch._2.trim
+        _           <- ZIO.when(target.isEmpty) {
+                         ZIO.fail(fail(Status.InternalServerError, "Repository HEAD resolved to an empty branch name."))
+                       }
+        _           <- ZIO.when(target == "HEAD") {
+                         ZIO.fail(
+                           fail(
+                             Status.BadRequest,
+                             "Repository is in detached HEAD state. Check out a named branch before applying.",
+                           )
+                         )
+                       }
         merge       <- runGit(repoPath, List("merge", "--no-ff", "--no-edit", sourceBranch))
         _           <-
           if merge._1 == 0 then ZIO.unit
@@ -685,7 +698,8 @@ object WorkspacesController:
   private def runGit(repoPath: String, args: List[String]): IO[Response, (Int, String)] =
     ZIO
       .attemptBlocking {
-        val process = new ProcessBuilder(("git" :: "-C" :: repoPath :: args)*)
+        val cmd     = "git" :: "-c" :: "safe.directory=*" :: "-C" :: repoPath :: args
+        val process = new ProcessBuilder(cmd*)
           .redirectErrorStream(true)
           .start()
         val output  = scala.io.Source.fromInputStream(process.getInputStream, "UTF-8").mkString
