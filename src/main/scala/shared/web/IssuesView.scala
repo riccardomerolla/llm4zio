@@ -326,7 +326,8 @@ object IssuesView:
           .reverse
         val statusToken  = issueStatusToken(status)
         div(
-          cls                         := "w-[19rem] min-w-[19rem] flex-shrink-0 rounded-xl border border-white/10 bg-slate-900/70 p-3 snap-start",
+          cls                         := "min-w-0 flex-shrink-0 rounded-xl border border-white/10 bg-slate-900/70 p-3 snap-start",
+          attr("data-board-column")   := "true",
           attr("data-drop-status")    := statusToken,
           attr("data-column-status")  := statusToken,
           attr("data-column-label")   := label,
@@ -410,7 +411,8 @@ object IssuesView:
         )
       },
       div(
-        cls                                := "w-[19rem] min-w-[19rem] flex-shrink-0 rounded-xl border border-white/10 bg-slate-900/70 p-3 snap-start",
+        cls                                := "min-w-0 flex-shrink-0 rounded-xl border border-white/10 bg-slate-900/70 p-3 snap-start",
+        attr("data-board-column")          := "true",
         attr("data-hidden-columns-column") := "true",
       )(
         div(cls := "mb-2 flex items-center justify-between gap-1")(

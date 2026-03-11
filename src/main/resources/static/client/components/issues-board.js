@@ -343,7 +343,10 @@ class IssuesBoard {
 
       this._customVisibleColumns = this._loadVisibleColumns();
       window.addEventListener('resize', () => {
-        if (this._customVisibleColumns) return;
+        if (this._customVisibleColumns) {
+          this._resizeColumnsToViewport();
+          return;
+        }
         this._syncVisibleColumns();
       });
     }
@@ -403,6 +406,7 @@ class IssuesBoard {
       col.classList.toggle('hidden', !this._visibleColumns.has(statusToken));
     });
     this._renderHiddenColumnLane();
+    this._resizeColumnsToViewport();
   }
 
   _hideColumn(statusToken) {
@@ -459,6 +463,27 @@ class IssuesBoard {
       button.dataset.showColumn = statusToken;
       button.textContent = `${label} (${count})`;
       list.appendChild(button);
+    });
+  }
+
+  _resizeColumnsToViewport() {
+    const laneColumns = Array.from(this.root.querySelectorAll('[data-board-column]'))
+      .filter((el) => !el.classList.contains('hidden'));
+    if (laneColumns.length === 0) return;
+
+    const rootWidth = this.root.clientWidth;
+    if (!rootWidth || rootWidth <= 0) return;
+
+    const style = window.getComputedStyle(this.root);
+    const gap = parseFloat(style.columnGap || style.gap || '12') || 12;
+    const minWidth = 280;
+    const available = rootWidth - (gap * (laneColumns.length - 1));
+    const target = Math.floor(available / laneColumns.length);
+    const laneWidth = Math.max(minWidth, target);
+
+    laneColumns.forEach((col) => {
+      col.style.flex = `0 0 ${laneWidth}px`;
+      col.style.width = `${laneWidth}px`;
     });
   }
 
