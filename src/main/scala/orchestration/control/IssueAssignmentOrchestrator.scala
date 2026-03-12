@@ -14,12 +14,24 @@ import shared.ids.Ids.{ AgentId, EventId, IssueId, TaskRunId }
 
 trait IssueAssignmentOrchestrator:
   def assignIssue(issueId: String, agentName: String): IO[PersistenceError, AgentIssueView]
+  def assignIssue(
+    issueId: String,
+    agentName: String,
+    skipConversationBootstrap: Boolean,
+  ): IO[PersistenceError, AgentIssueView] =
+    assignIssue(issueId, agentName)
 
 object IssueAssignmentOrchestrator:
 
   def assignIssue(issueId: String, agentName: String)
     : ZIO[IssueAssignmentOrchestrator, PersistenceError, AgentIssueView] =
     ZIO.serviceWithZIO[IssueAssignmentOrchestrator](_.assignIssue(issueId, agentName))
+
+  def assignIssue(issueId: String, agentName: String, skipConversationBootstrap: Boolean)
+    : ZIO[IssueAssignmentOrchestrator, PersistenceError, AgentIssueView] =
+    ZIO.serviceWithZIO[IssueAssignmentOrchestrator](
+      _.assignIssue(issueId, agentName, skipConversationBootstrap)
+    )
 
   val live: ZLayer[
     ChatRepository & TaskRepository & LlmService & AgentConfigResolver & ActivityHub & IssueRepository,
@@ -66,6 +78,13 @@ final private case class IssueAssignmentOrchestratorLive(
 ) extends IssueAssignmentOrchestrator:
 
   override def assignIssue(issueId: String, agentName: String): IO[PersistenceError, AgentIssueView] =
+    assignIssue(issueId, agentName, skipConversationBootstrap = false)
+
+  override def assignIssue(
+    issueId: String,
+    agentName: String,
+    skipConversationBootstrap: Boolean,
+  ): IO[PersistenceError, AgentIssueView] =
     for
       issue   <- issueRepository.get(IssueId(issueId)).mapError(mapRepoError)
       now     <- Clock.instant
@@ -89,8 +108,12 @@ final private case class IssueAssignmentOrchestratorLive(
                      )
                    )
                    .mapError(mapRepoError)
-      convId  <- ensureIssueConversation(issueId, issue)
-      _       <- queue.offer(AssignmentTask(issueId, agentName, convId))
+      _       <- if skipConversationBootstrap then ZIO.unit
+                 else
+                   for
+                     convId <- ensureIssueConversation(issueId, issue)
+                     _      <- queue.offer(AssignmentTask(issueId, agentName, convId))
+                   yield ()
       _       <- activityHub.publish(
                    ActivityEvent(
                      id = EventId.generate,

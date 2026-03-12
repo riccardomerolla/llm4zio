@@ -250,7 +250,11 @@ final case class IssueControllerLive(
           issue              <- issueRepository.get(IssueId(id)).mapError(mapIssueRepoError)
           selectedWorkspaceId = parseWorkspaceSelection(form)
           workspaceForRun     = issue.workspaceId.orElse(selectedWorkspaceId)
-          _                  <- issueAssignmentOrchestrator.assignIssue(id, agentName)
+          _                  <- issueAssignmentOrchestrator.assignIssue(
+                                  id,
+                                  agentName,
+                                  skipConversationBootstrap = workspaceForRun.isDefined,
+                                )
           _                  <- workspaceForRun.fold[IO[PersistenceError, Unit]](ZIO.unit) { workspaceId =>
                                   workspaceRunService
                                     .assign(
@@ -532,7 +536,11 @@ final case class IssueControllerLive(
                               .mapError(err => PersistenceError.QueryFailed("json_parse", err))
           issue          <- issueRepository.get(IssueId(id)).mapError(mapIssueRepoError)
           workspaceForRun = issue.workspaceId.orElse(assignRequest.workspaceId.map(_.trim).filter(_.nonEmpty))
-          _              <- issueAssignmentOrchestrator.assignIssue(id, assignRequest.agentName)
+          _              <- issueAssignmentOrchestrator.assignIssue(
+                              id,
+                              assignRequest.agentName,
+                              skipConversationBootstrap = workspaceForRun.isDefined,
+                            )
           _              <- workspaceForRun.fold[IO[PersistenceError, Unit]](ZIO.unit) { workspaceId =>
                               workspaceRunService
                                 .assign(
@@ -571,7 +579,11 @@ final case class IssueControllerLive(
                                  assignRequest.workspaceId.map(_.trim).filter(_.nonEmpty)
                                )
                                for
-                                 _ <- issueAssignmentOrchestrator.assignIssue(id, best.agentName)
+                                 _ <- issueAssignmentOrchestrator.assignIssue(
+                                        id,
+                                        best.agentName,
+                                        skipConversationBootstrap = selectedWorkspaceId.isDefined,
+                                      )
                                  _ <- selectedWorkspaceId.fold[IO[PersistenceError, Unit]](ZIO.unit) { workspaceId =>
                                         workspaceRunService
                                           .assign(
@@ -1508,7 +1520,11 @@ final case class IssueControllerLive(
                                    )
                                  )
                                  .mapError(mapIssueRepoError)
-                      _     <- issueAssignmentOrchestrator.assignIssue(issueId, request.agentId)
+                      _     <- issueAssignmentOrchestrator.assignIssue(
+                                 issueId,
+                                 request.agentId,
+                                 skipConversationBootstrap = true,
+                               )
                       _     <- workspaceRunService
                                  .assign(
                                    request.workspaceId,
