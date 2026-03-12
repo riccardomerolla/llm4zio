@@ -14,6 +14,7 @@ class IssuesBoard {
     this._pointerDragging = false;
     this._visibleColumns = new Set();
     this._customVisibleColumns = null;
+    this.dragFromStatus = null;
 
     this.bindDragDrop();
     this.bindPointerDrag();
@@ -36,6 +37,7 @@ class IssuesBoard {
       this.dragCard = card;
       this.dragIssueId = card.dataset.issueId || null;
       this.sourceColumn = card.closest('[data-drop-status]');
+      this.dragFromStatus = this._issueCardStatus(card) || this._normalizeStatusToken(this.sourceColumn?.dataset?.dropStatus);
 
       event.dataTransfer?.setData('text/plain', this.dragIssueId || '');
       event.dataTransfer.effectAllowed = 'move';
@@ -56,6 +58,7 @@ class IssuesBoard {
       this.dragCard = null;
       this.dragIssueId = null;
       this.sourceColumn = null;
+      this.dragFromStatus = null;
       this.clearHighlights();
       this._flushPendingRefresh();
     });
@@ -66,10 +69,19 @@ class IssuesBoard {
   _bindColumnListeners() {
     this.root.querySelectorAll('[data-drop-status]').forEach((column) => {
       column.addEventListener('dragover', (event) => {
-        event.preventDefault();
-        event.dataTransfer.dropEffect = 'move';
-        this._highlightColumn(column);
-        this._movePlaceholderTo(column);
+        if (!this.dragIssueId) return;
+        const targetStatus = this._normalizeStatusToken(column.dataset.dropStatus);
+        const allowed = this._canDropTo(targetStatus);
+        if (allowed) {
+          event.preventDefault();
+          event.dataTransfer.dropEffect = 'move';
+          this._highlightColumn(column, true);
+          this._movePlaceholderTo(column);
+        } else {
+          event.dataTransfer.dropEffect = 'none';
+          this._highlightColumn(column, false);
+          if (this._placeholderColumn() === column) this._removePlaceholder();
+        }
       });
 
       column.addEventListener('dragleave', (event) => {
@@ -87,12 +99,13 @@ class IssuesBoard {
         this._unhighlightColumn(column);
         this._removePlaceholder();
 
-        const status = column.dataset.dropStatus || '';
+        const status = this._normalizeStatusToken(column.dataset.dropStatus || '');
         const issueId = this.dragIssueId || event.dataTransfer?.getData('text/plain') || '';
-        if (!status || !issueId) return;
+        if (!status || !issueId || !this._canDropTo(status, issueId)) return;
 
-        await this.patchIssueStatus(issueId, status);
-        this.refreshBoard(issueId);
+        const moved = await this.patchIssueStatus(issueId, status);
+        if (moved) this.refreshBoard(issueId);
+        else this._flushPendingRefresh();
       });
     });
   }
@@ -115,7 +128,7 @@ class IssuesBoard {
     if (this._placeholderColumn() === column) return;
     this._removePlaceholder();
     this.placeholder = document.createElement('div');
-    this.placeholder.className = 'rounded-lg border-2 border-dashed border-indigo-400/50 bg-indigo-500/10 h-[4.5rem] pointer-events-none';
+    this.placeholder.className = 'rounded-lg border-2 border-dashed border-emerald-400/60 bg-emerald-500/10 h-[4.5rem] pointer-events-none';
     this.placeholder.dataset.boardGhost = 'target';
     const cardsArea = column.querySelector('[data-role="column-cards"]');
     if (cardsArea) cardsArea.appendChild(this.placeholder);
@@ -131,18 +144,41 @@ class IssuesBoard {
     return this.placeholder?.closest('[data-drop-status]') || null;
   }
 
-  _highlightColumn(column) {
+  _highlightColumn(column, allowed = true) {
     this.clearHighlights();
-    column.classList.add('ring-2', 'ring-indigo-400/60', 'bg-indigo-500/5');
+    if (allowed) {
+      column.classList.add('ring-2', 'ring-emerald-400/60', 'bg-emerald-500/10');
+      column.classList.remove('cursor-not-allowed');
+      column.dataset.dropHighlight = 'allowed';
+    } else {
+      column.classList.add('ring-2', 'ring-rose-400/60', 'bg-rose-500/10', 'cursor-not-allowed');
+      column.dataset.dropHighlight = 'blocked';
+    }
   }
 
   _unhighlightColumn(column) {
-    column.classList.remove('ring-2', 'ring-indigo-400/60', 'bg-indigo-500/5');
+    column.classList.remove(
+      'ring-2',
+      'ring-emerald-400/60',
+      'bg-emerald-500/10',
+      'ring-rose-400/60',
+      'bg-rose-500/10',
+      'cursor-not-allowed',
+    );
+    column.dataset.dropHighlight = 'false';
   }
 
   clearHighlights() {
     this.root.querySelectorAll('[data-drop-status]').forEach((column) => {
-      column.classList.remove('ring-2', 'ring-indigo-400/60', 'bg-indigo-500/5');
+      column.classList.remove(
+        'ring-2',
+        'ring-emerald-400/60',
+        'bg-emerald-500/10',
+        'ring-rose-400/60',
+        'bg-rose-500/10',
+        'cursor-not-allowed',
+      );
+      column.dataset.dropHighlight = 'false';
     });
   }
 
@@ -525,6 +561,7 @@ class IssuesBoard {
         this.dragIssueId = pointerCard.dataset.issueId || null;
         this.dragCard = pointerCard;
         this.sourceColumn = pointerCard.closest('[data-drop-status]');
+        this.dragFromStatus = this._issueCardStatus(pointerCard) || this._normalizeStatusToken(this.sourceColumn?.dataset?.dropStatus);
 
         pointerCard.classList.add('opacity-40');
         this._insertSourceGhost(pointerCard);
@@ -544,8 +581,11 @@ class IssuesBoard {
       const el = document.elementFromPoint(event.clientX, event.clientY);
       const col = el?.closest('[data-drop-status]');
       if (col) {
-        this._highlightColumn(col);
-        this._movePlaceholderTo(col);
+        const targetStatus = this._normalizeStatusToken(col.dataset.dropStatus);
+        const allowed = this._canDropTo(targetStatus);
+        this._highlightColumn(col, allowed);
+        if (allowed) this._movePlaceholderTo(col);
+        else if (this._placeholderColumn() === col) this._removePlaceholder();
       }
     };
 
@@ -573,10 +613,12 @@ class IssuesBoard {
       this.dragIssueId = null;
       this.dragCard = null;
       this.sourceColumn = null;
+      this.dragFromStatus = null;
 
-      if (status && issueId) {
-        await this.patchIssueStatus(issueId, status);
-        this.refreshBoard(issueId);
+      if (status && issueId && this._canDropTo(status, issueId)) {
+        const moved = await this.patchIssueStatus(issueId, status);
+        if (moved) this.refreshBoard(issueId);
+        else this._flushPendingRefresh();
       } else {
         this._flushPendingRefresh();
       }
@@ -592,25 +634,32 @@ class IssuesBoard {
   // ---------------------------------------------------------------------------
 
   async patchIssueStatus(issueId, status) {
-    const payload = { status: this.toIssueStatus(status) };
-
     const card = this.root.querySelector(`[data-issue-id="${CSS.escape(issueId)}"]`);
+    const currentStatus = this._issueCardStatus(card);
+    const targetStatus = this._normalizeStatusToken(status);
+    if (!targetStatus || !this.isTransitionAllowed(currentStatus, targetStatus)) return false;
+
+    const payload = { status: this.toIssueStatus(targetStatus) };
     const currentAgent = card?.dataset?.assignedAgent || '';
     if (currentAgent.trim()) payload.agentName = currentAgent.trim();
 
-    if (status === 'done' || status === 'completed') payload.resultData = 'Status updated from board';
-    if (status === 'rework' || status === 'failed') payload.reason = 'Marked rework from board';
-    if (status === 'canceled') payload.reason = 'Canceled from board';
-    if (status === 'duplicated') payload.reason = 'Marked duplicated from board';
+    if (targetStatus === 'done') payload.resultData = 'Status updated from board';
+    if (targetStatus === 'rework') payload.reason = 'Marked rework from board';
+    if (targetStatus === 'canceled') payload.reason = 'Canceled from board';
+    if (targetStatus === 'duplicated') payload.reason = 'Marked duplicated from board';
 
     try {
-      await fetch(`/api/issues/${encodeURIComponent(issueId)}/status`, {
+      const response = await fetch(`/api/issues/${encodeURIComponent(issueId)}/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify(payload),
       });
+      if (!response.ok) return false;
+      if (card) card.dataset.issueStatus = targetStatus;
+      return true;
     } catch (_ignored) {
       // Best effort; board refresh will keep server as source of truth
+      return false;
     }
   }
 
@@ -627,11 +676,19 @@ class IssuesBoard {
   }
 
   toIssueStatus(statusToken) {
-    switch (String(statusToken || '').toLowerCase()) {
-      case 'backlog': return 'Backlog';
-      case 'todo': return 'Todo';
+    const rawToken = String(statusToken || '').trim().toLowerCase();
+    switch (rawToken) {
       case 'open': return 'Open';
       case 'assigned': return 'Assigned';
+      case 'completed': return 'Completed';
+      case 'failed': return 'Failed';
+      case 'skipped': return 'Skipped';
+      default: break;
+    }
+
+    switch (this._normalizeStatusToken(statusToken)) {
+      case 'backlog': return 'Backlog';
+      case 'todo': return 'Todo';
       case 'in_progress': return 'InProgress';
       case 'human_review': return 'HumanReview';
       case 'rework': return 'Rework';
@@ -639,10 +696,56 @@ class IssuesBoard {
       case 'done': return 'Done';
       case 'canceled': return 'Canceled';
       case 'duplicated': return 'Duplicated';
-      case 'completed': return 'Completed';
-      case 'failed': return 'Failed';
       default: return 'Backlog';
     }
+  }
+
+  _issueCardStatus(card) {
+    return this._normalizeStatusToken(card?.dataset?.issueStatus || '');
+  }
+
+  _canDropTo(targetStatus, issueId = null) {
+    const fromStatus = this.dragFromStatus || this._issueCardStatus(
+      issueId ? this.root.querySelector(`[data-issue-id="${CSS.escape(issueId)}"]`) : this.dragCard,
+    );
+    return this.isTransitionAllowed(fromStatus, targetStatus);
+  }
+
+  _normalizeStatusToken(rawStatus) {
+    const token = String(rawStatus || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[\s-]+/g, '_');
+
+    switch (token) {
+      case 'open': return 'backlog';
+      case 'assigned': return 'todo';
+      case 'completed': return 'done';
+      case 'failed': return 'rework';
+      case 'skipped': return 'canceled';
+      case 'inprogress': return 'in_progress';
+      case 'humanreview': return 'human_review';
+      default: return token;
+    }
+  }
+
+  isTransitionAllowed(fromStatusToken, toStatusToken) {
+    const from = this._normalizeStatusToken(fromStatusToken);
+    const to = this._normalizeStatusToken(toStatusToken);
+    if (!from || !to || from === to) return false;
+
+    const matrix = {
+      backlog: new Set(['todo', 'done', 'canceled', 'duplicated']),
+      todo: new Set(['backlog', 'in_progress', 'done', 'canceled', 'duplicated']),
+      in_progress: new Set(['human_review', 'done', 'canceled', 'duplicated']),
+      human_review: new Set(['rework', 'merging', 'done', 'canceled', 'duplicated']),
+      rework: new Set(['in_progress', 'done', 'canceled', 'duplicated']),
+      merging: new Set(['done', 'canceled', 'duplicated']),
+      done: new Set([]),
+      canceled: new Set(['backlog']),
+      duplicated: new Set([]),
+    };
+    return matrix[from]?.has(to) === true;
   }
 
   _flashLandedCard(issueId) {

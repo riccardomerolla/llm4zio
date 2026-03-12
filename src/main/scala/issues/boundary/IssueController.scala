@@ -236,6 +236,7 @@ final case class IssueControllerLive(
                               case IssueStateTag.Skipped    => IssueStatus.Skipped
                             })
                             .orElseFail(PersistenceError.QueryFailed("status_parse", s"Unknown status: $rawStatus"))
+          _            <- ensureTransitionAllowed(issue.state, status, issueId.value)
           event        <- statusToEvent(issueId, IssueStatusUpdateRequest(status = status), agentFallback, now)
           _            <- issueRepository.append(event).mapError(mapIssueRepoError)
         yield Response(status = Status.SeeOther, headers = Headers(Header.Custom("Location", s"/issues/$id")))
@@ -714,6 +715,7 @@ final case class IssueControllerLive(
                                case _                                 => None
                              })
                              .getOrElse("board")
+          _             <- ensureTransitionAllowed(issue.state, updateRequest.status, issueId.value)
           event         <- statusToEvent(issueId, updateRequest, fallbackAgent, now)
           _             <- issueRepository.append(event).mapError(mapIssueRepoError)
           _             <- activityHub.publish(
@@ -957,6 +959,62 @@ final case class IssueControllerLive(
       case "failed"      => Some(IssueStateTag.Failed)
       case "skipped"     => Some(IssueStateTag.Skipped)
       case _             => None
+
+  private val allowedBoardTransitions: Map[IssueStatus, Set[IssueStatus]] = Map(
+    IssueStatus.Backlog -> Set(IssueStatus.Todo, IssueStatus.Done, IssueStatus.Canceled, IssueStatus.Duplicated),
+    IssueStatus.Todo -> Set(IssueStatus.Backlog, IssueStatus.InProgress, IssueStatus.Done, IssueStatus.Canceled, IssueStatus.Duplicated),
+    IssueStatus.InProgress -> Set(IssueStatus.HumanReview, IssueStatus.Done, IssueStatus.Canceled, IssueStatus.Duplicated),
+    IssueStatus.HumanReview ->
+      Set(IssueStatus.Rework, IssueStatus.Merging, IssueStatus.Done, IssueStatus.Canceled, IssueStatus.Duplicated),
+    IssueStatus.Rework -> Set(IssueStatus.InProgress, IssueStatus.Done, IssueStatus.Canceled, IssueStatus.Duplicated),
+    IssueStatus.Merging -> Set(IssueStatus.Done, IssueStatus.Canceled, IssueStatus.Duplicated),
+    IssueStatus.Done -> Set.empty,
+    IssueStatus.Canceled -> Set(IssueStatus.Backlog),
+    IssueStatus.Duplicated -> Set.empty,
+  )
+
+  private def canonicalBoardStatus(status: IssueStatus): IssueStatus =
+    status match
+      case IssueStatus.Open      => IssueStatus.Backlog
+      case IssueStatus.Assigned  => IssueStatus.Todo
+      case IssueStatus.Completed => IssueStatus.Done
+      case IssueStatus.Failed    => IssueStatus.Rework
+      case IssueStatus.Skipped   => IssueStatus.Canceled
+      case other                 => other
+
+  private def boardStatusFromState(state: IssueState): IssueStatus =
+    state match
+      case IssueState.Backlog(_)          => IssueStatus.Backlog
+      case IssueState.Todo(_)             => IssueStatus.Todo
+      case IssueState.Open(_)             => IssueStatus.Backlog
+      case IssueState.Assigned(_, _)      => IssueStatus.Todo
+      case IssueState.InProgress(_, _)    => IssueStatus.InProgress
+      case IssueState.HumanReview(_)      => IssueStatus.HumanReview
+      case IssueState.Rework(_, _)        => IssueStatus.Rework
+      case IssueState.Merging(_)          => IssueStatus.Merging
+      case IssueState.Done(_, _)          => IssueStatus.Done
+      case IssueState.Canceled(_, _)      => IssueStatus.Canceled
+      case IssueState.Duplicated(_, _)    => IssueStatus.Duplicated
+      case IssueState.Completed(_, _, _)  => IssueStatus.Done
+      case IssueState.Failed(_, _, _)     => IssueStatus.Rework
+      case IssueState.Skipped(_, _)       => IssueStatus.Canceled
+
+  private def ensureTransitionAllowed(
+    currentState: IssueState,
+    requestedStatus: IssueStatus,
+    issueId: String,
+  ): IO[PersistenceError, Unit] =
+    val from = boardStatusFromState(currentState)
+    val to   = canonicalBoardStatus(requestedStatus)
+    val allowed = allowedBoardTransitions.getOrElse(from, Set.empty)
+    if allowed.contains(to) then ZIO.unit
+    else
+      ZIO.fail(
+        PersistenceError.QueryFailed(
+          "status_transition",
+          s"Invalid transition for issue $issueId: ${from.toString} -> ${to.toString}",
+        )
+      )
 
   private def statusToEvent(
     issueId: IssueId,
@@ -1477,6 +1535,7 @@ final case class IssueControllerLive(
                                         .filter(_.nonEmpty)
                                         .orElse(assignedAgentFromState(issue.state))
                                         .getOrElse("bulk")
+                      _            <- ensureTransitionAllowed(issue.state, request.status, issueId)
                       event        <- statusToEvent(
                                         IssueId(issueId),
                                         IssueStatusUpdateRequest(
