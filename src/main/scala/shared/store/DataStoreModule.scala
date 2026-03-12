@@ -10,20 +10,17 @@ import io.github.riccardomerolla.zio.eclipsestore.config.{ EclipseStoreConfig, S
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.schema.{ SchemaBinaryCodec, TypedStore, TypedStoreLive }
 import io.github.riccardomerolla.zio.eclipsestore.service.{ EclipseStoreService, LifecycleCommand }
-import issues.entity.{ AgentIssue, Assignment, IssueEvent }
 import taskrun.entity.{ TaskRun, TaskRunEvent }
 private val dataStoreHandlers =
   SchemaBinaryCodec.handlers(Schema[String])
     ++ SchemaBinaryCodec.handlers(Schema[TaskRun])
     ++ SchemaBinaryCodec.handlers(Schema[TaskRunEvent])
-    ++ SchemaBinaryCodec.handlers(Schema[AgentIssue])
-    ++ SchemaBinaryCodec.handlers(Schema[Assignment])
-    ++ SchemaBinaryCodec.handlers(Schema[IssueEvent])
     ++ SchemaBinaryCodec.handlers(Schema[Conversation])
     ++ SchemaBinaryCodec.handlers(Schema[ConversationEvent])
-  // WorkspaceEvent and WorkspaceRunEvent are stored as JSON strings (via zio-json),
+  // IssueEvent, WorkspaceEvent and WorkspaceRunEvent are stored as JSON strings (via zio-json),
   // not as typed EclipseStore objects, to avoid the default binary serializer
-  // creating fresh case-object instances that break Scala pattern matching on restart.
+  // creating fresh case-object instances that break Scala pattern matching on restart,
+  // and to avoid type ID conflicts when the sealed trait evolves (new subtypes added).
 
 object DataStoreModule:
 

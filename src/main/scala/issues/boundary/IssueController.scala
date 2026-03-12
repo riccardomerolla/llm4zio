@@ -220,20 +220,20 @@ final case class IssueControllerLive(
                           }.getOrElse("manual")
           status       <- ZIO
                             .fromOption(parseIssueStateTag(rawStatus).map {
-                              case IssueStateTag.Backlog    => IssueStatus.Backlog
-                              case IssueStateTag.Todo       => IssueStatus.Todo
-                              case IssueStateTag.Open       => IssueStatus.Open
-                              case IssueStateTag.Assigned   => IssueStatus.Assigned
-                              case IssueStateTag.InProgress => IssueStatus.InProgress
+                              case IssueStateTag.Backlog     => IssueStatus.Backlog
+                              case IssueStateTag.Todo        => IssueStatus.Todo
+                              case IssueStateTag.Open        => IssueStatus.Open
+                              case IssueStateTag.Assigned    => IssueStatus.Assigned
+                              case IssueStateTag.InProgress  => IssueStatus.InProgress
                               case IssueStateTag.HumanReview => IssueStatus.HumanReview
-                              case IssueStateTag.Rework     => IssueStatus.Rework
-                              case IssueStateTag.Merging    => IssueStatus.Merging
-                              case IssueStateTag.Done       => IssueStatus.Done
-                              case IssueStateTag.Canceled   => IssueStatus.Canceled
-                              case IssueStateTag.Duplicated => IssueStatus.Duplicated
-                              case IssueStateTag.Completed  => IssueStatus.Completed
-                              case IssueStateTag.Failed     => IssueStatus.Failed
-                              case IssueStateTag.Skipped    => IssueStatus.Skipped
+                              case IssueStateTag.Rework      => IssueStatus.Rework
+                              case IssueStateTag.Merging     => IssueStatus.Merging
+                              case IssueStateTag.Done        => IssueStatus.Done
+                              case IssueStateTag.Canceled    => IssueStatus.Canceled
+                              case IssueStateTag.Duplicated  => IssueStatus.Duplicated
+                              case IssueStateTag.Completed   => IssueStatus.Completed
+                              case IssueStateTag.Failed      => IssueStatus.Failed
+                              case IssueStateTag.Skipped     => IssueStatus.Skipped
                             })
                             .orElseFail(PersistenceError.QueryFailed("status_parse", s"Unknown status: $rawStatus"))
           _            <- ensureTransitionAllowed(issue.state, status, issueId.value)
@@ -856,25 +856,25 @@ final case class IssueControllerLive(
 
   private def domainToView(i: DomainIssue): AgentIssueView =
     val (status, assignedAgent, assignedAt, completedAt, errorMessage) = i.state match
-      case IssueState.Backlog(_)              => (IssueStatus.Backlog, None, None, None, None)
-      case IssueState.Todo(at)                => (IssueStatus.Todo, None, Some(at), None, None)
-      case IssueState.Open(_)                 => (IssueStatus.Backlog, None, None, None, None)
-      case IssueState.Assigned(agent, at)     => (IssueStatus.Todo, Some(agent.value), Some(at), None, None)
-      case IssueState.InProgress(agent, at)   => (IssueStatus.InProgress, Some(agent.value), Some(at), None, None)
-      case IssueState.HumanReview(at)         => (IssueStatus.HumanReview, None, None, Some(at), None)
-      case IssueState.Rework(at, msg)         => (IssueStatus.Rework, None, None, Some(at), Some(msg))
-      case IssueState.Merging(at)             => (IssueStatus.Merging, None, None, Some(at), None)
-      case IssueState.Done(at, _)             => (IssueStatus.Done, None, None, Some(at), None)
-      case IssueState.Canceled(at, msg)       => (IssueStatus.Canceled, None, None, Some(at), Some(msg))
-      case IssueState.Duplicated(at, msg)     => (IssueStatus.Duplicated, None, None, Some(at), Some(msg))
-      case IssueState.Completed(_, at, _)     => (IssueStatus.Done, None, None, Some(at), None)
-      case IssueState.Failed(_, at, msg)      => (IssueStatus.Rework, None, None, Some(at), Some(msg))
-      case IssueState.Skipped(at, reason)     => (IssueStatus.Canceled, None, None, Some(at), Some(reason))
+      case IssueState.Backlog(_)            => (IssueStatus.Backlog, None, None, None, None)
+      case IssueState.Todo(at)              => (IssueStatus.Todo, None, Some(at), None, None)
+      case IssueState.Open(_)               => (IssueStatus.Backlog, None, None, None, None)
+      case IssueState.Assigned(agent, at)   => (IssueStatus.Todo, Some(agent.value), Some(at), None, None)
+      case IssueState.InProgress(agent, at) => (IssueStatus.InProgress, Some(agent.value), Some(at), None, None)
+      case IssueState.HumanReview(at)       => (IssueStatus.HumanReview, None, None, Some(at), None)
+      case IssueState.Rework(at, msg)       => (IssueStatus.Rework, None, None, Some(at), Some(msg))
+      case IssueState.Merging(at)           => (IssueStatus.Merging, None, None, Some(at), None)
+      case IssueState.Done(at, _)           => (IssueStatus.Done, None, None, Some(at), None)
+      case IssueState.Canceled(at, msg)     => (IssueStatus.Canceled, None, None, Some(at), Some(msg))
+      case IssueState.Duplicated(at, msg)   => (IssueStatus.Duplicated, None, None, Some(at), Some(msg))
+      case IssueState.Completed(_, at, _)   => (IssueStatus.Done, None, None, Some(at), None)
+      case IssueState.Failed(_, at, msg)    => (IssueStatus.Rework, None, None, Some(at), Some(msg))
+      case IssueState.Skipped(at, reason)   => (IssueStatus.Canceled, None, None, Some(at), Some(reason))
     val priority                                                       = IssuePriority.values.find(_.toString.equalsIgnoreCase(i.priority)).getOrElse(IssuePriority.Medium)
     val createdAt                                                      = i.state match
       case IssueState.Backlog(at) => at
-      case IssueState.Open(at) => at
-      case _                   => java.time.Instant.EPOCH
+      case IssueState.Open(at)    => at
+      case _                      => java.time.Instant.EPOCH
     AgentIssueView(
       id = Some(i.id.value),
       runId = i.runId.map(_.value),
@@ -927,62 +927,73 @@ final case class IssueControllerLive(
 
   private def statusMatches(status: IssueStatus, token: String): Boolean =
     (status, token.trim.toLowerCase) match
-      case (IssueStatus.Backlog, "backlog")       => true
-      case (IssueStatus.Todo, "todo")             => true
+      case (IssueStatus.Backlog, "backlog")          => true
+      case (IssueStatus.Todo, "todo")                => true
       case (IssueStatus.HumanReview, "human_review") => true
       case (IssueStatus.HumanReview, "humanreview")  => true
-      case (IssueStatus.Rework, "rework")         => true
-      case (IssueStatus.Merging, "merging")       => true
-      case (IssueStatus.Done, "done")             => true
-      case (IssueStatus.Canceled, "canceled")     => true
-      case (IssueStatus.Duplicated, "duplicated") => true
+      case (IssueStatus.Rework, "rework")            => true
+      case (IssueStatus.Merging, "merging")          => true
+      case (IssueStatus.Done, "done")                => true
+      case (IssueStatus.Canceled, "canceled")        => true
+      case (IssueStatus.Duplicated, "duplicated")    => true
       // Legacy aliases
-      case (IssueStatus.Backlog, "open")          => true
-      case (IssueStatus.Todo, "assigned")         => true
-      case (IssueStatus.Done, "completed")        => true
-      case (IssueStatus.Rework, "failed")         => true
-      case (IssueStatus.Canceled, "skipped")      => true
-      case (IssueStatus.Open, "open")              => true
-      case (IssueStatus.Assigned, "assigned")      => true
-      case (IssueStatus.InProgress, "in_progress") => true
-      case (IssueStatus.InProgress, "inprogress")  => true
-      case (IssueStatus.Completed, "completed")    => true
-      case (IssueStatus.Failed, "failed")          => true
-      case (IssueStatus.Skipped, "skipped")        => true
-      case _                                       => false
+      case (IssueStatus.Backlog, "open")             => true
+      case (IssueStatus.Todo, "assigned")            => true
+      case (IssueStatus.Done, "completed")           => true
+      case (IssueStatus.Rework, "failed")            => true
+      case (IssueStatus.Canceled, "skipped")         => true
+      case (IssueStatus.Open, "open")                => true
+      case (IssueStatus.Assigned, "assigned")        => true
+      case (IssueStatus.InProgress, "in_progress")   => true
+      case (IssueStatus.InProgress, "inprogress")    => true
+      case (IssueStatus.Completed, "completed")      => true
+      case (IssueStatus.Failed, "failed")            => true
+      case (IssueStatus.Skipped, "skipped")          => true
+      case _                                         => false
 
   private def parseIssueStateTag(raw: String): Option[IssueStateTag] =
     raw.trim.toLowerCase match
-      case "backlog"     => Some(IssueStateTag.Backlog)
-      case "todo"        => Some(IssueStateTag.Todo)
+      case "backlog"      => Some(IssueStateTag.Backlog)
+      case "todo"         => Some(IssueStateTag.Todo)
       case "human_review" => Some(IssueStateTag.HumanReview)
-      case "humanreview" => Some(IssueStateTag.HumanReview)
-      case "rework"      => Some(IssueStateTag.Rework)
-      case "merging"     => Some(IssueStateTag.Merging)
-      case "done"        => Some(IssueStateTag.Done)
-      case "canceled"    => Some(IssueStateTag.Canceled)
-      case "cancelled"   => Some(IssueStateTag.Canceled)
-      case "duplicated"  => Some(IssueStateTag.Duplicated)
-      case "open"        => Some(IssueStateTag.Open)
-      case "assigned"    => Some(IssueStateTag.Assigned)
-      case "in_progress" => Some(IssueStateTag.InProgress)
-      case "inprogress"  => Some(IssueStateTag.InProgress)
-      case "completed"   => Some(IssueStateTag.Completed)
-      case "failed"      => Some(IssueStateTag.Failed)
-      case "skipped"     => Some(IssueStateTag.Skipped)
-      case _             => None
+      case "humanreview"  => Some(IssueStateTag.HumanReview)
+      case "rework"       => Some(IssueStateTag.Rework)
+      case "merging"      => Some(IssueStateTag.Merging)
+      case "done"         => Some(IssueStateTag.Done)
+      case "canceled"     => Some(IssueStateTag.Canceled)
+      case "cancelled"    => Some(IssueStateTag.Canceled)
+      case "duplicated"   => Some(IssueStateTag.Duplicated)
+      case "open"         => Some(IssueStateTag.Open)
+      case "assigned"     => Some(IssueStateTag.Assigned)
+      case "in_progress"  => Some(IssueStateTag.InProgress)
+      case "inprogress"   => Some(IssueStateTag.InProgress)
+      case "completed"    => Some(IssueStateTag.Completed)
+      case "failed"       => Some(IssueStateTag.Failed)
+      case "skipped"      => Some(IssueStateTag.Skipped)
+      case _              => None
 
   private val allowedBoardTransitions: Map[IssueStatus, Set[IssueStatus]] = Map(
-    IssueStatus.Backlog -> Set(IssueStatus.Todo, IssueStatus.Done, IssueStatus.Canceled, IssueStatus.Duplicated),
-    IssueStatus.Todo -> Set(IssueStatus.Backlog, IssueStatus.InProgress, IssueStatus.Done, IssueStatus.Canceled, IssueStatus.Duplicated),
-    IssueStatus.InProgress -> Set(IssueStatus.HumanReview, IssueStatus.Done, IssueStatus.Canceled, IssueStatus.Duplicated),
+    IssueStatus.Backlog     -> Set(IssueStatus.Todo, IssueStatus.Done, IssueStatus.Canceled, IssueStatus.Duplicated),
+    IssueStatus.Todo        -> Set(
+      IssueStatus.Backlog,
+      IssueStatus.InProgress,
+      IssueStatus.Done,
+      IssueStatus.Canceled,
+      IssueStatus.Duplicated,
+    ),
+    IssueStatus.InProgress  -> Set(
+      IssueStatus.HumanReview,
+      IssueStatus.Done,
+      IssueStatus.Canceled,
+      IssueStatus.Duplicated,
+    ),
     IssueStatus.HumanReview ->
       Set(IssueStatus.Rework, IssueStatus.Merging, IssueStatus.Done, IssueStatus.Canceled, IssueStatus.Duplicated),
-    IssueStatus.Rework -> Set(IssueStatus.InProgress, IssueStatus.Done, IssueStatus.Canceled, IssueStatus.Duplicated),
-    IssueStatus.Merging -> Set(IssueStatus.Done, IssueStatus.Canceled, IssueStatus.Duplicated),
-    IssueStatus.Done -> Set.empty,
-    IssueStatus.Canceled -> Set(IssueStatus.Backlog),
-    IssueStatus.Duplicated -> Set.empty,
+    IssueStatus.Rework      -> Set(IssueStatus.InProgress, IssueStatus.Done, IssueStatus.Canceled, IssueStatus.Duplicated),
+    IssueStatus.Merging     -> Set(IssueStatus.Done, IssueStatus.Canceled, IssueStatus.Duplicated),
+    IssueStatus.Done        -> Set.empty,
+    IssueStatus.Canceled    -> Set(IssueStatus.Backlog),
+    IssueStatus.Duplicated  -> Set.empty,
   )
 
   private def canonicalBoardStatus(status: IssueStatus): IssueStatus =
@@ -996,28 +1007,28 @@ final case class IssueControllerLive(
 
   private def boardStatusFromState(state: IssueState): IssueStatus =
     state match
-      case IssueState.Backlog(_)          => IssueStatus.Backlog
-      case IssueState.Todo(_)             => IssueStatus.Todo
-      case IssueState.Open(_)             => IssueStatus.Backlog
-      case IssueState.Assigned(_, _)      => IssueStatus.Todo
-      case IssueState.InProgress(_, _)    => IssueStatus.InProgress
-      case IssueState.HumanReview(_)      => IssueStatus.HumanReview
-      case IssueState.Rework(_, _)        => IssueStatus.Rework
-      case IssueState.Merging(_)          => IssueStatus.Merging
-      case IssueState.Done(_, _)          => IssueStatus.Done
-      case IssueState.Canceled(_, _)      => IssueStatus.Canceled
-      case IssueState.Duplicated(_, _)    => IssueStatus.Duplicated
-      case IssueState.Completed(_, _, _)  => IssueStatus.Done
-      case IssueState.Failed(_, _, _)     => IssueStatus.Rework
-      case IssueState.Skipped(_, _)       => IssueStatus.Canceled
+      case IssueState.Backlog(_)         => IssueStatus.Backlog
+      case IssueState.Todo(_)            => IssueStatus.Todo
+      case IssueState.Open(_)            => IssueStatus.Backlog
+      case IssueState.Assigned(_, _)     => IssueStatus.Todo
+      case IssueState.InProgress(_, _)   => IssueStatus.InProgress
+      case IssueState.HumanReview(_)     => IssueStatus.HumanReview
+      case IssueState.Rework(_, _)       => IssueStatus.Rework
+      case IssueState.Merging(_)         => IssueStatus.Merging
+      case IssueState.Done(_, _)         => IssueStatus.Done
+      case IssueState.Canceled(_, _)     => IssueStatus.Canceled
+      case IssueState.Duplicated(_, _)   => IssueStatus.Duplicated
+      case IssueState.Completed(_, _, _) => IssueStatus.Done
+      case IssueState.Failed(_, _, _)    => IssueStatus.Rework
+      case IssueState.Skipped(_, _)      => IssueStatus.Canceled
 
   private def ensureTransitionAllowed(
     currentState: IssueState,
     requestedStatus: IssueStatus,
     issueId: String,
   ): IO[PersistenceError, Unit] =
-    val from = boardStatusFromState(currentState)
-    val to   = canonicalBoardStatus(requestedStatus)
+    val from    = boardStatusFromState(currentState)
+    val to      = canonicalBoardStatus(requestedStatus)
     val allowed = allowedBoardTransitions.getOrElse(from, Set.empty)
     if allowed.contains(to) then ZIO.unit
     else
@@ -1035,15 +1046,15 @@ final case class IssueControllerLive(
     now: Instant,
   ): IO[PersistenceError, IssueEvent] =
     request.status match
-      case IssueStatus.Backlog    =>
+      case IssueStatus.Backlog     =>
         ZIO.succeed(IssueEvent.MovedToBacklog(issueId = issueId, movedAt = now, occurredAt = now))
-      case IssueStatus.Todo       =>
+      case IssueStatus.Todo        =>
         ZIO.succeed(IssueEvent.MovedToTodo(issueId = issueId, movedAt = now, occurredAt = now))
-      case IssueStatus.Open       =>
+      case IssueStatus.Open        =>
         ZIO.succeed(IssueEvent.MovedToBacklog(issueId = issueId, movedAt = now, occurredAt = now))
-      case IssueStatus.Assigned   =>
+      case IssueStatus.Assigned    =>
         ZIO.succeed(IssueEvent.MovedToTodo(issueId = issueId, movedAt = now, occurredAt = now))
-      case IssueStatus.InProgress =>
+      case IssueStatus.InProgress  =>
         ZIO.succeed(
           IssueEvent.Started(
             issueId = issueId,
@@ -1054,7 +1065,7 @@ final case class IssueControllerLive(
         )
       case IssueStatus.HumanReview =>
         ZIO.succeed(IssueEvent.MovedToHumanReview(issueId = issueId, movedAt = now, occurredAt = now))
-      case IssueStatus.Rework     =>
+      case IssueStatus.Rework      =>
         ZIO.succeed(
           IssueEvent.MovedToRework(
             issueId = issueId,
@@ -1063,9 +1074,9 @@ final case class IssueControllerLive(
             occurredAt = now,
           )
         )
-      case IssueStatus.Merging    =>
+      case IssueStatus.Merging     =>
         ZIO.succeed(IssueEvent.MovedToMerging(issueId = issueId, movedAt = now, occurredAt = now))
-      case IssueStatus.Done       =>
+      case IssueStatus.Done        =>
         ZIO.succeed(
           IssueEvent.MarkedDone(
             issueId = issueId,
@@ -1074,7 +1085,7 @@ final case class IssueControllerLive(
             occurredAt = now,
           )
         )
-      case IssueStatus.Canceled   =>
+      case IssueStatus.Canceled    =>
         ZIO.succeed(
           IssueEvent.Canceled(
             issueId = issueId,
@@ -1083,7 +1094,7 @@ final case class IssueControllerLive(
             occurredAt = now,
           )
         )
-      case IssueStatus.Duplicated =>
+      case IssueStatus.Duplicated  =>
         ZIO.succeed(
           IssueEvent.Duplicated(
             issueId = issueId,
@@ -1092,7 +1103,7 @@ final case class IssueControllerLive(
             occurredAt = now,
           )
         )
-      case IssueStatus.Completed  =>
+      case IssueStatus.Completed   =>
         ZIO.succeed(
           IssueEvent.MarkedDone(
             issueId = issueId,
@@ -1101,7 +1112,7 @@ final case class IssueControllerLive(
             occurredAt = now,
           )
         )
-      case IssueStatus.Failed     =>
+      case IssueStatus.Failed      =>
         ZIO.succeed(
           IssueEvent.MovedToRework(
             issueId = issueId,
@@ -1110,7 +1121,7 @@ final case class IssueControllerLive(
             occurredAt = now,
           )
         )
-      case IssueStatus.Skipped    =>
+      case IssueStatus.Skipped     =>
         ZIO.succeed(
           IssueEvent.Canceled(
             issueId = issueId,

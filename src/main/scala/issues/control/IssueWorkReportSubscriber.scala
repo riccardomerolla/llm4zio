@@ -63,29 +63,29 @@ final class IssueWorkReportSubscriber(
 
   private def handleIssueEvent(event: issues.entity.IssueEvent): UIO[Unit] =
     event match
-      case e: IssueEvent.Assigned  =>
+      case e: IssueEvent.Assigned           =>
         projection.updateAgentSummary(e.issueId, s"Assigned to agent ${e.agent.value}", e.occurredAt)
-      case e: IssueEvent.Started   =>
+      case e: IssueEvent.Started            =>
         projection.updateAgentSummary(e.issueId, s"Agent ${e.agent.value} started work", e.occurredAt)
-      case e: IssueEvent.MovedToTodo =>
+      case e: IssueEvent.MovedToTodo        =>
         projection.updateAgentSummary(e.issueId, "Ready in Todo", e.occurredAt)
       case e: IssueEvent.MovedToHumanReview =>
         projection.updateAgentSummary(e.issueId, "Waiting for human review", e.occurredAt)
-      case e: IssueEvent.MovedToRework =>
+      case e: IssueEvent.MovedToRework      =>
         projection.updateAgentSummary(e.issueId, s"Moved to rework: ${e.reason}", e.occurredAt)
-      case e: IssueEvent.MovedToMerging =>
+      case e: IssueEvent.MovedToMerging     =>
         projection.updateAgentSummary(e.issueId, "Approved and moving to merge", e.occurredAt)
-      case e: IssueEvent.MarkedDone =>
+      case e: IssueEvent.MarkedDone         =>
         projection.updateAgentSummary(e.issueId, s"Done: ${e.result}", e.occurredAt)
-      case e: IssueEvent.Canceled =>
+      case e: IssueEvent.Canceled           =>
         projection.updateAgentSummary(e.issueId, s"Canceled: ${e.reason}", e.occurredAt)
-      case e: IssueEvent.Duplicated =>
+      case e: IssueEvent.Duplicated         =>
         projection.updateAgentSummary(e.issueId, s"Duplicated: ${e.reason}", e.occurredAt)
-      case e: IssueEvent.Completed =>
+      case e: IssueEvent.Completed          =>
         projection.updateAgentSummary(e.issueId, s"Completed by ${e.agent.value}: ${e.result}", e.occurredAt)
-      case e: IssueEvent.Failed    =>
+      case e: IssueEvent.Failed             =>
         projection.updateAgentSummary(e.issueId, s"Failed: ${e.errorMessage}", e.occurredAt)
-      case _                       => ZIO.unit
+      case _                                => ZIO.unit
 
   private def handleParallelSessionEvent(event: ParallelSessionEvent): UIO[Unit] =
     event match

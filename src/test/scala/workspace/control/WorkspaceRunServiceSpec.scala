@@ -36,7 +36,7 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
     def list(filter: IssueFilter): IO[PersistenceError, List[issues.entity.AgentIssue]] = ZIO.succeed(Nil)
     def delete(id: IssueId): IO[PersistenceError, Unit]                                 = ZIO.unit
 
-  private final class RecordingIssueRepo(eventsRef: Ref[List[IssueEvent]]) extends IssueRepository:
+  final private class RecordingIssueRepo(eventsRef: Ref[List[IssueEvent]]) extends IssueRepository:
     def append(event: IssueEvent): IO[PersistenceError, Unit] =
       eventsRef.update(_ :+ event)
 

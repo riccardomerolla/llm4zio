@@ -374,7 +374,11 @@ object WorkspacesController:
         issueRepo
           .list(
             issues.entity.IssueFilter(
-              states = Set(issues.entity.IssueStateTag.Backlog, issues.entity.IssueStateTag.Todo, issues.entity.IssueStateTag.Open),
+              states = Set(
+                issues.entity.IssueStateTag.Backlog,
+                issues.entity.IssueStateTag.Todo,
+                issues.entity.IssueStateTag.Open,
+              ),
               limit = 20,
             )
           )

@@ -22,18 +22,18 @@ object IssueStateTag:
     state match
       case _: IssueState.Backlog     => IssueStateTag.Backlog
       case _: IssueState.Todo        => IssueStateTag.Todo
-      case _: IssueState.Open       => IssueStateTag.Open
-      case _: IssueState.Assigned   => IssueStateTag.Assigned
-      case _: IssueState.InProgress => IssueStateTag.InProgress
+      case _: IssueState.Open        => IssueStateTag.Open
+      case _: IssueState.Assigned    => IssueStateTag.Assigned
+      case _: IssueState.InProgress  => IssueStateTag.InProgress
       case _: IssueState.HumanReview => IssueStateTag.HumanReview
-      case _: IssueState.Rework     => IssueStateTag.Rework
-      case _: IssueState.Merging    => IssueStateTag.Merging
-      case _: IssueState.Done       => IssueStateTag.Done
-      case _: IssueState.Canceled   => IssueStateTag.Canceled
-      case _: IssueState.Duplicated => IssueStateTag.Duplicated
-      case _: IssueState.Completed  => IssueStateTag.Completed
-      case _: IssueState.Failed     => IssueStateTag.Failed
-      case _: IssueState.Skipped    => IssueStateTag.Skipped
+      case _: IssueState.Rework      => IssueStateTag.Rework
+      case _: IssueState.Merging     => IssueStateTag.Merging
+      case _: IssueState.Done        => IssueStateTag.Done
+      case _: IssueState.Canceled    => IssueStateTag.Canceled
+      case _: IssueState.Duplicated  => IssueStateTag.Duplicated
+      case _: IssueState.Completed   => IssueStateTag.Completed
+      case _: IssueState.Failed      => IssueStateTag.Failed
+      case _: IssueState.Skipped     => IssueStateTag.Skipped
 
 trait IssueRepository:
   def append(event: IssueEvent): IO[PersistenceError, Unit]

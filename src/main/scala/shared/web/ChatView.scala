@@ -204,11 +204,11 @@ object ChatView:
         ),
         runSessionMeta.fold[Frag](frag())(meta => runBreadcrumb(meta)),
         div(
-          id      := s"token-gauge-$conversationId",
-          cls     := "relative w-full cursor-pointer group overflow-visible h-[2px]",
-          attr("onclick") := """window.dispatchEvent(new CustomEvent('ab-panel-open', {{detail:{{panelId:'context-panel', title:'Token Usage'}}}}))""",
-          role    := "progressbar",
-          attr("aria-label") := "Context window usage",
+          id                    := s"token-gauge-$conversationId",
+          cls                   := "relative w-full cursor-pointer group overflow-visible h-[2px]",
+          attr("onclick")       := """window.dispatchEvent(new CustomEvent('ab-panel-open', {{detail:{{panelId:'context-panel', title:'Token Usage'}}}}))""",
+          role                  := "progressbar",
+          attr("aria-label")    := "Context window usage",
           attr("aria-valuenow") := "0",
           attr("aria-valuemax") := "100",
         )(
@@ -218,16 +218,20 @@ object ChatView:
             cls   := "absolute inset-y-0 left-0 rounded-full bg-emerald-500 transition-all duration-500",
             style := "width:0%",
           )(),
-          div(cls := "absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none")(
+          div(
+            cls := "absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none"
+          )(
             span(
               id  := s"token-gauge-label-$conversationId",
               cls := "text-[10px] text-gray-300 bg-slate-900/90 px-2 py-0.5 rounded-full pointer-events-none",
-            )(""),
+            )("")
           ),
         ),
         div(cls := "mt-1 flex flex-1 min-h-0 overflow-hidden")(
           div(cls := "flex-1 min-w-0 flex flex-col gap-3 min-h-0 overflow-hidden")(
-            div(cls := "relative flex-1 min-h-0 overflow-hidden rounded-2xl bg-slate-950/55 ring-1 ring-white/5 flex flex-col")(
+            div(
+              cls := "relative flex-1 min-h-0 overflow-hidden rounded-2xl bg-slate-950/55 ring-1 ring-white/5 flex flex-col"
+            )(
               tag("chat-message-stream")(
                 id                      := s"messages-$conversationId",
                 cls                     := "flex-1 min-h-0 overflow-y-auto p-4 space-y-3 block",
@@ -254,7 +258,7 @@ object ChatView:
             ),
           ),
           tag("ab-side-panel")(
-            cls               := "chat-context-dock",
+            cls              := "chat-context-dock",
             attr("panel-id") := "context-panel",
             attr("title")    := "Context",
             attr("width")    := "25rem",
@@ -318,10 +322,9 @@ object ChatView:
       showNewChat = showNewChat,
     )
 
-  /** Groups consecutive ToolCall entries together. Non-ToolCall entries (including ToolResult) are
-    * left as individual Left values. A run of 2+ consecutive ToolCall entries becomes a single
-    * Right value containing the list. A lone ToolCall stays as Left so it renders with the existing
-    * individual card.
+  /** Groups consecutive ToolCall entries together. Non-ToolCall entries (including ToolResult) are left as individual
+    * Left values. A run of 2+ consecutive ToolCall entries becomes a single Right value containing the list. A lone
+    * ToolCall stays as Left so it renders with the existing individual card.
     */
   private def groupToolCalls(
     messages: List[ConversationEntry]
@@ -333,7 +336,7 @@ object ChatView:
           case Right(group) :: tail => Right(msg :: group) :: tail
           // Start a new group with just this message (will be promoted to Right if 2+)
           case _                    => Right(List(msg)) :: acc
-      case (msg, acc) =>
+      case (msg, acc)                                            =>
         // Demote a solo ToolCall group (size == 1) back to a regular Left card
         val normalised = acc match
           case Right(List(single)) :: tail => Left(single) :: tail
@@ -346,10 +349,9 @@ object ChatView:
 
   /** Merges consecutive assistant Text entries that form a split fenced code block.
     *
-    * Some LLM streaming backends persist code blocks as individual lines:
-    *   Entry("```rust"), Entry("fn main() {"), Entry("}"), Entry("```")
-    * This pass stitches them back into one entry with the full fenced block content so
-    * the markdown renderer can produce a proper code block.
+    * Some LLM streaming backends persist code blocks as individual lines: Entry("```rust"), Entry("fn main() {"),
+    * Entry("}"), Entry("```") This pass stitches them back into one entry with the full fenced block content so the
+    * markdown renderer can produce a proper code block.
     */
   private def isAgentTextMessage(entry: ConversationEntry): Boolean =
     entry.messageType != MessageType.ToolCall && entry.messageType != MessageType.ToolResult
@@ -364,25 +366,25 @@ object ChatView:
   ): (List[String], List[ConversationEntry]) =
     messages match
       case head :: tail
-          if head.senderType == senderType
-          && isAgentTextMessage(head)
-          && head.content.trim == "```" =>
+           if head.senderType == senderType
+           && isAgentTextMessage(head)
+           && head.content.trim == "```" =>
         (Nil, tail) // found closing fence
       case head :: tail
-          if head.senderType == senderType
-          && isAgentTextMessage(head)
-          && !isFenceOpen(head.content) =>
+           if head.senderType == senderType
+           && isAgentTextMessage(head)
+           && !isFenceOpen(head.content) =>
         val (rest, after) = collectFenceBody(senderType, tail)
         (head.content :: rest, after)
       case _ => (Nil, messages) // bail — unexpected entry
 
   private def mergeCodeBlockFragments(messages: List[ConversationEntry]): List[ConversationEntry] =
     messages match
-      case Nil => Nil
+      case Nil          => Nil
       case head :: tail
-          if isAgentTextMessage(head)
-          && head.senderType != SenderType.User
-          && isFenceOpen(head.content) =>
+           if isAgentTextMessage(head)
+           && head.senderType != SenderType.User
+           && isFenceOpen(head.content) =>
         val lang              = head.content.trim.drop(3).trim
         val (codeLines, rest) = collectFenceBody(head.senderType, tail)
         val mergedContent     = s"```${lang}\n${codeLines.mkString("\n")}\n```"
@@ -392,32 +394,38 @@ object ChatView:
   def messagesFragment(messages: List[ConversationEntry], conversationId: Option[String] = None): String =
     val grouped = groupToolCalls(mergeCodeBlockFragments(messages))
     div(cls := "space-y-2 text-gray-100")(
-      grouped.zipWithIndex.map { case (entry, idx) =>
-        entry match
-          case Right(toolCalls) =>
-            val toolsJson = toolCalls.map { m =>
-              val name     = extractToolSummary(m.content)
-              val subtitle = m.content.linesIterator.take(3).mkString(" ").take(80).replace("\"", "'").replace("\n", " ")
-              val input    = m.content.take(400).replace("\"", "'").replace("\n", "\\n")
-              s"""{"name":"${name.replace("\"", "'")}","subtitle":"$subtitle","input":"$input"}"""
-            }.mkString("[", ",", "]")
-            div(cls := "flex justify-start my-0.5")(
-              tag("ab-tool-waterfall")(
-                attr("tools") := toolsJson,
-              )()
-            )
-          case Left(msg) =>
-            val prevSender =
-              if idx > 0 then
-                grouped(idx - 1) match
-                  case Left(prev)            => Some(prev.senderType)
-                  case Right(prevGroup)      => prevGroup.lastOption.map(_.senderType)
-              else None
-            messageCard(msg, prevSender, conversationId)
+      grouped.zipWithIndex.map {
+        case (entry, idx) =>
+          entry match
+            case Right(toolCalls) =>
+              val toolsJson = toolCalls.map { m =>
+                val name     = extractToolSummary(m.content)
+                val subtitle =
+                  m.content.linesIterator.take(3).mkString(" ").take(80).replace("\"", "'").replace("\n", " ")
+                val input    = m.content.take(400).replace("\"", "'").replace("\n", "\\n")
+                s"""{"name":"${name.replace("\"", "'")}","subtitle":"$subtitle","input":"$input"}"""
+              }.mkString("[", ",", "]")
+              div(cls := "flex justify-start my-0.5")(
+                tag("ab-tool-waterfall")(
+                  attr("tools") := toolsJson
+                )()
+              )
+            case Left(msg)        =>
+              val prevSender =
+                if idx > 0 then
+                  grouped(idx - 1) match
+                    case Left(prev)       => Some(prev.senderType)
+                    case Right(prevGroup) => prevGroup.lastOption.map(_.senderType)
+                else None
+              messageCard(msg, prevSender, conversationId)
       }
     ).render
 
-  private def messageCard(message: ConversationEntry, prevSender: Option[SenderType] = None, conversationId: Option[String] = None): Frag =
+  private def messageCard(
+    message: ConversationEntry,
+    prevSender: Option[SenderType] = None,
+    conversationId: Option[String] = None,
+  ): Frag =
     message.messageType match
       case MessageType.ToolCall   => toolCallCard(message)
       case MessageType.ToolResult => toolResultCard(message)
@@ -432,8 +440,8 @@ object ChatView:
               )
             )
           case sender            =>
-            val isUser             = sender == SenderType.User
-            val showSenderLabel    = prevSender != Some(sender)
+            val isUser                            = sender == SenderType.User
+            val showSenderLabel                   = prevSender != Some(sender)
             val (containerClasses, bubbleClasses) =
               if isUser then
                 (
@@ -467,7 +475,9 @@ object ChatView:
   t.focus();
 })(this)""",
                 )(
-                  raw("""<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" class="text-gray-500 group-hover:text-indigo-400 transition-colors"><path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10"/></svg>""")
+                  raw(
+                    """<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" class="text-gray-500 group-hover:text-indigo-400 transition-colors"><path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10"/></svg>"""
+                  )
                 )
               else frag(),
               div(cls := bubbleClasses)(
@@ -476,10 +486,11 @@ object ChatView:
                     message.sender
                   )
                 else
-                  frag(),
+                  frag()
+                ,
                 if !isUser && looksLikeMarkdown(message.content) then
                   div(
-                    cls             := "md-chat text-sm leading-6 text-gray-50 [&_p]:my-2 [&_p]:leading-7 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-0.5 [&_h1]:mt-4 [&_h1]:mb-1 [&_h1]:text-xl [&_h1]:font-semibold [&_h2]:mt-3 [&_h2]:mb-1 [&_h2]:text-lg [&_h2]:font-semibold [&_h3]:mt-2 [&_h3]:mb-1 [&_h3]:font-medium [&_a]:text-indigo-300 [&_a]:underline [&_a]:underline-offset-2 [&_blockquote]:my-2 [&_blockquote]:border-l-4 [&_blockquote]:border-indigo-400/40 [&_blockquote]:pl-3 [&_blockquote]:text-slate-300 [&_table]:my-3 [&_table]:w-full [&_table]:text-sm [&_th]:text-left [&_th]:font-semibold [&_th]:pb-1 [&_td]:py-1 [&_td]:pr-4 [&_hr]:my-3 [&_hr]:border-white/20",
+                    cls                 := "md-chat text-sm leading-6 text-gray-50 [&_p]:my-2 [&_p]:leading-7 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-0.5 [&_h1]:mt-4 [&_h1]:mb-1 [&_h1]:text-xl [&_h1]:font-semibold [&_h2]:mt-3 [&_h2]:mb-1 [&_h2]:text-lg [&_h2]:font-semibold [&_h3]:mt-2 [&_h3]:mb-1 [&_h3]:font-medium [&_a]:text-indigo-300 [&_a]:underline [&_a]:underline-offset-2 [&_blockquote]:my-2 [&_blockquote]:border-l-4 [&_blockquote]:border-indigo-400/40 [&_blockquote]:pl-3 [&_blockquote]:text-slate-300 [&_table]:my-3 [&_table]:w-full [&_table]:text-sm [&_th]:text-left [&_th]:font-semibold [&_th]:pb-1 [&_td]:py-1 [&_td]:pr-4 [&_hr]:my-3 [&_hr]:border-white/20",
                     attr("data-raw-md") := message.content,
                   )()
                 else
@@ -488,7 +499,7 @@ object ChatView:
                   )(
                     message.content
                   ),
-              )
+              ),
             )
 
   private def extractToolSummary(content: String): String =
@@ -544,7 +555,8 @@ object ChatView:
           }*
         )
       else
-        span(cls := "font-mono text-gray-500")(meta.runId.take(8)),
+        span(cls := "font-mono text-gray-500")(meta.runId.take(8))
+      ,
       span(cls := "ml-auto")(
         tag("ab-icon-button")(
           attr("icon")    := "M3.75 9h16.5m-16.5 6.75h16.5",
@@ -714,7 +726,7 @@ object ChatView:
               attr("data-role") := "mentions",
               cls               := "hidden absolute left-0 right-0 bottom-full mb-1 max-h-48 overflow-auto rounded-md border border-white/15 bg-slate-900/95 shadow-lg z-20",
             )(),
-          ),
+          )
         ),
         // Bottom toolbar
         div(cls := "flex items-center justify-between px-3 pb-2 gap-2")(
@@ -767,7 +779,9 @@ object ChatView:
               cls           := "rounded-md bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white p-1.5 transition-colors",
               attr("title") := "Send message (Ctrl+Enter)",
             )(
-              raw("""<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>""")
+              raw(
+                """<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>"""
+              )
             ),
           ),
         ),
@@ -833,17 +847,19 @@ object ChatView:
             attr("data-role") := "cancel",
           )("Cancel"),
           button(
-            `type`            := "submit",
-            cls               := "ml-1 inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-cyan-600/95 text-white transition-colors hover:bg-cyan-500 disabled:opacity-50",
-            attr("data-role") := "send",
+            `type`             := "submit",
+            cls                := "ml-1 inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-cyan-600/95 text-white transition-colors hover:bg-cyan-500 disabled:opacity-50",
+            attr("data-role")  := "send",
             attr("aria-label") := "Send to run",
-            attr("title")     := "Send to run",
+            attr("title")      := "Send to run",
             if isRunInputEnabled(runStateCode(meta.status)) then () else disabled,
           )(
-            raw("""<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>""")
+            raw(
+              """<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>"""
+            )
           ),
         ),
-      ),
+      )
     )
 
   private def gitPanelHtml(meta: RunSessionUiMeta, conversationId: String): Frag =
@@ -904,7 +920,7 @@ object ChatView:
       div(cls := "p-1 space-y-1")(
         h4(cls := "text-xs font-semibold text-gray-300 mb-1")("Commits"),
         div(cls := "space-y-1.5", attr("data-role") := "commit-log")(
-          p(cls := "text-xs text-gray-400")("Loading commits..."),
+          p(cls := "text-xs text-gray-400")("Loading commits...")
         ),
       ),
     )

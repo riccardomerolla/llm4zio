@@ -596,7 +596,7 @@ final case class WorkspaceRunServiceLive(
                           case None          => ZIO.unit
                       case None      => ZIO.unit
         yield ()
-      case _                                                       =>
+      case _                                                            =>
         ZIO.unit
 
   private def issueIdFromIssueRef(issueRef: String): Option[IssueId] =

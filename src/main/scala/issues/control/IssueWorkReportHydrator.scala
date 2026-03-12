@@ -38,23 +38,23 @@ final class IssueWorkReportHydrator(projection: IssueWorkReportProjection):
               case TaskRunState.Pending(createdAt)           => createdAt
               case TaskRunState.Cancelled(cancelledAt, _)    => cancelledAt
             val agentSummary = issue.state match
-              case IssueState.Todo(_)                           =>
+              case IssueState.Todo(_)                               =>
                 Some("Ready in Todo")
               case IssueState.Assigned(agent, assignedAt)           =>
                 Some(s"Assigned to agent ${agent.value}")
               case IssueState.InProgress(agent, startedAt)          =>
                 Some(s"Agent ${agent.value} working on issue")
-              case IssueState.HumanReview(_)                    =>
+              case IssueState.HumanReview(_)                        =>
                 Some("Waiting for human review")
-              case IssueState.Rework(_, reason)                 =>
+              case IssueState.Rework(_, reason)                     =>
                 Some(s"Moved to rework: $reason")
-              case IssueState.Merging(_)                        =>
+              case IssueState.Merging(_)                            =>
                 Some("Approved and moving to merge")
-              case IssueState.Done(_, result)                   =>
+              case IssueState.Done(_, result)                       =>
                 Some(s"Done: $result")
-              case IssueState.Canceled(_, reason)               =>
+              case IssueState.Canceled(_, reason)                   =>
                 Some(s"Canceled: $reason")
-              case IssueState.Duplicated(_, reason)             =>
+              case IssueState.Duplicated(_, reason)                 =>
                 Some(s"Duplicated: $reason")
               case IssueState.Completed(agent, completedAt, result) =>
                 Some(s"Completed by ${agent.value}: $result")

@@ -18,15 +18,15 @@ object IssuesView:
   )
 
   private val boardStatuses: List[(IssueStatus, String)] = List(
-    IssueStatus.Backlog    -> "Backlog",
-    IssueStatus.Todo       -> "Todo",
-    IssueStatus.InProgress -> "In Progress",
+    IssueStatus.Backlog     -> "Backlog",
+    IssueStatus.Todo        -> "Todo",
+    IssueStatus.InProgress  -> "In Progress",
     IssueStatus.HumanReview -> "Human Review",
-    IssueStatus.Rework     -> "Rework",
-    IssueStatus.Merging    -> "Merging",
-    IssueStatus.Done       -> "Done",
-    IssueStatus.Canceled   -> "Canceled",
-    IssueStatus.Duplicated -> "Duplicated",
+    IssueStatus.Rework      -> "Rework",
+    IssueStatus.Merging     -> "Merging",
+    IssueStatus.Done        -> "Done",
+    IssueStatus.Canceled    -> "Canceled",
+    IssueStatus.Duplicated  -> "Duplicated",
   )
 
   private def columnStatusDotCls(status: IssueStatus): String = status match
@@ -43,9 +43,9 @@ object IssuesView:
 
   private def hideableBoardColumn(status: IssueStatus): Boolean = status match
     case IssueStatus.HumanReview | IssueStatus.Rework | IssueStatus.Merging | IssueStatus.Done | IssueStatus.Canceled |
-        IssueStatus.Duplicated =>
+         IssueStatus.Duplicated =>
       true
-    case _                                                                                                               => false
+    case _ => false
 
   def list(
     runId: Option[String],
@@ -150,7 +150,9 @@ object IssuesView:
     val throughputPct               =
       if filteredIssues.isEmpty then 0
       else
-        ((filteredIssues.count(i => i.status == IssueStatus.Done || i.status == IssueStatus.Completed).toDouble / filteredIssues.size.toDouble) * 100).toInt
+        ((filteredIssues.count(i =>
+          i.status == IssueStatus.Done || i.status == IssueStatus.Completed
+        ).toDouble / filteredIssues.size.toDouble) * 100).toInt
     val (activeAgents, totalAgents) = agentUsage.getOrElse(0 -> math.max(availableAgents.size, 1))
     val syncStateCls                =
       if syncStatus.errorCount > 0 then "bg-rose-400"
@@ -335,7 +337,7 @@ object IssuesView:
         )(
           div(cls := "mb-2 flex items-center justify-between gap-1")(
             div(
-              cls := "flex min-w-0 flex-1 items-center gap-1.5",
+              cls := "flex min-w-0 flex-1 items-center gap-1.5"
             )(
               span(cls := s"inline-block h-2 w-2 flex-shrink-0 rounded-full ${columnStatusDotCls(status)}"),
               h3(cls := "text-sm font-semibold text-slate-100 truncate")(label),
@@ -347,10 +349,10 @@ object IssuesView:
             div(cls := "flex items-center gap-1")(
               if hideableBoardColumn(status) then
                 button(
-                  `type`                        := "button",
-                  cls                           := "flex-shrink-0 rounded p-0.5 text-slate-400 hover:bg-white/10 hover:text-slate-100",
-                  title                         := s"Hide $label column",
-                  attr("data-collapse-toggle")  := statusToken,
+                  `type`                       := "button",
+                  cls                          := "flex-shrink-0 rounded p-0.5 text-slate-400 hover:bg-white/10 hover:text-slate-100",
+                  title                        := s"Hide $label column",
+                  attr("data-collapse-toggle") := statusToken,
                 )("−")
               else (),
               button(
@@ -423,8 +425,8 @@ object IssuesView:
           )("0"),
         ),
         div(
-          cls                               := "space-y-1 max-h-[65vh] overflow-y-auto",
-          attr("data-hidden-columns-list")  := "true",
+          cls                              := "space-y-1 max-h-[65vh] overflow-y-auto",
+          attr("data-hidden-columns-list") := "true",
         )(
           p(cls := "rounded border border-dashed border-white/10 px-2 py-3 text-xs text-slate-500")("No hidden columns")
         ),
@@ -1283,7 +1285,9 @@ object IssuesView:
       else (),
       if showBlocked then
         div(cls := "mt-2")(
-          span(cls := "rounded-full border border-orange-400/40 bg-orange-500/20 px-2 py-0.5 text-[10px] font-semibold text-orange-200")(
+          span(
+            cls := "rounded-full border border-orange-400/40 bg-orange-500/20 px-2 py-0.5 text-[10px] font-semibold text-orange-200"
+          )(
             "Blocked: no matching agent"
           )
         )
@@ -1568,20 +1572,20 @@ object IssuesView:
 
   private def issueStatusToken(status: IssueStatus): String =
     status match
-      case IssueStatus.Backlog    => "backlog"
-      case IssueStatus.Todo       => "todo"
-      case IssueStatus.Open       => "open"
-      case IssueStatus.Assigned   => "assigned"
-      case IssueStatus.InProgress => "in_progress"
+      case IssueStatus.Backlog     => "backlog"
+      case IssueStatus.Todo        => "todo"
+      case IssueStatus.Open        => "open"
+      case IssueStatus.Assigned    => "assigned"
+      case IssueStatus.InProgress  => "in_progress"
       case IssueStatus.HumanReview => "human_review"
-      case IssueStatus.Rework     => "rework"
-      case IssueStatus.Merging    => "merging"
-      case IssueStatus.Done       => "done"
-      case IssueStatus.Canceled   => "canceled"
-      case IssueStatus.Duplicated => "duplicated"
-      case IssueStatus.Completed  => "completed"
-      case IssueStatus.Failed     => "failed"
-      case IssueStatus.Skipped    => "skipped"
+      case IssueStatus.Rework      => "rework"
+      case IssueStatus.Merging     => "merging"
+      case IssueStatus.Done        => "done"
+      case IssueStatus.Canceled    => "canceled"
+      case IssueStatus.Duplicated  => "duplicated"
+      case IssueStatus.Completed   => "completed"
+      case IssueStatus.Failed      => "failed"
+      case IssueStatus.Skipped     => "skipped"
 
   private def modeToggle(
     currentMode: String,
