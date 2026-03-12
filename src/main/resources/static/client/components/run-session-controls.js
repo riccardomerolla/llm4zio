@@ -124,7 +124,7 @@ class RunSessionControls {
       }
       this.feedbackText(`State changed: ${this.humanState(next)}.`);
       this.addSystemMessage(`Run state changed to ${this.humanState(next)}.`);
-      if (next === 'running:interactive' || next === 'running:autonomous' || next === 'pending') {
+      if (next !== 'running:paused') {
         this.isContinuationMode = false;
       }
       this.render();
@@ -201,8 +201,13 @@ class RunSessionControls {
 
   render() {
     const interactive = this.state === 'running:interactive' || this.state === 'running:paused';
-    const canContinue = this.state === 'running:paused' || this.state === 'completed' || this.state === 'failed' || this.state === 'cancelled';
+    const canContinue = this.state === 'running:paused';
     const isRunning = this.state.startsWith('running:');
+    const canAttach = isRunning;
+    const canCancel = this.state === 'pending' || isRunning;
+
+    if (!canContinue) this.isContinuationMode = false;
+
     const inputEnabled = (interactive && this.isAttached) || (canContinue && this.isContinuationMode);
     const inputPlaceholder = this.isContinuationMode
       ? 'Enter continuation instructions...'
@@ -211,10 +216,11 @@ class RunSessionControls {
       ? 'Send continuation instructions to start a new continuation run'
       : (inputEnabled ? 'Send follow-up instructions to this run' : 'Attach to interact');
 
-    this.attachBtn?.classList.toggle('hidden', this.isAttached);
-    this.detachBtn?.classList.toggle('hidden', !this.isAttached);
+    this.attachBtn?.classList.toggle('hidden', !(canAttach && !this.isAttached));
+    this.detachBtn?.classList.toggle('hidden', !(canAttach && this.isAttached));
     this.interruptBtn?.classList.toggle('hidden', !(this.isAttached && isRunning));
     this.continueBtn?.classList.toggle('hidden', !canContinue);
+    this.cancelBtn?.classList.toggle('hidden', !canCancel);
 
     if (this.input) {
       this.input.disabled = !inputEnabled;

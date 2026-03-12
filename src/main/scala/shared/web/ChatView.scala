@@ -801,7 +801,9 @@ object ChatView:
           )(""),
           button(
             `type`            := "button",
-            cls               := "rounded-full bg-cyan-600/90 hover:bg-cyan-500 text-white px-2.5 py-1 text-[11px] font-semibold tracking-[0.01em]",
+            cls               := s"rounded-full bg-cyan-600/90 hover:bg-cyan-500 text-white px-2.5 py-1 text-[11px] font-semibold tracking-[0.01em] ${
+                if showAttach(runStateCode(meta.status)) then "" else "hidden"
+              }",
             attr("data-role") := "attach",
           )("Attach"),
           button(
@@ -825,7 +827,9 @@ object ChatView:
           )("Continue"),
           button(
             `type`            := "button",
-            cls               := "rounded-full bg-rose-600/90 hover:bg-rose-500 text-white px-2.5 py-1 text-[11px] font-semibold tracking-[0.01em]",
+            cls               := s"rounded-full bg-rose-600/90 hover:bg-rose-500 text-white px-2.5 py-1 text-[11px] font-semibold tracking-[0.01em] ${
+                if showCancel(runStateCode(meta.status)) then "" else "hidden"
+              }",
             attr("data-role") := "cancel",
           )("Cancel"),
           button(
@@ -1065,7 +1069,13 @@ object ChatView:
     state == "running:interactive" || state == "running:paused"
 
   private def showContinue(state: String): Boolean =
-    state == "running:paused" || state == "completed" || state == "failed" || state == "cancelled"
+    state == "running:paused"
+
+  private def showAttach(state: String): Boolean =
+    state.startsWith("running")
+
+  private def showCancel(state: String): Boolean =
+    state == "pending" || state.startsWith("running")
 
   private def runInputTooltip(state: String): String =
     if state == "running:autonomous" || state == "pending" then "Attach to interact"
