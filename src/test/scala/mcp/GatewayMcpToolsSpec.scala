@@ -70,6 +70,8 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
     override def delete(id: String): IO[PersistenceError, Unit]                          = ZIO.unit
     override def appendRun(event: WorkspaceRunEvent): IO[PersistenceError, Unit]         = ZIO.unit
     override def listRuns(workspaceId: String): IO[PersistenceError, List[WorkspaceRun]] = ZIO.succeed(Nil)
+    override def listRunsByIssueRef(issueRef: String): IO[PersistenceError, List[WorkspaceRun]] =
+      ZIO.succeed(Nil)
     override def getRun(id: String): IO[PersistenceError, Option[WorkspaceRun]]          = ZIO.succeed(None)
 
   private val stubRunService: WorkspaceRunService = new WorkspaceRunService:

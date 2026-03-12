@@ -6,9 +6,10 @@ import zio.json.*
 
 import config.entity.AgentInfo
 import issues.entity.IssueWorkReport
-import issues.entity.api.{ AgentAssignmentView, AgentIssueView, IssueStatus, IssueTemplate }
+import issues.entity.api.{ AgentIssueView, IssueStatus, IssueTemplate }
 import scalatags.Text.all.*
 import shared.ids.Ids.IssueId
+import workspace.entity.{ RunSessionMode, RunStatus, WorkspaceRun }
 
 object IssuesView:
   final case class SyncStatus(
@@ -443,12 +444,12 @@ object IssuesView:
   /** Render the issue detail page with an optional proof-of-work panel. */
   def detailWithProofOfWork(
     issue: AgentIssueView,
-    assignments: List[AgentAssignmentView],
+    issueRuns: List[WorkspaceRun],
     availableAgents: List[AgentInfo],
     workspaces: List[(String, String)],
     workReport: Option[IssueWorkReport],
   ): String =
-    detailPage(issue, assignments, availableAgents, workspaces, workReport)
+    detailPage(issue, issueRuns, availableAgents, workspaces, workReport)
 
   def newForm(defaultRunId: Option[String], workspaces: List[(String, String)], templates: List[IssueTemplate])
     : String =
@@ -597,15 +598,15 @@ object IssuesView:
 
   def detail(
     issue: AgentIssueView,
-    assignments: List[AgentAssignmentView],
+    issueRuns: List[WorkspaceRun],
     availableAgents: List[AgentInfo],
     workspaces: List[(String, String)],
   ): String =
-    detailPage(issue, assignments, availableAgents, workspaces, workReport = None)
+    detailPage(issue, issueRuns, availableAgents, workspaces, workReport = None)
 
   private def detailPage(
     issue: AgentIssueView,
-    assignments: List[AgentAssignmentView],
+    issueRuns: List[WorkspaceRun],
     availableAgents: List[AgentInfo],
     workspaces: List[(String, String)],
     workReport: Option[IssueWorkReport],
@@ -618,6 +619,8 @@ object IssuesView:
     val convId        = safe(issue.conversationId)
     val workspaceId   = safe(issue.workspaceId)
     val workspaceName = workspaceNameOf(workspaces, workspaceId).getOrElse(workspaceId)
+    val sortedRuns    = issueRuns.sortBy(_.createdAt).reverse
+    val sidebarConvId = if convId.nonEmpty then convId else sortedRuns.headOption.map(_.conversationId).getOrElse("")
     val isRunning     = issue.status == IssueStatus.InProgress
     val statusToken   = issueStatusToken(issue.status)
 
@@ -667,29 +670,30 @@ object IssuesView:
             // execution history
             div(cls := "rounded-xl border border-white/10 bg-slate-900/60 p-6")(
               h2(cls := "mb-3 text-base font-semibold text-white")("Execution history"),
-              if assignments.isEmpty then
+              if sortedRuns.isEmpty then
                 p(cls := "text-sm text-slate-400")("No runs yet.")
               else
                 div(cls := "space-y-3")(
-                  assignments.sortBy(a =>
-                    try a.assignedAt
-                    catch case _: Throwable => Instant.EPOCH
-                  ).reverse.map { assignment =>
+                  sortedRuns.map { run =>
                     div(cls := "rounded-lg border border-white/10 bg-slate-800/70 p-4")(
                       div(cls := "flex flex-wrap items-center justify-between gap-2")(
-                        span(cls := "text-sm font-semibold text-slate-100")(safeStr(assignment.agentName, "unknown")),
-                        span(
-                          cls := s"rounded-full px-2 py-0.5 text-xs ${assignmentStatusBadge(safeStr(assignment.status, "pending"))}"
-                        )(safeStr(assignment.status, "pending")),
+                        span(cls := "text-sm font-semibold text-slate-100")(run.agentName),
+                        span(cls := s"rounded-full px-2 py-0.5 text-xs ${runStatusBadge(run.status)}")(
+                          runStatusLabel(run.status)
+                        ),
                       ),
-                      safe(assignment.executionLog).match
-                        case v if v.nonEmpty =>
-                          pre(cls := "mt-3 max-h-48 overflow-auto rounded bg-black/30 p-3 text-xs text-slate-200")(v)
-                        case _               => (),
-                      safe(assignment.result).match
-                        case v if v.nonEmpty =>
-                          pre(cls := "mt-3 max-h-48 overflow-auto rounded bg-black/30 p-3 text-xs text-slate-200")(v)
-                        case _               => (),
+                      div(cls := "mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400")(
+                        span(cls := "font-mono text-slate-500")(s"Run ${run.id.take(8)}"),
+                        span(s"Started ${prettyRelativeTime(run.createdAt)}"),
+                        span(s"Duration ${formatRunDuration(run)}"),
+                      ),
+                      div(cls := "mt-3 flex flex-wrap items-center gap-3 text-xs")(
+                        a(
+                          href := s"/chat/${run.conversationId}",
+                          cls  := "font-medium text-indigo-300 hover:text-indigo-200",
+                        )("Open chat →"),
+                        span(cls := "text-slate-500")(s"Branch ${run.branchName}"),
+                      ),
                     )
                   }
                 ),
@@ -756,10 +760,10 @@ object IssuesView:
                 ),
               ),
               // open chat link (if conversation exists)
-              if convId.nonEmpty then
+              if sidebarConvId.nonEmpty then
                 div(cls := "mt-3 border-t border-white/10 pt-3")(
                   a(
-                    href := s"/chat/$convId",
+                    href := s"/chat/$sidebarConvId",
                     cls  := "block text-center text-sm font-medium text-indigo-300 hover:text-indigo-200",
                   )("Open agent chat →")
                 )
@@ -1558,13 +1562,37 @@ object IssuesView:
       case "failed"       => "bg-orange-500/20 text-orange-200"
       case _              => "bg-slate-500/20 text-slate-200"
 
-  private def assignmentStatusBadge(status: String): String =
-    status.toLowerCase match
-      case "pending"    => "bg-yellow-500/20 text-yellow-200"
-      case "processing" => "bg-indigo-500/20 text-indigo-200"
-      case "completed"  => "bg-emerald-500/20 text-emerald-200"
-      case "failed"     => "bg-red-500/20 text-red-200"
-      case _            => "bg-slate-500/20 text-slate-200"
+  private def runStatusLabel(status: RunStatus): String = status match
+    case RunStatus.Pending                             => "Pending"
+    case RunStatus.Running(RunSessionMode.Autonomous) => "Running (Autonomous)"
+    case RunStatus.Running(RunSessionMode.Interactive) =>
+      "Running (Interactive)"
+    case RunStatus.Running(RunSessionMode.Paused)     => "Paused"
+    case RunStatus.Completed                           => "Completed"
+    case RunStatus.Failed                              => "Failed"
+    case RunStatus.Cancelled                           => "Cancelled"
+
+  private def runStatusBadge(status: RunStatus): String = status match
+    case RunStatus.Pending                             => "bg-slate-500/20 text-slate-200"
+    case RunStatus.Running(RunSessionMode.Autonomous) => "bg-blue-500/20 text-blue-200"
+    case RunStatus.Running(RunSessionMode.Interactive) =>
+      "bg-emerald-500/20 text-emerald-200"
+    case RunStatus.Running(RunSessionMode.Paused)     => "bg-amber-500/20 text-amber-200"
+    case RunStatus.Completed                           => "bg-emerald-500/20 text-emerald-200"
+    case RunStatus.Failed                              => "bg-rose-500/20 text-rose-200"
+    case RunStatus.Cancelled                           => "bg-orange-500/20 text-orange-200"
+
+  private def formatRunDuration(run: WorkspaceRun): String =
+    val seconds = java.time.Duration.between(run.createdAt, run.updatedAt).getSeconds.max(0L)
+    if seconds < 60 then s"${seconds}s"
+    else
+      val minutes = seconds / 60
+      val rest    = seconds % 60
+      if minutes < 60 then s"${minutes}m ${rest}s"
+      else
+        val hours = minutes / 60
+        val mins  = minutes % 60
+        s"${hours}h ${mins}m"
 
   private def issueStatusToken(status: IssueStatus): String =
     status match

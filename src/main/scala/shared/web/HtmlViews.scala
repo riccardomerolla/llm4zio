@@ -6,7 +6,8 @@ import config.entity.{ AgentInfo, WorkflowDefinition }
 import conversation.entity.api.{ ChatConversation, ConversationEntry, ConversationSessionMeta }
 import db.{ TaskReportRow, TaskRunRow }
 import gateway.entity.ChatSession
-import issues.entity.api.{ AgentAssignmentView, AgentIssueView, IssueTemplate }
+import issues.entity.api.{ AgentIssueView, IssueTemplate }
+import workspace.entity.WorkspaceRun
 
 object HtmlViews:
 
@@ -256,11 +257,11 @@ object HtmlViews:
 
   def issueDetail(
     issue: AgentIssueView,
-    assignments: List[AgentAssignmentView],
+    issueRuns: List[WorkspaceRun],
     availableAgents: List[AgentInfo],
     workspaces: List[(String, String)],
   ): String =
-    IssuesView.detail(issue, assignments, availableAgents, workspaces)
+    IssuesView.detail(issue, issueRuns, availableAgents, workspaces)
 
   def issueEditForm(issue: AgentIssueView, workspaces: List[(String, String)]): String =
     IssuesView.editForm(issue, workspaces)

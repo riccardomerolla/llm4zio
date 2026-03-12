@@ -46,6 +46,11 @@ object RunSessionManagerSpec extends ZIOSpecDefault:
         _.values.toList.flatMap(events => WorkspaceRun.fromEvents(events).toOption).filter(_.workspaceId == workspaceId)
       )
 
+    override def listRunsByIssueRef(issueRef: String): IO[PersistenceError, List[WorkspaceRun]] =
+      eventsRef.get.map(
+        _.values.toList.flatMap(events => WorkspaceRun.fromEvents(events).toOption).filter(_.issueRef == issueRef)
+      )
+
     override def getRun(id: String): IO[PersistenceError, Option[WorkspaceRun]] =
       eventsRef.get.map(_.get(id).flatMap(events => WorkspaceRun.fromEvents(events).toOption))
 

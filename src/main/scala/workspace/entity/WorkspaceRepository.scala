@@ -15,6 +15,7 @@ trait WorkspaceRepository:
 
   def appendRun(event: WorkspaceRunEvent): IO[PersistenceError, Unit]
   def listRuns(workspaceId: String): IO[PersistenceError, List[WorkspaceRun]]
+  def listRunsByIssueRef(issueRef: String): IO[PersistenceError, List[WorkspaceRun]]
   def getRun(id: String): IO[PersistenceError, Option[WorkspaceRun]]
 
 object WorkspaceRepository:
@@ -92,6 +93,18 @@ final case class WorkspaceRepositoryES(
         .map(_.flatten.filter(_.workspaceId == workspaceId).sortBy(_.createdAt).reverse)
     }
 
+  override def listRunsByIssueRef(issueRef: String): IO[PersistenceError, List[WorkspaceRun]] =
+    val normalizedRef = normalizeIssueRef(issueRef)
+    allRunIds("listRunsByIssueRef").flatMap { ids =>
+      ZIO.foreach(ids)(id => rebuildRun(id, "listRunsByIssueRef"))
+        .map(
+          _.flatten
+            .filter(run => normalizeIssueRef(run.issueRef) == normalizedRef)
+            .sortBy(_.createdAt)
+            .reverse
+        )
+    }
+
   override def getRun(id: String): IO[PersistenceError, Option[WorkspaceRun]] =
     rebuildRun(id, "getRun")
 
@@ -139,6 +152,9 @@ final case class WorkspaceRepositoryES(
 
   private def rebuildRun(id: String, op: String): IO[PersistenceError, Option[WorkspaceRun]] =
     loadEvents[WorkspaceRunEvent](runEventPrefix(id), op).map(WorkspaceRun.fromEvents(_).toOption)
+
+  private def normalizeIssueRef(issueRef: String): String =
+    issueRef.trim.stripPrefix("#")
 
   // ── helpers ───────────────────────────────────────────────────────────────
 

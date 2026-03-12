@@ -141,6 +141,9 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
     override def listRuns(workspaceId: String)
       : IO[shared.errors.PersistenceError, List[workspace.entity.WorkspaceRun]] =
       ZIO.succeed(Nil)
+    override def listRunsByIssueRef(issueRef: String)
+      : IO[shared.errors.PersistenceError, List[workspace.entity.WorkspaceRun]] =
+      ZIO.succeed(Nil)
     override def getRun(id: String): IO[shared.errors.PersistenceError, Option[workspace.entity.WorkspaceRun]]  =
       ZIO.none
 

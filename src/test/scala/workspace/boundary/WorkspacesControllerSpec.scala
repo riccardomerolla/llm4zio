@@ -71,6 +71,8 @@ object WorkspacesControllerSpec extends ZIOSpecDefault:
     def delete(id: String): IO[shared.errors.PersistenceError, Unit]                  = ref.update(_ - id)
     def appendRun(event: WorkspaceRunEvent): IO[shared.errors.PersistenceError, Unit] = ZIO.unit
     def listRuns(wid: String): IO[shared.errors.PersistenceError, List[WorkspaceRun]] = runRef.get.map(_.values.toList)
+    def listRunsByIssueRef(issueRef: String): IO[shared.errors.PersistenceError, List[WorkspaceRun]] =
+      runRef.get.map(_.values.toList.filter(_.issueRef == issueRef))
     def getRun(id: String): IO[shared.errors.PersistenceError, Option[WorkspaceRun]]  = runRef.get.map(_.get(id))
 
   private class StubRunService extends WorkspaceRunService:

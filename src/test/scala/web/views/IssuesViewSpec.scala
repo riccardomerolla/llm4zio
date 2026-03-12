@@ -109,7 +109,7 @@ object IssuesViewSpec extends ZIOSpecDefault:
       )
       val html  = IssuesView.detail(
         issue = issue,
-        assignments = Nil,
+        issueRuns = Nil,
         availableAgents = List(
           AgentInfo(
             name = "agent-1",
@@ -184,7 +184,7 @@ object IssuesViewSpec extends ZIOSpecDefault:
       )
       val html  = IssuesView.detail(
         issue = issue,
-        assignments = Nil,
+        issueRuns = Nil,
         availableAgents = Nil,
         workspaces = Nil,
       )

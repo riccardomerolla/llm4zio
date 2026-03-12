@@ -173,6 +173,8 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
 
     def listRuns(wid: String): IO[PersistenceError, List[WorkspaceRun]] =
       runRef.get.map(_.values.filter(_.workspaceId == wid).toList)
+    def listRunsByIssueRef(issueRef: String): IO[PersistenceError, List[WorkspaceRun]] =
+      runRef.get.map(_.values.filter(_.issueRef == issueRef).toList)
     def getRun(id: String): IO[PersistenceError, Option[WorkspaceRun]]  = runRef.get.map(_.get(id))
 
   private val sampleWs = Workspace(

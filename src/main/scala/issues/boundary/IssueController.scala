@@ -145,12 +145,13 @@ final case class IssueControllerLive(
         for
           issue          <- issueRepository.get(IssueId(id)).mapError(mapIssueRepoError)
           workspaces     <- workspaceRepository.list.mapError(mapIssueRepoError)
+          issueRuns      <- workspaceRepository.listRunsByIssueRef(s"#$id").mapError(mapIssueRepoError)
           allAgents      <- agentRepository.list().mapError(mapIssueRepoError)
           availableAgents = allAgents.filter(_.enabled).map(registryAgentToAgentInfo)
         yield html(
           HtmlViews.issueDetail(
             domainToView(issue),
-            List.empty,
+            issueRuns,
             availableAgents,
             workspaces.map(ws => ws.id -> ws.name),
           )
