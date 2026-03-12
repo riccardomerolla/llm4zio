@@ -24,6 +24,9 @@ object GeminiCliExecutor:
       private def findCommand: List[String] =
         if isWindows then List("where", "gemini") else List("which", "gemini")
 
+      private def geminiCommand: List[String] =
+        if isWindows then List("cmd", "/c", "gemini") else List("gemini")
+
       override def checkGeminiInstalled: IO[LlmError, Unit] =
         ZIO
           .attemptBlocking {
@@ -48,8 +51,7 @@ object GeminiCliExecutor:
         yield output
 
       private def startProcess(prompt: String, config: LlmConfig): IO[LlmError, Process] =
-        val commands = List(
-          "gemini",
+        val commands = geminiCommand ++ List(
           "-p",
           prompt,
           "-m",
