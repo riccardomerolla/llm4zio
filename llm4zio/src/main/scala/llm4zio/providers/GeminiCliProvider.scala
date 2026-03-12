@@ -18,10 +18,16 @@ trait GeminiCliExecutor:
 object GeminiCliExecutor:
   val default: GeminiCliExecutor =
     new GeminiCliExecutor {
+      private def isWindows: Boolean =
+        Option(java.lang.System.getProperty("os.name")).getOrElse("").toLowerCase.contains("win")
+
+      private def findCommand: List[String] =
+        if isWindows then List("where", "gemini") else List("which", "gemini")
+
       override def checkGeminiInstalled: IO[LlmError, Unit] =
         ZIO
           .attemptBlocking {
-            val process  = new ProcessBuilder("which", "gemini")
+            val process  = new ProcessBuilder(findCommand.asJava)
               .redirectErrorStream(true)
               .start()
             val exitCode = process.waitFor()
