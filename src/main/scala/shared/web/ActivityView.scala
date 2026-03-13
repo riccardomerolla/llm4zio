@@ -25,6 +25,8 @@ object ActivityView:
           filterButton("run_completed", "Run Completed"),
           filterButton("run_failed", "Run Failed"),
           filterButton("agent_assigned", "Agent Assigned"),
+          filterButton("analysis_started", "Analysis Started"),
+          filterButton("analysis_completed", "Analysis Completed"),
           filterButton("message_sent", "Message Sent"),
           filterButton("config_changed", "Config Changed"),
         )
@@ -120,63 +122,84 @@ object ActivityView:
     )
 
   private def eventIcon(eventType: ActivityEventType): (String, String) = eventTypeName(eventType) match
-    case "RunStarted"      =>
+    case "RunStarted"        =>
       (
         "bg-green-500/10 text-green-400",
         "M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347a1.125 1.125 0 0 1-1.667-.986V5.653Z",
       )
-    case "RunCompleted"    =>
+    case "RunCompleted"      =>
       ("bg-emerald-500/10 text-emerald-400", "M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z")
-    case "RunFailed"       =>
+    case "RunFailed"         =>
       (
         "bg-red-500/10 text-red-400",
         "M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z",
       )
-    case "RunStateChanged" =>
+    case "RunStateChanged"   =>
       (
         "bg-cyan-500/10 text-cyan-400",
         "M3.75 12h16.5m-6-6 6 6-6 6",
       )
-    case "AgentAssigned"   =>
+    case "AgentAssigned"     =>
       (
         "bg-purple-500/10 text-purple-400",
         "M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z",
       )
-    case "MessageSent"     =>
+    case "MessageSent"       =>
       (
         "bg-blue-500/10 text-blue-400",
         "M8.625 12a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H8.25m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H12m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 0 1-2.555-.337A5.972 5.972 0 0 1 5.41 20.97a5.969 5.969 0 0 1-.474-.065 4.48 4.48 0 0 0 .978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25Z",
       )
-    case "ConfigChanged"   =>
+    case "ConfigChanged"     =>
       (
         "bg-amber-500/10 text-amber-400",
         "M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28Z M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z",
       )
-    case _                 =>
+    case "AnalysisStarted"   =>
+      (
+        "bg-cyan-500/10 text-cyan-400",
+        "M12 6v6l4 2m6-2a10 10 0 1 1-20 0 10 10 0 0 1 20 0Z",
+      )
+    case "AnalysisCompleted" =>
+      (
+        "bg-emerald-500/10 text-emerald-400",
+        "M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z",
+      )
+    case "AnalysisFailed"    =>
+      (
+        "bg-rose-500/10 text-rose-400",
+        "M12 9v3.75m0 3.75h.007v.008H12v-.008ZM21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z",
+      )
+    case _                   =>
       (
         "bg-slate-500/10 text-slate-400",
         "M12 4.5v15m7.5-7.5h-15",
       )
 
   private def eventTypeLabel(eventType: ActivityEventType): String = eventTypeName(eventType) match
-    case "RunStarted"      => "Run Started"
-    case "RunCompleted"    => "Run Completed"
-    case "RunFailed"       => "Run Failed"
-    case "RunStateChanged" => "Run State Changed"
-    case "AgentAssigned"   => "Agent Assigned"
-    case "MessageSent"     => "Message Sent"
-    case "ConfigChanged"   => "Config Changed"
-    case _                 => "Unknown Event"
+    case "RunStarted"        => "Run Started"
+    case "RunCompleted"      => "Run Completed"
+    case "RunFailed"         => "Run Failed"
+    case "RunStateChanged"   => "Run State Changed"
+    case "AgentAssigned"     => "Agent Assigned"
+    case "MessageSent"       => "Message Sent"
+    case "ConfigChanged"     => "Config Changed"
+    case "AnalysisStarted"   => "Analysis Started"
+    case "AnalysisCompleted" => "Analysis Completed"
+    case "AnalysisFailed"    => "Analysis Failed"
+    case _                   => "Unknown Event"
 
   private def toDbEventType(eventType: ActivityEventType): String = eventTypeName(eventType) match
-    case "RunStarted"      => "run_started"
-    case "RunCompleted"    => "run_completed"
-    case "RunFailed"       => "run_failed"
-    case "RunStateChanged" => "run_state_changed"
-    case "AgentAssigned"   => "agent_assigned"
-    case "MessageSent"     => "message_sent"
-    case "ConfigChanged"   => "config_changed"
-    case _                 => "unknown"
+    case "RunStarted"        => "run_started"
+    case "RunCompleted"      => "run_completed"
+    case "RunFailed"         => "run_failed"
+    case "RunStateChanged"   => "run_state_changed"
+    case "AgentAssigned"     => "agent_assigned"
+    case "MessageSent"       => "message_sent"
+    case "ConfigChanged"     => "config_changed"
+    case "AnalysisStarted"   => "analysis_started"
+    case "AnalysisCompleted" => "analysis_completed"
+    case "AnalysisFailed"    => "analysis_failed"
+    case _                   => "unknown"
 
   private def eventTypeName(eventType: ActivityEventType): String =
     Option(eventType).map(_.toString).getOrElse("unknown")

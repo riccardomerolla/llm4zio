@@ -8,8 +8,10 @@ import zio.json.*
 import activity.control.ActivityHub
 import activity.entity.{ ActivityEvent, ActivityEventType }
 import agent.entity.AgentRepository
+import analysis.entity.AnalysisRepository
 import conversation.entity.api.{ ChatConversation, ConversationEntry, MessageType, SenderType }
 import db.ChatRepository
+import issues.control.IssueAnalysisAttachment
 import issues.entity.{ AgentIssue as DomainIssue, IssueEvent, IssueRepository }
 import orchestration.control.{ AgentPoolManager, PoolError, SlotHandle }
 import shared.ids.Ids.{ EventId, IssueId, TaskRunId }
@@ -31,6 +33,7 @@ object WorkspaceRunService:
   val live
     : ZLayer[
       WorkspaceRepository & ChatRepository & IssueRepository & ActivityHub & GitWatcher & AgentRepository &
+        AnalysisRepository &
         AgentPoolManager,
       Nothing,
       WorkspaceRunService,
@@ -43,6 +46,7 @@ object WorkspaceRunService:
         activity  <- ZIO.service[ActivityHub]
         watcher   <- ZIO.service[GitWatcher]
         agents    <- ZIO.service[AgentRepository]
+        analysis  <- ZIO.service[AnalysisRepository]
         pool      <- ZIO.service[AgentPoolManager]
         registry  <- Ref.make(Map.empty[String, Fiber[WorkspaceError, Unit]])
         slots     <- Ref.make(Map.empty[String, SlotHandle])
@@ -50,6 +54,7 @@ object WorkspaceRunService:
         repo,
         chat,
         issueRepo,
+        analysis,
         activityPublish = event => activity.publish(event),
         gitWatcher = watcher,
         fiberRegistry = registry,
@@ -126,6 +131,7 @@ final case class WorkspaceRunServiceLive(
   wsRepo: WorkspaceRepository,
   chatRepo: ChatRepository,
   issueRepo: IssueRepository,
+  analysisRepository: AnalysisRepository,
   timeoutSeconds: Long = 1800,
   // Injectable for testing: (repoPath, worktreePath, branch) => effect
   worktreeAdd: (String, String, String) => IO[WorkspaceError, Unit] = WorkspaceRunServiceLive.defaultWorktreeAdd,
@@ -681,23 +687,47 @@ final case class WorkspaceRunServiceLive(
   ): IO[WorkspaceError, Unit] =
     for
       now <- Clock.instant
-      ev   = status match
+      _   <- status match
                case RunStatus.Completed =>
-                 IssueEvent.MovedToHumanReview(issueId = issueId, movedAt = now, occurredAt = now)
+                 for
+                   issue  <- issueRepo
+                               .get(issueId)
+                               .mapError(e => WorkspaceError.PersistenceFailure(RuntimeException(e.toString)))
+                   events <- IssueAnalysisAttachment
+                               .latestForHumanReview(issue, analysisRepository, now)
+                               .map(attached =>
+                                 IssueEvent.MovedToHumanReview(
+                                   issueId = issueId,
+                                   movedAt = now,
+                                   occurredAt = now,
+                                 ) :: attached.toList
+                               )
+                               .mapError(e => WorkspaceError.PersistenceFailure(RuntimeException(e.toString)))
+                   _      <- ZIO.foreachDiscard(events)(event =>
+                               issueRepo
+                                 .append(event)
+                                 .mapError(e => WorkspaceError.PersistenceFailure(RuntimeException(e.toString)))
+                             )
+                 yield ()
                case RunStatus.Failed    =>
-                 IssueEvent.MovedToRework(
-                   issueId = issueId,
-                   movedAt = now,
-                   reason = s"Workspace run $runId failed",
-                   occurredAt = now,
-                 )
+                 issueRepo
+                   .append(
+                     IssueEvent.MovedToRework(
+                       issueId = issueId,
+                       movedAt = now,
+                       reason = s"Workspace run $runId failed",
+                       occurredAt = now,
+                     )
+                   )
+                   .mapError(e => WorkspaceError.PersistenceFailure(RuntimeException(e.toString)))
                case RunStatus.Cancelled =>
-                 IssueEvent.MovedToTodo(issueId = issueId, movedAt = now, occurredAt = now)
+                 issueRepo
+                   .append(IssueEvent.MovedToTodo(issueId = issueId, movedAt = now, occurredAt = now))
+                   .mapError(e => WorkspaceError.PersistenceFailure(RuntimeException(e.toString)))
                case _                   =>
-                 IssueEvent.MovedToTodo(issueId = issueId, movedAt = now, occurredAt = now)
-      _   <- issueRepo
-               .append(ev)
-               .mapError(e => WorkspaceError.PersistenceFailure(RuntimeException(e.toString)))
+                 issueRepo
+                   .append(IssueEvent.MovedToTodo(issueId = issueId, movedAt = now, occurredAt = now))
+                   .mapError(e => WorkspaceError.PersistenceFailure(RuntimeException(e.toString)))
     yield ()
 
   private def maybeCleanupWorktree(run: WorkspaceRun, status: RunStatus): IO[WorkspaceError, Unit] =

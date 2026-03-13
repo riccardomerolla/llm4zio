@@ -192,4 +192,19 @@ object IssueRepositoryESSpec extends ZIOSpecDefault:
           )).provideLayer(layerFor(path))
         }
       },
+      test("analysis attachment event updates projection") {
+        withTempDir { path =>
+          val issueId = Ids.IssueId("issue-9")
+          val now     = Instant.parse("2026-03-02T10:00:00Z")
+          val docs    = List(Ids.AnalysisDocId("analysis-1"), Ids.AnalysisDocId("analysis-2"))
+          (for
+            repo <- ZIO.service[IssueRepository]
+            _    <- repo.append(IssueEvent.Created(issueId, "Review", "Need context", "task", "medium", now))
+            _    <- repo.append(IssueEvent.AnalysisAttached(issueId, docs, now.plusSeconds(1), now.plusSeconds(1)))
+            got  <- repo.get(issueId)
+          yield assertTrue(
+            got.analysisDocIds == docs
+          )).provideLayer(layerFor(path))
+        }
+      },
     ) @@ TestAspect.sequential

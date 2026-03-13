@@ -7,6 +7,7 @@ import zio.*
 import zio.http.*
 import zio.json.*
 
+import analysis.control.WorkspaceAnalysisScheduler
 import orchestration.control.AgentRegistry
 import shared.errors.PersistenceError
 import shared.web.WorkspacesView
@@ -21,6 +22,7 @@ object WorkspacesController:
     agentRegistry: AgentRegistry,
     issueRepo: issues.entity.IssueRepository,
     gitService: GitService,
+    analysisScheduler: WorkspaceAnalysisScheduler,
   ): Routes[Any, Response] =
     Routes(
       // Redirect /workspaces → /settings/workspaces
@@ -97,11 +99,26 @@ object WorkspacesController:
       },
 
       // Full page
-      Method.GET / "settings" / "workspaces" -> handler { (_: Request) =>
+      Method.GET / "settings" / "workspaces"                -> handler { (_: Request) =>
         (for
-          ws     <- repo.list.mapError(persistErr)
-          agents <- agentRegistry.getAllAgents
-        yield html(WorkspacesView.page(ws, agents)))
+          ws         <- repo.list.mapError(persistErr)
+          agents     <- agentRegistry.getAllAgents
+          statusByWs <- loadAnalysisStatuses(ws.map(_.id), analysisScheduler).mapError(persistErr)
+        yield html(WorkspacesView.page(ws, agents, statusByWs)))
+          .catchAll(ZIO.succeed)
+      },
+      Method.GET / "settings" / "workspaces" / string("id") -> handler { (id: String, _: Request) =>
+        (for
+          workspace <- repo.get(id).mapError(persistErr)
+          agents    <- agentRegistry.getAllAgents
+          response  <- workspace match
+                         case None     => ZIO.succeed(Response(status = Status.NotFound))
+                         case Some(ws) =>
+                           analysisScheduler
+                             .statusForWorkspace(id)
+                             .mapError(persistErr)
+                             .map(statuses => html(WorkspacesView.detailPage(ws, agents, statuses)))
+        yield response)
           .catchAll(ZIO.succeed)
       },
 
@@ -132,26 +149,28 @@ object WorkspacesController:
       // Create
       Method.POST / "api" / "workspaces" -> handler { (req: Request) =>
         (for
-          patch  <- parseFormBody(req)
-          now    <- Clock.instant
-          id      = java.util.UUID.randomUUID().toString
-          _      <- repo
-                      .append(
-                        WorkspaceEvent.Created(
-                          workspaceId = id,
-                          name = patch.name,
-                          localPath = patch.localPath,
-                          defaultAgent = patch.defaultAgent,
-                          description = patch.description,
-                          cliTool = patch.cliTool,
-                          runMode = patch.runMode,
-                          occurredAt = now,
-                        )
-                      )
-                      .mapError(persistErr)
-          all    <- repo.list.mapError(persistErr)
-          agents <- agentRegistry.getAllAgents
-        yield html(WorkspacesView.page(all, agents))).catchAll(ZIO.succeed)
+          patch      <- parseFormBody(req)
+          now        <- Clock.instant
+          id          = java.util.UUID.randomUUID().toString
+          _          <- repo
+                          .append(
+                            WorkspaceEvent.Created(
+                              workspaceId = id,
+                              name = patch.name,
+                              localPath = patch.localPath,
+                              defaultAgent = patch.defaultAgent,
+                              description = patch.description,
+                              cliTool = patch.cliTool,
+                              runMode = patch.runMode,
+                              occurredAt = now,
+                            )
+                          )
+                          .mapError(persistErr)
+          _          <- analysisScheduler.triggerForWorkspaceEvent(id).forkDaemon
+          all        <- repo.list.mapError(persistErr)
+          agents     <- agentRegistry.getAllAgents
+          statusByWs <- loadAnalysisStatuses(all.map(_.id), analysisScheduler).mapError(persistErr)
+        yield html(WorkspacesView.page(all, agents, statusByWs))).catchAll(ZIO.succeed)
       },
 
       // Update
@@ -164,23 +183,25 @@ object WorkspacesController:
                         case None    => ZIO.succeed(Response(status = Status.NotFound))
                         case Some(_) =>
                           for
-                            _      <- repo
-                                        .append(
-                                          WorkspaceEvent.Updated(
-                                            workspaceId = id,
-                                            name = patch.name,
-                                            localPath = patch.localPath,
-                                            defaultAgent = patch.defaultAgent,
-                                            description = patch.description,
-                                            cliTool = patch.cliTool,
-                                            runMode = patch.runMode,
-                                            occurredAt = now,
-                                          )
-                                        )
-                                        .mapError(persistErr)
-                            all    <- repo.list.mapError(persistErr)
-                            agents <- agentRegistry.getAllAgents
-                          yield html(WorkspacesView.page(all, agents))
+                            _          <- repo
+                                            .append(
+                                              WorkspaceEvent.Updated(
+                                                workspaceId = id,
+                                                name = patch.name,
+                                                localPath = patch.localPath,
+                                                defaultAgent = patch.defaultAgent,
+                                                description = patch.description,
+                                                cliTool = patch.cliTool,
+                                                runMode = patch.runMode,
+                                                occurredAt = now,
+                                              )
+                                            )
+                                            .mapError(persistErr)
+                            _          <- analysisScheduler.triggerForWorkspaceEvent(id).forkDaemon
+                            all        <- repo.list.mapError(persistErr)
+                            agents     <- agentRegistry.getAllAgents
+                            statusByWs <- loadAnalysisStatuses(all.map(_.id), analysisScheduler).mapError(persistErr)
+                          yield html(WorkspacesView.page(all, agents, statusByWs))
         yield resp).catchAll(ZIO.succeed)
       },
 
@@ -193,11 +214,24 @@ object WorkspacesController:
       },
 
       // Runs list (HTMX fragment)
-      Method.GET / "api" / "workspaces" / string("id") / "runs" -> handler { (id: String, _: Request) =>
+      Method.GET / "api" / "workspaces" / string("id") / "runs"            -> handler { (id: String, _: Request) =>
         repo.listRuns(id)
           .mapError(persistErr)
           .map(runs => html(WorkspacesView.runsFragment(runs)))
           .catchAll(ZIO.succeed)
+      },
+      Method.GET / "api" / "workspaces" / string("id") / "analysis-status" -> handler { (id: String, _: Request) =>
+        analysisScheduler
+          .statusForWorkspace(id)
+          .mapError(persistErr)
+          .map(statuses => html(WorkspacesView.analysisStatusFragment(id, statuses)))
+          .catchAll(ZIO.succeed)
+      },
+      Method.POST / "api" / "workspaces" / string("id") / "reanalyze"      -> handler { (id: String, _: Request) =>
+        (for
+          _        <- analysisScheduler.triggerManual(id).forkDaemon
+          statuses <- analysisScheduler.statusForWorkspace(id).mapError(persistErr)
+        yield html(WorkspacesView.analysisStatusFragment(id, statuses))).catchAll(ZIO.succeed)
       },
 
       // Assign run
@@ -750,6 +784,14 @@ object WorkspacesController:
     workspaces: List[Workspace],
   ): IO[PersistenceError, List[WorkspaceRun]] =
     ZIO.foreach(workspaces)(ws => repo.listRuns(ws.id)).map(_.flatten)
+
+  private def loadAnalysisStatuses(
+    workspaceIds: List[String],
+    analysisScheduler: WorkspaceAnalysisScheduler,
+  ): IO[PersistenceError, Map[String, List[analysis.control.WorkspaceAnalysisStatus]]] =
+    ZIO.foreach(workspaceIds)(workspaceId =>
+      analysisScheduler.statusForWorkspace(workspaceId).map(workspaceId -> _)
+    ).map(_.toMap)
 
   private def parseRunsDashboardQuery(req: Request): RunsDashboardQuery =
     RunsDashboardQuery(

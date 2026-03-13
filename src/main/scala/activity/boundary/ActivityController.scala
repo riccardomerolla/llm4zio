@@ -56,11 +56,14 @@ final case class ActivityControllerLive(
     Response.text(content).contentType(MediaType.text.html)
 
   private def parseEventType(raw: String): Option[ActivityEventType] = raw.toLowerCase match
-    case "run_started"       => Some(ActivityEventType.RunStarted)
-    case "run_completed"     => Some(ActivityEventType.RunCompleted)
-    case "run_failed"        => Some(ActivityEventType.RunFailed)
-    case "run_state_changed" => Some(ActivityEventType.RunStateChanged)
-    case "agent_assigned"    => Some(ActivityEventType.AgentAssigned)
-    case "message_sent"      => Some(ActivityEventType.MessageSent)
-    case "config_changed"    => Some(ActivityEventType.ConfigChanged)
-    case _                   => None
+    case "run_started"        => Some(ActivityEventType.RunStarted)
+    case "run_completed"      => Some(ActivityEventType.RunCompleted)
+    case "run_failed"         => Some(ActivityEventType.RunFailed)
+    case "run_state_changed"  => Some(ActivityEventType.RunStateChanged)
+    case "agent_assigned"     => Some(ActivityEventType.AgentAssigned)
+    case "message_sent"       => Some(ActivityEventType.MessageSent)
+    case "config_changed"     => Some(ActivityEventType.ConfigChanged)
+    case "analysis_started"   => Some(ActivityEventType.AnalysisStarted)
+    case "analysis_completed" => Some(ActivityEventType.AnalysisCompleted)
+    case "analysis_failed"    => Some(ActivityEventType.AnalysisFailed)
+    case _                    => None

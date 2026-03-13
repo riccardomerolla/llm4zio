@@ -8,6 +8,8 @@ import zio.json.*
 import zio.test.*
 
 import _root_.config.entity.*
+import analysis.control.{ WorkspaceAnalysisScheduler, WorkspaceAnalysisState, WorkspaceAnalysisStatus }
+import analysis.entity.AnalysisType
 import issues.entity.{ AgentIssue, IssueEvent, IssueFilter, IssueRepository }
 import orchestration.control.AgentRegistry
 import shared.ids.Ids.IssueId
@@ -146,72 +148,105 @@ object WorkspacesControllerSpec extends ZIOSpecDefault:
     def aheadBehind(repoPath: String, baseBranch: String): IO[GitError, AheadBehind]        =
       ZIO.succeed(AheadBehind(ahead = 3, behind = 1))
 
-  private def makeRoutes(wsRef: Ref[Map[String, Workspace]], runRef: Ref[Map[String, WorkspaceRun]]) =
+  final private class StubAnalysisScheduler(triggerRef: Ref[List[(String, Boolean)]])
+    extends WorkspaceAnalysisScheduler:
+    override def triggerForWorkspaceEvent(workspaceId: String): UIO[Unit] =
+      triggerRef.update(_ :+ (workspaceId -> false))
+
+    override def triggerManual(workspaceId: String): UIO[Unit] =
+      triggerRef.update(_ :+ (workspaceId -> true))
+
+    override def statusForWorkspace(workspaceId: String)
+      : IO[shared.errors.PersistenceError, List[WorkspaceAnalysisStatus]] =
+      ZIO.succeed(
+        List(
+          WorkspaceAnalysisStatus(
+            workspaceId = workspaceId,
+            analysisType = AnalysisType.CodeReview,
+            state = WorkspaceAnalysisState.Completed,
+            completedAt = Some(Instant.parse("2026-02-24T10:15:00Z")),
+            lastUpdatedAt = Instant.parse("2026-02-24T10:15:00Z"),
+          )
+        )
+      )
+
+  private def makeRoutes(
+    wsRef: Ref[Map[String, Workspace]],
+    runRef: Ref[Map[String, WorkspaceRun]],
+    triggerRef: Ref[List[(String, Boolean)]],
+  ) =
     WorkspacesController.routes(
       StubWorkspaceRepo(wsRef, runRef),
       StubRunService(),
       StubAgentRegistry,
       StubIssueRepository,
       StubGitService,
+      StubAnalysisScheduler(triggerRef),
     )
 
   def spec: Spec[TestEnvironment & Scope, Any] = suite("WorkspacesControllerSpec")(
     test("GET /settings/workspaces returns 200") {
       for
-        wsRef  <- Ref.make(Map("ws-1" -> sampleWs))
-        runRef <- Ref.make(Map("run-1" -> sampleRun))
-        routes  = makeRoutes(wsRef, runRef)
-        req     = Request.get(URL(Path.decode("/settings/workspaces")))
-        resp   <- routes.runZIO(req)
+        wsRef      <- Ref.make(Map("ws-1" -> sampleWs))
+        runRef     <- Ref.make(Map("run-1" -> sampleRun))
+        triggerRef <- Ref.make(List.empty[(String, Boolean)])
+        routes      = makeRoutes(wsRef, runRef, triggerRef)
+        req         = Request.get(URL(Path.decode("/settings/workspaces")))
+        resp       <- routes.runZIO(req)
       yield assertTrue(resp.status == Status.Ok)
     },
     test("GET /api/workspaces returns JSON list") {
       for
-        wsRef  <- Ref.make(Map("ws-1" -> sampleWs))
-        runRef <- Ref.make(Map("run-1" -> sampleRun))
-        routes  = makeRoutes(wsRef, runRef)
-        req     = Request.get(URL(Path.decode("/api/workspaces")))
-        resp   <- routes.runZIO(req)
-        body   <- resp.body.asString
+        wsRef      <- Ref.make(Map("ws-1" -> sampleWs))
+        runRef     <- Ref.make(Map("run-1" -> sampleRun))
+        triggerRef <- Ref.make(List.empty[(String, Boolean)])
+        routes      = makeRoutes(wsRef, runRef, triggerRef)
+        req         = Request.get(URL(Path.decode("/api/workspaces")))
+        resp       <- routes.runZIO(req)
+        body       <- resp.body.asString
       yield assertTrue(resp.status == Status.Ok && body.contains("my-api"))
     },
     test("DELETE /api/workspaces/:id returns 204") {
       for
-        wsRef  <- Ref.make(Map("ws-1" -> sampleWs))
-        runRef <- Ref.make(Map("run-1" -> sampleRun))
-        routes  = makeRoutes(wsRef, runRef)
-        req     = Request(method = Method.DELETE, url = URL(Path.decode("/api/workspaces/ws-1")))
-        resp   <- routes.runZIO(req)
+        wsRef      <- Ref.make(Map("ws-1" -> sampleWs))
+        runRef     <- Ref.make(Map("run-1" -> sampleRun))
+        triggerRef <- Ref.make(List.empty[(String, Boolean)])
+        routes      = makeRoutes(wsRef, runRef, triggerRef)
+        req         = Request(method = Method.DELETE, url = URL(Path.decode("/api/workspaces/ws-1")))
+        resp       <- routes.runZIO(req)
       yield assertTrue(resp.status == Status.NoContent)
     },
     test("GET /api/workspaces/:id/runs returns 200") {
       for
-        wsRef  <- Ref.make(Map("ws-1" -> sampleWs))
-        runRef <- Ref.make(Map("run-1" -> sampleRun))
-        routes  = makeRoutes(wsRef, runRef)
-        req     = Request.get(URL(Path.decode("/api/workspaces/ws-1/runs")))
-        resp   <- routes.runZIO(req)
+        wsRef      <- Ref.make(Map("ws-1" -> sampleWs))
+        runRef     <- Ref.make(Map("run-1" -> sampleRun))
+        triggerRef <- Ref.make(List.empty[(String, Boolean)])
+        routes      = makeRoutes(wsRef, runRef, triggerRef)
+        req         = Request.get(URL(Path.decode("/api/workspaces/ws-1/runs")))
+        resp       <- routes.runZIO(req)
       yield assertTrue(resp.status == Status.Ok)
     },
     test("GET /runs redirects to command center") {
       for
-        wsRef   <- Ref.make(Map("ws-1" -> sampleWs))
-        runRef  <- Ref.make(Map("run-1" -> sampleRun))
-        routes   = makeRoutes(wsRef, runRef)
-        req      = Request.get(URL(Path.decode("/runs")))
-        resp    <- routes.runZIO(req)
-        location = resp.headers.header(Header.Location).map(_.renderedValue)
+        wsRef      <- Ref.make(Map("ws-1" -> sampleWs))
+        runRef     <- Ref.make(Map("run-1" -> sampleRun))
+        triggerRef <- Ref.make(List.empty[(String, Boolean)])
+        routes      = makeRoutes(wsRef, runRef, triggerRef)
+        req         = Request.get(URL(Path.decode("/runs")))
+        resp       <- routes.runZIO(req)
+        location    = resp.headers.header(Header.Location).map(_.renderedValue)
       yield assertTrue(resp.status == Status.MovedPermanently && location.contains("/"))
     },
     test("GET /api/runs filters by status") {
       val completedRun = sampleRun.copy(id = "run-2", status = RunStatus.Completed)
       for
-        wsRef  <- Ref.make(Map("ws-1" -> sampleWs))
-        runRef <- Ref.make(Map("run-1" -> sampleRun, "run-2" -> completedRun))
-        routes  = makeRoutes(wsRef, runRef)
-        req     = Request.get(URL.decode("/api/runs?status=completed").getOrElse(URL.root))
-        resp   <- routes.runZIO(req)
-        body   <- resp.body.asString
+        wsRef      <- Ref.make(Map("ws-1" -> sampleWs))
+        runRef     <- Ref.make(Map("run-1" -> sampleRun, "run-2" -> completedRun))
+        triggerRef <- Ref.make(List.empty[(String, Boolean)])
+        routes      = makeRoutes(wsRef, runRef, triggerRef)
+        req         = Request.get(URL.decode("/api/runs?status=completed").getOrElse(URL.root))
+        resp       <- routes.runZIO(req)
+        body       <- resp.body.asString
       yield assertTrue(resp.status == Status.Ok && body.contains("run-2") && !body.contains("run-1"))
     },
     test("WorkspaceCreateRequest with default RunMode.Host round-trips through JSON") {
@@ -237,71 +272,104 @@ object WorkspacesControllerSpec extends ZIOSpecDefault:
     },
     test("GET git status endpoint returns GitStatus JSON") {
       for
-        wsRef  <- Ref.make(Map("ws-1" -> sampleWs))
-        runRef <- Ref.make(Map("run-1" -> sampleRun))
-        routes  = makeRoutes(wsRef, runRef)
-        req     = Request.get(URL(Path.decode("/api/workspaces/ws-1/runs/run-1/git/status")))
-        resp   <- routes.runZIO(req)
-        body   <- resp.body.asString
+        wsRef      <- Ref.make(Map("ws-1" -> sampleWs))
+        runRef     <- Ref.make(Map("run-1" -> sampleRun))
+        triggerRef <- Ref.make(List.empty[(String, Boolean)])
+        routes      = makeRoutes(wsRef, runRef, triggerRef)
+        req         = Request.get(URL(Path.decode("/api/workspaces/ws-1/runs/run-1/git/status")))
+        resp       <- routes.runZIO(req)
+        body       <- resp.body.asString
       yield assertTrue(resp.status == Status.Ok && body.contains("feature/test"))
     },
     test("GET git diff endpoint supports staged query") {
       for
-        wsRef  <- Ref.make(Map("ws-1" -> sampleWs))
-        runRef <- Ref.make(Map("run-1" -> sampleRun))
-        routes  = makeRoutes(wsRef, runRef)
-        req     = Request.get(URL.decode("/api/workspaces/ws-1/runs/run-1/git/diff?staged=true").getOrElse(URL.root))
-        resp   <- routes.runZIO(req)
-        body   <- resp.body.asString
+        wsRef      <- Ref.make(Map("ws-1" -> sampleWs))
+        runRef     <- Ref.make(Map("run-1" -> sampleRun))
+        triggerRef <- Ref.make(List.empty[(String, Boolean)])
+        routes      = makeRoutes(wsRef, runRef, triggerRef)
+        req         = Request.get(URL.decode("/api/workspaces/ws-1/runs/run-1/git/diff?staged=true").getOrElse(URL.root))
+        resp       <- routes.runZIO(req)
+        body       <- resp.body.asString
       yield assertTrue(resp.status == Status.Ok && body.contains("A.scala"))
     },
     test("GET git file diff endpoint returns text/plain") {
       for
-        wsRef  <- Ref.make(Map("ws-1" -> sampleWs))
-        runRef <- Ref.make(Map("run-1" -> sampleRun))
-        routes  = makeRoutes(wsRef, runRef)
-        req     = Request.get(URL(Path.decode("/api/workspaces/ws-1/runs/run-1/git/diff/src%2Fmain%2Fscala%2FA.scala")))
-        resp   <- routes.runZIO(req)
-        body   <- resp.body.asString
+        wsRef      <- Ref.make(Map("ws-1" -> sampleWs))
+        runRef     <- Ref.make(Map("run-1" -> sampleRun))
+        triggerRef <- Ref.make(List.empty[(String, Boolean)])
+        routes      = makeRoutes(wsRef, runRef, triggerRef)
+        req         = Request.get(URL(Path.decode("/api/workspaces/ws-1/runs/run-1/git/diff/src%2Fmain%2Fscala%2FA.scala")))
+        resp       <- routes.runZIO(req)
+        body       <- resp.body.asString
       yield assertTrue(resp.status == Status.Ok && body.contains("diff --git"))
     },
     test("GET git log endpoint returns entries") {
       for
-        wsRef  <- Ref.make(Map("ws-1" -> sampleWs))
-        runRef <- Ref.make(Map("run-1" -> sampleRun))
-        routes  = makeRoutes(wsRef, runRef)
-        req     = Request.get(URL.decode("/api/workspaces/ws-1/runs/run-1/git/log?limit=10").getOrElse(URL.root))
-        resp   <- routes.runZIO(req)
-        body   <- resp.body.asString
+        wsRef      <- Ref.make(Map("ws-1" -> sampleWs))
+        runRef     <- Ref.make(Map("run-1" -> sampleRun))
+        triggerRef <- Ref.make(List.empty[(String, Boolean)])
+        routes      = makeRoutes(wsRef, runRef, triggerRef)
+        req         = Request.get(URL.decode("/api/workspaces/ws-1/runs/run-1/git/log?limit=10").getOrElse(URL.root))
+        resp       <- routes.runZIO(req)
+        body       <- resp.body.asString
       yield assertTrue(resp.status == Status.Ok && body.contains("feat: test"))
     },
     test("GET git branch endpoint returns branch and ahead/behind") {
       for
-        wsRef  <- Ref.make(Map("ws-1" -> sampleWs))
-        runRef <- Ref.make(Map("run-1" -> sampleRun))
-        routes  = makeRoutes(wsRef, runRef)
-        req     = Request.get(URL(Path.decode("/api/workspaces/ws-1/runs/run-1/git/branch")))
-        resp   <- routes.runZIO(req)
-        body   <- resp.body.asString
+        wsRef      <- Ref.make(Map("ws-1" -> sampleWs))
+        runRef     <- Ref.make(Map("run-1" -> sampleRun))
+        triggerRef <- Ref.make(List.empty[(String, Boolean)])
+        routes      = makeRoutes(wsRef, runRef, triggerRef)
+        req         = Request.get(URL(Path.decode("/api/workspaces/ws-1/runs/run-1/git/branch")))
+        resp       <- routes.runZIO(req)
+        body       <- resp.body.asString
       yield assertTrue(resp.status == Status.Ok && body.contains("\"ahead\":3") && body.contains("\"behind\":1"))
     },
     test("POST apply endpoint rejects active runs") {
       for
-        wsRef  <- Ref.make(Map("ws-1" -> sampleWs))
-        runRef <- Ref.make(Map("run-1" -> sampleRun))
-        routes  = makeRoutes(wsRef, runRef)
-        req     = Request.post(URL(Path.decode("/api/workspaces/ws-1/runs/run-1/apply")), Body.empty)
-        resp   <- routes.runZIO(req)
-        body   <- resp.body.asString
+        wsRef      <- Ref.make(Map("ws-1" -> sampleWs))
+        runRef     <- Ref.make(Map("run-1" -> sampleRun))
+        triggerRef <- Ref.make(List.empty[(String, Boolean)])
+        routes      = makeRoutes(wsRef, runRef, triggerRef)
+        req         = Request.post(URL(Path.decode("/api/workspaces/ws-1/runs/run-1/apply")), Body.empty)
+        resp       <- routes.runZIO(req)
+        body       <- resp.body.asString
       yield assertTrue(resp.status == Status.Conflict && body.contains("Run is still active"))
     },
     test("GET git file diff endpoint rejects invalid file path") {
       for
-        wsRef  <- Ref.make(Map("ws-1" -> sampleWs))
-        runRef <- Ref.make(Map("run-1" -> sampleRun))
-        routes  = makeRoutes(wsRef, runRef)
-        req     = Request.get(URL(Path.decode("/api/workspaces/ws-1/runs/run-1/git/diff/..%2Fsecret")))
-        resp   <- routes.runZIO(req)
+        wsRef      <- Ref.make(Map("ws-1" -> sampleWs))
+        runRef     <- Ref.make(Map("run-1" -> sampleRun))
+        triggerRef <- Ref.make(List.empty[(String, Boolean)])
+        routes      = makeRoutes(wsRef, runRef, triggerRef)
+        req         = Request.get(URL(Path.decode("/api/workspaces/ws-1/runs/run-1/git/diff/..%2Fsecret")))
+        resp       <- routes.runZIO(req)
       yield assertTrue(resp.status == Status.BadRequest)
     },
+    test("GET /settings/workspaces/:id returns detail page") {
+      for
+        wsRef      <- Ref.make(Map("ws-1" -> sampleWs))
+        runRef     <- Ref.make(Map("run-1" -> sampleRun))
+        triggerRef <- Ref.make(List.empty[(String, Boolean)])
+        routes      = makeRoutes(wsRef, runRef, triggerRef)
+        req         = Request.get(URL(Path.decode("/settings/workspaces/ws-1")))
+        resp       <- routes.runZIO(req)
+        body       <- resp.body.asString
+      yield assertTrue(resp.status == Status.Ok && body.contains("Analysis Status") && body.contains("Re-analyze"))
+    },
+    test("POST /api/workspaces/:id/reanalyze triggers scheduler") {
+      for
+        wsRef      <- Ref.make(Map("ws-1" -> sampleWs))
+        runRef     <- Ref.make(Map("run-1" -> sampleRun))
+        triggerRef <- Ref.make(List.empty[(String, Boolean)])
+        routes      = makeRoutes(wsRef, runRef, triggerRef)
+        req         = Request.post(URL(Path.decode("/api/workspaces/ws-1/reanalyze")), Body.empty)
+        resp       <- routes.runZIO(req)
+        body       <- resp.body.asString
+        _          <- Live.live(ZIO.sleep(50.millis))
+        triggers   <- triggerRef.get
+      yield assertTrue(
+        resp.status == Status.Ok && body.contains("Analysis Status") && triggers.contains("ws-1" -> true)
+      )
+    } @@ TestAspect.withLiveClock,
   )

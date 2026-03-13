@@ -123,8 +123,12 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
       ZIO.fail(LlmError.ProviderError("unused in tests", None))
 
   private val stubCliExecutor: GeminiCliExecutor = new GeminiCliExecutor:
-    override def checkGeminiInstalled: IO[LlmError, Unit]                                  = ZIO.unit
-    override def runGeminiProcess(prompt: String, config: LlmConfig): IO[LlmError, String] =
+    override def checkGeminiInstalled: IO[LlmError, Unit] = ZIO.unit
+    override def runGeminiProcess(
+      prompt: String,
+      config: LlmConfig,
+      executionContext: llm4zio.providers.GeminiCliExecutionContext,
+    ): IO[LlmError, String] =
       ZIO.fail(LlmError.ProviderError("unused in tests", None))
 
   private val stubWorkspaceRepo: workspace.entity.WorkspaceRepository = new workspace.entity.WorkspaceRepository:

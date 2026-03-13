@@ -89,6 +89,26 @@ object AgentRegistrySpec extends ZIOSpecDefault:
         agents.exists(_.name == "code-agent"),
       )
     },
+    test("built-in analysis agents expose required analysis capabilities") {
+      for
+        architecture <- AgentRegistry.findByName("architecture-agent")
+        security     <- AgentRegistry.findByName("security-agent")
+        code         <- AgentRegistry.findByName("code-agent")
+      yield assertTrue(
+        architecture.exists(_.tags.contains("architecture-analysis")),
+        security.exists(_.tags.contains("security-analysis")),
+        code.exists(_.tags.contains("code-review")),
+      )
+    },
+    test("findAgentsWithSkill discovers built-in analysis agents") {
+      for
+        architects <- AgentRegistry.findAgentsWithSkill("architecture-analysis")
+        security   <- AgentRegistry.findAgentsWithSkill("security-analysis")
+      yield assertTrue(
+        architects.exists(_.name == "architecture-agent"),
+        security.exists(_.name == "security-agent"),
+      )
+    },
     test("findAgentsForStep should filter by supported step") {
       for
         _              <- AgentRegistry.registerAgent(

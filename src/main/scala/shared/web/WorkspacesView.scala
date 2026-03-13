@@ -1,5 +1,9 @@
 package shared.web
 
+import java.time.Instant
+
+import analysis.control.{ WorkspaceAnalysisState, WorkspaceAnalysisStatus }
+import analysis.entity.AnalysisType
 import config.entity.AgentInfo
 import issues.entity.api.AgentIssueView
 import scalatags.Text.all.*
@@ -10,6 +14,13 @@ object WorkspacesView:
   val supportedCliTools: List[String] = List("claude", "gemini", "opencode", "codex", "copilot")
 
   def page(workspaces: List[Workspace], agents: List[AgentInfo]): String =
+    page(workspaces, agents, Map.empty)
+
+  def page(
+    workspaces: List[Workspace],
+    agents: List[AgentInfo],
+    analysisStatusByWorkspaceId: Map[String, List[WorkspaceAnalysisStatus]],
+  ): String =
     Layout.page("Workspaces", "/workspaces")(
       div(cls := "space-y-6")(
         div(cls := "rounded-xl border border-white/10 bg-slate-900/80 px-5 py-4")(
@@ -37,11 +48,61 @@ object WorkspacesView:
             ),
           )
         else
-          div(cls := "space-y-4")(workspaces.map(workspaceCard(_, agents))*),
+          div(cls := "space-y-4")(workspaces.map(ws =>
+            workspaceCard(ws, agents, analysisStatusByWorkspaceId.getOrElse(ws.id, Nil))
+          )*),
       )
     )
 
-  private def workspaceCard(ws: Workspace, agents: List[AgentInfo]): Frag =
+  def detailPage(
+    workspace: Workspace,
+    agents: List[AgentInfo],
+    analysisStatuses: List[WorkspaceAnalysisStatus],
+  ): String =
+    Layout.page(workspace.name, s"/settings/workspaces/${workspace.id}")(
+      div(cls := "space-y-6")(
+        div(cls := "flex items-center gap-3")(
+          a(
+            href := "/settings/workspaces",
+            cls  := "inline-flex rounded-md border border-white/15 px-3 py-1.5 text-sm text-slate-300 hover:bg-white/5",
+          )("Back to workspaces"),
+          h1(cls := "text-2xl font-bold text-white")(workspace.name),
+        ),
+        workspaceCard(workspace, agents, analysisStatuses, detailMode = true),
+      )
+    )
+
+  def analysisStatusFragment(workspaceId: String, statuses: List[WorkspaceAnalysisStatus]): String =
+    div(
+      id                 := s"analysis-status-$workspaceId",
+      cls                := "rounded-xl border border-white/10 bg-slate-950/60 p-4",
+      attr("hx-get")     := s"/api/workspaces/$workspaceId/analysis-status",
+      attr("hx-trigger") := "load, every 5s",
+      attr("hx-swap")    := "outerHTML",
+    )(
+      div(cls := "flex items-center justify-between gap-3")(
+        div(
+          h3(cls := "text-sm font-semibold uppercase tracking-wide text-slate-200")("Analysis Status"),
+          p(
+            cls := "mt-1 text-xs text-slate-400"
+          )("Auto-triggered on workspace create/update. Manual re-analysis bypasses cooldown."),
+        ),
+        button(
+          cls               := "rounded-md border border-cyan-400/30 bg-cyan-500/15 px-3 py-1.5 text-xs font-semibold text-cyan-200 hover:bg-cyan-500/25",
+          attr("hx-post")   := s"/api/workspaces/$workspaceId/reanalyze",
+          attr("hx-target") := s"#analysis-status-$workspaceId",
+          attr("hx-swap")   := "outerHTML",
+        )("Re-analyze"),
+      ),
+      div(cls := "mt-4 grid gap-3 md:grid-cols-3")(statuses.map(renderAnalysisStatusCard)*),
+    ).render
+
+  private def workspaceCard(
+    ws: Workspace,
+    agents: List[AgentInfo],
+    analysisStatuses: List[WorkspaceAnalysisStatus],
+    detailMode: Boolean = false,
+  ): Frag =
     div(
       cls                := "rounded-xl border border-white/10 bg-slate-900/60 p-5",
       id                 := s"ws-${ws.id}",
@@ -78,6 +139,12 @@ object WorkspacesView:
             attr("hx-target") := s"#runs-${ws.id}",
             attr("hx-swap")   := "innerHTML",
           )("Runs"),
+          if !detailMode then
+            a(
+              href := s"/settings/workspaces/${ws.id}",
+              cls  := "rounded-md border border-indigo-400/30 bg-indigo-500/15 px-2 py-1 text-xs font-semibold text-indigo-200 hover:bg-indigo-500/25",
+            )("Details")
+          else frag(),
           button(
             cls               := "rounded-md border border-cyan-400/30 bg-cyan-500/20 px-2 py-1 text-xs font-semibold text-cyan-200 hover:bg-cyan-500/30",
             attr("hx-get")    := s"/api/workspaces/${ws.id}/edit",
@@ -93,11 +160,59 @@ object WorkspacesView:
           )("Delete"),
         ),
       ),
+      if detailMode then raw(analysisStatusFragment(ws.id, normalizedStatuses(ws.id, analysisStatuses))) else frag(),
       div(cls := "mt-4 border-t border-white/10 pt-4")(
         assignForm(ws.id, ws.defaultAgent, agents)
       ),
       div(id := s"runs-${ws.id}", cls := "mt-3"),
     )
+
+  private def normalizedStatuses(
+    workspaceId: String,
+    statuses: List[WorkspaceAnalysisStatus],
+  ): List[WorkspaceAnalysisStatus] =
+    val byType = statuses.map(status => status.analysisType -> status).toMap
+    List(AnalysisType.CodeReview, AnalysisType.Architecture, AnalysisType.Security).map { analysisType =>
+      byType.getOrElse(
+        analysisType,
+        WorkspaceAnalysisStatus(
+          workspaceId = workspaceId,
+          analysisType = analysisType,
+          state = WorkspaceAnalysisState.Idle,
+          lastUpdatedAt = Instant.EPOCH,
+        ),
+      )
+    }
+
+  private def renderAnalysisStatusCard(status: WorkspaceAnalysisStatus): Frag =
+    val (label, classes) = status.state match
+      case WorkspaceAnalysisState.Pending   => ("Pending", "border-amber-400/30 bg-amber-500/10 text-amber-200")
+      case WorkspaceAnalysisState.Running   => ("Running", "border-cyan-400/30 bg-cyan-500/10 text-cyan-200")
+      case WorkspaceAnalysisState.Completed => ("Completed", "border-emerald-400/30 bg-emerald-500/10 text-emerald-200")
+      case WorkspaceAnalysisState.Failed    => ("Failed", "border-rose-400/30 bg-rose-500/10 text-rose-200")
+      case WorkspaceAnalysisState.Idle      => ("Idle", "border-slate-400/30 bg-slate-500/10 text-slate-300")
+    div(cls := "rounded-lg border border-white/10 bg-slate-900/70 p-4")(
+      div(cls := "flex items-center justify-between gap-2")(
+        div(cls := "text-sm font-semibold text-white")(analysisTypeLabel(status.analysisType)),
+        span(cls := s"rounded-full border px-2 py-0.5 text-xs font-semibold $classes")(label),
+      ),
+      status.startedAt
+        .map(ts => p(cls := "mt-2 text-xs text-slate-400")(s"Started ${formatTimestamp(ts)}"))
+        .getOrElse(p(cls := "mt-2 text-xs text-slate-500")("Not started yet")),
+      status.completedAt
+        .map(ts => p(cls := "mt-1 text-xs text-slate-400")(s"Completed ${formatTimestamp(ts)}"))
+        .getOrElse(frag()),
+    )
+
+  private def analysisTypeLabel(analysisType: AnalysisType): String =
+    analysisType match
+      case AnalysisType.CodeReview   => "Code Review"
+      case AnalysisType.Architecture => "Architecture"
+      case AnalysisType.Security     => "Security"
+      case AnalysisType.Custom(name) => name
+
+  private def formatTimestamp(instant: Instant): String =
+    instant.toString.take(19).replace("T", " ")
 
   def newWorkspaceForm: String =
     modalForm(

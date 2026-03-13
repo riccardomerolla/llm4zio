@@ -13,7 +13,19 @@ import llm4zio.tools.{ AnyTool, JsonSchema }
 
 trait GeminiCliExecutor:
   def checkGeminiInstalled: IO[LlmError, Unit]
-  def runGeminiProcess(prompt: String, config: LlmConfig): IO[LlmError, String]
+  def runGeminiProcess(
+    prompt: String,
+    config: LlmConfig,
+    executionContext: GeminiCliExecutionContext = GeminiCliExecutionContext.default,
+  ): IO[LlmError, String]
+
+final case class GeminiCliExecutionContext(
+  cwd: Option[String] = None,
+  includeDirectories: List[String] = Nil,
+)
+
+object GeminiCliExecutionContext:
+  val default: GeminiCliExecutionContext = GeminiCliExecutionContext()
 
 object GeminiCliExecutor:
   val default: GeminiCliExecutor =
@@ -42,27 +54,42 @@ object GeminiCliExecutor:
             else ZIO.unit
           }
 
-      override def runGeminiProcess(prompt: String, config: LlmConfig): IO[LlmError, String] =
+      override def runGeminiProcess(
+        prompt: String,
+        config: LlmConfig,
+        executionContext: GeminiCliExecutionContext,
+      ): IO[LlmError, String] =
         for
-          process  <- startProcess(prompt, config)
+          process  <- startProcess(prompt, config, executionContext)
           output   <- readOutput(process, config)
           exitCode <- waitForCompletion(process)
           _        <- validateExitCode(exitCode, output)
-        yield output
+          finalOut <- extractFinalResponse(output)
+        yield finalOut
 
-      private def startProcess(prompt: String, config: LlmConfig): IO[LlmError, Process] =
+      private def startProcess(
+        prompt: String,
+        config: LlmConfig,
+        executionContext: GeminiCliExecutionContext,
+      ): IO[LlmError, Process] =
         val commands = geminiCommand ++ List(
           "-p",
           prompt,
           "-m",
           config.model,
           "-y",
-        )
+          "--output-format",
+          "json",
+        ) ++ executionContext.includeDirectories.distinct.flatMap(path => List("--include-directories", path))
 
-        ZIO.logDebug(s"Starting Gemini process: gemini -p <prompt> -m ${config.model} -y") *>
+        ZIO.logDebug(
+          s"Starting Gemini process: gemini -p <prompt> -m ${config.model} -y --output-format json"
+        ) *>
           ZIO
             .attemptBlocking {
-              new ProcessBuilder(commands.asJava)
+              val builder = new ProcessBuilder(commands.asJava)
+              executionContext.cwd.foreach(path => builder.directory(java.nio.file.Paths.get(path).toFile))
+              builder
                 .redirectErrorStream(true)
                 .start()
             }
@@ -98,12 +125,72 @@ object GeminiCliExecutor:
             }") *>
             ZIO.fail(LlmError.ProviderError(s"Gemini process exited with code $exitCode", None))
         else ZIO.unit
+
+      private def extractFinalResponse(output: String): IO[LlmError, String] =
+        ZIO
+          .fromEither(GeminiCliProvider.extractResponse(output))
+          .mapError(err => LlmError.ParseError(err, output))
     }
 
   val live: ULayer[GeminiCliExecutor] =
     ZLayer.succeed(default)
 
 object GeminiCliProvider:
+  final private case class GeminiHeadlessError(
+    `type`: Option[String] = None,
+    message: Option[String] = None,
+    code: Option[Int] = None,
+  ) derives JsonDecoder
+
+  final private case class GeminiHeadlessResponse(
+    response: Option[String] = None,
+    error: Option[GeminiHeadlessError] = None,
+  ) derives JsonDecoder
+
+  private[providers] def extractResponse(output: String): Either[String, String] =
+    val normalized = output.replace("\r\n", "\n").trim
+    if normalized.isEmpty then Left("Gemini CLI returned empty output")
+    else
+      jsonCandidates(normalized)
+        .iterator
+        .map(parseHeadlessResponse)
+        .collectFirst { case Right(value) => Right(value) }
+        .getOrElse(parseHeadlessResponse(normalized))
+
+  private def jsonCandidates(raw: String): List[String] =
+    val firstBrace = raw.indexOf('{')
+    val lastBrace  = raw.lastIndexOf('}')
+    val braceSlice =
+      if firstBrace >= 0 && lastBrace >= firstBrace then
+        val suffix = raw.substring(0, lastBrace + 1)
+        suffix.indices
+          .filter(idx => suffix.charAt(idx) == '{')
+          .map(idx => suffix.substring(idx))
+          .toList
+      else Nil
+    (raw :: braceSlice).distinct
+
+  private def parseHeadlessResponse(raw: String): Either[String, String] =
+    raw
+      .fromJson[GeminiHeadlessResponse]
+      .left
+      .map(err => s"Failed to decode Gemini CLI JSON output: $err")
+      .flatMap { response =>
+        response.error.flatMap(_.message.map(_.trim).filter(_.nonEmpty)) match
+          case Some(message) =>
+            val details = List(
+              response.error.flatMap(_.`type`).map(t => s"type=$t"),
+              response.error.flatMap(_.code).map(code => s"code=$code"),
+            ).flatten.mkString(", ")
+            Left(
+              if details.nonEmpty then s"Gemini CLI returned an error ($details): $message"
+              else s"Gemini CLI returned an error: $message"
+            )
+          case None          =>
+            val content = response.response.map(_.trim).filter(_.nonEmpty)
+            content.toRight("Gemini CLI JSON output did not contain a response")
+      }
+
   def make(config: LlmConfig, executor: GeminiCliExecutor): LlmService =
     new LlmService:
       override def execute(prompt: String): IO[LlmError, LlmResponse] =

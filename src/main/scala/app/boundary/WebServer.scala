@@ -10,6 +10,7 @@ import _root_.config.boundary.{
   WorkflowsController as ConfigWorkflowsController,
 }
 import activity.boundary.ActivityController
+import analysis.control.WorkspaceAnalysisScheduler
 import app.boundary.{ AgentMonitorController as AppAgentMonitorController, HealthController as AppHealthController }
 import conversation.boundary.{
   ChatController as ConversationChatController,
@@ -40,36 +41,37 @@ trait WebServer:
 object WebServer:
 
   val live: ZLayer[
-    TaskRunDashboardController & TaskRunTasksController & TaskRunReportsController & TaskRunGraphController & SettingsBoundaryController & ConfigBoundaryController & ConfigAgentsController & AppAgentMonitorController & ConversationChatController & IssuesIssueController & ConfigWorkflowsController & GatewayTelegramController & ActivityController & MemoryBoundaryController & GatewayChannelController & AppHealthController & TaskRunLogsController & ConversationWebSocketController & WorkspaceRepository & WorkspaceRunService & GitService & AgentRegistry & IssueRepository & McpService,
+    TaskRunDashboardController & TaskRunTasksController & TaskRunReportsController & TaskRunGraphController & SettingsBoundaryController & ConfigBoundaryController & ConfigAgentsController & AppAgentMonitorController & ConversationChatController & IssuesIssueController & ConfigWorkflowsController & GatewayTelegramController & ActivityController & MemoryBoundaryController & GatewayChannelController & AppHealthController & TaskRunLogsController & ConversationWebSocketController & WorkspaceRepository & WorkspaceRunService & GitService & AgentRegistry & IssueRepository & McpService & WorkspaceAnalysisScheduler,
     Nothing,
     WebServer,
   ] = ZLayer {
     for
-      dashboard   <- ZIO.service[TaskRunDashboardController]
-      tasks       <- ZIO.service[TaskRunTasksController]
-      reports     <- ZIO.service[TaskRunReportsController]
-      graph       <- ZIO.service[TaskRunGraphController]
-      settings    <- ZIO.service[SettingsBoundaryController]
-      config      <- ZIO.service[ConfigBoundaryController]
-      agents      <- ZIO.service[ConfigAgentsController]
-      monitor     <- ZIO.service[AppAgentMonitorController]
-      chat        <- ZIO.service[ConversationChatController]
-      issues      <- ZIO.service[IssuesIssueController]
-      workflows   <- ZIO.service[ConfigWorkflowsController]
-      telegram    <- ZIO.service[GatewayTelegramController]
-      activity    <- ZIO.service[ActivityController]
-      memory      <- ZIO.service[MemoryBoundaryController]
-      channels    <- ZIO.service[GatewayChannelController]
-      health      <- ZIO.service[AppHealthController]
-      logs        <- ZIO.service[TaskRunLogsController]
-      websocket   <- ZIO.service[ConversationWebSocketController]
-      wsRepo      <- ZIO.service[WorkspaceRepository]
-      wsRunSvc    <- ZIO.service[WorkspaceRunService]
-      gitService  <- ZIO.service[GitService]
-      agentReg    <- ZIO.service[AgentRegistry]
-      issueRepo   <- ZIO.service[IssueRepository]
-      mcpSvc      <- ZIO.service[McpService]
-      staticRoutes = Routes.serveResources(Path.empty / "static")
+      dashboard         <- ZIO.service[TaskRunDashboardController]
+      tasks             <- ZIO.service[TaskRunTasksController]
+      reports           <- ZIO.service[TaskRunReportsController]
+      graph             <- ZIO.service[TaskRunGraphController]
+      settings          <- ZIO.service[SettingsBoundaryController]
+      config            <- ZIO.service[ConfigBoundaryController]
+      agents            <- ZIO.service[ConfigAgentsController]
+      monitor           <- ZIO.service[AppAgentMonitorController]
+      chat              <- ZIO.service[ConversationChatController]
+      issues            <- ZIO.service[IssuesIssueController]
+      workflows         <- ZIO.service[ConfigWorkflowsController]
+      telegram          <- ZIO.service[GatewayTelegramController]
+      activity          <- ZIO.service[ActivityController]
+      memory            <- ZIO.service[MemoryBoundaryController]
+      channels          <- ZIO.service[GatewayChannelController]
+      health            <- ZIO.service[AppHealthController]
+      logs              <- ZIO.service[TaskRunLogsController]
+      websocket         <- ZIO.service[ConversationWebSocketController]
+      wsRepo            <- ZIO.service[WorkspaceRepository]
+      wsRunSvc          <- ZIO.service[WorkspaceRunService]
+      gitService        <- ZIO.service[GitService]
+      agentReg          <- ZIO.service[AgentRegistry]
+      issueRepo         <- ZIO.service[IssueRepository]
+      mcpSvc            <- ZIO.service[McpService]
+      analysisScheduler <- ZIO.service[WorkspaceAnalysisScheduler]
+      staticRoutes       = Routes.serveResources(Path.empty / "static")
     yield new WebServer {
       override val routes: Routes[Any, Response] =
         dashboard.routes ++ tasks.routes ++ reports.routes ++ graph.routes ++ settings.routes ++ config.routes ++ agents.routes ++ monitor.routes ++ chat.routes ++ issues.routes ++ workflows.routes ++ telegram.routes ++ activity.routes ++ memory.routes ++ channels.routes ++ health.routes ++ logs.routes ++ websocket.routes ++ mcpSvc.controller.routes ++ WorkspacesController.routes(
@@ -78,6 +80,7 @@ object WebServer:
           agentReg,
           issueRepo,
           gitService,
+          analysisScheduler,
         ) ++ staticRoutes
     }
   }

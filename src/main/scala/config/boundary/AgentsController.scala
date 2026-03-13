@@ -10,7 +10,7 @@ import zio.json.*
 import zio.stream.ZStream
 
 import _root_.config.entity.{ AgentChannelBinding, AgentInfo }
-import agent.control.AgentMatching
+import agent.control.{ AgentMatching, BuiltInAgentSynchronizer }
 import agent.entity.api.*
 import agent.entity.{ Agent as RegistryAgent, AgentEvent, AgentRepository }
 import db.{ ConfigRepository, CustomAgentRow, PersistenceError }
@@ -629,35 +629,17 @@ final case class AgentsControllerLive(
 
   private def ensureRegistryMigrated: IO[PersistenceError, Unit] =
     for
-      existing     <- agentRepository.list(includeDeleted = true).mapError(mapAgentRepoError)
-      existingNames = existing.map(_.name.trim.toLowerCase).toSet
-      custom       <- repository.listCustomAgents
-      now          <- Clock.instant
-      migrated      = (seedBuiltInAgents(now) ++ seedCustomAgents(custom))
-                        .filterNot(agent => existingNames.contains(agent.name.trim.toLowerCase))
-      _            <- ZIO.foreachDiscard(migrated)(agent =>
-                        agentRepository.append(AgentEvent.Created(agent, now)).mapError(mapAgentRepoError)
-                      )
+      _             <- BuiltInAgentSynchronizer.sync.provide(ZLayer.succeed(agentRepository)).mapError(mapAgentRepoError)
+      existing      <- agentRepository.list(includeDeleted = true).mapError(mapAgentRepoError)
+      existingByName = existing.map(agent => agent.name.trim.toLowerCase -> agent).toMap
+      custom        <- repository.listCustomAgents
+      now           <- Clock.instant
+      customSeed     = seedCustomAgents(custom)
+      toCreate       = customSeed.filterNot(agent => existingByName.contains(agent.name.trim.toLowerCase))
+      _             <- ZIO.foreachDiscard(toCreate)(agent =>
+                         agentRepository.append(AgentEvent.Created(agent, now)).mapError(mapAgentRepoError)
+                       )
     yield ()
-
-  private def seedBuiltInAgents(now: Instant): List[RegistryAgent] =
-    AgentRegistry.builtInAgents.map { info =>
-      RegistryAgent(
-        id = AgentId.generate,
-        name = info.name,
-        description = info.description,
-        cliTool = inferCliTool(info.name),
-        capabilities = info.tags,
-        defaultModel = None,
-        systemPrompt = None,
-        maxConcurrentRuns = 1,
-        envVars = Map.empty,
-        timeout = Duration.ofMinutes(30),
-        enabled = true,
-        createdAt = now,
-        updatedAt = now,
-      )
-    }
 
   private def seedCustomAgents(custom: List[CustomAgentRow]): List[RegistryAgent] =
     custom.map { row =>

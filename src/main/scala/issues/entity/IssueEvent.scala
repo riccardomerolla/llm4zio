@@ -6,7 +6,7 @@ import zio.json.JsonCodec
 import zio.schema.annotation.fieldDefaultValue
 import zio.schema.{ Schema, derived }
 
-import shared.ids.Ids.{ AgentId, IssueId }
+import shared.ids.Ids.{ AgentId, AnalysisDocId, IssueId }
 
 sealed trait IssueEvent derives JsonCodec, Schema:
   def issueId: IssueId
@@ -150,6 +150,13 @@ object IssueEvent:
   final case class AcceptanceCriteriaUpdated(
     issueId: IssueId,
     acceptanceCriteria: String,
+    occurredAt: Instant,
+  ) extends IssueEvent
+
+  final case class AnalysisAttached(
+    issueId: IssueId,
+    @fieldDefaultValue(Nil) analysisDocIds: List[AnalysisDocId] = Nil,
+    attachedAt: Instant,
     occurredAt: Instant,
   ) extends IssueEvent
 

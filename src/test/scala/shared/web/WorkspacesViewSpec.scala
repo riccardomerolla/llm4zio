@@ -5,6 +5,8 @@ import java.time.Instant
 import zio.test.*
 
 import _root_.config.entity.{ AgentInfo, AgentType }
+import analysis.control.{ WorkspaceAnalysisState, WorkspaceAnalysisStatus }
+import analysis.entity.AnalysisType
 import workspace.entity.{ RunMode, RunStatus, Workspace, WorkspaceRun }
 
 object WorkspacesViewSpec extends ZIOSpecDefault:
@@ -87,6 +89,37 @@ object WorkspacesViewSpec extends ZIOSpecDefault:
     test("workspace card with RunMode.Docker renders 'Docker' and image name") {
       val html = WorkspacesView.page(List(dockerWs), sampleAgents)
       assertTrue(html.contains("Docker") && html.contains("gemini:latest"))
+    },
+    test("detail page renders re-analyze button and analysis statuses") {
+      val html = WorkspacesView.detailPage(
+        sampleWs,
+        sampleAgents,
+        List(
+          WorkspaceAnalysisStatus(
+            workspaceId = sampleWs.id,
+            analysisType = AnalysisType.CodeReview,
+            state = WorkspaceAnalysisState.Running,
+            startedAt = Some(Instant.parse("2026-02-24T10:30:00Z")),
+            lastUpdatedAt = Instant.parse("2026-02-24T10:30:00Z"),
+          ),
+          WorkspaceAnalysisStatus(
+            workspaceId = sampleWs.id,
+            analysisType = AnalysisType.Architecture,
+            state = WorkspaceAnalysisState.Completed,
+            startedAt = Some(Instant.parse("2026-02-24T10:31:00Z")),
+            completedAt = Some(Instant.parse("2026-02-24T10:32:00Z")),
+            lastUpdatedAt = Instant.parse("2026-02-24T10:32:00Z"),
+          ),
+        ),
+      )
+      assertTrue(
+        html.contains("Analysis Status"),
+        html.contains("Re-analyze"),
+        html.contains("Code Review"),
+        html.contains("Architecture"),
+        html.contains("Running"),
+        html.contains("Completed"),
+      )
     },
     test("runsDashboardPage renders dashboard table and quick actions") {
       val runningRun = sampleRun.copy(status = RunStatus.Running(workspace.entity.RunSessionMode.Autonomous))

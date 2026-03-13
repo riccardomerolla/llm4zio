@@ -3,6 +3,7 @@ package mcp
 import zio.*
 
 import agent.entity.AgentRepository
+import analysis.entity.AnalysisRepository
 import issues.entity.IssueRepository
 import llm4zio.mcp.server.{ McpError, McpServer }
 import llm4zio.mcp.transport.SseTransport
@@ -32,11 +33,12 @@ object McpService:
     wsRepo: WorkspaceRepository,
     runService: WorkspaceRunService,
     memoryRepo: MemoryRepository,
+    analysisRepo: AnalysisRepository,
   ): ZIO[Scope, Nothing, McpService] =
     for
       transport <- SseTransport.make(apiKey)
       registry  <- ToolRegistry.make
-      tools      = GatewayMcpTools(issueRepo, agentRepo, wsRepo, runService, memoryRepo)
+      tools      = GatewayMcpTools(issueRepo, agentRepo, wsRepo, runService, memoryRepo, analysisRepo)
       _         <- registry.registerAll(tools.all).mapError(e => new RuntimeException(e.toString)).orDie
       server    <- McpServer.make(registry, transport)
       fiber     <- server.start.forkScoped
@@ -45,24 +47,26 @@ object McpService:
 
   /** ZLayer for wiring into ApplicationDI. */
   val live: ZLayer[
-    IssueRepository & AgentRepository & WorkspaceRepository & WorkspaceRunService & MemoryRepository,
+    IssueRepository & AgentRepository & WorkspaceRepository & WorkspaceRunService & MemoryRepository & AnalysisRepository,
     Nothing,
     McpService,
   ] =
     ZLayer.scoped {
       for
-        issueRepo  <- ZIO.service[IssueRepository]
-        agentRepo  <- ZIO.service[AgentRepository]
-        wsRepo     <- ZIO.service[WorkspaceRepository]
-        runService <- ZIO.service[WorkspaceRunService]
-        memoryRepo <- ZIO.service[MemoryRepository]
-        svc        <- make(
-                        apiKey = None, // can be configured via GatewayConfig.mcp.apiKey later
-                        issueRepo,
-                        agentRepo,
-                        wsRepo,
-                        runService,
-                        memoryRepo,
-                      )
+        issueRepo    <- ZIO.service[IssueRepository]
+        agentRepo    <- ZIO.service[AgentRepository]
+        wsRepo       <- ZIO.service[WorkspaceRepository]
+        runService   <- ZIO.service[WorkspaceRunService]
+        memoryRepo   <- ZIO.service[MemoryRepository]
+        analysisRepo <- ZIO.service[AnalysisRepository]
+        svc          <- make(
+                          apiKey = None, // can be configured via GatewayConfig.mcp.apiKey later
+                          issueRepo,
+                          agentRepo,
+                          wsRepo,
+                          runService,
+                          memoryRepo,
+                          analysisRepo,
+                        )
       yield svc
     }

@@ -8,13 +8,14 @@ import zio.test.*
 import activity.control.ActivityHub
 import activity.entity.ActivityEvent
 import agent.entity.{ Agent, AgentRepository }
+import analysis.entity.{ AnalysisDoc, AnalysisRepository, AnalysisType }
 import conversation.entity.api.{ ChatConversation, ConversationEntry }
 import db.{ PersistenceError as DbPersistenceError, * }
 import issues.entity.{ AgentIssue, IssueEvent, IssueFilter, IssueRepository, IssueState }
 import orchestration.control.{ AutoDispatcherLive, DependencyResolver, SlotHandle }
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ AgentId, ConversationId, IssueId, TaskRunId }
-import workspace.entity.*
+import workspace.entity.{ RunStatus as WorkspaceRunStatus, * }
 
 object WorkspaceRunServiceSpec extends ZIOSpecDefault:
 
@@ -45,7 +46,23 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
       eventsRef.update(_ :+ event)
 
     def get(id: IssueId): IO[PersistenceError, issues.entity.AgentIssue] =
-      ZIO.fail(PersistenceError.NotFound("issue", id.value))
+      ZIO.succeed(
+        AgentIssue(
+          id = id,
+          runId = None,
+          conversationId = None,
+          title = s"Issue ${id.value}",
+          description = "desc",
+          issueType = "task",
+          priority = "medium",
+          requiredCapabilities = Nil,
+          state = IssueState.InProgress(AgentId("echo"), Instant.parse("2026-02-24T10:00:00Z")),
+          tags = Nil,
+          contextPath = "",
+          sourceFolder = "",
+          workspaceId = Some("ws-1"),
+        )
+      )
 
     def history(id: IssueId): IO[PersistenceError, List[IssueEvent]] =
       ZIO.succeed(Nil)
@@ -54,6 +71,27 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
       ZIO.succeed(Nil)
 
     def delete(id: IssueId): IO[PersistenceError, Unit] = ZIO.unit
+
+  private object StubAnalysisRepo extends AnalysisRepository:
+    def append(event: analysis.entity.AnalysisEvent): IO[PersistenceError, Unit]        = ZIO.unit
+    def get(id: shared.ids.Ids.AnalysisDocId): IO[PersistenceError, AnalysisDoc]        =
+      ZIO.fail(PersistenceError.NotFound("analysis_doc", id.value))
+    def listByWorkspace(workspaceId: String): IO[PersistenceError, List[AnalysisDoc]]   =
+      ZIO.succeed(
+        List(
+          AnalysisDoc(
+            id = shared.ids.Ids.AnalysisDocId("analysis-code-review"),
+            workspaceId = workspaceId,
+            analysisType = AnalysisType.CodeReview,
+            content = "review",
+            filePath = ".llm4zio/analysis/code-review.md",
+            generatedBy = AgentId("reviewer"),
+            createdAt = Instant.parse("2026-02-24T10:00:00Z"),
+            updatedAt = Instant.parse("2026-02-24T10:05:00Z"),
+          )
+        )
+      )
+    def listByType(analysisType: AnalysisType): IO[PersistenceError, List[AnalysisDoc]] = ZIO.succeed(Nil)
 
   // In-memory event-sourced stub WorkspaceRepository
   private class StubWorkspaceRepo(
@@ -114,7 +152,7 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
             conversationId = e.conversationId,
             worktreePath = e.worktreePath,
             branchName = e.branchName,
-            status = RunStatus.Pending,
+            status = WorkspaceRunStatus.Pending,
             attachedUsers = Set.empty,
             controllerUserId = None,
             createdAt = e.occurredAt,
@@ -156,7 +194,7 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
             m.get(e.runId).fold(m)(r =>
               m + (
                 e.runId -> r.copy(
-                  status = RunStatus.Running(RunSessionMode.Paused),
+                  status = WorkspaceRunStatus.Running(RunSessionMode.Paused),
                   attachedUsers = r.attachedUsers + e.userId,
                   controllerUserId = Some(e.userId),
                   updatedAt = e.occurredAt,
@@ -169,7 +207,7 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
             m.get(e.runId).fold(m)(r =>
               m + (
                 e.runId -> r.copy(
-                  status = RunStatus.Running(RunSessionMode.Interactive),
+                  status = WorkspaceRunStatus.Running(RunSessionMode.Interactive),
                   attachedUsers = r.attachedUsers + e.userId,
                   controllerUserId = Some(e.userId),
                   updatedAt = e.occurredAt,
@@ -235,6 +273,7 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
           wsRepo,
           chatRepo,
           StubIssueRepo,
+          StubAnalysisRepo,
           worktreeAdd = noopWorktreeAdd,
           worktreeRemove = noopWorktreeRemove,
           dockerCheck = dockerCheck,
@@ -263,6 +302,7 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
                        wsRepo,
                        chatRepo,
                        issueRepo,
+                       StubAnalysisRepo,
                        worktreeAdd = noopWorktreeAdd,
                        worktreeRemove = noopWorktreeRemove,
                        runCliAgent = runCliAgent,
@@ -368,7 +408,9 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
         _                <- ZIO.sleep(500.millis)
         saved            <- wsRepo.getRun(run.id)
       yield assertTrue(saved.exists(r =>
-        r.status == RunStatus.Completed || r.status == RunStatus.Running(RunSessionMode.Autonomous)
+        r.status == WorkspaceRunStatus.Completed || r.status == WorkspaceRunStatus.Running(
+          RunSessionMode.Autonomous
+        )
       ))
     } @@ TestAspect.withLiveClock,
     test("executeInFiber respects timeout and marks run Failed") {
@@ -383,6 +425,7 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
                       wsRepo,
                       chatRepo,
                       StubIssueRepo,
+                      StubAnalysisRepo,
                       timeoutSeconds = 0,
                       worktreeAdd = noopWorktreeAdd,
                       worktreeRemove = noopWorktreeRemove,
@@ -395,7 +438,11 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
         _        <- ZIO.sleep(300.millis)
         runs     <- wsRepo.listRuns("ws-1")
       // Status is either Failed (timeout fired) or Pending (git worktree add failed before fork)
-      yield assertTrue(runs.isEmpty || runs.forall(r => r.status == RunStatus.Failed || r.status == RunStatus.Pending))
+      yield assertTrue(
+        runs.isEmpty || runs.forall(r =>
+          r.status == WorkspaceRunStatus.Failed || r.status == WorkspaceRunStatus.Pending
+        )
+      )
     } @@ TestAspect.withLiveClock,
     test("assign succeeds when workspace has RunMode.Host even when dockerCheck would fail") {
       for
@@ -427,6 +474,7 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
                       wsRepo,
                       StubChatRepo(messages),
                       StubIssueRepo,
+                      StubAnalysisRepo,
                       worktreeAdd = noopWorktreeAdd,
                       worktreeRemove = noopWorktreeRemove,
                       runCliAgent = neverCliAgent,
@@ -438,7 +486,7 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
         _        <- svc.cancelRun(run.id)
         _        <- ZIO.sleep(100.millis) // let onExit finalizer persist Cancelled status
         saved    <- wsRepo.getRun(run.id)
-      yield assertTrue(saved.exists(_.status == RunStatus.Cancelled))
+      yield assertTrue(saved.exists(_.status == WorkspaceRunStatus.Cancelled))
     } @@ TestAspect.withLiveClock,
     test("cancelRun on unknown runId fails with NotFound") {
       for
@@ -460,7 +508,12 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
         events.exists {
           case IssueEvent.MovedToHumanReview(issueId, _, _) => issueId.value == "sync-complete"
           case _                                            => false
-        }
+        },
+        events.exists {
+          case IssueEvent.AnalysisAttached(issueId, docIds, _, _) =>
+            issueId.value == "sync-complete" && docIds == List(shared.ids.Ids.AnalysisDocId("analysis-code-review"))
+          case _                                                  => false
+        },
       )
     } @@ TestAspect.withLiveClock,
     test("failed workspace run moves issue to Rework") {

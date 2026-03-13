@@ -156,7 +156,7 @@ object AgentRegistry:
       description = "Assists with coding tasks: generation, review, debugging, and explanation.",
       agentType = AgentType.BuiltIn,
       usesAI = true,
-      tags = List("code", "generation", "review"),
+      tags = List("code", "generation", "review", "code-generation", "code-review"),
       skills = List(
         AgentSkill(
           skill = "code-generation",
@@ -172,6 +172,46 @@ object AgentRegistry:
           outputTypes = List("ReviewReport"),
           constraints = List(AgentConstraint.RequiresAI, AgentConstraint.MaxExecutionSeconds(180)),
         ),
+      ),
+      supportedSteps = Nil,
+      version = "1.0.0",
+    ),
+    AgentInfo(
+      name = "architecture-agent",
+      handle = "architecture-agent",
+      displayName = "Architecture Agent",
+      description = "Reviews codebases for module boundaries, dependencies, and architectural risks.",
+      agentType = AgentType.BuiltIn,
+      usesAI = true,
+      tags = List("architecture", "architecture-analysis", "design", "code-review"),
+      skills = List(
+        AgentSkill(
+          skill = "architecture-analysis",
+          description = "Analyze repository structure, coupling, and architectural decisions",
+          inputTypes = List("TaskContext", "SourceCode", "Repository"),
+          outputTypes = List("ArchitectureReport", "ReviewReport"),
+          constraints = List(AgentConstraint.RequiresAI, AgentConstraint.MaxExecutionSeconds(240)),
+        )
+      ),
+      supportedSteps = Nil,
+      version = "1.0.0",
+    ),
+    AgentInfo(
+      name = "security-agent",
+      handle = "security-agent",
+      displayName = "Security Agent",
+      description = "Reviews code and configuration for security weaknesses and exposure risks.",
+      agentType = AgentType.BuiltIn,
+      usesAI = true,
+      tags = List("security", "security-analysis", "security-review", "code-review"),
+      skills = List(
+        AgentSkill(
+          skill = "security-analysis",
+          description = "Inspect source and configuration for security vulnerabilities and OWASP risks",
+          inputTypes = List("TaskContext", "SourceCode", "Repository", "Configuration"),
+          outputTypes = List("SecurityReport", "ReviewReport"),
+          constraints = List(AgentConstraint.RequiresAI, AgentConstraint.MaxExecutionSeconds(240)),
+        )
       ),
       supportedSteps = Nil,
       version = "1.0.0",

@@ -8,7 +8,7 @@ import config.entity.{ AgentInfo, WorkflowDefinition }
 import conversation.entity.api.{ ChatConversation, ConversationEntry, ConversationSessionMeta }
 import db.{ TaskReportRow, TaskRunRow }
 import gateway.entity.ChatSession
-import issues.entity.api.{ AgentIssueView, DispatchStatusResponse, IssueTemplate }
+import issues.entity.api.{ AgentIssueView, AnalysisContextDocView, DispatchStatusResponse, IssueTemplate }
 import shared.ids.Ids.IssueId
 import workspace.entity.WorkspaceRun
 
@@ -270,9 +270,10 @@ object HtmlViews:
     issue: AgentIssueView,
     issueRuns: List[WorkspaceRun],
     availableAgents: List[AgentInfo],
+    analysisDocs: List[AnalysisContextDocView],
     workspaces: List[(String, String)],
   ): String =
-    IssuesView.detail(issue, issueRuns, availableAgents, workspaces)
+    IssuesView.detail(issue, issueRuns, availableAgents, analysisDocs, workspaces)
 
   def issueEditForm(issue: AgentIssueView, workspaces: List[(String, String)]): String =
     IssuesView.editForm(issue, workspaces)

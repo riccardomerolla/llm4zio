@@ -5,7 +5,7 @@ import java.time.Instant
 import zio.test.*
 
 import config.entity.{ AgentInfo, AgentType }
-import issues.entity.api.{ AgentIssueView, IssuePriority, IssueStatus, IssueTemplate, TemplateVariable }
+import issues.entity.api.*
 
 object IssuesViewSpec extends ZIOSpecDefault:
 
@@ -121,6 +121,7 @@ object IssuesViewSpec extends ZIOSpecDefault:
             tags = List("code"),
           )
         ),
+        analysisDocs = Nil,
         workspaces = List("ws-1" -> "Main Workspace"),
       )
       assertTrue(
@@ -186,12 +187,45 @@ object IssuesViewSpec extends ZIOSpecDefault:
         issue = issue,
         issueRuns = Nil,
         availableAgents = Nil,
+        analysisDocs = Nil,
         workspaces = Nil,
       )
       assertTrue(
         html.contains("External"),
         html.contains("GH:owner/repo#42"),
         html.contains("https://github.com/owner/repo/issues/42"),
+      )
+    },
+    test("detail renders analysis context tab and vscode deep links") {
+      val now  = Instant.parse("2026-03-02T10:00:00Z")
+      val html = IssuesView.detail(
+        issue = AgentIssueView(
+          id = Some("analysis-issue"),
+          title = "Review me",
+          description = "Task",
+          issueType = "task",
+          status = IssueStatus.HumanReview,
+          createdAt = now,
+          updatedAt = now,
+        ),
+        issueRuns = Nil,
+        availableAgents = Nil,
+        analysisDocs = List(
+          AnalysisContextDocView(
+            title = "Architecture",
+            content = "## Risks\n\n- Tight coupling",
+            filePath = ".llm4zio/analysis/architecture.md",
+            vscodeUrl = Some("vscode://file/Users/riccardo/repo/.llm4zio/analysis/architecture.md"),
+          )
+        ),
+        workspaces = Nil,
+      )
+      assertTrue(
+        html.contains("Analysis Context"),
+        html.contains("Open in VSCode"),
+        html.contains("vscode://file/Users/riccardo/repo/.llm4zio/analysis/architecture.md"),
+        html.contains(".llm4zio/analysis/architecture.md"),
+        html.contains("Tight coupling"),
       )
     },
   )
