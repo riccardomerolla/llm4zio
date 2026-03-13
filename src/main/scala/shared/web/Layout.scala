@@ -203,6 +203,7 @@ object Layout:
         li(
           div(cls := "text-xs/6 font-semibold uppercase tracking-wide text-gray-400")("Configure"),
           ul(attr("role") := "list", cls := "-mx-2 mt-2 space-y-1")(
+            navItem("/projects", "Projects", Icons.workflow, currentPath.startsWith("/projects")),
             navItem(
               "/workspaces",
               "Workspaces",

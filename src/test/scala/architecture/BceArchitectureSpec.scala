@@ -11,10 +11,10 @@ import zio.test.*
 object BceArchitectureSpec extends ZIOSpecDefault:
 
   private val componentPattern: Regex =
-    raw"^(activity|app|config|conversation|gateway|issues|memory|taskrun|orchestration)\.(boundary|control|entity)(?:\.|$$)".r
+    raw"^(activity|app|config|conversation|gateway|issues|memory|project|taskrun|orchestration)\.(boundary|control|entity)(?:\.|$$)".r
 
   private val importPattern: Regex =
-    raw"(?:^|\s|,)(?:_root_\.)?(activity|app|config|conversation|gateway|issues|memory|taskrun|orchestration)\.(boundary|control|entity)(?:\.|[\{\s,]|$$)".r
+    raw"(?:^|\s|,)(?:_root_\.)?(activity|app|config|conversation|gateway|issues|memory|project|taskrun|orchestration)\.(boundary|control|entity)(?:\.|[\{\s,]|$$)".r
 
   final private case class BceFile(path: Path, component: String, layer: String, imports: List[(Int, String, String)])
 

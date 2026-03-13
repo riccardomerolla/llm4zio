@@ -64,6 +64,17 @@ object Ids:
     given JsonCodec[AnalysisDocId] = JsonCodec.string.transform(AnalysisDocId.apply, _.value)
     given Schema[AnalysisDocId]    = stringSchema.transform(AnalysisDocId.apply, _.value)
 
+  opaque type ProjectId = String
+  object ProjectId:
+    def apply(value: String): ProjectId = value
+    def generate: ProjectId             = randomId()
+
+    extension (id: ProjectId)
+      def value: String = id
+
+    given JsonCodec[ProjectId] = JsonCodec.string.transform(ProjectId.apply, _.value)
+    given Schema[ProjectId]    = stringSchema.transform(ProjectId.apply, _.value)
+
   opaque type AssignmentId = String
   object AssignmentId:
     def apply(value: String): AssignmentId = value

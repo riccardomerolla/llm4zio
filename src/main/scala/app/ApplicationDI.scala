@@ -57,6 +57,7 @@ import orchestration.control.{
   IssueAssignmentOrchestrator as OrchestrationIssueAssignmentOrchestrator,
   ProgressTracker as OrchestrationProgressTracker,
 }
+import project.entity.ProjectRepository
 import shared.store.{ ConfigStoreModule, DataStoreModule, MemoryStoreModule, StoreConfig }
 import shared.web.StreamAbortRegistry
 import sttp.client4.DefaultFutureBackend
@@ -253,6 +254,7 @@ object ApplicationDI:
       OrchestrationIssueAssignmentOrchestrator.live,
       StreamAbortRegistry.live,
       ToolRegistry.layer,
+      ProjectRepository.live,
       WorkspaceRepository.live,
       AgentEventStoreES.live,
       AgentRepositoryES.live,
