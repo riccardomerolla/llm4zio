@@ -72,6 +72,12 @@ object ChatView:
             h1(cls := "text-2xl font-semibold text-white")("New chat"),
             p(cls := "mt-1 text-[11px] text-gray-400")("Pick a workspace and send your first message."),
           ),
+          div(cls := "rounded-lg border border-cyan-400/20 bg-cyan-500/10 p-3 text-[11px] text-cyan-100")(
+            span(cls := "font-semibold")("Need structured issue planning? "),
+            a(href := "/planner", cls := "underline decoration-cyan-300/60 underline-offset-2 hover:text-white")(
+              "Open the planner agent"
+            ),
+          ),
           form(action := "/chat/new", method := "post", cls := "space-y-3")(
             label(cls := "block text-[11px] font-semibold uppercase tracking-wide text-gray-400")(
               "Workspace",

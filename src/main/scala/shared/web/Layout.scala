@@ -197,6 +197,7 @@ object Layout:
               Icons.tableColumns,
               currentPath.startsWith("/board") || currentPath.startsWith("/issues/board"),
             ),
+            navItem("/planner", "Planner", Icons.workflow, currentPath.startsWith("/planner")),
             chatWorkspaceNav.fold[Frag](deferredChatWorkspacesTree(currentPath))(chatWorkspacesTree),
           ),
         ),

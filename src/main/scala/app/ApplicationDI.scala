@@ -52,6 +52,7 @@ import llm4zio.tools.{ AnyTool, JsonSchema, ToolRegistry }
 import memory.boundary.MemoryController as MemoryBoundaryController
 import memory.control.{ EmbeddingService, MemoryRepositoryES }
 import memory.entity.*
+import orchestration.boundary.PlannerController
 import orchestration.control.*
 import orchestration.control.{
   IssueAssignmentOrchestrator as OrchestrationIssueAssignmentOrchestrator,
@@ -262,6 +263,7 @@ object ApplicationDI:
       RunSessionManager.live,
       IssueEventStoreES.live,
       IssueRepositoryES.live,
+      PlannerAgentService.live,
       AnalysisEventStoreES.live,
       AnalysisRepositoryES.live,
       AnalysisAgentRunner.live,
@@ -281,6 +283,7 @@ object ApplicationDI:
       AppHealthController.live,
       GatewayTelegramController.live,
       ConversationWebSocketController.live,
+      PlannerController.live,
       mcp.McpService.live,
       WebServer.live,
     ) >>> ZLayer.service[WebServer]

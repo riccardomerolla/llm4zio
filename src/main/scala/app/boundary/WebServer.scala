@@ -24,6 +24,7 @@ import issues.boundary.IssueController as IssuesIssueController
 import issues.entity.IssueRepository
 import mcp.McpService
 import memory.boundary.MemoryController as MemoryBoundaryController
+import orchestration.boundary.PlannerController
 import orchestration.control.AgentRegistry
 import project.boundary.ProjectsController
 import project.entity.ProjectRepository
@@ -43,7 +44,7 @@ trait WebServer:
 object WebServer:
 
   val live: ZLayer[
-    TaskRunDashboardController & TaskRunTasksController & TaskRunReportsController & TaskRunGraphController & SettingsBoundaryController & ConfigBoundaryController & ConfigAgentsController & AppAgentMonitorController & ConversationChatController & IssuesIssueController & ConfigWorkflowsController & GatewayTelegramController & ActivityController & MemoryBoundaryController & GatewayChannelController & AppHealthController & TaskRunLogsController & ConversationWebSocketController & WorkspaceRepository & WorkspaceRunService & GitService & AgentRegistry & IssueRepository & ProjectRepository & McpService & WorkspaceAnalysisScheduler,
+    TaskRunDashboardController & TaskRunTasksController & TaskRunReportsController & TaskRunGraphController & SettingsBoundaryController & ConfigBoundaryController & ConfigAgentsController & AppAgentMonitorController & ConversationChatController & IssuesIssueController & ConfigWorkflowsController & GatewayTelegramController & ActivityController & MemoryBoundaryController & GatewayChannelController & AppHealthController & TaskRunLogsController & ConversationWebSocketController & WorkspaceRepository & WorkspaceRunService & GitService & AgentRegistry & IssueRepository & ProjectRepository & PlannerController & McpService & WorkspaceAnalysisScheduler,
     Nothing,
     WebServer,
   ] = ZLayer {
@@ -72,12 +73,13 @@ object WebServer:
       agentReg          <- ZIO.service[AgentRegistry]
       issueRepo         <- ZIO.service[IssueRepository]
       projectRepo       <- ZIO.service[ProjectRepository]
+      plannerController <- ZIO.service[PlannerController]
       mcpSvc            <- ZIO.service[McpService]
       analysisScheduler <- ZIO.service[WorkspaceAnalysisScheduler]
       staticRoutes       = Routes.serveResources(Path.empty / "static")
     yield new WebServer {
       override val routes: Routes[Any, Response] =
-        dashboard.routes ++ tasks.routes ++ reports.routes ++ graph.routes ++ settings.routes ++ config.routes ++ agents.routes ++ monitor.routes ++ chat.routes ++ issues.routes ++ workflows.routes ++ telegram.routes ++ activity.routes ++ memory.routes ++ channels.routes ++ health.routes ++ logs.routes ++ websocket.routes ++ mcpSvc.controller.routes ++ ProjectsController.routes(
+        dashboard.routes ++ tasks.routes ++ reports.routes ++ graph.routes ++ settings.routes ++ config.routes ++ agents.routes ++ monitor.routes ++ chat.routes ++ issues.routes ++ workflows.routes ++ telegram.routes ++ activity.routes ++ memory.routes ++ channels.routes ++ health.routes ++ logs.routes ++ websocket.routes ++ plannerController.routes ++ mcpSvc.controller.routes ++ ProjectsController.routes(
           projectRepo
         ) ++ WorkspacesController.routes(
           wsRepo,
