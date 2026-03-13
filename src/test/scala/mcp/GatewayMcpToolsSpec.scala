@@ -22,6 +22,7 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
     override def append(event: IssueEvent): IO[PersistenceError, Unit]             = ZIO.unit
     override def get(id: IssueId): IO[PersistenceError, AgentIssue]                =
       ZIO.fail(PersistenceError.NotFound("issue", id.value))
+    override def history(id: IssueId): IO[PersistenceError, List[IssueEvent]]      = ZIO.succeed(Nil)
     override def list(filter: IssueFilter): IO[PersistenceError, List[AgentIssue]] = ZIO.succeed(Nil)
     override def delete(id: IssueId): IO[PersistenceError, Unit]                   = ZIO.unit
 
@@ -52,7 +53,7 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
 
   private val stubWorkspaceRepo: WorkspaceRepository = new WorkspaceRepository:
     import workspace.entity.*
-    private val testWorkspace                                                            = Workspace(
+    private val testWorkspace                                                                   = Workspace(
       id = "ws1",
       name = "main-repo",
       localPath = "/repos/main",
@@ -64,15 +65,15 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
       createdAt = java.time.Instant.EPOCH,
       updatedAt = java.time.Instant.EPOCH,
     )
-    override def append(event: WorkspaceEvent): IO[PersistenceError, Unit]               = ZIO.unit
-    override def list: IO[PersistenceError, List[Workspace]]                             = ZIO.succeed(List(testWorkspace))
-    override def get(id: String): IO[PersistenceError, Option[Workspace]]                = list.map(_.find(_.id == id))
-    override def delete(id: String): IO[PersistenceError, Unit]                          = ZIO.unit
-    override def appendRun(event: WorkspaceRunEvent): IO[PersistenceError, Unit]         = ZIO.unit
-    override def listRuns(workspaceId: String): IO[PersistenceError, List[WorkspaceRun]] = ZIO.succeed(Nil)
+    override def append(event: WorkspaceEvent): IO[PersistenceError, Unit]                      = ZIO.unit
+    override def list: IO[PersistenceError, List[Workspace]]                                    = ZIO.succeed(List(testWorkspace))
+    override def get(id: String): IO[PersistenceError, Option[Workspace]]                       = list.map(_.find(_.id == id))
+    override def delete(id: String): IO[PersistenceError, Unit]                                 = ZIO.unit
+    override def appendRun(event: WorkspaceRunEvent): IO[PersistenceError, Unit]                = ZIO.unit
+    override def listRuns(workspaceId: String): IO[PersistenceError, List[WorkspaceRun]]        = ZIO.succeed(Nil)
     override def listRunsByIssueRef(issueRef: String): IO[PersistenceError, List[WorkspaceRun]] =
       ZIO.succeed(Nil)
-    override def getRun(id: String): IO[PersistenceError, Option[WorkspaceRun]]          = ZIO.succeed(None)
+    override def getRun(id: String): IO[PersistenceError, Option[WorkspaceRun]]                 = ZIO.succeed(None)
 
   private val stubRunService: WorkspaceRunService = new WorkspaceRunService:
     override def assign(workspaceId: String, req: AssignRunRequest): IO[WorkspaceError, WorkspaceRun] =
@@ -148,6 +149,8 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
                               appendedRef.set(Some(event))
                             override def get(id: IssueId): IO[PersistenceError, AgentIssue]                =
                               ZIO.fail(PersistenceError.NotFound("issue", id.value))
+                            override def history(id: IssueId): IO[PersistenceError, List[IssueEvent]]      =
+                              ZIO.succeed(Nil)
                             override def list(filter: IssueFilter): IO[PersistenceError, List[AgentIssue]] =
                               ZIO.succeed(Nil)
                             override def delete(id: IssueId): IO[PersistenceError, Unit]                   = ZIO.unit

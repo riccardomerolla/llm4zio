@@ -160,4 +160,36 @@ object IssueRepositoryESSpec extends ZIOSpecDefault:
           )).provideLayer(layerFor(path))
         }
       },
+      test("dependency and prompt events update projection and derived blocking relationships") {
+        withTempDir { path =>
+          val blockerId = Ids.IssueId("issue-7")
+          val blockedId = Ids.IssueId("issue-8")
+          val now       = Instant.parse("2026-03-02T09:50:00Z")
+          (for
+            repo      <- ZIO.service[IssueRepository]
+            _         <- repo.append(IssueEvent.Created(blockerId, "Blocker", "Unblock downstream", "task", "high", now))
+            _         <- repo.append(IssueEvent.Created(blockedId, "Blocked", "Wait on blocker", "task", "medium", now))
+            _         <- repo.append(IssueEvent.DependencyLinked(blockedId, blockerId, now.plusSeconds(1)))
+            _         <- repo.append(IssueEvent.PromptTemplateUpdated(
+                           blockedId,
+                           "Implement ${title} after dependencies are done.",
+                           now.plusSeconds(2),
+                         ))
+            _         <- repo.append(IssueEvent.AcceptanceCriteriaUpdated(
+                           blockedId,
+                           "Tests pass and reviewer can merge directly.",
+                           now.plusSeconds(3),
+                         ))
+            blocker   <- repo.get(blockerId)
+            blocked   <- repo.get(blockedId)
+            allIssues <- repo.list(IssueFilter(limit = 10))
+          yield assertTrue(
+            blocked.blockedBy == List(blockerId),
+            blocked.promptTemplate.contains("Implement ${title} after dependencies are done."),
+            blocked.acceptanceCriteria.contains("Tests pass and reviewer can merge directly."),
+            blocker.blocking == List(blockedId),
+            allIssues.find(_.id == blockerId).exists(_.blocking == List(blockedId)),
+          )).provideLayer(layerFor(path))
+        }
+      },
     ) @@ TestAspect.sequential

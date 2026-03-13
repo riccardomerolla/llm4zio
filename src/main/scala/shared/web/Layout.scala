@@ -25,7 +25,11 @@ object Layout:
     expanded: Boolean = false,
   )
 
-  final case class ChatWorkspaceNav(groups: List[ChatWorkspaceGroup], showNewChat: Boolean = true)
+  final case class ChatWorkspaceNav(
+    groups: List[ChatWorkspaceGroup],
+    showNewChat: Boolean = true,
+    renderedAt: java.time.Instant = java.time.Instant.EPOCH,
+  )
 
   def page(
     pageTitleText: String,
@@ -219,8 +223,7 @@ object Layout:
       )
     )
 
-  private def relativeTime(instant: java.time.Instant): String =
-    val now     = java.time.Instant.now()
+  private def relativeTime(instant: java.time.Instant, now: java.time.Instant): String =
     val minutes = java.time.temporal.ChronoUnit.MINUTES.between(instant, now)
     val hours   = java.time.temporal.ChronoUnit.HOURS.between(instant, now)
     val days    = java.time.temporal.ChronoUnit.DAYS.between(instant, now)
@@ -307,7 +310,7 @@ object Layout:
                   )(
                     div(cls := "truncate text-sm font-medium text-white leading-snug")(chat.title),
                     div(cls := "flex items-center gap-1.5 text-[10px] text-gray-500 leading-none")(
-                      s"${chat.messageCount} msgs · ${relativeTime(chat.createdAt)}"
+                      s"${chat.messageCount} msgs · ${relativeTime(chat.createdAt, nav.renderedAt)}"
                     ),
                   )
                 )

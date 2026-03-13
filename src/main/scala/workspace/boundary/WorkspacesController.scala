@@ -374,7 +374,11 @@ object WorkspacesController:
         issueRepo
           .list(
             issues.entity.IssueFilter(
-              states = Set(issues.entity.IssueStateTag.Backlog, issues.entity.IssueStateTag.Todo, issues.entity.IssueStateTag.Open),
+              states = Set(
+                issues.entity.IssueStateTag.Backlog,
+                issues.entity.IssueStateTag.Todo,
+                issues.entity.IssueStateTag.Open,
+              ),
               limit = 20,
             )
           )
@@ -634,11 +638,12 @@ object WorkspacesController:
                                if merged then
                                  s"Applied '$sourceBranch' into '$target' and synced ${syncResult._1} file(s), deleted ${syncResult._2}."
                                else
-                                 s"Merge into '$target' was skipped; applied '$sourceBranch' changes via file sync and synced ${syncResult._1} file(s), deleted ${syncResult._2}.",
-                              sourceBranch = sourceBranch,
-                              targetBranch = Some(target),
-                              output = Some(merge._2).filter(_.trim.nonEmpty),
-                            ).toJson
+                                 s"Merge into '$target' was skipped; applied '$sourceBranch' changes via file sync and synced ${syncResult._1} file(s), deleted ${syncResult._2}."
+                             ,
+                             sourceBranch = sourceBranch,
+                             targetBranch = Some(target),
+                             output = Some(merge._2).filter(_.trim.nonEmpty),
+                           ).toJson
                          )
                        )
       yield response
@@ -658,7 +663,7 @@ object WorkspacesController:
                         case (_, out) =>
                           val revDetail = revParse._2.trim
                           val symDetail = out.trim
-                          val detail =
+                          val detail    =
                             List(
                               Option.when(revDetail.nonEmpty)(s"rev-parse: $revDetail"),
                               Option.when(symDetail.nonEmpty)(s"symbolic-ref: $symDetail"),

@@ -25,6 +25,9 @@ object IssueWorkReportSubscriberSpec extends ZIOSpecDefault:
       def get(id: IssueId): IO[shared.errors.PersistenceError, AgentIssue] =
         ZIO.fail(shared.errors.PersistenceError.NotFound("issue", id.value))
 
+      def history(id: IssueId): IO[shared.errors.PersistenceError, List[IssueEvent]] =
+        ZIO.succeed(Nil)
+
       def list(filter: IssueFilter): IO[shared.errors.PersistenceError, List[AgentIssue]] =
         // Return stubs for any issue whose runId is in our map
         val matching = runIdToIssue.collect {
@@ -191,6 +194,8 @@ object IssueWorkReportSubscriberSpec extends ZIOSpecDefault:
           def append(event: IssueEvent): IO[shared.errors.PersistenceError, Unit]             = ZIO.unit
           def get(id: IssueId): IO[shared.errors.PersistenceError, AgentIssue]                =
             ZIO.fail(shared.errors.PersistenceError.NotFound("issue", id.value))
+          def history(id: IssueId): IO[shared.errors.PersistenceError, List[IssueEvent]]      =
+            ZIO.succeed(Nil)
           def list(filter: IssueFilter): IO[shared.errors.PersistenceError, List[AgentIssue]] =
             ZIO.succeed(List(
               AgentIssue(

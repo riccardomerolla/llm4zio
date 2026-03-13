@@ -97,13 +97,18 @@ object FoundationSerializationSpec extends ZIOSpecDefault:
             requiredCapabilities = List("scala", "refactoring"),
             state = IssueState.Assigned(Ids.AgentId("agent-1"), createdAt),
             tags = List("event-sourcing", "phase1"),
+            blockedBy = List(Ids.IssueId("iss-0")),
+            blocking = List(Ids.IssueId("iss-2")),
             contextPath = "src/main/scala/db",
             sourceFolder = "src/main/scala",
+            promptTemplate = Some("Fix ${title} with exhaustive tests."),
+            acceptanceCriteria = Some("Round-trip serialization remains stable."),
+            kaizenSkill = Some("scala-zio-refactor"),
+            milestoneRef = Some("m9-foundation"),
           )
-          val event: IssueEvent = IssueEvent.Assigned(
+          val event: IssueEvent = IssueEvent.PromptTemplateUpdated(
             issueId = issue.id,
-            agent = Ids.AgentId("agent-1"),
-            assignedAt = createdAt,
+            promptTemplate = "Fix ${title} with exhaustive tests.",
             occurredAt = createdAt,
           )
 

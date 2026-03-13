@@ -105,9 +105,10 @@ final case class ChatControllerLive(
           conversations      <- chatRepository.listConversations(0, 80)
           enriched           <- enrichConversationsWithChannel(conversations)
           workspaceGroups    <- buildWorkspaceFolders(enriched)
+          now                <- Clock.instant
           currentPath         = req.url.queryParams.getAll("path").headOption.flatMap(sanitizeString)
           currentConversation = currentPath.flatMap(parseCurrentConversationIdFromPath)
-          nav                 = toLayoutWorkspaceNav(workspaceGroups, currentConversation)
+          nav                 = toLayoutWorkspaceNav(workspaceGroups, currentConversation, now)
         yield html(Layout.chatWorkspacesTree(nav).render)
       }
     },
@@ -809,6 +810,7 @@ final case class ChatControllerLive(
   private def toLayoutWorkspaceNav(
     workspaceFolders: List[ChatView.ChatWorkspaceFolder],
     currentConversationId: Option[String],
+    renderedAt: Instant,
   ): Layout.ChatWorkspaceNav =
     Layout.ChatWorkspaceNav(
       groups = workspaceFolders.map { folder =>
@@ -832,6 +834,7 @@ final case class ChatControllerLive(
         )
       },
       showNewChat = true,
+      renderedAt = renderedAt,
     )
 
   private def parseCurrentConversationIdFromPath(path: String): Option[String] =

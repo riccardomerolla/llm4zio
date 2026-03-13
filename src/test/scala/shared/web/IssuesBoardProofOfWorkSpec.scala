@@ -4,7 +4,7 @@ import java.time.Instant
 
 import zio.test.*
 
-import issues.entity.api.{ AgentIssueView, IssuePriority, IssueStatus }
+import issues.entity.api.{ AgentIssueView, DispatchStatusResponse, IssuePriority, IssueStatus }
 import issues.entity.{ IssueDiffStats, IssueWorkReport }
 import shared.ids.Ids.IssueId
 
@@ -115,6 +115,34 @@ object IssuesBoardProofOfWorkSpec extends ZIOSpecDefault:
       test("board card renders short issue ID chip top-left") {
         val html = IssuesView.boardCardFragment(baseIssue, Nil, workReport = None)
         assertTrue(html.contains("#issue-po"))
+      },
+      test("todo board card renders ready-for-dispatch indicator") {
+        val issue = baseIssue.copy(status = IssueStatus.Todo)
+        val html  =
+          IssuesView.boardCardFragment(
+            issue,
+            Nil,
+            workReport = None,
+            dispatchStatus = Some(DispatchStatusResponse(readyForDispatch = true)),
+          )
+        assertTrue(
+          html.contains("✅"),
+          html.contains("Ready for dispatch"),
+        )
+      },
+      test("todo board card renders dependency-blocked indicator with blocked issue ids") {
+        val issue = baseIssue.copy(status = IssueStatus.Todo)
+        val html  = IssuesView.boardCardFragment(
+          issue,
+          Nil,
+          workReport = None,
+          dispatchStatus = Some(DispatchStatusResponse(dependencyBlocked = true, blockedByIds = List("12", "13"))),
+        )
+        assertTrue(
+          html.contains("🟡"),
+          html.contains("#12"),
+          html.contains("#13"),
+        )
       },
       test("board card renders status dot for Open issue (ring style)") {
         val issue = baseIssue.copy(status = IssueStatus.Open)

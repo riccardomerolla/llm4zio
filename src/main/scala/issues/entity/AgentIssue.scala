@@ -3,6 +3,7 @@ package issues.entity
 import java.time.Instant
 
 import zio.json.JsonCodec
+import zio.schema.annotation.fieldDefaultValue
 import zio.schema.{ Schema, derived }
 
 import shared.ids.Ids.{ AgentId, ConversationId, IssueId, TaskRunId }
@@ -34,8 +35,14 @@ final case class AgentIssue(
   requiredCapabilities: List[String],
   state: IssueState,
   tags: List[String],
+  @fieldDefaultValue(Nil) blockedBy: List[IssueId] = Nil,
+  @fieldDefaultValue(Nil) blocking: List[IssueId] = Nil,
   contextPath: String,
   sourceFolder: String,
+  @fieldDefaultValue(None) promptTemplate: Option[String] = None,
+  @fieldDefaultValue(None) acceptanceCriteria: Option[String] = None,
+  @fieldDefaultValue(None) kaizenSkill: Option[String] = None,
+  @fieldDefaultValue(None) milestoneRef: Option[String] = None,
   workspaceId: Option[String] = None,
   externalRef: Option[String] = None,
   externalUrl: Option[String] = None,
@@ -47,6 +54,14 @@ object AgentIssue:
     try
       Option(list).fold(Nil)(_.filter(a => Option(a).isDefined))
     catch case _: Throwable => Nil
+
+  private def sanitizeText(value: String): Option[String] =
+    Option(value).map(_.trim).filter(_.nonEmpty)
+
+  private def sanitizeIssueIds(values: List[IssueId]): List[IssueId] =
+    safeList(values)
+      .flatMap(id => Option(id).flatMap(v => sanitizeText(v.value).map(IssueId.apply)))
+      .distinct
 
   def fromEvents(events: List[IssueEvent]): Either[String, AgentIssue] =
     events match
@@ -79,8 +94,14 @@ object AgentIssue:
                     .flatMap(s => Option(s)).map(_.trim).filter(_.nonEmpty).distinct,
                   state = IssueState.Backlog(created.occurredAt),
                   tags = Nil,
+                  blockedBy = Nil,
+                  blocking = Nil,
                   contextPath = "",
                   sourceFolder = "",
+                  promptTemplate = None,
+                  acceptanceCriteria = None,
+                  kaizenSkill = None,
+                  milestoneRef = None,
                   workspaceId = None,
                   externalRef = None,
                   externalUrl = None,
@@ -92,6 +113,20 @@ object AgentIssue:
         current
           .toRight(s"Issue ${assigned.issueId.value} not initialized before Assigned event")
           .map(issue => Some(issue.copy(state = IssueState.Assigned(assigned.agent, assigned.assignedAt))))
+
+      case linked: IssueEvent.DependencyLinked =>
+        current
+          .toRight(s"Issue ${linked.issueId.value} not initialized before DependencyLinked event")
+          .map { issue =>
+            Some(issue.copy(blockedBy = sanitizeIssueIds(issue.blockedBy :+ linked.blockedByIssueId)))
+          }
+
+      case unlinked: IssueEvent.DependencyUnlinked =>
+        current
+          .toRight(s"Issue ${unlinked.issueId.value} not initialized before DependencyUnlinked event")
+          .map { issue =>
+            Some(issue.copy(blockedBy = issue.blockedBy.filterNot(_ == unlinked.blockedByIssueId)))
+          }
 
       case started: IssueEvent.Started =>
         current
@@ -169,6 +204,16 @@ object AgentIssue:
         current
           .toRight(s"Issue ${tagsUpdated.issueId.value} not initialized before TagsUpdated event")
           .map(issue => Some(issue.copy(tags = safeList(tagsUpdated.tags))))
+
+      case updated: IssueEvent.PromptTemplateUpdated =>
+        current
+          .toRight(s"Issue ${updated.issueId.value} not initialized before PromptTemplateUpdated event")
+          .map(issue => Some(issue.copy(promptTemplate = sanitizeText(updated.promptTemplate))))
+
+      case updated: IssueEvent.AcceptanceCriteriaUpdated =>
+        current
+          .toRight(s"Issue ${updated.issueId.value} not initialized before AcceptanceCriteriaUpdated event")
+          .map(issue => Some(issue.copy(acceptanceCriteria = sanitizeText(updated.acceptanceCriteria))))
 
       case reopened: IssueEvent.Reopened =>
         current

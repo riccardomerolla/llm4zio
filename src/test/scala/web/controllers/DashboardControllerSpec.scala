@@ -109,11 +109,13 @@ object DashboardControllerSpec extends ZIOSpecDefault:
         )
       )
 
-    override def append(event: IssueEvent): IO[shared.errors.PersistenceError, Unit] =
+    override def append(event: IssueEvent): IO[shared.errors.PersistenceError, Unit]        =
       ZIO.dieMessage("unused in DashboardControllerSpec")
-    override def get(id: IssueId): IO[shared.errors.PersistenceError, AgentIssue]    =
+    override def get(id: IssueId): IO[shared.errors.PersistenceError, AgentIssue]           =
       ZIO.dieMessage("unused in DashboardControllerSpec")
-    override def delete(id: IssueId): IO[shared.errors.PersistenceError, Unit]       =
+    override def history(id: IssueId): IO[shared.errors.PersistenceError, List[IssueEvent]] =
+      ZIO.succeed(Nil)
+    override def delete(id: IssueId): IO[shared.errors.PersistenceError, Unit]              =
       ZIO.dieMessage("unused in DashboardControllerSpec")
 
     private def mkIssue(id: String, state: IssueState): AgentIssue =

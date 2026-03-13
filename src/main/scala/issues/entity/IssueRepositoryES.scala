@@ -13,6 +13,14 @@ final case class IssueRepositoryES(
   dataStore: DataStoreModule.DataStoreService,
 ) extends IssueRepository:
 
+  private def enrichBlockingRelationships(issues: List[AgentIssue]): List[AgentIssue] =
+    val blockingIndex = issues.foldLeft(Map.empty[IssueId, List[IssueId]]) { (acc, issue) =>
+      issue.blockedBy.foldLeft(acc) { (inner, blockedById) =>
+        inner.updated(blockedById, (inner.getOrElse(blockedById, Nil) :+ issue.id).distinct)
+      }
+    }
+    issues.map(issue => issue.copy(blocking = blockingIndex.getOrElse(issue.id, issue.blocking).distinct))
+
   private def snapshotKey(id: IssueId): String = s"snapshot:issue:${id.value}"
 
   private def snapshotPrefix: String = "snapshot:issue:"
@@ -56,19 +64,27 @@ final case class IssueRepositoryES(
       }
 
   override def get(id: IssueId): IO[PersistenceError, AgentIssue] =
-    fetchSnapshot(id).flatMap {
-      case Some(issue) =>
-        ZIO.logDebug(
-          s"Fetched issue snapshot (JSON) from store: ${snapshotKey(id)} [state=${issue.state.getClass.getSimpleName}]"
-        ) *>
-          ZIO.succeed(issue)
-      case None        =>
-        ZIO.logDebug(s"No snapshot found for issue:${id.value} — rebuilding from events") *>
-          eventStore.events(id).flatMap {
-            case Nil => ZIO.fail(PersistenceError.NotFound("issue", id.value))
-            case _   => rebuildSnapshot(id)
+    list(IssueFilter(limit = Int.MaxValue)).flatMap { issues =>
+      issues.find(_.id == id) match
+        case Some(issue) => ZIO.succeed(issue)
+        case None        =>
+          fetchSnapshot(id).flatMap {
+            case Some(issue) =>
+              ZIO.logDebug(
+                s"Fetched issue snapshot (JSON) from store: ${snapshotKey(id)} [state=${issue.state.getClass.getSimpleName}]"
+              ) *>
+                ZIO.succeed(issue)
+            case None        =>
+              ZIO.logDebug(s"No snapshot found for issue:${id.value} — rebuilding from events") *>
+                eventStore.events(id).flatMap {
+                  case Nil => ZIO.fail(PersistenceError.NotFound("issue", id.value))
+                  case _   => rebuildSnapshot(id)
+                }
           }
     }
+
+  override def history(id: IssueId): IO[PersistenceError, List[IssueEvent]] =
+    eventStore.events(id)
 
   override def list(filter: IssueFilter): IO[PersistenceError, List[AgentIssue]] =
     dataStore.rawStore
@@ -92,6 +108,7 @@ final case class IssueRepositoryES(
           }
       }
       .map(_.flatten)
+      .map(enrichBlockingRelationships)
       .tap { all =>
         ZIO.logDebug(s"Recovered ${all.size} issue object(s) from store") *>
           ZIO.foreachDiscard(all) { i =>

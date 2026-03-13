@@ -1,12 +1,15 @@
 package shared.web
 
+import java.time.Instant
+
 import activity.entity.ActivityEvent
 import config.control.{ ModelRegistryResponse, ProviderProbeStatus }
 import config.entity.{ AgentInfo, WorkflowDefinition }
 import conversation.entity.api.{ ChatConversation, ConversationEntry, ConversationSessionMeta }
 import db.{ TaskReportRow, TaskRunRow }
 import gateway.entity.ChatSession
-import issues.entity.api.{ AgentIssueView, IssueTemplate }
+import issues.entity.api.{ AgentIssueView, DispatchStatusResponse, IssueTemplate }
+import shared.ids.Ids.IssueId
 import workspace.entity.WorkspaceRun
 
 object HtmlViews:
@@ -149,19 +152,22 @@ object HtmlViews:
     sessionMetaByConversation: Map[String, ConversationSessionMeta] = Map.empty,
     sessions: List[ChatSession] = Nil,
     workspaceFolders: List[ChatView.ChatWorkspaceFolder] = Nil,
+    renderedAt: Instant = Instant.EPOCH,
   ): String =
-    ChatView.dashboard(conversations, sessionMetaByConversation, sessions, workspaceFolders)
+    ChatView.dashboard(conversations, sessionMetaByConversation, sessions, workspaceFolders, renderedAt)
 
   def chatEmpty(
-    workspaceFolders: List[ChatView.ChatWorkspaceFolder] = Nil
+    workspaceFolders: List[ChatView.ChatWorkspaceFolder] = Nil,
+    renderedAt: Instant = Instant.EPOCH,
   ): String =
-    ChatView.emptyState(workspaceFolders)
+    ChatView.emptyState(workspaceFolders, renderedAt)
 
   def chatNew(
     workspaceFolders: List[ChatView.ChatWorkspaceFolder] = Nil,
     workspaces: List[(String, String)] = Nil,
+    renderedAt: Instant = Instant.EPOCH,
   ): String =
-    ChatView.newConversation(workspaceFolders, workspaces)
+    ChatView.newConversation(workspaceFolders, workspaces, renderedAt)
 
   def chatDetail(
     conversation: ChatConversation,
@@ -169,8 +175,9 @@ object HtmlViews:
     runSessionMeta: Option[RunSessionUiMeta] = None,
     workspaceFolders: List[ChatView.ChatWorkspaceFolder] = Nil,
     detailContext: ChatDetailContext = ChatDetailContext.empty,
+    renderedAt: Instant = Instant.EPOCH,
   ): String =
-    ChatView.detail(conversation, sessionMeta, runSessionMeta, workspaceFolders, detailContext)
+    ChatView.detail(conversation, sessionMeta, runSessionMeta, workspaceFolders, detailContext, renderedAt)
 
   def chatMessagesFragment(messages: List[ConversationEntry]): String =
     ChatView.messagesFragment(messages)
@@ -194,6 +201,7 @@ object HtmlViews:
     query: Option[String],
     statusFilter: Option[String] = None,
     availableAgents: List[AgentInfo] = Nil,
+    dispatchStatuses: Map[IssueId, DispatchStatusResponse] = Map.empty,
     autoDispatchEnabled: Boolean = false,
     syncStatus: IssuesView.SyncStatus = IssuesView.SyncStatus(None, 0, 0),
     agentUsage: Option[(Int, Int)] = None,
@@ -209,6 +217,7 @@ object HtmlViews:
       query = query,
       statusFilter = statusFilter,
       availableAgents = availableAgents,
+      dispatchStatuses = dispatchStatuses,
       autoDispatchEnabled = autoDispatchEnabled,
       syncStatus = syncStatus,
       agentUsage = agentUsage,
@@ -219,6 +228,7 @@ object HtmlViews:
     issues: List[AgentIssueView],
     workspaces: List[(String, String)],
     availableAgents: List[AgentInfo] = Nil,
+    dispatchStatuses: Map[IssueId, DispatchStatusResponse] = Map.empty,
     hasProofFilter: Option[Boolean] = None,
   ): String =
     IssuesView.boardColumnsFragment(
@@ -226,6 +236,7 @@ object HtmlViews:
       workspaces = workspaces,
       workReports = Map.empty,
       availableAgents = availableAgents,
+      dispatchStatuses = dispatchStatuses,
       hasProofFilter = hasProofFilter,
     )
 

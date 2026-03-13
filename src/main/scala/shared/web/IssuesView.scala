@@ -6,7 +6,7 @@ import zio.json.*
 
 import config.entity.AgentInfo
 import issues.entity.IssueWorkReport
-import issues.entity.api.{ AgentIssueView, IssueStatus, IssueTemplate }
+import issues.entity.api.{ AgentIssueView, DispatchStatusResponse, IssueStatus, IssueTemplate }
 import scalatags.Text.all.*
 import shared.ids.Ids.IssueId
 import workspace.entity.{ RunSessionMode, RunStatus, WorkspaceRun }
@@ -19,15 +19,15 @@ object IssuesView:
   )
 
   private val boardStatuses: List[(IssueStatus, String)] = List(
-    IssueStatus.Backlog    -> "Backlog",
-    IssueStatus.Todo       -> "Todo",
-    IssueStatus.InProgress -> "In Progress",
+    IssueStatus.Backlog     -> "Backlog",
+    IssueStatus.Todo        -> "Todo",
+    IssueStatus.InProgress  -> "In Progress",
     IssueStatus.HumanReview -> "Human Review",
-    IssueStatus.Rework     -> "Rework",
-    IssueStatus.Merging    -> "Merging",
-    IssueStatus.Done       -> "Done",
-    IssueStatus.Canceled   -> "Canceled",
-    IssueStatus.Duplicated -> "Duplicated",
+    IssueStatus.Rework      -> "Rework",
+    IssueStatus.Merging     -> "Merging",
+    IssueStatus.Done        -> "Done",
+    IssueStatus.Canceled    -> "Canceled",
+    IssueStatus.Duplicated  -> "Duplicated",
   )
 
   private def columnStatusDotCls(status: IssueStatus): String = status match
@@ -44,9 +44,9 @@ object IssuesView:
 
   private def hideableBoardColumn(status: IssueStatus): Boolean = status match
     case IssueStatus.HumanReview | IssueStatus.Rework | IssueStatus.Merging | IssueStatus.Done | IssueStatus.Canceled |
-        IssueStatus.Duplicated =>
+         IssueStatus.Duplicated =>
       true
-    case _                                                                                                               => false
+    case _ => false
 
   def list(
     runId: Option[String],
@@ -122,6 +122,7 @@ object IssuesView:
     query: Option[String],
     statusFilter: Option[String] = None,
     availableAgents: List[AgentInfo] = Nil,
+    dispatchStatuses: Map[IssueId, DispatchStatusResponse] = Map.empty,
     autoDispatchEnabled: Boolean = false,
     syncStatus: SyncStatus = SyncStatus(None, 0, 0),
     agentUsage: Option[(Int, Int)] = None,
@@ -151,7 +152,9 @@ object IssuesView:
     val throughputPct               =
       if filteredIssues.isEmpty then 0
       else
-        ((filteredIssues.count(i => i.status == IssueStatus.Done || i.status == IssueStatus.Completed).toDouble / filteredIssues.size.toDouble) * 100).toInt
+        ((filteredIssues.count(i =>
+          i.status == IssueStatus.Done || i.status == IssueStatus.Completed
+        ).toDouble / filteredIssues.size.toDouble) * 100).toInt
     val (activeAgents, totalAgents) = agentUsage.getOrElse(0 -> math.max(availableAgents.size, 1))
     val syncStateCls                =
       if syncStatus.errorCount > 0 then "bg-rose-400"
@@ -258,7 +261,7 @@ object IssuesView:
           cls                          := "min-h-[32rem]",
           attr("data-bulk-scope")      := "board",
         )(
-          raw(boardColumnsFragment(filteredIssues, workspaces, workReports, availableAgents))
+          raw(boardColumnsFragment(filteredIssues, workspaces, workReports, availableAgents, dispatchStatuses))
         ),
       ),
       JsResources.inlineModuleScript("/static/client/components/issues-board.js"),
@@ -309,6 +312,7 @@ object IssuesView:
     workspaces: List[(String, String)],
     workReports: Map[IssueId, IssueWorkReport],
     availableAgents: List[AgentInfo] = Nil,
+    dispatchStatuses: Map[IssueId, DispatchStatusResponse] = Map.empty,
     hasProofFilter: Option[Boolean] = None,
   ): String =
     val filteredIssues = hasProofFilter match
@@ -336,7 +340,7 @@ object IssuesView:
         )(
           div(cls := "mb-2 flex items-center justify-between gap-1")(
             div(
-              cls := "flex min-w-0 flex-1 items-center gap-1.5",
+              cls := "flex min-w-0 flex-1 items-center gap-1.5"
             )(
               span(cls := s"inline-block h-2 w-2 flex-shrink-0 rounded-full ${columnStatusDotCls(status)}"),
               h3(cls := "text-sm font-semibold text-slate-100 truncate")(label),
@@ -348,10 +352,10 @@ object IssuesView:
             div(cls := "flex items-center gap-1")(
               if hideableBoardColumn(status) then
                 button(
-                  `type`                        := "button",
-                  cls                           := "flex-shrink-0 rounded p-0.5 text-slate-400 hover:bg-white/10 hover:text-slate-100",
-                  title                         := s"Hide $label column",
-                  attr("data-collapse-toggle")  := statusToken,
+                  `type`                       := "button",
+                  cls                          := "flex-shrink-0 rounded p-0.5 text-slate-400 hover:bg-white/10 hover:text-slate-100",
+                  title                        := s"Hide $label column",
+                  attr("data-collapse-toggle") := statusToken,
                 )("−")
               else (),
               button(
@@ -406,7 +410,8 @@ object IssuesView:
             else
               columnIssues.map { issue =>
                 val report = issue.id.flatMap(id => workReports.get(IssueId(id)))
-                boardCard(issue, workspaces, report, availableAgents)
+                val status = issue.id.flatMap(id => dispatchStatuses.get(IssueId(id)))
+                boardCard(issue, workspaces, report, availableAgents, status)
               }
           ),
         )
@@ -424,8 +429,8 @@ object IssuesView:
           )("0"),
         ),
         div(
-          cls                               := "space-y-1 max-h-[65vh] overflow-y-auto",
-          attr("data-hidden-columns-list")  := "true",
+          cls                              := "space-y-1 max-h-[65vh] overflow-y-auto",
+          attr("data-hidden-columns-list") := "true",
         )(
           p(cls := "rounded border border-dashed border-white/10 px-2 py-3 text-xs text-slate-500")("No hidden columns")
         ),
@@ -438,8 +443,9 @@ object IssuesView:
     workspaces: List[(String, String)],
     workReport: Option[IssueWorkReport],
     availableAgents: List[AgentInfo] = Nil,
+    dispatchStatus: Option[DispatchStatusResponse] = None,
   ): String =
-    boardCard(issue, workspaces, workReport, availableAgents).render
+    boardCard(issue, workspaces, workReport, availableAgents, dispatchStatus).render
 
   /** Render the issue detail page with an optional proof-of-work panel. */
   def detailWithProofOfWork(
@@ -1186,6 +1192,7 @@ object IssuesView:
     workspaces: List[(String, String)],
     workReport: Option[IssueWorkReport] = None,
     availableAgents: List[AgentInfo] = Nil,
+    dispatchStatus: Option[DispatchStatusResponse] = None,
   ): Frag =
     val issueId       = safe(issue.id, "-")
     val workspaceId   = safe(issue.workspaceId)
@@ -1231,6 +1238,7 @@ object IssuesView:
     val requiredCaps  = safeTags(issue.requiredCapabilities)
     val quickAgents   = eligibleAgents(availableAgents, requiredCaps)
     val showBlocked   = issue.status == IssueStatus.Todo && requiredCaps.nonEmpty && quickAgents.isEmpty
+    val todoDispatch  = dispatchStatus.filter(_ => issue.status == IssueStatus.Todo)
     val externalRef   = safe(issue.externalRef)
     val externalUrl   = safe(issue.externalUrl)
     div(
@@ -1249,6 +1257,7 @@ object IssuesView:
         div(cls := "mb-1.5 flex items-center gap-1.5")(
           span(cls := s"inline-block h-2.5 w-2.5 flex-shrink-0 $statusDotCls"),
           span(cls := "text-[10px] font-mono text-slate-500")(shortId),
+          todoDispatch.map(dispatchStatusBadge),
           if externalRef.nonEmpty then
             externalBadge(externalRef, externalUrl)
           else (),
@@ -1287,13 +1296,41 @@ object IssuesView:
       else (),
       if showBlocked then
         div(cls := "mt-2")(
-          span(cls := "rounded-full border border-orange-400/40 bg-orange-500/20 px-2 py-0.5 text-[10px] font-semibold text-orange-200")(
+          span(
+            cls := "rounded-full border border-orange-400/40 bg-orange-500/20 px-2 py-0.5 text-[10px] font-semibold text-orange-200"
+          )(
             "Blocked: no matching agent"
           )
         )
       else (),
       if powHtml.nonEmpty then raw(powHtml) else (),
     )
+
+  private def dispatchStatusBadge(status: DispatchStatusResponse): Frag =
+    val (symbol, badgeCls, message) =
+      if status.waitingForAgent then
+        ("🕐", "border-sky-400/40 bg-sky-500/15 text-sky-200", "Waiting for an available agent slot")
+      else if status.capabilityMismatch then
+        (
+          "🔴",
+          "border-rose-400/40 bg-rose-500/15 text-rose-200",
+          "No registered agent matches the required capabilities",
+        )
+      else if status.dependencyBlocked then
+        val suffix =
+          if status.blockedByIds.isEmpty then ""
+          else s": ${status.blockedByIds.map(id => s"#$id").mkString(", ")}"
+        ("🟡", "border-amber-400/40 bg-amber-500/15 text-amber-200", s"Blocked by unresolved dependencies$suffix")
+      else if status.readyForDispatch then
+        ("✅", "border-emerald-400/40 bg-emerald-500/15 text-emerald-200", "Ready for dispatch on the next poll")
+      else
+        ("", "", "")
+    if symbol.isEmpty then span()
+    else
+      span(
+        cls   := s"inline-flex items-center rounded-full border px-1.5 py-0.5 text-[10px] leading-none $badgeCls",
+        title := message,
+      )(symbol)
 
   private def bulkToolbar(scope: String): Frag =
     div(
@@ -1564,20 +1601,20 @@ object IssuesView:
 
   private def runStatusLabel(status: RunStatus): String = status match
     case RunStatus.Pending                             => "Pending"
-    case RunStatus.Running(RunSessionMode.Autonomous) => "Running (Autonomous)"
+    case RunStatus.Running(RunSessionMode.Autonomous)  => "Running (Autonomous)"
     case RunStatus.Running(RunSessionMode.Interactive) =>
       "Running (Interactive)"
-    case RunStatus.Running(RunSessionMode.Paused)     => "Paused"
+    case RunStatus.Running(RunSessionMode.Paused)      => "Paused"
     case RunStatus.Completed                           => "Completed"
     case RunStatus.Failed                              => "Failed"
     case RunStatus.Cancelled                           => "Cancelled"
 
   private def runStatusBadge(status: RunStatus): String = status match
     case RunStatus.Pending                             => "bg-slate-500/20 text-slate-200"
-    case RunStatus.Running(RunSessionMode.Autonomous) => "bg-blue-500/20 text-blue-200"
+    case RunStatus.Running(RunSessionMode.Autonomous)  => "bg-blue-500/20 text-blue-200"
     case RunStatus.Running(RunSessionMode.Interactive) =>
       "bg-emerald-500/20 text-emerald-200"
-    case RunStatus.Running(RunSessionMode.Paused)     => "bg-amber-500/20 text-amber-200"
+    case RunStatus.Running(RunSessionMode.Paused)      => "bg-amber-500/20 text-amber-200"
     case RunStatus.Completed                           => "bg-emerald-500/20 text-emerald-200"
     case RunStatus.Failed                              => "bg-rose-500/20 text-rose-200"
     case RunStatus.Cancelled                           => "bg-orange-500/20 text-orange-200"
@@ -1596,20 +1633,20 @@ object IssuesView:
 
   private def issueStatusToken(status: IssueStatus): String =
     status match
-      case IssueStatus.Backlog    => "backlog"
-      case IssueStatus.Todo       => "todo"
-      case IssueStatus.Open       => "open"
-      case IssueStatus.Assigned   => "assigned"
-      case IssueStatus.InProgress => "in_progress"
+      case IssueStatus.Backlog     => "backlog"
+      case IssueStatus.Todo        => "todo"
+      case IssueStatus.Open        => "open"
+      case IssueStatus.Assigned    => "assigned"
+      case IssueStatus.InProgress  => "in_progress"
       case IssueStatus.HumanReview => "human_review"
-      case IssueStatus.Rework     => "rework"
-      case IssueStatus.Merging    => "merging"
-      case IssueStatus.Done       => "done"
-      case IssueStatus.Canceled   => "canceled"
-      case IssueStatus.Duplicated => "duplicated"
-      case IssueStatus.Completed  => "completed"
-      case IssueStatus.Failed     => "failed"
-      case IssueStatus.Skipped    => "skipped"
+      case IssueStatus.Rework      => "rework"
+      case IssueStatus.Merging     => "merging"
+      case IssueStatus.Done        => "done"
+      case IssueStatus.Canceled    => "canceled"
+      case IssueStatus.Duplicated  => "duplicated"
+      case IssueStatus.Completed   => "completed"
+      case IssueStatus.Failed      => "failed"
+      case IssueStatus.Skipped     => "skipped"
 
   private def modeToggle(
     currentMode: String,

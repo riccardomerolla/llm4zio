@@ -23,6 +23,18 @@ object IssueEvent:
     @fieldDefaultValue(Nil) requiredCapabilities: List[String] = Nil,
   ) extends IssueEvent
 
+  final case class DependencyLinked(
+    issueId: IssueId,
+    blockedByIssueId: IssueId,
+    occurredAt: Instant,
+  ) extends IssueEvent
+
+  final case class DependencyUnlinked(
+    issueId: IssueId,
+    blockedByIssueId: IssueId,
+    occurredAt: Instant,
+  ) extends IssueEvent
+
   final case class Assigned(
     issueId: IssueId,
     agent: AgentId,
@@ -126,6 +138,18 @@ object IssueEvent:
   final case class TagsUpdated(
     issueId: IssueId,
     tags: List[String],
+    occurredAt: Instant,
+  ) extends IssueEvent
+
+  final case class PromptTemplateUpdated(
+    issueId: IssueId,
+    promptTemplate: String,
+    occurredAt: Instant,
+  ) extends IssueEvent
+
+  final case class AcceptanceCriteriaUpdated(
+    issueId: IssueId,
+    acceptanceCriteria: String,
     occurredAt: Instant,
   ) extends IssueEvent
 

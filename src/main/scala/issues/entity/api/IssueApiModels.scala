@@ -176,6 +176,15 @@ case class AutoAssignIssueResponse(
   reason: Option[String] = None,
 ) derives JsonCodec
 
+case class DispatchStatusResponse(
+  waitingForAgent: Boolean = false,
+  capabilityMismatch: Boolean = false,
+  dependencyBlocked: Boolean = false,
+  blockedByIds: List[String] = Nil,
+  readyForDispatch: Boolean = false,
+  reworkBoosted: Boolean = false,
+) derives JsonCodec
+
 case class PipelineStep(
   agentId: String,
   promptOverride: Option[String] = None,

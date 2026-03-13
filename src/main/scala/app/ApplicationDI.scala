@@ -236,7 +236,7 @@ object ApplicationDI:
     }
 
   def webServerLayer(config: GatewayConfig, storeConfig: StoreConfig): ZLayer[Any, Nothing, WebServer] =
-    ZLayer.make[WebServer](
+    ZLayer.make[WebServer & AutoDispatcher](
       commonLayers(config, storeConfig),
       TaskRunDashboardController.live,
       TaskRunTasksController.live,
@@ -258,7 +258,11 @@ object ApplicationDI:
       RunSessionManager.live,
       IssueEventStoreES.live,
       IssueRepositoryES.live,
+      DependencyResolver.live,
+      AgentPoolManager.live,
+      IssueDispatchStatusService.live,
       WorkspaceRunService.live,
+      AutoDispatcher.live,
       ConversationChatController.live,
       IssuesIssueController.live,
       ActivityController.live,
@@ -269,7 +273,7 @@ object ApplicationDI:
       ConversationWebSocketController.live,
       mcp.McpService.live,
       WebServer.live,
-    )
+    ) >>> ZLayer.service[WebServer]
 
   private val channelRegistryLayer
     : ZLayer[Ref[GatewayConfig] & AgentRegistry & TaskRepository & TaskExecutor & ConfigRepository, Nothing, ChannelRegistry] =
