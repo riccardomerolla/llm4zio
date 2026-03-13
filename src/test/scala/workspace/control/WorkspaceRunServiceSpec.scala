@@ -5,13 +5,15 @@ import java.time.Instant
 import zio.*
 import zio.test.*
 
-import agent.entity.Agent
+import activity.control.ActivityHub
+import activity.entity.ActivityEvent
+import agent.entity.{ Agent, AgentRepository }
 import conversation.entity.api.{ ChatConversation, ConversationEntry }
-import db.{ ChatRepository, PersistenceError as DbPersistenceError }
-import issues.entity.{ IssueEvent, IssueFilter, IssueRepository }
-import orchestration.control.SlotHandle
+import db.{ PersistenceError as DbPersistenceError, * }
+import issues.entity.{ AgentIssue, IssueEvent, IssueFilter, IssueRepository, IssueState }
+import orchestration.control.{ AutoDispatcherLive, DependencyResolver, SlotHandle }
 import shared.errors.PersistenceError
-import shared.ids.Ids.IssueId
+import shared.ids.Ids.{ AgentId, ConversationId, IssueId, TaskRunId }
 import workspace.entity.*
 
 object WorkspaceRunServiceSpec extends ZIOSpecDefault:
@@ -216,6 +218,10 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
     runCliAgent: (List[String], String, String => Task[Unit], Map[String, String]) => Task[Int] =
       CliAgentRunner.runProcessStreaming,
     resolveProfile: String => IO[WorkspaceError, Option[Agent]] = _ => ZIO.succeed(None),
+    acquireAgentSlot: String => IO[WorkspaceError, SlotHandle] = agentName =>
+      Clock.instant.map(now => SlotHandle(s"slot-${agentName.trim.toLowerCase}", agentName.trim.toLowerCase, now)),
+    availableAgentSlots: String => UIO[Int] = _ => ZIO.succeed(Int.MaxValue),
+    releaseAgentSlot: SlotHandle => UIO[Unit] = _ => ZIO.unit,
   ) =
     for
       messages <- Ref.make(List.empty[String])
@@ -234,6 +240,9 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
           dockerCheck = dockerCheck,
           runCliAgent = runCliAgent,
           fiberRegistry = registry,
+          acquireAgentSlot = acquireAgentSlot,
+          availableAgentSlots = availableAgentSlots,
+          releaseAgentSlot = releaseAgentSlot,
           resolveAgentProfile = resolveProfile,
         )
     yield (svc, wsRepo, messages)
@@ -261,30 +270,49 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
                      )
     yield (svc, issueEvents)
 
-  private def makeServiceWithSlotReleases(
-    runCliAgent: (List[String], String, String => Task[Unit], Map[String, String]) => Task[Int]
-  ) =
-    for
-      messages <- Ref.make(List.empty[String])
-      released <- Ref.make(List.empty[SlotHandle])
-      wsMap    <- Ref.make(Map(sampleWs.id -> sampleWs))
-      runMap   <- Ref.make(Map.empty[String, WorkspaceRun])
-      registry <- Ref.make(Map.empty[String, Fiber[WorkspaceError, Unit]])
-      slotRef  <- Ref.make(Map.empty[String, SlotHandle])
-      chatRepo  = StubChatRepo(messages)
-      wsRepo    = StubWorkspaceRepo(wsMap, runMap)
-      svc       = WorkspaceRunServiceLive(
-                    wsRepo,
-                    chatRepo,
-                    StubIssueRepo,
-                    worktreeAdd = noopWorktreeAdd,
-                    worktreeRemove = noopWorktreeRemove,
-                    runCliAgent = runCliAgent,
-                    fiberRegistry = registry,
-                    slotRegistry = slotRef,
-                    releaseAgentSlot = handle => released.update(_ :+ handle),
-                  )
-    yield (svc, released)
+  final private class SharedPoolHarness private (
+    availableRef: Ref[Int],
+    acquiredRef: Ref[List[SlotHandle]],
+    releasedRef: Ref[List[SlotHandle]],
+  ):
+    def acquire(agentName: String): IO[WorkspaceError, SlotHandle] =
+      availableRef.modify { available =>
+        if available > 0 then
+          val next = available - 1
+          (Right(next), next)
+        else
+          (
+            Left(WorkspaceError.InvalidRunState(agentName, "available_slots > 0", s"available_slots = $available")),
+            available,
+          )
+      }.flatMap {
+        case Left(error)     => ZIO.fail(error)
+        case Right(sequence) =>
+          Clock.instant.flatMap { now =>
+            val handle = SlotHandle(s"slot-$sequence", agentName.trim.toLowerCase, now)
+            acquiredRef.update(_ :+ handle).as(handle)
+          }
+      }
+
+    def available(agentName: String): UIO[Int] =
+      availableRef.get
+
+    def release(handle: SlotHandle): UIO[Unit] =
+      availableRef.update(_ + 1) *> releasedRef.update(_ :+ handle)
+
+    def acquired: UIO[List[SlotHandle]] =
+      acquiredRef.get
+
+    def released: UIO[List[SlotHandle]] =
+      releasedRef.get
+
+  private object SharedPoolHarness:
+    def make(initialAvailable: Int): UIO[SharedPoolHarness] =
+      for
+        available <- Ref.make(initialAvailable)
+        acquired  <- Ref.make(List.empty[SlotHandle])
+        released  <- Ref.make(List.empty[SlotHandle])
+      yield SharedPoolHarness(available, acquired, released)
 
   def spec: Spec[TestEnvironment & Scope, Any] = suite("WorkspaceRunServiceSpec")(
     test("assign returns a WorkspaceRun with correct workspace and issue ref") {
@@ -318,6 +346,19 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
         run              <- svc.assign("ws-1", req)
         saved            <- wsRepo.listRuns("ws-1")
       yield assertTrue(saved.nonEmpty && saved.exists(_.id == run.id))
+    },
+    test("assign fails with InvalidRunState when the shared agent pool has no available slots") {
+      for
+        (svc, _, _) <- makeService(
+                         availableAgentSlots = _ => ZIO.succeed(0)
+                       )
+        result      <- svc.assign(
+                         "ws-1",
+                         AssignRunRequest(issueRef = "#pool-full", prompt = "echo hello", agentName = "echo"),
+                       ).either
+      yield assertTrue(result match
+        case Left(WorkspaceError.InvalidRunState("echo", "available_slots > 0", "available_slots = 0")) => true
+        case _                                                                                          => false)
     },
     test("assign forks fiber that eventually sets run status to Completed") {
       for
@@ -437,17 +478,39 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
         }
       )
     } @@ TestAspect.withLiveClock,
-    test("registered slots are released when a run completes") {
+    test("assigned runs release their reserved slot when they complete") {
       val successCliAgent: (List[String], String, String => Task[Unit], Map[String, String]) => Task[Int] =
         (_, _, _, _) => ZIO.sleep(100.millis).as(0)
-      val slotHandle                                                                                      = SlotHandle("slot-1", "echo", sampleWs.createdAt)
       for
-        (svc, released) <- makeServiceWithSlotReleases(successCliAgent)
-        run             <- svc.assign("ws-1", AssignRunRequest(issueRef = "#slot-release", prompt = "ok", agentName = "echo"))
-        _               <- svc.registerSlot(run.id, slotHandle)
-        _               <- ZIO.sleep(250.millis)
-        handles         <- released.get
-      yield assertTrue(handles == List(slotHandle))
+        pool        <- SharedPoolHarness.make(initialAvailable = 1)
+        (svc, _, _) <- makeService(
+                         runCliAgent = successCliAgent,
+                         acquireAgentSlot = pool.acquire,
+                         availableAgentSlots = pool.available,
+                         releaseAgentSlot = pool.release,
+                       )
+        _           <- svc.assign("ws-1", AssignRunRequest(issueRef = "#slot-release", prompt = "ok", agentName = "echo"))
+        _           <- ZIO.sleep(250.millis)
+        acquired    <- pool.acquired
+        released    <- pool.released
+      yield assertTrue(acquired.nonEmpty, released == acquired)
+    } @@ TestAspect.withLiveClock,
+    test("assigned runs release their reserved slot when they fail") {
+      val failingCliAgent: (List[String], String, String => Task[Unit], Map[String, String]) => Task[Int] =
+        (_, _, _, _) => ZIO.sleep(100.millis).as(2)
+      for
+        pool        <- SharedPoolHarness.make(initialAvailable = 1)
+        (svc, _, _) <- makeService(
+                         runCliAgent = failingCliAgent,
+                         acquireAgentSlot = pool.acquire,
+                         availableAgentSlots = pool.available,
+                         releaseAgentSlot = pool.release,
+                       )
+        _           <- svc.assign("ws-1", AssignRunRequest(issueRef = "#slot-fail", prompt = "fail", agentName = "echo"))
+        _           <- ZIO.sleep(250.millis)
+        acquired    <- pool.acquired
+        released    <- pool.released
+      yield assertTrue(acquired.nonEmpty, released == acquired)
     } @@ TestAspect.withLiveClock,
     test("cancelled workspace run moves issue back to Todo") {
       val neverCliAgent: (List[String], String, String => Task[Unit], Map[String, String]) => Task[Int] =
@@ -465,6 +528,131 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
           case _                                     => false
         }
       )
+    } @@ TestAspect.withLiveClock,
+    test("assigned runs release their reserved slot when they are cancelled") {
+      val neverCliAgent: (List[String], String, String => Task[Unit], Map[String, String]) => Task[Int] =
+        (_, _, _, _) => ZIO.never.as(0)
+      for
+        pool        <- SharedPoolHarness.make(initialAvailable = 1)
+        (svc, _, _) <- makeService(
+                         runCliAgent = neverCliAgent,
+                         acquireAgentSlot = pool.acquire,
+                         availableAgentSlots = pool.available,
+                         releaseAgentSlot = pool.release,
+                       )
+        run         <- svc.assign("ws-1", AssignRunRequest(issueRef = "#slot-cancel", prompt = "hang", agentName = "echo"))
+        _           <- ZIO.sleep(120.millis)
+        _           <- svc.cancelRun(run.id)
+        _           <- ZIO.sleep(120.millis)
+        acquired    <- pool.acquired
+        released    <- pool.released
+      yield assertTrue(acquired.nonEmpty, released == acquired)
+    } @@ TestAspect.withLiveClock,
+    test("manual assignment and auto-dispatch share the same pool ceiling") {
+      val neverCliAgent: (List[String], String, String => Task[Unit], Map[String, String]) => Task[Int] =
+        (_, _, _, _) => ZIO.never.as(0)
+      val readyIssue                                                                                    = AgentIssue(
+        id = IssueId("auto-1"),
+        runId = Some(TaskRunId("run-auto-1")),
+        conversationId = Some(ConversationId("conv-auto-1")),
+        title = "Auto issue",
+        description = "ready for dispatch",
+        issueType = "task",
+        priority = "high",
+        requiredCapabilities = Nil,
+        state = IssueState.Todo(sampleWs.createdAt),
+        tags = Nil,
+        blockedBy = Nil,
+        blocking = Nil,
+        contextPath = "",
+        sourceFolder = "",
+        workspaceId = Some("ws-1"),
+      )
+      val enabledConfig                                                                                 = new ConfigRepository:
+        override def getAllSettings: IO[DbPersistenceError, List[SettingRow]]                           = ZIO.succeed(Nil)
+        override def getSetting(key: String): IO[DbPersistenceError, Option[SettingRow]]                =
+          ZIO.succeed(Option.when(key == "issues.autoDispatch.enabled")(SettingRow(key, "true", sampleWs.updatedAt)))
+        override def upsertSetting(key: String, value: String): IO[DbPersistenceError, Unit]            = ZIO.unit
+        override def deleteSetting(key: String): IO[DbPersistenceError, Unit]                           = ZIO.unit
+        override def deleteSettingsByPrefix(prefix: String): IO[DbPersistenceError, Unit]               = ZIO.unit
+        override def createWorkflow(workflow: WorkflowRow): IO[DbPersistenceError, Long]                = ZIO.dieMessage("unused")
+        override def getWorkflow(id: Long): IO[DbPersistenceError, Option[WorkflowRow]]                 = ZIO.dieMessage("unused")
+        override def getWorkflowByName(name: String): IO[DbPersistenceError, Option[WorkflowRow]]       =
+          ZIO.dieMessage("unused")
+        override def listWorkflows: IO[DbPersistenceError, List[WorkflowRow]]                           = ZIO.dieMessage("unused")
+        override def updateWorkflow(workflow: WorkflowRow): IO[DbPersistenceError, Unit]                = ZIO.dieMessage("unused")
+        override def deleteWorkflow(id: Long): IO[DbPersistenceError, Unit]                             = ZIO.dieMessage("unused")
+        override def createCustomAgent(agent: CustomAgentRow): IO[DbPersistenceError, Long]             = ZIO.dieMessage("unused")
+        override def getCustomAgent(id: Long): IO[DbPersistenceError, Option[CustomAgentRow]]           = ZIO.dieMessage("unused")
+        override def getCustomAgentByName(name: String): IO[DbPersistenceError, Option[CustomAgentRow]] =
+          ZIO.dieMessage("unused")
+        override def listCustomAgents: IO[DbPersistenceError, List[CustomAgentRow]]                     = ZIO.dieMessage("unused")
+        override def updateCustomAgent(agent: CustomAgentRow): IO[DbPersistenceError, Unit]             = ZIO.dieMessage("unused")
+        override def deleteCustomAgent(id: Long): IO[DbPersistenceError, Unit]                          = ZIO.dieMessage("unused")
+      val readyResolver                                                                                 = new DependencyResolver:
+        override def dependencyGraph(issues: List[AgentIssue]): Map[IssueId, Set[IssueId]] = Map.empty
+        override def readyToDispatch(issues: List[AgentIssue]): List[AgentIssue]           = issues
+        override def currentIssues: IO[PersistenceError, List[AgentIssue]]                 = ZIO.succeed(List(readyIssue))
+        override def currentReadyToDispatch: IO[PersistenceError, List[AgentIssue]]        = ZIO.succeed(List(readyIssue))
+      val stubAgentRepo                                                                                 = new AgentRepository:
+        override def append(event: _root_.agent.entity.AgentEvent): IO[PersistenceError, Unit] =
+          ZIO.dieMessage("unused")
+        override def get(id: AgentId): IO[PersistenceError, Agent]                             =
+          ZIO.fail(PersistenceError.NotFound("agent", id.value))
+        override def list(includeDeleted: Boolean): IO[PersistenceError, List[Agent]]          =
+          ZIO.succeed(
+            List(
+              Agent(
+                id = AgentId("echo"),
+                name = "echo",
+                description = "echo",
+                cliTool = "echo",
+                capabilities = Nil,
+                defaultModel = None,
+                systemPrompt = None,
+                maxConcurrentRuns = 1,
+                envVars = Map.empty,
+                timeout = java.time.Duration.ofMinutes(5),
+                enabled = true,
+                createdAt = sampleWs.createdAt,
+                updatedAt = sampleWs.updatedAt,
+              )
+            )
+          )
+        override def findByName(name: String): IO[PersistenceError, Option[Agent]]             = list().map(_.find(_.name == name))
+      val activityHub                                                                                   = new ActivityHub:
+        override def publish(event: ActivityEvent): UIO[Unit] = ZIO.unit
+        override def subscribe: UIO[Dequeue[ActivityEvent]]   = Queue.unbounded[ActivityEvent]
+      for
+        pool             <- SharedPoolHarness.make(initialAvailable = 1)
+        (svc, wsRepo, _) <- makeService(
+                              runCliAgent = neverCliAgent,
+                              acquireAgentSlot = pool.acquire,
+                              availableAgentSlots = pool.available,
+                              releaseAgentSlot = pool.release,
+                            )
+        _                <- svc.assign("ws-1", AssignRunRequest(issueRef = "#manual", prompt = "hold", agentName = "echo"))
+        _                <- ZIO.sleep(100.millis)
+        dispatcher        = AutoDispatcherLive(
+                              configRepository = enabledConfig,
+                              issueRepository = StubIssueRepo,
+                              dependencyResolver = readyResolver,
+                              agentRepository = stubAgentRepo,
+                              workspaceRepository = wsRepo,
+                              workspaceRunService = svc,
+                              activityHub = activityHub,
+                              agentPoolManager = new orchestration.control.AgentPoolManager:
+                                override def acquireSlot(agentName: String): IO[orchestration.control.PoolError, SlotHandle] =
+                                  pool.acquire(agentName).mapError(_ =>
+                                    orchestration.control.PoolError.PersistenceFailure("test_pool_acquire", "unexpected")
+                                  )
+                                override def releaseSlot(handle: SlotHandle): UIO[Unit]                                      = pool.release(handle)
+                                override def availableSlots(agentName: String): UIO[Int]                                     = pool.available(agentName)
+                                override def resize(agentName: String, newMax: Int): UIO[Unit]                               = ZIO.unit,
+                            )
+        count            <- dispatcher.dispatchOnce
+        runs             <- wsRepo.listRuns("ws-1")
+      yield assertTrue(count == 0, runs.size == 1, runs.exists(_.issueRef == "#manual"))
     } @@ TestAspect.withLiveClock,
     test("continueRun creates a child run reusing parent worktree and branch") {
       val instantCliAgent: (List[String], String, String => Task[Unit], Map[String, String]) => Task[Int] =
