@@ -6,11 +6,12 @@ import zio.json.ast.Json
 import zio.test.*
 
 import agent.entity.AgentRepository
+import analysis.entity.{ AnalysisDoc, AnalysisRepository, AnalysisType }
 import issues.entity.{ AgentIssue, IssueEvent, IssueFilter, IssueRepository }
 import llm4zio.tools.ToolRegistry
 import memory.entity.MemoryRepository
 import shared.errors.PersistenceError
-import shared.ids.Ids.{ AgentId, IssueId }
+import shared.ids.Ids.{ AgentId, AnalysisDocId, IssueId }
 import workspace.control.{ AssignRunRequest, WorkspaceRunService }
 import workspace.entity.{ WorkspaceError, WorkspaceRepository, WorkspaceRun }
 
@@ -96,14 +97,52 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
     override def deleteById(userId: UserId, id: memory.entity.MemoryId): IO[Throwable, Unit] = ZIO.unit
     override def deleteBySession(sessionId: memory.entity.SessionId): IO[Throwable, Unit]    = ZIO.unit
 
+  private val stubAnalysisRepo: AnalysisRepository = new AnalysisRepository:
+    private val docs                                                                             = List(
+      AnalysisDoc(
+        id = AnalysisDocId("analysis-architecture"),
+        workspaceId = "ws1",
+        analysisType = AnalysisType.Architecture,
+        content = "# Executive Summary\n\nSystem boundaries are clear.\n\n## Risks\n\nModerate coupling remains.",
+        filePath = ".llm4zio/analysis/architecture.md",
+        generatedBy = AgentId("architect"),
+        createdAt = java.time.Instant.parse("2026-03-13T10:00:00Z"),
+        updatedAt = java.time.Instant.parse("2026-03-13T10:05:00Z"),
+      ),
+      AnalysisDoc(
+        id = AnalysisDocId("analysis-security"),
+        workspaceId = "ws1",
+        analysisType = AnalysisType.Security,
+        content = "Threat model reviewed.\n\nSecrets handling looks acceptable.",
+        filePath = ".llm4zio/analysis/security.md",
+        generatedBy = AgentId("security"),
+        createdAt = java.time.Instant.parse("2026-03-13T11:00:00Z"),
+        updatedAt = java.time.Instant.parse("2026-03-13T11:10:00Z"),
+      ),
+    )
+    override def append(event: analysis.entity.AnalysisEvent): IO[PersistenceError, Unit]        = ZIO.unit
+    override def get(id: AnalysisDocId): IO[PersistenceError, AnalysisDoc]                       =
+      ZIO.fromOption(docs.find(_.id == id)).orElseFail(PersistenceError.NotFound("analysis_doc", id.value))
+    override def listByWorkspace(workspaceId: String): IO[PersistenceError, List[AnalysisDoc]]   =
+      ZIO.succeed(docs.filter(_.workspaceId == workspaceId))
+    override def listByType(analysisType: AnalysisType): IO[PersistenceError, List[AnalysisDoc]] =
+      ZIO.succeed(docs.filter(_.analysisType == analysisType))
+
   // ── Tests ─────────────────────────────────────────────────────────────────
 
   def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("GatewayMcpTools")(
     suite("tool registration")(
-      test("registers all 7 gateway tools") {
+      test("registers all 9 gateway tools") {
         for
           registry <- ToolRegistry.make
-          tools     = GatewayMcpTools(stubIssueRepo, stubAgentRepo, stubWorkspaceRepo, stubRunService, stubMemoryRepo)
+          tools     = GatewayMcpTools(
+                        stubIssueRepo,
+                        stubAgentRepo,
+                        stubWorkspaceRepo,
+                        stubRunService,
+                        stubMemoryRepo,
+                        stubAnalysisRepo,
+                      )
           _        <- registry.registerAll(tools.all)
           listed   <- registry.list
           names     = listed.map(_.name).toSet
@@ -115,6 +154,8 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
           names.contains("list_workspaces"),
           names.contains("search_conversations"),
           names.contains("get_metrics"),
+          names.contains("get_analysis_docs"),
+          names.contains("get_analysis_summary"),
         )
       }
     ),
@@ -122,7 +163,14 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
       test("returns registered agents as JSON array") {
         for
           registry <- ToolRegistry.make
-          tools     = GatewayMcpTools(stubIssueRepo, stubAgentRepo, stubWorkspaceRepo, stubRunService, stubMemoryRepo)
+          tools     = GatewayMcpTools(
+                        stubIssueRepo,
+                        stubAgentRepo,
+                        stubWorkspaceRepo,
+                        stubRunService,
+                        stubMemoryRepo,
+                        stubAnalysisRepo,
+                      )
           _        <- registry.registerAll(tools.all)
           result   <- registry.execute(llm4zio.core.ToolCall(id = "1", name = "list_agents", arguments = "{}"))
           json      = result.result.toOption.get
@@ -133,7 +181,14 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
       test("returns workspaces as JSON array") {
         for
           registry <- ToolRegistry.make
-          tools     = GatewayMcpTools(stubIssueRepo, stubAgentRepo, stubWorkspaceRepo, stubRunService, stubMemoryRepo)
+          tools     = GatewayMcpTools(
+                        stubIssueRepo,
+                        stubAgentRepo,
+                        stubWorkspaceRepo,
+                        stubRunService,
+                        stubMemoryRepo,
+                        stubAnalysisRepo,
+                      )
           _        <- registry.registerAll(tools.all)
           result   <- registry.execute(llm4zio.core.ToolCall(id = "2", name = "list_workspaces", arguments = "{}"))
           json      = result.result.toOption.get
@@ -155,7 +210,14 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
                               ZIO.succeed(Nil)
                             override def delete(id: IssueId): IO[PersistenceError, Unit]                   = ZIO.unit
           registry     <- ToolRegistry.make
-          tools         = GatewayMcpTools(capturingRepo, stubAgentRepo, stubWorkspaceRepo, stubRunService, stubMemoryRepo)
+          tools         = GatewayMcpTools(
+                            capturingRepo,
+                            stubAgentRepo,
+                            stubWorkspaceRepo,
+                            stubRunService,
+                            stubMemoryRepo,
+                            stubAnalysisRepo,
+                          )
           _            <- registry.registerAll(tools.all)
           args          = Json.Obj(
                             "title"       -> Json.Str("Fix bug"),
@@ -176,7 +238,14 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
       test("returns not_found when run does not exist") {
         for
           registry <- ToolRegistry.make
-          tools     = GatewayMcpTools(stubIssueRepo, stubAgentRepo, stubWorkspaceRepo, stubRunService, stubMemoryRepo)
+          tools     = GatewayMcpTools(
+                        stubIssueRepo,
+                        stubAgentRepo,
+                        stubWorkspaceRepo,
+                        stubRunService,
+                        stubMemoryRepo,
+                        stubAnalysisRepo,
+                      )
           _        <- registry.registerAll(tools.all)
           args      = Json.Obj("runId" -> Json.Str("unknown-run"))
           result   <- registry.execute(llm4zio.core.ToolCall(id = "4", name = "get_run_status", arguments = args.toJson))
@@ -188,7 +257,14 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
       test("returns empty results from stub memory repository") {
         for
           registry <- ToolRegistry.make
-          tools     = GatewayMcpTools(stubIssueRepo, stubAgentRepo, stubWorkspaceRepo, stubRunService, stubMemoryRepo)
+          tools     = GatewayMcpTools(
+                        stubIssueRepo,
+                        stubAgentRepo,
+                        stubWorkspaceRepo,
+                        stubRunService,
+                        stubMemoryRepo,
+                        stubAnalysisRepo,
+                      )
           _        <- registry.registerAll(tools.all)
           args      = Json.Obj("query" -> Json.Str("test query"))
           result   <-
@@ -201,13 +277,74 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
       test("returns gateway metrics JSON") {
         for
           registry <- ToolRegistry.make
-          tools     = GatewayMcpTools(stubIssueRepo, stubAgentRepo, stubWorkspaceRepo, stubRunService, stubMemoryRepo)
+          tools     = GatewayMcpTools(
+                        stubIssueRepo,
+                        stubAgentRepo,
+                        stubWorkspaceRepo,
+                        stubRunService,
+                        stubMemoryRepo,
+                        stubAnalysisRepo,
+                      )
           _        <- registry.registerAll(tools.all)
           result   <- registry.execute(llm4zio.core.ToolCall(id = "6", name = "get_metrics", arguments = "{}"))
           json      = result.result.toOption.get
         yield assertTrue(
           json.toJson.contains("agents"),
           json.toJson.contains("workspaces"),
+        )
+      }
+    ),
+    suite("get_analysis_docs")(
+      test("returns workspace analysis docs and supports type filtering") {
+        for
+          registry  <- ToolRegistry.make
+          tools      = GatewayMcpTools(
+                         stubIssueRepo,
+                         stubAgentRepo,
+                         stubWorkspaceRepo,
+                         stubRunService,
+                         stubMemoryRepo,
+                         stubAnalysisRepo,
+                       )
+          _         <- registry.registerAll(tools.all)
+          allArgs    = Json.Obj("workspaceId" -> Json.Str("ws1"))
+          allResult <-
+            registry.execute(llm4zio.core.ToolCall(id = "7", name = "get_analysis_docs", arguments = allArgs.toJson))
+          filterArgs = Json.Obj("workspaceId" -> Json.Str("ws1"), "analysisType" -> Json.Str("security"))
+          oneResult <-
+            registry.execute(llm4zio.core.ToolCall(id = "8", name = "get_analysis_docs", arguments = filterArgs.toJson))
+          allJson    = allResult.result.toOption.get.toJson
+          oneJson    = oneResult.result.toOption.get.toJson
+        yield assertTrue(
+          allJson.contains("Architecture"),
+          allJson.contains("Security"),
+          allJson.contains(".llm4zio/analysis/architecture.md"),
+          oneJson.contains("Security"),
+          !oneJson.contains("Architecture"),
+        )
+      }
+    ),
+    suite("get_analysis_summary")(
+      test("returns condensed summary from executive summary and first paragraph") {
+        for
+          registry <- ToolRegistry.make
+          tools     = GatewayMcpTools(
+                        stubIssueRepo,
+                        stubAgentRepo,
+                        stubWorkspaceRepo,
+                        stubRunService,
+                        stubMemoryRepo,
+                        stubAnalysisRepo,
+                      )
+          _        <- registry.registerAll(tools.all)
+          args      = Json.Obj("workspaceId" -> Json.Str("ws1"))
+          result   <-
+            registry.execute(llm4zio.core.ToolCall(id = "9", name = "get_analysis_summary", arguments = args.toJson))
+          json      = result.result.toOption.get.toJson
+        yield assertTrue(
+          json.contains("Architecture: System boundaries are clear."),
+          json.contains("Security: Threat model reviewed."),
+          json.contains("\"documents\":2"),
         )
       }
     ),

@@ -1,10 +1,13 @@
 package mcp
 
+import java.time.Instant
+
 import zio.*
 import zio.json.*
 import zio.json.ast.Json
 
 import agent.entity.AgentRepository
+import analysis.entity.{ AnalysisRepository, AnalysisType }
 import issues.entity.{ IssueEvent, IssueRepository }
 import llm4zio.tools.{ Tool, ToolExecutionError }
 import memory.entity.{ MemoryFilter, MemoryRepository, UserId }
@@ -23,6 +26,7 @@ final class GatewayMcpTools(
   wsRepo: WorkspaceRepository,
   runService: WorkspaceRunService,
   memoryRepo: MemoryRepository,
+  analysisRepo: AnalysisRepository,
 ):
 
   // ── assign_issue ──────────────────────────────────────────────────────────
@@ -238,6 +242,91 @@ final class GatewayMcpTools(
       ),
   )
 
+  // ── get_analysis_docs ─────────────────────────────────────────────────────
+
+  private val getAnalysisDocsTool: Tool = Tool(
+    name = "get_analysis_docs",
+    description = "Get workspace analysis documents, optionally filtered by analysis type",
+    parameters = Json.Obj(
+      "type"       -> Json.Str("object"),
+      "properties" -> Json.Obj(
+        "workspaceId"  -> Json.Obj("type" -> Json.Str("string")),
+        "analysisType" -> Json.Obj("type" -> Json.Str("string")),
+      ),
+      "required"   -> Json.Arr(Chunk(Json.Str("workspaceId"))),
+    ),
+    execute = args =>
+      for
+        workspaceId     <- fieldStr(args, "workspaceId")
+        analysisTypeOpt <- fieldStrOpt(args, "analysisType") match
+                             case Some(raw) =>
+                               ZIO
+                                 .fromEither(parseAnalysisType(raw))
+                                 .map(Some(_))
+                                 .mapError(msg => ToolExecutionError.InvalidParameters(msg))
+                             case None      =>
+                               ZIO.succeed(None)
+        docs            <- analysisRepo
+                             .listByWorkspace(workspaceId)
+                             .mapError(e => ToolExecutionError.ExecutionFailed(e.toString))
+      yield Json.Arr(
+        Chunk.fromIterable(
+          docs
+            .filter(doc => analysisTypeOpt.forall(_ == doc.analysisType))
+            .sortBy(doc => (doc.updatedAt, doc.createdAt))(Ordering.Tuple2(
+              Ordering[Instant],
+              Ordering[Instant],
+            ).reverse)
+            .map(doc =>
+              Json.Obj(
+                "id"           -> Json.Str(doc.id.value),
+                "analysisType" -> Json.Str(renderAnalysisType(doc.analysisType)),
+                "content"      -> Json.Str(doc.content),
+                "filePath"     -> Json.Str(doc.filePath),
+                "generatedBy"  -> Json.Str(doc.generatedBy.value),
+                "createdAt"    -> Json.Str(doc.createdAt.toString),
+              )
+            )
+        )
+      ),
+  )
+
+  // ── get_analysis_summary ──────────────────────────────────────────────────
+
+  private val getAnalysisSummaryTool: Tool = Tool(
+    name = "get_analysis_summary",
+    description = "Get a condensed workspace analysis summary assembled from all available analysis docs",
+    parameters = Json.Obj(
+      "type"       -> Json.Str("object"),
+      "properties" -> Json.Obj(
+        "workspaceId" -> Json.Obj("type" -> Json.Str("string"))
+      ),
+      "required"   -> Json.Arr(Chunk(Json.Str("workspaceId"))),
+    ),
+    execute = args =>
+      for
+        workspaceId <- fieldStr(args, "workspaceId")
+        docs        <- analysisRepo
+                         .listByWorkspace(workspaceId)
+                         .mapError(e => ToolExecutionError.ExecutionFailed(e.toString))
+        grouped      = docs
+                         .groupBy(_.analysisType)
+                         .toList
+                         .sortBy { case (analysisType, _) => analysisTypeRank(analysisType) }
+                         .flatMap {
+                           case (_, docsForType) =>
+                             docsForType.sortBy(doc => (doc.updatedAt, doc.createdAt)).lastOption
+                         }
+        summary      = grouped.map(doc =>
+                         s"${renderAnalysisType(doc.analysisType)}: ${summarizeAnalysis(doc.content)}"
+                       ).mkString("\n\n")
+      yield Json.Obj(
+        "workspaceId" -> Json.Str(workspaceId),
+        "summary"     -> Json.Str(summary),
+        "documents"   -> Json.Num(BigDecimal(grouped.size)),
+      ),
+  )
+
   // ── helpers ───────────────────────────────────────────────────────────────
 
   private def fieldStr(args: Json, key: String): IO[ToolExecutionError, String] =
@@ -259,6 +348,57 @@ final class GatewayMcpTools(
       case Json.Obj(fields) => fields.toMap.get(key).collect { case Json.Num(v) => v.intValue() }
       case _                => None
 
+  private def parseAnalysisType(raw: String): Either[String, AnalysisType] =
+    raw.trim.toLowerCase match
+      case "code_review" | "codereview" | "code-review" => Right(AnalysisType.CodeReview)
+      case "architecture"                               => Right(AnalysisType.Architecture)
+      case "security"                                   => Right(AnalysisType.Security)
+      case value if value.nonEmpty                      => Right(AnalysisType.Custom(value))
+      case _                                            => Left("analysisType must be a non-empty string")
+
+  private def renderAnalysisType(analysisType: AnalysisType): String =
+    analysisType match
+      case AnalysisType.CodeReview   => "CodeReview"
+      case AnalysisType.Architecture => "Architecture"
+      case AnalysisType.Security     => "Security"
+      case AnalysisType.Custom(name) => name
+
+  private def summarizeAnalysis(markdown: String): String =
+    val lines            = markdown.linesIterator.map(_.trim).toList
+    val executiveSummary = sectionBody(lines, "executive summary")
+    executiveSummary
+      .orElse(firstParagraph(lines))
+      .getOrElse("No summary available.")
+
+  private def sectionBody(lines: List[String], heading: String): Option[String] =
+    val startIndex = lines.indexWhere { line =>
+      line.startsWith("#") && line.stripPrefix("#").trim.equalsIgnoreCase(heading)
+    }
+    if startIndex < 0 then None
+    else
+      val body = lines
+        .drop(startIndex + 1)
+        .takeWhile(line => !line.startsWith("#"))
+        .dropWhile(_.isEmpty)
+        .mkString(" ")
+        .trim
+      Option(body).filter(_.nonEmpty)
+
+  private def firstParagraph(lines: List[String]): Option[String] =
+    val paragraph = lines
+      .dropWhile(line => line.isEmpty || line.startsWith("#"))
+      .takeWhile(_.nonEmpty)
+      .mkString(" ")
+      .trim
+    Option(paragraph).filter(_.nonEmpty)
+
+  private def analysisTypeRank(analysisType: AnalysisType): Int =
+    analysisType match
+      case AnalysisType.CodeReview   => 0
+      case AnalysisType.Architecture => 1
+      case AnalysisType.Security     => 2
+      case AnalysisType.Custom(_)    => 3
+
   private def isActive(status: workspace.entity.RunStatus): Boolean =
     status == workspace.entity.RunStatus.Pending ||
     status.isInstanceOf[workspace.entity.RunStatus.Running]
@@ -271,4 +411,6 @@ final class GatewayMcpTools(
     listWorkspacesTool,
     searchConversationsTool,
     getMetricsTool,
+    getAnalysisDocsTool,
+    getAnalysisSummaryTool,
   )
