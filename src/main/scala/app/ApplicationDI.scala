@@ -23,6 +23,7 @@ import activity.boundary.ActivityController
 import activity.control.ActivityHub
 import activity.entity.ActivityRepository
 import agent.entity.{ AgentEventStoreES, AgentRepositoryES }
+import analysis.entity.{ AnalysisEventStoreES, AnalysisRepositoryES }
 import app.boundary.{
   AgentMonitorController as AppAgentMonitorController,
   HealthController as AppHealthController,
@@ -258,6 +259,8 @@ object ApplicationDI:
       RunSessionManager.live,
       IssueEventStoreES.live,
       IssueRepositoryES.live,
+      AnalysisEventStoreES.live,
+      AnalysisRepositoryES.live,
       DependencyResolver.live,
       AgentPoolManager.live,
       IssueDispatchStatusService.live,

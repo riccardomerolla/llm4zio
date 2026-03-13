@@ -18,7 +18,9 @@ import activity.entity.{ ActivityEvent, ActivityEventType }
 import agent.control.AgentMatching
 import agent.entity.AgentRepository
 import agent.entity.api.AgentMatchSuggestion
+import analysis.entity.{ AnalysisRepository, AnalysisType }
 import db.{ ChatRepository, ConfigRepository, PersistenceError, TaskRepository }
+import issues.control.IssueAnalysisAttachment
 import issues.entity.api.*
 import issues.entity.{ AgentIssue as DomainIssue, * }
 import orchestration.control.{ IssueAssignmentOrchestrator, IssueDispatchStatusService }
@@ -38,7 +40,8 @@ object IssueController:
   val live
     : ZLayer[
       ChatRepository & TaskRepository & ConfigRepository & AgentRepository & IssueAssignmentOrchestrator &
-        IssueRepository & WorkspaceRepository & WorkspaceRunService & ActivityHub & IssueDispatchStatusService,
+        IssueRepository & WorkspaceRepository & WorkspaceRunService & ActivityHub & IssueDispatchStatusService &
+        AnalysisRepository,
       Nothing,
       IssueController,
     ] =
@@ -55,6 +58,7 @@ final case class IssueControllerLive(
   workspaceRunService: WorkspaceRunService,
   activityHub: ActivityHub,
   issueDispatchStatusService: IssueDispatchStatusService,
+  analysisRepository: AnalysisRepository,
 ) extends IssueController:
 
   override val routes: Routes[Any, Response] = Routes(
@@ -149,12 +153,14 @@ final case class IssueControllerLive(
           workspaces     <- workspaceRepository.list.mapError(mapIssueRepoError)
           issueRuns      <- workspaceRepository.listRunsByIssueRef(s"#$id").mapError(mapIssueRepoError)
           allAgents      <- agentRepository.list().mapError(mapIssueRepoError)
+          analysisDocs   <- loadIssueAnalysisContext(issue).mapError(mapIssueRepoError)
           availableAgents = allAgents.filter(_.enabled).map(registryAgentToAgentInfo)
         yield html(
           HtmlViews.issueDetail(
             domainToView(issue),
             issueRuns,
             availableAgents,
+            analysisDocs,
             workspaces.map(ws => ws.id -> ws.name),
           )
         )
@@ -248,8 +254,8 @@ final case class IssueControllerLive(
                             })
                             .orElseFail(PersistenceError.QueryFailed("status_parse", s"Unknown status: $rawStatus"))
           _            <- ensureTransitionAllowed(issue.state, status, issueId.value)
-          event        <- statusToEvent(issueId, IssueStatusUpdateRequest(status = status), agentFallback, now)
-          _            <- issueRepository.append(event).mapError(mapIssueRepoError)
+          events       <- statusToEvents(issue, IssueStatusUpdateRequest(status = status), agentFallback, now)
+          _            <- ZIO.foreachDiscard(events)(issueRepository.append(_).mapError(mapIssueRepoError))
         yield Response(status = Status.SeeOther, headers = Headers(Header.Custom("Location", s"/issues/$id")))
       }
     },
@@ -739,8 +745,8 @@ final case class IssueControllerLive(
                              })
                              .getOrElse("board")
           _             <- ensureTransitionAllowed(issue.state, updateRequest.status, issueId.value)
-          event         <- statusToEvent(issueId, updateRequest, fallbackAgent, now)
-          _             <- issueRepository.append(event).mapError(mapIssueRepoError)
+          events        <- statusToEvents(issue, updateRequest, fallbackAgent, now)
+          _             <- ZIO.foreachDiscard(events)(issueRepository.append(_).mapError(mapIssueRepoError))
           _             <- maybeStartWorkspaceRunOnInProgress(
                              issue = issue,
                              requestedStatus = updateRequest.status,
@@ -946,6 +952,43 @@ final case class IssueControllerLive(
       ))
       .map(_.filter(_.status != IssueStatus.Skipped))
 
+  private def loadIssueAnalysisContext(
+    issue: DomainIssue
+  ): IO[shared.errors.PersistenceError, List[AnalysisContextDocView]] =
+    ZIO.foreach(issue.analysisDocIds) { docId =>
+      analysisRepository.get(docId).either.flatMap {
+        case Right(doc) =>
+          loadWorkspacePath(doc.workspaceId).map { workspacePath =>
+            Some(
+              AnalysisContextDocView(
+                title = analysisTitle(doc.analysisType),
+                content = doc.content,
+                filePath = doc.filePath,
+                vscodeUrl = workspacePath.map(buildVscodeUrl(_, doc.filePath)),
+              )
+            )
+          }
+        case Left(_)    =>
+          ZIO.succeed(None)
+      }
+    }.map(_.flatten)
+
+  private def loadWorkspacePath(workspaceId: String): IO[shared.errors.PersistenceError, Option[String]] =
+    workspaceRepository.get(workspaceId).map(_.flatMap(ws => Option(ws.localPath).map(_.trim).filter(_.nonEmpty)))
+
+  private def analysisTitle(analysisType: AnalysisType): String =
+    analysisType match
+      case AnalysisType.CodeReview   => "Code Review"
+      case AnalysisType.Architecture => "Architecture"
+      case AnalysisType.Security     => "Security"
+      case AnalysisType.Custom(name) => Option(name).map(_.trim).filter(_.nonEmpty).getOrElse("Custom Analysis")
+
+  private def buildVscodeUrl(workspacePath: String, filePath: String): String =
+    val relative = Paths.get(filePath)
+    val resolved =
+      if relative.isAbsolute then relative.normalize() else Paths.get(workspacePath).resolve(relative).normalize()
+    s"vscode://file${resolved.toUri.getRawPath}"
+
   private def statusMatches(status: IssueStatus, token: String): Boolean =
     (status, token.trim.toLowerCase) match
       case (IssueStatus.Backlog, "backlog")          => true
@@ -1060,97 +1103,84 @@ final case class IssueControllerLive(
         )
       )
 
-  private def statusToEvent(
-    issueId: IssueId,
+  private def statusToEvents(
+    issue: DomainIssue,
     request: IssueStatusUpdateRequest,
     fallbackAgent: String,
     now: Instant,
-  ): IO[PersistenceError, IssueEvent] =
-    request.status match
-      case IssueStatus.Backlog     =>
-        ZIO.succeed(IssueEvent.MovedToBacklog(issueId = issueId, movedAt = now, occurredAt = now))
-      case IssueStatus.Todo        =>
-        ZIO.succeed(IssueEvent.MovedToTodo(issueId = issueId, movedAt = now, occurredAt = now))
-      case IssueStatus.Open        =>
-        ZIO.succeed(IssueEvent.MovedToBacklog(issueId = issueId, movedAt = now, occurredAt = now))
-      case IssueStatus.Assigned    =>
-        ZIO.succeed(IssueEvent.MovedToTodo(issueId = issueId, movedAt = now, occurredAt = now))
+  ): IO[PersistenceError, List[IssueEvent]] =
+    val issueId                  = issue.id
+    val primaryEvent: IssueEvent = request.status match
+      case IssueStatus.Backlog     => IssueEvent.MovedToBacklog(issueId = issueId, movedAt = now, occurredAt = now)
+      case IssueStatus.Todo        => IssueEvent.MovedToTodo(issueId = issueId, movedAt = now, occurredAt = now)
+      case IssueStatus.Open        => IssueEvent.MovedToBacklog(issueId = issueId, movedAt = now, occurredAt = now)
+      case IssueStatus.Assigned    => IssueEvent.MovedToTodo(issueId = issueId, movedAt = now, occurredAt = now)
       case IssueStatus.InProgress  =>
-        ZIO.succeed(
-          IssueEvent.Started(
-            issueId = issueId,
-            agent = AgentId(fallbackAgent),
-            startedAt = now,
-            occurredAt = now,
-          )
+        IssueEvent.Started(
+          issueId = issueId,
+          agent = AgentId(fallbackAgent),
+          startedAt = now,
+          occurredAt = now,
         )
-      case IssueStatus.HumanReview =>
-        ZIO.succeed(IssueEvent.MovedToHumanReview(issueId = issueId, movedAt = now, occurredAt = now))
+      case IssueStatus.HumanReview => IssueEvent.MovedToHumanReview(issueId = issueId, movedAt = now, occurredAt = now)
       case IssueStatus.Rework      =>
-        ZIO.succeed(
-          IssueEvent.MovedToRework(
-            issueId = issueId,
-            movedAt = now,
-            reason = request.reason.map(_.trim).filter(_.nonEmpty).getOrElse("Needs rework"),
-            occurredAt = now,
-          )
+        IssueEvent.MovedToRework(
+          issueId = issueId,
+          movedAt = now,
+          reason = request.reason.map(_.trim).filter(_.nonEmpty).getOrElse("Needs rework"),
+          occurredAt = now,
         )
-      case IssueStatus.Merging     =>
-        ZIO.succeed(IssueEvent.MovedToMerging(issueId = issueId, movedAt = now, occurredAt = now))
+      case IssueStatus.Merging     => IssueEvent.MovedToMerging(issueId = issueId, movedAt = now, occurredAt = now)
       case IssueStatus.Done        =>
-        ZIO.succeed(
-          IssueEvent.MarkedDone(
-            issueId = issueId,
-            doneAt = now,
-            result = request.resultData.map(_.trim).filter(_.nonEmpty).getOrElse("Marked done from board"),
-            occurredAt = now,
-          )
+        IssueEvent.MarkedDone(
+          issueId = issueId,
+          doneAt = now,
+          result = request.resultData.map(_.trim).filter(_.nonEmpty).getOrElse("Marked done from board"),
+          occurredAt = now,
         )
       case IssueStatus.Canceled    =>
-        ZIO.succeed(
-          IssueEvent.Canceled(
-            issueId = issueId,
-            canceledAt = now,
-            reason = request.reason.map(_.trim).filter(_.nonEmpty).getOrElse("Canceled from board"),
-            occurredAt = now,
-          )
+        IssueEvent.Canceled(
+          issueId = issueId,
+          canceledAt = now,
+          reason = request.reason.map(_.trim).filter(_.nonEmpty).getOrElse("Canceled from board"),
+          occurredAt = now,
         )
       case IssueStatus.Duplicated  =>
-        ZIO.succeed(
-          IssueEvent.Duplicated(
-            issueId = issueId,
-            duplicatedAt = now,
-            reason = request.reason.map(_.trim).filter(_.nonEmpty).getOrElse("Marked duplicated from board"),
-            occurredAt = now,
-          )
+        IssueEvent.Duplicated(
+          issueId = issueId,
+          duplicatedAt = now,
+          reason = request.reason.map(_.trim).filter(_.nonEmpty).getOrElse("Marked duplicated from board"),
+          occurredAt = now,
         )
       case IssueStatus.Completed   =>
-        ZIO.succeed(
-          IssueEvent.MarkedDone(
-            issueId = issueId,
-            doneAt = now,
-            result = request.resultData.map(_.trim).filter(_.nonEmpty).getOrElse("Marked completed from board"),
-            occurredAt = now,
-          )
+        IssueEvent.MarkedDone(
+          issueId = issueId,
+          doneAt = now,
+          result = request.resultData.map(_.trim).filter(_.nonEmpty).getOrElse("Marked completed from board"),
+          occurredAt = now,
         )
       case IssueStatus.Failed      =>
-        ZIO.succeed(
-          IssueEvent.MovedToRework(
-            issueId = issueId,
-            movedAt = now,
-            reason = request.reason.map(_.trim).filter(_.nonEmpty).getOrElse("Marked failed from board"),
-            occurredAt = now,
-          )
+        IssueEvent.MovedToRework(
+          issueId = issueId,
+          movedAt = now,
+          reason = request.reason.map(_.trim).filter(_.nonEmpty).getOrElse("Marked failed from board"),
+          occurredAt = now,
         )
       case IssueStatus.Skipped     =>
-        ZIO.succeed(
-          IssueEvent.Canceled(
-            issueId = issueId,
-            canceledAt = now,
-            reason = request.reason.map(_.trim).filter(_.nonEmpty).getOrElse("Skipped from board"),
-            occurredAt = now,
-          )
+        IssueEvent.Canceled(
+          issueId = issueId,
+          canceledAt = now,
+          reason = request.reason.map(_.trim).filter(_.nonEmpty).getOrElse("Skipped from board"),
+          occurredAt = now,
         )
+    request.status match
+      case IssueStatus.HumanReview =>
+        IssueAnalysisAttachment
+          .latestForHumanReview(issue, analysisRepository, now)
+          .map(attached => primaryEvent :: attached.toList)
+          .mapError(mapIssueRepoError)
+      case _                       =>
+        ZIO.succeed(List(primaryEvent))
 
   private def filterIssues(
     issues: List[AgentIssueView],
@@ -1584,8 +1614,8 @@ final case class IssueControllerLive(
                                         .orElse(assignedAgentFromState(issue.state))
                                         .getOrElse("bulk")
                       _            <- ensureTransitionAllowed(issue.state, request.status, issueId)
-                      event        <- statusToEvent(
-                                        IssueId(issueId),
+                      events       <- statusToEvents(
+                                        issue,
                                         IssueStatusUpdateRequest(
                                           status = request.status,
                                           agentName = request.agentName,
@@ -1595,7 +1625,7 @@ final case class IssueControllerLive(
                                         fallbackAgent,
                                         now,
                                       )
-                      _            <- issueRepository.append(event).mapError(mapIssueRepoError)
+                      _            <- ZIO.foreachDiscard(events)(issueRepository.append(_).mapError(mapIssueRepoError))
                     yield ()).either
                   }
     yield toBulkResponse(issueIds.size, results)

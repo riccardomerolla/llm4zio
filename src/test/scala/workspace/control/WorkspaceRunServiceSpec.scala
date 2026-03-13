@@ -8,6 +8,7 @@ import zio.test.*
 import activity.control.ActivityHub
 import activity.entity.ActivityEvent
 import agent.entity.{ Agent, AgentRepository }
+import analysis.entity.{ AnalysisDoc, AnalysisRepository, AnalysisType }
 import conversation.entity.api.{ ChatConversation, ConversationEntry }
 import db.{ PersistenceError as DbPersistenceError, * }
 import issues.entity.{ AgentIssue, IssueEvent, IssueFilter, IssueRepository, IssueState }
@@ -45,7 +46,23 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
       eventsRef.update(_ :+ event)
 
     def get(id: IssueId): IO[PersistenceError, issues.entity.AgentIssue] =
-      ZIO.fail(PersistenceError.NotFound("issue", id.value))
+      ZIO.succeed(
+        AgentIssue(
+          id = id,
+          runId = None,
+          conversationId = None,
+          title = s"Issue ${id.value}",
+          description = "desc",
+          issueType = "task",
+          priority = "medium",
+          requiredCapabilities = Nil,
+          state = IssueState.InProgress(AgentId("echo"), Instant.parse("2026-02-24T10:00:00Z")),
+          tags = Nil,
+          contextPath = "",
+          sourceFolder = "",
+          workspaceId = Some("ws-1"),
+        )
+      )
 
     def history(id: IssueId): IO[PersistenceError, List[IssueEvent]] =
       ZIO.succeed(Nil)
@@ -54,6 +71,27 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
       ZIO.succeed(Nil)
 
     def delete(id: IssueId): IO[PersistenceError, Unit] = ZIO.unit
+
+  private object StubAnalysisRepo extends AnalysisRepository:
+    def append(event: analysis.entity.AnalysisEvent): IO[PersistenceError, Unit]        = ZIO.unit
+    def get(id: shared.ids.Ids.AnalysisDocId): IO[PersistenceError, AnalysisDoc]        =
+      ZIO.fail(PersistenceError.NotFound("analysis_doc", id.value))
+    def listByWorkspace(workspaceId: String): IO[PersistenceError, List[AnalysisDoc]]   =
+      ZIO.succeed(
+        List(
+          AnalysisDoc(
+            id = shared.ids.Ids.AnalysisDocId("analysis-code-review"),
+            workspaceId = workspaceId,
+            analysisType = AnalysisType.CodeReview,
+            content = "review",
+            filePath = ".llm4zio/analysis/code-review.md",
+            generatedBy = AgentId("reviewer"),
+            createdAt = Instant.parse("2026-02-24T10:00:00Z"),
+            updatedAt = Instant.parse("2026-02-24T10:05:00Z"),
+          )
+        )
+      )
+    def listByType(analysisType: AnalysisType): IO[PersistenceError, List[AnalysisDoc]] = ZIO.succeed(Nil)
 
   // In-memory event-sourced stub WorkspaceRepository
   private class StubWorkspaceRepo(
@@ -235,6 +273,7 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
           wsRepo,
           chatRepo,
           StubIssueRepo,
+          StubAnalysisRepo,
           worktreeAdd = noopWorktreeAdd,
           worktreeRemove = noopWorktreeRemove,
           dockerCheck = dockerCheck,
@@ -263,6 +302,7 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
                        wsRepo,
                        chatRepo,
                        issueRepo,
+                       StubAnalysisRepo,
                        worktreeAdd = noopWorktreeAdd,
                        worktreeRemove = noopWorktreeRemove,
                        runCliAgent = runCliAgent,
@@ -385,6 +425,7 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
                       wsRepo,
                       chatRepo,
                       StubIssueRepo,
+                      StubAnalysisRepo,
                       timeoutSeconds = 0,
                       worktreeAdd = noopWorktreeAdd,
                       worktreeRemove = noopWorktreeRemove,
@@ -433,6 +474,7 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
                       wsRepo,
                       StubChatRepo(messages),
                       StubIssueRepo,
+                      StubAnalysisRepo,
                       worktreeAdd = noopWorktreeAdd,
                       worktreeRemove = noopWorktreeRemove,
                       runCliAgent = neverCliAgent,
@@ -466,7 +508,12 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
         events.exists {
           case IssueEvent.MovedToHumanReview(issueId, _, _) => issueId.value == "sync-complete"
           case _                                            => false
-        }
+        },
+        events.exists {
+          case IssueEvent.AnalysisAttached(issueId, docIds, _, _) =>
+            issueId.value == "sync-complete" && docIds == List(shared.ids.Ids.AnalysisDocId("analysis-code-review"))
+          case _                                                  => false
+        },
       )
     } @@ TestAspect.withLiveClock,
     test("failed workspace run moves issue to Rework") {

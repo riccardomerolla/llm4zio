@@ -6,7 +6,7 @@ import zio.json.*
 
 import config.entity.AgentInfo
 import issues.entity.IssueWorkReport
-import issues.entity.api.{ AgentIssueView, DispatchStatusResponse, IssueStatus, IssueTemplate }
+import issues.entity.api.{ AgentIssueView, AnalysisContextDocView, DispatchStatusResponse, IssueStatus, IssueTemplate }
 import scalatags.Text.all.*
 import shared.ids.Ids.IssueId
 import workspace.entity.{ RunSessionMode, RunStatus, WorkspaceRun }
@@ -455,7 +455,7 @@ object IssuesView:
     workspaces: List[(String, String)],
     workReport: Option[IssueWorkReport],
   ): String =
-    detailPage(issue, issueRuns, availableAgents, workspaces, workReport)
+    detailPage(issue, issueRuns, availableAgents, Nil, workspaces, workReport)
 
   def newForm(defaultRunId: Option[String], workspaces: List[(String, String)], templates: List[IssueTemplate])
     : String =
@@ -606,14 +606,16 @@ object IssuesView:
     issue: AgentIssueView,
     issueRuns: List[WorkspaceRun],
     availableAgents: List[AgentInfo],
+    analysisDocs: List[AnalysisContextDocView],
     workspaces: List[(String, String)],
   ): String =
-    detailPage(issue, issueRuns, availableAgents, workspaces, workReport = None)
+    detailPage(issue, issueRuns, availableAgents, analysisDocs, workspaces, workReport = None)
 
   private def detailPage(
     issue: AgentIssueView,
     issueRuns: List[WorkspaceRun],
     availableAgents: List[AgentInfo],
+    analysisDocs: List[AnalysisContextDocView],
     workspaces: List[(String, String)],
     workReport: Option[IssueWorkReport],
   ): String =
@@ -638,10 +640,22 @@ object IssuesView:
           span(cls := "text-slate-600")("/"),
           span(cls := "text-sm text-slate-400")(s"#$issueIdStr"),
         ),
+        div(cls := "border-b border-white/10")(
+          tag("nav")(cls := "-mb-px flex space-x-6", attr("aria-label") := "Issue detail tabs")(
+            a(
+              href := "#issue-overview",
+              cls  := "border-b-2 border-indigo-500 py-3 px-1 text-sm font-medium text-white whitespace-nowrap",
+            )("Overview"),
+            a(
+              href := "#issue-analysis-context",
+              cls  := "border-b-2 border-transparent py-3 px-1 text-sm font-medium text-gray-400 hover:text-white hover:border-white/30 whitespace-nowrap",
+            )("Analysis Context"),
+          )
+        ),
         // ── main two-column layout ───────────────────────────────────────
         div(cls := "flex flex-col gap-4 lg:flex-row lg:items-start")(
           // ── LEFT: title + content ──────────────────────────────────────
-          div(cls := "min-w-0 flex-1 space-y-4")(
+          div(id := "issue-overview", cls := "min-w-0 flex-1 space-y-4")(
             // title card
             div(cls := "rounded-xl border border-white/10 bg-slate-900/70 p-6")(
               div(cls := "flex flex-wrap items-start justify-between gap-3")(
@@ -699,6 +713,36 @@ object IssuesView:
                           cls  := "font-medium text-indigo-300 hover:text-indigo-200",
                         )("Open chat →"),
                         span(cls := "text-slate-500")(s"Branch ${run.branchName}"),
+                      ),
+                    )
+                  }
+                ),
+            ),
+            div(id := "issue-analysis-context", cls := "rounded-xl border border-white/10 bg-slate-900/60 p-6")(
+              h2(cls := "mb-3 text-base font-semibold text-white")("Analysis Context"),
+              if analysisDocs.isEmpty then
+                p(cls := "text-sm text-slate-400")("No analysis documents attached.")
+              else
+                div(cls := "space-y-3")(
+                  analysisDocs.map { doc =>
+                    tag("details")(cls := "rounded-lg border border-white/10 bg-slate-800/70")(
+                      tag("summary")(
+                        cls := "flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-medium text-slate-100"
+                      )(
+                        span(doc.title),
+                        doc.vscodeUrl.map(url =>
+                          a(
+                            href    := url,
+                            cls     := "text-xs font-medium text-indigo-300 hover:text-indigo-200",
+                            onclick := "event.stopPropagation();",
+                          )("Open in VSCode")
+                        ).getOrElse(()),
+                      ),
+                      div(cls := "space-y-3 border-t border-white/10 px-4 py-4")(
+                        p(cls := "text-xs text-slate-500")(doc.filePath),
+                        div(cls := "prose prose-invert prose-sm max-w-none text-slate-100")(
+                          markdownFragment(safeStr(doc.content))
+                        ),
                       ),
                     )
                   }

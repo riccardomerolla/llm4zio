@@ -185,6 +185,13 @@ case class DispatchStatusResponse(
   reworkBoosted: Boolean = false,
 ) derives JsonCodec
 
+final case class AnalysisContextDocView(
+  title: String,
+  content: String,
+  filePath: String,
+  vscodeUrl: Option[String] = None,
+)
+
 case class PipelineStep(
   agentId: String,
   promptOverride: Option[String] = None,

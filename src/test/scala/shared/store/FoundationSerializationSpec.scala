@@ -106,10 +106,12 @@ object FoundationSerializationSpec extends ZIOSpecDefault:
             acceptanceCriteria = Some("Round-trip serialization remains stable."),
             kaizenSkill = Some("scala-zio-refactor"),
             milestoneRef = Some("m9-foundation"),
+            analysisDocIds = List(Ids.AnalysisDocId("analysis-1"), Ids.AnalysisDocId("analysis-2")),
           )
-          val event: IssueEvent = IssueEvent.PromptTemplateUpdated(
+          val event: IssueEvent = IssueEvent.AnalysisAttached(
             issueId = issue.id,
-            promptTemplate = "Fix ${title} with exhaustive tests.",
+            analysisDocIds = issue.analysisDocIds,
+            attachedAt = createdAt,
             occurredAt = createdAt,
           )
 

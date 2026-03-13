@@ -6,7 +6,7 @@ import zio.json.JsonCodec
 import zio.schema.annotation.fieldDefaultValue
 import zio.schema.{ Schema, derived }
 
-import shared.ids.Ids.{ AgentId, ConversationId, IssueId, TaskRunId }
+import shared.ids.Ids.{ AgentId, AnalysisDocId, ConversationId, IssueId, TaskRunId }
 
 enum IssueState derives JsonCodec, Schema:
   case Backlog(createdAt: Instant)
@@ -43,6 +43,7 @@ final case class AgentIssue(
   @fieldDefaultValue(None) acceptanceCriteria: Option[String] = None,
   @fieldDefaultValue(None) kaizenSkill: Option[String] = None,
   @fieldDefaultValue(None) milestoneRef: Option[String] = None,
+  @fieldDefaultValue(Nil) analysisDocIds: List[AnalysisDocId] = Nil,
   workspaceId: Option[String] = None,
   externalRef: Option[String] = None,
   externalUrl: Option[String] = None,
@@ -61,6 +62,11 @@ object AgentIssue:
   private def sanitizeIssueIds(values: List[IssueId]): List[IssueId] =
     safeList(values)
       .flatMap(id => Option(id).flatMap(v => sanitizeText(v.value).map(IssueId.apply)))
+      .distinct
+
+  private def sanitizeAnalysisDocIds(values: List[AnalysisDocId]): List[AnalysisDocId] =
+    safeList(values)
+      .flatMap(id => Option(id).flatMap(v => sanitizeText(v.value).map(AnalysisDocId.apply)))
       .distinct
 
   def fromEvents(events: List[IssueEvent]): Either[String, AgentIssue] =
@@ -102,6 +108,7 @@ object AgentIssue:
                   acceptanceCriteria = None,
                   kaizenSkill = None,
                   milestoneRef = None,
+                  analysisDocIds = Nil,
                   workspaceId = None,
                   externalRef = None,
                   externalUrl = None,
@@ -214,6 +221,11 @@ object AgentIssue:
         current
           .toRight(s"Issue ${updated.issueId.value} not initialized before AcceptanceCriteriaUpdated event")
           .map(issue => Some(issue.copy(acceptanceCriteria = sanitizeText(updated.acceptanceCriteria))))
+
+      case attached: IssueEvent.AnalysisAttached =>
+        current
+          .toRight(s"Issue ${attached.issueId.value} not initialized before AnalysisAttached event")
+          .map(issue => Some(issue.copy(analysisDocIds = sanitizeAnalysisDocIds(attached.analysisDocIds))))
 
       case reopened: IssueEvent.Reopened =>
         current
