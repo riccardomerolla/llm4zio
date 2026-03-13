@@ -7,9 +7,12 @@ import zio.test.*
 
 import activity.control.ActivityHub
 import activity.entity.{ ActivityEvent, ActivityEventType }
+import db.{ ConfigRepository, CustomAgentRow, PersistenceError as DbPersistenceError, SettingRow, WorkflowRow }
 import issues.entity.*
+import orchestration.control.WorkReportEventBus
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ AnalysisDocId, EventId, IssueId, TaskRunId }
+import taskrun.entity.{ CiStatus, TaskRunEvent }
 import workspace.entity.*
 
 object MergeAgentServiceSpec extends ZIOSpecDefault:
@@ -108,14 +111,42 @@ object MergeAgentServiceSpec extends ZIOSpecDefault:
         _     <- subscribers.update(_ + queue)
       yield queue
 
+  final private class StubConfigRepository(settings: Ref[Map[String, String]]) extends ConfigRepository:
+    override def getAllSettings: IO[DbPersistenceError, List[SettingRow]]                           =
+      settings.get.map(_.toList.map { case (key, value) => SettingRow(key, value, now) })
+    override def getSetting(key: String): IO[DbPersistenceError, Option[SettingRow]]                =
+      settings.get.map(_.get(key).map(value => SettingRow(key, value, now)))
+    override def upsertSetting(key: String, value: String): IO[DbPersistenceError, Unit]            =
+      settings.update(_.updated(key, value)).unit
+    override def deleteSetting(key: String): IO[DbPersistenceError, Unit]                           = settings.update(_ - key).unit
+    override def deleteSettingsByPrefix(prefix: String): IO[DbPersistenceError, Unit]               =
+      settings.update(_.filterNot(_._1.startsWith(prefix))).unit
+    override def createWorkflow(workflow: WorkflowRow): IO[DbPersistenceError, Long]                = ZIO.succeed(1L)
+    override def getWorkflow(id: Long): IO[DbPersistenceError, Option[WorkflowRow]]                 = ZIO.succeed(None)
+    override def getWorkflowByName(name: String): IO[DbPersistenceError, Option[WorkflowRow]]       = ZIO.succeed(None)
+    override def listWorkflows: IO[DbPersistenceError, List[WorkflowRow]]                           = ZIO.succeed(Nil)
+    override def updateWorkflow(workflow: WorkflowRow): IO[DbPersistenceError, Unit]                = ZIO.unit
+    override def deleteWorkflow(id: Long): IO[DbPersistenceError, Unit]                             = ZIO.unit
+    override def createCustomAgent(agent: CustomAgentRow): IO[DbPersistenceError, Long]             = ZIO.succeed(1L)
+    override def getCustomAgent(id: Long): IO[DbPersistenceError, Option[CustomAgentRow]]           = ZIO.succeed(None)
+    override def getCustomAgentByName(name: String): IO[DbPersistenceError, Option[CustomAgentRow]] =
+      ZIO.succeed(None)
+    override def listCustomAgents: IO[DbPersistenceError, List[CustomAgentRow]]                     = ZIO.succeed(Nil)
+    override def updateCustomAgent(agent: CustomAgentRow): IO[DbPersistenceError, Unit]             = ZIO.unit
+    override def deleteCustomAgent(id: Long): IO[DbPersistenceError, Unit]                          = ZIO.unit
+
   final private case class Harness(
     issueId: IssueId,
     issueState: Ref[Map[IssueId, AgentIssue]],
+    settings: Ref[Map[String, String]],
     gitCalls: Ref[List[String]],
     mergeFailure: Ref[Option[GitError]],
+    ciResult: Ref[(List[String], Int)],
     activityEvents: Ref[List[ActivityEvent]],
     activityHub: ActivityHub,
-    layer: ZLayer[Any, Nothing, MergeAgentService],
+    workReportEventBus: WorkReportEventBus,
+    serviceLayer: ZLayer[Any, Nothing, MergeAgentService],
+    runtimeLayer: ZLayer[Any, Nothing, MergeAgentService],
   )
 
   private def makeHarness: UIO[Harness] =
@@ -143,10 +174,23 @@ object MergeAgentServiceSpec extends ZIOSpecDefault:
                           )
                         )
       gitCalls       <- Ref.make(List.empty[String])
+      settings       <- Ref.make(Map.empty[String, String])
       mergeFailure   <- Ref.make(Option.empty[GitError])
+      ciResult       <- Ref.make((List("All checks passed"), 0))
       activityEvents <- Ref.make(List.empty[ActivityEvent])
       subscribers    <- Ref.make(Set.empty[Queue[ActivityEvent]])
       activityHub     = StubActivityHub(activityEvents, subscribers)
+      configRepo      = StubConfigRepository(settings)
+      taskRunHub     <- Hub.unbounded[TaskRunEvent]
+      issueHub       <- Hub.unbounded[IssueEvent]
+      sessionHub     <- Hub.unbounded[orchestration.control.ParallelSessionEvent]
+      workQueue      <- Queue.unbounded[IssueId]
+      pendingRef     <- Ref.Synchronized.make(Set.empty[IssueId])
+      workReportBus   = WorkReportEventBus(
+                          taskRunHub = taskRunHub,
+                          issueHub = issueHub,
+                          parallelSessionHub = sessionHub,
+                        )
       workspace       = Workspace(
                           id = "ws-1",
                           name = "repo",
@@ -178,12 +222,38 @@ object MergeAgentServiceSpec extends ZIOSpecDefault:
       issueRepo       = StubIssueRepository(issueState)
       workspaceRepo   = StubWorkspaceRepository(Map(workspace.id -> workspace), Map(run.id -> run))
       gitService      = StubGitService(gitCalls, mergeFailure)
-      layer           =
-        ZLayer.succeed(issueRepo) ++
-          ZLayer.succeed(workspaceRepo) ++
-          ZLayer.succeed(gitService) ++
-          ZLayer.succeed(activityHub) >>> MergeAgentService.live
-    yield Harness(IssueId("merge-1"), issueState, gitCalls, mergeFailure, activityEvents, activityHub, layer)
+      service         = MergeAgentServiceLive(
+                          issueRepository = issueRepo,
+                          workspaceRepository = workspaceRepo,
+                          gitService = gitService,
+                          activityHub = activityHub,
+                          configRepository = configRepo,
+                          workReportEventBus = workReportBus,
+                          queue = workQueue,
+                          pending = pendingRef,
+                          commandRunner = (_, _) => ciResult.get,
+                        )
+      serviceLayer    = ZLayer.succeed(service)
+      runtimeLayer    = ZLayer.scoped {
+                          for
+                            _ <- service.bootstrap.catchAll(_ => ZIO.unit).forkScoped
+                            _ <- service.listen.forkScoped
+                            _ <- service.worker.forever.forkScoped
+                          yield service
+                        }
+    yield Harness(
+      IssueId("merge-1"),
+      issueState,
+      settings,
+      gitCalls,
+      mergeFailure,
+      ciResult,
+      activityEvents,
+      activityHub,
+      workReportBus,
+      serviceLayer,
+      runtimeLayer,
+    )
 
   private def waitUntilDone(issueState: Ref[Map[IssueId, AgentIssue]], issueId: IssueId): UIO[Unit] =
     issueState.get.flatMap { state =>
@@ -194,13 +264,26 @@ object MergeAgentServiceSpec extends ZIOSpecDefault:
       case None    => ZIO.dieMessage("merge did not complete")
     }
 
+  private def waitForCiEvents(
+    taskRunQueue: Dequeue[TaskRunEvent],
+    expectedCount: Int,
+  ): IO[Throwable, List[TaskRunEvent.CiStatusUpdated]] =
+    ZIO
+      .collectAll(
+        List.fill(expectedCount) {
+          taskRunQueue.take.flatMap {
+            case event: TaskRunEvent.CiStatusUpdated => ZIO.succeed(event)
+            case other                               => ZIO.dieMessage(s"unexpected task run event: $other")
+          }
+        }
+      )
+      .timeoutFail(new RuntimeException(s"expected $expectedCount CI status events"))(2.seconds)
+
   def spec: Spec[TestEnvironment, Any] = suite("MergeAgentServiceSpec")(
     test("mergeOnce checks out base branch, merges agent branch, and marks issue done") {
       for
         harness <- makeHarness
-        result  <- MergeAgentService
-                     .mergeOnce(harness.issueId)
-                     .provideLayer(harness.layer)
+        result  <- MergeAgentService.mergeOnce(harness.issueId).provideLayer(harness.serviceLayer)
         issue   <- harness.issueState.get.map(_(harness.issueId))
         calls   <- harness.gitCalls.get
       yield assertTrue(
@@ -215,7 +298,7 @@ object MergeAgentServiceSpec extends ZIOSpecDefault:
         harness <- makeHarness
         _       <- ZIO.scoped {
                      for
-                       env <- harness.layer.build
+                       env <- harness.runtimeLayer.build
                        _   <- (
                                 for
                                   _ <- harness.activityHub.publish(
@@ -244,10 +327,7 @@ object MergeAgentServiceSpec extends ZIOSpecDefault:
       for
         harness <- makeHarness
         _       <- harness.mergeFailure.set(Some(mergeConflict))
-        result  <- MergeAgentService
-                     .mergeOnce(harness.issueId)
-                     .provideLayer(harness.layer)
-                     .either
+        result  <- MergeAgentService.mergeOnce(harness.issueId).provideLayer(harness.serviceLayer).either
         issue   <- harness.issueState.get.map(_(harness.issueId))
         calls   <- harness.gitCalls.get
         events  <- harness.activityEvents.get
@@ -260,6 +340,59 @@ object MergeAgentServiceSpec extends ZIOSpecDefault:
           case _                            => false,
         issue.mergeConflictFiles == List("src/Main.scala", "README.md"),
         events.exists(_.eventType == ActivityEventType.MergeConflict),
+      )
+    },
+    test("required CI verification publishes running/passed status and only then marks issue done") {
+      for
+        harness           <- makeHarness
+        _                 <- harness.settings.set(
+                               Map(
+                                 "workspace.ws-1.mergePolicy.requireCi" -> "true",
+                                 "workspace.ws-1.mergePolicy.ciCommand" -> "sbt test",
+                               )
+                             )
+        _                 <- harness.ciResult.set((List("All checks passed"), 0))
+        tuple             <- ZIO.scoped {
+                               for
+                                 taskRunQueue <- harness.workReportEventBus.subscribeTaskRun
+                                 result       <- MergeAgentService.mergeOnce(harness.issueId).provideLayer(harness.serviceLayer)
+                                 ciEvents     <- waitForCiEvents(taskRunQueue, 2)
+                               yield (result, ciEvents)
+                             }
+        (result, ciEvents) = tuple
+        issue             <- harness.issueState.get.map(_(harness.issueId))
+      yield assertTrue(
+        result == (),
+        issue.state.isInstanceOf[IssueState.Done],
+        ciEvents.map(_.runId) == List(TaskRunId("run-1"), TaskRunId("run-1")),
+        ciEvents.map(_.ciStatus) == List(CiStatus.Running, CiStatus.Passed),
+      )
+    },
+    test("required CI verification moves issue to Rework when command fails") {
+      for
+        harness           <- makeHarness
+        _                 <- harness.settings.set(
+                               Map(
+                                 "workspace.ws-1.mergePolicy.requireCi" -> "true",
+                                 "workspace.ws-1.mergePolicy.ciCommand" -> "sbt test",
+                               )
+                             )
+        _                 <- harness.ciResult.set((List("[error] tests failed", "1 failing"), 1))
+        tuple             <- ZIO.scoped {
+                               for
+                                 taskRunQueue <- harness.workReportEventBus.subscribeTaskRun
+                                 result       <- MergeAgentService.mergeOnce(harness.issueId).provideLayer(harness.serviceLayer).either
+                                 ciEvents     <- waitForCiEvents(taskRunQueue, 2)
+                               yield (result, ciEvents)
+                             }
+        (result, ciEvents) = tuple
+        issue             <- harness.issueState.get.map(_(harness.issueId))
+      yield assertTrue(
+        result == Left(MergeAgentError.CiVerificationFailed("[error] tests failed | 1 failing")),
+        issue.state match
+          case IssueState.Rework(_, reason) => reason == "CI verification failed: [error] tests failed | 1 failing"
+          case _                            => false,
+        ciEvents.map(_.ciStatus) == List(CiStatus.Running, CiStatus.Failed),
       )
     },
   ) @@ TestAspect.sequential @@ TestAspect.withLiveClock

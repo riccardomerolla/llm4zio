@@ -5,9 +5,12 @@ import zio.json.*
 
 import activity.control.ActivityHub
 import activity.entity.{ ActivityEvent, ActivityEventType }
+import db.ConfigRepository
 import issues.entity.*
+import orchestration.control.WorkReportEventBus
 import shared.errors.PersistenceError
-import shared.ids.Ids.{ EventId, IssueId }
+import shared.ids.Ids.{ EventId, IssueId, TaskRunId }
+import taskrun.entity.{ CiStatus, TaskRunEvent }
 import workspace.entity.{ GitError, RunStatus, WorkspaceRepository, WorkspaceRun }
 
 enum MergeAgentError:
@@ -16,6 +19,8 @@ enum MergeAgentError:
   case RunNotFound(issueId: IssueId)
   case WorkspaceNotFound(workspaceId: String)
   case InvalidBaseBranch(repoPath: String, branch: String)
+  case CiCommandMissing(workspaceId: String)
+  case CiVerificationFailed(details: String)
   case PersistenceFailure(operation: String, details: String)
   case GitFailure(error: GitError)
 
@@ -26,6 +31,9 @@ enum MergeAgentError:
       case RunNotFound(issueId)                   => s"No workspace run found for issue ${issueId.value}"
       case WorkspaceNotFound(workspaceId)         => s"Workspace not found: $workspaceId"
       case InvalidBaseBranch(repoPath, branch)    => s"Invalid base branch '$branch' for repository $repoPath"
+      case CiCommandMissing(workspaceId)          =>
+        s"CI verification required but no CI command configured for workspace $workspaceId"
+      case CiVerificationFailed(details)          => s"CI verification failed: $details"
       case PersistenceFailure(operation, details) => s"$operation failed: $details"
       case GitFailure(error)                      => error.toString
 
@@ -42,13 +50,20 @@ object MergeAgentService:
   def mergeOnce(issueId: IssueId): ZIO[MergeAgentService, MergeAgentError, Unit] =
     ZIO.serviceWithZIO[MergeAgentService](_.mergeOnce(issueId))
 
-  val live: ZLayer[IssueRepository & WorkspaceRepository & GitService & ActivityHub, Nothing, MergeAgentService] =
+  val live
+    : ZLayer[
+      IssueRepository & WorkspaceRepository & GitService & ActivityHub & ConfigRepository & WorkReportEventBus,
+      Nothing,
+      MergeAgentService,
+    ] =
     ZLayer.scoped {
       for
         issueRepository     <- ZIO.service[IssueRepository]
         workspaceRepository <- ZIO.service[WorkspaceRepository]
         gitService          <- ZIO.service[GitService]
         activityHub         <- ZIO.service[ActivityHub]
+        configRepository    <- ZIO.service[ConfigRepository]
+        workReportEventBus  <- ZIO.service[WorkReportEventBus]
         queue               <- Queue.unbounded[IssueId]
         pending             <- Ref.Synchronized.make(Set.empty[IssueId])
         service              = MergeAgentServiceLive(
@@ -56,8 +71,11 @@ object MergeAgentService:
                                  workspaceRepository = workspaceRepository,
                                  gitService = gitService,
                                  activityHub = activityHub,
+                                 configRepository = configRepository,
+                                 workReportEventBus = workReportEventBus,
                                  queue = queue,
                                  pending = pending,
+                                 commandRunner = (argv, cwd) => CliAgentRunner.runProcess(argv, cwd),
                                )
         _                   <- service.bootstrap.catchAll(logBootstrapError).forkScoped
         _                   <- service.listen.forkScoped
@@ -91,8 +109,11 @@ final case class MergeAgentServiceLive(
   workspaceRepository: WorkspaceRepository,
   gitService: GitService,
   activityHub: ActivityHub,
+  configRepository: ConfigRepository,
+  workReportEventBus: WorkReportEventBus,
   queue: Queue[IssueId],
   pending: Ref.Synchronized[Set[IssueId]],
+  commandRunner: (List[String], String) => Task[(List[String], Int)],
 ) extends MergeAgentService:
 
   override def enqueue(issueId: IssueId): UIO[Unit] =
@@ -109,7 +130,7 @@ final case class MergeAgentServiceLive(
       workspace  <- resolveWorkspace(run.workspaceId)
       branchInfo <- gitService.branchInfo(workspace.localPath).mapError(MergeAgentError.GitFailure.apply)
       baseBranch <- validateBaseBranch(workspace.localPath, branchInfo.current, branchInfo.isDetached)
-      _          <- mergeIntoBase(issue, run, workspace.localPath, baseBranch)
+      _          <- mergeIntoBase(issue, run, workspace.id, workspace.localPath, baseBranch)
     yield ()
 
   private[workspace] def bootstrap: IO[PersistenceError, Unit] =
@@ -195,6 +216,7 @@ final case class MergeAgentServiceLive(
   private def mergeIntoBase(
     issue: AgentIssue,
     run: WorkspaceRun,
+    workspaceId: String,
     repoPath: String,
     baseBranch: String,
   ): IO[MergeAgentError, Unit] =
@@ -214,6 +236,7 @@ final case class MergeAgentServiceLive(
                case other                                =>
                  ZIO.fail(MergeAgentError.GitFailure(other))
              }
+      _ <- verifyCiIfRequired(issue, run, workspaceId, repoPath)
       _ <- markIssueDone(issue, run.branchName, baseBranch)
     yield ()
 
@@ -269,6 +292,111 @@ final case class MergeAgentServiceLive(
       case xs  => xs.mkString(", ")
     s"merge conflict: $summary"
 
+  private def verifyCiIfRequired(
+    issue: AgentIssue,
+    run: WorkspaceRun,
+    workspaceId: String,
+    repoPath: String,
+  ): IO[MergeAgentError, Unit] =
+    for
+      config <- loadCiVerificationConfig(workspaceId)
+      _      <- if !config.requireCi then ZIO.unit
+                else
+                  config.command match
+                    case Some(command) => runCiVerification(issue, run, repoPath, command)
+                    case None          => ZIO.fail(MergeAgentError.CiCommandMissing(workspaceId))
+    yield ()
+
+  private def loadCiVerificationConfig(workspaceId: String): IO[MergeAgentError, CiVerificationConfig] =
+    for
+      requireCi <- settingValue(s"workspace.$workspaceId.mergePolicy.requireCi")
+                     .flatMap {
+                       case Some(value) => ZIO.succeed(parseBoolean(value))
+                       case None        => settingValue("mergePolicy.requireCi").map(_.exists(parseBoolean))
+                     }
+      command   <- settingValue(s"workspace.$workspaceId.mergePolicy.ciCommand")
+                     .flatMap {
+                       case some @ Some(_) => ZIO.succeed(some)
+                       case None           => settingValue("mergePolicy.ciCommand")
+                     }
+    yield CiVerificationConfig(requireCi = requireCi, command = command)
+
+  private def settingValue(key: String): IO[MergeAgentError, Option[String]] =
+    configRepository
+      .getSetting(key)
+      .mapError(err => MergeAgentError.PersistenceFailure(s"get_setting:$key", err.toString))
+      .map(_.map(_.value.trim).filter(_.nonEmpty))
+
+  private def parseBoolean(value: String): Boolean =
+    value.trim.equalsIgnoreCase("true") || value.trim == "1" || value.trim.equalsIgnoreCase("yes")
+
+  private def runCiVerification(
+    issue: AgentIssue,
+    run: WorkspaceRun,
+    repoPath: String,
+    command: String,
+  ): IO[MergeAgentError, Unit] =
+    for
+      startedAt    <- Clock.instant
+      _            <- publishCiStatus(issue, run, CiStatus.Running, startedAt)
+      result       <- runShellCommand(command, repoPath)
+      (lines, code) = result
+      parsedStatus  =
+        if code == 0 then normalizePassedStatus(ProofOfWorkExtractor.parseCiStatus(lines)) else CiStatus.Failed
+      finishedAt   <- Clock.instant
+      _            <- publishCiStatus(issue, run, parsedStatus, finishedAt)
+      _            <- parsedStatus match
+                        case CiStatus.Passed =>
+                          ZIO.unit
+                        case _               =>
+                          handleCiFailure(issue, lines, finishedAt)
+    yield ()
+
+  private def runShellCommand(command: String, cwd: String): IO[MergeAgentError, (List[String], Int)] =
+    commandRunner(shellArgv(command), cwd)
+      .mapError(err => MergeAgentError.PersistenceFailure("ci_command", err.getMessage))
+
+  private def shellArgv(command: String): List[String] =
+    if HostPlatform.isWindows() then List("cmd", "/c", command)
+    else List("sh", "-lc", command)
+
+  private def normalizePassedStatus(status: CiStatus): CiStatus =
+    status match
+      case CiStatus.Failed => CiStatus.Failed
+      case _               => CiStatus.Passed
+
+  private def publishCiStatus(
+    issue: AgentIssue,
+    run: WorkspaceRun,
+    status: CiStatus,
+    at: java.time.Instant,
+  ): UIO[Unit] =
+    val runId = issue.runId.getOrElse(TaskRunId(run.id))
+    workReportEventBus.publishTaskRun(TaskRunEvent.CiStatusUpdated(runId, status, at))
+
+  private def handleCiFailure(
+    issue: AgentIssue,
+    lines: List[String],
+    now: java.time.Instant,
+  ): IO[MergeAgentError, Unit] =
+    val details = ciFailureDetails(lines)
+    issueRepository
+      .append(
+        IssueEvent.MovedToRework(
+          issueId = issue.id,
+          movedAt = now,
+          reason = s"CI verification failed: $details",
+          occurredAt = now,
+        )
+      )
+      .mapError(err => MergeAgentError.PersistenceFailure("move_issue_to_rework_ci", err.toString)) *>
+      ZIO.fail(MergeAgentError.CiVerificationFailed(details))
+
+  private def ciFailureDetails(lines: List[String]): String =
+    lines.map(_.trim).filter(_.nonEmpty).takeRight(8) match
+      case Nil => "command exited with errors"
+      case xs  => xs.mkString(" | ")
+
   private def publishSuccess(issueId: IssueId): UIO[Unit] =
     Clock.instant.flatMap(now =>
       activityHub.publish(
@@ -322,3 +450,8 @@ final case class MergeAgentServiceLive(
         )
       )
     )
+
+final private case class CiVerificationConfig(
+  requireCi: Boolean,
+  command: Option[String],
+)

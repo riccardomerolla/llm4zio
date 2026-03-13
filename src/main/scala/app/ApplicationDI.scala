@@ -269,6 +269,7 @@ object ApplicationDI:
       IssueDispatchStatusService.live,
       WorkspaceRunService.live,
       AutoDispatcher.live,
+      WorkReportEventBus.layer,
       MergeAgentService.live,
       ConversationChatController.live,
       IssuesIssueController.live,
