@@ -22,19 +22,19 @@ enum AnalysisAgentRunnerError(val message: String) derives JsonCodec, Schema:
   case WorkspaceDisabled(workspaceId: String)
     extends AnalysisAgentRunnerError(s"Workspace is disabled: $workspaceId")
   case ConfiguredAgentNotFound(agentName: String)
-    extends AnalysisAgentRunnerError(s"Configured code review agent not found: $agentName")
+    extends AnalysisAgentRunnerError(s"Configured analysis agent not found: $agentName")
   case ConfiguredAgentDisabled(agentName: String)
-    extends AnalysisAgentRunnerError(s"Configured code review agent is disabled: $agentName")
-  case NoCodeReviewAgentAvailable(workspaceId: String)
-    extends AnalysisAgentRunnerError(s"No enabled code review agent available for workspace: $workspaceId")
+    extends AnalysisAgentRunnerError(s"Configured analysis agent is disabled: $agentName")
+  case NoAnalysisAgentAvailable(profile: String, workspaceId: String)
+    extends AnalysisAgentRunnerError(s"No enabled $profile agent available for workspace: $workspaceId")
   case ProcessFailed(agentName: String, cause: String)
-    extends AnalysisAgentRunnerError(s"Code review process failed for $agentName: $cause")
+    extends AnalysisAgentRunnerError(s"Analysis process failed for $agentName: $cause")
   case ProcessTimedOut(agentName: String, timeout: JavaDuration)
-    extends AnalysisAgentRunnerError(s"Code review process timed out for $agentName after ${timeout.toSeconds}s")
+    extends AnalysisAgentRunnerError(s"Analysis process timed out for $agentName after ${timeout.toSeconds}s")
   case NonZeroExit(agentName: String, exitCode: Int, output: String)
-    extends AnalysisAgentRunnerError(s"Code review process exited with code $exitCode for $agentName: $output")
+    extends AnalysisAgentRunnerError(s"Analysis process exited with code $exitCode for $agentName: $output")
   case EmptyOutput(agentName: String)
-    extends AnalysisAgentRunnerError(s"Code review agent $agentName returned empty output")
+    extends AnalysisAgentRunnerError(s"Analysis agent $agentName returned empty output")
   case FileWriteFailed(path: String, cause: String)
     extends AnalysisAgentRunnerError(s"Failed to write analysis file at $path: $cause")
   case GitFailed(command: String, details: String)
@@ -48,13 +48,25 @@ enum AnalysisAgentRunnerError(val message: String) derives JsonCodec, Schema:
 
 trait AnalysisAgentRunner:
   def runCodeReview(workspaceId: String): IO[AnalysisAgentRunnerError, AnalysisDoc]
+  def runArchitecture(workspaceId: String): IO[AnalysisAgentRunnerError, AnalysisDoc]
+  def runSecurity(workspaceId: String): IO[AnalysisAgentRunnerError, AnalysisDoc]
 
 object AnalysisAgentRunner:
-  val CodeReviewAgentSettingKey: String = "analysis.code-review.agent"
-  val CodeReviewRelativePath: String    = ".llm4zio/analysis/code-review.md"
+  val CodeReviewAgentSettingKey: String   = "analysis.code-review.agent"
+  val ArchitectureAgentSettingKey: String = "analysis.architecture.agent"
+  val SecurityAgentSettingKey: String     = "analysis.security.agent"
+  val CodeReviewRelativePath: String      = ".llm4zio/analysis/code-review.md"
+  val ArchitectureRelativePath: String    = ".llm4zio/analysis/architecture.md"
+  val SecurityRelativePath: String        = ".llm4zio/analysis/security.md"
 
   def runCodeReview(workspaceId: String): ZIO[AnalysisAgentRunner, AnalysisAgentRunnerError, AnalysisDoc] =
     ZIO.serviceWithZIO[AnalysisAgentRunner](_.runCodeReview(workspaceId))
+
+  def runArchitecture(workspaceId: String): ZIO[AnalysisAgentRunner, AnalysisAgentRunnerError, AnalysisDoc] =
+    ZIO.serviceWithZIO[AnalysisAgentRunner](_.runArchitecture(workspaceId))
+
+  def runSecurity(workspaceId: String): ZIO[AnalysisAgentRunner, AnalysisAgentRunnerError, AnalysisDoc] =
+    ZIO.serviceWithZIO[AnalysisAgentRunner](_.runSecurity(workspaceId))
 
   val live
     : ZLayer[WorkspaceRepository & AgentRepository & AnalysisRepository & TaskRepository & FileService, Nothing, AnalysisAgentRunner] =
@@ -87,15 +99,24 @@ final case class AnalysisAgentRunnerLive(
 ) extends AnalysisAgentRunner:
 
   override def runCodeReview(workspaceId: String): IO[AnalysisAgentRunnerError, AnalysisDoc] =
+    runAnalysis(workspaceId, AnalysisProfile.codeReview)
+
+  override def runArchitecture(workspaceId: String): IO[AnalysisAgentRunnerError, AnalysisDoc] =
+    runAnalysis(workspaceId, AnalysisProfile.architecture)
+
+  override def runSecurity(workspaceId: String): IO[AnalysisAgentRunnerError, AnalysisDoc] =
+    runAnalysis(workspaceId, AnalysisProfile.security)
+
+  private def runAnalysis(workspaceId: String, profile: AnalysisProfile): IO[AnalysisAgentRunnerError, AnalysisDoc] =
     for
       workspace <- loadWorkspace(workspaceId)
-      agent     <- selectAgent(workspace)
-      prompt     = composePrompt(workspace, agent)
-      markdown  <- executeReview(workspace, agent, prompt)
-      filePath   = Paths.get(workspace.localPath).resolve(AnalysisAgentRunner.CodeReviewRelativePath)
+      agent     <- selectAgent(workspace, profile)
+      prompt    <- resolvePrompt(workspace, agent, profile)
+      markdown  <- executeReview(workspace, agent, profile, prompt)
+      filePath   = Paths.get(workspace.localPath).resolve(profile.relativePath)
       _         <- writeAnalysisFile(filePath, markdown)
-      _         <- commitAnalysisFile(workspace, AnalysisAgentRunner.CodeReviewRelativePath)
-      doc       <- persistAnalysisDoc(workspace, agent, markdown, filePath, AnalysisAgentRunner.CodeReviewRelativePath)
+      _         <- commitAnalysisFile(workspace, profile)
+      doc       <- persistAnalysisDoc(workspace, agent, profile, markdown, filePath)
     yield doc
 
   private def loadWorkspace(workspaceId: String): IO[AnalysisAgentRunnerError, Workspace] =
@@ -108,8 +129,8 @@ final case class AnalysisAgentRunnerLive(
         case None                                 => ZIO.fail(AnalysisAgentRunnerError.WorkspaceNotFound(workspaceId))
       }
 
-  private def selectAgent(workspace: Workspace): IO[AnalysisAgentRunnerError, Agent] =
-    configuredAgent.flatMap {
+  private def selectAgent(workspace: Workspace, profile: AnalysisProfile): IO[AnalysisAgentRunnerError, Agent] =
+    configuredAgent(profile).flatMap {
       case Some(name) =>
         agentRepository
           .findByName(name)
@@ -127,23 +148,47 @@ final case class AnalysisAgentRunnerLive(
             ZIO
               .fromOption(
                 agents
-                  .filter(agent => agent.enabled && hasCodeReviewCapability(agent))
+                  .filter(agent => agent.enabled && hasProfileCapability(agent, profile))
                   .sortBy(_.name.toLowerCase)
                   .headOption
               )
-              .orElseFail(AnalysisAgentRunnerError.NoCodeReviewAgentAvailable(workspace.id))
+              .orElseFail(AnalysisAgentRunnerError.NoAnalysisAgentAvailable(profile.slug, workspace.id))
           }
     }
 
-  private def configuredAgent: IO[AnalysisAgentRunnerError, Option[String]] =
+  private def configuredAgent(profile: AnalysisProfile): IO[AnalysisAgentRunnerError, Option[String]] =
     taskRepository
-      .getSetting(AnalysisAgentRunner.CodeReviewAgentSettingKey)
-      .mapError(err => AnalysisAgentRunnerError.SettingsPersistenceFailed("getCodeReviewAgentSetting", err.toString))
+      .getSetting(profile.agentSettingKey)
+      .mapError(err =>
+        AnalysisAgentRunnerError.SettingsPersistenceFailed(s"get${profile.name}AgentSetting", err.toString)
+      )
+      .map(_.map(_.value.trim).filter(_.nonEmpty))
+
+  private def resolvePrompt(
+    workspace: Workspace,
+    agent: Agent,
+    profile: AnalysisProfile,
+  ): IO[AnalysisAgentRunnerError, String] =
+    for
+      workspaceOverride <- setting(workspacePromptKey(workspace.id, profile))
+      globalOverride    <- setting(globalPromptKey(profile))
+    yield composePrompt(
+      workspace = workspace,
+      agent = agent,
+      profile = profile,
+      body = workspaceOverride.orElse(globalOverride).getOrElse(profile.defaultPromptBody),
+    )
+
+  private def setting(key: String): IO[AnalysisAgentRunnerError, Option[String]] =
+    taskRepository
+      .getSetting(key)
+      .mapError(err => AnalysisAgentRunnerError.SettingsPersistenceFailed(s"getSetting:$key", err.toString))
       .map(_.map(_.value.trim).filter(_.nonEmpty))
 
   private def executeReview(
     workspace: Workspace,
     agent: Agent,
+    profile: AnalysisProfile,
     prompt: String,
   ): IO[AnalysisAgentRunnerError, String] =
     for
@@ -171,7 +216,7 @@ final case class AnalysisAgentRunnerLive(
       output    <- outputRef.get.map(_.mkString("\n").trim)
       _         <- ZIO.fail(AnalysisAgentRunnerError.NonZeroExit(agent.name, exitCode, output)).when(exitCode != 0)
       markdown  <- ZIO
-                     .fromEither(normalizeMarkdown(output))
+                     .fromEither(normalizeMarkdown(output, profile.documentTitle))
                      .mapError(_ => AnalysisAgentRunnerError.EmptyOutput(agent.name))
     yield markdown
 
@@ -185,9 +230,9 @@ final case class AnalysisAgentRunnerLive(
              .mapError(mapFileError("writeAnalysisFile", path))
     yield ()
 
-  private def commitAnalysisFile(workspace: Workspace, relativePath: String): IO[AnalysisAgentRunnerError, Unit] =
+  private def commitAnalysisFile(workspace: Workspace, profile: AnalysisProfile): IO[AnalysisAgentRunnerError, Unit] =
     for
-      _             <- runGitChecked(workspace.localPath, "git add", List("add", "--", relativePath))
+      _             <- runGitChecked(workspace.localPath, "git add", List("add", "--", profile.relativePath))
       (_, diffExit) <- runGit(workspace.localPath, List("diff", "--cached", "--quiet", "--exit-code"))
       _             <- diffExit match
                          case 0    => ZIO.unit
@@ -195,7 +240,7 @@ final case class AnalysisAgentRunnerLive(
                            runGitChecked(
                              workspace.localPath,
                              "git commit",
-                             List("commit", "-m", s"Add code review analysis for ${workspace.name}"),
+                             List("commit", "-m", s"Add ${profile.commitLabel} analysis for ${workspace.name}"),
                            )
                          case code =>
                            ZIO.fail(
@@ -209,9 +254,9 @@ final case class AnalysisAgentRunnerLive(
   private def persistAnalysisDoc(
     workspace: Workspace,
     agent: Agent,
+    profile: AnalysisProfile,
     markdown: String,
     absolutePath: Path,
-    relativePath: String,
   ): IO[AnalysisAgentRunnerError, AnalysisDoc] =
     for
       now      <- Clock.instant
@@ -221,7 +266,7 @@ final case class AnalysisAgentRunnerLive(
           .mapError(err => AnalysisAgentRunnerError.AnalysisPersistenceFailed("listByWorkspace", err.toString))
           .map(
             _.find(doc =>
-              doc.analysisType == AnalysisType.CodeReview && doc.filePath == relativePath
+              doc.analysisType == profile.analysisType && doc.filePath == profile.relativePath
             )
           )
       doc      <- existing match
@@ -238,9 +283,9 @@ final case class AnalysisAgentRunnerLive(
                       val created = AnalysisDoc(
                         id = docId,
                         workspaceId = workspace.id,
-                        analysisType = AnalysisType.CodeReview,
+                        analysisType = profile.analysisType,
                         content = markdown,
-                        filePath = relativePath,
+                        filePath = profile.relativePath,
                         generatedBy = agent.id,
                         createdAt = now,
                         updatedAt = now,
@@ -250,9 +295,9 @@ final case class AnalysisAgentRunnerLive(
                           AnalysisEvent.AnalysisCreated(
                             docId = docId,
                             workspaceId = workspace.id,
-                            analysisType = AnalysisType.CodeReview,
+                            analysisType = profile.analysisType,
                             content = markdown,
-                            filePath = relativePath,
+                            filePath = profile.relativePath,
                             generatedBy = agent.id,
                             occurredAt = now,
                           )
@@ -261,46 +306,29 @@ final case class AnalysisAgentRunnerLive(
                           AnalysisAgentRunnerError.AnalysisPersistenceFailed("appendAnalysisCreated", err.toString)
                         )
                         .as(created)
-      _        <- ZIO.logInfo(s"Saved code review analysis for workspace ${workspace.id} at $absolutePath")
+      _        <- ZIO.logInfo(s"Saved ${profile.slug} analysis for workspace ${workspace.id} at $absolutePath")
     yield doc
 
-  private def composePrompt(workspace: Workspace, agent: Agent): String =
+  private def composePrompt(
+    workspace: Workspace,
+    agent: Agent,
+    profile: AnalysisProfile,
+    body: String,
+  ): String =
     val agentInstructions = agent.systemPrompt.map(_.trim).filter(_.nonEmpty).map(_ + "\n\n").getOrElse("")
-    s"""${agentInstructions}Perform a read-only code review analysis for the repository at:
+    s"""${agentInstructions}Perform a read-only ${profile.analysisLabel} for the repository at:
        |${workspace.localPath}
        |
        |Do not modify files. Inspect the repository and return markdown only.
        |
-       |Focus on:
-       |- Code quality and patterns
-       |- Technical debt areas
-       |- Test coverage assessment
-       |- Naming conventions and consistency
-       |- Potential bug patterns
+       |Return markdown only.
        |
-       |Use exactly this structure:
-       |# Code Review Analysis
-       |
-       |## Code Quality and Patterns
-       |Provide concrete findings with relevant files or modules when known.
-       |
-       |## Technical Debt Areas
-       |Describe notable maintenance risks or cleanup opportunities.
-       |
-       |## Test Coverage Assessment
-       |Call out missing coverage, weak assertions, or risky untested paths.
-       |
-       |## Naming Conventions and Consistency
-       |Highlight inconsistent names, APIs, or structural conventions.
-       |
-       |## Potential Bug Patterns
-       |List likely correctness or regression risks with concise rationale.
-       |
-       |If a section has no material issues, say so explicitly.
+       |$body
        |""".stripMargin
 
-  private def hasCodeReviewCapability(agent: Agent): Boolean =
-    agent.capabilities.exists(_.trim.equalsIgnoreCase("code-review"))
+  private def hasProfileCapability(agent: Agent, profile: AnalysisProfile): Boolean =
+    val capabilities = agent.capabilities.map(_.trim.toLowerCase).filter(_.nonEmpty).toSet
+    profile.capabilities.exists(capabilities.contains)
 
   private def runGit(repoPath: String, args: List[String]): IO[AnalysisAgentRunnerError, (List[String], Int)] =
     gitRunner("git" :: args, repoPath)
@@ -322,7 +350,7 @@ final case class AnalysisAgentRunnerLive(
   private def mapFileError(operation: String, path: Path)(error: FileError): AnalysisAgentRunnerError =
     AnalysisAgentRunnerError.FileWriteFailed(path.toString, s"$operation: ${error.message}")
 
-  private[control] def normalizeMarkdown(raw: String): Either[String, String] =
+  private[control] def normalizeMarkdown(raw: String, documentTitle: String): Either[String, String] =
     val normalized = raw.replace("\r\n", "\n").trim
     if normalized.isEmpty then Left("empty")
     else
@@ -333,6 +361,154 @@ final case class AnalysisAgentRunnerLive(
         else lines
       val body      = unwrapped.mkString("\n").trim
       if body.isEmpty then Left("empty")
-      else if body.linesIterator.take(1).exists(_.trim.equalsIgnoreCase("# Code Review Analysis")) then
+      else if body.linesIterator.take(1).exists(_.trim.equalsIgnoreCase(s"# $documentTitle")) then
         Right(body + "\n")
-      else Right(s"# Code Review Analysis\n\n$body\n")
+      else Right(s"# $documentTitle\n\n$body\n")
+
+  private def globalPromptKey(profile: AnalysisProfile): String =
+    s"analysis.${profile.slug}.prompt"
+
+  private def workspacePromptKey(workspaceId: String, profile: AnalysisProfile): String =
+    s"workspace.$workspaceId.analysis.${profile.slug}.prompt"
+
+final private case class AnalysisProfile(
+  name: String,
+  slug: String,
+  analysisType: AnalysisType,
+  relativePath: String,
+  agentSettingKey: String,
+  analysisLabel: String,
+  documentTitle: String,
+  commitLabel: String,
+  capabilities: List[String],
+  defaultPromptBody: String,
+)
+
+object AnalysisProfile:
+  val codeReview: AnalysisProfile =
+    AnalysisProfile(
+      name = "CodeReview",
+      slug = "code-review",
+      analysisType = AnalysisType.CodeReview,
+      relativePath = AnalysisAgentRunner.CodeReviewRelativePath,
+      agentSettingKey = AnalysisAgentRunner.CodeReviewAgentSettingKey,
+      analysisLabel = "code review analysis",
+      documentTitle = "Code Review Analysis",
+      commitLabel = "code review",
+      capabilities = List("code-review"),
+      defaultPromptBody =
+        """Focus on:
+          |- Code quality and patterns
+          |- Technical debt areas
+          |- Test coverage assessment
+          |- Naming conventions and consistency
+          |- Potential bug patterns
+          |
+          |Use exactly this structure:
+          |# Code Review Analysis
+          |
+          |## Code Quality and Patterns
+          |Provide concrete findings with relevant files or modules when known.
+          |
+          |## Technical Debt Areas
+          |Describe notable maintenance risks or cleanup opportunities.
+          |
+          |## Test Coverage Assessment
+          |Call out missing coverage, weak assertions, or risky untested paths.
+          |
+          |## Naming Conventions and Consistency
+          |Highlight inconsistent names, APIs, or structural conventions.
+          |
+          |## Potential Bug Patterns
+          |List likely correctness or regression risks with concise rationale.
+          |
+          |If a section has no material issues, say so explicitly.""".stripMargin,
+    )
+
+  val architecture: AnalysisProfile =
+    AnalysisProfile(
+      name = "Architecture",
+      slug = "architecture",
+      analysisType = AnalysisType.Architecture,
+      relativePath = AnalysisAgentRunner.ArchitectureRelativePath,
+      agentSettingKey = AnalysisAgentRunner.ArchitectureAgentSettingKey,
+      analysisLabel = "architecture analysis",
+      documentTitle = "Architecture Analysis",
+      commitLabel = "architecture",
+      capabilities = List("architecture-analysis", "architecture", "code-review"),
+      defaultPromptBody =
+        """Focus on:
+          |- Module boundaries and package structure
+          |- Dependency graph with a mermaid diagram
+          |- API surface inventory
+          |- Design pattern identification
+          |- Coupling and cohesion assessment
+          |- Recommended improvements
+          |
+          |Use exactly this structure:
+          |# Architecture Analysis
+          |
+          |## Module Boundaries and Package Structure
+          |Describe the main architectural slices and responsibilities.
+          |
+          |## Dependency Graph
+          |Include a mermaid diagram showing major modules and dependencies.
+          |
+          |## API Surface Inventory
+          |Summarize the primary external and internal interfaces.
+          |
+          |## Design Pattern Identification
+          |Identify recurring design patterns and noteworthy architectural conventions.
+          |
+          |## Coupling and Cohesion Assessment
+          |Call out tight coupling, weak cohesion, or layering problems.
+          |
+          |## Recommended Improvements
+          |List pragmatic architectural improvements in priority order.
+          |
+          |If a section has no material issues, say so explicitly.""".stripMargin,
+    )
+
+  val security: AnalysisProfile =
+    AnalysisProfile(
+      name = "Security",
+      slug = "security",
+      analysisType = AnalysisType.Security,
+      relativePath = AnalysisAgentRunner.SecurityRelativePath,
+      agentSettingKey = AnalysisAgentRunner.SecurityAgentSettingKey,
+      analysisLabel = "security analysis",
+      documentTitle = "Security Analysis",
+      commitLabel = "security",
+      capabilities = List("security-analysis", "security-review", "security", "code-review"),
+      defaultPromptBody =
+        """Focus on:
+          |- Dependency vulnerability scan signals visible in the repository
+          |- Secret and credential exposure risks
+          |- Input validation gaps
+          |- Authentication and authorization patterns
+          |- OWASP top-10 assessment
+          |- Security recommendations
+          |
+          |Use exactly this structure:
+          |# Security Analysis
+          |
+          |## Dependency Vulnerability Scan
+          |Review dependency manifests and call out notable version or supply-chain risks.
+          |
+          |## Secret and Credential Exposure Risks
+          |Highlight embedded secrets, risky config defaults, or unsafe handling patterns.
+          |
+          |## Input Validation Gaps
+          |Assess validation, encoding, and sanitization boundaries.
+          |
+          |## Authentication and Authorization Patterns
+          |Summarize authn/authz design and any obvious weaknesses.
+          |
+          |## OWASP Top 10 Assessment
+          |Map likely risks to OWASP categories where relevant.
+          |
+          |## Security Recommendations
+          |List the highest-leverage security improvements.
+          |
+          |If a section has no material issues, say so explicitly.""".stripMargin,
+    )

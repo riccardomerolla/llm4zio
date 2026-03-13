@@ -93,12 +93,10 @@ object AnalysisAgentRunnerSpec extends ZIOSpecDefault:
     override def findByName(name: String): IO[PersistenceError, Option[Agent]]            =
       ZIO.succeed(agents.find(_.name.equalsIgnoreCase(name.trim)))
 
-  final private case class StubTaskRepository(settingValue: Option[String]) extends TaskRepository:
+  final private case class StubTaskRepository(settings: Map[String, String]) extends TaskRepository:
     override def getSetting(key: String): IO[db.PersistenceError, Option[SettingRow]] =
       ZIO.succeed(
-        if key == AnalysisAgentRunner.CodeReviewAgentSettingKey then
-          settingValue.map(value => SettingRow(key, value, now))
-        else None
+        settings.get(key).map(value => SettingRow(key, value, now))
       )
 
     override def createRun(run: TaskRunRow): IO[db.PersistenceError, Long]                           = unsupportedDb("createRun")
@@ -179,7 +177,7 @@ object AnalysisAgentRunnerSpec extends ZIOSpecDefault:
   private def makeRunner(
     repoPath: Path,
     agents: List[Agent],
-    configuredAgent: Option[String],
+    settings: Map[String, String] = Map.empty,
     processOutput: List[String],
     processExitCode: Int = 0,
     initialDocs: List[AnalysisDoc] = Nil,
@@ -206,7 +204,7 @@ object AnalysisAgentRunnerSpec extends ZIOSpecDefault:
                        workspaceRepository = StubWorkspaceRepository(Some(workspace.copy(localPath = repoPath.toString))),
                        agentRepository = StubAgentRepository(agents),
                        analysisRepository = StubAnalysisRepository(docsRef),
-                       taskRepository = StubTaskRepository(configuredAgent),
+                       taskRepository = StubTaskRepository(settings),
                        fileService = fileService,
                        processRunner = (argv, cwd, onLine, envVars) =>
                          processRef.update(_ :+ ProcessInvocation(argv, cwd, envVars)) *>
@@ -256,7 +254,14 @@ object AnalysisAgentRunnerSpec extends ZIOSpecDefault:
                                                     "Null-like Option fallback around invoice settlement deserves review.",
                                                     "```",
                                                   )
-          tuple                                <- makeRunner(repoPath, List(fallback, configured), Some("configured-reviewer"), output)
+          tuple                                <- makeRunner(
+                                                    repoPath,
+                                                    List(fallback, configured),
+                                                    settings = Map(
+                                                      AnalysisAgentRunner.CodeReviewAgentSettingKey -> "configured-reviewer"
+                                                    ),
+                                                    processOutput = output,
+                                                  )
           (runner, processRef, gitRef, docsRef) = tuple
           doc                                  <- runner.runCodeReview("ws-1")
           savedContent                         <- ZIO.attemptBlocking(
@@ -293,7 +298,6 @@ object AnalysisAgentRunnerSpec extends ZIOSpecDefault:
           tuple            <- makeRunner(
                                 repoPath = repoPath,
                                 agents = List(beta, alpha),
-                                configuredAgent = None,
                                 processOutput = List("# Code Review Analysis", "", "## Code Quality and Patterns", "Looks fine."),
                               )
           (runner, _, _, _) = tuple
@@ -318,7 +322,6 @@ object AnalysisAgentRunnerSpec extends ZIOSpecDefault:
           tuple                  <- makeRunner(
                                       repoPath = repoPath,
                                       agents = List(reviewer),
-                                      configuredAgent = None,
                                       processOutput = List("# Code Review Analysis", "", "## Code Quality and Patterns", "New content"),
                                       initialDocs = List(existingDoc),
                                     )
@@ -332,6 +335,66 @@ object AnalysisAgentRunnerSpec extends ZIOSpecDefault:
           docs(existingId).content.contains("New content"),
         )
       },
+      test("workspace prompt override wins over global prompt for architecture analysis") {
+        for
+          repoPath                             <- ZIO.attemptBlocking(Files.createTempDirectory("analysis-runner-architecture"))
+          architect                             = agent(id = "architect-1", name = "architect", capabilities = List("architecture-analysis"))
+          tuple                                <- makeRunner(
+                                                    repoPath = repoPath,
+                                                    agents = List(architect),
+                                                    settings = Map(
+                                                      "analysis.architecture.prompt"                -> "GLOBAL-ARCH",
+                                                      "workspace.ws-1.analysis.architecture.prompt" -> "WORKSPACE-ARCH",
+                                                    ),
+                                                    processOutput = List("## Module Boundaries and Package Structure", "Custom architecture output"),
+                                                  )
+          (runner, processRef, gitRef, docsRef) = tuple
+          doc                                  <- runner.runArchitecture("ws-1")
+          processCalls                         <- processRef.get
+          gitCalls                             <- gitRef.get
+          docs                                 <- docsRef.get
+          savedContent                         <- ZIO.attemptBlocking(
+                                                    Files.readString(repoPath.resolve(AnalysisAgentRunner.ArchitectureRelativePath))
+                                                  )
+          promptArg                             = processCalls.head.argv.drop(1).mkString(" ")
+        yield assertTrue(
+          doc.analysisType == AnalysisType.Architecture,
+          doc.filePath == AnalysisAgentRunner.ArchitectureRelativePath,
+          doc.content.startsWith("# Architecture Analysis"),
+          savedContent == doc.content,
+          promptArg.contains("WORKSPACE-ARCH"),
+          !promptArg.contains("GLOBAL-ARCH"),
+          gitCalls.map(_.argv.drop(1)) == Vector(
+            List("add", "--", AnalysisAgentRunner.ArchitectureRelativePath),
+            List("diff", "--cached", "--quiet", "--exit-code"),
+            List("commit", "-m", "Add architecture analysis for billing-service"),
+          ),
+          docs.size == 1,
+        )
+      },
+      test("security analysis falls back to code-review capability and global prompt override") {
+        for
+          repoPath                  <- ZIO.attemptBlocking(Files.createTempDirectory("analysis-runner-security"))
+          fallbackReviewer           = agent(id = "reviewer-1", name = "reviewer", capabilities = List("code-review"))
+          tuple                     <- makeRunner(
+                                         repoPath = repoPath,
+                                         agents = List(fallbackReviewer),
+                                         settings = Map("analysis.security.prompt" -> "GLOBAL-SECURITY"),
+                                         processOutput =
+                                           List("## Dependency Vulnerability Scan", "No obvious vulnerable pins in manifests."),
+                                       )
+          (runner, processRef, _, _) = tuple
+          doc                       <- runner.runSecurity("ws-1")
+          processCalls              <- processRef.get
+          promptArg                  = processCalls.head.argv.drop(1).mkString(" ")
+        yield assertTrue(
+          doc.analysisType == AnalysisType.Security,
+          doc.filePath == AnalysisAgentRunner.SecurityRelativePath,
+          doc.generatedBy == fallbackReviewer.id,
+          doc.content.startsWith("# Security Analysis"),
+          promptArg.contains("GLOBAL-SECURITY"),
+        )
+      },
       test("fails when no configured agent exists and no enabled code-review agent is available") {
         for
           repoPath         <- ZIO.attemptBlocking(Files.createTempDirectory("analysis-runner-no-agent"))
@@ -339,11 +402,10 @@ object AnalysisAgentRunnerSpec extends ZIOSpecDefault:
           tuple            <- makeRunner(
                                 repoPath = repoPath,
                                 agents = List(writer),
-                                configuredAgent = None,
                                 processOutput = List("# Code Review Analysis"),
                               )
           (runner, _, _, _) = tuple
           result           <- runner.runCodeReview("ws-1").either
-        yield assertTrue(result == Left(AnalysisAgentRunnerError.NoCodeReviewAgentAvailable("ws-1")))
+        yield assertTrue(result == Left(AnalysisAgentRunnerError.NoAnalysisAgentAvailable("code-review", "ws-1")))
       },
     ).provide(FileService.live)
