@@ -67,7 +67,7 @@ import taskrun.boundary.{
   ReportsController as TaskRunReportsController,
   TasksController as TaskRunTasksController,
 }
-import workspace.control.{ GitService, GitWatcher, InteractiveAgentRunner, RunSessionManager, WorkspaceRunService }
+import workspace.control.*
 import workspace.entity.WorkspaceRepository
 
 object ApplicationDI:
@@ -238,7 +238,7 @@ object ApplicationDI:
     }
 
   def webServerLayer(config: GatewayConfig, storeConfig: StoreConfig): ZLayer[Any, Nothing, WebServer] =
-    ZLayer.make[WebServer & AutoDispatcher](
+    ZLayer.make[WebServer & AutoDispatcher & MergeAgentService](
       commonLayers(config, storeConfig),
       TaskRunDashboardController.live,
       TaskRunTasksController.live,
@@ -269,6 +269,7 @@ object ApplicationDI:
       IssueDispatchStatusService.live,
       WorkspaceRunService.live,
       AutoDispatcher.live,
+      MergeAgentService.live,
       ConversationChatController.live,
       IssuesIssueController.live,
       ActivityController.live,

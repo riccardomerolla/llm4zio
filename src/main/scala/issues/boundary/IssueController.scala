@@ -761,6 +761,10 @@ final case class IssueControllerLive(
                                runId = issue.runId.map(r => TaskRunId(r.value)),
                                agentName = Some(fallbackAgent),
                                summary = s"Issue #$id moved to ${updateRequest.status.toString}",
+                               payload =
+                                 Some(
+                                   s"""{"issueId":"$id","status":${updateRequest.status.toString.toJson}}"""
+                                 ),
                                createdAt = now,
                              )
                            )

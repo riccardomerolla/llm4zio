@@ -17,6 +17,8 @@ trait GitService:
   def branchInfo(repoPath: String): IO[GitError, GitBranchInfo]
   def showFile(repoPath: String, filePath: String, ref: String = "HEAD"): IO[GitError, String]
   def aheadBehind(repoPath: String, baseBranch: String): IO[GitError, AheadBehind]
+  def checkout(repoPath: String, branch: String): IO[GitError, Unit]
+  def mergeNoFastForward(repoPath: String, branch: String, message: String): IO[GitError, Unit]
 
 object GitService:
   val live: ULayer[GitService] = ZLayer.succeed(GitServiceLive())
@@ -44,6 +46,12 @@ object GitService:
 
   def aheadBehind(repoPath: String, baseBranch: String): ZIO[GitService, GitError, AheadBehind] =
     ZIO.serviceWithZIO[GitService](_.aheadBehind(repoPath, baseBranch))
+
+  def checkout(repoPath: String, branch: String): ZIO[GitService, GitError, Unit] =
+    ZIO.serviceWithZIO[GitService](_.checkout(repoPath, branch))
+
+  def mergeNoFastForward(repoPath: String, branch: String, message: String): ZIO[GitService, GitError, Unit] =
+    ZIO.serviceWithZIO[GitService](_.mergeNoFastForward(repoPath, branch, message))
 
 object GitParsers:
   private val LogSeparator = "\\u001f"
@@ -246,6 +254,21 @@ final case class GitServiceLive() extends GitService:
           runGit(repoPath, "rev-list", "--left-right", "--count", s"$ref...HEAD")
             .flatMap(raw => ZIO.fromEither(GitParsers.parseAheadBehind(raw)))
       }
+
+  override def checkout(repoPath: String, branch: String): IO[GitError, Unit] =
+    ensureRepo(repoPath) *>
+      runGit(repoPath, "checkout", branch.trim).unit
+
+  override def mergeNoFastForward(repoPath: String, branch: String, message: String): IO[GitError, Unit] =
+    ensureRepo(repoPath) *>
+      runGit(
+        repoPath,
+        "merge",
+        "--no-ff",
+        "-m",
+        message.trim,
+        branch.trim,
+      ).unit
 
   /** Returns the first resolvable ref from the candidates, or None if none exist in this repo/worktree. */
   private def resolveRef(repoPath: String, branch: String): IO[GitError, Option[String]] =
