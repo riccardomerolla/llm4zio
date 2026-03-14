@@ -1,6 +1,6 @@
 package orchestration.boundary
 
-import java.net.URLDecoder
+import java.net.{ URLDecoder, URLEncoder }
 import java.nio.charset.StandardCharsets
 
 import zio.*
@@ -83,7 +83,7 @@ final case class PlannerControllerLive(
       plannerAgentService.confirmPlan(conversationId)
         .map(result =>
           Response.redirect(
-            URL.decode(s"/board?mode=list&plannerCreated=${result.issueIds.size}").toOption.getOrElse(URL.root)
+            URL.decode(boardRedirect(result.issueIds.map(_.value))).toOption.getOrElse(URL.root)
           )
         )
         .catchAll(error => ZIO.succeed(renderPlannerError(error)))
@@ -105,6 +105,7 @@ final case class PlannerControllerLive(
     val prompts      = values(form, "prompt_template")
     val skills       = values(form, "kaizen_skills")
     val proof        = values(form, "proof_of_work_requirements")
+    val included     = values(form, "included")
     val sizes        = List(
       draftIds.size,
       titles.size,
@@ -117,6 +118,7 @@ final case class PlannerControllerLive(
       prompts.size,
       skills.size,
       proof.size,
+      included.size,
     ).distinct
 
     if sizes.size > 1 then
@@ -138,6 +140,7 @@ final case class PlannerControllerLive(
               promptTemplate = prompts(idx),
               kaizenSkills = splitCsv(skills(idx)),
               proofOfWorkRequirements = splitCsv(proof(idx)),
+              included = included(idx).equalsIgnoreCase("true"),
             )
           },
         )
@@ -184,3 +187,10 @@ final case class PlannerControllerLive(
 
   private def mapWorkspaceError(error: shared.errors.PersistenceError): PlannerAgentError =
     PlannerAgentError.PersistenceFailure("list_workspaces", error.toString)
+
+  private def boardRedirect(issueIds: List[String]): String =
+    val normalized = issueIds.map(_.trim).filter(_.nonEmpty).distinct
+    if normalized.isEmpty then "/board?mode=list"
+    else
+      val query = URLEncoder.encode(normalized.mkString(","), StandardCharsets.UTF_8)
+      s"/board?mode=list&plannerCreated=${normalized.size}&q=$query"

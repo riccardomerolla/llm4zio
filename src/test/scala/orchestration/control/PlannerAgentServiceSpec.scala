@@ -7,8 +7,10 @@ import zio.json.*
 import zio.test.*
 
 import _root_.config.entity.AIProviderConfig
+import activity.control.ActivityHub
+import activity.entity.ActivityEvent
 import conversation.entity.api.*
-import db.{ ChatRepository, PersistenceError }
+import db.*
 import issues.entity.{ IssueEvent, IssueRepository }
 import llm4zio.core.*
 import llm4zio.providers.{ GeminiCliExecutor, HttpClient }
@@ -85,6 +87,36 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
       override def resolveConfig(agentName: String): IO[PersistenceError, AIProviderConfig] =
         ZIO.succeed(AIProviderConfig.withDefaults(AIProviderConfig())))
 
+  private val testConfigRepository: ULayer[ConfigRepository] =
+    ZLayer.succeed(new ConfigRepository:
+      override def getAllSettings: IO[PersistenceError, List[SettingRow]]                           = ZIO.succeed(Nil)
+      override def getSetting(key: String): IO[PersistenceError, Option[SettingRow]]                =
+        ZIO.succeed(
+          if key == "planner.create.initialStatus" then Some(SettingRow(key, "todo", Instant.EPOCH))
+          else None
+        )
+      override def upsertSetting(key: String, value: String): IO[PersistenceError, Unit]            = ZIO.unit
+      override def deleteSetting(key: String): IO[PersistenceError, Unit]                           = ZIO.unit
+      override def deleteSettingsByPrefix(prefix: String): IO[PersistenceError, Unit]               = ZIO.unit
+      override def createWorkflow(workflow: WorkflowRow): IO[PersistenceError, Long]                = ZIO.dieMessage("unused")
+      override def getWorkflow(id: Long): IO[PersistenceError, Option[WorkflowRow]]                 = ZIO.dieMessage("unused")
+      override def getWorkflowByName(name: String): IO[PersistenceError, Option[WorkflowRow]]       = ZIO.dieMessage("unused")
+      override def listWorkflows: IO[PersistenceError, List[WorkflowRow]]                           = ZIO.dieMessage("unused")
+      override def updateWorkflow(workflow: WorkflowRow): IO[PersistenceError, Unit]                = ZIO.dieMessage("unused")
+      override def deleteWorkflow(id: Long): IO[PersistenceError, Unit]                             = ZIO.dieMessage("unused")
+      override def createCustomAgent(agent: CustomAgentRow): IO[PersistenceError, Long]             = ZIO.dieMessage("unused")
+      override def getCustomAgent(id: Long): IO[PersistenceError, Option[CustomAgentRow]]           = ZIO.dieMessage("unused")
+      override def getCustomAgentByName(name: String): IO[PersistenceError, Option[CustomAgentRow]] =
+        ZIO.dieMessage("unused")
+      override def listCustomAgents: IO[PersistenceError, List[CustomAgentRow]]                     = ZIO.dieMessage("unused")
+      override def updateCustomAgent(agent: CustomAgentRow): IO[PersistenceError, Unit]             = ZIO.dieMessage("unused")
+      override def deleteCustomAgent(id: Long): IO[PersistenceError, Unit]                          = ZIO.dieMessage("unused"))
+
+  private val noopActivityHub: ULayer[ActivityHub] =
+    ZLayer.succeed(new ActivityHub:
+      override def publish(event: ActivityEvent): UIO[Unit] = ZIO.unit
+      override def subscribe: UIO[Dequeue[ActivityEvent]]   = Queue.unbounded[ActivityEvent])
+
   private val testLlm: ULayer[LlmService] =
     ZLayer.succeed(new LlmService:
       override def execute(prompt: String): IO[LlmError, LlmResponse]                                       =
@@ -112,6 +144,7 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
                 promptTemplate = "Implement the data model",
                 kaizenSkills = List("task-planning"),
                 proofOfWorkRequirements = List("tests pass", "coverage > 80%"),
+                included = true,
               ),
               PlannerIssueDraft(
                 draftId = "issue-2",
@@ -121,6 +154,7 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
                 dependencyDraftIds = List("issue-1"),
                 acceptanceCriteria = "Routes are reachable",
                 promptTemplate = "Wire the planner controller",
+                included = false,
               ),
             ),
           ).toJson
@@ -146,6 +180,8 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
       InMemoryChatRepo.layer,
       RecordingIssueRepo.refLayer,
       RecordingIssueRepo.layer,
+      testConfigRepository,
+      noopActivityHub,
       testConfigResolver,
       testLlm,
       stubHttpClient,
@@ -176,14 +212,15 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
           result  <- service.confirmPlan(id)
           events  <- ref.get
         yield assertTrue(
-          result.issueIds.size == 2,
-          events.count(_.isInstanceOf[IssueEvent.Created]) == 2,
-          events.exists(_.isInstanceOf[IssueEvent.DependencyLinked]),
+          result.issueIds.size == 1,
+          events.count(_.isInstanceOf[IssueEvent.Created]) == 1,
+          !events.exists(_.isInstanceOf[IssueEvent.DependencyLinked]),
           events.exists(_.isInstanceOf[IssueEvent.PromptTemplateUpdated]),
           events.exists(_.isInstanceOf[IssueEvent.AcceptanceCriteriaUpdated]),
           events.exists(_.isInstanceOf[IssueEvent.KaizenSkillUpdated]),
           events.exists(_.isInstanceOf[IssueEvent.ProofOfWorkRequirementsUpdated]),
-          events.count(_.isInstanceOf[IssueEvent.WorkspaceLinked]) == 2,
+          events.exists(_.isInstanceOf[IssueEvent.MovedToTodo]),
+          events.count(_.isInstanceOf[IssueEvent.WorkspaceLinked]) == 1,
           events.exists {
             case IssueEvent.TagsUpdated(_, tags, _) => tags.contains("skill:task-planning")
             case _                                  => false

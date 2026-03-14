@@ -7,14 +7,16 @@ import zio.json.*
 import zio.json.ast.Json
 
 import _root_.config.entity.AIProviderConfig
+import activity.control.ActivityHub
+import activity.entity.{ ActivityEvent, ActivityEventType }
 import app.ApplicationDI
 import conversation.entity.api.{ ChatConversation, ConversationEntry, MessageType, SenderType }
-import db.{ ChatRepository, PersistenceError }
+import db.{ ChatRepository, ConfigRepository, PersistenceError }
 import issues.entity.{ IssueEvent, IssueRepository }
 import llm4zio.core.{ LlmConfig, LlmError, LlmProvider, LlmService }
 import llm4zio.providers.{ GeminiCliExecutor, HttpClient }
 import llm4zio.tools.JsonSchema
-import shared.ids.Ids.IssueId
+import shared.ids.Ids.{ EventId, IssueId }
 
 enum PlannerAgentError:
   case ConversationNotFound(conversationId: Long)
@@ -46,6 +48,7 @@ final case class PlannerIssueDraft(
   promptTemplate: String = "",
   kaizenSkills: List[String] = Nil,
   proofOfWorkRequirements: List[String] = Nil,
+  included: Boolean = true,
 ) derives JsonCodec
 
 final case class PlannerPlanPreview(
@@ -64,6 +67,9 @@ final case class PlannerConfirmation(
   conversationId: Long,
   issueIds: List[IssueId],
 )
+
+enum PlannerInitialStatus:
+  case Backlog, Todo
 
 trait PlannerAgentService:
   def startSession(
@@ -119,22 +125,27 @@ object PlannerAgentService:
 
   val live
     : ZLayer[
-      ChatRepository & IssueRepository & AgentConfigResolver & LlmService & HttpClient & GeminiCliExecutor,
+      ChatRepository & IssueRepository & ConfigRepository & ActivityHub & AgentConfigResolver & LlmService &
+        HttpClient & GeminiCliExecutor,
       Nothing,
       PlannerAgentService,
     ] =
     ZLayer.fromZIO {
       for
-        chatRepository  <- ZIO.service[ChatRepository]
-        issueRepository <- ZIO.service[IssueRepository]
-        configResolver  <- ZIO.service[AgentConfigResolver]
-        llmService      <- ZIO.service[LlmService]
-        httpClient      <- ZIO.service[HttpClient]
-        cliExecutor     <- ZIO.service[GeminiCliExecutor]
-        previewState    <- Ref.Synchronized.make(Map.empty[Long, PlannerPreviewState])
+        chatRepository   <- ZIO.service[ChatRepository]
+        issueRepository  <- ZIO.service[IssueRepository]
+        configRepository <- ZIO.service[ConfigRepository]
+        activityHub      <- ZIO.service[ActivityHub]
+        configResolver   <- ZIO.service[AgentConfigResolver]
+        llmService       <- ZIO.service[LlmService]
+        httpClient       <- ZIO.service[HttpClient]
+        cliExecutor      <- ZIO.service[GeminiCliExecutor]
+        previewState     <- Ref.Synchronized.make(Map.empty[Long, PlannerPreviewState])
       yield PlannerAgentServiceLive(
         chatRepository = chatRepository,
         issueRepository = issueRepository,
+        configRepository = configRepository,
+        activityHub = activityHub,
         configResolver = configResolver,
         llmService = llmService,
         httpClient = httpClient,
@@ -151,6 +162,8 @@ final private case class PlannerStructuredResponse(
 final case class PlannerAgentServiceLive(
   chatRepository: ChatRepository,
   issueRepository: IssueRepository,
+  configRepository: ConfigRepository,
+  activityHub: ActivityHub,
   configResolver: AgentConfigResolver,
   llmService: LlmService,
   httpClient: HttpClient,
@@ -355,7 +368,8 @@ final case class PlannerAgentServiceLive(
   ): IO[PlannerAgentError, PlannerConfirmation] =
     for
       now             <- Clock.instant
-      orderedDrafts    = state.preview.issues
+      initialStatus   <- loadInitialStatus
+      orderedDrafts    = state.preview.issues.filter(_.included)
       _               <- ZIO.fail(PlannerAgentError.IssueDraftInvalid("Planner preview does not contain any issue drafts"))
                            .when(orderedDrafts.isEmpty)
       issueIdsByDraft <- ZIO.foreach(orderedDrafts) { draft =>
@@ -413,6 +427,11 @@ final case class PlannerAgentServiceLive(
                                       )
                                       .mapError(mapIssuePersistence("planner_proof_of_work"))
                                   }
+                             _ <- ZIO.when(initialStatus == PlannerInitialStatus.Todo) {
+                                    issueRepository
+                                      .append(IssueEvent.MovedToTodo(issueId, movedAt = now, occurredAt = now))
+                                      .mapError(mapIssuePersistence("planner_move_todo"))
+                                  }
                              _ <- state.workspaceId.fold[IO[PlannerAgentError, Unit]](ZIO.unit) { workspaceId =>
                                     issueRepository
                                       .append(IssueEvent.WorkspaceLinked(issueId, workspaceId, now))
@@ -434,6 +453,7 @@ final case class PlannerAgentServiceLive(
                          }
       confirmation     =
         PlannerConfirmation(state.conversationId, orderedDrafts.flatMap(draft => issueIdsByDraft.get(draft.draftId)))
+      _               <- publishPlannerBatchActivity(state, confirmation.issueIds, initialStatus, now)
       _               <- previewState.update(_.updated(
                            state.conversationId,
                            state.copy(confirmedIssueIds = Some(confirmation.issueIds)),
@@ -455,6 +475,7 @@ final case class PlannerAgentServiceLive(
         promptTemplate = draft.promptTemplate.trim,
         kaizenSkills = sanitizeList(draft.kaizenSkills),
         proofOfWorkRequirements = sanitizeList(draft.proofOfWorkRequirements),
+        included = draft.included,
       )
     }
     val duplicateIds     = normalizedIssues.groupBy(_.draftId).collect { case (id, values) if values.size > 1 => id }.toList
@@ -477,6 +498,7 @@ final case class PlannerAgentServiceLive(
       acceptanceCriteria = "",
       promptTemplate = "",
       proofOfWorkRequirements = Nil,
+      included = true,
     )
 
   private def plannerTitle(initialRequest: String): String =
@@ -502,12 +524,14 @@ final case class PlannerAgentServiceLive(
       val skills       = if draft.kaizenSkills.isEmpty then "none" else draft.kaizenSkills.mkString(", ")
       val proof        =
         if draft.proofOfWorkRequirements.isEmpty then "none" else draft.proofOfWorkRequirements.mkString(", ")
+      val selection    = if draft.included then "included" else "excluded"
       s"""### ${draft.title}
          |Priority: ${normalizedPriority(draft.priority)}
          |Capabilities: $capabilities
          |Dependencies: $dependencies
          |Kaizen skills: $skills
          |Proof of work: $proof
+         |Selection: $selection
          |
          |${draft.description}
          |""".stripMargin
@@ -568,6 +592,7 @@ final case class PlannerAgentServiceLive(
                 "type"  -> Json.Str("array"),
                 "items" -> Json.Obj("type" -> Json.Str("string")),
               ),
+              "included"                -> Json.Obj("type" -> Json.Str("boolean")),
             ),
             "required"   -> Json.Arr(
               Chunk(
@@ -582,6 +607,7 @@ final case class PlannerAgentServiceLive(
                 Json.Str("promptTemplate"),
                 Json.Str("kaizenSkills"),
                 Json.Str("proofOfWorkRequirements"),
+                Json.Str("included"),
               )
             ),
           ),
@@ -658,6 +684,42 @@ final case class PlannerAgentServiceLive(
       case "high"     => "high"
       case "critical" => "critical"
     }.getOrElse("medium")
+
+  private def loadInitialStatus: IO[PlannerAgentError, PlannerInitialStatus] =
+    configRepository
+      .getSetting("planner.create.initialStatus")
+      .mapError(mapPersistence("planner_initial_status"))
+      .map(_.flatMap(setting => Option(setting.value).map(_.trim.toLowerCase)).getOrElse("backlog"))
+      .map {
+        case "todo" => PlannerInitialStatus.Todo
+        case _      => PlannerInitialStatus.Backlog
+      }
+
+  private def publishPlannerBatchActivity(
+    state: PlannerPreviewState,
+    issueIds: List[IssueId],
+    initialStatus: PlannerInitialStatus,
+    now: Instant,
+  ): UIO[Unit] =
+    activityHub.publish(
+      ActivityEvent(
+        id = EventId.generate,
+        eventType = ActivityEventType.RunStateChanged,
+        source = "planner",
+        summary = s"Planner session #${state.conversationId} created ${issueIds.size} issue(s)",
+        payload = Some(
+          Json
+            .Obj(
+              "conversationId" -> Json.Num(state.conversationId),
+              "workspaceId"    -> state.workspaceId.fold[Json](Json.Null)(Json.Str(_)),
+              "initialStatus"  -> Json.Str(initialStatus.toString.toLowerCase),
+              "issueIds"       -> Json.Arr(Chunk.fromIterable(issueIds.map(id => Json.Str(id.value)))),
+            )
+            .toJson
+        ),
+        createdAt = now,
+      )
+    )
 
   private def mapPersistence(operation: String)(error: PersistenceError): PlannerAgentError =
     PlannerAgentError.PersistenceFailure(operation, error.toString)

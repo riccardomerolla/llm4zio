@@ -1305,12 +1305,19 @@ final case class IssueControllerLive(
   ): List[AgentIssueView] =
     val byQuery = query match
       case Some(term) =>
-        val needle = term.toLowerCase
-        issues.filter(issue =>
-          issue.title.toLowerCase.contains(needle) ||
-          issue.description.toLowerCase.contains(needle) ||
-          issue.issueType.toLowerCase.contains(needle)
-        )
+        val needles = term
+          .split("[,\\s]+")
+          .toList
+          .map(_.trim.toLowerCase)
+          .filter(_.nonEmpty)
+        issues.filter { issue =>
+          needles.exists { needle =>
+            issue.id.exists(_.toLowerCase.contains(needle)) ||
+            issue.title.toLowerCase.contains(needle) ||
+            issue.description.toLowerCase.contains(needle) ||
+            issue.issueType.toLowerCase.contains(needle)
+          }
+        }
       case None       => issues
     tag match
       case Some(value) =>
