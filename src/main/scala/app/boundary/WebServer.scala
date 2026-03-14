@@ -80,7 +80,11 @@ object WebServer:
     yield new WebServer {
       override val routes: Routes[Any, Response] =
         dashboard.routes ++ tasks.routes ++ reports.routes ++ graph.routes ++ settings.routes ++ config.routes ++ agents.routes ++ monitor.routes ++ chat.routes ++ issues.routes ++ workflows.routes ++ telegram.routes ++ activity.routes ++ memory.routes ++ channels.routes ++ health.routes ++ logs.routes ++ websocket.routes ++ plannerController.routes ++ mcpSvc.controller.routes ++ ProjectsController.routes(
-          projectRepo
+          projectRepo,
+          wsRepo,
+          issueRepo,
+          agentReg,
+          analysisScheduler,
         ) ++ WorkspacesController.routes(
           wsRepo,
           wsRunSvc,
