@@ -104,6 +104,7 @@ final case class PlannerControllerLive(
     val acceptance   = values(form, "acceptance_criteria")
     val prompts      = values(form, "prompt_template")
     val skills       = values(form, "kaizen_skills")
+    val proof        = values(form, "proof_of_work_requirements")
     val sizes        = List(
       draftIds.size,
       titles.size,
@@ -115,6 +116,7 @@ final case class PlannerControllerLive(
       acceptance.size,
       prompts.size,
       skills.size,
+      proof.size,
     ).distinct
 
     if sizes.size > 1 then
@@ -135,6 +137,7 @@ final case class PlannerControllerLive(
               acceptanceCriteria = acceptance(idx),
               promptTemplate = prompts(idx),
               kaizenSkills = splitCsv(skills(idx)),
+              proofOfWorkRequirements = splitCsv(proof(idx)),
             )
           },
         )

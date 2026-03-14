@@ -2,6 +2,7 @@ package shared.web
 
 import issues.entity.{ IssueCiStatus, IssuePrStatus, IssueWorkReport }
 import scalatags.Text.all.*
+import workspace.control.ProofOfWorkExtractor
 
 /** Renders the proof-of-work panel for an issue.
   *
@@ -17,9 +18,10 @@ object ProofOfWorkView:
     * @param collapsed
     *   if true the panel is rendered collapsed (toggle-able by JS)
     */
-  def panel(report: IssueWorkReport, collapsed: Boolean): String =
-    if !hasAnySignal(report) then ""
+  def panel(report: IssueWorkReport, collapsed: Boolean, requirements: List[String] = Nil): String =
+    if !hasAnySignal(report) && requirements.isEmpty then ""
     else
+      val checks = ProofOfWorkExtractor.validateRequirements(requirements, report)
       div(
         cls                        := "mt-3 rounded-lg border border-white/10 bg-slate-950/60 p-3 text-xs text-slate-200",
         attr("data-proof-of-work") := report.issueId.value,
@@ -82,6 +84,27 @@ object ProofOfWorkView:
                   div(cls := "rounded border border-white/10 px-2 py-1")(
                     span(cls := "font-medium")(r.stepName),
                     span(cls := " ml-2 text-slate-400")(r.content),
+                  )
+                }
+              ),
+            )
+          else (),
+          if checks.nonEmpty then
+            div(cls := "mt-3")(
+              p(cls := "mb-2 text-[11px] font-semibold text-slate-300")("Verification Checklist"),
+              div(cls := "space-y-2")(
+                checks.map { check =>
+                  val stateCls =
+                    if check.passed then "border-emerald-400/30 bg-emerald-500/10 text-emerald-100"
+                    else "border-rose-400/30 bg-rose-500/10 text-rose-100"
+                  div(cls := s"rounded border px-2 py-2 text-[11px] $stateCls")(
+                    div(cls := "flex items-center justify-between gap-2")(
+                      span(cls := "font-medium")(check.requirement),
+                      span(cls := "text-[10px] font-semibold uppercase tracking-wide")(
+                        if check.passed then "Pass" else "Fail"
+                      ),
+                    ),
+                    p(cls := "mt-1 text-[10px] opacity-90")(check.details),
                   )
                 }
               ),

@@ -31,6 +31,10 @@ case class AgentIssueView(
   workspaceId: Option[String] = None,
   externalRef: Option[String] = None,
   externalUrl: Option[String] = None,
+  promptTemplate: Option[String] = None,
+  acceptanceCriteria: Option[String] = None,
+  kaizenSkill: Option[String] = None,
+  proofOfWorkRequirements: List[String] = Nil,
   priority: IssuePriority = IssuePriority.Medium,
   status: IssueStatus = IssueStatus.Backlog,
   assignedAgent: Option[String] = None,
@@ -68,6 +72,10 @@ case class AgentIssueCreateRequest(
   workspaceId: Option[String] = None,
   priority: IssuePriority = IssuePriority.Medium,
   conversationId: Option[String] = None,
+  promptTemplate: Option[String] = None,
+  acceptanceCriteria: Option[String] = None,
+  kaizenSkill: Option[String] = None,
+  proofOfWorkRequirements: List[String] = Nil,
 ) derives JsonCodec
 
 case class AssignIssueRequest(

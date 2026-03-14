@@ -5,7 +5,7 @@ import java.time.Instant
 import zio.*
 import zio.test.*
 
-import issues.entity.{ IssueWorkReport, IssueWorkReportProjection }
+import issues.entity.{ IssueCiStatus, IssueWorkReport, IssueWorkReportProjection }
 import orchestration.control.WorkReportEventBus
 import shared.ids.Ids.{ IssueId, TaskRunId }
 import taskrun.entity.CiStatus
@@ -81,6 +81,25 @@ object ProofOfWorkExtractorSpec extends ZIOSpecDefault:
           stats.filesChanged == 0,
           stats.linesAdded == 0,
           stats.linesRemoved == 0,
+        )
+      },
+      test("validateRequirements marks proof checks pass and fail from report evidence") {
+        val report = IssueWorkReport
+          .empty(issueId, now)
+          .copy(
+            walkthrough = Some("All tests pass and coverage 86.2%"),
+            ciStatus = Some(IssueCiStatus.Passed),
+            prLink = Some("https://github.com/org/repo/pull/7"),
+          )
+        val checks = ProofOfWorkExtractor.validateRequirements(
+          List("tests pass", "coverage > 80%", "pull request opened", "no lint errors"),
+          report,
+        )
+        assertTrue(
+          checks.find(_.requirement == "tests pass").exists(_.passed),
+          checks.find(_.requirement == "coverage > 80%").exists(_.passed),
+          checks.find(_.requirement == "pull request opened").exists(_.passed),
+          checks.find(_.requirement == "no lint errors").exists(!_.passed),
         )
       },
     )

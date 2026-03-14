@@ -45,6 +45,7 @@ import gateway.boundary.{
 }
 import gateway.control.{ MessageRouter, * }
 import issues.boundary.IssueController as IssuesIssueController
+import issues.control.{ IssueWorkReportHydrator, IssueWorkReportSubscriber }
 import issues.entity.{ IssueEventStoreES, IssueRepositoryES }
 import llm4zio.core.*
 import llm4zio.providers.{ GeminiCliExecutor, HttpClient }
@@ -69,6 +70,7 @@ import taskrun.boundary.{
   ReportsController as TaskRunReportsController,
   TasksController as TaskRunTasksController,
 }
+import taskrun.entity.{ TaskRunEventStoreES, TaskRunRepositoryES }
 import workspace.control.*
 import workspace.entity.WorkspaceRepository
 
@@ -263,6 +265,8 @@ object ApplicationDI:
       RunSessionManager.live,
       IssueEventStoreES.live,
       IssueRepositoryES.live,
+      TaskRunEventStoreES.live,
+      TaskRunRepositoryES.live,
       PlannerAgentService.live,
       AnalysisEventStoreES.live,
       AnalysisRepositoryES.live,
@@ -274,6 +278,7 @@ object ApplicationDI:
       WorkspaceRunService.live,
       AutoDispatcher.live,
       WorkReportEventBus.layer,
+      issueWorkReportProjectionLayer,
       MergeAgentService.live,
       ConversationChatController.live,
       IssuesIssueController.live,
@@ -287,6 +292,19 @@ object ApplicationDI:
       mcp.McpService.live,
       WebServer.live,
     ) >>> ZLayer.service[WebServer]
+
+  private val issueWorkReportProjectionLayer
+    : ZLayer[WorkReportEventBus & issues.entity.IssueRepository & taskrun.entity.TaskRunRepository, Nothing, issues.entity.IssueWorkReportProjection] =
+    ZLayer.scoped {
+      for
+        bus         <- ZIO.service[WorkReportEventBus]
+        issueRepo   <- ZIO.service[issues.entity.IssueRepository]
+        taskRunRepo <- ZIO.service[taskrun.entity.TaskRunRepository]
+        projection  <- issues.entity.IssueWorkReportProjection.make
+        _           <- IssueWorkReportHydrator.runStartup(projection, issueRepo, taskRunRepo)
+        _           <- IssueWorkReportSubscriber(bus, projection, issueRepo).start
+      yield projection
+    }
 
   private val channelRegistryLayer
     : ZLayer[Ref[GatewayConfig] & AgentRegistry & TaskRepository & TaskExecutor & ConfigRepository, Nothing, ChannelRegistry] =

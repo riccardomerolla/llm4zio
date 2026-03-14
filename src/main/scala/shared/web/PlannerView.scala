@@ -191,6 +191,11 @@ object PlannerView:
       labeledArea("Acceptance Criteria", "acceptance_criteria", draft.acceptanceCriteria, 3),
       labeledArea("Prompt Template", "prompt_template", draft.promptTemplate, 5),
       labeledInput("Kaizen Skills", "kaizen_skills", draft.kaizenSkills.mkString(",")),
+      labeledInput(
+        "Proof Of Work",
+        "proof_of_work_requirements",
+        draft.proofOfWorkRequirements.mkString(","),
+      ),
     )
 
   private def labeledInput(labelText: String, nameValue: String, valueText: String): Frag =

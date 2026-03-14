@@ -42,6 +42,7 @@ final case class AgentIssue(
   @fieldDefaultValue(None) promptTemplate: Option[String] = None,
   @fieldDefaultValue(None) acceptanceCriteria: Option[String] = None,
   @fieldDefaultValue(None) kaizenSkill: Option[String] = None,
+  @fieldDefaultValue(Nil) proofOfWorkRequirements: List[String] = Nil,
   @fieldDefaultValue(None) milestoneRef: Option[String] = None,
   @fieldDefaultValue(Nil) analysisDocIds: List[AnalysisDocId] = Nil,
   @fieldDefaultValue(Nil) mergeConflictFiles: List[String] = Nil,
@@ -71,6 +72,9 @@ object AgentIssue:
       .distinct
 
   private def sanitizeFilePaths(values: List[String]): List[String] =
+    safeList(values).flatMap(sanitizeText).distinct
+
+  private def sanitizeRequirements(values: List[String]): List[String] =
     safeList(values).flatMap(sanitizeText).distinct
 
   def fromEvents(events: List[IssueEvent]): Either[String, AgentIssue] =
@@ -111,6 +115,7 @@ object AgentIssue:
                   promptTemplate = None,
                   acceptanceCriteria = None,
                   kaizenSkill = None,
+                  proofOfWorkRequirements = Nil,
                   milestoneRef = None,
                   analysisDocIds = Nil,
                   mergeConflictFiles = Nil,
@@ -251,6 +256,16 @@ object AgentIssue:
         current
           .toRight(s"Issue ${updated.issueId.value} not initialized before AcceptanceCriteriaUpdated event")
           .map(issue => Some(issue.copy(acceptanceCriteria = sanitizeText(updated.acceptanceCriteria))))
+
+      case updated: IssueEvent.KaizenSkillUpdated =>
+        current
+          .toRight(s"Issue ${updated.issueId.value} not initialized before KaizenSkillUpdated event")
+          .map(issue => Some(issue.copy(kaizenSkill = sanitizeText(updated.kaizenSkill))))
+
+      case updated: IssueEvent.ProofOfWorkRequirementsUpdated =>
+        current
+          .toRight(s"Issue ${updated.issueId.value} not initialized before ProofOfWorkRequirementsUpdated event")
+          .map(issue => Some(issue.copy(proofOfWorkRequirements = sanitizeRequirements(updated.requirements))))
 
       case attached: IssueEvent.AnalysisAttached =>
         current

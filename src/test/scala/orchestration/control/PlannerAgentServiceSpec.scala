@@ -111,6 +111,7 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
                 acceptanceCriteria = "Model compiles",
                 promptTemplate = "Implement the data model",
                 kaizenSkills = List("task-planning"),
+                proofOfWorkRequirements = List("tests pass", "coverage > 80%"),
               ),
               PlannerIssueDraft(
                 draftId = "issue-2",
@@ -180,6 +181,8 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
           events.exists(_.isInstanceOf[IssueEvent.DependencyLinked]),
           events.exists(_.isInstanceOf[IssueEvent.PromptTemplateUpdated]),
           events.exists(_.isInstanceOf[IssueEvent.AcceptanceCriteriaUpdated]),
+          events.exists(_.isInstanceOf[IssueEvent.KaizenSkillUpdated]),
+          events.exists(_.isInstanceOf[IssueEvent.ProofOfWorkRequirementsUpdated]),
           events.count(_.isInstanceOf[IssueEvent.WorkspaceLinked]) == 2,
           events.exists {
             case IssueEvent.TagsUpdated(_, tags, _) => tags.contains("skill:task-planning")

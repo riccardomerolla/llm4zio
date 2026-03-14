@@ -45,6 +45,7 @@ final case class PlannerIssueDraft(
   acceptanceCriteria: String = "",
   promptTemplate: String = "",
   kaizenSkills: List[String] = Nil,
+  proofOfWorkRequirements: List[String] = Nil,
 ) derives JsonCodec
 
 final case class PlannerPlanPreview(
@@ -390,6 +391,28 @@ final case class PlannerAgentServiceLive(
                                       ))
                                       .mapError(mapIssuePersistence("planner_acceptance"))
                                   }
+                             _ <- ZIO.when(draft.kaizenSkills.nonEmpty) {
+                                    issueRepository
+                                      .append(
+                                        IssueEvent.KaizenSkillUpdated(
+                                          issueId,
+                                          sanitizeList(draft.kaizenSkills).mkString(", "),
+                                          now,
+                                        )
+                                      )
+                                      .mapError(mapIssuePersistence("planner_kaizen"))
+                                  }
+                             _ <- ZIO.when(draft.proofOfWorkRequirements.nonEmpty) {
+                                    issueRepository
+                                      .append(
+                                        IssueEvent.ProofOfWorkRequirementsUpdated(
+                                          issueId,
+                                          sanitizeList(draft.proofOfWorkRequirements),
+                                          now,
+                                        )
+                                      )
+                                      .mapError(mapIssuePersistence("planner_proof_of_work"))
+                                  }
                              _ <- state.workspaceId.fold[IO[PlannerAgentError, Unit]](ZIO.unit) { workspaceId =>
                                     issueRepository
                                       .append(IssueEvent.WorkspaceLinked(issueId, workspaceId, now))
@@ -431,6 +454,7 @@ final case class PlannerAgentServiceLive(
         acceptanceCriteria = draft.acceptanceCriteria.trim,
         promptTemplate = draft.promptTemplate.trim,
         kaizenSkills = sanitizeList(draft.kaizenSkills),
+        proofOfWorkRequirements = sanitizeList(draft.proofOfWorkRequirements),
       )
     }
     val duplicateIds     = normalizedIssues.groupBy(_.draftId).collect { case (id, values) if values.size > 1 => id }.toList
@@ -452,6 +476,7 @@ final case class PlannerAgentServiceLive(
       description = "",
       acceptanceCriteria = "",
       promptTemplate = "",
+      proofOfWorkRequirements = Nil,
     )
 
   private def plannerTitle(initialRequest: String): String =
@@ -475,11 +500,14 @@ final case class PlannerAgentServiceLive(
       val capabilities =
         if draft.requiredCapabilities.isEmpty then "none" else draft.requiredCapabilities.mkString(", ")
       val skills       = if draft.kaizenSkills.isEmpty then "none" else draft.kaizenSkills.mkString(", ")
+      val proof        =
+        if draft.proofOfWorkRequirements.isEmpty then "none" else draft.proofOfWorkRequirements.mkString(", ")
       s"""### ${draft.title}
          |Priority: ${normalizedPriority(draft.priority)}
          |Capabilities: $capabilities
          |Dependencies: $dependencies
          |Kaizen skills: $skills
+         |Proof of work: $proof
          |
          |${draft.description}
          |""".stripMargin
@@ -498,6 +526,7 @@ final case class PlannerAgentServiceLive(
        |- Suggest practical required capabilities for each issue.
        |- Generate prompt templates that an implementation agent can execute directly.
        |- Include kaizen skill references when useful.
+       |- Include concrete proof-of-work requirements when verification matters.
        |- Use stable draft ids like issue-1, issue-2 so dependencies can reference them.
        |- Keep priorities to one of: low, medium, high, critical.
        |- Return only valid JSON matching the schema.
@@ -516,22 +545,26 @@ final case class PlannerAgentServiceLive(
           "items" -> Json.Obj(
             "type"       -> Json.Str("object"),
             "properties" -> Json.Obj(
-              "draftId"              -> Json.Obj("type" -> Json.Str("string")),
-              "title"                -> Json.Obj("type" -> Json.Str("string")),
-              "description"          -> Json.Obj("type" -> Json.Str("string")),
-              "issueType"            -> Json.Obj("type" -> Json.Str("string")),
-              "priority"             -> Json.Obj("type" -> Json.Str("string")),
-              "requiredCapabilities" -> Json.Obj(
+              "draftId"                 -> Json.Obj("type" -> Json.Str("string")),
+              "title"                   -> Json.Obj("type" -> Json.Str("string")),
+              "description"             -> Json.Obj("type" -> Json.Str("string")),
+              "issueType"               -> Json.Obj("type" -> Json.Str("string")),
+              "priority"                -> Json.Obj("type" -> Json.Str("string")),
+              "requiredCapabilities"    -> Json.Obj(
                 "type"  -> Json.Str("array"),
                 "items" -> Json.Obj("type" -> Json.Str("string")),
               ),
-              "dependencyDraftIds"   -> Json.Obj(
+              "dependencyDraftIds"      -> Json.Obj(
                 "type"  -> Json.Str("array"),
                 "items" -> Json.Obj("type" -> Json.Str("string")),
               ),
-              "acceptanceCriteria"   -> Json.Obj("type" -> Json.Str("string")),
-              "promptTemplate"       -> Json.Obj("type" -> Json.Str("string")),
-              "kaizenSkills"         -> Json.Obj(
+              "acceptanceCriteria"      -> Json.Obj("type" -> Json.Str("string")),
+              "promptTemplate"          -> Json.Obj("type" -> Json.Str("string")),
+              "kaizenSkills"            -> Json.Obj(
+                "type"  -> Json.Str("array"),
+                "items" -> Json.Obj("type" -> Json.Str("string")),
+              ),
+              "proofOfWorkRequirements" -> Json.Obj(
                 "type"  -> Json.Str("array"),
                 "items" -> Json.Obj("type" -> Json.Str("string")),
               ),
@@ -548,6 +581,7 @@ final case class PlannerAgentServiceLive(
                 Json.Str("acceptanceCriteria"),
                 Json.Str("promptTemplate"),
                 Json.Str("kaizenSkills"),
+                Json.Str("proofOfWorkRequirements"),
               )
             ),
           ),

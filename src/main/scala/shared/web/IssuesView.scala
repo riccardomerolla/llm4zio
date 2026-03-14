@@ -493,6 +493,7 @@ object IssuesView:
               textField("tags", "Tags (comma separated)", "bug,build,analysis"),
               capabilityEditor("requiredCapabilities", "Required Capabilities", ""),
               textField("preferredAgent", "Preferred AI Agent", "gemini-cli"),
+              textField("kaizenSkill", "Kaizen Skill", "scala-zio-refactor"),
               workspaceSelect("workspaceId", "Linked Workspace", workspaces, None),
               textField("contextPath", "Context Path", "/path/to/context"),
               textField("sourceFolder", "Source Folder", "/path/to/source"),
@@ -507,6 +508,28 @@ object IssuesView:
                 placeholder := "# Task\nExplain what the agent should do, acceptance criteria, and constraints.",
                 required,
               ),
+            ),
+            div(cls := "mt-4 grid gap-4 md:grid-cols-2")(
+              textAreaField(
+                "acceptanceCriteria",
+                "Acceptance Criteria",
+                "List the conditions the agent output must satisfy.",
+                4,
+              ),
+              textAreaField(
+                "proofOfWorkRequirements",
+                "Proof Of Work Requirements",
+                "tests pass\nno lint errors\ncoverage > 80%",
+                4,
+              ),
+            ),
+            div(cls := "mt-4")(
+              textAreaField(
+                "promptTemplate",
+                "Prompt Template",
+                "Implement ${title}.\n\nAcceptance criteria:\n${acceptanceCriteria}",
+                6,
+              )
             ),
           ),
           div(cls := "flex items-center gap-3")(
@@ -542,6 +565,7 @@ object IssuesView:
               textField("priority", "Priority", safeStr(issue.priority.toString, "medium")),
               textField("tags", "Tags (comma separated)", safe(issue.tags)),
               capabilityEditor("requiredCapabilities", "Required Capabilities", safe(issue.requiredCapabilities)),
+              textField("kaizenSkill", "Kaizen Skill", safe(issue.kaizenSkill)),
               textField("contextPath", "Context Path", safe(issue.contextPath)),
               textField("sourceFolder", "Source Folder", safe(issue.sourceFolder)),
               workspaceSelect(
@@ -559,6 +583,18 @@ object IssuesView:
                 rows := 14,
                 cls  := "w-full rounded-lg border border-white/15 bg-slate-800/80 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-indigo-400/40 focus:outline-none",
               )(safeStr(issue.description)),
+            ),
+            div(cls := "mt-4 grid gap-4 md:grid-cols-2")(
+              textAreaField("acceptanceCriteria", "Acceptance Criteria", safe(issue.acceptanceCriteria), 4),
+              textAreaField(
+                "proofOfWorkRequirements",
+                "Proof Of Work Requirements",
+                issue.proofOfWorkRequirements.mkString("\n"),
+                4,
+              ),
+            ),
+            div(cls := "mt-4")(
+              textAreaField("promptTemplate", "Prompt Template", safe(issue.promptTemplate), 6)
             ),
           ),
           div(cls := "flex items-center gap-3")(
@@ -602,6 +638,17 @@ object IssuesView:
       Option(thunk).getOrElse(fallback)
     catch case _: Throwable => fallback
 
+  private def textAreaField(nameValue: String, labelText: String, valueText: String, rowsCount: Int): Frag =
+    div(
+      label(cls := "mb-2 block text-sm font-semibold text-slate-200", `for` := nameValue)(labelText),
+      textarea(
+        id   := nameValue,
+        name := nameValue,
+        rows := rowsCount,
+        cls  := "w-full rounded-lg border border-white/15 bg-slate-800/80 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-indigo-400/40 focus:outline-none",
+      )(valueText),
+    )
+
   def detail(
     issue: AgentIssueView,
     issueRuns: List[WorkspaceRun],
@@ -609,8 +656,9 @@ object IssuesView:
     analysisDocs: List[AnalysisContextDocView],
     mergeHistory: List[MergeHistoryEntryView],
     workspaces: List[(String, String)],
+    workReport: Option[IssueWorkReport] = None,
   ): String =
-    detailPage(issue, issueRuns, availableAgents, analysisDocs, mergeHistory, workspaces, workReport = None)
+    detailPage(issue, issueRuns, availableAgents, analysisDocs, mergeHistory, workspaces, workReport)
 
   private def detailPage(
     issue: AgentIssueView,
@@ -621,19 +669,23 @@ object IssuesView:
     workspaces: List[(String, String)],
     workReport: Option[IssueWorkReport],
   ): String =
-    val issueIdStr    = safe(issue.id, "-")
-    val selectedAgent = safe(issue.preferredAgent).match
+    val issueIdStr      = safe(issue.id, "-")
+    val selectedAgent   = safe(issue.preferredAgent).match
       case "" => safe(issue.assignedAgent)
       case v  => v
-    val requiredCaps  = safeTags(issue.requiredCapabilities)
-    val convId        = safe(issue.conversationId)
-    val workspaceId   = safe(issue.workspaceId)
-    val workspaceName = workspaceNameOf(workspaces, workspaceId).getOrElse(workspaceId)
-    val sortedRuns    = issueRuns.sortBy(_.createdAt).reverse
-    val sidebarConvId = if convId.nonEmpty then convId else sortedRuns.headOption.map(_.conversationId).getOrElse("")
-    val isRunning     = issue.status == IssueStatus.InProgress
-    val statusToken   = issueStatusToken(issue.status)
-    val conflictFiles = issue.mergeConflictFiles.filter(_.trim.nonEmpty).distinct
+    val requiredCaps    = safeTags(issue.requiredCapabilities)
+    val convId          = safe(issue.conversationId)
+    val workspaceId     = safe(issue.workspaceId)
+    val workspaceName   = workspaceNameOf(workspaces, workspaceId).getOrElse(workspaceId)
+    val sortedRuns      = issueRuns.sortBy(_.createdAt).reverse
+    val sidebarConvId   = if convId.nonEmpty then convId else sortedRuns.headOption.map(_.conversationId).getOrElse("")
+    val isRunning       = issue.status == IssueStatus.InProgress
+    val statusToken     = issueStatusToken(issue.status)
+    val conflictFiles   = issue.mergeConflictFiles.filter(_.trim.nonEmpty).distinct
+    val effectiveReport =
+      workReport.orElse(
+        Option.when(issue.proofOfWorkRequirements.nonEmpty)(IssueWorkReport.empty(IssueId(issueIdStr), issue.updatedAt))
+      )
 
     Layout.page(s"Issue #$issueIdStr", "/issues")(
       div(cls := "mt-2 mx-auto max-w-6xl space-y-4")(
@@ -699,6 +751,26 @@ object IssuesView:
                 markdownFragment(safeStr(issue.description))
               ),
             ),
+            if safe(issue.acceptanceCriteria).nonEmpty || safe(issue.kaizenSkill).nonEmpty then
+              div(cls := "rounded-xl border border-white/10 bg-slate-900/70 p-6 space-y-4")(
+                if safe(issue.acceptanceCriteria).nonEmpty then
+                  div(
+                    p(cls := "mb-2 text-sm font-semibold text-slate-300")("Acceptance Criteria"),
+                    div(cls := "prose prose-invert prose-sm max-w-none text-slate-100")(
+                      markdownFragment(safe(issue.acceptanceCriteria))
+                    ),
+                  )
+                else (),
+                if safe(issue.kaizenSkill).nonEmpty then
+                  div(
+                    p(cls := "mb-2 text-sm font-semibold text-slate-300")("Kaizen Skill"),
+                    span(
+                      cls := "inline-flex rounded-full border border-cyan-400/30 bg-cyan-500/10 px-3 py-1 text-xs font-semibold text-cyan-200"
+                    )(safe(issue.kaizenSkill)),
+                  )
+                else (),
+              )
+            else (),
             if conflictFiles.nonEmpty then
               div(id := "merge-conflict", cls := "rounded-xl border border-rose-400/30 bg-rose-500/10 p-6")(
                 div(cls := "flex flex-wrap items-start justify-between gap-3")(
@@ -745,8 +817,8 @@ object IssuesView:
               )
             else (),
             // proof-of-work (when available)
-            workReport
-              .map(r => ProofOfWorkView.panel(r, collapsed = false))
+            effectiveReport
+              .map(r => ProofOfWorkView.panel(r, collapsed = false, requirements = issue.proofOfWorkRequirements))
               .filter(_.nonEmpty)
               .map(html => div(cls := "rounded-xl border border-white/10 bg-slate-900/60 p-6")(raw(html)))
               .getOrElse(()),
@@ -936,6 +1008,9 @@ object IssuesView:
               else (),
               sidebarMeta("Run", safeMap(issue.runId, identity, "—")),
               if requiredCaps.nonEmpty then sidebarMeta("Capabilities", requiredCaps.mkString(", ")) else (),
+              if issue.proofOfWorkRequirements.nonEmpty then
+                sidebarMeta("Proof checks", issue.proofOfWorkRequirements.size.toString)
+              else (),
               if safe(issue.contextPath).nonEmpty then sidebarMeta("Context path", safe(issue.contextPath)) else (),
               if safe(issue.sourceFolder).nonEmpty then sidebarMeta("Source folder", safe(issue.sourceFolder)) else (),
               sidebarMeta("Updated", safeStr(issue.updatedAt.toString.take(19).replace('T', ' '), "—")),

@@ -41,7 +41,7 @@ object IssueController:
     : ZLayer[
       ChatRepository & TaskRepository & ConfigRepository & AgentRepository & IssueAssignmentOrchestrator &
         IssueRepository & WorkspaceRepository & WorkspaceRunService & ActivityHub & IssueDispatchStatusService &
-        AnalysisRepository,
+        AnalysisRepository & IssueWorkReportProjection,
       Nothing,
       IssueController,
     ] =
@@ -59,6 +59,7 @@ final case class IssueControllerLive(
   activityHub: ActivityHub,
   issueDispatchStatusService: IssueDispatchStatusService,
   analysisRepository: AnalysisRepository,
+  issueWorkReportProjection: IssueWorkReportProjection,
 ) extends IssueController:
 
   override val routes: Routes[Any, Response] = Routes(
@@ -118,6 +119,14 @@ final case class IssueControllerLive(
           _       <- ZIO.when(tags.nonEmpty) {
                        issueRepository.append(IssueEvent.TagsUpdated(issueId, tags, now)).mapError(mapIssueRepoError)
                      }
+          _       <- persistStructuredFields(
+                       issueId = issueId,
+                       promptTemplate = optional(form, "promptTemplate"),
+                       acceptanceCriteria = optional(form, "acceptanceCriteria"),
+                       kaizenSkill = optional(form, "kaizenSkill"),
+                       proofOfWorkRequirements = parseProofOfWorkRequirements(form.get("proofOfWorkRequirements")),
+                       now = now,
+                     )
           _       <- parseWorkspaceSelection(form).fold[IO[PersistenceError, Unit]](ZIO.unit) { workspaceId =>
                        for
                          _ <- ensureWorkspaceExists(workspaceId)
@@ -155,6 +164,7 @@ final case class IssueControllerLive(
           allAgents      <- agentRepository.list().mapError(mapIssueRepoError)
           analysisDocs   <- loadIssueAnalysisContext(issue).mapError(mapIssueRepoError)
           mergeHistory   <- loadMergeHistory(issue.id)
+          workReport     <- issueWorkReportProjection.get(issue.id)
           availableAgents = allAgents.filter(_.enabled).map(registryAgentToAgentInfo)
         yield html(
           HtmlViews.issueDetail(
@@ -164,6 +174,7 @@ final case class IssueControllerLive(
             analysisDocs,
             mergeHistory,
             workspaces.map(ws => ws.id -> ws.name),
+            workReport,
           )
         )
       }
@@ -207,6 +218,14 @@ final case class IssueControllerLive(
           _       <- issueRepository.append(event).mapError(mapIssueRepoError)
           tags     = parseTagList(form.get("tags"))
           _       <- issueRepository.append(IssueEvent.TagsUpdated(issueId, tags, now)).mapError(mapIssueRepoError)
+          _       <- persistStructuredFields(
+                       issueId = issueId,
+                       promptTemplate = optional(form, "promptTemplate"),
+                       acceptanceCriteria = optional(form, "acceptanceCriteria"),
+                       kaizenSkill = optional(form, "kaizenSkill"),
+                       proofOfWorkRequirements = parseProofOfWorkRequirements(form.get("proofOfWorkRequirements")),
+                       now = now,
+                     )
           _       <- parseWorkspaceSelection(form) match
                        case Some(wsId) =>
                          for
@@ -302,7 +321,7 @@ final case class IssueControllerLive(
                                       workspaceId,
                                       AssignRunRequest(
                                         issueRef = s"#$id",
-                                        prompt = issue.description,
+                                        prompt = executionPrompt(issue),
                                         agentName = agentName,
                                       ),
                                     )
@@ -336,6 +355,14 @@ final case class IssueControllerLive(
           _            <- ZIO.when(tags.nonEmpty) {
                             issueRepository.append(IssueEvent.TagsUpdated(issueId, tags, now)).mapError(mapIssueRepoError)
                           }
+          _            <- persistStructuredFields(
+                            issueId = issueId,
+                            promptTemplate = issueRequest.promptTemplate,
+                            acceptanceCriteria = issueRequest.acceptanceCriteria,
+                            kaizenSkill = issueRequest.kaizenSkill,
+                            proofOfWorkRequirements = sanitizeProofRequirements(issueRequest.proofOfWorkRequirements),
+                            now = now,
+                          )
           _            <- issueRequest.workspaceId.fold[IO[PersistenceError, Unit]](ZIO.unit) { workspaceId =>
                             for
                               _ <- ensureWorkspaceExists(workspaceId)
@@ -588,7 +615,7 @@ final case class IssueControllerLive(
                                   workspaceId,
                                   AssignRunRequest(
                                     issueRef = s"#$id",
-                                    prompt = issue.description,
+                                    prompt = executionPrompt(issue),
                                     agentName = assignRequest.agentName,
                                   ),
                                 )
@@ -631,7 +658,7 @@ final case class IssueControllerLive(
                                             workspaceId,
                                             AssignRunRequest(
                                               issueRef = s"#$id",
-                                              prompt = issue.description,
+                                              prompt = executionPrompt(issue),
                                               agentName = best.agentName,
                                             ),
                                           )
@@ -931,6 +958,10 @@ final case class IssueControllerLive(
       workspaceId = i.workspaceId,
       externalRef = i.externalRef,
       externalUrl = i.externalUrl,
+      promptTemplate = i.promptTemplate,
+      acceptanceCriteria = i.acceptanceCriteria,
+      kaizenSkill = i.kaizenSkill,
+      proofOfWorkRequirements = i.proofOfWorkRequirements,
       priority = priority,
       status = status,
       assignedAgent = assignedAgent,
@@ -1677,7 +1708,7 @@ final case class IssueControllerLive(
                                    request.workspaceId,
                                    AssignRunRequest(
                                      issueRef = s"#$issueId",
-                                     prompt = issue.description,
+                                     prompt = executionPrompt(issue),
                                      agentName = request.agentId,
                                    ),
                                  )
@@ -1791,7 +1822,7 @@ final case class IssueControllerLive(
                   workspaceId,
                   AssignRunRequest(
                     issueRef = s"#${issue.id.value}",
-                    prompt = issue.description,
+                    prompt = executionPrompt(issue),
                     agentName = agentName,
                   ),
                 )
@@ -1990,7 +2021,7 @@ final case class IssueControllerLive(
       .map(_.trim)
       .filter(_.nonEmpty)
       .orElse(basePromptOverride.map(_.trim).filter(_.nonEmpty))
-      .getOrElse(issue.description)
+      .getOrElse(executionPrompt(issue))
 
   private def publishPipelineActivity(
     issueId: String,
@@ -2293,8 +2324,86 @@ final case class IssueControllerLive(
       .fromOption(form.get(key).map(_.trim).filter(_.nonEmpty))
       .orElseFail(PersistenceError.QueryFailed("parseForm", s"Missing field '$key'"))
 
+  private def optional(form: Map[String, String], key: String): Option[String] =
+    form.get(key).map(_.trim).filter(_.nonEmpty)
+
+  private def sanitizeProofRequirements(requirements: List[String]): List[String] =
+    requirements.map(_.trim).filter(_.nonEmpty).distinct
+
+  private def parseProofOfWorkRequirements(raw: Option[String]): List[String] =
+    raw.toList
+      .flatMap(_.split("[\\n,]").toList)
+      .map(_.trim)
+      .filter(_.nonEmpty)
+      .distinct
+
+  private def persistStructuredFields(
+    issueId: IssueId,
+    promptTemplate: Option[String],
+    acceptanceCriteria: Option[String],
+    kaizenSkill: Option[String],
+    proofOfWorkRequirements: List[String],
+    now: Instant,
+  ): IO[PersistenceError, Unit] =
+    for
+      _ <- promptTemplate.fold[IO[PersistenceError, Unit]](ZIO.unit) { template =>
+             issueRepository
+               .append(IssueEvent.PromptTemplateUpdated(issueId, template, now))
+               .mapError(mapIssueRepoError)
+           }
+      _ <- acceptanceCriteria.fold[IO[PersistenceError, Unit]](ZIO.unit) { criteria =>
+             issueRepository
+               .append(IssueEvent.AcceptanceCriteriaUpdated(issueId, criteria, now))
+               .mapError(mapIssueRepoError)
+           }
+      _ <- kaizenSkill.fold[IO[PersistenceError, Unit]](ZIO.unit) { skill =>
+             issueRepository
+               .append(IssueEvent.KaizenSkillUpdated(issueId, skill, now))
+               .mapError(mapIssueRepoError)
+           }
+      _ <- ZIO.when(proofOfWorkRequirements.nonEmpty) {
+             issueRepository
+               .append(
+                 IssueEvent.ProofOfWorkRequirementsUpdated(
+                   issueId,
+                   sanitizeProofRequirements(proofOfWorkRequirements),
+                   now,
+                 )
+               )
+               .mapError(mapIssueRepoError)
+           }
+    yield ()
+
   private def parseWorkspaceSelection(form: Map[String, String]): Option[String] =
     form.get("workspaceId").map(_.trim).filter(_.nonEmpty)
+
+  private def executionPrompt(issue: DomainIssue): String =
+    issue.promptTemplate
+      .map(_.trim)
+      .filter(_.nonEmpty)
+      .map(template => renderPromptTemplate(template, issue))
+      .filter(_.trim.nonEmpty)
+      .getOrElse {
+        val sections = List(
+          Option(issue.description).map(_.trim).filter(_.nonEmpty),
+          issue.acceptanceCriteria.map(criteria => s"Acceptance criteria:\n$criteria"),
+          issue.kaizenSkill.map(skill => s"Kaizen skill:\n$skill"),
+          Option.when(issue.proofOfWorkRequirements.nonEmpty) {
+            "Proof-of-work requirements:\n" + issue.proofOfWorkRequirements.map(req => s"- $req").mkString("\n")
+          },
+        ).flatten
+        sections.mkString("\n\n").trim
+      }
+
+  private def renderPromptTemplate(template: String, issue: DomainIssue): String =
+    template
+      .replace("${title}", issue.title)
+      .replace("${description}", issue.description)
+      .replace("${acceptanceCriteria}", issue.acceptanceCriteria.getOrElse(""))
+      .replace("${kaizenSkill}", issue.kaizenSkill.getOrElse(""))
+      .replace("${proofOfWorkRequirements}", issue.proofOfWorkRequirements.mkString(", "))
+      .replace("${contextPath}", issue.contextPath)
+      .replace("${sourceFolder}", issue.sourceFolder)
 
   private def ensureWorkspaceExists(workspaceId: String): IO[PersistenceError, Unit] =
     workspaceRepository

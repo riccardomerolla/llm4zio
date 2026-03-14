@@ -180,6 +180,16 @@ object IssueRepositoryESSpec extends ZIOSpecDefault:
                            "Tests pass and reviewer can merge directly.",
                            now.plusSeconds(3),
                          ))
+            _         <- repo.append(IssueEvent.KaizenSkillUpdated(
+                           blockedId,
+                           "scala-zio-refactor",
+                           now.plusSeconds(4),
+                         ))
+            _         <- repo.append(IssueEvent.ProofOfWorkRequirementsUpdated(
+                           blockedId,
+                           List("tests pass", "no lint errors"),
+                           now.plusSeconds(5),
+                         ))
             blocker   <- repo.get(blockerId)
             blocked   <- repo.get(blockedId)
             allIssues <- repo.list(IssueFilter(limit = 10))
@@ -187,6 +197,8 @@ object IssueRepositoryESSpec extends ZIOSpecDefault:
             blocked.blockedBy == List(blockerId),
             blocked.promptTemplate.contains("Implement ${title} after dependencies are done."),
             blocked.acceptanceCriteria.contains("Tests pass and reviewer can merge directly."),
+            blocked.kaizenSkill.contains("scala-zio-refactor"),
+            blocked.proofOfWorkRequirements == List("tests pass", "no lint errors"),
             blocker.blocking == List(blockedId),
             allIssues.find(_.id == blockerId).exists(_.blocking == List(blockedId)),
           )).provideLayer(layerFor(path))

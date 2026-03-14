@@ -62,6 +62,9 @@ object IssuesViewSpec extends ZIOSpecDefault:
       )
       assertTrue(
         html.contains("Linked Workspace"),
+        html.contains("Acceptance Criteria"),
+        html.contains("Proof Of Work Requirements"),
+        html.contains("Prompt Template"),
         html.contains("No workspace linked"),
         html.contains("Main Workspace (ws-1)"),
         html.contains("Template"),
@@ -181,6 +184,9 @@ object IssuesViewSpec extends ZIOSpecDefault:
         status = IssueStatus.Open,
         externalRef = Some("GH:owner/repo#42"),
         externalUrl = Some("https://github.com/owner/repo/issues/42"),
+        acceptanceCriteria = Some("Tests pass"),
+        kaizenSkill = Some("scala-zio-refactor"),
+        proofOfWorkRequirements = List("tests pass"),
         createdAt = now,
         updatedAt = now,
       )
@@ -196,6 +202,8 @@ object IssuesViewSpec extends ZIOSpecDefault:
         html.contains("External"),
         html.contains("GH:owner/repo#42"),
         html.contains("https://github.com/owner/repo/issues/42"),
+        html.contains("Acceptance Criteria"),
+        html.contains("Kaizen Skill"),
       )
     },
     test("detail renders analysis context tab and vscode deep links") {
