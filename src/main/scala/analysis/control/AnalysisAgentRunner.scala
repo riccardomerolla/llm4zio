@@ -148,8 +148,16 @@ object AnalysisAgentRunner:
       .resolveConfig(agentName)
       .either
       .flatMap {
-        case Right(config) => withFailover(config, prompt, workspacePath, httpClient, cliExecutor, providerCache)
-        case Left(_)       => llmService.execute(prompt)
+        case Right(config) =>
+          ZIO.logDebug(
+            s"Analysis using provider=${config.provider}, model=${config.model} for agent '$agentName'"
+          ) *>
+            withFailover(config, prompt, workspacePath, httpClient, cliExecutor, providerCache)
+        case Left(err)     =>
+          ZIO.logWarning(
+            s"Failed to resolve AI config for agent '$agentName' ($err); falling back to default LLM service"
+          ) *>
+            llmService.execute(prompt)
       }
 
   private def withFailover(
@@ -308,9 +316,16 @@ final case class AnalysisAgentRunnerLive(
 
   private def runAnalysis(workspaceId: String, profile: AnalysisProfile): IO[AnalysisAgentRunnerError, AnalysisDoc] =
     for
+      _         <- ZIO.logDebug(s"Starting ${profile.slug} analysis for workspace $workspaceId")
       workspace <- loadWorkspace(workspaceId)
       agent     <- selectAgent(workspace, profile)
+      _         <- ZIO.logDebug(
+                     s"Selected agent '${agent.name}' for ${profile.slug} analysis in workspace '${workspace.name}'"
+                   )
       prompt    <- resolvePrompt(workspace, agent, profile)
+      _         <- ZIO.logDebug(
+                     s"Executing ${profile.slug} analysis for workspace '${workspace.name}' with agent '${agent.name}'"
+                   )
       markdown  <- executeReview(workspace, agent, profile, prompt)
       filePath   = Paths.get(workspace.localPath).resolve(profile.relativePath)
       _         <- writeAnalysisFile(filePath, markdown)
@@ -419,11 +434,14 @@ final case class AnalysisAgentRunnerLive(
   ): IO[AnalysisAgentRunnerError, String] =
     llmPromptExecutor match
       case Some(executeWithProvider) =>
-        executeWithProvider(workspace, agent, prompt).flatMap { raw =>
-          ZIO
-            .fromEither(normalizeMarkdown(raw, profile.documentTitle))
-            .mapError(_ => AnalysisAgentRunnerError.EmptyOutput(agent.name))
-        }
+        ZIO.logDebug(
+          s"Running ${profile.slug} analysis via AI provider for agent '${agent.name}' in workspace '${workspace.name}'"
+        ) *>
+          executeWithProvider(workspace, agent, prompt).flatMap { raw =>
+            ZIO
+              .fromEither(normalizeMarkdown(raw, profile.documentTitle))
+              .mapError(_ => AnalysisAgentRunnerError.EmptyOutput(agent.name))
+          }
       case None                      =>
         if agent.cliTool.trim.equalsIgnoreCase("codex") then
           executeCodexReview(workspace, agent, profile, prompt)
@@ -437,6 +455,9 @@ final case class AnalysisAgentRunnerLive(
     prompt: String,
   ): IO[AnalysisAgentRunnerError, String] =
     for
+      _         <- ZIO.logDebug(
+                     s"Running ${profile.slug} analysis via CLI tool '${agent.cliTool}' for workspace '${workspace.name}'"
+                   )
       outputRef <- Ref.make(Vector.empty[String])
       argv       = CliAgentRunner.buildArgv(
                      cliTool = agent.cliTool,
@@ -483,6 +504,9 @@ final case class AnalysisAgentRunnerLive(
         prompt,
       )
       for
+        _                <- ZIO.logDebug(
+                              s"Running ${profile.slug} analysis via Codex for workspace '${workspace.name}' (agent='${agent.name}')"
+                            )
         result           <- commandRunner(argv, workspace.localPath, agent.envVars)
                               .mapError(err => AnalysisAgentRunnerError.ProcessFailed(agent.name, err.getMessage))
                               .timeoutFail(AnalysisAgentRunnerError.ProcessTimedOut(agent.name, agent.timeout))(
