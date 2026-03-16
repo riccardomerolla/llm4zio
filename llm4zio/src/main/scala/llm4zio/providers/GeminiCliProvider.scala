@@ -151,11 +151,27 @@ object GeminiCliProvider:
     val normalized = output.replace("\r\n", "\n").trim
     if normalized.isEmpty then Left("Gemini CLI returned empty output")
     else
-      jsonCandidates(normalized)
+      val jsonResult = jsonCandidates(normalized)
         .iterator
         .map(parseHeadlessResponse)
         .collectFirst { case Right(value) => Right(value) }
         .getOrElse(parseHeadlessResponse(normalized))
+      jsonResult match
+        case Right(_)  => jsonResult
+        case Left(err) =>
+          // Fall back: some Gemini CLI versions (especially when Chrome DevTools extensions
+          // are loaded) emit startup messages followed by plain markdown rather than a JSON
+          // envelope.  Find the first markdown heading and treat everything from there as
+          // the actual response.
+          extractMarkdownFallback(normalized).toRight(err)
+
+  private def extractMarkdownFallback(text: String): Option[String] =
+    val lines           = text.linesIterator.toList
+    val firstHeadingIdx = lines.indexWhere(_.trim.startsWith("#"))
+    if firstHeadingIdx >= 0 then
+      val content = lines.drop(firstHeadingIdx).mkString("\n").trim
+      Option(content).filter(_.nonEmpty)
+    else None
 
   private def jsonCandidates(raw: String): List[String] =
     val firstBrace = raw.indexOf('{')

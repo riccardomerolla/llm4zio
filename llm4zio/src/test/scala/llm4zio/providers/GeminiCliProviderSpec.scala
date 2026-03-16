@@ -123,4 +123,32 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
         )
       )
     },
+    test("extractResponse falls back to plain-text markdown when no JSON envelope is present") {
+      val output =
+        """Loaded cached credentials.
+          |Loading extension: chrome-devtools-mcp
+          |Loading extension: code-review
+          |Server 'chrome-devtools' supports tool updates. Listening for changes...
+          |Attempt 1 failed: You have exhausted your capacity on this model. Retrying after 5686ms...
+          |## Security Analysis
+          |
+          |This is the plain-text analysis without a JSON wrapper.
+          |""".stripMargin
+
+      assertTrue(
+        GeminiCliProvider.extractResponse(output) == Right(
+          "## Security Analysis\n\nThis is the plain-text analysis without a JSON wrapper."
+        )
+      )
+    },
+    test("extractResponse returns error when output is only preamble with no markdown content") {
+      val output =
+        """Loaded cached credentials.
+          |Loading extension: chrome-devtools-mcp
+          |""".stripMargin
+
+      assertTrue(
+        GeminiCliProvider.extractResponse(output).isLeft
+      )
+    },
   )
