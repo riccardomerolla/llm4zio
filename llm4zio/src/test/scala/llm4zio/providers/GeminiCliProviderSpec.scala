@@ -123,7 +123,7 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
         )
       )
     },
-    test("extractResponse falls back to plain-text markdown when no JSON envelope is present") {
+    test("extractResponse falls back to plain-text markdown after preamble when no JSON envelope is present") {
       val output =
         """Loaded cached credentials.
           |Loading extension: chrome-devtools-mcp
@@ -138,6 +138,21 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
       assertTrue(
         GeminiCliProvider.extractResponse(output) == Right(
           "## Security Analysis\n\nThis is the plain-text analysis without a JSON wrapper."
+        )
+      )
+    },
+    test("extractResponse falls back to plain prose after preamble when no JSON envelope and no markdown heading") {
+      val output =
+        """Loaded cached credentials.
+          |Loading extension: chrome-devtools-mcp
+          |Loading extension: code-review
+          |Server 'chrome-devtools' supports tool updates. Listening for changes...
+          |I have completed the read-only code review analysis of the repository. The results from the analysis are available in the previous turn. Let me know if you have any other questions.
+          |""".stripMargin
+
+      assertTrue(
+        GeminiCliProvider.extractResponse(output) == Right(
+          "I have completed the read-only code review analysis of the repository. The results from the analysis are available in the previous turn. Let me know if you have any other questions."
         )
       )
     },

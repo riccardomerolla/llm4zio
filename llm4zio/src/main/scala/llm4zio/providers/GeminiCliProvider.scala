@@ -151,27 +151,63 @@ object GeminiCliProvider:
     val normalized = output.replace("\r\n", "\n").trim
     if normalized.isEmpty then Left("Gemini CLI returned empty output")
     else
-      val jsonResult = jsonCandidates(normalized)
+      // Try to decode any candidate as a GeminiHeadlessResponse.  A successful decode means we
+      // found a proper JSON envelope (even if it contains a Gemini error payload) — use that
+      // result directly.  Only fall back to plain-text extraction when NO candidate decoded as
+      // JSON at all (e.g. the CLI emitted startup messages followed by plain prose or markdown).
+      val jsonDecoded = jsonCandidates(normalized)
         .iterator
-        .map(parseHeadlessResponse)
-        .collectFirst { case Right(value) => Right(value) }
-        .getOrElse(parseHeadlessResponse(normalized))
-      jsonResult match
-        case Right(_)  => jsonResult
-        case Left(err) =>
-          // Fall back: some Gemini CLI versions (especially when Chrome DevTools extensions
-          // are loaded) emit startup messages followed by plain markdown rather than a JSON
-          // envelope.  Find the first markdown heading and treat everything from there as
-          // the actual response.
-          extractMarkdownFallback(normalized).toRight(err)
+        .flatMap(tryDecodeHeadless)
+        .nextOption()
+        .orElse(tryDecodeHeadless(normalized))
 
-  private def extractMarkdownFallback(text: String): Option[String] =
-    val lines           = text.linesIterator.toList
-    val firstHeadingIdx = lines.indexWhere(_.trim.startsWith("#"))
-    if firstHeadingIdx >= 0 then
-      val content = lines.drop(firstHeadingIdx).mkString("\n").trim
-      Option(content).filter(_.nonEmpty)
-    else None
+      jsonDecoded match
+        case Some(result) => result
+        case None         =>
+          // No JSON envelope found — some Gemini CLI versions (especially when Chrome DevTools
+          // extensions are loaded) emit preamble lines followed by the response as plain text.
+          // Strip all known preamble lines from the top and return whatever content remains.
+          extractAfterPreamble(normalized)
+            .toRight("Failed to decode Gemini CLI JSON output: output did not contain a JSON envelope")
+
+  // Returns None if `raw` cannot be decoded as GeminiHeadlessResponse, otherwise returns the
+  // interpreted result (Right = content, Left = Gemini API error message).
+  private def tryDecodeHeadless(raw: String): Option[Either[String, String]] =
+    raw.fromJson[GeminiHeadlessResponse].toOption.map { response =>
+      response.error.flatMap(_.message.map(_.trim).filter(_.nonEmpty)) match
+        case Some(message) =>
+          val details = List(
+            response.error.flatMap(_.`type`).map(t => s"type=$t"),
+            response.error.flatMap(_.code).map(code => s"code=$code"),
+          ).flatten.mkString(", ")
+          Left(
+            if details.nonEmpty then s"Gemini CLI returned an error ($details): $message"
+            else s"Gemini CLI returned an error: $message"
+          )
+        case None          =>
+          val content = response.response.map(_.trim).filter(_.nonEmpty)
+          content.toRight("Gemini CLI JSON output did not contain a response")
+    }
+
+  // Patterns that identify known Gemini CLI startup/preamble lines.
+  private val preamblePatterns: List[scala.util.matching.Regex] = List(
+    "^Loaded cached .*".r,
+    "^Loading extension: .*".r,
+    "^Server '.+' supports tool updates.*".r,
+    "^Attempt \\d+ failed: .*".r,
+    "^YOLO mode is enabled.*".r,
+  )
+
+  private def isPreambleLine(line: String): Boolean =
+    preamblePatterns.exists(_.matches(line))
+
+  private def extractAfterPreamble(text: String): Option[String] =
+    // Drop leading preamble lines and blank separator lines, then return the rest.
+    val content = text.linesIterator
+      .dropWhile(line => line.trim.isEmpty || isPreambleLine(line.trim))
+      .mkString("\n")
+      .trim
+    Option(content).filter(_.nonEmpty)
 
   private def jsonCandidates(raw: String): List[String] =
     val firstBrace = raw.indexOf('{')
@@ -185,27 +221,6 @@ object GeminiCliProvider:
           .toList
       else Nil
     (raw :: braceSlice).distinct
-
-  private def parseHeadlessResponse(raw: String): Either[String, String] =
-    raw
-      .fromJson[GeminiHeadlessResponse]
-      .left
-      .map(err => s"Failed to decode Gemini CLI JSON output: $err")
-      .flatMap { response =>
-        response.error.flatMap(_.message.map(_.trim).filter(_.nonEmpty)) match
-          case Some(message) =>
-            val details = List(
-              response.error.flatMap(_.`type`).map(t => s"type=$t"),
-              response.error.flatMap(_.code).map(code => s"code=$code"),
-            ).flatten.mkString(", ")
-            Left(
-              if details.nonEmpty then s"Gemini CLI returned an error ($details): $message"
-              else s"Gemini CLI returned an error: $message"
-            )
-          case None          =>
-            val content = response.response.map(_.trim).filter(_.nonEmpty)
-            content.toRight("Gemini CLI JSON output did not contain a response")
-      }
 
   def make(config: LlmConfig, executor: GeminiCliExecutor): LlmService =
     new LlmService:
