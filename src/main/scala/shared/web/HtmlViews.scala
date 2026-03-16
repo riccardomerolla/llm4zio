@@ -8,6 +8,7 @@ import config.entity.{ AgentInfo, WorkflowDefinition }
 import conversation.entity.api.{ ChatConversation, ConversationEntry, ConversationSessionMeta }
 import db.{ TaskReportRow, TaskRunRow }
 import gateway.entity.ChatSession
+import issues.entity.IssueWorkReport
 import issues.entity.api.{
   AgentIssueView,
   AnalysisContextDocView,
@@ -15,6 +16,7 @@ import issues.entity.api.{
   IssueTemplate,
   MergeHistoryEntryView,
 }
+import orchestration.control.PlannerPreviewState
 import shared.ids.Ids.IssueId
 import workspace.entity.WorkspaceRun
 
@@ -188,6 +190,12 @@ object HtmlViews:
   def chatMessagesFragment(messages: List[ConversationEntry]): String =
     ChatView.messagesFragment(messages)
 
+  def plannerStart(workspaces: List[(String, String)]): String =
+    PlannerView.startPage(workspaces)
+
+  def plannerDetail(state: PlannerPreviewState, workspaces: List[(String, String)]): String =
+    PlannerView.detailPage(state = state, workspaces = workspaces)
+
   def issuesView(
     runId: Option[String],
     issues: List[AgentIssueView],
@@ -279,8 +287,9 @@ object HtmlViews:
     analysisDocs: List[AnalysisContextDocView],
     mergeHistory: List[MergeHistoryEntryView],
     workspaces: List[(String, String)],
+    workReport: Option[IssueWorkReport] = None,
   ): String =
-    IssuesView.detail(issue, issueRuns, availableAgents, analysisDocs, mergeHistory, workspaces)
+    IssuesView.detail(issue, issueRuns, availableAgents, analysisDocs, mergeHistory, workspaces, workReport)
 
   def issueEditForm(issue: AgentIssueView, workspaces: List[(String, String)]): String =
     IssuesView.editForm(issue, workspaces)

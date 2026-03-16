@@ -299,6 +299,7 @@ final private case class IssueAssignmentOrchestratorLive(
       contextPath = Option(i.contextPath).filter(_.nonEmpty),
       sourceFolder = Option(i.sourceFolder).filter(_.nonEmpty),
       workspaceId = i.workspaceId,
+      estimate = i.estimate,
       priority = priority,
       status = status,
       assignedAgent = assignedAgent,

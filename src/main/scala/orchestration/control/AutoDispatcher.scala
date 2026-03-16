@@ -167,7 +167,18 @@ final case class AutoDispatcherLive(
   private def buildPrompt(issue: AgentIssue): String =
     issue.promptTemplate
       .flatMap(template => Option(renderPromptTemplate(template, issue)).map(_.trim).filter(_.nonEmpty))
-      .orElse(Option(issue.description).map(_.trim).filter(_.nonEmpty))
+      .orElse {
+        val sections = List(
+          Option(issue.description).map(_.trim).filter(_.nonEmpty),
+          issue.acceptanceCriteria.map(criteria => s"Acceptance criteria:\n$criteria"),
+          issue.estimate.map(value => s"Estimate:\n$value"),
+          issue.kaizenSkill.map(skill => s"Kaizen skill:\n$skill"),
+          Option.when(issue.proofOfWorkRequirements.nonEmpty) {
+            "Proof-of-work requirements:\n" + issue.proofOfWorkRequirements.map(req => s"- $req").mkString("\n")
+          },
+        ).flatten
+        Option(sections.mkString("\n\n").trim).filter(_.nonEmpty)
+      }
       .getOrElse(issue.title)
 
   private def renderPromptTemplate(template: String, issue: AgentIssue): String =
@@ -175,6 +186,9 @@ final case class AutoDispatcherLive(
       .replace("${title}", issue.title)
       .replace("${description}", issue.description)
       .replace("${acceptanceCriteria}", issue.acceptanceCriteria.getOrElse(""))
+      .replace("${estimate}", issue.estimate.getOrElse(""))
+      .replace("${kaizenSkill}", issue.kaizenSkill.getOrElse(""))
+      .replace("${proofOfWorkRequirements}", issue.proofOfWorkRequirements.mkString(", "))
       .replace("${contextPath}", issue.contextPath)
       .replace("${sourceFolder}", issue.sourceFolder)
 

@@ -387,6 +387,17 @@ object IssuesView:
                 option(value := "Medium", selected := "selected")("Medium"),
                 option(value := "Low")("Low"),
               ),
+              select(
+                cls                             := "min-w-0 w-24 rounded border border-white/15 bg-slate-900/80 px-1.5 py-1 text-xs text-slate-100 focus:outline-none",
+                attr("data-quick-add-estimate") := statusToken,
+              )(
+                option(value := "")("—"),
+                option(value := "XS")("👕 XS"),
+                option(value := "S")("👕 S"),
+                option(value := "M")("👕 M"),
+                option(value := "L")("👕 L"),
+                option(value := "XL")("👕 XL"),
+              ),
               button(
                 `type`                        := "button",
                 cls                           := "flex-1 rounded border border-emerald-400/30 bg-emerald-500/20 py-1 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/30",
@@ -490,9 +501,11 @@ object IssuesView:
               textField("issueType", "Type", "task", required = true),
               textField("runId", "Run ID (optional)", defaultRunId.map(_.toString).getOrElse("")),
               textField("priority", "Priority", "medium"),
+              textField("estimate", "Estimate (XS/S/M/L/XL)", "M"),
               textField("tags", "Tags (comma separated)", "bug,build,analysis"),
               capabilityEditor("requiredCapabilities", "Required Capabilities", ""),
               textField("preferredAgent", "Preferred AI Agent", "gemini-cli"),
+              textField("kaizenSkill", "Kaizen Skill", "scala-zio-refactor"),
               workspaceSelect("workspaceId", "Linked Workspace", workspaces, None),
               textField("contextPath", "Context Path", "/path/to/context"),
               textField("sourceFolder", "Source Folder", "/path/to/source"),
@@ -507,6 +520,28 @@ object IssuesView:
                 placeholder := "# Task\nExplain what the agent should do, acceptance criteria, and constraints.",
                 required,
               ),
+            ),
+            div(cls := "mt-4 grid gap-4 md:grid-cols-2")(
+              textAreaField(
+                "acceptanceCriteria",
+                "Acceptance Criteria",
+                "List the conditions the agent output must satisfy.",
+                4,
+              ),
+              textAreaField(
+                "proofOfWorkRequirements",
+                "Proof Of Work Requirements",
+                "tests pass\nno lint errors\ncoverage > 80%",
+                4,
+              ),
+            ),
+            div(cls := "mt-4")(
+              textAreaField(
+                "promptTemplate",
+                "Prompt Template",
+                "Implement ${title}.\n\nAcceptance criteria:\n${acceptanceCriteria}",
+                6,
+              )
             ),
           ),
           div(cls := "flex items-center gap-3")(
@@ -540,8 +575,10 @@ object IssuesView:
               textField("title", "Title", safeStr(issue.title), required = true),
               textField("issueType", "Type", safeStr(issue.issueType, "task"), required = true),
               textField("priority", "Priority", safeStr(issue.priority.toString, "medium")),
+              textField("estimate", "Estimate (XS/S/M/L/XL)", safe(issue.estimate)),
               textField("tags", "Tags (comma separated)", safe(issue.tags)),
               capabilityEditor("requiredCapabilities", "Required Capabilities", safe(issue.requiredCapabilities)),
+              textField("kaizenSkill", "Kaizen Skill", safe(issue.kaizenSkill)),
               textField("contextPath", "Context Path", safe(issue.contextPath)),
               textField("sourceFolder", "Source Folder", safe(issue.sourceFolder)),
               workspaceSelect(
@@ -559,6 +596,18 @@ object IssuesView:
                 rows := 14,
                 cls  := "w-full rounded-lg border border-white/15 bg-slate-800/80 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-indigo-400/40 focus:outline-none",
               )(safeStr(issue.description)),
+            ),
+            div(cls := "mt-4 grid gap-4 md:grid-cols-2")(
+              textAreaField("acceptanceCriteria", "Acceptance Criteria", safe(issue.acceptanceCriteria), 4),
+              textAreaField(
+                "proofOfWorkRequirements",
+                "Proof Of Work Requirements",
+                issue.proofOfWorkRequirements.mkString("\n"),
+                4,
+              ),
+            ),
+            div(cls := "mt-4")(
+              textAreaField("promptTemplate", "Prompt Template", safe(issue.promptTemplate), 6)
             ),
           ),
           div(cls := "flex items-center gap-3")(
@@ -602,6 +651,17 @@ object IssuesView:
       Option(thunk).getOrElse(fallback)
     catch case _: Throwable => fallback
 
+  private def textAreaField(nameValue: String, labelText: String, valueText: String, rowsCount: Int): Frag =
+    div(
+      label(cls := "mb-2 block text-sm font-semibold text-slate-200", `for` := nameValue)(labelText),
+      textarea(
+        id   := nameValue,
+        name := nameValue,
+        rows := rowsCount,
+        cls  := "w-full rounded-lg border border-white/15 bg-slate-800/80 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-indigo-400/40 focus:outline-none",
+      )(valueText),
+    )
+
   def detail(
     issue: AgentIssueView,
     issueRuns: List[WorkspaceRun],
@@ -609,8 +669,9 @@ object IssuesView:
     analysisDocs: List[AnalysisContextDocView],
     mergeHistory: List[MergeHistoryEntryView],
     workspaces: List[(String, String)],
+    workReport: Option[IssueWorkReport] = None,
   ): String =
-    detailPage(issue, issueRuns, availableAgents, analysisDocs, mergeHistory, workspaces, workReport = None)
+    detailPage(issue, issueRuns, availableAgents, analysisDocs, mergeHistory, workspaces, workReport)
 
   private def detailPage(
     issue: AgentIssueView,
@@ -621,19 +682,23 @@ object IssuesView:
     workspaces: List[(String, String)],
     workReport: Option[IssueWorkReport],
   ): String =
-    val issueIdStr    = safe(issue.id, "-")
-    val selectedAgent = safe(issue.preferredAgent).match
+    val issueIdStr      = safe(issue.id, "-")
+    val selectedAgent   = safe(issue.preferredAgent).match
       case "" => safe(issue.assignedAgent)
       case v  => v
-    val requiredCaps  = safeTags(issue.requiredCapabilities)
-    val convId        = safe(issue.conversationId)
-    val workspaceId   = safe(issue.workspaceId)
-    val workspaceName = workspaceNameOf(workspaces, workspaceId).getOrElse(workspaceId)
-    val sortedRuns    = issueRuns.sortBy(_.createdAt).reverse
-    val sidebarConvId = if convId.nonEmpty then convId else sortedRuns.headOption.map(_.conversationId).getOrElse("")
-    val isRunning     = issue.status == IssueStatus.InProgress
-    val statusToken   = issueStatusToken(issue.status)
-    val conflictFiles = issue.mergeConflictFiles.filter(_.trim.nonEmpty).distinct
+    val requiredCaps    = safeTags(issue.requiredCapabilities)
+    val convId          = safe(issue.conversationId)
+    val workspaceId     = safe(issue.workspaceId)
+    val workspaceName   = workspaceNameOf(workspaces, workspaceId).getOrElse(workspaceId)
+    val sortedRuns      = issueRuns.sortBy(_.createdAt).reverse
+    val sidebarConvId   = if convId.nonEmpty then convId else sortedRuns.headOption.map(_.conversationId).getOrElse("")
+    val isRunning       = issue.status == IssueStatus.InProgress
+    val statusToken     = issueStatusToken(issue.status)
+    val conflictFiles   = issue.mergeConflictFiles.filter(_.trim.nonEmpty).distinct
+    val effectiveReport =
+      workReport.orElse(
+        Option.when(issue.proofOfWorkRequirements.nonEmpty)(IssueWorkReport.empty(IssueId(issueIdStr), issue.updatedAt))
+      )
 
     Layout.page(s"Issue #$issueIdStr", "/issues")(
       div(cls := "mt-2 mx-auto max-w-6xl space-y-4")(
@@ -671,6 +736,7 @@ object IssuesView:
                   div(cls := "mt-2 flex flex-wrap items-center gap-2")(
                     statusBadge(statusToken),
                     priorityBadge(safeStr(issue.priority.toString, "medium")),
+                    issue.estimate.filter(_.nonEmpty).map(estimateBadge),
                     safeTags(issue.tags).map(tagBadge),
                   ),
                 ),
@@ -699,6 +765,26 @@ object IssuesView:
                 markdownFragment(safeStr(issue.description))
               ),
             ),
+            if safe(issue.acceptanceCriteria).nonEmpty || safe(issue.kaizenSkill).nonEmpty then
+              div(cls := "rounded-xl border border-white/10 bg-slate-900/70 p-6 space-y-4")(
+                if safe(issue.acceptanceCriteria).nonEmpty then
+                  div(
+                    p(cls := "mb-2 text-sm font-semibold text-slate-300")("Acceptance Criteria"),
+                    div(cls := "prose prose-invert prose-sm max-w-none text-slate-100")(
+                      markdownFragment(safe(issue.acceptanceCriteria))
+                    ),
+                  )
+                else (),
+                if safe(issue.kaizenSkill).nonEmpty then
+                  div(
+                    p(cls := "mb-2 text-sm font-semibold text-slate-300")("Kaizen Skill"),
+                    span(
+                      cls := "inline-flex rounded-full border border-cyan-400/30 bg-cyan-500/10 px-3 py-1 text-xs font-semibold text-cyan-200"
+                    )(safe(issue.kaizenSkill)),
+                  )
+                else (),
+              )
+            else (),
             if conflictFiles.nonEmpty then
               div(id := "merge-conflict", cls := "rounded-xl border border-rose-400/30 bg-rose-500/10 p-6")(
                 div(cls := "flex flex-wrap items-start justify-between gap-3")(
@@ -745,8 +831,8 @@ object IssuesView:
               )
             else (),
             // proof-of-work (when available)
-            workReport
-              .map(r => ProofOfWorkView.panel(r, collapsed = false))
+            effectiveReport
+              .map(r => ProofOfWorkView.panel(r, collapsed = false, requirements = issue.proofOfWorkRequirements))
               .filter(_.nonEmpty)
               .map(html => div(cls := "rounded-xl border border-white/10 bg-slate-900/60 p-6")(raw(html)))
               .getOrElse(()),
@@ -935,7 +1021,11 @@ object IssuesView:
                 )
               else (),
               sidebarMeta("Run", safeMap(issue.runId, identity, "—")),
+              sidebarMeta("Estimate", safe(issue.estimate, "—")),
               if requiredCaps.nonEmpty then sidebarMeta("Capabilities", requiredCaps.mkString(", ")) else (),
+              if issue.proofOfWorkRequirements.nonEmpty then
+                sidebarMeta("Proof checks", issue.proofOfWorkRequirements.size.toString)
+              else (),
               if safe(issue.contextPath).nonEmpty then sidebarMeta("Context path", safe(issue.contextPath)) else (),
               if safe(issue.sourceFolder).nonEmpty then sidebarMeta("Source folder", safe(issue.sourceFolder)) else (),
               sidebarMeta("Updated", safeStr(issue.updatedAt.toString.take(19).replace('T', ' '), "—")),
@@ -1417,6 +1507,7 @@ object IssuesView:
       attr("data-issue-status")   := issueStatusToken(issue.status),
       attr("data-assigned-agent") := safe(issue.assignedAgent),
       attr("data-priority")       := safeStr(issue.priority.toString).toLowerCase,
+      attr("data-estimate")       := safe(issue.estimate),
       attr("data-tags")           := safe(issue.tags),
       attr("data-workspace-id")   := workspaceId,
       attr("data-required-caps")  := requiredCaps.mkString(","),
@@ -1434,6 +1525,7 @@ object IssuesView:
         p(cls := "mb-2 text-sm font-semibold text-slate-100 line-clamp-2")(titleText),
         div(cls := "flex flex-wrap items-center gap-1")(
           priorityBadge(safeStr(issue.priority.toString, "medium")),
+          issue.estimate.filter(_.nonEmpty).map(estimateBadge),
           safeTags(issue.tags).take(2).map(tagBadge),
           if workspaceName.nonEmpty then workspaceBadge(workspaceName) else (),
         ),
@@ -1745,6 +1837,16 @@ object IssuesView:
   private def priorityBadge(priority: String): Frag =
     span(cls := s"rounded-full px-2 py-0.5 text-xs font-semibold ${priorityBadgeClass(priority)}")(priority)
 
+  private def estimateBadge(estimate: String): Frag =
+    val normalized = safeStr(estimate).trim.toUpperCase
+    span(
+      cls                   := "rounded-full px-2 py-0.5 text-xs font-semibold",
+      attr("data-estimate") := normalized,
+      attr("style")         := s"background-color: ${estimateBadgeColor(normalized)}; color: white;",
+    )(
+      s"👕 $normalized"
+    )
+
   private def workspaceBadge(workspace: String): Frag =
     span(
       cls := "rounded-full border border-cyan-400/30 bg-cyan-500/20 px-2 py-0.5 text-xs font-semibold text-cyan-200"
@@ -1772,6 +1874,15 @@ object IssuesView:
       case "high"     => "bg-orange-500/20 text-orange-200"
       case "medium"   => "bg-yellow-500/20 text-yellow-200"
       case _          => "bg-blue-500/20 text-blue-200"
+
+  private def estimateBadgeColor(estimate: String): String =
+    estimate match
+      case "XS" => "#0e8a16"
+      case "S"  => "#006b75"
+      case "M"  => "#0052cc"
+      case "L"  => "#d93f0b"
+      case "XL" => "#b60205"
+      case _    => "#475569"
 
   private def statusBadgeClass(status: String): String =
     status.toLowerCase match

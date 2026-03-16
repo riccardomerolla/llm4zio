@@ -9,6 +9,8 @@ import scalatags.Text.tags2.{ nav, title as titleTag }
 
 object Layout:
 
+  private val SidebarChatInitialLimit = 10
+
   final case class ChatNavItem(
     conversationId: String,
     title: String,
@@ -197,12 +199,14 @@ object Layout:
               Icons.tableColumns,
               currentPath.startsWith("/board") || currentPath.startsWith("/issues/board"),
             ),
+            navItem("/planner", "Planner", Icons.workflow, currentPath.startsWith("/planner")),
             chatWorkspaceNav.fold[Frag](deferredChatWorkspacesTree(currentPath))(chatWorkspacesTree),
           ),
         ),
         li(
           div(cls := "text-xs/6 font-semibold uppercase tracking-wide text-gray-400")("Configure"),
           ul(attr("role") := "list", cls := "-mx-2 mt-2 space-y-1")(
+            navItem("/projects", "Projects", Icons.workflow, currentPath.startsWith("/projects")),
             navItem(
               "/workspaces",
               "Workspaces",
@@ -292,12 +296,13 @@ object Layout:
         p(cls := "px-2 py-1 text-[11px] text-gray-500")("No workspace chats")
       else
         nav.groups.map { group =>
-          val body = frag(
+          val (visibleChats, remainingChats) = splitSidebarChats(group.chats)
+          val body                           = frag(
             tag("summary")(cls := "cursor-pointer select-none truncate px-2 text-[11px] font-semibold text-gray-300")(
               s"${group.label} (${group.chats.length})"
             ),
             ul(cls := "mt-1 space-y-0.5")(
-              group.chats.map(chat =>
+              visibleChats.map(chat =>
                 li(
                   a(
                     href                      := chat.href,
@@ -314,7 +319,38 @@ object Layout:
                     ),
                   )
                 )
-              )
+              ),
+              if remainingChats.nonEmpty then
+                li(
+                  tag("details")(cls := "rounded-md")(
+                    tag("summary")(
+                      cls := "cursor-pointer select-none rounded-md px-3 py-2 text-[11px] font-semibold text-cyan-300 hover:bg-white/5"
+                    )(
+                      s"Load ${remainingChats.length} more"
+                    ),
+                    ul(cls := "mt-1 space-y-0.5")(
+                      remainingChats.map(chat =>
+                        li(
+                          a(
+                            href                      := chat.href,
+                            cls                       := s"flex flex-col gap-0.5 block border-l-2 pl-3 py-2 rounded-r-md transition-colors ${
+                                if chat.active then "border-indigo-500 bg-indigo-500/10"
+                                else "border-transparent hover:border-indigo-400/50 hover:bg-white/5"
+                              }",
+                            attr("title")             := chat.title,
+                            attr("data-palette-chat") := "true",
+                          )(
+                            div(cls := "truncate text-sm font-medium text-white leading-snug")(chat.title),
+                            div(cls := "flex items-center gap-1.5 text-[10px] text-gray-500 leading-none")(
+                              s"${chat.messageCount} msgs · ${relativeTime(chat.createdAt, nav.renderedAt)}"
+                            ),
+                          )
+                        )
+                      )
+                    ),
+                  )
+                )
+              else frag(),
             ),
           )
           if group.expanded then
@@ -326,6 +362,18 @@ object Layout:
             tag("details")(cls := "rounded-md py-1")(body)
         },
     )
+
+  private def splitSidebarChats(chats: List[ChatNavItem]): (List[ChatNavItem], List[ChatNavItem]) =
+    val initial = chats.take(SidebarChatInitialLimit)
+    if chats.length <= SidebarChatInitialLimit then (initial, Nil)
+    else
+      chats.find(_.active) match
+        case Some(activeChat) if !initial.exists(_.conversationId == activeChat.conversationId) =>
+          val visible   = (initial.take(SidebarChatInitialLimit - 1) :+ activeChat).distinctBy(_.conversationId)
+          val remaining = chats.filterNot(chat => visible.exists(_.conversationId == chat.conversationId))
+          (visible, remaining)
+        case _                                                                                  =>
+          (initial, chats.drop(SidebarChatInitialLimit))
 
   private def deferredChatWorkspacesTree(currentPath: String): Frag =
     div(

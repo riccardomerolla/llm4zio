@@ -193,6 +193,24 @@ object IssueEvent:
     occurredAt: Instant,
   ) extends IssueEvent
 
+  final case class EstimateUpdated(
+    issueId: IssueId,
+    estimate: String,
+    occurredAt: Instant,
+  ) extends IssueEvent
+
+  final case class KaizenSkillUpdated(
+    issueId: IssueId,
+    kaizenSkill: String,
+    occurredAt: Instant,
+  ) extends IssueEvent
+
+  final case class ProofOfWorkRequirementsUpdated(
+    issueId: IssueId,
+    @fieldDefaultValue(Nil) requirements: List[String] = Nil,
+    occurredAt: Instant,
+  ) extends IssueEvent
+
   final case class AnalysisAttached(
     issueId: IssueId,
     @fieldDefaultValue(Nil) analysisDocIds: List[AnalysisDocId] = Nil,

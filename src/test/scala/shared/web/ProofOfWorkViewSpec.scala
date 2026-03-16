@@ -84,6 +84,19 @@ object ProofOfWorkViewSpec extends ZIOSpecDefault:
         val html   = ProofOfWorkView.panel(report, collapsed = false)
         assertTrue(html.contains("Agent completed 5 steps."))
       },
+      test("renders verification checklist when proof requirements are provided") {
+        val report = emptyReport.copy(
+          walkthrough = Some("All tests pass and coverage 82%."),
+          ciStatus = Some(IssueCiStatus.Passed),
+        )
+        val html   =
+          ProofOfWorkView.panel(report, collapsed = false, requirements = List("tests pass", "coverage > 80%"))
+        assertTrue(
+          html.contains("Verification Checklist"),
+          html.contains("tests pass"),
+          html.contains("Pass"),
+        )
+      },
       test("evidenceBar returns empty string when report has no signals") {
         val html = ProofOfWorkView.evidenceBar(emptyReport)
         assertTrue(html.isEmpty)

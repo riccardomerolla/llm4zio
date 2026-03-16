@@ -41,7 +41,9 @@ final case class AgentIssue(
   sourceFolder: String,
   @fieldDefaultValue(None) promptTemplate: Option[String] = None,
   @fieldDefaultValue(None) acceptanceCriteria: Option[String] = None,
+  @fieldDefaultValue(None) estimate: Option[String] = None,
   @fieldDefaultValue(None) kaizenSkill: Option[String] = None,
+  @fieldDefaultValue(Nil) proofOfWorkRequirements: List[String] = Nil,
   @fieldDefaultValue(None) milestoneRef: Option[String] = None,
   @fieldDefaultValue(Nil) analysisDocIds: List[AnalysisDocId] = Nil,
   @fieldDefaultValue(Nil) mergeConflictFiles: List[String] = Nil,
@@ -51,6 +53,8 @@ final case class AgentIssue(
 ) derives JsonCodec, Schema
 
 object AgentIssue:
+  val ValidEstimates: Set[String] = Set("XS", "S", "M", "L", "XL")
+
   /** Safely iterate a list that may be null or contain null elements due to EclipseStore schema evolution. */
   private def safeList[A](list: List[A]): List[A] =
     try
@@ -59,6 +63,11 @@ object AgentIssue:
 
   private def sanitizeText(value: String): Option[String] =
     Option(value).map(_.trim).filter(_.nonEmpty)
+
+  def normalizeEstimate(value: String): Option[String] =
+    sanitizeText(value)
+      .map(_.toUpperCase)
+      .filter(ValidEstimates.contains)
 
   private def sanitizeIssueIds(values: List[IssueId]): List[IssueId] =
     safeList(values)
@@ -71,6 +80,9 @@ object AgentIssue:
       .distinct
 
   private def sanitizeFilePaths(values: List[String]): List[String] =
+    safeList(values).flatMap(sanitizeText).distinct
+
+  private def sanitizeRequirements(values: List[String]): List[String] =
     safeList(values).flatMap(sanitizeText).distinct
 
   def fromEvents(events: List[IssueEvent]): Either[String, AgentIssue] =
@@ -110,7 +122,9 @@ object AgentIssue:
                   sourceFolder = "",
                   promptTemplate = None,
                   acceptanceCriteria = None,
+                  estimate = None,
                   kaizenSkill = None,
+                  proofOfWorkRequirements = Nil,
                   milestoneRef = None,
                   analysisDocIds = Nil,
                   mergeConflictFiles = Nil,
@@ -251,6 +265,21 @@ object AgentIssue:
         current
           .toRight(s"Issue ${updated.issueId.value} not initialized before AcceptanceCriteriaUpdated event")
           .map(issue => Some(issue.copy(acceptanceCriteria = sanitizeText(updated.acceptanceCriteria))))
+
+      case updated: IssueEvent.EstimateUpdated =>
+        current
+          .toRight(s"Issue ${updated.issueId.value} not initialized before EstimateUpdated event")
+          .map(issue => Some(issue.copy(estimate = normalizeEstimate(updated.estimate))))
+
+      case updated: IssueEvent.KaizenSkillUpdated =>
+        current
+          .toRight(s"Issue ${updated.issueId.value} not initialized before KaizenSkillUpdated event")
+          .map(issue => Some(issue.copy(kaizenSkill = sanitizeText(updated.kaizenSkill))))
+
+      case updated: IssueEvent.ProofOfWorkRequirementsUpdated =>
+        current
+          .toRight(s"Issue ${updated.issueId.value} not initialized before ProofOfWorkRequirementsUpdated event")
+          .map(issue => Some(issue.copy(proofOfWorkRequirements = sanitizeRequirements(updated.requirements))))
 
       case attached: IssueEvent.AnalysisAttached =>
         current

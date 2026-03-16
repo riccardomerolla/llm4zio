@@ -367,8 +367,10 @@ class IssuesBoard {
 
     const titleInput     = form.querySelector('[data-quick-add-title]');
     const prioritySelect = form.querySelector('[data-quick-add-priority]');
-    const title    = titleInput?.value?.trim() || '';
-    const priority = prioritySelect?.value || 'Medium';
+    const estimateSelect = form.querySelector('[data-quick-add-estimate]');
+    const title          = titleInput?.value?.trim() || '';
+    const priority       = prioritySelect?.value || 'Medium';
+    const estimate       = estimateSelect?.value || '';
 
     if (!title) {
       titleInput?.focus();
@@ -384,6 +386,7 @@ class IssuesBoard {
         body: JSON.stringify({
           title,
           priority,
+          estimate,
           status: this.toIssueStatus(statusToken),
           description: title,
           issueType: 'task',
