@@ -23,7 +23,7 @@ case class AIResponse(
 
 case class AIProviderConfig(
   provider: AIProvider = AIProvider.GeminiCli,
-  model: String = "gemini-2.5-pro",
+  model: String = "gemini-2.5-flash",
   baseUrl: Option[String] = None,
   apiKey: Option[String] = None,
   timeout: zio.Duration = 300.seconds,

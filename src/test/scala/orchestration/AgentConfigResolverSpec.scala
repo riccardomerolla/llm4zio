@@ -84,7 +84,7 @@ object AgentConfigResolverSpec extends ZIOSpecDefault:
         resolved <- resolver.resolveConfig("task-planner")
       yield assertTrue(
         resolved.provider == AIProvider.GeminiApi,
-        resolved.model == "gemini-2.5-pro",
+        resolved.model == "gemini-2.5-flash",
         resolved.baseUrl.contains("https://generativelanguage.googleapis.com"),
         resolved.apiKey.contains("g-key"),
       )

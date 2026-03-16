@@ -150,7 +150,9 @@ object AnalysisAgentRunner:
       .flatMap {
         case Right(config) =>
           ZIO.logDebug(
-            s"Analysis using provider=${config.provider}, model=${config.model} for agent '$agentName'"
+            s"Analysis resolved provider=${config.provider}, model=${config.model}${
+                renderFallbackChain(config)
+              } for agent '$agentName'"
           ) *>
             withFailover(config, prompt, workspacePath, httpClient, cliExecutor, providerCache)
         case Left(err)     =>
@@ -168,13 +170,58 @@ object AnalysisAgentRunner:
     cliExecutor: GeminiCliExecutor,
     providerCache: Ref.Synchronized[Map[LlmConfig, LlmService]],
   ): IO[LlmError, LlmResponse] =
-    fallbackConfigs(config)
-      .foldLeft[IO[LlmError, LlmResponse]](ZIO.fail(LlmError.ConfigError("No LLM provider configured"))) {
-        (acc, cfg) =>
-          acc.orElse(
-            executeWithConfig(cfg, prompt, workspacePath, httpClient, cliExecutor, providerCache)
-          )
-      }
+    val configs = fallbackConfigs(config)
+    attemptWithFallback(
+      configs = configs,
+      attemptIndex = 1,
+      totalAttempts = configs.size,
+      prompt = prompt,
+      workspacePath = workspacePath,
+      httpClient = httpClient,
+      cliExecutor = cliExecutor,
+      providerCache = providerCache,
+    )
+
+  private def attemptWithFallback(
+    configs: List[LlmConfig],
+    attemptIndex: Int,
+    totalAttempts: Int,
+    prompt: String,
+    workspacePath: String,
+    httpClient: HttpClient,
+    cliExecutor: GeminiCliExecutor,
+    providerCache: Ref.Synchronized[Map[LlmConfig, LlmService]],
+  ): IO[LlmError, LlmResponse] =
+    configs match
+      case Nil              => ZIO.fail(LlmError.ConfigError("No LLM provider configured"))
+      case cfg :: remaining =>
+        ZIO.logDebug(
+          s"Analysis LLM attempt $attemptIndex/$totalAttempts using provider=${cfg.provider}, model=${cfg.model}"
+        ) *>
+          executeWithConfig(cfg, prompt, workspacePath, httpClient, cliExecutor, providerCache)
+            .catchAll { err =>
+              val failureLog =
+                ZIO.logWarning(
+                  s"Analysis LLM attempt $attemptIndex/$totalAttempts failed for provider=${cfg.provider}, model=${
+                      cfg.model
+                    }: ${renderLlmError(err)}"
+                )
+              remaining match
+                case Nil =>
+                  failureLog *> ZIO.fail(err)
+                case _   =>
+                  failureLog *>
+                    attemptWithFallback(
+                      configs = remaining,
+                      attemptIndex = attemptIndex + 1,
+                      totalAttempts = totalAttempts,
+                      prompt = prompt,
+                      workspacePath = workspacePath,
+                      httpClient = httpClient,
+                      cliExecutor = cliExecutor,
+                      providerCache = providerCache,
+                    )
+            }
 
   private def executeWithConfig(
     cfg: LlmConfig,
@@ -289,6 +336,14 @@ object AnalysisAgentRunner:
       case LlmError.ConfigError(message)         => s"ConfigError(message=$message)"
       case LlmError.RateLimitError(retryAfter)   =>
         retryAfter.fold("RateLimitError")(duration => s"RateLimitError(retryAfter=${duration.render})")
+
+  private def renderFallbackChain(config: AIProviderConfig): String =
+    val fallbacks = config.fallbackChain.models.map { ref =>
+      val provider = ref.provider.getOrElse(config.provider)
+      s"$provider:${ref.modelId}"
+    }
+    if fallbacks.isEmpty then ""
+    else s", fallbacks=[${fallbacks.mkString(", ")}]"
 
 final case class AnalysisAgentRunnerLive(
   workspaceRepository: WorkspaceRepository,

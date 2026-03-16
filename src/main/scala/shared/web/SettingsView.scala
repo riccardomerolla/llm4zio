@@ -529,7 +529,7 @@ object SettingsView:
           "ai.model",
           "Model",
           s,
-          placeholder = "gemini-2.5-pro (or llama3 for local)",
+          placeholder = "gemini-2.5-flash (or llama3 for local)",
           error = errors.get("ai.model"),
         ),
         textField(
