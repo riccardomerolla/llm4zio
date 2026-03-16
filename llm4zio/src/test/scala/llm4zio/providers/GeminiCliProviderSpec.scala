@@ -1,13 +1,17 @@
 package llm4zio.providers
 
 import zio.*
+import zio.stream.ZStream
 import zio.test.*
 
 import llm4zio.core.*
 
 object GeminiCliProviderSpec extends ZIOSpecDefault:
   // Mock executor for testing
-  class MockGeminiCliExecutor(shouldSucceed: Boolean = true) extends GeminiCliExecutor:
+  class MockGeminiCliExecutor(
+    shouldSucceed: Boolean = true,
+    streamEvents: List[GeminiCliStreamEvent] = Nil,
+  ) extends GeminiCliExecutor:
     override def checkGeminiInstalled: IO[LlmError, Unit] =
       if shouldSucceed then ZIO.unit
       else ZIO.fail(LlmError.ConfigError("gemini-cli not installed"))
@@ -19,6 +23,14 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
     ): IO[LlmError, String] =
       if shouldSucceed then ZIO.succeed(s"Response to: $prompt")
       else ZIO.fail(LlmError.ProviderError("Process failed", None))
+
+    override def runGeminiProcessStream(
+      prompt: String,
+      config: LlmConfig,
+      executionContext: GeminiCliExecutionContext,
+    ): ZStream[Any, LlmError, GeminiCliStreamEvent] =
+      if shouldSucceed then ZStream.fromIterable(streamEvents)
+      else ZStream.fail(LlmError.ProviderError("Process failed", None))
 
   def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("GeminiCliProvider")(
     test("execute should return response") {
@@ -70,6 +82,66 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
       for {
         result <- provider.execute("test").exit
       } yield assertTrue(result.isFailure)
+    },
+    test("executeStream should emit assistant chunks from Gemini stream-json events and ignore non-json output") {
+      val config   = LlmConfig(
+        provider = LlmProvider.GeminiCli,
+        model = "gemini-2.0-flash-exp",
+      )
+      val executor = new MockGeminiCliExecutor(
+        streamEvents = List(
+          GeminiCliStreamEvent.LogLine("Loaded cached credentials."),
+          GeminiCliStreamEvent.Init(model = Some("gemini-2.5-pro"), sessionId = Some("s1")),
+          GeminiCliStreamEvent.ToolUse(toolName = Some("codebase_investigator"), toolId = Some("tool-1")),
+          GeminiCliStreamEvent.ToolResult(toolId = Some("tool-1"), status = Some("success")),
+          GeminiCliStreamEvent.LogLine("Error when talking to Gemini API Full report available at: ..."),
+          GeminiCliStreamEvent.Message(role = Some("assistant"), content = Some("Hello "), delta = true),
+          GeminiCliStreamEvent.Message(role = Some("assistant"), content = Some("world"), delta = true),
+          GeminiCliStreamEvent.Result(
+            status = Some("success"),
+            errorMessage = None,
+            stats = Some(GeminiCliProvider.GeminiStreamStats(
+              total_tokens = Some(15),
+              input_tokens = Some(10),
+              output_tokens = Some(5),
+            )),
+          ),
+        )
+      )
+      val provider = GeminiCliProvider.make(config, executor)
+
+      for
+        chunks <- provider.executeStream("test prompt").runCollect
+      yield assertTrue(
+        chunks.map(_.delta).mkString == "Hello world",
+        chunks.lastOption.flatMap(_.finishReason).contains("stop"),
+        chunks.lastOption.flatMap(_.usage).contains(TokenUsage(prompt = 10, completion = 5, total = 15)),
+      )
+    },
+    test("executeStream should fail when Gemini stream-json result contains an error") {
+      val config   = LlmConfig(
+        provider = LlmProvider.GeminiCli,
+        model = "gemini-2.0-flash-exp",
+      )
+      val executor = new MockGeminiCliExecutor(
+        streamEvents = List(
+          GeminiCliStreamEvent.LogLine("Loaded cached credentials."),
+          GeminiCliStreamEvent.Result(
+            status = Some("error"),
+            errorMessage = Some("You have exhausted your capacity on this model."),
+            stats = Some(GeminiCliProvider.GeminiStreamStats(
+              total_tokens = Some(1),
+              input_tokens = Some(1),
+              output_tokens = Some(0),
+            )),
+          ),
+        )
+      )
+      val provider = GeminiCliProvider.make(config, executor)
+
+      for
+        result <- provider.executeStream("test prompt").runCollect.exit
+      yield assertTrue(result.isFailure)
     },
     test("extractResponse returns final response from Gemini headless JSON") {
       val output =
@@ -164,6 +236,25 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
 
       assertTrue(
         GeminiCliProvider.extractResponse(output).isLeft
+      )
+    },
+    test("parseStreamEvent decodes stream-json lines and preserves non-json output as log lines") {
+      val initLine =
+        """{"type":"init","session_id":"session-1","model":"gemini-2.5-pro"}"""
+      val toolLine =
+        """{"type":"tool_use","tool_name":"codebase_investigator","tool_id":"tool-1"}"""
+
+      assertTrue(
+        GeminiCliProvider.parseStreamEvent(initLine) == GeminiCliStreamEvent.Init(
+          model = Some("gemini-2.5-pro"),
+          sessionId = Some("session-1"),
+        ),
+        GeminiCliProvider.parseStreamEvent(toolLine) == GeminiCliStreamEvent.ToolUse(
+          toolName = Some("codebase_investigator"),
+          toolId = Some("tool-1"),
+        ),
+        GeminiCliProvider.parseStreamEvent("Error when talking to Gemini API Full report available at: ...") ==
+          GeminiCliStreamEvent.LogLine("Error when talking to Gemini API Full report available at: ..."),
       )
     },
   )

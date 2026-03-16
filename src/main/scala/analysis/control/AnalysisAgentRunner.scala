@@ -233,24 +233,18 @@ object AnalysisAgentRunner:
   ): IO[LlmError, LlmResponse] =
     cfg.provider match
       case LlmProvider.GeminiCli =>
-        cliExecutor
-          .runGeminiProcess(
-            prompt = prompt,
-            config = cfg,
-            executionContext = GeminiCliExecutionContext(
-              cwd = Some(workspacePath),
-              includeDirectories = List(workspacePath),
-            ),
-          )
-          .map(content =>
-            LlmResponse(
-              content = content,
-              metadata = Map(
-                "provider" -> "gemini-cli",
-                "model"    -> cfg.model,
+        llm4zio.core.Streaming.collect(
+          llm4zio.providers.GeminiCliProvider
+            .make(
+              config = cfg,
+              executor = cliExecutor,
+              executionContext = GeminiCliExecutionContext(
+                cwd = Some(workspacePath),
+                includeDirectories = List(workspacePath),
               ),
             )
-          )
+            .executeStream(prompt)
+        )
       case _                     =>
         providerFor(cfg, httpClient, cliExecutor, providerCache).flatMap(_.execute(prompt))
 

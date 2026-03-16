@@ -174,7 +174,13 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
       prompt: String,
       config: LlmConfig,
       executionContext: llm4zio.providers.GeminiCliExecutionContext,
-    ): IO[LlmError, String] = ZIO.fail(LlmError.ProviderError("unused", None)))
+    ): IO[LlmError, String] = ZIO.fail(LlmError.ProviderError("unused", None))
+    override def runGeminiProcessStream(
+      prompt: String,
+      config: LlmConfig,
+      executionContext: llm4zio.providers.GeminiCliExecutionContext,
+    ): zio.stream.ZStream[Any, LlmError, llm4zio.providers.GeminiCliStreamEvent] =
+      zio.stream.ZStream.fail(LlmError.ProviderError("unused", None)))
 
   private val failingLlm: ULayer[LlmService] =
     ZLayer.succeed(new LlmService:
