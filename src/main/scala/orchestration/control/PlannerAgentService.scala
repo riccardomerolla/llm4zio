@@ -12,7 +12,7 @@ import activity.entity.{ ActivityEvent, ActivityEventType }
 import app.ApplicationDI
 import conversation.entity.api.{ ChatConversation, ConversationEntry, MessageType, SenderType }
 import db.{ ChatRepository, ConfigRepository, PersistenceError }
-import issues.entity.{ IssueEvent, IssueRepository }
+import issues.entity.{ AgentIssue as DomainIssue, IssueEvent, IssueRepository }
 import llm4zio.core.{ LlmConfig, LlmError, LlmProvider, LlmService }
 import llm4zio.providers.{ GeminiCliExecutor, HttpClient }
 import llm4zio.tools.JsonSchema
@@ -42,6 +42,7 @@ final case class PlannerIssueDraft(
   description: String,
   issueType: String = "task",
   priority: String = "medium",
+  estimate: Option[String] = None,
   requiredCapabilities: List[String] = Nil,
   dependencyDraftIds: List[String] = Nil,
   acceptanceCriteria: String = "",
@@ -431,6 +432,11 @@ final case class PlannerAgentServiceLive(
                                       ))
                                       .mapError(mapIssuePersistence("planner_acceptance"))
                                   }
+                             _ <- draft.estimate.fold[IO[PlannerAgentError, Unit]](ZIO.unit) { estimate =>
+                                    issueRepository
+                                      .append(IssueEvent.EstimateUpdated(issueId, estimate, now))
+                                      .mapError(mapIssuePersistence("planner_estimate"))
+                                  }
                              _ <- ZIO.when(draft.kaizenSkills.nonEmpty) {
                                     issueRepository
                                       .append(
@@ -487,40 +493,56 @@ final case class PlannerAgentServiceLive(
     yield confirmation
 
   private def normalizePreview(preview: PlannerPlanPreview): Either[String, PlannerPlanPreview] =
-    val normalizedIssues = preview.issues.zipWithIndex.map { (draft, index) =>
-      val draftId = Option(draft.draftId).map(_.trim).filter(_.nonEmpty).getOrElse(s"issue-${index + 1}")
-      draft.copy(
-        draftId = draftId,
-        title = draft.title.trim,
-        description = draft.description.trim,
-        issueType = normalizedIssueType(draft.issueType),
-        priority = normalizedPriority(draft.priority),
-        requiredCapabilities = sanitizeList(draft.requiredCapabilities),
-        dependencyDraftIds = sanitizeList(draft.dependencyDraftIds).filterNot(_ == draftId),
-        acceptanceCriteria = draft.acceptanceCriteria.trim,
-        promptTemplate = draft.promptTemplate.trim,
-        kaizenSkills = sanitizeList(draft.kaizenSkills),
-        proofOfWorkRequirements = sanitizeList(draft.proofOfWorkRequirements),
-        included = draft.included,
-      )
-    }
-    val duplicateIds     = normalizedIssues.groupBy(_.draftId).collect { case (id, values) if values.size > 1 => id }.toList
-    if duplicateIds.nonEmpty then Left(s"Planner issue draft ids must be unique: ${duplicateIds.mkString(", ")}")
-    else if normalizedIssues.exists(_.title.isEmpty) then Left("Planner issue titles cannot be empty")
-    else if normalizedIssues.exists(_.description.isEmpty) then Left("Planner issue descriptions cannot be empty")
-    else
-      Right(
-        PlannerPlanPreview(
-          summary = preview.summary.trim,
-          issues = normalizedIssues,
+    val normalizedIssuesEither =
+      preview.issues.zipWithIndex.foldLeft[Either[String, List[PlannerIssueDraft]]](Right(Nil)) {
+        case (acc, (draft, index)) =>
+          acc.flatMap { issues =>
+            val draftId         = Option(draft.draftId).map(_.trim).filter(_.nonEmpty).getOrElse(s"issue-${index + 1}")
+            val rawEstimate     = draft.estimate.map(_.trim).filter(_.nonEmpty)
+            val normalizedValue = normalizedEstimate(rawEstimate)
+            if rawEstimate.isDefined && normalizedValue.isEmpty then
+              Left(s"Planner issue estimate must be one of: ${DomainIssue.ValidEstimates.toList.sorted.mkString(", ")}")
+            else
+              Right(
+                issues :+ draft.copy(
+                  draftId = draftId,
+                  title = draft.title.trim,
+                  description = draft.description.trim,
+                  issueType = normalizedIssueType(draft.issueType),
+                  priority = normalizedPriority(draft.priority),
+                  estimate = normalizedValue,
+                  requiredCapabilities = sanitizeList(draft.requiredCapabilities),
+                  dependencyDraftIds = sanitizeList(draft.dependencyDraftIds).filterNot(_ == draftId),
+                  acceptanceCriteria = draft.acceptanceCriteria.trim,
+                  promptTemplate = draft.promptTemplate.trim,
+                  kaizenSkills = sanitizeList(draft.kaizenSkills),
+                  proofOfWorkRequirements = sanitizeList(draft.proofOfWorkRequirements),
+                  included = draft.included,
+                )
+              )
+          }
+      }
+    normalizedIssuesEither.flatMap { normalizedIssues =>
+      val duplicateIds =
+        normalizedIssues.groupBy(_.draftId).collect { case (id, values) if values.size > 1 => id }.toList
+      if duplicateIds.nonEmpty then Left(s"Planner issue draft ids must be unique: ${duplicateIds.mkString(", ")}")
+      else if normalizedIssues.exists(_.title.isEmpty) then Left("Planner issue titles cannot be empty")
+      else if normalizedIssues.exists(_.description.isEmpty) then Left("Planner issue descriptions cannot be empty")
+      else
+        Right(
+          PlannerPlanPreview(
+            summary = preview.summary.trim,
+            issues = normalizedIssues,
+          )
         )
-      )
+    }
 
   private def blankIssue(index: Int): PlannerIssueDraft =
     PlannerIssueDraft(
       draftId = s"issue-$index",
       title = s"Planned Issue $index",
       description = "",
+      estimate = None,
       acceptanceCriteria = "",
       promptTemplate = "",
       proofOfWorkRequirements = Nil,
@@ -613,11 +635,13 @@ final case class PlannerAgentServiceLive(
       val capabilities =
         if draft.requiredCapabilities.isEmpty then "none" else draft.requiredCapabilities.mkString(", ")
       val skills       = if draft.kaizenSkills.isEmpty then "none" else draft.kaizenSkills.mkString(", ")
+      val estimate     = draft.estimate.getOrElse("none")
       val proof        =
         if draft.proofOfWorkRequirements.isEmpty then "none" else draft.proofOfWorkRequirements.mkString(", ")
       val selection    = if draft.included then "included" else "excluded"
       s"""### ${draft.title}
          |Priority: ${normalizedPriority(draft.priority)}
+         |Estimate: $estimate
          |Capabilities: $capabilities
          |Dependencies: $dependencies
          |Kaizen skills: $skills
@@ -640,6 +664,7 @@ final case class PlannerAgentServiceLive(
        |- Write clear descriptions and acceptance criteria.
        |- Suggest practical required capabilities for each issue.
        |- Generate prompt templates that an implementation agent can execute directly.
+       |- Assign each issue an estimate from: XS, S, M, L, XL.
        |- Include kaizen skill references when useful.
        |- Include concrete proof-of-work requirements when verification matters.
        |- Use stable draft ids like issue-1, issue-2 so dependencies can reference them.
@@ -665,6 +690,10 @@ final case class PlannerAgentServiceLive(
               "description"             -> Json.Obj("type" -> Json.Str("string")),
               "issueType"               -> Json.Obj("type" -> Json.Str("string")),
               "priority"                -> Json.Obj("type" -> Json.Str("string")),
+              "estimate"                -> Json.Obj(
+                "type" -> Json.Str("string"),
+                "enum" -> Json.Arr(Chunk.fromIterable(DomainIssue.ValidEstimates.toList.sorted.map(Json.Str.apply))),
+              ),
               "requiredCapabilities"    -> Json.Obj(
                 "type"  -> Json.Str("array"),
                 "items" -> Json.Obj("type" -> Json.Str("string")),
@@ -692,6 +721,7 @@ final case class PlannerAgentServiceLive(
                 Json.Str("description"),
                 Json.Str("issueType"),
                 Json.Str("priority"),
+                Json.Str("estimate"),
                 Json.Str("requiredCapabilities"),
                 Json.Str("dependencyDraftIds"),
                 Json.Str("acceptanceCriteria"),
@@ -775,6 +805,9 @@ final case class PlannerAgentServiceLive(
       case "high"     => "high"
       case "critical" => "critical"
     }.getOrElse("medium")
+
+  private def normalizedEstimate(value: Option[String]): Option[String] =
+    value.flatMap(DomainIssue.normalizeEstimate)
 
   private def loadInitialStatus: IO[PlannerAgentError, PlannerInitialStatus] =
     configRepository

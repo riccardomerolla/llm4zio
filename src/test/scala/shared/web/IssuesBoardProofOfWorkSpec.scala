@@ -192,8 +192,19 @@ object IssuesBoardProofOfWorkSpec extends ZIOSpecDefault:
           html.contains("data-quick-add-form"),
           html.contains("data-quick-add-title"),
           html.contains("data-quick-add-priority"),
+          html.contains("data-quick-add-estimate"),
           html.contains("data-quick-add-submit"),
           html.contains("data-quick-add-cancel"),
+        )
+      },
+      test("quick-add form estimate select has t-shirt size options") {
+        val html = IssuesView.boardColumnsFragment(List(baseIssue), Nil, Map.empty)
+        assertTrue(
+          html.contains("👕 XS"),
+          html.contains("👕 S"),
+          html.contains("👕 M"),
+          html.contains("👕 L"),
+          html.contains("👕 XL"),
         )
       },
       test("quick-add form priority select has Critical/High/Medium/Low options") {
@@ -224,6 +235,23 @@ object IssuesBoardProofOfWorkSpec extends ZIOSpecDefault:
           updatedIdx >= 0,
           agentIdx >= 0,
           updatedIdx < agentIdx,
+        )
+      },
+      test("board card renders colored estimate badge and data attribute when estimate is present") {
+        val issue = baseIssue.copy(estimate = Some("M"))
+        val html  = IssuesView.boardCardFragment(issue, Nil, workReport = None)
+        assertTrue(
+          html.contains("data-estimate=\"M\""),
+          html.contains("👕 M"),
+          html.contains("background-color: #0052cc; color: white;"),
+        )
+      },
+      test("detail header renders estimate badge when estimate is present") {
+        val issue = baseIssue.copy(estimate = Some("XL"))
+        val html  = IssuesView.detailWithProofOfWork(issue, Nil, Nil, Nil, workReport = None)
+        assertTrue(
+          html.contains("👕 XL"),
+          html.contains("background-color: #b60205; color: white;"),
         )
       },
     )

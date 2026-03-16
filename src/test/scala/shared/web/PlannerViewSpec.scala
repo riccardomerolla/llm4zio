@@ -37,6 +37,7 @@ object PlannerViewSpec extends ZIOSpecDefault:
                 draftId = "issue-1",
                 title = "Model",
                 description = "Create the model",
+                estimate = Some("M"),
               ),
               PlannerIssueDraft(
                 draftId = "issue-2",
@@ -84,6 +85,8 @@ object PlannerViewSpec extends ZIOSpecDefault:
           html.contains("planner-mermaid"),
           html.contains("Recommended order"),
           html.contains("name=\"included\""),
+          html.contains("Estimate"),
+          html.contains("value=\"M\""),
           html.contains("Excluded"),
           html.contains("window.history.replaceState"),
           html.contains("/planner/42"),

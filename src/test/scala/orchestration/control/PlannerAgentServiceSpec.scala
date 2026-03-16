@@ -139,6 +139,7 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
                 title = "Design data model",
                 description = "Define planner data structures",
                 priority = "high",
+                estimate = Some("M"),
                 requiredCapabilities = List("scala", "zio"),
                 acceptanceCriteria = "Model compiles",
                 promptTemplate = "Implement the data model",
@@ -151,6 +152,7 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
                 title = "Wire controller",
                 description = "Expose planner routes",
                 priority = "medium",
+                estimate = Some("S"),
                 dependencyDraftIds = List("issue-1"),
                 acceptanceCriteria = "Routes are reachable",
                 promptTemplate = "Wire the planner controller",
@@ -259,6 +261,7 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
           !events.exists(_.isInstanceOf[IssueEvent.DependencyLinked]),
           events.exists(_.isInstanceOf[IssueEvent.PromptTemplateUpdated]),
           events.exists(_.isInstanceOf[IssueEvent.AcceptanceCriteriaUpdated]),
+          events.exists(_.isInstanceOf[IssueEvent.EstimateUpdated]),
           events.exists(_.isInstanceOf[IssueEvent.KaizenSkillUpdated]),
           events.exists(_.isInstanceOf[IssueEvent.ProofOfWorkRequirementsUpdated]),
           events.exists(_.isInstanceOf[IssueEvent.MovedToTodo]),
@@ -278,6 +281,19 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
             service
               .updatePreview(start.conversationId, PlannerPlanPreview("x", List(PlannerIssueDraft("i1", "", "desc"))))
               .exit
+        yield assertTrue(exit.isFailure)
+      },
+      test("updatePreview rejects invalid estimates") {
+        for
+          service <- ZIO.service[PlannerAgentService]
+          start   <- service.startSession("Plan a new planner feature", None)
+          _       <- awaitSettledPreview(service, start.conversationId)
+          exit    <- service
+                       .updatePreview(
+                         start.conversationId,
+                         PlannerPlanPreview("x", List(PlannerIssueDraft("i1", "Title", "desc", estimate = Some("XXL")))),
+                       )
+                       .exit
         yield assertTrue(exit.isFailure)
       },
       test("startSession keeps the conversation available when the first preview generation fails") {

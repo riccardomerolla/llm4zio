@@ -387,6 +387,17 @@ object IssuesView:
                 option(value := "Medium", selected := "selected")("Medium"),
                 option(value := "Low")("Low"),
               ),
+              select(
+                cls                             := "min-w-0 w-24 rounded border border-white/15 bg-slate-900/80 px-1.5 py-1 text-xs text-slate-100 focus:outline-none",
+                attr("data-quick-add-estimate") := statusToken,
+              )(
+                option(value := "")("—"),
+                option(value := "XS")("👕 XS"),
+                option(value := "S")("👕 S"),
+                option(value := "M")("👕 M"),
+                option(value := "L")("👕 L"),
+                option(value := "XL")("👕 XL"),
+              ),
               button(
                 `type`                        := "button",
                 cls                           := "flex-1 rounded border border-emerald-400/30 bg-emerald-500/20 py-1 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/30",
@@ -490,6 +501,7 @@ object IssuesView:
               textField("issueType", "Type", "task", required = true),
               textField("runId", "Run ID (optional)", defaultRunId.map(_.toString).getOrElse("")),
               textField("priority", "Priority", "medium"),
+              textField("estimate", "Estimate (XS/S/M/L/XL)", "M"),
               textField("tags", "Tags (comma separated)", "bug,build,analysis"),
               capabilityEditor("requiredCapabilities", "Required Capabilities", ""),
               textField("preferredAgent", "Preferred AI Agent", "gemini-cli"),
@@ -563,6 +575,7 @@ object IssuesView:
               textField("title", "Title", safeStr(issue.title), required = true),
               textField("issueType", "Type", safeStr(issue.issueType, "task"), required = true),
               textField("priority", "Priority", safeStr(issue.priority.toString, "medium")),
+              textField("estimate", "Estimate (XS/S/M/L/XL)", safe(issue.estimate)),
               textField("tags", "Tags (comma separated)", safe(issue.tags)),
               capabilityEditor("requiredCapabilities", "Required Capabilities", safe(issue.requiredCapabilities)),
               textField("kaizenSkill", "Kaizen Skill", safe(issue.kaizenSkill)),
@@ -723,6 +736,7 @@ object IssuesView:
                   div(cls := "mt-2 flex flex-wrap items-center gap-2")(
                     statusBadge(statusToken),
                     priorityBadge(safeStr(issue.priority.toString, "medium")),
+                    issue.estimate.filter(_.nonEmpty).map(estimateBadge),
                     safeTags(issue.tags).map(tagBadge),
                   ),
                 ),
@@ -1007,6 +1021,7 @@ object IssuesView:
                 )
               else (),
               sidebarMeta("Run", safeMap(issue.runId, identity, "—")),
+              sidebarMeta("Estimate", safe(issue.estimate, "—")),
               if requiredCaps.nonEmpty then sidebarMeta("Capabilities", requiredCaps.mkString(", ")) else (),
               if issue.proofOfWorkRequirements.nonEmpty then
                 sidebarMeta("Proof checks", issue.proofOfWorkRequirements.size.toString)
@@ -1492,6 +1507,7 @@ object IssuesView:
       attr("data-issue-status")   := issueStatusToken(issue.status),
       attr("data-assigned-agent") := safe(issue.assignedAgent),
       attr("data-priority")       := safeStr(issue.priority.toString).toLowerCase,
+      attr("data-estimate")       := safe(issue.estimate),
       attr("data-tags")           := safe(issue.tags),
       attr("data-workspace-id")   := workspaceId,
       attr("data-required-caps")  := requiredCaps.mkString(","),
@@ -1509,6 +1525,7 @@ object IssuesView:
         p(cls := "mb-2 text-sm font-semibold text-slate-100 line-clamp-2")(titleText),
         div(cls := "flex flex-wrap items-center gap-1")(
           priorityBadge(safeStr(issue.priority.toString, "medium")),
+          issue.estimate.filter(_.nonEmpty).map(estimateBadge),
           safeTags(issue.tags).take(2).map(tagBadge),
           if workspaceName.nonEmpty then workspaceBadge(workspaceName) else (),
         ),
@@ -1820,6 +1837,16 @@ object IssuesView:
   private def priorityBadge(priority: String): Frag =
     span(cls := s"rounded-full px-2 py-0.5 text-xs font-semibold ${priorityBadgeClass(priority)}")(priority)
 
+  private def estimateBadge(estimate: String): Frag =
+    val normalized = safeStr(estimate).trim.toUpperCase
+    span(
+      cls                   := "rounded-full px-2 py-0.5 text-xs font-semibold",
+      attr("data-estimate") := normalized,
+      attr("style")         := s"background-color: ${estimateBadgeColor(normalized)}; color: white;",
+    )(
+      s"👕 $normalized"
+    )
+
   private def workspaceBadge(workspace: String): Frag =
     span(
       cls := "rounded-full border border-cyan-400/30 bg-cyan-500/20 px-2 py-0.5 text-xs font-semibold text-cyan-200"
@@ -1847,6 +1874,15 @@ object IssuesView:
       case "high"     => "bg-orange-500/20 text-orange-200"
       case "medium"   => "bg-yellow-500/20 text-yellow-200"
       case _          => "bg-blue-500/20 text-blue-200"
+
+  private def estimateBadgeColor(estimate: String): String =
+    estimate match
+      case "XS" => "#0e8a16"
+      case "S"  => "#006b75"
+      case "M"  => "#0052cc"
+      case "L"  => "#d93f0b"
+      case "XL" => "#b60205"
+      case _    => "#475569"
 
   private def statusBadgeClass(status: String): String =
     status.toLowerCase match

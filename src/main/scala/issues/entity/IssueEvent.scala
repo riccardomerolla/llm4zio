@@ -193,6 +193,12 @@ object IssueEvent:
     occurredAt: Instant,
   ) extends IssueEvent
 
+  final case class EstimateUpdated(
+    issueId: IssueId,
+    estimate: String,
+    occurredAt: Instant,
+  ) extends IssueEvent
+
   final case class KaizenSkillUpdated(
     issueId: IssueId,
     kaizenSkill: String,

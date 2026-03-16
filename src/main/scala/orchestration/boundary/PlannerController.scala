@@ -122,6 +122,7 @@ final case class PlannerControllerLive(
     val descriptions = values(form, "description")
     val issueTypes   = values(form, "issue_type")
     val priorities   = values(form, "priority")
+    val estimates    = values(form, "estimate")
     val capabilities = values(form, "required_capabilities")
     val dependencies = values(form, "dependency_draft_ids")
     val acceptance   = values(form, "acceptance_criteria")
@@ -135,6 +136,7 @@ final case class PlannerControllerLive(
       descriptions.size,
       issueTypes.size,
       priorities.size,
+      estimates.size,
       capabilities.size,
       dependencies.size,
       acceptance.size,
@@ -157,6 +159,7 @@ final case class PlannerControllerLive(
               description = descriptions(idx),
               issueType = issueTypes(idx),
               priority = priorities(idx),
+              estimate = Option(estimates(idx)).map(_.trim).filter(_.nonEmpty),
               requiredCapabilities = splitCsv(capabilities(idx)),
               dependencyDraftIds = splitCsv(dependencies(idx)),
               acceptanceCriteria = acceptance(idx),

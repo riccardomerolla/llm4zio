@@ -432,6 +432,7 @@ object ProjectsController:
       workspaceId = i.workspaceId,
       externalRef = i.externalRef,
       externalUrl = i.externalUrl,
+      estimate = i.estimate,
       priority = priority,
       status = status,
       assignedAgent = assignedAgent,

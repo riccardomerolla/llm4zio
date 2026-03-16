@@ -99,49 +99,51 @@ final case class IssueControllerLive(
     Method.POST / "issues"                                           -> handler { (req: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
-          form    <- parseForm(req)
-          title   <- required(form, "title")
-          content <- required(form, "description")
-          now     <- Clock.instant
-          issueId  = IssueId.generate
-          tags     = parseTagList(form.get("tags"))
-          required = parseCapabilityList(form.get("requiredCapabilities"))
-          event    = IssueEvent.Created(
-                       issueId = issueId,
-                       title = title,
-                       description = content,
-                       issueType = form.get("issueType").map(_.trim).filter(_.nonEmpty).getOrElse("task"),
-                       priority = form.get("priority").getOrElse("medium"),
-                       occurredAt = now,
-                       requiredCapabilities = required,
-                     )
-          _       <- issueRepository.append(event).mapError(mapIssueRepoError)
-          _       <- ZIO.when(tags.nonEmpty) {
-                       issueRepository.append(IssueEvent.TagsUpdated(issueId, tags, now)).mapError(mapIssueRepoError)
-                     }
-          _       <- persistStructuredFields(
-                       issueId = issueId,
-                       promptTemplate = optional(form, "promptTemplate"),
-                       acceptanceCriteria = optional(form, "acceptanceCriteria"),
-                       kaizenSkill = optional(form, "kaizenSkill"),
-                       proofOfWorkRequirements = parseProofOfWorkRequirements(form.get("proofOfWorkRequirements")),
-                       now = now,
-                     )
-          _       <- parseWorkspaceSelection(form).fold[IO[PersistenceError, Unit]](ZIO.unit) { workspaceId =>
-                       for
-                         _ <- ensureWorkspaceExists(workspaceId)
-                         _ <- issueRepository
-                                .append(
-                                  IssueEvent.WorkspaceLinked(
-                                    issueId = issueId,
-                                    workspaceId = workspaceId,
-                                    occurredAt = now,
-                                  )
-                                )
-                                .mapError(mapIssueRepoError)
-                       yield ()
-                     }
-          redirect = form.get("runId").map(id => s"/board?mode=list&run_id=$id").getOrElse("/board?mode=list")
+          form     <- parseForm(req)
+          title    <- required(form, "title")
+          content  <- required(form, "description")
+          estimate <- parseEstimate(optional(form, "estimate"))
+          now      <- Clock.instant
+          issueId   = IssueId.generate
+          tags      = parseTagList(form.get("tags"))
+          required  = parseCapabilityList(form.get("requiredCapabilities"))
+          event     = IssueEvent.Created(
+                        issueId = issueId,
+                        title = title,
+                        description = content,
+                        issueType = form.get("issueType").map(_.trim).filter(_.nonEmpty).getOrElse("task"),
+                        priority = form.get("priority").getOrElse("medium"),
+                        occurredAt = now,
+                        requiredCapabilities = required,
+                      )
+          _        <- issueRepository.append(event).mapError(mapIssueRepoError)
+          _        <- ZIO.when(tags.nonEmpty) {
+                        issueRepository.append(IssueEvent.TagsUpdated(issueId, tags, now)).mapError(mapIssueRepoError)
+                      }
+          _        <- persistStructuredFields(
+                        issueId = issueId,
+                        promptTemplate = optional(form, "promptTemplate"),
+                        acceptanceCriteria = optional(form, "acceptanceCriteria"),
+                        estimate = estimate,
+                        kaizenSkill = optional(form, "kaizenSkill"),
+                        proofOfWorkRequirements = parseProofOfWorkRequirements(form.get("proofOfWorkRequirements")),
+                        now = now,
+                      )
+          _        <- parseWorkspaceSelection(form).fold[IO[PersistenceError, Unit]](ZIO.unit) { workspaceId =>
+                        for
+                          _ <- ensureWorkspaceExists(workspaceId)
+                          _ <- issueRepository
+                                 .append(
+                                   IssueEvent.WorkspaceLinked(
+                                     issueId = issueId,
+                                     workspaceId = workspaceId,
+                                     occurredAt = now,
+                                   )
+                                 )
+                                 .mapError(mapIssueRepoError)
+                        yield ()
+                      }
+          redirect  = form.get("runId").map(id => s"/board?mode=list&run_id=$id").getOrElse("/board?mode=list")
         yield Response(status = Status.SeeOther, headers = Headers(Header.Custom("Location", redirect)))
       }
     },
@@ -198,46 +200,48 @@ final case class IssueControllerLive(
     Method.POST / "issues" / string("id") / "edit"                   -> handler { (id: String, req: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
-          form    <- parseForm(req)
-          title   <- required(form, "title")
-          content <- required(form, "description")
-          now     <- Clock.instant
-          issueId  = IssueId(id)
-          caps     = parseCapabilityList(form.get("requiredCapabilities"))
-          event    = IssueEvent.MetadataUpdated(
-                       issueId = issueId,
-                       title = title,
-                       description = content,
-                       issueType = form.get("issueType").map(_.trim).filter(_.nonEmpty).getOrElse("task"),
-                       priority = form.get("priority").map(_.trim).filter(_.nonEmpty).getOrElse("medium"),
-                       requiredCapabilities = caps,
-                       contextPath = form.get("contextPath").map(_.trim).getOrElse(""),
-                       sourceFolder = form.get("sourceFolder").map(_.trim).getOrElse(""),
-                       occurredAt = now,
-                     )
-          _       <- issueRepository.append(event).mapError(mapIssueRepoError)
-          tags     = parseTagList(form.get("tags"))
-          _       <- issueRepository.append(IssueEvent.TagsUpdated(issueId, tags, now)).mapError(mapIssueRepoError)
-          _       <- persistStructuredFields(
-                       issueId = issueId,
-                       promptTemplate = optional(form, "promptTemplate"),
-                       acceptanceCriteria = optional(form, "acceptanceCriteria"),
-                       kaizenSkill = optional(form, "kaizenSkill"),
-                       proofOfWorkRequirements = parseProofOfWorkRequirements(form.get("proofOfWorkRequirements")),
-                       now = now,
-                     )
-          _       <- parseWorkspaceSelection(form) match
-                       case Some(wsId) =>
-                         for
-                           _ <- ensureWorkspaceExists(wsId)
-                           _ <- issueRepository
-                                  .append(IssueEvent.WorkspaceLinked(issueId, wsId, now))
-                                  .mapError(mapIssueRepoError)
-                         yield ()
-                       case None       =>
-                         issueRepository
-                           .append(IssueEvent.WorkspaceUnlinked(issueId, now))
-                           .mapError(mapIssueRepoError)
+          form     <- parseForm(req)
+          title    <- required(form, "title")
+          content  <- required(form, "description")
+          estimate <- parseEstimate(optional(form, "estimate"))
+          now      <- Clock.instant
+          issueId   = IssueId(id)
+          caps      = parseCapabilityList(form.get("requiredCapabilities"))
+          event     = IssueEvent.MetadataUpdated(
+                        issueId = issueId,
+                        title = title,
+                        description = content,
+                        issueType = form.get("issueType").map(_.trim).filter(_.nonEmpty).getOrElse("task"),
+                        priority = form.get("priority").map(_.trim).filter(_.nonEmpty).getOrElse("medium"),
+                        requiredCapabilities = caps,
+                        contextPath = form.get("contextPath").map(_.trim).getOrElse(""),
+                        sourceFolder = form.get("sourceFolder").map(_.trim).getOrElse(""),
+                        occurredAt = now,
+                      )
+          _        <- issueRepository.append(event).mapError(mapIssueRepoError)
+          tags      = parseTagList(form.get("tags"))
+          _        <- issueRepository.append(IssueEvent.TagsUpdated(issueId, tags, now)).mapError(mapIssueRepoError)
+          _        <- persistStructuredFields(
+                        issueId = issueId,
+                        promptTemplate = optional(form, "promptTemplate"),
+                        acceptanceCriteria = optional(form, "acceptanceCriteria"),
+                        estimate = estimate,
+                        kaizenSkill = optional(form, "kaizenSkill"),
+                        proofOfWorkRequirements = parseProofOfWorkRequirements(form.get("proofOfWorkRequirements")),
+                        now = now,
+                      )
+          _        <- parseWorkspaceSelection(form) match
+                        case Some(wsId) =>
+                          for
+                            _ <- ensureWorkspaceExists(wsId)
+                            _ <- issueRepository
+                                   .append(IssueEvent.WorkspaceLinked(issueId, wsId, now))
+                                   .mapError(mapIssueRepoError)
+                          yield ()
+                        case None       =>
+                          issueRepository
+                            .append(IssueEvent.WorkspaceUnlinked(issueId, now))
+                            .mapError(mapIssueRepoError)
         yield Response(status = Status.SeeOther, headers = Headers(Header.Custom("Location", s"/issues/$id")))
       }
     },
@@ -338,6 +342,7 @@ final case class IssueControllerLive(
           issueRequest <- ZIO
                             .fromEither(body.fromJson[AgentIssueCreateRequest])
                             .mapError(err => PersistenceError.QueryFailed("json_parse", err))
+          estimate     <- parseEstimate(issueRequest.estimate)
           now          <- Clock.instant
           issueId       = IssueId.generate
           tags          = parseTagList(issueRequest.tags)
@@ -359,6 +364,7 @@ final case class IssueControllerLive(
                             issueId = issueId,
                             promptTemplate = issueRequest.promptTemplate,
                             acceptanceCriteria = issueRequest.acceptanceCriteria,
+                            estimate = estimate,
                             kaizenSkill = issueRequest.kaizenSkill,
                             proofOfWorkRequirements = sanitizeProofRequirements(issueRequest.proofOfWorkRequirements),
                             now = now,
@@ -960,6 +966,7 @@ final case class IssueControllerLive(
       externalUrl = i.externalUrl,
       promptTemplate = i.promptTemplate,
       acceptanceCriteria = i.acceptanceCriteria,
+      estimate = i.estimate,
       kaizenSkill = i.kaizenSkill,
       proofOfWorkRequirements = i.proofOfWorkRequirements,
       priority = priority,
@@ -2344,10 +2351,25 @@ final case class IssueControllerLive(
       .filter(_.nonEmpty)
       .distinct
 
+  private def parseEstimate(raw: Option[String]): IO[PersistenceError, Option[String]] =
+    raw match
+      case None        => ZIO.none
+      case Some(value) =>
+        ZIO
+          .fromOption(DomainIssue.normalizeEstimate(value))
+          .orElseFail(
+            PersistenceError.QueryFailed(
+              "issue_estimate",
+              s"Estimate must be one of: ${DomainIssue.ValidEstimates.toList.sorted.mkString(", ")}",
+            )
+          )
+          .map(Some(_))
+
   private def persistStructuredFields(
     issueId: IssueId,
     promptTemplate: Option[String],
     acceptanceCriteria: Option[String],
+    estimate: Option[String],
     kaizenSkill: Option[String],
     proofOfWorkRequirements: List[String],
     now: Instant,
@@ -2361,6 +2383,11 @@ final case class IssueControllerLive(
       _ <- acceptanceCriteria.fold[IO[PersistenceError, Unit]](ZIO.unit) { criteria =>
              issueRepository
                .append(IssueEvent.AcceptanceCriteriaUpdated(issueId, criteria, now))
+               .mapError(mapIssueRepoError)
+           }
+      _ <- estimate.fold[IO[PersistenceError, Unit]](ZIO.unit) { value =>
+             issueRepository
+               .append(IssueEvent.EstimateUpdated(issueId, value, now))
                .mapError(mapIssueRepoError)
            }
       _ <- kaizenSkill.fold[IO[PersistenceError, Unit]](ZIO.unit) { skill =>
@@ -2394,6 +2421,7 @@ final case class IssueControllerLive(
         val sections = List(
           Option(issue.description).map(_.trim).filter(_.nonEmpty),
           issue.acceptanceCriteria.map(criteria => s"Acceptance criteria:\n$criteria"),
+          issue.estimate.map(value => s"Estimate:\n$value"),
           issue.kaizenSkill.map(skill => s"Kaizen skill:\n$skill"),
           Option.when(issue.proofOfWorkRequirements.nonEmpty) {
             "Proof-of-work requirements:\n" + issue.proofOfWorkRequirements.map(req => s"- $req").mkString("\n")
@@ -2407,6 +2435,7 @@ final case class IssueControllerLive(
       .replace("${title}", issue.title)
       .replace("${description}", issue.description)
       .replace("${acceptanceCriteria}", issue.acceptanceCriteria.getOrElse(""))
+      .replace("${estimate}", issue.estimate.getOrElse(""))
       .replace("${kaizenSkill}", issue.kaizenSkill.getOrElse(""))
       .replace("${proofOfWorkRequirements}", issue.proofOfWorkRequirements.mkString(", "))
       .replace("${contextPath}", issue.contextPath)

@@ -41,6 +41,7 @@ final case class AgentIssue(
   sourceFolder: String,
   @fieldDefaultValue(None) promptTemplate: Option[String] = None,
   @fieldDefaultValue(None) acceptanceCriteria: Option[String] = None,
+  @fieldDefaultValue(None) estimate: Option[String] = None,
   @fieldDefaultValue(None) kaizenSkill: Option[String] = None,
   @fieldDefaultValue(Nil) proofOfWorkRequirements: List[String] = Nil,
   @fieldDefaultValue(None) milestoneRef: Option[String] = None,
@@ -52,6 +53,8 @@ final case class AgentIssue(
 ) derives JsonCodec, Schema
 
 object AgentIssue:
+  val ValidEstimates: Set[String] = Set("XS", "S", "M", "L", "XL")
+
   /** Safely iterate a list that may be null or contain null elements due to EclipseStore schema evolution. */
   private def safeList[A](list: List[A]): List[A] =
     try
@@ -60,6 +63,11 @@ object AgentIssue:
 
   private def sanitizeText(value: String): Option[String] =
     Option(value).map(_.trim).filter(_.nonEmpty)
+
+  def normalizeEstimate(value: String): Option[String] =
+    sanitizeText(value)
+      .map(_.toUpperCase)
+      .filter(ValidEstimates.contains)
 
   private def sanitizeIssueIds(values: List[IssueId]): List[IssueId] =
     safeList(values)
@@ -114,6 +122,7 @@ object AgentIssue:
                   sourceFolder = "",
                   promptTemplate = None,
                   acceptanceCriteria = None,
+                  estimate = None,
                   kaizenSkill = None,
                   proofOfWorkRequirements = Nil,
                   milestoneRef = None,
@@ -256,6 +265,11 @@ object AgentIssue:
         current
           .toRight(s"Issue ${updated.issueId.value} not initialized before AcceptanceCriteriaUpdated event")
           .map(issue => Some(issue.copy(acceptanceCriteria = sanitizeText(updated.acceptanceCriteria))))
+
+      case updated: IssueEvent.EstimateUpdated =>
+        current
+          .toRight(s"Issue ${updated.issueId.value} not initialized before EstimateUpdated event")
+          .map(issue => Some(issue.copy(estimate = normalizeEstimate(updated.estimate))))
 
       case updated: IssueEvent.KaizenSkillUpdated =>
         current

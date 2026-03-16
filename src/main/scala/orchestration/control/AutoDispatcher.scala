@@ -171,6 +171,7 @@ final case class AutoDispatcherLive(
         val sections = List(
           Option(issue.description).map(_.trim).filter(_.nonEmpty),
           issue.acceptanceCriteria.map(criteria => s"Acceptance criteria:\n$criteria"),
+          issue.estimate.map(value => s"Estimate:\n$value"),
           issue.kaizenSkill.map(skill => s"Kaizen skill:\n$skill"),
           Option.when(issue.proofOfWorkRequirements.nonEmpty) {
             "Proof-of-work requirements:\n" + issue.proofOfWorkRequirements.map(req => s"- $req").mkString("\n")
@@ -185,6 +186,7 @@ final case class AutoDispatcherLive(
       .replace("${title}", issue.title)
       .replace("${description}", issue.description)
       .replace("${acceptanceCriteria}", issue.acceptanceCriteria.getOrElse(""))
+      .replace("${estimate}", issue.estimate.getOrElse(""))
       .replace("${kaizenSkill}", issue.kaizenSkill.getOrElse(""))
       .replace("${proofOfWorkRequirements}", issue.proofOfWorkRequirements.mkString(", "))
       .replace("${contextPath}", issue.contextPath)

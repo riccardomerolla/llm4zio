@@ -314,8 +314,9 @@ object PlannerView:
         labeledInput("Title", "title", draft.title),
         labeledInput("Issue Type", "issue_type", draft.issueType),
       ),
-      div(cls := "grid gap-3 md:grid-cols-3")(
+      div(cls := "grid gap-3 md:grid-cols-4")(
         labeledInput("Priority", "priority", draft.priority),
+        labeledInput("Estimate", "estimate", draft.estimate.getOrElse("")),
         labeledInput("Capabilities", "required_capabilities", draft.requiredCapabilities.mkString(",")),
         labeledInput("Dependencies", "dependency_draft_ids", draft.dependencyDraftIds.mkString(",")),
       ),
