@@ -228,6 +228,22 @@ object WorkspacesControllerSpec extends ZIOSpecDefault:
         resp       <- routes.runZIO(req)
       yield assertTrue(resp.status == Status.NoContent)
     },
+    test("DELETE /api/workspaces/:id from detail view redirects back to workspace list") {
+      for
+        wsRef      <- Ref.make(Map("ws-1" -> sampleWs))
+        runRef     <- Ref.make(Map("run-1" -> sampleRun))
+        triggerRef <- Ref.make(List.empty[(String, Boolean)])
+        routes      = makeRoutes(wsRef, runRef, triggerRef)
+        req         = Request(method = Method.DELETE, url = URL.decode("/api/workspaces/ws-1?detailMode=true").toOption.get)
+        resp       <- routes.runZIO(req)
+        redirect    = resp.headers.headers
+                        .find(_.headerName.toString.equalsIgnoreCase("HX-Redirect"))
+                        .map(_.renderedValue)
+      yield assertTrue(
+        resp.status == Status.Ok,
+        redirect.contains("/settings/workspaces"),
+      )
+    },
     test("GET /api/workspaces/:id/runs returns 200") {
       for
         wsRef      <- Ref.make(Map("ws-1" -> sampleWs))

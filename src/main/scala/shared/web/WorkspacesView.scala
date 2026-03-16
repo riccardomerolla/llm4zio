@@ -11,7 +11,7 @@ import workspace.entity.{ RunMode, RunSessionMode, RunStatus, Workspace, Workspa
 
 object WorkspacesView:
 
-  val supportedCliTools: List[String] = List("claude", "gemini", "opencode", "codex", "copilot")
+  val supportedCliTools: List[String] = List("gemini", "claude", "opencode", "codex", "copilot")
 
   def page(workspaces: List[Workspace], agents: List[AgentInfo]): String =
     page(workspaces, agents, Map.empty)
@@ -92,6 +92,7 @@ object WorkspacesView:
           attr("hx-post")   := s"/api/workspaces/$workspaceId/reanalyze",
           attr("hx-target") := s"#analysis-status-$workspaceId",
           attr("hx-swap")   := "outerHTML",
+          onclick           := "this.disabled=true;this.textContent='Re-analyzing...';this.setAttribute('aria-busy','true');",
         )("Re-analyze"),
       ),
       div(cls := "mt-4 grid gap-3 md:grid-cols-3")(statuses.map(renderAnalysisStatusCard)*),
@@ -153,7 +154,7 @@ object WorkspacesView:
           )("Edit"),
           button(
             cls                := "rounded-md border border-rose-400/30 bg-rose-500/10 px-2 py-1 text-xs font-semibold text-rose-200 hover:bg-rose-500/20",
-            attr("hx-delete")  := s"/api/workspaces/${ws.id}",
+            attr("hx-delete")  := s"/api/workspaces/${ws.id}?detailMode=$detailMode",
             attr("hx-target")  := s"#ws-${ws.id}",
             attr("hx-swap")    := "outerHTML",
             attr("hx-confirm") := s"Delete workspace '${ws.name}'?",
@@ -275,7 +276,7 @@ object WorkspacesView:
         formField("name", "Name", ws.map(_.name).getOrElse(""), required = true),
         formField("localPath", "Local path", ws.flatMap(v => Some(v.localPath)).getOrElse(""), required = true),
         formField("description", "Description", ws.flatMap(_.description).getOrElse(""), required = false),
-        cliToolSelectField(ws.map(_.cliTool).getOrElse("claude")),
+        cliToolSelectField(ws.map(_.cliTool).getOrElse("gemini")),
         runModeField(ws.map(_.runMode).getOrElse(RunMode.Host), formId),
         div(cls := "flex gap-3 pt-2")(
           button(
