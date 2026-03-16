@@ -170,6 +170,68 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
         response <- provider.executeStructured[StructuredReply]("test prompt", Json.Obj())
       yield assertTrue(response.summary == "streamed")
     },
+    test("executeStructured should parse fenced JSON from stream-json assistant chunks") {
+      final case class StructuredReply(summary: String) derives JsonCodec
+
+      val config   = LlmConfig(
+        provider = LlmProvider.GeminiCli,
+        model = "gemini-2.0-flash-exp",
+      )
+      val executor = new MockGeminiCliExecutor(
+        streamEvents = List(
+          GeminiCliStreamEvent.Message(role = Some("assistant"), content = Some("```json\n"), delta = true),
+          GeminiCliStreamEvent.Message(
+            role = Some("assistant"),
+            content = Some("""{"summary":"fenced"}"""),
+            delta = true,
+          ),
+          GeminiCliStreamEvent.Message(role = Some("assistant"), content = Some("\n```"), delta = true),
+          GeminiCliStreamEvent.Result(
+            status = Some("success"),
+            errorMessage = None,
+            stats = None,
+          ),
+        )
+      )
+      val provider = GeminiCliProvider.make(config, executor)
+
+      for
+        response <- provider.executeStructured[StructuredReply]("test prompt", Json.Obj())
+      yield assertTrue(response.summary == "fenced")
+    },
+    test("executeStructured should parse prose plus fenced JSON from stream-json assistant chunks") {
+      final case class StructuredReply(summary: String) derives JsonCodec
+
+      val config   = LlmConfig(
+        provider = LlmProvider.GeminiCli,
+        model = "gemini-2.0-flash-exp",
+      )
+      val executor = new MockGeminiCliExecutor(
+        streamEvents = List(
+          GeminiCliStreamEvent.Message(
+            role = Some("assistant"),
+            content = Some("Here is the structured output:\n```json\n"),
+            delta = true,
+          ),
+          GeminiCliStreamEvent.Message(
+            role = Some("assistant"),
+            content = Some("""{"summary":"wrapped"}"""),
+            delta = true,
+          ),
+          GeminiCliStreamEvent.Message(role = Some("assistant"), content = Some("\n```\nUse this plan."), delta = true),
+          GeminiCliStreamEvent.Result(
+            status = Some("success"),
+            errorMessage = None,
+            stats = None,
+          ),
+        )
+      )
+      val provider = GeminiCliProvider.make(config, executor)
+
+      for
+        response <- provider.executeStructured[StructuredReply]("test prompt", Json.Obj())
+      yield assertTrue(response.summary == "wrapped")
+    },
     test("extractResponse returns final response from Gemini headless JSON") {
       val output =
         """{"response":"# Architecture Analysis\n\n## Recommended Improvements\nUse smaller modules.","stats":{"turns":1}}"""

@@ -323,17 +323,61 @@ object GeminiCliProvider:
     Option(content).filter(_.nonEmpty)
 
   private def jsonCandidates(raw: String): List[String] =
-    val firstBrace = raw.indexOf('{')
-    val lastBrace  = raw.lastIndexOf('}')
-    val braceSlice =
-      if firstBrace >= 0 && lastBrace >= firstBrace then
-        val suffix = raw.substring(0, lastBrace + 1)
-        suffix.indices
-          .filter(idx => suffix.charAt(idx) == '{')
-          .map(idx => suffix.substring(idx))
-          .toList
-      else Nil
-    (raw :: braceSlice).distinct
+    val fencedSlices = extractJsonFromMarkdownFences(raw)
+    val balancedJson = extractBalancedJsonObjects(raw) ++ fencedSlices.flatMap(extractBalancedJsonObjects)
+    (raw :: fencedSlices ::: balancedJson).map(_.trim).filter(_.nonEmpty).distinct
+
+  private def extractJsonFromMarkdownFences(raw: String): List[String] =
+    val fencePattern = "(?s)```(?:json)?\\s*(.*?)\\s*```".r
+    fencePattern
+      .findAllMatchIn(raw)
+      .flatMap { matched =>
+        val content = matched.group(1).trim
+        Option.when(content.nonEmpty)(content)
+      }
+      .toList
+
+  private def extractBalancedJsonObjects(raw: String): List[String] =
+    final case class ScanState(
+      startIdx: Option[Int] = None,
+      depth: Int = 0,
+      inString: Boolean = false,
+      escaping: Boolean = false,
+      results: List[String] = Nil,
+    )
+
+    raw.zipWithIndex.foldLeft(ScanState()) {
+      case (state, (ch, idx)) =>
+        if state.inString then
+          if state.escaping then state.copy(escaping = false)
+          else if ch == '\\' then state.copy(escaping = true)
+          else if ch == '"' then state.copy(inString = false)
+          else state
+        else
+          ch match
+            case '"'                    =>
+              state.copy(inString = true)
+            case '{'                    =>
+              state.copy(
+                startIdx = state.startIdx.orElse(Some(idx)),
+                depth = state.depth + 1,
+              )
+            case '}' if state.depth > 0 =>
+              val nextDepth = state.depth - 1
+              if nextDepth == 0 then
+                state.startIdx match
+                  case Some(start) =>
+                    state.copy(
+                      startIdx = None,
+                      depth = 0,
+                      results = raw.substring(start, idx + 1) :: state.results,
+                    )
+                  case None        =>
+                    state.copy(depth = 0)
+              else state.copy(depth = nextDepth)
+            case _                      =>
+              state
+    }.results.reverse
 
   private def streamStatsToUsage(stats: Option[GeminiStreamStats]): Option[TokenUsage] =
     stats.flatMap(s =>
@@ -461,10 +505,20 @@ object GeminiCliProvider:
                           if chunk.delta.nonEmpty then acc.append(chunk.delta) else acc
                         }
                         .map(_.result())
-          parsed   <- ZIO.fromEither(streamed.fromJson[A])
-                        .mapError(err =>
-                          LlmError.ParseError(s"Failed to parse response as structured output: $err", streamed)
-                        )
+          parsed   <-
+            ZIO
+              .fromOption(
+                jsonCandidates(streamed)
+                  .iterator
+                  .flatMap(candidate => candidate.fromJson[A].toOption)
+                  .nextOption()
+              )
+              .orElseFail(
+                LlmError.ParseError(
+                  s"Failed to parse response as structured output: ${streamed.fromJson[A].left.getOrElse("no JSON candidate found")}",
+                  streamed,
+                )
+              )
         yield parsed
 
       override def isAvailable: UIO[Boolean] =

@@ -6,6 +6,7 @@ import zio.*
 import zio.json.*
 import zio.json.ast.Json
 
+import _root_.config.SettingsApplier
 import _root_.config.entity.AIProviderConfig
 import activity.control.ActivityHub
 import activity.entity.{ ActivityEvent, ActivityEventType }
@@ -134,8 +135,8 @@ object PlannerAgentService:
 
   val live
     : ZLayer[
-      ChatRepository & IssueRepository & ConfigRepository & ActivityHub & AgentConfigResolver & LlmService &
-        HttpClient & GeminiCliExecutor & WorkspaceRepository,
+      ChatRepository & IssueRepository & ConfigRepository & ActivityHub & AgentConfigResolver &
+        HttpClient & GeminiCliExecutor & WorkspaceRepository & AIProviderConfig,
       Nothing,
       PlannerAgentService,
     ] =
@@ -146,10 +147,10 @@ object PlannerAgentService:
         configRepository <- ZIO.service[ConfigRepository]
         activityHub      <- ZIO.service[ActivityHub]
         configResolver   <- ZIO.service[AgentConfigResolver]
-        llmService       <- ZIO.service[LlmService]
         httpClient       <- ZIO.service[HttpClient]
         cliExecutor      <- ZIO.service[GeminiCliExecutor]
         workspaceRepo    <- ZIO.service[WorkspaceRepository]
+        startupAiConfig  <- ZIO.service[AIProviderConfig]
         previewState     <- Ref.Synchronized.make(Map.empty[Long, PlannerPreviewState])
       yield PlannerAgentServiceLive(
         chatRepository = chatRepository,
@@ -157,10 +158,10 @@ object PlannerAgentService:
         configRepository = configRepository,
         activityHub = activityHub,
         configResolver = configResolver,
-        llmService = llmService,
         httpClient = httpClient,
         cliExecutor = cliExecutor,
         workspaceRepository = workspaceRepo,
+        startupAiConfig = startupAiConfig,
         previewState = previewState,
       )
     }
@@ -183,10 +184,10 @@ final case class PlannerAgentServiceLive(
   configRepository: ConfigRepository,
   activityHub: ActivityHub,
   configResolver: AgentConfigResolver,
-  llmService: LlmService,
   httpClient: HttpClient,
   cliExecutor: GeminiCliExecutor,
   workspaceRepository: WorkspaceRepository,
+  startupAiConfig: AIProviderConfig,
   previewState: Ref.Synchronized[Map[Long, PlannerPreviewState]],
 ) extends PlannerAgentService:
 
@@ -783,11 +784,10 @@ final case class PlannerAgentServiceLive(
       .either
       .flatMap {
         case Right(config) =>
-          executeStructuredWithConfig[A](config, prompt, schema, workspaceContext).catchAll(_ =>
-            llmService.executeStructured[A](prompt, schema).mapError(mapLlmError)
-          )
+          executeStructuredWithConfig[A](config, prompt, schema, workspaceContext)
+            .catchAll(_ => executeStructuredWithGlobalConfig(prompt, schema, workspaceContext))
         case Left(_)       =>
-          llmService.executeStructured[A](prompt, schema).mapError(mapLlmError)
+          executeStructuredWithGlobalConfig(prompt, schema, workspaceContext)
       }
 
   private def executeStructuredWithConfig[A: JsonCodec](
@@ -803,6 +803,24 @@ final case class PlannerAgentServiceLive(
             service.executeStructured[A](prompt, schema).mapError(mapLlmError)
           ))
       }
+
+  private def executeStructuredWithGlobalConfig[A: JsonCodec](
+    prompt: String,
+    schema: JsonSchema,
+    workspaceContext: Option[PlannerWorkspaceContext],
+  ): IO[PlannerAgentError, A] =
+    resolveGlobalAiConfig.flatMap(config =>
+      executeStructuredWithConfig(config, prompt, schema, workspaceContext)
+    )
+
+  private def resolveGlobalAiConfig: IO[PlannerAgentError, AIProviderConfig] =
+    configRepository
+      .getAllSettings
+      .mapError(mapPersistence("planner_global_ai_settings"))
+      .map(rows => rows.map(row => row.key -> row.value).toMap)
+      .map(settings =>
+        SettingsApplier.toAIProviderConfig(settings).map(AIProviderConfig.withDefaults).getOrElse(startupAiConfig)
+      )
 
   private def providerFor(
     config: LlmConfig,
