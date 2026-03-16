@@ -6,6 +6,7 @@ import java.nio.charset.StandardCharsets
 import zio.*
 import zio.http.*
 
+import db.ChatRepository
 import orchestration.control.{ PlannerAgentError, PlannerAgentService, PlannerIssueDraft, PlannerPlanPreview }
 import shared.web.PlannerView
 import workspace.entity.WorkspaceRepository
@@ -14,79 +15,101 @@ trait PlannerController:
   def routes: Routes[Any, Response]
 
 object PlannerController:
-  val live: ZLayer[PlannerAgentService & WorkspaceRepository, Nothing, PlannerController] =
+  val live: ZLayer[PlannerAgentService & WorkspaceRepository & ChatRepository, Nothing, PlannerController] =
     ZLayer.fromFunction(PlannerControllerLive.apply)
 
 final case class PlannerControllerLive(
   plannerAgentService: PlannerAgentService,
   workspaceRepository: WorkspaceRepository,
+  chatRepository: ChatRepository,
 ) extends PlannerController:
 
   override val routes: Routes[Any, Response] = Routes(
-    Method.GET / "planner"                                      -> handler { (_: Request) =>
-      workspaceRepository.list
-        .mapError(mapWorkspaceError)
-        .map(workspaces => html(PlannerView.startPage(workspaces.map(ws => ws.id -> ws.name))))
-        .catchAll(error => ZIO.succeed(renderPlannerError(error)))
+    Method.GET / "planner"                                        -> handler { (req: Request) =>
+      renderStartPage(
+        initialRequest = req.queryParam("request").getOrElse(""),
+        selectedWorkspaceId = req.queryParam("workspace_id").filterNot(_ == "chat"),
+      )
     },
-    Method.POST / "planner"                                     -> handler { (req: Request) =>
+    Method.POST / "planner"                                       -> handler { (req: Request) =>
       (for
-        form           <- parseMultiForm(req)
-        request        <- required(form, "request")
-        workspaceId     = optional(form, "workspace_id").filterNot(_ == "chat")
-        conversationId <- plannerAgentService.startSession(request, workspaceId)
-      yield Response.redirect(URL.decode(s"/planner/$conversationId").toOption.getOrElse(URL.root)))
-        .catchAll(error => ZIO.succeed(renderPlannerError(error)))
-    },
-    Method.GET / "planner" / long("id")                         -> handler { (conversationId: Long, _: Request) =>
-      (for
-        preview    <- plannerAgentService.getPreview(conversationId)
-        workspaces <- workspaceRepository.list.mapError(mapWorkspaceError)
-      yield html(PlannerView.detailPage(preview, workspaces.map(ws => ws.id -> ws.name))))
-        .catchAll(error => ZIO.succeed(renderPlannerError(error)))
-    },
-    Method.POST / "planner" / long("id") / "chat"               -> handler { (conversationId: Long, req: Request) =>
-      (for
-        form <- parseMultiForm(req)
-        msg  <- required(form, "message")
-        _    <- plannerAgentService.appendUserMessage(conversationId, msg)
-      yield Response.redirect(URL.decode(s"/planner/$conversationId").toOption.getOrElse(URL.root)))
-        .catchAll(error => ZIO.succeed(renderPlannerError(error)))
-    },
-    Method.POST / "planner" / long("id") / "refresh"            -> handler { (conversationId: Long, _: Request) =>
-      plannerAgentService.regeneratePreview(conversationId)
-        .as(Response.redirect(URL.decode(s"/planner/$conversationId").toOption.getOrElse(URL.root)))
-        .catchAll(error => ZIO.succeed(renderPlannerError(error)))
-    },
-    Method.POST / "planner" / long("id") / "preview"            -> handler { (conversationId: Long, req: Request) =>
-      (for
-        form    <- parseMultiForm(req)
-        preview <- parsePreviewForm(form)
-        _       <- plannerAgentService.updatePreview(conversationId, preview)
-      yield Response.redirect(URL.decode(s"/planner/$conversationId").toOption.getOrElse(URL.root)))
-        .catchAll(error => ZIO.succeed(renderPlannerError(error)))
-    },
-    Method.POST / "planner" / long("id") / "preview" / "add"    -> handler { (conversationId: Long, _: Request) =>
-      plannerAgentService.addBlankIssue(conversationId)
-        .as(Response.redirect(URL.decode(s"/planner/$conversationId").toOption.getOrElse(URL.root)))
-        .catchAll(error => ZIO.succeed(renderPlannerError(error)))
-    },
-    Method.POST / "planner" / long("id") / "preview" / "remove" -> handler { (conversationId: Long, req: Request) =>
-      (for
-        form    <- parseMultiForm(req)
-        draftId <- required(form, "draft_id")
-        _       <- plannerAgentService.removeIssue(conversationId, draftId)
-      yield Response.redirect(URL.decode(s"/planner/$conversationId").toOption.getOrElse(URL.root)))
-        .catchAll(error => ZIO.succeed(renderPlannerError(error)))
-    },
-    Method.POST / "planner" / long("id") / "confirm"            -> handler { (conversationId: Long, _: Request) =>
-      plannerAgentService.confirmPlan(conversationId)
-        .map(result =>
-          Response.redirect(
-            URL.decode(boardRedirect(result.issueIds.map(_.value))).toOption.getOrElse(URL.root)
+        form       <- parseMultiForm(req)
+        request    <- required(form, "request")
+        workspaceId = optional(form, "workspace_id").filterNot(_ == "chat")
+        start      <- plannerAgentService.startSession(request, workspaceId)
+        response   <- renderDetailPage(
+                        start.conversationId,
+                        canonicalPath = Some(plannerDetailPath(start.conversationId)),
+                        status = Status.Created,
+                      )
+      yield response)
+        .catchAll { error =>
+          renderStartPage(
+            errorMessage = Some(error.message),
+            status = Status.BadRequest,
           )
-        )
-        .catchAll(error => ZIO.succeed(renderPlannerError(error)))
+        }
+    },
+    Method.GET / "planner" / string("id")                         -> handler { (id: String, _: Request) =>
+      withConversationId(id)(conversationId => renderDetailPage(conversationId))
+    },
+    Method.GET / "planner" / string("id") / "plan-fragment"       -> handler { (id: String, _: Request) =>
+      withConversationId(id)(renderPlanFragment)
+    },
+    Method.POST / "planner" / string("id") / "chat"               -> handler { (id: String, req: Request) =>
+      withConversationId(id) { conversationId =>
+        (for
+          form <- parseMultiForm(req)
+          msg  <- required(form, "message")
+          _    <- plannerAgentService.appendUserMessage(conversationId, msg)
+        yield Response.redirect(URL.decode(plannerDetailPath(conversationId)).toOption.getOrElse(URL.root)))
+          .catchAll(error => renderDetailPage(conversationId, Some(error.message), status = Status.BadRequest))
+      }
+    },
+    Method.POST / "planner" / string("id") / "refresh"            -> handler { (id: String, _: Request) =>
+      withConversationId(id) { conversationId =>
+        plannerAgentService.regeneratePreview(conversationId)
+          .as(Response.redirect(URL.decode(plannerDetailPath(conversationId)).toOption.getOrElse(URL.root)))
+          .catchAll(error => renderDetailPage(conversationId, Some(error.message), status = Status.BadRequest))
+      }
+    },
+    Method.POST / "planner" / string("id") / "preview"            -> handler { (id: String, req: Request) =>
+      withConversationId(id) { conversationId =>
+        (for
+          form    <- parseMultiForm(req)
+          preview <- parsePreviewForm(form)
+          _       <- plannerAgentService.updatePreview(conversationId, preview)
+        yield Response.redirect(URL.decode(plannerDetailPath(conversationId)).toOption.getOrElse(URL.root)))
+          .catchAll(error => renderDetailPage(conversationId, Some(error.message), status = Status.BadRequest))
+      }
+    },
+    Method.POST / "planner" / string("id") / "preview" / "add"    -> handler { (id: String, _: Request) =>
+      withConversationId(id) { conversationId =>
+        plannerAgentService.addBlankIssue(conversationId)
+          .as(Response.redirect(URL.decode(plannerDetailPath(conversationId)).toOption.getOrElse(URL.root)))
+          .catchAll(error => renderDetailPage(conversationId, Some(error.message), status = Status.BadRequest))
+      }
+    },
+    Method.POST / "planner" / string("id") / "preview" / "remove" -> handler { (id: String, req: Request) =>
+      withConversationId(id) { conversationId =>
+        (for
+          form    <- parseMultiForm(req)
+          draftId <- required(form, "draft_id")
+          _       <- plannerAgentService.removeIssue(conversationId, draftId)
+        yield Response.redirect(URL.decode(plannerDetailPath(conversationId)).toOption.getOrElse(URL.root)))
+          .catchAll(error => renderDetailPage(conversationId, Some(error.message), status = Status.BadRequest))
+      }
+    },
+    Method.POST / "planner" / string("id") / "confirm"            -> handler { (id: String, _: Request) =>
+      withConversationId(id) { conversationId =>
+        plannerAgentService.confirmPlan(conversationId)
+          .map(result =>
+            Response.redirect(
+              URL.decode(boardRedirect(result.issueIds.map(_.value))).toOption.getOrElse(URL.root)
+            )
+          )
+          .catchAll(error => renderDetailPage(conversationId, Some(error.message), status = Status.BadRequest))
+      }
     },
   )
 
@@ -176,17 +199,76 @@ final case class PlannerControllerLive(
   private def splitCsv(raw: String): List[String] =
     raw.split(",").toList.map(_.trim).filter(_.nonEmpty).distinct
 
-  private def html(content: String): Response =
-    Response.text(content).contentType(MediaType.text.html)
+  private def withConversationId(id: String)(f: Long => ZIO[Any, Nothing, Response]): ZIO[Any, Nothing, Response] =
+    id.trim.toLongOption match
+      case Some(conversationId) => f(conversationId)
+      case None                 => ZIO.succeed(Response.text(s"Invalid planner conversation id: $id").status(Status.BadRequest))
+
+  private def html(content: String, status: Status): Response =
+    Response(
+      status = status,
+      headers = Headers(Header.ContentType(MediaType.text.html)),
+      body = Body.fromString(content),
+    )
 
   private def urlDecode(value: String): String =
     URLDecoder.decode(value, StandardCharsets.UTF_8)
 
-  private def renderPlannerError(error: PlannerAgentError): Response =
-    Response.text(error.message).status(Status.BadRequest)
-
   private def mapWorkspaceError(error: shared.errors.PersistenceError): PlannerAgentError =
     PlannerAgentError.PersistenceFailure("list_workspaces", error.toString)
+
+  private def renderStartPage(
+    errorMessage: Option[String] = None,
+    initialRequest: String = "",
+    selectedWorkspaceId: Option[String] = None,
+    status: Status = Status.Ok,
+  ): ZIO[Any, Nothing, Response] =
+    workspaceRepository.list
+      .mapError(mapWorkspaceError)
+      .map { workspaces =>
+        html(
+          PlannerView.startPage(
+            workspaces = workspaces.map(ws => ws.id -> ws.name),
+            initialRequest = initialRequest,
+            selectedWorkspaceId = selectedWorkspaceId,
+            errorMessage = errorMessage,
+          ),
+          status = status,
+        )
+      }
+      .catchAll(error => ZIO.succeed(Response.text(error.message).status(Status.BadRequest)))
+
+  private def renderDetailPage(
+    conversationId: Long,
+    errorMessage: Option[String] = None,
+    canonicalPath: Option[String] = None,
+    status: Status = Status.Ok,
+  ): ZIO[Any, Nothing, Response] =
+    (for
+      preview    <- plannerAgentService.getPreview(conversationId)
+      messages   <- chatRepository.getMessages(conversationId).mapError(mapPersistenceError("planner_messages"))
+      workspaces <- workspaceRepository.list.mapError(mapWorkspaceError)
+    yield html(
+      PlannerView.detailPage(
+        state = preview,
+        messages = messages,
+        workspaces = workspaces.map(ws => ws.id -> ws.name),
+        errorMessage = errorMessage,
+        canonicalPath = canonicalPath,
+      ),
+      status = status,
+    )).catchAll(error => ZIO.succeed(Response.text(error.message).status(Status.BadRequest)))
+
+  private def renderPlanFragment(conversationId: Long): ZIO[Any, Nothing, Response] =
+    plannerAgentService.getPreview(conversationId)
+      .map(state => html(PlannerView.planPanels(state), status = Status.Ok))
+      .catchAll(error => ZIO.succeed(Response.text(error.message).status(Status.BadRequest)))
+
+  private def mapPersistenceError(operation: String)(error: db.PersistenceError): PlannerAgentError =
+    PlannerAgentError.PersistenceFailure(operation, error.toString)
+
+  private def plannerDetailPath(conversationId: Long): String =
+    s"/planner/$conversationId"
 
   private def boardRedirect(issueIds: List[String]): String =
     val normalized = issueIds.map(_.trim).filter(_.nonEmpty).distinct

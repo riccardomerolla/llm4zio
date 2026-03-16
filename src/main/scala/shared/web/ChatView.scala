@@ -329,7 +329,7 @@ object ChatView:
           id = folder.id,
           label = folder.label,
           chats = chats,
-          expanded = chats.exists(_.active) || folder.id == "chat",
+          expanded = false,
         )
       },
       showNewChat = showNewChat,
@@ -629,7 +629,7 @@ object ChatView:
         }.getOrElse(frag()),
       )
 
-  private val markdownRenderScript: Frag =
+  val markdownRenderScript: Frag =
     script(raw("""(function () {
   var _markedConfigured = false;
   window.renderMarkdownEls = function () {

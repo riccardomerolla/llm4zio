@@ -194,7 +194,7 @@ object HtmlViews:
     PlannerView.startPage(workspaces)
 
   def plannerDetail(state: PlannerPreviewState, workspaces: List[(String, String)]): String =
-    PlannerView.detailPage(state, workspaces)
+    PlannerView.detailPage(state = state, workspaces = workspaces)
 
   def issuesView(
     runId: Option[String],

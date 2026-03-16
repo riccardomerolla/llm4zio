@@ -174,6 +174,22 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
       executionContext: llm4zio.providers.GeminiCliExecutionContext,
     ): IO[LlmError, String] = ZIO.fail(LlmError.ProviderError("unused", None)))
 
+  private val failingLlm: ULayer[LlmService] =
+    ZLayer.succeed(new LlmService:
+      override def execute(prompt: String): IO[LlmError, LlmResponse]                                       =
+        ZIO.fail(LlmError.ProviderError("planner failed", None))
+      override def executeStream(prompt: String): zio.stream.Stream[LlmError, LlmChunk]                     =
+        zio.stream.ZStream.empty
+      override def executeWithHistory(messages: List[Message]): IO[LlmError, LlmResponse]                   =
+        ZIO.fail(LlmError.ProviderError("planner failed", None))
+      override def executeStreamWithHistory(messages: List[Message]): zio.stream.Stream[LlmError, LlmChunk] =
+        zio.stream.ZStream.empty
+      override def executeWithTools(prompt: String, tools: List[AnyTool]): IO[LlmError, ToolCallResponse]   =
+        ZIO.fail(LlmError.ProviderError("planner failed", None))
+      override def executeStructured[A: JsonCodec](prompt: String, schema: JsonSchema): IO[LlmError, A]     =
+        ZIO.fail(LlmError.ProviderError("planner failed", None))
+      override def isAvailable: UIO[Boolean]                                                                = ZIO.succeed(true))
+
   private val plannerLayer
     : ZLayer[Any, Nothing, PlannerAgentService & ChatRepository & Ref[Vector[IssueEvent]]] =
     ZLayer.make[PlannerAgentService & ChatRepository & Ref[Vector[IssueEvent]]](
@@ -189,16 +205,41 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
       PlannerAgentService.live,
     )
 
+  private val plannerLayerWithFailingLlm: ZLayer[Any, Nothing, PlannerAgentService & ChatRepository] =
+    ZLayer.make[PlannerAgentService & ChatRepository](
+      InMemoryChatRepo.layer,
+      RecordingIssueRepo.refLayer,
+      RecordingIssueRepo.layer,
+      testConfigRepository,
+      noopActivityHub,
+      testConfigResolver,
+      failingLlm,
+      stubHttpClient,
+      stubCliExecutor,
+      PlannerAgentService.live,
+    )
+
+  private def awaitSettledPreview(
+    service: PlannerAgentService,
+    conversationId: Long,
+    attempts: Int = 50,
+  ): IO[PlannerAgentError, PlannerPreviewState] =
+    service.getPreview(conversationId).flatMap { state =>
+      if !state.isGenerating || attempts <= 0 then ZIO.succeed(state)
+      else Live.live(ZIO.sleep(10.millis)) *> awaitSettledPreview(service, conversationId, attempts - 1)
+    }
+
   def spec: Spec[TestEnvironment & Scope, Any] =
     suite("PlannerAgentServiceSpec")(
       test("startSession creates a planner conversation and preview") {
         for
           service <- ZIO.service[PlannerAgentService]
           chat    <- ZIO.service[ChatRepository]
-          id      <- service.startSession("Plan a new planner feature", Some("ws-1"))
-          conv    <- chat.getConversation(id)
-          state   <- service.getPreview(id)
+          start   <- service.startSession("Plan a new planner feature", Some("ws-1"))
+          state   <- awaitSettledPreview(service, start.conversationId)
+          conv    <- chat.getConversation(start.conversationId)
         yield assertTrue(
+          start.warning.isEmpty,
           conv.exists(_.title.startsWith("Planner:")),
           conv.flatMap(_.description).contains("planner-session|workspace:ws-1"),
           state.preview.issues.size == 2,
@@ -208,8 +249,9 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
         for
           service <- ZIO.service[PlannerAgentService]
           ref     <- ZIO.service[Ref[Vector[IssueEvent]]]
-          id      <- service.startSession("Plan a new planner feature", Some("ws-1"))
-          result  <- service.confirmPlan(id)
+          start   <- service.startSession("Plan a new planner feature", Some("ws-1"))
+          _       <- awaitSettledPreview(service, start.conversationId)
+          result  <- service.confirmPlan(start.conversationId)
           events  <- ref.get
         yield assertTrue(
           result.issueIds.size == 1,
@@ -230,8 +272,27 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
       test("updatePreview validates blank titles") {
         for
           service <- ZIO.service[PlannerAgentService]
-          id      <- service.startSession("Plan a new planner feature", None)
-          exit    <- service.updatePreview(id, PlannerPlanPreview("x", List(PlannerIssueDraft("i1", "", "desc")))).exit
+          start   <- service.startSession("Plan a new planner feature", None)
+          _       <- awaitSettledPreview(service, start.conversationId)
+          exit    <-
+            service
+              .updatePreview(start.conversationId, PlannerPlanPreview("x", List(PlannerIssueDraft("i1", "", "desc"))))
+              .exit
         yield assertTrue(exit.isFailure)
       },
+      test("startSession keeps the conversation available when the first preview generation fails") {
+        for
+          service  <- ZIO.service[PlannerAgentService]
+          chatRepo <- ZIO.service[ChatRepository]
+          start    <- service.startSession("Plan a risky planner feature", Some("ws-9"))
+          state    <- awaitSettledPreview(service, start.conversationId)
+          messages <- chatRepo.getMessages(start.conversationId)
+        yield assertTrue(
+          start.warning.isEmpty,
+          state.preview.issues.isEmpty,
+          state.workspaceId.contains("ws-9"),
+          state.lastError.exists(_.contains("Planner agent failed")),
+          messages.exists(_.content.contains("Planner preview generation failed")),
+        )
+      }.provideLayer(plannerLayerWithFailingLlm),
     ).provideLayerShared(plannerLayer)

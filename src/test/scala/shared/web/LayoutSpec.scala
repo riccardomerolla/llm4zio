@@ -38,4 +38,38 @@ object LayoutSpec extends ZIOSpecDefault:
           html.contains("id=\"mobile-sidebar-backdrop\""),
         )
       },
+      test("workspace chat groups are collapsed by default and show load more after 10 chats") {
+        val chats = (1 to 12).toList.map { idx =>
+          Layout.ChatNavItem(
+            conversationId = s"c-$idx",
+            title = s"Chat $idx",
+            href = s"/chat/$idx",
+            active = idx == 12,
+            messageCount = idx,
+            createdAt = java.time.Instant.EPOCH.plusSeconds(idx.toLong),
+          )
+        }
+        val html  = Layout
+          .chatWorkspacesTree(
+            Layout.ChatWorkspaceNav(
+              groups = List(
+                Layout.ChatWorkspaceGroup(
+                  id = "chat",
+                  label = "Chat",
+                  chats = chats,
+                  expanded = false,
+                )
+              ),
+              renderedAt = java.time.Instant.EPOCH.plusSeconds(1000),
+            )
+          )
+          .render
+
+        assertTrue(
+          html.contains("Chat (12)"),
+          html.contains("Load 2 more"),
+          !html.contains("open=\"open\""),
+          html.contains("Chat 12"),
+        )
+      },
     )

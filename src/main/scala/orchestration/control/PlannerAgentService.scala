@@ -61,6 +61,13 @@ final case class PlannerPreviewState(
   workspaceId: Option[String],
   preview: PlannerPlanPreview,
   confirmedIssueIds: Option[List[IssueId]] = None,
+  isGenerating: Boolean = false,
+  lastError: Option[String] = None,
+)
+
+final case class PlannerSessionStart(
+  conversationId: Long,
+  warning: Option[String] = None,
 )
 
 final case class PlannerConfirmation(
@@ -76,7 +83,7 @@ trait PlannerAgentService:
     initialRequest: String,
     workspaceId: Option[String],
     createdBy: Option[String] = None,
-  ): IO[PlannerAgentError, Long]
+  ): IO[PlannerAgentError, PlannerSessionStart]
   def regeneratePreview(conversationId: Long): IO[PlannerAgentError, PlannerPreviewState]
   def appendUserMessage(conversationId: Long, content: String): IO[PlannerAgentError, PlannerPreviewState]
   def getPreview(conversationId: Long): IO[PlannerAgentError, PlannerPreviewState]
@@ -90,7 +97,7 @@ object PlannerAgentService:
     initialRequest: String,
     workspaceId: Option[String],
     createdBy: Option[String] = None,
-  ): ZIO[PlannerAgentService, PlannerAgentError, Long] =
+  ): ZIO[PlannerAgentService, PlannerAgentError, PlannerSessionStart] =
     ZIO.serviceWithZIO[PlannerAgentService](_.startSession(initialRequest, workspaceId, createdBy))
 
   def regeneratePreview(conversationId: Long): ZIO[PlannerAgentService, PlannerAgentError, PlannerPreviewState] =
@@ -177,7 +184,7 @@ final case class PlannerAgentServiceLive(
     initialRequest: String,
     workspaceId: Option[String],
     createdBy: Option[String] = None,
-  ): IO[PlannerAgentError, Long] =
+  ): IO[PlannerAgentError, PlannerSessionStart] =
     for
       now            <- Clock.instant
       conversationId <- chatRepository
@@ -199,31 +206,15 @@ final case class PlannerAgentServiceLive(
                           messageType = MessageType.Text,
                           createdAt = now,
                         )
-      _              <- regeneratePreview(conversationId)
-    yield conversationId
+      _              <- markPreviewGenerating(conversationId, workspaceId, Some(initialRequest))
+      _              <- generatePreviewInBackground(conversationId).forkDaemon
+    yield PlannerSessionStart(conversationId)
 
   override def regeneratePreview(conversationId: Long): IO[PlannerAgentError, PlannerPreviewState] =
     for
       conversation <- getConversation(conversationId)
-      messages     <- chatRepository.getMessages(conversationId).mapError(mapPersistence("planner_messages"))
-      transcript   <- buildTranscript(conversationId, messages)
-      preview      <- executePlannerPrompt(transcript)
-      normalized   <- ZIO.fromEither(normalizePreview(preview)).mapError(PlannerAgentError.IssueDraftInvalid.apply)
-      now          <- Clock.instant
-      _            <- appendChatMessage(
-                        conversationId = conversationId,
-                        sender = plannerAgentName,
-                        senderType = SenderType.Assistant,
-                        content = previewMarkdown(normalized),
-                        messageType = MessageType.Text,
-                        createdAt = now,
-                      )
-      state        <- savePreviewState(
-                        conversationId = conversationId,
-                        workspaceId = workspaceFromConversation(conversation),
-                        preview = normalized,
-                        preserveConfirmation = false,
-                      )
+      state        <- markPreviewGenerating(conversationId, workspaceFromConversation(conversation))
+      _            <- generatePreviewInBackground(conversationId).forkDaemon
     yield state
 
   override def appendUserMessage(conversationId: Long, content: String): IO[PlannerAgentError, PlannerPreviewState] =
@@ -350,6 +341,8 @@ final case class PlannerAgentServiceLive(
     workspaceId: Option[String],
     preview: PlannerPlanPreview,
     preserveConfirmation: Boolean,
+    isGenerating: Boolean = false,
+    lastError: Option[String] = None,
   ): UIO[PlannerPreviewState] =
     previewState.modify { current =>
       val existing     = current.get(conversationId)
@@ -359,6 +352,37 @@ final case class PlannerAgentServiceLive(
         workspaceId = workspaceId.orElse(existing.flatMap(_.workspaceId)),
         preview = preview,
         confirmedIssueIds = confirmedIds,
+        isGenerating = isGenerating,
+        lastError = lastError,
+      )
+      next -> current.updated(conversationId, next)
+    }
+
+  private def markPreviewGenerating(
+    conversationId: Long,
+    workspaceId: Option[String],
+    initialRequest: Option[String] = None,
+  ): UIO[PlannerPreviewState] =
+    previewState.modify { current =>
+      val existing     = current.get(conversationId)
+      val confirmedIds = existing.flatMap(_.confirmedIssueIds)
+      val preview      = existing.map(_.preview).getOrElse(
+        PlannerPlanPreview(
+          summary = initialRequest
+            .map(_.trim)
+            .filter(_.nonEmpty)
+            .map(request => s"Planner is generating a preview for: $request")
+            .getOrElse("Planner is generating a preview."),
+          issues = Nil,
+        )
+      )
+      val next         = PlannerPreviewState(
+        conversationId = conversationId,
+        workspaceId = workspaceId.orElse(existing.flatMap(_.workspaceId)),
+        preview = preview,
+        confirmedIssueIds = confirmedIds,
+        isGenerating = true,
+        lastError = None,
       )
       next -> current.updated(conversationId, next)
     }
@@ -369,6 +393,8 @@ final case class PlannerAgentServiceLive(
     for
       now             <- Clock.instant
       initialStatus   <- loadInitialStatus
+      _               <- ZIO.fail(PlannerAgentError.IssueDraftInvalid("Planner preview is still generating"))
+                           .when(state.isGenerating)
       orderedDrafts    = state.preview.issues.filter(_.included)
       _               <- ZIO.fail(PlannerAgentError.IssueDraftInvalid("Planner preview does not contain any issue drafts"))
                            .when(orderedDrafts.isEmpty)
@@ -500,6 +526,71 @@ final case class PlannerAgentServiceLive(
       proofOfWorkRequirements = Nil,
       included = true,
     )
+
+  private def appendPlannerWarningMessage(
+    conversationId: Long,
+    errorMessage: String,
+    createdAt: Instant,
+  ): UIO[Unit] =
+    appendChatMessage(
+      conversationId = conversationId,
+      sender = "planner",
+      senderType = SenderType.Assistant,
+      content = s"Planner preview generation failed. You can retry or continue refining the request.\n\n$errorMessage",
+      messageType = MessageType.Text,
+      createdAt = createdAt,
+    ).unit.catchAll(_ => ZIO.unit)
+
+  private def generatePreviewInBackground(conversationId: Long): UIO[Unit] =
+    computePreview(conversationId)
+      .unit
+      .catchAll(handlePreviewFailure(conversationId, _))
+
+  private def computePreview(conversationId: Long): IO[PlannerAgentError, PlannerPreviewState] =
+    for
+      conversation <- getConversation(conversationId)
+      messages     <- chatRepository.getMessages(conversationId).mapError(mapPersistence("planner_messages"))
+      transcript   <- buildTranscript(conversationId, messages)
+      preview      <- executePlannerPrompt(transcript)
+      normalized   <- ZIO.fromEither(normalizePreview(preview)).mapError(PlannerAgentError.IssueDraftInvalid.apply)
+      now          <- Clock.instant
+      _            <- appendChatMessage(
+                        conversationId = conversationId,
+                        sender = plannerAgentName,
+                        senderType = SenderType.Assistant,
+                        content = previewMarkdown(normalized),
+                        messageType = MessageType.Text,
+                        createdAt = now,
+                      )
+      state        <- savePreviewState(
+                        conversationId = conversationId,
+                        workspaceId = workspaceFromConversation(conversation),
+                        preview = normalized,
+                        preserveConfirmation = false,
+                        isGenerating = false,
+                        lastError = None,
+                      )
+    yield state
+
+  private def handlePreviewFailure(
+    conversationId: Long,
+    error: PlannerAgentError,
+  ): UIO[Unit] =
+    for
+      existing <- previewState.get.map(_.get(conversationId))
+      now      <- Clock.instant
+      _        <- appendPlannerWarningMessage(conversationId, error.message, now)
+      _        <- savePreviewState(
+                    conversationId = conversationId,
+                    workspaceId = existing.flatMap(_.workspaceId),
+                    preview = existing.map(_.preview).getOrElse(
+                      PlannerPlanPreview("Planner preview generation failed.", Nil)
+                    ),
+                    preserveConfirmation = true,
+                    isGenerating = false,
+                    lastError = Some(error.message),
+                  )
+    yield ()
 
   private def plannerTitle(initialRequest: String): String =
     val raw = initialRequest.trim.replaceAll("\\s+", " ")

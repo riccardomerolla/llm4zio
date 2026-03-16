@@ -830,7 +830,7 @@ final case class ChatControllerLive(
           id = folder.id,
           label = folder.label,
           chats = chats,
-          expanded = chats.exists(_.active) || folder.id == "chat",
+          expanded = false,
         )
       },
       showNewChat = true,
