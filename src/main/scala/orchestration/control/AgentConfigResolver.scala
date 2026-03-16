@@ -117,8 +117,8 @@ final case class AgentConfigResolverLive(
 
   private def defaultModelFor(provider: AIProvider): String =
     provider match
-      case AIProvider.GeminiCli => "gemini-2.5-flash"
-      case AIProvider.GeminiApi => "gemini-2.5-flash"
+      case AIProvider.GeminiCli => "gemini-2.5-pro"
+      case AIProvider.GeminiApi => "gemini-2.5-pro"
       case AIProvider.OpenAi    => "gpt-4o-mini"
       case AIProvider.Anthropic => "claude-3-5-haiku-latest"
       case AIProvider.LmStudio  => "openai/gpt-oss-20b"

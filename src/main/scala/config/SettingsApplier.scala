@@ -41,7 +41,7 @@ object SettingsApplier:
       val provider = parseAIProvider(providerStr).getOrElse(AIProvider.GeminiCli)
       AIProviderConfig(
         provider = provider,
-        model = settings.getOrElse("ai.model", "gemini-2.5-flash"),
+        model = settings.getOrElse("ai.model", "gemini-2.5-pro"),
         baseUrl = settings.get("ai.baseUrl").filter(_.nonEmpty),
         apiKey = settings.get("ai.apiKey").filter(_.nonEmpty),
         timeout = parseDuration(settings.get("ai.timeout")).getOrElse(300.seconds),
