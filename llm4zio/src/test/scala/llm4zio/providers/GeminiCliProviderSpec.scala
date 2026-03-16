@@ -1,6 +1,8 @@
 package llm4zio.providers
 
 import zio.*
+import zio.json.JsonCodec
+import zio.json.ast.Json
 import zio.stream.ZStream
 import zio.test.*
 
@@ -142,6 +144,31 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
       for
         result <- provider.executeStream("test prompt").runCollect.exit
       yield assertTrue(result.isFailure)
+    },
+    test("executeStructured should parse JSON from stream-json assistant chunks") {
+      final case class StructuredReply(summary: String) derives JsonCodec
+
+      val config   = LlmConfig(
+        provider = LlmProvider.GeminiCli,
+        model = "gemini-2.0-flash-exp",
+      )
+      val executor = new MockGeminiCliExecutor(
+        streamEvents = List(
+          GeminiCliStreamEvent.Init(model = Some("gemini-2.5-pro"), sessionId = Some("s1")),
+          GeminiCliStreamEvent.Message(role = Some("assistant"), content = Some("""{"summary":"""), delta = true),
+          GeminiCliStreamEvent.Message(role = Some("assistant"), content = Some(""""streamed"}"""), delta = true),
+          GeminiCliStreamEvent.Result(
+            status = Some("success"),
+            errorMessage = None,
+            stats = None,
+          ),
+        )
+      )
+      val provider = GeminiCliProvider.make(config, executor)
+
+      for
+        response <- provider.executeStructured[StructuredReply]("test prompt", Json.Obj())
+      yield assertTrue(response.summary == "streamed")
     },
     test("extractResponse returns final response from Gemini headless JSON") {
       val output =

@@ -14,9 +14,10 @@ import conversation.entity.api.{ ChatConversation, ConversationEntry, MessageTyp
 import db.{ ChatRepository, ConfigRepository, PersistenceError }
 import issues.entity.{ AgentIssue as DomainIssue, IssueEvent, IssueRepository }
 import llm4zio.core.{ LlmConfig, LlmError, LlmProvider, LlmService }
-import llm4zio.providers.{ GeminiCliExecutor, HttpClient }
+import llm4zio.providers.{ GeminiCliExecutionContext, GeminiCliExecutor, HttpClient }
 import llm4zio.tools.JsonSchema
 import shared.ids.Ids.{ EventId, IssueId }
+import workspace.entity.WorkspaceRepository
 
 enum PlannerAgentError:
   case ConversationNotFound(conversationId: Long)
@@ -134,7 +135,7 @@ object PlannerAgentService:
   val live
     : ZLayer[
       ChatRepository & IssueRepository & ConfigRepository & ActivityHub & AgentConfigResolver & LlmService &
-        HttpClient & GeminiCliExecutor,
+        HttpClient & GeminiCliExecutor & WorkspaceRepository,
       Nothing,
       PlannerAgentService,
     ] =
@@ -148,6 +149,7 @@ object PlannerAgentService:
         llmService       <- ZIO.service[LlmService]
         httpClient       <- ZIO.service[HttpClient]
         cliExecutor      <- ZIO.service[GeminiCliExecutor]
+        workspaceRepo    <- ZIO.service[WorkspaceRepository]
         previewState     <- Ref.Synchronized.make(Map.empty[Long, PlannerPreviewState])
       yield PlannerAgentServiceLive(
         chatRepository = chatRepository,
@@ -158,6 +160,7 @@ object PlannerAgentService:
         llmService = llmService,
         httpClient = httpClient,
         cliExecutor = cliExecutor,
+        workspaceRepository = workspaceRepo,
         previewState = previewState,
       )
     }
@@ -166,6 +169,13 @@ final private case class PlannerStructuredResponse(
   summary: String,
   issues: List[PlannerIssueDraft],
 ) derives JsonCodec
+
+final private case class PlannerWorkspaceContext(
+  workspaceId: String,
+  name: String,
+  localPath: Option[String],
+  description: Option[String],
+)
 
 final case class PlannerAgentServiceLive(
   chatRepository: ChatRepository,
@@ -176,6 +186,7 @@ final case class PlannerAgentServiceLive(
   llmService: LlmService,
   httpClient: HttpClient,
   cliExecutor: GeminiCliExecutor,
+  workspaceRepository: WorkspaceRepository,
   previewState: Ref.Synchronized[Map[Long, PlannerPreviewState]],
 ) extends PlannerAgentService:
 
@@ -333,8 +344,15 @@ final case class PlannerAgentServiceLive(
           .mkString("\n\n")
       )
 
-  private def executePlannerPrompt(transcript: String): IO[PlannerAgentError, PlannerPlanPreview] =
-    executeStructuredWithPreferredAgent[PlannerStructuredResponse](plannerPrompt(transcript), plannerResponseSchema)
+  private def executePlannerPrompt(
+    transcript: String,
+    workspaceContext: Option[PlannerWorkspaceContext],
+  ): IO[PlannerAgentError, PlannerPlanPreview] =
+    executeStructuredWithPreferredAgent[PlannerStructuredResponse](
+      plannerPrompt(transcript, workspaceContext),
+      plannerResponseSchema,
+      workspaceContext,
+    )
       .map(response => PlannerPlanPreview(summary = response.summary, issues = response.issues))
 
   private def savePreviewState(
@@ -573,7 +591,8 @@ final case class PlannerAgentServiceLive(
       conversation <- getConversation(conversationId)
       messages     <- chatRepository.getMessages(conversationId).mapError(mapPersistence("planner_messages"))
       transcript   <- buildTranscript(conversationId, messages)
-      preview      <- executePlannerPrompt(transcript)
+      workspaceCtx <- loadWorkspaceContext(workspaceFromConversation(conversation))
+      preview      <- executePlannerPrompt(transcript, workspaceCtx)
       normalized   <- ZIO.fromEither(normalizePreview(preview)).mapError(PlannerAgentError.IssueDraftInvalid.apply)
       now          <- Clock.instant
       _            <- appendChatMessage(
@@ -653,10 +672,27 @@ final case class PlannerAgentServiceLive(
     }.mkString("\n")
     s"${preview.summary.trim}\n\n$body".trim
 
-  private def plannerPrompt(transcript: String): String =
-    s"""You are the task-planner agent for llm4zio.
+  private def plannerPrompt(transcript: String, workspaceContext: Option[PlannerWorkspaceContext]): String =
+    val workspaceBlock = workspaceContext match
+      case Some(context) =>
+        val pathLine        = context.localPath.fold("unknown")(identity)
+        val descriptionLine = context.description.map(_.trim).filter(_.nonEmpty).getOrElse("none")
+        s"""Selected workspace context:
+           |- Workspace id: ${context.workspaceId}
+           |- Workspace name: ${context.name}
+           |- Workspace local path: $pathLine
+           |- Workspace description: $descriptionLine
+           |
+           |Use this selected workspace as the repository context for any inspection or planning. Do not assume the current llm4zio source tree is the target unless the workspace metadata explicitly points there.
+           |""".stripMargin
+      case None          =>
+        "No workspace was selected. Plan from the conversation only.\n"
+
+    s"""You are the task-planner agent.
        |
        |Your job is to turn the user's initiative into a structured execution plan.
+       |
+       |$workspaceBlock
        |
        |Rules:
        |- Break work into atomic, independently executable issues.
@@ -740,13 +776,14 @@ final case class PlannerAgentServiceLive(
   private def executeStructuredWithPreferredAgent[A: JsonCodec](
     prompt: String,
     schema: JsonSchema,
+    workspaceContext: Option[PlannerWorkspaceContext],
   ): IO[PlannerAgentError, A] =
     configResolver
       .resolveConfig(plannerAgentName)
       .either
       .flatMap {
         case Right(config) =>
-          executeStructuredWithConfig[A](config, prompt, schema).catchAll(_ =>
+          executeStructuredWithConfig[A](config, prompt, schema, workspaceContext).catchAll(_ =>
             llmService.executeStructured[A](prompt, schema).mapError(mapLlmError)
           )
         case Left(_)       =>
@@ -757,19 +794,23 @@ final case class PlannerAgentServiceLive(
     config: AIProviderConfig,
     prompt: String,
     schema: JsonSchema,
+    workspaceContext: Option[PlannerWorkspaceContext],
   ): IO[PlannerAgentError, A] =
     fallbackConfigs(config)
       .foldLeft[IO[PlannerAgentError, A]](ZIO.fail(PlannerAgentError.LlmFailure("No planner LLM provider configured"))) {
         (acc, cfg) =>
-          acc.orElse(providerFor(cfg).flatMap(service =>
+          acc.orElse(providerFor(cfg, workspaceContext).flatMap(service =>
             service.executeStructured[A](prompt, schema).mapError(mapLlmError)
           ))
       }
 
-  private def providerFor(config: LlmConfig): IO[PlannerAgentError, LlmService] =
-    ZIO.succeed {
+  private def providerFor(
+    config: LlmConfig,
+    workspaceContext: Option[PlannerWorkspaceContext],
+  ): IO[PlannerAgentError, LlmService] =
+    plannerExecutionContext(workspaceContext).map { executionContext =>
       config.provider match
-        case LlmProvider.GeminiCli => llm4zio.providers.GeminiCliProvider.make(config, cliExecutor)
+        case LlmProvider.GeminiCli => llm4zio.providers.GeminiCliProvider.make(config, cliExecutor, executionContext)
         case LlmProvider.GeminiApi => llm4zio.providers.GeminiApiProvider.make(config, httpClient)
         case LlmProvider.OpenAI    => llm4zio.providers.OpenAIProvider.make(config, httpClient)
         case LlmProvider.Anthropic => llm4zio.providers.AnthropicProvider.make(config, httpClient)
@@ -777,6 +818,40 @@ final case class PlannerAgentServiceLive(
         case LlmProvider.Ollama    => llm4zio.providers.OllamaProvider.make(config, httpClient)
         case LlmProvider.OpenCode  => llm4zio.providers.OpenCodeProvider.make(config, httpClient)
     }
+
+  private def loadWorkspaceContext(
+    workspaceId: Option[String]
+  ): IO[PlannerAgentError, Option[PlannerWorkspaceContext]] =
+    workspaceId match
+      case None              => ZIO.none
+      case Some(workspaceId) =>
+        workspaceRepository
+          .get(workspaceId)
+          .mapError(err => PlannerAgentError.PersistenceFailure("planner_workspace_lookup", err.toString))
+          .map(
+            _.map(workspace =>
+              PlannerWorkspaceContext(
+                workspaceId = workspace.id,
+                name = workspace.name,
+                localPath = Option(workspace.localPath).map(_.trim).filter(_.nonEmpty),
+                description = workspace.description,
+              )
+            )
+          )
+
+  private def plannerExecutionContext(
+    workspaceContext: Option[PlannerWorkspaceContext]
+  ): IO[PlannerAgentError, GeminiCliExecutionContext] =
+    ZIO.succeed(
+      workspaceContext.flatMap(_.localPath) match
+        case Some(localPath) =>
+          GeminiCliExecutionContext(
+            cwd = Some(localPath),
+            includeDirectories = List(localPath),
+          )
+        case None            =>
+          GeminiCliExecutionContext.default
+    )
 
   private def fallbackConfigs(primary: AIProviderConfig): List[LlmConfig] =
     val primaryLlm = ApplicationDI.aiConfigToLlmConfig(primary)

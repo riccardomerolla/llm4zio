@@ -108,7 +108,7 @@ object GeminiCliExecutor:
         executionContext: GeminiCliExecutionContext,
         outputFormat: String,
       ): IO[LlmError, Process] =
-        val commands = geminiCommand ++ List(
+        val commands           = geminiCommand ++ List(
           "-p",
           prompt,
           "-m",
@@ -117,9 +117,14 @@ object GeminiCliExecutor:
           "--output-format",
           outputFormat,
         ) ++ executionContext.includeDirectories.distinct.flatMap(path => List("--include-directories", path))
+        val includeDirectories = executionContext.includeDirectories.distinct
+        val cwdInfo            = executionContext.cwd.fold("cwd=<default>")(path => s"cwd=$path")
+        val includeInfo        =
+          if includeDirectories.isEmpty then "includeDirectories=[]"
+          else s"includeDirectories=[${includeDirectories.mkString(", ")}]"
 
         ZIO.logDebug(
-          s"Starting Gemini process: gemini -p <prompt> -m ${config.model} -y --output-format $outputFormat"
+          s"Starting Gemini process: gemini -p <prompt> -m ${config.model} -y --output-format $outputFormat $includeInfo $cwdInfo"
         ) *>
           ZIO
             .attemptBlocking {
@@ -373,7 +378,7 @@ object GeminiCliProvider:
               case GeminiCliStreamEvent.LogLine(line) if line.trim.isEmpty || isPreambleLine(line.trim) =>
                 ZIO.logDebug(s"Gemini stream preamble: ${line.trim}")
               case GeminiCliStreamEvent.LogLine(line)                                                   =>
-                ZIO.logWarning(s"Gemini stream non-JSON output: ${line.trim}")
+                ZIO.logTrace(s"Gemini stream non-JSON output: ${line.trim}")
               case GeminiCliStreamEvent.Init(model, sessionId)                                          =>
                 ZIO.logDebug(
                   s"Gemini stream initialized${model.fold("")(m =>
@@ -451,10 +456,14 @@ object GeminiCliProvider:
 
       override def executeStructured[A: JsonCodec](prompt: String, schema: JsonSchema): IO[LlmError, A] =
         for
-          response <- execute(prompt)
-          parsed   <- ZIO.fromEither(response.content.fromJson[A])
+          streamed <- executeStream(prompt)
+                        .runFold(new StringBuilder()) { (acc, chunk) =>
+                          if chunk.delta.nonEmpty then acc.append(chunk.delta) else acc
+                        }
+                        .map(_.result())
+          parsed   <- ZIO.fromEither(streamed.fromJson[A])
                         .mapError(err =>
-                          LlmError.ParseError(s"Failed to parse response as structured output: $err", response.content)
+                          LlmError.ParseError(s"Failed to parse response as structured output: $err", streamed)
                         )
         yield parsed
 

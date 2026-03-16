@@ -15,6 +15,7 @@ import issues.entity.{ IssueEvent, IssueRepository }
 import llm4zio.core.*
 import llm4zio.providers.{ GeminiCliExecutor, HttpClient }
 import llm4zio.tools.{ AnyTool, JsonSchema }
+import workspace.entity.*
 
 object PlannerAgentServiceSpec extends ZIOSpecDefault:
 
@@ -81,6 +82,36 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
     val refLayer: ULayer[Ref[Vector[IssueEvent]]]                        = ZLayer.fromZIO(Ref.make(Vector.empty[IssueEvent]))
     val layer: ZLayer[Ref[Vector[IssueEvent]], Nothing, IssueRepository] =
       ZLayer.fromFunction(RecordingIssueRepo.apply)
+
+  private val testWorkspace = Workspace(
+    id = "ws-1",
+    name = "Planner Workspace",
+    localPath = "/tmp/planner-workspace",
+    defaultAgent = Some("task-planner"),
+    description = Some("planner repo"),
+    enabled = true,
+    runMode = RunMode.Host,
+    cliTool = "gemini",
+    createdAt = Instant.EPOCH,
+    updatedAt = Instant.EPOCH,
+  )
+
+  final case class StubWorkspaceRepository(workspaces: Map[String, Workspace]) extends WorkspaceRepository:
+    override def append(event: WorkspaceEvent): IO[shared.errors.PersistenceError, Unit]                      = ZIO.unit
+    override def list: IO[shared.errors.PersistenceError, List[Workspace]]                                    =
+      ZIO.succeed(workspaces.values.toList)
+    override def get(id: String): IO[shared.errors.PersistenceError, Option[Workspace]]                       =
+      ZIO.succeed(workspaces.get(id))
+    override def delete(id: String): IO[shared.errors.PersistenceError, Unit]                                 = ZIO.unit
+    override def appendRun(event: WorkspaceRunEvent): IO[shared.errors.PersistenceError, Unit]                = ZIO.unit
+    override def listRuns(workspaceId: String): IO[shared.errors.PersistenceError, List[WorkspaceRun]]        =
+      ZIO.succeed(Nil)
+    override def listRunsByIssueRef(issueRef: String): IO[shared.errors.PersistenceError, List[WorkspaceRun]] =
+      ZIO.succeed(Nil)
+    override def getRun(id: String): IO[shared.errors.PersistenceError, Option[WorkspaceRun]]                 = ZIO.succeed(None)
+
+  private val testWorkspaceRepository: ULayer[WorkspaceRepository] =
+    ZLayer.succeed(StubWorkspaceRepository(Map(testWorkspace.id -> testWorkspace)))
 
   private val testConfigResolver: ULayer[AgentConfigResolver] =
     ZLayer.succeed(new AgentConfigResolver:
@@ -168,6 +199,28 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
       : IO[LlmError, String] =
       ZIO.fail(LlmError.ProviderError("unused", None)))
 
+  private val cliContextRefLayer: ULayer[Ref[Vector[llm4zio.providers.GeminiCliExecutionContext]]] =
+    ZLayer.fromZIO(Ref.make(Vector.empty[llm4zio.providers.GeminiCliExecutionContext]))
+
+  private val stubCliExecutorLayer
+    : ZLayer[Ref[Vector[llm4zio.providers.GeminiCliExecutionContext]], Nothing, GeminiCliExecutor] =
+    ZLayer.fromFunction { (contextRef: Ref[Vector[llm4zio.providers.GeminiCliExecutionContext]]) =>
+      new GeminiCliExecutor:
+        override def checkGeminiInstalled: IO[LlmError, Unit] = ZIO.unit
+        override def runGeminiProcess(
+          prompt: String,
+          config: LlmConfig,
+          executionContext: llm4zio.providers.GeminiCliExecutionContext,
+        ): IO[LlmError, String] =
+          contextRef.update(_ :+ executionContext) *> ZIO.fail(LlmError.ProviderError("unused", None))
+        override def runGeminiProcessStream(
+          prompt: String,
+          config: LlmConfig,
+          executionContext: llm4zio.providers.GeminiCliExecutionContext,
+        ): zio.stream.ZStream[Any, LlmError, llm4zio.providers.GeminiCliStreamEvent] =
+          zio.stream.ZStream.fromZIO(contextRef.update(_ :+ executionContext)).drain
+    }
+
   private val stubCliExecutor: ULayer[GeminiCliExecutor] = ZLayer.succeed(new GeminiCliExecutor:
     override def checkGeminiInstalled: IO[LlmError, Unit] = ZIO.unit
     override def runGeminiProcess(
@@ -199,17 +252,27 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
       override def isAvailable: UIO[Boolean]                                                                = ZIO.succeed(true))
 
   private val plannerLayer
-    : ZLayer[Any, Nothing, PlannerAgentService & ChatRepository & Ref[Vector[IssueEvent]]] =
-    ZLayer.make[PlannerAgentService & ChatRepository & Ref[Vector[IssueEvent]]](
+    : ZLayer[
+      Any,
+      Nothing,
+      PlannerAgentService & ChatRepository & Ref[Vector[IssueEvent]] &
+        Ref[Vector[llm4zio.providers.GeminiCliExecutionContext]],
+    ] =
+    ZLayer.make[
+      PlannerAgentService & ChatRepository & Ref[Vector[IssueEvent]] &
+        Ref[Vector[llm4zio.providers.GeminiCliExecutionContext]]
+    ](
       InMemoryChatRepo.layer,
       RecordingIssueRepo.refLayer,
       RecordingIssueRepo.layer,
+      testWorkspaceRepository,
       testConfigRepository,
       noopActivityHub,
       testConfigResolver,
       testLlm,
       stubHttpClient,
-      stubCliExecutor,
+      cliContextRefLayer,
+      stubCliExecutorLayer,
       PlannerAgentService.live,
     )
 
@@ -218,6 +281,7 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
       InMemoryChatRepo.layer,
       RecordingIssueRepo.refLayer,
       RecordingIssueRepo.layer,
+      testWorkspaceRepository,
       testConfigRepository,
       noopActivityHub,
       testConfigResolver,
@@ -251,6 +315,19 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
           conv.exists(_.title.startsWith("Planner:")),
           conv.flatMap(_.description).contains("planner-session|workspace:ws-1"),
           state.preview.issues.size == 2,
+        )
+      },
+      test("planner Gemini CLI execution includes the selected workspace directory") {
+        for
+          service    <- ZIO.service[PlannerAgentService]
+          contextRef <- ZIO.service[Ref[Vector[llm4zio.providers.GeminiCliExecutionContext]]]
+          start      <- service.startSession("Plan inside workspace context", Some("ws-1"))
+          _          <- awaitSettledPreview(service, start.conversationId)
+          contexts   <- contextRef.get
+        yield assertTrue(
+          contexts.nonEmpty,
+          contexts.exists(_.cwd.contains("/tmp/planner-workspace")),
+          contexts.exists(_.includeDirectories.contains("/tmp/planner-workspace")),
         )
       },
       test("confirmPlan emits issue, prompt, acceptance, tag, workspace, and dependency events") {
