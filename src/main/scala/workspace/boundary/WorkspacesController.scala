@@ -206,10 +206,17 @@ object WorkspacesController:
       },
 
       // Delete
-      Method.DELETE / "api" / "workspaces" / string("id") -> handler { (id: String, _: Request) =>
+      Method.DELETE / "api" / "workspaces" / string("id") -> handler { (id: String, req: Request) =>
         repo.delete(id)
           .mapError(persistErr)
-          .as(Response(status = Status.NoContent))
+          .as {
+            if req.queryParam("detailMode").contains("true") then
+              Response(
+                status = Status.Ok,
+                headers = Headers(Header.Custom("HX-Redirect", "/settings/workspaces")),
+              )
+            else Response(status = Status.NoContent)
+          }
           .catchAll(ZIO.succeed)
       },
 

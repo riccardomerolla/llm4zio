@@ -8,7 +8,12 @@
     </encoder>
   </appender>
 
+    <logger name="llm4zio" level="DEBUG" />
+    
+    <logger name="agent" level="DEBUG" />
+    <logger name="analysis" level="DEBUG" />
     <logger name="issues" level="DEBUG" />
+    <logger name="orchestration" level="DEBUG" />
     <logger name="conversation" level="DEBUG" />
     <logger name="taskrun" level="DEBUG" />
 

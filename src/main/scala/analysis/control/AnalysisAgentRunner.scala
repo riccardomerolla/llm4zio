@@ -148,8 +148,18 @@ object AnalysisAgentRunner:
       .resolveConfig(agentName)
       .either
       .flatMap {
-        case Right(config) => withFailover(config, prompt, workspacePath, httpClient, cliExecutor, providerCache)
-        case Left(_)       => llmService.execute(prompt)
+        case Right(config) =>
+          ZIO.logDebug(
+            s"Analysis resolved provider=${config.provider}, model=${config.model}${
+                renderFallbackChain(config)
+              } for agent '$agentName'"
+          ) *>
+            withFailover(config, prompt, workspacePath, httpClient, cliExecutor, providerCache)
+        case Left(err)     =>
+          ZIO.logWarning(
+            s"Failed to resolve AI config for agent '$agentName' ($err); falling back to default LLM service"
+          ) *>
+            llmService.execute(prompt)
       }
 
   private def withFailover(
@@ -160,13 +170,58 @@ object AnalysisAgentRunner:
     cliExecutor: GeminiCliExecutor,
     providerCache: Ref.Synchronized[Map[LlmConfig, LlmService]],
   ): IO[LlmError, LlmResponse] =
-    fallbackConfigs(config)
-      .foldLeft[IO[LlmError, LlmResponse]](ZIO.fail(LlmError.ConfigError("No LLM provider configured"))) {
-        (acc, cfg) =>
-          acc.orElse(
-            executeWithConfig(cfg, prompt, workspacePath, httpClient, cliExecutor, providerCache)
-          )
-      }
+    val configs = fallbackConfigs(config)
+    attemptWithFallback(
+      configs = configs,
+      attemptIndex = 1,
+      totalAttempts = configs.size,
+      prompt = prompt,
+      workspacePath = workspacePath,
+      httpClient = httpClient,
+      cliExecutor = cliExecutor,
+      providerCache = providerCache,
+    )
+
+  private def attemptWithFallback(
+    configs: List[LlmConfig],
+    attemptIndex: Int,
+    totalAttempts: Int,
+    prompt: String,
+    workspacePath: String,
+    httpClient: HttpClient,
+    cliExecutor: GeminiCliExecutor,
+    providerCache: Ref.Synchronized[Map[LlmConfig, LlmService]],
+  ): IO[LlmError, LlmResponse] =
+    configs match
+      case Nil              => ZIO.fail(LlmError.ConfigError("No LLM provider configured"))
+      case cfg :: remaining =>
+        ZIO.logDebug(
+          s"Analysis LLM attempt $attemptIndex/$totalAttempts using provider=${cfg.provider}, model=${cfg.model}"
+        ) *>
+          executeWithConfig(cfg, prompt, workspacePath, httpClient, cliExecutor, providerCache)
+            .catchAll { err =>
+              val failureLog =
+                ZIO.logWarning(
+                  s"Analysis LLM attempt $attemptIndex/$totalAttempts failed for provider=${cfg.provider}, model=${
+                      cfg.model
+                    }: ${renderLlmError(err)}"
+                )
+              remaining match
+                case Nil =>
+                  failureLog *> ZIO.fail(err)
+                case _   =>
+                  failureLog *>
+                    attemptWithFallback(
+                      configs = remaining,
+                      attemptIndex = attemptIndex + 1,
+                      totalAttempts = totalAttempts,
+                      prompt = prompt,
+                      workspacePath = workspacePath,
+                      httpClient = httpClient,
+                      cliExecutor = cliExecutor,
+                      providerCache = providerCache,
+                    )
+            }
 
   private def executeWithConfig(
     cfg: LlmConfig,
@@ -178,24 +233,18 @@ object AnalysisAgentRunner:
   ): IO[LlmError, LlmResponse] =
     cfg.provider match
       case LlmProvider.GeminiCli =>
-        cliExecutor
-          .runGeminiProcess(
-            prompt = prompt,
-            config = cfg,
-            executionContext = GeminiCliExecutionContext(
-              cwd = Some(workspacePath),
-              includeDirectories = List(workspacePath),
-            ),
-          )
-          .map(content =>
-            LlmResponse(
-              content = content,
-              metadata = Map(
-                "provider" -> "gemini-cli",
-                "model"    -> cfg.model,
+        llm4zio.core.Streaming.collect(
+          llm4zio.providers.GeminiCliProvider
+            .make(
+              config = cfg,
+              executor = cliExecutor,
+              executionContext = GeminiCliExecutionContext(
+                cwd = Some(workspacePath),
+                includeDirectories = List(workspacePath),
               ),
             )
-          )
+            .executeStream(prompt)
+        )
       case _                     =>
         providerFor(cfg, httpClient, cliExecutor, providerCache).flatMap(_.execute(prompt))
 
@@ -282,6 +331,14 @@ object AnalysisAgentRunner:
       case LlmError.RateLimitError(retryAfter)   =>
         retryAfter.fold("RateLimitError")(duration => s"RateLimitError(retryAfter=${duration.render})")
 
+  private def renderFallbackChain(config: AIProviderConfig): String =
+    val fallbacks = config.fallbackChain.models.map { ref =>
+      val provider = ref.provider.getOrElse(config.provider)
+      s"$provider:${ref.modelId}"
+    }
+    if fallbacks.isEmpty then ""
+    else s", fallbacks=[${fallbacks.mkString(", ")}]"
+
 final case class AnalysisAgentRunnerLive(
   workspaceRepository: WorkspaceRepository,
   agentRepository: AgentRepository,
@@ -308,9 +365,16 @@ final case class AnalysisAgentRunnerLive(
 
   private def runAnalysis(workspaceId: String, profile: AnalysisProfile): IO[AnalysisAgentRunnerError, AnalysisDoc] =
     for
+      _         <- ZIO.logDebug(s"Starting ${profile.slug} analysis for workspace $workspaceId")
       workspace <- loadWorkspace(workspaceId)
       agent     <- selectAgent(workspace, profile)
+      _         <- ZIO.logDebug(
+                     s"Selected agent '${agent.name}' for ${profile.slug} analysis in workspace '${workspace.name}'"
+                   )
       prompt    <- resolvePrompt(workspace, agent, profile)
+      _         <- ZIO.logDebug(
+                     s"Executing ${profile.slug} analysis for workspace '${workspace.name}' with agent '${agent.name}'"
+                   )
       markdown  <- executeReview(workspace, agent, profile, prompt)
       filePath   = Paths.get(workspace.localPath).resolve(profile.relativePath)
       _         <- writeAnalysisFile(filePath, markdown)
@@ -419,11 +483,14 @@ final case class AnalysisAgentRunnerLive(
   ): IO[AnalysisAgentRunnerError, String] =
     llmPromptExecutor match
       case Some(executeWithProvider) =>
-        executeWithProvider(workspace, agent, prompt).flatMap { raw =>
-          ZIO
-            .fromEither(normalizeMarkdown(raw, profile.documentTitle))
-            .mapError(_ => AnalysisAgentRunnerError.EmptyOutput(agent.name))
-        }
+        ZIO.logDebug(
+          s"Running ${profile.slug} analysis via AI provider for agent '${agent.name}' in workspace '${workspace.name}'"
+        ) *>
+          executeWithProvider(workspace, agent, prompt).flatMap { raw =>
+            ZIO
+              .fromEither(normalizeMarkdown(raw, profile.documentTitle))
+              .mapError(_ => AnalysisAgentRunnerError.EmptyOutput(agent.name))
+          }
       case None                      =>
         if agent.cliTool.trim.equalsIgnoreCase("codex") then
           executeCodexReview(workspace, agent, profile, prompt)
@@ -437,6 +504,9 @@ final case class AnalysisAgentRunnerLive(
     prompt: String,
   ): IO[AnalysisAgentRunnerError, String] =
     for
+      _         <- ZIO.logDebug(
+                     s"Running ${profile.slug} analysis via CLI tool '${agent.cliTool}' for workspace '${workspace.name}'"
+                   )
       outputRef <- Ref.make(Vector.empty[String])
       argv       = CliAgentRunner.buildArgv(
                      cliTool = agent.cliTool,
@@ -483,6 +553,9 @@ final case class AnalysisAgentRunnerLive(
         prompt,
       )
       for
+        _                <- ZIO.logDebug(
+                              s"Running ${profile.slug} analysis via Codex for workspace '${workspace.name}' (agent='${agent.name}')"
+                            )
         result           <- commandRunner(argv, workspace.localPath, agent.envVars)
                               .mapError(err => AnalysisAgentRunnerError.ProcessFailed(agent.name, err.getMessage))
                               .timeoutFail(AnalysisAgentRunnerError.ProcessTimedOut(agent.name, agent.timeout))(

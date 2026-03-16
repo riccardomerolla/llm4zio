@@ -130,6 +130,12 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
       executionContext: llm4zio.providers.GeminiCliExecutionContext,
     ): IO[LlmError, String] =
       ZIO.fail(LlmError.ProviderError("unused in tests", None))
+    override def runGeminiProcessStream(
+      prompt: String,
+      config: LlmConfig,
+      executionContext: llm4zio.providers.GeminiCliExecutionContext,
+    ): zio.stream.ZStream[Any, LlmError, llm4zio.providers.GeminiCliStreamEvent] =
+      zio.stream.ZStream.fail(LlmError.ProviderError("unused in tests", None))
 
   private val stubWorkspaceRepo: workspace.entity.WorkspaceRepository = new workspace.entity.WorkspaceRepository:
     override def append(event: workspace.entity.WorkspaceEvent): IO[shared.errors.PersistenceError, Unit]       =

@@ -83,6 +83,7 @@ object ApplicationDI:
       DataStoreModule.DataStoreService &
       MemoryStoreModule.MemoryEntriesStore &
       GatewayConfig &
+      AIProviderConfig &
       Ref[GatewayConfig] &
       ModelService &
       HttpClient &

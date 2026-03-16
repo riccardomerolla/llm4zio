@@ -3,7 +3,6 @@ package orchestration.control
 import java.time.Instant
 
 import zio.*
-import zio.json.*
 import zio.test.*
 
 import _root_.config.entity.AIProviderConfig
@@ -14,7 +13,7 @@ import db.*
 import issues.entity.{ IssueEvent, IssueRepository }
 import llm4zio.core.*
 import llm4zio.providers.{ GeminiCliExecutor, HttpClient }
-import llm4zio.tools.{ AnyTool, JsonSchema }
+import workspace.entity.*
 
 object PlannerAgentServiceSpec extends ZIOSpecDefault:
 
@@ -82,14 +81,57 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
     val layer: ZLayer[Ref[Vector[IssueEvent]], Nothing, IssueRepository] =
       ZLayer.fromFunction(RecordingIssueRepo.apply)
 
+  private val plannerStructuredResponseJson =
+    """{"summary":"Generated plan","issues":[{"draftId":"issue-1","title":"Design data model","description":"Define planner data structures","issueType":"task","priority":"high","estimate":"M","requiredCapabilities":["scala","zio"],"dependencyDraftIds":[],"acceptanceCriteria":"Model compiles","promptTemplate":"Implement the data model","kaizenSkills":["task-planning"],"proofOfWorkRequirements":["tests pass","coverage > 80%"],"included":true},{"draftId":"issue-2","title":"Wire controller","description":"Expose planner routes","issueType":"task","priority":"medium","estimate":"S","requiredCapabilities":[],"dependencyDraftIds":["issue-1"],"acceptanceCriteria":"Routes are reachable","promptTemplate":"Wire the planner controller","kaizenSkills":[],"proofOfWorkRequirements":[],"included":false}]}"""
+
+  private val testWorkspace = Workspace(
+    id = "ws-1",
+    name = "Planner Workspace",
+    localPath = "/tmp/planner-workspace",
+    defaultAgent = Some("task-planner"),
+    description = Some("planner repo"),
+    enabled = true,
+    runMode = RunMode.Host,
+    cliTool = "gemini",
+    createdAt = Instant.EPOCH,
+    updatedAt = Instant.EPOCH,
+  )
+
+  final case class StubWorkspaceRepository(workspaces: Map[String, Workspace]) extends WorkspaceRepository:
+    override def append(event: WorkspaceEvent): IO[shared.errors.PersistenceError, Unit]                      = ZIO.unit
+    override def list: IO[shared.errors.PersistenceError, List[Workspace]]                                    =
+      ZIO.succeed(workspaces.values.toList)
+    override def get(id: String): IO[shared.errors.PersistenceError, Option[Workspace]]                       =
+      ZIO.succeed(workspaces.get(id))
+    override def delete(id: String): IO[shared.errors.PersistenceError, Unit]                                 = ZIO.unit
+    override def appendRun(event: WorkspaceRunEvent): IO[shared.errors.PersistenceError, Unit]                = ZIO.unit
+    override def listRuns(workspaceId: String): IO[shared.errors.PersistenceError, List[WorkspaceRun]]        =
+      ZIO.succeed(Nil)
+    override def listRunsByIssueRef(issueRef: String): IO[shared.errors.PersistenceError, List[WorkspaceRun]] =
+      ZIO.succeed(Nil)
+    override def getRun(id: String): IO[shared.errors.PersistenceError, Option[WorkspaceRun]]                 = ZIO.succeed(None)
+
+  private val testWorkspaceRepository: ULayer[WorkspaceRepository] =
+    ZLayer.succeed(StubWorkspaceRepository(Map(testWorkspace.id -> testWorkspace)))
+
   private val testConfigResolver: ULayer[AgentConfigResolver] =
     ZLayer.succeed(new AgentConfigResolver:
       override def resolveConfig(agentName: String): IO[PersistenceError, AIProviderConfig] =
         ZIO.succeed(AIProviderConfig.withDefaults(AIProviderConfig())))
 
+  private val failingConfigResolver: ULayer[AgentConfigResolver] =
+    ZLayer.succeed(new AgentConfigResolver:
+      override def resolveConfig(agentName: String): IO[PersistenceError, AIProviderConfig] =
+        ZIO.fail(PersistenceError.ConnectionFailed("resolver unavailable")))
+
   private val testConfigRepository: ULayer[ConfigRepository] =
     ZLayer.succeed(new ConfigRepository:
-      override def getAllSettings: IO[PersistenceError, List[SettingRow]]                           = ZIO.succeed(Nil)
+      override def getAllSettings: IO[PersistenceError, List[SettingRow]]                           = ZIO.succeed(
+        List(
+          SettingRow("ai.provider", "GeminiCli", Instant.EPOCH),
+          SettingRow("ai.model", "gemini-2.5-flash", Instant.EPOCH),
+        )
+      )
       override def getSetting(key: String): IO[PersistenceError, Option[SettingRow]]                =
         ZIO.succeed(
           if key == "planner.create.initialStatus" then Some(SettingRow(key, "todo", Instant.EPOCH))
@@ -117,56 +159,49 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
       override def publish(event: ActivityEvent): UIO[Unit] = ZIO.unit
       override def subscribe: UIO[Dequeue[ActivityEvent]]   = Queue.unbounded[ActivityEvent])
 
-  private val testLlm: ULayer[LlmService] =
-    ZLayer.succeed(new LlmService:
-      override def execute(prompt: String): IO[LlmError, LlmResponse]                                       =
-        ZIO.succeed(LlmResponse(prompt))
-      override def executeStream(prompt: String): zio.stream.Stream[LlmError, LlmChunk]                     =
-        zio.stream.ZStream.empty
-      override def executeWithHistory(messages: List[Message]): IO[LlmError, LlmResponse]                   =
-        ZIO.succeed(LlmResponse("history"))
-      override def executeStreamWithHistory(messages: List[Message]): zio.stream.Stream[LlmError, LlmChunk] =
-        zio.stream.ZStream.empty
-      override def executeWithTools(prompt: String, tools: List[AnyTool]): IO[LlmError, ToolCallResponse]   =
-        ZIO.succeed(ToolCallResponse(Some("ok"), Nil, "stop"))
-      override def executeStructured[A: JsonCodec](prompt: String, schema: JsonSchema): IO[LlmError, A]     =
-        val payload =
-          PlannerStructuredResponse(
-            summary = "Generated plan",
-            issues = List(
-              PlannerIssueDraft(
-                draftId = "issue-1",
-                title = "Design data model",
-                description = "Define planner data structures",
-                priority = "high",
-                estimate = Some("M"),
-                requiredCapabilities = List("scala", "zio"),
-                acceptanceCriteria = "Model compiles",
-                promptTemplate = "Implement the data model",
-                kaizenSkills = List("task-planning"),
-                proofOfWorkRequirements = List("tests pass", "coverage > 80%"),
-                included = true,
-              ),
-              PlannerIssueDraft(
-                draftId = "issue-2",
-                title = "Wire controller",
-                description = "Expose planner routes",
-                priority = "medium",
-                estimate = Some("S"),
-                dependencyDraftIds = List("issue-1"),
-                acceptanceCriteria = "Routes are reachable",
-                promptTemplate = "Wire the planner controller",
-                included = false,
-              ),
-            ),
-          ).toJson
-        ZIO.fromEither(payload.fromJson[A]).mapError(err => LlmError.ParseError(err, payload))
-      override def isAvailable: UIO[Boolean]                                                                = ZIO.succeed(true))
-
   private val stubHttpClient: ULayer[HttpClient] = ZLayer.succeed(new HttpClient:
     override def postJson(url: String, body: String, headers: Map[String, String], timeout: Duration)
       : IO[LlmError, String] =
       ZIO.fail(LlmError.ProviderError("unused", None)))
+
+  private val cliContextRefLayer: ULayer[Ref[Vector[llm4zio.providers.GeminiCliExecutionContext]]] =
+    ZLayer.fromZIO(Ref.make(Vector.empty[llm4zio.providers.GeminiCliExecutionContext]))
+
+  private val startupAiConfigLayer: ULayer[AIProviderConfig] =
+    ZLayer.succeed(AIProviderConfig.withDefaults(AIProviderConfig()))
+
+  private val stubCliExecutorLayer
+    : ZLayer[Ref[Vector[llm4zio.providers.GeminiCliExecutionContext]], Nothing, GeminiCliExecutor] =
+    ZLayer.fromFunction { (contextRef: Ref[Vector[llm4zio.providers.GeminiCliExecutionContext]]) =>
+      new GeminiCliExecutor:
+        override def checkGeminiInstalled: IO[LlmError, Unit] = ZIO.unit
+        override def runGeminiProcess(
+          prompt: String,
+          config: LlmConfig,
+          executionContext: llm4zio.providers.GeminiCliExecutionContext,
+        ): IO[LlmError, String] =
+          contextRef.update(_ :+ executionContext) *> ZIO.fail(LlmError.ProviderError("unused", None))
+        override def runGeminiProcessStream(
+          prompt: String,
+          config: LlmConfig,
+          executionContext: llm4zio.providers.GeminiCliExecutionContext,
+        ): zio.stream.ZStream[Any, LlmError, llm4zio.providers.GeminiCliStreamEvent] =
+          zio.stream.ZStream.fromZIO(contextRef.update(_ :+ executionContext)).drain ++
+            zio.stream.ZStream.fromIterable(
+              List(
+                llm4zio.providers.GeminiCliStreamEvent.Message(
+                  role = Some("assistant"),
+                  content = Some(plannerStructuredResponseJson),
+                  delta = true,
+                ),
+                llm4zio.providers.GeminiCliStreamEvent.Result(
+                  status = Some("success"),
+                  errorMessage = None,
+                  stats = None,
+                ),
+              )
+            )
+    }
 
   private val stubCliExecutor: ULayer[GeminiCliExecutor] = ZLayer.succeed(new GeminiCliExecutor:
     override def checkGeminiInstalled: IO[LlmError, Unit] = ZIO.unit
@@ -174,36 +209,36 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
       prompt: String,
       config: LlmConfig,
       executionContext: llm4zio.providers.GeminiCliExecutionContext,
-    ): IO[LlmError, String] = ZIO.fail(LlmError.ProviderError("unused", None)))
-
-  private val failingLlm: ULayer[LlmService] =
-    ZLayer.succeed(new LlmService:
-      override def execute(prompt: String): IO[LlmError, LlmResponse]                                       =
-        ZIO.fail(LlmError.ProviderError("planner failed", None))
-      override def executeStream(prompt: String): zio.stream.Stream[LlmError, LlmChunk]                     =
-        zio.stream.ZStream.empty
-      override def executeWithHistory(messages: List[Message]): IO[LlmError, LlmResponse]                   =
-        ZIO.fail(LlmError.ProviderError("planner failed", None))
-      override def executeStreamWithHistory(messages: List[Message]): zio.stream.Stream[LlmError, LlmChunk] =
-        zio.stream.ZStream.empty
-      override def executeWithTools(prompt: String, tools: List[AnyTool]): IO[LlmError, ToolCallResponse]   =
-        ZIO.fail(LlmError.ProviderError("planner failed", None))
-      override def executeStructured[A: JsonCodec](prompt: String, schema: JsonSchema): IO[LlmError, A]     =
-        ZIO.fail(LlmError.ProviderError("planner failed", None))
-      override def isAvailable: UIO[Boolean]                                                                = ZIO.succeed(true))
+    ): IO[LlmError, String] = ZIO.fail(LlmError.ProviderError("unused", None))
+    override def runGeminiProcessStream(
+      prompt: String,
+      config: LlmConfig,
+      executionContext: llm4zio.providers.GeminiCliExecutionContext,
+    ): zio.stream.ZStream[Any, LlmError, llm4zio.providers.GeminiCliStreamEvent] =
+      zio.stream.ZStream.fail(LlmError.ProviderError("unused", None)))
 
   private val plannerLayer
-    : ZLayer[Any, Nothing, PlannerAgentService & ChatRepository & Ref[Vector[IssueEvent]]] =
-    ZLayer.make[PlannerAgentService & ChatRepository & Ref[Vector[IssueEvent]]](
+    : ZLayer[
+      Any,
+      Nothing,
+      PlannerAgentService & ChatRepository & Ref[Vector[IssueEvent]] &
+        Ref[Vector[llm4zio.providers.GeminiCliExecutionContext]],
+    ] =
+    ZLayer.make[
+      PlannerAgentService & ChatRepository & Ref[Vector[IssueEvent]] &
+        Ref[Vector[llm4zio.providers.GeminiCliExecutionContext]]
+    ](
       InMemoryChatRepo.layer,
       RecordingIssueRepo.refLayer,
       RecordingIssueRepo.layer,
+      testWorkspaceRepository,
       testConfigRepository,
       noopActivityHub,
       testConfigResolver,
-      testLlm,
       stubHttpClient,
-      stubCliExecutor,
+      cliContextRefLayer,
+      stubCliExecutorLayer,
+      startupAiConfigLayer,
       PlannerAgentService.live,
     )
 
@@ -212,12 +247,36 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
       InMemoryChatRepo.layer,
       RecordingIssueRepo.refLayer,
       RecordingIssueRepo.layer,
+      testWorkspaceRepository,
       testConfigRepository,
       noopActivityHub,
       testConfigResolver,
-      failingLlm,
       stubHttpClient,
       stubCliExecutor,
+      startupAiConfigLayer,
+      PlannerAgentService.live,
+    )
+
+  private val plannerLayerWithResolverFallback
+    : ZLayer[
+      Any,
+      Nothing,
+      PlannerAgentService & ChatRepository & Ref[Vector[llm4zio.providers.GeminiCliExecutionContext]],
+    ] =
+    ZLayer.make[
+      PlannerAgentService & ChatRepository & Ref[Vector[llm4zio.providers.GeminiCliExecutionContext]]
+    ](
+      InMemoryChatRepo.layer,
+      RecordingIssueRepo.refLayer,
+      RecordingIssueRepo.layer,
+      testWorkspaceRepository,
+      testConfigRepository,
+      noopActivityHub,
+      failingConfigResolver,
+      stubHttpClient,
+      cliContextRefLayer,
+      stubCliExecutorLayer,
+      startupAiConfigLayer,
       PlannerAgentService.live,
     )
 
@@ -247,6 +306,32 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
           state.preview.issues.size == 2,
         )
       },
+      test("planner Gemini CLI execution includes the selected workspace directory") {
+        for
+          service    <- ZIO.service[PlannerAgentService]
+          contextRef <- ZIO.service[Ref[Vector[llm4zio.providers.GeminiCliExecutionContext]]]
+          start      <- service.startSession("Plan inside workspace context", Some("ws-1"))
+          _          <- awaitSettledPreview(service, start.conversationId)
+          contexts   <- contextRef.get
+        yield assertTrue(
+          contexts.nonEmpty,
+          contexts.exists(_.cwd.contains("/tmp/planner-workspace")),
+          contexts.exists(_.includeDirectories.contains("/tmp/planner-workspace")),
+        )
+      }.provideLayer(plannerLayer),
+      test("planner global config fallback keeps the selected workspace directory") {
+        for
+          service    <- ZIO.service[PlannerAgentService]
+          contextRef <- ZIO.service[Ref[Vector[llm4zio.providers.GeminiCliExecutionContext]]]
+          start      <- service.startSession("Plan using fallback config", Some("ws-1"))
+          _          <- awaitSettledPreview(service, start.conversationId)
+          contexts   <- contextRef.get
+        yield assertTrue(
+          contexts.nonEmpty,
+          contexts.exists(_.cwd.contains("/tmp/planner-workspace")),
+          contexts.exists(_.includeDirectories.contains("/tmp/planner-workspace")),
+        )
+      }.provideLayer(plannerLayerWithResolverFallback),
       test("confirmPlan emits issue, prompt, acceptance, tag, workspace, and dependency events") {
         for
           service <- ZIO.service[PlannerAgentService]

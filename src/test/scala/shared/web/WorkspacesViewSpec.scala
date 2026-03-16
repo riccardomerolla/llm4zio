@@ -115,6 +115,8 @@ object WorkspacesViewSpec extends ZIOSpecDefault:
       assertTrue(
         html.contains("Analysis Status"),
         html.contains("Re-analyze"),
+        html.contains("Re-analyzing..."),
+        html.contains("aria-busy"),
         html.contains("Code Review"),
         html.contains("Architecture"),
         html.contains("Running"),
