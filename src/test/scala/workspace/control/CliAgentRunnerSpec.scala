@@ -69,7 +69,71 @@ object CliAgentRunnerSpec extends ZIOSpecDefault:
       val argv = CliAgentRunner.buildInteractiveArgv("claude", "/tmp/wt")
       assertTrue(argv == List("claude"))
     },
-    test("buildArgv with RunMode.Host is identical to default") {
+    test("buildArgvForHost wraps gemini with cmd /c on Windows") {
+      val argv = CliAgentRunner.buildArgvForHost("gemini", "fix the bug", "/repo", isWindowsHost = true)
+      assertTrue(
+        argv == List("cmd", "/c", "gemini", "--yolo", "--include-directories", "/repo", "-p", "fix the bug")
+      )
+    },
+    test("buildArgvForHost wraps claude with cmd /c on Windows") {
+      val argv = CliAgentRunner.buildArgvForHost("claude", "fix the bug", "", isWindowsHost = true)
+      assertTrue(argv == List("cmd", "/c", "claude", "--print", "fix the bug"))
+    },
+    test("buildArgvForHost wraps opencode with cmd /c on Windows") {
+      val argv = CliAgentRunner.buildArgvForHost("opencode", "fix the bug", "", isWindowsHost = true)
+      assertTrue(argv == List("cmd", "/c", "opencode", "run", "--prompt", "fix the bug"))
+    },
+    test("buildArgvForHost wraps codex with cmd /c on Windows") {
+      val argv = CliAgentRunner.buildArgvForHost("codex", "fix the bug", "", isWindowsHost = true)
+      assertTrue(argv == List("cmd", "/c", "codex", "fix the bug"))
+    },
+    test("buildArgvForHost wraps copilot with cmd /c on Windows") {
+      val argv = CliAgentRunner.buildArgvForHost("copilot", "fix the bug", "", isWindowsHost = true)
+      assertTrue(argv == List("cmd", "/c", "gh", "copilot", "suggest", "-t", "shell", "fix the bug"))
+    },
+    test("buildInteractiveArgvForHost wraps gemini with cmd /c on Windows") {
+      val argv = CliAgentRunner.buildInteractiveArgvForHost("gemini", "/repo", isWindowsHost = true)
+      assertTrue(argv == List("cmd", "/c", "gemini", "--yolo", "--include-directories", "/repo"))
+    },
+    test("buildInteractiveArgvForHost wraps claude with cmd /c on Windows") {
+      val argv = CliAgentRunner.buildInteractiveArgvForHost("claude", "", isWindowsHost = true)
+      assertTrue(argv == List("cmd", "/c", "claude"))
+    },
+    test("normalizePromptForCmd collapses Unix newlines to spaces") {
+      val result = CliAgentRunner.normalizePromptForCmd("line one\nline two\nline three")
+      assertTrue(result == "line one line two line three")
+    },
+    test("normalizePromptForCmd collapses Windows CRLF to spaces") {
+      val result = CliAgentRunner.normalizePromptForCmd("line one\r\nline two\r\nline three")
+      assertTrue(result == "line one line two line three")
+    },
+    test("buildArgvForHost normalizes newlines in prompt when wrapping with cmd /c on Windows") {
+      val prompt = "fix the\nbug now"
+      val argv   = CliAgentRunner.buildArgvForHost("gemini", prompt, "/repo", isWindowsHost = true)
+      assertTrue(
+        !argv.exists(_.contains("\n")) &&
+        argv.contains("fix the bug now")
+      )
+    },
+    test("buildArgv with RunMode.Docker always uses Linux inner argv regardless of host OS") {
+      val argv = CliAgentRunner.buildArgv(
+        "gemini",
+        "fix it",
+        "/tmp/wt",
+        RunMode.Docker("gemini:latest", Nil, mountWorktree = false, None),
+      )
+      // Inner argv must not contain cmd /c even when called from a Windows-detected host
+      assertTrue(
+        !argv.containsSlice(List("cmd", "/c")) &&
+        argv.containsSlice(List("gemini", "--yolo", "--include-directories", "/tmp/wt", "-p", "fix it"))
+      )
+    },
+    test("buildArgvForHost on Windows host never bleeds into Docker inner argv") {
+      // Explicitly verify that the isWindowsHost = false path is used for Docker inner commands
+      val innerArgv = CliAgentRunner.buildArgvForHost("gemini", "fix it", "/tmp/wt", isWindowsHost = false)
+      assertTrue(innerArgv == List("gemini", "--yolo", "--include-directories", "/tmp/wt", "-p", "fix it"))
+    },
+    test("buildArgv defaults to RunMode.Host") {
       val argvDefault  = CliAgentRunner.buildArgv("gemini", "fix it", "/tmp/wt")
       val argvExplicit = CliAgentRunner.buildArgv("gemini", "fix it", "/tmp/wt", RunMode.Host)
       assertTrue(argvDefault == argvExplicit)
