@@ -11,6 +11,15 @@ object CliAgentRunner:
   enum InteractionSupport:
     case InteractiveStdin, ContinuationOnly
 
+  /** Normalise a prompt for Windows `cmd.exe` execution.
+    *
+    * When a process is launched via `cmd /c <tool> -p <prompt>`, `cmd.exe` interprets literal newline characters as
+    * command separators, truncating the argument list at the first newline. Collapsing all newline sequences to a
+    * single space avoids this while keeping the prompt intelligible to the LLM.
+    */
+  private[workspace] def normalizePromptForCmd(prompt: String): String =
+    prompt.replaceAll("""\r\n|\n|\r""", " ")
+
   def interactionSupport(cliTool: String): InteractionSupport =
     cliTool.toLowerCase match
       // Supports stdin conversation when not using --print.
@@ -36,10 +45,27 @@ object CliAgentRunner:
     isWindowsHost: Boolean,
   ): List[String] =
     cliTool match
+      case "gemini" if isWindowsHost     =>
+        List(
+          "cmd",
+          "/c",
+          "gemini",
+          "--yolo",
+          "--include-directories",
+          repoPath,
+          "-p",
+          normalizePromptForCmd(prompt),
+        )
       case "gemini"                      => List("gemini", "--yolo", "--include-directories", repoPath, "-p", prompt)
+      case "opencode" if isWindowsHost   =>
+        List("cmd", "/c", "opencode", "run", "--prompt", normalizePromptForCmd(prompt))
       case "opencode"                    => List("opencode", "run", "--prompt", prompt)
+      case "claude" if isWindowsHost     => List("cmd", "/c", "claude", "--print", normalizePromptForCmd(prompt))
       case "claude"                      => List("claude", "--print", prompt)
+      case "codex" if isWindowsHost      => List("cmd", "/c", "codex", normalizePromptForCmd(prompt))
       case "codex"                       => List("codex", prompt)
+      case "copilot" if isWindowsHost    =>
+        List("cmd", "/c", "gh", "copilot", "suggest", "-t", "shell", normalizePromptForCmd(prompt))
       case "copilot"                     => List("gh", "copilot", "suggest", "-t", "shell", prompt)
       case "echo" if isWindowsHost       => List("cmd", "/c", "echo", prompt)
       case "sh" if isWindowsHost         => List("cmd", "/c", prompt)
@@ -58,9 +84,14 @@ object CliAgentRunner:
     isWindowsHost: Boolean,
   ): List[String] =
     cliTool match
+      case "gemini" if isWindowsHost     =>
+        List("cmd", "/c", "gemini", "--yolo", "--include-directories", repoPath)
       case "gemini"                      => List("gemini", "--yolo", "--include-directories", repoPath)
+      case "claude" if isWindowsHost     => List("cmd", "/c", "claude")
       case "claude"                      => List("claude")
+      case "codex" if isWindowsHost      => List("cmd", "/c", "codex")
       case "codex"                       => List("codex")
+      case "opencode" if isWindowsHost   => List("cmd", "/c", "opencode", "run")
       case "opencode"                    => List("opencode", "run")
       case "sh" if isWindowsHost         => List("cmd")
       case "powershell" if isWindowsHost => List("powershell")
@@ -90,7 +121,8 @@ object CliAgentRunner:
       case RunMode.Host                                             =>
         buildArgvForHost(cliTool, prompt, effectiveIncludePath, isWindowsHost)
       case RunMode.Docker(image, extraArgs, mountWorktree, network) =>
-        val innerArgv     = buildArgvForHost(cliTool, prompt, effectiveIncludePath, isWindowsHost)
+        // Docker containers always run a Linux image; never apply Windows cmd-wrapping for the inner argv.
+        val innerArgv     = buildArgvForHost(cliTool, prompt, effectiveIncludePath, isWindowsHost = false)
         val mountFlags    = if mountWorktree then List("-v", s"$worktreePath:/workspace", "--workdir", "/workspace")
         else List.empty
         val networkFlags  = network.map(n => List("--network", n)).getOrElse(List.empty)
@@ -126,7 +158,8 @@ object CliAgentRunner:
       case RunMode.Host                                             =>
         buildInteractiveArgvForHost(cliTool, effectiveIncludePath, isWindowsHost)
       case RunMode.Docker(image, extraArgs, mountWorktree, network) =>
-        val innerArgv    = buildInteractiveArgvForHost(cliTool, effectiveIncludePath, isWindowsHost)
+        // Docker containers always run a Linux image; never apply Windows cmd-wrapping for the inner argv.
+        val innerArgv    = buildInteractiveArgvForHost(cliTool, effectiveIncludePath, isWindowsHost = false)
         val mountFlags   = if mountWorktree then List("-v", s"$worktreePath:/workspace", "--workdir", "/workspace")
         else List.empty
         val networkFlags = network.map(n => List("--network", n)).getOrElse(List.empty)
