@@ -42,6 +42,21 @@ object GeminiCliExecutionContext:
   val default: GeminiCliExecutionContext = GeminiCliExecutionContext()
 
 object GeminiCliExecutor:
+
+  /** On Windows, `cmd.exe` may interpret literal newline characters inside a
+    * quoted command-line argument as command separators.  When the gemini process
+    * is launched via `cmd /c gemini -p <prompt> …`, a multi-line prompt causes
+    * `cmd.exe` to truncate the argument list at the first newline, dropping
+    * everything that follows — including `--output-format stream-json`.  The
+    * result is that gemini outputs plain text instead of JSON stream events, so
+    * every output line is parsed as a `LogLine` and no content is accumulated.
+    *
+    * Replace every newline sequence with a single space so the full command
+    * reaches gemini unchanged.  The LLM still understands the compacted prompt.
+    */
+  private[providers] def normalizePromptForWindowsCmd(prompt: String): String =
+    prompt.replace("\r\n", " ").replace("\n", " ").replace("\r", " ")
+
   val default: GeminiCliExecutor =
     new GeminiCliExecutor {
       private def isWindows: Boolean =
@@ -108,9 +123,10 @@ object GeminiCliExecutor:
         executionContext: GeminiCliExecutionContext,
         outputFormat: String,
       ): IO[LlmError, Process] =
+        val effectivePrompt    = if isWindows then normalizePromptForWindowsCmd(prompt) else prompt
         val commands           = geminiCommand ++ List(
           "-p",
-          prompt,
+          effectivePrompt,
           "-m",
           config.model,
           "-y",
