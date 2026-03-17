@@ -346,4 +346,39 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
           GeminiCliStreamEvent.LogLine("Error when talking to Gemini API Full report available at: ..."),
       )
     },
+    suite("normalizePromptForWindowsCmd")(
+      test("replaces Unix newlines with spaces") {
+        val prompt     = "Analyze the repo at:\n/path/to/repo\n\nDo not modify files."
+        val normalized = GeminiCliExecutor.normalizePromptForWindowsCmd(prompt)
+        assertTrue(
+          !normalized.contains("\n"),
+          normalized == "Analyze the repo at: /path/to/repo  Do not modify files.",
+        )
+      },
+      test("replaces Windows CRLF sequences with spaces") {
+        val prompt     = "Analyze the repo at:\r\n/path/to/repo\r\n\r\nDo not modify files."
+        val normalized = GeminiCliExecutor.normalizePromptForWindowsCmd(prompt)
+        assertTrue(
+          !normalized.contains("\r"),
+          !normalized.contains("\n"),
+          normalized == "Analyze the repo at: /path/to/repo  Do not modify files.",
+        )
+      },
+      test("replaces bare carriage returns with spaces") {
+        val prompt     = "line1\rline2"
+        val normalized = GeminiCliExecutor.normalizePromptForWindowsCmd(prompt)
+        assertTrue(
+          !normalized.contains("\r"),
+          normalized == "line1 line2",
+        )
+      },
+      test("leaves single-line prompts unchanged") {
+        val prompt     = "Analyze the repo and return markdown only."
+        val normalized = GeminiCliExecutor.normalizePromptForWindowsCmd(prompt)
+        assertTrue(normalized == prompt)
+      },
+      test("handles empty prompt") {
+        assertTrue(GeminiCliExecutor.normalizePromptForWindowsCmd("") == "")
+      },
+    ),
   )
