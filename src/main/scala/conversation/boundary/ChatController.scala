@@ -1,6 +1,6 @@
 package conversation.boundary
 
-import java.net.URLDecoder
+import java.net.{ URLDecoder, URLEncoder }
 import java.nio.charset.StandardCharsets
 import java.time.Instant
 
@@ -19,7 +19,7 @@ import issues.entity.{ IssueReport, IssueWorkReport }
 import llm4zio.core.{ ConversationThread, LlmError, LlmService, Streaming, ToolConversationManager }
 import llm4zio.providers.{ GeminiCliExecutor, HttpClient }
 import llm4zio.tools.ToolRegistry
-import orchestration.control.{ AgentConfigResolver, IssueAssignmentOrchestrator }
+import orchestration.control.*
 import shared.errors.PersistenceError as WorkspacePersistenceError
 import shared.ids.Ids.{ ConversationId, EventId, IssueId, ReportId }
 import shared.web.*
@@ -37,7 +37,7 @@ object ChatController:
     : ZLayer[
       ChatRepository & LlmService & TaskRepository & IssueAssignmentOrchestrator & AgentConfigResolver &
         GatewayService & ChannelRegistry & StreamAbortRegistry & ActivityHub & ToolRegistry & HttpClient &
-        GeminiCliExecutor & WorkspaceRepository,
+        GeminiCliExecutor & WorkspaceRepository & PlannerAgentService,
       Nothing,
       ChatController,
     ] =
@@ -57,11 +57,20 @@ final case class ChatControllerLive(
   httpClient: HttpClient,
   cliExecutor: GeminiCliExecutor,
   workspaceRepository: WorkspaceRepository,
+  plannerAgentService: PlannerAgentService,
 ) extends ChatController:
 
   override val routes: Routes[Any, Response] = Routes(
+    Method.GET / "planner"                                              -> handler { (_: Request) =>
+      ZIO.succeed(redirect("/chat/new?mode=plan"))
+    },
+    Method.GET / "planner" / string("id")                               -> handler { (id: String, _: Request) =>
+      parseLongId("conversation", id)
+        .as(redirect(s"/chat/$id"))
+        .catchAll(error => ZIO.succeed(Response.text(error.toString).status(Status.BadRequest)))
+    },
     // Chat Conversations Web Views
-    Method.GET / "chat"                                      -> handler { (_: Request) =>
+    Method.GET / "chat"                                                 -> handler { (_: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
           conversations <- chatRepository.listConversations(0, 80)
@@ -82,7 +91,7 @@ final case class ChatControllerLive(
             )
       }
     },
-    Method.GET / "chat" / "new"                              -> handler { (_: Request) =>
+    Method.GET / "chat" / "new"                                         -> handler { (_: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
           conversations   <- chatRepository.listConversations(0, 80)
@@ -99,7 +108,7 @@ final case class ChatControllerLive(
         )
       }
     },
-    Method.GET / "chat" / "sidebar-nav"                      -> handler { (req: Request) =>
+    Method.GET / "chat" / "sidebar-nav"                                 -> handler { (req: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
           conversations      <- chatRepository.listConversations(0, 80)
@@ -112,7 +121,7 @@ final case class ChatControllerLive(
         yield html(Layout.chatWorkspacesTree(nav).render)
       }
     },
-    Method.POST / "chat"                                     -> handler { (req: Request) =>
+    Method.POST / "chat"                                                -> handler { (req: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
           form           <- parseForm(req)
@@ -136,56 +145,28 @@ final case class ChatControllerLive(
         )
       }
     },
-    Method.POST / "chat" / "new"                             -> handler { (req: Request) =>
+    Method.POST / "chat" / "new"                                        -> handler { (req: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
           form          <- parseForm(req)
           rawContent    <- ZIO
                              .fromOption(form.get("content").map(_.trim).filter(_.nonEmpty))
                              .orElseFail(PersistenceError.QueryFailed("parseForm", "Missing content"))
+          mode          <- parseConversationMode(form.get("mode"))
           workspaceIdRaw = form.get("workspace_id").flatMap(sanitizeString)
           workspaceId   <- resolveSelectedWorkspaceId(workspaceIdRaw)
-          now           <- Clock.instant
-          conversation   = ChatConversation(
-                             runId = None,
-                             title = "",
-                             description = workspaceId.map(workspaceMarkerDescription),
-                             createdAt = now,
-                             updatedAt = now,
-                           )
-          convId        <- chatRepository.createConversation(conversation)
-          mention        = parsePreferredAgentMention(rawContent)
-          content        = mention.content
-          preferred     <- resolvePreferredAgent(convId, mention.metadata.get("preferredAgent"))
-          _             <- chatRepository.addMessage(
-                             ConversationEntry(
-                               conversationId = convId.toString,
-                               sender = "user",
-                               senderType = SenderType.User,
-                               content = rawContent,
-                               messageType = MessageType.Text,
-                               createdAt = now,
-                               updatedAt = now,
-                             )
-                           )
-          _             <- ensureConversationTitle(convId, content, now)
-          userInbound   <- toGatewayMessage(
-                             convId,
-                             SenderType.User,
-                             content,
-                             None,
-                             GatewayMessageDirection.Inbound,
-                             additionalMetadata = withPreferredAgentMetadata(mention.metadata, preferred),
-                           )
-          _             <- routeThroughGateway(gatewayService.processInbound(userInbound))
-          _             <- streamAssistantResponse(convId, content, preferred).forkDaemon
+          convId        <- mode match
+                             case ConversationMode.Plan =>
+                               startPlanConversation(rawContent, workspaceId)
+                             case ConversationMode.Chat =>
+                               startChatConversation(rawContent, workspaceId)
         yield Response(
           status = Status.SeeOther,
           headers = Headers(Header.Custom("Location", s"/chat/$convId")),
         )
       }
     },
-    Method.GET / "chat" / string("id")                       -> handler { (id: String, _: Request) =>
+    Method.GET / "chat" / string("id")                                  -> handler { (id: String, _: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
           convId           <- parseLongId("conversation", id)
@@ -201,7 +182,7 @@ final case class ChatControllerLive(
         yield html(HtmlViews.chatDetail(conversation, sessionMeta, runMeta, workspaceGroups, detailContext))
       }
     },
-    Method.GET / "chat" / string("id") / "messages"          -> handler { (id: String, _: Request) =>
+    Method.GET / "chat" / string("id") / "messages"                     -> handler { (id: String, _: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
           convId   <- parseLongId("conversation", id)
@@ -209,56 +190,183 @@ final case class ChatControllerLive(
         yield html(HtmlViews.chatMessagesFragment(messages))
       }
     },
-    Method.POST / "chat" / string("id") / "messages"         -> handler { (id: String, req: Request) =>
+    Method.POST / "chat" / string("id") / "messages"                    -> handler { (id: String, req: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
-          convId      <- parseLongId("conversation", id)
-          form        <- parseForm(req)
-          rawContent  <- ZIO
-                           .fromOption(form.get("content").map(_.trim).filter(_.nonEmpty))
-                           .orElseFail(PersistenceError.QueryFailed("parseForm", "Missing content"))
-          mention      = parsePreferredAgentMention(rawContent)
-          content      = mention.content
-          preferred   <- resolvePreferredAgent(convId, mention.metadata.get("preferredAgent"))
-          now         <- Clock.instant
-          _           <- chatRepository.addMessage(
-                           ConversationEntry(
-                             conversationId = id,
-                             sender = "user",
-                             senderType = SenderType.User,
-                             content = rawContent,
-                             messageType = MessageType.Text,
-                             createdAt = now,
-                             updatedAt = now,
-                           )
-                         )
-          _           <- ensureConversationTitle(convId, content, now)
-          _           <- activityHub.publish(
-                           ActivityEvent(
-                             id = EventId.generate,
-                             eventType = ActivityEventType.MessageSent,
-                             source = "chat",
-                             conversationId = Some(ConversationId(id)),
-                             summary = s"Message sent in conversation #$convId",
-                             createdAt = now,
-                           )
-                         )
-          userInbound <- toGatewayMessage(
-                           convId,
-                           SenderType.User,
-                           content,
-                           None,
-                           GatewayMessageDirection.Inbound,
-                           additionalMetadata = withPreferredAgentMetadata(mention.metadata, preferred),
-                         )
-          _           <- routeThroughGateway(gatewayService.processInbound(userInbound))
-          _           <- streamAssistantResponse(convId, content, preferred).forkDaemon
-          messages    <- chatRepository.getMessages(convId)
+          convId       <- parseLongId("conversation", id)
+          conversation <- chatRepository
+                            .getConversation(convId)
+                            .someOrFail(PersistenceError.NotFound("conversation", convId))
+          form         <- parseForm(req)
+          rawContent   <- ZIO
+                            .fromOption(form.get("content").map(_.trim).filter(_.nonEmpty))
+                            .orElseFail(PersistenceError.QueryFailed("parseForm", "Missing content"))
+          now          <- Clock.instant
+          _            <- conversationMode(conversation) match
+                            case ConversationMode.Plan =>
+                              plannerAgentService
+                                .appendUserMessage(convId, rawContent)
+                                .mapError(mapPlannerError("planner_append_user_message"))
+                                .unit
+                            case ConversationMode.Chat =>
+                              for
+                                mention     <- ZIO.succeed(parsePreferredAgentMention(rawContent))
+                                content      = mention.content
+                                preferred   <- resolvePreferredAgent(convId, mention.metadata.get("preferredAgent"))
+                                _           <- chatRepository.addMessage(
+                                                 ConversationEntry(
+                                                   conversationId = id,
+                                                   sender = "user",
+                                                   senderType = SenderType.User,
+                                                   content = rawContent,
+                                                   messageType = MessageType.Text,
+                                                   createdAt = now,
+                                                   updatedAt = now,
+                                                 )
+                                               )
+                                _           <- ensureConversationTitle(convId, content, now)
+                                userInbound <- toGatewayMessage(
+                                                 convId,
+                                                 SenderType.User,
+                                                 content,
+                                                 None,
+                                                 GatewayMessageDirection.Inbound,
+                                                 additionalMetadata = withPreferredAgentMetadata(mention.metadata, preferred),
+                                               )
+                                _           <- routeThroughGateway(gatewayService.processInbound(userInbound))
+                                _           <- streamAssistantResponse(convId, content, preferred).forkDaemon
+                              yield ()
+          _            <- activityHub.publish(
+                            ActivityEvent(
+                              id = EventId.generate,
+                              eventType = ActivityEventType.MessageSent,
+                              source = "chat",
+                              conversationId = Some(ConversationId(id)),
+                              summary = s"Message sent in conversation #$convId",
+                              createdAt = now,
+                            )
+                          )
+          messages     <- chatRepository.getMessages(convId)
         yield html(HtmlViews.chatMessagesFragment(messages))
       }
     },
+    Method.GET / "chat" / string("id") / "plan-fragment"                -> handler { (id: String, _: Request) =>
+      ErrorHandlingMiddleware.fromPersistence {
+        for
+          convId <- parseLongId("conversation", id)
+          state  <- plannerAgentService.getPreview(convId).mapError(mapPlannerError("planner_get_preview"))
+        yield html(
+          PlanPreviewComponents
+            .planPanelsContent(
+              state,
+              basePath = s"/chat/$convId/plan",
+              fragmentPath = s"/chat/$convId/plan-fragment",
+            )
+            .render
+        )
+      }
+    },
+    Method.POST / "chat" / string("id") / "plan" / "chat"               -> handler { (id: String, req: Request) =>
+      ErrorHandlingMiddleware.fromPersistence {
+        for
+          convId <- parseLongId("conversation", id)
+          form   <- parseMultiForm(req)
+          msg    <- required(form, "message")
+          _      <- plannerAgentService
+                      .appendUserMessage(convId, msg)
+                      .mapError(mapPlannerError("planner_append_user_message"))
+        yield seeOtherToChat(convId)
+      }
+    },
+    Method.POST / "chat" / string("id") / "plan" / "refresh"            -> handler { (id: String, _: Request) =>
+      ErrorHandlingMiddleware.fromPersistence {
+        for
+          convId <- parseLongId("conversation", id)
+          _      <- plannerAgentService.regeneratePreview(convId).mapError(mapPlannerError("planner_regenerate_preview"))
+        yield seeOtherToChat(convId)
+      }
+    },
+    Method.POST / "chat" / string("id") / "plan" / "preview"            -> handler { (id: String, req: Request) =>
+      ErrorHandlingMiddleware.fromPersistence {
+        for
+          convId  <- parseLongId("conversation", id)
+          form    <- parseMultiForm(req)
+          preview <- parsePreviewForm(form)
+          _       <- plannerAgentService
+                       .updatePreview(convId, preview)
+                       .mapError(mapPlannerError("planner_update_preview"))
+        yield seeOtherToChat(convId)
+      }
+    },
+    Method.POST / "chat" / string("id") / "plan" / "preview" / "add"    -> handler { (id: String, _: Request) =>
+      ErrorHandlingMiddleware.fromPersistence {
+        for
+          convId <- parseLongId("conversation", id)
+          _      <- plannerAgentService.addBlankIssue(convId).mapError(mapPlannerError("planner_add_blank_issue"))
+        yield seeOtherToChat(convId)
+      }
+    },
+    Method.POST / "chat" / string("id") / "plan" / "preview" / "remove" -> handler { (id: String, req: Request) =>
+      ErrorHandlingMiddleware.fromPersistence {
+        for
+          convId  <- parseLongId("conversation", id)
+          form    <- parseMultiForm(req)
+          draftId <-
+            optional(form, "remove_draft_id")
+              .orElse(optional(form, "draft_id"))
+              .fold[IO[PersistenceError, String]](
+                ZIO.fail(PersistenceError.QueryFailed("planner_form", "Missing required field: remove_draft_id"))
+              )(ZIO.succeed(_))
+          _       <- plannerAgentService.removeIssue(convId, draftId).mapError(mapPlannerError("planner_remove_issue"))
+        yield seeOtherToChat(convId)
+      }
+    },
+    Method.POST / "chat" / string("id") / "plan" / "confirm"            -> handler { (id: String, _: Request) =>
+      ErrorHandlingMiddleware.fromPersistence {
+        for
+          convId <- parseLongId("conversation", id)
+          result <- plannerAgentService.confirmPlan(convId).mapError(mapPlannerError("planner_confirm_plan"))
+        yield seeOther(boardRedirect(result.issueIds.map(_.value)))
+      }
+    },
+    Method.POST / "chat" / string("id") / "plan" / "mode"               -> handler { (id: String, req: Request) =>
+      ErrorHandlingMiddleware.fromPersistence {
+        for
+          convId       <- parseLongId("conversation", id)
+          conversation <- chatRepository
+                            .getConversation(convId)
+                            .someOrFail(PersistenceError.NotFound("conversation", convId))
+          form         <- parseForm(req)
+          mode         <- parseConversationMode(form.get("mode"))
+          workspaceId   = parseWorkspaceMarkerDescription(conversation.description)
+          updatedAt    <- Clock.instant
+          updated       = conversation.copy(
+                            description = modeDescription(mode, workspaceId),
+                            updatedAt = updatedAt,
+                          )
+          _            <- chatRepository.updateConversation(updated)
+          _            <- mode match
+                            case ConversationMode.Plan =>
+                              plannerAgentService
+                                .getPreview(convId)
+                                .either
+                                .flatMap {
+                                  case Right(_)                                   => ZIO.unit
+                                  case Left(PlannerAgentError.PreviewNotFound(_)) =>
+                                    plannerAgentService
+                                      .regeneratePreview(convId)
+                                      .mapError(mapPlannerError("planner_regenerate_preview"))
+                                      .unit
+                                  case Left(error)                                =>
+                                    ZIO.fail(mapPlannerError("planner_get_preview")(error))
+                                }
+                            case ConversationMode.Chat =>
+                              ZIO.unit
+        yield seeOtherToChat(convId)
+      }
+    },
     // Abort streaming
-    Method.POST / "api" / "chat" / string("id") / "abort"    -> handler { (id: String, _: Request) =>
+    Method.POST / "api" / "chat" / string("id") / "abort"               -> handler { (id: String, _: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         parseLongId("conversation", id).flatMap(streamAbortRegistry.abort).map { aborted =>
           Response.json(Map("aborted" -> aborted.toString).toJson)
@@ -266,7 +374,7 @@ final case class ChatControllerLive(
       }
     },
     // Chat API Endpoints
-    Method.POST / "api" / "chat"                             -> handler { (req: Request) =>
+    Method.POST / "api" / "chat"                                        -> handler { (req: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
           body        <- req.body.asString.mapError(err =>
@@ -290,7 +398,7 @@ final case class ChatControllerLive(
         yield Response.json(created.toJson)
       }
     },
-    Method.GET / "api" / "chat" / string("id")               -> handler { (id: String, _: Request) =>
+    Method.GET / "api" / "chat" / string("id")                          -> handler { (id: String, _: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
           convId       <- parseLongId("conversation", id)
@@ -300,7 +408,7 @@ final case class ChatControllerLive(
         yield Response.json(conversation.toJson)
       }
     },
-    Method.POST / "api" / "chat" / string("id") / "messages" -> handler { (id: String, req: Request) =>
+    Method.POST / "api" / "chat" / string("id") / "messages"            -> handler { (id: String, req: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
           convId     <- parseLongId("conversation", id)
@@ -315,7 +423,7 @@ final case class ChatControllerLive(
         yield Response.json(aiMessage.toJson)
       }
     },
-    Method.GET / "api" / "chat" / string("id") / "messages"  -> handler { (id: String, req: Request) =>
+    Method.GET / "api" / "chat" / string("id") / "messages"             -> handler { (id: String, req: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         val since = req.queryParam("since").flatMap(s => scala.util.Try(Instant.parse(s)).toOption)
         for
@@ -326,12 +434,12 @@ final case class ChatControllerLive(
         yield Response.json(messages.toJson)
       }
     },
-    Method.GET / "api" / "sessions"                          -> handler { (_: Request) =>
+    Method.GET / "api" / "sessions"                                     -> handler { (_: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         listChatSessions.map(sessions => Response.json(sessions.toJson))
       }
     },
-    Method.GET / "api" / "sessions" / string("id")           -> handler { (id: String, _: Request) =>
+    Method.GET / "api" / "sessions" / string("id")                      -> handler { (id: String, _: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         val decoded = urlDecode(id)
         for
@@ -339,7 +447,7 @@ final case class ChatControllerLive(
         yield Response.json(session.toJson)
       }
     },
-    Method.DELETE / "api" / "sessions" / string("id")        -> handler { (id: String, _: Request) =>
+    Method.DELETE / "api" / "sessions" / string("id")                   -> handler { (id: String, _: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         val decoded = urlDecode(id)
         for
@@ -347,7 +455,7 @@ final case class ChatControllerLive(
         yield Response.json(SessionDeleteResponse(deleted = true, sessionId = decoded).toJson)
       }
     },
-    Method.DELETE / "api" / "conversations" / string("id")   -> handler { (id: String, _: Request) =>
+    Method.DELETE / "api" / "conversations" / string("id")              -> handler { (id: String, _: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
           convId <- parseLongId("conversation", id)
@@ -359,6 +467,18 @@ final case class ChatControllerLive(
 
   private def html(content: String): Response =
     Response.text(content).contentType(MediaType.text.html)
+
+  private def redirect(path: String): Response =
+    Response.redirect(URL.decode(path).toOption.getOrElse(URL.root))
+
+  private def seeOther(path: String): Response =
+    Response(
+      status = Status.SeeOther,
+      headers = Headers(Header.Location(URL.decode(path).toOption.getOrElse(URL.root))),
+    )
+
+  private def seeOtherToChat(conversationId: Long): Response =
+    seeOther(s"/chat/$conversationId")
 
   private def addUserAndAssistantMessage(
     conversationId: Long,
@@ -485,6 +605,65 @@ final case class ChatControllerLive(
       yield ()
     effect.catchAll(err => ZIO.logWarning(s"streaming response failed for conversation $conversationId: $err"))
 
+  private def startChatConversation(
+    rawContent: String,
+    workspaceId: Option[String],
+  ): IO[PersistenceError, Long] =
+    for
+      now         <- Clock.instant
+      conversation = ChatConversation(
+                       runId = None,
+                       title = "",
+                       description = modeDescription(ConversationMode.Chat, workspaceId),
+                       createdAt = now,
+                       updatedAt = now,
+                     )
+      convId      <- chatRepository.createConversation(conversation)
+      mention      = parsePreferredAgentMention(rawContent)
+      content      = mention.content
+      preferred   <- resolvePreferredAgent(convId, mention.metadata.get("preferredAgent"))
+      _           <- chatRepository.addMessage(
+                       ConversationEntry(
+                         conversationId = convId.toString,
+                         sender = "user",
+                         senderType = SenderType.User,
+                         content = rawContent,
+                         messageType = MessageType.Text,
+                         createdAt = now,
+                         updatedAt = now,
+                       )
+                     )
+      _           <- ensureConversationTitle(convId, content, now)
+      userInbound <- toGatewayMessage(
+                       convId,
+                       SenderType.User,
+                       content,
+                       None,
+                       GatewayMessageDirection.Inbound,
+                       additionalMetadata = withPreferredAgentMetadata(mention.metadata, preferred),
+                     )
+      _           <- routeThroughGateway(gatewayService.processInbound(userInbound))
+      _           <- streamAssistantResponse(convId, content, preferred).forkDaemon
+    yield convId
+
+  private def startPlanConversation(
+    rawContent: String,
+    workspaceId: Option[String],
+  ): IO[PersistenceError, Long] =
+    plannerAgentService
+      .startSession(rawContent, workspaceId)
+      .mapError(error => PersistenceError.QueryFailed("planner_start_session", error.message))
+      .flatMap { start =>
+        chatRepository.getConversation(start.conversationId).flatMap {
+          case Some(conversation) =>
+            chatRepository.updateConversation(
+              conversation.copy(description = modeDescription(ConversationMode.Plan, workspaceId))
+            ).as(start.conversationId)
+          case None               =>
+            ZIO.fail(PersistenceError.NotFound("conversation", start.conversationId))
+        }
+      }
+
   private def sendStreamEvent(conversationId: Long, eventType: String, payload: String): UIO[Unit] =
     val jsonContent = Map("type" -> eventType, "delta" -> payload).toJson
     (for
@@ -561,6 +740,70 @@ final case class ChatControllerLive(
           metadata = Map.empty,
         )
 
+  private def parseConversationMode(raw: Option[String]): IO[PersistenceError, ConversationMode] =
+    raw.flatMap(sanitizeString).map(_.toLowerCase(java.util.Locale.ROOT)) match
+      case None | Some("chat") => ZIO.succeed(ConversationMode.Chat)
+      case Some("plan")        => ZIO.succeed(ConversationMode.Plan)
+      case Some(other)         =>
+        ZIO.fail(PersistenceError.QueryFailed("parse_mode", s"Unsupported conversation mode: $other"))
+
+  private def parsePreviewForm(form: Map[String, List[String]]): IO[PersistenceError, PlannerPlanPreview] =
+    val summary      = optional(form, "summary").getOrElse("")
+    val draftIds     = values(form, "draft_id")
+    val titles       = values(form, "title")
+    val descriptions = values(form, "description")
+    val issueTypes   = values(form, "issue_type")
+    val priorities   = values(form, "priority")
+    val estimates    = values(form, "estimate")
+    val capabilities = values(form, "required_capabilities")
+    val dependencies = values(form, "dependency_draft_ids")
+    val acceptance   = values(form, "acceptance_criteria")
+    val prompts      = values(form, "prompt_template")
+    val skills       = values(form, "kaizen_skills")
+    val proof        = values(form, "proof_of_work_requirements")
+    val included     = values(form, "included")
+    val sizes        = List(
+      draftIds.size,
+      titles.size,
+      descriptions.size,
+      issueTypes.size,
+      priorities.size,
+      estimates.size,
+      capabilities.size,
+      dependencies.size,
+      acceptance.size,
+      prompts.size,
+      skills.size,
+      proof.size,
+      included.size,
+    ).distinct
+
+    if sizes.size > 1 then
+      ZIO.fail(PersistenceError.QueryFailed("planner_preview_form", "Planner preview form fields were incomplete"))
+    else
+      ZIO.succeed(
+        PlannerPlanPreview(
+          summary = summary,
+          issues = draftIds.indices.toList.map { idx =>
+            PlannerIssueDraft(
+              draftId = draftIds(idx),
+              title = titles(idx),
+              description = descriptions(idx),
+              issueType = issueTypes(idx),
+              priority = priorities(idx),
+              estimate = Option(estimates(idx)).map(_.trim).filter(_.nonEmpty),
+              requiredCapabilities = splitCsv(capabilities(idx)),
+              dependencyDraftIds = splitCsv(dependencies(idx)),
+              acceptanceCriteria = acceptance(idx),
+              promptTemplate = prompts(idx),
+              kaizenSkills = splitCsv(skills(idx)),
+              proofOfWorkRequirements = splitCsv(proof(idx)),
+              included = included(idx).equalsIgnoreCase("true"),
+            )
+          },
+        )
+      )
+
   private def ensureWebSocketSession(conversationId: Long): UIO[Unit] =
     val sessionKey = SessionScopeStrategy.PerConversation.build("websocket", conversationId.toString)
     channelRegistry
@@ -577,6 +820,9 @@ final case class ChatControllerLive(
 
   private def routeThroughGateway(effect: IO[GatewayServiceError, Unit]): UIO[Unit] =
     effect.catchAll(err => ZIO.logWarning(s"gateway routing skipped: $err"))
+
+  private def mapPlannerError(operation: String)(error: PlannerAgentError): PersistenceError =
+    PersistenceError.QueryFailed(operation, error.message)
 
   private def enrichConversationsWithChannel(
     conversations: List[ChatConversation]
@@ -634,20 +880,39 @@ final case class ChatControllerLive(
     conversation: ChatConversation,
     sessionMeta: Option[ConversationSessionMeta],
   ): IO[PersistenceError, ChatDetailContext] =
+    val plannerStateEffect =
+      if conversationMode(conversation) == ConversationMode.Plan then
+        sanitizeOptional(conversation.id).flatMap(_.toLongOption) match
+          case Some(conversationId) =>
+            plannerAgentService
+              .getPreview(conversationId)
+              .either
+              .map(_.toOption)
+          case None                 =>
+            ZIO.none
+      else ZIO.none
+
     sanitizeOptional(conversation.runId).flatMap(_.toLongOption) match
       case None        =>
-        ZIO.succeed(ChatDetailContext.empty.copy(memorySessionId = sessionMeta.map(_.sessionKey)))
-      case Some(runId) =>
-        migrationRepository.getReportsByTask(runId).map { reports =>
-          val graphReports = reports.filter(report => report.reportType.trim.equalsIgnoreCase("graph"))
-          val proofOfWork  = toSyntheticProofOfWork(conversation, runId, reports)
-          ChatDetailContext(
-            proofOfWork = proofOfWork,
-            reports = reports,
-            graphReports = graphReports,
+        plannerStateEffect.map(plannerState =>
+          ChatDetailContext.empty.copy(
             memorySessionId = sessionMeta.map(_.sessionKey),
+            plannerState = plannerState,
           )
-        }
+        )
+      case Some(runId) =>
+        for
+          reports      <- migrationRepository.getReportsByTask(runId)
+          plannerState <- plannerStateEffect
+          graphReports  = reports.filter(report => report.reportType.trim.equalsIgnoreCase("graph"))
+          proofOfWork   = toSyntheticProofOfWork(conversation, runId, reports)
+        yield ChatDetailContext(
+          proofOfWork = proofOfWork,
+          reports = reports,
+          graphReports = graphReports,
+          memorySessionId = sessionMeta.map(_.sessionKey),
+          plannerState = plannerState,
+        )
 
   private def toSyntheticProofOfWork(
     conversation: ChatConversation,
@@ -743,15 +1008,33 @@ final case class ChatControllerLive(
           case None    => ZIO.fail(PersistenceError.QueryFailed("workspace", s"Workspace not found: $workspaceId"))
         }
 
-  private def workspaceMarkerDescription(workspaceId: String): String =
-    s"workspace:$workspaceId"
+  private def conversationMode(conversation: ChatConversation): ConversationMode =
+    conversation.description match
+      case Some(desc)
+           if desc.startsWith(
+             "planner-session"
+           ) || desc.split("\\|").toList.exists(_.trim.equalsIgnoreCase("mode:plan")) =>
+        ConversationMode.Plan
+      case _ =>
+        ConversationMode.Chat
+
+  private def modeDescription(mode: ConversationMode, workspaceId: Option[String]): Option[String] =
+    (mode, workspaceId) match
+      case (ConversationMode.Plan, Some(ws)) => Some(s"mode:plan|workspace:$ws")
+      case (ConversationMode.Plan, None)     => Some("mode:plan")
+      case (ConversationMode.Chat, Some(ws)) => Some(s"workspace:$ws")
+      case (ConversationMode.Chat, None)     => None
 
   private def parseWorkspaceMarkerDescription(raw: Option[String]): Option[String] =
     raw.flatMap { description =>
       sanitizeString(description).flatMap { value =>
-        val Prefix = "workspace:"
-        if value.startsWith(Prefix) then sanitizeString(value.drop(Prefix.length))
-        else None
+        value
+          .split("\\|")
+          .toList
+          .collectFirst {
+            case segment if segment.trim.startsWith("workspace:") => segment.trim.stripPrefix("workspace:")
+          }
+          .flatMap(sanitizeString)
       }
     }
 
@@ -772,12 +1055,16 @@ final case class ChatControllerLive(
                          }
       workspaceById    = workspaces.map(ws => ws.id -> ws).toMap
       grouped          = conversations.foldLeft(Map.empty[String, List[ChatConversation]]) { (acc, conversation) =>
-                           val folderId =
+                           val descriptionWorkspace =
+                             conversationMode(conversation) match
+                               case ConversationMode.Plan => parseWorkspaceMarkerDescription(conversation.description)
+                               case ConversationMode.Chat => parseWorkspaceMarkerDescription(conversation.description)
+                           val folderId             =
                              sanitizeOptional(conversation.runId)
                                .flatMap(runIdToWorkspace.get)
-                               .orElse(parseWorkspaceMarkerDescription(conversation.description).filter(workspaceById.contains))
+                               .orElse(descriptionWorkspace.filter(workspaceById.contains))
                                .getOrElse("chat")
-                           val existing = acc.getOrElse(folderId, Nil)
+                           val existing             = acc.getOrElse(folderId, Nil)
                            acc.updated(folderId, conversation :: existing)
                          }
       workspaceFolders =
@@ -824,6 +1111,7 @@ final case class ChatControllerLive(
               title = sanitizeString(chat.title).getOrElse("Untitled chat"),
               href = s"/chat/$conversationId",
               active = currentConversationId.contains(conversationId),
+              isPlan = conversationMode(chat) == ConversationMode.Plan,
             )
           }
         Layout.ChatWorkspaceGroup(
@@ -1212,6 +1500,43 @@ final case class ChatControllerLive(
           .toMap
       }
       .mapError(err => PersistenceError.QueryFailed("parseForm", err.getMessage))
+
+  private def parseMultiForm(req: Request): IO[PersistenceError, Map[String, List[String]]] =
+    req.body.asString
+      .map { body =>
+        body
+          .split("&")
+          .toList
+          .flatMap {
+            _.split("=", 2).toList match
+              case key :: value :: Nil => Some(urlDecode(key) -> urlDecode(value))
+              case key :: Nil          => Some(urlDecode(key) -> "")
+              case _                   => None
+          }
+          .groupMap(_._1)(_._2)
+      }
+      .mapError(err => PersistenceError.QueryFailed("parseMultiForm", err.getMessage))
+
+  private def required(form: Map[String, List[String]], key: String): IO[PersistenceError, String] =
+    ZIO
+      .fromOption(optional(form, key))
+      .orElseFail(PersistenceError.QueryFailed("planner_form", s"Missing required field: $key"))
+
+  private def optional(form: Map[String, List[String]], key: String): Option[String] =
+    form.get(key).flatMap(_.headOption).map(_.trim).filter(_.nonEmpty)
+
+  private def values(form: Map[String, List[String]], key: String): List[String] =
+    form.getOrElse(key, Nil).map(_.trim)
+
+  private def splitCsv(raw: String): List[String] =
+    raw.split(",").toList.map(_.trim).filter(_.nonEmpty).distinct
+
+  private def boardRedirect(issueIds: List[String]): String =
+    val normalized = issueIds.map(_.trim).filter(_.nonEmpty).distinct
+    if normalized.isEmpty then "/board?mode=list"
+    else
+      val query = URLEncoder.encode(normalized.mkString(","), StandardCharsets.UTF_8)
+      s"/board?mode=list&plannerCreated=${normalized.size}&q=$query"
 
   private def urlDecode(value: String): String =
     URLDecoder.decode(value, StandardCharsets.UTF_8)

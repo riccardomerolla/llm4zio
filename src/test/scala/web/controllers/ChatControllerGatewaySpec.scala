@@ -24,6 +24,45 @@ import shared.web.StreamAbortRegistryLive
 
 object ChatControllerGatewaySpec extends ZIOSpecDefault:
 
+  private val stubPlannerAgentService: PlannerAgentService =
+    new PlannerAgentService:
+      override def startSession(
+        initialRequest: String,
+        workspaceId: Option[String],
+        createdBy: Option[String],
+      ): IO[PlannerAgentError, PlannerSessionStart] =
+        ZIO.fail(PlannerAgentError.IssueDraftInvalid("unused in test"))
+
+      override def regeneratePreview(conversationId: Long): IO[PlannerAgentError, PlannerPreviewState] =
+        ZIO.fail(PlannerAgentError.IssueDraftInvalid("unused in test"))
+
+      override def appendUserMessage(
+        conversationId: Long,
+        content: String,
+      ): IO[PlannerAgentError, PlannerPreviewState] =
+        ZIO.fail(PlannerAgentError.IssueDraftInvalid("unused in test"))
+
+      override def getPreview(conversationId: Long): IO[PlannerAgentError, PlannerPreviewState] =
+        ZIO.fail(PlannerAgentError.IssueDraftInvalid("unused in test"))
+
+      override def updatePreview(
+        conversationId: Long,
+        preview: PlannerPlanPreview,
+      ): IO[PlannerAgentError, PlannerPreviewState] =
+        ZIO.fail(PlannerAgentError.IssueDraftInvalid("unused in test"))
+
+      override def addBlankIssue(conversationId: Long): IO[PlannerAgentError, PlannerPreviewState] =
+        ZIO.fail(PlannerAgentError.IssueDraftInvalid("unused in test"))
+
+      override def removeIssue(
+        conversationId: Long,
+        draftId: String,
+      ): IO[PlannerAgentError, PlannerPreviewState] =
+        ZIO.fail(PlannerAgentError.IssueDraftInvalid("unused in test"))
+
+      override def confirmPlan(conversationId: Long): IO[PlannerAgentError, PlannerConfirmation] =
+        ZIO.fail(PlannerAgentError.IssueDraftInvalid("unused in test"))
+
   private def appLayer
     : ZLayer[Any, Any, ChatRepository & TaskRepository & GatewayService & ChannelRegistry & LlmService] =
     ZLayer.make[ChatRepository & TaskRepository & GatewayService & ChannelRegistry & LlmService](
@@ -157,12 +196,16 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
     override def getRun(id: String): IO[shared.errors.PersistenceError, Option[workspace.entity.WorkspaceRun]]  =
       ZIO.none
 
-  private def newConversation(chatRepository: ChatRepository): IO[PersistenceError, Long] =
+  private def newConversation(
+    chatRepository: ChatRepository,
+    description: Option[String] = None,
+  ): IO[PersistenceError, Long] =
     for
       now <- Clock.instant
       id  <- chatRepository.createConversation(
                ChatConversation(
                  title = "Gateway test",
+                 description = description,
                  createdAt = now,
                  updatedAt = now,
                )
@@ -388,6 +431,7 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
                        httpClient = stubHttpClient,
                        cliExecutor = stubCliExecutor,
                        workspaceRepository = stubWorkspaceRepo,
+                       plannerAgentService = stubPlannerAgentService,
                      )
         request    = Request.post(
                        s"/api/chat/$convId/messages",
@@ -433,6 +477,7 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
                        httpClient = stubHttpClient,
                        cliExecutor = stubCliExecutor,
                        workspaceRepository = stubWorkspaceRepo,
+                       plannerAgentService = stubPlannerAgentService,
                      )
         request    = Request.post(
                        s"/api/chat/$convId/messages",
@@ -485,6 +530,7 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
                             httpClient = stubHttpClient,
                             cliExecutor = stubCliExecutor,
                             workspaceRepository = stubWorkspaceRepo,
+                            plannerAgentService = stubPlannerAgentService,
                           )
         request         = Request.post(
                             s"/api/chat/$convId/messages",
@@ -522,6 +568,7 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
                        httpClient = stubHttpClient,
                        cliExecutor = stubCliExecutor,
                        workspaceRepository = stubWorkspaceRepo,
+                       plannerAgentService = stubPlannerAgentService,
                      )
         request    = Request.post(
                        s"/chat/$convId/messages",
@@ -589,6 +636,7 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
                        httpClient = stubHttpClient,
                        cliExecutor = stubCliExecutor,
                        workspaceRepository = stubWorkspaceRepo,
+                       plannerAgentService = stubPlannerAgentService,
                      )
         response  <- controller.routes.runZIO(Request.get("/api/sessions"))
         body      <- response.body.asString
@@ -626,6 +674,7 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
                        httpClient = stubHttpClient,
                        cliExecutor = stubCliExecutor,
                        workspaceRepository = stubWorkspaceRepo,
+                       plannerAgentService = stubPlannerAgentService,
                      )
         request    = Request.post(
                        s"/api/chat/$convId/messages",
@@ -644,6 +693,315 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
         body.contains("ok"),
         persisted.count(_.senderType == SenderType.User) == 1,
         persisted.count(_.senderType == SenderType.Assistant) == 1,
+      )).provideSomeLayer[Scope](appLayer)
+    },
+    test("POST /chat/new with mode=plan creates a planner session and redirects to unified chat") {
+      (for
+        chatRepo  <- ZIO.service[ChatRepository]
+        migrRepo  <- ZIO.service[TaskRepository]
+        llm       <- ZIO.service[LlmService]
+        gateway   <- ZIO.service[GatewayService]
+        registry  <- ZIO.service[ChannelRegistry]
+        abortReg  <- Ref.make(Map.empty[Long, UIO[Unit]]).map(StreamAbortRegistryLive.apply)
+        actHub    <- Ref.make(Set.empty[Queue[ActivityEvent]]).map(subs => ActivityHubLive(stubActivityRepo, subs))
+        toolReg   <- llm4zio.tools.ToolRegistry.make
+        startRef  <- Ref.make(List.empty[(String, Option[String])])
+        planner    = new PlannerAgentService:
+                       override def startSession(
+                         initialRequest: String,
+                         workspaceId: Option[String],
+                         createdBy: Option[String],
+                       ): IO[PlannerAgentError, PlannerSessionStart] =
+                         for
+                           _   <- startRef.update(_ :+ (initialRequest -> workspaceId))
+                           now <- Clock.instant
+                           id  <- chatRepo.createConversation(
+                                    ChatConversation(
+                                      title = "Planner: " + initialRequest,
+                                      description = Some("planner-session"),
+                                      createdAt = now,
+                                      updatedAt = now,
+                                    )
+                                  ).mapError(err =>
+                                    PlannerAgentError.PersistenceFailure("create_conversation", err.toString)
+                                  )
+                         yield PlannerSessionStart(id)
+                       override def regeneratePreview(conversationId: Long): IO[PlannerAgentError, PlannerPreviewState] =
+                         ZIO.fail(PlannerAgentError.PreviewNotFound(conversationId))
+                       override def appendUserMessage(
+                         conversationId: Long,
+                         content: String,
+                       ): IO[PlannerAgentError, PlannerPreviewState] =
+                         ZIO.fail(PlannerAgentError.PreviewNotFound(conversationId))
+                       override def getPreview(conversationId: Long): IO[PlannerAgentError, PlannerPreviewState]        =
+                         ZIO.fail(PlannerAgentError.PreviewNotFound(conversationId))
+                       override def updatePreview(
+                         conversationId: Long,
+                         preview: PlannerPlanPreview,
+                       ): IO[PlannerAgentError, PlannerPreviewState] =
+                         ZIO.fail(PlannerAgentError.PreviewNotFound(conversationId))
+                       override def addBlankIssue(conversationId: Long): IO[PlannerAgentError, PlannerPreviewState]     =
+                         ZIO.fail(PlannerAgentError.PreviewNotFound(conversationId))
+                       override def removeIssue(
+                         conversationId: Long,
+                         draftId: String,
+                       ): IO[PlannerAgentError, PlannerPreviewState] =
+                         ZIO.fail(PlannerAgentError.PreviewNotFound(conversationId))
+                       override def confirmPlan(conversationId: Long): IO[PlannerAgentError, PlannerConfirmation]       =
+                         ZIO.fail(PlannerAgentError.PreviewNotFound(conversationId))
+        controller = ChatControllerLive(
+                       chatRepository = chatRepo,
+                       llmService = llm,
+                       migrationRepository = migrRepo,
+                       issueAssignmentOrchestrator = testIssueAssignment,
+                       configResolver = testConfigResolver,
+                       gatewayService = gateway,
+                       channelRegistry = registry,
+                       streamAbortRegistry = abortReg,
+                       activityHub = actHub,
+                       toolRegistry = toolReg,
+                       httpClient = stubHttpClient,
+                       cliExecutor = stubCliExecutor,
+                       workspaceRepository = stubWorkspaceRepo,
+                       plannerAgentService = planner,
+                     )
+        response  <- controller.routes.runZIO(
+                       Request.post(
+                         "/chat/new",
+                         Body.fromString("content=Plan+the+migration&mode=plan&workspace_id=chat"),
+                       )
+                     )
+        location   = response.headers.header(Header.Location).map(_.renderedValue)
+        convId    <- ZIO
+                       .fromOption(location.flatMap(_.stripPrefix("/chat/").toLongOption))
+                       .orElseFail(PersistenceError.QueryFailed("location", "missing redirect id"))
+        stored    <- chatRepo.getConversation(convId)
+        starts    <- startRef.get
+      yield assertTrue(
+        response.status == Status.SeeOther,
+        location.contains(s"/chat/$convId"),
+        starts == List("Plan the migration" -> None),
+        stored.flatMap(_.description).contains("mode:plan"),
+      )).provideSomeLayer[Scope](appLayer)
+    },
+    test("POST /chat/:id/messages routes plan-mode conversations through PlannerAgentService") {
+      (for
+        chatRepo    <- ZIO.service[ChatRepository]
+        migrRepo    <- ZIO.service[TaskRepository]
+        llm         <- ZIO.service[LlmService]
+        gateway     <- ZIO.service[GatewayService]
+        registry    <- ZIO.service[ChannelRegistry]
+        convId      <- newConversation(chatRepo, description = Some("mode:plan"))
+        abortReg    <- Ref.make(Map.empty[Long, UIO[Unit]]).map(StreamAbortRegistryLive.apply)
+        actHub      <- Ref.make(Set.empty[Queue[ActivityEvent]]).map(subs => ActivityHubLive(stubActivityRepo, subs))
+        toolReg     <- llm4zio.tools.ToolRegistry.make
+        appendCalls <- Ref.make(List.empty[(Long, String)])
+        planner      = new PlannerAgentService:
+                         override def startSession(
+                           initialRequest: String,
+                           workspaceId: Option[String],
+                           createdBy: Option[String],
+                         ): IO[PlannerAgentError, PlannerSessionStart] =
+                           ZIO.fail(PlannerAgentError.IssueDraftInvalid("unused"))
+                         override def regeneratePreview(conversationId: Long): IO[PlannerAgentError, PlannerPreviewState] =
+                           ZIO.succeed(
+                             PlannerPreviewState(
+                               conversationId = conversationId,
+                               workspaceId = None,
+                               preview = PlannerPlanPreview("Generated", Nil),
+                               isGenerating = true,
+                             )
+                           )
+                         override def appendUserMessage(
+                           conversationId: Long,
+                           content: String,
+                         ): IO[PlannerAgentError, PlannerPreviewState] =
+                           for
+                             now <- Clock.instant
+                             _   <- appendCalls.update(_ :+ (conversationId -> content))
+                             _   <- chatRepo.addMessage(
+                                      ConversationEntry(
+                                        conversationId = conversationId.toString,
+                                        sender = "user",
+                                        senderType = SenderType.User,
+                                        content = content,
+                                        messageType = MessageType.Text,
+                                        createdAt = now,
+                                        updatedAt = now,
+                                      )
+                                    ).mapError(err =>
+                                      PlannerAgentError.PersistenceFailure("add_message", err.toString)
+                                    )
+                             out <- regeneratePreview(conversationId)
+                           yield out
+                         override def getPreview(conversationId: Long): IO[PlannerAgentError, PlannerPreviewState]        =
+                           regeneratePreview(conversationId)
+                         override def updatePreview(
+                           conversationId: Long,
+                           preview: PlannerPlanPreview,
+                         ): IO[PlannerAgentError, PlannerPreviewState] =
+                           regeneratePreview(conversationId)
+                         override def addBlankIssue(conversationId: Long): IO[PlannerAgentError, PlannerPreviewState]     =
+                           regeneratePreview(conversationId)
+                         override def removeIssue(
+                           conversationId: Long,
+                           draftId: String,
+                         ): IO[PlannerAgentError, PlannerPreviewState] =
+                           regeneratePreview(conversationId)
+                         override def confirmPlan(conversationId: Long): IO[PlannerAgentError, PlannerConfirmation]       =
+                           ZIO.succeed(PlannerConfirmation(conversationId, Nil))
+        controller   = ChatControllerLive(
+                         chatRepository = chatRepo,
+                         llmService = llm,
+                         migrationRepository = migrRepo,
+                         issueAssignmentOrchestrator = testIssueAssignment,
+                         configResolver = testConfigResolver,
+                         gatewayService = gateway,
+                         channelRegistry = registry,
+                         streamAbortRegistry = abortReg,
+                         activityHub = actHub,
+                         toolRegistry = toolReg,
+                         httpClient = stubHttpClient,
+                         cliExecutor = stubCliExecutor,
+                         workspaceRepository = stubWorkspaceRepo,
+                         plannerAgentService = planner,
+                       )
+        response    <- controller.routes.runZIO(
+                         Request.post(
+                           s"/chat/$convId/messages",
+                           Body.fromString("content=break+this+down&fragment=true"),
+                         )
+                       )
+        body        <- response.body.asString
+        calls       <- appendCalls.get
+        persisted   <- chatRepo.getMessages(convId)
+      yield assertTrue(
+        response.status == Status.Ok,
+        body.contains("break this down"),
+        calls == List(convId -> "break this down"),
+        persisted.count(_.senderType == SenderType.User) == 1,
+        persisted.count(_.senderType == SenderType.Assistant) == 0,
+      )).provideSomeLayer[Scope](appLayer)
+    },
+    test("planner POST actions redirect with SeeOther to GET routes") {
+      (for
+        chatRepo    <- ZIO.service[ChatRepository]
+        migrRepo    <- ZIO.service[TaskRepository]
+        llm         <- ZIO.service[LlmService]
+        gateway     <- ZIO.service[GatewayService]
+        registry    <- ZIO.service[ChannelRegistry]
+        convId      <- newConversation(chatRepo, description = Some("mode:plan"))
+        abortReg    <- Ref.make(Map.empty[Long, UIO[Unit]]).map(StreamAbortRegistryLive.apply)
+        actHub      <- Ref.make(Set.empty[Queue[ActivityEvent]]).map(subs => ActivityHubLive(stubActivityRepo, subs))
+        toolReg     <- llm4zio.tools.ToolRegistry.make
+        planner      = new PlannerAgentService:
+                         override def startSession(
+                           initialRequest: String,
+                           workspaceId: Option[String],
+                           createdBy: Option[String],
+                         ): IO[PlannerAgentError, PlannerSessionStart] =
+                           ZIO.fail(PlannerAgentError.IssueDraftInvalid("unused"))
+                         override def regeneratePreview(conversationId: Long): IO[PlannerAgentError, PlannerPreviewState] =
+                           ZIO.succeed(
+                             PlannerPreviewState(
+                               conversationId = conversationId,
+                               workspaceId = None,
+                               preview = PlannerPlanPreview("Generated", Nil),
+                             )
+                           )
+                         override def appendUserMessage(
+                           conversationId: Long,
+                           content: String,
+                         ): IO[PlannerAgentError, PlannerPreviewState] =
+                           regeneratePreview(conversationId)
+                         override def getPreview(conversationId: Long): IO[PlannerAgentError, PlannerPreviewState]        =
+                           regeneratePreview(conversationId)
+                         override def updatePreview(
+                           conversationId: Long,
+                           preview: PlannerPlanPreview,
+                         ): IO[PlannerAgentError, PlannerPreviewState] =
+                           regeneratePreview(conversationId)
+                         override def addBlankIssue(
+                           conversationId: Long
+                         ): IO[PlannerAgentError, PlannerPreviewState] =
+                           regeneratePreview(conversationId)
+                         override def removeIssue(
+                           conversationId: Long,
+                           draftId: String,
+                         ): IO[PlannerAgentError, PlannerPreviewState] =
+                           regeneratePreview(conversationId)
+                         override def confirmPlan(
+                           conversationId: Long
+                         ): IO[PlannerAgentError, PlannerConfirmation] =
+                           ZIO.succeed(PlannerConfirmation(conversationId, Nil))
+        controller   = ChatControllerLive(
+                         chatRepository = chatRepo,
+                         llmService = llm,
+                         migrationRepository = migrRepo,
+                         issueAssignmentOrchestrator = testIssueAssignment,
+                         configResolver = testConfigResolver,
+                         gatewayService = gateway,
+                         channelRegistry = registry,
+                         streamAbortRegistry = abortReg,
+                         activityHub = actHub,
+                         toolRegistry = toolReg,
+                         httpClient = stubHttpClient,
+                         cliExecutor = stubCliExecutor,
+                         workspaceRepository = stubWorkspaceRepo,
+                         plannerAgentService = planner,
+                       )
+        previewResp <- controller.routes.runZIO(
+                         Request.post(
+                           s"/chat/$convId/plan/preview",
+                           Body.fromString(
+                             "summary=Updated&draft_id=issue-1&included=true&title=Title&issue_type=task&priority=high&estimate=S&required_capabilities=scala&dependency_draft_ids=&description=Desc&acceptance_criteria=Done&prompt_template=Prompt&kaizen_skills=&proof_of_work_requirements="
+                           ),
+                         )
+                       )
+        confirmResp <- controller.routes.runZIO(Request.post(s"/chat/$convId/plan/confirm", Body.empty))
+        previewLoc   = previewResp.headers.header(Header.Location).map(_.renderedValue)
+        confirmLoc   = confirmResp.headers.header(Header.Location).map(_.renderedValue)
+      yield assertTrue(
+        previewResp.status == Status.SeeOther,
+        previewLoc.contains(s"/chat/$convId"),
+        confirmResp.status == Status.SeeOther,
+        confirmLoc.contains("/board?mode=list"),
+      )).provideSomeLayer[Scope](appLayer)
+    },
+    test("legacy planner urls redirect to unified chat routes") {
+      (for
+        chatRepo       <- ZIO.service[ChatRepository]
+        migrRepo       <- ZIO.service[TaskRepository]
+        llm            <- ZIO.service[LlmService]
+        gateway        <- ZIO.service[GatewayService]
+        registry       <- ZIO.service[ChannelRegistry]
+        convId         <- newConversation(chatRepo)
+        abortReg       <- Ref.make(Map.empty[Long, UIO[Unit]]).map(StreamAbortRegistryLive.apply)
+        actHub         <- Ref.make(Set.empty[Queue[ActivityEvent]]).map(subs => ActivityHubLive(stubActivityRepo, subs))
+        toolReg        <- llm4zio.tools.ToolRegistry.make
+        controller      = ChatControllerLive(
+                            chatRepository = chatRepo,
+                            llmService = llm,
+                            migrationRepository = migrRepo,
+                            issueAssignmentOrchestrator = testIssueAssignment,
+                            configResolver = testConfigResolver,
+                            gatewayService = gateway,
+                            channelRegistry = registry,
+                            streamAbortRegistry = abortReg,
+                            activityHub = actHub,
+                            toolRegistry = toolReg,
+                            httpClient = stubHttpClient,
+                            cliExecutor = stubCliExecutor,
+                            workspaceRepository = stubWorkspaceRepo,
+                            plannerAgentService = stubPlannerAgentService,
+                          )
+        rootRedirect   <- controller.routes.runZIO(Request.get("/planner"))
+        detailRedirect <- controller.routes.runZIO(Request.get(s"/planner/$convId"))
+      yield assertTrue(
+        rootRedirect.status == Status.TemporaryRedirect,
+        rootRedirect.headers.header(Header.Location).map(_.renderedValue).contains("/chat/new?mode=plan"),
+        detailRedirect.status == Status.TemporaryRedirect,
+        detailRedirect.headers.header(Header.Location).map(_.renderedValue).contains(s"/chat/$convId"),
       )).provideSomeLayer[Scope](appLayer)
     },
   ) @@ TestAspect.sequential @@ TestAspect.timeout(20.seconds)

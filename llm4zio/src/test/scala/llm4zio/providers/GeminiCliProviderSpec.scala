@@ -232,6 +232,39 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
         response <- provider.executeStructured[StructuredReply]("test prompt", Json.Obj())
       yield assertTrue(response.summary == "wrapped")
     },
+    test("executeStructured should parse uppercase fenced JSON from stream-json assistant chunks") {
+      final case class StructuredReply(summary: String) derives JsonCodec
+
+      val config   = LlmConfig(
+        provider = LlmProvider.GeminiCli,
+        model = "gemini-2.0-flash-exp",
+      )
+      val executor = new MockGeminiCliExecutor(
+        streamEvents = List(
+          GeminiCliStreamEvent.Message(
+            role = Some("assistant"),
+            content = Some("Here is the plan:\n```JSON\n"),
+            delta = true,
+          ),
+          GeminiCliStreamEvent.Message(
+            role = Some("assistant"),
+            content = Some("""{"summary":"uppercase-fence"}"""),
+            delta = true,
+          ),
+          GeminiCliStreamEvent.Message(role = Some("assistant"), content = Some("\n```"), delta = true),
+          GeminiCliStreamEvent.Result(
+            status = Some("success"),
+            errorMessage = None,
+            stats = None,
+          ),
+        )
+      )
+      val provider = GeminiCliProvider.make(config, executor)
+
+      for
+        response <- provider.executeStructured[StructuredReply]("test prompt", Json.Obj())
+      yield assertTrue(response.summary == "uppercase-fence")
+    },
     test("extractResponse returns final response from Gemini headless JSON") {
       val output =
         """{"response":"# Architecture Analysis\n\n## Recommended Improvements\nUse smaller modules.","stats":{"turns":1}}"""

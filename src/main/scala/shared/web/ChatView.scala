@@ -72,13 +72,70 @@ object ChatView:
             h1(cls := "text-2xl font-semibold text-white")("New chat"),
             p(cls := "mt-1 text-[11px] text-gray-400")("Pick a workspace and send your first message."),
           ),
-          div(cls := "rounded-lg border border-cyan-400/20 bg-cyan-500/10 p-3 text-[11px] text-cyan-100")(
-            span(cls := "font-semibold")("Need structured issue planning? "),
-            a(href := "/planner", cls := "underline decoration-cyan-300/60 underline-offset-2 hover:text-white")(
-              "Open the planner agent"
-            ),
-          ),
           form(action := "/chat/new", method := "post", cls := "space-y-3")(
+            input(`type` := "hidden", name := "mode", value := "chat"),
+            div(cls := "rounded-lg border border-white/10 bg-white/5 p-3")(
+              div(cls := "flex items-start justify-between gap-3")(
+                div(cls := "space-y-1")(
+                  p(cls := "text-[11px] font-semibold uppercase tracking-wide text-slate-300")("Conversation mode"),
+                  p(cls := "text-[11px] text-slate-400")(
+                    "Start a normal chat or open a plan session inside chat."
+                  ),
+                ),
+                div(
+                  cls                := "inline-flex rounded-full border border-white/10 bg-black/20 p-1 text-[11px] font-semibold text-slate-300",
+                  attr("role")       := "group",
+                  attr("aria-label") := "Conversation mode",
+                )(
+                  button(
+                    `type`               := "button",
+                    cls                  := "mode-toggle-btn rounded-full bg-indigo-600 px-3 py-1 text-white shadow-sm transition-colors duration-150",
+                    attr("data-mode")    := "chat",
+                    attr("aria-pressed") := "true",
+                    attr("onclick")      := """(function(button){
+                      var group = button.closest('[role=group]');
+                      var form = button.closest('form');
+                      if (!group || !form) return;
+                      var hidden = form.querySelector('input[name=mode]');
+                      if (!hidden) return;
+                      hidden.value = 'chat';
+                      group.querySelectorAll('[data-mode]').forEach(function(el) {
+                        var active = el.getAttribute('data-mode') === 'chat';
+                        el.classList.toggle('bg-indigo-600', active);
+                        el.classList.toggle('text-white', active);
+                        el.classList.toggle('shadow-sm', active);
+                        el.classList.toggle('text-slate-300', !active);
+                        el.classList.toggle('hover:text-white', !active);
+                        el.setAttribute('aria-pressed', String(active));
+                      });
+                    })(this)""",
+                  )("Chat"),
+                  button(
+                    `type`               := "button",
+                    cls                  := "mode-toggle-btn rounded-full px-3 py-1 transition-colors duration-150 text-slate-300 hover:text-white",
+                    attr("data-mode")    := "plan",
+                    attr("aria-pressed") := "false",
+                    attr("onclick")      := """(function(button){
+                      var group = button.closest('[role=group]');
+                      var form = button.closest('form');
+                      if (!group || !form) return;
+                      var hidden = form.querySelector('input[name=mode]');
+                      if (!hidden) return;
+                      hidden.value = 'plan';
+                      group.querySelectorAll('[data-mode]').forEach(function(el) {
+                        var active = el.getAttribute('data-mode') === 'plan';
+                        el.classList.toggle('bg-indigo-600', active);
+                        el.classList.toggle('text-white', active);
+                        el.classList.toggle('shadow-sm', active);
+                        el.classList.toggle('text-slate-300', !active);
+                        el.classList.toggle('hover:text-white', !active);
+                        el.setAttribute('aria-pressed', String(active));
+                      });
+                    })(this)""",
+                  )("Plan"),
+                ),
+              )
+            ),
             label(cls := "block text-[11px] font-semibold uppercase tracking-wide text-gray-400")(
               "Workspace",
               select(
@@ -127,6 +184,8 @@ object ChatView:
   ): String =
     val conversationId = sanitizeOptionalString(conversation.id).getOrElse("unknown")
     val description    = sanitizeOptionalString(conversation.description).flatMap(stripWorkspaceMarker)
+    val isPlanMode     = isPlanConversation(conversation)
+    val plannerState   = detailContext.plannerState
     val runControlId   = s"run-session-controls-$conversationId"
     val issuesHref     =
       sanitizeOptionalString(conversation.runId)
@@ -261,7 +320,7 @@ object ChatView:
             ),
             inlineTimelineEvents(detailContext, runSessionMeta),
             activityIndicator(conversationId),
-            runSessionMeta.fold[Frag](standardChatComposer(conversationId))(meta =>
+            runSessionMeta.fold[Frag](standardChatComposer(conversationId, isPlanMode))(meta =>
               runInteractionComposer(
                 conversationId = conversationId,
                 runControlId = runControlId,
@@ -275,13 +334,22 @@ object ChatView:
             attr("title")    := "Context",
             attr("width")    := "25rem",
           )(),
+          plannerState.fold[Frag](frag())(_ =>
+            tag("ab-side-panel")(
+              cls              := "chat-plan-dock",
+              attr("panel-id") := "plan-panel",
+              attr("title")    := "Plan Preview",
+              attr("width")    := "40rem",
+            )()
+          ),
         ),
       ),
+      plannerState.fold[Frag](frag())(_ => planPanelHeaderActionsTemplate(conversationId)),
       chatDetailStyles,
       runSessionMeta.fold[Frag](frag())(_ => gitPanelStyles),
       JsResources.markedScript,
       markdownRenderScript,
-      if detailContext.graphReports.nonEmpty then JsResources.mermaidScript else frag(),
+      if detailContext.graphReports.nonEmpty || plannerState.isDefined then JsResources.mermaidScript else frag(),
       tag("link")(
         attr("rel")  := "stylesheet",
         attr("href") := "https://cdn.jsdelivr.net/npm/highlight.js@11.11.1/styles/github-dark.min.css",
@@ -299,6 +367,13 @@ object ChatView:
         )
       ),
       if detailContext.graphReports.nonEmpty then graphPanelScript(conversationId) else frag(),
+      plannerState.fold[Frag](frag())(_ =>
+        frag(
+          planPanelOpenScript(conversationId),
+          planPanelHeaderActionsScript,
+          PlanPreviewComponents.mermaidInitScript,
+        )
+      ),
       runSessionMeta.fold[Frag](frag())(meta => gitPanelHtml(meta, conversationId)),
       runSessionMeta.fold[Frag](frag())(_ => gitPanelActivateScript(conversationId)),
     )
@@ -321,6 +396,7 @@ object ChatView:
               title = sanitizeString(chat.title).getOrElse("Untitled chat"),
               href = s"/chat/$conversationId",
               active = currentConversationId.contains(conversationId),
+              isPlan = isPlanConversation(chat),
               messageCount = chat.messages.length,
               createdAt = chat.updatedAt,
             )
@@ -686,6 +762,65 @@ object ChatView:
       )
     )
 
+  private def planPanelOpenScript(conversationId: String): Frag =
+    script(
+      raw(
+        s"""document.addEventListener('DOMContentLoaded', function () {
+           |  window.dispatchEvent(new CustomEvent('ab-panel-open', {
+           |    detail: {
+           |      panelId: 'plan-panel',
+           |      title: 'Plan Preview',
+           |      contentUrl: '/chat/$conversationId/plan-fragment'
+           |    }
+           |  }));
+           |  var syncActions = function () {
+           |    var target = document.getElementById('panel-plan-panel-actions');
+           |    var template = document.getElementById('plan-panel-header-actions-template');
+           |    if (!target || !template) return false;
+           |    target.innerHTML = template.innerHTML;
+           |    return true;
+           |  };
+           |  if (!syncActions()) {
+           |    var attempts = 0;
+           |    var timer = window.setInterval(function () {
+           |      attempts += 1;
+           |      if (syncActions() || attempts >= 20) window.clearInterval(timer);
+           |    }, 100);
+           |  }
+           |});
+           |""".stripMargin
+      )
+    )
+
+  private val planPanelHeaderActionsScript: Frag =
+    script(
+      raw(
+        """window.addEventListener('ab-panel-open', function (event) {
+          |  if (!event.detail || event.detail.panelId !== 'plan-panel') return;
+          |  var target = document.getElementById('panel-plan-panel-actions');
+          |  var template = document.getElementById('plan-panel-header-actions-template');
+          |  if (target && template) target.innerHTML = template.innerHTML;
+          |});
+          |""".stripMargin
+      )
+    )
+
+  private def planPanelHeaderActionsTemplate(conversationId: String): Frag =
+    div(id := "plan-panel-header-actions-template", cls := "hidden")(
+      form(action := s"/chat/$conversationId/plan/refresh", method := "post", cls := "inline-flex")(
+        button(
+          `type` := "submit",
+          cls    := "rounded border border-white/10 px-2.5 py-1 text-[11px] font-semibold text-slate-200 hover:bg-white/5",
+        )("Regenerate")
+      ),
+      form(action := s"/chat/$conversationId/plan/confirm", method := "post", cls := "ml-1 inline-flex")(
+        button(
+          `type` := "submit",
+          cls    := "rounded bg-emerald-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-emerald-500",
+        )("Create all")
+      ),
+    )
+
   private def activityIndicator(conversationId: String): Frag =
     div(
       id  := s"activity-indicator-$conversationId",
@@ -696,7 +831,7 @@ object ChatView:
       span(cls := "ml-auto animate-pulse text-gray-600")("\u25cf"),
     )
 
-  private def standardChatComposer(conversationId: String): Frag =
+  private def standardChatComposer(conversationId: String, isPlanMode: Boolean): Frag =
     div(
       cls := "sticky bottom-0 mt-2 rounded-xl bg-slate-900/98 ring-1 ring-white/10 backdrop-blur"
     )(
@@ -773,6 +908,33 @@ object ChatView:
           ),
           // Right: model selector + send + abort
           div(cls := "flex items-center gap-1.5")(
+            form(
+              method := "post",
+              action := s"/chat/$conversationId/plan/mode",
+              cls    := "m-0",
+            )(
+              input(`type` := "hidden", name := "mode", value := (if isPlanMode then "plan" else "chat")),
+              div(
+                cls                := "inline-flex rounded-full border border-white/10 bg-black/20 p-1 text-[10px] font-semibold text-slate-300",
+                attr("role")       := "group",
+                attr("aria-label") := "Conversation mode",
+              )(
+                button(
+                  `type`          := "submit",
+                  cls             := s"rounded-full px-2.5 py-1 transition-colors duration-150 ${
+                      if !isPlanMode then "bg-indigo-600 text-white shadow-sm" else "text-slate-300 hover:text-white"
+                    }",
+                  attr("onclick") := """this.form.querySelector('input[name=mode]').value='chat';""",
+                )("Chat"),
+                button(
+                  `type`          := "submit",
+                  cls             := s"rounded-full px-2.5 py-1 transition-colors duration-150 ${
+                      if isPlanMode then "bg-indigo-600 text-white shadow-sm" else "text-slate-300 hover:text-white"
+                    }",
+                  attr("onclick") := """this.form.querySelector('input[name=mode]').value='plan';""",
+                )("Plan"),
+              ),
+            ),
             tag("ab-badge-select")(
               attr("value")   := "claude-opus-4-6",
               attr("options") := """[{"value":"claude-opus-4-6","label":"Opus 4.6"},{"value":"claude-sonnet-4-6","label":"Sonnet 4.6"},{"value":"claude-haiku-4-5","label":"Haiku 4.5"}]""",
@@ -1195,6 +1357,14 @@ object ChatView:
         case _       => None
     catch
       case _: Throwable => None
+
+  private def isPlanConversation(conversation: ChatConversation): Boolean =
+    sanitizeOptionalString(conversation.description).exists { description =>
+      val normalized = description.trim
+      normalized.startsWith(
+        "planner-session"
+      ) || normalized.split("\\|").toList.exists(_.trim.equalsIgnoreCase("mode:plan"))
+    }
 
   private def stripWorkspaceMarker(value: String): Option[String] =
     val Prefix = "workspace:"

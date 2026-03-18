@@ -6,16 +6,14 @@ object LayoutSpec extends ZIOSpecDefault:
 
   def spec: Spec[Any, Nothing] =
     suite("Layout")(
-      test("sidebar contains OPERATE and CONFIGURE sections with Board, Planner, and Projects links") {
+      test("sidebar contains OPERATE and CONFIGURE sections with Board and Projects links") {
         val html = Layout.page("Test", "/board")()
         assertTrue(
           html.contains("Operate"),
           html.contains("Configure"),
           html.contains("/board"),
-          html.contains("/planner"),
           html.contains("/projects"),
           html.contains("Command Center"),
-          html.contains("Planner"),
           html.contains("Projects"),
           html.contains("Settings"),
           html.contains("Board"),
@@ -70,6 +68,34 @@ object LayoutSpec extends ZIOSpecDefault:
           html.contains("Load 2 more"),
           !html.contains("open=\"open\""),
           html.contains("Chat 12"),
+        )
+      },
+      test("workspace chat items render a Plan badge when flagged") {
+        val html = Layout
+          .chatWorkspacesTree(
+            Layout.ChatWorkspaceNav(
+              groups = List(
+                Layout.ChatWorkspaceGroup(
+                  id = "chat",
+                  label = "Chat",
+                  chats = List(
+                    Layout.ChatNavItem(
+                      conversationId = "c-plan",
+                      title = "Planner session",
+                      href = "/chat/1",
+                      active = false,
+                      isPlan = true,
+                    )
+                  ),
+                )
+              )
+            )
+          )
+          .render
+
+        assertTrue(
+          html.contains("Planner session"),
+          html.contains("Plan"),
         )
       },
     )

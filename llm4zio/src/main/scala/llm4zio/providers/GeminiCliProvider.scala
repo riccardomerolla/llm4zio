@@ -342,7 +342,7 @@ object GeminiCliProvider:
     (raw :: fencedSlices ::: balancedJson).map(_.trim).filter(_.nonEmpty).distinct
 
   private def extractJsonFromMarkdownFences(raw: String): List[String] =
-    val fencePattern = "(?s)```(?:json)?\\s*(.*?)\\s*```".r
+    val fencePattern = "(?is)```(?:[\\w.+-]+)?\\s*(.*?)\\s*```".r
     fencePattern
       .findAllMatchIn(raw)
       .flatMap { matched =>
@@ -514,25 +514,27 @@ object GeminiCliProvider:
 
       override def executeStructured[A: JsonCodec](prompt: String, schema: JsonSchema): IO[LlmError, A] =
         for
-          streamed <- executeStream(prompt)
-                        .runFold(new StringBuilder()) { (acc, chunk) =>
-                          if chunk.delta.nonEmpty then acc.append(chunk.delta) else acc
-                        }
-                        .map(_.result())
-          parsed   <-
-            ZIO
-              .fromOption(
-                jsonCandidates(streamed)
-                  .iterator
-                  .flatMap(candidate => candidate.fromJson[A].toOption)
-                  .nextOption()
+          streamed  <- executeStream(prompt)
+                         .runFold(new StringBuilder()) { (acc, chunk) =>
+                           if chunk.delta.nonEmpty then acc.append(chunk.delta) else acc
+                         }
+                         .map(_.result())
+          candidates = jsonCandidates(streamed)
+          parsed     = candidates.iterator
+                         .map(candidate => candidate -> candidate.fromJson[A])
+                         .collectFirst { case (_, Right(value)) => value }
+          parseError = candidates.iterator
+                         .map(_.fromJson[A])
+                         .collectFirst { case Left(error) => error }
+                         .orElse(streamed.fromJson[A].left.toOption)
+                         .getOrElse("no JSON candidate found")
+          parsed    <-
+            ZIO.fromOption(parsed).orElseFail(
+              LlmError.ParseError(
+                s"Failed to parse response as structured output: $parseError",
+                streamed,
               )
-              .orElseFail(
-                LlmError.ParseError(
-                  s"Failed to parse response as structured output: ${streamed.fromJson[A].left.getOrElse("no JSON candidate found")}",
-                  streamed,
-                )
-              )
+            )
         yield parsed
 
       override def isAvailable: UIO[Boolean] =
