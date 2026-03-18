@@ -11,25 +11,16 @@ import llm4zio.tools.{ AnyTool, JsonSchema }
 object TracingLoggingSpec extends ZIOSpecDefault:
 
   final private class SuccessService extends LlmService:
-    override def execute(prompt: String): IO[LlmError, LlmResponse] =
-      ZIO.succeed(LlmResponse(
+    override def executeStream(prompt: String): zio.stream.Stream[LlmError, LlmChunk] =
+      ZStream.succeed(LlmChunk(
         "ok",
+        finishReason = Some("stop"),
         usage = Some(TokenUsage(10, 5, 15)),
         metadata = Map("provider" -> "openai", "model" -> "gpt-4o"),
       ))
 
-    override def executeStream(prompt: String): zio.stream.Stream[LlmError, LlmChunk] =
-      ZStream.fromZIO(execute(prompt).map(r =>
-        LlmChunk(r.content, finishReason = Some("stop"), usage = r.usage, metadata = r.metadata)
-      ))
-
-    override def executeWithHistory(messages: List[Message]): IO[LlmError, LlmResponse] =
-      execute(messages.map(_.content).mkString("\n"))
-
     override def executeStreamWithHistory(messages: List[Message]): zio.stream.Stream[LlmError, LlmChunk] =
-      ZStream.fromZIO(executeWithHistory(messages).map(r =>
-        LlmChunk(r.content, finishReason = Some("stop"), usage = r.usage, metadata = r.metadata)
-      ))
+      ZStream.succeed(LlmChunk("ok", finishReason = Some("stop"), usage = Some(TokenUsage(10, 5, 15))))
 
     override def executeWithTools(prompt: String, tools: List[AnyTool]): IO[LlmError, ToolCallResponse] =
       ZIO.succeed(ToolCallResponse(content = Some("ok"), toolCalls = Nil, finishReason = "stop"))
@@ -40,17 +31,11 @@ object TracingLoggingSpec extends ZIOSpecDefault:
     override def isAvailable: UIO[Boolean] = ZIO.succeed(true)
 
   final private class FailingService extends LlmService:
-    override def execute(prompt: String): IO[LlmError, LlmResponse] =
-      ZIO.fail(LlmError.TimeoutError(2.seconds))
-
     override def executeStream(prompt: String): zio.stream.Stream[LlmError, LlmChunk] =
-      ZStream.fromZIO(execute(prompt).map(r => LlmChunk(r.content)))
-
-    override def executeWithHistory(messages: List[Message]): IO[LlmError, LlmResponse] =
-      execute(messages.map(_.content).mkString("\n"))
+      ZStream.fromZIO(ZIO.fail(LlmError.TimeoutError(2.seconds)))
 
     override def executeStreamWithHistory(messages: List[Message]): zio.stream.Stream[LlmError, LlmChunk] =
-      ZStream.fromZIO(executeWithHistory(messages).map(r => LlmChunk(r.content)))
+      ZStream.fromZIO(ZIO.fail(LlmError.TimeoutError(2.seconds)))
 
     override def executeWithTools(prompt: String, tools: List[AnyTool]): IO[LlmError, ToolCallResponse] =
       ZIO.fail(LlmError.TimeoutError(2.seconds))
@@ -86,7 +71,7 @@ object TracingLoggingSpec extends ZIOSpecDefault:
           sinkPair        <- StructuredLogSink.inMemory
           (sink, readLogs) = sinkPair
           observed         = ProductionLogging.observed(new SuccessService, tracing, metrics, sink)
-          _               <- observed.execute("SELECT CUSTOMER")
+          _               <- Streaming.collect(observed.executeStream("SELECT CUSTOMER"))
           logs            <- readLogs
           spans           <- tracing.recordedSpans
           snapshot        <- metrics.snapshot
@@ -109,7 +94,7 @@ object TracingLoggingSpec extends ZIOSpecDefault:
           sinkPair        <- StructuredLogSink.inMemory
           (sink, readLogs) = sinkPair
           observed         = ProductionLogging.observed(new FailingService, tracing, metrics, sink)
-          _               <- observed.execute("FAIL").either
+          _               <- Streaming.collect(observed.executeStream("FAIL")).either
           logs            <- readLogs
           snapshot        <- metrics.snapshot
         yield assertTrue(

@@ -10,19 +10,9 @@ import llm4zio.tools.{ AnyTool, JsonSchema }
 object GeminiApiProvider:
   def make(config: LlmConfig, httpClient: HttpClient): LlmService =
     new LlmService:
-      override def execute(prompt: String): IO[LlmError, LlmResponse] =
-        executeRequest(prompt, None)
-
       override def executeStream(prompt: String): ZStream[Any, LlmError, LlmChunk] =
         val contents = List(GeminiContent(parts = List(GeminiPart(text = Some(prompt)))))
         executeStreamWithContents(contents)
-
-      override def executeWithHistory(messages: List[Message]): IO[LlmError, LlmResponse] =
-        // Convert messages to Gemini content format
-        val contents = messages.map { msg =>
-          GeminiContent(parts = List(GeminiPart(text = Some(msg.content))))
-        }
-        executeRequestWithContents(contents, None)
 
       override def executeStreamWithHistory(messages: List[Message]): ZStream[Any, LlmError, LlmChunk] =
         val contents = messages.map { msg =>
@@ -94,7 +84,7 @@ object GeminiApiProvider:
         yield parsed
 
       override def isAvailable: UIO[Boolean] =
-        execute("health check").fold(_ => false, _ => true)
+        llm4zio.core.Streaming.collect(executeStream("health check")).fold(_ => false, _ => true)
 
       private def executeRequest(
         prompt: String,

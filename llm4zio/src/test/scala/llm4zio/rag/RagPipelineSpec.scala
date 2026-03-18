@@ -10,13 +10,13 @@ import llm4zio.core.*
 object RagPipelineSpec extends ZIOSpecDefault:
 
   final private class MockLlmService extends LlmService:
-    override def execute(prompt: String): IO[LlmError, LlmResponse] =
+    private def execute(prompt: String): IO[LlmError, LlmResponse] =
       ZIO.succeed(LlmResponse(content = s"ANSWER\n$prompt"))
 
     override def executeStream(prompt: String): zio.stream.Stream[LlmError, LlmChunk] =
       ZStream.fromZIO(execute(prompt).map(response => LlmChunk(response.content, finishReason = Some("stop"))))
 
-    override def executeWithHistory(messages: List[Message]): IO[LlmError, LlmResponse] =
+    private def executeWithHistory(messages: List[Message]): IO[LlmError, LlmResponse] =
       ZIO.succeed(LlmResponse(content = messages.map(_.content).mkString("\n")))
 
     override def executeStreamWithHistory(messages: List[Message]): zio.stream.Stream[LlmError, LlmChunk] =

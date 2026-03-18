@@ -61,20 +61,19 @@ object ProductionLogging:
     config: LoggingConfig = LoggingConfig(),
   ): LlmService =
     new LlmService:
-      override def execute(prompt: String): IO[LlmError, LlmResponse] =
-        runObserved(
-          operation = "execute",
-          prompt = prompt,
-          providerHint = None,
-          modelHint = None,
-          agent = None,
-          runId = None,
-          step = None,
-          executeEffect = service.execute(prompt),
-        )
-
       override def executeStream(prompt: String): ZStream[Any, LlmError, LlmChunk] =
-        ZStream.fromZIO(execute(prompt)).map(response =>
+        ZStream.fromZIO(
+          runObserved(
+            operation = "executeStream",
+            prompt = prompt,
+            providerHint = None,
+            modelHint = None,
+            agent = None,
+            runId = None,
+            step = None,
+            executeEffect = Streaming.collect(service.executeStream(prompt)),
+          )
+        ).map(response =>
           LlmChunk(
             delta = response.content,
             finishReason = Some("stop"),
@@ -83,21 +82,20 @@ object ProductionLogging:
           )
         )
 
-      override def executeWithHistory(messages: List[Message]): IO[LlmError, LlmResponse] =
-        val prompt = messages.map(message => s"${message.role.toString}: ${message.content}").mkString("\n")
-        runObserved(
-          operation = "executeWithHistory",
-          prompt = prompt,
-          providerHint = None,
-          modelHint = None,
-          agent = None,
-          runId = None,
-          step = None,
-          executeEffect = service.executeWithHistory(messages),
-        )
-
       override def executeStreamWithHistory(messages: List[Message]): ZStream[Any, LlmError, LlmChunk] =
-        ZStream.fromZIO(executeWithHistory(messages)).map(response =>
+        val prompt = messages.map(message => s"${message.role.toString}: ${message.content}").mkString("\n")
+        ZStream.fromZIO(
+          runObserved(
+            operation = "executeStreamWithHistory",
+            prompt = prompt,
+            providerHint = None,
+            modelHint = None,
+            agent = None,
+            runId = None,
+            step = None,
+            executeEffect = Streaming.collect(service.executeStreamWithHistory(messages)),
+          )
+        ).map(response =>
           LlmChunk(
             delta = response.content,
             finishReason = Some("stop"),

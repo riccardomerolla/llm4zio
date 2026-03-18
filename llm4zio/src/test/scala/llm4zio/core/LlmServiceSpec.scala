@@ -10,17 +10,11 @@ import llm4zio.tools.{ AnyTool, JsonSchema }
 object LlmServiceSpec extends ZIOSpecDefault:
   // Mock implementation for testing
   class MockLlmService extends LlmService:
-    override def execute(prompt: String): IO[LlmError, LlmResponse] =
-      ZIO.succeed(LlmResponse(content = s"Response to: $prompt"))
-
     override def executeStream(prompt: String): Stream[LlmError, LlmChunk] =
       ZStream(
         LlmChunk(delta = "Hello", finishReason = None),
         LlmChunk(delta = " world", finishReason = Some("stop")),
       )
-
-    override def executeWithHistory(messages: List[Message]): IO[LlmError, LlmResponse] =
-      ZIO.succeed(LlmResponse(content = s"Response to ${messages.length} messages"))
 
     override def executeStreamWithHistory(messages: List[Message]): Stream[LlmError, LlmChunk] =
       ZStream(LlmChunk(delta = "Stream response", finishReason = Some("stop")))
@@ -38,8 +32,8 @@ object LlmServiceSpec extends ZIOSpecDefault:
     test("execute should return response") {
       val service = new MockLlmService()
       for {
-        response <- service.execute("test prompt")
-      } yield assertTrue(response.content == "Response to: test prompt")
+        response <- Streaming.collect(service.executeStream("test prompt"))
+      } yield assertTrue(response.content == "Hello world")
     },
     test("executeStream should return chunks") {
       val service = new MockLlmService()
@@ -58,8 +52,8 @@ object LlmServiceSpec extends ZIOSpecDefault:
         Message(MessageRole.Assistant, "Hi there"),
       )
       for {
-        response <- service.executeWithHistory(messages)
-      } yield assertTrue(response.content.contains("2 messages"))
+        response <- Streaming.collect(service.executeStreamWithHistory(messages))
+      } yield assertTrue(response.content.contains("Stream response"))
     },
     test("isAvailable should return true for mock") {
       val service = new MockLlmService()
@@ -69,7 +63,7 @@ object LlmServiceSpec extends ZIOSpecDefault:
     },
     test("ZIO service accessors should work") {
       for {
-        response <- LlmService.execute("test")
+        response <- ZIO.serviceWithZIO[LlmService](svc => Streaming.collect(svc.executeStream("test")))
       } yield assertTrue(response.content.nonEmpty)
     }.provide(ZLayer.succeed[LlmService](new MockLlmService())),
   )

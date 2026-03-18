@@ -229,7 +229,7 @@ object MultiTurnInteractions:
     maxAttempts: Int,
   ): IO[LlmError, A] =
     for
-      response <- llmService.execute(prompt)
+      response <- Streaming.collect(llmService.executeStream(prompt))
       parsed   <- ZIO.fromEither(parse(response.content)).mapError { parseError =>
                     LlmError.ParseError(parseError, response.content)
                   }

@@ -268,9 +268,9 @@ object IssueControllerSpec extends ZIOSpecDefault:
       ZIO.succeed(AIProviderConfig())
 
   private object StubLlmService extends LlmService:
-    override def execute(prompt: String): IO[LlmError, LlmResponse]                                     = ZIO.dieMessage("unused")
+    def execute(prompt: String): IO[LlmError, LlmResponse]                                              = ZIO.dieMessage("unused")
     override def executeStream(prompt: String): ZStream[Any, LlmError, LlmChunk]                        = ZStream.dieMessage("unused")
-    override def executeWithHistory(messages: List[Message]): IO[LlmError, LlmResponse]                 = ZIO.dieMessage("unused")
+    def executeWithHistory(messages: List[Message]): IO[LlmError, LlmResponse]                          = ZIO.dieMessage("unused")
     override def executeStreamWithHistory(messages: List[Message]): ZStream[Any, LlmError, LlmChunk]    =
       ZStream.dieMessage("unused")
     override def executeWithTools(prompt: String, tools: List[AnyTool]): IO[LlmError, ToolCallResponse] =

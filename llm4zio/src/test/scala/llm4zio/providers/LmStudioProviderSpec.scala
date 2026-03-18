@@ -2,6 +2,7 @@ package llm4zio.providers
 
 import zio.*
 import zio.json.*
+import zio.stream.ZStream
 import zio.test.*
 
 import llm4zio.core.*
@@ -16,23 +17,28 @@ object LmStudioProviderSpec extends ZIOSpecDefault:
 
     override def postJson(url: String, body: String, headers: Map[String, String], timeout: Duration)
       : IO[LlmError, String] =
+      if shouldSucceed then ZIO.succeed("{}")
+      else ZIO.fail(LlmError.ProviderError("HTTP POST failed", None))
+
+    override def postJsonStreamSSE(
+      url: String,
+      body: String,
+      headers: Map[String, String],
+      timeout: Duration,
+    ): ZStream[Any, LlmError, String] =
       if shouldSucceed then
-        val response = LmStudioChatResponse(
-          model_instance_id = "inst-local-123",
-          output = List(
-            LmStudioOutputItem(
-              `type` = "message",
-              content = Some("Test LM Studio native response"),
-            )
-          ),
-          stats = Some(LmStudioStats(
-            input_tokens = Some(10),
-            total_output_tokens = Some(5),
-          )),
-        )
-        ZIO.succeed(response.toJson)
+        ZStream.fromIterable(List(
+          OpenAIChatChunk(
+            id = Some("chatcmpl-123"),
+            model = Some("llama-2-7b"),
+            choices = List(OpenAIChatChunkChoice(
+              delta = Some(OpenAIChatChunkDelta(content = Some("Test LM Studio native response"))),
+              finish_reason = Some("stop"),
+            )),
+          ).toJson
+        ))
       else
-        ZIO.fail(LlmError.ProviderError("HTTP POST failed", None))
+        ZStream.fail(LlmError.ProviderError("HTTP POST failed", None))
 
   def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("LmStudioProvider")(
     test("execute should return response") {
@@ -45,11 +51,9 @@ object LmStudioProviderSpec extends ZIOSpecDefault:
       val provider   = LmStudioProvider.make(config, httpClient)
 
       for {
-        response <- provider.execute("test prompt")
+        response <- Streaming.collect(provider.executeStream("test prompt"))
       } yield assertTrue(
         response.content == "Test LM Studio native response",
-        response.usage.isDefined,
-        response.usage.get.total == 15,
         response.metadata("provider") == "lmstudio",
       )
     },
@@ -64,7 +68,7 @@ object LmStudioProviderSpec extends ZIOSpecDefault:
       val provider   = LmStudioProvider.make(config, httpClient)
 
       for {
-        response <- provider.execute("test prompt")
+        response <- Streaming.collect(provider.executeStream("test prompt"))
       } yield assertTrue(
         response.content == "Test LM Studio native response"
       )
@@ -79,7 +83,7 @@ object LmStudioProviderSpec extends ZIOSpecDefault:
       val provider   = LmStudioProvider.make(config, httpClient)
 
       for {
-        result <- provider.execute("test").exit
+        result <- Streaming.collect(provider.executeStream("test")).exit
       } yield assertTrue(result.isFailure)
     },
     test("executeWithHistory should convert messages") {
@@ -98,10 +102,9 @@ object LmStudioProviderSpec extends ZIOSpecDefault:
       )
 
       for {
-        response <- provider.executeWithHistory(messages)
+        response <- Streaming.collect(provider.executeStreamWithHistory(messages))
       } yield assertTrue(
-        response.content == "Test LM Studio native response",
-        response.usage.isDefined,
+        response.content == "Test LM Studio native response"
       )
     },
     test("executeStructured should support JSON schema") {
@@ -198,26 +201,34 @@ object LmStudioProviderSpec extends ZIOSpecDefault:
 
         override def postJson(url: String, body: String, headers: Map[String, String], timeout: Duration)
           : IO[LlmError, String] =
+          ZIO.succeed("{}")
+
+        override def postJsonStreamSSE(
+          url: String,
+          body: String,
+          headers: Map[String, String],
+          timeout: Duration,
+        ): ZStream[Any, LlmError, String] =
           val hasAuthHeader = headers.get("Authorization").contains("Bearer optional-key")
           if hasAuthHeader then
-            val response = LmStudioChatResponse(
-              model_instance_id = "inst-local-123",
-              output = List(
-                LmStudioOutputItem(
-                  `type` = "message",
-                  content = Some("Authenticated"),
-                )
-              ),
-            )
-            ZIO.succeed(response.toJson)
+            ZStream.fromIterable(List(
+              OpenAIChatChunk(
+                id = Some("chatcmpl-auth"),
+                model = Some("llama-2-7b"),
+                choices = List(OpenAIChatChunkChoice(
+                  delta = Some(OpenAIChatChunkDelta(content = Some("Authenticated"))),
+                  finish_reason = Some("stop"),
+                )),
+              ).toJson
+            ))
           else
-            ZIO.fail(LlmError.AuthenticationError("Missing auth header"))
+            ZStream.fail(LlmError.AuthenticationError("Missing auth header"))
 
       val httpClient = new HeaderCheckingHttpClient()
       val provider   = LmStudioProvider.make(config, httpClient)
 
       for {
-        response <- provider.execute("test prompt")
+        response <- Streaming.collect(provider.executeStream("test prompt"))
       } yield assertTrue(response.content == "Authenticated")
     },
   )

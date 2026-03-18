@@ -15,14 +15,10 @@ case class ToolCallResponse(
 ) derives JsonCodec
 
 trait LlmService:
-  // Basic execution
-  def execute(prompt: String): IO[LlmError, LlmResponse]
-
   // Streaming primitives
   def executeStream(prompt: String): Stream[LlmError, LlmChunk]
 
   // Conversation support
-  def executeWithHistory(messages: List[Message]): IO[LlmError, LlmResponse]
   def executeStreamWithHistory(messages: List[Message]): Stream[LlmError, LlmChunk]
 
   // Tool calling
@@ -36,14 +32,8 @@ trait LlmService:
 
 object LlmService:
   // ZIO service accessors
-  def execute(prompt: String): ZIO[LlmService, LlmError, LlmResponse] =
-    ZIO.serviceWithZIO[LlmService](_.execute(prompt))
-
   def executeStream(prompt: String): ZStream[LlmService, LlmError, LlmChunk] =
     ZStream.serviceWithStream[LlmService](_.executeStream(prompt))
-
-  def executeWithHistory(messages: List[Message]): ZIO[LlmService, LlmError, LlmResponse] =
-    ZIO.serviceWithZIO[LlmService](_.executeWithHistory(messages))
 
   def executeStreamWithHistory(messages: List[Message]): ZStream[LlmService, LlmError, LlmChunk] =
     ZStream.serviceWithStream[LlmService](_.executeStreamWithHistory(messages))
@@ -79,14 +69,8 @@ object LlmService:
 
         private val provider = buildProvider(config)
 
-        override def execute(prompt: String): IO[LlmError, LlmResponse] =
-          provider.execute(prompt)
-
         override def executeStream(prompt: String): Stream[LlmError, LlmChunk] =
           provider.executeStream(prompt)
-
-        override def executeWithHistory(messages: List[Message]): IO[LlmError, LlmResponse] =
-          provider.executeWithHistory(messages)
 
         override def executeStreamWithHistory(messages: List[Message]): Stream[LlmError, LlmChunk] =
           provider.executeStreamWithHistory(messages)

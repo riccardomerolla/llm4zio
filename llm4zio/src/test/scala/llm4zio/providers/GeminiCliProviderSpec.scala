@@ -40,11 +40,20 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
         provider = LlmProvider.GeminiCli,
         model = "gemini-2.0-flash-exp",
       )
-      val executor = new MockGeminiCliExecutor()
+      val executor = new MockGeminiCliExecutor(
+        streamEvents = List(
+          GeminiCliStreamEvent.Message(
+            role = Some("assistant"),
+            content = Some("Response to: test prompt"),
+            delta = true,
+          ),
+          GeminiCliStreamEvent.Result(status = Some("success"), errorMessage = None, stats = None),
+        )
+      )
       val provider = GeminiCliProvider.make(config, executor)
 
       for {
-        response <- provider.execute("test prompt")
+        response <- Streaming.collect(provider.executeStream("test prompt"))
       } yield assertTrue(
         response.content.contains("Response to: test prompt")
       )
@@ -82,7 +91,7 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
       val provider = GeminiCliProvider.make(config, executor)
 
       for {
-        result <- provider.execute("test").exit
+        result <- Streaming.collect(provider.executeStream("test")).exit
       } yield assertTrue(result.isFailure)
     },
     test("executeStream should emit assistant chunks from Gemini stream-json events and ignore non-json output") {

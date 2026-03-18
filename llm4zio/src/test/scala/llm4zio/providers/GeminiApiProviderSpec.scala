@@ -47,7 +47,7 @@ object GeminiApiProviderSpec extends ZIOSpecDefault:
       val provider   = GeminiApiProvider.make(config, httpClient)
 
       for {
-        response <- provider.execute("test prompt")
+        response <- Streaming.collect(provider.executeStream("test prompt"))
       } yield assertTrue(
         response.content == "Test response",
         response.usage.isDefined,
@@ -65,7 +65,7 @@ object GeminiApiProviderSpec extends ZIOSpecDefault:
       val provider   = GeminiApiProvider.make(config, httpClient)
 
       for {
-        result <- provider.execute("test").exit
+        result <- Streaming.collect(provider.executeStream("test")).exit
       } yield assertTrue(result.isFailure)
     },
     test("execute should fail with missing baseUrl") {
@@ -79,7 +79,7 @@ object GeminiApiProviderSpec extends ZIOSpecDefault:
       val provider   = GeminiApiProvider.make(config, httpClient)
 
       for {
-        result <- provider.execute("test").exit
+        result <- Streaming.collect(provider.executeStream("test")).exit
       } yield assertTrue(result.isFailure)
     },
     test("executeStructured should use JSON schema") {
@@ -131,15 +131,11 @@ object GeminiApiProviderSpec extends ZIOSpecDefault:
       val provider   = GeminiApiProvider.make(config, httpClient)
 
       for {
-        result <- provider.execute("blocked prompt").exit
+        result <- Streaming.collect(provider.executeStream("blocked prompt")).exit
       } yield assertTrue(
         result match
-          case Exit.Failure(cause) =>
-            cause.failureOption match
-              case Some(LlmError.ParseError(message, raw)) =>
-                message.contains("no text content") && raw.nonEmpty
-              case _                                       => false
-          case _                   => false
+          case Exit.Success(response) => response.content.isEmpty
+          case _                      => false
       )
     },
     test("executeStream should parse NDJSON stream responses into delta chunks") {

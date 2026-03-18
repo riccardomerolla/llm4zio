@@ -2,6 +2,7 @@ package llm4zio.providers
 
 import zio.*
 import zio.json.*
+import zio.stream.ZStream
 import zio.test.*
 
 import llm4zio.core.*
@@ -25,28 +26,38 @@ object OllamaProviderSpec extends ZIOSpecDefault:
 
     override def postJson(url: String, body: String, headers: Map[String, String], timeout: Duration)
       : IO[LlmError, String] =
+      if shouldSucceed then ZIO.succeed("{}")
+      else ZIO.fail(LlmError.ProviderError("HTTP POST failed", None))
+
+    override def postJsonStream(
+      url: String,
+      body: String,
+      headers: Map[String, String],
+      timeout: Duration,
+    ): ZStream[Any, LlmError, String] =
       if shouldSucceed then
-        // Check if it's a chat or generate request based on URL
         if url.endsWith("/api/chat") then
-          val response = OllamaChatResponse(
-            model = "llama2",
-            message = OllamaMessage(role = "assistant", content = "Test chat response"),
-            done = true,
-            prompt_eval_count = Some(10),
-            eval_count = Some(5),
+          ZStream.succeed(
+            OllamaChatResponse(
+              model = "llama2",
+              message = OllamaMessage(role = "assistant", content = "Test chat response"),
+              done = true,
+              prompt_eval_count = Some(10),
+              eval_count = Some(5),
+            ).toJson
           )
-          ZIO.succeed(response.toJson)
         else
-          val response = OllamaGenerateResponse(
-            model = "llama2",
-            response = "Test generate response",
-            done = true,
-            prompt_eval_count = Some(10),
-            eval_count = Some(5),
+          ZStream.succeed(
+            OllamaGenerateResponse(
+              model = "llama2",
+              response = "Test generate response",
+              done = true,
+              prompt_eval_count = Some(10),
+              eval_count = Some(5),
+            ).toJson
           )
-          ZIO.succeed(response.toJson)
       else
-        ZIO.fail(LlmError.ProviderError("HTTP POST failed", None))
+        ZStream.fail(LlmError.ProviderError("HTTP POST failed", None))
 
   def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("OllamaProvider")(
     test("execute should return response") {
@@ -59,7 +70,7 @@ object OllamaProviderSpec extends ZIOSpecDefault:
       val provider   = OllamaProvider.make(config, httpClient)
 
       for {
-        response <- provider.execute("test prompt")
+        response <- Streaming.collect(provider.executeStream("test prompt"))
       } yield assertTrue(
         response.content == "Test generate response",
         response.usage.isDefined,
@@ -76,7 +87,7 @@ object OllamaProviderSpec extends ZIOSpecDefault:
       val provider   = OllamaProvider.make(config, httpClient)
 
       for {
-        result <- provider.execute("test").exit
+        result <- Streaming.collect(provider.executeStream("test")).exit
       } yield assertTrue(result.isFailure)
     },
     test("executeWithHistory should convert messages and use chat endpoint") {
@@ -95,7 +106,7 @@ object OllamaProviderSpec extends ZIOSpecDefault:
       )
 
       for {
-        response <- provider.executeWithHistory(messages)
+        response <- Streaming.collect(provider.executeStreamWithHistory(messages))
       } yield assertTrue(
         response.content == "Test chat response",
         response.usage.isDefined,
@@ -122,6 +133,20 @@ object OllamaProviderSpec extends ZIOSpecDefault:
             done = true,
           )
           ZIO.succeed(response.toJson)
+
+        override def postJsonStream(
+          url: String,
+          body: String,
+          headers: Map[String, String],
+          timeout: Duration,
+        ): ZStream[Any, LlmError, String] =
+          ZStream.succeed(
+            OllamaGenerateResponse(
+              model = "llama2",
+              response = """{"name":"John","age":30}""",
+              done = true,
+            ).toJson
+          )
 
       val httpClient = new JsonMockHttpClient()
       val provider   = OllamaProvider.make(config, httpClient)

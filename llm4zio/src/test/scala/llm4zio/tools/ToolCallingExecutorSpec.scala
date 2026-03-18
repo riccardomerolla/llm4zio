@@ -14,13 +14,13 @@ object ToolCallingExecutorSpec extends ZIOSpecDefault:
   final private class LoopMockService extends LlmService:
     private val calls = new AtomicInteger(0)
 
-    override def execute(prompt: String): IO[LlmError, LlmResponse] =
+    private def execute(prompt: String): IO[LlmError, LlmResponse] =
       ZIO.succeed(LlmResponse(prompt))
 
     override def executeStream(prompt: String): zio.stream.Stream[LlmError, LlmChunk] =
       ZStream.fromZIO(execute(prompt).map(r => LlmChunk(r.content, finishReason = Some("stop"))))
 
-    override def executeWithHistory(messages: List[Message]): IO[LlmError, LlmResponse] =
+    private def executeWithHistory(messages: List[Message]): IO[LlmError, LlmResponse] =
       ZIO.succeed(LlmResponse(messages.map(_.content).mkString("\n")))
 
     override def executeStreamWithHistory(messages: List[Message]): zio.stream.Stream[LlmError, LlmChunk] =

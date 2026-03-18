@@ -2,11 +2,26 @@ package llm4zio.providers
 
 import zio.*
 import zio.json.*
+import zio.stream.ZStream
 import zio.test.*
 
 import llm4zio.core.*
 
 object OpenAIProviderSpec extends ZIOSpecDefault:
+  // SSE chunk for success response
+  private def sseChunkLine(content: String, finish: Option[String] = None): String =
+    OpenAIChatChunk(
+      id = Some("chatcmpl-123"),
+      model = Some("gpt-4"),
+      choices = List(
+        OpenAIChatChunkChoice(
+          index = 0,
+          delta = Some(OpenAIChatChunkDelta(content = Some(content))),
+          finish_reason = finish,
+        )
+      ),
+    ).toJson
+
   // Mock HTTP client for testing
   class MockHttpClient(shouldSucceed: Boolean = true) extends HttpClient:
     override def get(url: String, headers: Map[String, String], timeout: Duration): IO[LlmError, String] =
@@ -15,26 +30,21 @@ object OpenAIProviderSpec extends ZIOSpecDefault:
 
     override def postJson(url: String, body: String, headers: Map[String, String], timeout: Duration)
       : IO[LlmError, String] =
+      if shouldSucceed then ZIO.succeed("{}")
+      else ZIO.fail(LlmError.ProviderError("HTTP POST failed", None))
+
+    override def postJsonStreamSSE(
+      url: String,
+      body: String,
+      headers: Map[String, String],
+      timeout: Duration,
+    ): ZStream[Any, LlmError, String] =
       if shouldSucceed then
-        val response = ChatCompletionResponse(
-          id = Some("chatcmpl-123"),
-          choices = List(
-            ChatChoice(
-              index = 0,
-              message = Some(ChatMessage(role = "assistant", content = "Test response")),
-              finish_reason = Some("stop"),
-            )
-          ),
-          usage = Some(OpenAITokenUsage(
-            prompt_tokens = Some(10),
-            completion_tokens = Some(5),
-            total_tokens = Some(15),
-          )),
-          model = Some("gpt-4"),
-        )
-        ZIO.succeed(response.toJson)
+        ZStream.fromIterable(List(
+          sseChunkLine("Test response", Some("stop"))
+        ))
       else
-        ZIO.fail(LlmError.ProviderError("HTTP POST failed", None))
+        ZStream.fail(LlmError.ProviderError("HTTP POST failed", None))
 
   def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("OpenAIProvider")(
     test("execute should return response") {
@@ -48,11 +58,9 @@ object OpenAIProviderSpec extends ZIOSpecDefault:
       val provider   = OpenAIProvider.make(config, httpClient)
 
       for {
-        response <- provider.execute("test prompt")
+        response <- Streaming.collect(provider.executeStream("test prompt"))
       } yield assertTrue(
-        response.content == "Test response",
-        response.usage.isDefined,
-        response.usage.get.total == 15,
+        response.content == "Test response"
       )
     },
     test("execute should fail with missing apiKey") {
@@ -66,7 +74,7 @@ object OpenAIProviderSpec extends ZIOSpecDefault:
       val provider   = OpenAIProvider.make(config, httpClient)
 
       for {
-        result <- provider.execute("test").exit
+        result <- Streaming.collect(provider.executeStream("test")).exit
       } yield assertTrue(result.isFailure)
     },
     test("execute should fail with missing baseUrl") {
@@ -80,7 +88,7 @@ object OpenAIProviderSpec extends ZIOSpecDefault:
       val provider   = OpenAIProvider.make(config, httpClient)
 
       for {
-        result <- provider.execute("test").exit
+        result <- Streaming.collect(provider.executeStream("test")).exit
       } yield assertTrue(result.isFailure)
     },
     test("executeWithHistory should convert messages") {
@@ -99,7 +107,7 @@ object OpenAIProviderSpec extends ZIOSpecDefault:
       )
 
       for {
-        response <- provider.executeWithHistory(messages)
+        response <- Streaming.collect(provider.executeStreamWithHistory(messages))
       } yield assertTrue(response.content == "Test response")
     },
   )

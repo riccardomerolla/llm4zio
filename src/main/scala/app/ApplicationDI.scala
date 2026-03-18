@@ -455,14 +455,8 @@ object ApplicationDI:
     cacheRef: Ref.Synchronized[Map[LlmConfig, LlmService]],
   ) extends LlmService:
 
-    override def execute(prompt: String): IO[LlmError, LlmResponse] =
-      withFailover(_.execute(prompt))
-
     override def executeStream(prompt: String): zio.stream.Stream[LlmError, LlmChunk] =
       zio.stream.ZStream.unwrap(serviceChain.map(chain => failoverStream(chain)(_.executeStream(prompt))))
-
-    override def executeWithHistory(messages: List[Message]): IO[LlmError, LlmResponse] =
-      withFailover(_.executeWithHistory(messages))
 
     override def executeStreamWithHistory(messages: List[Message]): zio.stream.Stream[LlmError, LlmChunk] =
       zio.stream.ZStream.unwrap(serviceChain.map(chain => failoverStream(chain)(_.executeStreamWithHistory(messages))))
