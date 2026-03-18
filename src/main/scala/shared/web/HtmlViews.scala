@@ -201,6 +201,7 @@ object HtmlViews:
   def issuesBoard(
     issues: List[AgentIssueView],
     workspaces: List[(String, String)],
+    workReports: Map[IssueId, IssueWorkReport] = Map.empty,
     workspaceFilter: Option[String],
     agentFilter: Option[String],
     priorityFilter: Option[String],
@@ -217,6 +218,7 @@ object HtmlViews:
     IssuesView.board(
       issues = issues,
       workspaces = workspaces,
+      workReports = workReports,
       workspaceFilter = workspaceFilter,
       agentFilter = agentFilter,
       priorityFilter = priorityFilter,
@@ -234,6 +236,7 @@ object HtmlViews:
   def issuesBoardColumns(
     issues: List[AgentIssueView],
     workspaces: List[(String, String)],
+    workReports: Map[IssueId, IssueWorkReport] = Map.empty,
     availableAgents: List[AgentInfo] = Nil,
     dispatchStatuses: Map[IssueId, DispatchStatusResponse] = Map.empty,
     hasProofFilter: Option[Boolean] = None,
@@ -241,7 +244,7 @@ object HtmlViews:
     IssuesView.boardColumnsFragment(
       issues = issues,
       workspaces = workspaces,
-      workReports = Map.empty,
+      workReports = workReports,
       availableAgents = availableAgents,
       dispatchStatuses = dispatchStatuses,
       hasProofFilter = hasProofFilter,

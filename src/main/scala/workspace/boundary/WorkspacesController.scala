@@ -150,6 +150,7 @@ object WorkspacesController:
       Method.POST / "api" / "workspaces" -> handler { (req: Request) =>
         (for
           patch      <- parseFormBody(req)
+          _          <- validateWorkspaceLocalPath(patch.localPath)
           now        <- Clock.instant
           id          = java.util.UUID.randomUUID().toString
           _          <- repo
@@ -177,6 +178,7 @@ object WorkspacesController:
       Method.PUT / "api" / "workspaces" / string("id") -> handler { (id: String, req: Request) =>
         (for
           patch    <- parseFormBody(req)
+          _        <- validateWorkspaceLocalPath(patch.localPath)
           existing <- repo.get(id).mapError(persistErr)
           now      <- Clock.instant
           resp     <- existing match
@@ -541,6 +543,34 @@ object WorkspacesController:
       val escapes    = normalized.iterator().hasNext && normalized.startsWith("..")
       if isAbsolute || escapes then ZIO.succeed(Left(Response.badRequest("Invalid file path")))
       else ZIO.succeed(Right(normalized.toString))
+
+  private def validateWorkspaceLocalPath(localPath: String): IO[Response, Unit] =
+    val trimmed = Option(localPath).map(_.trim).getOrElse("")
+    if trimmed.isEmpty then ZIO.fail(Response.badRequest("localPath is required"))
+    else
+      ZIO
+        .attempt(Paths.get(trimmed))
+        .mapError(_ => Response.badRequest(s"Invalid workspace path: $trimmed"))
+        .flatMap { path =>
+          if !Files.exists(path) then ZIO.fail(Response.badRequest(s"Workspace path does not exist: $trimmed"))
+          else if !Files.isDirectory(path) then
+            ZIO.fail(Response.badRequest(s"Workspace path is not a directory: $trimmed"))
+          else
+            runGit(trimmed, List("rev-parse", "--is-inside-work-tree")).flatMap {
+              case (0, output) if output.trim.equalsIgnoreCase("true") => ZIO.unit
+              case (_, output)                                         =>
+                ZIO.fail(
+                  Response.badRequest(
+                    s"Workspace path must be a git repository: $trimmed${renderGitValidationDetails(output)}"
+                  )
+                )
+            }
+        }
+
+  private def renderGitValidationDetails(output: String): String =
+    val trimmed = Option(output).map(_.trim).getOrElse("")
+    if trimmed.isEmpty then ""
+    else s" ($trimmed)"
 
   private def resolveRunWorktree(
     repo: WorkspaceRepository,

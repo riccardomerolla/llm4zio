@@ -112,6 +112,19 @@ object IssuesBoardProofOfWorkSpec extends ZIOSpecDefault:
         )
         assertTrue(html.contains("data-proof-of-work"))
       },
+      test("HtmlViews.issuesBoardColumns preserves proof-of-work content during fragment refresh") {
+        val report  = IssueWorkReport.empty(issueId, now).copy(walkthrough = Some("Retained after refresh."))
+        val reports = Map(issueId -> report)
+        val html    = HtmlViews.issuesBoardColumns(
+          issues = List(baseIssue),
+          workspaces = Nil,
+          workReports = reports,
+        )
+        assertTrue(
+          html.contains("data-proof-of-work"),
+          html.contains("Retained after refresh."),
+        )
+      },
       test("board card renders short issue ID chip top-left") {
         val html = IssuesView.boardCardFragment(baseIssue, Nil, workReport = None)
         assertTrue(html.contains("#issue-po"))

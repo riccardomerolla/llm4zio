@@ -98,16 +98,18 @@ final private case class IssueAssignmentOrchestratorLive(
                      )
                    )
                    .mapError(mapRepoError)
-      _       <- issueRepository
-                   .append(
-                     IssueEvent.Started(
-                       issueId = IssueId(issueId),
-                       agent = AgentId(agentName),
-                       startedAt = now,
-                       occurredAt = now,
+      _       <- ZIO.unless(skipConversationBootstrap) {
+                   issueRepository
+                     .append(
+                       IssueEvent.Started(
+                         issueId = IssueId(issueId),
+                         agent = AgentId(agentName),
+                         startedAt = now,
+                         occurredAt = now,
+                       )
                      )
-                   )
-                   .mapError(mapRepoError)
+                     .mapError(mapRepoError)
+                 }
       _       <- if skipConversationBootstrap then ZIO.unit
                  else
                    for

@@ -320,17 +320,11 @@ final case class IssueControllerLive(
                                   skipConversationBootstrap = workspaceForRun.isDefined,
                                 )
           _                  <- workspaceForRun.fold[IO[PersistenceError, Unit]](ZIO.unit) { workspaceId =>
-                                  workspaceRunService
-                                    .assign(
-                                      workspaceId,
-                                      AssignRunRequest(
-                                        issueRef = s"#$id",
-                                        prompt = executionPrompt(issue),
-                                        agentName = agentName,
-                                      ),
-                                    )
-                                    .mapError(err => PersistenceError.QueryFailed("workspace_assign", err.toString))
-                                    .unit
+                                  assignWorkspaceRunAndMarkStarted(
+                                    issue = issue,
+                                    workspaceId = workspaceId,
+                                    agentName = agentName,
+                                  )
                                 }
         yield Response(status = Status.SeeOther, headers = Headers(Header.Custom("Location", s"/issues/$id")))
       }
@@ -659,17 +653,11 @@ final case class IssueControllerLive(
                                         skipConversationBootstrap = selectedWorkspaceId.isDefined,
                                       )
                                  _ <- selectedWorkspaceId.fold[IO[PersistenceError, Unit]](ZIO.unit) { workspaceId =>
-                                        workspaceRunService
-                                          .assign(
-                                            workspaceId,
-                                            AssignRunRequest(
-                                              issueRef = s"#$id",
-                                              prompt = executionPrompt(issue),
-                                              agentName = best.agentName,
-                                            ),
-                                          )
-                                          .mapError(err => PersistenceError.QueryFailed("workspace_assign", err.toString))
-                                          .unit
+                                        assignWorkspaceRunAndMarkStarted(
+                                          issue = issue,
+                                          workspaceId = workspaceId,
+                                          agentName = best.agentName,
+                                        )
                                       }
                                yield AutoAssignIssueResponse(
                                  assigned = true,
@@ -845,6 +833,7 @@ final case class IssueControllerLive(
       for
         workspaces          <- workspaceRepository.list.mapError(mapIssueRepoError)
         issues              <- loadBoardIssues(query, tagFilter, workspaceFilter, agentFilter, priorityFilter, statusFilter)
+        workReports         <- issueWorkReportProjection.getAll
         allAgents           <- agentRepository.list().mapError(mapIssueRepoError)
         availableAgents      = allAgents.filter(_.enabled).map(registryAgentToAgentInfo)
         dispatchStatuses    <- loadDispatchStatuses(issues)
@@ -871,6 +860,7 @@ final case class IssueControllerLive(
                                      HtmlViews.issuesBoard(
                                        issues = issues,
                                        workspaces = workspaces.map(ws => ws.id -> ws.name),
+                                       workReports = workReports,
                                        workspaceFilter = workspaceFilter,
                                        agentFilter = agentFilter,
                                        priorityFilter = priorityFilter,
@@ -900,6 +890,7 @@ final case class IssueControllerLive(
       for
         workspaces       <- workspaceRepository.list.mapError(mapIssueRepoError)
         issues           <- loadBoardIssues(query, tagFilter, workspaceFilter, agentFilter, priorityFilter, statusFilter)
+        workReports      <- issueWorkReportProjection.getAll
         allAgents        <- agentRepository.list().mapError(mapIssueRepoError)
         availableAgents   = allAgents.filter(_.enabled).map(registryAgentToAgentInfo)
         dispatchStatuses <- loadDispatchStatuses(issues)
@@ -907,6 +898,7 @@ final case class IssueControllerLive(
         HtmlViews.issuesBoardColumns(
           issues = issues,
           workspaces = workspaces.map(ws => ws.id -> ws.name),
+          workReports = workReports,
           availableAgents = availableAgents,
           dispatchStatuses = dispatchStatuses,
           hasProofFilter = if hasProofFilter then Some(true) else None,
@@ -1717,16 +1709,11 @@ final case class IssueControllerLive(
                                  request.agentId,
                                  skipConversationBootstrap = true,
                                )
-                      _     <- workspaceRunService
-                                 .assign(
-                                   request.workspaceId,
-                                   AssignRunRequest(
-                                     issueRef = s"#$issueId",
-                                     prompt = executionPrompt(issue),
-                                     agentName = request.agentId,
-                                   ),
-                                 )
-                                 .mapError(err => PersistenceError.QueryFailed("workspace_assign", err.toString))
+                      _     <- assignWorkspaceRunAndMarkStarted(
+                                 issue = issue,
+                                 workspaceId = request.workspaceId,
+                                 agentName = request.agentId,
+                               )
                     yield ()).either
                   }
     yield toBulkResponse(issueIds.size, results)
@@ -1842,6 +1829,35 @@ final case class IssueControllerLive(
                 )
                 .mapError(err => PersistenceError.QueryFailed("workspace_assign", err.toString))
                 .unit
+
+  private def assignWorkspaceRunAndMarkStarted(
+    issue: DomainIssue,
+    workspaceId: String,
+    agentName: String,
+  ): IO[PersistenceError, Unit] =
+    for
+      _   <- workspaceRunService
+               .assign(
+                 workspaceId,
+                 AssignRunRequest(
+                   issueRef = s"#${issue.id.value}",
+                   prompt = executionPrompt(issue),
+                   agentName = agentName,
+                 ),
+               )
+               .mapError(err => PersistenceError.QueryFailed("workspace_assign", err.toString))
+      now <- Clock.instant
+      _   <- issueRepository
+               .append(
+                 IssueEvent.Started(
+                   issueId = issue.id,
+                   agent = AgentId(agentName),
+                   startedAt = now,
+                   occurredAt = now,
+                 )
+               )
+               .mapError(mapIssueRepoError)
+    yield ()
 
   private def executeParallelPipeline(
     issueId: String,

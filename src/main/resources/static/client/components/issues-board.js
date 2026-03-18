@@ -16,6 +16,7 @@ class IssuesBoard {
     this._customVisibleColumns = null;
     this.dragFromStatus = null;
     this._toastHost = null;
+    this._pendingPostRefreshToast = null;
 
     this.bindDragDrop();
     this.bindPointerDrag();
@@ -748,9 +749,12 @@ class IssuesBoard {
       const hasAssignedAgent = (card?.dataset?.assignedAgent || '').trim().length > 0;
       if (targetStatus === 'todo' && !hasAssignedAgent) {
         const workspaceId = (card?.dataset?.workspaceId || '').trim();
-        const autoAssigned = await this.autoAssignIssue(issueId, workspaceId || null);
-        if (!autoAssigned) {
-          this._showToast('Issue moved to Todo, but auto-assign failed.', 'warning');
+        const autoAssign = await this.autoAssignIssue(issueId, workspaceId || null);
+        if (!autoAssign.assigned) {
+          this._pendingPostRefreshToast = {
+            message: autoAssign.message || 'Issue moved to Todo, but auto-assign failed.',
+            type: 'warning',
+          };
         }
       }
       return true;
@@ -793,13 +797,26 @@ class IssuesBoard {
         body: JSON.stringify(payload),
       });
       if (!response.ok) {
-        this._showToast(await this._responseErrorMessage(response, 'Could not auto-assign issue'));
-        return false;
+        return {
+          assigned: false,
+          message: await this._responseErrorMessage(response, 'Could not auto-assign issue'),
+        };
       }
-      return response.ok;
+      const payloadJson = await response.json();
+      if (payloadJson?.assigned === true) {
+        return { assigned: true };
+      }
+      return {
+        assigned: false,
+        message: payloadJson?.reason
+          ? `Issue moved to Todo, but auto-assign did not dispatch a run: ${String(payloadJson.reason).trim()}`
+          : 'Issue moved to Todo, but auto-assign did not dispatch a run.',
+      };
     } catch (_error) {
-      this._showToast('Could not auto-assign issue. Check your connection and retry.');
-      return false;
+      return {
+        assigned: false,
+        message: 'Could not auto-assign issue. Check your connection and retry.',
+      };
     }
   }
 
@@ -1010,6 +1027,7 @@ class IssuesBoard {
         this.bindQuickAdd();
         this.bindQuickDispatch();
         this._flashLandedCard(landedIssueId);
+        this._flushPostRefreshToast();
       }).catch(() => {}).finally(onSettled);
       return;
     }
@@ -1024,9 +1042,17 @@ class IssuesBoard {
         this.bindQuickAdd();
         this.bindQuickDispatch();
         this._flashLandedCard(landedIssueId);
+        this._flushPostRefreshToast();
       })
       .catch(() => {})
       .finally(onSettled);
+  }
+
+  _flushPostRefreshToast() {
+    const toast = this._pendingPostRefreshToast;
+    this._pendingPostRefreshToast = null;
+    if (!toast?.message) return;
+    this._showToast(toast.message, toast.type || 'warning');
   }
 
   // ---------------------------------------------------------------------------

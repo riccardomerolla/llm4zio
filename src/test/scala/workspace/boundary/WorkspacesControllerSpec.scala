@@ -207,6 +207,30 @@ object WorkspacesControllerSpec extends ZIOSpecDefault:
         resp       <- routes.runZIO(req)
       yield assertTrue(resp.status == Status.Ok)
     },
+    test("POST /api/workspaces rejects a localPath that is not a git repository") {
+      for
+        tempDir    <- ZIO.acquireRelease(ZIO.attempt(java.nio.file.Files.createTempDirectory("ws-non-git")))(path =>
+                        ZIO.attempt(java.nio.file.Files.deleteIfExists(path)).orDie
+                      )
+        wsRef      <- Ref.make(Map.empty[String, Workspace])
+        runRef     <- Ref.make(Map.empty[String, WorkspaceRun])
+        triggerRef <- Ref.make(List.empty[(String, Boolean)])
+        routes      = makeRoutes(wsRef, runRef, triggerRef)
+        req         = Request(
+                        method = Method.POST,
+                        url = URL(Path.decode("/api/workspaces")),
+                        body =
+                          Body.fromString(s"name=Broken&localPath=${java.net.URLEncoder.encode(tempDir.toString, "UTF-8")}"),
+                      )
+        resp       <- routes.runZIO(req)
+        body       <- resp.body.asString
+        allWs      <- wsRef.get
+      yield assertTrue(
+        resp.status == Status.BadRequest,
+        body.contains("must be a git repository"),
+        allWs.isEmpty,
+      )
+    },
     test("GET /api/workspaces returns JSON list") {
       for
         wsRef      <- Ref.make(Map("ws-1" -> sampleWs))
