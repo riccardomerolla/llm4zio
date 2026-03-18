@@ -16,6 +16,7 @@ object Layout:
     title: String,
     href: String,
     active: Boolean,
+    isPlan: Boolean = false,
     messageCount: Int = 0,
     createdAt: java.time.Instant = java.time.Instant.EPOCH,
   )
@@ -199,7 +200,6 @@ object Layout:
               Icons.tableColumns,
               currentPath.startsWith("/board") || currentPath.startsWith("/issues/board"),
             ),
-            navItem("/planner", "Planner", Icons.workflow, currentPath.startsWith("/planner")),
             chatWorkspaceNav.fold[Frag](deferredChatWorkspacesTree(currentPath))(chatWorkspacesTree),
           ),
         ),
@@ -313,7 +313,14 @@ object Layout:
                     attr("title")             := chat.title,
                     attr("data-palette-chat") := "true",
                   )(
-                    div(cls := "truncate text-sm font-medium text-white leading-snug")(chat.title),
+                    div(cls := "flex min-w-0 items-center gap-1.5")(
+                      div(cls := "truncate text-sm font-medium text-white leading-snug")(chat.title),
+                      if chat.isPlan then
+                        span(
+                          cls := "inline-flex flex-shrink-0 rounded-full bg-cyan-500/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-cyan-200"
+                        )("Plan")
+                      else frag(),
+                    ),
                     div(cls := "flex items-center gap-1.5 text-[10px] text-gray-500 leading-none")(
                       s"${chat.messageCount} msgs · ${relativeTime(chat.createdAt, nav.renderedAt)}"
                     ),
@@ -340,7 +347,14 @@ object Layout:
                             attr("title")             := chat.title,
                             attr("data-palette-chat") := "true",
                           )(
-                            div(cls := "truncate text-sm font-medium text-white leading-snug")(chat.title),
+                            div(cls := "flex min-w-0 items-center gap-1.5")(
+                              div(cls := "truncate text-sm font-medium text-white leading-snug")(chat.title),
+                              if chat.isPlan then
+                                span(
+                                  cls := "inline-flex flex-shrink-0 rounded-full bg-cyan-500/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-cyan-200"
+                                )("Plan")
+                              else frag(),
+                            ),
                             div(cls := "flex items-center gap-1.5 text-[10px] text-gray-500 leading-none")(
                               s"${chat.messageCount} msgs · ${relativeTime(chat.createdAt, nav.renderedAt)}"
                             ),

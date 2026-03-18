@@ -5,6 +5,7 @@ import java.time.Instant
 import zio.test.*
 
 import conversation.entity.api.{ ChatConversation, ConversationEntry, MessageType, SenderType }
+import orchestration.control.{ PlannerPlanPreview, PlannerPreviewState }
 import workspace.entity.{ RunSessionMode, RunStatus }
 
 object ChatViewSpec extends ZIOSpecDefault:
@@ -88,5 +89,31 @@ object ChatViewSpec extends ZIOSpecDefault:
       )
       val html  = ChatView.messagesFragment(List(entry))
       assertTrue(html.contains("ab-timeline-event"))
+    },
+    test("detail auto-opens the plan panel when planner state exists") {
+      val conversation = ChatConversation(
+        id = Some("42"),
+        title = "Plan Conversation",
+        description = Some("mode:plan|workspace:ws-1"),
+        createdAt = Instant.parse("2026-03-01T10:00:00Z"),
+        updatedAt = Instant.parse("2026-03-01T10:05:00Z"),
+      )
+      val detail       = ChatDetailContext.empty.copy(
+        plannerState = Some(
+          PlannerPreviewState(
+            conversationId = 42L,
+            workspaceId = Some("ws-1"),
+            preview = PlannerPlanPreview(summary = "Draft summary", issues = Nil),
+          )
+        )
+      )
+
+      val html = ChatView.detail(conversation, None, None, detailContext = detail)
+      assertTrue(
+        html.contains("""panel-id="plan-panel""""),
+        html.contains("/chat/42/plan-fragment"),
+        html.contains("Create all"),
+        html.contains("Regenerate"),
+      )
     },
   )

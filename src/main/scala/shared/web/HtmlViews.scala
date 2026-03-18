@@ -16,7 +16,6 @@ import issues.entity.api.{
   IssueTemplate,
   MergeHistoryEntryView,
 }
-import orchestration.control.PlannerPreviewState
 import shared.ids.Ids.IssueId
 import workspace.entity.WorkspaceRun
 
@@ -189,12 +188,6 @@ object HtmlViews:
 
   def chatMessagesFragment(messages: List[ConversationEntry]): String =
     ChatView.messagesFragment(messages)
-
-  def plannerStart(workspaces: List[(String, String)]): String =
-    PlannerView.startPage(workspaces)
-
-  def plannerDetail(state: PlannerPreviewState, workspaces: List[(String, String)]): String =
-    PlannerView.detailPage(state = state, workspaces = workspaces)
 
   def issuesView(
     runId: Option[String],

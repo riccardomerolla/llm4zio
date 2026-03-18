@@ -169,7 +169,7 @@ object PlannerAgentService:
 final private case class PlannerStructuredResponse(
   summary: String,
   issues: List[PlannerIssueDraft],
-) derives JsonCodec
+)
 
 final private case class PlannerWorkspaceContext(
   workspaceId: String,
@@ -349,11 +349,16 @@ final case class PlannerAgentServiceLive(
     transcript: String,
     workspaceContext: Option[PlannerWorkspaceContext],
   ): IO[PlannerAgentError, PlannerPlanPreview] =
-    executeStructuredWithPreferredAgent[PlannerStructuredResponse](
+    executeStructuredWithPreferredAgent[Json](
       plannerPrompt(transcript, workspaceContext),
       plannerResponseSchema,
       workspaceContext,
     )
+      .flatMap(responseJson =>
+        ZIO
+          .fromEither(normalizePlannerResponse(responseJson))
+          .mapError(details => PlannerAgentError.LlmFailure(s"Parse error: $details"))
+      )
       .map(response => PlannerPlanPreview(summary = response.summary, issues = response.issues))
 
   private def savePreviewState(
@@ -773,6 +778,107 @@ final case class PlannerAgentServiceLive(
       ),
       "required"   -> Json.Arr(Chunk(Json.Str("summary"), Json.Str("issues"))),
     )
+
+  private def normalizePlannerResponse(json: Json): Either[String, PlannerStructuredResponse] =
+    json match
+      case Json.Obj(fields) =>
+        val fieldMap = fields.toMap
+        extractIssues(fieldMap).map { issues =>
+          PlannerStructuredResponse(
+            summary = extractString(fieldMap, "summary").getOrElse(defaultPlannerSummary(issues)),
+            issues = issues,
+          )
+        }
+      case _                =>
+        Left("planner response must be a JSON object")
+
+  private def extractIssues(fields: Map[String, Json]): Either[String, List[PlannerIssueDraft]] =
+    fields.get("issues") match
+      case Some(Json.Arr(items)) =>
+        items.toList.zipWithIndex.foldLeft[Either[String, List[PlannerIssueDraft]]](Right(Nil)) {
+          case (acc, (item, idx)) =>
+            acc.flatMap(drafts => normalizeIssueDraft(item, idx).map(draft => drafts :+ draft))
+        }
+      case Some(_)               => Left("planner response field 'issues' must be an array")
+      case None                  => Left("planner response is missing required field 'issues'")
+
+  private def normalizeIssueDraft(json: Json, index: Int): Either[String, PlannerIssueDraft] =
+    json match
+      case Json.Obj(fields) =>
+        val fieldMap          = fields.toMap
+        val descriptionEither = requiredString(fieldMap, "description", "issue description", index)
+        descriptionEither.map { description =>
+          val draftId = firstString(fieldMap, "draftId", "draft_id", "issue_id").getOrElse(s"issue-${index + 1}")
+          val title   =
+            firstString(fieldMap, "title").filter(_.nonEmpty).getOrElse(deriveTitle(description, index))
+          PlannerIssueDraft(
+            draftId = draftId,
+            title = title,
+            description = description,
+            issueType = firstString(fieldMap, "issueType", "issue_type").getOrElse("task"),
+            priority = firstString(fieldMap, "priority").getOrElse("medium"),
+            estimate = firstString(fieldMap, "estimate"),
+            requiredCapabilities = firstStringList(fieldMap, "requiredCapabilities", "required_capabilities"),
+            dependencyDraftIds = firstStringList(fieldMap, "dependencyDraftIds", "dependency_draft_ids", "depends_on"),
+            acceptanceCriteria =
+              firstString(fieldMap, "acceptanceCriteria", "acceptance_criteria").getOrElse(""),
+            promptTemplate = firstString(fieldMap, "promptTemplate", "prompt_template").getOrElse(""),
+            kaizenSkills = firstStringList(fieldMap, "kaizenSkills", "kaizen_skills", "kaizen_references"),
+            proofOfWorkRequirements =
+              firstStringList(fieldMap, "proofOfWorkRequirements", "proof_of_work_requirements", "proof_of_work"),
+            included = firstBoolean(fieldMap, "included").getOrElse(true),
+          )
+        }
+      case _                =>
+        Left(s"planner issue at index ${index + 1} must be a JSON object")
+
+  private def extractString(fields: Map[String, Json], key: String): Option[String] =
+    fields.get(key).flatMap {
+      case Json.Str(value) => Some(value.trim).filter(_.nonEmpty)
+      case _               => None
+    }
+
+  private def firstString(fields: Map[String, Json], keys: String*): Option[String] =
+    keys.iterator.flatMap(key => extractString(fields, key)).nextOption()
+
+  private def firstBoolean(fields: Map[String, Json], keys: String*): Option[Boolean] =
+    keys.iterator.flatMap(key =>
+      fields.get(key).flatMap {
+        case Json.Bool(value) => Some(value)
+        case _                => None
+      }
+    ).nextOption()
+
+  private def firstStringList(fields: Map[String, Json], keys: String*): List[String] =
+    keys.iterator.map(key =>
+      fields.get(key).map {
+        case Json.Arr(items)                        =>
+          items.toList.collect { case Json.Str(value) if value.trim.nonEmpty => value.trim }
+        case Json.Str(value) if value.trim.nonEmpty =>
+          List(value.trim)
+        case _                                      =>
+          Nil
+      }.getOrElse(Nil)
+    ).find(_.nonEmpty).getOrElse(Nil)
+
+  private def requiredString(
+    fields: Map[String, Json],
+    key: String,
+    label: String,
+    index: Int,
+  ): Either[String, String] =
+    extractString(fields, key).toRight(s"planner issue ${index + 1} is missing required $label")
+
+  private def deriveTitle(description: String, index: Int): String =
+    val normalized = description.trim.linesIterator.nextOption().getOrElse(description.trim)
+    val trimmed    = normalized.stripSuffix(".").trim
+    if trimmed.isEmpty then s"Issue ${index + 1}" else trimmed.take(80)
+
+  private def defaultPlannerSummary(issues: List[PlannerIssueDraft]): String =
+    issues.length match
+      case 0 => "Generated planner preview."
+      case 1 => "Generated planner preview with 1 issue."
+      case n => s"Generated planner preview with $n issues."
 
   private def executeStructuredWithPreferredAgent[A: JsonCodec](
     prompt: String,

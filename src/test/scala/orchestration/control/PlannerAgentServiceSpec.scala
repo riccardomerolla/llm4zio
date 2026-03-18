@@ -84,6 +84,25 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
   private val plannerStructuredResponseJson =
     """{"summary":"Generated plan","issues":[{"draftId":"issue-1","title":"Design data model","description":"Define planner data structures","issueType":"task","priority":"high","estimate":"M","requiredCapabilities":["scala","zio"],"dependencyDraftIds":[],"acceptanceCriteria":"Model compiles","promptTemplate":"Implement the data model","kaizenSkills":["task-planning"],"proofOfWorkRequirements":["tests pass","coverage > 80%"],"included":true},{"draftId":"issue-2","title":"Wire controller","description":"Expose planner routes","issueType":"task","priority":"medium","estimate":"S","requiredCapabilities":[],"dependencyDraftIds":["issue-1"],"acceptanceCriteria":"Routes are reachable","promptTemplate":"Wire the planner controller","kaizenSkills":[],"proofOfWorkRequirements":[],"included":false}]}"""
 
+  private val plannerGeminiStyleResponseJson =
+    """```json
+      |{
+      |  "issues": [
+      |    {
+      |      "issue_id": "issue-1",
+      |      "description": "Analyze the existing Rust code (`src/main.rs`) to identify testable components.",
+      |      "acceptance_criteria": "A report listing identified testable components from `src/main.rs` is generated.",
+      |      "required_capabilities": ["Rust analysis", "Codebase inspection"],
+      |      "prompt_template": "Use `read_file` to inspect `src/main.rs` and list components that would benefit from unit testing.",
+      |      "estimate": "XS",
+      |      "priority": "high",
+      |      "kaizen_references": [],
+      |      "proof_of_work": "Provide the content of `src/main.rs` and the list of identified testable components as plain text."
+      |    }
+      |  ]
+      |}
+      |```""".stripMargin
+
   private val testWorkspace = Workspace(
     id = "ws-1",
     name = "Planner Workspace",
@@ -203,6 +222,39 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
             )
     }
 
+  private val geminiStyleCliExecutorLayer
+    : ZLayer[Ref[Vector[llm4zio.providers.GeminiCliExecutionContext]], Nothing, GeminiCliExecutor] =
+    ZLayer.fromFunction { (contextRef: Ref[Vector[llm4zio.providers.GeminiCliExecutionContext]]) =>
+      new GeminiCliExecutor:
+        override def checkGeminiInstalled: IO[LlmError, Unit] = ZIO.unit
+        override def runGeminiProcess(
+          prompt: String,
+          config: LlmConfig,
+          executionContext: llm4zio.providers.GeminiCliExecutionContext,
+        ): IO[LlmError, String] =
+          contextRef.update(_ :+ executionContext) *> ZIO.fail(LlmError.ProviderError("unused", None))
+        override def runGeminiProcessStream(
+          prompt: String,
+          config: LlmConfig,
+          executionContext: llm4zio.providers.GeminiCliExecutionContext,
+        ): zio.stream.ZStream[Any, LlmError, llm4zio.providers.GeminiCliStreamEvent] =
+          zio.stream.ZStream.fromZIO(contextRef.update(_ :+ executionContext)).drain ++
+            zio.stream.ZStream.fromIterable(
+              List(
+                llm4zio.providers.GeminiCliStreamEvent.Message(
+                  role = Some("assistant"),
+                  content = Some(plannerGeminiStyleResponseJson),
+                  delta = true,
+                ),
+                llm4zio.providers.GeminiCliStreamEvent.Result(
+                  status = Some("success"),
+                  errorMessage = None,
+                  stats = None,
+                ),
+              )
+            )
+    }
+
   private val stubCliExecutor: ULayer[GeminiCliExecutor] = ZLayer.succeed(new GeminiCliExecutor:
     override def checkGeminiInstalled: IO[LlmError, Unit] = ZIO.unit
     override def runGeminiProcess(
@@ -280,6 +332,29 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
       PlannerAgentService.live,
     )
 
+  private val plannerLayerWithGeminiStyleResponse
+    : ZLayer[
+      Any,
+      Nothing,
+      PlannerAgentService & ChatRepository & Ref[Vector[llm4zio.providers.GeminiCliExecutionContext]],
+    ] =
+    ZLayer.make[
+      PlannerAgentService & ChatRepository & Ref[Vector[llm4zio.providers.GeminiCliExecutionContext]]
+    ](
+      InMemoryChatRepo.layer,
+      RecordingIssueRepo.refLayer,
+      RecordingIssueRepo.layer,
+      testWorkspaceRepository,
+      testConfigRepository,
+      noopActivityHub,
+      testConfigResolver,
+      stubHttpClient,
+      cliContextRefLayer,
+      geminiStyleCliExecutorLayer,
+      startupAiConfigLayer,
+      PlannerAgentService.live,
+    )
+
   private def awaitSettledPreview(
     service: PlannerAgentService,
     conversationId: Long,
@@ -332,6 +407,23 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
           contexts.exists(_.includeDirectories.contains("/tmp/planner-workspace")),
         )
       }.provideLayer(plannerLayerWithResolverFallback),
+      test("startSession tolerates Gemini planner payload variants") {
+        for
+          service <- ZIO.service[PlannerAgentService]
+          start   <- service.startSession("Plan Rust unit tests", Some("ws-1"))
+          state   <- awaitSettledPreview(service, start.conversationId)
+        yield assertTrue(
+          state.lastError.isEmpty,
+          state.preview.summary == "Generated planner preview with 1 issue.",
+          state.preview.issues.size == 1,
+          state.preview.issues.head.draftId == "issue-1",
+          state.preview.issues.head.title.startsWith("Analyze the existing Rust code"),
+          state.preview.issues.head.acceptanceCriteria.contains("testable components"),
+          state.preview.issues.head.requiredCapabilities == List("Rust analysis", "Codebase inspection"),
+          state.preview.issues.head.promptTemplate.contains("read_file"),
+          state.preview.issues.head.proofOfWorkRequirements.nonEmpty,
+        )
+      }.provideLayer(plannerLayerWithGeminiStyleResponse),
       test("confirmPlan emits issue, prompt, acceptance, tag, workspace, and dependency events") {
         for
           service <- ZIO.service[PlannerAgentService]

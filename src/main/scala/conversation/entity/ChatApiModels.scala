@@ -11,6 +11,9 @@ enum MessageType derives JsonCodec, Schema:
 enum SenderType derives JsonCodec, Schema:
   case User, Assistant, System
 
+enum ConversationMode derives JsonCodec, Schema:
+  case Chat, Plan
+
 case class ConversationEntry(
   id: Option[String] = None,
   conversationId: String,
