@@ -357,7 +357,11 @@ final case class PlannerAgentServiceLive(
       .flatMap(responseJson =>
         ZIO
           .fromEither(normalizePlannerResponse(responseJson))
-          .mapError(details => PlannerAgentError.LlmFailure(s"Parse error: $details"))
+          .mapError(details =>
+            PlannerAgentError.LlmFailure(
+              s"Parse error: $details\n\nRaw response:\n```json\n${responseJson.toJsonPretty}\n```"
+            )
+          )
       )
       .map(response => PlannerPlanPreview(summary = response.summary, issues = response.issues))
 
