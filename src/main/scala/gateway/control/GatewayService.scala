@@ -8,7 +8,7 @@ import zio.json.*
 import _root_.config.entity.AgentInfo
 import db.{ ChatRepository, ConfigRepository }
 import gateway.entity.NormalizedMessage
-import llm4zio.core.LlmService
+import llm4zio.core.{ LlmService, Streaming }
 import memory.entity.{ MemoryEntry, MemoryId, MemoryKind, MemoryRepository }
 import orchestration.control.{ AgentRegistry, ConversationMemory }
 
@@ -476,7 +476,7 @@ final case class GatewayServiceLive(
       (for
         settings <- loadMemorySettings
         prompt   <- enrichPromptWithMemory(inbound, settings)
-        response <- llmService.execute(prompt)
+        response <- Streaming.collect(llmService.executeStream(prompt))
       yield response).foldZIO(
         error =>
           sendAssistantReply(
@@ -557,7 +557,7 @@ final case class GatewayServiceLive(
                        |$transcript
                        |""".stripMargin
       }
-      summary  <- llmService.execute(prompt).mapError(_ => GatewayServiceError.QueueClosed)
+      summary  <- Streaming.collect(llmService.executeStream(prompt)).mapError(_ => GatewayServiceError.QueueClosed)
       now      <- Clock.instant
       _        <- memoryRepository
                     .save(

@@ -4,7 +4,7 @@ import zio.*
 import zio.json.*
 
 import _root_.config.entity.AgentInfo
-import llm4zio.core.LlmService
+import llm4zio.core.{ LlmService, Streaming }
 
 final case class IntentConversationState(
   pendingOptions: List[String] = Nil,
@@ -53,7 +53,7 @@ object IntentParser:
     for
       isAvailable <- LlmService.isAvailable
       _           <- ZIO.fail(llm4zio.core.LlmError.ConfigError("llm unavailable")).unless(isAvailable)
-      response    <- LlmService.execute(prompt)
+      response    <- ZIO.serviceWithZIO[LlmService](svc => Streaming.collect(svc.executeStream(prompt)))
       decoded     <- ZIO
                        .fromEither(response.content.fromJson[LlmRouterResponse])
                        .mapError(err => llm4zio.core.LlmError.ParseError(err, response.content))

@@ -23,44 +23,22 @@ import llm4zio.tools.{ AnyTool, JsonSchema }
 object LmStudioProvider:
   def make(config: LlmConfig, httpClient: HttpClient): LlmService =
     new LlmService:
-      override def execute(prompt: String): IO[LlmError, LlmResponse] =
-        executeRequest(List(LmStudioMessage(role = "user", content = prompt)))
-
       override def executeStream(prompt: String): ZStream[Any, LlmError, LlmChunk] =
-        // LM Studio native API supports streaming, but not implemented in this basic version
-        ZStream.fromZIO(execute(prompt)).map { response =>
-          LlmChunk(
-            delta = response.content,
-            finishReason = Some("stop"),
-            usage = response.usage,
-            metadata = response.metadata,
-          )
-        }
+        executeStreamRequest(List(LmStudioMessage(role = "user", content = prompt)))
 
-      override def executeWithHistory(messages: List[Message]): IO[LlmError, LlmResponse] =
+      override def executeStreamWithHistory(messages: List[Message]): ZStream[Any, LlmError, LlmChunk] =
         val lmStudioMessages = messages.map { msg =>
           LmStudioMessage(
             role = msg.role match
               case MessageRole.System    => "system"
               case MessageRole.User      => "user"
               case MessageRole.Assistant => "assistant"
-              case MessageRole.Tool      =>
-                "tool"
+              case MessageRole.Tool      => "tool"
             ,
             content = msg.content,
           )
         }
-        executeRequest(lmStudioMessages)
-
-      override def executeStreamWithHistory(messages: List[Message]): ZStream[Any, LlmError, LlmChunk] =
-        ZStream.fromZIO(executeWithHistory(messages)).map { response =>
-          LlmChunk(
-            delta = response.content,
-            finishReason = Some("stop"),
-            usage = response.usage,
-            metadata = response.metadata,
-          )
-        }
+        executeStreamRequest(lmStudioMessages)
 
       override def executeWithTools(prompt: String, tools: List[AnyTool]): IO[LlmError, ToolCallResponse] =
         // LM Studio supports tool calling if the underlying model does
@@ -93,6 +71,47 @@ object LmStudioProvider:
               )
               .as(true)
               .catchAll(_ => ZIO.succeed(false))
+
+      /** Real token-by-token streaming via LM Studio's OpenAI-compatible /v1/chat/completions endpoint */
+      private def executeStreamRequest(messages: List[LmStudioMessage]): ZStream[Any, LlmError, LlmChunk] =
+        ZStream.unwrap {
+          for
+            baseUrl   <- ZIO.fromOption(config.baseUrl).orElseFail(
+                           LlmError.ConfigError("Missing baseUrl for LmStudio provider")
+                         )
+            normalized = normalizeBaseUrl(baseUrl)
+            chatMessages = messages.map(m => ChatMessage(role = m.role, content = m.content))
+            request    = ChatCompletionRequest(
+                           model = config.model,
+                           messages = chatMessages,
+                           temperature = config.temperature.orElse(Some(0.7)),
+                           max_tokens = config.maxTokens,
+                           max_completion_tokens = None,
+                           stream = Some(true),
+                           response_format = None,
+                         )
+            url        = s"$normalized/v1/chat/completions"
+          yield httpClient
+            .postJsonStreamSSE(url, request.toJson, authHeaders, config.timeout)
+            .mapZIO { line =>
+              ZIO
+                .fromEither(line.fromJson[OpenAIChatChunk])
+                .mapError(err => LlmError.ParseError(s"Failed to parse LmStudio stream chunk: $err", line))
+            }
+            .flatMap { chunk =>
+              val choice = chunk.choices.headOption
+              val delta  = choice.flatMap(_.delta).flatMap(_.content).getOrElse("")
+              val finish = choice.flatMap(_.finish_reason)
+              if delta.nonEmpty || finish.isDefined then
+                ZStream.succeed(LlmChunk(
+                  delta = delta,
+                  finishReason = finish,
+                  usage = None,
+                  metadata = Map("provider" -> "lmstudio", "model" -> config.model),
+                ))
+              else ZStream.empty
+            }
+        }
 
       private def executeRequest(
         messages: List[LmStudioMessage]

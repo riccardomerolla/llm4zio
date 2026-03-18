@@ -10,44 +10,22 @@ import llm4zio.tools.{ AnyTool, JsonSchema }
 object OpenAIProvider:
   def make(config: LlmConfig, httpClient: HttpClient): LlmService =
     new LlmService:
-      override def execute(prompt: String): IO[LlmError, LlmResponse] =
-        executeRequest(List(ChatMessage(role = "user", content = prompt)), None)
-
       override def executeStream(prompt: String): ZStream[Any, LlmError, LlmChunk] =
-        // OpenAI supports streaming, but not implemented in this basic version
-        ZStream.fromZIO(execute(prompt)).map { response =>
-          LlmChunk(
-            delta = response.content,
-            finishReason = Some("stop"),
-            usage = response.usage,
-            metadata = response.metadata,
-          )
-        }
+        executeStreamRequest(List(ChatMessage(role = "user", content = prompt)))
 
-      override def executeWithHistory(messages: List[Message]): IO[LlmError, LlmResponse] =
+      override def executeStreamWithHistory(messages: List[Message]): ZStream[Any, LlmError, LlmChunk] =
         val chatMessages = messages.map { msg =>
           ChatMessage(
             role = msg.role match
               case MessageRole.System    => "system"
               case MessageRole.User      => "user"
               case MessageRole.Assistant => "assistant"
-              case MessageRole.Tool      =>
-                "tool"
+              case MessageRole.Tool      => "tool"
             ,
             content = msg.content,
           )
         }
-        executeRequest(chatMessages, None)
-
-      override def executeStreamWithHistory(messages: List[Message]): ZStream[Any, LlmError, LlmChunk] =
-        ZStream.fromZIO(executeWithHistory(messages)).map { response =>
-          LlmChunk(
-            delta = response.content,
-            finishReason = Some("stop"),
-            usage = response.usage,
-            metadata = response.metadata,
-          )
-        }
+        executeStreamRequest(chatMessages)
 
       override def executeWithTools(prompt: String, tools: List[AnyTool]): IO[LlmError, ToolCallResponse] =
         for
@@ -162,6 +140,47 @@ object OpenAIProvider:
           usage = usage,
           metadata = baseMetadata(parsed),
         )
+
+      private def executeStreamRequest(messages: List[ChatMessage]): ZStream[Any, LlmError, LlmChunk] =
+        ZStream.unwrap {
+          for
+            baseUrl <- ZIO.fromOption(config.baseUrl).orElseFail(
+                         LlmError.ConfigError("Missing baseUrl for OpenAI provider")
+                       )
+            _       <- ZIO.fromOption(config.apiKey).orElseFail(
+                         LlmError.AuthenticationError("Missing API key for OpenAI provider")
+                       )
+            request  = ChatCompletionRequest(
+                         model = config.model,
+                         messages = messages,
+                         temperature = config.temperature.orElse(Some(0.7)),
+                         max_tokens = config.maxTokens,
+                         max_completion_tokens = None,
+                         stream = Some(true),
+                         response_format = None,
+                       )
+            url      = s"${baseUrl.stripSuffix("/")}/chat/completions"
+          yield httpClient
+            .postJsonStreamSSE(url, request.toJson, authHeaders, config.timeout)
+            .mapZIO { line =>
+              ZIO
+                .fromEither(line.fromJson[OpenAIChatChunk])
+                .mapError(err => LlmError.ParseError(s"Failed to parse OpenAI stream chunk: $err", line))
+            }
+            .flatMap { chunk =>
+              val choice = chunk.choices.headOption
+              val delta  = choice.flatMap(_.delta).flatMap(_.content).getOrElse("")
+              val finish = choice.flatMap(_.finish_reason)
+              if delta.nonEmpty || finish.isDefined then
+                ZStream.succeed(LlmChunk(
+                  delta = delta,
+                  finishReason = finish,
+                  usage = None,
+                  metadata = Map("provider" -> "openai", "model" -> config.model),
+                ))
+              else ZStream.empty
+            }
+        }
 
       private def authHeaders: Map[String, String] =
         config.apiKey.map(key => Map("Authorization" -> s"Bearer $key")).getOrElse(Map.empty)

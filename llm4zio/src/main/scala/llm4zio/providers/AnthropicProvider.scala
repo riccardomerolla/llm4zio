@@ -10,22 +10,10 @@ import llm4zio.tools.{ AnyTool, JsonSchema }
 object AnthropicProvider:
   def make(config: LlmConfig, httpClient: HttpClient): LlmService =
     new LlmService:
-      override def execute(prompt: String): IO[LlmError, LlmResponse] =
-        executeRequest(List(ChatMessage(role = "user", content = prompt)), None)
-
       override def executeStream(prompt: String): ZStream[Any, LlmError, LlmChunk] =
-        // Anthropic supports streaming, but not implemented in this basic version
-        ZStream.fromZIO(execute(prompt)).map { response =>
-          LlmChunk(
-            delta = response.content,
-            finishReason = Some("stop"),
-            usage = response.usage,
-            metadata = response.metadata,
-          )
-        }
+        executeStreamRequest(List(ChatMessage(role = "user", content = prompt)), None)
 
-      override def executeWithHistory(messages: List[Message]): IO[LlmError, LlmResponse] =
-        // Separate system messages from user/assistant messages
+      override def executeStreamWithHistory(messages: List[Message]): ZStream[Any, LlmError, LlmChunk] =
         val systemMsg    = messages.find(_.role == MessageRole.System).map(_.content)
         val chatMessages = messages
           .filter(_.role != MessageRole.System)
@@ -34,22 +22,12 @@ object AnthropicProvider:
               role = msg.role match
                 case MessageRole.User      => "user"
                 case MessageRole.Assistant => "assistant"
-                case _                     => "user" // fallback
+                case _                     => "user"
               ,
               content = msg.content,
             )
           }
-        executeRequest(chatMessages, systemMsg)
-
-      override def executeStreamWithHistory(messages: List[Message]): ZStream[Any, LlmError, LlmChunk] =
-        ZStream.fromZIO(executeWithHistory(messages)).map { response =>
-          LlmChunk(
-            delta = response.content,
-            finishReason = Some("stop"),
-            usage = response.usage,
-            metadata = response.metadata,
-          )
-        }
+        executeStreamRequest(chatMessages, systemMsg)
 
       override def executeWithTools(prompt: String, tools: List[AnyTool]): IO[LlmError, ToolCallResponse] =
         for
@@ -103,14 +81,14 @@ object AnthropicProvider:
         // so we ask for JSON and parse it
         val jsonPrompt = s"$prompt\n\nPlease respond with valid JSON matching the provided schema."
         for
-          response <- execute(jsonPrompt)
+          response <- executeRequest(List(ChatMessage(role = "user", content = jsonPrompt)), None)
           parsed   <-
             ZIO.fromEither(response.content.fromJson[A])
               .mapError(err => LlmError.ParseError(s"Failed to parse structured response: $err", response.content))
         yield parsed
 
       override def isAvailable: UIO[Boolean] =
-        execute("health check").fold(_ => false, _ => true)
+        llm4zio.core.Streaming.collect(executeStream("health check")).fold(_ => false, _ => true)
 
       private def executeRequest(
         messages: List[ChatMessage],
@@ -147,6 +125,60 @@ object AnthropicProvider:
           usage = usage,
           metadata = baseMetadata(parsed),
         )
+
+      private def executeStreamRequest(
+        messages: List[ChatMessage],
+        systemMessage: Option[String],
+      ): ZStream[Any, LlmError, LlmChunk] =
+        ZStream.unwrap {
+          for
+            baseUrl <- ZIO.fromOption(config.baseUrl).orElseFail(
+                         LlmError.ConfigError("Missing baseUrl for Anthropic provider")
+                       )
+            apiKey  <- ZIO.fromOption(config.apiKey).orElseFail(
+                         LlmError.AuthenticationError("Missing API key for Anthropic provider")
+                       )
+            request  = AnthropicRequest(
+                         model = config.model,
+                         max_tokens = config.maxTokens.getOrElse(4096),
+                         messages = messages,
+                         temperature = config.temperature,
+                         system = systemMessage,
+                         stream = Some(true),
+                       )
+            url      = s"${baseUrl.stripSuffix("/")}/messages"
+          yield httpClient
+            .postJsonStreamSSE(url, request.toJson, authHeaders(apiKey), config.timeout)
+            .mapZIO { line =>
+              ZIO
+                .fromEither(line.fromJson[AnthropicStreamChunk])
+                .mapError(err => LlmError.ParseError(s"Failed to parse Anthropic stream chunk: $err", line))
+            }
+            .flatMap { chunk =>
+              chunk.`type` match
+                case "content_block_delta" =>
+                  val text = chunk.delta.flatMap(_.text).getOrElse("")
+                  if text.nonEmpty then
+                    ZStream.succeed(LlmChunk(
+                      delta = text,
+                      finishReason = None,
+                      usage = None,
+                      metadata = Map("provider" -> "anthropic", "model" -> config.model),
+                    ))
+                  else ZStream.empty
+                case "message_delta"       =>
+                  val stopReason = chunk.delta.flatMap(_.stop_reason)
+                  if stopReason.isDefined then
+                    ZStream.succeed(LlmChunk(
+                      delta = "",
+                      finishReason = stopReason,
+                      usage = None,
+                      metadata = Map("provider" -> "anthropic", "model" -> config.model),
+                    ))
+                  else ZStream.empty
+                case _                     => ZStream.empty
+            }
+        }
 
       private def authHeaders(apiKey: String): Map[String, String] =
         Map(

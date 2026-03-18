@@ -4,7 +4,7 @@ import zio.*
 import zio.json.*
 import zio.stream.*
 
-import llm4zio.core.{ LlmError, LlmResponse, LlmService }
+import llm4zio.core.{ LlmError, LlmResponse, LlmService, Streaming }
 
 enum DocumentProcessingError:
   case InvalidInput(message: String)
@@ -334,7 +334,7 @@ object RagPipeline:
            |
            |Include citations in the form [source:<documentId>#<chunkIndex>].
            |""".stripMargin
-      response        <- llmService.execute(prompt).mapError(DocumentProcessingError.GenerationFailed.apply)
+      response        <- Streaming.collect(llmService.executeStream(prompt)).mapError(DocumentProcessingError.GenerationFailed.apply)
       citations        = merged.map(result => citationFor(result.document))
     yield RagQueryResult(
       query = query,

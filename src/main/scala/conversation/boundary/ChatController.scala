@@ -1278,14 +1278,14 @@ final case class ChatControllerLive(
                 executeWithConfig(config, prompt).catchAll(err =>
                   ZIO.logWarning(
                     s"chat agent override execution failed for '$name': ${formatLlmError(err)}; falling back to global provider"
-                  ) *> llmService.execute(prompt)
+                  ) *> Streaming.collect(llmService.executeStream(prompt))
                 )
             case Left(err)     =>
               ZIO.logWarning(s"chat agent override resolution failed for '$name': $err; using global provider") *>
-                llmService.execute(prompt)
+                Streaming.collect(llmService.executeStream(prompt))
           }
       case None       =>
-        llmService.execute(prompt)
+        Streaming.collect(llmService.executeStream(prompt))
 
   private def executeStreamWithPreferredAgent(
     agentName: Option[String],
@@ -1325,7 +1325,7 @@ final case class ChatControllerLive(
   private def executeWithConfig(config: AIProviderConfig, prompt: String): IO[LlmError, llm4zio.core.LlmResponse] =
     fallbackConfigs(config)
       .foldLeft[IO[LlmError, llm4zio.core.LlmResponse]](ZIO.fail(LlmError.ConfigError("No LLM provider configured"))) {
-        (acc, cfg) => acc.orElse(providerFor(cfg).flatMap(_.execute(prompt)))
+        (acc, cfg) => acc.orElse(providerFor(cfg).flatMap(svc => Streaming.collect(svc.executeStream(prompt))))
       }
 
   private def executeStreamWithConfig(

@@ -9,6 +9,7 @@ case class AnthropicRequest(
   messages: List[ChatMessage],
   temperature: Option[Double] = None,
   system: Option[String] = None,
+  stream: Option[Boolean] = None,
 ) derives JsonCodec
 
 case class AnthropicResponse(
@@ -62,4 +63,16 @@ case class AnthropicResponseWithTools(
   model: Option[String] = None,
   usage: Option[AnthropicUsage] = None,
   stop_reason: Option[String] = None,
+) derives JsonCodec
+
+// Streaming chunk models (SSE)
+case class AnthropicStreamChunkDelta(
+  `type`: String = "",
+  text: Option[String] = None,
+  stop_reason: Option[String] = None,
+) derives JsonCodec
+
+case class AnthropicStreamChunk(
+  `type`: String = "",
+  delta: Option[AnthropicStreamChunkDelta] = None,
 ) derives JsonCodec

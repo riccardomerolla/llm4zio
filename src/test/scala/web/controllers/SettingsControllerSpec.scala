@@ -21,13 +21,13 @@ import shared.store.{ ConfigStoreModule, ConversationRow, DataStoreModule, Memor
 object SettingsControllerSpec extends ZIOSpecDefault:
 
   private val stubLlmService: LlmService = new LlmService:
-    override def execute(prompt: String): IO[LlmError, LlmResponse] =
+    def execute(prompt: String): IO[LlmError, LlmResponse] =
       ZIO.succeed(LlmResponse("ok"))
 
     override def executeStream(prompt: String): ZStream[Any, LlmError, LlmChunk] =
       ZStream.empty
 
-    override def executeWithHistory(messages: List[Message]): IO[LlmError, LlmResponse] =
+    def executeWithHistory(messages: List[Message]): IO[LlmError, LlmResponse] =
       ZIO.succeed(LlmResponse("ok"))
 
     override def executeStreamWithHistory(messages: List[Message]): ZStream[Any, LlmError, LlmChunk] =

@@ -159,7 +159,7 @@ object AnalysisAgentRunner:
           ZIO.logWarning(
             s"Failed to resolve AI config for agent '$agentName' ($err); falling back to default LLM service"
           ) *>
-            llmService.execute(prompt)
+            llm4zio.core.Streaming.collect(llmService.executeStream(prompt))
       }
 
   private def withFailover(
@@ -246,7 +246,7 @@ object AnalysisAgentRunner:
             .executeStream(prompt)
         )
       case _                     =>
-        providerFor(cfg, httpClient, cliExecutor, providerCache).flatMap(_.execute(prompt))
+        providerFor(cfg, httpClient, cliExecutor, providerCache).flatMap(svc => llm4zio.core.Streaming.collect(svc.executeStream(prompt)))
 
   private def fallbackConfigs(primary: AIProviderConfig): List[LlmConfig] =
     val primaryLlm = aiConfigToLlmConfig(primary)

@@ -19,7 +19,7 @@ import activity.entity.{ ActivityEvent, ActivityEventType }
 import db.*
 import io.github.riccardomerolla.zio.eclipsestore.schema.TypedStore
 import io.github.riccardomerolla.zio.eclipsestore.service.{ LifecycleCommand, LifecycleStatus }
-import llm4zio.core.{ LlmError, LlmService }
+import llm4zio.core.{ LlmError, LlmService, Streaming }
 import llm4zio.tools.ToolRegistry
 import shared.ids.Ids.EventId
 import shared.store.{ MemoryStoreModule, * }
@@ -460,7 +460,7 @@ final case class SettingsControllerLive(
         form     <- parseForm(req)
         aiConfig <- ZIO.fromOption(SettingsApplier.toAIProviderConfig(form)).orElseFail("No AI provider configured")
         start    <- Clock.nanoTime
-        _        <- llmService.execute("Say 'pong'")
+        _        <- Streaming.collect(llmService.executeStream("Say 'pong'")).unit
         end      <- Clock.nanoTime
         latency   = (end - start) / 1_000_000 // Convert nanos to millis
       yield (aiConfig.model, latency)

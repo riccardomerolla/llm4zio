@@ -96,3 +96,21 @@ case class ChatCompletionRequestWithTools(
   max_tokens: Option[Int] = None,
   stream: Option[Boolean] = None,
 ) derives JsonCodec
+
+// Streaming chunk models (SSE)
+case class OpenAIChatChunkDelta(
+  role: Option[String] = None,
+  content: Option[String] = None,
+) derives JsonCodec
+
+case class OpenAIChatChunkChoice(
+  index: Int = 0,
+  delta: Option[OpenAIChatChunkDelta] = None,
+  finish_reason: Option[String] = None,
+) derives JsonCodec
+
+case class OpenAIChatChunk(
+  id: Option[String] = None,
+  model: Option[String] = None,
+  choices: List[OpenAIChatChunkChoice] = Nil,
+) derives JsonCodec

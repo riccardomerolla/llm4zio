@@ -14,24 +14,12 @@ import llm4zio.tools.{ AnyTool, JsonSchema }
 object OpenCodeProvider:
   def make(config: LlmConfig, httpClient: HttpClient): LlmService =
     new LlmService:
-      override def execute(prompt: String): IO[LlmError, LlmResponse] =
-        executeRequest(
-          messages = List(ChatMessage(role = "user", content = prompt)),
-          responseFormat = None,
-        )
-
       override def executeStream(prompt: String): ZStream[Any, LlmError, LlmChunk] =
         ZStream.fromZIO(
           executeStreamRequest(
             messages = List(ChatMessage(role = "user", content = prompt))
           )
         ).flatMap(chunks => ZStream.fromIterable(chunks))
-
-      override def executeWithHistory(messages: List[Message]): IO[LlmError, LlmResponse] =
-        executeRequest(
-          messages = toChatMessages(messages),
-          responseFormat = None,
-        )
 
       override def executeStreamWithHistory(messages: List[Message]): ZStream[Any, LlmError, LlmChunk] =
         ZStream.fromZIO(executeStreamRequest(toChatMessages(messages))).flatMap(chunks => ZStream.fromIterable(chunks))

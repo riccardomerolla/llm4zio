@@ -31,6 +31,18 @@ trait HttpClient:
       ZStream.fromIterable(raw.split("\\r?\\n").toList)
     }
 
+  /** Parse SSE (Server-Sent Events) stream: strips `data: ` prefix, skips `[DONE]` and empty lines */
+  def postJsonStreamSSE(
+    url: String,
+    body: String,
+    headers: Map[String, String] = Map.empty,
+    timeout: Duration,
+  ): ZStream[Any, LlmError, String] =
+    postJsonStream(url, body, headers, timeout)
+      .filter(_.startsWith("data: "))
+      .map(_.stripPrefix("data: ").trim)
+      .filter(s => s.nonEmpty && s != "[DONE]")
+
 object HttpClient:
   def get(
     url: String,
@@ -54,6 +66,14 @@ object HttpClient:
     timeout: Duration,
   ): ZStream[HttpClient, LlmError, String] =
     ZStream.serviceWithStream[HttpClient](_.postJsonStream(url, body, headers, timeout))
+
+  def postJsonStreamSSE(
+    url: String,
+    body: String,
+    headers: Map[String, String] = Map.empty,
+    timeout: Duration,
+  ): ZStream[HttpClient, LlmError, String] =
+    ZStream.serviceWithStream[HttpClient](_.postJsonStreamSSE(url, body, headers, timeout))
 
   val live: ZLayer[Client, Nothing, HttpClient] =
     ZLayer.fromFunction((client: Client) => fromRequestExecutor(request => client.batched(request)))

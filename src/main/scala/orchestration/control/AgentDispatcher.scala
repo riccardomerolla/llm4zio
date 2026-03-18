@@ -226,7 +226,7 @@ final case class AgentDispatcherLive(
       .either
       .flatMap {
         case Right(config) => withFailover(config, prompt)
-        case Left(_)       => llmService.execute(prompt)
+        case Left(_)       => llm4zio.core.Streaming.collect(llmService.executeStream(prompt))
       }
 
   private def withFailover(config: AIProviderConfig, prompt: String): IO[LlmError, LlmResponse] =
@@ -234,7 +234,7 @@ final case class AgentDispatcherLive(
       .foldLeft[IO[LlmError, LlmResponse]](ZIO.fail(LlmError.ConfigError("No LLM provider configured"))) {
         (acc, cfg) =>
           acc.orElse(
-            providerFor(cfg).flatMap(_.execute(prompt))
+            providerFor(cfg).flatMap(svc => llm4zio.core.Streaming.collect(svc.executeStream(prompt)))
           )
       }
 

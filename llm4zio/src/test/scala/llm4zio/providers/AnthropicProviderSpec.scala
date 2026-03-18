@@ -2,11 +2,24 @@ package llm4zio.providers
 
 import zio.*
 import zio.json.*
+import zio.stream.ZStream
 import zio.test.*
 
 import llm4zio.core.*
 
 object AnthropicProviderSpec extends ZIOSpecDefault:
+  private def sseChunkLine(text: String): String =
+    AnthropicStreamChunk(
+      `type` = "content_block_delta",
+      delta = Some(AnthropicStreamChunkDelta(`type` = "text_delta", text = Some(text), stop_reason = None)),
+    ).toJson
+
+  private val sseStopLine: String =
+    AnthropicStreamChunk(
+      `type` = "message_delta",
+      delta = Some(AnthropicStreamChunkDelta(`type` = "message_delta", text = None, stop_reason = Some("end_turn"))),
+    ).toJson
+
   // Mock HTTP client for testing
   class MockHttpClient(shouldSucceed: Boolean = true) extends HttpClient:
     override def get(url: String, headers: Map[String, String], timeout: Duration): IO[LlmError, String] =
@@ -14,22 +27,18 @@ object AnthropicProviderSpec extends ZIOSpecDefault:
 
     override def postJson(url: String, body: String, headers: Map[String, String], timeout: Duration)
       : IO[LlmError, String] =
+      if shouldSucceed then ZIO.succeed("{}") else ZIO.fail(LlmError.ProviderError("HTTP request failed", None))
+
+    override def postJsonStreamSSE(
+      url: String,
+      body: String,
+      headers: Map[String, String],
+      timeout: Duration,
+    ): ZStream[Any, LlmError, String] =
       if shouldSucceed then
-        val response = AnthropicResponse(
-          id = Some("msg_123"),
-          content = List(
-            ContentBlock(`type` = "text", text = Some("Test response"))
-          ),
-          usage = Some(AnthropicUsage(
-            input_tokens = Some(10),
-            output_tokens = Some(5),
-          )),
-          model = Some("claude-3-5-sonnet-20241022"),
-          stop_reason = Some("end_turn"),
-        )
-        ZIO.succeed(response.toJson)
+        ZStream.fromIterable(List(sseChunkLine("Test response"), sseStopLine))
       else
-        ZIO.fail(LlmError.ProviderError("HTTP request failed", None))
+        ZStream.fail(LlmError.ProviderError("HTTP request failed", None))
 
   def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("AnthropicProvider")(
     test("execute should return response") {
@@ -43,11 +52,9 @@ object AnthropicProviderSpec extends ZIOSpecDefault:
       val provider   = AnthropicProvider.make(config, httpClient)
 
       for {
-        response <- provider.execute("test prompt")
+        response <- Streaming.collect(provider.executeStream("test prompt"))
       } yield assertTrue(
         response.content == "Test response",
-        response.usage.isDefined,
-        response.usage.get.total == 15,
       )
     },
     test("execute should fail with missing apiKey") {
@@ -61,7 +68,7 @@ object AnthropicProviderSpec extends ZIOSpecDefault:
       val provider   = AnthropicProvider.make(config, httpClient)
 
       for {
-        result <- provider.execute("test").exit
+        result <- Streaming.collect(provider.executeStream("test")).exit
       } yield assertTrue(result.isFailure)
     },
     test("executeWithHistory should handle system messages") {
@@ -81,7 +88,7 @@ object AnthropicProviderSpec extends ZIOSpecDefault:
       )
 
       for {
-        response <- provider.executeWithHistory(messages)
+        response <- Streaming.collect(provider.executeStreamWithHistory(messages))
       } yield assertTrue(response.content == "Test response")
     },
   )

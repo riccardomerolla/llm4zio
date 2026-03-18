@@ -408,21 +408,6 @@ object GeminiCliProvider:
     executionContext: GeminiCliExecutionContext = GeminiCliExecutionContext.default,
   ): LlmService =
     new LlmService:
-      override def execute(prompt: String): IO[LlmError, LlmResponse] =
-        for
-          _      <- ZIO.logInfo(s"Executing Gemini CLI with model: ${config.model}")
-          _      <- executor.checkGeminiInstalled
-          output <- executor.runGeminiProcess(prompt, config, executionContext)
-          _      <- ZIO.logDebug("Gemini execution completed")
-        yield LlmResponse(
-          content = output,
-          usage = None,
-          metadata = Map(
-            "provider" -> "gemini-cli",
-            "model"    -> config.model,
-          ),
-        )
-
       override def executeStream(prompt: String): ZStream[Any, LlmError, LlmChunk] =
         val baseMetadata = Map(
           "provider" -> "gemini-cli",
@@ -496,12 +481,6 @@ object GeminiCliProvider:
               case _                                                                                              =>
                 ZStream.empty
             }
-
-      override def executeWithHistory(messages: List[Message]): IO[LlmError, LlmResponse] =
-        val combinedPrompt = messages.map { msg =>
-          s"${msg.role}: ${msg.content}"
-        }.mkString("\n\n")
-        execute(combinedPrompt)
 
       override def executeStreamWithHistory(messages: List[Message]): ZStream[Any, LlmError, LlmChunk] =
         val combinedPrompt = messages.map { msg =>

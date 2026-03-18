@@ -87,13 +87,13 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
   private object TestLlm:
     val layer: ULayer[LlmService] = ZLayer.succeed(
       new LlmService:
-        override def execute(prompt: String): IO[LlmError, LlmResponse] =
+        def execute(prompt: String): IO[LlmError, LlmResponse] =
           ZIO.succeed(LlmResponse(content = s"echo:$prompt", metadata = Map("provider" -> "test")))
 
         override def executeStream(prompt: String): zio.stream.Stream[LlmError, LlmChunk] =
           ZStream.succeed(LlmChunk(delta = s"echo:$prompt", finishReason = Some("stop")))
 
-        override def executeWithHistory(messages: List[Message]): IO[LlmError, LlmResponse] =
+        def executeWithHistory(messages: List[Message]): IO[LlmError, LlmResponse] =
           ZIO.succeed(LlmResponse(content = "history"))
 
         override def executeStreamWithHistory(messages: List[Message]): zio.stream.Stream[LlmError, LlmChunk] =

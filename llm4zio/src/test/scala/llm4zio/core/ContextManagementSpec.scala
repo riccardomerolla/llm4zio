@@ -32,7 +32,7 @@ object ContextManagementSpec extends ZIOSpecDefault:
   final private class ClarificationLlmService extends LlmService:
     private val counter = new java.util.concurrent.atomic.AtomicInteger(0)
 
-    override def execute(prompt: String): IO[LlmError, LlmResponse] =
+    private def execute(@annotation.unused prompt: String): IO[LlmError, LlmResponse] =
       ZIO.attempt(counter.getAndIncrement()).orDie.flatMap { call =>
         if call == 0 then ZIO.succeed(LlmResponse("not-json"))
         else ZIO.succeed(LlmResponse("{\"value\": 42}"))
@@ -41,7 +41,7 @@ object ContextManagementSpec extends ZIOSpecDefault:
     override def executeStream(prompt: String): zio.stream.Stream[LlmError, LlmChunk] =
       ZStream.fromZIO(execute(prompt).map(r => LlmChunk(r.content, finishReason = Some("stop"))))
 
-    override def executeWithHistory(messages: List[Message]): IO[LlmError, LlmResponse] =
+    private def executeWithHistory(messages: List[Message]): IO[LlmError, LlmResponse] =
       execute(messages.map(_.content).mkString("\n"))
 
     override def executeStreamWithHistory(messages: List[Message]): zio.stream.Stream[LlmError, LlmChunk] =
@@ -58,12 +58,12 @@ object ContextManagementSpec extends ZIOSpecDefault:
   final private class ToolLoopLlmService extends LlmService:
     private val counter = new java.util.concurrent.atomic.AtomicInteger(0)
 
-    override def execute(prompt: String): IO[LlmError, LlmResponse] = ZIO.succeed(LlmResponse(prompt))
+    private def execute(prompt: String): IO[LlmError, LlmResponse] = ZIO.succeed(LlmResponse(prompt))
 
     override def executeStream(prompt: String): zio.stream.Stream[LlmError, LlmChunk] =
       ZStream.fromZIO(execute(prompt).map(r => LlmChunk(r.content, finishReason = Some("stop"))))
 
-    override def executeWithHistory(messages: List[Message]): IO[LlmError, LlmResponse] =
+    private def executeWithHistory(messages: List[Message]): IO[LlmError, LlmResponse] =
       execute(messages.map(_.content).mkString("\n"))
 
     override def executeStreamWithHistory(messages: List[Message]): zio.stream.Stream[LlmError, LlmChunk] =

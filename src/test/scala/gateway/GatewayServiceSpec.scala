@@ -62,14 +62,11 @@ object GatewayServiceSpec extends ZIOSpecDefault:
   private object TestLlm:
     val layer: ULayer[LlmService] = ZLayer.succeed(
       new LlmService:
-        override def execute(prompt: String): IO[LlmError, LlmResponse] =
+        def execute(prompt: String): IO[LlmError, LlmResponse] =
           ZIO.succeed(LlmResponse("""{"agent":"code-agent","confidence":0.93}"""))
 
         override def executeStream(prompt: String): zio.stream.Stream[LlmError, LlmChunk] =
-          ZStream.empty
-
-        override def executeWithHistory(messages: List[Message]): IO[LlmError, LlmResponse] =
-          ZIO.succeed(LlmResponse("history"))
+          ZStream.succeed(LlmChunk("""{"agent":"code-agent","confidence":0.93}""", finishReason = Some("stop")))
 
         override def executeStreamWithHistory(messages: List[Message]): zio.stream.Stream[LlmError, LlmChunk] =
           ZStream.empty
@@ -113,15 +110,17 @@ object GatewayServiceSpec extends ZIOSpecDefault:
   ): ZLayer[Any, Any, GatewayService & ChannelRegistry] =
     val llmLayer = ZLayer.succeed(
       new LlmService:
-        override def execute(prompt: String): IO[LlmError, LlmResponse] =
+        def execute(prompt: String): IO[LlmError, LlmResponse] =
           if prompt.contains("You are a request router.") then
             ZIO.succeed(LlmResponse("""{"agent":"code-agent","confidence":0.93}"""))
           else promptRef.update(_ :+ prompt).as(LlmResponse("ok"))
 
         override def executeStream(prompt: String): zio.stream.Stream[LlmError, LlmChunk] =
-          ZStream.empty
+          if prompt.contains("You are a request router.") then
+            ZStream.succeed(LlmChunk("""{"agent":"code-agent","confidence":0.93}""", finishReason = Some("stop")))
+          else ZStream.fromZIO(promptRef.update(_ :+ prompt).as(LlmChunk("ok", finishReason = Some("stop"))))
 
-        override def executeWithHistory(messages: List[Message]): IO[LlmError, LlmResponse] =
+        def executeWithHistory(messages: List[Message]): IO[LlmError, LlmResponse] =
           ZIO.succeed(LlmResponse("history"))
 
         override def executeStreamWithHistory(messages: List[Message]): zio.stream.Stream[LlmError, LlmChunk] =

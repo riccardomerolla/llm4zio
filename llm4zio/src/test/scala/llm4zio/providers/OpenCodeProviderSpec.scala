@@ -93,14 +93,13 @@ object OpenCodeProviderSpec extends ZIOSpecDefault:
   def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("OpenCodeProvider")(
     test("execute maps successful API response") {
       for
-        http     <- mockHttpClient(req => ZIO.succeed(standardResponse()))
+        http     <- mockHttpClient(_ => ZIO.succeed(sseResponse))
         provider  = OpenCodeProvider.make(config(), http)
-        response <- provider.execute("test prompt")
+        response <- Streaming.collect(provider.executeStream("test prompt"))
       yield assertTrue(
-        response.content == "Test response from OpenCode",
-        response.usage.exists(_.total == 15),
+        response.content == "Hello world",
+        response.usage.exists(_.total == 11),
         response.metadata.get("provider").contains("opencode"),
-        response.metadata.get("id").contains("chatcmpl-123"),
       )
     },
     test("executeStream parses SSE chunks") {
@@ -134,23 +133,23 @@ object OpenCodeProviderSpec extends ZIOSpecDefault:
     },
     test("execute fails when apiKey missing") {
       for
-        http    <- mockHttpClient(_ => ZIO.succeed(standardResponse()))
+        http    <- mockHttpClient(_ => ZIO.succeed(sseResponse))
         provider = OpenCodeProvider.make(config(apiKey = None), http)
-        result  <- provider.execute("test").exit
+        result  <- Streaming.collect(provider.executeStream("test")).exit
       yield assertTrue(result.isFailure)
     },
     test("execute fails when baseUrl missing") {
       for
-        http    <- mockHttpClient(_ => ZIO.succeed(standardResponse()))
+        http    <- mockHttpClient(_ => ZIO.succeed(sseResponse))
         provider = OpenCodeProvider.make(config(baseUrl = None), http)
-        result  <- provider.execute("test").exit
+        result  <- Streaming.collect(provider.executeStream("test")).exit
       yield assertTrue(result.isFailure)
     },
     test("request construction sets OpenAI-compatible endpoint and auth header") {
       for
-        http     <- mockHttpClient(_ => ZIO.succeed(standardResponse()))
+        http     <- mockHttpClient(_ => ZIO.succeed(sseResponse))
         provider  = OpenCodeProvider.make(config(), http)
-        _        <- provider.execute("test prompt")
+        _        <- Streaming.collect(provider.executeStream("test prompt"))
         captured <- http.captured
         last     <- ZIO.fromOption(captured.headOption)
       yield assertTrue(
@@ -210,7 +209,7 @@ object OpenCodeProviderSpec extends ZIOSpecDefault:
                       for
                         http    <- mockHttpClient(_ => ZIO.fail(err))
                         provider = OpenCodeProvider.make(config(), http)
-                        outcome <- provider.execute("x").either
+                        outcome <- Streaming.collect(provider.executeStream("x")).either
                       yield outcome
                     }
       yield assertTrue(outcomes.forall(_.isLeft))

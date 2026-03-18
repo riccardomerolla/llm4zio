@@ -9,7 +9,7 @@ import conversation.entity.api.{ ChatConversation, ConversationEntry, MessageTyp
 import db.{ ChatRepository, PersistenceError, TaskRepository }
 import issues.entity.api.{ AgentIssueView, IssuePriority, IssueStatus }
 import issues.entity.{ IssueEvent, IssueRepository }
-import llm4zio.core.{ LlmError, LlmService }
+import llm4zio.core.{ LlmError, LlmService, Streaming }
 import shared.ids.Ids.{ AgentId, EventId, IssueId, TaskRunId }
 
 trait IssueAssignmentOrchestrator:
@@ -192,7 +192,7 @@ final private case class IssueAssignmentOrchestratorLive(
                              updatedAt = now,
                            )
                          )
-      llmResponse     <- llmService.execute(prompt).mapError(convertLlmError)
+      llmResponse     <- Streaming.collect(llmService.executeStream(prompt)).mapError(convertLlmError)
       now2            <- Clock.instant
       _               <- chatRepository.addMessage(
                            ConversationEntry(

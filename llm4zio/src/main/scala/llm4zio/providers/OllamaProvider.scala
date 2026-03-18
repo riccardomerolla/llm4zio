@@ -68,43 +68,22 @@ case class OllamaModelsResponse(
 object OllamaProvider:
   def make(config: LlmConfig, httpClient: HttpClient): LlmService =
     new LlmService:
-      override def execute(prompt: String): IO[LlmError, LlmResponse] =
-        executeGenerate(prompt, None)
-
       override def executeStream(prompt: String): ZStream[Any, LlmError, LlmChunk] =
-        // Ollama supports streaming, but not implemented in this basic version
-        ZStream.fromZIO(execute(prompt)).map { response =>
-          LlmChunk(
-            delta = response.content,
-            finishReason = Some("stop"),
-            usage = response.usage,
-            metadata = response.metadata,
-          )
-        }
+        executeGenerateStream(prompt, None)
 
-      override def executeWithHistory(messages: List[Message]): IO[LlmError, LlmResponse] =
+      override def executeStreamWithHistory(messages: List[Message]): ZStream[Any, LlmError, LlmChunk] =
         val ollamaMessages = messages.map { msg =>
           OllamaMessage(
             role = msg.role match
               case MessageRole.System    => "system"
               case MessageRole.User      => "user"
               case MessageRole.Assistant => "assistant"
-              case MessageRole.Tool      => "user" // Ollama doesn't have tool role
+              case MessageRole.Tool      => "user"
             ,
             content = msg.content,
           )
         }
-        executeChatRequest(ollamaMessages, None)
-
-      override def executeStreamWithHistory(messages: List[Message]): ZStream[Any, LlmError, LlmChunk] =
-        ZStream.fromZIO(executeWithHistory(messages)).map { response =>
-          LlmChunk(
-            delta = response.content,
-            finishReason = Some("stop"),
-            usage = response.usage,
-            metadata = response.metadata,
-          )
-        }
+        executeChatStream(ollamaMessages, None)
 
       override def executeWithTools(prompt: String, tools: List[AnyTool]): IO[LlmError, ToolCallResponse] =
         // Ollama doesn't have native tool calling support yet
@@ -132,6 +111,89 @@ object OllamaProvider:
               )
               .as(true)
               .catchAll(_ => ZIO.succeed(false))
+
+      private def executeGenerateStream(
+        prompt: String,
+        format: Option[String],
+      ): ZStream[Any, LlmError, LlmChunk] =
+        ZStream.unwrap {
+          for
+            baseUrl <- ZIO.fromOption(config.baseUrl).orElseFail(
+                         LlmError.ConfigError("Missing baseUrl for Ollama provider")
+                       )
+            request  = OllamaGenerateRequest(
+                         model = config.model,
+                         prompt = prompt,
+                         stream = true,
+                         format = format,
+                         options = Some(OllamaOptions(
+                           temperature = config.temperature,
+                           num_predict = config.maxTokens,
+                         )),
+                       )
+            url      = s"${baseUrl.stripSuffix("/")}/api/generate"
+          yield httpClient
+            .postJsonStream(url, request.toJson, Map.empty, config.timeout)
+            .filter(_.trim.nonEmpty)
+            .mapZIO { line =>
+              ZIO
+                .fromEither(line.fromJson[OllamaGenerateResponse])
+                .mapError(err => LlmError.ParseError(s"Failed to parse Ollama stream chunk: $err", line))
+            }
+            .flatMap { chunk =>
+              val finish = if chunk.done then Some("stop") else None
+              if chunk.response.nonEmpty || chunk.done then
+                ZStream.succeed(LlmChunk(
+                  delta = chunk.response,
+                  finishReason = finish,
+                  usage = if chunk.done then extractGenerateUsage(chunk) else None,
+                  metadata = baseMetadata(chunk.model),
+                ))
+              else ZStream.empty
+            }
+        }
+
+      private def executeChatStream(
+        messages: List[OllamaMessage],
+        format: Option[String],
+      ): ZStream[Any, LlmError, LlmChunk] =
+        ZStream.unwrap {
+          for
+            baseUrl <- ZIO.fromOption(config.baseUrl).orElseFail(
+                         LlmError.ConfigError("Missing baseUrl for Ollama provider")
+                       )
+            request  = OllamaChatRequest(
+                         model = config.model,
+                         messages = messages,
+                         stream = true,
+                         format = format,
+                         options = Some(OllamaOptions(
+                           temperature = config.temperature,
+                           num_predict = config.maxTokens,
+                         )),
+                       )
+            url      = s"${baseUrl.stripSuffix("/")}/api/chat"
+          yield httpClient
+            .postJsonStream(url, request.toJson, Map.empty, config.timeout)
+            .filter(_.trim.nonEmpty)
+            .mapZIO { line =>
+              ZIO
+                .fromEither(line.fromJson[OllamaChatResponse])
+                .mapError(err => LlmError.ParseError(s"Failed to parse Ollama chat stream chunk: $err", line))
+            }
+            .flatMap { chunk =>
+              val finish = if chunk.done then Some("stop") else None
+              val text   = chunk.message.content
+              if text.nonEmpty || chunk.done then
+                ZStream.succeed(LlmChunk(
+                  delta = text,
+                  finishReason = finish,
+                  usage = if chunk.done then extractChatUsage(chunk) else None,
+                  metadata = baseMetadata(chunk.model),
+                ))
+              else ZStream.empty
+            }
+        }
 
       private def executeGenerate(
         prompt: String,
@@ -164,41 +226,6 @@ object OllamaProvider:
           usage    = extractGenerateUsage(parsed)
         yield LlmResponse(
           content = parsed.response,
-          usage = usage,
-          metadata = baseMetadata(parsed.model),
-        )
-
-      private def executeChatRequest(
-        messages: List[OllamaMessage],
-        format: Option[String],
-      ): IO[LlmError, LlmResponse] =
-        for
-          baseUrl <- ZIO.fromOption(config.baseUrl).orElseFail(
-                       LlmError.ConfigError("Missing baseUrl for Ollama provider")
-                     )
-          request  = OllamaChatRequest(
-                       model = config.model,
-                       messages = messages,
-                       stream = false,
-                       format = format,
-                       options = Some(OllamaOptions(
-                         temperature = config.temperature,
-                         num_predict = config.maxTokens,
-                       )),
-                     )
-          url      = s"${baseUrl.stripSuffix("/")}/api/chat"
-          body    <- httpClient.postJson(
-                       url = url,
-                       body = request.toJson,
-                       headers = Map.empty,
-                       timeout = config.timeout,
-                     )
-          parsed  <- ZIO
-                       .fromEither(body.fromJson[OllamaChatResponse])
-                       .mapError(err => LlmError.ParseError(s"Failed to decode Ollama chat response: $err", body))
-          usage    = extractChatUsage(parsed)
-        yield LlmResponse(
-          content = parsed.message.content,
           usage = usage,
           metadata = baseMetadata(parsed.model),
         )
