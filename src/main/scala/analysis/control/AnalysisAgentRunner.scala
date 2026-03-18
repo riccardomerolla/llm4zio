@@ -246,7 +246,9 @@ object AnalysisAgentRunner:
             .executeStream(prompt)
         )
       case _                     =>
-        providerFor(cfg, httpClient, cliExecutor, providerCache).flatMap(svc => llm4zio.core.Streaming.collect(svc.executeStream(prompt)))
+        providerFor(cfg, httpClient, cliExecutor, providerCache).flatMap(svc =>
+          llm4zio.core.Streaming.collect(svc.executeStream(prompt))
+        )
 
   private def fallbackConfigs(primary: AIProviderConfig): List[LlmConfig] =
     val primaryLlm = aiConfigToLlmConfig(primary)

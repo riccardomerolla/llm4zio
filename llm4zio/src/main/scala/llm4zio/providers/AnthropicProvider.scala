@@ -22,7 +22,8 @@ object AnthropicProvider:
               role = msg.role match
                 case MessageRole.User      => "user"
                 case MessageRole.Assistant => "assistant"
-                case _                     => "user"
+                case _                     =>
+                  "user"
               ,
               content = msg.content,
             )

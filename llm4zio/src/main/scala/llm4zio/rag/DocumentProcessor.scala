@@ -334,7 +334,8 @@ object RagPipeline:
            |
            |Include citations in the form [source:<documentId>#<chunkIndex>].
            |""".stripMargin
-      response        <- Streaming.collect(llmService.executeStream(prompt)).mapError(DocumentProcessingError.GenerationFailed.apply)
+      response        <-
+        Streaming.collect(llmService.executeStream(prompt)).mapError(DocumentProcessingError.GenerationFailed.apply)
       citations        = merged.map(result => citationFor(result.document))
     yield RagQueryResult(
       query = query,

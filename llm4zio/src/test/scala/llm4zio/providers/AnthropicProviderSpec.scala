@@ -54,7 +54,7 @@ object AnthropicProviderSpec extends ZIOSpecDefault:
       for {
         response <- Streaming.collect(provider.executeStream("test prompt"))
       } yield assertTrue(
-        response.content == "Test response",
+        response.content == "Test response"
       )
     },
     test("execute should fail with missing apiKey") {

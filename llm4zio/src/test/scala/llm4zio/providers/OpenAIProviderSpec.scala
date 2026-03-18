@@ -41,7 +41,7 @@ object OpenAIProviderSpec extends ZIOSpecDefault:
     ): ZStream[Any, LlmError, String] =
       if shouldSucceed then
         ZStream.fromIterable(List(
-          sseChunkLine("Test response", Some("stop")),
+          sseChunkLine("Test response", Some("stop"))
         ))
       else
         ZStream.fail(LlmError.ProviderError("HTTP POST failed", None))
@@ -60,7 +60,7 @@ object OpenAIProviderSpec extends ZIOSpecDefault:
       for {
         response <- Streaming.collect(provider.executeStream("test prompt"))
       } yield assertTrue(
-        response.content == "Test response",
+        response.content == "Test response"
       )
     },
     test("execute should fail with missing apiKey") {

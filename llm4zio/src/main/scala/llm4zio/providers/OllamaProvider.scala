@@ -78,7 +78,8 @@ object OllamaProvider:
               case MessageRole.System    => "system"
               case MessageRole.User      => "user"
               case MessageRole.Assistant => "assistant"
-              case MessageRole.Tool      => "user"
+              case MessageRole.Tool      =>
+                "user"
             ,
             content = msg.content,
           )

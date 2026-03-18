@@ -42,7 +42,11 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
       )
       val executor = new MockGeminiCliExecutor(
         streamEvents = List(
-          GeminiCliStreamEvent.Message(role = Some("assistant"), content = Some("Response to: test prompt"), delta = true),
+          GeminiCliStreamEvent.Message(
+            role = Some("assistant"),
+            content = Some("Response to: test prompt"),
+            delta = true,
+          ),
           GeminiCliStreamEvent.Result(status = Some("success"), errorMessage = None, stats = None),
         )
       )

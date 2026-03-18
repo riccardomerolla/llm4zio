@@ -104,7 +104,7 @@ object LmStudioProviderSpec extends ZIOSpecDefault:
       for {
         response <- Streaming.collect(provider.executeStreamWithHistory(messages))
       } yield assertTrue(
-        response.content == "Test LM Studio native response",
+        response.content == "Test LM Studio native response"
       )
     },
     test("executeStructured should support JSON schema") {

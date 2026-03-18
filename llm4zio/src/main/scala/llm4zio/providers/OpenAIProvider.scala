@@ -20,7 +20,8 @@ object OpenAIProvider:
               case MessageRole.System    => "system"
               case MessageRole.User      => "user"
               case MessageRole.Assistant => "assistant"
-              case MessageRole.Tool      => "tool"
+              case MessageRole.Tool      =>
+                "tool"
             ,
             content = msg.content,
           )

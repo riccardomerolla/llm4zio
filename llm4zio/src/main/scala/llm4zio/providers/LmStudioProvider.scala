@@ -33,7 +33,8 @@ object LmStudioProvider:
               case MessageRole.System    => "system"
               case MessageRole.User      => "user"
               case MessageRole.Assistant => "assistant"
-              case MessageRole.Tool      => "tool"
+              case MessageRole.Tool      =>
+                "tool"
             ,
             content = msg.content,
           )
@@ -76,21 +77,21 @@ object LmStudioProvider:
       private def executeStreamRequest(messages: List[LmStudioMessage]): ZStream[Any, LlmError, LlmChunk] =
         ZStream.unwrap {
           for
-            baseUrl   <- ZIO.fromOption(config.baseUrl).orElseFail(
-                           LlmError.ConfigError("Missing baseUrl for LmStudio provider")
-                         )
-            normalized = normalizeBaseUrl(baseUrl)
+            baseUrl     <- ZIO.fromOption(config.baseUrl).orElseFail(
+                             LlmError.ConfigError("Missing baseUrl for LmStudio provider")
+                           )
+            normalized   = normalizeBaseUrl(baseUrl)
             chatMessages = messages.map(m => ChatMessage(role = m.role, content = m.content))
-            request    = ChatCompletionRequest(
-                           model = config.model,
-                           messages = chatMessages,
-                           temperature = config.temperature.orElse(Some(0.7)),
-                           max_tokens = config.maxTokens,
-                           max_completion_tokens = None,
-                           stream = Some(true),
-                           response_format = None,
-                         )
-            url        = s"$normalized/v1/chat/completions"
+            request      = ChatCompletionRequest(
+                             model = config.model,
+                             messages = chatMessages,
+                             temperature = config.temperature.orElse(Some(0.7)),
+                             max_tokens = config.maxTokens,
+                             max_completion_tokens = None,
+                             stream = Some(true),
+                             response_format = None,
+                           )
+            url          = s"$normalized/v1/chat/completions"
           yield httpClient
             .postJsonStreamSSE(url, request.toJson, authHeaders, config.timeout)
             .mapZIO { line =>
