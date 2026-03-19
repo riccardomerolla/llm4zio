@@ -53,11 +53,7 @@ object DashboardView:
           h2(cls := "text-lg font-semibold text-white")("Recent Tasks"),
           div(cls := "flex items-center gap-3")(
             span(id := "refresh-indicator", cls := "htmx-indicator text-xs text-gray-500")("Updating..."),
-            span(
-              cls := "inline-flex items-center rounded-md bg-indigo-500/10 px-2 py-1 text-xs font-medium text-indigo-400 ring-1 ring-inset ring-indigo-500/20"
-            )(
-              "Auto-refresh 5s"
-            ),
+            Components.badge("Auto-refresh 5s", "info"),
           ),
         ),
         div(
@@ -114,7 +110,6 @@ object DashboardView:
         div(id := "channels-summary-indicator", cls := "htmx-indicator text-xs text-gray-500 mt-2")("Refreshing..."),
       ),
       JsResources.inlineModuleScript("/static/client/components/agent-metrics.js"),
-      frag(Components.dsScripts*),
     )
 
   def recentRunsContent(runs: List[TaskRunRow]): Frag =

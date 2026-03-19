@@ -127,4 +127,4 @@ class AbToast extends LitElement {
   }
 }
 
-customElements.define('ab-toast', AbToast);
+if (!customElements.get('ab-toast')) customElements.define('ab-toast', AbToast);

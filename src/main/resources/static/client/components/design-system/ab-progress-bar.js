@@ -51,4 +51,4 @@ class AbProgressBar extends LitElement {
   }
 }
 
-customElements.define('ab-progress-bar', AbProgressBar);
+if (!customElements.get('ab-progress-bar')) customElements.define('ab-progress-bar', AbProgressBar);

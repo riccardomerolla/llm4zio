@@ -73,4 +73,4 @@ class AbModal extends LitElement {
   }
 }
 
-customElements.define('ab-modal', AbModal);
+if (!customElements.get('ab-modal')) customElements.define('ab-modal', AbModal);

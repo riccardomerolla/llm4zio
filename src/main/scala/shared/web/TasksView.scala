@@ -113,7 +113,7 @@ object TasksView:
                   cls := "flex items-center justify-between rounded-md bg-white/5 px-4 py-3",
                 )(
                   span(cls := "text-sm font-medium text-white")(step),
-                  span(stepBadgeClasses(status))(status),
+                  Components.badge(status, stepVariant(status)),
                 )
             }
           ),
@@ -245,20 +245,13 @@ object TasksView:
       case RunStatus.Pending   =>
         "Pending"
 
-  private def stepBadgeClasses(status: String): Modifier =
-    status match
-      case "Completed" =>
-        cls := "inline-flex items-center rounded-md bg-emerald-500/10 px-2 py-1 text-xs font-medium text-emerald-300 ring-1 ring-emerald-400/20"
-      case "Running"   =>
-        cls := "inline-flex items-center rounded-md bg-indigo-500/10 px-2 py-1 text-xs font-medium text-indigo-300 ring-1 ring-indigo-400/20"
-      case "Failed"    =>
-        cls := "inline-flex items-center rounded-md bg-rose-500/10 px-2 py-1 text-xs font-medium text-rose-300 ring-1 ring-rose-400/20"
-      case "Paused"    =>
-        cls := "inline-flex items-center rounded-md bg-amber-500/10 px-2 py-1 text-xs font-medium text-amber-300 ring-1 ring-amber-400/20"
-      case "Cancelled" =>
-        cls := "inline-flex items-center rounded-md bg-amber-500/10 px-2 py-1 text-xs font-medium text-amber-300 ring-1 ring-amber-400/20"
-      case _           =>
-        cls := "inline-flex items-center rounded-md bg-gray-500/10 px-2 py-1 text-xs font-medium text-gray-300 ring-1 ring-gray-400/20"
+  private def stepVariant(status: String): String = status match
+    case "Completed" => "success"
+    case "Running"   => "info"
+    case "Failed"    => "error"
+    case "Paused"    => "amber"
+    case "Cancelled" => "gray"
+    case _           => "default"
 
   private def stepProgressLabel(task: TaskListItem): String =
     val total     = task.steps.size

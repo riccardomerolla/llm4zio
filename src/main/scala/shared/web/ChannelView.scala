@@ -137,14 +137,12 @@ object ChannelView:
     )
 
   private def channelCard(card: ChannelCardData, nowMs: Long): Frag =
-    val (pillLabel, pillClasses) = statusPill(card.status)
+    val (pillLabel, pillVariant) = statusPill(card.status)
     val configId                 = s"config-panel-${card.name}"
     div(cls := "rounded-lg bg-white/5 ring-1 ring-white/10 p-5")(
       div(cls := "flex items-center justify-between mb-3")(
         h2(cls := "text-lg font-semibold text-white capitalize")(card.name),
-        span(
-          cls := s"inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset $pillClasses"
-        )(pillLabel),
+        Components.badge(pillLabel, pillVariant),
       ),
       div(cls := "text-sm text-gray-300 space-y-1")(
         card.mode.map(mode => p(span(cls := "text-gray-400")("Mode: "), mode)),
@@ -178,11 +176,10 @@ object ChannelView:
 
   private def statusPill(status: ChannelStatus): (String, String) =
     status match
-      case ChannelStatus.Connected     => ("Connected", "bg-emerald-500/10 text-emerald-300 ring-emerald-300/30")
-      case ChannelStatus.Disconnected  => ("Disconnected", "bg-red-500/10 text-red-300 ring-red-300/30")
-      case ChannelStatus.NotConfigured =>
-        ("Not Configured", "bg-gray-500/10 text-gray-300 ring-gray-300/30")
-      case ChannelStatus.Error(_)      => ("Error", "bg-amber-500/10 text-amber-300 ring-amber-300/30")
+      case ChannelStatus.Connected     => ("Connected", "success")
+      case ChannelStatus.Disconnected  => ("Disconnected", "error")
+      case ChannelStatus.NotConfigured => ("Not Configured", "gray")
+      case ChannelStatus.Error(_)      => ("Error", "warning")
 
   private def relativeTime(lastActivityTs: Option[Long], nowMs: Long): String =
     lastActivityTs match

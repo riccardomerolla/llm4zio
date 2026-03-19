@@ -101,4 +101,4 @@ class AbDataTable extends LitElement {
   }
 }
 
-customElements.define('ab-data-table', AbDataTable);
+if (!customElements.get('ab-data-table')) customElements.define('ab-data-table', AbDataTable);

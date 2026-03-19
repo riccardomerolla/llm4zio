@@ -47,4 +47,4 @@ class AbBadge extends LitElement {
   }
 }
 
-customElements.define('ab-badge', AbBadge);
+if (!customElements.get('ab-badge')) customElements.define('ab-badge', AbBadge);

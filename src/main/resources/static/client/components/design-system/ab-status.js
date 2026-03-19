@@ -45,4 +45,4 @@ class AbStatus extends LitElement {
   }
 }
 
-customElements.define('ab-status', AbStatus);
+if (!customElements.get('ab-status')) customElements.define('ab-status', AbStatus);

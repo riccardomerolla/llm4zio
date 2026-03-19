@@ -39,4 +39,4 @@ class AbCard extends LitElement {
   }
 }
 
-customElements.define('ab-card', AbCard);
+if (!customElements.get('ab-card')) customElements.define('ab-card', AbCard);

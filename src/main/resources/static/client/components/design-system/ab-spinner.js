@@ -53,4 +53,4 @@ class AbSpinner extends LitElement {
   }
 }
 
-customElements.define('ab-spinner', AbSpinner);
+if (!customElements.get('ab-spinner')) customElements.define('ab-spinner', AbSpinner);
