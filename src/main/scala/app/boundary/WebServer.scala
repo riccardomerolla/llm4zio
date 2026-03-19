@@ -75,6 +75,11 @@ object WebServer:
       mcpSvc            <- ZIO.service[McpService]
       analysisScheduler <- ZIO.service[WorkspaceAnalysisScheduler]
       staticRoutes       = Routes.serveResources(Path.empty / "static")
+      devCatalogRoutes   = Routes(
+                             Method.GET / "components" -> handler {
+                               Response.html(shared.web.ComponentsCatalogView.page())
+                             }
+                           )
     yield new WebServer {
       override val routes: Routes[Any, Response] =
         dashboard.routes ++ tasks.routes ++ reports.routes ++ graph.routes ++ settings.routes ++ config.routes ++ agents.routes ++ monitor.routes ++ chat.routes ++ issues.routes ++ workflows.routes ++ telegram.routes ++ activity.routes ++ memory.routes ++ channels.routes ++ health.routes ++ logs.routes ++ websocket.routes ++ mcpSvc.controller.routes ++ ProjectsController.routes(
@@ -90,7 +95,7 @@ object WebServer:
           issueRepo,
           gitService,
           analysisScheduler,
-        ) ++ staticRoutes
+        ) ++ devCatalogRoutes ++ staticRoutes
     }
   }
   private val defaultShutdownTimeout = java.time.Duration.ofSeconds(3L)

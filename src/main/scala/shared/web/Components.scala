@@ -5,36 +5,66 @@ import scalatags.Text.all.*
 import scalatags.Text.svgAttrs.{ d, viewBox }
 import scalatags.Text.svgTags.{ path, svg }
 
+/** Design-system component wrappers.
+  *
+  * Primitive display components delegate to `ab-*` Lit web components (see
+  * `resources/static/client/components/design-system/`), which use light-DOM rendering so Tailwind classes are applied
+  * without Shadow DOM restrictions.
+  *
+  * Views that import Components.scala methods automatically use the web components without needing individual changes.
+  */
 object Components:
 
+  // ── Badge ────────────────────────────────────────────────────────────────
+
+  /** Generic badge — emits `<ab-badge text="..." variant="...">`. */
+  def badge(text: String, variant: String = "default"): Frag =
+    tag("ab-badge")(attr("text") := text, attr("variant") := variant)
+
+  /** Status-mapped badge for `RunStatus`. */
   def statusBadge(status: RunStatus): Frag =
-    val (bg, text, label) = status match
-      case RunStatus.Pending   => ("bg-yellow-500/10 ring-yellow-500/20", "text-yellow-400", "Pending")
-      case RunStatus.Running   => ("bg-blue-500/10 ring-blue-500/20", "text-blue-400", "Running")
-      case RunStatus.Paused    => ("bg-amber-500/10 ring-amber-500/20", "text-amber-400", "Paused")
-      case RunStatus.Completed => ("bg-green-500/10 ring-green-500/20", "text-green-400", "Completed")
-      case RunStatus.Failed    => ("bg-red-500/10 ring-red-500/20", "text-red-400", "Failed")
-      case RunStatus.Cancelled => ("bg-gray-500/10 ring-gray-500/20", "text-gray-400", "Cancelled")
-    span(cls := s"inline-flex items-center rounded-md px-2 py-1 text-xs font-medium $bg $text ring-1 ring-inset")(
-      label
-    )
+    val (variant, label) = status match
+      case RunStatus.Pending   => ("warning", "Pending")
+      case RunStatus.Running   => ("info", "Running")
+      case RunStatus.Paused    => ("amber", "Paused")
+      case RunStatus.Completed => ("success", "Completed")
+      case RunStatus.Failed    => ("error", "Failed")
+      case RunStatus.Cancelled => ("gray", "Cancelled")
+    badge(label, variant)
 
+  /** File-type badge for `FileType`. */
   def fileTypeBadge(ft: FileType): Frag =
-    val (bg, text, label) = ft match
-      case FileType.Program  => ("bg-indigo-500/10 ring-indigo-500/20", "text-indigo-400", "Program")
-      case FileType.Copybook => ("bg-purple-500/10 ring-purple-500/20", "text-purple-400", "Copybook")
-      case FileType.JCL      => ("bg-pink-500/10 ring-pink-500/20", "text-pink-400", "JCL")
-      case FileType.Unknown  => ("bg-gray-500/10 ring-gray-500/20", "text-gray-400", "Unknown")
-    span(cls := s"inline-flex items-center rounded-md px-2 py-1 text-xs font-medium $bg $text ring-1 ring-inset")(
-      label
+    val (variant, label) = ft match
+      case FileType.Program  => ("indigo", "Program")
+      case FileType.Copybook => ("purple", "Copybook")
+      case FileType.JCL      => ("pink", "JCL")
+      case FileType.Unknown  => ("gray", "Unknown")
+    badge(label, variant)
+
+  // ── Spinner ──────────────────────────────────────────────────────────────
+
+  /** Loading spinner — emits `<ab-spinner size="..." label="...">`. */
+  def spinner(size: String = "md", label: String = "Loading"): Frag =
+    tag("ab-spinner")(attr("size") := size, attr("label") := label)
+
+  /** Legacy alias used by views (wraps in htmx-indicator div for compatibility). */
+  def loadingSpinner: Frag =
+    div(cls := "htmx-indicator flex justify-center items-center p-4")(
+      spinner()
     )
 
+  // ── Progress bar ─────────────────────────────────────────────────────────
+
+  /** Animated progress bar — emits `<ab-progress-bar value="current" max="total">`. */
   def progressBar(current: Int, total: Int): Frag =
-    val pct = if total > 0 then (current.toDouble / total * 100).toInt else 0
-    div(cls := "w-full bg-white/10 rounded-full h-2.5")(
-      div(cls := "bg-indigo-500 h-2.5 rounded-full transition-all duration-300", style := s"width: $pct%")
+    tag("ab-progress-bar")(
+      attr("value") := current.toString,
+      attr("max")   := total.toString,
     )
 
+  // ── Summary card ─────────────────────────────────────────────────────────
+
+  /** Icon summary card — kept as ScalaTags because it embeds an SVG icon inline. */
   def summaryCard(titleText: String, value: String, svgPath: String): Frag =
     div(cls := "bg-white/5 ring-1 ring-white/10 rounded-lg p-6")(
       div(cls := "flex items-center justify-between")(
@@ -46,13 +76,7 @@ object Components:
       )
     )
 
-  def loadingSpinner: Frag =
-    div(cls := "htmx-indicator flex justify-center items-center p-4")(
-      svgIcon(
-        "M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z",
-        "animate-spin h-6 w-6 text-indigo-400",
-      )
-    )
+  // ── Empty state ──────────────────────────────────────────────────────────
 
   def emptyState(message: String): Frag =
     div(cls := "text-center py-12")(
@@ -62,6 +86,8 @@ object Components:
       ),
       p(cls := "text-sm text-gray-400")(message),
     )
+
+  // ── SVG icon utility ─────────────────────────────────────────────────────
 
   def svgIcon(pathD: String, classes: String): Frag =
     svg(
@@ -77,3 +103,19 @@ object Components:
         attr("stroke-linejoin") := "round",
       )
     )
+
+  // ── Design-system JS imports ─────────────────────────────────────────────
+
+  /** Module scripts for all design-system `ab-*` components. Include once per page (or let the layout include them
+    * globally). Views use `dsScripts` to include them.
+    */
+  val dsScripts: Seq[Frag] = Seq(
+    JsResources.inlineModuleScript("/static/client/components/design-system/ab-badge.js"),
+    JsResources.inlineModuleScript("/static/client/components/design-system/ab-spinner.js"),
+    JsResources.inlineModuleScript("/static/client/components/design-system/ab-status.js"),
+    JsResources.inlineModuleScript("/static/client/components/design-system/ab-card.js"),
+    JsResources.inlineModuleScript("/static/client/components/design-system/ab-modal.js"),
+    JsResources.inlineModuleScript("/static/client/components/design-system/ab-progress-bar.js"),
+    JsResources.inlineModuleScript("/static/client/components/design-system/ab-data-table.js"),
+    JsResources.inlineModuleScript("/static/client/components/design-system/ab-toast.js"),
+  )

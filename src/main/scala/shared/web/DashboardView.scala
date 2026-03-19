@@ -114,6 +114,7 @@ object DashboardView:
         div(id := "channels-summary-indicator", cls := "htmx-indicator text-xs text-gray-500 mt-2")("Refreshing..."),
       ),
       JsResources.inlineModuleScript("/static/client/components/agent-metrics.js"),
+      frag(Components.dsScripts*),
     )
 
   def recentRunsContent(runs: List[TaskRunRow]): Frag =
