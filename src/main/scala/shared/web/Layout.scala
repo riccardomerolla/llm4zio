@@ -47,7 +47,7 @@ object Layout:
         meta(name    := "viewport", content := "width=device-width, initial-scale=1"),
         titleTag(s"$pageTitleText — A-B-Normal"),
         script(src   := "https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"),
-        script(src   := "https://unpkg.com/htmx.org@2.0.4"),
+        script(src   := "https://unpkg.com/htmx.org@2.0.7"),
         script(src   := "https://unpkg.com/htmx-ext-sse@2.0.0/sse.js"),
       ),
       body(cls := "h-full text-[12px] leading-5 text-gray-200")(
