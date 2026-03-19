@@ -14,6 +14,7 @@ import llm4zio.core.*
 import llm4zio.tools.{ AnyTool, JsonSchema }
 import memory.entity.*
 import orchestration.control.AgentRegistry
+import prompts.PromptLoader
 
 object GatewayServiceSpec extends ZIOSpecDefault:
 
@@ -34,6 +35,7 @@ object GatewayServiceSpec extends ZIOSpecDefault:
       AgentRegistry.live,
       TestLlm.layer,
       EmptyMemoryRepo.layer,
+      PromptLoader.reloading,
       MessageRouter.live,
       GatewayService.live,
     )
@@ -54,6 +56,7 @@ object GatewayServiceSpec extends ZIOSpecDefault:
       AgentRegistry.live,
       TestLlm.layer,
       EmptyMemoryRepo.layer,
+      PromptLoader.reloading,
       MessageRouter.live,
       ZLayer.fromZIO(Queue.unbounded[NormalizedMessage]),
       GatewayService.liveWithSteeringQueue,
@@ -196,6 +199,7 @@ object GatewayServiceSpec extends ZIOSpecDefault:
       AgentRegistry.live,
       llmLayer,
       seededMemoryLayer,
+      PromptLoader.reloading,
       MessageRouter.live,
       GatewayService.live,
     )

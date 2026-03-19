@@ -7,7 +7,7 @@ package config.boundary
 object SettingsValidator:
 
   /** Allowed setting key prefixes — anything else is rejected */
-  val allowedPrefixes: Set[String] = Set("ai.", "gateway.", "telegram.")
+  val allowedPrefixes: Set[String] = Set("ai.", "gateway.", "telegram.", "prompts.")
 
   /** Predicate to check if a key should be saved */
   def isAllowedKey(key: String): Boolean =
@@ -27,7 +27,7 @@ object SettingsValidator:
     else
       key match
         // Checkboxes — normalize "on"/"off" to "true"/"false"
-        case "gateway.dryRun" | "gateway.verbose" | "telegram.enabled" =>
+        case "gateway.dryRun" | "gateway.verbose" | "telegram.enabled" | "prompts.reloading" =>
           normalizeCheckbox(value).map(v => if v then "true" else "false")
 
         // AI Provider — must be a valid provider enum

@@ -16,6 +16,7 @@ import db.TaskRepository
 import llm4zio.core.*
 import llm4zio.providers.{ GeminiCliExecutionContext, GeminiCliExecutor, HttpClient }
 import orchestration.control.AgentConfigResolver
+import prompts.{ PromptError, PromptLoader }
 import shared.errors.FileError
 import shared.ids.Ids
 import workspace.control.CliAgentRunner
@@ -78,7 +79,7 @@ object AnalysisAgentRunner:
   val live
     : ZLayer[
       WorkspaceRepository & AgentRepository & AnalysisRepository & TaskRepository & FileService &
-        AgentConfigResolver & LlmService & HttpClient & GeminiCliExecutor,
+        AgentConfigResolver & LlmService & HttpClient & GeminiCliExecutor & PromptLoader,
       Nothing,
       AnalysisAgentRunner,
     ] =
@@ -93,6 +94,7 @@ object AnalysisAgentRunner:
         llmService          <- ZIO.service[LlmService]
         httpClient          <- ZIO.service[HttpClient]
         cliExecutor         <- ZIO.service[GeminiCliExecutor]
+        promptLoader        <- ZIO.service[PromptLoader]
         providerCache       <- Ref.Synchronized.make(Map.empty[LlmConfig, LlmService])
       yield AnalysisAgentRunnerLive(
         workspaceRepository = workspaceRepository,
@@ -100,6 +102,7 @@ object AnalysisAgentRunner:
         analysisRepository = analysisRepository,
         taskRepository = taskRepository,
         fileService = fileService,
+        promptLoader = Some(promptLoader),
         llmPromptExecutor = Some(
           promptExecutor(
             configResolver = configResolver,
@@ -347,6 +350,7 @@ final case class AnalysisAgentRunnerLive(
   analysisRepository: AnalysisRepository,
   taskRepository: TaskRepository,
   fileService: FileService,
+  promptLoader: Option[PromptLoader] = None,
   llmPromptExecutor: Option[(Workspace, Agent, String) => IO[AnalysisAgentRunnerError, String]] = None,
   processRunner: (List[String], String, String => Task[Unit], Map[String, String]) => Task[Int] =
     CliAgentRunner.runProcessStreaming,
@@ -462,14 +466,26 @@ final case class AnalysisAgentRunnerLive(
     profile: AnalysisProfile,
   ): IO[AnalysisAgentRunnerError, String] =
     for
+      template          <- loadTemplate(profile, agent)
       workspaceOverride <- setting(workspacePromptKey(workspace.id, profile))
       globalOverride    <- setting(globalPromptKey(profile))
+      agentInstructions  = agent.systemPrompt.map(_.trim).filter(_.nonEmpty).map(_ + "\n\n").getOrElse("")
+      body               = workspaceOverride.orElse(globalOverride).map(v => s"$agentInstructions$v").getOrElse(template)
     yield composePrompt(
       workspace = workspace,
-      agent = agent,
       profile = profile,
-      body = workspaceOverride.orElse(globalOverride).getOrElse(profile.defaultPromptBody),
+      body = body,
     )
+
+  private def loadTemplate(profile: AnalysisProfile, agent: Agent): IO[AnalysisAgentRunnerError, String] =
+    val agentInstructions = agent.systemPrompt.map(_.trim).filter(_.nonEmpty).map(_ + "\n\n").getOrElse("")
+    profile.promptTemplateName match
+      case Some(name) if promptLoader.isDefined =>
+        promptLoader.get
+          .load(name, Map("systemPrompt" -> agentInstructions))
+          .mapError(mapPromptError)
+      case _                                    =>
+        ZIO.succeed(s"$agentInstructions${profile.defaultPromptBody}")
 
   private def setting(key: String): IO[AnalysisAgentRunnerError, Option[String]] =
     taskRepository
@@ -684,12 +700,10 @@ final case class AnalysisAgentRunnerLive(
 
   private def composePrompt(
     workspace: Workspace,
-    agent: Agent,
     profile: AnalysisProfile,
     body: String,
   ): String =
-    val agentInstructions = agent.systemPrompt.map(_.trim).filter(_.nonEmpty).map(_ + "\n\n").getOrElse("")
-    s"""${agentInstructions}Perform a read-only ${profile.analysisLabel} for the repository at:
+    s"""Perform a read-only ${profile.analysisLabel} for the repository at:
        |${workspace.localPath}
        |
        |Do not modify files. Inspect the repository and return markdown only.
@@ -698,6 +712,9 @@ final case class AnalysisAgentRunnerLive(
        |
        |$body
        |""".stripMargin
+
+  private def mapPromptError(error: PromptError): AnalysisAgentRunnerError =
+    AnalysisAgentRunnerError.ProviderExecutionFailed("prompt-loader", error.message)
 
   private def hasProfileCapability(agent: Agent, profile: AnalysisProfile): Boolean =
     val capabilities = agent.capabilities.map(_.trim.toLowerCase).filter(_.nonEmpty).toSet
@@ -754,6 +771,7 @@ final private case class AnalysisProfile(
   documentTitle: String,
   commitLabel: String,
   capabilities: List[String],
+  promptTemplateName: Option[String],
   defaultPromptBody: String,
 )
 
@@ -769,6 +787,7 @@ object AnalysisProfile:
       documentTitle = "Code Review Analysis",
       commitLabel = "code review",
       capabilities = List("code-review"),
+      promptTemplateName = Some("analysis/code-review"),
       defaultPromptBody =
         """Focus on:
           |- Code quality and patterns
@@ -809,6 +828,7 @@ object AnalysisProfile:
       documentTitle = "Architecture Analysis",
       commitLabel = "architecture",
       capabilities = List("architecture-analysis", "architecture", "code-review"),
+      promptTemplateName = Some("analysis/architecture"),
       defaultPromptBody =
         """Focus on:
           |- Module boundaries and package structure
@@ -853,6 +873,7 @@ object AnalysisProfile:
       documentTitle = "Security Analysis",
       commitLabel = "security",
       capabilities = List("security-analysis", "security-review", "security", "code-review"),
+      promptTemplateName = None,
       defaultPromptBody =
         """Focus on:
           |- Dependency vulnerability scan signals visible in the repository

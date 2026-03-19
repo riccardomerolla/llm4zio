@@ -59,6 +59,7 @@ import orchestration.control.{
   ProgressTracker as OrchestrationProgressTracker,
 }
 import project.entity.ProjectRepository
+import prompts.PromptLoader
 import shared.store.{ ConfigStoreModule, DataStoreModule, MemoryStoreModule, StoreConfig }
 import shared.web.StreamAbortRegistry
 import sttp.client4.DefaultFutureBackend
@@ -112,6 +113,7 @@ object ApplicationDI:
       DiscordGatewayService &
       TaskProgressNotifier &
       AgentConfigResolver &
+      PromptLoader &
       MemoryRepository &
       EmbeddingService &
       GitService &
@@ -162,6 +164,7 @@ object ApplicationDI:
       TaskRepository.live,
       ZLayer.succeed(config.resolvedProviderConfig),
       AgentConfigResolver.live,
+      PromptLoader.fromSettings,
       // Create runtime config ref with merged DB settings
       configRefLayer,
       ModelService.live,
