@@ -70,6 +70,7 @@ object Layout:
         JsResources.inlineModuleScript("/static/client/components/ab-command-palette.js"),
         tag("ab-keyboard-shortcuts")(),
         JsResources.inlineModuleScript("/static/client/components/ab-keyboard-shortcuts.js"),
+        frag(Components.dsScripts*),
         script(raw(
           """(function () {
             |  const sidebar = document.getElementById("mobile-sidebar");

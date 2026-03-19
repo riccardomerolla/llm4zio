@@ -93,14 +93,11 @@ object ReportsView:
 
   private def typeBadge(reportType: String): Frag =
     val normalized = reportType.trim.toLowerCase
-    val classes    = normalized match
-      case "markdown" =>
-        "inline-flex items-center rounded-md bg-indigo-500/10 px-2 py-1 text-xs font-medium text-indigo-300 ring-1 ring-indigo-400/20"
-      case "graph"    =>
-        "inline-flex items-center rounded-md bg-emerald-500/10 px-2 py-1 text-xs font-medium text-emerald-300 ring-1 ring-emerald-400/20"
-      case _          =>
-        "inline-flex items-center rounded-md bg-gray-500/10 px-2 py-1 text-xs font-medium text-gray-300 ring-1 ring-gray-400/20"
-    span(cls := classes)(normalized)
+    val variant    = normalized match
+      case "markdown" => "indigo"
+      case "graph"    => "success"
+      case _          => "default"
+    Components.badge(normalized, variant)
 
   private def reportScripts(reportType: String): Frag =
     val normalized = reportType.trim.toLowerCase

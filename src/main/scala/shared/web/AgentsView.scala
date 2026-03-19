@@ -191,24 +191,9 @@ object AgentsView:
 
   private def statusBadge(registryAgent: Option[Agent]): Frag =
     registryAgent match
-      case Some(agent) if agent.enabled =>
-        span(
-          cls := "rounded-full border border-emerald-400/30 bg-emerald-500/20 px-2 py-0.5 text-xs font-semibold text-emerald-200"
-        )(
-          "Enabled"
-        )
-      case Some(_)                      =>
-        span(
-          cls := "rounded-full border border-slate-500/30 bg-slate-500/20 px-2 py-0.5 text-xs font-semibold text-slate-200"
-        )(
-          "Disabled"
-        )
-      case None                         =>
-        span(
-          cls := "rounded-full border border-slate-500/30 bg-slate-500/20 px-2 py-0.5 text-xs font-semibold text-slate-200"
-        )(
-          "Config Only"
-        )
+      case Some(agent) if agent.enabled => Components.badge("Enabled", "success")
+      case Some(_)                      => Components.badge("Disabled", "gray")
+      case None                         => Components.badge("Config Only", "gray")
 
   private def metricCard(labelText: String, value: String): Frag =
     div(cls := "rounded border border-white/10 bg-slate-800/70 px-2 py-2")(
@@ -840,40 +825,18 @@ object AgentsView:
     Option(agent.handle).map(_.trim).filter(_.nonEmpty).getOrElse(agent.name)
 
   private def typeBadge(agentType: AgentType): Frag =
-    val badgeCls = agentType match
-      case AgentType.BuiltIn =>
-        "rounded-full border border-sky-400/30 bg-sky-500/20 px-2 py-0.5 text-xs font-semibold text-sky-200"
-      case AgentType.Custom  =>
-        "rounded-full border border-violet-400/30 bg-violet-500/20 px-2 py-0.5 text-xs font-semibold text-violet-200"
-    span(cls := badgeCls)(
-      agentType match
-        case AgentType.BuiltIn => "Built-in"
-        case AgentType.Custom  => "Custom"
-    )
+    agentType match
+      case AgentType.BuiltIn => Components.badge("Built-in", "info")
+      case AgentType.Custom  => Components.badge("Custom", "purple")
 
   private def aiBadge(usesAI: Boolean): Frag =
-    val badgeCls =
-      if usesAI then
-        "rounded-full border border-emerald-400/30 bg-emerald-500/20 px-2 py-0.5 text-xs font-semibold text-emerald-200"
-      else "rounded-full border border-slate-500/30 bg-slate-500/20 px-2 py-0.5 text-xs font-semibold text-slate-200"
-    span(cls := badgeCls)(
-      if usesAI then "Uses AI" else "No AI"
-    )
+    if usesAI then Components.badge("Uses AI", "success")
+    else Components.badge("No AI", "gray")
 
   private def tagBadge(tag: String): Frag =
-    span(cls := s"rounded-full border px-2 py-0.5 text-xs font-semibold ${tagBadgeClass(tag)}")(tag)
-
-  private def tagBadgeClass(tag: String): String =
-    val palette = Vector(
-      "border-rose-400/30 bg-rose-500/20 text-rose-200",
-      "border-amber-400/30 bg-amber-500/20 text-amber-200",
-      "border-emerald-400/30 bg-emerald-500/20 text-emerald-200",
-      "border-cyan-400/30 bg-cyan-500/20 text-cyan-200",
-      "border-indigo-400/30 bg-indigo-500/20 text-indigo-200",
-      "border-fuchsia-400/30 bg-fuchsia-500/20 text-fuchsia-200",
-    )
-    val idx     = math.abs(tag.toLowerCase.hashCode) % palette.size
-    palette(idx)
+    val variants = Vector("error", "amber", "success", "info", "indigo", "purple")
+    val variant  = variants(math.abs(tag.toLowerCase.hashCode) % variants.size)
+    Components.badge(tag, variant)
 
   private def formatSeconds(seconds: Long): String =
     if seconds <= 0 then "0s"

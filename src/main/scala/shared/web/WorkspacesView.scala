@@ -113,18 +113,8 @@ object WorkspacesView:
         div(
           div(cls := "flex items-center gap-2")(
             h2(cls := "text-lg font-semibold text-white")(ws.name),
-            if ws.enabled then
-              span(
-                cls := "rounded-full border border-emerald-400/30 bg-emerald-500/20 px-2 py-0.5 text-xs font-semibold text-emerald-200"
-              )(
-                "enabled"
-              )
-            else
-              span(
-                cls := "rounded-full border border-slate-400/30 bg-slate-500/20 px-2 py-0.5 text-xs font-semibold text-slate-400"
-              )(
-                "disabled"
-              ),
+            if ws.enabled then Components.badge("enabled", "success")
+            else Components.badge("disabled", "gray"),
           ),
           p(cls := "mt-1 text-sm text-slate-400 font-mono")(ws.localPath),
           p(cls := "mt-1 text-xs text-slate-500")(s"CLI: ${ws.cliTool}"),
@@ -186,16 +176,16 @@ object WorkspacesView:
     }
 
   private def renderAnalysisStatusCard(status: WorkspaceAnalysisStatus): Frag =
-    val (label, classes) = status.state match
-      case WorkspaceAnalysisState.Pending   => ("Pending", "border-amber-400/30 bg-amber-500/10 text-amber-200")
-      case WorkspaceAnalysisState.Running   => ("Running", "border-cyan-400/30 bg-cyan-500/10 text-cyan-200")
-      case WorkspaceAnalysisState.Completed => ("Completed", "border-emerald-400/30 bg-emerald-500/10 text-emerald-200")
-      case WorkspaceAnalysisState.Failed    => ("Failed", "border-rose-400/30 bg-rose-500/10 text-rose-200")
-      case WorkspaceAnalysisState.Idle      => ("Idle", "border-slate-400/30 bg-slate-500/10 text-slate-300")
+    val (label, variant) = status.state match
+      case WorkspaceAnalysisState.Pending   => ("Pending", "warning")
+      case WorkspaceAnalysisState.Running   => ("Running", "info")
+      case WorkspaceAnalysisState.Completed => ("Completed", "success")
+      case WorkspaceAnalysisState.Failed    => ("Failed", "error")
+      case WorkspaceAnalysisState.Idle      => ("Idle", "gray")
     div(cls := "rounded-lg border border-white/10 bg-slate-900/70 p-4")(
       div(cls := "flex items-center justify-between gap-2")(
         div(cls := "text-sm font-semibold text-white")(analysisTypeLabel(status.analysisType)),
-        span(cls := s"rounded-full border px-2 py-0.5 text-xs font-semibold $classes")(label),
+        Components.badge(label, variant),
       ),
       status.startedAt
         .map(ts => p(cls := "mt-2 text-xs text-slate-400")(s"Started ${formatTimestamp(ts)}"))
