@@ -84,6 +84,7 @@ final case class SettingsControllerLive(
     "memory.maxContextMemories",
     "memory.summarizationThreshold",
     "memory.retentionDays",
+    "prompts.reloading",
   )
 
   final private case class StoreDebugEntry(
@@ -122,14 +123,15 @@ final case class SettingsControllerLive(
           form     <- parseForm(req)
           _        <- ZIO.foreachDiscard(settingsKeys) { key =>
                         val value = key match
-                          case "gateway.dryRun" | "gateway.verbose" | "telegram.enabled" | "memory.enabled" =>
+                          case "gateway.dryRun" | "gateway.verbose" | "telegram.enabled" | "memory.enabled" |
+                               "prompts.reloading" =>
                             if form.get(key).exists(_.equalsIgnoreCase("on")) then "true" else "false"
-                          case _                                                                            =>
+                          case _ =>
                             form.getOrElse(key, "")
                         if value.nonEmpty || key.startsWith("ai.") || key.startsWith("gateway.") || key.startsWith(
                             "telegram."
                           ) || key
-                            .startsWith("memory.")
+                            .startsWith("memory.") || key.startsWith("prompts.")
                         then
                           repository.upsertSetting(key, value)
                         else ZIO.unit
@@ -251,13 +253,18 @@ final case class SettingsControllerLive(
         for
           form     <- parseForm(req)
           keys      =
-            settingsKeys.filter(k => k.startsWith("gateway.") || k.startsWith("telegram.") || k.startsWith("memory."))
+            settingsKeys.filter(k =>
+              k.startsWith("gateway.") || k.startsWith("telegram.") || k.startsWith("memory.") || k.startsWith(
+                "prompts."
+              )
+            )
           _        <- ZIO.foreachDiscard(keys) { key =>
                         val value = key match
-                          case "gateway.dryRun" | "gateway.verbose" | "telegram.enabled" | "memory.enabled" =>
+                          case "gateway.dryRun" | "gateway.verbose" | "telegram.enabled" | "memory.enabled" |
+                               "prompts.reloading" =>
                             if form.get(key).exists(v => v.equalsIgnoreCase("on") || v.equalsIgnoreCase("true")) then "true"
                             else "false"
-                          case _                                                                            => form.getOrElse(key, "")
+                          case _ => form.getOrElse(key, "")
                         repository.upsertSetting(key, value)
                       }
           _        <- checkpointConfigStore

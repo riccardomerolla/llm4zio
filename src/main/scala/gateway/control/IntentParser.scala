@@ -5,6 +5,7 @@ import zio.json.*
 
 import _root_.config.entity.AgentInfo
 import llm4zio.core.{ LlmService, Streaming }
+import prompts.PromptLoader
 
 final case class IntentConversationState(
   pendingOptions: List[String] = Nil,
@@ -24,7 +25,7 @@ object IntentParser:
     message: String,
     state: IntentConversationState,
     availableAgents: List[AgentInfo],
-  ): URIO[LlmService, IntentDecision] =
+  ): URIO[LlmService & PromptLoader, IntentDecision] =
     val normalized = normalize(message)
     val options    = clarificationOptions(availableAgents)
 
@@ -47,10 +48,10 @@ object IntentParser:
   private[control] def parseWithLLM(
     message: String,
     availableAgents: List[AgentInfo],
-  ): ZIO[LlmService, llm4zio.core.LlmError, IntentDecision] =
+  ): ZIO[LlmService & PromptLoader, llm4zio.core.LlmError, IntentDecision] =
     val options = clarificationOptions(availableAgents)
-    val prompt  = buildPrompt(message, availableAgents)
     for
+      prompt      <- buildPrompt(message, availableAgents)
       isAvailable <- LlmService.isAvailable
       _           <- ZIO.fail(llm4zio.core.LlmError.ConfigError("llm unavailable")).unless(isAvailable)
       response    <- ZIO.serviceWithZIO[LlmService](svc => Streaming.collect(svc.executeStream(prompt)))
@@ -131,22 +132,23 @@ object IntentParser:
               parsed.options.filter(_.nonEmpty).map(_.filter(options.contains)).filter(_.nonEmpty).getOrElse(options),
           )
 
-  private def buildPrompt(message: String, agents: List[AgentInfo]): String =
+  private def buildPrompt(
+    message: String,
+    agents: List[AgentInfo],
+  ): ZIO[PromptLoader, llm4zio.core.LlmError, String] =
     val renderedAgents = agents.map { agent =>
       val skills = agent.skills.map(_.description).mkString("; ")
       s"- ${agent.name}: ${agent.description}. Skills: $skills. Tags: ${agent.tags.mkString(", ")}"
     }.mkString("\n")
-    s"""You are a request router.
-       |Classify the user message to one agent from this list:
-       |$renderedAgents
-       |
-       |Return JSON only, with one of these shapes:
-       |{"agent":"<name>","confidence":0.0}
-       |{"clarify":true,"question":"...","options":["name1","name2",...]}
-       |
-       |User message:
-       |$message
-       |""".stripMargin
+    PromptLoader
+      .load(
+        "intent-router",
+        Map(
+          "agentList" -> renderedAgents,
+          "message"   -> message,
+        ),
+      )
+      .mapError(err => llm4zio.core.LlmError.ConfigError(err.message))
 
   private def clarificationOptions(agents: List[AgentInfo]): List[String] =
     agents.map(_.name).distinct.sorted

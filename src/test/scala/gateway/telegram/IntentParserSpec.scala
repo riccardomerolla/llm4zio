@@ -6,6 +6,7 @@ import zio.test.*
 import _root_.config.entity.{ AgentInfo, AgentSkill, AgentType }
 import gateway.control.{ IntentConversationState, IntentDecision, IntentParser }
 import llm4zio.core.*
+import prompts.PromptLoader
 
 object IntentParserSpec extends ZIOSpecDefault:
 
@@ -119,7 +120,7 @@ object IntentParserSpec extends ZIOSpecDefault:
                       message = "find latest docs about zio-http",
                       state = IntentConversationState(),
                       availableAgents = agents,
-                    ).provideLayer(llmLayer)
+                    ).provideLayer(llmLayer ++ PromptLoader.reloading)
       yield assertTrue(decision == IntentDecision.Route("web-search-agent", "llm confidence=0.91"))
     },
-  ).provideSomeLayer[TestEnvironment](unavailableLlm)
+  ).provideSomeLayer[TestEnvironment](unavailableLlm ++ PromptLoader.reloading)

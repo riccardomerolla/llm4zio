@@ -16,6 +16,7 @@ import agent.entity.{ Agent as RegistryAgent, AgentEvent, AgentRepository }
 import db.{ ConfigRepository, CustomAgentRow, PersistenceError }
 import llm4zio.core.{ LlmError, LlmService }
 import orchestration.control.{ AgentRegistry, OrchestratorControlPlane }
+import prompts.PromptLoader
 import shared.ids.Ids.AgentId
 import shared.web.{ ErrorHandlingMiddleware, HtmlViews }
 import workspace.entity.{ RunStatus, WorkspaceRepository, WorkspaceRun }
@@ -29,7 +30,11 @@ object AgentsController:
     ZIO.serviceWith[AgentsController](_.routes)
 
   val live
-    : ZLayer[ConfigRepository & LlmService & AgentRepository & WorkspaceRepository & OrchestratorControlPlane, Nothing, AgentsController] =
+    : ZLayer[
+      ConfigRepository & LlmService & AgentRepository & WorkspaceRepository & OrchestratorControlPlane & PromptLoader,
+      Nothing,
+      AgentsController,
+    ] =
     ZLayer.fromFunction(AgentsControllerLive.apply)
 
 final case class AgentsControllerLive(
@@ -38,6 +43,7 @@ final case class AgentsControllerLive(
   agentRepository: AgentRepository,
   workspaceRepository: WorkspaceRepository,
   controlPlane: OrchestratorControlPlane,
+  promptLoader: PromptLoader,
 ) extends AgentsController:
 
   private val aiSettingKeys: List[String] = List(
@@ -1040,7 +1046,7 @@ final case class AgentsControllerLive(
         customPrompt <- repository
                           .getCustomAgentByName(targetAgent.name)
                           .map(_.map(_.systemPrompt).filter(_.trim.nonEmpty))
-        prompt        = buildAgentPrompt(customPrompt, invokeReq.message, invokeReq.sessionId, targetAgent.name)
+        prompt       <- buildAgentPrompt(customPrompt, invokeReq.message, invokeReq.sessionId, targetAgent.name)
         stream        =
           llmService
             .executeStream(prompt)
@@ -1072,14 +1078,19 @@ final case class AgentsControllerLive(
     message: String,
     sessionId: String,
     agentName: String,
-  ): String =
+  ): IO[PersistenceError, String] =
     val custom = systemPrompt.map(_.trim).filter(_.nonEmpty).map(v => s"$v\n\n").getOrElse("")
-    s"""${custom}You are agent '$agentName'.
-       |Session: $sessionId
-       |
-       |User message:
-       |$message
-       |""".stripMargin
+    promptLoader
+      .load(
+        "agent-execution",
+        Map(
+          "custom"    -> custom,
+          "agentName" -> agentName,
+          "sessionId" -> sessionId,
+          "message"   -> message,
+        ),
+      )
+      .mapError(err => PersistenceError.QueryFailed("agent_invoke_prompt", err.message))
 
   private def formatLlmError(error: LlmError): String =
     error match

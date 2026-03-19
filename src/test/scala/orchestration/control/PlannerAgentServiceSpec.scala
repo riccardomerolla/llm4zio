@@ -13,6 +13,7 @@ import db.*
 import issues.entity.{ IssueEvent, IssueRepository }
 import llm4zio.core.*
 import llm4zio.providers.{ GeminiCliExecutor, HttpClient }
+import prompts.PromptLoader
 import workspace.entity.*
 
 object PlannerAgentServiceSpec extends ZIOSpecDefault:
@@ -291,6 +292,7 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
       cliContextRefLayer,
       stubCliExecutorLayer,
       startupAiConfigLayer,
+      PromptLoader.reloading,
       PlannerAgentService.live,
     )
 
@@ -306,6 +308,7 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
       stubHttpClient,
       stubCliExecutor,
       startupAiConfigLayer,
+      PromptLoader.reloading,
       PlannerAgentService.live,
     )
 
@@ -329,6 +332,7 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
       cliContextRefLayer,
       stubCliExecutorLayer,
       startupAiConfigLayer,
+      PromptLoader.reloading,
       PlannerAgentService.live,
     )
 
@@ -352,6 +356,7 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
       cliContextRefLayer,
       geminiStyleCliExecutorLayer,
       startupAiConfigLayer,
+      PromptLoader.reloading,
       PlannerAgentService.live,
     )
 

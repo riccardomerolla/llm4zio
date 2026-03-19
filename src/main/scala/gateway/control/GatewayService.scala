@@ -11,6 +11,7 @@ import gateway.entity.NormalizedMessage
 import llm4zio.core.{ LlmService, Streaming }
 import memory.entity.{ MemoryEntry, MemoryId, MemoryKind, MemoryRepository }
 import orchestration.control.{ AgentRegistry, ConversationMemory }
+import prompts.PromptLoader
 
 enum GatewayServiceError:
   case Router(error: MessageRouterError)
@@ -65,7 +66,11 @@ object GatewayService:
     ZIO.serviceWithZIO[GatewayService](_.metrics)
 
   val live
-    : ZLayer[MessageRouter & AgentRegistry & LlmService & ConfigRepository & MemoryRepository & ChatRepository, Nothing, GatewayService] =
+    : ZLayer[
+      MessageRouter & AgentRegistry & LlmService & ConfigRepository & MemoryRepository & ChatRepository & PromptLoader,
+      Nothing,
+      GatewayService,
+    ] =
     ZLayer.scoped {
       for
         router        <- ZIO.service[MessageRouter]
@@ -74,6 +79,7 @@ object GatewayService:
         configRepo    <- ZIO.service[ConfigRepository]
         memoryRepo    <- ZIO.service[MemoryRepository]
         chatRepo      <- ZIO.service[ChatRepository]
+        promptLoader  <- ZIO.service[PromptLoader]
         queue         <- Queue.unbounded[GatewayQueueCommand]
         metrics       <- Ref.make(GatewayMetricsSnapshot())
         intents       <- Ref.make(Map.empty[gateway.entity.SessionKey, IntentConversationState])
@@ -86,6 +92,7 @@ object GatewayService:
         configRepo,
         memoryRepo,
         chatRepo,
+        promptLoader,
         metrics,
         None,
         intents,
@@ -94,7 +101,7 @@ object GatewayService:
 
   val liveWithSteeringQueue
     : ZLayer[
-      MessageRouter & Queue[NormalizedMessage] & AgentRegistry & LlmService & ConfigRepository & MemoryRepository & ChatRepository,
+      MessageRouter & Queue[NormalizedMessage] & AgentRegistry & LlmService & ConfigRepository & MemoryRepository & ChatRepository & PromptLoader,
       Nothing,
       GatewayService,
     ] =
@@ -106,6 +113,7 @@ object GatewayService:
         configRepo    <- ZIO.service[ConfigRepository]
         memoryRepo    <- ZIO.service[MemoryRepository]
         chatRepo      <- ZIO.service[ChatRepository]
+        promptLoader  <- ZIO.service[PromptLoader]
         steeringQueue <- ZIO.service[Queue[NormalizedMessage]]
         queue         <- Queue.unbounded[GatewayQueueCommand]
         metrics       <- Ref.make(GatewayMetricsSnapshot())
@@ -119,6 +127,7 @@ object GatewayService:
         configRepo,
         memoryRepo,
         chatRepo,
+        promptLoader,
         metrics,
         Some(steeringQueue),
         intents,
@@ -250,6 +259,7 @@ final case class GatewayServiceLive(
   configRepository: ConfigRepository,
   memoryRepository: MemoryRepository,
   chatRepository: ChatRepository,
+  promptLoader: PromptLoader,
   metricsRef: Ref[GatewayMetricsSnapshot],
   steeringQueue: Option[Queue[NormalizedMessage]],
   intentStateRef: Ref[Map[gateway.entity.SessionKey, IntentConversationState]],
@@ -350,7 +360,7 @@ final case class GatewayServiceLive(
         stateMap <- intentStateRef.get
         current   = stateMap.getOrElse(message.sessionKey, IntentConversationState())
         decision <- IntentParser.parse(message.content, current, availableAgents).provideEnvironment(
-                      ZEnvironment(llmService)
+                      ZEnvironment(llmService, promptLoader)
                     )
         _        <- decision match
                       case IntentDecision.Route(agentName, rationale) =>

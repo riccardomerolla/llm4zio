@@ -17,6 +17,7 @@ import issues.entity.{ AgentIssue as DomainIssue, IssueEvent, IssueRepository }
 import llm4zio.core.{ LlmConfig, LlmError, LlmProvider, LlmService }
 import llm4zio.providers.{ GeminiCliExecutionContext, GeminiCliExecutor, HttpClient }
 import llm4zio.tools.JsonSchema
+import prompts.{ PromptError, PromptLoader }
 import shared.ids.Ids.{ EventId, IssueId }
 import workspace.entity.WorkspaceRepository
 
@@ -136,7 +137,7 @@ object PlannerAgentService:
   val live
     : ZLayer[
       ChatRepository & IssueRepository & ConfigRepository & ActivityHub & AgentConfigResolver &
-        HttpClient & GeminiCliExecutor & WorkspaceRepository & AIProviderConfig,
+        HttpClient & GeminiCliExecutor & WorkspaceRepository & AIProviderConfig & PromptLoader,
       Nothing,
       PlannerAgentService,
     ] =
@@ -151,6 +152,7 @@ object PlannerAgentService:
         cliExecutor      <- ZIO.service[GeminiCliExecutor]
         workspaceRepo    <- ZIO.service[WorkspaceRepository]
         startupAiConfig  <- ZIO.service[AIProviderConfig]
+        promptLoader     <- ZIO.service[PromptLoader]
         previewState     <- Ref.Synchronized.make(Map.empty[Long, PlannerPreviewState])
       yield PlannerAgentServiceLive(
         chatRepository = chatRepository,
@@ -162,6 +164,7 @@ object PlannerAgentService:
         cliExecutor = cliExecutor,
         workspaceRepository = workspaceRepo,
         startupAiConfig = startupAiConfig,
+        promptLoader = promptLoader,
         previewState = previewState,
       )
     }
@@ -188,6 +191,7 @@ final case class PlannerAgentServiceLive(
   cliExecutor: GeminiCliExecutor,
   workspaceRepository: WorkspaceRepository,
   startupAiConfig: AIProviderConfig,
+  promptLoader: PromptLoader,
   previewState: Ref.Synchronized[Map[Long, PlannerPreviewState]],
 ) extends PlannerAgentService:
 
@@ -349,11 +353,15 @@ final case class PlannerAgentServiceLive(
     transcript: String,
     workspaceContext: Option[PlannerWorkspaceContext],
   ): IO[PlannerAgentError, PlannerPlanPreview] =
-    executeStructuredWithPreferredAgent[Json](
-      plannerPrompt(transcript, workspaceContext),
-      plannerResponseSchema,
-      workspaceContext,
-    )
+    (for
+      prompt <- loadPlannerPrompt(transcript, workspaceContext)
+      schema <- loadPlannerSchema
+      json   <- executeStructuredWithPreferredAgent[Json](
+                  prompt,
+                  schema,
+                  workspaceContext,
+                )
+    yield json)
       .flatMap(responseJson =>
         ZIO
           .fromEither(normalizePlannerResponse(responseJson))
@@ -682,7 +690,10 @@ final case class PlannerAgentServiceLive(
     }.mkString("\n")
     s"${preview.summary.trim}\n\n$body".trim
 
-  private def plannerPrompt(transcript: String, workspaceContext: Option[PlannerWorkspaceContext]): String =
+  private def loadPlannerPrompt(
+    transcript: String,
+    workspaceContext: Option[PlannerWorkspaceContext],
+  ): IO[PlannerAgentError, String] =
     val workspaceBlock = workspaceContext match
       case Some(context) =>
         val pathLine        = context.localPath.fold("unknown")(identity)
@@ -698,90 +709,44 @@ final case class PlannerAgentServiceLive(
       case None          =>
         "No workspace was selected. Plan from the conversation only.\n"
 
-    s"""You are the task-planner agent.
-       |
-       |Your job is to turn the user's initiative into a structured execution plan.
-       |
-       |$workspaceBlock
-       |
-       |Rules:
-       |- Break work into atomic, independently executable issues.
-       |- Prefer parallelizable tasks when dependencies allow it.
-       |- Write clear descriptions and acceptance criteria.
-       |- Suggest practical required capabilities for each issue.
-       |- Generate prompt templates that an implementation agent can execute directly.
-       |- Assign each issue an estimate from: XS, S, M, L, XL.
-       |- Include kaizen skill references when useful.
-       |- Include concrete proof-of-work requirements when verification matters.
-       |- Use stable draft ids like issue-1, issue-2 so dependencies can reference them.
-       |- Keep priorities to one of: low, medium, high, critical.
-       |- Return only valid JSON matching the schema.
-       |
-       |Conversation transcript:
-       |$transcript
-       |""".stripMargin
-
-  private val plannerResponseSchema: JsonSchema =
-    Json.Obj(
-      "type"       -> Json.Str("object"),
-      "properties" -> Json.Obj(
-        "summary" -> Json.Obj("type" -> Json.Str("string")),
-        "issues"  -> Json.Obj(
-          "type"  -> Json.Str("array"),
-          "items" -> Json.Obj(
-            "type"       -> Json.Str("object"),
-            "properties" -> Json.Obj(
-              "draftId"                 -> Json.Obj("type" -> Json.Str("string")),
-              "title"                   -> Json.Obj("type" -> Json.Str("string")),
-              "description"             -> Json.Obj("type" -> Json.Str("string")),
-              "issueType"               -> Json.Obj("type" -> Json.Str("string")),
-              "priority"                -> Json.Obj("type" -> Json.Str("string")),
-              "estimate"                -> Json.Obj(
-                "type" -> Json.Str("string"),
-                "enum" -> Json.Arr(Chunk.fromIterable(DomainIssue.ValidEstimates.toList.sorted.map(Json.Str.apply))),
-              ),
-              "requiredCapabilities"    -> Json.Obj(
-                "type"  -> Json.Str("array"),
-                "items" -> Json.Obj("type" -> Json.Str("string")),
-              ),
-              "dependencyDraftIds"      -> Json.Obj(
-                "type"  -> Json.Str("array"),
-                "items" -> Json.Obj("type" -> Json.Str("string")),
-              ),
-              "acceptanceCriteria"      -> Json.Obj("type" -> Json.Str("string")),
-              "promptTemplate"          -> Json.Obj("type" -> Json.Str("string")),
-              "kaizenSkills"            -> Json.Obj(
-                "type"  -> Json.Str("array"),
-                "items" -> Json.Obj("type" -> Json.Str("string")),
-              ),
-              "proofOfWorkRequirements" -> Json.Obj(
-                "type"  -> Json.Str("array"),
-                "items" -> Json.Obj("type" -> Json.Str("string")),
-              ),
-              "included"                -> Json.Obj("type" -> Json.Str("boolean")),
-            ),
-            "required"   -> Json.Arr(
-              Chunk(
-                Json.Str("draftId"),
-                Json.Str("title"),
-                Json.Str("description"),
-                Json.Str("issueType"),
-                Json.Str("priority"),
-                Json.Str("estimate"),
-                Json.Str("requiredCapabilities"),
-                Json.Str("dependencyDraftIds"),
-                Json.Str("acceptanceCriteria"),
-                Json.Str("promptTemplate"),
-                Json.Str("kaizenSkills"),
-                Json.Str("proofOfWorkRequirements"),
-                Json.Str("included"),
-              )
-            ),
-          ),
+    promptLoader
+      .load(
+        "planner-agent",
+        Map(
+          "workspaceBlock" -> workspaceBlock,
+          "transcript"     -> transcript,
         ),
-      ),
-      "required"   -> Json.Arr(Chunk(Json.Str("summary"), Json.Str("issues"))),
-    )
+      )
+      .mapError(mapPromptError)
+
+  private def loadPlannerSchema: IO[PlannerAgentError, JsonSchema] =
+    readClasspathResource("prompts/planner-schema.json")
+      .flatMap(raw =>
+        ZIO
+          .fromEither(raw.fromJson[Json])
+          .mapError(err => PlannerAgentError.LlmFailure(s"Invalid planner schema JSON: $err"))
+      )
+
+  private def readClasspathResource(path: String): IO[PlannerAgentError, String] =
+    ZIO
+      .attemptBlockingIO(Option(getClass.getClassLoader.getResourceAsStream(path)))
+      .mapError(err => PlannerAgentError.LlmFailure(s"Failed reading planner resource '$path': ${err.getMessage}"))
+      .flatMap {
+        case Some(stream) =>
+          ZIO
+            .attemptBlockingIO {
+              try new String(stream.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8)
+              finally stream.close()
+            }
+            .mapError(err =>
+              PlannerAgentError.LlmFailure(s"Failed reading planner resource '$path': ${err.getMessage}")
+            )
+        case None         =>
+          ZIO.fail(PlannerAgentError.LlmFailure(s"Missing planner resource: $path"))
+      }
+
+  private def mapPromptError(error: PromptError): PlannerAgentError =
+    PlannerAgentError.LlmFailure(error.message)
 
   private def normalizePlannerResponse(json: Json): Either[String, PlannerStructuredResponse] =
     json match

@@ -20,6 +20,7 @@ import llm4zio.providers.{ GeminiCliExecutor, HttpClient }
 import llm4zio.tools.{ AnyTool, JsonSchema }
 import memory.entity.*
 import orchestration.control.{ IssueAssignmentOrchestrator, * }
+import prompts.PromptLoader
 import shared.web.StreamAbortRegistryLive
 
 object ChatControllerGatewaySpec extends ZIOSpecDefault:
@@ -80,6 +81,7 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
       AgentRegistry.live,
       MessageRouter.live,
       EmptyMemoryRepo.layer,
+      PromptLoader.reloading,
       GatewayService.live,
       TestLlm.layer,
     )

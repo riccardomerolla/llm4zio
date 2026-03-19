@@ -1,0 +1,84 @@
+{
+  "type": "object",
+  "properties": {
+    "summary": {
+      "type": "string"
+    },
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "draftId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "issueType": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "string"
+          },
+          "estimate": {
+            "type": "string",
+            "enum": ["L", "M", "S", "XL", "XS"]
+          },
+          "requiredCapabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "dependencyDraftIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "acceptanceCriteria": {
+            "type": "string"
+          },
+          "promptTemplate": {
+            "type": "string"
+          },
+          "kaizenSkills": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "proofOfWorkRequirements": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "included": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "draftId",
+          "title",
+          "description",
+          "issueType",
+          "priority",
+          "estimate",
+          "requiredCapabilities",
+          "dependencyDraftIds",
+          "acceptanceCriteria",
+          "promptTemplate",
+          "kaizenSkills",
+          "proofOfWorkRequirements",
+          "included"
+        ]
+      }
+    }
+  },
+  "required": ["summary", "issues"]
+}
