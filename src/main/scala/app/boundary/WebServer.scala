@@ -77,7 +77,9 @@ object WebServer:
       staticRoutes       = Routes.serveResources(Path.empty / "static")
       devCatalogRoutes   = Routes(
                              Method.GET / "components" -> handler {
-                               Response.html(shared.web.ComponentsCatalogView.page())
+                               Response
+                                 .text(shared.web.ComponentsCatalogView.page())
+                                 .contentType(MediaType.text.html)
                              }
                            )
     yield new WebServer {
