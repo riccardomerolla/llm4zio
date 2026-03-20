@@ -19,12 +19,14 @@ import agent.control.AgentMatching
 import agent.entity.AgentRepository
 import agent.entity.api.AgentMatchSuggestion
 import analysis.entity.{ AnalysisRepository, AnalysisType }
+import board.control.BoardOrchestrator
+import board.entity.BoardError
 import db.{ ChatRepository, ConfigRepository, PersistenceError, TaskRepository }
 import issues.control.IssueAnalysisAttachment
 import issues.entity.api.*
 import issues.entity.{ AgentIssue as DomainIssue, * }
 import orchestration.control.{ IssueAssignmentOrchestrator, IssueDispatchStatusService }
-import shared.ids.Ids.{ AgentId, EventId, IssueId, TaskRunId }
+import shared.ids.Ids.{ AgentId, BoardIssueId, EventId, IssueId, TaskRunId }
 import shared.web.{ ErrorHandlingMiddleware, HtmlViews }
 import workspace.control.{ AssignRunRequest, WorkspaceRunService }
 import workspace.entity.WorkspaceRepository
@@ -41,6 +43,7 @@ object IssueController:
     : ZLayer[
       ChatRepository & TaskRepository & ConfigRepository & AgentRepository & IssueAssignmentOrchestrator &
         IssueRepository & WorkspaceRepository & WorkspaceRunService & ActivityHub & IssueDispatchStatusService &
+        BoardOrchestrator &
         AnalysisRepository & IssueWorkReportProjection,
       Nothing,
       IssueController,
@@ -58,6 +61,7 @@ final case class IssueControllerLive(
   workspaceRunService: WorkspaceRunService,
   activityHub: ActivityHub,
   issueDispatchStatusService: IssueDispatchStatusService,
+  boardOrchestrator: BoardOrchestrator,
   analysisRepository: AnalysisRepository,
   issueWorkReportProjection: IssueWorkReportProjection,
 ) extends IssueController:
@@ -610,17 +614,11 @@ final case class IssueControllerLive(
                               skipConversationBootstrap = workspaceForRun.isDefined,
                             )
           _              <- workspaceForRun.fold[IO[PersistenceError, Unit]](ZIO.unit) { workspaceId =>
-                              workspaceRunService
-                                .assign(
-                                  workspaceId,
-                                  AssignRunRequest(
-                                    issueRef = s"#$id",
-                                    prompt = executionPrompt(issue),
-                                    agentName = assignRequest.agentName,
-                                  ),
-                                )
-                                .mapError(err => PersistenceError.QueryFailed("workspace_assign", err.toString))
-                                .unit
+                              assignWorkspaceRunAndMarkStarted(
+                                issue = issue,
+                                workspaceId = workspaceId,
+                                agentName = assignRequest.agentName,
+                              )
                             }
           updated        <- issueRepository.get(IssueId(id)).mapError(mapIssueRepoError)
         yield Response.json(domainToView(updated).toJson)
@@ -919,6 +917,19 @@ final case class IssueControllerLive(
         PersistenceError.QueryFailed(entity, cause)
       case shared.errors.PersistenceError.StoreUnavailable(msg)              =>
         PersistenceError.QueryFailed("store", msg)
+
+  private def mapBoardError(error: BoardError): PersistenceError =
+    error match
+      case BoardError.BoardNotFound(value)            => PersistenceError.QueryFailed("board", s"Not found: $value")
+      case BoardError.IssueNotFound(value)            => PersistenceError.QueryFailed("board_issue", s"Not found: $value")
+      case BoardError.IssueAlreadyExists(value)       => PersistenceError.QueryFailed("board_issue_exists", value)
+      case BoardError.InvalidColumn(value)            => PersistenceError.QueryFailed("board_column", value)
+      case BoardError.ParseError(message)             => PersistenceError.QueryFailed("board_parse", message)
+      case BoardError.WriteError(path, message)       => PersistenceError.QueryFailed("board_write", s"$path: $message")
+      case BoardError.GitOperationFailed(op, message) => PersistenceError.QueryFailed("board_git", s"$op: $message")
+      case BoardError.DependencyCycle(issueIds)       =>
+        PersistenceError.QueryFailed("board_cycle", issueIds.mkString(","))
+      case BoardError.ConcurrencyConflict(message)    => PersistenceError.QueryFailed("board_concurrency", message)
 
   private def domainToView(i: DomainIssue): AgentIssueView =
     val (status, assignedAgent, assignedAt, completedAt, errorMessage) = i.state match
@@ -1835,8 +1846,23 @@ final case class IssueControllerLive(
     workspaceId: String,
     agentName: String,
   ): IO[PersistenceError, Unit] =
+    val appendLegacyStartedEvent =
+      for
+        now <- Clock.instant
+        _   <- issueRepository
+                 .append(
+                   IssueEvent.Started(
+                     issueId = issue.id,
+                     agent = AgentId(agentName),
+                     startedAt = now,
+                     occurredAt = now,
+                   )
+                 )
+                 .mapError(mapIssueRepoError)
+      yield ()
+
     for
-      _   <- workspaceRunService
+      run <- workspaceRunService
                .assign(
                  workspaceId,
                  AssignRunRequest(
@@ -1846,17 +1872,35 @@ final case class IssueControllerLive(
                  ),
                )
                .mapError(err => PersistenceError.QueryFailed("workspace_assign", err.toString))
-      now <- Clock.instant
-      _   <- issueRepository
-               .append(
-                 IssueEvent.Started(
-                   issueId = issue.id,
-                   agent = AgentId(agentName),
-                   startedAt = now,
-                   occurredAt = now,
+      _   <- issue.workspaceId match
+               case Some(_) =>
+                 markWorkspaceBoardIssueStarted(
+                   issueId = issue.id.value,
+                   workspaceId = workspaceId,
+                   agentName = agentName,
+                   branchName = run.branchName,
                  )
-               )
-               .mapError(mapIssueRepoError)
+               case None    =>
+                 appendLegacyStartedEvent
+    yield ()
+
+  private def markWorkspaceBoardIssueStarted(
+    issueId: String,
+    workspaceId: String,
+    agentName: String,
+    branchName: String,
+  ): IO[PersistenceError, Unit] =
+    for
+      workspaceOpt <- workspaceRepository.get(workspaceId).mapError(mapIssueRepoError)
+      workspace    <- ZIO
+                        .fromOption(workspaceOpt)
+                        .orElseFail(PersistenceError.QueryFailed("workspace", s"Not found: $workspaceId"))
+      boardIssueId <- ZIO
+                        .fromEither(BoardIssueId.fromString(issueId))
+                        .mapError(err => PersistenceError.QueryFailed("board_issue_id", err))
+      _            <- boardOrchestrator
+                        .markIssueStarted(workspace.localPath, boardIssueId, agentName, branchName)
+                        .mapError(mapBoardError)
     yield ()
 
   private def executeParallelPipeline(

@@ -94,6 +94,17 @@ object BoardControllerSpec extends ZIOSpecDefault:
     override def dispatchCycle(workspacePath: String): IO[BoardError, DispatchResult] =
       ZIO.succeed(DispatchResult(List(BoardIssueId("issue-a")), List(BoardIssueId("issue-b"))))
 
+    override def assignIssue(workspacePath: String, issueId: BoardIssueId, agentName: String): IO[BoardError, Unit] =
+      ZIO.unit
+
+    override def markIssueStarted(
+      workspacePath: String,
+      issueId: BoardIssueId,
+      agentName: String,
+      branchName: String,
+    ): IO[BoardError, Unit] =
+      ZIO.unit
+
     override def completeIssue(workspacePath: String, issueId: BoardIssueId, success: Boolean, details: String)
       : IO[BoardError, Unit] = ZIO.unit
 

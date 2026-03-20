@@ -16,6 +16,9 @@ final case class DispatchResult(
 
 trait BoardOrchestrator:
   def dispatchCycle(workspacePath: String): IO[BoardError, DispatchResult]
+  def assignIssue(workspacePath: String, issueId: BoardIssueId, agentName: String): IO[BoardError, Unit]
+  def markIssueStarted(workspacePath: String, issueId: BoardIssueId, agentName: String, branchName: String)
+    : IO[BoardError, Unit]
   def completeIssue(workspacePath: String, issueId: BoardIssueId, success: Boolean, details: String)
     : IO[BoardError, Unit]
 
@@ -30,6 +33,21 @@ object BoardOrchestrator:
     details: String,
   ): ZIO[BoardOrchestrator, BoardError, Unit] =
     ZIO.serviceWithZIO[BoardOrchestrator](_.completeIssue(workspacePath, issueId, success, details))
+
+  def assignIssue(
+    workspacePath: String,
+    issueId: BoardIssueId,
+    agentName: String,
+  ): ZIO[BoardOrchestrator, BoardError, Unit] =
+    ZIO.serviceWithZIO[BoardOrchestrator](_.assignIssue(workspacePath, issueId, agentName))
+
+  def markIssueStarted(
+    workspacePath: String,
+    issueId: BoardIssueId,
+    agentName: String,
+    branchName: String,
+  ): ZIO[BoardOrchestrator, BoardError, Unit] =
+    ZIO.serviceWithZIO[BoardOrchestrator](_.markIssueStarted(workspacePath, issueId, agentName, branchName))
 
   val live
     : ZLayer[
@@ -96,6 +114,43 @@ final case class BoardOrchestratorLive(
   ): IO[BoardError, Unit] =
     if success then completeSuccess(workspacePath, issueId, details)
     else completeFailure(workspacePath, issueId, details)
+
+  override def assignIssue(workspacePath: String, issueId: BoardIssueId, agentName: String): IO[BoardError, Unit] =
+    for
+      _   <- ensureMainBranch(workspacePath)
+      now <- Clock.instant
+      _   <- boardRepository.updateIssue(
+               workspacePath,
+               issueId,
+               _.copy(
+                 assignedAgent = Some(agentName),
+                 transientState = TransientState.Assigned(agentName, now),
+                 failureReason = None,
+               ),
+             )
+    yield ()
+
+  override def markIssueStarted(
+    workspacePath: String,
+    issueId: BoardIssueId,
+    agentName: String,
+    branchName: String,
+  ): IO[BoardError, Unit] =
+    for
+      _   <- ensureMainBranch(workspacePath)
+      now <- Clock.instant
+      _   <- boardRepository.moveIssue(workspacePath, issueId, BoardColumn.InProgress)
+      _   <- boardRepository.updateIssue(
+               workspacePath,
+               issueId,
+               _.copy(
+                 assignedAgent = Some(agentName),
+                 transientState = TransientState.Assigned(agentName, now),
+                 branchName = Option(branchName).map(_.trim).filter(_.nonEmpty),
+                 failureReason = None,
+               ),
+             )
+    yield ()
 
   private[board] def listenForRunCompletion: UIO[Unit] =
     activityHub.subscribe.flatMap(queue =>

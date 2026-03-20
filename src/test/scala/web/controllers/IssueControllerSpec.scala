@@ -13,6 +13,8 @@ import activity.control.ActivityHub
 import activity.entity.ActivityEvent
 import agent.entity.{ Agent, AgentEvent, AgentRepository }
 import analysis.entity.{ AnalysisDoc, AnalysisEvent, AnalysisRepository, AnalysisType }
+import board.control.BoardOrchestrator
+import board.entity.BoardError
 import conversation.entity.api.{ ChatConversation, ConversationEntry, SessionContextLink }
 import db.*
 import issues.boundary.IssueControllerLive
@@ -22,7 +24,7 @@ import llm4zio.core.*
 import llm4zio.tools.{ AnyTool, JsonSchema }
 import orchestration.control.{ AgentConfigResolver, IssueAssignmentOrchestrator, IssueDispatchStatusService }
 import shared.errors.PersistenceError as SharedPersistenceError
-import shared.ids.Ids.{ AgentId, AnalysisDocId, IssueId }
+import shared.ids.Ids.{ AgentId, AnalysisDocId, BoardIssueId, IssueId }
 import workspace.control.{ AssignRunRequest, WorkspaceRunService }
 import workspace.entity.*
 
@@ -238,6 +240,26 @@ object IssueControllerSpec extends ZIOSpecDefault:
     ): IO[SharedPersistenceError, Map[IssueId, issues.entity.api.DispatchStatusResponse]] =
       ZIO.succeed(Map.empty)
 
+  private object StubBoardOrchestrator extends BoardOrchestrator:
+    override def dispatchCycle(workspacePath: String): IO[BoardError, board.control.DispatchResult]                 =
+      ZIO.succeed(board.control.DispatchResult(Nil, Nil))
+    override def assignIssue(workspacePath: String, issueId: BoardIssueId, agentName: String): IO[BoardError, Unit] =
+      ZIO.unit
+    override def markIssueStarted(
+      workspacePath: String,
+      issueId: BoardIssueId,
+      agentName: String,
+      branchName: String,
+    ): IO[BoardError, Unit] =
+      ZIO.unit
+    override def completeIssue(
+      workspacePath: String,
+      issueId: BoardIssueId,
+      success: Boolean,
+      details: String,
+    ): IO[BoardError, Unit] =
+      ZIO.unit
+
   private object StubAnalysisRepository extends AnalysisRepository:
     override def append(event: AnalysisEvent): IO[SharedPersistenceError, Unit]                        = ZIO.dieMessage("unused")
     override def get(id: AnalysisDocId): IO[SharedPersistenceError, AnalysisDoc]                       = ZIO.dieMessage("unused")
@@ -283,13 +305,16 @@ object IssueControllerSpec extends ZIOSpecDefault:
     issueRepo: IssueRepository,
     workspaceRunService: WorkspaceRunService,
   ): ZIO[Scope, Nothing, Routes[Any, Response]] =
-    val orchestratorLayer =
+    val workspaceRepository = StubWorkspaceRepository(List(sampleWorkspace))
+    val orchestratorLayer   =
       (ZLayer.succeed(StubChatRepository) ++
         ZLayer.succeed(StubTaskRepository) ++
         ZLayer.succeed(StubLlmService) ++
         ZLayer.succeed(StubAgentConfigResolver) ++
         ZLayer.succeed(StubActivityHub) ++
-        ZLayer.succeed(issueRepo)) >>> IssueAssignmentOrchestrator.live
+        ZLayer.succeed(issueRepo) ++
+        ZLayer.succeed(StubBoardOrchestrator) ++
+        ZLayer.succeed(workspaceRepository)) >>> IssueAssignmentOrchestrator.live
 
     ZIO
       .service[IssueAssignmentOrchestrator]
@@ -302,10 +327,11 @@ object IssueControllerSpec extends ZIOSpecDefault:
           agentRepository = StubAgentRepository,
           issueAssignmentOrchestrator = orchestrator,
           issueRepository = issueRepo,
-          workspaceRepository = StubWorkspaceRepository(List(sampleWorkspace)),
+          workspaceRepository = workspaceRepository,
           workspaceRunService = workspaceRunService,
           activityHub = StubActivityHub,
           issueDispatchStatusService = StubDispatchStatusService,
+          boardOrchestrator = StubBoardOrchestrator,
           analysisRepository = StubAnalysisRepository,
           issueWorkReportProjection = StubWorkReportProjection,
         ).routes
@@ -313,7 +339,9 @@ object IssueControllerSpec extends ZIOSpecDefault:
 
   def spec: Spec[TestEnvironment & Scope, Any] =
     suite("IssueControllerSpec")(
-      test("POST /api/issues/:id/auto-assign starts the issue only after workspace run creation succeeds") {
+      test(
+        "POST /api/issues/:id/auto-assign creates workspace run without persisting issue state events for workspace issues"
+      ) {
         for
           issueEvents <- Ref.make(Map(issueId -> issueSeedEvents))
           runRequests <- Ref.make(List.empty[AssignRunRequest])
@@ -329,16 +357,19 @@ object IssueControllerSpec extends ZIOSpecDefault:
           parsed      <- ZIO
                            .fromEither(body.fromJson[AutoAssignIssueResponse])
                            .orElseFail(new RuntimeException(s"invalid json: $body"))
-          updated     <- issueRepo.get(issueId)
+          history     <- issueRepo.history(issueId)
           requests    <- runRequests.get
         yield assertTrue(
           resp.status == Status.Ok,
           parsed.assigned,
           requests.map(_.issueRef) == List("#issue-1"),
-          updated.state.isInstanceOf[IssueState.InProgress],
+          !history.exists(_.isInstanceOf[IssueEvent.Assigned]),
+          !history.exists(_.isInstanceOf[IssueEvent.Started]),
         )
       },
-      test("POST /api/issues/:id/auto-assign does not move the issue to InProgress when workspace run creation fails") {
+      test(
+        "POST /api/issues/:id/auto-assign does not append assignment/start events when workspace run creation fails"
+      ) {
         for
           issueEvents <- Ref.make(Map(issueId -> issueSeedEvents))
           runRequests <- Ref.make(List.empty[AssignRunRequest])
@@ -350,11 +381,10 @@ object IssueControllerSpec extends ZIOSpecDefault:
                            body = Body.fromString(""),
                          )
           resp        <- routes.runZIO(req)
-          updated     <- issueRepo.get(issueId)
           history     <- issueRepo.history(issueId)
         yield assertTrue(
           resp.status == Status.InternalServerError,
-          updated.state.isInstanceOf[IssueState.Assigned],
+          !history.exists(_.isInstanceOf[IssueEvent.Assigned]),
           !history.exists(_.isInstanceOf[IssueEvent.Started]),
         )
       },
