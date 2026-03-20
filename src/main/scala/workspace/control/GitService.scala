@@ -18,6 +18,10 @@ trait GitService:
   def showFile(repoPath: String, filePath: String, ref: String = "HEAD"): IO[GitError, String]
   def aheadBehind(repoPath: String, baseBranch: String): IO[GitError, AheadBehind]
   def checkout(repoPath: String, branch: String): IO[GitError, Unit]
+  def add(repoPath: String, paths: List[String]): IO[GitError, Unit]
+  def mv(repoPath: String, from: String, to: String): IO[GitError, Unit]
+  def commit(repoPath: String, message: String): IO[GitError, String]
+  def rm(repoPath: String, path: String, recursive: Boolean = false): IO[GitError, Unit]
   def mergeNoFastForward(repoPath: String, branch: String, message: String): IO[GitError, Unit]
   def mergeAbort(repoPath: String): IO[GitError, Unit]
   def conflictedFiles(repoPath: String): IO[GitError, List[String]]
@@ -53,6 +57,18 @@ object GitService:
 
   def checkout(repoPath: String, branch: String): ZIO[GitService, GitError, Unit] =
     ZIO.serviceWithZIO[GitService](_.checkout(repoPath, branch))
+
+  def add(repoPath: String, paths: List[String]): ZIO[GitService, GitError, Unit] =
+    ZIO.serviceWithZIO[GitService](_.add(repoPath, paths))
+
+  def mv(repoPath: String, from: String, to: String): ZIO[GitService, GitError, Unit] =
+    ZIO.serviceWithZIO[GitService](_.mv(repoPath, from, to))
+
+  def commit(repoPath: String, message: String): ZIO[GitService, GitError, String] =
+    ZIO.serviceWithZIO[GitService](_.commit(repoPath, message))
+
+  def rm(repoPath: String, path: String, recursive: Boolean = false): ZIO[GitService, GitError, Unit] =
+    ZIO.serviceWithZIO[GitService](_.rm(repoPath, path, recursive))
 
   def mergeNoFastForward(repoPath: String, branch: String, message: String): ZIO[GitService, GitError, Unit] =
     ZIO.serviceWithZIO[GitService](_.mergeNoFastForward(repoPath, branch, message))
@@ -274,6 +290,25 @@ final case class GitServiceLive() extends GitService:
   override def checkout(repoPath: String, branch: String): IO[GitError, Unit] =
     ensureRepo(repoPath) *>
       runGit(repoPath, "checkout", branch.trim).unit
+
+  override def add(repoPath: String, paths: List[String]): IO[GitError, Unit] =
+    val cleanPaths = paths.map(_.trim).filter(_.nonEmpty).distinct
+    ensureRepo(repoPath) *>
+      (if cleanPaths.isEmpty then ZIO.fail(GitError.CommandFailed("git add", "No paths provided"))
+       else runGit(repoPath, ("add" :: cleanPaths)*).unit)
+
+  override def mv(repoPath: String, from: String, to: String): IO[GitError, Unit] =
+    ensureRepo(repoPath) *>
+      runGit(repoPath, "mv", from.trim, to.trim).unit
+
+  override def commit(repoPath: String, message: String): IO[GitError, String] =
+    ensureRepo(repoPath) *>
+      runGit(repoPath, "commit", "-m", message.trim) *>
+      headSha(repoPath)
+
+  override def rm(repoPath: String, path: String, recursive: Boolean = false): IO[GitError, Unit] =
+    ensureRepo(repoPath) *>
+      runGit(repoPath, "rm", if recursive then "-r" else "", path.trim).unit
 
   override def mergeNoFastForward(repoPath: String, branch: String, message: String): IO[GitError, Unit] =
     ensureRepo(repoPath) *>

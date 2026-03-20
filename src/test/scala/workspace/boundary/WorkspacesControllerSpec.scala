@@ -149,6 +149,14 @@ object WorkspacesControllerSpec extends ZIOSpecDefault:
       ZIO.succeed(AheadBehind(ahead = 3, behind = 1))
     def checkout(repoPath: String, branch: String): IO[GitError, Unit]                            =
       ZIO.unit
+    def add(repoPath: String, paths: List[String]): IO[GitError, Unit]                            =
+      ZIO.unit
+    def mv(repoPath: String, from: String, to: String): IO[GitError, Unit]                        =
+      ZIO.unit
+    def commit(repoPath: String, message: String): IO[GitError, String]                           =
+      ZIO.succeed("abc123")
+    def rm(repoPath: String, path: String, recursive: Boolean): IO[GitError, Unit]                =
+      ZIO.unit
     def mergeNoFastForward(repoPath: String, branch: String, message: String): IO[GitError, Unit] =
       ZIO.unit
     def mergeAbort(repoPath: String): IO[GitError, Unit]                                          =

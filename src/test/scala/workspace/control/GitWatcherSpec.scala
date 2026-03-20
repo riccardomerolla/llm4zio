@@ -56,6 +56,10 @@ object GitWatcherSpec extends ZIOSpecDefault:
       AheadBehind(ahead = 0, behind = 0)
     )
     override def checkout(repoPath: String, branch: String): IO[GitError, Unit]                            = ZIO.unit
+    override def add(repoPath: String, paths: List[String]): IO[GitError, Unit]                            = ZIO.unit
+    override def mv(repoPath: String, from: String, to: String): IO[GitError, Unit]                        = ZIO.unit
+    override def commit(repoPath: String, message: String): IO[GitError, String]                           = ZIO.succeed("hash-b")
+    override def rm(repoPath: String, path: String, recursive: Boolean): IO[GitError, Unit]                = ZIO.unit
     override def mergeNoFastForward(repoPath: String, branch: String, message: String): IO[GitError, Unit] =
       ZIO.unit
     override def mergeAbort(repoPath: String): IO[GitError, Unit]                                          = ZIO.unit
