@@ -14,6 +14,49 @@ This file defines how agent should behave when working on **Scala 3** + **ZIO 2.
 
 Agent must treat these rules as **global guidance** for code generation, refactoring, architecture, documentation, and testing.
 
+# Development process
+
+## Write a plan
+
+First write a step-by-step implementation plan. Store the plan in
+a `plan.md` file. Do not include any code in the plan. 
+
+* The plan should consist of multiple tasks
+* Tasks should be designed to be implemented individually, one by
+  one
+* Tasks should be grouped by feature / technical concern, so that
+  when all tasks from a group are implemented, the feature is
+  complete
+* Each task should handle a single concern and gradually move the
+  system toward the goal
+* Make sure there are no additional features planned
+
+## Implement
+
+Execute the implementation plan step by step 
+
+* Iterate on the implementation of consecutive tasks. The code
+  MUST compile without warnings, and the tests MUST pass
+* Unit tests should be focused, non-overlapping, each covering a
+  single well-defined scenario
+* After completig all tasks from a task group, ALWAYS perform a
+  code review, taking into account the coding guidelines. You
+  MUST run a code review before proceeding to the next task
+  group.
+* ALWAYS apply code review remarks, and then repeat the review
+  process. If there were no remarks, proceed to the next task
+  group.
+* All developed features should be integrated with the rest of
+  the system, so that there's no dead or unreachable code.
+  Anything that's developed must be somehow reachable from the
+  main entrypoint.  
+* Commit the result and proceed to the next task in the
+  implementation plan
+* Mark the task as done in the plan file
+
+Work on the implementation autonomously. Do not ask any
+questions, resolve any issues on your own.
+
 ---
 
 # 1. Purpose
@@ -400,34 +443,20 @@ Before responding, Agent must validate:
 
 # 13. Build & Run
 The project uses `sbt` for all tasks.
+- use `sbt --client` instead of `sbt` to connect to a running sbt
+  server for faster execution
 - **Compile:** `sbt compile`
-- **Format Code:** `sbt fmt` (Run this before submitting any changes)
+- **Format Code:** `sbt fmt`  plugin: `sbt --client scalafmtAll` (Run this before submitting any changes)
 - **Build Fat JAR:** `sbt assembly`
+- ALWAYS use tools to compile and run tests instead of relying on
+  bash commands
+- after adding a dependency to `build.sbt`, ALWAYS run the
+  `import-build` tool
+- to lookup a dependency or the latest version, use the
+  `find-dep` tool
+- to lookup the API of a class, use the `inspect` tool
 
 # 14. Testing Protocols
 You MUST verify your changes by running tests.
 - **Run Unit Tests:** `sbt test`
   - *Note:* These use `ZIO Test` and `scalamock-zio`. They do not require external secrets.
-- **Run Integration Tests:** `sbt it:test`
-- **Run Benchmarks:** `sbt bench:test`
-
-# 15. API Design Patterns
-
-## RESTful API Structure
-
-```scala
-// ✅ Resource-based URLs
-GET    /api/v1/markets                 # List resources
-GET    /api/v1/markets/:id             # Get single resource
-POST   /api/v1/markets                 # Create resource
-PUT    /api/v1/markets/:id             # Replace resource
-PATCH  /api/v1/markets/:id             # Update resource
-DELETE /api/v1/markets/:id             # Delete resource
-
-// ✅ Query parameters for filtering, sorting, pagination
-GET /api/v1/markets?status=active&sort=volume&limit=20&offset=0
-```
-
-The Rule: Use /admin only for System-Wide Operations that don't map to a specific resource (e.g., "Check Health", "List All Wallets", "System Panic")
-
----

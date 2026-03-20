@@ -10,7 +10,7 @@ addCommandAlias("check", "; scalafixAll --check; scalafmtCheckAll")
 
 // Centralized version management
 val zioVersion = "2.1.24"
-val zioProcessVersion = "0.7.2"
+val zioProcessVersion = "0.8.0"
 val zioJsonVersion = "0.9.0"
 val zioHttpVersion = "3.8.1"
 val zioLoggingVersion = "2.4.0"
