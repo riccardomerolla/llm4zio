@@ -153,4 +153,34 @@ object BoardRepositoryFSSpec extends ZIOSpecDefault:
         )
       }
     },
+    test("readBoard repairs duplicate issue placement across columns and commits repair") {
+      ZIO.scoped {
+        for
+          repoPath <- initRepo
+          repo     <- repository
+          _        <- repo.initBoard(repoPath.toString)
+          _        <- repo.createIssue(repoPath.toString, BoardColumn.Todo, issue("dup-issue", "Duplicate Issue"))
+          _        <- ZIO.attemptBlocking {
+                        val todoDir   = repoPath.resolve(".board").resolve("todo").resolve("dup-issue")
+                        val reviewDir = repoPath.resolve(".board").resolve("review").resolve("dup-issue")
+                        val _         = JFiles.createDirectories(reviewDir)
+                        val _         = JFiles.copy(
+                          todoDir.resolve("ISSUE.md"),
+                          reviewDir.resolve("ISSUE.md"),
+                          java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                        )
+                      }
+          _        <- runCmd(repoPath, "git", "add", ".board/review/dup-issue")
+          _        <- runCmd(repoPath, "git", "commit", "-m", "simulate duplicate placement from merge")
+          board    <- repo.readBoard(repoPath.toString)
+          todo      = board.columns.getOrElse(BoardColumn.Todo, Nil).map(_.frontmatter.id.value)
+          review    = board.columns.getOrElse(BoardColumn.Review, Nil).map(_.frontmatter.id.value)
+          logs     <- runCmd(repoPath, "git", "log", "--pretty=%s", "-n", "1")
+        yield assertTrue(
+          !todo.contains("dup-issue"),
+          review.contains("dup-issue"),
+          logs.contains("[board] Repair: deduplicate issue placements"),
+        )
+      }
+    },
   )

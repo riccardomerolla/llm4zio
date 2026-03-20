@@ -106,4 +106,34 @@ object IssueMarkdownParserSpec extends ZIOSpecDefault:
         case _                              => false
       })
     },
+    test("parse accepts legacy review transientState and normalizes it") {
+      val raw =
+        """---
+          |id: fix-auth-timeout
+          |title: Fix authentication timeout on session refresh
+          |priority: high
+          |assignedAgent: null
+          |requiredCapabilities: []
+          |blockedBy: []
+          |tags: []
+          |acceptanceCriteria: []
+          |estimate: null
+          |proofOfWork: []
+          |transientState: review(code-agent,2026-03-20T15:22:43.644853Z)
+          |branchName: null
+          |failureReason: null
+          |completedAt: null
+          |createdAt: 2026-03-20T10:00:00Z
+          |---
+          |Body
+          |""".stripMargin
+
+      for
+        parsed        <- parser.parse(raw)
+        (parsedFm, md) = parsed
+      yield assertTrue(
+        parsedFm.transientState == TransientState.None,
+        md == "Body\n",
+      )
+    },
   )

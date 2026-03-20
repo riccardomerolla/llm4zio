@@ -53,13 +53,16 @@ final case class BoardRepositoryFS(
     }
 
   override def readBoard(workspacePath: String): IO[BoardError, Board] =
-    for
-      workspace <- ensureWorkspaceDirectory(workspacePath)
-      _         <- ensureBoardRoot(workspace)
-      columns   <- ZIO.foreach(columnsInOrder) { column =>
-                     listIssues(workspacePath, column).map(column -> _)
-                   }
-    yield Board(workspacePath = workspacePath, columns = columns.toMap)
+    withWorkspaceLock(workspacePath) {
+      for
+        workspace <- ensureWorkspaceDirectory(workspacePath)
+        _         <- ensureBoardRoot(workspace)
+        _         <- reconcileDuplicateIssuePlacements(workspacePath, workspace)
+        columns   <- ZIO.foreach(columnsInOrder) { column =>
+                       listIssues(workspacePath, column).map(column -> _)
+                     }
+      yield Board(workspacePath = workspacePath, columns = columns.toMap)
+    }
 
   override def readIssue(workspacePath: String, issueId: BoardIssueId): IO[BoardError, BoardIssue] =
     for
@@ -166,24 +169,15 @@ final case class BoardRepositoryFS(
     for
       workspace <- ensureWorkspaceDirectory(workspacePath)
       _         <- ensureBoardRoot(workspace)
-      issuesDir  = workspace.resolve(boardRootFolder).resolve(column.folderName)
-      issueDirs <- ZIO
-                     .attemptBlocking {
-                       if JFiles.exists(issuesDir) then
-                         JFiles
-                           .list(issuesDir)
-                           .iterator()
-                           .asScala
-                           .filter(path => JFiles.isDirectory(path))
-                           .toList
-                           .sortBy(_.getFileName.toString)
-                       else Nil
-                     }
-                     .mapError(err =>
-                       BoardError.ParseError(s"Unable to list column '${column.folderName}': ${err.getMessage}")
-                     )
+      issueDirs <- listIssueDirectories(workspace, column)
       issues    <- ZIO.foreach(issueDirs)(dir => readIssueAt(column, dir))
-    yield issues
+      higherCols = columnsInOrder.drop(columnPriority(column) + 1)
+      visible   <- ZIO.filter(issues) { issue =>
+                     ZIO
+                       .foreach(higherCols)(higher => pathExists(issueDirectory(workspace, higher, issue.frontmatter.id)))
+                       .map(occurrences => !occurrences.contains(true))
+                   }
+    yield visible
 
   override def invalidateWorkspace(workspacePath: String): UIO[Unit] =
     ZIO.unit
@@ -239,9 +233,68 @@ final case class BoardRepositoryFS(
       found     <- ZIO.foreach(columnsInOrder) { column =>
                      val issueDir = issueDirectory(workspace, column, issueId)
                      pathExists(issueDir).map(exists => if exists then Some(IssueLocation(column, issueDir)) else None)
-                   }.map(_.flatten.headOption)
-      location  <- ZIO.fromOption(found).orElseFail(BoardError.IssueNotFound(issueId.value))
+                   }.map(_.flatten)
+      _         <- ZIO
+                     .logWarning(
+                       s"[board] duplicate issue '${issueId.value}' detected across columns: ${
+                           found.map(_.column.folderName).mkString(", ")
+                         }; preferring highest priority column"
+                     )
+                     .when(found.size > 1)
+      location  <- ZIO
+                     .fromOption(found.sortBy(loc => columnPriority(loc.column)).lastOption)
+                     .orElseFail(BoardError.IssueNotFound(issueId.value))
     yield location
+
+  private def listIssueDirectories(workspace: Path, column: BoardColumn): IO[BoardError, List[Path]] =
+    val issuesDir = workspace.resolve(boardRootFolder).resolve(column.folderName)
+    ZIO
+      .attemptBlocking {
+        if JFiles.exists(issuesDir) then
+          JFiles
+            .list(issuesDir)
+            .iterator()
+            .asScala
+            .filter(path => JFiles.isDirectory(path))
+            .toList
+            .sortBy(_.getFileName.toString)
+        else Nil
+      }
+      .mapError(err =>
+        BoardError.ParseError(s"Unable to list column '${column.folderName}': ${err.getMessage}")
+      )
+
+  private def reconcileDuplicateIssuePlacements(workspacePath: String, workspace: Path): IO[BoardError, Unit] =
+    for
+      perColumn <- ZIO.foreach(columnsInOrder) { column =>
+                     listIssueDirectories(workspace, column).map(dirs => column -> dirs)
+                   }
+      placements = perColumn.flatMap {
+                     case (column, dirs) =>
+                       dirs.map(dir => (dir.getFileName.toString, column, dir))
+                   }
+      duplicates = placements.groupBy(_._1).view.mapValues(_.toList).toMap.filter(_._2.size > 1)
+      toRemove   = duplicates.values.toList.flatMap { entries =>
+                     val keep = entries.maxBy { case (_, column, _) => columnPriority(column) }
+                     entries.filterNot(_ == keep).map(_._3)
+                   }
+      _         <- ZIO
+                     .logWarning(
+                       s"[board] duplicate issue placements detected in $workspacePath; removing ${
+                           toRemove.size
+                         } stale directories"
+                     )
+                     .when(toRemove.nonEmpty)
+      _         <- ZIO.foreachDiscard(toRemove) { dir =>
+                     gitService
+                       .rm(workspacePath, relativize(workspace, dir), recursive = true)
+                       .mapError(mapGitError("git rm"))
+                   }
+      _         <- gitService
+                     .commit(workspacePath, s"[board] Repair: deduplicate issue placements (${toRemove.size})")
+                     .mapError(mapGitError("git commit"))
+                     .when(toRemove.nonEmpty)
+    yield ()
 
   private def issueExists(workspacePath: String, issueId: BoardIssueId): IO[BoardError, Boolean] =
     locateIssue(workspacePath, issueId).as(true).catchSome { case _: BoardError.IssueNotFound => ZIO.succeed(false) }
@@ -280,6 +333,9 @@ final case class BoardRepositoryFS(
 
   private def issueDirectory(workspace: Path, column: BoardColumn, issueId: BoardIssueId): Path =
     workspace.resolve(boardRootFolder).resolve(column.folderName).resolve(issueId.value)
+
+  private def columnPriority(column: BoardColumn): Int =
+    columnsInOrder.indexOf(column)
 
   private def stageAndCommit(workspacePath: String, addPaths: List[String], commitMessage: String)
     : IO[BoardError, String] =

@@ -1,5 +1,7 @@
 package workspace.control
 
+import java.io.{ BufferedReader, InputStreamReader }
+import java.nio.charset.StandardCharsets
 import java.nio.file.Paths
 
 import zio.*
@@ -181,8 +183,8 @@ object CliAgentRunner:
     }
 
   /** Run argv as a subprocess, calling `onLine` for each line of output as it is produced. stderr is merged into stdout
-    * via redirectErrorStream. Returns the exit code. Runs on ZIO's blocking thread pool. The process is forcibly
-    * destroyed if the effect is interrupted or an error occurs.
+    * only for logging and does not get forwarded to `onLine`. Returns the exit code. Runs on ZIO's blocking thread
+    * pool. The process is forcibly destroyed if the effect is interrupted or an error occurs.
     *
     * Uses `ZIO.attemptBlockingCancelable` for `readLine` so that fiber interruption immediately kills the process (via
     * `destroyForcibly`) which unblocks the blocking read instead of waiting for the process to finish naturally.
@@ -198,17 +200,40 @@ object CliAgentRunner:
         val pb = new ProcessBuilder(argv*)
         pb.directory(Paths.get(cwd).toFile)
         envVars.foreach { case (k, v) => pb.environment().put(k, v) }
-        pb.redirectErrorStream(true)
+        pb.redirectErrorStream(false)
         pb.start()
       }
     )(process => ZIO.succeedBlocking(process.destroyForcibly()).ignore) { process =>
-      val reader           = new java.io.BufferedReader(new java.io.InputStreamReader(process.getInputStream))
-      def loop: Task[Unit] =
+      val commandLabel = argv.headOption.getOrElse("process")
+      val outReader    = new BufferedReader(new InputStreamReader(process.getInputStream, StandardCharsets.UTF_8))
+      val errReader    = new BufferedReader(new InputStreamReader(process.getErrorStream, StandardCharsets.UTF_8))
+
+      def readLoop(reader: BufferedReader, handleLine: String => Task[Unit]): Task[Unit] =
         ZIO
           .attemptBlockingCancelable(Option(reader.readLine()))(ZIO.succeedBlocking(process.destroyForcibly()).ignore)
           .flatMap {
             case None       => ZIO.unit
-            case Some(line) => onLine(line) *> loop
+            case Some(line) => handleLine(line) *> readLoop(reader, handleLine)
           }
-      loop *> ZIO.attemptBlockingIO(process.waitFor())
+
+      val drainStdout =
+        readLoop(outReader, onLine)
+          .ensuring(ZIO.attemptBlocking(outReader.close()).ignoreLogged)
+
+      val drainStderr =
+        readLoop(
+          errReader,
+          line =>
+            if line.trim.nonEmpty then
+              ZIO.logDebug(s"[$commandLabel][stderr] ${line.take(500)}${if line.length > 500 then "..." else ""}")
+            else ZIO.unit,
+        )
+          .ensuring(ZIO.attemptBlocking(errReader.close()).ignoreLogged)
+          .catchAll(err => ZIO.logDebug(s"[$commandLabel] stderr drain stopped: ${err.getMessage}"))
+
+      (for
+        stderrFiber <- drainStderr.forkDaemon
+        _           <- drainStdout
+        _           <- stderrFiber.interrupt.ignore
+      yield ()) *> ZIO.attemptBlockingIO(process.waitFor())
     }

@@ -208,6 +208,11 @@ final case class IssueMarkdownParserLive() extends IssueMarkdownParser:
   private def parseTransientState(value: String): IO[BoardError, TransientState] =
     val trimmed = value.trim
     if trimmed.equalsIgnoreCase("none") || isNullLiteral(trimmed) then ZIO.succeed(TransientState.None)
+    else if trimmed.toLowerCase.startsWith("review(") && trimmed.endsWith(")") then
+      // Backward compatibility: legacy board issues could persist `review(agent,ts)`.
+      // Current model does not expose a dedicated Review transient state, and board column
+      // already encodes HumanReview. Normalize to `none` so existing issues remain readable.
+      ZIO.succeed(TransientState.None)
     else if trimmed.toLowerCase.startsWith("assigned(") && trimmed.endsWith(")") then
       val inner      = trimmed.drop("assigned(".length).dropRight(1)
       val splitIndex = inner.lastIndexOf(',')

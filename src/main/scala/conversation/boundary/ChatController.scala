@@ -1026,17 +1026,22 @@ final case class ChatControllerLive(
       case (ConversationMode.Chat, None)     => None
 
   private def parseWorkspaceMarkerDescription(raw: Option[String]): Option[String] =
-    raw.flatMap { description =>
-      sanitizeString(description).flatMap { value =>
-        value
-          .split("\\|")
-          .toList
-          .collectFirst {
-            case segment if segment.trim.startsWith("workspace:") => segment.trim.stripPrefix("workspace:")
-          }
-          .flatMap(sanitizeString)
-      }
-    }
+    try
+      sanitizeOptional(raw) match
+        case None              => None
+        case Some(description) =>
+          sanitizeString(description) match
+            case None        => None
+            case Some(value) =>
+              value
+                .split("\\|")
+                .iterator
+                .map(_.trim)
+                .find(_.startsWith("workspace:"))
+                .map(_.stripPrefix("workspace:"))
+                .flatMap(sanitizeString)
+    catch
+      case _: Throwable => None
 
   private def buildWorkspaceFolders(
     conversations: List[ChatConversation]

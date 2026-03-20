@@ -100,19 +100,30 @@ object GeminiCliExecutor:
         executionContext: GeminiCliExecutionContext,
       ): ZStream[Any, LlmError, GeminiCliStreamEvent] =
         ZStream.unwrapScoped {
-          ZIO.acquireRelease(startProcess(
-            prompt,
-            config,
-            executionContext,
-            outputFormat = "stream-json",
-          ))(terminateProcess)
-            .map { process =>
-              streamOutput(process) ++ ZStream.fromZIO(
-                waitForCompletion(process).flatMap(exitCode =>
-                  validateExitCode(exitCode, s"Gemini stream process exited with code $exitCode", None)
-                )
-              ).drain
-            }
+          for
+            process <- ZIO.acquireRelease(startProcess(
+                         prompt,
+                         config,
+                         executionContext,
+                         outputFormat = "stream-json",
+                         mergeErrorStream = false,
+                       ))(terminateProcess)
+            _       <- streamStderrOutput(process)
+                         .mapZIO(line =>
+                           if line.trim.nonEmpty then
+                             ZIO.logDebug(
+                               s"Gemini stream stderr: ${line.take(500)}${if line.length > 500 then "..." else ""}"
+                             )
+                           else ZIO.unit
+                         )
+                         .runDrain
+                         .catchAll(err => ZIO.logDebug(s"Gemini stderr stream closed: ${err.toString}"))
+                         .forkScoped
+          yield streamOutput(process) ++ ZStream.fromZIO(
+            waitForCompletion(process).flatMap(exitCode =>
+              validateExitCode(exitCode, s"Gemini stream process exited with code $exitCode", None)
+            )
+          ).drain
         }
 
       private def startProcess(
@@ -120,6 +131,7 @@ object GeminiCliExecutor:
         config: LlmConfig,
         executionContext: GeminiCliExecutionContext,
         outputFormat: String,
+        mergeErrorStream: Boolean = true,
       ): IO[LlmError, Process] =
         val effectivePrompt    = if isWindows then normalizePromptForWindowsCmd(prompt) else prompt
         val commands           = geminiCommand ++ List(
@@ -145,7 +157,7 @@ object GeminiCliExecutor:
               val builder = new ProcessBuilder(commands.asJava)
               executionContext.cwd.foreach(path => builder.directory(java.nio.file.Paths.get(path).toFile))
               builder
-                .redirectErrorStream(true)
+                .redirectErrorStream(mergeErrorStream)
                 .start()
             }
             .mapError(e => LlmError.ProviderError(s"Failed to start gemini process: ${e.getMessage}", Some(e)))
@@ -194,6 +206,30 @@ object GeminiCliExecutor:
             case LlmError.TimeoutError(d) => ZIO.logError(s"Gemini process timed out after ${d.toSeconds}s")
             case other                    => ZIO.logError(s"Gemini output read error: $other")
           }
+
+      private def streamStderrOutput(process: Process): ZStream[Any, LlmError, String] =
+        ZStream.unwrapScoped {
+          ZIO.acquireRelease(
+            ZIO
+              .attemptBlocking(new BufferedReader(new InputStreamReader(
+                process.getErrorStream,
+                StandardCharsets.UTF_8,
+              )))
+              .mapError(e =>
+                LlmError.ProviderError(s"Failed to open gemini stderr stream: ${e.getMessage}", Some(e))
+              )
+          )((reader: BufferedReader) => ZIO.attemptBlocking(reader.close()).ignoreLogged)
+            .map { reader =>
+              ZStream.repeatZIOOption {
+                ZIO
+                  .attemptBlocking(Option(reader.readLine()))
+                  .mapError(e =>
+                    Some(LlmError.ProviderError(s"Failed to read gemini stderr: ${e.getMessage}", Some(e)))
+                  )
+                  .someOrFail(None)
+              }
+            }
+        }
 
       private def waitForCompletion(process: Process): IO[LlmError, Int] =
         ZIO
