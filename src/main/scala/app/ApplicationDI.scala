@@ -31,6 +31,7 @@ import app.boundary.{
   WebServer,
 }
 import app.control.{ FileService, HealthMonitor, HttpAIClient, LogTailer, StateService }
+import board.control.*
 import com.bot4s.telegram.clients.FutureSttpClient
 import conversation.boundary.{
   ChatController as ConversationChatController,
@@ -245,8 +246,11 @@ object ApplicationDI:
     }
 
   def webServerLayer(config: GatewayConfig, storeConfig: StoreConfig): ZLayer[Any, Nothing, WebServer] =
-    ZLayer.make[WebServer & AutoDispatcher & MergeAgentService](
+    ZLayer.make[WebServer & AutoDispatcher & MergeAgentService & BoardOrchestrator](
       commonLayers(config, storeConfig),
+      IssueMarkdownParser.live,
+      BoardRepositoryFS.live,
+      BoardDependencyResolver.live,
       TaskRunDashboardController.live,
       TaskRunTasksController.live,
       TaskRunReportsController.live,
@@ -279,6 +283,7 @@ object ApplicationDI:
       AgentPoolManager.live,
       IssueDispatchStatusService.live,
       WorkspaceRunService.live,
+      BoardOrchestrator.live,
       AutoDispatcher.live,
       WorkReportEventBus.layer,
       issueWorkReportProjectionLayer,
