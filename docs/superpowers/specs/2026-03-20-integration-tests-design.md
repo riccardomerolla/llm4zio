@@ -36,7 +36,7 @@ A plain `object` (no trait, no inheritance) in `src/it/scala/integration/`.
 | `initGitRepo` | `ZIO[Scope, Throwable, Path]` — acquireRelease: creates temp dir, `git init --initial-branch=main`, sets user config, writes `HelloWorld.scala`, initial commit. Deletes on scope exit. |
 | `boardRepoFor(git, parser)` | Builds `BoardRepositoryFS` with a fresh lock `Ref`. (`BoardRepositoryFS` constructor is `(parser, gitService, locksRef)` — no path param.) |
 | `stubLlm(responses)` | `Ref`-backed queue of JSON strings; `executeStructured` pops and decodes them. Same pattern as golden path. |
-| `minimalWorkspace(id, path)` | Constructs a `Workspace` value with `enabled=true`, `RunMode.Host`, `defaultAgent = Some("codex")`. |
+| `minimalWorkspace(id, path)` | Constructs a `Workspace` value with `id`, `name = "test-workspace"`, `localPath = path.toString`, `enabled=true`, `RunMode.Host`, `defaultAgent = Some("codex")`, `cliTool = "codex"`, `description = None`, `createdAt = Instant.now()`, `updatedAt = Instant.now()`. |
 | `stubWorkspaceRepo(ws)` | `StubWorkspaceRepository`: returns the single workspace; all run lookups return `Nil`. |
 | `stubActivityHub` | `NoOpActivityHub`: `publish` discards events; `subscribe` returns a one-slot queue. |
 
@@ -103,7 +103,7 @@ Constructor takes `repoPath: Path` and `sem: Semaphore`.
 - `continueRun`: returns `ZIO.fail(WorkspaceError.InvalidRunState(...))`.
 - `cancelRun`: returns `ZIO.unit`.
 
-Note: there is **no** `cleanupAfterSuccessfulMerge` method in `WorkspaceRunService` trait. `cleanupLatestRun` inside `BoardOrchestratorLive` is a no-op here because `stubWorkspaceRepo.listRunsByIssueRef` returns `Nil`. The semaphore is therefore released manually via `sem.release` in the test body after each `completeIssue` call.
+Note: `WorkspaceRunService` trait has `cleanupAfterSuccessfulMerge` with a default `ZIO.unit` body — stubs do not need to override it. It is invoked by `cleanupLatestRun` inside `BoardOrchestratorLive` only when `listRunsByIssueRef` returns non-empty. Since `stubWorkspaceRepo.listRunsByIssueRef` returns `Nil`, `cleanupLatestRun` is a no-op and the semaphore is never automatically released. The semaphore is therefore released manually via `sem.release` in the test body after each `completeIssue` call.
 
 This enforces observable pool capacity without any real agent execution.
 
@@ -153,9 +153,9 @@ Real services: `GitServiceLive` (via `gitRunner`), `FileService.live`.
 | Parameter | Value |
 |---|---|
 | `workspaceRepository` | `StubWorkspaceRepository` (one enabled workspace) |
-| `agentRepository` | `StubAgentRepository` — `list()` returns `Nil`, `findByName` returns `None` → triggers `BuiltInAgentSynchronizer.seedBuiltInAgents` fallback, which seeds the `code-agent` built-in agent (carries `code-review` capability tag). The analysis pipeline selects `code-agent` via capability matching on `AnalysisProfile.codeReview`. |
+| `agentRepository` | `StubAgentRepository` — `list()` returns `Nil`; `findByName("code-agent")` returns a valid enabled `Agent` with `capabilities = List("code-review")`, `name = "code-agent"`. This ensures deterministic agent selection: `selectAgent` calls `builtInAgentByName("code-agent")` via the setting key path, which returns `code-agent` directly without alphabetical ordering ambiguity. |
 | `analysisRepository` | `StubAnalysisRepository` — concrete class with `val events: Ref[List[AnalysisEvent]]` accessible directly (not just the trait reference) so the test can read `stubRepo.events.get` to assert persistence. `listByWorkspace` returns `ZIO.succeed(Nil)` (no prior docs), so `persistAnalysisDoc` emits `AnalysisEvent.AnalysisCreated`. |
-| `taskRepository` | `StubTaskRepository` — `getSetting` returns `None` (no overrides) |
+| `taskRepository` | `StubTaskRepository` — `getSetting(AnalysisAgentRunner.CodeReviewAgentSettingKey)` returns `ZIO.succeed(Some(SettingRow("analysis.code-review.agent", "code-agent")))`. This routes `selectAgent` through the `builtInAgentByName` path, which calls `agentRepository.findByName("code-agent")` — giving deterministic selection regardless of built-in ordering. |
 | `fileService` | `FileService.live` |
 | `llmPromptExecutor` | `Some((_, agent, _) => ZIO.succeed(s"# Code Review\n\nMocked analysis by ${agent.name}."))` |
 | `promptLoader` | `None` |
