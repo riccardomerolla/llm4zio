@@ -23,20 +23,19 @@ import workspace.entity.*
 
 /** Integration test for the gateway workspace golden path.
   *
-  * Tests the end-to-end flow without real AI providers by mocking [[LlmService]],
-  * [[WorkspaceRunService]], and [[WorkspaceRepository]]. All file system operations
-  * (board structure, git commits, merges) execute against a real temporary git
-  * repository so the test is fully re-runnable and self-cleaning.
+  * Tests the end-to-end flow without real AI providers by mocking [[LlmService]], [[WorkspaceRunService]], and
+  * [[WorkspaceRepository]]. All file system operations (board structure, git commits, merges) execute against a real
+  * temporary git repository so the test is fully re-runnable and self-cleaning.
   *
   * Golden path:
   *   1. Init a "Hello World" Scala git repository (source fixture)
   *   2. Init the board structure (.board/)
   *   3. Plan two issues via [[IssueCreationWizard]] (LLM is mocked)
-  *      - add-greeting-param  (high priority, no dependencies)
-  *      - add-language-param  (medium priority, blocked by add-greeting-param)
+  *      - add-greeting-param (high priority, no dependencies)
+  *      - add-language-param (medium priority, blocked by add-greeting-param)
   *   4. Move issues to Todo
-  *   5. Dispatch cycle 1 → only add-greeting-param dispatched (dependency guard)
-  *      Stub [[WorkspaceRunService]] creates a real feature branch
+  *   5. Dispatch cycle 1 → only add-greeting-param dispatched (dependency guard) Stub [[WorkspaceRunService]] creates a
+  *      real feature branch
   *   6. Complete add-greeting-param → merges feature branch → issue moves to Done
   *   7. Dispatch cycle 2 → add-language-param now unblocked
   *   8. Complete add-language-param → merges → Done
@@ -118,13 +117,13 @@ object WorkspaceGoldenPathIntegrationSpec extends ZIOSpecDefault:
   // ── Stub: WorkspaceRepository ──────────────────────────────────────────────
   // Returns a single in-memory workspace; run lookups return empty lists.
 
-  private final class StubWorkspaceRepository(ws: Workspace) extends WorkspaceRepository:
-    override def append(event: WorkspaceEvent): IO[PersistenceError, Unit]               = ZIO.unit
-    override def list: IO[PersistenceError, List[Workspace]]                             = ZIO.succeed(List(ws))
-    override def get(id: String): IO[PersistenceError, Option[Workspace]]               =
+  final private class StubWorkspaceRepository(ws: Workspace) extends WorkspaceRepository:
+    override def append(event: WorkspaceEvent): IO[PersistenceError, Unit]                      = ZIO.unit
+    override def list: IO[PersistenceError, List[Workspace]]                                    = ZIO.succeed(List(ws))
+    override def get(id: String): IO[PersistenceError, Option[Workspace]]                       =
       ZIO.succeed(Option.when(id == ws.id)(ws))
-    override def delete(id: String): IO[PersistenceError, Unit]                         = ZIO.unit
-    override def appendRun(event: WorkspaceRunEvent): IO[PersistenceError, Unit]        = ZIO.unit
+    override def delete(id: String): IO[PersistenceError, Unit]                                 = ZIO.unit
+    override def appendRun(event: WorkspaceRunEvent): IO[PersistenceError, Unit]                = ZIO.unit
     override def listRuns(workspaceId: String): IO[PersistenceError, List[WorkspaceRun]]        = ZIO.succeed(Nil)
     override def listRunsByIssueRef(issueRef: String): IO[PersistenceError, List[WorkspaceRun]] = ZIO.succeed(Nil)
     override def getRun(id: String): IO[PersistenceError, Option[WorkspaceRun]]                 = ZIO.succeed(None)
@@ -134,7 +133,7 @@ object WorkspaceGoldenPathIntegrationSpec extends ZIOSpecDefault:
   // commit, returns a [[WorkspaceRun]] containing that branch name, and checks
   // back out to main so subsequent board operations stay on the right branch.
 
-  private final class StubWorkspaceRunService(repoPath: Path) extends WorkspaceRunService:
+  final private class StubWorkspaceRunService(repoPath: Path) extends WorkspaceRunService:
 
     private def runGit(args: String*): IO[WorkspaceError, Unit] =
       Command(args.head, args.drop(1)*).workingDirectory(repoPath.toFile).string.unit
@@ -143,15 +142,15 @@ object WorkspaceGoldenPathIntegrationSpec extends ZIOSpecDefault:
     override def assign(workspaceId: String, req: AssignRunRequest): IO[WorkspaceError, WorkspaceRun] =
       val branchName = s"feature/${req.issueRef}/work"
       for
-        _ <- runGit("git", "checkout", "-b", branchName)
-        _ <- ZIO
-               .attemptBlocking(
-                 JFiles.writeString(repoPath.resolve(s"${req.issueRef}-impl.txt"), s"Work done for ${req.issueRef}")
-               )
-               .mapError(e => WorkspaceError.WorktreeError(e.getMessage))
-        _ <- runGit("git", "add", ".")
-        _ <- runGit("git", "commit", "-m", s"impl: ${req.issueRef}")
-        _ <- runGit("git", "checkout", "main")
+        _  <- runGit("git", "checkout", "-b", branchName)
+        _  <- ZIO
+                .attemptBlocking(
+                  JFiles.writeString(repoPath.resolve(s"${req.issueRef}-impl.txt"), s"Work done for ${req.issueRef}")
+                )
+                .mapError(e => WorkspaceError.WorktreeError(e.getMessage))
+        _  <- runGit("git", "add", ".")
+        _  <- runGit("git", "commit", "-m", s"impl: ${req.issueRef}")
+        _  <- runGit("git", "checkout", "main")
         now = Instant.now()
       yield WorkspaceRun(
         id = s"run-${req.issueRef}",
@@ -183,9 +182,9 @@ object WorkspaceGoldenPathIntegrationSpec extends ZIOSpecDefault:
   // No-op hub: events are published but not routed (the orchestrator's background
   // listener is not started when instantiating BoardOrchestratorLive directly).
 
-  private final class NoOpActivityHub extends ActivityHub:
+  final private class NoOpActivityHub extends ActivityHub:
     override def publish(event: ActivityEvent): UIO[Unit] = ZIO.unit
-    override def subscribe: UIO[Dequeue[ActivityEvent]] =
+    override def subscribe: UIO[Dequeue[ActivityEvent]]   =
       Queue.bounded[ActivityEvent](1).map(q => q: Dequeue[ActivityEvent])
 
   // ── Pre-canned LLM response ────────────────────────────────────────────────
@@ -255,9 +254,9 @@ object WorkspaceGoldenPathIntegrationSpec extends ZIOSpecDefault:
                               createdAt = Instant.now(),
                               updatedAt = Instant.now(),
                             )
-            wsRepo       = StubWorkspaceRepository(testWorkspace)
-            runService   = StubWorkspaceRunService(repoPath)
-            hub          = NoOpActivityHub()
+            wsRepo        = StubWorkspaceRepository(testWorkspace)
+            runService    = StubWorkspaceRunService(repoPath)
+            hub           = NoOpActivityHub()
 
             // BoardOrchestratorLive instantiated directly (no scoped fork of the
             // activity listener) — we drive completion explicitly via completeIssue.
@@ -271,25 +270,25 @@ object WorkspaceGoldenPathIntegrationSpec extends ZIOSpecDefault:
                            )
 
             // ── Phase 1: Init board structure ──────────────────────────────────
-            _             <- boardRepo.initBoard(workspacePath)
+            _ <- boardRepo.initBoard(workspacePath)
 
             // ── Phase 2: Plan issues via mocked LLM ───────────────────────────
-            session   <- wizard.startNaturalLanguage(
-                           workspacePath,
-                           "Add a greeting parameter and a language parameter to HelloWorld",
-                         )
-            created   <- wizard.confirm(session.sessionId)
+            session <- wizard.startNaturalLanguage(
+                         workspacePath,
+                         "Add a greeting parameter and a language parameter to HelloWorld",
+                       )
+            created <- wizard.confirm(session.sessionId)
 
             // Move both issues from Backlog → Todo (ready for dispatch)
-            _         <- ZIO.foreach(created.issueIds)(id =>
-                           boardRepo.moveIssue(workspacePath, id, BoardColumn.Todo)
-                         )
+            _ <- ZIO.foreach(created.issueIds)(id =>
+                   boardRepo.moveIssue(workspacePath, id, BoardColumn.Todo)
+                 )
 
             // ── Phase 3: First dispatch cycle ─────────────────────────────────
             // add-greeting-param has no blockers → dispatched
             // add-language-param is blocked by add-greeting-param → skipped
-            dispatch1 <- orchestrator.dispatchCycle(workspacePath)
-            board1    <- boardRepo.readBoard(workspacePath)
+            dispatch1  <- orchestrator.dispatchCycle(workspacePath)
+            board1     <- boardRepo.readBoard(workspacePath)
             inProgress1 = board1.columns.getOrElse(BoardColumn.InProgress, Nil)
 
             // ── Phase 4: Complete first issue (simulated agent done) ───────────
@@ -321,7 +320,6 @@ object WorkspaceGoldenPathIntegrationSpec extends ZIOSpecDefault:
             boardFinal <- boardRepo.readBoard(workspacePath)
             doneFinal   = boardFinal.columns.getOrElse(BoardColumn.Done, Nil)
             gitLog     <- gitOutput(repoPath, "git", "log", "--oneline").orDie
-
           yield assertTrue(
             // LLM generated two issues
             created.issueIds.size == 2,
