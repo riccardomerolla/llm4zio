@@ -55,6 +55,9 @@ object IssueCreationWizardSpec extends ZIOSpecDefault:
     override def listIssues(workspacePath: String, column: BoardColumn): IO[BoardError, List[BoardIssue]] =
       createdRef.get.map(_.filter(_.column == column))
 
+    override def invalidateWorkspace(workspacePath: String): UIO[Unit] =
+      ZIO.unit
+
   final private case class JsonLlmStub(
     responsesRef: Ref[List[String]],
     promptsRef: Ref[List[String]],

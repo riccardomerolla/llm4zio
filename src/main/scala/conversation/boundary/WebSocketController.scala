@@ -343,18 +343,30 @@ final case class WebSocketControllerLive(
               ZStream
                 .fromQueue(queue)
                 .mapZIO {
-                  case GitWatcherEvent.StatusUpdated(status) =>
+                  case GitWatcherEvent.StatusUpdated(status)            =>
                     withNow(ts =>
                       sendServerMessage(
                         socket,
                         ServerMessage.Event(topic, "git-status-update", status.toJson, ts),
                       )
                     )
-                  case GitWatcherEvent.NewCommit(commit)     =>
+                  case GitWatcherEvent.NewCommit(commit)                =>
                     withNow(ts =>
                       sendServerMessage(
                         socket,
                         ServerMessage.Event(topic, "git-new-commit", commit.toJson, ts),
+                      )
+                    )
+                  case GitWatcherEvent.BoardChanged(path, changedPaths) =>
+                    withNow(ts =>
+                      sendServerMessage(
+                        socket,
+                        ServerMessage.Event(
+                          topic,
+                          "git-board-changed",
+                          s"""{"worktreePath":${path.toJson},"changedPaths":${changedPaths.toJson}}""",
+                          ts,
+                        ),
                       )
                     )
                 }

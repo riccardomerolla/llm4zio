@@ -31,6 +31,7 @@ import app.boundary.{
   WebServer,
 }
 import app.control.{ FileService, HealthMonitor, HttpAIClient, LogTailer, StateService }
+import board.boundary.BoardController as BoardBoundaryController
 import board.control.*
 import com.bot4s.telegram.clients.FutureSttpClient
 import conversation.boundary.{
@@ -117,8 +118,7 @@ object ApplicationDI:
       PromptLoader &
       MemoryRepository &
       EmbeddingService &
-      GitService &
-      GitWatcher
+      GitService
 
   def aiProviderToLlmProvider(aiProvider: AIProvider): LlmProvider =
     aiProvider match
@@ -172,7 +172,6 @@ object ApplicationDI:
       configAwareLlmServiceLayer,
       EmbeddingService.live,
       GitService.live,
-      GitWatcher.live,
       MemoryRepositoryES.live,
       WorkflowService.live,
       ActivityRepository.live,
@@ -249,8 +248,10 @@ object ApplicationDI:
     ZLayer.make[WebServer & AutoDispatcher & MergeAgentService & BoardOrchestrator](
       commonLayers(config, storeConfig),
       IssueMarkdownParser.live,
-      BoardRepositoryFS.live,
+      (BoardRepositoryFS.live ++ ZLayer.service[GitService]) >>> BoardCache.live(),
+      GitWatcher.live,
       BoardDependencyResolver.live,
+      BoardBoundaryController.live,
       TaskRunDashboardController.live,
       TaskRunTasksController.live,
       TaskRunReportsController.live,

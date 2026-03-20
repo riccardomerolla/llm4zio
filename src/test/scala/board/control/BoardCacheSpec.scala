@@ -73,6 +73,9 @@ object BoardCacheSpec extends ZIOSpecDefault:
     override def listIssues(workspacePath: String, column: BoardColumn): IO[BoardError, List[BoardIssue]] =
       listCalls.update(_ + 1) *> ZIO.succeed(board.columns.getOrElse(column, Nil))
 
+    override def invalidateWorkspace(workspacePath: String): UIO[Unit] =
+      ZIO.unit
+
   final private case class StubGit(ref: Ref[String]) extends GitService:
     override def status(repoPath: String): IO[GitError, GitStatus]                                         =
       ZIO.succeed(GitStatus("main", Nil, Nil, Nil))

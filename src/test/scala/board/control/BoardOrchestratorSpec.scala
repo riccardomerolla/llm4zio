@@ -98,6 +98,9 @@ object BoardOrchestratorSpec extends ZIOSpecDefault:
     override def listIssues(workspacePath: String, column: BoardColumn): IO[BoardError, List[BoardIssue]] =
       ref.get.map(_.values.filter(_.column == column).toList)
 
+    override def invalidateWorkspace(workspacePath: String): UIO[Unit] =
+      ZIO.unit
+
   final private case class StubWorkspaceRunService(
     assignedRef: Ref[List[(String, AssignRunRequest)]],
     cleanupRef: Ref[List[String]],

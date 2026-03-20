@@ -5,6 +5,10 @@ import java.time.Instant
 import zio.*
 import zio.test.*
 
+import activity.control.ActivityHub
+import activity.entity.ActivityEvent
+import board.entity.*
+import shared.ids.Ids.BoardIssueId
 import workspace.entity.*
 
 object GitWatcherSpec extends ZIOSpecDefault:
@@ -68,13 +72,40 @@ object GitWatcherSpec extends ZIOSpecDefault:
     override def showDiffStat(repoPath: String, ref: String): IO[GitError, GitDiffStat]                    =
       ZIO.succeed(GitDiffStat(Nil))
 
+  private object StubActivityHub extends ActivityHub:
+    override def publish(event: ActivityEvent): UIO[Unit] = ZIO.unit
+    override def subscribe: UIO[Dequeue[ActivityEvent]]   = Queue.unbounded[ActivityEvent]
+
+  private object StubBoardRepository extends BoardRepository:
+    override def initBoard(workspacePath: String): IO[BoardError, Unit]                                   = ZIO.unit
+    override def readBoard(workspacePath: String): IO[BoardError, Board]                                  =
+      ZIO.succeed(Board(workspacePath, Map.empty))
+    override def readIssue(workspacePath: String, issueId: BoardIssueId): IO[BoardError, BoardIssue]      =
+      ZIO.fail(BoardError.IssueNotFound(issueId.value))
+    override def createIssue(workspacePath: String, column: BoardColumn, issue: BoardIssue)
+      : IO[BoardError, BoardIssue] =
+      ZIO.succeed(issue.copy(column = column))
+    override def moveIssue(workspacePath: String, issueId: BoardIssueId, toColumn: BoardColumn)
+      : IO[BoardError, BoardIssue] =
+      ZIO.fail(BoardError.IssueNotFound(issueId.value))
+    override def updateIssue(
+      workspacePath: String,
+      issueId: BoardIssueId,
+      update: IssueFrontmatter => IssueFrontmatter,
+    ): IO[BoardError, BoardIssue] =
+      ZIO.fail(BoardError.IssueNotFound(issueId.value))
+    override def deleteIssue(workspacePath: String, issueId: BoardIssueId): IO[BoardError, Unit]          = ZIO.unit
+    override def listIssues(workspacePath: String, column: BoardColumn): IO[BoardError, List[BoardIssue]] =
+      ZIO.succeed(Nil)
+    override def invalidateWorkspace(workspacePath: String): UIO[Unit]                                    = ZIO.unit
+
   def spec: Spec[TestEnvironment, Any] = suite("GitWatcherSpec")(
     test("publishes status and commit updates when values change") {
       for
         statusRef <- Ref.make(statusA)
         logRef    <- Ref.make(List(commitA))
         service    = StubGitService(statusRef, logRef)
-        watcher   <- GitWatcherLive.make(service, pollInterval = 100.millis)
+        watcher   <- GitWatcherLive.make(service, StubActivityHub, StubBoardRepository, pollInterval = 100.millis)
         _         <- watcher.registerRun("run-1", "/tmp/repo")
         result    <- ZIO.scoped {
                        for

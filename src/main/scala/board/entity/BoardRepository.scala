@@ -17,6 +17,7 @@ trait BoardRepository:
   ): IO[BoardError, BoardIssue]
   def deleteIssue(workspacePath: String, issueId: BoardIssueId): IO[BoardError, Unit]
   def listIssues(workspacePath: String, column: BoardColumn): IO[BoardError, List[BoardIssue]]
+  def invalidateWorkspace(workspacePath: String): UIO[Unit]
 
 object BoardRepository:
   def initBoard(workspacePath: String): ZIO[BoardRepository, BoardError, Unit] =
@@ -54,3 +55,6 @@ object BoardRepository:
 
   def listIssues(workspacePath: String, column: BoardColumn): ZIO[BoardRepository, BoardError, List[BoardIssue]] =
     ZIO.serviceWithZIO[BoardRepository](_.listIssues(workspacePath, column))
+
+  def invalidateWorkspace(workspacePath: String): ZIO[BoardRepository, Nothing, Unit] =
+    ZIO.serviceWithZIO[BoardRepository](_.invalidateWorkspace(workspacePath))

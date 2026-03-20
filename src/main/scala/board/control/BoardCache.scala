@@ -66,6 +66,9 @@ final case class BoardCache(
         case None         => underlying.listIssues(workspacePath, column)
     )
 
+  override def invalidateWorkspace(workspacePath: String): UIO[Unit] =
+    invalidate(workspacePath)
+
   private def invalidate(workspacePath: String): UIO[Unit] =
     cacheRef.update(_ - workspacePath).unit
 

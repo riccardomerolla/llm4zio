@@ -185,6 +185,9 @@ final case class BoardRepositoryFS(
       issues    <- ZIO.foreach(issueDirs)(dir => readIssueAt(column, dir))
     yield issues
 
+  override def invalidateWorkspace(workspacePath: String): UIO[Unit] =
+    ZIO.unit
+
   final private case class IssueLocation(column: BoardColumn, issueDirectory: Path)
 
   private def withWorkspaceLock[A](workspacePath: String)(effect: IO[BoardError, A]): IO[BoardError, A] =
