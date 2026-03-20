@@ -14,7 +14,7 @@ import activity.entity.ActivityEvent
 import agent.entity.{ Agent, AgentEvent, AgentRepository }
 import analysis.entity.{ AnalysisDoc, AnalysisEvent, AnalysisRepository, AnalysisType }
 import board.control.BoardOrchestrator
-import board.entity.BoardError
+import board.entity.*
 import conversation.entity.api.{ ChatConversation, ConversationEntry, SessionContextLink }
 import db.*
 import issues.boundary.IssueControllerLive
@@ -260,6 +260,29 @@ object IssueControllerSpec extends ZIOSpecDefault:
     ): IO[BoardError, Unit] =
       ZIO.unit
 
+  private object StubBoardRepository extends BoardRepository:
+    override def initBoard(workspacePath: String): IO[BoardError, Unit]                                   = ZIO.unit
+    override def readBoard(workspacePath: String): IO[BoardError, Board]                                  =
+      ZIO.fail(BoardError.BoardNotFound(workspacePath))
+    override def readIssue(workspacePath: String, issueId: BoardIssueId): IO[BoardError, BoardIssue]      =
+      ZIO.fail(BoardError.IssueNotFound(issueId.value))
+    override def createIssue(workspacePath: String, column: BoardColumn, issue: BoardIssue)
+      : IO[BoardError, BoardIssue] =
+      ZIO.fail(BoardError.BoardNotFound(workspacePath))
+    override def moveIssue(workspacePath: String, issueId: BoardIssueId, toColumn: BoardColumn)
+      : IO[BoardError, BoardIssue] =
+      ZIO.fail(BoardError.IssueNotFound(issueId.value))
+    override def updateIssue(
+      workspacePath: String,
+      issueId: BoardIssueId,
+      update: IssueFrontmatter => IssueFrontmatter,
+    ): IO[BoardError, BoardIssue] =
+      ZIO.fail(BoardError.IssueNotFound(issueId.value))
+    override def deleteIssue(workspacePath: String, issueId: BoardIssueId): IO[BoardError, Unit]          = ZIO.unit
+    override def listIssues(workspacePath: String, column: BoardColumn): IO[BoardError, List[BoardIssue]] =
+      ZIO.succeed(Nil)
+    override def invalidateWorkspace(workspacePath: String): UIO[Unit]                                    = ZIO.unit
+
   private object StubAnalysisRepository extends AnalysisRepository:
     override def append(event: AnalysisEvent): IO[SharedPersistenceError, Unit]                        = ZIO.dieMessage("unused")
     override def get(id: AnalysisDocId): IO[SharedPersistenceError, AnalysisDoc]                       = ZIO.dieMessage("unused")
@@ -332,6 +355,7 @@ object IssueControllerSpec extends ZIOSpecDefault:
           activityHub = StubActivityHub,
           issueDispatchStatusService = StubDispatchStatusService,
           boardOrchestrator = StubBoardOrchestrator,
+          boardRepository = StubBoardRepository,
           analysisRepository = StubAnalysisRepository,
           issueWorkReportProjection = StubWorkReportProjection,
         ).routes

@@ -87,7 +87,7 @@ object StreamingSpec extends ZIOSpecDefault:
         )
 
         for {
-          result <- Streaming.withTimeout(chunks, timeout = 5.seconds).runCollect
+          result <- Live.live(Streaming.withTimeout(chunks, timeout = 5.seconds).runCollect)
         } yield assertTrue(result.size == 2)
       },
       test("should fail on timeout") {
