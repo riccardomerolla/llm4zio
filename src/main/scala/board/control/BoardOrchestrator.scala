@@ -1,0 +1,363 @@
+package board.control
+
+import zio.*
+
+import activity.control.ActivityHub
+import activity.entity.ActivityEventType
+import board.entity.*
+import shared.ids.Ids.BoardIssueId
+import workspace.control.{ AssignRunRequest, GitService, WorkspaceRunService }
+import workspace.entity.{ GitError, WorkspaceRepository }
+
+final case class DispatchResult(
+  dispatchedIssueIds: List[BoardIssueId],
+  skippedIssueIds: List[BoardIssueId],
+)
+
+trait BoardOrchestrator:
+  def dispatchCycle(workspacePath: String): IO[BoardError, DispatchResult]
+  def assignIssue(workspacePath: String, issueId: BoardIssueId, agentName: String): IO[BoardError, Unit]
+  def markIssueStarted(workspacePath: String, issueId: BoardIssueId, agentName: String, branchName: String)
+    : IO[BoardError, Unit]
+  def completeIssue(workspacePath: String, issueId: BoardIssueId, success: Boolean, details: String)
+    : IO[BoardError, Unit]
+
+object BoardOrchestrator:
+  def dispatchCycle(workspacePath: String): ZIO[BoardOrchestrator, BoardError, DispatchResult] =
+    ZIO.serviceWithZIO[BoardOrchestrator](_.dispatchCycle(workspacePath))
+
+  def completeIssue(
+    workspacePath: String,
+    issueId: BoardIssueId,
+    success: Boolean,
+    details: String,
+  ): ZIO[BoardOrchestrator, BoardError, Unit] =
+    ZIO.serviceWithZIO[BoardOrchestrator](_.completeIssue(workspacePath, issueId, success, details))
+
+  def assignIssue(
+    workspacePath: String,
+    issueId: BoardIssueId,
+    agentName: String,
+  ): ZIO[BoardOrchestrator, BoardError, Unit] =
+    ZIO.serviceWithZIO[BoardOrchestrator](_.assignIssue(workspacePath, issueId, agentName))
+
+  def markIssueStarted(
+    workspacePath: String,
+    issueId: BoardIssueId,
+    agentName: String,
+    branchName: String,
+  ): ZIO[BoardOrchestrator, BoardError, Unit] =
+    ZIO.serviceWithZIO[BoardOrchestrator](_.markIssueStarted(workspacePath, issueId, agentName, branchName))
+
+  val live
+    : ZLayer[
+      BoardRepository & BoardDependencyResolver & WorkspaceRunService & WorkspaceRepository & GitService & ActivityHub,
+      Nothing,
+      BoardOrchestrator,
+    ] =
+    ZLayer.scoped {
+      for
+        boardRepository <- ZIO.service[BoardRepository]
+        resolver        <- ZIO.service[BoardDependencyResolver]
+        runService      <- ZIO.service[WorkspaceRunService]
+        workspaceRepo   <- ZIO.service[WorkspaceRepository]
+        gitService      <- ZIO.service[GitService]
+        activityHub     <- ZIO.service[ActivityHub]
+        service          = BoardOrchestratorLive(
+                             boardRepository = boardRepository,
+                             dependencyResolver = resolver,
+                             workspaceRunService = runService,
+                             workspaceRepository = workspaceRepo,
+                             gitService = gitService,
+                             activityHub = activityHub,
+                           )
+        _               <- service.listenForRunCompletion.forkScoped
+      yield service
+    }
+
+final case class BoardOrchestratorLive(
+  boardRepository: BoardRepository,
+  dependencyResolver: BoardDependencyResolver,
+  workspaceRunService: WorkspaceRunService,
+  workspaceRepository: WorkspaceRepository,
+  gitService: GitService,
+  activityHub: ActivityHub,
+) extends BoardOrchestrator:
+
+  override def dispatchCycle(workspacePath: String): IO[BoardError, DispatchResult] =
+    for
+      _         <- ensureMainBranch(workspacePath)
+      board     <- boardRepository.readBoard(workspacePath)
+      ready     <- dependencyResolver.readyToDispatch(board)
+      workspace <- resolveWorkspaceByPath(workspacePath)
+      result    <- ZIO.foldLeft(ready)(DispatchResult(Nil, Nil)) { (acc, issue) =>
+                     dispatchIssue(
+                       workspacePath = workspacePath,
+                       workspaceId = workspace.id,
+                       issue = issue,
+                       defaultAgent = workspace.defaultAgent,
+                     )
+                       .as(acc.copy(dispatchedIssueIds = acc.dispatchedIssueIds :+ issue.frontmatter.id))
+                       .catchAll(err =>
+                         ZIO.logWarning(
+                           s"[board] dispatch failed for ${issue.frontmatter.id.value}: ${renderBoardError(err)}"
+                         ).as(acc.copy(skippedIssueIds = acc.skippedIssueIds :+ issue.frontmatter.id))
+                       )
+                   }
+    yield result
+
+  override def completeIssue(
+    workspacePath: String,
+    issueId: BoardIssueId,
+    success: Boolean,
+    details: String,
+  ): IO[BoardError, Unit] =
+    if success then completeSuccess(workspacePath, issueId, details)
+    else completeFailure(workspacePath, issueId, details)
+
+  override def assignIssue(workspacePath: String, issueId: BoardIssueId, agentName: String): IO[BoardError, Unit] =
+    for
+      _   <- ensureMainBranch(workspacePath)
+      now <- Clock.instant
+      _   <- boardRepository.updateIssue(
+               workspacePath,
+               issueId,
+               _.copy(
+                 assignedAgent = Some(agentName),
+                 transientState = TransientState.Assigned(agentName, now),
+                 failureReason = None,
+               ),
+             )
+    yield ()
+
+  override def markIssueStarted(
+    workspacePath: String,
+    issueId: BoardIssueId,
+    agentName: String,
+    branchName: String,
+  ): IO[BoardError, Unit] =
+    for
+      _   <- ensureMainBranch(workspacePath)
+      now <- Clock.instant
+      _   <- boardRepository.moveIssue(workspacePath, issueId, BoardColumn.InProgress)
+      _   <- boardRepository.updateIssue(
+               workspacePath,
+               issueId,
+               _.copy(
+                 assignedAgent = Some(agentName),
+                 transientState = TransientState.Assigned(agentName, now),
+                 branchName = Option(branchName).map(_.trim).filter(_.nonEmpty),
+                 failureReason = None,
+               ),
+             )
+    yield ()
+
+  private[board] def listenForRunCompletion: UIO[Unit] =
+    activityHub.subscribe.flatMap(queue =>
+      queue.take.flatMap(handleActivityEvent).forever
+    )
+
+  private def handleActivityEvent(event: activity.entity.ActivityEvent): UIO[Unit] =
+    event.eventType match
+      case ActivityEventType.RunCompleted => completeFromRunEvent(event, success = true)
+      case ActivityEventType.RunFailed    => completeFromRunEvent(event, success = false)
+      case _                              => ZIO.unit
+
+  private def completeFromRunEvent(event: activity.entity.ActivityEvent, success: Boolean): UIO[Unit] =
+    event.runId match
+      case None        => ZIO.unit
+      case Some(runId) =>
+        (for
+          runOpt <- workspaceRepository
+                      .getRun(runId.value)
+                      .mapError(err => BoardError.ParseError(s"run lookup failed: $err"))
+          _      <- runOpt match
+                      case None      => ZIO.unit
+                      case Some(run) =>
+                        issueIdFromIssueRef(run.issueRef) match
+                          case None          => ZIO.unit
+                          case Some(issueId) =>
+                            workspaceRepository
+                              .get(run.workspaceId)
+                              .mapError(err => BoardError.ParseError(s"workspace lookup failed: $err"))
+                              .flatMap {
+                                case None            => ZIO.unit
+                                case Some(workspace) =>
+                                  completeIssue(
+                                    workspace.localPath,
+                                    issueId,
+                                    success = success,
+                                    details = event.summary,
+                                  )
+                              }
+        yield ()).catchAll(err => ZIO.logWarning(s"[board] completion from activity failed: ${renderBoardError(err)}"))
+
+  private def dispatchIssue(
+    workspacePath: String,
+    workspaceId: String,
+    issue: BoardIssue,
+    defaultAgent: Option[String],
+  ): IO[BoardError, Unit] =
+    val agent =
+      issue.frontmatter.assignedAgent.map(_.trim).filter(_.nonEmpty)
+        .orElse(defaultAgent.map(_.trim).filter(_.nonEmpty))
+        .getOrElse("codex")
+
+    (for
+      now <- Clock.instant
+      _   <- boardRepository.updateIssue(
+               workspacePath,
+               issue.frontmatter.id,
+               _.copy(
+                 assignedAgent = Some(agent),
+                 transientState = TransientState.Assigned(agent, now),
+                 failureReason = None,
+               ),
+             )
+      _   <- boardRepository.moveIssue(workspacePath, issue.frontmatter.id, BoardColumn.InProgress)
+      run <- workspaceRunService
+               .assign(
+                 workspaceId,
+                 AssignRunRequest(
+                   issueRef = issue.frontmatter.id.value,
+                   prompt = issue.body,
+                   agentName = agent,
+                 ),
+               )
+               .mapError(err => BoardError.ConcurrencyConflict(s"workspace run assign failed: $err"))
+      _   <- boardRepository.updateIssue(
+               workspacePath,
+               issue.frontmatter.id,
+               _.copy(branchName = Some(run.branchName)),
+             )
+    yield ()).catchAll { err =>
+      dispatchCompensation(workspacePath, issue.frontmatter.id, renderBoardError(err)) *>
+        ZIO.fail(err)
+    }
+
+  private def completeSuccess(workspacePath: String, issueId: BoardIssueId, details: String): IO[BoardError, Unit] =
+    for
+      _      <- ensureMainBranch(workspacePath)
+      issue  <- boardRepository.readIssue(workspacePath, issueId)
+      branch <- ZIO
+                  .fromOption(issue.frontmatter.branchName.map(_.trim).filter(_.nonEmpty))
+                  .orElseFail(BoardError.ParseError(s"Issue '${issueId.value}' has no branchName"))
+      _      <- gitService
+                  .mergeNoFastForward(
+                    workspacePath,
+                    branch,
+                    s"[board] Merge issue ${issueId.value}: ${issue.frontmatter.title}",
+                  )
+                  .mapError(mapGitError("git merge --no-ff"))
+      now    <- Clock.instant
+      _      <- boardRepository.moveIssue(workspacePath, issueId, BoardColumn.Done)
+      _      <- boardRepository.updateIssue(
+                  workspacePath,
+                  issueId,
+                  fm =>
+                    fm.copy(
+                      transientState = TransientState.None,
+                      completedAt = Some(now),
+                      failureReason = None,
+                      branchName = None,
+                      proofOfWork = appendDetail(fm.proofOfWork, details),
+                    ),
+                )
+      _      <- cleanupLatestRun(issueId)
+    yield ()
+
+  private def completeFailure(workspacePath: String, issueId: BoardIssueId, details: String): IO[BoardError, Unit] =
+    for
+      _     <- ensureMainBranch(workspacePath)
+      now   <- Clock.instant
+      reason = Option(details).map(_.trim).filter(_.nonEmpty).getOrElse("Run failed")
+      _     <- boardRepository.moveIssue(workspacePath, issueId, BoardColumn.Backlog)
+      _     <- boardRepository.updateIssue(
+                 workspacePath,
+                 issueId,
+                 _.copy(
+                   transientState = TransientState.Rework(reason, now),
+                   failureReason = Some(reason),
+                   completedAt = None,
+                 ),
+               )
+    yield ()
+
+  private def cleanupLatestRun(issueId: BoardIssueId): IO[BoardError, Unit] =
+    for
+      direct <- workspaceRepository
+                  .listRunsByIssueRef(issueId.value)
+                  .mapError(err => BoardError.ParseError(s"list runs failed: $err"))
+      hash   <- workspaceRepository
+                  .listRunsByIssueRef(s"#${issueId.value}")
+                  .mapError(err => BoardError.ParseError(s"list runs failed: $err"))
+      all     = (direct ++ hash).groupBy(_.id).values.map(_.head).toList
+      latest  = all.sortBy(_.updatedAt.toEpochMilli)(Ordering.Long.reverse).headOption
+      _      <- ZIO.when(latest.isDefined)(workspaceRunService.cleanupAfterSuccessfulMerge(latest.get.id))
+    yield ()
+
+  private def resolveWorkspaceByPath(workspacePath: String): IO[BoardError, workspace.entity.Workspace] =
+    workspaceRepository
+      .list
+      .mapError(err => BoardError.ParseError(s"workspace list failed: $err"))
+      .flatMap(workspaces =>
+        workspaces.find(_.localPath == workspacePath) match
+          case Some(workspace) => ZIO.succeed(workspace)
+          case None            => ZIO.fail(BoardError.BoardNotFound(workspacePath))
+      )
+
+  private def ensureMainBranch(workspacePath: String): IO[BoardError, Unit] =
+    gitService
+      .branchInfo(workspacePath)
+      .mapError(mapGitError("git branch --show-current"))
+      .flatMap { info =>
+        if !info.isDetached && info.current == "main" then ZIO.unit
+        else
+          ZIO.fail(
+            BoardError.ConcurrencyConflict(
+              s"Board mutations are allowed only on 'main' (current='${info.current}', detached=${info.isDetached})"
+            )
+          )
+      }
+
+  private def dispatchCompensation(workspacePath: String, issueId: BoardIssueId, reason: String): UIO[Unit] =
+    val fallbackReason =
+      Option(reason).map(_.trim).filter(_.nonEmpty).getOrElse("dispatch failed")
+
+    for
+      _ <- boardRepository.moveIssue(workspacePath, issueId, BoardColumn.Todo).ignore
+      _ <- boardRepository
+             .updateIssue(
+               workspacePath,
+               issueId,
+               _.copy(
+                 transientState = TransientState.None,
+                 failureReason = Some(fallbackReason),
+                 branchName = None,
+               ),
+             )
+             .ignore
+    yield ()
+
+  private def issueIdFromIssueRef(issueRef: String): Option[BoardIssueId] =
+    BoardIssueId.fromString(issueRef.trim.stripPrefix("#")).toOption
+
+  private def appendDetail(existing: List[String], details: String): List[String] =
+    Option(details).map(_.trim).filter(_.nonEmpty) match
+      case Some(detail) => existing :+ detail
+      case None         => existing
+
+  private def mapGitError(operation: String)(error: GitError): BoardError =
+    BoardError.GitOperationFailed(operation, error.toString)
+
+  private def renderBoardError(error: BoardError): String =
+    error match
+      case BoardError.BoardNotFound(workspacePath)       => s"board not found: $workspacePath"
+      case BoardError.IssueNotFound(issueId)             => s"issue not found: $issueId"
+      case BoardError.IssueAlreadyExists(issueId)        => s"issue already exists: $issueId"
+      case BoardError.InvalidColumn(value)               => s"invalid column: $value"
+      case BoardError.ParseError(message)                => s"parse error: $message"
+      case BoardError.WriteError(path, message)          => s"write error at $path: $message"
+      case BoardError.GitOperationFailed(operation, msg) => s"$operation failed: $msg"
+      case BoardError.DependencyCycle(issueIds)          => s"dependency cycle: ${issueIds.mkString(",")}"
+      case BoardError.ConcurrencyConflict(message)       => s"concurrency conflict: $message"

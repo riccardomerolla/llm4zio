@@ -5,12 +5,15 @@ import zio.json.*
 
 import activity.control.ActivityHub
 import activity.entity.{ ActivityEvent, ActivityEventType }
+import board.control.BoardOrchestrator
+import board.entity.BoardError
 import conversation.entity.api.{ ChatConversation, ConversationEntry, MessageType, SenderType }
 import db.{ ChatRepository, PersistenceError, TaskRepository }
 import issues.entity.api.{ AgentIssueView, IssuePriority, IssueStatus }
-import issues.entity.{ IssueEvent, IssueRepository }
+import issues.entity.{ IssueEvent, IssueRepository, IssueState }
 import llm4zio.core.{ LlmError, LlmService, Streaming }
-import shared.ids.Ids.{ AgentId, EventId, IssueId, TaskRunId }
+import shared.ids.Ids.{ AgentId, BoardIssueId, EventId, IssueId, TaskRunId }
+import workspace.entity.WorkspaceRepository
 
 trait IssueAssignmentOrchestrator:
   def assignIssue(issueId: String, agentName: String): IO[PersistenceError, AgentIssueView]
@@ -34,7 +37,8 @@ object IssueAssignmentOrchestrator:
     )
 
   val live: ZLayer[
-    ChatRepository & TaskRepository & LlmService & AgentConfigResolver & ActivityHub & IssueRepository,
+    ChatRepository & TaskRepository & LlmService & AgentConfigResolver & ActivityHub & IssueRepository &
+      BoardOrchestrator & WorkspaceRepository,
     Nothing,
     IssueAssignmentOrchestrator,
   ] =
@@ -46,6 +50,8 @@ object IssueAssignmentOrchestrator:
         configResolver      <- ZIO.service[AgentConfigResolver]
         activityHub         <- ZIO.service[ActivityHub]
         issueRepository     <- ZIO.service[IssueRepository]
+        boardOrchestrator   <- ZIO.service[BoardOrchestrator]
+        workspaceRepository <- ZIO.service[WorkspaceRepository]
         queue               <- Queue.unbounded[AssignmentTask]
         service              =
           IssueAssignmentOrchestratorLive(
@@ -55,6 +61,8 @@ object IssueAssignmentOrchestrator:
             configResolver,
             activityHub,
             issueRepository,
+            boardOrchestrator,
+            workspaceRepository,
             queue,
           )
         _                   <- service.processQueue.forever.forkScoped
@@ -74,6 +82,8 @@ final private case class IssueAssignmentOrchestratorLive(
   configResolver: AgentConfigResolver,
   activityHub: ActivityHub,
   issueRepository: IssueRepository,
+  boardOrchestrator: BoardOrchestrator,
+  workspaceRepository: WorkspaceRepository,
   queue: Queue[AssignmentTask],
 ) extends IssueAssignmentOrchestrator:
 
@@ -88,28 +98,32 @@ final private case class IssueAssignmentOrchestratorLive(
     for
       issue   <- issueRepository.get(IssueId(issueId)).mapError(mapRepoError)
       now     <- Clock.instant
-      _       <- issueRepository
-                   .append(
-                     IssueEvent.Assigned(
-                       issueId = IssueId(issueId),
-                       agent = AgentId(agentName),
-                       assignedAt = now,
-                       occurredAt = now,
-                     )
-                   )
-                   .mapError(mapRepoError)
-      _       <- ZIO.unless(skipConversationBootstrap) {
-                   issueRepository
-                     .append(
-                       IssueEvent.Started(
-                         issueId = IssueId(issueId),
-                         agent = AgentId(agentName),
-                         startedAt = now,
-                         occurredAt = now,
+      _       <- issue.workspaceId match
+                   case Some(workspaceId) =>
+                     assignWorkspaceBoardIssue(issueId, workspaceId, agentName)
+                   case None              =>
+                     issueRepository
+                       .append(
+                         IssueEvent.Assigned(
+                           issueId = IssueId(issueId),
+                           agent = AgentId(agentName),
+                           assignedAt = now,
+                           occurredAt = now,
+                         )
                        )
-                     )
-                     .mapError(mapRepoError)
-                 }
+                       .mapError(mapRepoError) *>
+                       ZIO.unless(skipConversationBootstrap) {
+                         issueRepository
+                           .append(
+                             IssueEvent.Started(
+                               issueId = IssueId(issueId),
+                               agent = AgentId(agentName),
+                               startedAt = now,
+                               occurredAt = now,
+                             )
+                           )
+                           .mapError(mapRepoError)
+                       }
       _       <- if skipConversationBootstrap then ZIO.unit
                  else
                    for
@@ -127,8 +141,32 @@ final private case class IssueAssignmentOrchestratorLive(
                      createdAt = now,
                    )
                  )
-      updated <- issueRepository.get(IssueId(issueId)).mapError(mapRepoError)
+      updated <- issue.workspaceId match
+                   case Some(_) =>
+                     ZIO.succeed(
+                       issue.copy(
+                         state = if skipConversationBootstrap then IssueState.Assigned(AgentId(agentName), now)
+                         else IssueState.InProgress(AgentId(agentName), now)
+                       )
+                     )
+                   case None    =>
+                     issueRepository.get(IssueId(issueId)).mapError(mapRepoError)
     yield domainToView(updated)
+
+  private def assignWorkspaceBoardIssue(issueId: String, workspaceId: String, agentName: String)
+    : IO[PersistenceError, Unit] =
+    for
+      workspaceOpt <- workspaceRepository.get(workspaceId).mapError(mapRepoError)
+      workspace    <- ZIO
+                        .fromOption(workspaceOpt)
+                        .orElseFail(PersistenceError.QueryFailed("workspace", s"Not found: $workspaceId"))
+      boardIssueId <- ZIO
+                        .fromEither(BoardIssueId.fromString(issueId))
+                        .mapError(message => PersistenceError.QueryFailed("board_issue_id", message))
+      _            <- boardOrchestrator
+                        .assignIssue(workspace.localPath, boardIssueId, agentName)
+                        .mapError(mapBoardError)
+    yield ()
 
   private def ensureIssueConversation(
     issueId: String,
@@ -265,6 +303,20 @@ final private case class IssueAssignmentOrchestratorLive(
         PersistenceError.QueryFailed(entity, c)
       case shared.errors.PersistenceError.StoreUnavailable(msg)          =>
         PersistenceError.QueryFailed("store", msg)
+
+  private def mapBoardError(e: BoardError): PersistenceError =
+    e match
+      case BoardError.BoardNotFound(value)            => PersistenceError.QueryFailed("board", s"Not found: $value")
+      case BoardError.IssueNotFound(value)            => PersistenceError.QueryFailed("board_issue", s"Not found: $value")
+      case BoardError.IssueAlreadyExists(value)       => PersistenceError.QueryFailed("board_issue_exists", value)
+      case BoardError.InvalidColumn(value)            => PersistenceError.QueryFailed("board_column", value)
+      case BoardError.ParseError(message)             => PersistenceError.QueryFailed("board_parse", message)
+      case BoardError.WriteError(path, message)       => PersistenceError.QueryFailed("board_write", s"$path: $message")
+      case BoardError.GitOperationFailed(op, message) =>
+        PersistenceError.QueryFailed("board_git", s"$op: $message")
+      case BoardError.DependencyCycle(issueIds)       =>
+        PersistenceError.QueryFailed("board_cycle", issueIds.mkString(","))
+      case BoardError.ConcurrencyConflict(message)    => PersistenceError.QueryFailed("board_concurrency", message)
 
   private def domainToView(i: issues.entity.AgentIssue): AgentIssueView =
     import issues.entity.IssueState

@@ -11,6 +11,7 @@ import _root_.config.entity.AIProviderConfig
 import activity.control.ActivityHub
 import activity.entity.{ ActivityEvent, ActivityEventType }
 import app.ApplicationDI
+import board.entity.{ IssueEstimate as BoardIssueEstimate, IssuePriority as BoardIssuePriority, * }
 import conversation.entity.api.{ ChatConversation, ConversationEntry, MessageType, SenderType }
 import db.{ ChatRepository, ConfigRepository, PersistenceError }
 import issues.entity.{ AgentIssue as DomainIssue, IssueEvent, IssueRepository }
@@ -18,7 +19,7 @@ import llm4zio.core.{ LlmConfig, LlmError, LlmProvider, LlmService }
 import llm4zio.providers.{ GeminiCliExecutionContext, GeminiCliExecutor, HttpClient }
 import llm4zio.tools.JsonSchema
 import prompts.{ PromptError, PromptLoader }
-import shared.ids.Ids.{ EventId, IssueId }
+import shared.ids.Ids.{ BoardIssueId, EventId, IssueId }
 import workspace.entity.WorkspaceRepository
 
 enum PlannerAgentError:
@@ -136,7 +137,7 @@ object PlannerAgentService:
 
   val live
     : ZLayer[
-      ChatRepository & IssueRepository & ConfigRepository & ActivityHub & AgentConfigResolver &
+      ChatRepository & IssueRepository & BoardRepository & ConfigRepository & ActivityHub & AgentConfigResolver &
         HttpClient & GeminiCliExecutor & WorkspaceRepository & AIProviderConfig & PromptLoader,
       Nothing,
       PlannerAgentService,
@@ -145,6 +146,7 @@ object PlannerAgentService:
       for
         chatRepository   <- ZIO.service[ChatRepository]
         issueRepository  <- ZIO.service[IssueRepository]
+        boardRepository  <- ZIO.service[BoardRepository]
         configRepository <- ZIO.service[ConfigRepository]
         activityHub      <- ZIO.service[ActivityHub]
         configResolver   <- ZIO.service[AgentConfigResolver]
@@ -157,6 +159,7 @@ object PlannerAgentService:
       yield PlannerAgentServiceLive(
         chatRepository = chatRepository,
         issueRepository = issueRepository,
+        boardRepository = boardRepository,
         configRepository = configRepository,
         activityHub = activityHub,
         configResolver = configResolver,
@@ -184,6 +187,7 @@ final private case class PlannerWorkspaceContext(
 final case class PlannerAgentServiceLive(
   chatRepository: ChatRepository,
   issueRepository: IssueRepository,
+  boardRepository: BoardRepository,
   configRepository: ConfigRepository,
   activityHub: ActivityHub,
   configResolver: AgentConfigResolver,
@@ -356,11 +360,7 @@ final case class PlannerAgentServiceLive(
     (for
       prompt <- loadPlannerPrompt(transcript, workspaceContext)
       schema <- loadPlannerSchema
-      json   <- executeStructuredWithPreferredAgent[Json](
-                  prompt,
-                  schema,
-                  workspaceContext,
-                )
+      json   <- executePlannerJson(prompt, schema, workspaceContext)
     yield json)
       .flatMap(responseJson =>
         ZIO
@@ -372,6 +372,29 @@ final case class PlannerAgentServiceLive(
           )
       )
       .map(response => PlannerPlanPreview(summary = response.summary, issues = response.issues))
+
+  private def executePlannerJson(
+    prompt: String,
+    schema: JsonSchema,
+    workspaceContext: Option[PlannerWorkspaceContext],
+  ): IO[PlannerAgentError, Json] =
+    executeStructuredWithPreferredAgent[Json](
+      prompt,
+      schema,
+      workspaceContext,
+    ).catchAll {
+      case PlannerAgentError.LlmFailure(details) if isStructuredParseFailure(details) =>
+        executeTextWithPreferredAgent(prompt, workspaceContext).flatMap(raw =>
+          extractJsonFromRawText(raw) match
+            case Right(json) =>
+              ZIO.succeed(json)
+            case Left(_)     =>
+              ZIO.logWarning("Planner returned non-JSON text response; using synthesized empty plan preview") *>
+                ZIO.succeed(synthesizePlannerJsonFromText(raw))
+        )
+      case other                                                                      =>
+        ZIO.fail(other)
+    }
 
   private def savePreviewState(
     conversationId: Long,
@@ -435,6 +458,37 @@ final case class PlannerAgentServiceLive(
       orderedDrafts    = state.preview.issues.filter(_.included)
       _               <- ZIO.fail(PlannerAgentError.IssueDraftInvalid("Planner preview does not contain any issue drafts"))
                            .when(orderedDrafts.isEmpty)
+      issueIdsByDraft <- state.workspaceId match
+                           case Some(workspaceId) =>
+                             createWorkspaceBoardIssues(
+                               workspaceId = workspaceId,
+                               orderedDrafts = orderedDrafts,
+                               initialStatus = initialStatus,
+                               now = now,
+                             )
+                           case None              =>
+                             createLegacyIssues(
+                               workspaceId = None,
+                               orderedDrafts = orderedDrafts,
+                               initialStatus = initialStatus,
+                               now = now,
+                             )
+      confirmation     =
+        PlannerConfirmation(state.conversationId, orderedDrafts.flatMap(draft => issueIdsByDraft.get(draft.draftId)))
+      _               <- publishPlannerBatchActivity(state, confirmation.issueIds, initialStatus, now)
+      _               <- previewState.update(_.updated(
+                           state.conversationId,
+                           state.copy(confirmedIssueIds = Some(confirmation.issueIds)),
+                         ))
+    yield confirmation
+
+  private def createLegacyIssues(
+    workspaceId: Option[String],
+    orderedDrafts: List[PlannerIssueDraft],
+    initialStatus: PlannerInitialStatus,
+    now: Instant,
+  ): IO[PlannerAgentError, Map[String, IssueId]] =
+    for
       issueIdsByDraft <- ZIO.foreach(orderedDrafts) { draft =>
                            val issueId   = IssueId.generate
                            val created   = IssueEvent.Created(
@@ -500,9 +554,9 @@ final case class PlannerAgentServiceLive(
                                       .append(IssueEvent.MovedToTodo(issueId, movedAt = now, occurredAt = now))
                                       .mapError(mapIssuePersistence("planner_move_todo"))
                                   }
-                             _ <- state.workspaceId.fold[IO[PlannerAgentError, Unit]](ZIO.unit) { workspaceId =>
+                             _ <- workspaceId.fold[IO[PlannerAgentError, Unit]](ZIO.unit) { value =>
                                     issueRepository
-                                      .append(IssueEvent.WorkspaceLinked(issueId, workspaceId, now))
+                                      .append(IssueEvent.WorkspaceLinked(issueId, value, now))
                                       .mapError(mapIssuePersistence("planner_workspace_link"))
                                   }
                            yield draft.draftId -> issueId
@@ -519,14 +573,69 @@ final case class PlannerAgentServiceLive(
                                  ZIO.unit
                            }
                          }
-      confirmation     =
-        PlannerConfirmation(state.conversationId, orderedDrafts.flatMap(draft => issueIdsByDraft.get(draft.draftId)))
-      _               <- publishPlannerBatchActivity(state, confirmation.issueIds, initialStatus, now)
-      _               <- previewState.update(_.updated(
-                           state.conversationId,
-                           state.copy(confirmedIssueIds = Some(confirmation.issueIds)),
-                         ))
-    yield confirmation
+    yield issueIdsByDraft
+
+  private def createWorkspaceBoardIssues(
+    workspaceId: String,
+    orderedDrafts: List[PlannerIssueDraft],
+    initialStatus: PlannerInitialStatus,
+    now: Instant,
+  ): IO[PlannerAgentError, Map[String, IssueId]] =
+    for
+      workspacePath <- resolveWorkspacePath(workspaceId)
+      _             <- boardRepository.initBoard(workspacePath).mapError(mapBoardPersistence("planner_board_init"))
+      column         = if initialStatus == PlannerInitialStatus.Todo then BoardColumn.Todo else BoardColumn.Backlog
+      created       <- ZIO.foreach(orderedDrafts) { draft =>
+                         val boardIssueId = BoardIssueId(IssueId.generate.value.toLowerCase)
+                         val skillTags    = sanitizeList(draft.kaizenSkills).map(skill => s"skill:$skill")
+                         for
+                           boardEstimate <- toBoardEstimate(draft.estimate)
+                           issue         <- boardRepository
+                                              .createIssue(
+                                                workspacePath,
+                                                column,
+                                                BoardIssue(
+                                                  frontmatter = IssueFrontmatter(
+                                                    id = boardIssueId,
+                                                    title = draft.title.trim,
+                                                    priority = toBoardPriority(normalizedPriority(draft.priority)),
+                                                    assignedAgent = None,
+                                                    requiredCapabilities = sanitizeList(draft.requiredCapabilities),
+                                                    blockedBy = Nil,
+                                                    tags = skillTags,
+                                                    acceptanceCriteria = splitListField(draft.acceptanceCriteria),
+                                                    estimate = boardEstimate,
+                                                    proofOfWork = sanitizeList(draft.proofOfWorkRequirements),
+                                                    transientState = TransientState.None,
+                                                    branchName = None,
+                                                    failureReason = None,
+                                                    completedAt = None,
+                                                    createdAt = now,
+                                                  ),
+                                                  body = draft.description.trim,
+                                                  column = column,
+                                                  directoryPath = "",
+                                                ),
+                                              )
+                                              .mapError(mapBoardPersistence("planner_board_create_issue"))
+                         yield draft.draftId -> issue.frontmatter.id
+                       }
+      byDraft        = created.toMap
+      _             <- ZIO.foreachDiscard(orderedDrafts) { draft =>
+                         val issueId = byDraft(draft.draftId)
+                         val blocked = sanitizeList(draft.dependencyDraftIds).flatMap(byDraft.get)
+                         ZIO.when(blocked.nonEmpty) {
+                           boardRepository
+                             .updateIssue(
+                               workspacePath,
+                               issueId,
+                               current => current.copy(blockedBy = blocked.distinct),
+                             )
+                             .mapError(mapBoardPersistence("planner_board_dependency_link"))
+                             .unit
+                         }
+                       }
+    yield byDraft.view.mapValues(id => IssueId(id.value)).toMap
 
   private def normalizePreview(preview: PlannerPlanPreview): Either[String, PlannerPlanPreview] =
     val normalizedIssuesEither =
@@ -849,6 +958,61 @@ final case class PlannerAgentServiceLive(
       case 1 => "Generated planner preview with 1 issue."
       case n => s"Generated planner preview with $n issues."
 
+  private def isStructuredParseFailure(details: String): Boolean =
+    val normalized = Option(details).getOrElse("").toLowerCase
+    normalized.contains("parse error") || normalized.contains("structured output")
+
+  private def extractJsonFromRawText(raw: String): Either[String, Json] =
+    val trimmed = Option(raw).map(_.trim).getOrElse("")
+
+    val direct = parseJsonCandidate(trimmed)
+    direct.orElse {
+      val fences = extractJsonCodeBlocks(trimmed)
+      fences.iterator.map(parseJsonCandidate).collectFirst { case Right(value) => Right(value) }
+        .getOrElse(Left("No valid JSON found in fenced code block"))
+    }.orElse {
+      extractOuterJsonObject(trimmed)
+        .toRight("No JSON object found in planner response")
+        .flatMap(parseJsonCandidate)
+    }
+
+  private def synthesizePlannerJsonFromText(raw: String): Json =
+    val content = plainTextContent(raw)
+    Json.Obj(
+      "summary" -> Json.Str(defaultSummaryFromText(content)),
+      "issues"  -> Json.Arr(Chunk.empty),
+    )
+
+  private def plainTextContent(raw: String): String =
+    val trimmed   = Option(raw).map(_.trim).getOrElse("")
+    val fromFence = extractJsonCodeBlocks(trimmed).headOption
+      .orElse {
+        val textFencePattern = "(?s)```(?:text)?\\s*(.*?)\\s*```".r
+        textFencePattern.findFirstMatchIn(trimmed).map(_.group(1))
+      }
+    fromFence.getOrElse(trimmed).trim
+
+  private def defaultSummaryFromText(content: String): String =
+    val normalized = content.replaceAll("\\s+", " ").trim
+    if normalized.isEmpty then "Planner returned no structured issues."
+    else normalized.take(280)
+
+  private def parseJsonCandidate(candidate: String): Either[String, Json] =
+    Option(candidate).map(_.trim).filter(_.nonEmpty) match
+      case None           => Left("Planner response was empty")
+      case Some(nonEmpty) =>
+        nonEmpty.fromJson[Json].left.map(err => s"Invalid JSON candidate: $err")
+
+  private def extractJsonCodeBlocks(raw: String): List[String] =
+    val pattern = "(?s)```(?:json)?\\s*(.*?)\\s*```".r
+    pattern.findAllMatchIn(Option(raw).getOrElse("")).map(_.group(1)).toList
+
+  private def extractOuterJsonObject(raw: String): Option[String] =
+    val text = Option(raw).getOrElse("")
+    val from = text.indexOf('{')
+    val to   = text.lastIndexOf('}')
+    if from >= 0 && to > from then Some(text.substring(from, to + 1)) else None
+
   private def executeStructuredWithPreferredAgent[A: JsonCodec](
     prompt: String,
     schema: JsonSchema,
@@ -865,6 +1029,21 @@ final case class PlannerAgentServiceLive(
           executeStructuredWithGlobalConfig(prompt, schema, workspaceContext)
       }
 
+  private def executeTextWithPreferredAgent(
+    prompt: String,
+    workspaceContext: Option[PlannerWorkspaceContext],
+  ): IO[PlannerAgentError, String] =
+    configResolver
+      .resolveConfig(plannerAgentName)
+      .either
+      .flatMap {
+        case Right(config) =>
+          executeTextWithConfig(config, prompt, workspaceContext)
+            .catchAll(_ => executeTextWithGlobalConfig(prompt, workspaceContext))
+        case Left(_)       =>
+          executeTextWithGlobalConfig(prompt, workspaceContext)
+      }
+
   private def executeStructuredWithConfig[A: JsonCodec](
     config: AIProviderConfig,
     prompt: String,
@@ -879,6 +1058,22 @@ final case class PlannerAgentServiceLive(
           ))
       }
 
+  private def executeTextWithConfig(
+    config: AIProviderConfig,
+    prompt: String,
+    workspaceContext: Option[PlannerWorkspaceContext],
+  ): IO[PlannerAgentError, String] =
+    fallbackConfigs(config)
+      .foldLeft[IO[
+        PlannerAgentError,
+        String,
+      ]](ZIO.fail(PlannerAgentError.LlmFailure("No planner LLM provider configured"))) {
+        (acc, cfg) =>
+          acc.orElse(providerFor(cfg, workspaceContext).flatMap(service =>
+            service.executeStream(prompt).runCollect.map(_.map(_.delta).mkString).mapError(mapLlmError)
+          ))
+      }
+
   private def executeStructuredWithGlobalConfig[A: JsonCodec](
     prompt: String,
     schema: JsonSchema,
@@ -886,6 +1081,14 @@ final case class PlannerAgentServiceLive(
   ): IO[PlannerAgentError, A] =
     resolveGlobalAiConfig.flatMap(config =>
       executeStructuredWithConfig(config, prompt, schema, workspaceContext)
+    )
+
+  private def executeTextWithGlobalConfig(
+    prompt: String,
+    workspaceContext: Option[PlannerWorkspaceContext],
+  ): IO[PlannerAgentError, String] =
+    resolveGlobalAiConfig.flatMap(config =>
+      executeTextWithConfig(config, prompt, workspaceContext)
     )
 
   private def resolveGlobalAiConfig: IO[PlannerAgentError, AIProviderConfig] =
@@ -974,6 +1177,47 @@ final case class PlannerAgentServiceLive(
       case "critical" => "critical"
     }.getOrElse("medium")
 
+  private def toBoardPriority(priority: String): BoardIssuePriority =
+    priority match
+      case "critical" => BoardIssuePriority.Critical
+      case "high"     => BoardIssuePriority.High
+      case "low"      => BoardIssuePriority.Low
+      case _          => BoardIssuePriority.Medium
+
+  private def toBoardEstimate(estimate: Option[String]): IO[PlannerAgentError, Option[BoardIssueEstimate]] =
+    estimate match
+      case Some("XS") => ZIO.succeed(Some(BoardIssueEstimate.XS))
+      case Some("S")  => ZIO.succeed(Some(BoardIssueEstimate.S))
+      case Some("M")  => ZIO.succeed(Some(BoardIssueEstimate.M))
+      case Some("L")  => ZIO.succeed(Some(BoardIssueEstimate.L))
+      case Some("XL") => ZIO.succeed(Some(BoardIssueEstimate.XL))
+      case Some(raw)  =>
+        ZIO.fail(PlannerAgentError.IssueDraftInvalid(s"Planner issue estimate '$raw' is not supported"))
+      case None       => ZIO.succeed(None)
+
+  private def splitListField(value: String): List[String] =
+    value.split("[\\n,]").toList.map(_.trim).filter(_.nonEmpty)
+
+  private def resolveWorkspacePath(workspaceId: String): IO[PlannerAgentError, String] =
+    workspaceRepository
+      .get(workspaceId)
+      .mapError(err => PlannerAgentError.PersistenceFailure("planner_workspace_lookup", err.toString))
+      .flatMap {
+        case Some(workspace) =>
+          val path = Option(workspace.localPath).map(_.trim).filter(_.nonEmpty)
+          ZIO
+            .fromOption(path)
+            .orElseFail(PlannerAgentError.PersistenceFailure(
+              "planner_workspace_lookup",
+              s"Workspace $workspaceId has no local path",
+            ))
+        case None            =>
+          ZIO.fail(PlannerAgentError.PersistenceFailure(
+            "planner_workspace_lookup",
+            s"Workspace not found: $workspaceId",
+          ))
+      }
+
   private def normalizedEstimate(value: Option[String]): Option[String] =
     value.flatMap(DomainIssue.normalizeEstimate)
 
@@ -1018,6 +1262,27 @@ final case class PlannerAgentServiceLive(
 
   private def mapIssuePersistence(operation: String)(error: shared.errors.PersistenceError): PlannerAgentError =
     PlannerAgentError.PersistenceFailure(operation, error.toString)
+
+  private def mapBoardPersistence(operation: String)(error: BoardError): PlannerAgentError =
+    error match
+      case BoardError.IssueNotFound(value)            =>
+        PlannerAgentError.PersistenceFailure(operation, s"Board issue not found: $value")
+      case BoardError.IssueAlreadyExists(value)       =>
+        PlannerAgentError.PersistenceFailure(operation, s"Board issue already exists: $value")
+      case BoardError.BoardNotFound(value)            =>
+        PlannerAgentError.PersistenceFailure(operation, s"Board not found: $value")
+      case BoardError.InvalidColumn(value)            =>
+        PlannerAgentError.PersistenceFailure(operation, s"Invalid board column: $value")
+      case BoardError.ParseError(details)             =>
+        PlannerAgentError.PersistenceFailure(operation, details)
+      case BoardError.WriteError(path, reason)        =>
+        PlannerAgentError.PersistenceFailure(operation, s"$path: $reason")
+      case BoardError.GitOperationFailed(action, msg) =>
+        PlannerAgentError.PersistenceFailure(operation, s"$action failed: $msg")
+      case BoardError.DependencyCycle(issueIds)       =>
+        PlannerAgentError.PersistenceFailure(operation, s"Dependency cycle: ${issueIds.mkString(", ")}")
+      case BoardError.ConcurrencyConflict(message)    =>
+        PlannerAgentError.PersistenceFailure(operation, s"Board concurrency conflict: $message")
 
   private def mapLlmError(error: LlmError): PlannerAgentError =
     PlannerAgentError.LlmFailure(

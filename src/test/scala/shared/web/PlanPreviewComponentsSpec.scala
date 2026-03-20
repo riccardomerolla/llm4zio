@@ -83,4 +83,20 @@ object PlanPreviewComponentsSpec extends ZIOSpecDefault:
           mermaidInit.contains("planner-plan-panels-"),
         )
       },
+      test("planGraph sanitizes mermaid node labels and ids") {
+        val drafts = List(
+          PlannerIssueDraft(
+            draftId = "issue:one\nraw",
+            title = "Create `get_greeting(name: &str,\nlang: &str) -> String` in src/main.rs [core]",
+            description = "desc",
+            included = true,
+          )
+        )
+        val graph  = PlanPreviewComponents.planGraph(drafts)
+        assertTrue(
+          graph.mermaid.contains("node_1_issue_one_raw"),
+          !graph.mermaid.contains("\nlang: &str"),
+          !graph.mermaid.contains("[core]"),
+        )
+      },
     )

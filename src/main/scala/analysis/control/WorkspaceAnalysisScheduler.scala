@@ -7,11 +7,11 @@ import zio.*
 import activity.control.ActivityHub
 import activity.entity.{ ActivityEvent, ActivityEventType }
 import analysis.entity.{ AnalysisDoc, AnalysisRepository, AnalysisType }
+import board.entity.*
 import db.TaskRepository
-import issues.control.IssueAnalysisAttachment
-import issues.entity.{ IssueEvent, IssueFilter, IssueRepository, IssueStateTag }
 import shared.errors.PersistenceError
-import shared.ids.Ids.{ EventId, IssueId }
+import shared.ids.Ids.{ BoardIssueId, EventId, IssueId }
+import workspace.entity.WorkspaceRepository
 
 final private[analysis] case class WorkspaceAnalysisJob(
   workspaceId: String,
@@ -60,29 +60,31 @@ object WorkspaceAnalysisScheduler:
 
   val live
     : ZLayer[
-      AnalysisAgentRunner & AnalysisRepository & ActivityHub & TaskRepository & IssueRepository,
+      AnalysisAgentRunner & AnalysisRepository & ActivityHub & TaskRepository & BoardRepository & WorkspaceRepository,
       Nothing,
       WorkspaceAnalysisScheduler,
     ] =
     ZLayer.scoped {
       for
-        runner       <- ZIO.service[AnalysisAgentRunner]
-        repository   <- ZIO.service[AnalysisRepository]
-        activityHub  <- ZIO.service[ActivityHub]
-        taskRepo     <- ZIO.service[TaskRepository]
-        issueRepo    <- ZIO.service[IssueRepository]
-        queue        <- Queue.unbounded[WorkspaceAnalysisJob]
-        runtimeState <- Ref.Synchronized.make(Map.empty[(String, AnalysisType), WorkspaceAnalysisStatus])
-        service       = WorkspaceAnalysisSchedulerLive(
-                          runner = runner,
-                          repository = repository,
-                          activityHub = activityHub,
-                          taskRepository = taskRepo,
-                          issueRepository = issueRepo,
-                          queue = queue,
-                          runtimeState = runtimeState,
-                        )
-        _            <- ZIO.foreachParDiscard(1 to trackedTypes.size)(_ => service.worker.forever.forkScoped)
+        runner        <- ZIO.service[AnalysisAgentRunner]
+        repository    <- ZIO.service[AnalysisRepository]
+        activityHub   <- ZIO.service[ActivityHub]
+        taskRepo      <- ZIO.service[TaskRepository]
+        boardRepo     <- ZIO.service[BoardRepository]
+        workspaceRepo <- ZIO.service[WorkspaceRepository]
+        queue         <- Queue.unbounded[WorkspaceAnalysisJob]
+        runtimeState  <- Ref.Synchronized.make(Map.empty[(String, AnalysisType), WorkspaceAnalysisStatus])
+        service        = WorkspaceAnalysisSchedulerLive(
+                           runner = runner,
+                           repository = repository,
+                           activityHub = activityHub,
+                           taskRepository = taskRepo,
+                           boardRepository = boardRepo,
+                           workspaceRepository = workspaceRepo,
+                           queue = queue,
+                           runtimeState = runtimeState,
+                         )
+        _             <- ZIO.foreachParDiscard(1 to trackedTypes.size)(_ => service.worker.forever.forkScoped)
       yield service
     }
 
@@ -91,7 +93,8 @@ final case class WorkspaceAnalysisSchedulerLive(
   repository: AnalysisRepository,
   activityHub: ActivityHub,
   taskRepository: TaskRepository,
-  issueRepository: IssueRepository,
+  boardRepository: BoardRepository,
+  workspaceRepository: WorkspaceRepository,
   queue: Queue[WorkspaceAnalysisJob],
   runtimeState: Ref.Synchronized[Map[(String, AnalysisType), WorkspaceAnalysisStatus]],
 ) extends WorkspaceAnalysisScheduler:
@@ -248,55 +251,96 @@ final case class WorkspaceAnalysisSchedulerLive(
     workspaceId: String,
     now: Instant,
   ): IO[PersistenceError, Unit] =
-    for
-      issues      <- issueRepository.list(IssueFilter(states = Set(IssueStateTag.HumanReview), limit = Int.MaxValue))
-      reviewIssues = issues.filter(_.workspaceId.contains(workspaceId))
-      _           <- reviewIssues match
-                       case Nil      =>
-                         createHumanReviewIssue(workspaceId, now).flatMap(attachLatestAnalysis(_, now))
-                       case existing =>
-                         ZIO.foreachDiscard(existing)(issue => attachLatestAnalysis(issue.id, now))
-    yield ()
-
-  private def createHumanReviewIssue(
-    workspaceId: String,
-    now: Instant,
-  ): IO[PersistenceError, IssueId] =
-    val issueId     = IssueId.generate
-    val title       = s"Human review for workspace $workspaceId"
+    val title       = s"Analysis docs for workspace $workspaceId"
     val description =
       s"Automatically created review issue for workspace $workspaceId. Review the latest code review, architecture, and security analysis docs."
-    for
-      _ <- issueRepository.append(
-             IssueEvent.Created(
-               issueId = issueId,
-               title = title,
-               description = description,
-               issueType = "task",
-               priority = "medium",
-               occurredAt = now,
-             )
-           )
-      _ <- issueRepository.append(IssueEvent.TagsUpdated(issueId, List("analysis-review", "auto-generated"), now))
-      _ <- issueRepository.append(IssueEvent.WorkspaceLinked(issueId, workspaceId, now))
-      _ <- issueRepository.append(IssueEvent.MovedToHumanReview(issueId, movedAt = now, occurredAt = now))
-    yield issueId
+    ensureWorkspaceBoardReviewIssue(workspaceId, title, description, now)
 
-  private def attachLatestAnalysis(
-    issueId: IssueId,
+  private val boardColumns: List[BoardColumn] = List(
+    BoardColumn.Backlog,
+    BoardColumn.Todo,
+    BoardColumn.InProgress,
+    BoardColumn.Review,
+    BoardColumn.Done,
+    BoardColumn.Archive,
+  )
+
+  private def ensureWorkspaceBoardReviewIssue(
+    workspaceId: String,
+    title: String,
+    description: String,
     now: Instant,
   ): IO[PersistenceError, Unit] =
     for
-      issue <- issueRepository.get(issueId)
-      _     <- IssueAnalysisAttachment
-                 .latestForHumanReview(issue, repository, now)
-                 .flatMap {
-                   case Some(event) if event.analysisDocIds != issue.analysisDocIds =>
-                     issueRepository.append(event)
-                   case _                                                           =>
-                     ZIO.unit
-                 }
+      workspaceOpt <- workspaceRepository.get(workspaceId)
+      workspace    <- ZIO.fromOption(workspaceOpt).orElseFail(PersistenceError.NotFound("workspace", workspaceId))
+      _            <- boardRepository.initBoard(workspace.localPath).mapError(mapBoardError)
+      existing     <- ZIO
+                        .foreach(boardColumns)(column => boardRepository.listIssues(workspace.localPath, column))
+                        .map(_.flatten)
+                        .mapError(mapBoardError)
+      hasReview     = existing.exists(issue =>
+                        issue.frontmatter.tags.exists(_.equalsIgnoreCase("analysis-review")) ||
+                        issue.frontmatter.title.equalsIgnoreCase(title)
+                      )
+      _            <- ZIO.unless(hasReview) {
+                        createWorkspaceBoardReviewIssue(workspace.localPath, title, description, now)
+                      }
     yield ()
+
+  private def createWorkspaceBoardReviewIssue(
+    workspacePath: String,
+    title: String,
+    description: String,
+    now: Instant,
+  ): IO[PersistenceError, Unit] =
+    for
+      boardIssueId <- ZIO
+                        .fromEither(BoardIssueId.fromString(IssueId.generate.value))
+                        .mapError(err => PersistenceError.QueryFailed("board_issue_id", err))
+      _            <- boardRepository
+                        .createIssue(
+                          workspacePath,
+                          BoardColumn.Review,
+                          BoardIssue(
+                            frontmatter = IssueFrontmatter(
+                              id = boardIssueId,
+                              title = title,
+                              priority = IssuePriority.Medium,
+                              assignedAgent = None,
+                              requiredCapabilities = Nil,
+                              blockedBy = Nil,
+                              tags = List("analysis-review", "auto-generated"),
+                              acceptanceCriteria = Nil,
+                              estimate = None,
+                              proofOfWork = Nil,
+                              transientState = TransientState.None,
+                              branchName = None,
+                              failureReason = None,
+                              completedAt = None,
+                              createdAt = now,
+                            ),
+                            body = description,
+                            column = BoardColumn.Review,
+                            directoryPath = "",
+                          ),
+                        )
+                        .unit
+                        .mapError(mapBoardError)
+    yield ()
+
+  private def mapBoardError(error: BoardError): PersistenceError =
+    error match
+      case BoardError.BoardNotFound(value)            => PersistenceError.QueryFailed("board", s"Not found: $value")
+      case BoardError.IssueNotFound(value)            => PersistenceError.QueryFailed("board_issue", s"Not found: $value")
+      case BoardError.IssueAlreadyExists(value)       => PersistenceError.QueryFailed("board_issue_exists", value)
+      case BoardError.InvalidColumn(value)            => PersistenceError.QueryFailed("board_column", value)
+      case BoardError.ParseError(message)             => PersistenceError.QueryFailed("board_parse", message)
+      case BoardError.WriteError(path, message)       => PersistenceError.QueryFailed("board_write", s"$path: $message")
+      case BoardError.GitOperationFailed(op, message) => PersistenceError.QueryFailed("board_git", s"$op: $message")
+      case BoardError.DependencyCycle(issueIds)       =>
+        PersistenceError.QueryFailed("board_cycle", issueIds.mkString(","))
+      case BoardError.ConcurrencyConflict(message)    => PersistenceError.QueryFailed("board_concurrency", message)
 
   private def renderJobError(error: AnalysisAgentRunnerError | PersistenceError): String =
     error match

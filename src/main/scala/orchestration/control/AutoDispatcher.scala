@@ -193,25 +193,27 @@ final case class AutoDispatcherLive(
       .replace("${sourceFolder}", issue.sourceFolder)
 
   private def markIssueStarted(issue: AgentIssue, agentName: String): IO[PersistenceError, Unit] =
-    for
-      now <- Clock.instant
-      _   <- issueRepository.append(
-               IssueEvent.Assigned(
-                 issueId = issue.id,
-                 agent = AgentId(agentName),
-                 assignedAt = now,
-                 occurredAt = now,
+    if issue.workspaceId.isDefined then ZIO.unit
+    else
+      for
+        now <- Clock.instant
+        _   <- issueRepository.append(
+                 IssueEvent.Assigned(
+                   issueId = issue.id,
+                   agent = AgentId(agentName),
+                   assignedAt = now,
+                   occurredAt = now,
+                 )
                )
-             )
-      _   <- issueRepository.append(
-               IssueEvent.Started(
-                 issueId = issue.id,
-                 agent = AgentId(agentName),
-                 startedAt = now,
-                 occurredAt = now,
+        _   <- issueRepository.append(
+                 IssueEvent.Started(
+                   issueId = issue.id,
+                   agent = AgentId(agentName),
+                   startedAt = now,
+                   occurredAt = now,
+                 )
                )
-             )
-    yield ()
+      yield ()
 
   private def publishDispatchActivity(issue: AgentIssue, agentName: String, runId: String): UIO[Unit] =
     Clock.instant.flatMap { now =>

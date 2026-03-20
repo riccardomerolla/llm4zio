@@ -12,6 +12,7 @@ import _root_.config.boundary.{
 import activity.boundary.ActivityController
 import analysis.control.WorkspaceAnalysisScheduler
 import app.boundary.{ AgentMonitorController as AppAgentMonitorController, HealthController as AppHealthController }
+import board.boundary.BoardController as BoardBoundaryController
 import conversation.boundary.{
   ChatController as ConversationChatController,
   WebSocketController as ConversationWebSocketController,
@@ -43,7 +44,7 @@ trait WebServer:
 object WebServer:
 
   val live: ZLayer[
-    TaskRunDashboardController & TaskRunTasksController & TaskRunReportsController & TaskRunGraphController & SettingsBoundaryController & ConfigBoundaryController & ConfigAgentsController & AppAgentMonitorController & ConversationChatController & IssuesIssueController & ConfigWorkflowsController & GatewayTelegramController & ActivityController & MemoryBoundaryController & GatewayChannelController & AppHealthController & TaskRunLogsController & ConversationWebSocketController & WorkspaceRepository & WorkspaceRunService & GitService & AgentRegistry & IssueRepository & ProjectRepository & McpService & WorkspaceAnalysisScheduler,
+    TaskRunDashboardController & TaskRunTasksController & TaskRunReportsController & TaskRunGraphController & SettingsBoundaryController & ConfigBoundaryController & ConfigAgentsController & AppAgentMonitorController & ConversationChatController & IssuesIssueController & BoardBoundaryController & ConfigWorkflowsController & GatewayTelegramController & ActivityController & MemoryBoundaryController & GatewayChannelController & AppHealthController & TaskRunLogsController & ConversationWebSocketController & WorkspaceRepository & WorkspaceRunService & GitService & AgentRegistry & IssueRepository & ProjectRepository & McpService & WorkspaceAnalysisScheduler,
     Nothing,
     WebServer,
   ] = ZLayer {
@@ -58,6 +59,7 @@ object WebServer:
       monitor           <- ZIO.service[AppAgentMonitorController]
       chat              <- ZIO.service[ConversationChatController]
       issues            <- ZIO.service[IssuesIssueController]
+      board             <- ZIO.service[BoardBoundaryController]
       workflows         <- ZIO.service[ConfigWorkflowsController]
       telegram          <- ZIO.service[GatewayTelegramController]
       activity          <- ZIO.service[ActivityController]
@@ -84,7 +86,7 @@ object WebServer:
                            )
     yield new WebServer {
       override val routes: Routes[Any, Response] =
-        dashboard.routes ++ tasks.routes ++ reports.routes ++ graph.routes ++ settings.routes ++ config.routes ++ agents.routes ++ monitor.routes ++ chat.routes ++ issues.routes ++ workflows.routes ++ telegram.routes ++ activity.routes ++ memory.routes ++ channels.routes ++ health.routes ++ logs.routes ++ websocket.routes ++ mcpSvc.controller.routes ++ ProjectsController.routes(
+        dashboard.routes ++ tasks.routes ++ reports.routes ++ graph.routes ++ settings.routes ++ config.routes ++ agents.routes ++ monitor.routes ++ chat.routes ++ issues.routes ++ board.routes ++ workflows.routes ++ telegram.routes ++ activity.routes ++ memory.routes ++ channels.routes ++ health.routes ++ logs.routes ++ websocket.routes ++ mcpSvc.controller.routes ++ ProjectsController.routes(
           projectRepo,
           wsRepo,
           issueRepo,

@@ -4,12 +4,17 @@ import zio.*
 import zio.json.*
 import zio.stream.ZStream
 
+import activity.control.ActivityHub
+import activity.entity.{ ActivityEvent, ActivityEventType }
+import board.entity.BoardRepository
+import shared.ids.Ids.EventId
 import workspace.entity.{ GitError, GitLogEntry, GitStatus }
 
 sealed trait GitWatcherEvent derives JsonCodec
 object GitWatcherEvent:
-  final case class StatusUpdated(status: GitStatus) extends GitWatcherEvent
-  final case class NewCommit(commit: GitLogEntry)   extends GitWatcherEvent
+  final case class StatusUpdated(status: GitStatus)                               extends GitWatcherEvent
+  final case class NewCommit(commit: GitLogEntry)                                 extends GitWatcherEvent
+  final case class BoardChanged(worktreePath: String, changedPaths: List[String]) extends GitWatcherEvent
 
 trait GitWatcher:
   def registerRun(runId: String, worktreePath: String): UIO[Unit]
@@ -17,11 +22,13 @@ trait GitWatcher:
   def subscribe(runId: String): ZIO[Scope, String, Dequeue[GitWatcherEvent]]
 
 object GitWatcher:
-  val live: ZLayer[GitService, Nothing, GitWatcher] =
+  val live: ZLayer[GitService & ActivityHub & BoardRepository, Nothing, GitWatcher] =
     ZLayer.fromZIO {
       for
-        gitService <- ZIO.service[GitService]
-        watcher    <- GitWatcherLive.make(gitService)
+        gitService      <- ZIO.service[GitService]
+        activityHub     <- ZIO.service[ActivityHub]
+        boardRepository <- ZIO.service[BoardRepository]
+        watcher         <- GitWatcherLive.make(gitService, activityHub, boardRepository)
       yield watcher
     }
 
@@ -34,6 +41,8 @@ object GitWatcher:
 
 final case class GitWatcherLive private (
   gitService: GitService,
+  activityHub: ActivityHub,
+  boardRepository: BoardRepository,
   pollInterval: Duration,
   watchers: Ref[Map[String, GitWatcherLive.RunWatch]],
 ) extends GitWatcher:
@@ -113,7 +122,15 @@ final case class GitWatcherLive private (
           val changed = previous.forall(_ != snapshot)
           (changed, Some(snapshot))
         }.flatMap { changed =>
-          if changed then hub.publish(GitWatcherEvent.StatusUpdated(status)).unit else ZIO.unit
+          if changed then
+            val boardPaths = boardPathsFromStatus(status)
+            for
+              _ <- hub.publish(GitWatcherEvent.StatusUpdated(status)).unit
+              _ <- ZIO.when(boardPaths.nonEmpty) {
+                     publishBoardChanged(worktreePath, boardPaths, hub)
+                   }
+            yield ()
+          else ZIO.unit
         }
       case Left(_: GitError.NotAGitRepository) => ZIO.unit
       case Left(_)                             => ZIO.unit
@@ -136,6 +153,32 @@ final case class GitWatcherLive private (
       case Left(_)          => ZIO.unit
     }
 
+  private def publishBoardChanged(
+    worktreePath: String,
+    changedPaths: List[String],
+    hub: Hub[GitWatcherEvent],
+  ): UIO[Unit] =
+    (for
+      now <- Clock.instant
+      _   <- boardRepository.invalidateWorkspace(worktreePath)
+      _   <- hub.publish(GitWatcherEvent.BoardChanged(worktreePath, changedPaths)).unit
+      _   <- activityHub.publish(
+               ActivityEvent(
+                 id = EventId.generate,
+                 eventType = ActivityEventType.ConfigChanged,
+                 source = "git-watcher-board",
+                 summary = s".board change detected for $worktreePath",
+                 payload = Some(BoardChangePayload(worktreePath, changedPaths).toJson),
+                 createdAt = now,
+               )
+             )
+    yield ()).ignoreLogged
+
+  private def boardPathsFromStatus(status: GitStatus): List[String] =
+    val tracked = status.staged.map(_.path) ++ status.unstaged.map(_.path)
+    val all     = (tracked ++ status.untracked).map(_.trim).filter(_.nonEmpty).distinct
+    all.filter(path => path == ".board" || path.startsWith(".board/"))
+
 object GitWatcherLive:
   final case class RunWatch(
     worktreePath: String,
@@ -146,5 +189,14 @@ object GitWatcherLive:
     fiber: Fiber.Runtime[Nothing, Unit],
   )
 
-  def make(gitService: GitService, pollInterval: Duration = 5.seconds): UIO[GitWatcherLive] =
-    Ref.make(Map.empty[String, RunWatch]).map(state => GitWatcherLive(gitService, pollInterval, state))
+  def make(
+    gitService: GitService,
+    activityHub: ActivityHub,
+    boardRepository: BoardRepository,
+    pollInterval: Duration = 5.seconds,
+  ): UIO[GitWatcherLive] =
+    Ref.make(Map.empty[String, RunWatch]).map(state =>
+      GitWatcherLive(gitService, activityHub, boardRepository, pollInterval, state)
+    )
+
+final case class BoardChangePayload(worktreePath: String, changedPaths: List[String]) derives JsonCodec

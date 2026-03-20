@@ -3,6 +3,8 @@ package shared.web
 import java.net.URLEncoder
 import java.time.Instant
 
+import scala.annotation.tailrec
+
 import conversation.entity.api.{ ChatConversation, ConversationEntry, ConversationSessionMeta, MessageType, SenderType }
 import gateway.entity.ChatSession
 import scalatags.Text.all.*
@@ -481,8 +483,112 @@ object ChatView:
         head.copy(content = mergedContent, messageType = MessageType.Text) :: mergeCodeBlockFragments(rest)
       case head :: tail => head :: mergeCodeBlockFragments(tail)
 
+  private val technicalNotificationPatterns: List[scala.util.matching.Regex] = List(
+    """(?i)attempt\s+\d+\s+failed""".r,
+    """(?i)\bretrying\b""".r,
+    """(?i)\b(?:status\s+)?429\b""".r,
+    """(?i)\bgaxioserror\b""".r,
+    """(?i)\brate(?:\s|-)?limit(?:exceeded)?\b""".r,
+    """(?i)\bno\s+capacity\s+available\s+for\s+model\b""".r,
+    """(?i)\byolo mode is enabled\b""".r,
+    """(?i)\bloaded cached credentials\b""".r,
+    """(?i)\bresource_exhausted\b""".r,
+    """(?i)\bmodel_capacity_exhausted\b""".r,
+    """(?i)\bgoogle\.rpc\.errorinfo\b""".r,
+    """(?i)\bcloudcode-pa\.googleapis\.com\b""".r,
+    """(?i)\btoo many requests\b""".r,
+    """(?i)\bstatusText\b""".r,
+    """(?i)\berrorRedactor\b""".r,
+    """(?i)\bx-goog-api-client\b""".r,
+    """(?i)\bnode:internal/process/task_queues\b""".r,
+    """(?i)\bCodeAssistServer\b""".r,
+    """(?i)\bGeminiChat\b""".r,
+    """(?i)\bretryWithBackoff\b""".r,
+    """(?i)\bloggingContentGenerator\.js:\d+:\d+""".r,
+    """(?i)\btelemetry/trace\.js:\d+:\d+""".r,
+    """(?i)\bSymbol\(gaxios-gaxios-error\)\b""".r,
+  )
+
+  private def isTechnicalNotificationContent(content: String): Boolean =
+    val normalized = Option(content).getOrElse("").trim
+    normalized.nonEmpty && technicalNotificationPatterns.exists(_.findFirstIn(normalized).nonEmpty)
+
+  private def isTechnicalNotificationMessage(message: ConversationEntry): Boolean =
+    message.senderType != SenderType.User &&
+    message.messageType != MessageType.ToolCall &&
+    message.messageType != MessageType.ToolResult &&
+    isTechnicalNotificationContent(message.content)
+
+  private def isTechnicalFragmentContent(content: String): Boolean =
+    val normalized = Option(content).getOrElse("").trim
+    normalized.nonEmpty &&
+    (
+      normalized.matches("""^[\[\]\{\}\(\),]+$""") ||
+      normalized.matches("""^\s*['"`\],\[\{\}]+\s*$""") ||
+      normalized.matches("""(?i)^at\s+.+\(.+\)$""") ||
+      normalized.matches("""(?i)^at\s+async\s+.+$""") ||
+      normalized.matches("""(?i)^caused by:.*""") ||
+      normalized.matches("""(?i)^['"]?[a-z0-9_.\-@]+['"]?\s*:\s*.*$""") ||
+      normalized.matches("""^.*\+\s*$""")
+    )
+
+  private def isTechnicalFragmentMessage(message: ConversationEntry): Boolean =
+    message.senderType != SenderType.User &&
+    message.messageType != MessageType.ToolCall &&
+    message.messageType != MessageType.ToolResult &&
+    !isTechnicalNotificationMessage(message) &&
+    isTechnicalFragmentContent(message.content)
+
+  private def expandTechnicalIndices(
+    highSignal: Set[Int],
+    fragments: Set[Int],
+  ): Set[Int] =
+    @tailrec def loop(frontier: Set[Int], acc: Set[Int]): Set[Int] =
+      if frontier.isEmpty then acc
+      else
+        val adjacent = frontier
+          .flatMap(i => Set(i - 1, i + 1))
+          .intersect(fragments)
+          .diff(acc)
+        loop(adjacent, acc ++ adjacent)
+
+    loop(highSignal, highSignal)
+
+  private def technicalNotificationsCard(notifications: List[ConversationEntry]): Frag =
+    if notifications.isEmpty then frag()
+    else
+      val latest = notifications.reverse.take(20)
+      div(cls := "pt-1")(
+        tag("details")(
+          cls := "rounded-xl border border-amber-500/20 bg-amber-500/8 px-3 py-2 text-amber-100/90"
+        )(
+          tag("summary")(
+            cls := "cursor-pointer list-none text-xs font-semibold tracking-wide select-none"
+          )(
+            s"Technical notifications hidden: ${notifications.size}"
+          ),
+          div(cls := "mt-2 space-y-1.5")(
+            latest.map { entry =>
+              div(
+                cls := "rounded-md border border-amber-300/15 bg-slate-950/35 px-2 py-1.5 text-[11px] text-amber-50/85"
+              )(
+                entry.content
+              )
+            }
+          ),
+        )
+      )
+
   def messagesFragment(messages: List[ConversationEntry], conversationId: Option[String] = None): String =
-    val grouped = groupToolCalls(mergeCodeBlockFragments(messages))
+    val merged                          = mergeCodeBlockFragments(messages)
+    val indexed                         = merged.zipWithIndex
+    val highSignal                      = indexed.collect { case (m, i) if isTechnicalNotificationMessage(m) => i }.toSet
+    val fragments                       = indexed.collect { case (m, i) if isTechnicalFragmentMessage(m) => i }.toSet
+    val technicalIndices                = expandTechnicalIndices(highSignal, fragments)
+    val (technicalPairs, timelinePairs) = indexed.partition { case (_, idx) => technicalIndices.contains(idx) }
+    val technical                       = technicalPairs.map(_._1)
+    val timelineMessages                = timelinePairs.map(_._1)
+    val grouped                         = groupToolCalls(timelineMessages)
     div(cls := "space-y-2 text-gray-100")(
       grouped.zipWithIndex.map {
         case (entry, idx) =>
@@ -508,7 +614,8 @@ object ChatView:
                     case Right(prevGroup) => prevGroup.lastOption.map(_.senderType)
                 else None
               messageCard(msg, prevSender, conversationId)
-      }
+      },
+      technicalNotificationsCard(technical),
     ).render
 
   private def messageCard(

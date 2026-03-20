@@ -8,12 +8,14 @@ import zio.test.*
 import _root_.config.entity.AIProviderConfig
 import activity.control.ActivityHub
 import activity.entity.ActivityEvent
+import board.entity.*
 import conversation.entity.api.*
 import db.*
 import issues.entity.{ IssueEvent, IssueRepository }
 import llm4zio.core.*
 import llm4zio.providers.{ GeminiCliExecutor, HttpClient }
 import prompts.PromptLoader
+import shared.ids.Ids.BoardIssueId
 import workspace.entity.*
 
 object PlannerAgentServiceSpec extends ZIOSpecDefault:
@@ -82,6 +84,79 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
     val layer: ZLayer[Ref[Vector[IssueEvent]], Nothing, IssueRepository] =
       ZLayer.fromFunction(RecordingIssueRepo.apply)
 
+  final case class RecordingBoardRepo(ref: Ref[Map[String, Map[BoardIssueId, BoardIssue]]]) extends BoardRepository:
+    override def initBoard(workspacePath: String): IO[BoardError, Unit] =
+      ref.update(current => current.updatedWith(workspacePath)(_.orElse(Some(Map.empty)))).unit
+
+    override def readBoard(workspacePath: String): IO[BoardError, Board] =
+      ref.get.flatMap { state =>
+        val byId = state.getOrElse(workspacePath, Map.empty)
+        ZIO.succeed(
+          Board(
+            workspacePath,
+            BoardColumn.values.map(column => column -> byId.values.filter(_.column == column).toList).toMap,
+          )
+        )
+      }
+
+    override def readIssue(workspacePath: String, issueId: BoardIssueId): IO[BoardError, BoardIssue] =
+      ref.get.flatMap { state =>
+        ZIO
+          .fromOption(state.getOrElse(workspacePath, Map.empty).get(issueId))
+          .orElseFail(BoardError.IssueNotFound(issueId.value))
+      }
+
+    override def createIssue(workspacePath: String, column: BoardColumn, issue: BoardIssue)
+      : IO[BoardError, BoardIssue] =
+      ref.modify { state =>
+        val byId = state.getOrElse(workspacePath, Map.empty)
+        byId.get(issue.frontmatter.id) match
+          case Some(_) =>
+            (Left(BoardError.IssueAlreadyExists(issue.frontmatter.id.value)), state)
+          case None    =>
+            val created = issue.copy(column = column)
+            (Right(created), state.updated(workspacePath, byId.updated(issue.frontmatter.id, created)))
+      }.absolve
+
+    override def moveIssue(workspacePath: String, issueId: BoardIssueId, toColumn: BoardColumn)
+      : IO[BoardError, BoardIssue] =
+      ref.modify { state =>
+        val byId = state.getOrElse(workspacePath, Map.empty)
+        byId.get(issueId) match
+          case None        => (Left(BoardError.IssueNotFound(issueId.value)), state)
+          case Some(issue) =>
+            val moved = issue.copy(column = toColumn)
+            (Right(moved), state.updated(workspacePath, byId.updated(issueId, moved)))
+      }.absolve
+
+    override def updateIssue(
+      workspacePath: String,
+      issueId: BoardIssueId,
+      update: IssueFrontmatter => IssueFrontmatter,
+    ): IO[BoardError, BoardIssue] =
+      ref.modify { state =>
+        val byId = state.getOrElse(workspacePath, Map.empty)
+        byId.get(issueId) match
+          case None        => (Left(BoardError.IssueNotFound(issueId.value)), state)
+          case Some(issue) =>
+            val updated = issue.copy(frontmatter = update(issue.frontmatter))
+            (Right(updated), state.updated(workspacePath, byId.updated(issueId, updated)))
+      }.absolve
+
+    override def deleteIssue(workspacePath: String, issueId: BoardIssueId): IO[BoardError, Unit] =
+      ref.update(state => state.updated(workspacePath, state.getOrElse(workspacePath, Map.empty) - issueId)).unit
+
+    override def listIssues(workspacePath: String, column: BoardColumn): IO[BoardError, List[BoardIssue]] =
+      ref.get.map(_.getOrElse(workspacePath, Map.empty).values.filter(_.column == column).toList)
+
+    override def invalidateWorkspace(workspacePath: String): UIO[Unit] = ZIO.unit
+
+  object RecordingBoardRepo:
+    val refLayer: ULayer[Ref[Map[String, Map[BoardIssueId, BoardIssue]]]]                        =
+      ZLayer.fromZIO(Ref.make(Map.empty[String, Map[BoardIssueId, BoardIssue]]))
+    val layer: ZLayer[Ref[Map[String, Map[BoardIssueId, BoardIssue]]], Nothing, BoardRepository] =
+      ZLayer.fromFunction(RecordingBoardRepo.apply)
+
   private val plannerStructuredResponseJson =
     """{"summary":"Generated plan","issues":[{"draftId":"issue-1","title":"Design data model","description":"Define planner data structures","issueType":"task","priority":"high","estimate":"M","requiredCapabilities":["scala","zio"],"dependencyDraftIds":[],"acceptanceCriteria":"Model compiles","promptTemplate":"Implement the data model","kaizenSkills":["task-planning"],"proofOfWorkRequirements":["tests pass","coverage > 80%"],"included":true},{"draftId":"issue-2","title":"Wire controller","description":"Expose planner routes","issueType":"task","priority":"medium","estimate":"S","requiredCapabilities":[],"dependencyDraftIds":["issue-1"],"acceptanceCriteria":"Routes are reachable","promptTemplate":"Wire the planner controller","kaizenSkills":[],"proofOfWorkRequirements":[],"included":false}]}"""
 
@@ -102,6 +177,11 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
       |    }
       |  ]
       |}
+      |```""".stripMargin
+
+  private val plannerPlainTextResponse =
+    """```text
+      |The `greet` function, implemented as `get_greeting` in `src/main.rs`, already supports multi-language greetings for English ('en'), Italian ('it'), and German ('de'), with English as the default. The existing tests also cover these functionalities. No changes are needed.
       |```""".stripMargin
 
   private val testWorkspace = Workspace(
@@ -270,20 +350,55 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
     ): zio.stream.ZStream[Any, LlmError, llm4zio.providers.GeminiCliStreamEvent] =
       zio.stream.ZStream.fail(LlmError.ProviderError("unused", None)))
 
+  private val plainTextCliExecutorLayer
+    : ZLayer[Ref[Vector[llm4zio.providers.GeminiCliExecutionContext]], Nothing, GeminiCliExecutor] =
+    ZLayer.fromFunction { (contextRef: Ref[Vector[llm4zio.providers.GeminiCliExecutionContext]]) =>
+      new GeminiCliExecutor:
+        override def checkGeminiInstalled: IO[LlmError, Unit] = ZIO.unit
+        override def runGeminiProcess(
+          prompt: String,
+          config: LlmConfig,
+          executionContext: llm4zio.providers.GeminiCliExecutionContext,
+        ): IO[LlmError, String] =
+          contextRef.update(_ :+ executionContext) *> ZIO.fail(LlmError.ProviderError("unused", None))
+        override def runGeminiProcessStream(
+          prompt: String,
+          config: LlmConfig,
+          executionContext: llm4zio.providers.GeminiCliExecutionContext,
+        ): zio.stream.ZStream[Any, LlmError, llm4zio.providers.GeminiCliStreamEvent] =
+          zio.stream.ZStream.fromZIO(contextRef.update(_ :+ executionContext)).drain ++
+            zio.stream.ZStream.fromIterable(
+              List(
+                llm4zio.providers.GeminiCliStreamEvent.Message(
+                  role = Some("assistant"),
+                  content = Some(plannerPlainTextResponse),
+                  delta = true,
+                ),
+                llm4zio.providers.GeminiCliStreamEvent.Result(
+                  status = Some("success"),
+                  errorMessage = None,
+                  stats = None,
+                ),
+              )
+            )
+    }
+
   private val plannerLayer
     : ZLayer[
       Any,
       Nothing,
-      PlannerAgentService & ChatRepository & Ref[Vector[IssueEvent]] &
-        Ref[Vector[llm4zio.providers.GeminiCliExecutionContext]],
+      PlannerAgentService & ChatRepository & BoardRepository & Ref[Vector[IssueEvent]] &
+        Ref[Map[String, Map[BoardIssueId, BoardIssue]]] & Ref[Vector[llm4zio.providers.GeminiCliExecutionContext]],
     ] =
     ZLayer.make[
-      PlannerAgentService & ChatRepository & Ref[Vector[IssueEvent]] &
-        Ref[Vector[llm4zio.providers.GeminiCliExecutionContext]]
+      PlannerAgentService & ChatRepository & BoardRepository & Ref[Vector[IssueEvent]] &
+        Ref[Map[String, Map[BoardIssueId, BoardIssue]]] & Ref[Vector[llm4zio.providers.GeminiCliExecutionContext]]
     ](
       InMemoryChatRepo.layer,
       RecordingIssueRepo.refLayer,
       RecordingIssueRepo.layer,
+      RecordingBoardRepo.refLayer,
+      RecordingBoardRepo.layer,
       testWorkspaceRepository,
       testConfigRepository,
       noopActivityHub,
@@ -301,6 +416,8 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
       InMemoryChatRepo.layer,
       RecordingIssueRepo.refLayer,
       RecordingIssueRepo.layer,
+      RecordingBoardRepo.refLayer,
+      RecordingBoardRepo.layer,
       testWorkspaceRepository,
       testConfigRepository,
       noopActivityHub,
@@ -324,6 +441,8 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
       InMemoryChatRepo.layer,
       RecordingIssueRepo.refLayer,
       RecordingIssueRepo.layer,
+      RecordingBoardRepo.refLayer,
+      RecordingBoardRepo.layer,
       testWorkspaceRepository,
       testConfigRepository,
       noopActivityHub,
@@ -348,6 +467,8 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
       InMemoryChatRepo.layer,
       RecordingIssueRepo.refLayer,
       RecordingIssueRepo.layer,
+      RecordingBoardRepo.refLayer,
+      RecordingBoardRepo.layer,
       testWorkspaceRepository,
       testConfigRepository,
       noopActivityHub,
@@ -355,6 +476,32 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
       stubHttpClient,
       cliContextRefLayer,
       geminiStyleCliExecutorLayer,
+      startupAiConfigLayer,
+      PromptLoader.reloading,
+      PlannerAgentService.live,
+    )
+
+  private val plannerLayerWithPlainTextResponse
+    : ZLayer[
+      Any,
+      Nothing,
+      PlannerAgentService & ChatRepository & Ref[Vector[llm4zio.providers.GeminiCliExecutionContext]],
+    ] =
+    ZLayer.make[
+      PlannerAgentService & ChatRepository & Ref[Vector[llm4zio.providers.GeminiCliExecutionContext]]
+    ](
+      InMemoryChatRepo.layer,
+      RecordingIssueRepo.refLayer,
+      RecordingIssueRepo.layer,
+      RecordingBoardRepo.refLayer,
+      RecordingBoardRepo.layer,
+      testWorkspaceRepository,
+      testConfigRepository,
+      noopActivityHub,
+      testConfigResolver,
+      stubHttpClient,
+      cliContextRefLayer,
+      plainTextCliExecutorLayer,
       startupAiConfigLayer,
       PromptLoader.reloading,
       PlannerAgentService.live,
@@ -429,11 +576,43 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
           state.preview.issues.head.proofOfWorkRequirements.nonEmpty,
         )
       }.provideLayer(plannerLayerWithGeminiStyleResponse),
-      test("confirmPlan emits issue, prompt, acceptance, tag, workspace, and dependency events") {
+      test("startSession tolerates plain text planner responses by synthesizing an empty preview") {
+        for
+          service <- ZIO.service[PlannerAgentService]
+          start   <- service.startSession("Plan Rust unit tests", Some("ws-1"))
+          state   <- awaitSettledPreview(service, start.conversationId)
+        yield assertTrue(
+          state.lastError.isEmpty,
+          state.preview.issues.isEmpty,
+          state.preview.summary.contains("No changes are needed"),
+        )
+      }.provideLayer(plannerLayerWithPlainTextResponse),
+      test("confirmPlan creates board issue for workspace plans and skips event-store creation") {
+        for
+          service   <- ZIO.service[PlannerAgentService]
+          boardRepo <- ZIO.service[BoardRepository]
+          ref       <- ZIO.service[Ref[Vector[IssueEvent]]]
+          start     <- service.startSession("Plan a new planner feature", Some("ws-1"))
+          _         <- awaitSettledPreview(service, start.conversationId)
+          result    <- service.confirmPlan(start.conversationId)
+          events    <- ref.get
+          todo      <- boardRepo.listIssues(testWorkspace.localPath, BoardColumn.Todo)
+        yield assertTrue(
+          result.issueIds.size == 1,
+          events.isEmpty,
+          todo.size == 1,
+          todo.head.frontmatter.id.value == result.issueIds.head.value,
+          todo.head.frontmatter.tags.contains("skill:task-planning"),
+          todo.head.frontmatter.acceptanceCriteria.nonEmpty,
+          todo.head.frontmatter.estimate.contains(IssueEstimate.M),
+          todo.head.frontmatter.proofOfWork.nonEmpty,
+        )
+      }.provideLayer(plannerLayer),
+      test("confirmPlan emits events for non-workspace plans") {
         for
           service <- ZIO.service[PlannerAgentService]
           ref     <- ZIO.service[Ref[Vector[IssueEvent]]]
-          start   <- service.startSession("Plan a new planner feature", Some("ws-1"))
+          start   <- service.startSession("Plan a new planner feature", None)
           _       <- awaitSettledPreview(service, start.conversationId)
           result  <- service.confirmPlan(start.conversationId)
           events  <- ref.get
@@ -447,13 +626,13 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
           events.exists(_.isInstanceOf[IssueEvent.KaizenSkillUpdated]),
           events.exists(_.isInstanceOf[IssueEvent.ProofOfWorkRequirementsUpdated]),
           events.exists(_.isInstanceOf[IssueEvent.MovedToTodo]),
-          events.count(_.isInstanceOf[IssueEvent.WorkspaceLinked]) == 1,
+          !events.exists(_.isInstanceOf[IssueEvent.WorkspaceLinked]),
           events.exists {
             case IssueEvent.TagsUpdated(_, tags, _) => tags.contains("skill:task-planning")
             case _                                  => false
           },
         )
-      },
+      }.provideLayer(plannerLayer),
       test("updatePreview validates blank titles") {
         for
           service <- ZIO.service[PlannerAgentService]

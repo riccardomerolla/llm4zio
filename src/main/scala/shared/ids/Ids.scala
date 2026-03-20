@@ -140,3 +140,23 @@ object Ids:
 
     given JsonCodec[EventId] = JsonCodec.string.transform(EventId.apply, _.value)
     given Schema[EventId]    = stringSchema.transform(EventId.apply, _.value)
+
+  opaque type BoardIssueId = String
+  object BoardIssueId:
+    private val kebabCaseRegex = "^[a-z0-9]+(?:-[a-z0-9]+)*$".r
+
+    def apply(value: String): BoardIssueId = value
+
+    def fromString(value: String): Either[String, BoardIssueId] =
+      val normalized = value.trim.toLowerCase
+      if normalized.isEmpty then Left("Board issue id cannot be empty")
+      else
+        kebabCaseRegex.findFirstIn(normalized) match
+          case Some(_) => Right(normalized)
+          case None    => Left(s"Board issue id '$value' must be kebab-case")
+
+    extension (id: BoardIssueId)
+      def value: String = id
+
+    given JsonCodec[BoardIssueId] = JsonCodec.string.transform(BoardIssueId.apply, _.value)
+    given Schema[BoardIssueId]    = stringSchema.transform(BoardIssueId.apply, _.value)

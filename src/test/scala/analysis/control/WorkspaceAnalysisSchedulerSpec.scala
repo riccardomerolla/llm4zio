@@ -8,10 +8,11 @@ import zio.test.*
 import activity.control.ActivityHub
 import activity.entity.{ ActivityEvent, ActivityEventType }
 import analysis.entity.{ AnalysisDoc, AnalysisEvent, AnalysisRepository, AnalysisType }
+import board.entity.*
 import db.{ PersistenceError as DbPersistenceError, * }
-import issues.entity.*
 import shared.errors.PersistenceError
-import shared.ids.Ids.{ AgentId, AnalysisDocId, IssueId }
+import shared.ids.Ids.{ AgentId, AnalysisDocId, BoardIssueId }
+import workspace.entity.*
 
 object WorkspaceAnalysisSchedulerSpec extends ZIOSpecDefault:
 
@@ -20,7 +21,7 @@ object WorkspaceAnalysisSchedulerSpec extends ZIOSpecDefault:
     countsRef: Ref[Map[AnalysisType, Int]],
     docsRef: Ref[List[AnalysisDoc]],
     activityRef: Ref[List[ActivityEvent]],
-    issuesRef: Ref[Map[IssueId, AgentIssue]],
+    boardRef: Ref[Map[BoardIssueId, BoardIssue]],
     releaseAll: UIO[Unit],
   )
 
@@ -40,57 +41,6 @@ object WorkspaceAnalysisSchedulerSpec extends ZIOSpecDefault:
   final private class StubActivityHub(activityRef: Ref[List[ActivityEvent]]) extends ActivityHub:
     override def publish(event: ActivityEvent): UIO[Unit] = activityRef.update(_ :+ event)
     override def subscribe: UIO[Dequeue[ActivityEvent]]   = Queue.unbounded[ActivityEvent]
-
-  final private class StubIssueRepository(issuesRef: Ref[Map[IssueId, AgentIssue]]) extends IssueRepository:
-    override def append(event: IssueEvent): IO[PersistenceError, Unit] =
-      issuesRef.modify { current =>
-        val updated = event match
-          case created: IssueEvent.Created           =>
-            current.updated(
-              created.issueId,
-              AgentIssue(
-                id = created.issueId,
-                runId = None,
-                conversationId = None,
-                title = created.title,
-                description = created.description,
-                issueType = created.issueType,
-                priority = created.priority,
-                requiredCapabilities = created.requiredCapabilities,
-                state = IssueState.Backlog(created.occurredAt),
-                tags = Nil,
-                contextPath = "",
-                sourceFolder = "",
-              ),
-            )
-          case tagsUpdated: IssueEvent.TagsUpdated   =>
-            current.updatedWith(tagsUpdated.issueId)(_.map(_.copy(tags = tagsUpdated.tags)))
-          case linked: IssueEvent.WorkspaceLinked    =>
-            current.updatedWith(linked.issueId)(_.map(_.copy(workspaceId = Some(linked.workspaceId))))
-          case moved: IssueEvent.MovedToHumanReview  =>
-            current.updatedWith(moved.issueId)(_.map(_.copy(state = IssueState.HumanReview(moved.movedAt))))
-          case attached: IssueEvent.AnalysisAttached =>
-            current.updatedWith(attached.issueId)(_.map(_.copy(analysisDocIds = attached.analysisDocIds)))
-          case _                                     =>
-            current
-        ((), updated)
-      }
-
-    override def get(id: IssueId): IO[PersistenceError, AgentIssue] =
-      issuesRef.get.flatMap(issues =>
-        ZIO.fromOption(issues.get(id)).orElseFail(PersistenceError.NotFound("issue", id.value))
-      )
-
-    override def history(id: IssueId): IO[PersistenceError, List[IssueEvent]] =
-      ZIO.succeed(Nil)
-
-    override def list(filter: IssueFilter): IO[PersistenceError, List[AgentIssue]] =
-      issuesRef.get.map(_.values.toList.filter(issue =>
-        filter.states.isEmpty || filter.states.contains(IssueStateTag.fromState(issue.state))
-      ))
-
-    override def delete(id: IssueId): IO[PersistenceError, Unit] =
-      issuesRef.update(_ - id).unit
 
   final private class StubTaskRepository(settings: Map[String, String]) extends TaskRepository:
     override def createRun(run: TaskRunRow): IO[DbPersistenceError, Long]                           =
@@ -120,6 +70,71 @@ object WorkspaceAnalysisSchedulerSpec extends ZIOSpecDefault:
     override def upsertSetting(key: String, value: String): IO[DbPersistenceError, Unit]            =
       ZIO.fail(DbPersistenceError.QueryFailed("upsertSetting", "unused"))
 
+  final private class StubWorkspaceRepository(workspaces: List[Workspace]) extends WorkspaceRepository:
+    override def append(event: WorkspaceEvent): IO[PersistenceError, Unit]                      = ZIO.unit
+    override def list: IO[PersistenceError, List[Workspace]]                                    = ZIO.succeed(workspaces)
+    override def get(id: String): IO[PersistenceError, Option[Workspace]]                       = ZIO.succeed(workspaces.find(_.id == id))
+    override def delete(id: String): IO[PersistenceError, Unit]                                 = ZIO.unit
+    override def appendRun(event: WorkspaceRunEvent): IO[PersistenceError, Unit]                = ZIO.unit
+    override def listRuns(workspaceId: String): IO[PersistenceError, List[WorkspaceRun]]        = ZIO.succeed(Nil)
+    override def listRunsByIssueRef(issueRef: String): IO[PersistenceError, List[WorkspaceRun]] = ZIO.succeed(Nil)
+    override def getRun(id: String): IO[PersistenceError, Option[WorkspaceRun]]                 = ZIO.none
+
+  final private class StubBoardRepository(boardRef: Ref[Map[BoardIssueId, BoardIssue]]) extends BoardRepository:
+    override def initBoard(workspacePath: String): IO[BoardError, Unit]                                   = ZIO.unit
+    override def readBoard(workspacePath: String): IO[BoardError, Board]                                  =
+      boardRef.get.map(all =>
+        Board(
+          workspacePath,
+          BoardColumn.values.map(column => column -> all.values.filter(_.column == column).toList).toMap,
+        )
+      )
+    override def readIssue(workspacePath: String, issueId: BoardIssueId): IO[BoardError, BoardIssue]      =
+      boardRef.get.flatMap(all =>
+        ZIO.fromOption(all.get(issueId)).orElseFail(BoardError.IssueNotFound(issueId.value))
+      )
+    override def createIssue(workspacePath: String, column: BoardColumn, issue: BoardIssue)
+      : IO[BoardError, BoardIssue] =
+      boardRef
+        .modify { current =>
+          current.get(issue.frontmatter.id) match
+            case Some(_) =>
+              (Left(BoardError.IssueAlreadyExists(issue.frontmatter.id.value)), current)
+            case None    =>
+              val created = issue.copy(column = column)
+              (Right(created), current.updated(issue.frontmatter.id, created))
+        }
+        .absolve
+    override def moveIssue(workspacePath: String, issueId: BoardIssueId, toColumn: BoardColumn)
+      : IO[BoardError, BoardIssue] =
+      boardRef
+        .modify { current =>
+          current.get(issueId) match
+            case None        => (Left(BoardError.IssueNotFound(issueId.value)), current)
+            case Some(issue) =>
+              val moved = issue.copy(column = toColumn)
+              (Right(moved), current.updated(issueId, moved))
+        }
+        .absolve
+    override def updateIssue(
+      workspacePath: String,
+      issueId: BoardIssueId,
+      update: IssueFrontmatter => IssueFrontmatter,
+    ): IO[BoardError, BoardIssue] =
+      boardRef
+        .modify { current =>
+          current.get(issueId) match
+            case None        => (Left(BoardError.IssueNotFound(issueId.value)), current)
+            case Some(issue) =>
+              val updated = issue.copy(frontmatter = update(issue.frontmatter))
+              (Right(updated), current.updated(issueId, updated))
+        }
+        .absolve
+    override def deleteIssue(workspacePath: String, issueId: BoardIssueId): IO[BoardError, Unit]          = ZIO.unit
+    override def listIssues(workspacePath: String, column: BoardColumn): IO[BoardError, List[BoardIssue]] =
+      boardRef.get.map(_.values.filter(_.column == column).toList)
+    override def invalidateWorkspace(workspacePath: String): UIO[Unit]                                    = ZIO.unit
+
   private def makeHarness(blockTypes: Set[AnalysisType] = Set.empty, settings: Map[String, String] = Map.empty): ZIO[
     Scope,
     Nothing,
@@ -129,13 +144,29 @@ object WorkspaceAnalysisSchedulerSpec extends ZIOSpecDefault:
       countsRef     <- Ref.make(Map.empty[AnalysisType, Int])
       docsRef       <- Ref.make(List.empty[AnalysisDoc])
       activityRef   <- Ref.make(List.empty[ActivityEvent])
-      issuesRef     <- Ref.make(Map.empty[IssueId, AgentIssue])
+      boardRef      <- Ref.make(Map.empty[BoardIssueId, BoardIssue])
       blockers      <-
         ZIO.foreach(blockTypes)(analysisType => Promise.make[Nothing, Unit].map(analysisType -> _)).map(_.toMap)
       repository     = StubAnalysisRepository(docsRef)
       activityHub    = StubActivityHub(activityRef)
       taskRepository = StubTaskRepository(settings)
-      issueRepo      = StubIssueRepository(issuesRef)
+      workspaceRepo  = StubWorkspaceRepository(
+                         List(
+                           Workspace(
+                             id = "ws-1",
+                             name = "workspace-1",
+                             localPath = "/tmp/ws-1",
+                             defaultAgent = None,
+                             description = None,
+                             enabled = true,
+                             runMode = RunMode.Host,
+                             cliTool = "codex",
+                             createdAt = Instant.EPOCH,
+                             updatedAt = Instant.EPOCH,
+                           )
+                         )
+                       )
+      boardRepo      = StubBoardRepository(boardRef)
       runner         = new AnalysisAgentRunner:
                          override def runCodeReview(workspaceId: String): IO[AnalysisAgentRunnerError, AnalysisDoc]   =
                            run(workspaceId, AnalysisType.CodeReview)
@@ -171,12 +202,13 @@ object WorkspaceAnalysisSchedulerSpec extends ZIOSpecDefault:
                          repository = repository,
                          activityHub = activityHub,
                          taskRepository = taskRepository,
-                         issueRepository = issueRepo,
+                         boardRepository = boardRepo,
+                         workspaceRepository = workspaceRepo,
                          queue = queue,
                          runtimeState = runtimeState,
                        )
       releaseAll     = ZIO.foreachDiscard(blockers.values)(_.succeed(()).unit)
-    yield Harness(service, countsRef, docsRef, activityRef, issuesRef, releaseAll)
+    yield Harness(service, countsRef, docsRef, activityRef, boardRef, releaseAll)
 
   private def processQueued(service: WorkspaceAnalysisSchedulerLive, jobs: Int = 3): UIO[Unit] =
     ZIO.foreachDiscard(1 to jobs)(_ => service.worker)
@@ -242,49 +274,30 @@ object WorkspaceAnalysisSchedulerSpec extends ZIOSpecDefault:
         complete.forall(_.completedAt.nonEmpty),
       )
     },
-    test("completed analyses backfill latest docs onto existing HumanReview issues in the same workspace") {
-      val issueId = IssueId("issue-1")
-      for
-        harness <- makeHarness()
-        _       <- harness.issuesRef.set(
-                     Map(
-                       issueId -> AgentIssue(
-                         id = issueId,
-                         runId = None,
-                         conversationId = None,
-                         title = "Needs review",
-                         description = "desc",
-                         issueType = "Task",
-                         priority = "medium",
-                         requiredCapabilities = Nil,
-                         state = IssueState.HumanReview(Instant.EPOCH),
-                         tags = Nil,
-                         contextPath = "",
-                         sourceFolder = "",
-                         workspaceId = Some("ws-1"),
-                       )
-                     )
-                   )
-        _       <- harness.service.triggerManual("ws-1")
-        _       <- processQueued(harness.service)
-        issues  <- harness.issuesRef.get
-      yield assertTrue(
-        issues(issueId).analysisDocIds.size == 3
-      )
-    },
-    test("completed analyses create a HumanReview issue card when none exists for the workspace") {
+    test("completed analyses create one analysis review board issue when none exists for the workspace") {
       for
         harness <- makeHarness()
         _       <- harness.service.triggerManual("ws-1")
         _       <- processQueued(harness.service)
-        issues  <- harness.issuesRef.get.map(_.values.toList)
-        review   = issues.headOption
+        issues  <- harness.boardRef.get.map(_.values.toList)
+        review   = issues.find(_.frontmatter.tags.contains("analysis-review"))
       yield assertTrue(
         issues.size == 1,
-        review.exists(_.workspaceId.contains("ws-1")),
-        review.exists(_.tags.contains("analysis-review")),
-        review.exists(_.state.isInstanceOf[IssueState.HumanReview]),
-        review.exists(_.analysisDocIds.size == 3),
+        review.isDefined,
+        review.exists(_.column == BoardColumn.Review),
+        review.exists(_.frontmatter.tags.contains("analysis-review")),
+      )
+    },
+    test("completed analyses do not create duplicate analysis review board issues") {
+      for
+        harness <- makeHarness()
+        _       <- harness.service.triggerManual("ws-1")
+        _       <- processQueued(harness.service)
+        _       <- harness.service.triggerManual("ws-1")
+        _       <- processQueued(harness.service)
+        issues  <- harness.boardRef.get.map(_.values.toList)
+      yield assertTrue(
+        issues.count(_.frontmatter.tags.contains("analysis-review")) == 1
       )
     },
   )

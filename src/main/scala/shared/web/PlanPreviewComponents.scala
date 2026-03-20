@@ -110,9 +110,15 @@ object PlanPreviewComponents:
     val deps     = included.map(d => d.draftId -> d.dependencyDraftIds.filter(byId.contains).distinct).toMap
     val batches  = topoBatches(deps)
     val labels   = included.map(d => d.draftId -> d.title).toMap
+    val nodeIds  = included.zipWithIndex.map {
+      case (draft, index) =>
+        draft.draftId -> sanitizeMermaidNodeId(draft.draftId, index)
+    }.toMap
     val edges    =
-      included.flatMap(d => d.dependencyDraftIds.filter(byId.contains).map(dep => s"  \"$dep\" --> \"${d.draftId}\""))
-    val nodes    = included.map(d => s"  \"${d.draftId}\"[\"${escapeMermaid(labels(d.draftId))}\"]")
+      included.flatMap(d =>
+        d.dependencyDraftIds.filter(byId.contains).map(dep => s"  ${nodeIds(dep)} --> ${nodeIds(d.draftId)}")
+      )
+    val nodes    = included.map(d => s"  ${nodeIds(d.draftId)}[\"${escapeMermaid(labels(d.draftId))}\"]")
     val mermaid  =
       if included.isEmpty then "graph TD\n  empty[\"No included issues\"]"
       else (List("graph TD") ++ nodes ++ edges).mkString("\n")
@@ -262,4 +268,17 @@ object PlanPreviewComponents:
     loop(deps, Nil)
 
   def escapeMermaid(value: String): String =
-    value.replace("\"", "'")
+    value
+      .replaceAll("[\\r\\n\\t]+", " ")
+      .replaceAll("[\\[\\]{}|<>]", " ")
+      .replace("\"", "'")
+      .replace("`", "'")
+      .replace("\\", "/")
+      .replaceAll("\\s+", " ")
+      .trim
+      .take(120)
+
+  private def sanitizeMermaidNodeId(draftId: String, index: Int): String =
+    val base       = draftId.trim.toLowerCase.replaceAll("[^a-z0-9_\\-]", "_").replaceAll("_+", "_")
+    val normalized = if base.nonEmpty then base else s"issue_${index + 1}"
+    s"node_${index + 1}_$normalized"

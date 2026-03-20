@@ -19,12 +19,14 @@ import agent.control.AgentMatching
 import agent.entity.AgentRepository
 import agent.entity.api.AgentMatchSuggestion
 import analysis.entity.{ AnalysisRepository, AnalysisType }
+import board.control.BoardOrchestrator
+import board.entity.{ IssueEstimate as BoardIssueEstimate, IssuePriority as BoardIssuePriority, * }
 import db.{ ChatRepository, ConfigRepository, PersistenceError, TaskRepository }
 import issues.control.IssueAnalysisAttachment
 import issues.entity.api.*
 import issues.entity.{ AgentIssue as DomainIssue, * }
 import orchestration.control.{ IssueAssignmentOrchestrator, IssueDispatchStatusService }
-import shared.ids.Ids.{ AgentId, EventId, IssueId, TaskRunId }
+import shared.ids.Ids.{ AgentId, BoardIssueId, EventId, IssueId, TaskRunId }
 import shared.web.{ ErrorHandlingMiddleware, HtmlViews }
 import workspace.control.{ AssignRunRequest, WorkspaceRunService }
 import workspace.entity.WorkspaceRepository
@@ -41,6 +43,7 @@ object IssueController:
     : ZLayer[
       ChatRepository & TaskRepository & ConfigRepository & AgentRepository & IssueAssignmentOrchestrator &
         IssueRepository & WorkspaceRepository & WorkspaceRunService & ActivityHub & IssueDispatchStatusService &
+        BoardOrchestrator & BoardRepository &
         AnalysisRepository & IssueWorkReportProjection,
       Nothing,
       IssueController,
@@ -58,6 +61,8 @@ final case class IssueControllerLive(
   workspaceRunService: WorkspaceRunService,
   activityHub: ActivityHub,
   issueDispatchStatusService: IssueDispatchStatusService,
+  boardOrchestrator: BoardOrchestrator,
+  boardRepository: BoardRepository,
   analysisRepository: AnalysisRepository,
   issueWorkReportProjection: IssueWorkReportProjection,
 ) extends IssueController:
@@ -99,51 +104,56 @@ final case class IssueControllerLive(
     Method.POST / "issues"                                           -> handler { (req: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
-          form     <- parseForm(req)
-          title    <- required(form, "title")
-          content  <- required(form, "description")
-          estimate <- parseEstimate(optional(form, "estimate"))
-          now      <- Clock.instant
-          issueId   = IssueId.generate
-          tags      = parseTagList(form.get("tags"))
-          required  = parseCapabilityList(form.get("requiredCapabilities"))
-          event     = IssueEvent.Created(
-                        issueId = issueId,
-                        title = title,
-                        description = content,
-                        issueType = form.get("issueType").map(_.trim).filter(_.nonEmpty).getOrElse("task"),
-                        priority = form.get("priority").getOrElse("medium"),
-                        occurredAt = now,
-                        requiredCapabilities = required,
-                      )
-          _        <- issueRepository.append(event).mapError(mapIssueRepoError)
-          _        <- ZIO.when(tags.nonEmpty) {
-                        issueRepository.append(IssueEvent.TagsUpdated(issueId, tags, now)).mapError(mapIssueRepoError)
-                      }
-          _        <- persistStructuredFields(
-                        issueId = issueId,
-                        promptTemplate = optional(form, "promptTemplate"),
-                        acceptanceCriteria = optional(form, "acceptanceCriteria"),
-                        estimate = estimate,
-                        kaizenSkill = optional(form, "kaizenSkill"),
-                        proofOfWorkRequirements = parseProofOfWorkRequirements(form.get("proofOfWorkRequirements")),
-                        now = now,
-                      )
-          _        <- parseWorkspaceSelection(form).fold[IO[PersistenceError, Unit]](ZIO.unit) { workspaceId =>
-                        for
-                          _ <- ensureWorkspaceExists(workspaceId)
-                          _ <- issueRepository
-                                 .append(
-                                   IssueEvent.WorkspaceLinked(
-                                     issueId = issueId,
-                                     workspaceId = workspaceId,
-                                     occurredAt = now,
-                                   )
-                                 )
-                                 .mapError(mapIssueRepoError)
-                        yield ()
-                      }
-          redirect  = form.get("runId").map(id => s"/board?mode=list&run_id=$id").getOrElse("/board?mode=list")
+          form        <- parseForm(req)
+          title       <- required(form, "title")
+          content     <- required(form, "description")
+          estimate    <- parseEstimate(optional(form, "estimate"))
+          workspaceId  = parseWorkspaceSelection(form)
+          tags         = parseTagList(form.get("tags"))
+          requiredCaps = parseCapabilityList(form.get("requiredCapabilities"))
+          _           <- workspaceId match
+                           case Some(wsId) =>
+                             createWorkspaceBoardIssue(
+                               workspaceId = wsId,
+                               title = title,
+                               description = content,
+                               priority = parseIssuePriority(optional(form, "priority").getOrElse("medium")),
+                               tags = tags,
+                               requiredCapabilities = requiredCaps,
+                               acceptanceCriteria = optional(form, "acceptanceCriteria"),
+                               estimate = estimate,
+                             ).unit
+                           case None       =>
+                             for
+                               now    <- Clock.instant
+                               issueId = IssueId.generate
+                               event   = IssueEvent.Created(
+                                           issueId = issueId,
+                                           title = title,
+                                           description = content,
+                                           issueType = form.get("issueType").map(_.trim).filter(_.nonEmpty).getOrElse("task"),
+                                           priority = form.get("priority").getOrElse("medium"),
+                                           occurredAt = now,
+                                           requiredCapabilities = requiredCaps,
+                                         )
+                               _      <- issueRepository.append(event).mapError(mapIssueRepoError)
+                               _      <-
+                                 ZIO.when(tags.nonEmpty) {
+                                   issueRepository.append(IssueEvent.TagsUpdated(issueId, tags, now)).mapError(mapIssueRepoError)
+                                 }
+                               _      <- persistStructuredFields(
+                                           issueId = issueId,
+                                           promptTemplate = optional(form, "promptTemplate"),
+                                           acceptanceCriteria = optional(form, "acceptanceCriteria"),
+                                           estimate = estimate,
+                                           kaizenSkill = optional(form, "kaizenSkill"),
+                                           proofOfWorkRequirements = parseProofOfWorkRequirements(
+                                             form.get("proofOfWorkRequirements")
+                                           ),
+                                           now = now,
+                                         )
+                             yield ()
+          redirect     = form.get("runId").map(id => s"/board?mode=list&run_id=$id").getOrElse("/board?mode=list")
         yield Response(status = Status.SeeOther, headers = Headers(Header.Custom("Location", redirect)))
       }
     },
@@ -157,20 +167,35 @@ final case class IssueControllerLive(
         )
       }
     },
-    Method.GET / "issues" / string("id")                             -> handler { (id: String, _: Request) =>
+    Method.GET / "issues" / string("id")                             -> handler { (id: String, req: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
-          issue          <- issueRepository.get(IssueId(id)).mapError(mapIssueRepoError)
-          workspaces     <- workspaceRepository.list.mapError(mapIssueRepoError)
-          issueRuns      <- workspaceRepository.listRunsByIssueRef(s"#$id").mapError(mapIssueRepoError)
-          allAgents      <- agentRepository.list().mapError(mapIssueRepoError)
-          analysisDocs   <- loadIssueAnalysisContext(issue).mapError(mapIssueRepoError)
-          mergeHistory   <- loadMergeHistory(issue.id)
-          workReport     <- issueWorkReportProjection.get(issue.id)
-          availableAgents = allAgents.filter(_.enabled).map(registryAgentToAgentInfo)
+          workspaceHint                                      <- ZIO.succeed(req.queryParam("workspace").map(_.trim).filter(_.nonEmpty))
+          boardIssueOpt                                      <- resolveWorkspaceBoardIssue(id, workspaceHint)
+          issueRuns                                          <- workspaceRepository.listRunsByIssueRef(s"#$id").mapError(mapIssueRepoError)
+          workspaces                                         <- workspaceRepository.list.mapError(mapIssueRepoError)
+          allAgents                                          <- agentRepository.list().mapError(mapIssueRepoError)
+          availableAgents                                     = allAgents.filter(_.enabled).map(registryAgentToAgentInfo)
+          viewAndMeta                                        <- boardIssueOpt match
+                                                                  case Some((ws, boardIssue)) =>
+                                                                    for
+                                                                      analysisDocs <- loadWorkspaceAnalysisContext(ws.id).mapError(
+                                                                                        mapIssueRepoError
+                                                                                      )
+                                                                      mergeHistory <- loadMergeHistory(IssueId(id))
+                                                                      workReport   <- issueWorkReportProjection.get(IssueId(id))
+                                                                    yield (boardToView(boardIssue, ws.id), analysisDocs, mergeHistory, workReport)
+                                                                  case None                   =>
+                                                                    for
+                                                                      issue        <- issueRepository.get(IssueId(id)).mapError(mapIssueRepoError)
+                                                                      analysisDocs <- loadIssueAnalysisContext(issue).mapError(mapIssueRepoError)
+                                                                      mergeHistory <- loadMergeHistory(issue.id)
+                                                                      workReport   <- issueWorkReportProjection.get(issue.id)
+                                                                    yield (domainToView(issue), analysisDocs, mergeHistory, workReport)
+          (issueView, analysisDocs, mergeHistory, workReport) = viewAndMeta
         yield html(
           HtmlViews.issueDetail(
-            domainToView(issue),
+            issueView,
             issueRuns,
             availableAgents,
             analysisDocs,
@@ -189,59 +214,79 @@ final case class IssueControllerLive(
           .map(status => Response.json(status.toJson))
       }
     },
-    Method.GET / "issues" / string("id") / "edit"                    -> handler { (id: String, _: Request) =>
+    Method.GET / "issues" / string("id") / "edit"                    -> handler { (id: String, req: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
-          issue      <- issueRepository.get(IssueId(id)).mapError(mapIssueRepoError)
-          workspaces <- workspaceRepository.list.mapError(mapIssueRepoError)
-        yield html(HtmlViews.issueEditForm(domainToView(issue), workspaces.map(ws => ws.id -> ws.name)))
+          workspaceHint <- ZIO.succeed(req.queryParam("workspace").map(_.trim).filter(_.nonEmpty))
+          boardIssueOpt <- resolveWorkspaceBoardIssue(id, workspaceHint)
+          issue         <- boardIssueOpt match
+                             case Some((ws, boardIssue)) => ZIO.succeed(boardToView(boardIssue, ws.id))
+                             case None                   => issueRepository.get(IssueId(id)).mapError(mapIssueRepoError).map(domainToView)
+          workspaces    <- workspaceRepository.list.mapError(mapIssueRepoError)
+        yield html(HtmlViews.issueEditForm(issue, workspaces.map(ws => ws.id -> ws.name)))
       }
     },
     Method.POST / "issues" / string("id") / "edit"                   -> handler { (id: String, req: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
-          form     <- parseForm(req)
-          title    <- required(form, "title")
-          content  <- required(form, "description")
-          estimate <- parseEstimate(optional(form, "estimate"))
-          now      <- Clock.instant
-          issueId   = IssueId(id)
-          caps      = parseCapabilityList(form.get("requiredCapabilities"))
-          event     = IssueEvent.MetadataUpdated(
-                        issueId = issueId,
-                        title = title,
-                        description = content,
-                        issueType = form.get("issueType").map(_.trim).filter(_.nonEmpty).getOrElse("task"),
-                        priority = form.get("priority").map(_.trim).filter(_.nonEmpty).getOrElse("medium"),
-                        requiredCapabilities = caps,
-                        contextPath = form.get("contextPath").map(_.trim).getOrElse(""),
-                        sourceFolder = form.get("sourceFolder").map(_.trim).getOrElse(""),
-                        occurredAt = now,
-                      )
-          _        <- issueRepository.append(event).mapError(mapIssueRepoError)
-          tags      = parseTagList(form.get("tags"))
-          _        <- issueRepository.append(IssueEvent.TagsUpdated(issueId, tags, now)).mapError(mapIssueRepoError)
-          _        <- persistStructuredFields(
-                        issueId = issueId,
-                        promptTemplate = optional(form, "promptTemplate"),
-                        acceptanceCriteria = optional(form, "acceptanceCriteria"),
-                        estimate = estimate,
-                        kaizenSkill = optional(form, "kaizenSkill"),
-                        proofOfWorkRequirements = parseProofOfWorkRequirements(form.get("proofOfWorkRequirements")),
-                        now = now,
-                      )
-          _        <- parseWorkspaceSelection(form) match
-                        case Some(wsId) =>
-                          for
-                            _ <- ensureWorkspaceExists(wsId)
-                            _ <- issueRepository
-                                   .append(IssueEvent.WorkspaceLinked(issueId, wsId, now))
-                                   .mapError(mapIssueRepoError)
-                          yield ()
-                        case None       =>
-                          issueRepository
-                            .append(IssueEvent.WorkspaceUnlinked(issueId, now))
-                            .mapError(mapIssueRepoError)
+          form          <- parseForm(req)
+          workspaceHint  = parseWorkspaceSelection(form)
+          boardIssueOpt <- resolveWorkspaceBoardIssue(id, workspaceHint)
+          _             <- boardIssueOpt match
+                             case Some((ws, _)) =>
+                               updateWorkspaceBoardIssueFromForm(
+                                 issueId = id,
+                                 form = form,
+                                 workspaceIdHint = Some(ws.id),
+                               )
+                             case None          =>
+                               for
+                                 title    <- required(form, "title")
+                                 content  <- required(form, "description")
+                                 estimate <- parseEstimate(optional(form, "estimate"))
+                                 now      <- Clock.instant
+                                 issueId   = IssueId(id)
+                                 caps      = parseCapabilityList(form.get("requiredCapabilities"))
+                                 event     = IssueEvent.MetadataUpdated(
+                                               issueId = issueId,
+                                               title = title,
+                                               description = content,
+                                               issueType = form.get("issueType").map(_.trim).filter(_.nonEmpty).getOrElse("task"),
+                                               priority = form.get("priority").map(_.trim).filter(_.nonEmpty).getOrElse("medium"),
+                                               requiredCapabilities = caps,
+                                               contextPath = form.get("contextPath").map(_.trim).getOrElse(""),
+                                               sourceFolder = form.get("sourceFolder").map(_.trim).getOrElse(""),
+                                               occurredAt = now,
+                                             )
+                                 _        <- issueRepository.append(event).mapError(mapIssueRepoError)
+                                 tags      = parseTagList(form.get("tags"))
+                                 _        <- issueRepository
+                                               .append(IssueEvent.TagsUpdated(issueId, tags, now))
+                                               .mapError(mapIssueRepoError)
+                                 _        <- persistStructuredFields(
+                                               issueId = issueId,
+                                               promptTemplate = optional(form, "promptTemplate"),
+                                               acceptanceCriteria = optional(form, "acceptanceCriteria"),
+                                               estimate = estimate,
+                                               kaizenSkill = optional(form, "kaizenSkill"),
+                                               proofOfWorkRequirements = parseProofOfWorkRequirements(
+                                                 form.get("proofOfWorkRequirements")
+                                               ),
+                                               now = now,
+                                             )
+                                 _        <- parseWorkspaceSelection(form) match
+                                               case Some(wsId) =>
+                                                 for
+                                                   _ <- ensureWorkspaceExists(wsId)
+                                                   _ <- issueRepository
+                                                          .append(IssueEvent.WorkspaceLinked(issueId, wsId, now))
+                                                          .mapError(mapIssueRepoError)
+                                                 yield ()
+                                               case None       =>
+                                                 issueRepository
+                                                   .append(IssueEvent.WorkspaceUnlinked(issueId, now))
+                                                   .mapError(mapIssueRepoError)
+                               yield ()
         yield Response(status = Status.SeeOther, headers = Headers(Header.Custom("Location", s"/issues/$id")))
       }
     },
@@ -337,48 +382,54 @@ final case class IssueControllerLive(
                             .fromEither(body.fromJson[AgentIssueCreateRequest])
                             .mapError(err => PersistenceError.QueryFailed("json_parse", err))
           estimate     <- parseEstimate(issueRequest.estimate)
-          now          <- Clock.instant
-          issueId       = IssueId.generate
           tags          = parseTagList(issueRequest.tags)
           required      = issueRequest.requiredCapabilities.map(_.trim).filter(_.nonEmpty).distinct
-          event         = IssueEvent.Created(
-                            issueId = issueId,
-                            title = issueRequest.title,
-                            description = issueRequest.description,
-                            issueType = issueRequest.issueType,
-                            priority = issueRequest.priority.toString,
-                            occurredAt = now,
-                            requiredCapabilities = required,
-                          )
-          _            <- issueRepository.append(event).mapError(mapIssueRepoError)
-          _            <- ZIO.when(tags.nonEmpty) {
-                            issueRepository.append(IssueEvent.TagsUpdated(issueId, tags, now)).mapError(mapIssueRepoError)
-                          }
-          _            <- persistStructuredFields(
-                            issueId = issueId,
-                            promptTemplate = issueRequest.promptTemplate,
-                            acceptanceCriteria = issueRequest.acceptanceCriteria,
-                            estimate = estimate,
-                            kaizenSkill = issueRequest.kaizenSkill,
-                            proofOfWorkRequirements = sanitizeProofRequirements(issueRequest.proofOfWorkRequirements),
-                            now = now,
-                          )
-          _            <- issueRequest.workspaceId.fold[IO[PersistenceError, Unit]](ZIO.unit) { workspaceId =>
-                            for
-                              _ <- ensureWorkspaceExists(workspaceId)
-                              _ <- issueRepository
-                                     .append(
-                                       IssueEvent.WorkspaceLinked(
-                                         issueId = issueId,
-                                         workspaceId = workspaceId,
-                                         occurredAt = now,
-                                       )
-                                     )
-                                     .mapError(mapIssueRepoError)
-                            yield ()
-                          }
-          created      <- issueRepository.get(issueId).mapError(mapIssueRepoError)
-        yield Response.json(domainToView(created).toJson)
+          created      <- issueRequest.workspaceId.map(_.trim).filter(_.nonEmpty) match
+                            case Some(workspaceId) =>
+                              createWorkspaceBoardIssue(
+                                workspaceId = workspaceId,
+                                title = issueRequest.title,
+                                description = issueRequest.description,
+                                priority = issueRequest.priority,
+                                tags = tags,
+                                requiredCapabilities = required,
+                                acceptanceCriteria = issueRequest.acceptanceCriteria,
+                                estimate = estimate,
+                                assignedAgent = issueRequest.preferredAgent,
+                              )
+                            case None              =>
+                              for
+                                now     <- Clock.instant
+                                issueId  = IssueId.generate
+                                event    = IssueEvent.Created(
+                                             issueId = issueId,
+                                             title = issueRequest.title,
+                                             description = issueRequest.description,
+                                             issueType = issueRequest.issueType,
+                                             priority = issueRequest.priority.toString,
+                                             occurredAt = now,
+                                             requiredCapabilities = required,
+                                           )
+                                _       <- issueRepository.append(event).mapError(mapIssueRepoError)
+                                _       <- ZIO.when(tags.nonEmpty) {
+                                             issueRepository
+                                               .append(IssueEvent.TagsUpdated(issueId, tags, now))
+                                               .mapError(mapIssueRepoError)
+                                           }
+                                _       <- persistStructuredFields(
+                                             issueId = issueId,
+                                             promptTemplate = issueRequest.promptTemplate,
+                                             acceptanceCriteria = issueRequest.acceptanceCriteria,
+                                             estimate = estimate,
+                                             kaizenSkill = issueRequest.kaizenSkill,
+                                             proofOfWorkRequirements = sanitizeProofRequirements(
+                                               issueRequest.proofOfWorkRequirements
+                                             ),
+                                             now = now,
+                                           )
+                                created <- issueRepository.get(issueId).mapError(mapIssueRepoError)
+                              yield domainToView(created)
+        yield Response.json(created.toJson)
       }
     },
     Method.POST / "issues" / "from-template" / string("templateId")  -> handler { (templateId: String, req: Request) =>
@@ -408,40 +459,41 @@ final case class IssueControllerLive(
           _          <- ZIO
                           .fail(PersistenceError.QueryFailed("template", "Template produced an empty description"))
                           .when(description.trim.isEmpty)
-          now        <- Clock.instant
-          issueId     = IssueId.generate
-          event       = IssueEvent.Created(
-                          issueId = issueId,
-                          title = title,
-                          description = description,
-                          issueType = template.issueType,
-                          priority = template.priority.toString,
-                          occurredAt = now,
-                          requiredCapabilities = Nil,
-                        )
-          _          <- issueRepository.append(event).mapError(mapIssueRepoError)
-          _          <- ZIO.when(template.tags.nonEmpty) {
-                          issueRepository
-                            .append(IssueEvent.TagsUpdated(issueId, template.tags.distinct, now))
-                            .mapError(mapIssueRepoError)
-                        }
-          _          <- createReq.workspaceId.map(_.trim).filter(_.nonEmpty).fold[IO[PersistenceError, Unit]](ZIO.unit) {
-                          workspaceId =>
+          created    <- createReq.workspaceId.map(_.trim).filter(_.nonEmpty) match
+                          case Some(workspaceId) =>
+                            createWorkspaceBoardIssue(
+                              workspaceId = workspaceId,
+                              title = title,
+                              description = description,
+                              priority = template.priority,
+                              tags = template.tags.distinct,
+                              requiredCapabilities = Nil,
+                              acceptanceCriteria = None,
+                              estimate = None,
+                              assignedAgent = createReq.preferredAgent,
+                            )
+                          case None              =>
                             for
-                              _ <- ensureWorkspaceExists(workspaceId)
-                              _ <- issueRepository
-                                     .append(
-                                       IssueEvent.WorkspaceLinked(
-                                         issueId = issueId,
-                                         workspaceId = workspaceId,
-                                         occurredAt = now,
-                                       )
-                                     )
-                                     .mapError(mapIssueRepoError)
-                            yield ()
-                        }
-          created    <- issueRepository.get(issueId).mapError(mapIssueRepoError)
-        yield Response.json(domainToView(created).toJson)
+                              now     <- Clock.instant
+                              issueId  = IssueId.generate
+                              event    = IssueEvent.Created(
+                                           issueId = issueId,
+                                           title = title,
+                                           description = description,
+                                           issueType = template.issueType,
+                                           priority = template.priority.toString,
+                                           occurredAt = now,
+                                           requiredCapabilities = Nil,
+                                         )
+                              _       <- issueRepository.append(event).mapError(mapIssueRepoError)
+                              _       <- ZIO.when(template.tags.nonEmpty) {
+                                           issueRepository
+                                             .append(IssueEvent.TagsUpdated(issueId, template.tags.distinct, now))
+                                             .mapError(mapIssueRepoError)
+                                         }
+                              created <- issueRepository.get(issueId).mapError(mapIssueRepoError)
+                            yield domainToView(created)
+        yield Response.json(created.toJson)
       }
     },
     Method.GET / "api" / "issue-templates"                           -> handler { (_: Request) =>
@@ -479,10 +531,7 @@ final case class IssueControllerLive(
     Method.GET / "api" / "issues"                                    -> handler { (req: Request) =>
       val runIdStr = req.queryParam("run_id").map(_.trim).filter(_.nonEmpty)
       ErrorHandlingMiddleware.fromPersistence {
-        val filter = IssueFilter(runId = runIdStr.map(TaskRunId.apply))
-        issueRepository.list(filter).mapError(mapIssueRepoError).map(issues =>
-          Response.json(issues.map(domainToView).toJson)
-        )
+        loadApiIssues(runIdStr).map(issues => Response.json(issues.toJson))
       }
     },
     Method.GET / "api" / "pipelines"                                 -> handler { (_: Request) =>
@@ -589,10 +638,18 @@ final case class IssueControllerLive(
         yield Response.json(imported.toJson)
       }
     },
-    Method.GET / "api" / "issues" / string("id")                     -> handler { (id: String, _: Request) =>
+    Method.GET / "api" / "issues" / string("id")                     -> handler { (id: String, req: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
-        issueRepository.get(IssueId(id)).mapError(mapIssueRepoError)
-          .map(issue => Response.json(domainToView(issue).toJson))
+        val workspaceHint = req.queryParam("workspace").map(_.trim).filter(_.nonEmpty)
+        resolveWorkspaceBoardIssue(id, workspaceHint).flatMap {
+          case Some((ws, boardIssue)) =>
+            ZIO.succeed(Response.json(boardToView(boardIssue, ws.id).toJson))
+          case None                   =>
+            issueRepository
+              .get(IssueId(id))
+              .mapError(mapIssueRepoError)
+              .map(issue => Response.json(domainToView(issue).toJson))
+        }
       }
     },
     Method.PATCH / "api" / "issues" / string("id") / "assign"        -> handler { (id: String, req: Request) =>
@@ -610,17 +667,11 @@ final case class IssueControllerLive(
                               skipConversationBootstrap = workspaceForRun.isDefined,
                             )
           _              <- workspaceForRun.fold[IO[PersistenceError, Unit]](ZIO.unit) { workspaceId =>
-                              workspaceRunService
-                                .assign(
-                                  workspaceId,
-                                  AssignRunRequest(
-                                    issueRef = s"#$id",
-                                    prompt = executionPrompt(issue),
-                                    agentName = assignRequest.agentName,
-                                  ),
-                                )
-                                .mapError(err => PersistenceError.QueryFailed("workspace_assign", err.toString))
-                                .unit
+                              assignWorkspaceRunAndMarkStarted(
+                                issue = issue,
+                                workspaceId = workspaceId,
+                                agentName = assignRequest.agentName,
+                              )
                             }
           updated        <- issueRepository.get(IssueId(id)).mapError(mapIssueRepoError)
         yield Response.json(domainToView(updated).toJson)
@@ -920,6 +971,19 @@ final case class IssueControllerLive(
       case shared.errors.PersistenceError.StoreUnavailable(msg)              =>
         PersistenceError.QueryFailed("store", msg)
 
+  private def mapBoardError(error: BoardError): PersistenceError =
+    error match
+      case BoardError.BoardNotFound(value)            => PersistenceError.QueryFailed("board", s"Not found: $value")
+      case BoardError.IssueNotFound(value)            => PersistenceError.QueryFailed("board_issue", s"Not found: $value")
+      case BoardError.IssueAlreadyExists(value)       => PersistenceError.QueryFailed("board_issue_exists", value)
+      case BoardError.InvalidColumn(value)            => PersistenceError.QueryFailed("board_column", value)
+      case BoardError.ParseError(message)             => PersistenceError.QueryFailed("board_parse", message)
+      case BoardError.WriteError(path, message)       => PersistenceError.QueryFailed("board_write", s"$path: $message")
+      case BoardError.GitOperationFailed(op, message) => PersistenceError.QueryFailed("board_git", s"$op: $message")
+      case BoardError.DependencyCycle(issueIds)       =>
+        PersistenceError.QueryFailed("board_cycle", issueIds.mkString(","))
+      case BoardError.ConcurrencyConflict(message)    => PersistenceError.QueryFailed("board_concurrency", message)
+
   private def domainToView(i: DomainIssue): AgentIssueView =
     val (status, assignedAgent, assignedAt, completedAt, errorMessage) = i.state match
       case IssueState.Backlog(_)            => (IssueStatus.Backlog, None, None, None, None)
@@ -972,6 +1036,262 @@ final case class IssueControllerLive(
       updatedAt = assignedAt.orElse(completedAt).getOrElse(createdAt),
     )
 
+  private def boardToView(issue: BoardIssue, workspaceId: String): AgentIssueView =
+    val frontmatter                                                                                  = issue.frontmatter
+    val status: IssueStatus                                                                          = issue.column match
+      case BoardColumn.Backlog    => IssueStatus.Backlog
+      case BoardColumn.Todo       => IssueStatus.Todo
+      case BoardColumn.InProgress => IssueStatus.InProgress
+      case BoardColumn.Review     => IssueStatus.HumanReview
+      case BoardColumn.Done       => IssueStatus.Done
+      case BoardColumn.Archive    => IssueStatus.Done
+    val priority: IssuePriority                                                                      = frontmatter.priority match
+      case BoardIssuePriority.Critical => IssuePriority.Critical
+      case BoardIssuePriority.High     => IssuePriority.High
+      case BoardIssuePriority.Medium   => IssuePriority.Medium
+      case BoardIssuePriority.Low      => IssuePriority.Low
+    val estimate: Option[String]                                                                     = frontmatter.estimate.map {
+      case BoardIssueEstimate.XS => "XS"
+      case BoardIssueEstimate.S  => "S"
+      case BoardIssueEstimate.M  => "M"
+      case BoardIssueEstimate.L  => "L"
+      case BoardIssueEstimate.XL => "XL"
+    }
+    val (assignedAgent, assignedAt, errorMessage): (Option[String], Option[Instant], Option[String]) =
+      frontmatter.transientState match
+        case board.entity.TransientState.Assigned(agent, at) => (Some(agent), Some(at), frontmatter.failureReason)
+        case board.entity.TransientState.Rework(reason, at)  => (frontmatter.assignedAgent, Some(at), Some(reason))
+        case board.entity.TransientState.Merging(at)         => (frontmatter.assignedAgent, Some(at), frontmatter.failureReason)
+        case board.entity.TransientState.None                => (frontmatter.assignedAgent, None, frontmatter.failureReason)
+
+    AgentIssueView(
+      id = Some(frontmatter.id.value),
+      title = frontmatter.title,
+      description = issue.body,
+      issueType = "task",
+      tags = Option.when(frontmatter.tags.nonEmpty)(frontmatter.tags.mkString(",")),
+      requiredCapabilities =
+        Option.when(frontmatter.requiredCapabilities.nonEmpty)(frontmatter.requiredCapabilities.mkString(",")),
+      workspaceId = Some(workspaceId),
+      acceptanceCriteria =
+        Option.when(frontmatter.acceptanceCriteria.nonEmpty)(frontmatter.acceptanceCriteria.mkString("\n")),
+      estimate = estimate,
+      proofOfWorkRequirements = frontmatter.proofOfWork,
+      priority = priority,
+      status = status,
+      assignedAgent = assignedAgent,
+      assignedAt = assignedAt,
+      completedAt = frontmatter.completedAt,
+      errorMessage = errorMessage,
+      createdAt = frontmatter.createdAt,
+      updatedAt = assignedAt.orElse(frontmatter.completedAt).getOrElse(frontmatter.createdAt),
+    )
+
+  private def parseBoardIssueId(raw: String): IO[PersistenceError, BoardIssueId] =
+    ZIO.fromEither(BoardIssueId.fromString(raw)).mapError(err => PersistenceError.QueryFailed("board_issue_id", err))
+
+  private def parseIssuePriority(raw: String): IssuePriority =
+    raw.trim.toLowerCase match
+      case "critical" => IssuePriority.Critical
+      case "high"     => IssuePriority.High
+      case "low"      => IssuePriority.Low
+      case _          => IssuePriority.Medium
+
+  private def toBoardPriority(priority: IssuePriority): BoardIssuePriority =
+    priority match
+      case IssuePriority.Critical => BoardIssuePriority.Critical
+      case IssuePriority.High     => BoardIssuePriority.High
+      case IssuePriority.Medium   => BoardIssuePriority.Medium
+      case IssuePriority.Low      => BoardIssuePriority.Low
+
+  private def toBoardEstimate(estimate: Option[String]): IO[PersistenceError, Option[BoardIssueEstimate]] =
+    estimate match
+      case None        => ZIO.none
+      case Some("XS")  => ZIO.succeed(Some(BoardIssueEstimate.XS))
+      case Some("S")   => ZIO.succeed(Some(BoardIssueEstimate.S))
+      case Some("M")   => ZIO.succeed(Some(BoardIssueEstimate.M))
+      case Some("L")   => ZIO.succeed(Some(BoardIssueEstimate.L))
+      case Some("XL")  => ZIO.succeed(Some(BoardIssueEstimate.XL))
+      case Some(other) =>
+        ZIO.fail(
+          PersistenceError.QueryFailed("issue_estimate", s"Unsupported board estimate '$other'")
+        )
+
+  private def parseAcceptanceCriteria(raw: Option[String]): List[String] =
+    raw.toList.flatMap(_.split("[\\n,]").toList).map(_.trim).filter(_.nonEmpty)
+
+  private def resolveWorkspace(workspaceId: String): IO[PersistenceError, workspace.entity.Workspace] =
+    workspaceRepository
+      .get(workspaceId)
+      .mapError(mapIssueRepoError)
+      .flatMap(opt =>
+        ZIO.fromOption(opt).orElseFail(PersistenceError.QueryFailed("workspace", s"Not found: $workspaceId"))
+      )
+
+  private def resolveWorkspaceBoardIssue(
+    issueId: String,
+    workspaceHint: Option[String] = None,
+  ): IO[PersistenceError, Option[(workspace.entity.Workspace, BoardIssue)]] =
+    parseBoardIssueId(issueId).either.flatMap {
+      case Left(_)        => ZIO.none
+      case Right(boardId) =>
+        workspaceRepository
+          .list
+          .mapError(mapIssueRepoError)
+          .flatMap { workspaces =>
+            val prioritized = workspaceHint match
+              case Some(wsId) =>
+                workspaces.sortBy(ws => if ws.id == wsId then 0 else 1)
+              case None       => workspaces
+
+            ZIO
+              .foreach(prioritized) { ws =>
+                boardRepository
+                  .readIssue(ws.localPath, boardId)
+                  .map(issue => Some(ws -> issue))
+                  .catchAll {
+                    case _: BoardError.IssueNotFound => ZIO.none
+                    case _: BoardError.BoardNotFound => ZIO.none
+                    case other                       => ZIO.fail(mapBoardError(other))
+                  }
+              }
+              .map(_.collectFirst { case Some(found) => found })
+          }
+    }
+
+  private def createWorkspaceBoardIssue(
+    workspaceId: String,
+    title: String,
+    description: String,
+    priority: IssuePriority,
+    tags: List[String],
+    requiredCapabilities: List[String],
+    acceptanceCriteria: Option[String],
+    estimate: Option[String],
+    assignedAgent: Option[String] = None,
+  ): IO[PersistenceError, AgentIssueView] =
+    for
+      workspace <- resolveWorkspace(workspaceId)
+      _         <- boardRepository.initBoard(workspace.localPath).mapError(mapBoardError)
+      now       <- Clock.instant
+      boardId    = BoardIssueId(IssueId.generate.value.toLowerCase)
+      boardPrio  = toBoardPriority(priority)
+      boardEst  <- toBoardEstimate(estimate)
+      issue     <- boardRepository
+                     .createIssue(
+                       workspace.localPath,
+                       BoardColumn.Backlog,
+                       BoardIssue(
+                         frontmatter = IssueFrontmatter(
+                           id = boardId,
+                           title = title.trim,
+                           priority = boardPrio,
+                           assignedAgent = assignedAgent.map(_.trim).filter(_.nonEmpty),
+                           requiredCapabilities = requiredCapabilities,
+                           blockedBy = Nil,
+                           tags = tags,
+                           acceptanceCriteria = parseAcceptanceCriteria(acceptanceCriteria),
+                           estimate = boardEst,
+                           proofOfWork = Nil,
+                           transientState = board.entity.TransientState.None,
+                           branchName = None,
+                           failureReason = None,
+                           completedAt = None,
+                           createdAt = now,
+                         ),
+                         body = description.trim,
+                         column = BoardColumn.Backlog,
+                         directoryPath = "",
+                       ),
+                     )
+                     .mapError(mapBoardError)
+    yield boardToView(issue, workspace.id)
+
+  private def updateWorkspaceBoardIssueFromForm(
+    issueId: String,
+    form: Map[String, String],
+    workspaceIdHint: Option[String],
+  ): IO[PersistenceError, Unit] =
+    for
+      title                 <- required(form, "title")
+      description           <- required(form, "description")
+      found                 <- resolveWorkspaceBoardIssue(issueId, workspaceIdHint.orElse(parseWorkspaceSelection(form)))
+      (workspace, existing) <-
+        ZIO
+          .fromOption(found)
+          .orElseFail(PersistenceError.QueryFailed("board_issue", s"Not found: $issueId"))
+      caps                   = parseCapabilityList(form.get("requiredCapabilities"))
+      tags                   = parseTagList(form.get("tags"))
+      boardPrio              = toBoardPriority(parseIssuePriority(optional(form, "priority").getOrElse("medium")))
+      estimate              <- parseEstimate(optional(form, "estimate"))
+      boardEst              <- toBoardEstimate(estimate)
+      updatedIssue           = existing.copy(
+                                 frontmatter = existing.frontmatter.copy(
+                                   title = title.trim,
+                                   priority = boardPrio,
+                                   requiredCapabilities = caps,
+                                   tags = tags,
+                                   acceptanceCriteria = parseAcceptanceCriteria(optional(form, "acceptanceCriteria")),
+                                   estimate = boardEst,
+                                 ),
+                                 body = description.trim,
+                               )
+      _                     <- boardRepository
+                                 .deleteIssue(workspace.localPath, existing.frontmatter.id)
+                                 .mapError(mapBoardError)
+      _                     <- boardRepository
+                                 .createIssue(
+                                   workspace.localPath,
+                                   existing.column,
+                                   updatedIssue,
+                                 )
+                                 .unit
+                                 .mapError(mapBoardError)
+    yield ()
+
+  private val boardColumns: List[BoardColumn] = List(
+    BoardColumn.Backlog,
+    BoardColumn.Todo,
+    BoardColumn.InProgress,
+    BoardColumn.Review,
+    BoardColumn.Done,
+    BoardColumn.Archive,
+  )
+
+  private def loadWorkspaceBoardIssues(workspaceFilter: Option[String] = None)
+    : IO[PersistenceError, List[AgentIssueView]] =
+    workspaceRepository
+      .list
+      .mapError(mapIssueRepoError)
+      .map(_.filter(ws => workspaceFilter.forall(_.equalsIgnoreCase(ws.id))))
+      .flatMap { workspaces =>
+        ZIO.foreach(workspaces) { ws =>
+          ZIO
+            .foreach(boardColumns)(column => boardRepository.listIssues(ws.localPath, column))
+            .map(_.flatten.map(issue => boardToView(issue, ws.id)))
+            .catchAll {
+              case _: BoardError.BoardNotFound => ZIO.succeed(Nil)
+              case other                       => ZIO.fail(mapBoardError(other))
+            }
+        }.map(_.flatten)
+      }
+
+  private def loadApiIssues(runIdStr: Option[String]): IO[PersistenceError, List[AgentIssueView]] =
+    runIdStr match
+      case Some(runId) =>
+        issueRepository
+          .list(IssueFilter(runId = Some(TaskRunId(runId))))
+          .mapError(mapIssueRepoError)
+          .map(_.map(domainToView))
+      case None        =>
+        for
+          boardIssues <- loadWorkspaceBoardIssues()
+          esIssues    <- issueRepository
+                           .list(IssueFilter())
+                           .mapError(mapIssueRepoError)
+                           .map(_.filter(_.workspaceId.forall(_.trim.isEmpty)).map(domainToView))
+        yield boardIssues ++ esIssues
+
   private def loadBoardIssues(
     query: Option[String],
     tagFilter: Option[String],
@@ -980,22 +1300,24 @@ final case class IssueControllerLive(
     priorityFilter: Option[String],
     statusFilter: Option[String],
   ): IO[PersistenceError, List[AgentIssueView]] =
-    issueRepository
-      .list(IssueFilter())
-      .mapError(mapIssueRepoError)
-      .map(_.map(domainToView))
-      .map(filterIssues(_, query, tagFilter))
-      .map(_.filter(issue =>
-        workspaceFilter.forall(_.equalsIgnoreCase(issue.workspaceId.getOrElse(""))) &&
-        agentFilter.forall(agent =>
-          issue.assignedAgent.exists(_.equalsIgnoreCase(agent)) || issue.preferredAgent.exists(
-            _.equalsIgnoreCase(agent)
-          )
-        ) &&
-        statusFilter.forall(status => statusMatches(issue.status, status)) &&
-        priorityFilter.forall(p => issue.priority.toString.equalsIgnoreCase(p))
-      ))
-      .map(_.filter(_.status != IssueStatus.Skipped))
+    for
+      boardIssues <- loadWorkspaceBoardIssues(workspaceFilter)
+      esIssues    <- issueRepository
+                       .list(IssueFilter())
+                       .mapError(mapIssueRepoError)
+                       .map(_.filter(_.workspaceId.forall(_.trim.isEmpty)).map(domainToView))
+      merged       = boardIssues ++ esIssues
+      filtered     = filterIssues(merged, query, tagFilter).filter(issue =>
+                       workspaceFilter.forall(_.equalsIgnoreCase(issue.workspaceId.getOrElse(""))) &&
+                       agentFilter.forall(agent =>
+                         issue.assignedAgent.exists(_.equalsIgnoreCase(agent)) || issue.preferredAgent.exists(
+                           _.equalsIgnoreCase(agent)
+                         )
+                       ) &&
+                       statusFilter.forall(status => statusMatches(issue.status, status)) &&
+                       priorityFilter.forall(p => issue.priority.toString.equalsIgnoreCase(p))
+                     )
+    yield filtered.filter(_.status != IssueStatus.Skipped)
 
   private def loadIssueAnalysisContext(
     issue: DomainIssue
@@ -1017,6 +1339,24 @@ final case class IssueControllerLive(
           ZIO.succeed(None)
       }
     }.map(_.flatten)
+
+  private def loadWorkspaceAnalysisContext(
+    workspaceId: String
+  ): IO[shared.errors.PersistenceError, List[AnalysisContextDocView]] =
+    for
+      docs          <- analysisRepository.listByWorkspace(workspaceId)
+      workspacePath <- loadWorkspacePath(workspaceId)
+    yield docs
+      .sortBy(_.updatedAt)
+      .reverse
+      .map(doc =>
+        AnalysisContextDocView(
+          title = analysisTitle(doc.analysisType),
+          content = doc.content,
+          filePath = doc.filePath,
+          vscodeUrl = workspacePath.map(buildVscodeUrl(_, doc.filePath)),
+        )
+      )
 
   private def loadWorkspacePath(workspaceId: String): IO[shared.errors.PersistenceError, Option[String]] =
     workspaceRepository.get(workspaceId).map(_.flatMap(ws => Option(ws.localPath).map(_.trim).filter(_.nonEmpty)))
@@ -1835,8 +2175,23 @@ final case class IssueControllerLive(
     workspaceId: String,
     agentName: String,
   ): IO[PersistenceError, Unit] =
+    val appendLegacyStartedEvent =
+      for
+        now <- Clock.instant
+        _   <- issueRepository
+                 .append(
+                   IssueEvent.Started(
+                     issueId = issue.id,
+                     agent = AgentId(agentName),
+                     startedAt = now,
+                     occurredAt = now,
+                   )
+                 )
+                 .mapError(mapIssueRepoError)
+      yield ()
+
     for
-      _   <- workspaceRunService
+      run <- workspaceRunService
                .assign(
                  workspaceId,
                  AssignRunRequest(
@@ -1846,17 +2201,35 @@ final case class IssueControllerLive(
                  ),
                )
                .mapError(err => PersistenceError.QueryFailed("workspace_assign", err.toString))
-      now <- Clock.instant
-      _   <- issueRepository
-               .append(
-                 IssueEvent.Started(
-                   issueId = issue.id,
-                   agent = AgentId(agentName),
-                   startedAt = now,
-                   occurredAt = now,
+      _   <- issue.workspaceId match
+               case Some(_) =>
+                 markWorkspaceBoardIssueStarted(
+                   issueId = issue.id.value,
+                   workspaceId = workspaceId,
+                   agentName = agentName,
+                   branchName = run.branchName,
                  )
-               )
-               .mapError(mapIssueRepoError)
+               case None    =>
+                 appendLegacyStartedEvent
+    yield ()
+
+  private def markWorkspaceBoardIssueStarted(
+    issueId: String,
+    workspaceId: String,
+    agentName: String,
+    branchName: String,
+  ): IO[PersistenceError, Unit] =
+    for
+      workspaceOpt <- workspaceRepository.get(workspaceId).mapError(mapIssueRepoError)
+      workspace    <- ZIO
+                        .fromOption(workspaceOpt)
+                        .orElseFail(PersistenceError.QueryFailed("workspace", s"Not found: $workspaceId"))
+      boardIssueId <- ZIO
+                        .fromEither(BoardIssueId.fromString(issueId))
+                        .mapError(err => PersistenceError.QueryFailed("board_issue_id", err))
+      _            <- boardOrchestrator
+                        .markIssueStarted(workspace.localPath, boardIssueId, agentName, branchName)
+                        .mapError(mapBoardError)
     yield ()
 
   private def executeParallelPipeline(

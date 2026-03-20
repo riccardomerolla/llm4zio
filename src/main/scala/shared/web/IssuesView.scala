@@ -422,7 +422,7 @@ object IssuesView:
               columnIssues.map { issue =>
                 val report = issue.id.flatMap(id => workReports.get(IssueId(id)))
                 val status = issue.id.flatMap(id => dispatchStatuses.get(IssueId(id)))
-                boardCard(issue, workspaces, report, availableAgents, status)
+                boardCard(issue, workspaces, report, status)
               }
           ),
         )
@@ -456,7 +456,7 @@ object IssuesView:
     availableAgents: List[AgentInfo] = Nil,
     dispatchStatus: Option[DispatchStatusResponse] = None,
   ): String =
-    boardCard(issue, workspaces, workReport, availableAgents, dispatchStatus).render
+    boardCard(issue, workspaces, workReport, dispatchStatus).render
 
   /** Render the issue detail page with an optional proof-of-work panel. */
   def detailWithProofOfWork(
@@ -1448,7 +1448,6 @@ object IssuesView:
     issue: AgentIssueView,
     workspaces: List[(String, String)],
     workReport: Option[IssueWorkReport] = None,
-    availableAgents: List[AgentInfo] = Nil,
     dispatchStatus: Option[DispatchStatusResponse] = None,
   ): Frag =
     val issueId       = safe(issue.id, "-")
@@ -1493,8 +1492,6 @@ object IssuesView:
     val shortId       = s"#${issueId.take(8)}"
     val powHtml       = workReport.map(r => ProofOfWorkView.evidenceBar(r)).getOrElse("")
     val requiredCaps  = safeTags(issue.requiredCapabilities)
-    val quickAgents   = eligibleAgents(availableAgents, requiredCaps)
-    val showBlocked   = issue.status == IssueStatus.Todo && requiredCaps.nonEmpty && quickAgents.isEmpty
     val todoDispatch  = dispatchStatus.filter(_ => issue.status == IssueStatus.Todo)
     val externalRef   = safe(issue.externalRef)
     val externalUrl   = safe(issue.externalUrl)
@@ -1538,32 +1535,6 @@ object IssuesView:
           else span(),
         ),
       ),
-      if quickAgents.nonEmpty then
-        div(cls := "mt-2 flex items-center gap-1.5")(
-          select(
-            cls                             := "min-w-0 flex-1 rounded border border-white/15 bg-slate-900/80 px-1.5 py-1 text-[11px] text-slate-100",
-            attr("data-quick-assign-agent") := issueId,
-          )(
-            quickAgents.map { agent =>
-              option(value := agent.name)(agent.displayName)
-            }
-          ),
-          button(
-            `type`                           := "button",
-            cls                              := "rounded border border-emerald-400/30 bg-emerald-500/20 px-2 py-1 text-[11px] font-semibold text-emerald-200 hover:bg-emerald-500/30",
-            attr("data-quick-assign-action") := issueId,
-          )("Assign"),
-        )
-      else (),
-      if showBlocked then
-        div(cls := "mt-2")(
-          span(
-            cls := "rounded-full border border-orange-400/40 bg-orange-500/20 px-2 py-0.5 text-[10px] font-semibold text-orange-200"
-          )(
-            "Blocked: no matching agent"
-          )
-        )
-      else (),
       if powHtml.nonEmpty then raw(powHtml) else (),
       if issue.status == IssueStatus.HumanReview then
         div(cls := "mt-2")(
@@ -2018,17 +1989,6 @@ object IssuesView:
     if params.isEmpty then "/board"
     else
       "/board?" + params.map { case (k, v) => s"${urlEncode(k)}=${urlEncode(v)}" }.mkString("&")
-
-  private def eligibleAgents(agents: List[AgentInfo], requiredCaps: List[String]): List[AgentInfo] =
-    val required = requiredCaps.map(_.trim.toLowerCase).filter(_.nonEmpty).distinct
-    val active   = agents.filter(_.usesAI)
-    if required.isEmpty then active.sortBy(_.displayName.toLowerCase)
-    else
-      active.filter { agent =>
-        val tags   = agent.tags.map(_.trim.toLowerCase).filter(_.nonEmpty)
-        val skills = agent.skills.map(_.skill.trim.toLowerCase).filter(_.nonEmpty)
-        required.forall(cap => tags.contains(cap) || skills.contains(cap))
-      }.sortBy(_.displayName.toLowerCase)
 
   private def externalBadge(externalRef: String, externalUrl: String): Frag =
     val kind = externalRef.takeWhile(_ != ':').trim.toUpperCase match

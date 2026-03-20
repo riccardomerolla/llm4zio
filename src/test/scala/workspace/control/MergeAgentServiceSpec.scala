@@ -94,6 +94,14 @@ object MergeAgentServiceSpec extends ZIOSpecDefault:
       ZIO.succeed(AheadBehind(0, 0))
     override def checkout(repoPath: String, branch: String): IO[GitError, Unit]                            =
       calls.update(_ :+ s"checkout:$repoPath:$branch")
+    override def add(repoPath: String, paths: List[String]): IO[GitError, Unit]                            =
+      calls.update(_ :+ s"add:$repoPath:${paths.mkString(",")}")
+    override def mv(repoPath: String, from: String, to: String): IO[GitError, Unit]                        =
+      calls.update(_ :+ s"mv:$repoPath:$from:$to")
+    override def commit(repoPath: String, message: String): IO[GitError, String]                           =
+      calls.update(_ :+ s"commit:$repoPath:$message").as("1234567890abcdef1234567890abcdef12345678")
+    override def rm(repoPath: String, path: String, recursive: Boolean): IO[GitError, Unit]                =
+      calls.update(_ :+ s"rm:$repoPath:$path:$recursive")
     override def mergeNoFastForward(repoPath: String, branch: String, message: String): IO[GitError, Unit] =
       calls.update(_ :+ s"merge:$repoPath:$branch:$message") *>
         mergeFailure.get.flatMap {
