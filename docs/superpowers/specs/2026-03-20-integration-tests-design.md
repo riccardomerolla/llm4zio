@@ -34,7 +34,7 @@ A plain `object` (no trait, no inheritance) in `src/it/scala/integration/`.
 | Helper | Description |
 |---|---|
 | `initGitRepo` | `ZIO[Scope, Throwable, Path]` — acquireRelease: creates temp dir, `git init --initial-branch=main`, sets user config, writes `HelloWorld.scala`, initial commit. Deletes on scope exit. |
-| `boardRepoFor(path, git, parser)` | Builds `BoardRepositoryFS` with a fresh lock `Ref`. |
+| `boardRepoFor(git, parser)` | Builds `BoardRepositoryFS` with a fresh lock `Ref`. (`BoardRepositoryFS` constructor is `(parser, gitService, locksRef)` — no path param.) |
 | `stubLlm(responses)` | `Ref`-backed queue of JSON strings; `executeStructured` pops and decodes them. Same pattern as golden path. |
 | `minimalWorkspace(id, path)` | Constructs a `Workspace` value with `enabled=true`, `RunMode.Host`, `defaultAgent = Some("codex")`. |
 | `stubWorkspaceRepo(ws)` | `StubWorkspaceRepository`: returns the single workspace; all run lookups return `Nil`. |
@@ -73,14 +73,14 @@ Mocked: `WorkspaceRepository` (stub), `ActivityHub` (no-op).
 
 **Goal:** Verify that when `git merge --no-ff` produces a conflict, the error surfaces as `BoardError.GitOperationFailed`, the issue is not moved to Done, and calling `completeIssue(success=false)` recovers the issue to Backlog with `TransientState.Rework`.
 
-**Stub:** `StubConflictingRunService` — `assign()` creates a feature branch that modifies `HelloWorld.scala` (e.g. appends `// feature line`), then checks out main. After `assign()` returns, the test makes a conflicting commit directly on main that modifies the same lines.
+**Stub:** `StubConflictingRunService` — `assign()` creates a feature branch named `s"feature/${req.issueRef}/conflict-work"`, overwrites `src/HelloWorld.scala` with a conflicting version (e.g. replaces `println("Hello, World!")` with `println("Hello from feature!")`), commits, then checks out main. The returned `WorkspaceRun` has `branchName = s"feature/${req.issueRef}/conflict-work"` — this exact value is written to the issue frontmatter and later used by `completeIssue` to call `mergeNoFastForward`. After `assign()` returns, the test makes a conflicting commit directly on main that modifies the same line of `src/HelloWorld.scala`.
 
 **Flow:**
 1. Create one issue, move to Todo.
 2. `dispatchCycle` → issue dispatched, `branchName` set on issue frontmatter.
 3. Test makes a conflicting commit on main modifying the same file.
 4. Call `completeIssue(success = true, "done")` — expect `BoardError.GitOperationFailed`.
-5. Abort partial merge: `git merge --abort` via `gitRun`.
+5. Abort partial merge: `git merge --abort` via `gitRun`. **This must complete before step 7** — `completeIssue(success=false)` internally calls `ensureMainBranch` which checks we are on `main`; aborting the merge first restores the working tree to a clean `main` state, so steps 5 → 6 → 7 must be sequenced with `flatMap`/`*>`.
 6. Assert: issue is still in InProgress, not in Done.
 7. Call `completeIssue(success = false, "merge conflict - needs rework")`.
 8. Assert:
@@ -99,8 +99,11 @@ Mocked: `WorkspaceRepository` (stub), `ActivityHub` (no-op).
 
 **Shared stub — `PooledStubRunService`:**
 Constructor takes `repoPath: Path` and `sem: Semaphore`.
-- `assign()`: calls `sem.tryAcquire` — if `false`, returns `WorkspaceError.WorktreeError("agent pool exhausted")`; if `true`, creates a real feature branch and returns a `WorkspaceRun`.
-- `cleanupAfterSuccessfulMerge()`: calls `sem.release`.
+- `assign()`: calls `sem.tryAcquire` — if `false`, returns `WorkspaceError.WorktreeError("agent pool exhausted")`; if `true`, creates a real feature branch named `s"feature/${req.issueRef}/work"`, commits a work file, checks out main, and returns a `WorkspaceRun` with that `branchName`.
+- `continueRun`: returns `ZIO.fail(WorkspaceError.InvalidRunState(...))`.
+- `cancelRun`: returns `ZIO.unit`.
+
+Note: there is **no** `cleanupAfterSuccessfulMerge` method in `WorkspaceRunService` trait. `cleanupLatestRun` inside `BoardOrchestratorLive` is a no-op here because `stubWorkspaceRepo.listRunsByIssueRef` returns `Nil`. The semaphore is therefore released manually via `sem.release` in the test body after each `completeIssue` call.
 
 This enforces observable pool capacity without any real agent execution.
 
@@ -115,11 +118,11 @@ This enforces observable pool capacity without any real agent execution.
 **Flow:**
 1. **Cycle 1:** A dispatched (permit acquired), B and C skipped. Assert `dispatched=[A]`, `skipped=[B,C]`.
 2. **Cycle 2** (pool still full — A not yet completed): A is InProgress (not in `readyToDispatch`), B and C skipped. Assert `dispatched=[]`, `skipped=[B,C]`.
-3. Complete A → `cleanupAfterSuccessfulMerge` releases semaphore → A moves to Done.
+3. Complete A (moves to Done) → release semaphore manually: `sem.release`. Note: `cleanupAfterSuccessfulMerge` is NOT called here because `stubWorkspaceRepo.listRunsByIssueRef` returns `Nil` (no runs recorded), making `cleanupLatestRun` a no-op. The test therefore releases the semaphore directly after `completeIssue` succeeds.
 4. **Cycle 3:** B dispatched, C skipped. Assert `dispatched=[B]`.
-5. Complete B → semaphore released.
+5. Complete B (moves to Done) → `sem.release`.
 6. **Cycle 4:** C dispatched. Assert `dispatched=[C]`.
-7. Complete C.
+7. Complete C → `sem.release`.
 8. Final assert: A, B, C all in Done; git log has three `[board] Merge issue` entries; Todo and InProgress columns empty.
 
 ---
@@ -134,8 +137,8 @@ This enforces observable pool capacity without any real agent execution.
 1. Fire two `dispatchCycle` calls in parallel via `ZIO.zipPar` → `(result1, result2)`.
 2. Collect `allDispatched = result1.dispatchedIssueIds ++ result2.dispatchedIssueIds`.
 3. Assert:
-   - `allDispatched.distinct.size == 2` — each issue dispatched exactly once.
-   - No issue ID appears in both `result1.dispatchedIssueIds` and `result2.dispatchedIssueIds`.
+   - `result1.dispatchedIssueIds.intersect(result2.dispatchedIssueIds).isEmpty` — primary: no issue double-dispatched.
+   - `allDispatched.distinct.size == 2` — secondary: both issues were dispatched exactly once across the two cycles.
    - Board has exactly 2 InProgress issues, 0 in Todo.
 
 ---
@@ -150,8 +153,8 @@ Real services: `GitServiceLive` (via `gitRunner`), `FileService.live`.
 | Parameter | Value |
 |---|---|
 | `workspaceRepository` | `StubWorkspaceRepository` (one enabled workspace) |
-| `agentRepository` | `StubAgentRepository` — `list()` returns `Nil`, `findByName` returns `None` → built-in agent fallback |
-| `analysisRepository` | `StubAnalysisRepository` — in-memory `Ref[List[AnalysisEvent]]` |
+| `agentRepository` | `StubAgentRepository` — `list()` returns `Nil`, `findByName` returns `None` → triggers `BuiltInAgentSynchronizer.seedBuiltInAgents` fallback, which seeds the `code-agent` built-in agent (carries `code-review` capability tag). The analysis pipeline selects `code-agent` via capability matching on `AnalysisProfile.codeReview`. |
+| `analysisRepository` | `StubAnalysisRepository` — concrete class with `val events: Ref[List[AnalysisEvent]]` accessible directly (not just the trait reference) so the test can read `stubRepo.events.get` to assert persistence. `listByWorkspace` returns `ZIO.succeed(Nil)` (no prior docs), so `persistAnalysisDoc` emits `AnalysisEvent.AnalysisCreated`. |
 | `taskRepository` | `StubTaskRepository` — `getSetting` returns `None` (no overrides) |
 | `fileService` | `FileService.live` |
 | `llmPromptExecutor` | `Some((_, agent, _) => ZIO.succeed(s"# Code Review\n\nMocked analysis by ${agent.name}."))` |
