@@ -1,5 +1,6 @@
 package shared.web
 
+import llm4zio.observability.MetricsSnapshot
 import orchestration.control.{ AgentExecutionInfo, AgentExecutionState, AgentMonitorSnapshot }
 import scalatags.Text.all.*
 
@@ -20,18 +21,17 @@ object AgentMonitorView:
   )
 
   object AgentGlobalStats:
-    def fromSnapshot(snapshot: AgentMonitorSnapshot): AgentGlobalStats =
+    def fromSnapshotAndMetrics(snapshot: AgentMonitorSnapshot, llmMetrics: MetricsSnapshot): AgentGlobalStats =
       val active = snapshot.agents.count(a =>
         a.state == AgentExecutionState.Executing || a.state == AgentExecutionState.WaitingForTool
       )
-      val total  = snapshot.agents.map(_.tokensUsed).sum
       AgentGlobalStats(
         activeAgents = active,
         maxAgents = snapshot.agents.size max active,
-        runtimeSeconds = 0L,
-        tokensIn = total / 2,
-        tokensOut = total - total / 2,
-        tokensTotal = total,
+        runtimeSeconds = llmMetrics.totalLatencyMs / 1000,
+        tokensIn = llmMetrics.promptTokens,
+        tokensOut = llmMetrics.completionTokens,
+        tokensTotal = llmMetrics.totalTokens,
       )
 
     val empty: AgentGlobalStats = AgentGlobalStats(0, 0, 0L, 0L, 0L, 0L)
@@ -42,22 +42,23 @@ object AgentMonitorView:
     stage: String,
     pid: Option[Int],
     ageSeconds: Long,
-    turnCount: Long,
     tokensTotal: Long,
     sessionId: Option[String],
     lastEvent: String,
   )
 
   def fromSnapshot(snapshot: AgentMonitorSnapshot): List[AgentRunView] =
-    snapshot.agents.map(fromInfo)
+    snapshot.agents.map(fromInfo(_, snapshot.generatedAt))
 
-  def fromInfo(info: AgentExecutionInfo): AgentRunView =
+  def fromInfo(info: AgentExecutionInfo, now: java.time.Instant): AgentRunView =
+    val ageSeconds = info.startedAt
+      .map(s => java.time.Duration.between(s, now).getSeconds.max(0L))
+      .getOrElse(0L)
     AgentRunView(
       issueId = info.runId.getOrElse("—"),
       stage = stageName(info.state),
       pid = None,
-      ageSeconds = 0L,
-      turnCount = info.tokensUsed,
+      ageSeconds = ageSeconds,
       tokensTotal = info.tokensUsed,
       sessionId = info.conversationId,
       lastEvent = info.message.getOrElse("—"),

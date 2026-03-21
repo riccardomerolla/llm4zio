@@ -15,14 +15,18 @@ object LlmMetricsSpec extends ZIOSpecDefault:
         snapshot <- metrics.snapshot
       } yield assertTrue(snapshot.requests == 2)
     }.provide(LlmMetrics.layer),
-    test("record tokens tracks total") {
+    test("record tokens tracks total, prompt, and completion") {
       val usage = TokenUsage(prompt = 10, completion = 5, total = 15)
       for {
         metrics  <- ZIO.service[LlmMetrics]
         _        <- metrics.recordTokens(usage)
         _        <- metrics.recordTokens(usage)
         snapshot <- metrics.snapshot
-      } yield assertTrue(snapshot.totalTokens == 30)
+      } yield assertTrue(
+        snapshot.totalTokens == 30,
+        snapshot.promptTokens == 20,
+        snapshot.completionTokens == 10,
+      )
     }.provide(LlmMetrics.layer),
     test("record latency tracks total") {
       for {

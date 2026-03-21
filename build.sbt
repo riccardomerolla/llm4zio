@@ -12,7 +12,7 @@ addCommandAlias("check", "; scalafixAll --check; scalafmtCheckAll")
 val zioVersion = "2.1.24"
 val zioProcessVersion = "0.8.0"
 val zioJsonVersion = "0.9.0"
-val zioHttpVersion = "3.8.1"
+val zioHttpVersion = "3.10.1"
 val zioLoggingVersion = "2.4.0"
 val zioConfigVersion = "4.0.6"
 val zioCliVersion = "0.7.5"

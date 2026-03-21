@@ -88,6 +88,21 @@ trait OrchestratorControlPlane:
     */
   def abortAgentExecution(agentName: String): ZIO[Any, ControlPlaneError, Unit]
 
+  /** Register or update a workspace CLI agent run directly in the agent monitor.
+    *
+    * Called by [[workspace.control.WorkspaceRunService]] at run start, completion, and
+    * cancellation. Unlike routeStep-based flows, workspace runs are long-running CLI processes with
+    * no step decomposition.
+    */
+  def notifyWorkspaceAgent(
+    agentName: String,
+    state: AgentExecutionState,
+    runId: Option[String],
+    conversationId: Option[String],
+    message: Option[String],
+    tokenDelta: Long,
+  ): UIO[Unit]
+
 object OrchestratorControlPlane:
 
   def startWorkflow(
@@ -155,6 +170,18 @@ object OrchestratorControlPlane:
   def getAgentExecutionHistory(limit: Int)
     : ZIO[OrchestratorControlPlane, ControlPlaneError, List[AgentExecutionEvent]] =
     ZIO.serviceWithZIO[OrchestratorControlPlane](_.getAgentExecutionHistory(limit))
+
+  def notifyWorkspaceAgent(
+    agentName: String,
+    state: AgentExecutionState,
+    runId: Option[String],
+    conversationId: Option[String],
+    message: Option[String],
+    tokenDelta: Long,
+  ): ZIO[OrchestratorControlPlane, Nothing, Unit] =
+    ZIO.serviceWithZIO[OrchestratorControlPlane](
+      _.notifyWorkspaceAgent(agentName, state, runId, conversationId, message, tokenDelta)
+    )
 
   def pauseAgentExecution(agentName: String): ZIO[OrchestratorControlPlane, ControlPlaneError, Unit] =
     ZIO.serviceWithZIO[OrchestratorControlPlane](_.pauseAgentExecution(agentName))
@@ -275,6 +302,7 @@ final private[orchestration] class OrchestratorControlPlaneLive(
                   runId = Some(runId),
                   step = Some(step),
                   task = Some(s"${step.toString} for run $runId"),
+                  conversationId = None,
                   message = Some("Executing"),
                   tokenDelta = 0L,
                   now = now,
@@ -463,6 +491,7 @@ final private[orchestration] class OrchestratorControlPlaneLive(
                runId = None,
                step = None,
                task = Some("Paused by operator"),
+               conversationId = None,
                message = Some("Paused"),
                tokenDelta = 0L,
                now = now,
@@ -489,6 +518,7 @@ final private[orchestration] class OrchestratorControlPlaneLive(
                runId = None,
                step = None,
                task = Some("Resumed by operator"),
+               conversationId = None,
                message = Some("Executing"),
                tokenDelta = 0L,
                now = now,
@@ -515,6 +545,7 @@ final private[orchestration] class OrchestratorControlPlaneLive(
                runId = None,
                step = None,
                task = Some("Aborted by operator"),
+               conversationId = None,
                message = Some("Aborted"),
                tokenDelta = 0L,
                now = now,
@@ -550,6 +581,7 @@ final private[orchestration] class OrchestratorControlPlaneLive(
                 runId = Some(runId),
                 step = Some(step),
                 task = Some(s"${step.toString} for run $runId"),
+                conversationId = None,
                 message = Some(message),
                 tokenDelta = tokenDelta,
                 now = timestamp,
@@ -577,6 +609,7 @@ final private[orchestration] class OrchestratorControlPlaneLive(
                 runId = None,
                 step = None,
                 task = None,
+                conversationId = None,
                 message = Some("Idle"),
                 tokenDelta = 0L,
                 now = timestamp,
@@ -604,6 +637,7 @@ final private[orchestration] class OrchestratorControlPlaneLive(
                 runId = Some(runId),
                 step = Some(step),
                 task = Some(s"${step.toString} for run $runId"),
+                conversationId = None,
                 message = Some(error),
                 tokenDelta = 0L,
                 now = timestamp,
@@ -622,12 +656,47 @@ final private[orchestration] class OrchestratorControlPlaneLive(
       case _                                                      =>
         ZIO.unit
 
+  override def notifyWorkspaceAgent(
+    agentName: String,
+    state: AgentExecutionState,
+    runId: Option[String],
+    conversationId: Option[String],
+    message: Option[String],
+    tokenDelta: Long,
+  ): UIO[Unit] =
+    for
+      now <- Clock.instant
+      _   <- updateAgentState(
+               agentName = agentName,
+               state = state,
+               runId = runId,
+               step = None,
+               task = runId.map(id => s"workspace run $id"),
+               conversationId = conversationId,
+               message = message,
+               tokenDelta = tokenDelta,
+               now = now,
+             )
+      _   <- appendAgentHistory(
+               AgentExecutionEvent(
+                 id = java.util.UUID.randomUUID().toString,
+                 agentName = agentName,
+                 state = state,
+                 runId = runId,
+                 step = None,
+                 detail = message.getOrElse(state.toString),
+                 timestamp = now,
+               )
+             )
+    yield ()
+
   private def updateAgentState(
     agentName: String,
     state: AgentExecutionState,
     runId: Option[String],
     step: Option[TaskStep],
     task: Option[String],
+    conversationId: Option[String],
     message: Option[String],
     tokenDelta: Long,
     now: java.time.Instant,
@@ -639,17 +708,25 @@ final private[orchestration] class OrchestratorControlPlaneLive(
       val totalTokens  = existing.map(_.tokensUsed).getOrElse(0L) + tokenDelta
       val totalLatency = existing.map(_.latencyMs).getOrElse(0L) + latencyDelta
       val cost         = totalTokens.toDouble * 0.000001
+      val startedAt    = state match
+        case AgentExecutionState.Executing | AgentExecutionState.WaitingForTool =>
+          existing.flatMap(_.startedAt).orElse(Some(now))
+        case AgentExecutionState.Paused =>
+          existing.flatMap(_.startedAt)
+        case _ =>
+          None
       val next         = AgentExecutionInfo(
         agentName = agentName,
         state = state,
         runId = runId.orElse(existing.flatMap(_.runId)),
         step = step.orElse(existing.flatMap(_.step)),
         task = task.orElse(existing.flatMap(_.task)),
-        conversationId = existing.flatMap(_.conversationId),
+        conversationId = conversationId.orElse(existing.flatMap(_.conversationId)),
         tokensUsed = totalTokens,
         latencyMs = totalLatency,
         cost = cost,
         lastUpdatedAt = now,
+        startedAt = startedAt,
         message = message,
       )
       states.updated(agentName, next)

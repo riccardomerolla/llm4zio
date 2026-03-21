@@ -13,7 +13,7 @@ import conversation.entity.api.{ ChatConversation, ConversationEntry, MessageTyp
 import db.ChatRepository
 import issues.control.IssueAnalysisAttachment
 import issues.entity.{ AgentIssue as DomainIssue, IssueEvent, IssueRepository }
-import orchestration.control.{ AgentPoolManager, PoolError, SlotHandle }
+import orchestration.control.{ AgentExecutionState, AgentPoolManager, OrchestratorControlPlane, PoolError, SlotHandle }
 import shared.ids.Ids.{ EventId, IssueId, TaskRunId }
 import workspace.entity.*
 
@@ -35,22 +35,23 @@ object WorkspaceRunService:
     : ZLayer[
       WorkspaceRepository & ChatRepository & IssueRepository & ActivityHub & GitWatcher & AgentRepository &
         AnalysisRepository &
-        AgentPoolManager,
+        AgentPoolManager & OrchestratorControlPlane,
       Nothing,
       WorkspaceRunService,
     ] =
     ZLayer {
       for
-        repo      <- ZIO.service[WorkspaceRepository]
-        chat      <- ZIO.service[ChatRepository]
-        issueRepo <- ZIO.service[IssueRepository]
-        activity  <- ZIO.service[ActivityHub]
-        watcher   <- ZIO.service[GitWatcher]
-        agents    <- ZIO.service[AgentRepository]
-        analysis  <- ZIO.service[AnalysisRepository]
-        pool      <- ZIO.service[AgentPoolManager]
-        registry  <- Ref.make(Map.empty[String, Fiber[WorkspaceError, Unit]])
-        slots     <- Ref.make(Map.empty[String, SlotHandle])
+        repo         <- ZIO.service[WorkspaceRepository]
+        chat         <- ZIO.service[ChatRepository]
+        issueRepo    <- ZIO.service[IssueRepository]
+        activity     <- ZIO.service[ActivityHub]
+        watcher      <- ZIO.service[GitWatcher]
+        agents       <- ZIO.service[AgentRepository]
+        analysis     <- ZIO.service[AnalysisRepository]
+        pool         <- ZIO.service[AgentPoolManager]
+        controlPlane <- ZIO.service[OrchestratorControlPlane]
+        registry     <- Ref.make(Map.empty[String, Fiber[WorkspaceError, Unit]])
+        slots        <- Ref.make(Map.empty[String, SlotHandle])
       yield WorkspaceRunServiceLive(
         repo,
         chat,
@@ -67,6 +68,8 @@ object WorkspaceRunService:
         resolveAgentProfile = name =>
           agents.findByName(name)
             .mapError(err => WorkspaceError.PersistenceFailure(RuntimeException(err.toString))),
+        notifyControlPlane = (agentName, state, runId, convId, msg, tokens) =>
+          controlPlane.notifyWorkspaceAgent(agentName, state, runId, convId, msg, tokens),
       )
     }
 
@@ -169,6 +172,8 @@ final case class WorkspaceRunServiceLive(
   availableAgentSlots: String => UIO[Int] = _ => ZIO.succeed(Int.MaxValue),
   releaseAgentSlot: SlotHandle => UIO[Unit] = _ => ZIO.unit,
   resolveAgentProfile: String => IO[WorkspaceError, Option[_root_.agent.entity.Agent]] = _ => ZIO.succeed(None),
+  notifyControlPlane: (String, AgentExecutionState, Option[String], Option[String], Option[String], Long) => UIO[Unit] =
+    (_, _, _, _, _, _) => ZIO.unit,
 ) extends WorkspaceRunService:
 
   override def registerSlot(runId: String, handle: SlotHandle): UIO[Unit] =
@@ -287,7 +292,15 @@ final case class WorkspaceRunServiceLive(
                              )
                                .onExit {
                                  case Exit.Failure(c) if c.isInterruptedOnly =>
-                                   (updateRunStatus(run.id, RunStatus.Cancelled) *>
+                                   (notifyControlPlane(
+                                     run.agentName,
+                                     AgentExecutionState.Aborted,
+                                     Some(run.id),
+                                     Some(run.conversationId),
+                                     Some("Cancelled"),
+                                     0L,
+                                   ) *>
+                                     updateRunStatus(run.id, RunStatus.Cancelled) *>
                                      maybeCleanupWorktree(run, WorkspaceRunCleanup.OnCancelled) *>
                                      appendToConversation(run.conversationId, "Run cancelled by user.").ignore).ignore
                                  case _                                      => ZIO.unit
@@ -394,7 +407,15 @@ final case class WorkspaceRunServiceLive(
                                           )
                                             .onExit {
                                               case Exit.Failure(c) if c.isInterruptedOnly =>
-                                                (updateRunStatus(continuedRun.id, RunStatus.Cancelled) *>
+                                                (notifyControlPlane(
+                                                  continuedRun.agentName,
+                                                  AgentExecutionState.Aborted,
+                                                  Some(continuedRun.id),
+                                                  Some(continuedRun.conversationId),
+                                                  Some("Cancelled"),
+                                                  0L,
+                                                ) *>
+                                                  updateRunStatus(continuedRun.id, RunStatus.Cancelled) *>
                                                   maybeCleanupWorktree(continuedRun, WorkspaceRunCleanup.OnCancelled) *>
                                                   appendToConversation(
                                                     continuedRun.conversationId,
@@ -609,34 +630,54 @@ final case class WorkspaceRunServiceLive(
     val argvStr = argv.map(a => if a.contains(" ") then s"'$a'" else a).mkString(" ")
     val timeout = profile.map(_.timeout).getOrElse(java.time.Duration.ofSeconds(timeoutSeconds))
     (for
-      _        <- updateRunStatus(run.id, RunStatus.Running(RunSessionMode.Autonomous))
-      _        <- gitWatcher.registerRun(run.id, run.worktreePath)
-      _        <- ZIO.logInfo(s"[run:${run.id}] launching: $argvStr  (cwd=${run.worktreePath})")
-      linesRef <- Ref.make(0)
-      exitOpt  <- runCliAgent(
-                    argv,
-                    run.worktreePath,
-                    line =>
-                      linesRef.update(_ + 1) *>
-                        appendToConversation(run.conversationId, line)
-                          .tapError(e => ZIO.logWarning(s"[run:${run.id}] failed to persist line to chat: $e"))
-                          .ignore,
-                    envVars,
-                  )
-                    .timeout(timeout)
-                    .mapError(e => WorkspaceError.WorktreeError(e.getMessage))
-                    .tapError(e => ZIO.logError(s"[run:${run.id}] process error: $e"))
-      _        <- appendToConversation(run.conversationId, s"Run timed out after ${timeout.toSeconds}s")
-                    .when(exitOpt.isEmpty)
-      _        <- ZIO.logWarning(s"[run:${run.id}] timed out after ${timeout.toSeconds}s")
-                    .when(exitOpt.isEmpty)
-      count    <- linesRef.get
-      exitCode  = exitOpt.getOrElse(1)
-      _        <- ZIO.logInfo(s"[run:${run.id}] finished exit=$exitCode lines=$count")
-                    .when(exitOpt.isDefined)
-      status    = if exitOpt.isDefined && exitCode == 0 then RunStatus.Completed else RunStatus.Failed
-      _        <- updateRunStatus(run.id, status)
-      _        <- ZIO.logInfo(s"[run:${run.id}] status=$status")
+      _         <- notifyControlPlane(
+                     run.agentName,
+                     AgentExecutionState.Executing,
+                     Some(run.id),
+                     Some(run.conversationId),
+                     Some("Running"),
+                     0L,
+                   )
+      _         <- updateRunStatus(run.id, RunStatus.Running(RunSessionMode.Autonomous))
+      _         <- gitWatcher.registerRun(run.id, run.worktreePath)
+      _         <- ZIO.logInfo(s"[run:${run.id}] launching: $argvStr  (cwd=${run.worktreePath})")
+      linesRef  <- Ref.make(0)
+      tokenRef  <- Ref.make(0L)
+      exitOpt   <- runCliAgent(
+                     argv,
+                     run.worktreePath,
+                     line =>
+                       linesRef.update(_ + 1) *>
+                         tokenRef.update(_ + (line.length / 4).toLong.max(0L)) *>
+                         appendToConversation(run.conversationId, line)
+                           .tapError(e => ZIO.logWarning(s"[run:${run.id}] failed to persist line to chat: $e"))
+                           .ignore,
+                     envVars,
+                   )
+                     .timeout(timeout)
+                     .mapError(e => WorkspaceError.WorktreeError(e.getMessage))
+                     .tapError(e => ZIO.logError(s"[run:${run.id}] process error: $e"))
+      _         <- appendToConversation(run.conversationId, s"Run timed out after ${timeout.toSeconds}s")
+                     .when(exitOpt.isEmpty)
+      _         <- ZIO.logWarning(s"[run:${run.id}] timed out after ${timeout.toSeconds}s")
+                     .when(exitOpt.isEmpty)
+      count     <- linesRef.get
+      accTokens <- tokenRef.get
+      exitCode   = exitOpt.getOrElse(1)
+      _         <- ZIO.logInfo(s"[run:${run.id}] finished exit=$exitCode lines=$count")
+                     .when(exitOpt.isDefined)
+      status     = if exitOpt.isDefined && exitCode == 0 then RunStatus.Completed else RunStatus.Failed
+      finalState = if status == RunStatus.Completed then AgentExecutionState.Idle else AgentExecutionState.Failed
+      _         <- notifyControlPlane(
+                     run.agentName,
+                     finalState,
+                     Some(run.id),
+                     Some(run.conversationId),
+                     Some(s"Exit code $exitCode"),
+                     accTokens,
+                   )
+      _         <- updateRunStatus(run.id, status)
+      _         <- ZIO.logInfo(s"[run:${run.id}] status=$status")
     yield ()).ensuring(gitWatcher.unregisterRun(run.id))
 
   private def appendToConversation(conversationId: String, line: String): IO[WorkspaceError, Unit] =

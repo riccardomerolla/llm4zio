@@ -4,6 +4,7 @@ import java.time.Instant
 
 import zio.test.*
 
+import llm4zio.observability.MetricsSnapshot
 import orchestration.control.{ AgentExecutionInfo, AgentExecutionState, AgentMonitorSnapshot }
 import shared.web.AgentMonitorView.{ AgentGlobalStats, AgentRunView }
 
@@ -22,6 +23,7 @@ object AgentMonitorViewSpec extends ZIOSpecDefault:
     latencyMs = 200L,
     cost = 0.001,
     lastUpdatedAt = now,
+    startedAt = None,
     message = Some("Processing files"),
   )
 
@@ -55,7 +57,6 @@ object AgentMonitorViewSpec extends ZIOSpecDefault:
           stage = "EXEC",
           pid = None,
           ageSeconds = 30L,
-          turnCount = 12345L,
           tokensTotal = 12345L,
           sessionId = None,
           lastEvent = "Working",
@@ -70,7 +71,6 @@ object AgentMonitorViewSpec extends ZIOSpecDefault:
           stage = "EXEC",
           pid = None,
           ageSeconds = 0L,
-          turnCount = 0L,
           tokensTotal = 0L,
           sessionId = None,
           lastEvent = longEvent,
@@ -82,17 +82,17 @@ object AgentMonitorViewSpec extends ZIOSpecDefault:
         )
       },
       test("EXEC stage renders emerald dot") {
-        val row  = AgentRunView("id", "EXEC", None, 0L, 0L, 0L, None, "")
+        val row  = AgentRunView("id", "EXEC", None, 0L, 0L, None, "")
         val html = AgentMonitorView.table(List(row))
         assertTrue(html.contains("bg-emerald-400"))
       },
       test("FAIL stage renders rose dot") {
-        val row  = AgentRunView("id", "FAIL", None, 0L, 0L, 0L, None, "")
+        val row  = AgentRunView("id", "FAIL", None, 0L, 0L, None, "")
         val html = AgentMonitorView.table(List(row))
         assertTrue(html.contains("bg-rose-500"))
       },
       test("TOOL stage renders amber dot") {
-        val row  = AgentRunView("id", "TOOL", None, 0L, 0L, 0L, None, "")
+        val row  = AgentRunView("id", "TOOL", None, 0L, 0L, None, "")
         val html = AgentMonitorView.table(List(row))
         assertTrue(html.contains("bg-amber-400"))
       },
@@ -113,17 +113,17 @@ object AgentMonitorViewSpec extends ZIOSpecDefault:
         assertTrue(html.contains("issue-abc-12"))
       },
       test("AGE displays seconds for runs under 60s") {
-        val row  = AgentRunView("id", "EXEC", None, 45L, 0L, 0L, None, "")
+        val row  = AgentRunView("id", "EXEC", None, 45L, 0L, None, "")
         val html = AgentMonitorView.table(List(row))
         assertTrue(html.contains("45s"))
       },
       test("AGE displays minutes for runs 60s+") {
-        val row  = AgentRunView("id", "EXEC", None, 125L, 0L, 0L, None, "")
+        val row  = AgentRunView("id", "EXEC", None, 125L, 0L, None, "")
         val html = AgentMonitorView.table(List(row))
         assertTrue(html.contains("2m"))
       },
       test("SESSION truncated to 8 chars when present") {
-        val row  = AgentRunView("id", "EXEC", None, 0L, 0L, 0L, Some("sess-xyz-99"), "")
+        val row  = AgentRunView("id", "EXEC", None, 0L, 0L, Some("sess-xyz-99"), "")
         val html = AgentMonitorView.table(List(row))
         assertTrue(html.contains("sess-xyz"))
       },
@@ -204,8 +204,15 @@ object AgentMonitorViewSpec extends ZIOSpecDefault:
         val html  = AgentMonitorView.statsHeader(stats)
         assertTrue(html.contains("42s"))
       },
-      test("AgentGlobalStats.fromSnapshot counts active agents") {
-        val stats = AgentGlobalStats.fromSnapshot(snapshot)
+      test("AgentGlobalStats.fromSnapshotAndMetrics counts active agents") {
+        val llmMetrics = MetricsSnapshot(
+          requests = 0,
+          promptTokens = 0L,
+          completionTokens = 12345L,
+          totalLatencyMs = 0L,
+          errors = 0L,
+        )
+        val stats      = AgentGlobalStats.fromSnapshotAndMetrics(snapshot, llmMetrics)
         assertTrue(
           stats.activeAgents == 1, // sampleInfo is Executing
           stats.tokensTotal == 12345L,

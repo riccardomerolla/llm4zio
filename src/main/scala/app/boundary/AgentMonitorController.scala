@@ -5,6 +5,7 @@ import zio.http.*
 import zio.json.*
 import zio.stream.ZStream
 
+import llm4zio.observability.LlmMetrics
 import orchestration.control.OrchestratorControlPlane
 import shared.errors.ControlPlaneError
 import shared.web.AgentMonitorView
@@ -17,11 +18,12 @@ object AgentMonitorController:
   def routes: ZIO[AgentMonitorController, Nothing, Routes[Any, Response]] =
     ZIO.serviceWith[AgentMonitorController](_.routes)
 
-  val live: ZLayer[OrchestratorControlPlane, Nothing, AgentMonitorController] =
+  val live: ZLayer[OrchestratorControlPlane & LlmMetrics, Nothing, AgentMonitorController] =
     ZLayer.fromFunction(AgentMonitorControllerLive.apply)
 
 final case class AgentMonitorControllerLive(
-  controlPlane: OrchestratorControlPlane
+  controlPlane: OrchestratorControlPlane,
+  metrics: LlmMetrics,
 ) extends AgentMonitorController:
 
   override val routes: Routes[Any, Response] = Routes(
@@ -41,12 +43,14 @@ final case class AgentMonitorControllerLive(
             Schedule.spaced(2.seconds),
           )
           .collect { case Right(snapshot) => snapshot }
-          .map { snapshot =>
-            val rows      = AgentMonitorView.fromSnapshot(snapshot)
-            val stats     = AgentMonitorView.AgentGlobalStats.fromSnapshot(snapshot)
-            val tableHtml = AgentMonitorView.table(rows)
-            val statsHtml = AgentMonitorView.statsHeader(stats)
-            s"event: agent-stats\ndata: $statsHtml\n\nevent: agent-table\ndata: $tableHtml\n\n"
+          .mapZIO { snapshot =>
+            metrics.snapshot.map { llmMetrics =>
+              val rows      = AgentMonitorView.fromSnapshot(snapshot)
+              val stats     = AgentMonitorView.AgentGlobalStats.fromSnapshotAndMetrics(snapshot, llmMetrics)
+              val tableHtml = AgentMonitorView.table(rows)
+              val statsHtml = AgentMonitorView.statsHeader(stats)
+              s"event: agent-stats\ndata: $statsHtml\n\nevent: agent-table\ndata: $tableHtml\n\n"
+            }
           }
       ZIO.succeed(
         Response(

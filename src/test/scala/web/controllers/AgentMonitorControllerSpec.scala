@@ -8,6 +8,7 @@ import zio.test.*
 
 import _root_.config.entity.WorkflowDefinition
 import app.boundary.AgentMonitorControllerLive
+import llm4zio.observability.LlmMetrics
 import orchestration.control.*
 import shared.errors.ControlPlaneError
 import taskrun.entity.TaskStep
@@ -27,6 +28,7 @@ object AgentMonitorControllerSpec extends ZIOSpecDefault:
     latencyMs = 120L,
     cost = 0.000042,
     lastUpdatedAt = Instant.EPOCH,
+    startedAt = None,
     message = Some("working"),
   )
 
@@ -76,20 +78,30 @@ object AgentMonitorControllerSpec extends ZIOSpecDefault:
       actionRef.update("resume:" + agentName :: _).unit
     override def abortAgentExecution(agentName: String): ZIO[Any, ControlPlaneError, Unit]                    =
       actionRef.update("abort:" + agentName :: _).unit
+    override def notifyWorkspaceAgent(
+      agentName: String,
+      state: AgentExecutionState,
+      runId: Option[String],
+      conversationId: Option[String],
+      message: Option[String],
+      tokenDelta: Long,
+    ): UIO[Unit] = ZIO.unit
 
   def spec: Spec[TestEnvironment & Scope, Any] = suite("AgentMonitorControllerSpec")(
     test("GET /agent-monitor redirects to command center") {
       for
         actions   <- Ref.make(List.empty[String])
-        controller = AgentMonitorControllerLive(StubControlPlane(actions))
+        metrics   <- ZIO.service[LlmMetrics]
+        controller = AgentMonitorControllerLive(StubControlPlane(actions), metrics)
         response  <- controller.routes.runZIO(Request.get("/agent-monitor"))
         location   = response.headers.header(Header.Location).map(_.renderedValue)
       yield assertTrue(response.status == Status.MovedPermanently, location.contains("/"))
-    },
+    }.provide(LlmMetrics.layer, Scope.default),
     test("GET /api/agent-monitor/snapshot returns JSON snapshot") {
       for
         actions   <- Ref.make(List.empty[String])
-        controller = AgentMonitorControllerLive(StubControlPlane(actions))
+        metrics   <- ZIO.service[LlmMetrics]
+        controller = AgentMonitorControllerLive(StubControlPlane(actions), metrics)
         response  <- controller.routes.runZIO(Request.get("/api/agent-monitor/snapshot"))
         body      <- response.body.asString
       yield assertTrue(
@@ -97,13 +109,14 @@ object AgentMonitorControllerSpec extends ZIOSpecDefault:
         body.contains("\"agents\""),
         body.contains("\"agentName\":\"agent-1\""),
       )
-    },
+    }.provide(LlmMetrics.layer, Scope.default),
     test("POST pause endpoint calls control plane") {
       for
         actions   <- Ref.make(List.empty[String])
-        controller = AgentMonitorControllerLive(StubControlPlane(actions))
+        metrics   <- ZIO.service[LlmMetrics]
+        controller = AgentMonitorControllerLive(StubControlPlane(actions), metrics)
         response  <- controller.routes.runZIO(Request.post("/api/agent-monitor/agents/agent-1/pause", Body.empty))
         history   <- actions.get
       yield assertTrue(response.status == Status.Ok, history.contains("pause:agent-1"))
-    },
+    }.provide(LlmMetrics.layer, Scope.default),
   )

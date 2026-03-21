@@ -51,6 +51,7 @@ import issues.boundary.IssueController as IssuesIssueController
 import issues.control.{ IssueWorkReportHydrator, IssueWorkReportSubscriber }
 import issues.entity.IssueRepositoryBoard
 import llm4zio.core.*
+import llm4zio.observability.{ LlmMetrics, MeteredLlmService }
 import llm4zio.providers.{ GeminiCliExecutor, HttpClient }
 import llm4zio.tools.{ AnyTool, JsonSchema, ToolRegistry }
 import memory.boundary.MemoryController as MemoryBoundaryController
@@ -119,7 +120,8 @@ object ApplicationDI:
       PromptLoader &
       MemoryRepository &
       EmbeddingService &
-      GitService
+      GitService &
+      LlmMetrics
 
   def aiProviderToLlmProvider(aiProvider: AIProvider): LlmProvider =
     aiProvider match
@@ -170,7 +172,9 @@ object ApplicationDI:
       // Create runtime config ref with merged DB settings
       configRefLayer,
       ModelService.live,
-      configAwareLlmServiceLayer,
+      LlmMetrics.layer,
+      // configAwareLlmService composed with MeteredLlmService wrapping, yielding the metered LlmService
+      (configAwareLlmServiceLayer ++ ZLayer.service[LlmMetrics]) >>> MeteredLlmService.layer,
       EmbeddingService.live,
       GitService.live,
       MemoryRepositoryES.live,

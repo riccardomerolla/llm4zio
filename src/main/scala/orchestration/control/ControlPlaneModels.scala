@@ -155,6 +155,7 @@ case class AgentExecutionInfo(
   latencyMs: Long,
   cost: Double,
   lastUpdatedAt: Instant,
+  startedAt: Option[Instant] = None,
   message: Option[String],
 ) derives JsonCodec
 
