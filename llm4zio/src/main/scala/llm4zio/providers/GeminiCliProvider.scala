@@ -86,6 +86,9 @@ object GeminiCliExecutor:
     val effectivePrompt = if isWindows then normalizePromptForWindowsCmd(prompt) else prompt
     val baseArgs        = List("-p", effectivePrompt, "-m", config.model, "-y", "--output-format", outputFormat)
     val includeDirArgs  = ctx.includeDirectories.distinct.flatMap(p => List("--include-directories", p))
+    // The -s flag enables sandbox mode. The backend is controlled separately via
+    // GEMINI_SANDBOX env var injected in startProcess (see GeminiSandbox.envValue).
+    // Default sandbox: -s is emitted but no env var is set, letting gemini pick the backend.
     val sandboxArgs     = ctx.sandbox.map(_ => "-s").toList
     val turnLimitArgs   = ctx.turnLimit.toList.flatMap(n => List("--turn-limit", n.toString))
     baseArgs ++ includeDirArgs ++ sandboxArgs ++ turnLimitArgs
@@ -170,7 +173,11 @@ object GeminiCliExecutor:
       ): IO[LlmError, Process] =
         val geminiArgs = GeminiCliExecutor.buildGeminiArgs(prompt, config, executionContext, outputFormat, isWindows)
         val commands   = geminiCommand ++ geminiArgs
-        val argsForLog = geminiArgs.patch(1, List("<prompt>"), 1)
+        val promptIdx  = geminiArgs.indexOf("-p")
+        val argsForLog =
+          if promptIdx >= 0 && promptIdx + 1 < geminiArgs.length
+          then geminiArgs.patch(promptIdx + 1, List("<prompt>"), 1)
+          else geminiArgs
         ZIO.logDebug(
           s"Starting Gemini process: gemini ${argsForLog.mkString(" ")}"
         ) *>
