@@ -19,15 +19,22 @@ A comparison of the Gemini CLI documentation against the current `GeminiCliProvi
 | `ToolUse`/`ToolResult` events discarded, no tool observability | Medium |
 | `Init` event model/session_id not propagated to chunk metadata | Low |
 | No turn-limit configuration (`--turn-limit N`) | Low |
-| No skills directory support (`--skills-dir`) | Low |
+
+**Exit code source:** [Gemini CLI Headless Mode Reference](https://geminicli.com/docs/cli/headless/) — exit 0 = success, 1 = general error, 42 = input error, 53 = turn limit exceeded.
+
+**Sandbox source:** [Gemini CLI Sandboxing](https://geminicli.com/docs/cli/sandbox/) — `-s`/`--sandbox` is a boolean flag; the backend is selected via `GEMINI_SANDBOX` environment variable.
+
+**Skills source:** [Gemini CLI Skills](https://geminicli.com/docs/cli/skills/) — Skills are auto-discovered from `.gemini/skills/` or `~/.gemini/skills/` relative to CWD. There is no `--skills-dir` CLI flag; skills work automatically when `cwd` is set correctly.
 
 ---
 
 ## Design Decisions
 
 - **Tool calling (`executeWithTools`):** Remains unsupported — the CLI controls its own tool loop. Instead, tool events are surfaced as read-only observability via zero-delta `LlmChunk` metadata.
-- **Sandbox placement:** `GeminiCliExecutionContext` (per-execution), not `LlmConfig` (provider-level).
+- **Sandbox placement:** `GeminiCliExecutionContext` (per-execution), not `LlmConfig` (provider-level). Backend type is passed via `GEMINI_SANDBOX` env var injected into the `ProcessBuilder`, not as a CLI flag argument.
+- **Skills:** No new configuration needed. Skills auto-discover from `cwd`. Document as a convention: set `cwd` to a directory containing `.gemini/skills/` or `.agents/skills/`.
 - **History format:** Structured prompt template with `**User:**`/`**Assistant:**` bold markers and optional `[SYSTEM CONTEXT]` block.
+- **`turnLimit` threading:** Sourced from `GeminiCliExecutionContext` (already a parameter on both `runGeminiProcess`/`runGeminiProcessStream`) — read directly at `validateExitCode` call sites, no `GeminiCliExecutor` trait signature changes.
 
 ---
 
@@ -52,6 +59,8 @@ enum GeminiCliStreamEvent:
 
 **File:** `llm4zio/src/main/scala/llm4zio/providers/GeminiCliProvider.scala` (top-level in same file)
 
+The `-s`/`--sandbox` flag is boolean (enables sandboxing). The backend is selected via the `GEMINI_SANDBOX` environment variable. `Default` enables sandboxing with no specific backend (gemini picks one based on OS).
+
 ```scala
 enum GeminiSandbox:
   case Docker
@@ -59,10 +68,11 @@ enum GeminiSandbox:
   case SeatbeltMacOS  // sandbox-exec (macOS only)
   case Runsc          // gVisor (Linux)
   case Lxc            // LXC/LXD (Linux, experimental)
-  case Default        // -s with no value, let gemini pick
+  case Default        // -s with no GEMINI_SANDBOX, let gemini pick
 
 object GeminiSandbox:
-  def cliValue(s: GeminiSandbox): Option[String] = s match
+  /** The value to set in the GEMINI_SANDBOX env var, if any. None = use -s flag only (Default). */
+  def envValue(s: GeminiSandbox): Option[String] = s match
     case Docker        => Some("docker")
     case Podman        => Some("podman")
     case SeatbeltMacOS => Some("sandbox-exec")
@@ -71,14 +81,15 @@ object GeminiSandbox:
     case Default       => None
 ```
 
-### `GeminiCliExecutionContext` — extend with sandbox, skills dir, turn limit
+### `GeminiCliExecutionContext` — extend with sandbox and turn limit
+
+Note: no `skillsDir` field — skills auto-discover from `cwd` via `.gemini/skills/` / `.agents/skills/` convention.
 
 ```scala
 final case class GeminiCliExecutionContext(
   cwd: Option[String]             = None,
   includeDirectories: List[String] = Nil,
   sandbox: Option[GeminiSandbox]  = None,   // NEW
-  skillsDir: Option[String]       = None,   // NEW
   turnLimit: Option[Int]          = None,   // NEW
 )
 ```
@@ -91,11 +102,24 @@ final case class GeminiCliExecutionContext(
 
 **File:** `llm4zio/src/main/scala/llm4zio/core/Errors.scala`
 
+Must be defined inside `object LlmError` to match the existing namespace convention:
+
 ```scala
-case class TurnLimitError(limit: Option[Int] = None) extends LlmError  // NEW
+object LlmError:
+  case class ProviderError(message: String, cause: Option[Throwable] = None) extends LlmError
+  case class RateLimitError(retryAfter: Option[Duration] = None)             extends LlmError
+  case class AuthenticationError(message: String)                            extends LlmError
+  case class InvalidRequestError(message: String)                            extends LlmError
+  case class TimeoutError(duration: Duration)                                extends LlmError
+  case class ParseError(message: String, raw: String)                        extends LlmError
+  case class ToolError(toolName: String, message: String)                    extends LlmError
+  case class ConfigError(message: String)                                    extends LlmError
+  case class TurnLimitError(limit: Option[Int] = None)  extends LlmError    // NEW
 ```
 
 ### Updated `validateExitCode`
+
+No signature change to the `GeminiCliExecutor` trait. `turnLimit` is read from the `executionContext` that is already in scope at each call site:
 
 ```scala
 private def validateExitCode(
@@ -117,7 +141,10 @@ private def validateExitCode(
         ZIO.fail(LlmError.ProviderError(description, None))
 ```
 
-`turnLimit` is sourced from `GeminiCliExecutionContext.turnLimit` and threaded through `runGeminiProcess` and `runGeminiProcessStream`.
+Call sites pass `executionContext.turnLimit`:
+```scala
+_ <- validateExitCode(exitCode, s"Gemini process exited with code $exitCode", Some(output), executionContext.turnLimit)
+```
 
 ---
 
@@ -156,7 +183,7 @@ def parseStreamEvent(line: String): GeminiCliStreamEvent =
           case "message"     => GeminiCliStreamEvent.Message(event.role, event.content, event.delta.getOrElse(false))
           case "tool_use"    => GeminiCliStreamEvent.ToolUse(event.tool_name, event.tool_id, event.tool_input)
           case "tool_result" => GeminiCliStreamEvent.ToolResult(event.tool_id, event.status, event.content)
-          case "error"       =>                                                              // NEW
+          case "error"       =>
             GeminiCliStreamEvent.Error(
               message   = event.error.flatMap(_.message),
               code      = event.error.flatMap(_.code),
@@ -168,59 +195,77 @@ def parseStreamEvent(line: String): GeminiCliStreamEvent =
       case Left(_) => GeminiCliStreamEvent.LogLine(line)
 ```
 
-### Tool observability in `executeStream`
-
-Tool events become zero-delta `LlmChunk`s with structured metadata. `Error` events terminate the stream:
-
-```scala
-case GeminiCliStreamEvent.ToolUse(toolName, toolId, input) =>
-  ZStream.succeed(LlmChunk(
-    delta    = "",
-    metadata = currentMetadata ++ Map(
-      "event"      -> "tool_use",
-      "tool_name"  -> toolName.getOrElse(""),
-      "tool_id"    -> toolId.getOrElse(""),
-      "tool_input" -> input.getOrElse(""),
-    ),
-  ))
-
-case GeminiCliStreamEvent.ToolResult(toolId, status, content) =>
-  ZStream.succeed(LlmChunk(
-    delta    = "",
-    metadata = currentMetadata ++ Map(
-      "event"        -> "tool_result",
-      "tool_id"      -> toolId.getOrElse(""),
-      "tool_status"  -> status.getOrElse(""),
-      "tool_content" -> content.getOrElse(""),
-    ),
-  ))
-
-case GeminiCliStreamEvent.Error(message, code, errorType) =>
-  ZStream.fail(LlmError.ProviderError(
-    message.map(m => s"Gemini CLI stream error: $m").getOrElse("Gemini CLI stream error"),
-    None,
-  ))
-```
-
 ### Session ID & model metadata propagation
 
-`Init` events update a running metadata map via `mapAccumZIO` so all subsequent chunks carry `session_id` and the live `model`:
+Use a `Ref` for metadata state, updated on `Init` events and read on every `Message`/`Tool` event. This handles `Error` event termination cleanly in a single `.flatMap` pass — no `mapAccum`/`collectSome` split needed.
+
+
 
 ```scala
-// Seed state: base metadata without session_id
-// On Init: add model + session_id to accumulator
-// On Message/Tool: emit chunk with current accumulator as metadata
-.mapAccumZIO(Map("provider" -> "gemini-cli", "model" -> config.model)) {
-  (meta, event) =>
-    event match
+ZStream.fromZIO(Ref.make(baseMetadata)).flatMap { metaRef =>
+  executor
+    .runGeminiProcessStream(prompt, config, executionContext)
+    .tap(logStreamEvent)
+    .flatMap {
       case GeminiCliStreamEvent.Init(model, sessionId) =>
-        val updated = meta
-          ++ model.map("model" -> _).toMap
-          ++ sessionId.map("session_id" -> _).toMap
-        ZIO.succeed((updated, ZStream.empty))
-      case ... =>
-        ZIO.succeed((meta, ZStream.succeed(chunkWithMeta(meta, event))))
+        val updates = model.map("model" -> _).toMap ++ sessionId.map("session_id" -> _).toMap
+        ZStream.fromZIO(metaRef.update(_ ++ updates)).drain
+
+      case GeminiCliStreamEvent.Message(role, content, _)
+          if role.exists(_.equalsIgnoreCase("assistant")) =>
+        ZStream.fromZIO(metaRef.get).flatMap { meta =>
+          content.filter(_.nonEmpty) match
+            case Some(text) => ZStream.succeed(LlmChunk(delta = text, metadata = meta))
+            case None       => ZStream.empty
+        }
+
+      case GeminiCliStreamEvent.ToolUse(toolName, toolId, input) =>
+        ZStream.fromZIO(metaRef.get).map { meta =>
+          LlmChunk(delta = "", metadata = meta ++ Map(
+            "event" -> "tool_use", "tool_name" -> toolName.getOrElse(""),
+            "tool_id" -> toolId.getOrElse(""), "tool_input" -> input.getOrElse(""),
+          ))
+        }
+
+      case GeminiCliStreamEvent.ToolResult(toolId, status, content) =>
+        ZStream.fromZIO(metaRef.get).map { meta =>
+          LlmChunk(delta = "", metadata = meta ++ Map(
+            "event" -> "tool_result", "tool_id" -> toolId.getOrElse(""),
+            "tool_status" -> status.getOrElse(""), "tool_content" -> content.getOrElse(""),
+          ))
+        }
+
+      case GeminiCliStreamEvent.Error(message, _, _) =>
+        ZStream.fail(LlmError.ProviderError(
+          message.map(m => s"Gemini CLI stream error: $m").getOrElse("Gemini CLI stream error"),
+          None,
+        ))
+
+      case GeminiCliStreamEvent.Result(status, errorMessage, stats) if status.contains("error") =>
+        ZStream.fail(LlmError.ProviderError(
+          errorMessage.map(msg => s"Gemini CLI returned an error: $msg").getOrElse("Gemini CLI returned an error"),
+          None,
+        ))
+
+      case GeminiCliStreamEvent.Result(_, _, stats) =>
+        ZStream.fromZIO(metaRef.get).map { meta =>
+          LlmChunk(delta = "", finishReason = Some("stop"), usage = streamStatsToUsage(stats), metadata = meta)
+        }
+
+      case _ => ZStream.empty
+    }
 }
+```
+
+### Logging tap — cover `Error` variant
+
+The existing `.tap` block needs a new case for `Error` events to avoid silent swallowing in the wildcard:
+
+```scala
+case GeminiCliStreamEvent.Error(message, code, errorType) =>
+  ZIO.logWarning(
+    s"Gemini stream error event: ${message.getOrElse("unknown")} code=${code.getOrElse(-1)} type=${errorType.getOrElse("unknown")}"
+  )
 ```
 
 ---
@@ -229,26 +274,34 @@ case GeminiCliStreamEvent.Error(message, code, errorType) =>
 
 **File:** `GeminiCliProvider.scala` (private method inside `make`)
 
+Empty `messages` returns `Left(LlmError.InvalidRequestError(...))` — callers receive a typed error rather than an empty CLI invocation that would fail with exit 42.
+
 ```scala
-private def formatHistory(messages: List[Message]): String =
-  val systemParts = messages
-    .collect { case Message(MessageRole.System, content) => content.trim }
-    .filter(_.nonEmpty)
+private def formatHistory(messages: List[Message]): Either[LlmError, String] =
+  if messages.isEmpty then
+    Left(LlmError.InvalidRequestError("executeStreamWithHistory called with empty message list"))
+  else
+    val systemParts = messages
+      .collect { case Message(MessageRole.System, content) => content.trim }
+      .filter(_.nonEmpty)
 
-  val dialogueParts = messages
-    .filterNot(_.role == MessageRole.System)
-    .map {
-      case Message(MessageRole.User, content)      => s"**User:**\n${content.trim}"
-      case Message(MessageRole.Assistant, content) => s"**Assistant:**\n${content.trim}"
-      case Message(MessageRole.Tool, content)      => s"**Tool Result:**\n${content.trim}"
-      case Message(role, content)                  => s"**${role}:**\n${content.trim}"
-    }
+    val dialogueParts = messages
+      .filterNot(_.role == MessageRole.System)
+      .map {
+        case Message(MessageRole.User, content)      => s"**User:**\n${content.trim}"
+        case Message(MessageRole.Assistant, content) => s"**Assistant:**\n${content.trim}"
+        case Message(MessageRole.Tool, content)      => s"**Tool Result:**\n${content.trim}"
+        case Message(role, content)                  => s"**${role}:**\n${content.trim}"
+      }
 
-  val systemBlock =
-    if systemParts.isEmpty then ""
-    else s"[SYSTEM CONTEXT]\n${systemParts.mkString("\n\n")}\n\n---\n\n"
+    val systemBlock =
+      if systemParts.isEmpty then ""
+      else s"[SYSTEM CONTEXT]\n${systemParts.mkString("\n\n")}\n\n---\n\n"
 
-  systemBlock + dialogueParts.mkString("\n\n")
+    Right(systemBlock + dialogueParts.mkString("\n\n"))
+
+override def executeStreamWithHistory(messages: List[Message]): ZStream[Any, LlmError, LlmChunk] =
+  ZStream.fromEither(formatHistory(messages)).flatMap(executeStream)
 ```
 
 **Example output:**
@@ -271,11 +324,13 @@ What about the return type?
 
 ---
 
-## Section 5: CLI Argument Building
+## Section 5: CLI Argument Building — Sandbox & Turn Limit
 
 ### `buildGeminiArgs` — pure, testable argument construction
 
-**File:** `GeminiCliProvider.scala` (moved to `GeminiCliExecutor` companion)
+**File:** `GeminiCliProvider.scala` (companion object `GeminiCliExecutor`)
+
+Sandbox backend is set via `GEMINI_SANDBOX` environment variable, not as a CLI argument. The `-s` boolean flag enables sandboxing:
 
 ```scala
 private[providers] def buildGeminiArgs(
@@ -285,23 +340,42 @@ private[providers] def buildGeminiArgs(
   outputFormat: String,
   isWindows: Boolean,
 ): List[String] =
-  val effectivePrompt  = if isWindows then normalizePromptForWindowsCmd(prompt) else prompt
-  val baseArgs         = List("-p", effectivePrompt, "-m", config.model, "-y", "--output-format", outputFormat)
-  val includeDirArgs   = ctx.includeDirectories.distinct.flatMap(p => List("--include-directories", p))
-  val sandboxArgs      = ctx.sandbox.toList.flatMap {
-                           case GeminiSandbox.Default => List("-s")
-                           case s                     => List("-s", GeminiSandbox.cliValue(s).get)
-                         }
-  val skillsDirArgs    = ctx.skillsDir.toList.flatMap(dir => List("--skills-dir", dir))
-  val turnLimitArgs    = ctx.turnLimit.toList.flatMap(n => List("--turn-limit", n.toString))
-  baseArgs ++ includeDirArgs ++ sandboxArgs ++ skillsDirArgs ++ turnLimitArgs
+  val effectivePrompt = if isWindows then normalizePromptForWindowsCmd(prompt) else prompt
+  val baseArgs        = List("-p", effectivePrompt, "-m", config.model, "-y", "--output-format", outputFormat)
+  val includeDirArgs  = ctx.includeDirectories.distinct.flatMap(p => List("--include-directories", p))
+  val sandboxArgs     = ctx.sandbox.map(_ => "-s").toList   // -s is a boolean flag only
+  val turnLimitArgs   = ctx.turnLimit.toList.flatMap(n => List("--turn-limit", n.toString))
+  baseArgs ++ includeDirArgs ++ sandboxArgs ++ turnLimitArgs
 ```
 
-The debug log omits the prompt value to avoid logging large inputs:
+`buildGeminiArgs` returns only the flag arguments (starting with `-p`). `startProcess` prepends `geminiCommand` (the OS-appropriate executable) before passing to `ProcessBuilder`.
+
+### Sandbox environment variable injection & process launch
+
+The `GEMINI_SANDBOX` env var is set on the `ProcessBuilder` for non-Default sandbox types. `buildGeminiArgs` output is separate from the command prefix so the log stays clean:
 
 ```scala
-ZIO.logDebug(s"Starting Gemini process: gemini ${argsWithoutPrompt.mkString(" ")}")
+private def startProcess(...): IO[LlmError, Process] =
+  val geminiArgs  = buildGeminiArgs(prompt, config, executionContext, outputFormat, isWindows)
+  val commands    = geminiCommand ++ geminiArgs          // geminiCommand is the OS executable prefix
+  val argsForLog  = geminiArgs.patch(1, List("<prompt>"), 1)  // index 1 = position after "-p"
+  ZIO.logDebug(s"Starting Gemini process: gemini ${argsForLog.mkString(" ")}") *>
+    ZIO
+      .attemptBlocking {
+        val builder = new ProcessBuilder(commands.asJava)
+        executionContext.cwd.foreach(path => builder.directory(java.nio.file.Paths.get(path).toFile))
+        executionContext.sandbox.foreach { s =>
+          GeminiSandbox.envValue(s).foreach { v =>
+            builder.environment().put("GEMINI_SANDBOX", v)
+          }
+        }
+        builder.redirectErrorStream(mergeErrorStream).start()
+      }
+      .mapError(e => LlmError.ProviderError(s"Failed to start gemini process: ${e.getMessage}", Some(e)))
+      .tapError(err => ZIO.logError(s"Failed to start Gemini process: $err"))
 ```
+
+The log line `gemini ${argsForLog.mkString(" ")}` shows `gemini -p <prompt> -m model -y ...` — the `-p` flag is preserved, only the prompt value is replaced.
 
 ---
 
@@ -309,8 +383,8 @@ ZIO.logDebug(s"Starting Gemini process: gemini ${argsWithoutPrompt.mkString(" ")
 
 | File | Change |
 |------|--------|
-| `llm4zio/src/main/scala/llm4zio/core/Errors.scala` | Add `TurnLimitError` |
-| `llm4zio/src/main/scala/llm4zio/providers/GeminiCliProvider.scala` | All other changes: new ADTs, event parsing, stream handling, arg building, history format |
+| `llm4zio/src/main/scala/llm4zio/core/Errors.scala` | Add `TurnLimitError` inside `object LlmError` |
+| `llm4zio/src/main/scala/llm4zio/providers/GeminiCliProvider.scala` | All other changes: `GeminiSandbox` ADT, extended `GeminiCliStreamEvent`, enriched `GeminiStreamJsonEvent`, updated `parseStreamEvent`, `buildGeminiArgs`, `startProcess` env var injection, `Ref`-based metadata propagation in `executeStream`, improved `executeStreamWithHistory` with `formatHistory` |
 | `llm4zio/src/test/scala/llm4zio/providers/GeminiCliProviderSpec.scala` | New tests for all changes |
 
 ---
@@ -319,6 +393,7 @@ ZIO.logDebug(s"Starting Gemini process: gemini ${argsWithoutPrompt.mkString(" ")
 
 - `LlmService.scala` — interface unchanged
 - `Models.scala` — no new config fields needed
+- `GeminiCliExecutor` trait — no signature changes
 - `GeminiApiProvider.scala` — out of scope
 - All other providers — out of scope
 
@@ -326,9 +401,10 @@ ZIO.logDebug(s"Starting Gemini process: gemini ${argsWithoutPrompt.mkString(" ")
 
 ## Testing Strategy
 
-- `parseStreamEvent` — unit tests for `"error"` event, enriched `tool_use`/`tool_result`
-- `validateExitCode` — unit tests for exit 42 → `InvalidRequestError`, exit 53 → `TurnLimitError`
-- `buildGeminiArgs` — unit tests for each new flag combination
-- `formatHistory` — unit tests for system-only, dialogue-only, mixed, empty input
-- `executeStream` — mock executor tests for `ToolUse`/`ToolResult` chunk metadata, `Error` stream failure
-- `GeminiCliExecutionContext` — compile-time coverage via exhaustive `GeminiSandbox` match
+- `parseStreamEvent` — unit tests for `"error"` event, enriched `tool_use`/`tool_result`, `Init` with model+session_id
+- `validateExitCode` — unit tests for exit 42 → `InvalidRequestError`, exit 53 → `TurnLimitError(limit)`
+- `buildGeminiArgs` — unit tests for sandbox flag, turn-limit flag, include-directories, combinations
+- `formatHistory` — unit tests: system-only, dialogue-only, mixed, empty list → `Left(...)`
+- `executeStream` — mock executor tests for `ToolUse`/`ToolResult` chunk metadata, `Error` event stream failure, `Init` metadata propagation to subsequent `Message` chunks
+- `startProcess` env var injection — verify `GEMINI_SANDBOX` is set on `ProcessBuilder.environment()` for non-Default sandbox
+- `GeminiSandbox` — exhaustive match coverage; `envValue(Default)` returns `None`
