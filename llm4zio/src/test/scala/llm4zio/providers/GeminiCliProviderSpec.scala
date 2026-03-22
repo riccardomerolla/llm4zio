@@ -686,6 +686,80 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
         yield assertTrue(result.isFailure)
       },
     ),
+    suite("formatHistory via executeStreamWithHistory")(
+      test("empty message list fails with InvalidRequestError") {
+        val config   = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
+        val executor = new MockGeminiCliExecutor()
+        val provider = GeminiCliProvider.make(config, executor)
+        for
+          result <- provider.executeStreamWithHistory(Nil).runCollect.exit
+        yield assertTrue(result.isFailure)
+      },
+      test("user+assistant messages formatted with bold role markers") {
+        var capturedPrompt = ""
+        val config         = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
+        val executor       = new MockGeminiCliExecutor(
+          streamEvents = List(
+            GeminiCliStreamEvent.Message(role = Some("assistant"), content = Some("ok"), delta = true),
+            GeminiCliStreamEvent.Result(status = Some("success"), errorMessage = None, stats = None),
+          )
+        ) {
+          override def runGeminiProcessStream(
+            prompt: String,
+            config: LlmConfig,
+            executionContext: GeminiCliExecutionContext,
+          ): ZStream[Any, LlmError, GeminiCliStreamEvent] =
+            capturedPrompt = prompt
+            super.runGeminiProcessStream(prompt, config, executionContext)
+        }
+        val provider = GeminiCliProvider.make(config, executor)
+        val messages = List(
+          Message(MessageRole.User, "Hello"),
+          Message(MessageRole.Assistant, "Hi there"),
+          Message(MessageRole.User, "What is 2+2?"),
+        )
+        for
+          _ <- provider.executeStreamWithHistory(messages).runDrain
+        yield assertTrue(
+          capturedPrompt.contains("**User:**"),
+          capturedPrompt.contains("**Assistant:**"),
+          capturedPrompt.contains("Hello"),
+          capturedPrompt.contains("Hi there"),
+          capturedPrompt.contains("What is 2+2?"),
+          !capturedPrompt.startsWith("[SYSTEM CONTEXT]"),
+        )
+      },
+      test("system messages appear in [SYSTEM CONTEXT] block") {
+        var capturedPrompt = ""
+        val config         = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
+        val executor       = new MockGeminiCliExecutor(
+          streamEvents = List(
+            GeminiCliStreamEvent.Result(status = Some("success"), errorMessage = None, stats = None),
+          )
+        ) {
+          override def runGeminiProcessStream(
+            prompt: String,
+            config: LlmConfig,
+            executionContext: GeminiCliExecutionContext,
+          ): ZStream[Any, LlmError, GeminiCliStreamEvent] =
+            capturedPrompt = prompt
+            super.runGeminiProcessStream(prompt, config, executionContext)
+        }
+        val provider = GeminiCliProvider.make(config, executor)
+        val messages = List(
+          Message(MessageRole.System, "You are a helpful assistant."),
+          Message(MessageRole.User, "Hello"),
+        )
+        for
+          _ <- provider.executeStreamWithHistory(messages).runDrain
+        yield assertTrue(
+          capturedPrompt.startsWith("[SYSTEM CONTEXT]"),
+          capturedPrompt.contains("You are a helpful assistant."),
+          capturedPrompt.contains("---"),
+          capturedPrompt.contains("**User:**"),
+        )
+      },
+    ),
     suite("exit code error semantics")(
       test("TurnLimitError is an LlmError") {
         val err: LlmError = LlmError.TurnLimitError(Some(3))

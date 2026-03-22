@@ -599,11 +599,31 @@ object GeminiCliProvider:
               }
           }
 
+      private def formatHistory(messages: List[Message]): Either[LlmError, String] =
+        if messages.isEmpty then
+          Left(LlmError.InvalidRequestError("executeStreamWithHistory called with empty message list"))
+        else
+          val systemParts = messages
+            .collect { case Message(MessageRole.System, content) => content.trim }
+            .filter(_.nonEmpty)
+
+          val dialogueParts = messages
+            .filterNot(_.role == MessageRole.System)
+            .map {
+              case Message(MessageRole.User, content)      => s"**User:**\n${content.trim}"
+              case Message(MessageRole.Assistant, content) => s"**Assistant:**\n${content.trim}"
+              case Message(MessageRole.Tool, content)      => s"**Tool Result:**\n${content.trim}"
+              case Message(role, content)                  => s"**${role}:**\n${content.trim}"
+            }
+
+          val systemBlock =
+            if systemParts.isEmpty then ""
+            else s"[SYSTEM CONTEXT]\n${systemParts.mkString("\n\n")}\n\n---\n\n"
+
+          Right(systemBlock + dialogueParts.mkString("\n\n"))
+
       override def executeStreamWithHistory(messages: List[Message]): ZStream[Any, LlmError, LlmChunk] =
-        val combinedPrompt = messages.map { msg =>
-          s"${msg.role}: ${msg.content}"
-        }.mkString("\n\n")
-        executeStream(combinedPrompt)
+        ZStream.fromZIO(ZIO.fromEither(formatHistory(messages))).flatMap(executeStream)
 
       override def executeWithTools(prompt: String, tools: List[AnyTool]): IO[LlmError, ToolCallResponse] =
         ZIO.fail(LlmError.InvalidRequestError("Gemini CLI does not support tool calling"))
