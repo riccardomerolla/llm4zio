@@ -388,6 +388,45 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
           GeminiCliStreamEvent.LogLine("Error when talking to Gemini API Full report available at: ..."),
       )
     },
+    test("parseStreamEvent decodes error event into Error variant") {
+      val line = """{"type":"error","error":{"type":"rate_limit","message":"quota exceeded","code":429}}"""
+      assertTrue(
+        GeminiCliProvider.parseStreamEvent(line) == GeminiCliStreamEvent.Error(
+          message   = Some("quota exceeded"),
+          code      = Some(429),
+          errorType = Some("rate_limit"),
+        )
+      )
+    },
+    test("parseStreamEvent decodes tool_use with input into ToolUse") {
+      val line = """{"type":"tool_use","tool_name":"read_file","tool_id":"t1","tool_input":"{\"path\":\"/foo\"}"}"""
+      assertTrue(
+        GeminiCliProvider.parseStreamEvent(line) == GeminiCliStreamEvent.ToolUse(
+          toolName = Some("read_file"),
+          toolId   = Some("t1"),
+          input    = Some("""{"path":"/foo"}"""),
+        )
+      )
+    },
+    test("parseStreamEvent decodes tool_result with content into ToolResult") {
+      val line = """{"type":"tool_result","tool_id":"t1","status":"success","content":"file body"}"""
+      assertTrue(
+        GeminiCliProvider.parseStreamEvent(line) == GeminiCliStreamEvent.ToolResult(
+          toolId  = Some("t1"),
+          status  = Some("success"),
+          content = Some("file body"),
+        )
+      )
+    },
+    test("parseStreamEvent decodes init event with model and session_id") {
+      val line = """{"type":"init","model":"gemini-2.5-pro","session_id":"s42"}"""
+      assertTrue(
+        GeminiCliProvider.parseStreamEvent(line) == GeminiCliStreamEvent.Init(
+          model     = Some("gemini-2.5-pro"),
+          sessionId = Some("s42"),
+        )
+      )
+    },
     suite("GeminiSandbox")(
       test("envValue returns None for Default sandbox") {
         assertTrue(GeminiSandbox.envValue(GeminiSandbox.Default).isEmpty)

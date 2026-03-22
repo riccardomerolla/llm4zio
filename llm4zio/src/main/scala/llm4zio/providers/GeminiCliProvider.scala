@@ -310,14 +310,15 @@ object GeminiCliProvider:
 
   final private case class GeminiStreamJsonEvent(
     `type`: String,
-    role: Option[String] = None,
-    content: Option[String] = None,
-    delta: Option[Boolean] = None,
-    tool_name: Option[String] = None,
-    tool_id: Option[String] = None,
-    status: Option[String] = None,
-    model: Option[String] = None,
-    session_id: Option[String] = None,
+    role: Option[String]             = None,
+    content: Option[String]          = None,
+    delta: Option[Boolean]           = None,
+    tool_name: Option[String]        = None,
+    tool_id: Option[String]          = None,
+    tool_input: Option[String]       = None,
+    status: Option[String]           = None,
+    model: Option[String]            = None,
+    session_id: Option[String]       = None,
     error: Option[GeminiStreamError] = None,
     stats: Option[GeminiStreamStats] = None,
   ) derives JsonDecoder
@@ -347,16 +348,18 @@ object GeminiCliProvider:
           event.`type` match
             case "init"        => GeminiCliStreamEvent.Init(event.model, event.session_id)
             case "message"     => GeminiCliStreamEvent.Message(event.role, event.content, event.delta.getOrElse(false))
-            case "tool_use"    => GeminiCliStreamEvent.ToolUse(event.tool_name, event.tool_id, None)
-            case "tool_result" => GeminiCliStreamEvent.ToolResult(event.tool_id, event.status, None)
-            case "result"      =>
-              GeminiCliStreamEvent.Result(
-                status = event.status,
-                errorMessage = event.error.flatMap(_.message),
-                stats = event.stats,
+            case "tool_use"    => GeminiCliStreamEvent.ToolUse(event.tool_name, event.tool_id, event.tool_input)
+            case "tool_result" => GeminiCliStreamEvent.ToolResult(event.tool_id, event.status, event.content)
+            case "error"       =>
+              GeminiCliStreamEvent.Error(
+                message   = event.error.flatMap(_.message),
+                code      = event.error.flatMap(_.code),
+                errorType = event.error.flatMap(_.`type`),
               )
+            case "result"      =>
+              GeminiCliStreamEvent.Result(event.status, event.error.flatMap(_.message), event.stats)
             case _             => GeminiCliStreamEvent.LogLine(line)
-        case Left(_)      => GeminiCliStreamEvent.LogLine(line)
+        case Left(_) => GeminiCliStreamEvent.LogLine(line)
 
   private def tryDecodeHeadless(raw: String): Option[Either[String, String]] =
     raw.fromJson[GeminiHeadlessResponse].toOption.map { response =>
