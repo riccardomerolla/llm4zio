@@ -279,9 +279,11 @@ object GeminiCliExecutor:
         exitCode match
           case 0  => ZIO.unit
           case 42 =>
-            ZIO.fail(LlmError.InvalidRequestError(s"Gemini CLI rejected the input (exit 42): $description"))
+            ZIO.logWarning(s"Gemini CLI rejected the input (exit 42): $description") *>
+              ZIO.fail(LlmError.InvalidRequestError(s"Gemini CLI rejected the input (exit 42): $description"))
           case 53 =>
-            ZIO.fail(LlmError.TurnLimitError(turnLimit))
+            ZIO.logWarning(s"Gemini CLI turn limit exceeded (exit 53): $description") *>
+              ZIO.fail(LlmError.TurnLimitError(turnLimit))
           case _  =>
             val renderedOutput =
               output.map(out => s". Output: ${out.take(500)}${if out.length > 500 then "..." else ""}").getOrElse("")
