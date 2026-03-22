@@ -128,7 +128,7 @@ object GeminiCliExecutor:
           process  <- startProcess(prompt, config, executionContext, outputFormat = "json")
           output   <- readOutput(process, config)
           exitCode <- waitForCompletion(process)
-          _        <- validateExitCode(exitCode, s"Gemini process exited with code $exitCode", Some(output))
+          _        <- validateExitCode(exitCode, s"Gemini process exited with code $exitCode", Some(output), executionContext.turnLimit)
           finalOut <- extractFinalResponse(output)
         yield finalOut
 
@@ -159,7 +159,7 @@ object GeminiCliExecutor:
                          .forkScoped
           yield streamOutput(process) ++ ZStream.fromZIO(
             waitForCompletion(process).flatMap(exitCode =>
-              validateExitCode(exitCode, s"Gemini stream process exited with code $exitCode", None)
+              validateExitCode(exitCode, s"Gemini stream process exited with code $exitCode", None, executionContext.turnLimit)
             )
           ).drain
         }
@@ -270,13 +270,23 @@ object GeminiCliExecutor:
           .attemptBlocking(process.waitFor())
           .mapError(e => LlmError.ProviderError(s"Process wait failed: ${e.getMessage}", Some(e)))
 
-      private def validateExitCode(exitCode: Int, description: String, output: Option[String]): IO[LlmError, Unit] =
-        if exitCode != 0 then
-          val renderedOutput =
-            output.map(out => s". Output: ${out.take(500)}${if out.length > 500 then "..." else ""}").getOrElse("")
-          ZIO.logError(s"$description$renderedOutput") *>
-            ZIO.fail(LlmError.ProviderError(description, None))
-        else ZIO.unit
+      private def validateExitCode(
+        exitCode: Int,
+        description: String,
+        output: Option[String],
+        turnLimit: Option[Int] = None,
+      ): IO[LlmError, Unit] =
+        exitCode match
+          case 0  => ZIO.unit
+          case 42 =>
+            ZIO.fail(LlmError.InvalidRequestError(s"Gemini CLI rejected the input (exit 42): $description"))
+          case 53 =>
+            ZIO.fail(LlmError.TurnLimitError(turnLimit))
+          case _  =>
+            val renderedOutput =
+              output.map(out => s". Output: ${out.take(500)}${if out.length > 500 then "..." else ""}").getOrElse("")
+            ZIO.logError(s"$description$renderedOutput") *>
+              ZIO.fail(LlmError.ProviderError(description, None))
 
       private def extractFinalResponse(output: String): IO[LlmError, String] =
         ZIO

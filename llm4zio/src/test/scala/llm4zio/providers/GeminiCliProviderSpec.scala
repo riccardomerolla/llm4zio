@@ -600,4 +600,42 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
         assertTrue(GeminiCliExecutor.normalizePromptForWindowsCmd("") == "")
       },
     ),
+    suite("exit code error semantics")(
+      test("TurnLimitError is an LlmError") {
+        val err: LlmError = LlmError.TurnLimitError(Some(3))
+        assertTrue(err.isInstanceOf[LlmError])
+      },
+      test("executeStream surfaces TurnLimitError from executor") {
+        val config   = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
+        // shouldSucceed = true so checkGeminiInstalled passes; stream override controls the failure
+        val executor = new MockGeminiCliExecutor(shouldSucceed = true) {
+          override def runGeminiProcessStream(
+            prompt: String,
+            config: LlmConfig,
+            executionContext: GeminiCliExecutionContext,
+          ): ZStream[Any, LlmError, GeminiCliStreamEvent] =
+            ZStream.fail(LlmError.TurnLimitError(Some(3)))
+        }
+        val provider = GeminiCliProvider.make(config, executor)
+        for
+          result <- provider.executeStream("test").runCollect.exit
+        yield assertTrue(result.isFailure)
+      },
+      test("executeStream surfaces InvalidRequestError from executor") {
+        val config   = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
+        // shouldSucceed = true so checkGeminiInstalled passes; stream override controls the failure
+        val executor = new MockGeminiCliExecutor(shouldSucceed = true) {
+          override def runGeminiProcessStream(
+            prompt: String,
+            config: LlmConfig,
+            executionContext: GeminiCliExecutionContext,
+          ): ZStream[Any, LlmError, GeminiCliStreamEvent] =
+            ZStream.fail(LlmError.InvalidRequestError("bad input (exit 42)"))
+        }
+        val provider = GeminiCliProvider.make(config, executor)
+        for
+          result <- provider.executeStream("test").runCollect.exit
+        yield assertTrue(result.isFailure)
+      },
+    ),
   )
