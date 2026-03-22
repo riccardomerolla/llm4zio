@@ -76,6 +76,20 @@ object GeminiCliExecutor:
   private[providers] def normalizePromptForWindowsCmd(prompt: String): String =
     prompt.replaceAll("""\r\n|\n|\r""", " ")
 
+  private[providers] def buildGeminiArgs(
+    prompt: String,
+    config: LlmConfig,
+    ctx: GeminiCliExecutionContext,
+    outputFormat: String,
+    isWindows: Boolean,
+  ): List[String] =
+    val effectivePrompt = if isWindows then normalizePromptForWindowsCmd(prompt) else prompt
+    val baseArgs        = List("-p", effectivePrompt, "-m", config.model, "-y", "--output-format", outputFormat)
+    val includeDirArgs  = ctx.includeDirectories.distinct.flatMap(p => List("--include-directories", p))
+    val sandboxArgs     = ctx.sandbox.map(_ => "-s").toList
+    val turnLimitArgs   = ctx.turnLimit.toList.flatMap(n => List("--turn-limit", n.toString))
+    baseArgs ++ includeDirArgs ++ sandboxArgs ++ turnLimitArgs
+
   val default: GeminiCliExecutor =
     new GeminiCliExecutor {
       private def isWindows: Boolean =
@@ -154,29 +168,21 @@ object GeminiCliExecutor:
         outputFormat: String,
         mergeErrorStream: Boolean = true,
       ): IO[LlmError, Process] =
-        val effectivePrompt    = if isWindows then normalizePromptForWindowsCmd(prompt) else prompt
-        val commands           = geminiCommand ++ List(
-          "-p",
-          effectivePrompt,
-          "-m",
-          config.model,
-          "-y",
-          "--output-format",
-          outputFormat,
-        ) ++ executionContext.includeDirectories.distinct.flatMap(path => List("--include-directories", path))
-        val includeDirectories = executionContext.includeDirectories.distinct
-        val cwdInfo            = executionContext.cwd.fold("cwd=<default>")(path => s"cwd=$path")
-        val includeInfo        =
-          if includeDirectories.isEmpty then "includeDirectories=[]"
-          else s"includeDirectories=[${includeDirectories.mkString(", ")}]"
-
+        val geminiArgs = GeminiCliExecutor.buildGeminiArgs(prompt, config, executionContext, outputFormat, isWindows)
+        val commands   = geminiCommand ++ geminiArgs
+        val argsForLog = geminiArgs.patch(1, List("<prompt>"), 1)
         ZIO.logDebug(
-          s"Starting Gemini process: gemini -p <prompt> -m ${config.model} -y --output-format $outputFormat $includeInfo $cwdInfo"
+          s"Starting Gemini process: gemini ${argsForLog.mkString(" ")}"
         ) *>
           ZIO
             .attemptBlocking {
               val builder = new ProcessBuilder(commands.asJava)
               executionContext.cwd.foreach(path => builder.directory(java.nio.file.Paths.get(path).toFile))
+              executionContext.sandbox.foreach { s =>
+                GeminiSandbox.envValue(s).foreach { v =>
+                  builder.environment().put("GEMINI_SANDBOX", v)
+                }
+              }
               builder
                 .redirectErrorStream(mergeErrorStream)
                 .start()

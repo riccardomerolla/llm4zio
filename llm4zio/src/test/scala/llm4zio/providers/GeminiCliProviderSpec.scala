@@ -493,6 +493,78 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
       )
       assertTrue(event.content == Some("file content here"))
     },
+    suite("buildGeminiArgs")(
+      test("includes base flags") {
+        val config = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
+        val ctx    = GeminiCliExecutionContext()
+        val args   = GeminiCliExecutor.buildGeminiArgs("my prompt", config, ctx, "stream-json", isWindows = false)
+        assertTrue(
+          args.contains("-p"),
+          args.contains("my prompt"),
+          args.contains("-m"),
+          args.contains("gemini-2.5-pro"),
+          args.contains("-y"),
+          args.contains("--output-format"),
+          args.contains("stream-json"),
+        )
+      },
+      test("includes -s flag when sandbox is set") {
+        val config = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
+        val ctx    = GeminiCliExecutionContext(sandbox = Some(GeminiSandbox.Docker))
+        val args   = GeminiCliExecutor.buildGeminiArgs("prompt", config, ctx, "json", isWindows = false)
+        assertTrue(args.contains("-s"))
+      },
+      test("omits -s flag when sandbox is None") {
+        val config = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
+        val ctx    = GeminiCliExecutionContext(sandbox = None)
+        val args   = GeminiCliExecutor.buildGeminiArgs("prompt", config, ctx, "json", isWindows = false)
+        assertTrue(!args.contains("-s"))
+      },
+      test("includes --turn-limit when configured") {
+        val config = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
+        val ctx    = GeminiCliExecutionContext(turnLimit = Some(5))
+        val args   = GeminiCliExecutor.buildGeminiArgs("prompt", config, ctx, "json", isWindows = false)
+        assertTrue(
+          args.contains("--turn-limit"),
+          args.contains("5"),
+        )
+      },
+      test("omits --turn-limit when not configured") {
+        val config = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
+        val ctx    = GeminiCliExecutionContext()
+        val args   = GeminiCliExecutor.buildGeminiArgs("prompt", config, ctx, "json", isWindows = false)
+        assertTrue(!args.contains("--turn-limit"))
+      },
+      test("includes --include-directories for each entry") {
+        val config = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
+        val ctx    = GeminiCliExecutionContext(includeDirectories = List("/a", "/b"))
+        val args   = GeminiCliExecutor.buildGeminiArgs("prompt", config, ctx, "json", isWindows = false)
+        assertTrue(
+          args.count(_ == "--include-directories") == 2,
+          args.contains("/a"),
+          args.contains("/b"),
+        )
+      },
+      test("deduplicates include-directories") {
+        val config = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
+        val ctx    = GeminiCliExecutionContext(includeDirectories = List("/a", "/a"))
+        val args   = GeminiCliExecutor.buildGeminiArgs("prompt", config, ctx, "json", isWindows = false)
+        assertTrue(args.count(_ == "/a") == 1)
+      },
+      test("normalizes prompt newlines on Windows") {
+        val config    = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
+        val ctx       = GeminiCliExecutionContext()
+        val args      = GeminiCliExecutor.buildGeminiArgs("line1\nline2", config, ctx, "json", isWindows = true)
+        val promptIdx = args.indexOf("-p") + 1
+        assertTrue(!args(promptIdx).contains("\n"))
+      },
+      test("Default sandbox still produces -s flag") {
+        val config = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
+        val ctx    = GeminiCliExecutionContext(sandbox = Some(GeminiSandbox.Default))
+        val args   = GeminiCliExecutor.buildGeminiArgs("prompt", config, ctx, "json", isWindows = false)
+        assertTrue(args.contains("-s"))
+      },
+    ),
     suite("normalizePromptForWindowsCmd")(
       test("replaces Unix newlines with spaces") {
         val prompt     = "Analyze the repo at:\n/path/to/repo\n\nDo not modify files."
