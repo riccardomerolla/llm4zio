@@ -695,6 +695,16 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
           result <- provider.executeStreamWithHistory(Nil).runCollect.exit
         yield assertTrue(result.isFailure)
       },
+      test("system-only message list fails with InvalidRequestError") {
+        val config   = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
+        val executor = new MockGeminiCliExecutor()
+        val provider = GeminiCliProvider.make(config, executor)
+        for
+          result <- provider.executeStreamWithHistory(
+                      List(Message(MessageRole.System, "You are an assistant."))
+                    ).runCollect.exit
+        yield assertTrue(result.isFailure)
+      },
       test("user+assistant messages formatted with bold role markers") {
         var capturedPrompt = ""
         val config         = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")

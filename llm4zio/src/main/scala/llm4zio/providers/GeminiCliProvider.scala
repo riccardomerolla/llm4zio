@@ -620,7 +620,12 @@ object GeminiCliProvider:
             if systemParts.isEmpty then ""
             else s"[SYSTEM CONTEXT]\n${systemParts.mkString("\n\n")}\n\n---\n\n"
 
-          Right(systemBlock + dialogueParts.mkString("\n\n"))
+          if dialogueParts.isEmpty then
+            Left(LlmError.InvalidRequestError(
+              "executeStreamWithHistory: message list contains no non-system messages"
+            ))
+          else
+            Right(systemBlock + dialogueParts.mkString("\n\n"))
 
       override def executeStreamWithHistory(messages: List[Message]): ZStream[Any, LlmError, LlmChunk] =
         ZStream.fromZIO(ZIO.fromEither(formatHistory(messages))).flatMap(executeStream)
