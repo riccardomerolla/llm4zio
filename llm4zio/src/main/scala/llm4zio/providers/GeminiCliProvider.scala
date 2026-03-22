@@ -20,6 +20,24 @@ enum GeminiCliStreamEvent:
   case ToolResult(toolId: Option[String], status: Option[String])
   case Result(status: Option[String], errorMessage: Option[String], stats: Option[GeminiCliProvider.GeminiStreamStats])
 
+enum GeminiSandbox:
+  case Docker
+  case Podman
+  case SeatbeltMacOS  // sandbox-exec (macOS only)
+  case Runsc          // gVisor (Linux)
+  case Lxc            // LXC/LXD (Linux, experimental)
+  case Default        // -s only, no backend preference
+
+object GeminiSandbox:
+  /** Value to set in GEMINI_SANDBOX env var. None = let gemini choose (Default case). */
+  def envValue(s: GeminiSandbox): Option[String] = s match
+    case Docker        => Some("docker")
+    case Podman        => Some("podman")
+    case SeatbeltMacOS => Some("sandbox-exec")
+    case Runsc         => Some("runsc")
+    case Lxc           => Some("lxc")
+    case Default       => None
+
 trait GeminiCliExecutor:
   def checkGeminiInstalled: IO[LlmError, Unit]
   def runGeminiProcess(
@@ -34,8 +52,10 @@ trait GeminiCliExecutor:
   ): ZStream[Any, LlmError, GeminiCliStreamEvent]
 
 final case class GeminiCliExecutionContext(
-  cwd: Option[String] = None,
+  cwd: Option[String]              = None,
   includeDirectories: List[String] = Nil,
+  sandbox: Option[GeminiSandbox]   = None,
+  turnLimit: Option[Int]           = None,
 )
 
 object GeminiCliExecutionContext:

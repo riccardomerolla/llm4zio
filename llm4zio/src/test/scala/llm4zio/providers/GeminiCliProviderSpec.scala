@@ -388,6 +388,36 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
           GeminiCliStreamEvent.LogLine("Error when talking to Gemini API Full report available at: ..."),
       )
     },
+    suite("GeminiSandbox")(
+      test("envValue returns None for Default sandbox") {
+        assertTrue(GeminiSandbox.envValue(GeminiSandbox.Default).isEmpty)
+      },
+      test("envValue returns docker for Docker sandbox") {
+        assertTrue(GeminiSandbox.envValue(GeminiSandbox.Docker) == Some("docker"))
+      },
+      test("envValue returns podman for Podman sandbox") {
+        assertTrue(GeminiSandbox.envValue(GeminiSandbox.Podman) == Some("podman"))
+      },
+      test("envValue returns sandbox-exec for SeatbeltMacOS sandbox") {
+        assertTrue(GeminiSandbox.envValue(GeminiSandbox.SeatbeltMacOS) == Some("sandbox-exec"))
+      },
+      test("envValue returns runsc for Runsc sandbox") {
+        assertTrue(GeminiSandbox.envValue(GeminiSandbox.Runsc) == Some("runsc"))
+      },
+      test("envValue returns lxc for Lxc sandbox") {
+        assertTrue(GeminiSandbox.envValue(GeminiSandbox.Lxc) == Some("lxc"))
+      },
+    ),
+    test("GeminiCliExecutionContext includes sandbox and turnLimit fields") {
+      val ctx = GeminiCliExecutionContext(
+        sandbox    = Some(GeminiSandbox.Docker),
+        turnLimit  = Some(10),
+      )
+      assertTrue(
+        ctx.sandbox == Some(GeminiSandbox.Docker),
+        ctx.turnLimit == Some(10),
+      )
+    },
     test("TurnLimitError carries the configured limit") {
       val err = LlmError.TurnLimitError(Some(5))
       assertTrue(err.limit == Some(5))
