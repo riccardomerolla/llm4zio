@@ -13,3 +13,4 @@ object LlmError:
   case class ParseError(message: String, raw: String)                        extends LlmError
   case class ToolError(toolName: String, message: String)                    extends LlmError
   case class ConfigError(message: String)                                    extends LlmError
+  case class TurnLimitError(limit: Option[Int] = None)                      extends LlmError

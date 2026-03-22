@@ -218,3 +218,4 @@ private def toEmbeddingError(error: LlmError): EmbeddingError =
     case LlmError.ConfigError(message)         => EmbeddingError.ProviderError(message)
     case LlmError.ToolError(toolName, message) =>
       EmbeddingError.ProviderError(s"Unexpected tool error ($toolName): $message")
+    case LlmError.TurnLimitError(_) => EmbeddingError.ProviderError("Turn limit exceeded")

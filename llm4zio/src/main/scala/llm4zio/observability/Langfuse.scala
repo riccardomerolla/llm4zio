@@ -78,6 +78,7 @@ object LangfuseClient:
               case LlmError.ConfigError(message)         => LangfuseError.InvalidConfig(message)
               case LlmError.ToolError(tool, message)     =>
                 LangfuseError.Transport(s"Unexpected tool error ($tool): $message")
+              case LlmError.TurnLimitError(_) => LangfuseError.Transport("Turn limit exceeded")
             }
             .unit
 

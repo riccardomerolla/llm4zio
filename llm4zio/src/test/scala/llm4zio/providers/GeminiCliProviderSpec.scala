@@ -388,6 +388,14 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
           GeminiCliStreamEvent.LogLine("Error when talking to Gemini API Full report available at: ..."),
       )
     },
+    test("TurnLimitError carries the configured limit") {
+      val err = LlmError.TurnLimitError(Some(5))
+      assertTrue(err.limit == Some(5))
+    },
+    test("TurnLimitError has None limit when not configured") {
+      val err = LlmError.TurnLimitError()
+      assertTrue(err.limit.isEmpty)
+    },
     suite("normalizePromptForWindowsCmd")(
       test("replaces Unix newlines with spaces") {
         val prompt     = "Analyze the repo at:\n/path/to/repo\n\nDo not modify files."
