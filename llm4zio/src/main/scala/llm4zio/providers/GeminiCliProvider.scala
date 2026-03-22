@@ -494,82 +494,110 @@ object GeminiCliProvider:
   ): LlmService =
     new LlmService:
       override def executeStream(prompt: String): ZStream[Any, LlmError, LlmChunk] =
-        val baseMetadata = Map(
-          "provider" -> "gemini-cli",
-          "model"    -> config.model,
-        )
+        val baseMetadata = Map("provider" -> "gemini-cli", "model" -> config.model)
         ZStream.fromZIO(ZIO.logInfo(s"Executing Gemini CLI stream with model: ${config.model}")).drain ++
           ZStream.fromZIO(executor.checkGeminiInstalled).drain ++
-          executor
-            .runGeminiProcessStream(prompt, config, executionContext)
-            .tap {
-              case GeminiCliStreamEvent.LogLine(line) if line.trim.isEmpty || isPreambleLine(line.trim) =>
-                ZIO.logDebug(s"Gemini stream preamble: ${line.trim}")
-              case GeminiCliStreamEvent.LogLine(line)                                                   =>
-                ZIO.logTrace(s"Gemini stream non-JSON output: ${line.trim}")
-              case GeminiCliStreamEvent.Init(model, sessionId)                                          =>
-                ZIO.logDebug(
-                  s"Gemini stream initialized${model.fold("")(m =>
-                      s" with model=$m"
-                    )}${sessionId.fold("")(id => s", session=$id")}"
-                )
-              case GeminiCliStreamEvent.Message(role, _, delta)                                         =>
-                ZIO.logDebug(s"Gemini stream message event role=${role.getOrElse("unknown")}, delta=$delta")
-              case GeminiCliStreamEvent.ToolUse(toolName, toolId, _)                                    =>
-                ZIO.logDebug(
-                  s"Gemini stream tool use${toolName.fold("")(name =>
-                      s" tool=$name"
-                    )}${toolId.fold("")(id => s", id=$id")}"
-                )
-              case GeminiCliStreamEvent.ToolResult(toolId, status, _)                                  =>
-                ZIO.logDebug(
-                  s"Gemini stream tool result${toolId.fold("")(id =>
-                      s" id=$id"
-                    )}${status.fold("")(value => s", status=$value")}"
-                )
-              case GeminiCliStreamEvent.Error(message, code, errorType)                                =>
-                ZIO.logWarning(
-                  s"Gemini stream error event: ${message.getOrElse("unknown")} code=${code.getOrElse(-1)} type=${errorType.getOrElse("unknown")}"
-                )
-              case GeminiCliStreamEvent.Result(status, errorMessage, _)                                 =>
-                ZIO.logDebug(
-                  s"Gemini stream result status=${status.getOrElse("unknown")}${errorMessage.fold("")(msg =>
-                      s", error=$msg"
-                    )}"
-                )
-            }
-            .flatMap {
-              case GeminiCliStreamEvent.Message(role, content, _) if role.exists(_.equalsIgnoreCase("assistant")) =>
-                content.filter(_.nonEmpty) match
-                  case Some(text) =>
-                    ZStream.succeed(
-                      LlmChunk(
-                        delta = text,
-                        metadata = baseMetadata,
-                      )
+          ZStream.fromZIO(Ref.make(baseMetadata)).flatMap { metaRef =>
+            executor
+              .runGeminiProcessStream(prompt, config, executionContext)
+              .tap {
+                case GeminiCliStreamEvent.LogLine(line) if line.trim.isEmpty || isPreambleLine(line.trim) =>
+                  ZIO.logDebug(s"Gemini stream preamble: ${line.trim}")
+                case GeminiCliStreamEvent.LogLine(line) =>
+                  ZIO.logTrace(s"Gemini stream non-JSON output: ${line.trim}")
+                case GeminiCliStreamEvent.Init(model, sessionId) =>
+                  ZIO.logDebug(
+                    s"Gemini stream initialized${model.fold("")(m => s" with model=$m")}${sessionId.fold("")(id => s", session=$id")}"
+                  )
+                case GeminiCliStreamEvent.Message(role, _, delta) =>
+                  ZIO.logDebug(s"Gemini stream message event role=${role.getOrElse("unknown")}, delta=$delta")
+                case GeminiCliStreamEvent.ToolUse(toolName, toolId, _) =>
+                  ZIO.logDebug(
+                    s"Gemini stream tool use${toolName.fold("")(n => s" tool=$n")}${toolId.fold("")(id => s", id=$id")}"
+                  )
+                case GeminiCliStreamEvent.ToolResult(toolId, status, _) =>
+                  ZIO.logDebug(
+                    s"Gemini stream tool result${toolId.fold("")(id => s" id=$id")}${status.fold("")(v => s", status=$v")}"
+                  )
+                case GeminiCliStreamEvent.Error(message, code, errorType) =>
+                  ZIO.logWarning(
+                    s"Gemini stream error event: ${message.getOrElse("unknown")} code=${code.getOrElse(-1)} type=${errorType.getOrElse("unknown")}"
+                  )
+                case GeminiCliStreamEvent.Result(status, errorMessage, _) =>
+                  ZIO.logDebug(
+                    s"Gemini stream result status=${status.getOrElse("unknown")}${errorMessage.fold("")(msg => s", error=$msg")}"
+                  )
+              }
+              .flatMap {
+                case GeminiCliStreamEvent.Init(model, sessionId) =>
+                  val updates = model.map("model" -> _).toMap ++ sessionId.map("session_id" -> _).toMap
+                  ZStream.fromZIO(metaRef.update(_ ++ updates)).drain
+
+                case GeminiCliStreamEvent.Message(role, content, _)
+                    if role.exists(_.equalsIgnoreCase("assistant")) =>
+                  ZStream.fromZIO(metaRef.get).flatMap { meta =>
+                    content.filter(_.nonEmpty) match
+                      case Some(text) => ZStream.succeed(LlmChunk(delta = text, metadata = meta))
+                      case None       => ZStream.empty
+                  }
+
+                case GeminiCliStreamEvent.ToolUse(toolName, toolId, input) =>
+                  ZStream.fromZIO(metaRef.get).map { meta =>
+                    LlmChunk(
+                      delta = "",
+                      metadata = meta ++ Map(
+                        "event"      -> "tool_use",
+                        "tool_name"  -> toolName.getOrElse(""),
+                        "tool_id"    -> toolId.getOrElse(""),
+                        "tool_input" -> input.getOrElse(""),
+                      ),
                     )
-                  case None       => ZStream.empty
-              case GeminiCliStreamEvent.Result(status, errorMessage, stats) if status.contains("error")           =>
-                ZStream.fail(
-                  LlmError.ProviderError(
-                    errorMessage.map(msg => s"Gemini CLI returned an error: $msg").getOrElse(
-                      "Gemini CLI returned an error"
-                    ),
-                    None,
+                  }
+
+                case GeminiCliStreamEvent.ToolResult(toolId, status, content) =>
+                  ZStream.fromZIO(metaRef.get).map { meta =>
+                    LlmChunk(
+                      delta = "",
+                      metadata = meta ++ Map(
+                        "event"        -> "tool_result",
+                        "tool_id"      -> toolId.getOrElse(""),
+                        "tool_status"  -> status.getOrElse(""),
+                        "tool_content" -> content.getOrElse(""),
+                      ),
+                    )
+                  }
+
+                case GeminiCliStreamEvent.Error(message, _, _) =>
+                  ZStream.fail(
+                    LlmError.ProviderError(
+                      message.map(m => s"Gemini CLI stream error: $m").getOrElse("Gemini CLI stream error"),
+                      None,
+                    )
                   )
-                )
-              case GeminiCliStreamEvent.Result(_, _, stats)                                                       =>
-                ZStream.succeed(
-                  LlmChunk(
-                    delta = "",
-                    finishReason = Some("stop"),
-                    usage = streamStatsToUsage(stats),
-                    metadata = baseMetadata,
+
+                case GeminiCliStreamEvent.Result(status, errorMessage, stats) if status.contains("error") =>
+                  ZStream.fail(
+                    LlmError.ProviderError(
+                      errorMessage.map(msg => s"Gemini CLI returned an error: $msg").getOrElse(
+                        "Gemini CLI returned an error"
+                      ),
+                      None,
+                    )
                   )
-                )
-              case _                                                                                              =>
-                ZStream.empty
-            }
+
+                case GeminiCliStreamEvent.Result(_, _, stats) =>
+                  ZStream.fromZIO(metaRef.get).map { meta =>
+                    LlmChunk(
+                      delta        = "",
+                      finishReason = Some("stop"),
+                      usage        = streamStatsToUsage(stats),
+                      metadata     = meta,
+                    )
+                  }
+
+                case _ => ZStream.empty
+              }
+          }
 
       override def executeStreamWithHistory(messages: List[Message]): ZStream[Any, LlmError, LlmChunk] =
         val combinedPrompt = messages.map { msg =>

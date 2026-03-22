@@ -600,6 +600,92 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
         assertTrue(GeminiCliExecutor.normalizePromptForWindowsCmd("") == "")
       },
     ),
+    suite("executeStream metadata and tool observability")(
+      test("Init event propagates model and session_id to subsequent chunk metadata") {
+        val config   = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
+        val executor = new MockGeminiCliExecutor(
+          streamEvents = List(
+            GeminiCliStreamEvent.Init(model = Some("gemini-2.5-pro-live"), sessionId = Some("sess-99")),
+            GeminiCliStreamEvent.Message(role = Some("assistant"), content = Some("hello"), delta = true),
+            GeminiCliStreamEvent.Result(status = Some("success"), errorMessage = None, stats = None),
+          )
+        )
+        val provider = GeminiCliProvider.make(config, executor)
+        for
+          chunks <- provider.executeStream("hi").runCollect
+          textChunks = chunks.filter(_.delta.nonEmpty)
+        yield assertTrue(
+          textChunks.nonEmpty,
+          textChunks.head.metadata.get("session_id") == Some("sess-99"),
+          textChunks.head.metadata.get("model") == Some("gemini-2.5-pro-live"),
+        )
+      },
+      test("ToolUse event emits a zero-delta chunk with tool_use metadata") {
+        val config   = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
+        val executor = new MockGeminiCliExecutor(
+          streamEvents = List(
+            GeminiCliStreamEvent.ToolUse(
+              toolName = Some("read_file"),
+              toolId   = Some("t42"),
+              input    = Some("""{"path":"/foo"}"""),
+            ),
+            GeminiCliStreamEvent.Message(role = Some("assistant"), content = Some("done"), delta = true),
+            GeminiCliStreamEvent.Result(status = Some("success"), errorMessage = None, stats = None),
+          )
+        )
+        val provider = GeminiCliProvider.make(config, executor)
+        for
+          chunks <- provider.executeStream("hi").runCollect
+          toolChunks = chunks.filter(_.metadata.get("event").contains("tool_use"))
+        yield assertTrue(
+          toolChunks.size == 1,
+          toolChunks.head.delta.isEmpty,
+          toolChunks.head.metadata.get("tool_name") == Some("read_file"),
+          toolChunks.head.metadata.get("tool_id") == Some("t42"),
+          toolChunks.head.metadata.get("tool_input") == Some("""{"path":"/foo"}"""),
+        )
+      },
+      test("ToolResult event emits a zero-delta chunk with tool_result metadata") {
+        val config   = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
+        val executor = new MockGeminiCliExecutor(
+          streamEvents = List(
+            GeminiCliStreamEvent.ToolResult(
+              toolId  = Some("t42"),
+              status  = Some("success"),
+              content = Some("file body"),
+            ),
+            GeminiCliStreamEvent.Result(status = Some("success"), errorMessage = None, stats = None),
+          )
+        )
+        val provider = GeminiCliProvider.make(config, executor)
+        for
+          chunks <- provider.executeStream("hi").runCollect
+          resultChunks = chunks.filter(_.metadata.get("event").contains("tool_result"))
+        yield assertTrue(
+          resultChunks.size == 1,
+          resultChunks.head.delta.isEmpty,
+          resultChunks.head.metadata.get("tool_id") == Some("t42"),
+          resultChunks.head.metadata.get("tool_status") == Some("success"),
+          resultChunks.head.metadata.get("tool_content") == Some("file body"),
+        )
+      },
+      test("Error stream event fails the stream with ProviderError") {
+        val config   = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
+        val executor = new MockGeminiCliExecutor(
+          streamEvents = List(
+            GeminiCliStreamEvent.Error(
+              message   = Some("connection reset"),
+              code      = Some(500),
+              errorType = Some("server_error"),
+            ),
+          )
+        )
+        val provider = GeminiCliProvider.make(config, executor)
+        for
+          result <- provider.executeStream("hi").runCollect.exit
+        yield assertTrue(result.isFailure)
+      },
+    ),
     suite("exit code error semantics")(
       test("TurnLimitError is an LlmError") {
         val err: LlmError = LlmError.TurnLimitError(Some(3))
