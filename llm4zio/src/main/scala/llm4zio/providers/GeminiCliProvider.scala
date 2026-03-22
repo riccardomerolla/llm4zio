@@ -16,8 +16,9 @@ enum GeminiCliStreamEvent:
   case LogLine(line: String)
   case Init(model: Option[String], sessionId: Option[String])
   case Message(role: Option[String], content: Option[String], delta: Boolean)
-  case ToolUse(toolName: Option[String], toolId: Option[String])
-  case ToolResult(toolId: Option[String], status: Option[String])
+  case ToolUse(toolName: Option[String], toolId: Option[String], input: Option[String] = None)
+  case ToolResult(toolId: Option[String], status: Option[String], content: Option[String] = None)
+  case Error(message: Option[String], code: Option[Int], errorType: Option[String])
   case Result(status: Option[String], errorMessage: Option[String], stats: Option[GeminiCliProvider.GeminiStreamStats])
 
 enum GeminiSandbox:
@@ -346,8 +347,8 @@ object GeminiCliProvider:
           event.`type` match
             case "init"        => GeminiCliStreamEvent.Init(event.model, event.session_id)
             case "message"     => GeminiCliStreamEvent.Message(event.role, event.content, event.delta.getOrElse(false))
-            case "tool_use"    => GeminiCliStreamEvent.ToolUse(event.tool_name, event.tool_id)
-            case "tool_result" => GeminiCliStreamEvent.ToolResult(event.tool_id, event.status)
+            case "tool_use"    => GeminiCliStreamEvent.ToolUse(event.tool_name, event.tool_id, None)
+            case "tool_result" => GeminiCliStreamEvent.ToolResult(event.tool_id, event.status, None)
             case "result"      =>
               GeminiCliStreamEvent.Result(
                 status = event.status,
@@ -486,17 +487,21 @@ object GeminiCliProvider:
                 )
               case GeminiCliStreamEvent.Message(role, _, delta)                                         =>
                 ZIO.logDebug(s"Gemini stream message event role=${role.getOrElse("unknown")}, delta=$delta")
-              case GeminiCliStreamEvent.ToolUse(toolName, toolId)                                       =>
+              case GeminiCliStreamEvent.ToolUse(toolName, toolId, _)                                    =>
                 ZIO.logDebug(
                   s"Gemini stream tool use${toolName.fold("")(name =>
                       s" tool=$name"
                     )}${toolId.fold("")(id => s", id=$id")}"
                 )
-              case GeminiCliStreamEvent.ToolResult(toolId, status)                                      =>
+              case GeminiCliStreamEvent.ToolResult(toolId, status, _)                                  =>
                 ZIO.logDebug(
                   s"Gemini stream tool result${toolId.fold("")(id =>
                       s" id=$id"
                     )}${status.fold("")(value => s", status=$value")}"
+                )
+              case GeminiCliStreamEvent.Error(message, code, errorType)                                =>
+                ZIO.logWarning(
+                  s"Gemini stream error event: ${message.getOrElse("unknown")} code=${code.getOrElse(-1)} type=${errorType.getOrElse("unknown")}"
                 )
               case GeminiCliStreamEvent.Result(status, errorMessage, _)                                 =>
                 ZIO.logDebug(

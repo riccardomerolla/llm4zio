@@ -426,6 +426,34 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
       val err = LlmError.TurnLimitError()
       assertTrue(err.limit.isEmpty)
     },
+    test("GeminiCliStreamEvent.Error carries message, code, and errorType") {
+      val event: GeminiCliStreamEvent.Error = GeminiCliStreamEvent.Error(
+        message   = Some("auth failed"),
+        code      = Some(401),
+        errorType = Some("authentication_error"),
+      )
+      assertTrue(
+        event.message   == Some("auth failed"),
+        event.code      == Some(401),
+        event.errorType == Some("authentication_error"),
+      )
+    },
+    test("GeminiCliStreamEvent.ToolUse carries input field") {
+      val event: GeminiCliStreamEvent.ToolUse = GeminiCliStreamEvent.ToolUse(
+        toolName = Some("read_file"),
+        toolId   = Some("t1"),
+        input    = Some("""{"path":"/src/Main.scala"}"""),
+      )
+      assertTrue(event.input == Some("""{"path":"/src/Main.scala"}"""))
+    },
+    test("GeminiCliStreamEvent.ToolResult carries content field") {
+      val event: GeminiCliStreamEvent.ToolResult = GeminiCliStreamEvent.ToolResult(
+        toolId  = Some("t1"),
+        status  = Some("success"),
+        content = Some("file content here"),
+      )
+      assertTrue(event.content == Some("file content here"))
+    },
     suite("normalizePromptForWindowsCmd")(
       test("replaces Unix newlines with spaces") {
         val prompt     = "Analyze the repo at:\n/path/to/repo\n\nDo not modify files."
