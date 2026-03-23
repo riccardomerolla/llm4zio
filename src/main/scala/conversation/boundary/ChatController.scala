@@ -1393,6 +1393,8 @@ final case class ChatControllerLive(
         s"ToolError(tool=$toolName, message=$message)"
       case LlmError.ConfigError(message)         =>
         s"ConfigError(message=$message)"
+      case LlmError.TurnLimitError(limit)        =>
+        s"TurnLimitError(limit=${limit.getOrElse(-1)})"
 
   private def providerFor(cfg: llm4zio.core.LlmConfig): IO[LlmError, LlmService] =
     ZIO
@@ -1489,6 +1491,11 @@ final case class ChatControllerLive(
         PersistenceError.QueryFailed("llm_service", s"Tool error ($toolName): $message")
       case LlmError.ConfigError(message)          =>
         PersistenceError.QueryFailed("llm_service", s"Configuration error: $message")
+      case LlmError.TurnLimitError(limit)         =>
+        PersistenceError.QueryFailed(
+          "llm_service",
+          s"Turn limit exceeded${limit.map(l => s" (limit: $l)").getOrElse("")}",
+        )
 
   private def parseForm(req: Request): IO[PersistenceError, Map[String, String]] =
     req.body.asString

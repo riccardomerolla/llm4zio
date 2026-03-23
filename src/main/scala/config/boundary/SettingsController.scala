@@ -500,6 +500,7 @@ final case class SettingsControllerLive(
       case LlmError.ParseError(message, _)       => s"Parse error: $message"
       case LlmError.ToolError(toolName, message) => s"Tool error ($toolName): $message"
       case LlmError.ConfigError(message)         => s"Configuration error: $message"
+      case LlmError.TurnLimitError(limit)        => s"Turn limit exceeded${limit.map(l => s" (limit: $l)").getOrElse("")}"
 
   private def parseForm(req: Request): IO[PersistenceError, Map[String, String]] =
     req.body.asString

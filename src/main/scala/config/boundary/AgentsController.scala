@@ -1102,6 +1102,7 @@ final case class AgentsControllerLive(
       case LlmError.ParseError(message, _)       => s"Parse error: $message"
       case LlmError.ToolError(toolName, message) => s"Tool error ($toolName): $message"
       case LlmError.ConfigError(message)         => s"Configuration error: $message"
+      case LlmError.TurnLimitError(limit)        => s"Turn limit exceeded${limit.map(l => s" (limit: $l)").getOrElse("")}"
 
   private def urlDecode(value: String): String =
     URLDecoder.decode(value, StandardCharsets.UTF_8)

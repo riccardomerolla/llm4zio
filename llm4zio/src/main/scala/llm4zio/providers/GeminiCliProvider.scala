@@ -24,10 +24,10 @@ enum GeminiCliStreamEvent:
 enum GeminiSandbox:
   case Docker
   case Podman
-  case SeatbeltMacOS  // sandbox-exec (macOS only)
-  case Runsc          // gVisor (Linux)
-  case Lxc            // LXC/LXD (Linux, experimental)
-  case Default        // -s only, no backend preference
+  case SeatbeltMacOS // sandbox-exec (macOS only)
+  case Runsc         // gVisor (Linux)
+  case Lxc           // LXC/LXD (Linux, experimental)
+  case Default       // -s only, no backend preference
 
 object GeminiSandbox:
   /** Value to set in GEMINI_SANDBOX env var. None = let gemini choose (Default case). */
@@ -53,10 +53,10 @@ trait GeminiCliExecutor:
   ): ZStream[Any, LlmError, GeminiCliStreamEvent]
 
 final case class GeminiCliExecutionContext(
-  cwd: Option[String]              = None,
+  cwd: Option[String] = None,
   includeDirectories: List[String] = Nil,
-  sandbox: Option[GeminiSandbox]   = None,
-  turnLimit: Option[Int]           = None,
+  sandbox: Option[GeminiSandbox] = None,
+  turnLimit: Option[Int] = None,
 )
 
 object GeminiCliExecutionContext:
@@ -145,7 +145,11 @@ object GeminiCliExecutor:
           process  <- startProcess(prompt, config, executionContext, outputFormat = "json")
           output   <- readOutput(process, config)
           exitCode <- waitForCompletion(process)
-          _        <- GeminiCliExecutor.validateExitCode(exitCode, s"Gemini process exited with code $exitCode", executionContext.turnLimit)
+          _        <- GeminiCliExecutor.validateExitCode(
+                        exitCode,
+                        s"Gemini process exited with code $exitCode",
+                        executionContext.turnLimit,
+                      )
           finalOut <- extractFinalResponse(output)
         yield finalOut
 
@@ -176,7 +180,11 @@ object GeminiCliExecutor:
                          .forkScoped
           yield streamOutput(process) ++ ZStream.fromZIO(
             waitForCompletion(process).flatMap(exitCode =>
-              GeminiCliExecutor.validateExitCode(exitCode, s"Gemini stream process exited with code $exitCode", executionContext.turnLimit)
+              GeminiCliExecutor.validateExitCode(
+                exitCode,
+                s"Gemini stream process exited with code $exitCode",
+                executionContext.turnLimit,
+              )
             )
           ).drain
         }
@@ -332,15 +340,15 @@ object GeminiCliProvider:
 
   final private case class GeminiStreamJsonEvent(
     `type`: String,
-    role: Option[String]             = None,
-    content: Option[String]          = None,
-    delta: Option[Boolean]           = None,
-    tool_name: Option[String]        = None,
-    tool_id: Option[String]          = None,
-    tool_input: Option[String]       = None,
-    status: Option[String]           = None,
-    model: Option[String]            = None,
-    session_id: Option[String]       = None,
+    role: Option[String] = None,
+    content: Option[String] = None,
+    delta: Option[Boolean] = None,
+    tool_name: Option[String] = None,
+    tool_id: Option[String] = None,
+    tool_input: Option[String] = None,
+    status: Option[String] = None,
+    model: Option[String] = None,
+    session_id: Option[String] = None,
     error: Option[GeminiStreamError] = None,
     stats: Option[GeminiStreamStats] = None,
   ) derives JsonDecoder
@@ -374,14 +382,14 @@ object GeminiCliProvider:
             case "tool_result" => GeminiCliStreamEvent.ToolResult(event.tool_id, event.status, event.content)
             case "error"       =>
               GeminiCliStreamEvent.Error(
-                message   = event.error.flatMap(_.message),
-                code      = event.error.flatMap(_.code),
+                message = event.error.flatMap(_.message),
+                code = event.error.flatMap(_.code),
                 errorType = event.error.flatMap(_.`type`),
               )
             case "result"      =>
               GeminiCliStreamEvent.Result(event.status, event.error.flatMap(_.message), event.stats)
             case _             => GeminiCliStreamEvent.LogLine(line)
-        case Left(_) => GeminiCliStreamEvent.LogLine(line)
+        case Left(_)      => GeminiCliStreamEvent.LogLine(line)
 
   private def tryDecodeHeadless(raw: String): Option[Either[String, String]] =
     raw.fromJson[GeminiHeadlessResponse].toOption.map { response =>
@@ -500,29 +508,33 @@ object GeminiCliProvider:
               .tap {
                 case GeminiCliStreamEvent.LogLine(line) if line.trim.isEmpty || isPreambleLine(line.trim) =>
                   ZIO.logDebug(s"Gemini stream preamble: ${line.trim}")
-                case GeminiCliStreamEvent.LogLine(line) =>
+                case GeminiCliStreamEvent.LogLine(line)                                                   =>
                   ZIO.logTrace(s"Gemini stream non-JSON output: ${line.trim}")
-                case GeminiCliStreamEvent.Init(model, sessionId) =>
+                case GeminiCliStreamEvent.Init(model, sessionId)                                          =>
                   ZIO.logDebug(
-                    s"Gemini stream initialized${model.fold("")(m => s" with model=$m")}${sessionId.fold("")(id => s", session=$id")}"
+                    s"Gemini stream initialized${model.fold("")(m =>
+                        s" with model=$m"
+                      )}${sessionId.fold("")(id => s", session=$id")}"
                   )
-                case GeminiCliStreamEvent.Message(role, _, delta) =>
+                case GeminiCliStreamEvent.Message(role, _, delta)                                         =>
                   ZIO.logDebug(s"Gemini stream message event role=${role.getOrElse("unknown")}, delta=$delta")
-                case GeminiCliStreamEvent.ToolUse(toolName, toolId, _) =>
+                case GeminiCliStreamEvent.ToolUse(toolName, toolId, _)                                    =>
                   ZIO.logDebug(
                     s"Gemini stream tool use${toolName.fold("")(n => s" tool=$n")}${toolId.fold("")(id => s", id=$id")}"
                   )
-                case GeminiCliStreamEvent.ToolResult(toolId, status, _) =>
+                case GeminiCliStreamEvent.ToolResult(toolId, status, _)                                   =>
                   ZIO.logDebug(
                     s"Gemini stream tool result${toolId.fold("")(id => s" id=$id")}${status.fold("")(v => s", status=$v")}"
                   )
-                case GeminiCliStreamEvent.Error(message, code, errorType) =>
+                case GeminiCliStreamEvent.Error(message, code, errorType)                                 =>
                   ZIO.logWarning(
                     s"Gemini stream error event: ${message.getOrElse("unknown")} code=${code.getOrElse(-1)} type=${errorType.getOrElse("unknown")}"
                   )
-                case GeminiCliStreamEvent.Result(status, errorMessage, _) =>
+                case GeminiCliStreamEvent.Result(status, errorMessage, _)                                 =>
                   ZIO.logDebug(
-                    s"Gemini stream result status=${status.getOrElse("unknown")}${errorMessage.fold("")(msg => s", error=$msg")}"
+                    s"Gemini stream result status=${status.getOrElse("unknown")}${errorMessage.fold("")(msg =>
+                        s", error=$msg"
+                      )}"
                   )
               }
               .flatMap {
@@ -533,7 +545,7 @@ object GeminiCliProvider:
                   ZStream.fromZIO(metaRef.update(_ ++ updates)).drain
 
                 case GeminiCliStreamEvent.Message(role, content, _)
-                    if role.exists(_.equalsIgnoreCase("assistant")) =>
+                     if role.exists(_.equalsIgnoreCase("assistant")) =>
                   ZStream.fromZIO(metaRef.get).flatMap { meta =>
                     content.filter(_.nonEmpty) match
                       case Some(text) => ZStream.succeed(LlmChunk(delta = text, metadata = meta))
@@ -593,10 +605,10 @@ object GeminiCliProvider:
                 case GeminiCliStreamEvent.Result(_, _, stats) =>
                   ZStream.fromZIO(metaRef.get).map { meta =>
                     LlmChunk(
-                      delta        = "",
+                      delta = "",
                       finishReason = Some("stop"),
-                      usage        = streamStatsToUsage(stats),
-                      metadata     = meta,
+                      usage = streamStatsToUsage(stats),
+                      metadata = meta,
                     )
                   }
 
@@ -610,7 +622,7 @@ object GeminiCliProvider:
         if nonSystemMsgs.isEmpty then
           Left(LlmError.InvalidRequestError("History must contain at least one user or assistant message"))
         else
-          val systemBlock =
+          val systemBlock  =
             if systemMsgs.isEmpty then ""
             else s"[SYSTEM CONTEXT]\n${systemMsgs.map(_.content).mkString("\n")}\n---\n\n"
           val historyLines = nonSystemMsgs.map { msg =>

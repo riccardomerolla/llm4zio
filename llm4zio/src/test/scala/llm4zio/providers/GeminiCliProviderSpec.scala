@@ -392,8 +392,8 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
       val line = """{"type":"error","error":{"type":"rate_limit","message":"quota exceeded","code":429}}"""
       assertTrue(
         GeminiCliProvider.parseStreamEvent(line) == GeminiCliStreamEvent.Error(
-          message   = Some("quota exceeded"),
-          code      = Some(429),
+          message = Some("quota exceeded"),
+          code = Some(429),
           errorType = Some("rate_limit"),
         )
       )
@@ -403,8 +403,8 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
       assertTrue(
         GeminiCliProvider.parseStreamEvent(line) == GeminiCliStreamEvent.ToolUse(
           toolName = Some("read_file"),
-          toolId   = Some("t1"),
-          input    = Some("""{"path":"/foo"}"""),
+          toolId = Some("t1"),
+          input = Some("""{"path":"/foo"}"""),
         )
       )
     },
@@ -412,8 +412,8 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
       val line = """{"type":"tool_result","tool_id":"t1","status":"success","content":"file body"}"""
       assertTrue(
         GeminiCliProvider.parseStreamEvent(line) == GeminiCliStreamEvent.ToolResult(
-          toolId  = Some("t1"),
-          status  = Some("success"),
+          toolId = Some("t1"),
+          status = Some("success"),
           content = Some("file body"),
         )
       )
@@ -422,7 +422,7 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
       val line = """{"type":"init","model":"gemini-2.5-pro","session_id":"s42"}"""
       assertTrue(
         GeminiCliProvider.parseStreamEvent(line) == GeminiCliStreamEvent.Init(
-          model     = Some("gemini-2.5-pro"),
+          model = Some("gemini-2.5-pro"),
           sessionId = Some("s42"),
         )
       )
@@ -449,8 +449,8 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
     ),
     test("GeminiCliExecutionContext includes sandbox and turnLimit fields") {
       val ctx = GeminiCliExecutionContext(
-        sandbox    = Some(GeminiSandbox.Docker),
-        turnLimit  = Some(10),
+        sandbox = Some(GeminiSandbox.Docker),
+        turnLimit = Some(10),
       )
       assertTrue(
         ctx.sandbox == Some(GeminiSandbox.Docker),
@@ -467,28 +467,28 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
     },
     test("GeminiCliStreamEvent.Error carries message, code, and errorType") {
       val event: GeminiCliStreamEvent.Error = GeminiCliStreamEvent.Error(
-        message   = Some("auth failed"),
-        code      = Some(401),
+        message = Some("auth failed"),
+        code = Some(401),
         errorType = Some("authentication_error"),
       )
       assertTrue(
-        event.message   == Some("auth failed"),
-        event.code      == Some(401),
+        event.message == Some("auth failed"),
+        event.code == Some(401),
         event.errorType == Some("authentication_error"),
       )
     },
     test("GeminiCliStreamEvent.ToolUse carries input field") {
       val event: GeminiCliStreamEvent.ToolUse = GeminiCliStreamEvent.ToolUse(
         toolName = Some("read_file"),
-        toolId   = Some("t1"),
-        input    = Some("""{"path":"/src/Main.scala"}"""),
+        toolId = Some("t1"),
+        input = Some("""{"path":"/src/Main.scala"}"""),
       )
       assertTrue(event.input == Some("""{"path":"/src/Main.scala"}"""))
     },
     test("GeminiCliStreamEvent.ToolResult carries content field") {
       val event: GeminiCliStreamEvent.ToolResult = GeminiCliStreamEvent.ToolResult(
-        toolId  = Some("t1"),
-        status  = Some("success"),
+        toolId = Some("t1"),
+        status = Some("success"),
         content = Some("file content here"),
       )
       assertTrue(event.content == Some("file content here"))
@@ -666,7 +666,7 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
         )
         val provider = GeminiCliProvider.make(config, executor)
         for
-          chunks <- provider.executeStream("hi").runCollect
+          chunks    <- provider.executeStream("hi").runCollect
           textChunks = chunks.filter(_.delta.nonEmpty)
         yield assertTrue(
           textChunks.nonEmpty,
@@ -680,8 +680,8 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
           streamEvents = List(
             GeminiCliStreamEvent.ToolUse(
               toolName = Some("read_file"),
-              toolId   = Some("t42"),
-              input    = Some("""{"path":"/foo"}"""),
+              toolId = Some("t42"),
+              input = Some("""{"path":"/foo"}"""),
             ),
             GeminiCliStreamEvent.Message(role = Some("assistant"), content = Some("done"), delta = true),
             GeminiCliStreamEvent.Result(status = Some("success"), errorMessage = None, stats = None),
@@ -689,7 +689,7 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
         )
         val provider = GeminiCliProvider.make(config, executor)
         for
-          chunks <- provider.executeStream("hi").runCollect
+          chunks    <- provider.executeStream("hi").runCollect
           toolChunks = chunks.filter(_.metadata.get("event").contains("tool_use"))
         yield assertTrue(
           toolChunks.size == 1,
@@ -704,8 +704,8 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
         val executor = new MockGeminiCliExecutor(
           streamEvents = List(
             GeminiCliStreamEvent.ToolResult(
-              toolId  = Some("t42"),
-              status  = Some("success"),
+              toolId = Some("t42"),
+              status = Some("success"),
               content = Some("file body"),
             ),
             GeminiCliStreamEvent.Result(status = Some("success"), errorMessage = None, stats = None),
@@ -713,7 +713,7 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
         )
         val provider = GeminiCliProvider.make(config, executor)
         for
-          chunks <- provider.executeStream("hi").runCollect
+          chunks      <- provider.executeStream("hi").runCollect
           resultChunks = chunks.filter(_.metadata.get("event").contains("tool_result"))
         yield assertTrue(
           resultChunks.size == 1,
@@ -728,10 +728,10 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
         val executor = new MockGeminiCliExecutor(
           streamEvents = List(
             GeminiCliStreamEvent.Error(
-              message   = Some("connection reset"),
-              code      = Some(500),
+              message = Some("connection reset"),
+              code = Some(500),
               errorType = Some("server_error"),
-            ),
+            )
           )
         )
         val provider = GeminiCliProvider.make(config, executor)
@@ -767,22 +767,26 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
           Message(MessageRole.User, "What is 2+2?"),
         )
         for
-          capturedRef <- Ref.make("")
-          executor = new MockGeminiCliExecutor(
-            streamEvents = List(
-              GeminiCliStreamEvent.Message(role = Some("assistant"), content = Some("ok"), delta = true),
-              GeminiCliStreamEvent.Result(status = Some("success"), errorMessage = None, stats = None),
-            )
-          ) {
-            override def runGeminiProcessStream(
-              prompt: String,
-              config: LlmConfig,
-              executionContext: GeminiCliExecutionContext,
-            ): ZStream[Any, LlmError, GeminiCliStreamEvent] =
-              ZStream.fromZIO(capturedRef.set(prompt)).drain ++ super.runGeminiProcessStream(prompt, config, executionContext)
-          }
-          provider      = GeminiCliProvider.make(config, executor)
-          _             <- provider.executeStreamWithHistory(messages).runDrain
+          capturedRef    <- Ref.make("")
+          executor        = new MockGeminiCliExecutor(
+                              streamEvents = List(
+                                GeminiCliStreamEvent.Message(role = Some("assistant"), content = Some("ok"), delta = true),
+                                GeminiCliStreamEvent.Result(status = Some("success"), errorMessage = None, stats = None),
+                              )
+                            ) {
+                              override def runGeminiProcessStream(
+                                prompt: String,
+                                config: LlmConfig,
+                                executionContext: GeminiCliExecutionContext,
+                              ): ZStream[Any, LlmError, GeminiCliStreamEvent] =
+                                ZStream.fromZIO(capturedRef.set(prompt)).drain ++ super.runGeminiProcessStream(
+                                  prompt,
+                                  config,
+                                  executionContext,
+                                )
+                            }
+          provider        = GeminiCliProvider.make(config, executor)
+          _              <- provider.executeStreamWithHistory(messages).runDrain
           capturedPrompt <- capturedRef.get
         yield assertTrue(
           capturedPrompt.contains("**User:**"),
@@ -800,21 +804,25 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
           Message(MessageRole.User, "Hello"),
         )
         for
-          capturedRef <- Ref.make("")
-          executor = new MockGeminiCliExecutor(
-            streamEvents = List(
-              GeminiCliStreamEvent.Result(status = Some("success"), errorMessage = None, stats = None),
-            )
-          ) {
-            override def runGeminiProcessStream(
-              prompt: String,
-              config: LlmConfig,
-              executionContext: GeminiCliExecutionContext,
-            ): ZStream[Any, LlmError, GeminiCliStreamEvent] =
-              ZStream.fromZIO(capturedRef.set(prompt)).drain ++ super.runGeminiProcessStream(prompt, config, executionContext)
-          }
-          provider      = GeminiCliProvider.make(config, executor)
-          _             <- provider.executeStreamWithHistory(messages).runDrain
+          capturedRef    <- Ref.make("")
+          executor        = new MockGeminiCliExecutor(
+                              streamEvents = List(
+                                GeminiCliStreamEvent.Result(status = Some("success"), errorMessage = None, stats = None)
+                              )
+                            ) {
+                              override def runGeminiProcessStream(
+                                prompt: String,
+                                config: LlmConfig,
+                                executionContext: GeminiCliExecutionContext,
+                              ): ZStream[Any, LlmError, GeminiCliStreamEvent] =
+                                ZStream.fromZIO(capturedRef.set(prompt)).drain ++ super.runGeminiProcessStream(
+                                  prompt,
+                                  config,
+                                  executionContext,
+                                )
+                            }
+          provider        = GeminiCliProvider.make(config, executor)
+          _              <- provider.executeStreamWithHistory(messages).runDrain
           capturedPrompt <- capturedRef.get
         yield assertTrue(
           capturedPrompt.startsWith("[SYSTEM CONTEXT]"),
@@ -827,24 +835,28 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
         val config   = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
         val messages = List(Message(MessageRole.User, "hello"))
         for
-          capturedRef <- Ref.make("")
-          executor = new MockGeminiCliExecutor(
-            streamEvents = List(
-              GeminiCliStreamEvent.Result(status = Some("success"), errorMessage = None, stats = None),
-            )
-          ) {
-            override def runGeminiProcessStream(
-              prompt: String,
-              config: LlmConfig,
-              executionContext: GeminiCliExecutionContext,
-            ): ZStream[Any, LlmError, GeminiCliStreamEvent] =
-              ZStream.fromZIO(capturedRef.set(prompt)).drain ++ super.runGeminiProcessStream(prompt, config, executionContext)
-          }
-          provider      = GeminiCliProvider.make(config, executor)
-          _             <- provider.executeStreamWithHistory(messages).runDrain
+          capturedRef    <- Ref.make("")
+          executor        = new MockGeminiCliExecutor(
+                              streamEvents = List(
+                                GeminiCliStreamEvent.Result(status = Some("success"), errorMessage = None, stats = None)
+                              )
+                            ) {
+                              override def runGeminiProcessStream(
+                                prompt: String,
+                                config: LlmConfig,
+                                executionContext: GeminiCliExecutionContext,
+                              ): ZStream[Any, LlmError, GeminiCliStreamEvent] =
+                                ZStream.fromZIO(capturedRef.set(prompt)).drain ++ super.runGeminiProcessStream(
+                                  prompt,
+                                  config,
+                                  executionContext,
+                                )
+                            }
+          provider        = GeminiCliProvider.make(config, executor)
+          _              <- provider.executeStreamWithHistory(messages).runDrain
           capturedPrompt <- capturedRef.get
         yield assertTrue(
-          capturedPrompt == "**User:** hello",
+          capturedPrompt == "**User:** hello"
         )
       },
       test("system + user message formats correctly") {
@@ -854,21 +866,25 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
           Message(MessageRole.User, "What time is it?"),
         )
         for
-          capturedRef <- Ref.make("")
-          executor = new MockGeminiCliExecutor(
-            streamEvents = List(
-              GeminiCliStreamEvent.Result(status = Some("success"), errorMessage = None, stats = None),
-            )
-          ) {
-            override def runGeminiProcessStream(
-              prompt: String,
-              config: LlmConfig,
-              executionContext: GeminiCliExecutionContext,
-            ): ZStream[Any, LlmError, GeminiCliStreamEvent] =
-              ZStream.fromZIO(capturedRef.set(prompt)).drain ++ super.runGeminiProcessStream(prompt, config, executionContext)
-          }
-          provider      = GeminiCliProvider.make(config, executor)
-          _             <- provider.executeStreamWithHistory(messages).runDrain
+          capturedRef    <- Ref.make("")
+          executor        = new MockGeminiCliExecutor(
+                              streamEvents = List(
+                                GeminiCliStreamEvent.Result(status = Some("success"), errorMessage = None, stats = None)
+                              )
+                            ) {
+                              override def runGeminiProcessStream(
+                                prompt: String,
+                                config: LlmConfig,
+                                executionContext: GeminiCliExecutionContext,
+                              ): ZStream[Any, LlmError, GeminiCliStreamEvent] =
+                                ZStream.fromZIO(capturedRef.set(prompt)).drain ++ super.runGeminiProcessStream(
+                                  prompt,
+                                  config,
+                                  executionContext,
+                                )
+                            }
+          provider        = GeminiCliProvider.make(config, executor)
+          _              <- provider.executeStreamWithHistory(messages).runDrain
           capturedPrompt <- capturedRef.get
         yield assertTrue(
           capturedPrompt.startsWith("[SYSTEM CONTEXT]"),
@@ -883,24 +899,28 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
           Message(MessageRole.User, "Second question"),
         )
         for
-          capturedRef <- Ref.make("")
-          executor = new MockGeminiCliExecutor(
-            streamEvents = List(
-              GeminiCliStreamEvent.Result(status = Some("success"), errorMessage = None, stats = None),
-            )
-          ) {
-            override def runGeminiProcessStream(
-              prompt: String,
-              config: LlmConfig,
-              executionContext: GeminiCliExecutionContext,
-            ): ZStream[Any, LlmError, GeminiCliStreamEvent] =
-              ZStream.fromZIO(capturedRef.set(prompt)).drain ++ super.runGeminiProcessStream(prompt, config, executionContext)
-          }
-          provider      = GeminiCliProvider.make(config, executor)
-          _             <- provider.executeStreamWithHistory(messages).runDrain
+          capturedRef    <- Ref.make("")
+          executor        = new MockGeminiCliExecutor(
+                              streamEvents = List(
+                                GeminiCliStreamEvent.Result(status = Some("success"), errorMessage = None, stats = None)
+                              )
+                            ) {
+                              override def runGeminiProcessStream(
+                                prompt: String,
+                                config: LlmConfig,
+                                executionContext: GeminiCliExecutionContext,
+                              ): ZStream[Any, LlmError, GeminiCliStreamEvent] =
+                                ZStream.fromZIO(capturedRef.set(prompt)).drain ++ super.runGeminiProcessStream(
+                                  prompt,
+                                  config,
+                                  executionContext,
+                                )
+                            }
+          provider        = GeminiCliProvider.make(config, executor)
+          _              <- provider.executeStreamWithHistory(messages).runDrain
           capturedPrompt <- capturedRef.get
         yield assertTrue(
-          capturedPrompt.count(_.toString == "*") >= 6,  // at least 3 bold markers (**X:**)
+          capturedPrompt.count(_.toString == "*") >= 6, // at least 3 bold markers (**X:**)
           capturedPrompt.contains("**User:**"),
           capturedPrompt.contains("**Assistant:**"),
           capturedPrompt.contains("First question"),
@@ -1005,7 +1025,7 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
         )
         val provider = GeminiCliProvider.make(config, executor)
         for
-          chunks <- provider.executeStream("hi").runCollect
+          chunks    <- provider.executeStream("hi").runCollect
           textChunks = chunks.filter(_.delta.nonEmpty)
         yield assertTrue(
           textChunks.nonEmpty,
@@ -1019,10 +1039,10 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
           shouldSucceed = true,
           streamEvents = List(
             GeminiCliStreamEvent.Error(
-              message   = Some("api error"),
-              code      = Some(500),
+              message = Some("api error"),
+              code = Some(500),
               errorType = Some("server_error"),
-            ),
+            )
           ),
         )
         val provider = GeminiCliProvider.make(config, executor)
@@ -1036,10 +1056,10 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
           shouldSucceed = true,
           streamEvents = List(
             GeminiCliStreamEvent.Result(
-              status       = Some("error"),
+              status = Some("error"),
               errorMessage = Some("something went wrong"),
-              stats        = None,
-            ),
+              stats = None,
+            )
           ),
         )
         val provider = GeminiCliProvider.make(config, executor)
@@ -1054,8 +1074,8 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
           streamEvents = List(
             GeminiCliStreamEvent.ToolUse(
               toolName = Some("read_file"),
-              toolId   = Some("t1"),
-              input    = Some("""{"path":"foo.txt"}"""),
+              toolId = Some("t1"),
+              input = Some("""{"path":"foo.txt"}"""),
             ),
             GeminiCliStreamEvent.Result(status = Some("success"), errorMessage = None, stats = None),
           ),
@@ -1064,7 +1084,7 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
         for
           chunks <- provider.executeStream("hi").runCollect
         yield assertTrue(
-          chunks.exists(_.metadata.get("toolName") == Some("read_file")),
+          chunks.exists(_.metadata.get("toolName") == Some("read_file"))
         )
       },
       test("ToolResult event emits observability chunk") {
@@ -1073,8 +1093,8 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
           shouldSucceed = true,
           streamEvents = List(
             GeminiCliStreamEvent.ToolResult(
-              toolId  = Some("t1"),
-              status  = Some("success"),
+              toolId = Some("t1"),
+              status = Some("success"),
               content = Some("file content"),
             ),
             GeminiCliStreamEvent.Result(status = Some("success"), errorMessage = None, stats = None),
@@ -1084,7 +1104,7 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
         for
           chunks <- provider.executeStream("hi").runCollect
         yield assertTrue(
-          chunks.exists(_.metadata.get("toolId") == Some("t1")),
+          chunks.exists(_.metadata.get("toolId") == Some("t1"))
         )
       },
     ),

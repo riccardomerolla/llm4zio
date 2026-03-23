@@ -1296,4 +1296,5 @@ final case class PlannerAgentServiceLive(
         case LlmError.TimeoutError(duration)     => s"Timeout after $duration"
         case LlmError.ToolError(toolName, msg)   => s"Tool error [$toolName]: $msg"
         case LlmError.ConfigError(msg)           => s"Configuration error: $msg"
+        case LlmError.TurnLimitError(limit)      => s"Turn limit exceeded${limit.map(l => s": $l turns").getOrElse("")}"
     )

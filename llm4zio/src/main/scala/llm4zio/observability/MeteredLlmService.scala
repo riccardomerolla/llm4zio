@@ -9,11 +9,11 @@ import zio.stream.*
 import llm4zio.core.*
 import llm4zio.tools.{ AnyTool, JsonSchema }
 
-/** Decorator that wraps any [[LlmService]] and records request count, token usage (from streaming
-  * chunks), latency, and error count into [[LlmMetrics]].
+/** Decorator that wraps any [[LlmService]] and records request count, token usage (from streaming chunks), latency, and
+  * error count into [[LlmMetrics]].
   *
-  * Token usage is tracked only for streaming calls, where [[LlmChunk.usage]] is available in the
-  * final chunk. Non-streaming calls record request count, latency, and errors only.
+  * Token usage is tracked only for streaming calls, where [[LlmChunk.usage]] is available in the final chunk.
+  * Non-streaming calls record request count, latency, and errors only.
   */
 final case class MeteredLlmService(
   underlying: LlmService,

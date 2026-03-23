@@ -38,8 +38,8 @@ case class MetricsSnapshot(
   totalLatencyMs: Long,
   errors: Long,
 ):
-  def totalTokens: Long     = promptTokens + completionTokens
-  def avgLatencyMs: Double  =
+  def totalTokens: Long    = promptTokens + completionTokens
+  def avgLatencyMs: Double =
     if requests == 0 then 0.0 else totalLatencyMs.toDouble / requests
 
 object LlmMetrics:

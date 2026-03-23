@@ -335,6 +335,7 @@ object AnalysisAgentRunner:
       case LlmError.ConfigError(message)         => s"ConfigError(message=$message)"
       case LlmError.RateLimitError(retryAfter)   =>
         retryAfter.fold("RateLimitError")(duration => s"RateLimitError(retryAfter=${duration.render})")
+      case LlmError.TurnLimitError(limit)        => s"TurnLimitError(limit=${limit.getOrElse(-1)})"
 
   private def renderFallbackChain(config: AIProviderConfig): String =
     val fallbacks = config.fallbackChain.models.map { ref =>

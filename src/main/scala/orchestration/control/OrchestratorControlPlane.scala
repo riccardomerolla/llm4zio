@@ -90,9 +90,8 @@ trait OrchestratorControlPlane:
 
   /** Register or update a workspace CLI agent run directly in the agent monitor.
     *
-    * Called by [[workspace.control.WorkspaceRunService]] at run start, completion, and
-    * cancellation. Unlike routeStep-based flows, workspace runs are long-running CLI processes with
-    * no step decomposition.
+    * Called by [[workspace.control.WorkspaceRunService]] at run start, completion, and cancellation. Unlike
+    * routeStep-based flows, workspace runs are long-running CLI processes with no step decomposition.
     */
   def notifyWorkspaceAgent(
     agentName: String,
@@ -711,9 +710,9 @@ final private[orchestration] class OrchestratorControlPlaneLive(
       val startedAt    = state match
         case AgentExecutionState.Executing | AgentExecutionState.WaitingForTool =>
           existing.flatMap(_.startedAt).orElse(Some(now))
-        case AgentExecutionState.Paused =>
+        case AgentExecutionState.Paused                                         =>
           existing.flatMap(_.startedAt)
-        case _ =>
+        case _                                                                  =>
           None
       val next         = AgentExecutionInfo(
         agentName = agentName,

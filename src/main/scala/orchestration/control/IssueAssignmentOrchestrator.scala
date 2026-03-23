@@ -388,3 +388,8 @@ final private case class IssueAssignmentOrchestratorLive(
         PersistenceError.QueryFailed("llm_service", s"Tool error ($toolName): $message")
       case LlmError.ConfigError(message)          =>
         PersistenceError.QueryFailed("llm_service", s"Configuration error: $message")
+      case LlmError.TurnLimitError(limit)         =>
+        PersistenceError.QueryFailed(
+          "llm_service",
+          s"Turn limit exceeded${limit.map(l => s" (limit: $l)").getOrElse("")}",
+        )
