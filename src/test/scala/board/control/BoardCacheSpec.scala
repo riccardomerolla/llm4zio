@@ -100,6 +100,8 @@ object BoardCacheSpec extends ZIOSpecDefault:
     override def headSha(repoPath: String): IO[GitError, String]                                           = ref.get
     override def showDiffStat(repoPath: String, ref: String): IO[GitError, GitDiffStat]                    =
       ZIO.succeed(GitDiffStat(Nil))
+    override def diffStatVsBase(repoPath: String, baseBranch: String): IO[GitError, GitDiffStat]          = ZIO.succeed(GitDiffStat(Nil))
+    override def diffFileVsBase(repoPath: String, filePath: String, baseBranch: String): IO[GitError, String] = ZIO.succeed("")
 
   private def makeHarness(ttl: Duration = Duration.ofSeconds(30))
     : UIO[(BoardCache, Ref[Int], Ref[Int], Ref[Int], Ref[String])] =

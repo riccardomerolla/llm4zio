@@ -71,6 +71,8 @@ object GitWatcherSpec extends ZIOSpecDefault:
     override def headSha(repoPath: String): IO[GitError, String]                                           = ZIO.succeed("hash-b")
     override def showDiffStat(repoPath: String, ref: String): IO[GitError, GitDiffStat]                    =
       ZIO.succeed(GitDiffStat(Nil))
+    override def diffStatVsBase(repoPath: String, baseBranch: String): IO[GitError, GitDiffStat]          = ZIO.succeed(GitDiffStat(Nil))
+    override def diffFileVsBase(repoPath: String, filePath: String, baseBranch: String): IO[GitError, String] = ZIO.succeed("")
 
   private object StubActivityHub extends ActivityHub:
     override def publish(event: ActivityEvent): UIO[Unit] = ZIO.unit

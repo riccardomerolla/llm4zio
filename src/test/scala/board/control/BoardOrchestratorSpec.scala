@@ -187,6 +187,8 @@ object BoardOrchestratorSpec extends ZIOSpecDefault:
     override def conflictedFiles(repoPath: String): IO[GitError, List[String]]                             = ZIO.succeed(Nil)
     override def headSha(repoPath: String): IO[GitError, String]                                           = ZIO.succeed("sha")
     override def showDiffStat(repoPath: String, ref: String): IO[GitError, GitDiffStat]                    = ZIO.succeed(GitDiffStat(Nil))
+    override def diffStatVsBase(repoPath: String, baseBranch: String): IO[GitError, GitDiffStat]          = ZIO.succeed(GitDiffStat(Nil))
+    override def diffFileVsBase(repoPath: String, filePath: String, baseBranch: String): IO[GitError, String] = ZIO.succeed("")
 
   private val noopActivityHub = new ActivityHub:
     override def publish(event: ActivityEvent): UIO[Unit] = ZIO.unit

@@ -123,6 +123,10 @@ object MergeAgentServiceSpec extends ZIOSpecDefault:
           )
         )
       )
+    override def diffStatVsBase(repoPath: String, baseBranch: String): IO[GitError, GitDiffStat]          =
+      calls.update(_ :+ s"diff-stat-vs-base:$repoPath:$baseBranch").as(GitDiffStat(Nil))
+    override def diffFileVsBase(repoPath: String, filePath: String, baseBranch: String): IO[GitError, String] =
+      calls.update(_ :+ s"diff-file-vs-base:$repoPath:$filePath:$baseBranch").as("")
 
   final private class StubActivityHub(events: Ref[List[ActivityEvent]], subscribers: Ref[Set[Queue[ActivityEvent]]])
     extends ActivityHub:

@@ -167,6 +167,8 @@ object WorkspacesControllerSpec extends ZIOSpecDefault:
       ZIO.succeed("abc123")
     def showDiffStat(repoPath: String, ref: String): IO[GitError, GitDiffStat]                    =
       ZIO.succeed(GitDiffStat(Nil))
+    def diffStatVsBase(repoPath: String, baseBranch: String): IO[GitError, GitDiffStat]          = ZIO.succeed(GitDiffStat(Nil))
+    def diffFileVsBase(repoPath: String, filePath: String, baseBranch: String): IO[GitError, String] = ZIO.succeed("")
 
   final private class StubAnalysisScheduler(triggerRef: Ref[List[(String, Boolean)]])
     extends WorkspaceAnalysisScheduler:

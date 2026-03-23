@@ -58,7 +58,9 @@ class GitPanel {
   async refreshFiles(shouldFlash) {
     const [status, diffStat] = await Promise.all([
       this.fetchJson(this.statusEndpoint),
-      this.fetchJson(this.diffEndpoint),
+      // Always compare against main so only committed, tracked changes are shown —
+      // build artefacts and other gitignored files are excluded naturally.
+      this.fetchJson(`${this.diffEndpoint}?base=main`),
     ]);
     if (!status || !diffStat) return;
 
@@ -66,7 +68,7 @@ class GitPanel {
     this.status = status;
     this.diffStat = diffStat;
 
-    const nextChanged = this.computeChangedFiles(status);
+    const nextChanged = this.computeChangedFiles(status, diffStat);
     this.changedFiles = nextChanged;
 
     const flash = shouldFlash
@@ -94,12 +96,12 @@ class GitPanel {
     }
   }
 
-  computeChangedFiles(status) {
+  computeChangedFiles(status, diffStat) {
     const key = (entry) => `${entry.status}:${entry.path}`;
     const tracked = [
       ...(status?.staged || []).map((entry) => key(entry)),
       ...(status?.unstaged || []).map((entry) => key(entry)),
-      ...(status?.untracked || []).map((path) => `Untracked:${path}`),
+      ...(diffStat?.files || []).map((file) => `Committed:${file.path}`),
     ];
     return new Set(tracked);
   }
@@ -118,20 +120,21 @@ class GitPanel {
       group: 'Unstaged',
       key: `${entry.status}:${entry.path}`,
     }));
-    const untracked = (status?.untracked || []).map((path) => ({
-      path,
-      status: 'Untracked',
-      group: 'Untracked',
-      key: `Untracked:${path}`,
+    // Committed files from git diff main...HEAD — only tracked changes, gitignore respected.
+    const committed = (diffStat?.files || []).map((file) => ({
+      path: file.path,
+      status: 'Committed',
+      group: 'Committed',
+      key: `Committed:${file.path}`,
     }));
 
     const grouped = [
+      { label: 'Committed vs main', rows: committed },
       { label: 'Staged', rows: staged },
       { label: 'Unstaged', rows: unstaged },
-      { label: 'Untracked', rows: untracked },
     ];
 
-    const uniquePaths = new Set([...staged, ...unstaged, ...untracked].map((entry) => entry.path));
+    const uniquePaths = new Set([...committed, ...staged, ...unstaged].map((entry) => entry.path));
     const insertions = (diffStat?.files || []).reduce((total, item) => total + Number(item.additions || 0), 0);
     const deletions = (diffStat?.files || []).reduce((total, item) => total + Number(item.deletions || 0), 0);
 
@@ -153,7 +156,10 @@ class GitPanel {
             const deletions = Number(stat?.deletions || 0);
             const flashClass = flashEntries.has(entry.key) ? ' flash' : '';
             const badge = this.renderStatusBadge(entry.status);
-            const diffUrl = `${this.diffEndpoint}/${encodeURIComponent(entry.path)}`;
+            // Committed-group files request diff against main so the viewer shows the full branch diff
+            const diffUrl = entry.group === 'Committed'
+              ? `${this.diffEndpoint}/${encodeURIComponent(entry.path)}?base=main`
+              : `${this.diffEndpoint}/${encodeURIComponent(entry.path)}`;
             return `<button type="button" data-role="file" data-file-path="${this.escapeAttr(entry.path)}" hx-get="${this.escapeAttr(diffUrl)}" hx-target="this" class="git-file-row${flashClass} w-full text-left rounded-md border border-white/10 bg-white/5 px-2 py-1.5 hover:bg-white/10">
               <div class="flex items-center justify-between gap-2">
                 <div class="min-w-0 flex items-center gap-2">
@@ -173,10 +179,11 @@ class GitPanel {
   }
 
   renderStatusBadge(status) {
-    const normalized = String(status || 'Untracked').toLowerCase();
+    const normalized = String(status || '').toLowerCase();
     if (normalized === 'modified') return '<span class="inline-flex h-5 w-5 items-center justify-center rounded bg-blue-500/30 text-blue-200 text-[10px] font-bold">M</span>';
     if (normalized === 'added') return '<span class="inline-flex h-5 w-5 items-center justify-center rounded bg-emerald-500/30 text-emerald-200 text-[10px] font-bold">A</span>';
     if (normalized === 'deleted') return '<span class="inline-flex h-5 w-5 items-center justify-center rounded bg-rose-500/30 text-rose-200 text-[10px] font-bold">D</span>';
+    if (normalized === 'committed') return '<span class="inline-flex h-5 w-5 items-center justify-center rounded bg-violet-500/30 text-violet-200 text-[10px] font-bold">C</span>';
     return '<span class="inline-flex h-5 w-5 items-center justify-center rounded bg-slate-500/30 text-slate-200 text-[10px] font-bold">?</span>';
   }
 

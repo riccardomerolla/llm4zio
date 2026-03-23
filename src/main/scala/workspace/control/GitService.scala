@@ -27,6 +27,8 @@ trait GitService:
   def conflictedFiles(repoPath: String): IO[GitError, List[String]]
   def headSha(repoPath: String): IO[GitError, String]
   def showDiffStat(repoPath: String, ref: String = "HEAD"): IO[GitError, GitDiffStat]
+  def diffStatVsBase(repoPath: String, baseBranch: String): IO[GitError, GitDiffStat]
+  def diffFileVsBase(repoPath: String, filePath: String, baseBranch: String): IO[GitError, String]
 
 object GitService:
   val live: ULayer[GitService] = ZLayer.succeed(GitServiceLive())
@@ -84,6 +86,12 @@ object GitService:
 
   def showDiffStat(repoPath: String, ref: String = "HEAD"): ZIO[GitService, GitError, GitDiffStat] =
     ZIO.serviceWithZIO[GitService](_.showDiffStat(repoPath, ref))
+
+  def diffStatVsBase(repoPath: String, baseBranch: String): ZIO[GitService, GitError, GitDiffStat] =
+    ZIO.serviceWithZIO[GitService](_.diffStatVsBase(repoPath, baseBranch))
+
+  def diffFileVsBase(repoPath: String, filePath: String, baseBranch: String): ZIO[GitService, GitError, String] =
+    ZIO.serviceWithZIO[GitService](_.diffFileVsBase(repoPath, filePath, baseBranch))
 
 object GitParsers:
   private val LogSeparator = "\\u001f"
@@ -338,6 +346,29 @@ final case class GitServiceLive() extends GitService:
     ensureRepo(repoPath) *>
       runGit(repoPath, "show", "--numstat", "--format=", ref)
         .flatMap(raw => ZIO.fromEither(GitParsers.parseDiffNumStat(raw)))
+
+  override def diffStatVsBase(repoPath: String, baseBranch: String): IO[GitError, GitDiffStat] =
+    for
+      _      <- ensureRepo(repoPath)
+      ref    <- resolveRef(repoPath, baseBranch)
+      raw    <- ref match
+                  case None    => ZIO.succeed("")
+                  case Some(r) =>
+                    runGit(repoPath, "diff", s"$r...HEAD", "--numstat")
+                      .catchAll(_ => ZIO.succeed(""))
+      result <- ZIO.fromEither(GitParsers.parseDiffNumStat(raw))
+    yield result
+
+  override def diffFileVsBase(repoPath: String, filePath: String, baseBranch: String): IO[GitError, String] =
+    for
+      _   <- ensureRepo(repoPath)
+      ref <- resolveRef(repoPath, baseBranch)
+      out <- ref match
+               case None    => ZIO.succeed("")
+               case Some(r) =>
+                 runGit(repoPath, "diff", s"$r...HEAD", "--no-color", "--", filePath)
+                   .catchAll(_ => ZIO.succeed(""))
+    yield out
 
   /** Returns the first resolvable ref from the candidates, or None if none exist in this repo/worktree. */
   private def resolveRef(repoPath: String, branch: String): IO[GitError, Option[String]] =

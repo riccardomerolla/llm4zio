@@ -346,36 +346,53 @@ object WorkspacesController:
           }
         },
 
-      // Git diff stat (unstaged default, staged with ?staged=true)
+      // Git diff stat — ?base=<branch> shows committed changes vs that branch;
+      // without ?base, falls back to local worktree diff (?staged=true for index)
       Method.GET / "api" / "workspaces" / string("wsId") / "runs" / string("runId") / "git" / "diff" ->
         handler { (wsId: String, runId: String, req: Request) =>
           val staged = req.queryParam("staged").exists(_.trim.equalsIgnoreCase("true"))
+          val base   = req.queryParam("base").map(_.trim).filter(_.nonEmpty)
           resolveRunWorktree(repo, wsId, runId).flatMap {
             case Left(resp)        => ZIO.succeed(resp)
             case Right((_, _, wt)) =>
-              gitService
-                .diffStat(wt, staged = staged)
-                .map(diff => Response.json(diff.toJson))
-                .catchAll(err => ZIO.succeed(gitErr(err)))
+              base match
+                case Some(b) =>
+                  gitService
+                    .diffStatVsBase(wt, b)
+                    .map(diff => Response.json(diff.toJson))
+                    .catchAll(err => ZIO.succeed(gitErr(err)))
+                case None =>
+                  gitService
+                    .diffStat(wt, staged = staged)
+                    .map(diff => Response.json(diff.toJson))
+                    .catchAll(err => ZIO.succeed(gitErr(err)))
           }
         },
 
-      // Git file diff (URL-encoded file path segment)
+      // Git file diff — ?base=<branch> shows committed diff for that file vs base branch
       Method.GET / "api" / "workspaces" / string("wsId") / "runs" / string("runId") / "git" / "diff" / string(
         "filePath"
       ) ->
-        handler { (wsId: String, runId: String, filePath: String, _: Request) =>
+        handler { (wsId: String, runId: String, filePath: String, req: Request) =>
           val decoded = urlDecode(filePath)
+          val base    = req.queryParam("base").map(_.trim).filter(_.nonEmpty)
           validateGitFilePath(decoded).flatMap {
             case Left(resp) => ZIO.succeed(resp)
             case Right(fp)  =>
               resolveRunWorktree(repo, wsId, runId).flatMap {
                 case Left(resp)        => ZIO.succeed(resp)
                 case Right((_, _, wt)) =>
-                  gitService
-                    .diffFile(wt, fp)
-                    .map(diff => Response.text(diff).contentType(MediaType.text.plain))
-                    .catchAll(err => ZIO.succeed(gitErr(err)))
+                  base match
+                    case Some(b) =>
+                      gitService
+                        .diffFileVsBase(wt, fp, b)
+                        .map(diff => Response.text(diff).contentType(MediaType.text.plain))
+                        .catchAll(err => ZIO.succeed(gitErr(err)))
+                    case None =>
+                      gitService
+                        .diffFile(wt, fp)
+                        .map(diff => Response.text(diff).contentType(MediaType.text.plain))
+                        .catchAll(err => ZIO.succeed(gitErr(err)))
               }
           }
         },
