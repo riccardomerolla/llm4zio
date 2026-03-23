@@ -14,27 +14,131 @@
 
 ## Design
 
-### Bug 1 — Column fix
+### Bug 1 — Human Review workflow
 
-One-line change in `BoardOrchestrator.completeSuccess` (line 253):
+The current `completeSuccess` merges the branch immediately and moves the card straight to `Done`, bypassing any human oversight. The correct workflow is:
 
-```scala
-boardRepository.moveIssue(workspacePath, issueId, BoardColumn.Done)
-// →
-boardRepository.moveIssue(workspacePath, issueId, BoardColumn.Review)
-```
-
-`completeSuccess` retains all existing behaviour: merge branch to main, set `completedAt`, clear `branchName` (branch has been merged and will be cleaned up), append proof-of-work, run cleanup. `ensureMainBranch` and `gitService.mergeNoFastForward` in `BoardOrchestrator` are workspace-scoped and remain unchanged throughout.
-
-In `BoardOrchestratorSpec` line 296, the variable `doneIssue` should be renamed to `reviewIssue` for clarity.
+1. Run completes → card moves to **Review** (no merge yet, branch kept alive)
+2. Human reviews the changes via the Git Changes panel
+3. Human clicks **"Approve"** → system merges the branch, then moves card to **Done**
 
 **Workflow after fix:**
 
-| Event | From | To |
-|---|---|---|
-| Run assigned | Todo | In Progress |
-| Run completes (branch merged to main) | In Progress | Review |
-| Human approves | Review | Done |
+| Event | From | To | Merge happens? |
+|---|---|---|---|
+| Run assigned | Todo | In Progress | No |
+| Run completes | In Progress | Review | **No** — branch preserved |
+| Human clicks Approve | Review | Done | **Yes** — merge + cleanup |
+
+#### `completeSuccess` — revised
+
+Remove the merge, the cleanup, and the field-clearing that depend on the merge. Only move the card to Review and record proof-of-work:
+
+```scala
+private def completeSuccess(workspacePath: String, issueId: BoardIssueId, details: String): IO[BoardError, Unit] =
+  for
+    now <- Clock.instant
+    _   <- boardRepository.moveIssue(workspacePath, issueId, BoardColumn.Review)
+    _   <- boardRepository.updateIssue(
+             workspacePath,
+             issueId,
+             _.copy(
+               transientState = TransientState.None,
+               failureReason  = None,
+               proofOfWork    = appendDetail(fm.proofOfWork, details),
+             ),
+           )
+  yield ()
+```
+
+Fields that are **not** changed in `completeSuccess`:
+- `branchName` — preserved; the Approve action needs it to merge
+- `completedAt` — stays `None`; set to `Some(now)` only when Done
+- No `mergeNoFastForward`, no `cleanupLatestRun`
+- `ensureMainBranch` call removed from `completeSuccess` (no git operation here)
+
+#### New `approveIssue` — `BoardOrchestrator` trait + live
+
+Add to `BoardOrchestrator` trait:
+
+```scala
+def approveIssue(workspacePath: String, issueId: BoardIssueId): IO[BoardError, Unit]
+```
+
+Add companion object accessor and `BoardOrchestratorLive` implementation:
+
+```scala
+override def approveIssue(workspacePath: String, issueId: BoardIssueId): IO[BoardError, Unit] =
+  for
+    _      <- ensureMainBranch(workspacePath)
+    issue  <- boardRepository.readIssue(workspacePath, issueId)
+    _      <- ZIO.fail(BoardError.ParseError(s"Issue ${issueId.value} is not in Review"))
+                .unless(issue.column == BoardColumn.Review)
+    branch <- ZIO
+                .fromOption(issue.frontmatter.branchName.map(_.trim).filter(_.nonEmpty))
+                .orElseFail(BoardError.ParseError(s"Issue '${issueId.value}' has no branchName"))
+    now    <- Clock.instant
+    _      <- boardRepository.updateIssue(workspacePath, issueId, _.copy(transientState = TransientState.Merging(now)))
+    _      <- gitService
+                .mergeNoFastForward(
+                  workspacePath,
+                  branch,
+                  s"[board] Merge issue ${issueId.value}: ${issue.frontmatter.title}",
+                )
+                .mapError(mapGitError("git merge --no-ff"))
+    now2   <- Clock.instant
+    _      <- boardRepository.moveIssue(workspacePath, issueId, BoardColumn.Done)
+    _      <- boardRepository.updateIssue(
+                workspacePath,
+                issueId,
+                _.copy(
+                  transientState = TransientState.None,
+                  completedAt    = Some(now2),
+                  branchName     = None,
+                ),
+              )
+    _      <- cleanupLatestRun(issueId)
+  yield ()
+```
+
+On merge failure: `mapError` converts the `GitError` to `BoardError.GitOperationFailed` and the caller handles it. The card stays in Review with `transientState = TransientState.Merging` visible to the user, signalling that the merge was attempted but failed. A compensating `updateIssue` that resets `transientState = TransientState.None` and sets a `failureReason` should be added via `.catchAll` wrapping the merge + post-merge steps.
+
+#### New endpoint — `BoardController`
+
+Add route:
+
+```scala
+Method.POST / "board" / string("workspaceId") / "issues" / string("issueId") / "approve" -> handler {
+  (workspaceId: String, issueId: String, req: Request) =>
+    approveIssue(workspaceId, issueId, req).catchAll(boardErrorResponse)
+}
+```
+
+Private handler:
+
+```scala
+private def approveIssue(workspaceId: String, issueIdRaw: String, req: Request): IO[BoardError, Response] =
+  for
+    workspace <- resolveWorkspace(workspaceId)
+    issueId   <- readBoardIssueId(issueIdRaw)
+    _         <- boardOrchestrator.approveIssue(workspace.localPath, issueId)
+    response  <- if isHtmx(req) then renderBoardFragment(workspaceId) else ZIO.succeed(Response(status = Status.NoContent))
+  yield response
+```
+
+#### New "Approve" button — `BoardView`
+
+On card detail page (`BoardView.detailPage`) and on the card in the board fragment (`BoardView.columnsFragment`), when `issue.column == BoardColumn.Review` and `issue.frontmatter.branchName.nonEmpty`:
+
+```html
+<form method="POST" action="/board/{workspaceId}/issues/{issueId}/approve"
+      hx-post="/board/{workspaceId}/issues/{issueId}/approve"
+      hx-target="#board-columns" hx-swap="outerHTML">
+  <button type="submit" class="...">Approve</button>
+</form>
+```
+
+The button is absent on all other columns and when `branchName` is empty.
 
 ---
 
