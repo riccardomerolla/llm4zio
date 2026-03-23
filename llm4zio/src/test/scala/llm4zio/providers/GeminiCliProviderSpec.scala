@@ -823,6 +823,91 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
           capturedPrompt.contains("**User:**"),
         )
       },
+      test("single user message formats correctly") {
+        val config   = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
+        val messages = List(Message(MessageRole.User, "hello"))
+        for
+          capturedRef <- Ref.make("")
+          executor = new MockGeminiCliExecutor(
+            streamEvents = List(
+              GeminiCliStreamEvent.Result(status = Some("success"), errorMessage = None, stats = None),
+            )
+          ) {
+            override def runGeminiProcessStream(
+              prompt: String,
+              config: LlmConfig,
+              executionContext: GeminiCliExecutionContext,
+            ): ZStream[Any, LlmError, GeminiCliStreamEvent] =
+              ZStream.fromZIO(capturedRef.set(prompt)).drain ++ super.runGeminiProcessStream(prompt, config, executionContext)
+          }
+          provider      = GeminiCliProvider.make(config, executor)
+          _             <- provider.executeStreamWithHistory(messages).runDrain
+          capturedPrompt <- capturedRef.get
+        yield assertTrue(
+          capturedPrompt == "**User:** hello",
+        )
+      },
+      test("system + user message formats correctly") {
+        val config   = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
+        val messages = List(
+          Message(MessageRole.System, "Be concise."),
+          Message(MessageRole.User, "What time is it?"),
+        )
+        for
+          capturedRef <- Ref.make("")
+          executor = new MockGeminiCliExecutor(
+            streamEvents = List(
+              GeminiCliStreamEvent.Result(status = Some("success"), errorMessage = None, stats = None),
+            )
+          ) {
+            override def runGeminiProcessStream(
+              prompt: String,
+              config: LlmConfig,
+              executionContext: GeminiCliExecutionContext,
+            ): ZStream[Any, LlmError, GeminiCliStreamEvent] =
+              ZStream.fromZIO(capturedRef.set(prompt)).drain ++ super.runGeminiProcessStream(prompt, config, executionContext)
+          }
+          provider      = GeminiCliProvider.make(config, executor)
+          _             <- provider.executeStreamWithHistory(messages).runDrain
+          capturedPrompt <- capturedRef.get
+        yield assertTrue(
+          capturedPrompt.startsWith("[SYSTEM CONTEXT]"),
+          capturedPrompt.contains("**User:**"),
+        )
+      },
+      test("user + assistant + user formats with newline separators") {
+        val config   = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
+        val messages = List(
+          Message(MessageRole.User, "First question"),
+          Message(MessageRole.Assistant, "First answer"),
+          Message(MessageRole.User, "Second question"),
+        )
+        for
+          capturedRef <- Ref.make("")
+          executor = new MockGeminiCliExecutor(
+            streamEvents = List(
+              GeminiCliStreamEvent.Result(status = Some("success"), errorMessage = None, stats = None),
+            )
+          ) {
+            override def runGeminiProcessStream(
+              prompt: String,
+              config: LlmConfig,
+              executionContext: GeminiCliExecutionContext,
+            ): ZStream[Any, LlmError, GeminiCliStreamEvent] =
+              ZStream.fromZIO(capturedRef.set(prompt)).drain ++ super.runGeminiProcessStream(prompt, config, executionContext)
+          }
+          provider      = GeminiCliProvider.make(config, executor)
+          _             <- provider.executeStreamWithHistory(messages).runDrain
+          capturedPrompt <- capturedRef.get
+        yield assertTrue(
+          capturedPrompt.count(_.toString == "*") >= 6,  // at least 3 bold markers (**X:**)
+          capturedPrompt.contains("**User:**"),
+          capturedPrompt.contains("**Assistant:**"),
+          capturedPrompt.contains("First question"),
+          capturedPrompt.contains("First answer"),
+          capturedPrompt.contains("Second question"),
+        )
+      },
     ),
     suite("exit code error semantics")(
       test("TurnLimitError is an LlmError") {

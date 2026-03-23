@@ -605,32 +605,22 @@ object GeminiCliProvider:
           }
 
       private def formatHistory(messages: List[Message]): Either[LlmError, String] =
-        if messages.isEmpty then
-          Left(LlmError.InvalidRequestError("executeStreamWithHistory called with empty message list"))
+        val systemMsgs    = messages.filter(_.role == MessageRole.System)
+        val nonSystemMsgs = messages.filter(_.role != MessageRole.System)
+        if nonSystemMsgs.isEmpty then
+          Left(LlmError.InvalidRequestError("History must contain at least one user or assistant message"))
         else
-          val systemParts = messages
-            .collect { case Message(MessageRole.System, content) => content.trim }
-            .filter(_.nonEmpty)
-
-          val dialogueParts = messages
-            .filterNot(_.role == MessageRole.System)
-            .map {
-              case Message(MessageRole.User, content)      => s"**User:**\n${content.trim}"
-              case Message(MessageRole.Assistant, content) => s"**Assistant:**\n${content.trim}"
-              case Message(MessageRole.Tool, content)      => s"**Tool Result:**\n${content.trim}"
-              case Message(role, content)                  => s"**${role}:**\n${content.trim}"
-            }
-
           val systemBlock =
-            if systemParts.isEmpty then ""
-            else s"[SYSTEM CONTEXT]\n${systemParts.mkString("\n\n")}\n\n---\n\n"
-
-          if dialogueParts.isEmpty then
-            Left(LlmError.InvalidRequestError(
-              "executeStreamWithHistory: message list contains no non-system messages"
-            ))
-          else
-            Right(systemBlock + dialogueParts.mkString("\n\n"))
+            if systemMsgs.isEmpty then ""
+            else s"[SYSTEM CONTEXT]\n${systemMsgs.map(_.content).mkString("\n")}\n---\n\n"
+          val historyLines = nonSystemMsgs.map { msg =>
+            val roleLabel = msg.role match
+              case MessageRole.User      => "**User:**"
+              case MessageRole.Assistant => "**Assistant:**"
+              case _                     => msg.role.toString
+            s"$roleLabel ${msg.content}"
+          }
+          Right(systemBlock + historyLines.mkString("\n\n"))
 
       override def executeStreamWithHistory(messages: List[Message]): ZStream[Any, LlmError, LlmChunk] =
         ZStream.fromZIO(ZIO.fromEither(formatHistory(messages))).flatMap(executeStream)
