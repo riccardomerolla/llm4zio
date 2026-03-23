@@ -527,7 +527,9 @@ object GeminiCliProvider:
               }
               .flatMap {
                 case GeminiCliStreamEvent.Init(model, sessionId) =>
-                  val updates = model.map("model" -> _).toMap ++ sessionId.map("session_id" -> _).toMap
+                  val updates = model.map("model" -> _).toMap ++
+                    sessionId.map("session_id" -> _).toMap ++
+                    sessionId.map("sessionId" -> _).toMap
                   ZStream.fromZIO(metaRef.update(_ ++ updates)).drain
 
                 case GeminiCliStreamEvent.Message(role, content, _)
@@ -547,6 +549,9 @@ object GeminiCliProvider:
                         "tool_name"  -> toolName.getOrElse(""),
                         "tool_id"    -> toolId.getOrElse(""),
                         "tool_input" -> input.getOrElse(""),
+                        "toolName"   -> toolName.getOrElse(""),
+                        "toolId"     -> toolId.getOrElse(""),
+                        "toolInput"  -> input.getOrElse(""),
                       ),
                     )
                   }
@@ -560,6 +565,9 @@ object GeminiCliProvider:
                         "tool_id"      -> toolId.getOrElse(""),
                         "tool_status"  -> status.getOrElse(""),
                         "tool_content" -> content.getOrElse(""),
+                        "toolId"       -> toolId.getOrElse(""),
+                        "toolStatus"   -> status.getOrElse(""),
+                        "toolResult"   -> content.getOrElse(""),
                       ),
                     )
                   }

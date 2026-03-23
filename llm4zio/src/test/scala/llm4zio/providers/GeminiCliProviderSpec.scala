@@ -907,4 +907,100 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
         )
       },
     ),
+    suite("executeStream event handling")(
+      test("Init event populates metadata for subsequent chunks") {
+        val config   = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
+        val executor = new MockGeminiCliExecutor(
+          shouldSucceed = true,
+          streamEvents = List(
+            GeminiCliStreamEvent.Init(model = Some("gemini-2.5-pro"), sessionId = Some("sess-1")),
+            GeminiCliStreamEvent.Message(role = Some("assistant"), content = Some("hello"), delta = true),
+            GeminiCliStreamEvent.Result(status = Some("success"), errorMessage = None, stats = None),
+          ),
+        )
+        val provider = GeminiCliProvider.make(config, executor)
+        for
+          chunks <- provider.executeStream("hi").runCollect
+          textChunks = chunks.filter(_.delta.nonEmpty)
+        yield assertTrue(
+          textChunks.nonEmpty,
+          textChunks.exists(_.metadata.get("model") == Some("gemini-2.5-pro")),
+          textChunks.exists(_.metadata.get("sessionId") == Some("sess-1")),
+        )
+      },
+      test("Error event causes stream failure") {
+        val config   = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
+        val executor = new MockGeminiCliExecutor(
+          shouldSucceed = true,
+          streamEvents = List(
+            GeminiCliStreamEvent.Error(
+              message   = Some("api error"),
+              code      = Some(500),
+              errorType = Some("server_error"),
+            ),
+          ),
+        )
+        val provider = GeminiCliProvider.make(config, executor)
+        for
+          result <- provider.executeStream("hi").runCollect.exit
+        yield assertTrue(result.isFailure)
+      },
+      test("Result with error status causes stream failure") {
+        val config   = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
+        val executor = new MockGeminiCliExecutor(
+          shouldSucceed = true,
+          streamEvents = List(
+            GeminiCliStreamEvent.Result(
+              status       = Some("error"),
+              errorMessage = Some("something went wrong"),
+              stats        = None,
+            ),
+          ),
+        )
+        val provider = GeminiCliProvider.make(config, executor)
+        for
+          result <- provider.executeStream("hi").runCollect.exit
+        yield assertTrue(result.isFailure)
+      },
+      test("ToolUse event emits observability chunk") {
+        val config   = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
+        val executor = new MockGeminiCliExecutor(
+          shouldSucceed = true,
+          streamEvents = List(
+            GeminiCliStreamEvent.ToolUse(
+              toolName = Some("read_file"),
+              toolId   = Some("t1"),
+              input    = Some("""{"path":"foo.txt"}"""),
+            ),
+            GeminiCliStreamEvent.Result(status = Some("success"), errorMessage = None, stats = None),
+          ),
+        )
+        val provider = GeminiCliProvider.make(config, executor)
+        for
+          chunks <- provider.executeStream("hi").runCollect
+        yield assertTrue(
+          chunks.exists(_.metadata.get("toolName") == Some("read_file")),
+        )
+      },
+      test("ToolResult event emits observability chunk") {
+        val config   = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
+        val executor = new MockGeminiCliExecutor(
+          shouldSucceed = true,
+          streamEvents = List(
+            GeminiCliStreamEvent.ToolResult(
+              toolId  = Some("t1"),
+              status  = Some("success"),
+              content = Some("file content"),
+            ),
+            GeminiCliStreamEvent.Result(status = Some("success"), errorMessage = None, stats = None),
+          ),
+        )
+        val provider = GeminiCliProvider.make(config, executor)
+        for
+          chunks <- provider.executeStream("hi").runCollect
+        yield assertTrue(
+          chunks.exists(_.metadata.get("toolId") == Some("t1")),
+        )
+      },
+    ),
   )
