@@ -468,11 +468,11 @@ final case class WorkspaceRunServiceLive(
           // (e.g. auto-filled by the dispatch system).  Genuine operator additions
           // start with different text, so comparing prefixes is a reliable heuristic.
           {
-            val trimmed             = req.prompt.trim
-            val isRedundantPrompt   =
+            val trimmed           = req.prompt.trim
+            val isRedundantPrompt =
               trimmed.isEmpty ||
-                (i.title.nonEmpty && trimmed.startsWith(i.title.trim)) ||
-                (i.description.nonEmpty && trimmed.startsWith(i.description.trim))
+              (i.title.nonEmpty && trimmed.startsWith(i.title.trim)) ||
+              (i.description.nonEmpty && trimmed.startsWith(i.description.trim))
             Option.unless(isRedundantPrompt)(s"Additional instructions:\n${req.prompt}")
           },
         ).flatten.mkString("\n")

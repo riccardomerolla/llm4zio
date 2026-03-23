@@ -361,7 +361,7 @@ object WorkspacesController:
                     .diffStatVsBase(wt, b)
                     .map(diff => Response.json(diff.toJson))
                     .catchAll(err => ZIO.succeed(gitErr(err)))
-                case None =>
+                case None    =>
                   gitService
                     .diffStat(wt, staged = staged)
                     .map(diff => Response.json(diff.toJson))
@@ -388,7 +388,7 @@ object WorkspacesController:
                         .diffFileVsBase(wt, fp, b)
                         .map(diff => Response.text(diff).contentType(MediaType.text.plain))
                         .catchAll(err => ZIO.succeed(gitErr(err)))
-                    case None =>
+                    case None    =>
                       gitService
                         .diffFile(wt, fp)
                         .map(diff => Response.text(diff).contentType(MediaType.text.plain))

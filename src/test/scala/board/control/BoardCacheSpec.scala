@@ -77,31 +77,33 @@ object BoardCacheSpec extends ZIOSpecDefault:
       ZIO.unit
 
   final private case class StubGit(ref: Ref[String]) extends GitService:
-    override def status(repoPath: String): IO[GitError, GitStatus]                                         =
+    override def status(repoPath: String): IO[GitError, GitStatus]                                            =
       ZIO.succeed(GitStatus("main", Nil, Nil, Nil))
-    override def diff(repoPath: String, staged: Boolean): IO[GitError, GitDiff]                            = ZIO.succeed(GitDiff(Nil))
-    override def diffStat(repoPath: String, staged: Boolean): IO[GitError, GitDiffStat]                    =
+    override def diff(repoPath: String, staged: Boolean): IO[GitError, GitDiff]                               = ZIO.succeed(GitDiff(Nil))
+    override def diffStat(repoPath: String, staged: Boolean): IO[GitError, GitDiffStat]                       =
       ZIO.succeed(GitDiffStat(Nil))
-    override def diffFile(repoPath: String, filePath: String, staged: Boolean): IO[GitError, String]       = ZIO.succeed("")
-    override def log(repoPath: String, limit: Int): IO[GitError, List[GitLogEntry]]                        = ZIO.succeed(Nil)
-    override def branchInfo(repoPath: String): IO[GitError, GitBranchInfo]                                 =
+    override def diffFile(repoPath: String, filePath: String, staged: Boolean): IO[GitError, String]          = ZIO.succeed("")
+    override def log(repoPath: String, limit: Int): IO[GitError, List[GitLogEntry]]                           = ZIO.succeed(Nil)
+    override def branchInfo(repoPath: String): IO[GitError, GitBranchInfo]                                    =
       ZIO.succeed(GitBranchInfo("main", List("main"), isDetached = false))
-    override def showFile(repoPath: String, filePath: String, ref: String): IO[GitError, String]           = ZIO.succeed("")
-    override def aheadBehind(repoPath: String, baseBranch: String): IO[GitError, AheadBehind]              =
+    override def showFile(repoPath: String, filePath: String, ref: String): IO[GitError, String]              = ZIO.succeed("")
+    override def aheadBehind(repoPath: String, baseBranch: String): IO[GitError, AheadBehind]                 =
       ZIO.succeed(AheadBehind(0, 0))
-    override def checkout(repoPath: String, branch: String): IO[GitError, Unit]                            = ZIO.unit
-    override def add(repoPath: String, paths: List[String]): IO[GitError, Unit]                            = ZIO.unit
-    override def mv(repoPath: String, from: String, to: String): IO[GitError, Unit]                        = ZIO.unit
-    override def commit(repoPath: String, message: String): IO[GitError, String]                           = ZIO.succeed("sha")
-    override def rm(repoPath: String, path: String, recursive: Boolean): IO[GitError, Unit]                = ZIO.unit
-    override def mergeNoFastForward(repoPath: String, branch: String, message: String): IO[GitError, Unit] = ZIO.unit
-    override def mergeAbort(repoPath: String): IO[GitError, Unit]                                          = ZIO.unit
-    override def conflictedFiles(repoPath: String): IO[GitError, List[String]]                             = ZIO.succeed(Nil)
-    override def headSha(repoPath: String): IO[GitError, String]                                           = ref.get
-    override def showDiffStat(repoPath: String, ref: String): IO[GitError, GitDiffStat]                    =
+    override def checkout(repoPath: String, branch: String): IO[GitError, Unit]                               = ZIO.unit
+    override def add(repoPath: String, paths: List[String]): IO[GitError, Unit]                               = ZIO.unit
+    override def mv(repoPath: String, from: String, to: String): IO[GitError, Unit]                           = ZIO.unit
+    override def commit(repoPath: String, message: String): IO[GitError, String]                              = ZIO.succeed("sha")
+    override def rm(repoPath: String, path: String, recursive: Boolean): IO[GitError, Unit]                   = ZIO.unit
+    override def mergeNoFastForward(repoPath: String, branch: String, message: String): IO[GitError, Unit]    = ZIO.unit
+    override def mergeAbort(repoPath: String): IO[GitError, Unit]                                             = ZIO.unit
+    override def conflictedFiles(repoPath: String): IO[GitError, List[String]]                                = ZIO.succeed(Nil)
+    override def headSha(repoPath: String): IO[GitError, String]                                              = ref.get
+    override def showDiffStat(repoPath: String, ref: String): IO[GitError, GitDiffStat]                       =
       ZIO.succeed(GitDiffStat(Nil))
-    override def diffStatVsBase(repoPath: String, baseBranch: String): IO[GitError, GitDiffStat]          = ZIO.succeed(GitDiffStat(Nil))
-    override def diffFileVsBase(repoPath: String, filePath: String, baseBranch: String): IO[GitError, String] = ZIO.succeed("")
+    override def diffStatVsBase(repoPath: String, baseBranch: String): IO[GitError, GitDiffStat]              =
+      ZIO.succeed(GitDiffStat(Nil))
+    override def diffFileVsBase(repoPath: String, filePath: String, baseBranch: String): IO[GitError, String] =
+      ZIO.succeed("")
 
   private def makeHarness(ttl: Duration = Duration.ofSeconds(30))
     : UIO[(BoardCache, Ref[Int], Ref[Int], Ref[Int], Ref[String])] =

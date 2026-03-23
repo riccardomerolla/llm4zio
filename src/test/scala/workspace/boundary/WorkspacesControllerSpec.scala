@@ -114,7 +114,7 @@ object WorkspacesControllerSpec extends ZIOSpecDefault:
     def delete(id: IssueId): IO[shared.errors.PersistenceError, Unit]                   = ZIO.unit
 
   private object StubGitService extends GitService:
-    def status(repoPath: String): IO[GitError, GitStatus]                                         =
+    def status(repoPath: String): IO[GitError, GitStatus]                                            =
       ZIO.succeed(
         GitStatus(
           branch = "feature/test",
@@ -123,13 +123,13 @@ object WorkspacesControllerSpec extends ZIOSpecDefault:
           untracked = List("README.md"),
         )
       )
-    def diff(repoPath: String, staged: Boolean): IO[GitError, GitDiff]                            =
+    def diff(repoPath: String, staged: Boolean): IO[GitError, GitDiff]                               =
       ZIO.succeed(GitDiff(Nil))
-    def diffStat(repoPath: String, staged: Boolean): IO[GitError, GitDiffStat]                    =
+    def diffStat(repoPath: String, staged: Boolean): IO[GitError, GitDiffStat]                       =
       ZIO.succeed(GitDiffStat(List(DiffFileStat("A.scala", 5, 2))))
-    def diffFile(repoPath: String, filePath: String, staged: Boolean): IO[GitError, String]       =
+    def diffFile(repoPath: String, filePath: String, staged: Boolean): IO[GitError, String]          =
       ZIO.succeed(s"diff --git a/$filePath b/$filePath")
-    def log(repoPath: String, limit: Int): IO[GitError, List[GitLogEntry]]                        =
+    def log(repoPath: String, limit: Int): IO[GitError, List[GitLogEntry]]                           =
       ZIO.succeed(
         List(
           GitLogEntry(
@@ -141,33 +141,33 @@ object WorkspacesControllerSpec extends ZIOSpecDefault:
           )
         )
       )
-    def branchInfo(repoPath: String): IO[GitError, GitBranchInfo]                                 =
+    def branchInfo(repoPath: String): IO[GitError, GitBranchInfo]                                    =
       ZIO.succeed(GitBranchInfo("feature/test", List("main", "feature/test"), isDetached = false))
-    def showFile(repoPath: String, filePath: String, ref: String): IO[GitError, String]           =
+    def showFile(repoPath: String, filePath: String, ref: String): IO[GitError, String]              =
       ZIO.succeed("file-content")
-    def aheadBehind(repoPath: String, baseBranch: String): IO[GitError, AheadBehind]              =
+    def aheadBehind(repoPath: String, baseBranch: String): IO[GitError, AheadBehind]                 =
       ZIO.succeed(AheadBehind(ahead = 3, behind = 1))
-    def checkout(repoPath: String, branch: String): IO[GitError, Unit]                            =
+    def checkout(repoPath: String, branch: String): IO[GitError, Unit]                               =
       ZIO.unit
-    def add(repoPath: String, paths: List[String]): IO[GitError, Unit]                            =
+    def add(repoPath: String, paths: List[String]): IO[GitError, Unit]                               =
       ZIO.unit
-    def mv(repoPath: String, from: String, to: String): IO[GitError, Unit]                        =
+    def mv(repoPath: String, from: String, to: String): IO[GitError, Unit]                           =
       ZIO.unit
-    def commit(repoPath: String, message: String): IO[GitError, String]                           =
+    def commit(repoPath: String, message: String): IO[GitError, String]                              =
       ZIO.succeed("abc123")
-    def rm(repoPath: String, path: String, recursive: Boolean): IO[GitError, Unit]                =
+    def rm(repoPath: String, path: String, recursive: Boolean): IO[GitError, Unit]                   =
       ZIO.unit
-    def mergeNoFastForward(repoPath: String, branch: String, message: String): IO[GitError, Unit] =
+    def mergeNoFastForward(repoPath: String, branch: String, message: String): IO[GitError, Unit]    =
       ZIO.unit
-    def mergeAbort(repoPath: String): IO[GitError, Unit]                                          =
+    def mergeAbort(repoPath: String): IO[GitError, Unit]                                             =
       ZIO.unit
-    def conflictedFiles(repoPath: String): IO[GitError, List[String]]                             =
+    def conflictedFiles(repoPath: String): IO[GitError, List[String]]                                =
       ZIO.succeed(Nil)
-    def headSha(repoPath: String): IO[GitError, String]                                           =
+    def headSha(repoPath: String): IO[GitError, String]                                              =
       ZIO.succeed("abc123")
-    def showDiffStat(repoPath: String, ref: String): IO[GitError, GitDiffStat]                    =
+    def showDiffStat(repoPath: String, ref: String): IO[GitError, GitDiffStat]                       =
       ZIO.succeed(GitDiffStat(Nil))
-    def diffStatVsBase(repoPath: String, baseBranch: String): IO[GitError, GitDiffStat]          = ZIO.succeed(GitDiffStat(Nil))
+    def diffStatVsBase(repoPath: String, baseBranch: String): IO[GitError, GitDiffStat]              = ZIO.succeed(GitDiffStat(Nil))
     def diffFileVsBase(repoPath: String, filePath: String, baseBranch: String): IO[GitError, String] = ZIO.succeed("")
 
   final private class StubAnalysisScheduler(triggerRef: Ref[List[(String, Boolean)]])

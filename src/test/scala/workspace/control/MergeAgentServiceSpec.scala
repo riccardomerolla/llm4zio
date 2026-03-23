@@ -78,43 +78,43 @@ object MergeAgentServiceSpec extends ZIOSpecDefault:
       ZIO.succeed(runs.get(id))
 
   final private class StubGitService(calls: Ref[List[String]], mergeFailure: Ref[Option[GitError]]) extends GitService:
-    override def status(repoPath: String): IO[GitError, GitStatus]                                         = ZIO.succeed(
+    override def status(repoPath: String): IO[GitError, GitStatus]                                            = ZIO.succeed(
       GitStatus(branch = "main", staged = Nil, unstaged = Nil, untracked = Nil)
     )
-    override def diff(repoPath: String, staged: Boolean): IO[GitError, GitDiff]                            = ZIO.succeed(GitDiff(Nil))
-    override def diffStat(repoPath: String, staged: Boolean): IO[GitError, GitDiffStat]                    =
+    override def diff(repoPath: String, staged: Boolean): IO[GitError, GitDiff]                               = ZIO.succeed(GitDiff(Nil))
+    override def diffStat(repoPath: String, staged: Boolean): IO[GitError, GitDiffStat]                       =
       ZIO.succeed(GitDiffStat(Nil))
-    override def diffFile(repoPath: String, filePath: String, staged: Boolean): IO[GitError, String]       =
+    override def diffFile(repoPath: String, filePath: String, staged: Boolean): IO[GitError, String]          =
       ZIO.succeed("")
-    override def log(repoPath: String, limit: Int): IO[GitError, List[GitLogEntry]]                        = ZIO.succeed(Nil)
-    override def branchInfo(repoPath: String): IO[GitError, GitBranchInfo]                                 =
+    override def log(repoPath: String, limit: Int): IO[GitError, List[GitLogEntry]]                           = ZIO.succeed(Nil)
+    override def branchInfo(repoPath: String): IO[GitError, GitBranchInfo]                                    =
       ZIO.succeed(GitBranchInfo(current = "main", all = List("main", "agent/merge-1"), isDetached = false))
-    override def showFile(repoPath: String, filePath: String, ref: String): IO[GitError, String]           = ZIO.succeed("")
-    override def aheadBehind(repoPath: String, baseBranch: String): IO[GitError, AheadBehind]              =
+    override def showFile(repoPath: String, filePath: String, ref: String): IO[GitError, String]              = ZIO.succeed("")
+    override def aheadBehind(repoPath: String, baseBranch: String): IO[GitError, AheadBehind]                 =
       ZIO.succeed(AheadBehind(0, 0))
-    override def checkout(repoPath: String, branch: String): IO[GitError, Unit]                            =
+    override def checkout(repoPath: String, branch: String): IO[GitError, Unit]                               =
       calls.update(_ :+ s"checkout:$repoPath:$branch")
-    override def add(repoPath: String, paths: List[String]): IO[GitError, Unit]                            =
+    override def add(repoPath: String, paths: List[String]): IO[GitError, Unit]                               =
       calls.update(_ :+ s"add:$repoPath:${paths.mkString(",")}")
-    override def mv(repoPath: String, from: String, to: String): IO[GitError, Unit]                        =
+    override def mv(repoPath: String, from: String, to: String): IO[GitError, Unit]                           =
       calls.update(_ :+ s"mv:$repoPath:$from:$to")
-    override def commit(repoPath: String, message: String): IO[GitError, String]                           =
+    override def commit(repoPath: String, message: String): IO[GitError, String]                              =
       calls.update(_ :+ s"commit:$repoPath:$message").as("1234567890abcdef1234567890abcdef12345678")
-    override def rm(repoPath: String, path: String, recursive: Boolean): IO[GitError, Unit]                =
+    override def rm(repoPath: String, path: String, recursive: Boolean): IO[GitError, Unit]                   =
       calls.update(_ :+ s"rm:$repoPath:$path:$recursive")
-    override def mergeNoFastForward(repoPath: String, branch: String, message: String): IO[GitError, Unit] =
+    override def mergeNoFastForward(repoPath: String, branch: String, message: String): IO[GitError, Unit]    =
       calls.update(_ :+ s"merge:$repoPath:$branch:$message") *>
         mergeFailure.get.flatMap {
           case Some(error) => ZIO.fail(error)
           case None        => ZIO.unit
         }
-    override def mergeAbort(repoPath: String): IO[GitError, Unit]                                          =
+    override def mergeAbort(repoPath: String): IO[GitError, Unit]                                             =
       calls.update(_ :+ s"merge-abort:$repoPath")
-    override def conflictedFiles(repoPath: String): IO[GitError, List[String]]                             =
+    override def conflictedFiles(repoPath: String): IO[GitError, List[String]]                                =
       calls.update(_ :+ s"conflicted-files:$repoPath").as(List("src/Main.scala", "README.md"))
-    override def headSha(repoPath: String): IO[GitError, String]                                           =
+    override def headSha(repoPath: String): IO[GitError, String]                                              =
       calls.update(_ :+ s"head-sha:$repoPath").as("1234567890abcdef1234567890abcdef12345678")
-    override def showDiffStat(repoPath: String, ref: String): IO[GitError, GitDiffStat]                    =
+    override def showDiffStat(repoPath: String, ref: String): IO[GitError, GitDiffStat]                       =
       calls.update(_ :+ s"show-diff-stat:$repoPath:$ref").as(
         GitDiffStat(
           List(
@@ -123,7 +123,7 @@ object MergeAgentServiceSpec extends ZIOSpecDefault:
           )
         )
       )
-    override def diffStatVsBase(repoPath: String, baseBranch: String): IO[GitError, GitDiffStat]          =
+    override def diffStatVsBase(repoPath: String, baseBranch: String): IO[GitError, GitDiffStat]              =
       calls.update(_ :+ s"diff-stat-vs-base:$repoPath:$baseBranch").as(GitDiffStat(Nil))
     override def diffFileVsBase(repoPath: String, filePath: String, baseBranch: String): IO[GitError, String] =
       calls.update(_ :+ s"diff-file-vs-base:$repoPath:$filePath:$baseBranch").as("")

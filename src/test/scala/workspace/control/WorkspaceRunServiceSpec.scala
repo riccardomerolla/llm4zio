@@ -350,7 +350,8 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
                       def get(id: IssueId): IO[PersistenceError, AgentIssue]           = ZIO.succeed(issue.copy(id = id))
                       def history(id: IssueId): IO[PersistenceError, List[IssueEvent]] = ZIO.succeed(Nil)
                       def list(f: IssueFilter): IO[PersistenceError, List[AgentIssue]] = ZIO.succeed(Nil)
-                      def delete(id: IssueId): IO[PersistenceError, Unit]              = ZIO.unit,
+                      def delete(id: IssueId): IO[PersistenceError, Unit]              = ZIO.unit
+                    ,
                     StubAnalysisRepo,
                     worktreeAdd = noopWorktreeAdd,
                     worktreeRemove = noopWorktreeRemove,
@@ -831,7 +832,8 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
       test("None branch includes req.prompt as Task field") {
         for
           (svc, _, _) <- makeService()
-          run         <- svc.assign("ws-1", AssignRunRequest(issueRef = "#no-issue", prompt = "do the thing", agentName = "echo"))
+          run         <-
+            svc.assign("ws-1", AssignRunRequest(issueRef = "#no-issue", prompt = "do the thing", agentName = "echo"))
         yield assertTrue(
           run.prompt.contains("Task: do the thing"),
           run.prompt.contains("Execution constraints"),
@@ -878,14 +880,17 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
       test("Some branch includes req.prompt as Additional instructions when non-empty") {
         for
           svc <- makeServiceWithIssue(baseIssue)
-          run <- svc.assign("ws-1", AssignRunRequest(issueRef = "#extra", prompt = "focus on edge cases", agentName = "echo"))
+          run <- svc.assign(
+                   "ws-1",
+                   AssignRunRequest(issueRef = "#extra", prompt = "focus on edge cases", agentName = "echo"),
+                 )
         yield assertTrue(
           run.prompt.contains("Additional instructions:"),
           run.prompt.contains("focus on edge cases"),
         )
       },
       test("Some branch suppresses req.prompt when it starts with the issue title (auto-filled deduplication)") {
-        val issue = baseIssue.copy(
+        val issue            = baseIssue.copy(
           title = "Add default value for name arg",
           description = "Add a default value for the name parameter",
           acceptanceCriteria = Some("Unit test covering the default"),
@@ -901,7 +906,7 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
         yield assertTrue(!run.prompt.contains("Additional instructions:"))
       },
       test("Some branch suppresses req.prompt when it starts with the issue description (auto-filled deduplication)") {
-        val issue = baseIssue.copy(
+        val issue            = baseIssue.copy(
           title = "Some task",
           description = "Add a default value for the name parameter",
         )
