@@ -861,5 +861,50 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
           result <- provider.executeStream("test").runCollect.exit
         yield assertTrue(result.isFailure)
       },
+      test("exit 0 returns success") {
+        for
+          result <- GeminiCliExecutor.validateExitCode(0, "", None).exit
+        yield assertTrue(result == Exit.succeed(()))
+      },
+      test("exit 1 returns ProviderError") {
+        for
+          result <- GeminiCliExecutor.validateExitCode(1, "oops", None).exit
+        yield assertTrue(
+          result.isFailure,
+          result.causeOption.flatMap(_.failureOption).exists(_.isInstanceOf[LlmError.ProviderError]),
+        )
+      },
+      test("exit 42 returns InvalidRequestError") {
+        for
+          result <- GeminiCliExecutor.validateExitCode(42, "bad input", None).exit
+        yield assertTrue(
+          result.isFailure,
+          result.causeOption.flatMap(_.failureOption).exists(_.isInstanceOf[LlmError.InvalidRequestError]),
+        )
+      },
+      test("exit 53 returns TurnLimitError with limit from context") {
+        for
+          result <- GeminiCliExecutor.validateExitCode(53, "", Some(3)).exit
+        yield assertTrue(
+          result.isFailure,
+          result.causeOption.flatMap(_.failureOption).contains(LlmError.TurnLimitError(Some(3))),
+        )
+      },
+      test("exit 53 returns TurnLimitError with None when no limit set") {
+        for
+          result <- GeminiCliExecutor.validateExitCode(53, "", None).exit
+        yield assertTrue(
+          result.isFailure,
+          result.causeOption.flatMap(_.failureOption).contains(LlmError.TurnLimitError(None)),
+        )
+      },
+      test("exit 99 returns ProviderError as fallback") {
+        for
+          result <- GeminiCliExecutor.validateExitCode(99, "unknown", None).exit
+        yield assertTrue(
+          result.isFailure,
+          result.causeOption.flatMap(_.failureOption).exists(_.isInstanceOf[LlmError.ProviderError]),
+        )
+      },
     ),
   )
