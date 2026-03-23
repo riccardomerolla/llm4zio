@@ -455,16 +455,22 @@ final case class WorkspaceRunServiceLive(
            |Repository: $repoPath
            |Working directory: $worktreePath""".stripMargin
       case Some(i) =>
-        s"""Issue ${req.issueRef}: ${i.title}${
-            if i.description.nonEmpty then s"\nDescription:\n${i.description}" else ""
-          }${
-            if i.contextPath.nonEmpty then s"\nContext path: ${i.contextPath}" else ""
-          }${
-            if i.sourceFolder.nonEmpty then s"\nSource folder: ${i.sourceFolder}" else ""
-          }
-        $directoryGuardrail
-        Repository: $repoPath
-        Working directory: $worktreePath"""
+        val extras = List(
+          if i.description.nonEmpty then Some(s"Description:\n${i.description}") else None,
+          if i.contextPath.nonEmpty then Some(s"Context path: ${i.contextPath}") else None,
+          if i.sourceFolder.nonEmpty then Some(s"Source folder: ${i.sourceFolder}") else None,
+          i.acceptanceCriteria.filter(_.nonEmpty).map(ac => s"Acceptance criteria:\n$ac"),
+          Option.when(i.proofOfWorkRequirements.nonEmpty)(
+            s"Proof of work:\n${i.proofOfWorkRequirements.map("- " + _).mkString("\n")}"
+          ),
+          i.kaizenSkill.map(skill => s"Skill: $skill"),
+          Option.when(req.prompt.nonEmpty)(s"Additional instructions:\n${req.prompt}"),
+        ).flatten.mkString("\n")
+        s"""Issue ${req.issueRef}: ${i.title}${if extras.nonEmpty then s"\n$extras" else ""}
+           |
+           |$directoryGuardrail
+           |Repository: $repoPath
+           |Working directory: $worktreePath""".stripMargin
 
   private def sanitizeBranchPart(value: String): String =
     value.trim.toLowerCase.replaceAll("[^a-z0-9._-]+", "-").replaceAll("-{2,}", "-").stripPrefix("-").stripSuffix("-")

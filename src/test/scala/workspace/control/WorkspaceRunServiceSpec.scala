@@ -244,6 +244,22 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
     runMode = RunMode.Docker(image = "my-agent:latest"),
   )
 
+  private val baseIssue = AgentIssue(
+    id = IssueId("placeholder"),
+    runId = None,
+    conversationId = None,
+    title = "Base task title",
+    description = "Base task description",
+    issueType = "task",
+    priority = "medium",
+    requiredCapabilities = Nil,
+    state = IssueState.InProgress(AgentId("echo"), Instant.parse("2026-02-24T10:00:00Z")),
+    tags = Nil,
+    contextPath = "",
+    sourceFolder = "",
+    workspaceId = Some("ws-1"),
+  )
+
   // Stub git ops: worktree add is a no-op, remove is a no-op
   private val noopWorktreeAdd: (String, String, String) => IO[WorkspaceError, Unit] =
     (_, _, _) => ZIO.unit
@@ -319,6 +335,29 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
                        fiberRegistry = registry,
                      )
     yield (svc, issueEvents)
+
+  private def makeServiceWithIssue(issue: AgentIssue) =
+    for
+      messages <- Ref.make(List.empty[String])
+      wsMap    <- Ref.make(Map(sampleWs.id -> sampleWs))
+      runMap   <- Ref.make(Map.empty[String, WorkspaceRun])
+      registry <- Ref.make(Map.empty[String, Fiber[WorkspaceError, Unit]])
+      svc       = WorkspaceRunServiceLive(
+                    StubWorkspaceRepo(wsMap, runMap),
+                    StubChatRepo(messages),
+                    new IssueRepository:
+                      def append(e: IssueEvent): IO[PersistenceError, Unit]            = ZIO.unit
+                      def get(id: IssueId): IO[PersistenceError, AgentIssue]           = ZIO.succeed(issue.copy(id = id))
+                      def history(id: IssueId): IO[PersistenceError, List[IssueEvent]] = ZIO.succeed(Nil)
+                      def list(f: IssueFilter): IO[PersistenceError, List[AgentIssue]] = ZIO.succeed(Nil)
+                      def delete(id: IssueId): IO[PersistenceError, Unit]              = ZIO.unit,
+                    StubAnalysisRepo,
+                    worktreeAdd = noopWorktreeAdd,
+                    worktreeRemove = noopWorktreeRemove,
+                    branchDelete = noopBranchDelete,
+                    fiberRegistry = registry,
+                  )
+    yield svc
 
   final private class SharedPoolHarness private (
     availableRef: Ref[Int],
@@ -788,6 +827,77 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
         saved.exists(_.branchName == parent.branchName),
       )
     } @@ TestAspect.withLiveClock,
+    suite("buildPrompt content")(
+      test("None branch includes req.prompt as Task field") {
+        for
+          (svc, _, _) <- makeService()
+          run         <- svc.assign("ws-1", AssignRunRequest(issueRef = "#no-issue", prompt = "do the thing", agentName = "echo"))
+        yield assertTrue(
+          run.prompt.contains("Task: do the thing"),
+          run.prompt.contains("Execution constraints"),
+        )
+      },
+      test("Some branch includes issue title and description") {
+        val issue = baseIssue.copy(title = "My task title", description = "Do this specific thing")
+        for
+          svc <- makeServiceWithIssue(issue)
+          run <- svc.assign("ws-1", AssignRunRequest(issueRef = "#title-test", prompt = "", agentName = "echo"))
+        yield assertTrue(
+          run.prompt.contains("My task title"),
+          run.prompt.contains("Do this specific thing"),
+        )
+      },
+      test("Some branch includes acceptanceCriteria") {
+        val issue = baseIssue.copy(acceptanceCriteria = Some("Unit test to compare greet output"))
+        for
+          svc <- makeServiceWithIssue(issue)
+          run <- svc.assign("ws-1", AssignRunRequest(issueRef = "#ac-test", prompt = "", agentName = "echo"))
+        yield assertTrue(
+          run.prompt.contains("Acceptance criteria:"),
+          run.prompt.contains("Unit test to compare greet output"),
+        )
+      },
+      test("Some branch includes proofOfWorkRequirements as a bullet list") {
+        val issue = baseIssue.copy(proofOfWorkRequirements = List("All tests pass", "README updated"))
+        for
+          svc <- makeServiceWithIssue(issue)
+          run <- svc.assign("ws-1", AssignRunRequest(issueRef = "#pow-test", prompt = "", agentName = "echo"))
+        yield assertTrue(
+          run.prompt.contains("Proof of work:"),
+          run.prompt.contains("- All tests pass"),
+          run.prompt.contains("- README updated"),
+        )
+      },
+      test("Some branch includes kaizenSkill") {
+        val issue = baseIssue.copy(kaizenSkill = Some("scala3-zio"))
+        for
+          svc <- makeServiceWithIssue(issue)
+          run <- svc.assign("ws-1", AssignRunRequest(issueRef = "#kaizen-test", prompt = "", agentName = "echo"))
+        yield assertTrue(run.prompt.contains("Skill: scala3-zio"))
+      },
+      test("Some branch includes req.prompt as Additional instructions when non-empty") {
+        for
+          svc <- makeServiceWithIssue(baseIssue)
+          run <- svc.assign("ws-1", AssignRunRequest(issueRef = "#extra", prompt = "focus on edge cases", agentName = "echo"))
+        yield assertTrue(
+          run.prompt.contains("Additional instructions:"),
+          run.prompt.contains("focus on edge cases"),
+        )
+      },
+      test("Some branch omits empty sections cleanly") {
+        val issue = baseIssue.copy(description = "", contextPath = "", sourceFolder = "")
+        for
+          svc <- makeServiceWithIssue(issue)
+          run <- svc.assign("ws-1", AssignRunRequest(issueRef = "#clean", prompt = "", agentName = "echo"))
+        yield assertTrue(
+          run.prompt.contains("Execution constraints"),
+          !run.prompt.contains("Description:"),
+          !run.prompt.contains("Context path:"),
+          !run.prompt.contains("Acceptance criteria:"),
+          !run.prompt.contains("Proof of work:"),
+        )
+      },
+    ),
     test("assign passes merged environment vars to process runner") {
       val profile = Agent(
         id = shared.ids.Ids.AgentId("agent-1"),
