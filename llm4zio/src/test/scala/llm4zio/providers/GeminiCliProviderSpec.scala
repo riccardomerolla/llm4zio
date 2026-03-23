@@ -493,6 +493,60 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
       )
       assertTrue(event.content == Some("file content here"))
     },
+    suite("buildGeminiArgs — new")(
+      {
+        val config = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
+        val ctx    = GeminiCliExecutionContext()
+        Seq(
+          test("includes -p flag and prompt") {
+            val args = GeminiCliExecutor.buildGeminiArgs("hello", config, ctx, "stream-json", false)
+            assertTrue(args.contains("-p"), args.contains("hello"))
+          },
+          test("includes -m flag and model") {
+            val args = GeminiCliExecutor.buildGeminiArgs("hello", config, ctx, "stream-json", false)
+            assertTrue(args.contains("-m"), args.contains(config.model))
+          },
+          test("includes --output_format flag") {
+            val args = GeminiCliExecutor.buildGeminiArgs("hello", config, ctx, "stream-json", false)
+            assertTrue(args.contains("--output_format"), args.contains("stream-json"))
+          },
+          test("includes -s when sandbox is set") {
+            val ctxS = GeminiCliExecutionContext(sandbox = Some(GeminiSandbox.Docker))
+            val args = GeminiCliExecutor.buildGeminiArgs("hello", config, ctxS, "stream-json", false)
+            assertTrue(args.contains("-s"))
+          },
+          test("no -s when sandbox is None") {
+            val ctxN = GeminiCliExecutionContext(sandbox = None)
+            val args = GeminiCliExecutor.buildGeminiArgs("hello", config, ctxN, "stream-json", false)
+            assertTrue(!args.contains("-s"))
+          },
+          test("includes --turn-limit when turnLimit is set") {
+            val ctxT = GeminiCliExecutionContext(turnLimit = Some(5))
+            val args = GeminiCliExecutor.buildGeminiArgs("hello", config, ctxT, "stream-json", false)
+            assertTrue(args.contains("--turn-limit"), args.contains("5"))
+          },
+          test("no --turn-limit when turnLimit is None") {
+            val ctxT = GeminiCliExecutionContext(turnLimit = None)
+            val args = GeminiCliExecutor.buildGeminiArgs("hello", config, ctxT, "stream-json", false)
+            assertTrue(!args.contains("--turn-limit"))
+          },
+          test("includes -d for each includeDirectories entry") {
+            val ctxD = GeminiCliExecutionContext(includeDirectories = List("src", "docs"))
+            val args = GeminiCliExecutor.buildGeminiArgs("hello", config, ctxD, "stream-json", false)
+            assertTrue(
+              args.count(_ == "-d") == 2,
+              args.contains("src"),
+              args.contains("docs"),
+            )
+          },
+          test("Default sandbox still produces -s flag") {
+            val ctxDef = GeminiCliExecutionContext(sandbox = Some(GeminiSandbox.Default))
+            val args   = GeminiCliExecutor.buildGeminiArgs("hello", config, ctxDef, "stream-json", false)
+            assertTrue(args.contains("-s"))
+          },
+        )
+      }*
+    ),
     suite("buildGeminiArgs")(
       test("includes base flags") {
         val config = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
@@ -504,7 +558,7 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
           args.contains("-m"),
           args.contains("gemini-2.5-pro"),
           args.contains("-y"),
-          args.contains("--output-format"),
+          args.contains("--output_format"),
           args.contains("stream-json"),
         )
       },
@@ -535,12 +589,12 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
         val args   = GeminiCliExecutor.buildGeminiArgs("prompt", config, ctx, "json", isWindows = false)
         assertTrue(!args.contains("--turn-limit"))
       },
-      test("includes --include-directories for each entry") {
+      test("includes -d for each includeDirectories entry") {
         val config = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
         val ctx    = GeminiCliExecutionContext(includeDirectories = List("/a", "/b"))
         val args   = GeminiCliExecutor.buildGeminiArgs("prompt", config, ctx, "json", isWindows = false)
         assertTrue(
-          args.count(_ == "--include-directories") == 2,
+          args.count(_ == "-d") == 2,
           args.contains("/a"),
           args.contains("/b"),
         )
@@ -706,30 +760,30 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
         yield assertTrue(result.isFailure)
       },
       test("user+assistant messages formatted with bold role markers") {
-        var capturedPrompt = ""
-        val config         = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
-        val executor       = new MockGeminiCliExecutor(
-          streamEvents = List(
-            GeminiCliStreamEvent.Message(role = Some("assistant"), content = Some("ok"), delta = true),
-            GeminiCliStreamEvent.Result(status = Some("success"), errorMessage = None, stats = None),
-          )
-        ) {
-          override def runGeminiProcessStream(
-            prompt: String,
-            config: LlmConfig,
-            executionContext: GeminiCliExecutionContext,
-          ): ZStream[Any, LlmError, GeminiCliStreamEvent] =
-            capturedPrompt = prompt
-            super.runGeminiProcessStream(prompt, config, executionContext)
-        }
-        val provider = GeminiCliProvider.make(config, executor)
+        val config   = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
         val messages = List(
           Message(MessageRole.User, "Hello"),
           Message(MessageRole.Assistant, "Hi there"),
           Message(MessageRole.User, "What is 2+2?"),
         )
         for
-          _ <- provider.executeStreamWithHistory(messages).runDrain
+          capturedRef <- Ref.make("")
+          executor = new MockGeminiCliExecutor(
+            streamEvents = List(
+              GeminiCliStreamEvent.Message(role = Some("assistant"), content = Some("ok"), delta = true),
+              GeminiCliStreamEvent.Result(status = Some("success"), errorMessage = None, stats = None),
+            )
+          ) {
+            override def runGeminiProcessStream(
+              prompt: String,
+              config: LlmConfig,
+              executionContext: GeminiCliExecutionContext,
+            ): ZStream[Any, LlmError, GeminiCliStreamEvent] =
+              ZStream.fromZIO(capturedRef.set(prompt)).drain ++ super.runGeminiProcessStream(prompt, config, executionContext)
+          }
+          provider      = GeminiCliProvider.make(config, executor)
+          _             <- provider.executeStreamWithHistory(messages).runDrain
+          capturedPrompt <- capturedRef.get
         yield assertTrue(
           capturedPrompt.contains("**User:**"),
           capturedPrompt.contains("**Assistant:**"),
@@ -740,28 +794,28 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
         )
       },
       test("system messages appear in [SYSTEM CONTEXT] block") {
-        var capturedPrompt = ""
-        val config         = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
-        val executor       = new MockGeminiCliExecutor(
-          streamEvents = List(
-            GeminiCliStreamEvent.Result(status = Some("success"), errorMessage = None, stats = None),
-          )
-        ) {
-          override def runGeminiProcessStream(
-            prompt: String,
-            config: LlmConfig,
-            executionContext: GeminiCliExecutionContext,
-          ): ZStream[Any, LlmError, GeminiCliStreamEvent] =
-            capturedPrompt = prompt
-            super.runGeminiProcessStream(prompt, config, executionContext)
-        }
-        val provider = GeminiCliProvider.make(config, executor)
+        val config   = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
         val messages = List(
           Message(MessageRole.System, "You are a helpful assistant."),
           Message(MessageRole.User, "Hello"),
         )
         for
-          _ <- provider.executeStreamWithHistory(messages).runDrain
+          capturedRef <- Ref.make("")
+          executor = new MockGeminiCliExecutor(
+            streamEvents = List(
+              GeminiCliStreamEvent.Result(status = Some("success"), errorMessage = None, stats = None),
+            )
+          ) {
+            override def runGeminiProcessStream(
+              prompt: String,
+              config: LlmConfig,
+              executionContext: GeminiCliExecutionContext,
+            ): ZStream[Any, LlmError, GeminiCliStreamEvent] =
+              ZStream.fromZIO(capturedRef.set(prompt)).drain ++ super.runGeminiProcessStream(prompt, config, executionContext)
+          }
+          provider      = GeminiCliProvider.make(config, executor)
+          _             <- provider.executeStreamWithHistory(messages).runDrain
+          capturedPrompt <- capturedRef.get
         yield assertTrue(
           capturedPrompt.startsWith("[SYSTEM CONTEXT]"),
           capturedPrompt.contains("You are a helpful assistant."),
