@@ -884,6 +884,36 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
           run.prompt.contains("focus on edge cases"),
         )
       },
+      test("Some branch suppresses req.prompt when it starts with the issue title (auto-filled deduplication)") {
+        val issue = baseIssue.copy(
+          title = "Add default value for name arg",
+          description = "Add a default value for the name parameter",
+          acceptanceCriteria = Some("Unit test covering the default"),
+        )
+        val autoFilledPrompt =
+          "Add default value for name arg\nAcceptance criteria:\nUnit test covering the default\nEstimate:\nXS"
+        for
+          svc <- makeServiceWithIssue(issue)
+          run <- svc.assign(
+                   "ws-1",
+                   AssignRunRequest(issueRef = "#dup-title", prompt = autoFilledPrompt, agentName = "echo"),
+                 )
+        yield assertTrue(!run.prompt.contains("Additional instructions:"))
+      },
+      test("Some branch suppresses req.prompt when it starts with the issue description (auto-filled deduplication)") {
+        val issue = baseIssue.copy(
+          title = "Some task",
+          description = "Add a default value for the name parameter",
+        )
+        val autoFilledPrompt = "Add a default value for the name parameter\nEstimate: XS"
+        for
+          svc <- makeServiceWithIssue(issue)
+          run <- svc.assign(
+                   "ws-1",
+                   AssignRunRequest(issueRef = "#dup-desc", prompt = autoFilledPrompt, agentName = "echo"),
+                 )
+        yield assertTrue(!run.prompt.contains("Additional instructions:"))
+      },
       test("Some branch omits empty sections cleanly") {
         val issue = baseIssue.copy(description = "", contextPath = "", sourceFolder = "")
         for

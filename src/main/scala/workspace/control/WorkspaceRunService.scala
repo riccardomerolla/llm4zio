@@ -464,7 +464,17 @@ final case class WorkspaceRunServiceLive(
             s"Proof of work:\n${i.proofOfWorkRequirements.map("- " + _).mkString("\n")}"
           ),
           i.kaizenSkill.map(skill => s"Skill: $skill"),
-          Option.when(req.prompt.nonEmpty)(s"Additional instructions:\n${req.prompt}"),
+          // Suppress req.prompt when it is a reformatted copy of the issue text
+          // (e.g. auto-filled by the dispatch system).  Genuine operator additions
+          // start with different text, so comparing prefixes is a reliable heuristic.
+          {
+            val trimmed             = req.prompt.trim
+            val isRedundantPrompt   =
+              trimmed.isEmpty ||
+                (i.title.nonEmpty && trimmed.startsWith(i.title.trim)) ||
+                (i.description.nonEmpty && trimmed.startsWith(i.description.trim))
+            Option.unless(isRedundantPrompt)(s"Additional instructions:\n${req.prompt}")
+          },
         ).flatten.mkString("\n")
         s"""Issue ${req.issueRef}: ${i.title}${if extras.nonEmpty then s"\n$extras" else ""}
            |
