@@ -506,9 +506,9 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
             val args = GeminiCliExecutor.buildGeminiArgs("hello", config, ctx, "stream-json", false)
             assertTrue(args.contains("-m"), args.contains(config.model))
           },
-          test("includes --output_format flag") {
+          test("includes --output-format flag") {
             val args = GeminiCliExecutor.buildGeminiArgs("hello", config, ctx, "stream-json", false)
-            assertTrue(args.contains("--output_format"), args.contains("stream-json"))
+            assertTrue(args.contains("--output-format"), args.contains("stream-json"))
           },
           test("includes -s when sandbox is set") {
             val ctxS = GeminiCliExecutionContext(sandbox = Some(GeminiSandbox.Docker))
@@ -530,11 +530,11 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
             val args = GeminiCliExecutor.buildGeminiArgs("hello", config, ctxT, "stream-json", false)
             assertTrue(!args.contains("--turn-limit"))
           },
-          test("includes -d for each includeDirectories entry") {
+          test("includes --include-directories for each includeDirectories entry") {
             val ctxD = GeminiCliExecutionContext(includeDirectories = List("src", "docs"))
             val args = GeminiCliExecutor.buildGeminiArgs("hello", config, ctxD, "stream-json", false)
             assertTrue(
-              args.count(_ == "-d") == 2,
+              args.count(_ == "--include-directories") == 2,
               args.contains("src"),
               args.contains("docs"),
             )
@@ -558,7 +558,7 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
           args.contains("-m"),
           args.contains("gemini-2.5-pro"),
           args.contains("-y"),
-          args.contains("--output_format"),
+          args.contains("--output-format"),
           args.contains("stream-json"),
         )
       },
@@ -589,12 +589,12 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
         val args   = GeminiCliExecutor.buildGeminiArgs("prompt", config, ctx, "json", isWindows = false)
         assertTrue(!args.contains("--turn-limit"))
       },
-      test("includes -d for each includeDirectories entry") {
+      test("includes --include-directories for each includeDirectories entry") {
         val config = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
         val ctx    = GeminiCliExecutionContext(includeDirectories = List("/a", "/b"))
         val args   = GeminiCliExecutor.buildGeminiArgs("prompt", config, ctx, "json", isWindows = false)
         assertTrue(
-          args.count(_ == "-d") == 2,
+          args.count(_ == "--include-directories") == 2,
           args.contains("/a"),
           args.contains("/b"),
         )

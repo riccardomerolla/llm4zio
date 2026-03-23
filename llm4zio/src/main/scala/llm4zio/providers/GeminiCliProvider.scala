@@ -101,8 +101,8 @@ object GeminiCliExecutor:
     isWindows: Boolean,
   ): List[String] =
     val effectivePrompt = if isWindows then normalizePromptForWindowsCmd(prompt) else prompt
-    val baseArgs        = List("-p", effectivePrompt, "-m", config.model, "-y", "--output_format", outputFormat)
-    val includeDirArgs  = ctx.includeDirectories.distinct.flatMap(p => List("-d", p))
+    val baseArgs        = List("-p", effectivePrompt, "-m", config.model, "-y", "--output-format", outputFormat)
+    val includeDirArgs  = ctx.includeDirectories.distinct.flatMap(p => List("--include-directories", p))
     // The -s flag enables sandbox mode. The backend is controlled separately via
     // GEMINI_SANDBOX env var injected in startProcess (see GeminiSandbox.envValue).
     // Default sandbox: -s is emitted but no env var is set, letting gemini pick the backend.
