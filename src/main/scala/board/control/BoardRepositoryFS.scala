@@ -207,12 +207,12 @@ final case class BoardRepositoryFS(
                  }
     yield sem
 
-  private def withMutationRollback[A](workspacePath: String)(effect: IO[BoardError, A]): IO[BoardError, A] =
+  private def withMutationRollback[A](boardPath: String)(effect: IO[BoardError, A]): IO[BoardError, A] =
     for
       failed <- Ref.make(true)
       result <- effect.tap(_ => failed.set(false)).ensuring {
                   failed.get.flatMap {
-                    case true  => rollbackBoardChanges(workspacePath).ignore
+                    case true  => rollbackBoardChanges(boardPath).ignore
                     case false => ZIO.unit
                   }
                 }
