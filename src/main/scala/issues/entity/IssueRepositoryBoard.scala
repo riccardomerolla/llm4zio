@@ -536,7 +536,11 @@ final case class IssueRepositoryBoard(
     }
 
   private def moveIssue(workspacePath: String, issueId: BoardIssueId, to: BoardColumn): IO[PersistenceError, Unit] =
-    boardRepository.moveIssue(workspacePath, issueId, to).mapError(mapBoardError).unit
+    boardRepository
+      .moveIssue(workspacePath, issueId, to)
+      .catchSome { case _: BoardError.ConcurrencyConflict => ZIO.unit }
+      .mapError(mapBoardError)
+      .unit
 
   private def resolveWorkspaceBoardIssue(issueId: IssueId): IO[PersistenceError, Option[(Workspace, BoardIssue)]] =
     toBoardIssueId(issueId) match
