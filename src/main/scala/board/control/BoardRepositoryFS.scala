@@ -37,19 +37,18 @@ final case class BoardRepositoryFS(
 
   override def initBoard(workspacePath: String): IO[BoardError, Unit] =
     withWorkspaceLock(workspacePath) {
-      withMutationRollback(workspacePath) {
+      val boardPath   = workspacePath + "/" + boardRootFolder
+      val boardGitDir = Paths.get(boardPath).resolve(".git")
+      withMutationRollback(boardPath) {
         for
           workspace <- ensureWorkspaceDirectory(workspacePath)
           boardRoot  = workspace.resolve(boardRootFolder)
           exists    <- pathExists(boardRoot)
           _         <- createBoardFilesystem(boardRoot, createOverview = !exists)
-          _         <- stageAndCommit(
-                         workspacePath = workspacePath,
-                         addPaths = List(boardRootFolder),
-                         commitMessage = "[board] Init: board structure",
-                       ).unless(exists)
+          _         <- initBoardGit(boardPath, boardGitDir)
         yield ()
-      }
+      } *>
+      updateGitignore(workspacePath)
     }
 
   override def readBoard(workspacePath: String): IO[BoardError, Board] =
@@ -72,9 +71,11 @@ final case class BoardRepositoryFS(
 
   override def createIssue(workspacePath: String, column: BoardColumn, issue: BoardIssue): IO[BoardError, BoardIssue] =
     withWorkspaceLock(workspacePath) {
-      withMutationRollback(workspacePath) {
+      val boardPath = workspacePath + "/" + boardRootFolder
+      withMutationRollback(boardPath) {
         for
           workspace <- ensureWorkspaceDirectory(workspacePath)
+          boardRoot  = workspace.resolve(boardRootFolder)
           _         <- ensureBoardRoot(workspace)
           exists    <- issueExists(workspacePath, issue.frontmatter.id)
           _         <- ZIO.fail(BoardError.IssueAlreadyExists(issue.frontmatter.id.value)).when(exists)
@@ -88,8 +89,8 @@ final case class BoardRepositoryFS(
                          }
                          .mapError(err => BoardError.WriteError(issueFile.toString, err.getMessage))
           _         <- stageAndCommit(
-                         workspacePath = workspacePath,
-                         addPaths = List(relativize(workspace, issueDir)),
+                         workspacePath = boardPath,
+                         addPaths = List(relativize(boardRoot, issueDir)),
                          commitMessage = s"[board] Create: ${issue.frontmatter.title}",
                        )
         yield issue.copy(column = column, directoryPath = issueDir.toString)
@@ -99,9 +100,11 @@ final case class BoardRepositoryFS(
   override def moveIssue(workspacePath: String, issueId: BoardIssueId, toColumn: BoardColumn)
     : IO[BoardError, BoardIssue] =
     withWorkspaceLock(workspacePath) {
-      withMutationRollback(workspacePath) {
+      val boardPath = workspacePath + "/" + boardRootFolder
+      withMutationRollback(boardPath) {
         for
           workspace <- ensureWorkspaceDirectory(workspacePath)
+          boardRoot  = workspace.resolve(boardRootFolder)
           _         <- ensureBoardRoot(workspace)
           location  <- locateIssue(workspacePath, issueId)
           _         <-
@@ -110,11 +113,11 @@ final case class BoardRepositoryFS(
           fromPath   = location.issueDirectory
           toPath     = issueDirectory(workspace, toColumn, issueId)
           _         <- gitService
-                         .mv(workspacePath, relativize(workspace, fromPath), relativize(workspace, toPath))
+                         .mv(boardPath, relativize(boardRoot, fromPath), relativize(boardRoot, toPath))
                          .mapError(mapGitError("git mv"))
           _         <- gitService
                          .commit(
-                           workspacePath,
+                           boardPath,
                            s"[board] Move: ${issueId.value} ${location.column.folderName} -> ${toColumn.folderName}",
                          )
                          .mapError(mapGitError("git commit"))
@@ -129,9 +132,11 @@ final case class BoardRepositoryFS(
     update: IssueFrontmatter => IssueFrontmatter,
   ): IO[BoardError, BoardIssue] =
     withWorkspaceLock(workspacePath) {
-      withMutationRollback(workspacePath) {
+      val boardPath = workspacePath + "/" + boardRootFolder
+      withMutationRollback(boardPath) {
         for
           workspace  <- ensureWorkspaceDirectory(workspacePath)
+          boardRoot   = workspace.resolve(boardRootFolder)
           _          <- ensureBoardRoot(workspace)
           location   <- locateIssue(workspacePath, issueId)
           issueFile   = location.issueDirectory.resolve(issueMarkdownFile)
@@ -139,8 +144,8 @@ final case class BoardRepositoryFS(
           updatedRaw <- parser.updateFrontmatter(raw, update)
           _          <- writeFile(issueFile, updatedRaw)
           _          <- stageAndCommit(
-                          workspacePath = workspacePath,
-                          addPaths = List(relativize(workspace, issueFile)),
+                          workspacePath = boardPath,
+                          addPaths = List(relativize(boardRoot, issueFile)),
                           commitMessage = s"[board] Update: ${issueId.value}",
                         )
           issue      <- readIssueAt(location.column, location.issueDirectory)
@@ -150,16 +155,18 @@ final case class BoardRepositoryFS(
 
   override def deleteIssue(workspacePath: String, issueId: BoardIssueId): IO[BoardError, Unit] =
     withWorkspaceLock(workspacePath) {
-      withMutationRollback(workspacePath) {
+      val boardPath = workspacePath + "/" + boardRootFolder
+      withMutationRollback(boardPath) {
         for
           workspace <- ensureWorkspaceDirectory(workspacePath)
+          boardRoot  = workspace.resolve(boardRootFolder)
           _         <- ensureBoardRoot(workspace)
           location  <- locateIssue(workspacePath, issueId)
           _         <- gitService
-                         .rm(workspacePath, relativize(workspace, location.issueDirectory), recursive = true)
+                         .rm(boardPath, relativize(boardRoot, location.issueDirectory), recursive = true)
                          .mapError(mapGitError("git rm"))
           _         <- gitService
-                         .commit(workspacePath, s"[board] Delete: ${issueId.value}")
+                         .commit(boardPath, s"[board] Delete: ${issueId.value}")
                          .mapError(mapGitError("git commit"))
         yield ()
       }
@@ -200,19 +207,19 @@ final case class BoardRepositoryFS(
                  }
     yield sem
 
-  private def withMutationRollback[A](workspacePath: String)(effect: IO[BoardError, A]): IO[BoardError, A] =
+  private def withMutationRollback[A](boardPath: String)(effect: IO[BoardError, A]): IO[BoardError, A] =
     for
       failed <- Ref.make(true)
       result <- effect.tap(_ => failed.set(false)).ensuring {
                   failed.get.flatMap {
-                    case true  => rollbackBoardChanges(workspacePath).ignore
+                    case true  => rollbackBoardChanges(boardPath).ignore
                     case false => ZIO.unit
                   }
                 }
     yield result
 
-  private def rollbackBoardChanges(workspacePath: String): IO[BoardError, Unit] =
-    runGit(workspacePath, "checkout", "--", boardRootFolder).unit
+  private def rollbackBoardChanges(boardPath: String): IO[BoardError, Unit] =
+    runGit(boardPath, "checkout", "--", ".").unit
 
   private def createBoardFilesystem(boardRoot: Path, createOverview: Boolean): IO[BoardError, Unit] =
     ZIO
@@ -225,6 +232,34 @@ final case class BoardRepositoryFS(
             val _ = JFiles.writeString(overviewPath, defaultBoardOverview)
       }
       .mapError(err => BoardError.WriteError(boardRoot.toString, err.getMessage))
+
+  private def initBoardGit(boardPath: String, boardGitDir: Path): IO[BoardError, Unit] =
+    for
+      gitDirExists <- pathExists(boardGitDir)
+      _            <- ZIO.unless(gitDirExists)(runGit(boardPath, "init").unit)
+      hasCommits   <- gitService
+                        .log(boardPath, 1)
+                        .map(_.nonEmpty)
+                        .catchAll(_ => ZIO.succeed(false))
+      _            <- ZIO.unless(hasCommits)(
+                        stageAndCommit(boardPath, List("."), "[board] Init: board structure")
+                      )
+    yield ()
+
+  private def updateGitignore(workspacePath: String): IO[BoardError, Unit] =
+    val gitignorePath = Paths.get(workspacePath).resolve(".gitignore")
+    ZIO
+      .attemptBlocking {
+        val existing = if JFiles.exists(gitignorePath) then JFiles.readString(gitignorePath) else ""
+        if !existing.linesIterator.exists(_.trim == "/.board/") then
+          val sep        = if existing.nonEmpty && !existing.endsWith("\n") then "\n" else ""
+          val newContent = s"$existing${sep}/.board/\n"
+          val tmp        = JFiles.createTempFile(Paths.get(workspacePath), ".gitignore-", null)
+          JFiles.writeString(tmp, newContent)
+          JFiles.move(tmp, gitignorePath, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+          ()
+      }
+      .mapError(err => BoardError.WriteError(gitignorePath.toString, err.getMessage))
 
   private def locateIssue(workspacePath: String, issueId: BoardIssueId): IO[BoardError, IssueLocation] =
     for
@@ -265,6 +300,8 @@ final case class BoardRepositoryFS(
       )
 
   private def reconcileDuplicateIssuePlacements(workspacePath: String, workspace: Path): IO[BoardError, Unit] =
+    val boardPath = workspacePath + "/" + boardRootFolder
+    val boardRoot = workspace.resolve(boardRootFolder)
     for
       perColumn <- ZIO.foreach(columnsInOrder) { column =>
                      listIssueDirectories(workspace, column).map(dirs => column -> dirs)
@@ -287,11 +324,11 @@ final case class BoardRepositoryFS(
                      .when(toRemove.nonEmpty)
       _         <- ZIO.foreachDiscard(toRemove) { dir =>
                      gitService
-                       .rm(workspacePath, relativize(workspace, dir), recursive = true)
+                       .rm(boardPath, relativize(boardRoot, dir), recursive = true)
                        .mapError(mapGitError("git rm"))
                    }
       _         <- gitService
-                     .commit(workspacePath, s"[board] Repair: deduplicate issue placements (${toRemove.size})")
+                     .commit(boardPath, s"[board] Repair: deduplicate issue placements (${toRemove.size})")
                      .mapError(mapGitError("git commit"))
                      .when(toRemove.nonEmpty)
     yield ()

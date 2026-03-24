@@ -108,6 +108,8 @@ object BoardControllerSpec extends ZIOSpecDefault:
     override def completeIssue(workspacePath: String, issueId: BoardIssueId, success: Boolean, details: String)
       : IO[BoardError, Unit] = ZIO.unit
 
+    override def approveIssue(workspacePath: String, issueId: BoardIssueId): IO[BoardError, Unit] = ZIO.unit
+
   private object StubWorkspaceRepository extends WorkspaceRepository:
     override def append(event: WorkspaceEvent): IO[shared.errors.PersistenceError, Unit]                      = ZIO.dieMessage("unused")
     override def list: IO[shared.errors.PersistenceError, List[Workspace]]                                    = ZIO.succeed(List(workspace))

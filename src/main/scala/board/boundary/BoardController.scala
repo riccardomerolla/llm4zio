@@ -63,6 +63,10 @@ final case class BoardControllerLive(
       (workspaceId: String, req: Request) =>
         dispatch(workspaceId, req).catchAll(boardErrorResponse)
     },
+    Method.POST / "board" / string("workspaceId") / "issues" / string("issueId") / "approve" -> handler {
+      (workspaceId: String, issueId: String, req: Request) =>
+        approveIssue(workspaceId, issueId, req).catchAll(boardErrorResponse)
+    },
   )
 
   private def renderBoardPage(workspaceId: String): UIO[Response] =
@@ -196,6 +200,16 @@ final case class BoardControllerLive(
         if isHtmx(req) then
           renderBoardFragment(workspaceId).map(_.addHeaders(Headers(Header.Custom("X-Dispatch-Result", encoded))))
         else ZIO.succeed(Response.json(encoded))
+    yield response
+
+  private def approveIssue(workspaceId: String, issueIdRaw: String, req: Request): IO[BoardError, Response] =
+    for
+      workspace <- resolveWorkspace(workspaceId)
+      issueId   <- readBoardIssueId(issueIdRaw)
+      _         <- boardOrchestrator.approveIssue(workspace.localPath, issueId)
+      response  <-
+        if isHtmx(req) then renderBoardFragment(workspaceId)
+        else ZIO.succeed(Response.redirect(URL.decode(s"/board/$workspaceId").toOption.getOrElse(URL.root)))
     yield response
 
   private def resolveWorkspace(workspaceId: String): IO[BoardError, workspace.entity.Workspace] =

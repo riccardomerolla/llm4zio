@@ -111,6 +111,19 @@ object BoardView:
             issue.frontmatter.tags.map(tag => badge(tag)),
           )
         ),
+        if issue.column == BoardColumn.Review && issue.frontmatter.branchName.exists(_.nonEmpty) then
+          div(cls := "rounded-xl border border-white/10 bg-slate-900/70 p-4")(
+            form(
+              method := "post",
+              action := s"/board/$workspaceId/issues/${issue.frontmatter.id.value}/approve",
+            )(
+              button(
+                `type` := "submit",
+                cls    := "rounded border border-emerald-400/30 bg-emerald-500/20 px-3 py-2 text-sm font-semibold text-emerald-100 hover:bg-emerald-500/30",
+              )("Approve & Merge")
+            )
+          )
+        else (),
         div(cls := "rounded-xl border border-white/10 bg-slate-900/70 p-6")(
           div(cls := "prose prose-invert prose-sm max-w-none text-slate-100")(renderedIssueMarkdown)
         ),
@@ -142,11 +155,25 @@ object BoardView:
         )
       else (),
       div(cls := "mt-2 flex items-center justify-end gap-2")(
+        if column == BoardColumn.Review && issue.frontmatter.branchName.exists(_.nonEmpty) then
+          form(
+            method          := "post",
+            action          := s"/board/$workspaceId/issues/${issue.frontmatter.id.value}/approve",
+            attr("hx-post") := s"/board/$workspaceId/issues/${issue.frontmatter.id.value}/approve",
+            attr("hx-target") := "#fs-board-root",
+            attr("hx-swap")   := "innerHTML",
+          )(
+            button(
+              `type` := "submit",
+              cls    := "rounded border border-emerald-400/30 bg-emerald-500/20 px-2 py-1 text-[10px] font-semibold text-emerald-100 hover:bg-emerald-500/30",
+            )("Approve")
+          )
+        else (),
         button(
           `type`                    := "button",
           cls                       := "rounded border border-white/20 px-2 py-1 text-[10px] text-slate-200 hover:bg-white/10",
           attr("data-board-delete") := issue.frontmatter.id.value,
-        )("Delete")
+        )("Delete"),
       ),
     )
 
