@@ -148,7 +148,7 @@ object BoardRepositoryFSSpec extends ZIOSpecDefault:
                       )
           todo     <- repo.listIssues(repoPath.toString, BoardColumn.Todo)
           logCount <-
-            runCmd(repoPath, "git", "log", "--pretty=%s").map(_.linesIterator.count(_.contains("[board] Create:")))
+            runCmd(repoPath.resolve(".board"), "git", "log", "--pretty=%s").map(_.linesIterator.count(_.contains("[board] Create:")))
         yield assertTrue(
           todo.map(_.frontmatter.id.value).toSet == Set("task-a", "task-b"),
           logCount == 2,
@@ -172,16 +172,47 @@ object BoardRepositoryFSSpec extends ZIOSpecDefault:
                           java.nio.file.StandardCopyOption.REPLACE_EXISTING,
                         )
                       }
-          _        <- runCmd(repoPath, "git", "add", ".board/review/dup-issue")
-          _        <- runCmd(repoPath, "git", "commit", "-m", "simulate duplicate placement from merge")
+          _        <- runCmd(repoPath.resolve(".board"), "git", "add", "review/dup-issue")
+          _        <- runCmd(repoPath.resolve(".board"), "git", "commit", "-m", "simulate duplicate placement from merge")
           board    <- repo.readBoard(repoPath.toString)
           todo      = board.columns.getOrElse(BoardColumn.Todo, Nil).map(_.frontmatter.id.value)
           review    = board.columns.getOrElse(BoardColumn.Review, Nil).map(_.frontmatter.id.value)
-          logs     <- runCmd(repoPath, "git", "log", "--pretty=%s", "-n", "1")
+          logs     <- runCmd(repoPath.resolve(".board"), "git", "log", "--pretty=%s", "-n", "1")
         yield assertTrue(
           !todo.contains("dup-issue"),
           review.contains("dup-issue"),
           logs.contains("[board] Repair: deduplicate issue placements"),
+        )
+      }
+    },
+    test("initBoard is idempotent — second call does not create extra commits") {
+      ZIO.scoped {
+        for
+          repoPath  <- initRepo
+          repo      <- repository
+          _         <- repo.initBoard(repoPath.toString)
+          _         <- repo.initBoard(repoPath.toString)
+          logCount  <- runCmd(repoPath.resolve(".board"), "git", "log", "--pretty=%s")
+                         .map(_.linesIterator.count(_.contains("[board] Init:")))
+          gitignore <- ZIO.attemptBlocking(JFiles.readString(repoPath.resolve(".gitignore")))
+        yield assertTrue(
+          logCount == 1,
+          gitignore.linesIterator.count(_.trim == "/.board/") == 1,
+        )
+      }
+    },
+    test("updateGitignore does not add duplicate /.board/ entry when already present") {
+      ZIO.scoped {
+        for
+          repoPath  <- initRepo
+          repo      <- repository
+          _         <- ZIO.attemptBlocking(
+                         JFiles.writeString(repoPath.resolve(".gitignore"), "/.board/\n")
+                       )
+          _         <- repo.initBoard(repoPath.toString)
+          gitignore <- ZIO.attemptBlocking(JFiles.readString(repoPath.resolve(".gitignore")))
+        yield assertTrue(
+          gitignore.linesIterator.count(_.trim == "/.board/") == 1,
         )
       }
     },
