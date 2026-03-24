@@ -43,7 +43,11 @@ final case class BoardRepositoryFS(
           _         <- initBoardGit(boardPath, boardGitDir)
         yield ()
       } *>
-      updateGitignore(workspacePath)
+      updateGitignore(workspacePath).flatMap { changed =>
+        ZIO.when(changed)(
+          stageAndCommit(workspacePath, List(".gitignore"), "[board] Add .board/ to .gitignore").unit
+        )
+      }
     }
 
   override def readBoard(workspacePath: String): IO[BoardError, Board] =
@@ -242,7 +246,7 @@ final case class BoardRepositoryFS(
                       )
     yield ()
 
-  private def updateGitignore(workspacePath: String): IO[BoardError, Unit] =
+  private def updateGitignore(workspacePath: String): IO[BoardError, Boolean] =
     val gitignorePath = Paths.get(workspacePath).resolve(".gitignore")
     ZIO
       .attemptBlocking {
@@ -252,8 +256,9 @@ final case class BoardRepositoryFS(
           val newContent = s"$existing${sep}/.board/\n"
           val tmp        = JFiles.createTempFile(Paths.get(workspacePath), ".gitignore-", null)
           JFiles.writeString(tmp, newContent)
-          JFiles.move(tmp, gitignorePath, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
-          ()
+          val _          = JFiles.move(tmp, gitignorePath, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+          true
+        else false
       }
       .mapError(err => BoardError.WriteError(gitignorePath.toString, err.getMessage))
 
