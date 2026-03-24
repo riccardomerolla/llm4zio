@@ -120,7 +120,7 @@ object BoardRepositoryFSSpec extends ZIOSpecDefault:
           _        <- repo.deleteIssue(repoPath.toString, BoardIssueId("fix-auth-timeout"))
           backlog  <- repo.listIssues(repoPath.toString, BoardColumn.Backlog)
           todo     <- repo.listIssues(repoPath.toString, BoardColumn.Todo)
-          logs     <- runCmd(repoPath, "git", "log", "--pretty=%s", "-n", "5")
+          logs     <- runCmd(repoPath.resolve(".board"), "git", "log", "--pretty=%s", "-n", "5")
         yield assertTrue(
           created.column == BoardColumn.Todo,
           moved.column == BoardColumn.InProgress,
