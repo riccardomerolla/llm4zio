@@ -21,6 +21,7 @@ trait BoardOrchestrator:
     : IO[BoardError, Unit]
   def completeIssue(workspacePath: String, issueId: BoardIssueId, success: Boolean, details: String)
     : IO[BoardError, Unit]
+  def approveIssue(workspacePath: String, issueId: BoardIssueId): IO[BoardError, Unit]
 
 object BoardOrchestrator:
   def dispatchCycle(workspacePath: String): ZIO[BoardOrchestrator, BoardError, DispatchResult] =
@@ -48,6 +49,12 @@ object BoardOrchestrator:
     branchName: String,
   ): ZIO[BoardOrchestrator, BoardError, Unit] =
     ZIO.serviceWithZIO[BoardOrchestrator](_.markIssueStarted(workspacePath, issueId, agentName, branchName))
+
+  def approveIssue(
+    workspacePath: String,
+    issueId: BoardIssueId,
+  ): ZIO[BoardOrchestrator, BoardError, Unit] =
+    ZIO.serviceWithZIO[BoardOrchestrator](_.approveIssue(workspacePath, issueId))
 
   val live
     : ZLayer[
@@ -114,6 +121,53 @@ final case class BoardOrchestratorLive(
   ): IO[BoardError, Unit] =
     if success then completeSuccess(workspacePath, issueId, details)
     else completeFailure(workspacePath, issueId, details)
+
+  override def approveIssue(workspacePath: String, issueId: BoardIssueId): IO[BoardError, Unit] =
+    for
+      _      <- ensureMainBranch(workspacePath)
+      issue  <- boardRepository.readIssue(workspacePath, issueId)
+      _      <- ZIO
+                  .fail(BoardError.ParseError(s"Issue '${issueId.value}' is not in Review"))
+                  .unless(issue.column == BoardColumn.Review)
+      branch <- ZIO
+                  .fromOption(issue.frontmatter.branchName.map(_.trim).filter(_.nonEmpty))
+                  .orElseFail(BoardError.ParseError(s"Issue '${issueId.value}' has no branchName"))
+      now    <- Clock.instant
+      _      <- boardRepository.updateIssue(workspacePath, issueId, _.copy(transientState = TransientState.Merging(now)))
+      _      <- (for
+                   _    <- gitService
+                             .mergeNoFastForward(
+                               workspacePath,
+                               branch,
+                               s"[board] Merge issue ${issueId.value}: ${issue.frontmatter.title}",
+                             )
+                             .mapError(mapGitError("git merge --no-ff"))
+                   now2 <- Clock.instant
+                   _    <- boardRepository.moveIssue(workspacePath, issueId, BoardColumn.Done)
+                   _    <- boardRepository.updateIssue(
+                             workspacePath,
+                             issueId,
+                             _.copy(
+                               transientState = TransientState.None,
+                               completedAt    = Some(now2),
+                               branchName     = None,
+                             ),
+                           )
+                   _    <- cleanupLatestRun(issueId)
+                 yield ())
+                 .catchAll { err =>
+                   boardRepository
+                     .updateIssue(
+                       workspacePath,
+                       issueId,
+                       _.copy(
+                         transientState = TransientState.None,
+                         failureReason  = Some(renderBoardError(err)),
+                       ),
+                     )
+                     .ignore *> ZIO.fail(err)
+                 }
+    yield ()
 
   override def assignIssue(workspacePath: String, issueId: BoardIssueId, agentName: String): IO[BoardError, Unit] =
     for
@@ -265,6 +319,19 @@ final case class BoardOrchestratorLive(
                    completedAt = None,
                  ),
                )
+    yield ()
+
+  private def cleanupLatestRun(issueId: BoardIssueId): IO[BoardError, Unit] =
+    for
+      direct <- workspaceRepository
+                  .listRunsByIssueRef(issueId.value)
+                  .mapError(err => BoardError.ParseError(s"list runs failed: $err"))
+      hash   <- workspaceRepository
+                  .listRunsByIssueRef(s"#${issueId.value}")
+                  .mapError(err => BoardError.ParseError(s"list runs failed: $err"))
+      all     = (direct ++ hash).groupBy(_.id).values.map(_.head).toList
+      latest  = all.sortBy(_.updatedAt.toEpochMilli)(Ordering.Long.reverse).headOption
+      _      <- ZIO.when(latest.isDefined)(workspaceRunService.cleanupAfterSuccessfulMerge(latest.get.id))
     yield ()
 
   private def resolveWorkspaceByPath(workspacePath: String): IO[BoardError, workspace.entity.Workspace] =

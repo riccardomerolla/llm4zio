@@ -327,4 +327,40 @@ object BoardOrchestratorSpec extends ZIOSpecDefault:
           failed.frontmatter.completedAt.isEmpty,
         )
       },
+      test("approveIssue merges branch, moves issue to done, and triggers cleanup") {
+        val reviewIssue = issue("task-4", BoardColumn.Review, branchName = Some("agent/agent-default-task-4"))
+
+        val run = WorkspaceRun(
+          id = "run-4",
+          workspaceId = "ws-1",
+          parentRunId = None,
+          issueRef = "task-4",
+          agentName = "agent-default",
+          prompt = "Body for task-4",
+          conversationId = "1",
+          worktreePath = s"$workspacePath/.worktree/run-4",
+          branchName = "agent/agent-default-task-4",
+          status = RunStatus.Completed,
+          attachedUsers = Set.empty,
+          controllerUserId = None,
+          createdAt = Instant.parse("2026-03-20T10:00:00Z"),
+          updatedAt = Instant.parse("2026-03-20T10:10:00Z"),
+        )
+
+        for
+          (orchestrator, boardRef, _, cleanupRef, mergesRef) <-
+            makeOrchestrator(List(reviewIssue), runsByIssueRefSeed = Map("task-4" -> List(run)))
+          _                                                  <- orchestrator.approveIssue(workspacePath, BoardIssueId("task-4"))
+          state                                              <- boardRef.get
+          doneIssue                                           = state(BoardIssueId("task-4"))
+          cleanup                                            <- cleanupRef.get
+          merges                                             <- mergesRef.get
+        yield assertTrue(
+          doneIssue.column == BoardColumn.Done,
+          doneIssue.frontmatter.completedAt.nonEmpty,
+          doneIssue.frontmatter.branchName.isEmpty,
+          cleanup == List("run-4"),
+          merges.exists { case (_, branch, _) => branch == "agent/agent-default-task-4" },
+        )
+      },
     )
