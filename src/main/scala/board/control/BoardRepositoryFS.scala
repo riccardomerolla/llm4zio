@@ -37,19 +37,18 @@ final case class BoardRepositoryFS(
 
   override def initBoard(workspacePath: String): IO[BoardError, Unit] =
     withWorkspaceLock(workspacePath) {
-      withMutationRollback(workspacePath) {
+      val boardPath   = workspacePath + "/" + boardRootFolder
+      val boardGitDir = Paths.get(boardPath).resolve(".git")
+      withMutationRollback(boardPath) {
         for
           workspace <- ensureWorkspaceDirectory(workspacePath)
           boardRoot  = workspace.resolve(boardRootFolder)
           exists    <- pathExists(boardRoot)
           _         <- createBoardFilesystem(boardRoot, createOverview = !exists)
-          _         <- stageAndCommit(
-                         workspacePath = workspacePath,
-                         addPaths = List(boardRootFolder),
-                         commitMessage = "[board] Init: board structure",
-                       ).unless(exists)
+          _         <- initBoardGit(boardPath, boardGitDir)
         yield ()
-      }
+      } *>
+      updateGitignore(workspacePath)
     }
 
   override def readBoard(workspacePath: String): IO[BoardError, Board] =
@@ -211,8 +210,8 @@ final case class BoardRepositoryFS(
                 }
     yield result
 
-  private def rollbackBoardChanges(workspacePath: String): IO[BoardError, Unit] =
-    runGit(workspacePath, "checkout", "--", boardRootFolder).unit
+  private def rollbackBoardChanges(boardPath: String): IO[BoardError, Unit] =
+    runGit(boardPath, "checkout", "--", ".").unit
 
   private def createBoardFilesystem(boardRoot: Path, createOverview: Boolean): IO[BoardError, Unit] =
     ZIO
@@ -225,6 +224,34 @@ final case class BoardRepositoryFS(
             val _ = JFiles.writeString(overviewPath, defaultBoardOverview)
       }
       .mapError(err => BoardError.WriteError(boardRoot.toString, err.getMessage))
+
+  private def initBoardGit(boardPath: String, boardGitDir: Path): IO[BoardError, Unit] =
+    for
+      gitDirExists <- pathExists(boardGitDir)
+      _            <- ZIO.unless(gitDirExists)(runGit(boardPath, "init").unit)
+      hasCommits   <- gitService
+                        .log(boardPath, 1)
+                        .map(_.nonEmpty)
+                        .catchAll(_ => ZIO.succeed(false))
+      _            <- ZIO.unless(hasCommits)(
+                        stageAndCommit(boardPath, List("."), "[board] Init: board structure")
+                      )
+    yield ()
+
+  private def updateGitignore(workspacePath: String): IO[BoardError, Unit] =
+    val gitignorePath = Paths.get(workspacePath).resolve(".gitignore")
+    ZIO
+      .attemptBlocking {
+        val existing = if JFiles.exists(gitignorePath) then JFiles.readString(gitignorePath) else ""
+        if !existing.linesIterator.exists(_.trim == "/.board/") then
+          val sep        = if existing.nonEmpty && !existing.endsWith("\n") then "\n" else ""
+          val newContent = s"$existing${sep}/.board/\n"
+          val tmp        = JFiles.createTempFile(Paths.get(workspacePath), ".gitignore-", null)
+          JFiles.writeString(tmp, newContent)
+          JFiles.move(tmp, gitignorePath, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+          ()
+      }
+      .mapError(err => BoardError.WriteError(gitignorePath.toString, err.getMessage))
 
   private def locateIssue(workspacePath: String, issueId: BoardIssueId): IO[BoardError, IssueLocation] =
     for

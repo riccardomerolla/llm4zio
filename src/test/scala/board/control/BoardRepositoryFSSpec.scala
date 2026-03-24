@@ -70,31 +70,33 @@ object BoardRepositoryFSSpec extends ZIOSpecDefault:
     test("initBoard creates .board structure and initial commit") {
       ZIO.scoped {
         for
-          repoPath <- initRepo
-          repo     <- repository
-          _        <- repo.initBoard(repoPath.toString)
-          boardDir  = repoPath.resolve(".board")
-          checks   <- ZIO.attempt(
-                        (
-                          JFiles.exists(boardDir.resolve("BOARD.md")),
-                          JFiles.isDirectory(boardDir.resolve("backlog")),
-                          JFiles.isDirectory(boardDir.resolve("todo")),
-                          JFiles.isDirectory(boardDir.resolve("in-progress")),
-                          JFiles.isDirectory(boardDir.resolve("review")),
-                          JFiles.isDirectory(boardDir.resolve("done")),
-                          JFiles.isDirectory(boardDir.resolve("archive")),
-                        )
-                      )
-          status   <- runCmd(repoPath, "git", "log", "--oneline", "-n", "1")
+          repoPath  <- initRepo
+          repo      <- repository
+          _         <- repo.initBoard(repoPath.toString)
+          boardDir   = repoPath.resolve(".board")
+          checks    <- ZIO.attempt(
+                         (
+                           JFiles.exists(boardDir.resolve("BOARD.md")),
+                           JFiles.isDirectory(boardDir.resolve("backlog")),
+                           JFiles.isDirectory(boardDir.resolve("todo")),
+                           JFiles.isDirectory(boardDir.resolve("in-progress")),
+                           JFiles.isDirectory(boardDir.resolve("review")),
+                           JFiles.isDirectory(boardDir.resolve("done")),
+                           JFiles.isDirectory(boardDir.resolve("archive")),
+                         )
+                       )
+          boardLog  <- runCmd(repoPath.resolve(".board"), "git", "log", "--oneline", "-n", "1")
+          gitignore <- ZIO.attemptBlocking(JFiles.readString(repoPath.resolve(".gitignore")))
         yield assertTrue(
           checks._1,
-          status.contains("[board] Init: board structure"),
+          boardLog.contains("[board] Init: board structure"),
           checks._2,
           checks._3,
           checks._4,
           checks._5,
           checks._6,
           checks._7,
+          gitignore.linesIterator.exists(_.trim == "/.board/"),
         )
       }
     },
