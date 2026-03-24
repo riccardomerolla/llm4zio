@@ -17,14 +17,9 @@ final case class BoardRepositoryFS(
   gitService: GitService,
   locksRef: Ref[Map[String, Semaphore]],
 ) extends BoardRepository:
-  private val boardRootFolder      = ".board"
-  private val boardOverviewFile    = "BOARD.md"
-  private val issueMarkdownFile    = "ISSUE.md"
-  private val defaultBoardOverview =
-    """# Board
-      |
-      |Filesystem-backed board.
-      |""".stripMargin
+  private val boardRootFolder   = ".board"
+  private val boardSkillFile    = "SKILL.md"
+  private val issueMarkdownFile = "ISSUE.md"
 
   private val columnsInOrder: List[BoardColumn] = List(
     BoardColumn.Backlog,
@@ -227,9 +222,10 @@ final case class BoardRepositoryFS(
         val _ = JFiles.createDirectories(boardRoot)
         columnsInOrder.foreach(column => JFiles.createDirectories(boardRoot.resolve(column.folderName)))
         if createOverview then
-          val overviewPath = boardRoot.resolve(boardOverviewFile)
-          if !JFiles.exists(overviewPath) then
-            val _ = JFiles.writeString(overviewPath, defaultBoardOverview)
+          val skillPath = boardRoot.resolve(boardSkillFile)
+          if !JFiles.exists(skillPath) then
+            val content = scala.io.Source.fromResource("board/SKILL.md").mkString
+            val _       = JFiles.writeString(skillPath, content)
       }
       .mapError(err => BoardError.WriteError(boardRoot.toString, err.getMessage))
 
