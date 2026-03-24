@@ -265,7 +265,7 @@ object BoardOrchestratorSpec extends ZIOSpecDefault:
           ),
         )
       },
-      test("completeIssue success merges branch, moves issue to done, and triggers cleanup") {
+      test("completeIssue success moves issue to review, preserving branch") {
         val inProgress = issue("task-2", BoardColumn.InProgress, branchName = Some("agent/agent-default-task-2"))
 
         val run = WorkspaceRun(
@@ -295,16 +295,16 @@ object BoardOrchestratorSpec extends ZIOSpecDefault:
                                                                   details = "linked PR #22",
                                                                 )
           state                                              <- boardRef.get
-          doneIssue                                           = state(BoardIssueId("task-2"))
+          reviewIssue                                         = state(BoardIssueId("task-2"))
           cleanup                                            <- cleanupRef.get
           merges                                             <- mergesRef.get
         yield assertTrue(
-          doneIssue.column == BoardColumn.Done,
-          doneIssue.frontmatter.completedAt.nonEmpty,
-          doneIssue.frontmatter.branchName.isEmpty,
-          doneIssue.frontmatter.proofOfWork.contains("linked PR #22"),
-          cleanup == List("run-2"),
-          merges.exists { case (_, branch, _) => branch == "agent/agent-default-task-2" },
+          reviewIssue.column == BoardColumn.Review,
+          reviewIssue.frontmatter.completedAt.isEmpty,
+          reviewIssue.frontmatter.branchName.contains("agent/agent-default-task-2"),
+          reviewIssue.frontmatter.proofOfWork.contains("linked PR #22"),
+          cleanup.isEmpty,
+          merges.isEmpty,
         )
       },
       test("completeIssue failure moves issue to backlog with rework reason") {

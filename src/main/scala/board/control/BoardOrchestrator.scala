@@ -237,33 +237,17 @@ final case class BoardOrchestratorLive(
 
   private def completeSuccess(workspacePath: String, issueId: BoardIssueId, details: String): IO[BoardError, Unit] =
     for
-      _      <- ensureMainBranch(workspacePath)
-      issue  <- boardRepository.readIssue(workspacePath, issueId)
-      branch <- ZIO
-                  .fromOption(issue.frontmatter.branchName.map(_.trim).filter(_.nonEmpty))
-                  .orElseFail(BoardError.ParseError(s"Issue '${issueId.value}' has no branchName"))
-      _      <- gitService
-                  .mergeNoFastForward(
-                    workspacePath,
-                    branch,
-                    s"[board] Merge issue ${issueId.value}: ${issue.frontmatter.title}",
-                  )
-                  .mapError(mapGitError("git merge --no-ff"))
-      now    <- Clock.instant
-      _      <- boardRepository.moveIssue(workspacePath, issueId, BoardColumn.Done)
-      _      <- boardRepository.updateIssue(
-                  workspacePath,
-                  issueId,
-                  fm =>
-                    fm.copy(
-                      transientState = TransientState.None,
-                      completedAt = Some(now),
-                      failureReason = None,
-                      branchName = None,
-                      proofOfWork = appendDetail(fm.proofOfWork, details),
-                    ),
-                )
-      _      <- cleanupLatestRun(issueId)
+      _ <- boardRepository.moveIssue(workspacePath, issueId, BoardColumn.Review)
+      _ <- boardRepository.updateIssue(
+             workspacePath,
+             issueId,
+             fm =>
+               fm.copy(
+                 transientState = TransientState.None,
+                 failureReason  = None,
+                 proofOfWork    = appendDetail(fm.proofOfWork, details),
+               ),
+           )
     yield ()
 
   private def completeFailure(workspacePath: String, issueId: BoardIssueId, details: String): IO[BoardError, Unit] =
@@ -281,19 +265,6 @@ final case class BoardOrchestratorLive(
                    completedAt = None,
                  ),
                )
-    yield ()
-
-  private def cleanupLatestRun(issueId: BoardIssueId): IO[BoardError, Unit] =
-    for
-      direct <- workspaceRepository
-                  .listRunsByIssueRef(issueId.value)
-                  .mapError(err => BoardError.ParseError(s"list runs failed: $err"))
-      hash   <- workspaceRepository
-                  .listRunsByIssueRef(s"#${issueId.value}")
-                  .mapError(err => BoardError.ParseError(s"list runs failed: $err"))
-      all     = (direct ++ hash).groupBy(_.id).values.map(_.head).toList
-      latest  = all.sortBy(_.updatedAt.toEpochMilli)(Ordering.Long.reverse).headOption
-      _      <- ZIO.when(latest.isDefined)(workspaceRunService.cleanupAfterSuccessfulMerge(latest.get.id))
     yield ()
 
   private def resolveWorkspaceByPath(workspacePath: String): IO[BoardError, workspace.entity.Workspace] =
