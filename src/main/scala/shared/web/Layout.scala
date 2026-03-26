@@ -228,6 +228,12 @@ object Layout:
               currentPath.startsWith("/knowledge"),
             ),
             navItem(
+              "/daemons",
+              "Daemons",
+              Icons.cpuChip,
+              currentPath.startsWith("/daemons"),
+            ),
+            navItem(
               "/decisions",
               "Decisions",
               Icons.activity,

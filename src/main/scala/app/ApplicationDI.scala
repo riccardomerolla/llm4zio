@@ -38,6 +38,8 @@ import conversation.boundary.{
   ChatController as ConversationChatController,
   WebSocketController as ConversationWebSocketController,
 }
+import daemon.boundary.DaemonsController
+import daemon.control.DaemonAgentScheduler
 import db.*
 import decision.control.DecisionInbox
 import decision.entity.{ DecisionEventStoreES, DecisionRepositoryES }
@@ -314,6 +316,7 @@ object ApplicationDI:
       KnowledgeExtractionService.live,
       DependencyResolver.live,
       AgentPoolManager.live,
+      DaemonAgentScheduler.live,
       IssueDispatchStatusService.live,
       DecisionInbox.live,
       WorkspaceRunService.live,
@@ -326,6 +329,7 @@ object ApplicationDI:
       IssuesIssueController.live,
       ActivityController.live,
       MemoryBoundaryController.live,
+      DaemonsController.live,
       GatewayChannelController.live,
       AppHealthController.live,
       GatewayTelegramController.live,

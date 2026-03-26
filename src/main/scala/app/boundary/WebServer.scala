@@ -17,6 +17,8 @@ import conversation.boundary.{
   ChatController as ConversationChatController,
   WebSocketController as ConversationWebSocketController,
 }
+import daemon.boundary.DaemonsController
+import daemon.control.DaemonAgentScheduler
 import decision.boundary.DecisionsController
 import decision.control.DecisionInbox
 import gateway.boundary.{
@@ -55,7 +57,7 @@ trait WebServer:
 object WebServer:
 
   val live: ZLayer[
-    TaskRunDashboardController & SdlcDashboardController & TaskRunTasksController & TaskRunReportsController & TaskRunGraphController & SettingsBoundaryController & ConfigBoundaryController & ConfigAgentsController & AppAgentMonitorController & ConversationChatController & IssuesIssueController & BoardBoundaryController & ConfigWorkflowsController & GatewayTelegramController & ActivityController & MemoryBoundaryController & GatewayChannelController & AppHealthController & TaskRunLogsController & ConversationWebSocketController & WorkspaceRepository & WorkspaceRunService & GitService & AgentRegistry & IssueRepository & ProjectRepository & SpecificationRepository & PlanRepository & DecisionInbox & McpService & WorkspaceAnalysisScheduler & DecisionLogRepository & KnowledgeGraphService & MemoryRepository,
+    TaskRunDashboardController & SdlcDashboardController & TaskRunTasksController & TaskRunReportsController & TaskRunGraphController & SettingsBoundaryController & ConfigBoundaryController & ConfigAgentsController & AppAgentMonitorController & ConversationChatController & IssuesIssueController & BoardBoundaryController & ConfigWorkflowsController & GatewayTelegramController & ActivityController & MemoryBoundaryController & GatewayChannelController & AppHealthController & TaskRunLogsController & ConversationWebSocketController & WorkspaceRepository & WorkspaceRunService & GitService & AgentRegistry & IssueRepository & ProjectRepository & SpecificationRepository & PlanRepository & DecisionInbox & McpService & WorkspaceAnalysisScheduler & DecisionLogRepository & KnowledgeGraphService & MemoryRepository & DaemonsController & DaemonAgentScheduler,
     Nothing,
     WebServer,
   ] = ZLayer {
@@ -94,6 +96,7 @@ object WebServer:
       decisionLogs      <- ZIO.service[DecisionLogRepository]
       knowledgeGraph    <- ZIO.service[KnowledgeGraphService]
       memoryRepo        <- ZIO.service[MemoryRepository]
+      daemonsController <- ZIO.service[DaemonsController]
       staticRoutes       = Routes.serveResources(Path.empty / "static")
       devCatalogRoutes   = Routes(
                              Method.GET / "components" -> handler {
@@ -130,7 +133,7 @@ object WebServer:
           issueRepo,
           gitService,
           analysisScheduler,
-        ) ++ devCatalogRoutes ++ staticRoutes
+        ) ++ daemonsController.routes ++ devCatalogRoutes ++ staticRoutes
     }
   }
   private val defaultShutdownTimeout = java.time.Duration.ofSeconds(3L)
