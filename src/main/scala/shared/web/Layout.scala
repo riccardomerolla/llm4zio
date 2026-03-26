@@ -195,6 +195,7 @@ object Layout:
           div(cls := "text-xs/6 font-semibold uppercase tracking-wide text-gray-400")("Operate"),
           ul(attr("role") := "list", cls := "-mx-2 mt-2 space-y-1")(
             navItem("/", "Command Center", Icons.home, currentPath == "/"),
+            navItem("/sdlc", "SDLC Dashboard", Icons.activity, currentPath.startsWith("/sdlc")),
             navItem(
               "/board",
               "Board",

@@ -71,6 +71,8 @@ import orchestration.control.{
 import plan.entity.{ PlanEventStoreES, PlanRepositoryES }
 import project.entity.ProjectRepository
 import prompts.PromptLoader
+import sdlc.boundary.SdlcDashboardController
+import sdlc.control.SdlcDashboardService
 import shared.store.{ ConfigStoreModule, DataStoreModule, MemoryStoreModule, StoreConfig }
 import shared.web.StreamAbortRegistry
 import specification.entity.{ SpecificationEventStoreES, SpecificationRepositoryES }
@@ -270,6 +272,8 @@ object ApplicationDI:
       BoardDependencyResolver.live,
       BoardBoundaryController.live,
       TaskRunDashboardController.live,
+      SdlcDashboardService.live,
+      SdlcDashboardController.live,
       TaskRunTasksController.live,
       TaskRunReportsController.live,
       TaskRunGraphController.live,

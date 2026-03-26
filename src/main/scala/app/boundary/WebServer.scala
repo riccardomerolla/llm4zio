@@ -36,6 +36,7 @@ import plan.boundary.PlansController
 import plan.entity.PlanRepository
 import project.boundary.ProjectsController
 import project.entity.ProjectRepository
+import sdlc.boundary.SdlcDashboardController
 import specification.boundary.SpecificationsController
 import specification.entity.SpecificationRepository
 import taskrun.boundary.{
@@ -54,12 +55,13 @@ trait WebServer:
 object WebServer:
 
   val live: ZLayer[
-    TaskRunDashboardController & TaskRunTasksController & TaskRunReportsController & TaskRunGraphController & SettingsBoundaryController & ConfigBoundaryController & ConfigAgentsController & AppAgentMonitorController & ConversationChatController & IssuesIssueController & BoardBoundaryController & ConfigWorkflowsController & GatewayTelegramController & ActivityController & MemoryBoundaryController & GatewayChannelController & AppHealthController & TaskRunLogsController & ConversationWebSocketController & WorkspaceRepository & WorkspaceRunService & GitService & AgentRegistry & IssueRepository & ProjectRepository & SpecificationRepository & PlanRepository & DecisionInbox & McpService & WorkspaceAnalysisScheduler & DecisionLogRepository & KnowledgeGraphService & MemoryRepository,
+    TaskRunDashboardController & SdlcDashboardController & TaskRunTasksController & TaskRunReportsController & TaskRunGraphController & SettingsBoundaryController & ConfigBoundaryController & ConfigAgentsController & AppAgentMonitorController & ConversationChatController & IssuesIssueController & BoardBoundaryController & ConfigWorkflowsController & GatewayTelegramController & ActivityController & MemoryBoundaryController & GatewayChannelController & AppHealthController & TaskRunLogsController & ConversationWebSocketController & WorkspaceRepository & WorkspaceRunService & GitService & AgentRegistry & IssueRepository & ProjectRepository & SpecificationRepository & PlanRepository & DecisionInbox & McpService & WorkspaceAnalysisScheduler & DecisionLogRepository & KnowledgeGraphService & MemoryRepository,
     Nothing,
     WebServer,
   ] = ZLayer {
     for
       dashboard         <- ZIO.service[TaskRunDashboardController]
+      sdlcDashboard     <- ZIO.service[SdlcDashboardController]
       tasks             <- ZIO.service[TaskRunTasksController]
       reports           <- ZIO.service[TaskRunReportsController]
       graph             <- ZIO.service[TaskRunGraphController]
@@ -102,7 +104,7 @@ object WebServer:
                            )
     yield new WebServer {
       override val routes: Routes[Any, Response] =
-        dashboard.routes ++ tasks.routes ++ reports.routes ++ graph.routes ++ settings.routes ++ config.routes ++ agents.routes ++ monitor.routes ++ chat.routes ++ issues.routes ++ board.routes ++ workflows.routes ++ telegram.routes ++ activity.routes ++ memory.routes ++ channels.routes ++ health.routes ++ logs.routes ++ websocket.routes ++ mcpSvc.controller.routes ++ ProjectsController.routes(
+        dashboard.routes ++ sdlcDashboard.routes ++ tasks.routes ++ reports.routes ++ graph.routes ++ settings.routes ++ config.routes ++ agents.routes ++ monitor.routes ++ chat.routes ++ issues.routes ++ board.routes ++ workflows.routes ++ telegram.routes ++ activity.routes ++ memory.routes ++ channels.routes ++ health.routes ++ logs.routes ++ websocket.routes ++ mcpSvc.controller.routes ++ ProjectsController.routes(
           projectRepo,
           wsRepo,
           issueRepo,
