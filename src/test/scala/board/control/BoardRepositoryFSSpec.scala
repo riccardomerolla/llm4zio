@@ -148,7 +148,12 @@ object BoardRepositoryFSSpec extends ZIOSpecDefault:
                       )
           todo     <- repo.listIssues(repoPath.toString, BoardColumn.Todo)
           logCount <-
-            runCmd(repoPath.resolve(".board"), "git", "log", "--pretty=%s").map(_.linesIterator.count(_.contains("[board] Create:")))
+            runCmd(
+              repoPath.resolve(".board"),
+              "git",
+              "log",
+              "--pretty=%s",
+            ).map(_.linesIterator.count(_.contains("[board] Create:")))
         yield assertTrue(
           todo.map(_.frontmatter.id.value).toSet == Set("task-a", "task-b"),
           logCount == 2,
@@ -212,7 +217,7 @@ object BoardRepositoryFSSpec extends ZIOSpecDefault:
           _         <- repo.initBoard(repoPath.toString)
           gitignore <- ZIO.attemptBlocking(JFiles.readString(repoPath.resolve(".gitignore")))
         yield assertTrue(
-          gitignore.linesIterator.count(_.trim == "/.board/") == 1,
+          gitignore.linesIterator.count(_.trim == "/.board/") == 1
         )
       }
     },

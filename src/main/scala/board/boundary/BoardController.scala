@@ -33,33 +33,33 @@ final case class BoardControllerLive(
 ) extends BoardController:
 
   override val routes: Routes[Any, Response] = Routes(
-    Method.GET / "board" / string("workspaceId")                                         -> handler { (workspaceId: String, _: Request) =>
+    Method.GET / "board" / string("workspaceId")                                             -> handler { (workspaceId: String, _: Request) =>
       renderBoardPage(workspaceId)
     },
-    Method.GET / "board" / string("workspaceId") / "fragment"                            -> handler {
+    Method.GET / "board" / string("workspaceId") / "fragment"                                -> handler {
       (workspaceId: String, _: Request) =>
         renderBoardFragment(workspaceId)
     },
-    Method.GET / "board" / string("workspaceId") / "issues" / string("issueId")          -> handler {
+    Method.GET / "board" / string("workspaceId") / "issues" / string("issueId")              -> handler {
       (workspaceId: String, issueId: String, _: Request) =>
         readBoardIssueId(issueId).flatMap(id => renderIssueDetail(workspaceId, id)).catchAll(boardErrorResponse)
     },
-    Method.POST / "board" / string("workspaceId") / "issues"                             -> handler { (workspaceId: String, req: Request) =>
+    Method.POST / "board" / string("workspaceId") / "issues"                                 -> handler { (workspaceId: String, req: Request) =>
       createIssue(workspaceId, req).catchAll(boardErrorResponse)
     },
-    Method.PUT / "board" / string("workspaceId") / "issues" / string("issueId") / "move" -> handler {
+    Method.PUT / "board" / string("workspaceId") / "issues" / string("issueId") / "move"     -> handler {
       (workspaceId: String, issueId: String, req: Request) =>
         moveIssue(workspaceId, issueId, req).catchAll(boardErrorResponse)
     },
-    Method.PUT / "board" / string("workspaceId") / "issues" / string("issueId")          -> handler {
+    Method.PUT / "board" / string("workspaceId") / "issues" / string("issueId")              -> handler {
       (workspaceId: String, issueId: String, req: Request) =>
         updateIssue(workspaceId, issueId, req).catchAll(boardErrorResponse)
     },
-    Method.DELETE / "board" / string("workspaceId") / "issues" / string("issueId")       -> handler {
+    Method.DELETE / "board" / string("workspaceId") / "issues" / string("issueId")           -> handler {
       (workspaceId: String, issueId: String, req: Request) =>
         deleteIssue(workspaceId, issueId, req).catchAll(boardErrorResponse)
     },
-    Method.POST / "board" / string("workspaceId") / "dispatch"                           -> handler {
+    Method.POST / "board" / string("workspaceId") / "dispatch"                               -> handler {
       (workspaceId: String, req: Request) =>
         dispatch(workspaceId, req).catchAll(boardErrorResponse)
     },

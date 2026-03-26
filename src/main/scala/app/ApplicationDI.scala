@@ -46,6 +46,8 @@ import gateway.boundary.{
   TelegramController as GatewayTelegramController,
 }
 import gateway.control.{ MessageRouter, * }
+import governance.control.{ GovernancePolicyEngine, GovernancePolicyService }
+import governance.entity.{ GovernancePolicyEventStoreES, GovernancePolicyRepositoryES }
 import io.github.riccardomerolla.zio.eclipsestore.service.{ LifecycleCommand, LifecycleStatus }
 import issues.boundary.IssueController as IssuesIssueController
 import issues.control.{ IssueWorkReportHydrator, IssueWorkReportSubscriber }
@@ -272,6 +274,10 @@ object ApplicationDI:
       StreamAbortRegistry.live,
       ToolRegistry.layer,
       ProjectRepository.live,
+      GovernancePolicyEventStoreES.live,
+      GovernancePolicyRepositoryES.live,
+      GovernancePolicyEngine.live,
+      GovernancePolicyService.live,
       WorkspaceRepository.live,
       AgentEventStoreES.live,
       AgentRepositoryES.live,

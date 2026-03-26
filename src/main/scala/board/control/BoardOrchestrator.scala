@@ -5,6 +5,8 @@ import zio.*
 import activity.control.ActivityHub
 import activity.entity.ActivityEventType
 import board.entity.*
+import governance.control.{ GovernanceEvaluationContext, GovernancePolicyService }
+import governance.entity.{ GovernanceGate, GovernanceLifecycleAction, GovernanceLifecycleStage, GovernanceTransition }
 import shared.ids.Ids.BoardIssueId
 import workspace.control.{ AssignRunRequest, GitService, WorkspaceRunService }
 import workspace.entity.{ GitError, WorkspaceRepository }
@@ -58,7 +60,8 @@ object BoardOrchestrator:
 
   val live
     : ZLayer[
-      BoardRepository & BoardDependencyResolver & WorkspaceRunService & WorkspaceRepository & GitService & ActivityHub,
+      BoardRepository & BoardDependencyResolver & WorkspaceRunService & WorkspaceRepository & GitService & ActivityHub &
+        GovernancePolicyService,
       Nothing,
       BoardOrchestrator,
     ] =
@@ -70,6 +73,7 @@ object BoardOrchestrator:
         workspaceRepo   <- ZIO.service[WorkspaceRepository]
         gitService      <- ZIO.service[GitService]
         activityHub     <- ZIO.service[ActivityHub]
+        governance      <- ZIO.service[GovernancePolicyService]
         service          = BoardOrchestratorLive(
                              boardRepository = boardRepository,
                              dependencyResolver = resolver,
@@ -77,6 +81,7 @@ object BoardOrchestrator:
                              workspaceRepository = workspaceRepo,
                              gitService = gitService,
                              activityHub = activityHub,
+                             governancePolicyService = governance,
                            )
         _               <- service.listenForRunCompletion.forkScoped
       yield service
@@ -89,6 +94,7 @@ final case class BoardOrchestratorLive(
   workspaceRepository: WorkspaceRepository,
   gitService: GitService,
   activityHub: ActivityHub,
+  governancePolicyService: GovernancePolicyService,
 ) extends BoardOrchestrator:
 
   override def dispatchCycle(workspacePath: String): IO[BoardError, DispatchResult] =
@@ -124,49 +130,60 @@ final case class BoardOrchestratorLive(
 
   override def approveIssue(workspacePath: String, issueId: BoardIssueId): IO[BoardError, Unit] =
     for
-      _      <- ensureMainBranch(workspacePath)
-      issue  <- boardRepository.readIssue(workspacePath, issueId)
-      _      <- ZIO
-                  .fail(BoardError.ParseError(s"Issue '${issueId.value}' is not in Review"))
-                  .unless(issue.column == BoardColumn.Review)
-      branch <- ZIO
-                  .fromOption(issue.frontmatter.branchName.map(_.trim).filter(_.nonEmpty))
-                  .orElseFail(BoardError.ParseError(s"Issue '${issueId.value}' has no branchName"))
-      now    <- Clock.instant
-      _      <- boardRepository.updateIssue(workspacePath, issueId, _.copy(transientState = TransientState.Merging(now)))
-      _      <- (for
-                   _    <- gitService
-                             .mergeNoFastForward(
+      _         <- ensureMainBranch(workspacePath)
+      issue     <- boardRepository.readIssue(workspacePath, issueId)
+      workspace <- resolveWorkspaceByPath(workspacePath)
+      _         <- ensureGovernanceAllows(
+                     workspaceId = workspace.id,
+                     issue = issue,
+                     transition = GovernanceTransition(
+                       from = GovernanceLifecycleStage.HumanReview,
+                       to = GovernanceLifecycleStage.Done,
+                       action = GovernanceLifecycleAction.Approve,
+                     ),
+                     humanApprovalGranted = true,
+                   )
+      _         <- ZIO
+                     .fail(BoardError.ParseError(s"Issue '${issueId.value}' is not in Review"))
+                     .unless(issue.column == BoardColumn.Review)
+      branch    <- ZIO
+                     .fromOption(issue.frontmatter.branchName.map(_.trim).filter(_.nonEmpty))
+                     .orElseFail(BoardError.ParseError(s"Issue '${issueId.value}' has no branchName"))
+      now       <- Clock.instant
+      _         <- boardRepository.updateIssue(workspacePath, issueId, _.copy(transientState = TransientState.Merging(now)))
+      _         <- (for
+                     _    <- gitService
+                               .mergeNoFastForward(
+                                 workspacePath,
+                                 branch,
+                                 s"[board] Merge issue ${issueId.value}: ${issue.frontmatter.title}",
+                               )
+                               .mapError(mapGitError("git merge --no-ff"))
+                     now2 <- Clock.instant
+                     _    <- boardRepository.moveIssue(workspacePath, issueId, BoardColumn.Done)
+                     _    <- boardRepository.updateIssue(
                                workspacePath,
-                               branch,
-                               s"[board] Merge issue ${issueId.value}: ${issue.frontmatter.title}",
+                               issueId,
+                               _.copy(
+                                 transientState = TransientState.None,
+                                 completedAt = Some(now2),
+                                 branchName = None,
+                               ),
                              )
-                             .mapError(mapGitError("git merge --no-ff"))
-                   now2 <- Clock.instant
-                   _    <- boardRepository.moveIssue(workspacePath, issueId, BoardColumn.Done)
-                   _    <- boardRepository.updateIssue(
-                             workspacePath,
-                             issueId,
-                             _.copy(
-                               transientState = TransientState.None,
-                               completedAt    = Some(now2),
-                               branchName     = None,
-                             ),
-                           )
-                   _    <- cleanupLatestRun(issueId)
-                 yield ())
-                 .catchAll { err =>
-                   boardRepository
-                     .updateIssue(
-                       workspacePath,
-                       issueId,
-                       _.copy(
-                         transientState = TransientState.None,
-                         failureReason  = Some(renderBoardError(err)),
-                       ),
-                     )
-                     .ignore *> ZIO.fail(err)
-                 }
+                     _    <- cleanupLatestRun(issueId)
+                   yield ())
+                     .catchAll { err =>
+                       boardRepository
+                         .updateIssue(
+                           workspacePath,
+                           issueId,
+                           _.copy(
+                             transientState = TransientState.None,
+                             failureReason = Some(renderBoardError(err)),
+                           ),
+                         )
+                         .ignore *> ZIO.fail(err)
+                     }
     yield ()
 
   override def assignIssue(workspacePath: String, issueId: BoardIssueId, agentName: String): IO[BoardError, Unit] =
@@ -258,6 +275,15 @@ final case class BoardOrchestratorLive(
         .getOrElse("codex")
 
     (for
+      _   <- ensureGovernanceAllows(
+               workspaceId = workspaceId,
+               issue = issue,
+               transition = GovernanceTransition(
+                 from = GovernanceLifecycleStage.Todo,
+                 to = GovernanceLifecycleStage.InProgress,
+                 action = GovernanceLifecycleAction.Dispatch,
+               ),
+             )
       now <- Clock.instant
       _   <- boardRepository.updateIssue(
                workspacePath,
@@ -291,17 +317,28 @@ final case class BoardOrchestratorLive(
 
   private def completeSuccess(workspacePath: String, issueId: BoardIssueId, details: String): IO[BoardError, Unit] =
     for
-      _ <- boardRepository.moveIssue(workspacePath, issueId, BoardColumn.Review)
-      _ <- boardRepository.updateIssue(
-             workspacePath,
-             issueId,
-             fm =>
-               fm.copy(
-                 transientState = TransientState.None,
-                 failureReason  = None,
-                 proofOfWork    = appendDetail(fm.proofOfWork, details),
-               ),
-           )
+      workspace <- resolveWorkspaceByPath(workspacePath)
+      issue     <- boardRepository.readIssue(workspacePath, issueId)
+      _         <- ensureGovernanceAllows(
+                     workspaceId = workspace.id,
+                     issue = issue,
+                     transition = GovernanceTransition(
+                       from = GovernanceLifecycleStage.InProgress,
+                       to = GovernanceLifecycleStage.HumanReview,
+                       action = GovernanceLifecycleAction.CompleteWork,
+                     ),
+                   )
+      _         <- boardRepository.moveIssue(workspacePath, issueId, BoardColumn.Review)
+      _         <- boardRepository.updateIssue(
+                     workspacePath,
+                     issueId,
+                     fm =>
+                       fm.copy(
+                         transientState = TransientState.None,
+                         failureReason = None,
+                         proofOfWork = appendDetail(fm.proofOfWork, details),
+                       ),
+                   )
     yield ()
 
   private def completeFailure(workspacePath: String, issueId: BoardIssueId, details: String): IO[BoardError, Unit] =
@@ -399,3 +436,36 @@ final case class BoardOrchestratorLive(
       case BoardError.GitOperationFailed(operation, msg) => s"$operation failed: $msg"
       case BoardError.DependencyCycle(issueIds)          => s"dependency cycle: ${issueIds.mkString(",")}"
       case BoardError.ConcurrencyConflict(message)       => s"concurrency conflict: $message"
+
+  private def ensureGovernanceAllows(
+    workspaceId: String,
+    issue: BoardIssue,
+    transition: GovernanceTransition,
+    humanApprovalGranted: Boolean = false,
+  ): IO[BoardError, Unit] =
+    for
+      decision <- governancePolicyService
+                    .evaluateForWorkspace(
+                      workspaceId,
+                      GovernanceEvaluationContext(
+                        issueType = "task",
+                        transition = transition,
+                        satisfiedGates = satisfiedGates(issue, humanApprovalGranted),
+                        tags = issue.frontmatter.tags.toSet,
+                        humanApprovalGranted = humanApprovalGranted,
+                      ),
+                    )
+                    .mapError(err => BoardError.ParseError(s"governance lookup failed: $err"))
+      _        <- ZIO
+                    .fail(
+                      BoardError.ConcurrencyConflict(
+                        decision.reason.getOrElse("governance policy denied transition")
+                      )
+                    )
+                    .unless(decision.allowed)
+    yield ()
+
+  private def satisfiedGates(issue: BoardIssue, humanApprovalGranted: Boolean): Set[GovernanceGate] =
+    val proofOfWorkGate = Option.when(issue.frontmatter.proofOfWork.nonEmpty)(GovernanceGate.ProofOfWork).toSet
+    val humanGate       = Option.when(humanApprovalGranted)(GovernanceGate.HumanApproval).toSet
+    proofOfWorkGate ++ humanGate

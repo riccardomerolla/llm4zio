@@ -11,6 +11,8 @@ import agent.entity.{ Agent, AgentRepository }
 import analysis.entity.{ AnalysisDoc, AnalysisRepository, AnalysisType }
 import conversation.entity.api.{ ChatConversation, ConversationEntry }
 import db.{ PersistenceError as DbPersistenceError, * }
+import governance.control.{ GovernanceEvaluationContext, GovernancePolicyService, GovernanceTransitionDecision }
+import governance.entity.GovernancePolicy
 import issues.entity.{ AgentIssue, IssueEvent, IssueFilter, IssueRepository, IssueState }
 import orchestration.control.{ AutoDispatcherLive, DependencyResolver, SlotHandle }
 import shared.errors.PersistenceError
@@ -781,6 +783,25 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
       val activityHub                                                                                   = new ActivityHub:
         override def publish(event: ActivityEvent): UIO[Unit] = ZIO.unit
         override def subscribe: UIO[Dequeue[ActivityEvent]]   = Queue.unbounded[ActivityEvent]
+      val governancePolicyService                                                                       = new GovernancePolicyService:
+        override def resolvePolicyForWorkspace(workspaceId: String): IO[PersistenceError, GovernancePolicy] =
+          ZIO.succeed(GovernancePolicy.noOp)
+        override def evaluateForWorkspace(
+          workspaceId: String,
+          context: GovernanceEvaluationContext,
+        ): IO[PersistenceError, GovernanceTransitionDecision] =
+          ZIO.succeed(
+            GovernanceTransitionDecision(
+              allowed = true,
+              requiredGates = Set.empty,
+              missingGates = Set.empty,
+              humanApprovalRequired = false,
+              daemonTriggers = Nil,
+              escalationRules = Nil,
+              completionCriteria = None,
+              reason = None,
+            )
+          )
       for
         pool             <- SharedPoolHarness.make(initialAvailable = 1)
         (svc, wsRepo, _) <- makeService(
@@ -806,7 +827,9 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
                                   )
                                 override def releaseSlot(handle: SlotHandle): UIO[Unit]                                      = pool.release(handle)
                                 override def availableSlots(agentName: String): UIO[Int]                                     = pool.available(agentName)
-                                override def resize(agentName: String, newMax: Int): UIO[Unit]                               = ZIO.unit,
+                                override def resize(agentName: String, newMax: Int): UIO[Unit]                               = ZIO.unit
+                              ,
+                              governancePolicyService = governancePolicyService,
                             )
         count            <- dispatcher.dispatchOnce
         runs             <- wsRepo.listRuns("ws-1")
