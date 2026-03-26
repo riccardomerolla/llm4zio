@@ -141,6 +141,17 @@ object Ids:
     given JsonCodec[DecisionId] = JsonCodec.string.transform(DecisionId.apply, _.value)
     given Schema[DecisionId]    = stringSchema.transform(DecisionId.apply, _.value)
 
+  opaque type DecisionLogId = String
+  object DecisionLogId:
+    def apply(value: String): DecisionLogId = value
+    def generate: DecisionLogId             = randomId()
+
+    extension (id: DecisionLogId)
+      def value: String = id
+
+    given JsonCodec[DecisionLogId] = JsonCodec.string.transform(DecisionLogId.apply, _.value)
+    given Schema[DecisionLogId]    = stringSchema.transform(DecisionLogId.apply, _.value)
+
   opaque type AgentId = String
   object AgentId:
     def apply(value: String): AgentId = value

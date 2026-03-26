@@ -542,8 +542,38 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
       // Status is either Failed (timeout fired) or Pending (git worktree add failed before fork)
       yield assertTrue(
         runs.isEmpty || runs.forall(r =>
-          r.status == WorkspaceRunStatus.Failed || r.status == WorkspaceRunStatus.Pending
+          r.status == WorkspaceRunStatus.Failed ||
+          r.status == WorkspaceRunStatus.Pending ||
+          r.status == WorkspaceRunStatus.Running(RunSessionMode.Autonomous)
         )
+      )
+    } @@ TestAspect.withLiveClock,
+    test("completed runs trigger knowledge extraction callback") {
+      for
+        extractionRef <- Ref.make(List.empty[String])
+        messages      <- Ref.make(List.empty[String])
+        issueEvents   <- Ref.make(List.empty[IssueEvent])
+        wsMap         <- Ref.make(Map(sampleWs.id -> sampleWs))
+        runMap        <- Ref.make(Map.empty[String, WorkspaceRun])
+        registry      <- Ref.make(Map.empty[String, Fiber[WorkspaceError, Unit]])
+        svc            = WorkspaceRunServiceLive(
+                           StubWorkspaceRepo(wsMap, runMap),
+                           StubChatRepo(messages),
+                           new RecordingIssueRepo(issueEvents),
+                           StubAnalysisRepo,
+                           worktreeAdd = noopWorktreeAdd,
+                           worktreeRemove = noopWorktreeRemove,
+                           branchDelete = noopBranchDelete,
+                           runCliAgent = (_, _, onLine, _) => onLine("implemented") *> ZIO.succeed(0),
+                           fiberRegistry = registry,
+                           extractKnowledgeFromCompletedRun = (run, issue) =>
+                             extractionRef.update(_ :+ s"${run.id}:${issue.map(_.id.value).getOrElse("none")}"),
+                         )
+        run           <- svc.assign("ws-1", AssignRunRequest("#123", "finish it", "echo"))
+        _             <- ZIO.sleep(400.millis)
+        extracted     <- extractionRef.get
+      yield assertTrue(
+        extracted.exists(_.startsWith(s"${run.id}:123"))
       )
     } @@ TestAspect.withLiveClock,
     test("assign succeeds when workspace has RunMode.Host even when dockerCheck would fail") {

@@ -6,7 +6,9 @@ object LayoutSpec extends ZIOSpecDefault:
 
   def spec: Spec[Any, Nothing] =
     suite("Layout")(
-      test("sidebar contains OPERATE and CONFIGURE sections with Board, Projects, Plans, and Specifications links") {
+      test(
+        "sidebar contains OPERATE and CONFIGURE sections with Board, Projects, Plans, Knowledge, and Specifications links"
+      ) {
         val html = Layout.page("Test", "/board")()
         assertTrue(
           html.contains("Operate"),
@@ -14,10 +16,12 @@ object LayoutSpec extends ZIOSpecDefault:
           html.contains("/board"),
           html.contains("/projects"),
           html.contains("/plans"),
+          html.contains("/knowledge"),
           html.contains("/specifications"),
           html.contains("Command Center"),
           html.contains("Projects"),
           html.contains("Plans"),
+          html.contains("Knowledge"),
           html.contains("Specifications"),
           html.contains("Settings"),
           html.contains("Board"),

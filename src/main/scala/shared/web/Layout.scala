@@ -221,6 +221,12 @@ object Layout:
               currentPath.startsWith("/plans"),
             ),
             navItem(
+              "/knowledge",
+              "Knowledge",
+              Icons.documentText,
+              currentPath.startsWith("/knowledge"),
+            ),
+            navItem(
               "/decisions",
               "Decisions",
               Icons.activity,

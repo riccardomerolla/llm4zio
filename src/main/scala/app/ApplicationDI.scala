@@ -54,6 +54,8 @@ import io.github.riccardomerolla.zio.eclipsestore.service.{ LifecycleCommand, Li
 import issues.boundary.IssueController as IssuesIssueController
 import issues.control.{ IssueWorkReportHydrator, IssueWorkReportSubscriber }
 import issues.entity.IssueRepositoryBoard
+import knowledge.control.{ KnowledgeExtractionService, KnowledgeGraphService }
+import knowledge.entity.{ DecisionLogEventStoreES, DecisionLogRepositoryES }
 import llm4zio.core.*
 import llm4zio.observability.{ LlmMetrics, MeteredLlmService }
 import llm4zio.providers.{ GeminiCliExecutor, HttpClient }
@@ -285,6 +287,8 @@ object ApplicationDI:
       SpecificationRepositoryES.live,
       PlanEventStoreES.live,
       PlanRepositoryES.live,
+      DecisionLogEventStoreES.live,
+      DecisionLogRepositoryES.live,
       GovernancePolicyEventStoreES.live,
       GovernancePolicyRepositoryES.live,
       GovernancePolicyEngine.live,
@@ -302,6 +306,8 @@ object ApplicationDI:
       AnalysisRepositoryES.live,
       AnalysisAgentRunner.live,
       WorkspaceAnalysisScheduler.live,
+      KnowledgeGraphService.live,
+      KnowledgeExtractionService.live,
       DependencyResolver.live,
       AgentPoolManager.live,
       IssueDispatchStatusService.live,

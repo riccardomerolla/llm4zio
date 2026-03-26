@@ -11,13 +11,14 @@ import analysis.entity.{ AnalysisRepository, AnalysisType }
 import decision.control.DecisionInbox
 import decision.entity.{ DecisionFilter, DecisionResolutionKind, DecisionSourceKind, DecisionStatus, DecisionUrgency }
 import issues.entity.{ IssueEvent, IssueRepository }
+import knowledge.control.KnowledgeGraphService
 import llm4zio.tools.{ Tool, ToolExecutionError }
 import memory.entity.{ MemoryFilter, MemoryRepository, UserId }
 import shared.ids.Ids.IssueId
 import workspace.control.WorkspaceRunService
 import workspace.entity.WorkspaceRepository
 
-/** The 7 gateway tools exposed over MCP.
+/** Gateway tools exposed over MCP.
   *
   * Each tool is a pure `Tool` value: name + JSON schema + execute function. All repository/service dependencies are
   * injected at construction time.
@@ -30,6 +31,7 @@ final class GatewayMcpTools(
   decisionInbox: DecisionInbox,
   memoryRepo: MemoryRepository,
   analysisRepo: AnalysisRepository,
+  knowledgeGraph: KnowledgeGraphService,
 ):
 
   // ── assign_issue ──────────────────────────────────────────────────────────
@@ -242,6 +244,116 @@ final class GatewayMcpTools(
         "workspaces" -> Json.Num(BigDecimal(workspaces.size)),
         "activeRuns" -> Json.Num(BigDecimal(runs.count(r => isActive(r.status)))),
         "totalRuns"  -> Json.Num(BigDecimal(runs.size)),
+      ),
+  )
+
+  private val searchDecisionsTool: Tool = Tool(
+    name = "search_decisions",
+    description = "Search structured decision logs and linked decision knowledge",
+    parameters = Json.Obj(
+      "type"       -> Json.Str("object"),
+      "properties" -> Json.Obj(
+        "query"       -> Json.Obj("type" -> Json.Str("string")),
+        "workspaceId" -> Json.Obj("type" -> Json.Str("string")),
+        "limit"       -> Json.Obj("type" -> Json.Str("integer")),
+      ),
+      "required"   -> Json.Arr(Chunk(Json.Str("query"))),
+    ),
+    execute = args =>
+      for
+        query      <- fieldStr(args, "query")
+        workspaceId = fieldStrOpt(args, "workspaceId").map(_.trim).filter(_.nonEmpty)
+        limit       = fieldIntOpt(args, "limit").getOrElse(10)
+        results    <- knowledgeGraph
+                        .searchDecisions(query, workspaceId, limit)
+                        .mapError(e => ToolExecutionError.ExecutionFailed(e.toString))
+      yield Json.Arr(
+        Chunk.fromIterable(
+          results.map(result =>
+            Json.Obj(
+              "id"               -> Json.Str(result.decision.id.value),
+              "title"            -> Json.Str(result.decision.title),
+              "decisionTaken"    -> Json.Str(result.decision.decisionTaken),
+              "rationale"        -> Json.Str(result.decision.rationale),
+              "score"            -> Json.Num(BigDecimal(result.score)),
+              "issueIds"         -> Json.Arr(Chunk.fromIterable(result.decision.issueIds.map(id => Json.Str(id.value)))),
+              "planIds"          -> Json.Arr(Chunk.fromIterable(result.decision.planIds.map(id => Json.Str(id.value)))),
+              "specificationIds" -> Json.Arr(
+                Chunk.fromIterable(result.decision.specificationIds.map(id => Json.Str(id.value)))
+              ),
+            )
+          )
+        )
+      ),
+  )
+
+  private val getArchitecturalContextTool: Tool = Tool(
+    name = "get_architectural_context",
+    description = "Retrieve architectural rationale, constraints, and linked decisions for a query",
+    parameters = Json.Obj(
+      "type"       -> Json.Str("object"),
+      "properties" -> Json.Obj(
+        "query"       -> Json.Obj("type" -> Json.Str("string")),
+        "workspaceId" -> Json.Obj("type" -> Json.Str("string")),
+        "limit"       -> Json.Obj("type" -> Json.Str("integer")),
+      ),
+      "required"   -> Json.Arr(Chunk(Json.Str("query"))),
+    ),
+    execute = args =>
+      for
+        query      <- fieldStr(args, "query")
+        workspaceId = fieldStrOpt(args, "workspaceId").map(_.trim).filter(_.nonEmpty)
+        limit       = fieldIntOpt(args, "limit").getOrElse(10)
+        context    <- knowledgeGraph
+                        .getArchitecturalContext(query, workspaceId, limit)
+                        .mapError(e => ToolExecutionError.ExecutionFailed(e.toString))
+      yield Json.Obj(
+        "decisions"        -> Json.Arr(
+          Chunk.fromIterable(
+            context.decisions.map(item =>
+              Json.Obj(
+                "id"    -> Json.Str(item.decision.id.value),
+                "title" -> Json.Str(item.decision.title),
+                "score" -> Json.Num(BigDecimal(item.score)),
+              )
+            )
+          )
+        ),
+        "knowledgeEntries" -> Json.Arr(
+          Chunk.fromIterable(
+            context.knowledgeEntries.map(entry =>
+              Json.Obj(
+                "id"   -> Json.Str(entry.id.value),
+                "kind" -> Json.Str(entry.kind.value),
+                "text" -> Json.Str(entry.text),
+              )
+            )
+          )
+        ),
+        "analysisDocs"     -> Json.Arr(
+          Chunk.fromIterable(
+            context.analysisDocs.map(doc =>
+              Json.Obj(
+                "id"       -> Json.Str(doc.id.value),
+                "type"     -> Json.Str(doc.analysisType.toString),
+                "filePath" -> Json.Str(doc.filePath),
+                "content"  -> Json.Str(doc.content.take(500)),
+              )
+            )
+          )
+        ),
+        "edges"            -> Json.Arr(
+          Chunk.fromIterable(
+            context.edges.map(edge =>
+              Json.Obj(
+                "from"     -> Json.Str(edge.fromId),
+                "to"       -> Json.Str(edge.toId),
+                "relation" -> Json.Str(edge.relation),
+                "score"    -> Json.Num(BigDecimal(edge.score)),
+              )
+            )
+          )
+        ),
       ),
   )
 
@@ -544,4 +656,6 @@ final class GatewayMcpTools(
     resolveDecisionTool,
     getAnalysisDocsTool,
     getAnalysisSummaryTool,
+    searchDecisionsTool,
+    getArchitecturalContextTool,
   )

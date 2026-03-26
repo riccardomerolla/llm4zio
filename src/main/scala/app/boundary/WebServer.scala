@@ -25,8 +25,12 @@ import gateway.boundary.{
 }
 import issues.boundary.IssueController as IssuesIssueController
 import issues.entity.IssueRepository
+import knowledge.boundary.KnowledgeController
+import knowledge.control.KnowledgeGraphService
+import knowledge.entity.DecisionLogRepository
 import mcp.McpService
 import memory.boundary.MemoryController as MemoryBoundaryController
+import memory.entity.MemoryRepository
 import orchestration.control.AgentRegistry
 import plan.boundary.PlansController
 import plan.entity.PlanRepository
@@ -50,7 +54,7 @@ trait WebServer:
 object WebServer:
 
   val live: ZLayer[
-    TaskRunDashboardController & TaskRunTasksController & TaskRunReportsController & TaskRunGraphController & SettingsBoundaryController & ConfigBoundaryController & ConfigAgentsController & AppAgentMonitorController & ConversationChatController & IssuesIssueController & BoardBoundaryController & ConfigWorkflowsController & GatewayTelegramController & ActivityController & MemoryBoundaryController & GatewayChannelController & AppHealthController & TaskRunLogsController & ConversationWebSocketController & WorkspaceRepository & WorkspaceRunService & GitService & AgentRegistry & IssueRepository & ProjectRepository & SpecificationRepository & PlanRepository & DecisionInbox & McpService & WorkspaceAnalysisScheduler,
+    TaskRunDashboardController & TaskRunTasksController & TaskRunReportsController & TaskRunGraphController & SettingsBoundaryController & ConfigBoundaryController & ConfigAgentsController & AppAgentMonitorController & ConversationChatController & IssuesIssueController & BoardBoundaryController & ConfigWorkflowsController & GatewayTelegramController & ActivityController & MemoryBoundaryController & GatewayChannelController & AppHealthController & TaskRunLogsController & ConversationWebSocketController & WorkspaceRepository & WorkspaceRunService & GitService & AgentRegistry & IssueRepository & ProjectRepository & SpecificationRepository & PlanRepository & DecisionInbox & McpService & WorkspaceAnalysisScheduler & DecisionLogRepository & KnowledgeGraphService & MemoryRepository,
     Nothing,
     WebServer,
   ] = ZLayer {
@@ -85,6 +89,9 @@ object WebServer:
       decisionInbox     <- ZIO.service[DecisionInbox]
       mcpSvc            <- ZIO.service[McpService]
       analysisScheduler <- ZIO.service[WorkspaceAnalysisScheduler]
+      decisionLogs      <- ZIO.service[DecisionLogRepository]
+      knowledgeGraph    <- ZIO.service[KnowledgeGraphService]
+      memoryRepo        <- ZIO.service[MemoryRepository]
       staticRoutes       = Routes.serveResources(Path.empty / "static")
       devCatalogRoutes   = Routes(
                              Method.GET / "components" -> handler {
@@ -110,6 +117,10 @@ object WebServer:
           issueRepo,
         ) ++ DecisionsController.routes(
           decisionInbox
+        ) ++ KnowledgeController.routes(
+          decisionLogs,
+          knowledgeGraph,
+          memoryRepo,
         ) ++ WorkspacesController.routes(
           wsRepo,
           wsRunSvc,

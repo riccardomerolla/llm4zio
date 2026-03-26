@@ -10,10 +10,12 @@ import analysis.entity.{ AnalysisDoc, AnalysisRepository, AnalysisType }
 import decision.control.DecisionInbox
 import decision.entity.{ Decision, DecisionFilter, DecisionResolutionKind }
 import issues.entity.{ AgentIssue, IssueEvent, IssueFilter, IssueRepository }
+import knowledge.control.{ ArchitecturalContext, KnowledgeDecisionMatch, KnowledgeEdge, KnowledgeGraphService }
+import knowledge.entity.{ DecisionLog, DecisionMaker, DecisionMakerKind }
 import llm4zio.tools.ToolRegistry
 import memory.entity.MemoryRepository
 import shared.errors.PersistenceError
-import shared.ids.Ids.{ AgentId, AnalysisDocId, IssueId }
+import shared.ids.Ids.{ AgentId, AnalysisDocId, DecisionLogId, IssueId }
 import workspace.control.{ AssignRunRequest, WorkspaceRunService }
 import workspace.entity.{ WorkspaceError, WorkspaceRepository, WorkspaceRun }
 
@@ -160,22 +162,62 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
     override def listByType(analysisType: AnalysisType): IO[PersistenceError, List[AnalysisDoc]] =
       ZIO.succeed(docs.filter(_.analysisType == analysisType))
 
+  private val stubDecisionLog = DecisionLog(
+    id = DecisionLogId("decision-log-1"),
+    title = "Use derived knowledge graph edges",
+    context = "Need decision retrieval without extra infrastructure",
+    decisionTaken = "Derive edges from structured ids and semantic memory links",
+    rationale = "Enough for MCP and web retrieval",
+    consequences = List("Graph stays read-only"),
+    decisionDate = java.time.Instant.parse("2026-03-26T09:00:00Z"),
+    decisionMaker = DecisionMaker(DecisionMakerKind.Agent, "architect"),
+    workspaceId = Some("ws1"),
+    issueIds = List(IssueId("issue-1")),
+    createdAt = java.time.Instant.parse("2026-03-26T09:00:00Z"),
+    updatedAt = java.time.Instant.parse("2026-03-26T09:05:00Z"),
+  )
+
+  private val stubKnowledgeGraph: KnowledgeGraphService = new KnowledgeGraphService:
+    override def searchDecisions(
+      query: String,
+      workspaceId: Option[String],
+      limit: Int,
+    ): IO[PersistenceError, List[KnowledgeDecisionMatch]] =
+      ZIO.succeed(List(KnowledgeDecisionMatch(stubDecisionLog, 0.91)))
+
+    override def getArchitecturalContext(
+      query: String,
+      workspaceId: Option[String],
+      limit: Int,
+    ): IO[PersistenceError, ArchitecturalContext] =
+      ZIO.succeed(
+        ArchitecturalContext(
+          decisions = List(KnowledgeDecisionMatch(stubDecisionLog, 0.91)),
+          knowledgeEntries = Nil,
+          analysisDocs = Nil,
+          edges = List(KnowledgeEdge("decision-log-1", "mem-1", "semantic_decision", 0.8, explicit = false)),
+        )
+      )
+
+  private def tools =
+    GatewayMcpTools(
+      stubIssueRepo,
+      stubAgentRepo,
+      stubWorkspaceRepo,
+      stubRunService,
+      stubDecisionInbox,
+      stubMemoryRepo,
+      stubAnalysisRepo,
+      stubKnowledgeGraph,
+    )
+
   // ── Tests ─────────────────────────────────────────────────────────────────
 
   def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("GatewayMcpTools")(
     suite("tool registration")(
-      test("registers all 9 gateway tools") {
+      test("registers knowledge retrieval tools with the gateway set") {
         for
           registry <- ToolRegistry.make
-          tools     = GatewayMcpTools(
-                        stubIssueRepo,
-                        stubAgentRepo,
-                        stubWorkspaceRepo,
-                        stubRunService,
-                        stubDecisionInbox,
-                        stubMemoryRepo,
-                        stubAnalysisRepo,
-                      )
           _        <- registry.registerAll(tools.all)
           listed   <- registry.list
           names     = listed.map(_.name).toSet
@@ -189,6 +231,8 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
           names.contains("get_metrics"),
           names.contains("get_analysis_docs"),
           names.contains("get_analysis_summary"),
+          names.contains("search_decisions"),
+          names.contains("get_architectural_context"),
         )
       }
     ),
@@ -196,15 +240,6 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
       test("returns registered agents as JSON array") {
         for
           registry <- ToolRegistry.make
-          tools     = GatewayMcpTools(
-                        stubIssueRepo,
-                        stubAgentRepo,
-                        stubWorkspaceRepo,
-                        stubRunService,
-                        stubDecisionInbox,
-                        stubMemoryRepo,
-                        stubAnalysisRepo,
-                      )
           _        <- registry.registerAll(tools.all)
           result   <- registry.execute(llm4zio.core.ToolCall(id = "1", name = "list_agents", arguments = "{}"))
           json      = result.result.toOption.get
@@ -215,15 +250,6 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
       test("returns workspaces as JSON array") {
         for
           registry <- ToolRegistry.make
-          tools     = GatewayMcpTools(
-                        stubIssueRepo,
-                        stubAgentRepo,
-                        stubWorkspaceRepo,
-                        stubRunService,
-                        stubDecisionInbox,
-                        stubMemoryRepo,
-                        stubAnalysisRepo,
-                      )
           _        <- registry.registerAll(tools.all)
           result   <- registry.execute(llm4zio.core.ToolCall(id = "2", name = "list_workspaces", arguments = "{}"))
           json      = result.result.toOption.get
@@ -253,6 +279,7 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
                             stubDecisionInbox,
                             stubMemoryRepo,
                             stubAnalysisRepo,
+                            stubKnowledgeGraph,
                           )
           _            <- registry.registerAll(tools.all)
           args          = Json.Obj(
@@ -274,15 +301,6 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
       test("returns not_found when run does not exist") {
         for
           registry <- ToolRegistry.make
-          tools     = GatewayMcpTools(
-                        stubIssueRepo,
-                        stubAgentRepo,
-                        stubWorkspaceRepo,
-                        stubRunService,
-                        stubDecisionInbox,
-                        stubMemoryRepo,
-                        stubAnalysisRepo,
-                      )
           _        <- registry.registerAll(tools.all)
           args      = Json.Obj("runId" -> Json.Str("unknown-run"))
           result   <- registry.execute(llm4zio.core.ToolCall(id = "4", name = "get_run_status", arguments = args.toJson))
@@ -294,15 +312,6 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
       test("returns empty results from stub memory repository") {
         for
           registry <- ToolRegistry.make
-          tools     = GatewayMcpTools(
-                        stubIssueRepo,
-                        stubAgentRepo,
-                        stubWorkspaceRepo,
-                        stubRunService,
-                        stubDecisionInbox,
-                        stubMemoryRepo,
-                        stubAnalysisRepo,
-                      )
           _        <- registry.registerAll(tools.all)
           args      = Json.Obj("query" -> Json.Str("test query"))
           result   <-
@@ -315,15 +324,6 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
       test("returns gateway metrics JSON") {
         for
           registry <- ToolRegistry.make
-          tools     = GatewayMcpTools(
-                        stubIssueRepo,
-                        stubAgentRepo,
-                        stubWorkspaceRepo,
-                        stubRunService,
-                        stubDecisionInbox,
-                        stubMemoryRepo,
-                        stubAnalysisRepo,
-                      )
           _        <- registry.registerAll(tools.all)
           result   <- registry.execute(llm4zio.core.ToolCall(id = "6", name = "get_metrics", arguments = "{}"))
           json      = result.result.toOption.get
@@ -337,15 +337,6 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
       test("returns workspace analysis docs and supports type filtering") {
         for
           registry  <- ToolRegistry.make
-          tools      = GatewayMcpTools(
-                         stubIssueRepo,
-                         stubAgentRepo,
-                         stubWorkspaceRepo,
-                         stubRunService,
-                         stubDecisionInbox,
-                         stubMemoryRepo,
-                         stubAnalysisRepo,
-                       )
           _         <- registry.registerAll(tools.all)
           allArgs    = Json.Obj("workspaceId" -> Json.Str("ws1"))
           allResult <-
@@ -368,15 +359,6 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
       test("returns condensed summary from executive summary and first paragraph") {
         for
           registry <- ToolRegistry.make
-          tools     = GatewayMcpTools(
-                        stubIssueRepo,
-                        stubAgentRepo,
-                        stubWorkspaceRepo,
-                        stubRunService,
-                        stubDecisionInbox,
-                        stubMemoryRepo,
-                        stubAnalysisRepo,
-                      )
           _        <- registry.registerAll(tools.all)
           args      = Json.Obj("workspaceId" -> Json.Str("ws1"))
           result   <-
@@ -388,5 +370,35 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
           json.contains("\"documents\":2"),
         )
       }
+    ),
+    suite("knowledge tools")(
+      test("search_decisions returns structured decision matches") {
+        for
+          registry <- ToolRegistry.make
+          _        <- registry.registerAll(tools.all)
+          args      = Json.Obj("query" -> Json.Str("knowledge graph"))
+          result   <-
+            registry.execute(llm4zio.core.ToolCall(id = "10", name = "search_decisions", arguments = args.toJson))
+          json      = result.result.toOption.get.toJson
+        yield assertTrue(
+          json.contains("decision-log-1"),
+          json.contains("Use derived knowledge graph edges"),
+          json.contains("Derive edges from structured ids and semantic memory links"),
+        )
+      },
+      test("get_architectural_context returns graph edges") {
+        for
+          registry <- ToolRegistry.make
+          _        <- registry.registerAll(tools.all)
+          args      = Json.Obj("query" -> Json.Str("architecture"))
+          result   <- registry.execute(
+                        llm4zio.core.ToolCall(id = "11", name = "get_architectural_context", arguments = args.toJson)
+                      )
+          json      = result.result.toOption.get.toJson
+        yield assertTrue(
+          json.contains("semantic_decision"),
+          json.contains("decision-log-1"),
+        )
+      },
     ),
   )

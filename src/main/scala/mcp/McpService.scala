@@ -6,6 +6,7 @@ import agent.entity.AgentRepository
 import analysis.entity.AnalysisRepository
 import decision.control.DecisionInbox
 import issues.entity.IssueRepository
+import knowledge.control.KnowledgeGraphService
 import llm4zio.mcp.server.{ McpError, McpServer }
 import llm4zio.mcp.transport.SseTransport
 import llm4zio.tools.ToolRegistry
@@ -36,11 +37,21 @@ object McpService:
     decisionInbox: DecisionInbox,
     memoryRepo: MemoryRepository,
     analysisRepo: AnalysisRepository,
+    knowledgeGraph: KnowledgeGraphService,
   ): ZIO[Scope, Nothing, McpService] =
     for
       transport <- SseTransport.make(apiKey)
       registry  <- ToolRegistry.make
-      tools      = GatewayMcpTools(issueRepo, agentRepo, wsRepo, runService, decisionInbox, memoryRepo, analysisRepo)
+      tools      = GatewayMcpTools(
+                     issueRepo,
+                     agentRepo,
+                     wsRepo,
+                     runService,
+                     decisionInbox,
+                     memoryRepo,
+                     analysisRepo,
+                     knowledgeGraph,
+                   )
       _         <- registry.registerAll(tools.all).mapError(e => new RuntimeException(e.toString)).orDie
       server    <- McpServer.make(registry, transport)
       fiber     <- server.start.forkScoped
@@ -49,7 +60,7 @@ object McpService:
 
   /** ZLayer for wiring into ApplicationDI. */
   val live: ZLayer[
-    IssueRepository & AgentRepository & WorkspaceRepository & WorkspaceRunService & DecisionInbox & MemoryRepository & AnalysisRepository,
+    IssueRepository & AgentRepository & WorkspaceRepository & WorkspaceRunService & DecisionInbox & MemoryRepository & AnalysisRepository & KnowledgeGraphService,
     Nothing,
     McpService,
   ] =
@@ -62,6 +73,7 @@ object McpService:
         decisionInbox <- ZIO.service[DecisionInbox]
         memoryRepo    <- ZIO.service[MemoryRepository]
         analysisRepo  <- ZIO.service[AnalysisRepository]
+        knowledge     <- ZIO.service[KnowledgeGraphService]
         svc           <- make(
                            apiKey = None, // can be configured via GatewayConfig.mcp.apiKey later
                            issueRepo,
@@ -71,6 +83,7 @@ object McpService:
                            decisionInbox,
                            memoryRepo,
                            analysisRepo,
+                           knowledge,
                          )
       yield svc
     }
