@@ -1,6 +1,7 @@
 package shared.web
 
-import orchestration.control.{ PlannerIssueDraft, PlannerPreviewState }
+import orchestration.control.PlannerPreviewState
+import plan.entity.PlanTaskDraft
 import scalatags.Text.all.*
 
 object PlanPreviewComponents:
@@ -104,7 +105,7 @@ object PlanPreviewComponents:
       ),
     )
 
-  def planGraph(drafts: List[PlannerIssueDraft]): PlanGraph =
+  def planGraph(drafts: List[PlanTaskDraft]): PlanGraph =
     val included = drafts.filter(_.included)
     val byId     = included.map(d => d.draftId -> d).toMap
     val deps     = included.map(d => d.draftId -> d.dependencyDraftIds.filter(byId.contains).distinct).toMap
@@ -128,7 +129,7 @@ object PlanPreviewComponents:
       recommendedOrder = batches.flatten.map(id => s"$id (${labels.getOrElse(id, id)})"),
     )
 
-  def issueCard(basePath: String, draft: PlannerIssueDraft): Frag =
+  def issueCard(basePath: String, draft: PlanTaskDraft): Frag =
     div(cls := "rounded-xl border border-white/10 bg-black/20 p-4 space-y-3")(
       input(`type` := "hidden", name := "draft_id", value := draft.draftId),
       input(`type` := "hidden", name := "included", value := draft.included.toString),

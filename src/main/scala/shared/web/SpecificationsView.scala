@@ -276,9 +276,11 @@ object SpecificationsView:
   private def planHref(planRef: String): Option[String] =
     Option(planRef)
       .map(_.trim)
-      .filter(_.startsWith("planner:"))
-      .flatMap(_.stripPrefix("planner:").toLongOption)
-      .map(id => s"/chat/$id")
+      .flatMap { ref =>
+        if ref.startsWith("planner:") then ref.stripPrefix("planner:").toLongOption.map(id => s"/chat/$id")
+        else if ref.startsWith("plan:") then Some(s"/plans/${ref.stripPrefix("plan:")}")
+        else None
+      }
 
   private def timestamp(value: Instant): String =
     value.toString

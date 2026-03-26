@@ -215,6 +215,12 @@ object Layout:
               currentPath.startsWith("/specifications"),
             ),
             navItem(
+              "/plans",
+              "Plans",
+              Icons.tableColumns,
+              currentPath.startsWith("/plans"),
+            ),
+            navItem(
               "/decisions",
               "Decisions",
               Icons.activity,

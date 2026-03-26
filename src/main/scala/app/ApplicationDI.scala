@@ -66,6 +66,7 @@ import orchestration.control.{
   IssueAssignmentOrchestrator as OrchestrationIssueAssignmentOrchestrator,
   ProgressTracker as OrchestrationProgressTracker,
 }
+import plan.entity.{ PlanEventStoreES, PlanRepositoryES }
 import project.entity.ProjectRepository
 import prompts.PromptLoader
 import shared.store.{ ConfigStoreModule, DataStoreModule, MemoryStoreModule, StoreConfig }
@@ -282,6 +283,8 @@ object ApplicationDI:
       ProjectRepository.live,
       SpecificationEventStoreES.live,
       SpecificationRepositoryES.live,
+      PlanEventStoreES.live,
+      PlanRepositoryES.live,
       GovernancePolicyEventStoreES.live,
       GovernancePolicyRepositoryES.live,
       GovernancePolicyEngine.live,
