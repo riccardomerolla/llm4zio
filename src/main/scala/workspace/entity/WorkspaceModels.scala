@@ -290,6 +290,8 @@ enum WorkspaceError:
   case RunTimeout(runId: String)
   case PersistenceFailure(cause: Throwable)
   case DockerNotAvailable(reason: String)
+  case PermissionDenied(subject: String, reason: String)
+  case CostLimitExceeded(agentName: String, limit: Long)
   case InvalidRunState(runId: String, expected: String, actual: String)
   case ControllerConflict(runId: String, controller: String, requestedBy: String)
   case InteractiveProcessUnavailable(runId: String)

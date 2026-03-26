@@ -5,6 +5,7 @@ import java.nio.file.Files
 import zio.*
 import zio.test.*
 
+import agent.entity.{ AgentPermissions, TrustLevel }
 import workspace.entity.RunMode
 
 object CliAgentRunnerSpec extends ZIOSpecDefault:
@@ -173,6 +174,36 @@ object CliAgentRunnerSpec extends ZIOSpecDefault:
         RunMode.Docker("gemini:latest", Nil, mountWorktree = true, network = Some("none")),
       )
       assertTrue(argv.containsSlice(List("--network", "none")) && argv.contains("-i"))
+    },
+    test("validatePermissions rejects CLI tools outside the allowed set") {
+      val permissions = AgentPermissions.defaults(
+        trustLevel = TrustLevel.Standard,
+        cliTool = "codex",
+        timeout = java.time.Duration.ofMinutes(5),
+        maxEstimatedTokens = None,
+      )
+
+      assertTrue(
+        CliAgentRunner.validatePermissions("gemini", Some(permissions)) ==
+          Left("CLI tool 'gemini' is not allowed by the agent permission set")
+      )
+    },
+    test("buildArgv downgrades docker network to none when permissions disable network") {
+      val permissions = AgentPermissions.defaults(
+        trustLevel = TrustLevel.Untrusted,
+        cliTool = "gemini",
+        timeout = java.time.Duration.ofMinutes(5),
+        maxEstimatedTokens = None,
+      )
+      val argv        = CliAgentRunner.buildArgv(
+        "gemini",
+        "fix it",
+        "/tmp/wt",
+        RunMode.Docker("gemini:latest", Nil, mountWorktree = true, network = Some("host")),
+        permissions = Some(permissions),
+      )
+
+      assertTrue(argv.containsSlice(List("--network", "none")))
     },
     test("buildArgv with RunMode.Docker and mountWorktree=false omits -v and --workdir") {
       val argv = CliAgentRunner.buildArgv(

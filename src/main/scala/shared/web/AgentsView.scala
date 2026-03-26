@@ -3,8 +3,8 @@ package shared.web
 import zio.json.*
 
 import _root_.config.entity.{ AgentChannelBinding, AgentInfo, AgentType }
-import agent.entity.Agent
 import agent.entity.api.{ AgentActiveRun, AgentMetricsHistoryPoint, AgentMetricsSummary, AgentRunHistoryItem }
+import agent.entity.{ Agent, TrustLevel }
 import scalatags.Text.all.*
 
 object AgentsView:
@@ -454,6 +454,13 @@ object AgentsView:
                 value = values.getOrElse("timeout", "PT30M"),
                 placeholder = "PT30M",
               ),
+              trustLevelField(values.getOrElse("trustLevel", TrustLevel.Standard.toString)),
+              textInputField(
+                fieldName = "maxEstimatedTokens",
+                labelText = "Token Budget",
+                value = values.getOrElse("maxEstimatedTokens", ""),
+                placeholder = "optional, e.g. 120000",
+              ),
               textInputField(
                 fieldName = "dockerMemoryLimit",
                 labelText = "Docker Memory Limit",
@@ -542,6 +549,8 @@ object AgentsView:
           textAreaField("systemPrompt", "System Prompt", values.getOrElse("systemPrompt", "")),
           textField("maxConcurrentRuns", "Max Concurrent Runs", values.getOrElse("maxConcurrentRuns", "1")),
           textField("timeout", "Timeout ISO-8601 (e.g. PT30M)", values.getOrElse("timeout", "PT30M")),
+          trustLevelSelectField(values.getOrElse("trustLevel", TrustLevel.Standard.toString)),
+          textField("maxEstimatedTokens", "Token Budget (optional)", values.getOrElse("maxEstimatedTokens", "")),
           textField(
             "dockerMemoryLimit",
             "Docker Memory Limit (optional, e.g. 2g)",
@@ -887,3 +896,23 @@ object AgentsView:
         ),
       ),
     )
+
+  private def trustLevelField(selectedValue: String): Frag =
+    div(
+      label(cls := "mb-2 block text-sm font-semibold text-slate-200", `for` := "trustLevel")("Trust Level"),
+      select(
+        id   := "trustLevel",
+        name := "trustLevel",
+        cls  := "w-full rounded-lg border border-white/15 bg-slate-800/80 px-3 py-2 text-sm text-slate-100",
+      )(
+        TrustLevel.values.toList.map { level =>
+          option(
+            value := level.toString,
+            if selectedValue == level.toString then selected := "selected" else (),
+          )(level.toString)
+        }
+      ),
+    )
+
+  private def trustLevelSelectField(selectedValue: String): Frag =
+    trustLevelField(selectedValue)

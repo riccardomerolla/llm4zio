@@ -4,7 +4,7 @@ import java.time.Instant
 
 import zio.json.JsonCodec
 
-import agent.entity.Agent
+import agent.entity.{ Agent, TrustLevel }
 
 final case class AgentUpsertRequest(
   name: String,
@@ -17,6 +17,8 @@ final case class AgentUpsertRequest(
   envVars: Map[String, String] = Map.empty,
   dockerMemoryLimit: Option[String] = None,
   dockerCpuLimit: Option[String] = None,
+  trustLevel: TrustLevel = TrustLevel.Standard,
+  maxEstimatedTokens: Option[Long] = None,
   timeout: String = "PT30M",
   enabled: Boolean = true,
 ) derives JsonCodec

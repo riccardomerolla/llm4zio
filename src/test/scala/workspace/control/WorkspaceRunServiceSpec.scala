@@ -7,7 +7,7 @@ import zio.test.*
 
 import activity.control.ActivityHub
 import activity.entity.ActivityEvent
-import agent.entity.{ Agent, AgentRepository }
+import agent.entity.{ Agent, AgentPermissions, AgentRepository, TrustLevel }
 import analysis.entity.{ AnalysisDoc, AnalysisRepository, AnalysisType }
 import conversation.entity.api.{ ChatConversation, ConversationEntry }
 import db.{ PersistenceError as DbPersistenceError, * }
@@ -264,7 +264,11 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
 
   // Stub git ops: worktree add is a no-op, remove is a no-op
   private val noopWorktreeAdd: (String, String, String) => IO[WorkspaceError, Unit] =
-    (_, _, _) => ZIO.unit
+    (_, worktreePath, _) =>
+      ZIO
+        .attemptBlocking(java.nio.file.Files.createDirectories(java.nio.file.Paths.get(worktreePath)))
+        .mapError(error => WorkspaceError.WorktreeError(error.getMessage))
+        .unit
   private val noopWorktreeRemove: String => Task[Unit]                              =
     _ => ZIO.unit
   private val noopBranchDelete: (String, String) => Task[Unit]                      =
@@ -284,6 +288,7 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
       Clock.instant.map(now => SlotHandle(s"slot-${agentName.trim.toLowerCase}", agentName.trim.toLowerCase, now)),
     availableAgentSlots: String => UIO[Int] = _ => ZIO.succeed(Int.MaxValue),
     releaseAgentSlot: SlotHandle => UIO[Unit] = _ => ZIO.unit,
+    recordAgentTokens: (String, Long) => IO[WorkspaceError, Unit] = (_, _) => ZIO.unit,
     worktreeRemove: String => Task[Unit] = noopWorktreeRemove,
     branchDelete: (String, String) => Task[Unit] = noopBranchDelete,
   ) =
@@ -309,6 +314,7 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
           acquireAgentSlot = acquireAgentSlot,
           availableAgentSlots = availableAgentSlots,
           releaseAgentSlot = releaseAgentSlot,
+          recordAgentTokens = recordAgentTokens,
           resolveAgentProfile = resolveProfile,
         )
     yield (svc, wsRepo, messages)
@@ -451,6 +457,49 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
       yield assertTrue(result match
         case Left(WorkspaceError.InvalidRunState("echo", "available_slots > 0", "available_slots = 0")) => true
         case _                                                                                          => false)
+    },
+    test("assign rejects agent profiles without worktree write permission") {
+      val lockedProfile = Agent(
+        id = AgentId("locked"),
+        name = "locked",
+        description = "Locked down agent",
+        cliTool = "echo",
+        capabilities = Nil,
+        defaultModel = None,
+        systemPrompt = None,
+        maxConcurrentRuns = 1,
+        envVars = Map.empty,
+        timeout = java.time.Duration.ofMinutes(5),
+        enabled = true,
+        createdAt = sampleWs.createdAt,
+        updatedAt = sampleWs.updatedAt,
+        trustLevel = TrustLevel.Untrusted,
+        permissions = AgentPermissions.defaults(
+          trustLevel = TrustLevel.Untrusted,
+          cliTool = "echo",
+          timeout = java.time.Duration.ofMinutes(5),
+          maxEstimatedTokens = None,
+        ).copy(
+          fileSystem = AgentPermissions
+            .defaults(
+              trustLevel = TrustLevel.Untrusted,
+              cliTool = "echo",
+              timeout = java.time.Duration.ofMinutes(5),
+              maxEstimatedTokens = None,
+            )
+            .fileSystem
+            .copy(writeScopes = Nil)
+        ),
+      )
+      for
+        (svc, _, _) <- makeService(resolveProfile = _ => ZIO.succeed(Some(lockedProfile)))
+        result      <-
+          svc.assign("ws-1", AssignRunRequest(issueRef = "#locked", prompt = "nope", agentName = "locked")).either
+      yield assertTrue(result match
+        case Left(WorkspaceError.PermissionDenied("worktree write", reason)) =>
+          reason.contains("outside allowed scopes")
+        case _                                                               =>
+          false)
     },
     test("assign forks fiber that eventually sets run status to Completed") {
       for
@@ -597,9 +646,11 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
                          releaseAgentSlot = pool.release,
                        )
         _           <- svc.assign("ws-1", AssignRunRequest(issueRef = "#slot-release", prompt = "ok", agentName = "echo"))
-        _           <- ZIO.sleep(250.millis)
         acquired    <- pool.acquired
         released    <- pool.released
+                         .repeatUntil(_.nonEmpty)
+                         .timeoutFail(new RuntimeException("timed out waiting for slot release"))(1.second)
+                         .orDie
       yield assertTrue(acquired.nonEmpty, released == acquired)
     } @@ TestAspect.withLiveClock,
     test("assigned runs release their reserved slot when they fail") {
@@ -614,10 +665,30 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
                          releaseAgentSlot = pool.release,
                        )
         _           <- svc.assign("ws-1", AssignRunRequest(issueRef = "#slot-fail", prompt = "fail", agentName = "echo"))
-        _           <- ZIO.sleep(250.millis)
         acquired    <- pool.acquired
         released    <- pool.released
+                         .repeatUntil(_.nonEmpty)
+                         .timeoutFail(new RuntimeException("timed out waiting for slot release"))(1.second)
+                         .orDie
       yield assertTrue(acquired.nonEmpty, released == acquired)
+    } @@ TestAspect.withLiveClock,
+    test("stream token budget failures mark the run failed and record the error") {
+      val singleLineCliAgent: (List[String], String, String => Task[Unit], Map[String, String]) => Task[Int] =
+        (_, _, onLine, _) => onLine("x" * 80).as(0)
+      for
+        (svc, wsRepo, messages) <- makeService(
+                                     runCliAgent = singleLineCliAgent,
+                                     recordAgentTokens =
+                                       (_, _) => ZIO.fail(WorkspaceError.CostLimitExceeded("echo", 10L)),
+                                   )
+        run                     <- svc.assign("ws-1", AssignRunRequest(issueRef = "#budget", prompt = "stream", agentName = "echo"))
+        _                       <- ZIO.sleep(250.millis)
+        saved                   <- wsRepo.getRun(run.id)
+        recorded                <- messages.get
+      yield assertTrue(
+        saved.exists(_.status == WorkspaceRunStatus.Failed),
+        recorded.exists(_.contains("Run failed: CostLimitExceeded")),
+      )
     } @@ TestAspect.withLiveClock,
     test("cancelled workspace run moves issue back to Todo") {
       val neverCliAgent: (List[String], String, String => Task[Unit], Map[String, String]) => Task[Int] =
@@ -973,16 +1044,15 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
         updatedAt = sampleWs.updatedAt,
       )
       for
-        envRef      <- Ref.make(Map.empty[String, String])
-        runCli       = (argv: List[String], cwd: String, onLine: String => Task[Unit], env: Map[String, String]) =>
-                         envRef.set(env) *> ZIO.succeed(0)
+        envPromise  <- Promise.make[Nothing, Map[String, String]]
+        runCli       = (_: List[String], _: String, _: String => Task[Unit], env: Map[String, String]) =>
+                         envPromise.succeed(env).as(0)
         (svc, _, _) <- makeService(
                          runCliAgent = runCli,
                          resolveProfile = _ => ZIO.succeed(Some(profile)),
                        )
         _           <- svc.assign("ws-1", AssignRunRequest("#env", "check env", "echo"))
-        _           <- ZIO.sleep(100.millis)
-        env         <- envRef.get
+        env         <- envPromise.await
       yield assertTrue(env.get("AGENT_FLAG").contains("true"))
     } @@ TestAspect.withLiveClock,
   )

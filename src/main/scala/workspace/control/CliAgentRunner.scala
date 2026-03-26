@@ -6,6 +6,7 @@ import java.nio.file.Paths
 
 import zio.*
 
+import agent.entity.{ AgentPermissions, NetworkAccessScope }
 import workspace.entity.RunMode
 
 object CliAgentRunner:
@@ -113,13 +114,14 @@ object CliAgentRunner:
     envVars: Map[String, String] = Map.empty,
     dockerMemoryLimit: Option[String] = None,
     dockerCpuLimit: Option[String] = None,
+    permissions: Option[AgentPermissions] = None,
   ): List[String] =
     val effectiveIncludePath =
       if cliTool == "gemini" then worktreePath
       else if repoPath.nonEmpty then repoPath
       else worktreePath
     val isWindowsHost        = HostPlatform.isWindows()
-    runMode match
+    enforceRunMode(runMode, permissions) match
       case RunMode.Host                                             =>
         buildArgvForHost(cliTool, prompt, effectiveIncludePath, isWindowsHost)
       case RunMode.Docker(image, extraArgs, mountWorktree, network) =>
@@ -150,13 +152,14 @@ object CliAgentRunner:
     worktreePath: String,
     runMode: RunMode = RunMode.Host,
     repoPath: String = "",
+    permissions: Option[AgentPermissions] = None,
   ): List[String] =
     val effectiveIncludePath =
       if cliTool == "gemini" then worktreePath
       else if repoPath.nonEmpty then repoPath
       else worktreePath
     val isWindowsHost        = HostPlatform.isWindows()
-    runMode match
+    enforceRunMode(runMode, permissions) match
       case RunMode.Host                                             =>
         buildInteractiveArgvForHost(cliTool, effectiveIncludePath, isWindowsHost)
       case RunMode.Docker(image, extraArgs, mountWorktree, network) =>
@@ -166,6 +169,22 @@ object CliAgentRunner:
         else List.empty
         val networkFlags = network.map(n => List("--network", n)).getOrElse(List.empty)
         List("docker", "run", "--rm", "-i") ++ mountFlags ++ networkFlags ++ extraArgs ++ List(image) ++ innerArgv
+
+  def validatePermissions(cliTool: String, permissions: Option[AgentPermissions]): Either[String, Unit] =
+    permissions match
+      case Some(value)
+           if value.tools.allowedCliTools.nonEmpty &&
+           !value.tools.allowedCliTools.exists(_.equalsIgnoreCase(cliTool.trim)) =>
+        Left(s"CLI tool '$cliTool' is not allowed by the agent permission set")
+      case _ =>
+        Right(())
+
+  def enforceRunMode(runMode: RunMode, permissions: Option[AgentPermissions]): RunMode =
+    (runMode, permissions.map(_.network)) match
+      case (docker: RunMode.Docker, Some(NetworkAccessScope.Disabled)) =>
+        docker.copy(network = Some("none"))
+      case (other, _)                                                  =>
+        other
 
   /** Run argv as a subprocess with `cwd` as working directory. Returns (stdout+stderr lines, exit code). Merges stderr
     * into stdout via redirectErrorStream. Runs blocking IO on ZIO's blocking thread pool.

@@ -12,7 +12,7 @@ import zio.stream.ZStream
 import _root_.config.entity.{ AgentChannelBinding, AgentInfo }
 import agent.control.{ AgentMatching, BuiltInAgentSynchronizer }
 import agent.entity.api.*
-import agent.entity.{ Agent as RegistryAgent, AgentEvent, AgentRepository }
+import agent.entity.{ Agent as RegistryAgent, AgentEvent, AgentPermissions, AgentRepository, TrustLevel }
 import db.{ ConfigRepository, CustomAgentRow, PersistenceError }
 import llm4zio.core.{ LlmError, LlmService }
 import orchestration.control.{ AgentRegistry, OrchestratorControlPlane }
@@ -258,6 +258,7 @@ final case class AgentsControllerLive(
             values = Map(
               "agentSource"       -> "custom",
               "enabled"           -> "true",
+              "trustLevel"        -> TrustLevel.Standard.toString,
               "timeout"           -> "PT30M",
               "maxConcurrentRuns" -> "1",
               "cliTool"           -> "gemini",
@@ -844,6 +845,9 @@ final case class AgentsControllerLive(
                    .fail(PersistenceError.QueryFailed("agent_upsert", "maxConcurrentRuns must be >= 1"))
                    .when(request.maxConcurrentRuns < 1)
       _       <- ZIO
+                   .fail(PersistenceError.QueryFailed("agent_upsert", "maxEstimatedTokens must be >= 1"))
+                   .when(request.maxEstimatedTokens.exists(_ < 1))
+      _       <- ZIO
                    .fail(PersistenceError.QueryFailed("agent_upsert", "timeout must be between PT1S and PT24H"))
                    .when(timeout.compareTo(Duration.ofSeconds(1)) < 0 || timeout.compareTo(Duration.ofHours(24)) > 0)
       _       <- ZIO
@@ -879,22 +883,31 @@ final case class AgentsControllerLive(
       createdAt = createdAt,
       updatedAt = now,
       deletedAt = None,
+      trustLevel = request.trustLevel,
+      permissions = AgentPermissions.defaults(
+        trustLevel = request.trustLevel,
+        cliTool = request.cliTool,
+        timeout = timeout,
+        maxEstimatedTokens = request.maxEstimatedTokens,
+      ),
     )
 
   private def valuesFromAgent(agent: RegistryAgent): Map[String, String] =
     Map(
-      "name"              -> agent.name,
-      "description"       -> agent.description,
-      "cliTool"           -> agent.cliTool,
-      "capabilities"      -> agent.capabilities.mkString(","),
-      "defaultModel"      -> agent.defaultModel.getOrElse(""),
-      "systemPrompt"      -> agent.systemPrompt.getOrElse(""),
-      "maxConcurrentRuns" -> agent.maxConcurrentRuns.toString,
-      "timeout"           -> agent.timeout.toString,
-      "envVars"           -> agent.envVars.toList.sortBy(_._1).map((k, v) => s"$k=$v").mkString("\n"),
-      "dockerMemoryLimit" -> agent.dockerMemoryLimit.getOrElse(""),
-      "dockerCpuLimit"    -> agent.dockerCpuLimit.getOrElse(""),
-      "enabled"           -> agent.enabled.toString,
+      "name"               -> agent.name,
+      "description"        -> agent.description,
+      "cliTool"            -> agent.cliTool,
+      "capabilities"       -> agent.capabilities.mkString(","),
+      "defaultModel"       -> agent.defaultModel.getOrElse(""),
+      "systemPrompt"       -> agent.systemPrompt.getOrElse(""),
+      "maxConcurrentRuns"  -> agent.maxConcurrentRuns.toString,
+      "timeout"            -> agent.timeout.toString,
+      "envVars"            -> agent.envVars.toList.sortBy(_._1).map((k, v) => s"$k=$v").mkString("\n"),
+      "dockerMemoryLimit"  -> agent.dockerMemoryLimit.getOrElse(""),
+      "dockerCpuLimit"     -> agent.dockerCpuLimit.getOrElse(""),
+      "trustLevel"         -> agent.trustLevel.toString,
+      "maxEstimatedTokens" -> agent.permissions.resources.maxEstimatedTokens.map(_.toString).getOrElse(""),
+      "enabled"            -> agent.enabled.toString,
     )
 
   private def upsertFromForm(form: Map[String, String]): IO[PersistenceError, AgentUpsertRequest] =
@@ -911,6 +924,8 @@ final case class AgentsControllerLive(
                            .fromOption(raw.toIntOption)
                            .orElseFail(PersistenceError.QueryFailed("parseForm", "maxConcurrentRuns must be numeric"))
                        )
+      trustLevel  <- parseTrustLevel(form.get("trustLevel"))
+      maxTokens   <- parseOptionalLong(form.get("maxEstimatedTokens"), "maxEstimatedTokens")
     yield AgentUpsertRequest(
       name = name,
       description = description,
@@ -922,9 +937,34 @@ final case class AgentsControllerLive(
       envVars = parseEnvVars(form.get("envVars")),
       dockerMemoryLimit = optional(form, "dockerMemoryLimit"),
       dockerCpuLimit = optional(form, "dockerCpuLimit"),
+      trustLevel = trustLevel,
+      maxEstimatedTokens = maxTokens,
       timeout = timeout,
       enabled = form.get("enabled").exists(v => v == "on" || v.equalsIgnoreCase("true")),
     )
+
+  private def parseTrustLevel(raw: Option[String]): IO[PersistenceError, TrustLevel] =
+    raw.map(_.trim).filter(_.nonEmpty) match
+      case None       => ZIO.succeed(TrustLevel.Standard)
+      case Some(text) =>
+        TrustLevel.values.find(_.toString.equalsIgnoreCase(text)) match
+          case Some(level) => ZIO.succeed(level)
+          case None        =>
+            ZIO.fail(
+              PersistenceError.QueryFailed(
+                "parseForm",
+                s"trustLevel must be one of: ${TrustLevel.values.map(_.toString).mkString(", ")}",
+              )
+            )
+
+  private def parseOptionalLong(raw: Option[String], fieldName: String): IO[PersistenceError, Option[Long]] =
+    raw.map(_.trim).filter(_.nonEmpty) match
+      case None        => ZIO.succeed(None)
+      case Some(value) =>
+        ZIO
+          .fromOption(value.toLongOption)
+          .orElseFail(PersistenceError.QueryFailed("parseForm", s"$fieldName must be numeric"))
+          .map(Some(_))
 
   private def parseEnvVars(raw: Option[String]): Map[String, String] =
     raw.toList

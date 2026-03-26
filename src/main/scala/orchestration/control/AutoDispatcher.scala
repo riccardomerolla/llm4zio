@@ -335,9 +335,13 @@ final case class AutoDispatcherLive(
 
   private def poolErrorToPersistence(error: PoolError): PersistenceError =
     error match
-      case PoolError.AgentNotFound(agentName)         =>
+      case PoolError.AgentNotFound(agentName)            =>
         PersistenceError.NotFound("agent_pool_agent", agentName)
-      case PoolError.InvalidCapacity(agentName, raw)  =>
+      case PoolError.AgentPaused(agentName, reason)      =>
+        PersistenceError.QueryFailed("agent_pool_paused", s"$agentName -> $reason")
+      case PoolError.CostLimitExceeded(agentName, limit) =>
+        PersistenceError.QueryFailed("agent_pool_cost_limit", s"$agentName -> $limit")
+      case PoolError.InvalidCapacity(agentName, raw)     =>
         PersistenceError.QueryFailed("agent_pool_capacity", s"$agentName -> $raw")
-      case PoolError.PersistenceFailure(operation, e) =>
+      case PoolError.PersistenceFailure(operation, e)    =>
         PersistenceError.QueryFailed(operation, e.toString)
