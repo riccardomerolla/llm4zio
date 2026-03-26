@@ -8,8 +8,14 @@ case class InlineKeyboardAction(
   paused: Boolean,
 )
 
+case class DecisionKeyboardAction(
+  action: String,
+  decisionId: String,
+)
+
 object InlineKeyboards:
-  private val Prefix = "wf"
+  private val Prefix         = "wf"
+  private val DecisionPrefix = "decision"
 
   def workflowControls(
     runId: Long,
@@ -109,6 +115,18 @@ object InlineKeyboards:
       case RunStatus.Completed | RunStatus.Cancelled =>
         None
 
+  def decisionControls(decisionId: String): TelegramInlineKeyboardMarkup =
+    TelegramInlineKeyboardMarkup(
+      inline_keyboard = List(
+        List(
+          TelegramInlineKeyboardButton(
+            text = "Escalate",
+            callback_data = Some(encodeDecision("escalate", decisionId)),
+          )
+        )
+      )
+    )
+
   def parseCallbackData(raw: String): Either[String, InlineKeyboardAction] =
     val parts = raw.trim.split(":").toList
     parts match
@@ -123,5 +141,15 @@ object InlineKeyboards:
       case _                                                =>
         Left(s"invalid callback payload: $raw")
 
+  def parseDecisionCallbackData(raw: String): Either[String, DecisionKeyboardAction] =
+    raw.trim.split(":").toList match
+      case DecisionPrefix :: action :: decisionId :: Nil if decisionId.trim.nonEmpty =>
+        Right(DecisionKeyboardAction(action.trim.toLowerCase, decisionId.trim))
+      case _                                                                         =>
+        Left(s"invalid decision callback payload: $raw")
+
   private def encode(action: String, runId: Long, paused: Boolean): String =
     s"$Prefix:$action:$runId:${if paused then "paused" else "running"}"
+
+  private def encodeDecision(action: String, decisionId: String): String =
+    s"$DecisionPrefix:$action:$decisionId"

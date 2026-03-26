@@ -7,6 +7,8 @@ import zio.test.*
 
 import agent.entity.AgentRepository
 import analysis.entity.{ AnalysisDoc, AnalysisRepository, AnalysisType }
+import decision.control.DecisionInbox
+import decision.entity.{ Decision, DecisionFilter, DecisionResolutionKind }
 import issues.entity.{ AgentIssue, IssueEvent, IssueFilter, IssueRepository }
 import llm4zio.tools.ToolRegistry
 import memory.entity.MemoryRepository
@@ -97,6 +99,36 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
     override def deleteById(userId: UserId, id: memory.entity.MemoryId): IO[Throwable, Unit] = ZIO.unit
     override def deleteBySession(sessionId: memory.entity.SessionId): IO[Throwable, Unit]    = ZIO.unit
 
+  private val stubDecisionInbox: DecisionInbox = new DecisionInbox:
+    override def openIssueReviewDecision(issue: AgentIssue): IO[PersistenceError, Decision]              = ZIO.fail(
+      PersistenceError.QueryFailed("decision", "not implemented in test")
+    )
+    override def resolve(
+      id: shared.ids.Ids.DecisionId,
+      resolutionKind: DecisionResolutionKind,
+      actor: String,
+      summary: String,
+    ): IO[PersistenceError, Decision] = ZIO.fail(PersistenceError.QueryFailed("decision", "not implemented in test"))
+    override def syncOpenIssueReviewDecision(
+      issueId: IssueId,
+      resolutionKind: DecisionResolutionKind,
+      actor: String,
+      summary: String,
+    ): IO[PersistenceError, Option[Decision]] = ZIO.none
+    override def resolveOpenIssueReviewDecision(
+      issueId: IssueId,
+      resolutionKind: DecisionResolutionKind,
+      actor: String,
+      summary: String,
+    ): IO[PersistenceError, Option[Decision]] = ZIO.none
+    override def escalate(id: shared.ids.Ids.DecisionId, reason: String): IO[PersistenceError, Decision] = ZIO.fail(
+      PersistenceError.QueryFailed("decision", "not implemented in test")
+    )
+    override def get(id: shared.ids.Ids.DecisionId): IO[PersistenceError, Decision]                      =
+      ZIO.fail(PersistenceError.NotFound("decision", id.value))
+    override def list(filter: DecisionFilter): IO[PersistenceError, List[Decision]]                      = ZIO.succeed(Nil)
+    override def runMaintenance(now: java.time.Instant): IO[PersistenceError, List[Decision]]            = ZIO.succeed(Nil)
+
   private val stubAnalysisRepo: AnalysisRepository = new AnalysisRepository:
     private val docs                                                                             = List(
       AnalysisDoc(
@@ -140,6 +172,7 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
                         stubAgentRepo,
                         stubWorkspaceRepo,
                         stubRunService,
+                        stubDecisionInbox,
                         stubMemoryRepo,
                         stubAnalysisRepo,
                       )
@@ -168,6 +201,7 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
                         stubAgentRepo,
                         stubWorkspaceRepo,
                         stubRunService,
+                        stubDecisionInbox,
                         stubMemoryRepo,
                         stubAnalysisRepo,
                       )
@@ -186,6 +220,7 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
                         stubAgentRepo,
                         stubWorkspaceRepo,
                         stubRunService,
+                        stubDecisionInbox,
                         stubMemoryRepo,
                         stubAnalysisRepo,
                       )
@@ -215,6 +250,7 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
                             stubAgentRepo,
                             stubWorkspaceRepo,
                             stubRunService,
+                            stubDecisionInbox,
                             stubMemoryRepo,
                             stubAnalysisRepo,
                           )
@@ -243,6 +279,7 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
                         stubAgentRepo,
                         stubWorkspaceRepo,
                         stubRunService,
+                        stubDecisionInbox,
                         stubMemoryRepo,
                         stubAnalysisRepo,
                       )
@@ -262,6 +299,7 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
                         stubAgentRepo,
                         stubWorkspaceRepo,
                         stubRunService,
+                        stubDecisionInbox,
                         stubMemoryRepo,
                         stubAnalysisRepo,
                       )
@@ -282,6 +320,7 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
                         stubAgentRepo,
                         stubWorkspaceRepo,
                         stubRunService,
+                        stubDecisionInbox,
                         stubMemoryRepo,
                         stubAnalysisRepo,
                       )
@@ -303,6 +342,7 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
                          stubAgentRepo,
                          stubWorkspaceRepo,
                          stubRunService,
+                         stubDecisionInbox,
                          stubMemoryRepo,
                          stubAnalysisRepo,
                        )
@@ -333,6 +373,7 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
                         stubAgentRepo,
                         stubWorkspaceRepo,
                         stubRunService,
+                        stubDecisionInbox,
                         stubMemoryRepo,
                         stubAnalysisRepo,
                       )

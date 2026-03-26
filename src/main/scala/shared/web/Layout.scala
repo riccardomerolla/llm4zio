@@ -215,6 +215,12 @@ object Layout:
               currentPath.startsWith("/specifications"),
             ),
             navItem(
+              "/decisions",
+              "Decisions",
+              Icons.activity,
+              currentPath.startsWith("/decisions"),
+            ),
+            navItem(
               "/workspaces",
               "Workspaces",
               Icons.folder,

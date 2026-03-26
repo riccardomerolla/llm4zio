@@ -17,6 +17,8 @@ import conversation.boundary.{
   ChatController as ConversationChatController,
   WebSocketController as ConversationWebSocketController,
 }
+import decision.boundary.DecisionsController
+import decision.control.DecisionInbox
 import gateway.boundary.{
   ChannelController as GatewayChannelController,
   TelegramController as GatewayTelegramController,
@@ -46,7 +48,7 @@ trait WebServer:
 object WebServer:
 
   val live: ZLayer[
-    TaskRunDashboardController & TaskRunTasksController & TaskRunReportsController & TaskRunGraphController & SettingsBoundaryController & ConfigBoundaryController & ConfigAgentsController & AppAgentMonitorController & ConversationChatController & IssuesIssueController & BoardBoundaryController & ConfigWorkflowsController & GatewayTelegramController & ActivityController & MemoryBoundaryController & GatewayChannelController & AppHealthController & TaskRunLogsController & ConversationWebSocketController & WorkspaceRepository & WorkspaceRunService & GitService & AgentRegistry & IssueRepository & ProjectRepository & SpecificationRepository & McpService & WorkspaceAnalysisScheduler,
+    TaskRunDashboardController & TaskRunTasksController & TaskRunReportsController & TaskRunGraphController & SettingsBoundaryController & ConfigBoundaryController & ConfigAgentsController & AppAgentMonitorController & ConversationChatController & IssuesIssueController & BoardBoundaryController & ConfigWorkflowsController & GatewayTelegramController & ActivityController & MemoryBoundaryController & GatewayChannelController & AppHealthController & TaskRunLogsController & ConversationWebSocketController & WorkspaceRepository & WorkspaceRunService & GitService & AgentRegistry & IssueRepository & ProjectRepository & SpecificationRepository & DecisionInbox & McpService & WorkspaceAnalysisScheduler,
     Nothing,
     WebServer,
   ] = ZLayer {
@@ -77,6 +79,7 @@ object WebServer:
       issueRepo         <- ZIO.service[IssueRepository]
       projectRepo       <- ZIO.service[ProjectRepository]
       specificationRepo <- ZIO.service[SpecificationRepository]
+      decisionInbox     <- ZIO.service[DecisionInbox]
       mcpSvc            <- ZIO.service[McpService]
       analysisScheduler <- ZIO.service[WorkspaceAnalysisScheduler]
       staticRoutes       = Routes.serveResources(Path.empty / "static")
@@ -98,6 +101,8 @@ object WebServer:
         ) ++ SpecificationsController.routes(
           specificationRepo,
           issueRepo,
+        ) ++ DecisionsController.routes(
+          decisionInbox
         ) ++ WorkspacesController.routes(
           wsRepo,
           wsRunSvc,

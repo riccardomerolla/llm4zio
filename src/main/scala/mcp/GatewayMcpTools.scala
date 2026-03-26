@@ -8,6 +8,8 @@ import zio.json.ast.Json
 
 import agent.entity.AgentRepository
 import analysis.entity.{ AnalysisRepository, AnalysisType }
+import decision.control.DecisionInbox
+import decision.entity.{ DecisionFilter, DecisionResolutionKind, DecisionSourceKind, DecisionStatus, DecisionUrgency }
 import issues.entity.{ IssueEvent, IssueRepository }
 import llm4zio.tools.{ Tool, ToolExecutionError }
 import memory.entity.{ MemoryFilter, MemoryRepository, UserId }
@@ -25,6 +27,7 @@ final class GatewayMcpTools(
   agentRepo: AgentRepository,
   wsRepo: WorkspaceRepository,
   runService: WorkspaceRunService,
+  decisionInbox: DecisionInbox,
   memoryRepo: MemoryRepository,
   analysisRepo: AnalysisRepository,
 ):
@@ -242,6 +245,99 @@ final class GatewayMcpTools(
       ),
   )
 
+  private val listDecisionsTool: Tool = Tool(
+    name = "list_decisions",
+    description = "List queued human decisions with optional filters",
+    parameters = Json.Obj(
+      "type"       -> Json.Str("object"),
+      "properties" -> Json.Obj(
+        "status"  -> Json.Obj("type" -> Json.Str("string")),
+        "source"  -> Json.Obj("type" -> Json.Str("string")),
+        "urgency" -> Json.Obj("type" -> Json.Str("string")),
+        "limit"   -> Json.Obj("type" -> Json.Str("integer")),
+      ),
+      "required"   -> Json.Arr(Chunk.empty),
+    ),
+    execute = args =>
+      for
+        status  <- fieldStrOpt(args, "status") match
+                     case Some(raw) =>
+                       ZIO.fromEither(parseDecisionStatus(raw))
+                         .map(Some(_))
+                         .mapError(ToolExecutionError.InvalidParameters.apply)
+                     case None      => ZIO.none
+        source  <- fieldStrOpt(args, "source") match
+                     case Some(raw) =>
+                       ZIO.fromEither(parseDecisionSourceKind(raw))
+                         .map(Some(_))
+                         .mapError(ToolExecutionError.InvalidParameters.apply)
+                     case None      => ZIO.none
+        urgency <- fieldStrOpt(args, "urgency") match
+                     case Some(raw) =>
+                       ZIO.fromEither(parseDecisionUrgency(raw))
+                         .map(Some(_))
+                         .mapError(ToolExecutionError.InvalidParameters.apply)
+                     case None      => ZIO.none
+        limit    = fieldIntOpt(args, "limit").getOrElse(20).max(1)
+        items   <- decisionInbox
+                     .list(
+                       DecisionFilter(
+                         statuses = status.map(Set(_)).getOrElse(Set.empty),
+                         sourceKind = source,
+                         urgency = urgency,
+                         limit = limit,
+                       )
+                     )
+                     .mapError(e => ToolExecutionError.ExecutionFailed(e.toString))
+      yield Json.Arr(
+        Chunk.fromIterable(
+          items.map(item =>
+            Json.Obj(
+              "id"          -> Json.Str(item.id.value),
+              "title"       -> Json.Str(item.title),
+              "status"      -> Json.Str(item.status.toString),
+              "urgency"     -> Json.Str(item.urgency.toString),
+              "source"      -> Json.Str(item.source.kind.toString),
+              "referenceId" -> Json.Str(item.source.referenceId),
+              "deadlineAt"  -> Json.Str(item.deadlineAt.map(_.toString).getOrElse("")),
+            )
+          )
+        )
+      ),
+  )
+
+  private val resolveDecisionTool: Tool = Tool(
+    name = "resolve_decision",
+    description = "Resolve a human decision by decision ID",
+    parameters = Json.Obj(
+      "type"       -> Json.Str("object"),
+      "properties" -> Json.Obj(
+        "decisionId" -> Json.Obj("type" -> Json.Str("string")),
+        "resolution" -> Json.Obj("type" -> Json.Str("string")),
+        "actor"      -> Json.Obj("type" -> Json.Str("string")),
+        "summary"    -> Json.Obj("type" -> Json.Str("string")),
+      ),
+      "required"   -> Json.Arr(Chunk(Json.Str("decisionId"), Json.Str("resolution"))),
+    ),
+    execute = args =>
+      for
+        decisionId <- fieldStr(args, "decisionId")
+        resolution <- fieldStr(args, "resolution").flatMap(raw =>
+                        ZIO.fromEither(parseDecisionResolution(raw))
+                          .mapError(ToolExecutionError.InvalidParameters.apply)
+                      )
+        actor       = fieldStrOpt(args, "actor").getOrElse("mcp")
+        summary     = fieldStrOpt(args, "summary").getOrElse("Resolved from MCP")
+        resolved   <- decisionInbox
+                        .resolve(shared.ids.Ids.DecisionId(decisionId), resolution, actor, summary)
+                        .mapError(e => ToolExecutionError.ExecutionFailed(e.toString))
+      yield Json.Obj(
+        "decisionId" -> Json.Str(resolved.id.value),
+        "status"     -> Json.Str(resolved.status.toString),
+        "resolution" -> Json.Str(resolved.resolution.map(_.kind.toString).getOrElse("")),
+      ),
+  )
+
   // ── get_analysis_docs ─────────────────────────────────────────────────────
 
   private val getAnalysisDocsTool: Tool = Tool(
@@ -356,6 +452,39 @@ final class GatewayMcpTools(
       case value if value.nonEmpty                      => Right(AnalysisType.Custom(value))
       case _                                            => Left("analysisType must be a non-empty string")
 
+  private def parseDecisionStatus(raw: String): Either[String, DecisionStatus] =
+    raw.trim.toLowerCase match
+      case "pending"   => Right(DecisionStatus.Pending)
+      case "resolved"  => Right(DecisionStatus.Resolved)
+      case "escalated" => Right(DecisionStatus.Escalated)
+      case "expired"   => Right(DecisionStatus.Expired)
+      case other       => Left(s"Unknown decision status: $other")
+
+  private def parseDecisionSourceKind(raw: String): Either[String, DecisionSourceKind] =
+    raw.trim.toLowerCase match
+      case "issue_review" | "issuereview"         => Right(DecisionSourceKind.IssueReview)
+      case "governance"                           => Right(DecisionSourceKind.Governance)
+      case "agent_escalation" | "agentescalation" => Right(DecisionSourceKind.AgentEscalation)
+      case "manual"                               => Right(DecisionSourceKind.Manual)
+      case other                                  => Left(s"Unknown decision source: $other")
+
+  private def parseDecisionUrgency(raw: String): Either[String, DecisionUrgency] =
+    raw.trim.toLowerCase match
+      case "low"      => Right(DecisionUrgency.Low)
+      case "medium"   => Right(DecisionUrgency.Medium)
+      case "high"     => Right(DecisionUrgency.High)
+      case "critical" => Right(DecisionUrgency.Critical)
+      case other      => Left(s"Unknown decision urgency: $other")
+
+  private def parseDecisionResolution(raw: String): Either[String, DecisionResolutionKind] =
+    raw.trim.toLowerCase match
+      case "approved"        => Right(DecisionResolutionKind.Approved)
+      case "reworkrequested" => Right(DecisionResolutionKind.ReworkRequested)
+      case "acknowledged"    => Right(DecisionResolutionKind.Acknowledged)
+      case "escalated"       => Right(DecisionResolutionKind.Escalated)
+      case "expired"         => Right(DecisionResolutionKind.Expired)
+      case other             => Left(s"Unknown decision resolution: $other")
+
   private def renderAnalysisType(analysisType: AnalysisType): String =
     analysisType match
       case AnalysisType.CodeReview   => "CodeReview"
@@ -411,6 +540,8 @@ final class GatewayMcpTools(
     listWorkspacesTool,
     searchConversationsTool,
     getMetricsTool,
+    listDecisionsTool,
+    resolveDecisionTool,
     getAnalysisDocsTool,
     getAnalysisSummaryTool,
   )

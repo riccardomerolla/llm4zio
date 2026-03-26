@@ -39,6 +39,8 @@ import conversation.boundary.{
   WebSocketController as ConversationWebSocketController,
 }
 import db.*
+import decision.control.DecisionInbox
+import decision.entity.{ DecisionEventStoreES, DecisionRepositoryES }
 import gateway.boundary.discord.DiscordGatewayService
 import gateway.boundary.telegram.*
 import gateway.boundary.{
@@ -103,6 +105,7 @@ object ApplicationDI:
       WorkflowService &
       ActivityRepository &
       ActivityHub &
+      decision.entity.DecisionRepository &
       OrchestrationProgressTracker &
       ChatRepository &
       AgentRegistry &
@@ -181,6 +184,8 @@ object ApplicationDI:
       EmbeddingService.live,
       GitService.live,
       MemoryRepositoryES.live,
+      DecisionEventStoreES.live,
+      DecisionRepositoryES.live,
       WorkflowService.live,
       ActivityRepository.live,
       ActivityHub.live,
@@ -297,6 +302,7 @@ object ApplicationDI:
       DependencyResolver.live,
       AgentPoolManager.live,
       IssueDispatchStatusService.live,
+      DecisionInbox.live,
       WorkspaceRunService.live,
       BoardOrchestrator.live,
       AutoDispatcher.live,
@@ -355,7 +361,12 @@ object ApplicationDI:
     }
 
   private val channelRegistryLayer
-    : ZLayer[Ref[GatewayConfig] & AgentRegistry & TaskRepository & TaskExecutor & ConfigRepository, Nothing, ChannelRegistry] =
+    : ZLayer[
+      Ref[GatewayConfig] & AgentRegistry & TaskRepository & TaskExecutor & ConfigRepository &
+        decision.entity.DecisionRepository,
+      Nothing,
+      ChannelRegistry,
+    ] =
     ZLayer.scoped {
       for
         configRef     <- ZIO.service[Ref[GatewayConfig]]
@@ -363,6 +374,7 @@ object ApplicationDI:
         repository    <- ZIO.service[TaskRepository]
         taskExecutor  <- ZIO.service[TaskExecutor]
         configRepo    <- ZIO.service[ConfigRepository]
+        decisionRepo  <- ZIO.service[decision.entity.DecisionRepository]
         channels      <- Ref.Synchronized.make(Map.empty[String, MessageChannel])
         runtime       <- Ref.Synchronized.make(Map.empty[String, ChannelRuntime])
         clients       <- Ref.Synchronized.make(Map.empty[String, TelegramClient])
@@ -384,6 +396,7 @@ object ApplicationDI:
                            workflowNotifier = WorkflowNotifierLive(telegramClient, agentRegistry, repository, taskExecutor),
                            taskRepository = Some(repository),
                            taskExecutor = Some(taskExecutor),
+                           decisionRepository = Some(decisionRepo),
                            scopeStrategy = parseSessionScopeStrategy(settingMap.get("telegram.sessionScopeStrategy")),
                          )
         _             <- registry.register(websocket)

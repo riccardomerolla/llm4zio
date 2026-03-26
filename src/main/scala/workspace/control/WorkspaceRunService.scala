@@ -11,6 +11,7 @@ import agent.entity.{ AgentPathScope, AgentPermissions, AgentRepository, Network
 import analysis.entity.AnalysisRepository
 import conversation.entity.api.{ ChatConversation, ConversationEntry, MessageType, SenderType }
 import db.ChatRepository
+import decision.control.DecisionInbox
 import issues.control.IssueAnalysisAttachment
 import issues.entity.{ AgentIssue as DomainIssue, IssueEvent, IssueRepository }
 import orchestration.control.{ AgentExecutionState, AgentPoolManager, OrchestratorControlPlane, PoolError, SlotHandle }
@@ -34,7 +35,7 @@ object WorkspaceRunService:
   val live
     : ZLayer[
       WorkspaceRepository & ChatRepository & IssueRepository & ActivityHub & GitWatcher & AgentRepository &
-        AnalysisRepository &
+        AnalysisRepository & DecisionInbox &
         AgentPoolManager & OrchestratorControlPlane,
       Nothing,
       WorkspaceRunService,
@@ -48,6 +49,7 @@ object WorkspaceRunService:
         watcher      <- ZIO.service[GitWatcher]
         agents       <- ZIO.service[AgentRepository]
         analysis     <- ZIO.service[AnalysisRepository]
+        decisions    <- ZIO.service[DecisionInbox]
         pool         <- ZIO.service[AgentPoolManager]
         controlPlane <- ZIO.service[OrchestratorControlPlane]
         registry     <- Ref.make(Map.empty[String, Fiber[WorkspaceError, Unit]])
@@ -70,6 +72,11 @@ object WorkspaceRunService:
         resolveAgentProfile = name =>
           agents.findByName(name)
             .mapError(err => WorkspaceError.PersistenceFailure(RuntimeException(err.toString))),
+        onIssueEnteredHumanReview = issue =>
+          decisions
+            .openIssueReviewDecision(issue)
+            .mapError(err => WorkspaceError.PersistenceFailure(RuntimeException(err.toString)))
+            .unit,
         notifyControlPlane = (agentName, state, runId, convId, msg, tokens) =>
           controlPlane.notifyWorkspaceAgent(agentName, state, runId, convId, msg, tokens),
       )
@@ -186,6 +193,7 @@ final case class WorkspaceRunServiceLive(
   releaseAgentSlot: SlotHandle => UIO[Unit] = _ => ZIO.unit,
   recordAgentTokens: (String, Long) => IO[WorkspaceError, Unit] = (_, _) => ZIO.unit,
   resolveAgentProfile: String => IO[WorkspaceError, Option[_root_.agent.entity.Agent]] = _ => ZIO.succeed(None),
+  onIssueEnteredHumanReview: DomainIssue => IO[WorkspaceError, Unit] = _ => ZIO.unit,
   notifyControlPlane: (String, AgentExecutionState, Option[String], Option[String], Option[String], Long) => UIO[Unit] =
     (_, _, _, _, _, _) => ZIO.unit,
 ) extends WorkspaceRunService:
@@ -1027,6 +1035,7 @@ final case class WorkspaceRunServiceLive(
                                  .append(event)
                                  .mapError(e => WorkspaceError.PersistenceFailure(RuntimeException(e.toString)))
                              )
+                   _      <- onIssueEnteredHumanReview(issue)
                  yield ()
                case RunStatus.Failed    =>
                  issueRepo
