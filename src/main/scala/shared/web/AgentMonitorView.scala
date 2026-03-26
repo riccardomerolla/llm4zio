@@ -45,6 +45,7 @@ object AgentMonitorView:
     tokensTotal: Long,
     sessionId: Option[String],
     lastEvent: String,
+    reviewHref: Option[String] = None,
   )
 
   def fromSnapshot(snapshot: AgentMonitorSnapshot): List[AgentRunView] =
@@ -62,6 +63,7 @@ object AgentMonitorView:
       tokensTotal = info.tokensUsed,
       sessionId = info.conversationId,
       lastEvent = info.message.getOrElse("—"),
+      reviewHref = info.runId.filter(_.trim.nonEmpty).map(runId => s"/checkpoints/$runId"),
     )
 
   private def stageName(state: AgentExecutionState): String = state match
@@ -127,7 +129,12 @@ object AgentMonitorView:
 
   private def row(r: AgentRunView): Frag =
     val dotCls = stageDotCls(r.stage)
-    tag("tr")(cls := "border-b border-white/5 hover:bg-white/[0.03]")(
+    tag("tr")(
+      cls := s"border-b border-white/5 hover:bg-white/[0.03] ${
+          if r.reviewHref.isDefined then "cursor-pointer" else ""
+        }",
+      r.reviewHref.map(href => onclick := s"window.location='$href'").getOrElse(()),
+    )(
       tag("td")(cls := cellCls)(
         span(cls := "text-slate-400")(r.issueId.take(12))
       ),

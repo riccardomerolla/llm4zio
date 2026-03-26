@@ -15,6 +15,16 @@ import shared.ids.Ids.{ DecisionId, EventId, IssueId }
 
 trait DecisionInbox:
   def openIssueReviewDecision(issue: AgentIssue): IO[PersistenceError, Decision]
+  def openManualDecision(
+    title: String,
+    context: String,
+    referenceId: String,
+    summary: String,
+    urgency: DecisionUrgency = DecisionUrgency.Medium,
+    workspaceId: Option[String] = None,
+    issueId: Option[IssueId] = None,
+  ): IO[PersistenceError, Decision] =
+    ZIO.fail(PersistenceError.QueryFailed("decision_manual", "Manual decision creation not implemented"))
   def resolve(id: DecisionId, resolutionKind: DecisionResolutionKind, actor: String, summary: String)
     : IO[PersistenceError, Decision]
   def syncOpenIssueReviewDecision(
@@ -37,6 +47,19 @@ trait DecisionInbox:
 object DecisionInbox:
   def openIssueReviewDecision(issue: AgentIssue): ZIO[DecisionInbox, PersistenceError, Decision] =
     ZIO.serviceWithZIO[DecisionInbox](_.openIssueReviewDecision(issue))
+
+  def openManualDecision(
+    title: String,
+    context: String,
+    referenceId: String,
+    summary: String,
+    urgency: DecisionUrgency = DecisionUrgency.Medium,
+    workspaceId: Option[String] = None,
+    issueId: Option[IssueId] = None,
+  ): ZIO[DecisionInbox, PersistenceError, Decision] =
+    ZIO.serviceWithZIO[DecisionInbox](
+      _.openManualDecision(title, context, referenceId, summary, urgency, workspaceId, issueId)
+    )
 
   def resolve(
     id: DecisionId,
@@ -98,6 +121,53 @@ final case class DecisionInboxLive(
                     case Some(value) => ZIO.succeed(value)
                     case None        => createIssueReviewDecision(issue, now)
     yield decision
+
+  override def openManualDecision(
+    title: String,
+    context: String,
+    referenceId: String,
+    summary: String,
+    urgency: DecisionUrgency,
+    workspaceId: Option[String],
+    issueId: Option[IssueId],
+  ): IO[PersistenceError, Decision] =
+    for
+      now            <- Clock.instant
+      _              <- runMaintenance(now)
+      timeoutSeconds <- loadTimeoutSeconds
+      event           = DecisionEvent.Created(
+                          decisionId = DecisionId.generate,
+                          title = title.trim,
+                          context = context.trim,
+                          action = DecisionAction.ManualEscalation,
+                          source = DecisionSource(
+                            kind = DecisionSourceKind.Manual,
+                            referenceId = referenceId.trim,
+                            summary = summary.trim,
+                            workspaceId = workspaceId,
+                            issueId = issueId,
+                          ),
+                          urgency = urgency,
+                          deadlineAt = Some(now.plusSeconds(timeoutSeconds)),
+                          occurredAt = now,
+                        )
+      _              <- decisionRepository.append(event)
+      created        <- decisionRepository.get(event.decisionId)
+      _              <- activityHub.publish(
+                          ActivityEvent(
+                            id = EventId.generate,
+                            eventType = ActivityEventType.DecisionCreated,
+                            source = "decision-inbox",
+                            summary = s"Manual decision ${created.id.value} opened for ${referenceId.trim}",
+                            payload = Some(
+                              s"""{"decisionId":"${created.id.value}","referenceId":${referenceId.trim.toJson},"workspaceId":${workspaceId.getOrElse(
+                                  ""
+                                ).toJson}}"""
+                            ),
+                            createdAt = now,
+                          )
+                        )
+    yield created
 
   override def resolve(
     id: DecisionId,

@@ -197,6 +197,12 @@ object Layout:
             navItem("/", "Command Center", Icons.home, currentPath == "/"),
             navItem("/sdlc", "SDLC Dashboard", Icons.activity, currentPath.startsWith("/sdlc")),
             navItem(
+              "/checkpoints",
+              "Checkpoints",
+              Icons.documentText,
+              currentPath.startsWith("/checkpoints"),
+            ),
+            navItem(
               "/board",
               "Board",
               Icons.tableColumns,

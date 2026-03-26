@@ -13,6 +13,8 @@ import activity.boundary.ActivityController
 import analysis.control.WorkspaceAnalysisScheduler
 import app.boundary.{ AgentMonitorController as AppAgentMonitorController, HealthController as AppHealthController }
 import board.boundary.BoardController as BoardBoundaryController
+import checkpoint.boundary.CheckpointsController
+import checkpoint.control.CheckpointReviewService
 import conversation.boundary.{
   ChatController as ConversationChatController,
   WebSocketController as ConversationWebSocketController,
@@ -57,7 +59,7 @@ trait WebServer:
 object WebServer:
 
   val live: ZLayer[
-    TaskRunDashboardController & SdlcDashboardController & TaskRunTasksController & TaskRunReportsController & TaskRunGraphController & SettingsBoundaryController & ConfigBoundaryController & ConfigAgentsController & AppAgentMonitorController & ConversationChatController & IssuesIssueController & BoardBoundaryController & ConfigWorkflowsController & GatewayTelegramController & ActivityController & MemoryBoundaryController & GatewayChannelController & AppHealthController & TaskRunLogsController & ConversationWebSocketController & WorkspaceRepository & WorkspaceRunService & GitService & AgentRegistry & IssueRepository & ProjectRepository & SpecificationRepository & PlanRepository & DecisionInbox & McpService & WorkspaceAnalysisScheduler & DecisionLogRepository & KnowledgeGraphService & MemoryRepository & DaemonsController & DaemonAgentScheduler,
+    TaskRunDashboardController & SdlcDashboardController & TaskRunTasksController & TaskRunReportsController & TaskRunGraphController & SettingsBoundaryController & ConfigBoundaryController & ConfigAgentsController & AppAgentMonitorController & ConversationChatController & IssuesIssueController & BoardBoundaryController & ConfigWorkflowsController & GatewayTelegramController & ActivityController & MemoryBoundaryController & GatewayChannelController & AppHealthController & TaskRunLogsController & ConversationWebSocketController & WorkspaceRepository & WorkspaceRunService & GitService & AgentRegistry & IssueRepository & ProjectRepository & SpecificationRepository & PlanRepository & DecisionInbox & McpService & WorkspaceAnalysisScheduler & DecisionLogRepository & KnowledgeGraphService & MemoryRepository & DaemonsController & DaemonAgentScheduler & CheckpointReviewService,
     Nothing,
     WebServer,
   ] = ZLayer {
@@ -97,6 +99,7 @@ object WebServer:
       knowledgeGraph    <- ZIO.service[KnowledgeGraphService]
       memoryRepo        <- ZIO.service[MemoryRepository]
       daemonsController <- ZIO.service[DaemonsController]
+      checkpointReview  <- ZIO.service[CheckpointReviewService]
       staticRoutes       = Routes.serveResources(Path.empty / "static")
       devCatalogRoutes   = Routes(
                              Method.GET / "components" -> handler {
@@ -122,6 +125,8 @@ object WebServer:
           issueRepo,
         ) ++ DecisionsController.routes(
           decisionInbox
+        ) ++ CheckpointsController.routes(
+          checkpointReview
         ) ++ KnowledgeController.routes(
           decisionLogs,
           knowledgeGraph,

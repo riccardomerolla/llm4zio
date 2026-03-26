@@ -33,6 +33,7 @@ import app.boundary.{
 import app.control.{ FileService, HealthMonitor, HttpAIClient, LogTailer, StateService }
 import board.boundary.BoardController as BoardBoundaryController
 import board.control.*
+import checkpoint.control.CheckpointReviewService
 import com.bot4s.telegram.clients.FutureSttpClient
 import conversation.boundary.{
   ChatController as ConversationChatController,
@@ -304,6 +305,7 @@ object ApplicationDI:
       AgentRepositoryES.live,
       InteractiveAgentRunner.live,
       RunSessionManager.live,
+      CheckpointReviewService.live,
       IssueRepositoryBoard.live,
       TaskRunEventStoreES.live,
       TaskRunRepositoryES.live,
