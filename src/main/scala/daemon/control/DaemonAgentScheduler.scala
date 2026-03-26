@@ -59,7 +59,7 @@ object DaemonAgentScheduler:
   val live
     : ZLayer[
       ProjectRepository & WorkspaceRepository & IssueRepository & ActivityHub & AgentPoolManager & ConfigRepository &
-        GovernancePolicyRepository,
+        GovernancePolicyRepository & DaemonAgentSpecRepository,
       Nothing,
       DaemonAgentScheduler,
     ] =
@@ -72,6 +72,7 @@ object DaemonAgentScheduler:
         agentPoolManager     <- ZIO.service[AgentPoolManager]
         configRepository     <- ZIO.service[ConfigRepository]
         governanceRepository <- ZIO.service[GovernancePolicyRepository]
+        daemonRepository     <- ZIO.service[DaemonAgentSpecRepository]
         queue                <- Queue.unbounded[DaemonJob]
         runtimeState         <- Ref.Synchronized.make(Map.empty[DaemonAgentSpecId, DaemonAgentRuntime])
         service               = DaemonAgentSchedulerLive(
@@ -82,6 +83,7 @@ object DaemonAgentScheduler:
                                   agentPoolManager = agentPoolManager,
                                   configRepository = configRepository,
                                   governanceRepository = governanceRepository,
+                                  daemonRepository = daemonRepository,
                                   queue = queue,
                                   runtimeState = runtimeState,
                                 )
@@ -104,6 +106,7 @@ final case class DaemonAgentSchedulerLive(
   agentPoolManager: AgentPoolManager,
   configRepository: ConfigRepository,
   governanceRepository: GovernancePolicyRepository,
+  daemonRepository: DaemonAgentSpecRepository,
   queue: Queue[DaemonJob],
   runtimeState: Ref.Synchronized[Map[DaemonAgentSpecId, DaemonAgentRuntime]],
 ) extends DaemonAgentScheduler:
@@ -280,8 +283,7 @@ final case class DaemonAgentSchedulerLive(
     spec.daemonKey match
       case DaemonAgentSpec.TestGuardianKey => runTestGuardian(spec)
       case DaemonAgentSpec.DebtDetectorKey => runDebtDetector(spec)
-      case other                           =>
-        ZIO.fail(PersistenceError.QueryFailed("daemon_execute", s"Unsupported daemon $other"))
+      case _                               => runCustomDaemon(spec)
 
   private def runTestGuardian(spec: DaemonAgentSpec): IO[PersistenceError, DaemonRunOutcome] =
     for
@@ -308,6 +310,29 @@ final case class DaemonAgentSchedulerLive(
       issuesCreated = created,
       lastIssueCreatedAt = Option.when(created > 0)(now),
       summary = s"${spec.name} scanned ${workspaces.size} workspace(s) and created $created maintenance issue(s)",
+    )
+
+  private def runCustomDaemon(spec: DaemonAgentSpec): IO[PersistenceError, DaemonRunOutcome] =
+    for
+      workspaces <- loadWorkspacesById(spec.workspaceIds)
+      created    <- ZIO
+                      .foreach(workspaces.take(spec.limits.maxIssuesPerRun)) { workspace =>
+                        ensureMaintenanceIssue(
+                          workspaceId = workspace.id,
+                          fingerprint = daemonFingerprint(spec.daemonKey, workspace.id),
+                          title = s"${spec.name}: execute daemon objective for ${workspace.name}",
+                          description =
+                            s"${spec.purpose}\n\nExecution prompt:\n${spec.prompt}".trim,
+                          priority = "medium",
+                          tags = List(s"daemon:${spec.daemonKey}", s"project:${spec.projectId.value}", "daemon:custom"),
+                        )
+                      }
+                      .map(_.count(identity))
+      now        <- Clock.instant
+    yield DaemonRunOutcome(
+      issuesCreated = created,
+      lastIssueCreatedAt = Option.when(created > 0)(now),
+      summary = s"${spec.name} evaluated ${workspaces.size} workspace(s) and created $created daemon issue(s)",
     )
 
   private def detectDebt(spec: DaemonAgentSpec, workspace: Workspace): IO[PersistenceError, Boolean] =
@@ -488,12 +513,13 @@ final case class DaemonAgentSchedulerLive(
 
   private def loadSpecs: IO[PersistenceError, List[DaemonAgentSpec]] =
     for
-      projects   <- projectRepository.list
-      workspaces <- workspaceRepository.list
-      specs      <- ZIO.foreach(projects)(project =>
-                      deriveSpecs(project, workspaces.filter(ws => project.workspaceIds.contains(ws.id)))
-                    )
-    yield specs.flatten
+      projects     <- projectRepository.list
+      workspaces   <- workspaceRepository.list
+      builtInSpecs <- ZIO.foreach(projects)(project =>
+                        deriveSpecs(project, workspaces.filter(ws => project.workspaceIds.contains(ws.id)))
+                      )
+      customSpecs  <- ZIO.foreach(projects)(project => daemonRepository.listByProject(project.id))
+    yield (builtInSpecs.flatten ++ customSpecs.flatten).distinctBy(_.id)
 
   private def deriveSpecs(project: Project, workspaces: List[Workspace]): IO[PersistenceError, List[DaemonAgentSpec]] =
     if workspaces.isEmpty then ZIO.succeed(Nil)

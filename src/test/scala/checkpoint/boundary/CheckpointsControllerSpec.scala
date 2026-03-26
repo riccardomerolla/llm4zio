@@ -101,7 +101,8 @@ object CheckpointsControllerSpec extends ZIOSpecDefault:
       test("GET /checkpoints renders the checkpoint review page") {
         for
           ref      <- Ref.make(List.empty[String])
-          response <- CheckpointsController.routes(new StubService(ref)).runZIO(Request.get(URL(Path.decode("/checkpoints"))))
+          response <-
+            CheckpointsController.routes(new StubService(ref)).runZIO(Request.get(URL(Path.decode("/checkpoints"))))
           body     <- response.body.asString
         yield assertTrue(
           response.status == Status.Ok,
@@ -112,7 +113,9 @@ object CheckpointsControllerSpec extends ZIOSpecDefault:
       test("GET /checkpoints/:runId renders the detail page") {
         for
           ref      <- Ref.make(List.empty[String])
-          response <- CheckpointsController.routes(new StubService(ref)).runZIO(Request.get(URL(Path.decode("/checkpoints/run-1"))))
+          response <- CheckpointsController.routes(
+                        new StubService(ref)
+                      ).runZIO(Request.get(URL(Path.decode("/checkpoints/run-1"))))
           body     <- response.body.asString
         yield assertTrue(
           response.status == Status.Ok,

@@ -41,9 +41,12 @@ import conversation.boundary.{
 }
 import daemon.boundary.DaemonsController
 import daemon.control.DaemonAgentScheduler
+import daemon.entity.DaemonAgentSpecRepositoryES
 import db.*
 import decision.control.DecisionInbox
 import decision.entity.{ DecisionEventStoreES, DecisionRepositoryES }
+import evolution.control.EvolutionEngine
+import evolution.entity.{ EvolutionProposalEventStoreES, EvolutionProposalRepositoryES }
 import gateway.boundary.discord.DiscordGatewayService
 import gateway.boundary.telegram.*
 import gateway.boundary.{
@@ -296,6 +299,8 @@ object ApplicationDI:
       PlanRepositoryES.live,
       DecisionLogEventStoreES.live,
       DecisionLogRepositoryES.live,
+      EvolutionProposalEventStoreES.live,
+      EvolutionProposalRepositoryES.live,
       GovernancePolicyEventStoreES.live,
       GovernancePolicyRepositoryES.live,
       GovernancePolicyEngine.live,
@@ -318,9 +323,11 @@ object ApplicationDI:
       KnowledgeExtractionService.live,
       DependencyResolver.live,
       AgentPoolManager.live,
+      DaemonAgentSpecRepositoryES.live,
       DaemonAgentScheduler.live,
       IssueDispatchStatusService.live,
       DecisionInbox.live,
+      EvolutionEngine.live,
       WorkspaceRunService.live,
       BoardOrchestrator.live,
       AutoDispatcher.live,

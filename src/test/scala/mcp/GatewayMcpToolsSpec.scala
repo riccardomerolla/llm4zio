@@ -9,13 +9,21 @@ import agent.entity.AgentRepository
 import analysis.entity.{ AnalysisDoc, AnalysisRepository, AnalysisType }
 import decision.control.DecisionInbox
 import decision.entity.{ Decision, DecisionFilter, DecisionResolutionKind }
+import evolution.control.{ EvolutionEngine, EvolutionProposalRequest }
+import evolution.entity.{
+  EvolutionAuditRecord,
+  EvolutionProposal,
+  EvolutionProposalEvent,
+  EvolutionProposalFilter,
+  EvolutionProposalStatus,
+}
 import issues.entity.{ AgentIssue, IssueEvent, IssueFilter, IssueRepository }
 import knowledge.control.{ ArchitecturalContext, KnowledgeDecisionMatch, KnowledgeEdge, KnowledgeGraphService }
 import knowledge.entity.{ DecisionLog, DecisionMaker, DecisionMakerKind }
 import llm4zio.tools.ToolRegistry
 import memory.entity.MemoryRepository
 import shared.errors.PersistenceError
-import shared.ids.Ids.{ AgentId, AnalysisDocId, DecisionLogId, IssueId }
+import shared.ids.Ids.*
 import workspace.control.{ AssignRunRequest, WorkspaceRunService }
 import workspace.entity.{ WorkspaceError, WorkspaceRepository, WorkspaceRun }
 
@@ -131,6 +139,69 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
     override def list(filter: DecisionFilter): IO[PersistenceError, List[Decision]]                      = ZIO.succeed(Nil)
     override def runMaintenance(now: java.time.Instant): IO[PersistenceError, List[Decision]]            = ZIO.succeed(Nil)
 
+  private val stubEvolutionEngine: EvolutionEngine = new EvolutionEngine:
+    private val seedProposal = EvolutionProposal(
+      id = EvolutionProposalId("proposal-1"),
+      projectId = ProjectId("project-1"),
+      title = "Add daemon",
+      rationale = "Need more automation",
+      target = evolution.entity.EvolutionTarget.WorkflowDefinitionTarget(
+        projectId = ProjectId("project-1"),
+        workflow = _root_.config.entity.WorkflowDefinition(name = "test", steps = List("chat"), isBuiltin = false),
+      ),
+      template = None,
+      proposer = EvolutionAuditRecord("mcp", "seed", java.time.Instant.EPOCH),
+      status = EvolutionProposalStatus.Proposed,
+      decisionId = Some(DecisionId("decision-1")),
+      createdAt = java.time.Instant.EPOCH,
+      updatedAt = java.time.Instant.EPOCH,
+    )
+
+    override def propose(request: EvolutionProposalRequest): IO[evolution.control.EvolutionError, EvolutionProposal] =
+      ZIO.succeed(seedProposal.copy(title = request.title))
+    override def approve(
+      proposalId: EvolutionProposalId,
+      actor: String,
+      summary: String,
+    ): IO[evolution.control.EvolutionError, EvolutionProposal] =
+      ZIO.succeed(seedProposal.copy(status = EvolutionProposalStatus.Approved))
+    override def apply(
+      proposalId: EvolutionProposalId,
+      actor: String,
+      summary: String,
+    ): IO[evolution.control.EvolutionError, EvolutionProposal] =
+      ZIO.succeed(seedProposal.copy(status = EvolutionProposalStatus.Applied))
+    override def rollback(
+      proposalId: EvolutionProposalId,
+      actor: String,
+      summary: String,
+    ): IO[evolution.control.EvolutionError, EvolutionProposal] =
+      ZIO.succeed(seedProposal.copy(status = EvolutionProposalStatus.RolledBack))
+    override def get(proposalId: EvolutionProposalId): IO[evolution.control.EvolutionError, EvolutionProposal]       =
+      ZIO.succeed(seedProposal)
+    override def list(
+      filter: EvolutionProposalFilter
+    ): IO[evolution.control.EvolutionError, List[EvolutionProposal]] = ZIO.succeed(List(seedProposal))
+    override def history(
+      proposalId: EvolutionProposalId
+    ): IO[evolution.control.EvolutionError, List[EvolutionProposalEvent]] =
+      ZIO.succeed(
+        List(
+          EvolutionProposalEvent.Proposed(
+            proposalId = seedProposal.id,
+            projectId = seedProposal.projectId,
+            title = seedProposal.title,
+            rationale = seedProposal.rationale,
+            target = seedProposal.target,
+            template = None,
+            proposedBy = "mcp",
+            summary = "created",
+            decisionId = seedProposal.decisionId,
+            occurredAt = java.time.Instant.EPOCH,
+          )
+        )
+      )
+
   private val stubAnalysisRepo: AnalysisRepository = new AnalysisRepository:
     private val docs                                                                             = List(
       AnalysisDoc(
@@ -206,6 +277,7 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
       stubWorkspaceRepo,
       stubRunService,
       stubDecisionInbox,
+      stubEvolutionEngine,
       stubMemoryRepo,
       stubAnalysisRepo,
       stubKnowledgeGraph,
@@ -231,6 +303,9 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
           names.contains("get_metrics"),
           names.contains("get_analysis_docs"),
           names.contains("get_analysis_summary"),
+          names.contains("propose_evolution"),
+          names.contains("list_proposals"),
+          names.contains("get_evolution_history"),
           names.contains("search_decisions"),
           names.contains("get_architectural_context"),
         )
@@ -277,6 +352,7 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
                             stubWorkspaceRepo,
                             stubRunService,
                             stubDecisionInbox,
+                            stubEvolutionEngine,
                             stubMemoryRepo,
                             stubAnalysisRepo,
                             stubKnowledgeGraph,
@@ -371,6 +447,33 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
         )
       }
     ),
+    suite("evolution tools")(
+      test("list_proposals returns proposal rows") {
+        for
+          registry <- ToolRegistry.make
+          _        <- registry.registerAll(tools.all)
+          result   <- registry.execute(llm4zio.core.ToolCall(id = "10", name = "list_proposals", arguments = "{}"))
+          json      = result.result.toOption.get.toJson
+        yield assertTrue(
+          json.contains("proposal-1"),
+          json.contains("Add daemon"),
+        )
+      },
+      test("get_evolution_history returns recorded events") {
+        for
+          registry <- ToolRegistry.make
+          _        <- registry.registerAll(tools.all)
+          args      = Json.Obj("proposalId" -> Json.Str("proposal-1"))
+          result   <- registry.execute(
+                        llm4zio.core.ToolCall(id = "11", name = "get_evolution_history", arguments = args.toJson)
+                      )
+          json      = result.result.toOption.get.toJson
+        yield assertTrue(
+          json.contains("Proposed"),
+          json.contains("proposal-1"),
+        )
+      },
+    ),
     suite("knowledge tools")(
       test("search_decisions returns structured decision matches") {
         for
@@ -378,7 +481,7 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
           _        <- registry.registerAll(tools.all)
           args      = Json.Obj("query" -> Json.Str("knowledge graph"))
           result   <-
-            registry.execute(llm4zio.core.ToolCall(id = "10", name = "search_decisions", arguments = args.toJson))
+            registry.execute(llm4zio.core.ToolCall(id = "12", name = "search_decisions", arguments = args.toJson))
           json      = result.result.toOption.get.toJson
         yield assertTrue(
           json.contains("decision-log-1"),
@@ -392,7 +495,7 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
           _        <- registry.registerAll(tools.all)
           args      = Json.Obj("query" -> Json.Str("architecture"))
           result   <- registry.execute(
-                        llm4zio.core.ToolCall(id = "11", name = "get_architectural_context", arguments = args.toJson)
+                        llm4zio.core.ToolCall(id = "13", name = "get_architectural_context", arguments = args.toJson)
                       )
           json      = result.result.toOption.get.toJson
         yield assertTrue(

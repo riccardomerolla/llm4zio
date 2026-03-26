@@ -111,11 +111,22 @@ object DaemonAgentSchedulerSpec extends ZIOSpecDefault:
     override def listByProject(projectId: ProjectId): IO[PersistenceError, List[GovernancePolicy]]  =
       ZIO.succeed(policy.filter(_.projectId == projectId).toList)
 
+  final private class StubDaemonAgentSpecRepository(specs: List[DaemonAgentSpec]) extends DaemonAgentSpecRepository:
+    override def get(id: shared.ids.Ids.DaemonAgentSpecId): IO[PersistenceError, DaemonAgentSpec] =
+      ZIO.fromOption(specs.find(_.id == id)).orElseFail(PersistenceError.NotFound("daemon_spec", id.value))
+    override def listByProject(projectId: ProjectId): IO[PersistenceError, List[DaemonAgentSpec]] =
+      ZIO.succeed(specs.filter(_.projectId == projectId))
+    override def listAll: IO[PersistenceError, List[DaemonAgentSpec]]                             =
+      ZIO.succeed(specs)
+    override def save(spec: DaemonAgentSpec): IO[PersistenceError, Unit]                          = ZIO.unit
+    override def delete(id: shared.ids.Ids.DaemonAgentSpecId): IO[PersistenceError, Unit]         = ZIO.unit
+
   private def makeScheduler(
     workspacePath: String,
     governancePolicy: Option[GovernancePolicy] = None,
     settings: Map[String, String] = Map.empty,
     seededIssues: Map[IssueId, List[IssueEvent]] = Map.empty,
+    customSpecs: List[DaemonAgentSpec] = Nil,
   ): ZIO[Any, Nothing, (DaemonAgentSchedulerLive, Ref[Map[IssueId, List[IssueEvent]]], Ref[List[ActivityEvent]])] =
     for
       issueRef    <- Ref.make(seededIssues)
@@ -153,6 +164,7 @@ object DaemonAgentSchedulerSpec extends ZIOSpecDefault:
                        agentPoolManager = new StubAgentPoolManager,
                        configRepository = new StubConfigRepository(configRef),
                        governanceRepository = new StubGovernancePolicyRepository(governancePolicy),
+                       daemonRepository = new StubDaemonAgentSpecRepository(customSpecs),
                        queue = queue,
                        runtimeState = runtimeRef,
                      )
