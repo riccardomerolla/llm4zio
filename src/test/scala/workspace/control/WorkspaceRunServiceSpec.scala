@@ -246,6 +246,16 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
     runMode = RunMode.Docker(image = "my-agent:latest"),
   )
 
+  private val cloudWs = sampleWs.copy(
+    id = "ws-cloud",
+    runMode = RunMode.Cloud(
+      provider = "aws-fargate",
+      image = "ghcr.io/riccardomerolla/llm4zio-agent:latest",
+      region = Some("eu-west-1"),
+      network = Some("none"),
+    ),
+  )
+
   private val baseIssue = AgentIssue(
     id = IssueId("placeholder"),
     runId = None,
@@ -592,6 +602,18 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
         case Left(WorkspaceError.DockerNotAvailable(_)) => true
         case _                                          => false)
     },
+    test("cloud runtime stub marks the run failed after assignment") {
+      for
+        (svc, wsRepo, messages) <- makeService(cloudWs)
+        run                     <- svc.assign("ws-cloud", AssignRunRequest(issueRef = "#cloud", prompt = "remote", agentName = "echo"))
+        _                       <- ZIO.sleep(250.millis)
+        saved                   <- wsRepo.getRun(run.id)
+        recorded                <- messages.get
+      yield assertTrue(
+        saved.exists(_.status == WorkspaceRunStatus.Failed),
+        recorded.exists(_.contains("not implemented yet")),
+      )
+    } @@ TestAspect.withLiveClock,
     test("cancelRun on a running fiber returns unit and marks run Cancelled") {
       // Use ZIO.never as the CLI runner so the fiber is always running and can be cleanly interrupted
       val neverCliAgent: (List[String], String, String => Task[Unit], Map[String, String]) => Task[Int] =

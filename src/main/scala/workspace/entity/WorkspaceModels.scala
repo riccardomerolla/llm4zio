@@ -18,6 +18,19 @@ object RunMode:
     network: Option[String] = None,
   ) extends RunMode
 
+  /** Run the agent in a remote cloud container.
+    *
+    * The concrete provider implementation is intentionally deferred; the config exists so runtime selection and
+    * serialization can be wired end-to-end before provider-specific provisioning is added.
+    */
+  final case class Cloud(
+    provider: String,
+    image: String,
+    region: Option[String] = None,
+    extraArgs: List[String] = List.empty,
+    network: Option[String] = None,
+  ) extends RunMode
+
 sealed trait RunStatus derives JsonCodec, Schema
 object RunStatus:
   case object Pending                            extends RunStatus

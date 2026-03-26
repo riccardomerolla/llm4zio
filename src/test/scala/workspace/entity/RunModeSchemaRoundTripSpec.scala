@@ -62,4 +62,17 @@ object RunModeSchemaRoundTripSpec extends ZIOSpecDefault:
         case _            => "failed"
       assertTrue(result == "matched")
     },
+    test("RunMode.Cloud round-trips via ZIO Schema JsonCodec") {
+      val schema  = summon[Schema[RunMode]]
+      val codec   = JsonCodec.jsonCodec(schema)
+      val cloud   = RunMode.Cloud(
+        provider = "aws-fargate",
+        image = "ghcr.io/riccardomerolla/llm4zio-agent:latest",
+        region = Some("eu-west-1"),
+        network = Some("none"),
+      )
+      val json    = codec.encodeJson(cloud, None).toString
+      val decoded = codec.decodeJson(json)
+      assertTrue(decoded == Right(cloud))
+    },
   )

@@ -233,8 +233,9 @@ object WorkspacesView:
 
   private def runModeLabel(runMode: RunMode): String =
     runMode match
-      case RunMode.Host                   => "Run mode: Host"
-      case RunMode.Docker(image, _, _, _) => s"Run mode: \uD83D\uDC33 Docker ($image)"
+      case RunMode.Host                            => "Run mode: Host"
+      case RunMode.Docker(image, _, _, _)          => s"Run mode: \uD83D\uDC33 Docker ($image)"
+      case RunMode.Cloud(provider, image, _, _, _) => s"Run mode: Cloud ($provider / $image)"
 
   private def modalForm(
     title: String,
@@ -282,10 +283,15 @@ object WorkspacesView:
     ).render
 
   private def runModeField(currentMode: RunMode, scopeId: String): Frag =
-    val isDocker                                  = currentMode.isInstanceOf[RunMode.Docker]
-    val (dockerImage, dockerNetwork, dockerMount) = currentMode match
+    val isDocker                                               = currentMode.isInstanceOf[RunMode.Docker]
+    val isCloud                                                = currentMode.isInstanceOf[RunMode.Cloud]
+    val (dockerImage, dockerNetwork, dockerMount)              = currentMode match
       case RunMode.Docker(img, _, mount, net) => (img, net.getOrElse(""), mount)
-      case RunMode.Host                       => ("", "", true)
+      case _                                  => ("", "", true)
+    val (cloudProvider, cloudImage, cloudRegion, cloudNetwork) = currentMode match
+      case RunMode.Cloud(provider, image, region, _, network) =>
+        (provider, image, region.getOrElse(""), network.getOrElse(""))
+      case _                                                  => ("", "", "", "")
     div(cls := "space-y-2")(
       label(cls := "mb-1 block text-sm font-semibold text-slate-200")("Run mode"),
       div(cls := "flex gap-4")(
@@ -294,8 +300,8 @@ object WorkspacesView:
             `type`           := "radio",
             name             := "runModeType",
             value            := "host",
-            if !isDocker then checked else (),
-            attr("onchange") := s"document.getElementById('docker-fields-$scopeId').style.display='none'",
+            if !isDocker && !isCloud then checked else (),
+            attr("onchange") := s"document.getElementById('docker-fields-$scopeId').style.display='none';document.getElementById('cloud-fields-$scopeId').style.display='none'",
           ),
           "Host",
         ),
@@ -305,9 +311,19 @@ object WorkspacesView:
             name             := "runModeType",
             value            := "docker",
             if isDocker then checked else (),
-            attr("onchange") := s"document.getElementById('docker-fields-$scopeId').style.display='block'",
+            attr("onchange") := s"document.getElementById('docker-fields-$scopeId').style.display='block';document.getElementById('cloud-fields-$scopeId').style.display='none'",
           ),
           "Docker",
+        ),
+        label(cls := "flex items-center gap-1.5 text-sm text-slate-200")(
+          input(
+            `type`           := "radio",
+            name             := "runModeType",
+            value            := "cloud",
+            if isCloud then checked else (),
+            attr("onchange") := s"document.getElementById('docker-fields-$scopeId').style.display='none';document.getElementById('cloud-fields-$scopeId').style.display='block'",
+          ),
+          "Cloud",
         ),
       ),
       div(
@@ -349,6 +365,64 @@ object WorkspacesView:
             id          := s"dockerNetwork-$scopeId",
             name        := "dockerNetwork",
             value       := dockerNetwork,
+            placeholder := "e.g. none",
+            cls         := "w-full rounded-lg border border-white/15 bg-slate-800/80 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-indigo-400/40 focus:outline-none",
+          ),
+        ),
+      ),
+      div(
+        id    := s"cloud-fields-$scopeId",
+        style := s"display:${if isCloud then "block" else "none"}",
+        cls   := "space-y-2 pl-2 border-l border-white/10",
+      )(
+        div(
+          label(cls := "mb-1 block text-xs font-semibold text-slate-300", `for` := s"cloudProvider-$scopeId")(
+            "Cloud provider"
+          ),
+          input(
+            `type`      := "text",
+            id          := s"cloudProvider-$scopeId",
+            name        := "cloudProvider",
+            value       := cloudProvider,
+            placeholder := "e.g. aws-fargate",
+            cls         := "w-full rounded-lg border border-white/15 bg-slate-800/80 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-indigo-400/40 focus:outline-none",
+          ),
+        ),
+        div(
+          label(cls := "mb-1 block text-xs font-semibold text-slate-300", `for` := s"cloudImage-$scopeId")(
+            "Runtime image"
+          ),
+          input(
+            `type`      := "text",
+            id          := s"cloudImage-$scopeId",
+            name        := "cloudImage",
+            value       := cloudImage,
+            placeholder := "e.g. ghcr.io/riccardomerolla/llm4zio-agent:latest",
+            cls         := "w-full rounded-lg border border-white/15 bg-slate-800/80 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-indigo-400/40 focus:outline-none",
+          ),
+        ),
+        div(
+          label(cls := "mb-1 block text-xs font-semibold text-slate-300", `for` := s"cloudRegion-$scopeId")(
+            "Region"
+          ),
+          input(
+            `type`      := "text",
+            id          := s"cloudRegion-$scopeId",
+            name        := "cloudRegion",
+            value       := cloudRegion,
+            placeholder := "e.g. eu-west-1",
+            cls         := "w-full rounded-lg border border-white/15 bg-slate-800/80 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-indigo-400/40 focus:outline-none",
+          ),
+        ),
+        div(
+          label(cls := "mb-1 block text-xs font-semibold text-slate-300", `for` := s"cloudNetwork-$scopeId")(
+            "Network policy"
+          ),
+          input(
+            `type`      := "text",
+            id          := s"cloudNetwork-$scopeId",
+            name        := "cloudNetwork",
+            value       := cloudNetwork,
             placeholder := "e.g. none",
             cls         := "w-full rounded-lg border border-white/15 bg-slate-800/80 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-indigo-400/40 focus:outline-none",
           ),

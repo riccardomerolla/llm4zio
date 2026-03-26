@@ -142,6 +142,10 @@ object CliAgentRunner:
         ) ++ mountFlags ++ networkFlags ++ resourceFlags ++ envFlags ++ extraArgs ++ List(
           image
         ) ++ innerArgv
+      case RunMode.Cloud(_, _, _, _, _)                             =>
+        // Cloud execution is handled by ExecutionRuntime; keep host argv compatibility for legacy callers that only
+        // need argument construction.
+        buildArgvForHost(cliTool, prompt, effectiveIncludePath, isWindowsHost)
 
   /** Build argv for long-lived interactive sessions.
     *
@@ -169,6 +173,10 @@ object CliAgentRunner:
         else List.empty
         val networkFlags = network.map(n => List("--network", n)).getOrElse(List.empty)
         List("docker", "run", "--rm", "-i") ++ mountFlags ++ networkFlags ++ extraArgs ++ List(image) ++ innerArgv
+      case RunMode.Cloud(_, _, _, _, _)                             =>
+        // Interactive cloud sessions are not implemented yet; return host argv for compatibility with helper-only
+        // callers and let ExecutionRuntime decide how to execute remotely.
+        buildInteractiveArgvForHost(cliTool, effectiveIncludePath, isWindowsHost)
 
   def validatePermissions(cliTool: String, permissions: Option[AgentPermissions]): Either[String, Unit] =
     permissions match
@@ -183,6 +191,8 @@ object CliAgentRunner:
     (runMode, permissions.map(_.network)) match
       case (docker: RunMode.Docker, Some(NetworkAccessScope.Disabled)) =>
         docker.copy(network = Some("none"))
+      case (cloud: RunMode.Cloud, Some(NetworkAccessScope.Disabled))   =>
+        cloud.copy(network = Some("none"))
       case (other, _)                                                  =>
         other
 

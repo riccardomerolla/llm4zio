@@ -332,6 +332,22 @@ object WorkspacesControllerSpec extends ZIOSpecDefault:
       val decoded = req.toJson.fromJson[WorkspaceCreateRequest]
       assertTrue(decoded == Right(req))
     },
+    test("WorkspaceCreateRequest with RunMode.Cloud round-trips through JSON") {
+      val req     = WorkspaceCreateRequest(
+        name = "remote",
+        localPath = "/tmp/remote",
+        defaultAgent = Some("code-agent"),
+        description = Some("cloud runtime"),
+        runMode = RunMode.Cloud(
+          provider = "aws-fargate",
+          image = "ghcr.io/riccardomerolla/llm4zio-agent:latest",
+          region = Some("eu-west-1"),
+          network = Some("none"),
+        ),
+      )
+      val decoded = req.toJson.fromJson[WorkspaceCreateRequest]
+      assertTrue(decoded == Right(req))
+    },
     test("GET git status endpoint returns GitStatus JSON") {
       for
         wsRef      <- Ref.make(Map("ws-1" -> sampleWs))

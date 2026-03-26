@@ -7,7 +7,7 @@ import zio.json.*
 
 import activity.control.ActivityHub
 import activity.entity.{ ActivityEvent, ActivityEventType }
-import agent.entity.{ AgentPathScope, AgentPermissions, AgentRepository, NetworkAccessScope }
+import agent.entity.{ AgentPathScope, AgentPermissions, AgentRepository, NetworkAccessScope, TrustLevel }
 import analysis.entity.AnalysisRepository
 import conversation.entity.api.{ ChatConversation, ConversationEntry, MessageType, SenderType }
 import db.ChatRepository
@@ -110,7 +110,7 @@ object WorkspaceRunService:
         WorkspaceError.PersistenceFailure(RuntimeException(cause))
 
 object WorkspaceRunServiceLive:
-  final private case class WorkspaceExecutionFailure(error: WorkspaceError)
+  final case class WorkspaceExecutionFailure(error: WorkspaceError)
     extends RuntimeException(error.toString)
   final private case class GitSnapshot(
     headRevision: String,
@@ -205,6 +205,8 @@ final case class WorkspaceRunServiceLive(
     (_, _) => ZIO.unit,
   notifyControlPlane: (String, AgentExecutionState, Option[String], Option[String], Option[String], Long) => UIO[Unit] =
     (_, _, _, _, _, _) => ZIO.unit,
+  resolveExecutionRuntime: (RunMode, AgentPermissions, Option[TrustLevel]) => ExecutionRuntime.Resolution =
+    ExecutionRuntime.resolve,
 ) extends WorkspaceRunService:
 
   override def registerSlot(runId: String, handle: SlotHandle): UIO[Unit] =
@@ -230,9 +232,6 @@ final case class WorkspaceRunServiceLive(
                      _.fold[IO[WorkspaceError, Workspace]](ZIO.fail(WorkspaceError.NotFound(workspaceId)))(ZIO.succeed)
                    )
       _       <- ZIO.unless(ws.enabled)(ZIO.fail(WorkspaceError.Disabled(workspaceId)))
-      _       <- ws.runMode match
-                   case RunMode.Docker(_, _, _, _) => dockerCheck
-                   case RunMode.Host               => ZIO.unit
       profile <- resolveAgentProfile(req.agentName)
       slot    <- reserveAgentSlot(req.agentName)
       run     <- (for
@@ -250,14 +249,25 @@ final case class WorkspaceRunServiceLive(
                    branch      = s"agent/${sanitizeBranchPart(req.agentName)}-${req.issueRef.stripPrefix("#")}-$short"
                    wtPath      = WorkspaceRunServiceLive.worktreePath(ws.name, runId)
                    permissions = resolvedPermissions(profile, ws.cliTool)
-                   runMode    <- enforcePermissions(
+                   runtime    <- enforcePermissions(
                                    agentName = req.agentName,
                                    workspace = ws,
                                    worktreePath = wtPath,
                                    permissions = permissions,
+                                   trustLevel = profile.map(_.trustLevel),
                                  )
                    _          <- worktreeAdd(ws.localPath, wtPath, branch)
                    prompt      = buildPrompt(req, issue, ws.localPath, wtPath, permissions)
+                   context     = executionContext(
+                                   runId = runId,
+                                   cliTool = ws.cliTool,
+                                   prompt = prompt,
+                                   worktreePath = wtPath,
+                                   repoPath = ws.localPath,
+                                   profile = profile,
+                                   permissions = permissions,
+                                 )
+                   _          <- runtimePreflight(runtime, context)
                    _          <- injectAgentPromptFile(ws.name, req.issueRef, branch, wtPath, profile)
                    now        <- Clock.instant
                    conv        = ChatConversation(
@@ -313,7 +323,7 @@ final case class WorkspaceRunServiceLive(
                                        sender = "system",
                                        senderType = SenderType.System,
                                        content =
-                                         s"Agent `${req.agentName}` (via `${ws.cliTool}`) started on branch `${run.branchName}` in `${run.worktreePath}`",
+                                         s"Agent `${req.agentName}` (via `${ws.cliTool}`) started on branch `${run.branchName}` in `${run.worktreePath}` using `${runtime.runtime.name}` runtime",
                                        messageType = MessageType.Status,
                                        createdAt = now,
                                        updatedAt = now,
@@ -323,7 +333,7 @@ final case class WorkspaceRunServiceLive(
                    _          <- registerSlot(run.id, slot)
                    fiber      <- executeInFiber(
                                    run = run,
-                                   runMode = runMode,
+                                   runtimeResolution = runtime,
                                    cliTool = ws.cliTool,
                                    repoPath = ws.localPath,
                                    profile = profile,
@@ -373,15 +383,26 @@ final case class WorkspaceRunServiceLive(
                            _.fold[IO[WorkspaceError, Workspace]](ZIO.fail(WorkspaceError.NotFound(run.workspaceId)))(ZIO.succeed)
                          )
       permissions    = resolvedPermissions(profile, ws.cliTool)
-      runMode       <- enforcePermissions(
+      runtime       <- enforcePermissions(
                          agentName = effectiveAgent,
                          workspace = ws,
                          worktreePath = run.worktreePath,
                          permissions = permissions,
+                         trustLevel = profile.map(_.trustLevel),
                        )
       continuedRun  <- (for
                          historyPrompt <- buildContinuationPrompt(run, followUpPrompt)
                          newRunId       = java.util.UUID.randomUUID().toString
+                         context        = executionContext(
+                                            runId = newRunId,
+                                            cliTool = ws.cliTool,
+                                            prompt = historyPrompt,
+                                            worktreePath = run.worktreePath,
+                                            repoPath = ws.localPath,
+                                            profile = profile,
+                                            permissions = permissions,
+                                          )
+                         _             <- runtimePreflight(runtime, context)
                          now           <- Clock.instant
                          conv          <- chatRepo
                                             .createConversation(
@@ -446,7 +467,7 @@ final case class WorkspaceRunServiceLive(
                          _             <- registerSlot(continuedRun.id, slot)
                          fiber         <- executeInFiber(
                                             run = continuedRun,
-                                            runMode = runMode,
+                                            runtimeResolution = runtime,
                                             cliTool = ws.cliTool,
                                             repoPath = ws.localPath,
                                             profile = profile,
@@ -582,7 +603,8 @@ final case class WorkspaceRunServiceLive(
     workspace: Workspace,
     worktreePath: String,
     permissions: AgentPermissions,
-  ): IO[WorkspaceError, RunMode] =
+    trustLevel: Option[TrustLevel],
+  ): IO[WorkspaceError, ExecutionRuntime.Resolution] =
     for
       _ <- ensurePathAllowed(
              path = workspace.localPath,
@@ -611,7 +633,39 @@ final case class WorkspaceRunServiceLive(
                )
              case _                                                                      =>
                ZIO.unit
-    yield CliAgentRunner.enforceRunMode(workspace.runMode, Some(permissions))
+    yield resolveExecutionRuntime(workspace.runMode, permissions, trustLevel)
+
+  private def executionContext(
+    runId: String,
+    cliTool: String,
+    prompt: String,
+    worktreePath: String,
+    repoPath: String,
+    profile: Option[_root_.agent.entity.Agent],
+    permissions: AgentPermissions,
+  ): ExecutionRuntime.Context =
+    ExecutionRuntime.Context(
+      runId = runId,
+      cliTool = cliTool,
+      prompt = prompt,
+      worktreePath = worktreePath,
+      repoPath = repoPath,
+      runCommand = runCliAgent,
+      envVars = workspaceLevelEnvVars ++ profile.map(_.envVars).getOrElse(Map.empty),
+      permissions = permissions,
+      resources = ExecutionRuntime.Resources(
+        dockerMemoryLimit = profile.flatMap(_.dockerMemoryLimit),
+        dockerCpuLimit = profile.flatMap(_.dockerCpuLimit),
+      ),
+    )
+
+  private def runtimePreflight(
+    resolution: ExecutionRuntime.Resolution,
+    context: ExecutionRuntime.Context,
+  ): IO[WorkspaceError, Unit] =
+    resolution.mode match
+      case _: RunMode.Docker => dockerCheck *> resolution.runtime.preflight(context)
+      case _                 => resolution.runtime.preflight(context)
 
   private def ensurePathAllowed(
     path: String,
@@ -837,80 +891,87 @@ final case class WorkspaceRunServiceLive(
 
   private def executeInFiber(
     run: WorkspaceRun,
-    runMode: RunMode,
+    runtimeResolution: ExecutionRuntime.Resolution,
     cliTool: String,
     repoPath: String = "",
     profile: Option[_root_.agent.entity.Agent] = None,
     permissions: AgentPermissions,
   ): IO[WorkspaceError, Unit] =
-    val envVars = workspaceLevelEnvVars ++ profile.map(_.envVars).getOrElse(Map.empty)
-    val argv    = CliAgentRunner.buildArgv(
+    val context = executionContext(
+      runId = run.id,
       cliTool = cliTool,
       prompt = run.prompt,
       worktreePath = run.worktreePath,
-      runMode = runMode,
       repoPath = repoPath,
-      envVars = envVars,
-      dockerMemoryLimit = profile.flatMap(_.dockerMemoryLimit),
-      dockerCpuLimit = profile.flatMap(_.dockerCpuLimit),
-      permissions = Some(permissions),
+      profile = profile,
+      permissions = permissions,
     )
-    val argvStr = argv.map(a => if a.contains(" ") then s"'$a'" else a).mkString(" ")
     val timeout = profile.map(_.timeout).getOrElse(java.time.Duration.ofSeconds(timeoutSeconds))
     captureGitSnapshot(run.worktreePath, permissions)
       .catchAll(error =>
         ZIO.logWarning(s"[run:${run.id}] git snapshot unavailable: $error").as(None)
       )
       .flatMap { snapshot =>
-        val program =
+        val program = ZIO.acquireReleaseWith(runtimeResolution.runtime.provision(context))(provisioned =>
+          runtimeResolution.runtime.cleanup(context, provisioned)
+        ) { provisioned =>
           for
             _           <- notifyControlPlane(
                              run.agentName,
                              AgentExecutionState.Executing,
                              Some(run.id),
                              Some(run.conversationId),
-                             Some("Running"),
+                             Some(s"Running via ${runtimeResolution.runtime.name} runtime"),
                              0L,
                            )
             _           <- updateRunStatus(run.id, RunStatus.Running(RunSessionMode.Autonomous))
             _           <- gitWatcher.registerRun(run.id, run.worktreePath)
-            _           <- ZIO.logInfo(s"[run:${run.id}] launching: $argvStr  (cwd=${run.worktreePath})")
+            _           <- ZIO.logInfo(
+                             s"[run:${run.id}] launching via ${runtimeResolution.runtime.name} runtime (cwd=${run.worktreePath})"
+                           )
             linesRef    <- Ref.make(0)
             tokenRef    <- Ref.make(0L)
-            runResult   <- runCliAgent(
-                             argv,
-                             run.worktreePath,
-                             line =>
-                               for
-                                 _           <- linesRef.update(_ + 1)
-                                 estimated    = (line.length / 4).toLong.max(0L)
-                                 totalTokens <- tokenRef.updateAndGet(_ + estimated)
-                                 _           <- recordAgentTokens(run.agentName, estimated)
-                                                  .mapError(WorkspaceRunServiceLive.WorkspaceExecutionFailure.apply)
-                                 _           <- appendToConversation(run.conversationId, line)
-                                                  .tapError(e =>
-                                                    ZIO.logWarning(s"[run:${run.id}] failed to persist line to chat: $e")
+            runResult   <- runtimeResolution.runtime
+                             .execute(
+                               context,
+                               provisioned,
+                               line =>
+                                 for
+                                   _           <- linesRef.update(_ + 1)
+                                   estimated    = (line.length / 4).toLong.max(0L)
+                                   totalTokens <- tokenRef.updateAndGet(_ + estimated)
+                                   _           <- recordAgentTokens(run.agentName, estimated)
+                                                    .mapError(WorkspaceRunServiceLive.WorkspaceExecutionFailure.apply)
+                                   _           <- appendToConversation(run.conversationId, line)
+                                                    .tapError(e =>
+                                                      ZIO.logWarning(s"[run:${run.id}] failed to persist line to chat: $e")
+                                                    )
+                                                    .mapError(WorkspaceRunServiceLive.WorkspaceExecutionFailure.apply)
+                                                    .ignore
+                                   _           <- notifyControlPlane(
+                                                    run.agentName,
+                                                    AgentExecutionState.Executing,
+                                                    Some(run.id),
+                                                    Some(run.conversationId),
+                                                    Some(s"Streaming output (${totalTokens} estimated tokens)"),
+                                                    totalTokens,
                                                   )
-                                                  .mapError(WorkspaceRunServiceLive.WorkspaceExecutionFailure.apply)
-                                                  .ignore
-                                 _           <- notifyControlPlane(
-                                                  run.agentName,
-                                                  AgentExecutionState.Executing,
-                                                  Some(run.id),
-                                                  Some(run.conversationId),
-                                                  Some(s"Streaming output (${totalTokens} estimated tokens)"),
-                                                  totalTokens,
-                                                )
-                               yield (),
-                             envVars,
-                           )
+                                 yield (),
+                             )
                              .timeout(timeout)
-                             .mapError {
-                               case WorkspaceRunServiceLive.WorkspaceExecutionFailure(error) => error
-                               case e                                                        => WorkspaceError.WorktreeError(e.getMessage)
-                             }
                              .tapError(e => ZIO.logError(s"[run:${run.id}] process error: $e"))
                              .either
+            artifacts   <- runtimeResolution.runtime
+                             .collectArtifacts(context, provisioned)
+                             .catchAll(error =>
+                               ZIO.logWarning(s"[run:${run.id}] artifact collection failed: $error").as(Nil)
+                             )
+            _           <- ZIO.foreachDiscard(artifacts)(artifact =>
+                             appendToConversation(
+                               run.conversationId,
+                               s"Collected artifact `${artifact.name}` from `${artifact.location}`",
+                             ).ignore
+                           )
             _           <- runResult match
                              case Left(error)    =>
                                appendToConversation(run.conversationId, s"Run failed: $error").ignore
@@ -922,17 +983,18 @@ final case class WorkspaceRunServiceLive(
                              .when(runResult == Right(None))
             count       <- linesRef.get
             accTokens   <- tokenRef.get
-            exitCode     = runResult.toOption.flatten.getOrElse(1)
+            exitCode     = runResult.toOption.flatten.map(_.exitCode).getOrElse(1)
             _           <- ZIO.logInfo(s"[run:${run.id}] finished exit=$exitCode lines=$count")
                              .when(runResult.toOption.flatten.isDefined)
             status       = runResult match
-                             case Right(Some(0)) => RunStatus.Completed
-                             case _              => RunStatus.Failed
+                             case Right(Some(result)) if result.exitCode == 0 => RunStatus.Completed
+                             case _                                           => RunStatus.Failed
             finalState   = if status == RunStatus.Completed then AgentExecutionState.Idle else AgentExecutionState.Failed
             finalMessage = runResult match
-                             case Left(error)    => s"Failed: $error"
-                             case Right(None)    => s"Timed out after ${timeout.toSeconds}s"
-                             case Right(Some(_)) => s"Exit code $exitCode"
+                             case Left(error)         => s"Failed: $error"
+                             case Right(None)         => s"Timed out after ${timeout.toSeconds}s"
+                             case Right(Some(result)) =>
+                               s"Exit code ${result.exitCode} via ${runtimeResolution.runtime.name} runtime"
             _           <- rollbackToSnapshot(run, snapshot, permissions)
                              .catchAll(error => ZIO.logWarning(s"[run:${run.id}] rollback failed: $error"))
                              .when(status != RunStatus.Completed)
@@ -947,6 +1009,7 @@ final case class WorkspaceRunServiceLive(
             _           <- updateRunStatus(run.id, status)
             _           <- ZIO.logInfo(s"[run:${run.id}] status=$status")
           yield ()
+        }
         program.onInterrupt(
           rollbackToSnapshot(run, snapshot, permissions)
             .catchAll(error => ZIO.logWarning(s"[run:${run.id}] rollback failed during interrupt: $error"))

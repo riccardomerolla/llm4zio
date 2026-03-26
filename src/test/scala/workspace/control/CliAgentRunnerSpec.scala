@@ -214,6 +214,28 @@ object CliAgentRunnerSpec extends ZIOSpecDefault:
       )
       assertTrue(!argv.contains("-v") && !argv.contains("--workdir"))
     },
+    test("buildArgv with RunMode.Cloud falls back to host argv for compatibility") {
+      val argv = CliAgentRunner.buildArgv(
+        "gemini",
+        "fix it",
+        "/tmp/wt",
+        RunMode.Cloud(provider = "aws-fargate", image = "remote-image"),
+      )
+      assertTrue(argv == List("gemini", "--yolo", "--include-directories", "/tmp/wt", "-p", "fix it"))
+    },
+    test("enforceRunMode downgrades cloud network to none when permissions disable network") {
+      val permissions = AgentPermissions.defaults(
+        trustLevel = TrustLevel.Untrusted,
+        cliTool = "gemini",
+        timeout = java.time.Duration.ofMinutes(5),
+        maxEstimatedTokens = None,
+      )
+      val mode        = CliAgentRunner.enforceRunMode(
+        RunMode.Cloud(provider = "aws-fargate", image = "remote-image", network = Some("public")),
+        Some(permissions),
+      )
+      assertTrue(mode == RunMode.Cloud(provider = "aws-fargate", image = "remote-image", network = Some("none")))
+    },
     test("buildInteractiveArgv for gemini includes --yolo and --include-directories") {
       val argv = CliAgentRunner.buildInteractiveArgv("gemini", "/tmp/wt")
       assertTrue(argv == List("gemini", "--yolo", "--include-directories", "/tmp/wt"))

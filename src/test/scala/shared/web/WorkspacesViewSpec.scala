@@ -39,6 +39,15 @@ object WorkspacesViewSpec extends ZIOSpecDefault:
     id = "ws-docker",
     runMode = RunMode.Docker(image = "gemini:latest", network = Some("none")),
   )
+  private val cloudWs   = sampleWs.copy(
+    id = "ws-cloud",
+    runMode = RunMode.Cloud(
+      provider = "aws-fargate",
+      image = "ghcr.io/riccardomerolla/llm4zio-agent:latest",
+      region = Some("eu-west-1"),
+      network = Some("none"),
+    ),
+  )
   private val sampleRun = WorkspaceRun(
     id = "run-1",
     workspaceId = "ws-1",
@@ -89,6 +98,10 @@ object WorkspacesViewSpec extends ZIOSpecDefault:
     test("workspace card with RunMode.Docker renders 'Docker' and image name") {
       val html = WorkspacesView.page(List(dockerWs), sampleAgents)
       assertTrue(html.contains("Docker") && html.contains("gemini:latest"))
+    },
+    test("workspace card with RunMode.Cloud renders provider and image name") {
+      val html = WorkspacesView.page(List(cloudWs), sampleAgents)
+      assertTrue(html.contains("Cloud") && html.contains("aws-fargate") && html.contains("llm4zio-agent:latest"))
     },
     test("detail page renders re-analyze button and analysis statuses") {
       val html = WorkspacesView.detailPage(
