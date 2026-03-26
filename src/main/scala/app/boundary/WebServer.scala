@@ -28,6 +28,8 @@ import memory.boundary.MemoryController as MemoryBoundaryController
 import orchestration.control.AgentRegistry
 import project.boundary.ProjectsController
 import project.entity.ProjectRepository
+import specification.boundary.SpecificationsController
+import specification.entity.SpecificationRepository
 import taskrun.boundary.{
   DashboardController as TaskRunDashboardController,
   GraphController as TaskRunGraphController,
@@ -44,7 +46,7 @@ trait WebServer:
 object WebServer:
 
   val live: ZLayer[
-    TaskRunDashboardController & TaskRunTasksController & TaskRunReportsController & TaskRunGraphController & SettingsBoundaryController & ConfigBoundaryController & ConfigAgentsController & AppAgentMonitorController & ConversationChatController & IssuesIssueController & BoardBoundaryController & ConfigWorkflowsController & GatewayTelegramController & ActivityController & MemoryBoundaryController & GatewayChannelController & AppHealthController & TaskRunLogsController & ConversationWebSocketController & WorkspaceRepository & WorkspaceRunService & GitService & AgentRegistry & IssueRepository & ProjectRepository & McpService & WorkspaceAnalysisScheduler,
+    TaskRunDashboardController & TaskRunTasksController & TaskRunReportsController & TaskRunGraphController & SettingsBoundaryController & ConfigBoundaryController & ConfigAgentsController & AppAgentMonitorController & ConversationChatController & IssuesIssueController & BoardBoundaryController & ConfigWorkflowsController & GatewayTelegramController & ActivityController & MemoryBoundaryController & GatewayChannelController & AppHealthController & TaskRunLogsController & ConversationWebSocketController & WorkspaceRepository & WorkspaceRunService & GitService & AgentRegistry & IssueRepository & ProjectRepository & SpecificationRepository & McpService & WorkspaceAnalysisScheduler,
     Nothing,
     WebServer,
   ] = ZLayer {
@@ -74,6 +76,7 @@ object WebServer:
       agentReg          <- ZIO.service[AgentRegistry]
       issueRepo         <- ZIO.service[IssueRepository]
       projectRepo       <- ZIO.service[ProjectRepository]
+      specificationRepo <- ZIO.service[SpecificationRepository]
       mcpSvc            <- ZIO.service[McpService]
       analysisScheduler <- ZIO.service[WorkspaceAnalysisScheduler]
       staticRoutes       = Routes.serveResources(Path.empty / "static")
@@ -92,6 +95,9 @@ object WebServer:
           issueRepo,
           agentReg,
           analysisScheduler,
+        ) ++ SpecificationsController.routes(
+          specificationRepo,
+          issueRepo,
         ) ++ WorkspacesController.routes(
           wsRepo,
           wsRunSvc,

@@ -108,6 +108,17 @@ object Ids:
     given JsonCodec[GovernancePolicyId] = JsonCodec.string.transform(GovernancePolicyId.apply, _.value)
     given Schema[GovernancePolicyId]    = stringSchema.transform(GovernancePolicyId.apply, _.value)
 
+  opaque type SpecificationId = String
+  object SpecificationId:
+    def apply(value: String): SpecificationId = value
+    def generate: SpecificationId             = randomId()
+
+    extension (id: SpecificationId)
+      def value: String = id
+
+    given JsonCodec[SpecificationId] = JsonCodec.string.transform(SpecificationId.apply, _.value)
+    given Schema[SpecificationId]    = stringSchema.transform(SpecificationId.apply, _.value)
+
   opaque type AgentId = String
   object AgentId:
     def apply(value: String): AgentId = value

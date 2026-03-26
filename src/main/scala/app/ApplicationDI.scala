@@ -68,6 +68,7 @@ import project.entity.ProjectRepository
 import prompts.PromptLoader
 import shared.store.{ ConfigStoreModule, DataStoreModule, MemoryStoreModule, StoreConfig }
 import shared.web.StreamAbortRegistry
+import specification.entity.{ SpecificationEventStoreES, SpecificationRepositoryES }
 import sttp.client4.DefaultFutureBackend
 import taskrun.boundary.{
   DashboardController as TaskRunDashboardController,
@@ -274,6 +275,8 @@ object ApplicationDI:
       StreamAbortRegistry.live,
       ToolRegistry.layer,
       ProjectRepository.live,
+      SpecificationEventStoreES.live,
+      SpecificationRepositoryES.live,
       GovernancePolicyEventStoreES.live,
       GovernancePolicyRepositoryES.live,
       GovernancePolicyEngine.live,
