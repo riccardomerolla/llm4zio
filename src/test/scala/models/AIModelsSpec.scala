@@ -4,6 +4,8 @@ import zio.json.*
 import zio.json.ast.Json
 import zio.test.*
 
+import config.entity.*
+
 object AIModelsSpec extends ZIOSpecDefault:
 
   private def roundTripTest[A: JsonEncoder: JsonDecoder](name: String, value: A): Spec[Any, Nothing] =

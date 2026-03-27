@@ -17,6 +17,7 @@ import governance.entity.GovernancePolicy
 import llm4zio.core.{ LlmChunk, LlmError, LlmService, Message, ToolCallResponse }
 import llm4zio.tools.{ AnyTool, JsonSchema }
 import shared.errors.PersistenceError
+import shared.testfixtures.{ NoOpActivityHub, StubWorkspaceRepository }
 import workspace.control.GitServiceLive
 import workspace.entity.*
 
@@ -117,27 +118,6 @@ object IntegrationFixtures:
       createdAt = Instant.now(),
       updatedAt = Instant.now(),
     )
-
-  // ── StubWorkspaceRepository ──────────────────────────────────────────────────
-  // Returns a single in-memory workspace; all run lookups return Nil.
-
-  final class StubWorkspaceRepository(ws: Workspace) extends WorkspaceRepository:
-    override def append(event: WorkspaceEvent): IO[PersistenceError, Unit]                      = ZIO.unit
-    override def list: IO[PersistenceError, List[Workspace]]                                    = ZIO.succeed(List(ws))
-    override def get(id: String): IO[PersistenceError, Option[Workspace]]                       =
-      ZIO.succeed(Option.when(id == ws.id)(ws))
-    override def delete(id: String): IO[PersistenceError, Unit]                                 = ZIO.unit
-    override def appendRun(event: WorkspaceRunEvent): IO[PersistenceError, Unit]                = ZIO.unit
-    override def listRuns(workspaceId: String): IO[PersistenceError, List[WorkspaceRun]]        = ZIO.succeed(Nil)
-    override def listRunsByIssueRef(issueRef: String): IO[PersistenceError, List[WorkspaceRun]] = ZIO.succeed(Nil)
-    override def getRun(id: String): IO[PersistenceError, Option[WorkspaceRun]]                 = ZIO.succeed(None)
-
-  // ── NoOpActivityHub ──────────────────────────────────────────────────────────
-
-  final class NoOpActivityHub extends ActivityHub:
-    override def publish(event: ActivityEvent): UIO[Unit] = ZIO.unit
-    override def subscribe: UIO[Dequeue[ActivityEvent]]   =
-      Queue.bounded[ActivityEvent](1).map(q => q: Dequeue[ActivityEvent])
 
   // ── NoOpGovernancePolicyService ───────────────────────────────────────────
   // Always allows all transitions (no governance rules enforced).

@@ -16,6 +16,7 @@ import issues.entity.{ TokenUsage as IssueTokenUsage, * }
 import orchestration.control.{ ActiveRun, AgentExecutionEvent, ResourceAllocationState, * }
 import shared.errors.{ ControlPlaneError, PersistenceError, StateError }
 import shared.ids.Ids.{ AgentId, DecisionId, IssueId, ReportId, TaskRunId }
+import shared.testfixtures.*
 import taskrun.entity.*
 import workspace.control.{ GitService, RunSessionManager, WorkspaceRunService }
 import workspace.entity.*
@@ -185,27 +186,6 @@ object CheckpointReviewServiceSpec extends ZIOSpecDefault:
       message: Option[String],
       tokenDelta: Long,
     ): UIO[Unit] = ZIO.unit
-
-  final private class StubWorkspaceRepository extends WorkspaceRepository:
-    override def append(event: WorkspaceEvent): IO[PersistenceError, Unit]                      = ZIO.unit
-    override def list: IO[PersistenceError, List[workspace.entity.Workspace]]                   = ZIO.succeed(Nil)
-    override def get(id: String): IO[PersistenceError, Option[workspace.entity.Workspace]]      = ZIO.none
-    override def delete(id: String): IO[PersistenceError, Unit]                                 = ZIO.unit
-    override def appendRun(event: WorkspaceRunEvent): IO[PersistenceError, Unit]                = ZIO.unit
-    override def listRuns(workspaceId: String): IO[PersistenceError, List[WorkspaceRun]]        =
-      ZIO.succeed(List(workspaceRun).filter(_.workspaceId == workspaceId))
-    override def listRunsByIssueRef(issueRef: String): IO[PersistenceError, List[WorkspaceRun]] =
-      ZIO.succeed(List(workspaceRun).filter(_.issueRef == issueRef))
-    override def getRun(id: String): IO[PersistenceError, Option[WorkspaceRun]]                 =
-      ZIO.succeed(Some(workspaceRun).filter(_.id == id))
-
-  final private class StubIssueRepository extends IssueRepository:
-    override def append(event: IssueEvent): IO[PersistenceError, Unit]             = ZIO.unit
-    override def get(id: IssueId): IO[PersistenceError, AgentIssue]                = ZIO.succeed(issue)
-    override def history(id: IssueId): IO[PersistenceError, List[IssueEvent]]      = ZIO.succeed(Nil)
-    override def list(filter: IssueFilter): IO[PersistenceError, List[AgentIssue]] =
-      ZIO.succeed(List(issue).filter(_ => filter.runId.forall(_ == TaskRunId(runId))))
-    override def delete(id: IssueId): IO[PersistenceError, Unit]                   = ZIO.unit
 
   final private class StubProjection extends IssueWorkReportProjection:
     override def get(issueId: IssueId): UIO[Option[IssueWorkReport]]                                          =
@@ -378,8 +358,8 @@ object CheckpointReviewServiceSpec extends ZIOSpecDefault:
       service      = CheckpointReviewServiceLive(
                        new StubStateService,
                        new StubControlPlane(controlRef),
-                       new StubWorkspaceRepository,
-                       new StubIssueRepository,
+                       new StubWorkspaceRepository(Nil, List(workspaceRun)),
+                       StubIssueRepository.of(issue),
                        new StubProjection,
                        new StubChatRepository(chatRef),
                        new StubGitService,

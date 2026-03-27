@@ -5,9 +5,10 @@ import java.time.Instant
 import zio.*
 import zio.test.*
 
-import issues.entity.{ AgentIssue, IssueFilter, IssueRepository, IssueState }
+import issues.entity.{ AgentIssue, IssueRepository, IssueState }
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ AgentId, ConversationId, IssueId, TaskRunId }
+import shared.testfixtures.*
 
 object DependencyResolverSpec extends ZIOSpecDefault:
 
@@ -35,24 +36,6 @@ object DependencyResolverSpec extends ZIOSpecDefault:
       contextPath = "",
       sourceFolder = "",
     )
-
-  final private case class StubIssueRepository(storedIssues: List[AgentIssue]) extends IssueRepository:
-    override def append(event: issues.entity.IssueEvent): IO[PersistenceError, Unit] =
-      ZIO.dieMessage("append unused in DependencyResolverSpec")
-
-    override def get(id: IssueId): IO[PersistenceError, AgentIssue] =
-      ZIO
-        .fromOption(storedIssues.find(_.id == id))
-        .orElseFail(PersistenceError.NotFound("issue", id.value))
-
-    override def history(id: IssueId): IO[PersistenceError, List[issues.entity.IssueEvent]] =
-      ZIO.succeed(Nil)
-
-    override def list(filter: IssueFilter): IO[PersistenceError, List[AgentIssue]] =
-      ZIO.succeed(storedIssues.slice(filter.offset.max(0), filter.offset.max(0) + filter.limit.max(0)))
-
-    override def delete(id: IssueId): IO[PersistenceError, Unit] =
-      ZIO.dieMessage("delete unused in DependencyResolverSpec")
 
   def spec: Spec[TestEnvironment & Scope, Any] =
     suite("DependencyResolverSpec")(

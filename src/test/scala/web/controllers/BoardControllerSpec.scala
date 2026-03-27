@@ -10,6 +10,7 @@ import board.boundary.*
 import board.control.*
 import board.entity.*
 import shared.ids.Ids.BoardIssueId
+import shared.testfixtures.*
 import workspace.entity.*
 
 object BoardControllerSpec extends ZIOSpecDefault:
@@ -110,22 +111,13 @@ object BoardControllerSpec extends ZIOSpecDefault:
 
     override def approveIssue(workspacePath: String, issueId: BoardIssueId): IO[BoardError, Unit] = ZIO.unit
 
-  private object StubWorkspaceRepository extends WorkspaceRepository:
-    override def append(event: WorkspaceEvent): IO[shared.errors.PersistenceError, Unit]                      = ZIO.dieMessage("unused")
-    override def list: IO[shared.errors.PersistenceError, List[Workspace]]                                    = ZIO.succeed(List(workspace))
-    override def get(id: String): IO[shared.errors.PersistenceError, Option[Workspace]]                       =
-      ZIO.succeed(Option.when(id == workspace.id)(workspace))
-    override def delete(id: String): IO[shared.errors.PersistenceError, Unit]                                 = ZIO.dieMessage("unused")
-    override def appendRun(event: WorkspaceRunEvent): IO[shared.errors.PersistenceError, Unit]                =
-      ZIO.dieMessage("unused")
-    override def listRuns(workspaceId: String): IO[shared.errors.PersistenceError, List[WorkspaceRun]]        =
-      ZIO.succeed(Nil)
-    override def listRunsByIssueRef(issueRef: String): IO[shared.errors.PersistenceError, List[WorkspaceRun]] =
-      ZIO.succeed(Nil)
-    override def getRun(id: String): IO[shared.errors.PersistenceError, Option[WorkspaceRun]]                 = ZIO.succeed(None)
-
   private def controller(repo: BoardRepository): BoardControllerLive =
-    BoardControllerLive(repo, StubBoardOrchestrator, StubWorkspaceRepository, IssueMarkdownParserLive())
+    BoardControllerLive(
+      repo,
+      StubBoardOrchestrator,
+      StubWorkspaceRepository.single(workspace),
+      IssueMarkdownParserLive(),
+    )
 
   def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("BoardControllerSpec")(
     test("supports create, move, update and delete endpoints") {

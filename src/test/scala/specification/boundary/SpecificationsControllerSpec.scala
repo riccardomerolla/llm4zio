@@ -6,9 +6,10 @@ import zio.*
 import zio.http.*
 import zio.test.*
 
-import issues.entity.{ AgentIssue, IssueEvent, IssueFilter, IssueRepository, IssueState }
+import issues.entity.{ AgentIssue, IssueState }
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ IssueId, SpecificationId }
+import shared.testfixtures.*
 import specification.entity.*
 
 object SpecificationsControllerSpec extends ZIOSpecDefault:
@@ -46,14 +47,6 @@ object SpecificationsControllerSpec extends ZIOSpecDefault:
           .fromEither(Specification.diff(spec, fromVersion, toVersion))
           .mapError(err => PersistenceError.QueryFailed("specification_diff", err))
       )
-
-  final private class StubIssueRepository(issues: List[AgentIssue]) extends IssueRepository:
-    override def append(event: IssueEvent): IO[PersistenceError, Unit]             = ZIO.unit
-    override def get(id: IssueId): IO[PersistenceError, AgentIssue]                =
-      ZIO.fromOption(issues.find(_.id == id)).orElseFail(PersistenceError.NotFound("issue", id.value))
-    override def history(id: IssueId): IO[PersistenceError, List[IssueEvent]]      = ZIO.succeed(Nil)
-    override def list(filter: IssueFilter): IO[PersistenceError, List[AgentIssue]] = ZIO.succeed(issues)
-    override def delete(id: IssueId): IO[PersistenceError, Unit]                   = ZIO.unit
 
   private val specificationId = SpecificationId("spec-1")
 

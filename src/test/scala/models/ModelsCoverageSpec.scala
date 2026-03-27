@@ -5,7 +5,12 @@ import java.time.Instant
 import zio.Scope
 import zio.test.*
 
-import issues.entity.api.{ AgentAssignmentView, AgentIssueView }
+import config.entity.{ AgentHealth, AgentHealthStatus, AgentMetrics }
+import conversation.entity.api.{ ChatConversationCreateRequest, ConversationMessageRequest, MessageType }
+import issues.entity.api.{ AgentAssignmentView, AgentIssueCreateRequest, AgentIssueView, IssuePriority }
+import orchestration.control.*
+import shared.errors.{ ControlPlaneError, WorkspaceError }
+import taskrun.entity.{ ProgressModels, StepMetrics, StepProgressEvent }
 
 object ModelsCoverageSpec extends ZIOSpecDefault:
 

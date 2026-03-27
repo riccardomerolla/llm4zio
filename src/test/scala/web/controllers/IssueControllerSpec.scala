@@ -9,8 +9,6 @@ import zio.stream.ZStream
 import zio.test.*
 
 import _root_.config.entity.AIProviderConfig
-import activity.control.ActivityHub
-import activity.entity.ActivityEvent
 import agent.entity.{ Agent, AgentEvent, AgentRepository }
 import analysis.entity.{ AnalysisDoc, AnalysisEvent, AnalysisRepository, AnalysisType }
 import board.control.BoardOrchestrator
@@ -27,6 +25,7 @@ import llm4zio.tools.{ AnyTool, JsonSchema }
 import orchestration.control.{ AgentConfigResolver, IssueAssignmentOrchestrator, IssueDispatchStatusService }
 import shared.errors.PersistenceError as SharedPersistenceError
 import shared.ids.Ids.{ AgentId, AnalysisDocId, BoardIssueId, IssueId }
+import shared.testfixtures.*
 import workspace.control.{ AssignRunRequest, WorkspaceRunService }
 import workspace.entity.*
 
@@ -112,17 +111,6 @@ object IssueControllerSpec extends ZIOSpecDefault:
     override def delete(id: IssueId): IO[SharedPersistenceError, Unit] =
       ref.update(_ - id)
 
-  final private class StubWorkspaceRepository(workspaces: List[Workspace]) extends WorkspaceRepository:
-    override def append(event: WorkspaceEvent): IO[SharedPersistenceError, Unit]                      = ZIO.dieMessage("unused")
-    override def list: IO[SharedPersistenceError, List[Workspace]]                                    = ZIO.succeed(workspaces)
-    override def get(id: String): IO[SharedPersistenceError, Option[Workspace]]                       =
-      ZIO.succeed(workspaces.find(_.id == id))
-    override def delete(id: String): IO[SharedPersistenceError, Unit]                                 = ZIO.dieMessage("unused")
-    override def appendRun(event: WorkspaceRunEvent): IO[SharedPersistenceError, Unit]                = ZIO.dieMessage("unused")
-    override def listRuns(workspaceId: String): IO[SharedPersistenceError, List[WorkspaceRun]]        = ZIO.succeed(Nil)
-    override def listRunsByIssueRef(issueRef: String): IO[SharedPersistenceError, List[WorkspaceRun]] = ZIO.succeed(Nil)
-    override def getRun(id: String): IO[SharedPersistenceError, Option[WorkspaceRun]]                 = ZIO.succeed(None)
-
   final private class StubWorkspaceRunService(
     runRequests: Ref[List[AssignRunRequest]],
     failAssign: Boolean,
@@ -202,26 +190,6 @@ object IssueControllerSpec extends ZIOSpecDefault:
     override def getSetting(key: String): IO[PersistenceError, Option[db.SettingRow]]             = ZIO.succeed(None)
     override def upsertSetting(key: String, value: String): IO[PersistenceError, Unit]            = ZIO.dieMessage("unused")
 
-  private object StubConfigRepository extends ConfigRepository:
-    override def getAllSettings: IO[PersistenceError, List[db.SettingRow]]                           = ZIO.succeed(Nil)
-    override def getSetting(key: String): IO[PersistenceError, Option[db.SettingRow]]                = ZIO.succeed(None)
-    override def upsertSetting(key: String, value: String): IO[PersistenceError, Unit]               = ZIO.dieMessage("unused")
-    override def deleteSetting(key: String): IO[PersistenceError, Unit]                              = ZIO.dieMessage("unused")
-    override def deleteSettingsByPrefix(prefix: String): IO[PersistenceError, Unit]                  = ZIO.dieMessage("unused")
-    override def createWorkflow(workflow: WorkflowRow): IO[PersistenceError, Long]                   = ZIO.dieMessage("unused")
-    override def getWorkflow(id: Long): IO[PersistenceError, Option[WorkflowRow]]                    = ZIO.dieMessage("unused")
-    override def getWorkflowByName(name: String): IO[PersistenceError, Option[WorkflowRow]]          = ZIO.dieMessage("unused")
-    override def listWorkflows: IO[PersistenceError, List[WorkflowRow]]                              = ZIO.succeed(Nil)
-    override def updateWorkflow(workflow: WorkflowRow): IO[PersistenceError, Unit]                   = ZIO.dieMessage("unused")
-    override def deleteWorkflow(id: Long): IO[PersistenceError, Unit]                                = ZIO.dieMessage("unused")
-    override def createCustomAgent(agent: db.CustomAgentRow): IO[PersistenceError, Long]             = ZIO.dieMessage("unused")
-    override def getCustomAgent(id: Long): IO[PersistenceError, Option[db.CustomAgentRow]]           = ZIO.dieMessage("unused")
-    override def getCustomAgentByName(name: String): IO[PersistenceError, Option[db.CustomAgentRow]] =
-      ZIO.dieMessage("unused")
-    override def listCustomAgents: IO[PersistenceError, List[db.CustomAgentRow]]                     = ZIO.succeed(Nil)
-    override def updateCustomAgent(agent: db.CustomAgentRow): IO[PersistenceError, Unit]             = ZIO.dieMessage("unused")
-    override def deleteCustomAgent(id: Long): IO[PersistenceError, Unit]                             = ZIO.dieMessage("unused")
-
   private object StubAgentRepository extends AgentRepository:
     override def append(event: AgentEvent): IO[SharedPersistenceError, Unit]                    = ZIO.dieMessage("unused")
     override def get(id: AgentId): IO[SharedPersistenceError, Agent]                            = ZIO.succeed(sampleAgent)
@@ -229,10 +197,6 @@ object IssueControllerSpec extends ZIOSpecDefault:
       ZIO.succeed(List(sampleAgent))
     override def findByName(name: String): IO[SharedPersistenceError, Option[Agent]]            =
       ZIO.succeed(List(sampleAgent).find(_.name == name))
-
-  private object StubActivityHub extends ActivityHub:
-    override def publish(event: ActivityEvent): UIO[Unit] = ZIO.unit
-    override def subscribe: UIO[Dequeue[ActivityEvent]]   = Queue.unbounded[ActivityEvent]
 
   private object StubDispatchStatusService extends IssueDispatchStatusService:
     override def statusFor(issueId: IssueId): IO[SharedPersistenceError, issues.entity.api.DispatchStatusResponse] =
@@ -366,7 +330,7 @@ object IssueControllerSpec extends ZIOSpecDefault:
         ZLayer.succeed(StubTaskRepository) ++
         ZLayer.succeed(StubLlmService) ++
         ZLayer.succeed(StubAgentConfigResolver) ++
-        ZLayer.succeed(StubActivityHub) ++
+        ZLayer.succeed(NoOpActivityHub) ++
         ZLayer.succeed(issueRepo) ++
         ZLayer.succeed(StubBoardOrchestrator) ++
         ZLayer.succeed(workspaceRepository)) >>> IssueAssignmentOrchestrator.live
@@ -378,13 +342,13 @@ object IssueControllerSpec extends ZIOSpecDefault:
         IssueControllerLive(
           chatRepository = StubChatRepository,
           taskRepository = StubTaskRepository,
-          configRepository = StubConfigRepository,
+          configRepository = StubConfigRepository.empty,
           agentRepository = StubAgentRepository,
           issueAssignmentOrchestrator = orchestrator,
           issueRepository = issueRepo,
           workspaceRepository = workspaceRepository,
           workspaceRunService = workspaceRunService,
-          activityHub = StubActivityHub,
+          activityHub = NoOpActivityHub,
           issueDispatchStatusService = StubDispatchStatusService,
           boardOrchestrator = StubBoardOrchestrator,
           boardRepository = StubBoardRepository,
