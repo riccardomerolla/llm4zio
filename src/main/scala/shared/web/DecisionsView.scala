@@ -11,23 +11,53 @@ object DecisionsView:
     sourceFilter: Option[String],
     urgencyFilter: Option[String],
     query: Option[String],
+    pendingCount: Int = 0,
   ): String =
-    Layout.page("Decisions", "/decisions")(
+    Layout.page("Decisions", "/decisions", pendingDecisions = Some(pendingCount))(
+      tag("style")(raw(
+        "@keyframes decision-pulse{0%,100%{border-color:rgba(244,63,94,.45)}50%{border-color:rgba(244,63,94,.1)}}" +
+          ".decision-critical{animation:decision-pulse 2s ease-in-out infinite}"
+      )),
       div(cls := "space-y-6")(
         div(cls := "rounded-xl border border-white/10 bg-slate-900/80 px-5 py-4")(
-          h1(cls := "text-2xl font-bold text-white")("Decision Inbox"),
-          p(cls := "mt-1 text-sm text-slate-300")(
-            "Review queued human decisions, resolve issue reviews, and monitor overdue escalations."
-          ),
+          div(cls := "flex flex-wrap items-center justify-between gap-4")(
+            div(
+              h1(cls := "text-2xl font-bold text-white")("Decision Inbox"),
+              p(cls := "mt-1 text-sm text-slate-300")(
+                "Review queued human decisions, resolve issue reviews, and monitor overdue escalations."
+              ),
+            ),
+            if pendingCount > 0 then
+              span(
+                cls := "inline-flex items-center rounded-full border border-amber-400/30 bg-amber-500/10 px-3 py-1 text-sm font-semibold text-amber-200"
+              )(s"$pendingCount pending")
+            else frag(),
+          )
         ),
         filterBar(statusFilter, sourceFilter, urgencyFilter, query),
-        if decisions.isEmpty then
-          div(cls := "rounded-xl border border-dashed border-white/10 bg-slate-900/60 p-10 text-center")(
-            p(cls := "text-slate-300")("No decisions match the current filters.")
-          )
-        else
-          div(cls := "space-y-4")(decisions.map(card)*),
-      )
+        decisionsList(decisions),
+      ),
+      keyboardNavScript,
+    )
+
+  def cardsFragment(decisions: List[Decision]): String =
+    decisionsList(decisions).render
+
+  private def decisionsList(decisions: List[Decision]): Frag =
+    div(
+      id                 := "decisions-list",
+      attr("hx-get")     := "/decisions/fragment",
+      attr("hx-trigger") := "every 5s",
+      attr("hx-target")  := "#decisions-list",
+      attr("hx-swap")    := "outerHTML",
+      attr("hx-include") := "#decisions-filter-form",
+    )(
+      if decisions.isEmpty then
+        div(cls := "rounded-xl border border-dashed border-white/10 bg-slate-900/60 p-10 text-center")(
+          p(cls := "text-slate-300")("No decisions match the current filters.")
+        )
+      else
+        div(cls := "space-y-4")(decisions.map(card)*)
     )
 
   private def filterBar(
@@ -37,6 +67,7 @@ object DecisionsView:
     query: Option[String],
   ): Frag =
     form(
+      id     := "decisions-filter-form",
       action := "/decisions",
       method := "get",
       cls    := "grid gap-3 rounded-xl border border-white/10 bg-slate-900/60 p-4 lg:grid-cols-4",
@@ -87,7 +118,14 @@ object DecisionsView:
     )
 
   private def card(decision: Decision): Frag =
-    div(cls := "rounded-xl border border-white/10 bg-slate-900/60 p-5")(
+    val criticalCls =
+      if decision.urgency == DecisionUrgency.Critical then " decision-critical border-rose-500/45"
+      else " border-white/10"
+    div(
+      cls                   := s"rounded-xl border bg-slate-900/60 p-5$criticalCls",
+      attr("data-decision") := decision.id.value,
+      attr("tabindex")      := "0",
+    )(
       div(cls := "flex flex-wrap items-start justify-between gap-4")(
         div(
           h2(cls := "text-lg font-semibold text-white")(decision.title),
@@ -115,33 +153,82 @@ object DecisionsView:
   private def actionBar(decision: Decision): Frag =
     if decision.status != DecisionStatus.Pending then frag()
     else
-      div(cls := "mt-4 flex flex-wrap gap-2")(
-        resolutionForm(decision.id.value, DecisionResolutionKind.Approved, "Approve", "emerald"),
-        resolutionForm(decision.id.value, DecisionResolutionKind.ReworkRequested, "Request rework", "amber"),
+      div(cls := "mt-4 space-y-2")(
+        form(action := s"/decisions/${decision.id.value}/resolve", method := "post")(
+          textarea(
+            name        := "summary",
+            rows        := "2",
+            placeholder := "Reviewer notes (optional)…",
+            cls         := "w-full rounded border border-white/10 bg-black/20 px-2 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-cyan-500/50",
+          )(""),
+          div(cls := "mt-2 flex flex-wrap gap-2")(
+            button(
+              `type`              := "submit",
+              name                := "resolution",
+              value               := DecisionResolutionKind.Approved.toString,
+              attr("data-action") := "approve",
+              cls                 := "rounded border border-emerald-400/30 bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/20",
+            )("Approve"),
+            button(
+              `type`              := "submit",
+              name                := "resolution",
+              value               := DecisionResolutionKind.ReworkRequested.toString,
+              attr("data-action") := "rework",
+              cls                 := "rounded border border-amber-400/30 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-200 hover:bg-amber-500/20",
+            )("Request rework"),
+          ),
+        ),
         escalateForm(decision.id.value),
       )
-
-  private def resolutionForm(
-    decisionId: String,
-    resolutionKind: DecisionResolutionKind,
-    labelText: String,
-    tone: String,
-  ): Frag =
-    form(action := s"/decisions/$decisionId/resolve", method := "post")(
-      input(`type` := "hidden", name := "resolution", value := resolutionKind.toString),
-      button(
-        `type` := "submit",
-        cls    := s"rounded border border-$tone-400/30 bg-$tone-500/10 px-3 py-2 text-xs font-semibold text-$tone-200 hover:bg-$tone-500/20",
-      )(labelText),
-    )
 
   private def escalateForm(decisionId: String): Frag =
     form(action := s"/decisions/$decisionId/escalate", method := "post")(
       button(
-        `type` := "submit",
-        cls    := "rounded border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-xs font-semibold text-rose-200 hover:bg-rose-500/20",
+        `type`              := "submit",
+        attr("data-action") := "escalate",
+        cls                 := "rounded border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-xs font-semibold text-rose-200 hover:bg-rose-500/20",
       )("Escalate")
     )
+
+  private def keyboardNavScript: Frag =
+    script(raw(
+      """(function () {
+        |  var focusIdx = -1;
+        |  function getCards() { return Array.from(document.querySelectorAll('[data-decision]')); }
+        |  function applyFocus(cards) {
+        |    cards.forEach(function (c, i) {
+        |      c.classList.toggle('ring-2', i === focusIdx);
+        |      c.classList.toggle('ring-white/30', i === focusIdx);
+        |    });
+        |    if (focusIdx >= 0 && cards[focusIdx]) {
+        |      cards[focusIdx].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        |    }
+        |  }
+        |  document.addEventListener('keydown', function (e) {
+        |    var tag = e.target.tagName;
+        |    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+        |    var cards = getCards();
+        |    if (!cards.length) return;
+        |    if (e.key === 'j') {
+        |      focusIdx = Math.min(focusIdx + 1, cards.length - 1);
+        |      applyFocus(cards);
+        |    } else if (e.key === 'k') {
+        |      focusIdx = Math.max(focusIdx - 1, 0);
+        |      applyFocus(cards);
+        |    } else if (e.key === 'a' && focusIdx >= 0 && cards[focusIdx]) {
+        |      var btn = cards[focusIdx].querySelector('[data-action="approve"]');
+        |      if (btn) btn.click();
+        |    } else if (e.key === 'r' && focusIdx >= 0 && cards[focusIdx]) {
+        |      var btn = cards[focusIdx].querySelector('[data-action="rework"]');
+        |      if (btn) btn.click();
+        |    } else if (e.key === 'e' && focusIdx >= 0 && cards[focusIdx]) {
+        |      var btn = cards[focusIdx].querySelector('[data-action="escalate"]');
+        |      if (btn) btn.click();
+        |    }
+        |  });
+        |})();
+        |""".stripMargin
+    ))
 
   private def chip(value: String): Frag =
     span(cls := "rounded-full border border-white/15 bg-slate-800/60 px-3 py-1 text-xs text-slate-200")(value)

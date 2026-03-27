@@ -27,6 +27,8 @@ import gateway.boundary.{
   ChannelController as GatewayChannelController,
   TelegramController as GatewayTelegramController,
 }
+import governance.boundary.GovernanceController
+import governance.entity.GovernancePolicyRepository
 import issues.boundary.IssueController as IssuesIssueController
 import issues.entity.IssueRepository
 import knowledge.boundary.KnowledgeController
@@ -50,8 +52,6 @@ import taskrun.boundary.{
   ReportsController as TaskRunReportsController,
   TasksController as TaskRunTasksController,
 }
-import governance.boundary.GovernanceController
-import governance.entity.GovernancePolicyRepository
 import workspace.boundary.WorkspacesController
 import workspace.control.{ GitService, WorkspaceRunService }
 import workspace.entity.WorkspaceRepository

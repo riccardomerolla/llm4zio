@@ -38,6 +38,7 @@ object Layout:
     pageTitleText: String,
     currentPath: String = "/",
     chatWorkspaceNav: Option[ChatWorkspaceNav] = None,
+    pendingDecisions: Option[Int] = None,
   )(
     bodyContent: Frag*
   ): String =
@@ -51,8 +52,8 @@ object Layout:
         script(src   := "https://unpkg.com/htmx-ext-sse@2.0.0/sse.js"),
       ),
       body(cls := "h-full text-[12px] leading-5 text-gray-200")(
-        mobileSidebar(currentPath, chatWorkspaceNav),
-        desktopSidebar(currentPath, chatWorkspaceNav),
+        mobileSidebar(currentPath, chatWorkspaceNav, pendingDecisions),
+        desktopSidebar(currentPath, chatWorkspaceNav, pendingDecisions),
         mobileTopbar(pageTitleText),
         button(
           id                    := "desktop-sidebar-restore",
@@ -145,7 +146,11 @@ object Layout:
       div(cls := "text-sm font-semibold text-white")(pageTitleText),
     )
 
-  private def mobileSidebar(currentPath: String, chatWorkspaceNav: Option[ChatWorkspaceNav]): Frag =
+  private def mobileSidebar(
+    currentPath: String,
+    chatWorkspaceNav: Option[ChatWorkspaceNav],
+    pendingDecisions: Option[Int],
+  ): Frag =
     div(id := "mobile-sidebar", cls := "hidden lg:hidden")(
       div(id := "mobile-sidebar-backdrop", cls := "fixed inset-0 z-40 bg-gray-900/80")(),
       div(cls := "fixed inset-y-0 left-0 z-50 w-full max-w-xs")(
@@ -163,12 +168,16 @@ object Layout:
               Icons.xMark,
             ),
           ),
-          sidebarNav(currentPath, chatWorkspaceNav),
+          sidebarNav(currentPath, chatWorkspaceNav, pendingDecisions),
         )
       ),
     )
 
-  private def desktopSidebar(currentPath: String, chatWorkspaceNav: Option[ChatWorkspaceNav]): Frag =
+  private def desktopSidebar(
+    currentPath: String,
+    chatWorkspaceNav: Option[ChatWorkspaceNav],
+    pendingDecisions: Option[Int],
+  ): Frag =
     div(
       id  := "desktop-sidebar",
       cls := "hidden bg-gray-900 lg:fixed lg:inset-y-0 lg:z-50 lg:flex lg:w-72 lg:flex-col",
@@ -184,11 +193,15 @@ object Layout:
             attr("aria-expanded") := "true",
           )(Icons.menu),
         ),
-        sidebarNav(currentPath, chatWorkspaceNav),
+        sidebarNav(currentPath, chatWorkspaceNav, pendingDecisions),
       )
     )
 
-  private def sidebarNav(currentPath: String, chatWorkspaceNav: Option[ChatWorkspaceNav]): Frag =
+  private def sidebarNav(
+    currentPath: String,
+    chatWorkspaceNav: Option[ChatWorkspaceNav],
+    pendingDecisions: Option[Int] = None,
+  ): Frag =
     nav(cls := "flex flex-1 flex-col")(
       ul(attr("role") := "list", cls := "flex flex-1 flex-col gap-y-7")(
         li(
@@ -244,6 +257,7 @@ object Layout:
               "Decisions",
               Icons.activity,
               currentPath.startsWith("/decisions"),
+              pendingDecisions.filter(_ > 0),
             ),
             navItem(
               "/governance",
@@ -443,11 +457,21 @@ object Layout:
       p(cls := "px-2 py-1 text-[11px] text-gray-500")("Loading workspace chats...")
     )
 
-  private def navItem(href: String, label: String, icon: Frag, active: Boolean): Frag =
+  private def navItem(href: String, label: String, icon: Frag, active: Boolean, badge: Option[Int] = None): Frag =
     val classes =
       if active then "group flex gap-x-3 rounded-md bg-white/5 p-2 text-sm/6 font-semibold text-white"
       else "group flex gap-x-3 rounded-md p-2 text-sm/6 font-semibold text-gray-400 hover:bg-white/5 hover:text-white"
-    li(a(attr("href") := href, cls := classes)(icon, label))
+    li(
+      a(attr("href") := href, cls := classes)(
+        icon,
+        span(cls := "flex-1")(label),
+        badge.fold[Frag](frag())(count =>
+          span(
+            cls := "ml-auto inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-amber-200"
+          )(count.toString)
+        ),
+      )
+    )
 
   // ---------------------------------------------------------------------------
   // Icons (Heroicons outline 24x24)

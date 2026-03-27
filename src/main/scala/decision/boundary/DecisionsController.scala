@@ -19,6 +19,9 @@ object DecisionsController:
       Method.GET / "decisions"                              -> handler { (req: Request) =>
         listPage(req, decisionInbox).catchAll(error => ZIO.succeed(persistErr(error)))
       },
+      Method.GET / "decisions" / "fragment"                 -> handler { (req: Request) =>
+        listFragment(req, decisionInbox).catchAll(error => ZIO.succeed(persistErr(error)))
+      },
       Method.POST / "decisions" / string("id") / "resolve"  -> handler { (id: String, req: Request) =>
         resolve(id, req, decisionInbox).catchAll(error => ZIO.succeed(persistErr(error)))
       },
@@ -28,6 +31,28 @@ object DecisionsController:
     )
 
   private def listPage(req: Request, decisionInbox: DecisionInbox): IO[PersistenceError, Response] =
+    val statusFilter  = req.queryParam("status").map(_.trim).filter(_.nonEmpty)
+    val sourceFilter  = req.queryParam("source").map(_.trim).filter(_.nonEmpty)
+    val urgencyFilter = req.queryParam("urgency").map(_.trim).filter(_.nonEmpty)
+    val query         = req.queryParam("query").map(_.trim).filter(_.nonEmpty)
+    for
+      items        <- decisionInbox.list(
+                        DecisionFilter(
+                          statuses = statusFilter.flatMap(parseStatus).map(Set(_)).getOrElse(Set.empty),
+                          sourceKind = sourceFilter.flatMap(parseSourceKind),
+                          urgency = urgencyFilter.flatMap(parseUrgency),
+                          query = query,
+                          limit = Int.MaxValue,
+                        )
+                      )
+      pendingCount <- decisionInbox
+                        .list(DecisionFilter(statuses = Set(DecisionStatus.Pending), limit = Int.MaxValue))
+                        .map(_.size)
+    yield htmlResponse(
+      DecisionsView.page(items, statusFilter, sourceFilter, urgencyFilter, query, pendingCount)
+    )
+
+  private def listFragment(req: Request, decisionInbox: DecisionInbox): IO[PersistenceError, Response] =
     val statusFilter  = req.queryParam("status").map(_.trim).filter(_.nonEmpty)
     val sourceFilter  = req.queryParam("source").map(_.trim).filter(_.nonEmpty)
     val urgencyFilter = req.queryParam("urgency").map(_.trim).filter(_.nonEmpty)
@@ -42,7 +67,7 @@ object DecisionsController:
           limit = Int.MaxValue,
         )
       )
-      .map(items => htmlResponse(DecisionsView.page(items, statusFilter, sourceFilter, urgencyFilter, query)))
+      .map(items => htmlResponse(DecisionsView.cardsFragment(items)))
 
   private def resolve(id: String, req: Request, decisionInbox: DecisionInbox): IO[PersistenceError, Response] =
     for
@@ -50,7 +75,9 @@ object DecisionsController:
       resolution <- ZIO
                       .fromOption(form.get("resolution").flatMap(_.headOption).flatMap(parseResolutionKind))
                       .orElseFail(PersistenceError.QueryFailed("decision_resolution", "Missing resolution"))
-      _          <- decisionInbox.resolve(DecisionId(id), resolution, actor = "web", summary = "Resolved from web inbox")
+      summary     = form.get("summary").flatMap(_.headOption).map(_.trim).filter(_.nonEmpty)
+                      .getOrElse("Resolved from web inbox")
+      _          <- decisionInbox.resolve(DecisionId(id), resolution, actor = "web", summary = summary)
     yield redirect("/decisions")
 
   private def escalate(id: String, decisionInbox: DecisionInbox): IO[PersistenceError, Response] =

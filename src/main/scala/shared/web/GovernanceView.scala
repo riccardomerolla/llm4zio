@@ -99,7 +99,7 @@ object GovernanceView:
         ("bg-cyan-500/10", "border-cyan-400/30")
       else
         ("bg-slate-800/60", "border-white/15")
-    div(cls := s"flex flex-col items-center gap-1")(
+    div(cls := "flex flex-col items-center gap-1")(
       span(
         cls   := s"rounded border $border $bg px-2 py-1 text-xs font-semibold text-slate-100",
         title := gateTooltip(outgoing),
