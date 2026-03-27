@@ -5,10 +5,9 @@ import java.time.Instant
 import zio.*
 import zio.test.*
 
-import activity.control.ActivityHub
-import activity.entity.ActivityEvent
 import board.entity.*
 import shared.ids.Ids.BoardIssueId
+import shared.testfixtures.*
 import workspace.entity.*
 
 object GitWatcherSpec extends ZIOSpecDefault:
@@ -76,10 +75,6 @@ object GitWatcherSpec extends ZIOSpecDefault:
     override def diffFileVsBase(repoPath: String, filePath: String, baseBranch: String): IO[GitError, String] =
       ZIO.succeed("")
 
-  private object StubActivityHub extends ActivityHub:
-    override def publish(event: ActivityEvent): UIO[Unit] = ZIO.unit
-    override def subscribe: UIO[Dequeue[ActivityEvent]]   = Queue.unbounded[ActivityEvent]
-
   private object StubBoardRepository extends BoardRepository:
     override def initBoard(workspacePath: String): IO[BoardError, Unit]                                   = ZIO.unit
     override def readBoard(workspacePath: String): IO[BoardError, Board]                                  =
@@ -109,7 +104,7 @@ object GitWatcherSpec extends ZIOSpecDefault:
         statusRef <- Ref.make(statusA)
         logRef    <- Ref.make(List(commitA))
         service    = StubGitService(statusRef, logRef)
-        watcher   <- GitWatcherLive.make(service, StubActivityHub, StubBoardRepository, pollInterval = 100.millis)
+        watcher   <- GitWatcherLive.make(service, NoOpActivityHub, StubBoardRepository, pollInterval = 100.millis)
         _         <- watcher.registerRun("run-1", "/tmp/repo")
         result    <- ZIO.scoped {
                        for

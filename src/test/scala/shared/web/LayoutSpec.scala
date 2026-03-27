@@ -7,15 +7,17 @@ object LayoutSpec extends ZIOSpecDefault:
   def spec: Spec[Any, Nothing] =
     suite("Layout")(
       test(
-        "sidebar contains OPERATE and CONFIGURE sections with SDLC, Checkpoints, Board, Projects, Plans, Knowledge, Daemons, and Specifications links"
+        "sidebar contains core gateway and ADE sections with governance and evolution links"
       ) {
         val html = Layout.page("Test", "/board")()
         assertTrue(
-          html.contains("Operate"),
-          html.contains("Configure"),
+          html.contains("Core Gateway"),
+          html.contains("ADE"),
           html.contains("/sdlc"),
           html.contains("/checkpoints"),
           html.contains("/board"),
+          html.contains("/governance"),
+          html.contains("/evolution"),
           html.contains("/projects"),
           html.contains("/plans"),
           html.contains("/knowledge"),
@@ -24,6 +26,8 @@ object LayoutSpec extends ZIOSpecDefault:
           html.contains("Command Center"),
           html.contains("SDLC Dashboard"),
           html.contains("Checkpoints"),
+          html.contains("Governance"),
+          html.contains("Evolution"),
           html.contains("Projects"),
           html.contains("Plans"),
           html.contains("Knowledge"),
@@ -33,13 +37,25 @@ object LayoutSpec extends ZIOSpecDefault:
           html.contains("Board"),
         )
       },
-      test("Board nav item is active when currentPath starts with /board") {
+      test("board nav item is active when currentPath starts with /board") {
         val html = Layout.page("Test", "/board")()
-        assertTrue(html.contains("bg-white/5"))
+        assertTrue(
+          html.contains("data-active=\"true\""),
+          html.contains("aria-current=\"page\""),
+        )
       },
       test("Board nav item exists for non-board paths") {
         val html = Layout.page("Test", "/issues")()
         assertTrue(html.contains("/board"))
+      },
+      test("ADE items include live badge loaders for board, checkpoints, and decisions") {
+        val html = Layout.page("Test", "/decisions", pendingDecisions = Some(3))()
+        assertTrue(
+          html.contains("/sidebar/badges/board"),
+          html.contains("/sidebar/badges/checkpoints"),
+          html.contains("/sidebar/badges/decisions"),
+          html.contains(">3<"),
+        )
       },
       test("mobile sidebar toggle and drawer markup are present") {
         val html = Layout.page("Test", "/board")()

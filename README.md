@@ -1,309 +1,287 @@
 # llm4zio
 
 [![Maven Central](https://img.shields.io/maven-central/v/io.github.riccardomerolla/llm4zio.svg)](https://mvnrepository.com/artifact/io.github.riccardomerolla/llm4zio)
-[![Test Coverage](https://img.shields.io/badge/tests-450+-green)]()
+[![Scala 3](https://img.shields.io/badge/Scala-3.5.2-red)](https://www.scala-lang.org/)
+[![ZIO 2](https://img.shields.io/badge/ZIO-2.1.24-blue)](https://zio.dev/)
+[![Tests](https://img.shields.io/badge/tests-1126+-green)]()
 
-A purely functional, ZIO-native LLM integration library and production-grade AI gateway for Scala 3.
+**An Autonomous Development Environment (ADE) and ZIO-native LLM integration library for Scala 3.**
 
-Built from the ground up for **Effect-Oriented Programming**, `llm4zio` provides type-safe, resource-safe, and composable abstractions for interacting with Large Language Models and orchestrating multi-agent workflows.
-
----
-
-## ⚡ Why llm4zio?
-
-- **ZIO Native**: Everything is a `ZIO[R, E, A]`. No hidden side effects, no thrown exceptions.
-- **Typed Errors**: Exhaustive pattern matching on API failures, rate limits, and context length issues via `LLMError`.
-- **Streaming First**: Backpressured token streaming using `ZStream`.
-- **Resource Safe**: Connection pooling and HTTP client lifecycles managed automatically via `Scope` and `ZLayer`.
-- **Resilient**: Built-in support for exponential backoff, circuit breakers, and token-bucket rate limiting.
-- **Event Sourced**: All domain aggregates (agents, conversations, workspaces, issues) are fully event-sourced.
+llm4zio is a production-grade AI gateway that orchestrates autonomous coding agents across your repositories. Agents pick up issues from a structured Kanban board, produce code under governance policies, and surface decisions to human reviewers — all tracked in a fully event-sourced system. It also ships as a standalone ZIO library for direct LLM integration.
 
 ---
 
-## 📦 Installation
+## Architecture
 
-```scala
-libraryDependencies += "io.github.riccardomerolla" %% "llm4zio" % "1.0.3"
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│                            Channels                                   │
+│         Telegram · Slack · Discord · WebSocket · MCP SSE (41 tools)  │
+└────────────────────────────────┬─────────────────────────────────────┘
+                                 │
+┌────────────────────────────────▼─────────────────────────────────────┐
+│                        llm4zio-gateway                                │
+│    Multi-channel routing · Sessions · Intent parsing · Response chunk │
+├──────────────────────────┬───────────────────────────────────────────┤
+│        ADE Engine        │           Workspace Layer                 │
+│  Board · Governance      │   Git repos · CLI/Docker runners          │
+│  Decisions · Specs       │   Interactive sessions · WorkspaceRuns    │
+│  Plans · Checkpoints     │   Git worktrees · Parallel sessions       │
+│  Knowledge · Daemons     │                                           │
+│  Evolution · Projects    │                                           │
+│  SDLC Dashboard · Activity│                                          │
+├──────────────────────────┴───────────────────────────────────────────┤
+│               Event Store (EclipseStore + GigaMap)                   │
+│        Persistent event sourcing for every ADE aggregate             │
+├──────────────────────────────────────────────────────────────────────┤
+│                       llm4zio core                                   │
+│   LLM clients · ZStream · Typed errors · Resilience · Embeddings     │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 🚀 Quick Start
+## The 12 ADE Features
 
-```scala
-import zio._
-import zio.stream._
-import io.github.riccardomerolla.llm4zio._
-
-val program: ZIO[LLMService, LLMError, Unit] = for {
-  // Simple completion
-  response <- ZIO.serviceWithZIO[LLMService](_.complete(
-    ChatRequest(
-      messages = List(ChatMessage.user("What is ZIO?")),
-      model = "gpt-4o"
-    )
-  ))
-  _ <- Console.printLine(s"Response: ${response.content}")
-
-  // Streaming with backpressure
-  _ <- ZStream.serviceWithStream[LLMService](_.stream(
-    ChatRequest(
-      messages = List(ChatMessage.user("Write a Scala 3 macro.")),
-      model = "gpt-4o"
-    )
-  )).foreach(chunk => Console.print(chunk))
-} yield ()
-
-program.provide(
-  LLMService.live(LLMConfig(
-    provider = "openai",
-    apiKey = sys.env.get("OPENAI_API_KEY"),
-    model = "gpt-4o"
-  ))
-)
-```
+| Feature | What it does | Package |
+|---------|-------------|---------|
+| **Board** | Kanban workflow — Backlog → Todo → InProgress → Review → Done. Issues live as Markdown files in `.board/` inside your repo. | [`board/`](src/main/scala/board/) |
+| **Specifications** | Structured spec documents attached to board issues. Agents generate specs; humans approve before work begins. | [`specification/`](src/main/scala/specification/) |
+| **Plans** | Step-by-step implementation plans auto-generated by the LLM and validated before dispatch. | [`plan/`](src/main/scala/plan/) |
+| **Decisions** | Human-in-the-loop decision inbox. Agents surface choices (risk, architecture, scope) for async review. | [`decision/`](src/main/scala/decision/) |
+| **Checkpoints** | Automated quality gates at configurable intervals during a run (tests, lint, spec coverage). | [`checkpoint/`](src/main/scala/checkpoint/) |
+| **Knowledge Base** | Persistent fact store: agents write and query domain knowledge, architectural context, and code summaries. | [`knowledge/`](src/main/scala/knowledge/) |
+| **Governance** | Policy engine that evaluates lifecycle transitions against configurable rules and required gates. | [`governance/`](src/main/scala/governance/) |
+| **Daemons** | Background services triggered on schedules or events: drift detection, dependency scanning, PR monitoring. | [`daemon/`](src/main/scala/daemon/) |
+| **Evolution** | Propose, review, apply, and rollback structural changes to the ADE configuration itself. | [`evolution/`](src/main/scala/evolution/) |
+| **Projects** | Group workspaces under projects and link governance policies to teams and repositories. | [`project/`](src/main/scala/project/) |
+| **SDLC Dashboard** | Live metrics for the software lifecycle: throughput, cycle time, agent performance, governance pass rates. | [`sdlc/`](src/main/scala/sdlc/) |
+| **Activity Feed** | Real-time audit log of every ADE event: dispatches, completions, decisions, checkpoints, and configuration changes. | [`activity/`](src/main/scala/activity/) |
 
 ---
 
-## 🛡️ Typed Error Handling
-
-Never catch `Throwable` again. Handle specific LLM failures exhaustively:
-
-```scala
-def robustCall(req: ChatRequest): ZIO[LLMService, Nothing, String] =
-  ZIO.serviceWithZIO[LLMService](_.complete(req)).map(_.content).catchAll {
-    case LLMError.RateLimited(retryAfter) =>
-      ZIO.logWarning(s"Rate limited. Retrying in $retryAfter") *>
-      ZIO.sleep(retryAfter) *> robustCall(req)
-    case LLMError.ContextLengthExceeded =>
-      ZIO.succeed("Prompt too long. Please truncate.")
-    case LLMError.ApiError(msg, code) =>
-      ZIO.logError(s"API Error $code: $msg") *> ZIO.succeed("Fallback response")
-    case e: LLMError =>
-      ZIO.logError(s"Unexpected LLM error: $e") *> ZIO.succeed("Error")
-  }
-```
-
----
-
-## 🧪 Testing
-
-`llm4zio` provides `TestLLMService` for deterministic, fast unit testing without hitting real APIs:
-
-```scala
-import zio.test._
-import io.github.riccardomerolla.llm4zio.test._
-
-object MyAgentSpec extends ZIOSpecDefault {
-  def spec = suite("MyAgent")(
-    test("handles responses") {
-      for {
-        _ <- TestLLMService.setResponse("Mocked LLM response")
-        res <- MyAgent.run("Hello")
-      } yield assertTrue(res == "Mocked LLM response")
-    }
-  ).provide(TestLLMService.mock)
-}
-```
-
----
-
-## 🏗️ Architecture
-
-The project is structured as a layered system:
+## Board Workflow
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                  llm4zio-gateway                        │
-│   Multi-channel AI gateway (Telegram, Slack, Discord,   │
-│   WebSocket) with workflow orchestration and MCP server │
-├──────────────────────┬──────────────────────────────────┤
-│  Orchestration Layer │  Workspace Layer                 │
-│  (Workflows, Agents, │  (Git repos, CLI/Docker runners, │
-│   Parallel Sessions) │   interactive agent sessions)    │
-├──────────────────────┴──────────────────────────────────┤
-│                  llm4zio core                           │
-│   LLM client abstractions, streaming, typed errors      │
-└─────────────────────────────────────────────────────────┘
+              Governance check          Human gate
+              (policy engine)           (approve/rework)
+                    │                        │
+┌─────────┐   ┌─────▼────┐   ┌──────────┐   ┌────────┐   ┌──────┐
+│ Backlog │──▶│   Todo   │──▶│InProgress│──▶│ Review │──▶│ Done │
+└─────────┘   └──────────┘   └──────────┘   └────────┘   └──────┘
+                  Dispatch         ▲
+                                   │ Rework requested
+                              Checkpoints
+                              Knowledge writes
+                              Decision inbox
 ```
 
----
-
-## 📖 Core Library Features
-
-### LLM Client Abstraction
-- Unified `LLMService` interface across providers (OpenAI, Anthropic, Gemini, local)
-- Streaming completions via `ZStream` with full backpressure
-- Typed `LLMError` ADT: `RateLimited`, `ContextLengthExceeded`, `ApiError`, and more
-- Configurable retry policies with exponential backoff
-
-### Agent Domain Model
-- Full event-sourced `Agent` aggregate with capabilities, concurrency limits, and Docker resource quotas
-- `AgentRegistry`: runtime discovery, capability-based routing, performance ranking, health tracking
-- `AgentDispatcher`: parallel agent execution with `ZIO.foreachPar`
-- `AgentConfigResolver`: dynamic configuration loading and capability matching
-
-### Conversation Management
-- Event-sourced `Conversation` aggregate (channels: Telegram, Web, Internal)
-- Message types: Text, Code, Error, Status
-- Sender roles: User, Assistant, System
-- Full conversation history and lifecycle management
-
-### Task Execution (TaskRun)
-- `TaskRun` event-sourced aggregate with phases, reports, and artifact collection
-- States: Pending → Running → Completed / Failed / Cancelled
-- Real-time progress streaming via `ProgressTracker`
-
-### Issue Tracking
-- `AgentIssue` aggregate: title, description, priority, required capabilities, tags
-- Full lifecycle: Open → Assigned → InProgress → Completed / Failed / Skipped
-- `IssueAssignmentOrchestrator`: intelligent issue-to-agent matching based on capabilities
-
-### Memory and Context
-- Episodic/semantic memory system with vector embedding support
-- Memory types: Preference, Fact, Context, Summary
-- Similarity-scored retrieval, per-user/per-session filtering
-- `EmbeddingService` for vector store integration
-
-### Configuration Management
-- Typed setting values: Text, Flag, Whole, Decimal
-- Workflow definition storage with step ordering
-- Custom agent configuration with full CRUD and versioning
-
-### Activity Audit Log
-- `ActivityEvent` stream: RunStarted, RunCompleted, AgentAssigned, MessageSent, ConfigChanged
-- `ActivityHub` for real-time broadcasting of audit events
-
-### Event Sourcing Infrastructure
-- Generic `EventStore[E]` trait with `append` / `getEvents` / `getAllEvents`
-- In-memory and persistent backends
-- Event projection pattern across all aggregates
+Issues are plain Markdown files committed inside your repository under `.board/`. The board is fully git-portable — no external database required for the board state itself.
 
 ---
 
-## 🌐 Gateway Features (llm4zio-gateway)
+## MCP Tool Catalog
 
-### Multi-Channel Support
-| Channel | Features |
-|---------|----------|
-| **Telegram** | Bot commands (`/start`, `/help`, `/workflow`, `/agent`), polling + webhook, keyboard UI, file transfer, progress notifications |
-| **Slack** | Workspace integration, thread routing, message formatting |
-| **Discord** | Guild and channel routing, message handling |
-| **WebSocket** | Bi-directional real-time web clients, session lifecycle |
+llm4zio exposes **41 tools** over SSE at `/mcp/sse` for external LLM agents.
 
-### Message Routing
-- `MessageRouter`: session resolution with strategies — `PerUser`, `PerRun`, `Global`
-- `GatewayService`: inbound/outbound queues, intent parsing, response chunking, memory enrichment
-- `NormalizedMessage`: unified cross-channel message model (direction, role, metadata, session key)
-- `IntentParser`: natural language intent classification, agent capability matching, clarification generation
-- `ResponseChunker`: channel-aware message size splitting with reassembly support
-
-### Session Management
-- `ChatSession` with configurable `SessionScopeStrategy`
-- `ChannelRegistry`: runtime channel registration/discovery with health status
-- Session context tracking: conversation ID, run ID, metadata per channel
-
-### Gateway Metrics
-- Per-channel enqueue/process counts, chunking stats, error tracking
-- `GatewayMetricsSnapshot` for real-time observability
-
----
-
-## ⚙️ Orchestration Features
-
-### Workflow Engine
-- DAG-based workflow planning with topological sort for parallel batch execution
-- Graph validation: circular dependency detection, missing dependency checks
-- Dynamic graph operations: `insertNodeAfter`, `removeNode`, `updateAgentPolicy`
-- Agent selection strategies: `CapabilityMatch`, `LoadBalanced`, `CostOptimized`, `PerformanceHistory`
-- Conditional execution based on workflow context
-- `WorkflowOrchestrator`: phase execution, progress callbacks, state checkpointing, error accumulation
-
-### Parallel Workspace Sessions
-Fan-out parallel agent execution inspired by AI coding workflows:
-
-```
-User request
-    │
-    ├── Agent 1 (Claude) → git worktree 1
-    ├── Agent 2 (Gemini) → git worktree 2
-    └── Agent 3 (...)    → git worktree 3
-          │
-          └─→ collect results → notify user via channel
-```
-
-- `ParallelSessionCoordinator`: launches N agents concurrently via `ZIO.foreachPar`, each in an isolated git worktree
-- `ParallelWorkspaceSession`: session state with per-worktree run tracking (`WorktreeRunRef`)
-- `ParallelSessionEvent` typed ADT: `SessionStarted`, `WorktreeAgentStarted`, `WorktreeAgentProgress`, `WorktreeAgentCompleted`, `WorktreeAgentFailed`, `SessionReadyForReview`
-- `ParallelSessionFormatter`: converts events to `NormalizedMessage` for real-time channel delivery
-- `DiffStats`: git diff summary per agent run (files changed, lines added/removed)
-- Full `ParallelSessionStatus` lifecycle: Pending → Running → Collecting → ReadyForReview
-
-### Control Plane
-- `OrchestratorControlPlane`: centralized event pub/sub for workflow execution commands and progress reporting
-- `Llm4zioAdapters`: protocol adaptation layer between internal models and external LLM services
-
----
-
-## 🗂️ Workspace Features
-
-### Workspace Model
-- `Workspace`: local git repository with configurable agent, run mode (Host or Docker), and enable/disable
-- `WorkspaceRun`: execution tracking with states Pending → Running → Completed / Failed / Cancelled
-- Interactive modes: Autonomous, Interactive, Paused — with user attach/detach support
-- Full event sourcing: Created, Updated, Enabled, Disabled, Deleted
-
-### Execution Environments
-- `CliAgentRunner`: direct host execution — CLI tool invocation, argument building, output capture
-- `InteractiveAgentRunner`: interactive mode with process control (pause, resume, cancel) and I/O streaming
-- `DockerSupport`: containerized execution with image management, volume mounting, network config, resource limits (memory/CPU from agent definition)
-
-### Git Integration
-- `GitService`: status, diff, diffStat, log, branchInfo, showFile, aheadBehind
-- `GitWatcher`: filesystem monitoring with change event propagation
-- `GitModels`: `GitStatus`, `GitDiff`, `GitDiffStat`, `GitLogEntry`, `GitBranchInfo`, `AheadBehind`
-
----
-
-## 🔌 MCP Server (Model Context Protocol)
-
-Exposes 7 tools for external LLM agents to interact with the gateway:
+<details>
+<summary><strong>Board & Workflow</strong></summary>
 
 | Tool | Description |
 |------|-------------|
 | `assign_issue` | Create and assign a new issue with title, description, and priority |
 | `run_agent` | Execute an agent on a workspace for a given issue |
-| `get_agent_status` | Query current state, progress, and logs for a run |
-| `get_memory` | Retrieve stored memory entries with semantic scoring |
-| `save_memory` | Persist context, facts, or preferences for future recall |
-| `list_agents` | Discover available agents with capabilities and status |
-| `get_workspace` | Get workspace info, branch details, and current Git diff |
+| `get_run_status` | Query current state, progress, and logs for a run |
+| `list_workspaces` | Discover available workspaces and their current status |
+| `list_agents` | List available agents with capabilities and health |
+</details>
 
-- SSE transport with session-based routing and session ID in response headers
-- `McpService` manages server lifecycle as a scoped ZIO resource
-- JSON schema generation for all tool parameters
+<details>
+<summary><strong>Specifications & Plans</strong></summary>
+
+| Tool | Description |
+|------|-------------|
+| `create_specification` | Generate a structured spec for an issue |
+| `get_specification` | Retrieve a specification by issue ref |
+| `get_specification_diff` | Show changes between spec versions |
+| `revise_specification` | Update an existing specification |
+| `approve_specification` | Mark a specification as approved |
+| `list_specifications` | List specifications with filter options |
+| `create_plan` | Generate an implementation plan for an issue |
+| `get_plan` | Retrieve a plan |
+| `revise_plan` | Update a plan |
+| `validate_plan` | Run consistency checks on a plan |
+| `list_plans` | List plans by workspace or issue |
+</details>
+
+<details>
+<summary><strong>Decisions</strong></summary>
+
+| Tool | Description |
+|------|-------------|
+| `list_decisions` | List open decisions, optionally filtered by status |
+| `get_decision` | Retrieve a specific decision |
+| `resolve_decision` | Approve, request rework, or escalate a decision |
+| `escalate_decision` | Escalate a decision to a higher authority |
+| `search_decisions` | Full-text search across decision history |
+| `get_escalations` | List currently escalated decisions |
+</details>
+
+<details>
+<summary><strong>Governance</strong></summary>
+
+| Tool | Description |
+|------|-------------|
+| `evaluate_governance_transition` | Evaluate whether a lifecycle transition is allowed |
+| `get_governance_policy` | Retrieve the active policy for a workspace |
+</details>
+
+<details>
+<summary><strong>Daemons</strong></summary>
+
+| Tool | Description |
+|------|-------------|
+| `list_daemons` | List all configured background daemons |
+| `start_daemon` | Start a daemon |
+| `stop_daemon` | Stop a running daemon |
+| `restart_daemon` | Restart a daemon |
+| `set_daemon_enabled` | Enable or disable a daemon |
+| `trigger_daemon` | Manually trigger a daemon run |
+</details>
+
+<details>
+<summary><strong>Evolution</strong></summary>
+
+| Tool | Description |
+|------|-------------|
+| `propose_evolution` | Propose a structural change to the ADE config |
+| `list_proposals` | List evolution proposals by status |
+| `get_evolution_history` | Retrieve applied and rolled-back evolutions |
+</details>
+
+<details>
+<summary><strong>Knowledge & Analysis</strong></summary>
+
+| Tool | Description |
+|------|-------------|
+| `get_analysis_docs` | Retrieve code analysis documents for a workspace |
+| `get_analysis_summary` | Get a high-level analysis summary |
+| `get_architectural_context` | Query architectural knowledge for a path or component |
+| `get_churn_alerts` | List files with abnormal churn rates |
+| `get_stoppages` | Identify blocking issues in the SDLC pipeline |
+| `search_conversations` | Search conversation history across channels |
+</details>
+
+<details>
+<summary><strong>Observability</strong></summary>
+
+| Tool | Description |
+|------|-------------|
+| `get_metrics` | Retrieve runtime metrics snapshot |
+| `get_sdlc_dashboard` | Full SDLC metrics: throughput, cycle time, agent performance |
+</details>
 
 ---
 
-## 🔐 Typed Domain Errors
+## Quick Start: ADE Operator
 
-All errors are typed ADTs — no stringly-typed failures:
+**1. Configure and run the gateway**
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+sbt run
+# Web UI: http://localhost:8080
+# MCP SSE: http://localhost:8080/mcp/sse
+```
+
+**2. Register a workspace**
+
+Navigate to **Workspaces** in the UI, or via MCP:
+
+```json
+{ "tool": "list_workspaces" }
+```
+
+**3. Create and dispatch an issue**
+
+```json
+{
+  "tool": "assign_issue",
+  "title": "Add retry logic to UserService",
+  "description": "Implement exponential backoff using ZIO Schedule",
+  "priority": "High"
+}
+```
+
+**4. Monitor progress**
+
+The agent works autonomously: reads specs, writes plans, checkpoints progress, surfaces decisions to the inbox. Follow along in the **Board** or **Activity Feed** views.
+
+**5. Review and approve**
+
+When the run completes, the issue moves to **Review**. Inspect the diff, check any open decisions, then approve to merge.
+
+---
+
+## Quick Start: Library User
 
 ```scala
-// Agent and workspace errors
-sealed trait ParallelSessionError
-object ParallelSessionError:
-  case class WorkflowNotFound(workflowId: String)                 extends ParallelSessionError
-  case class WorkspaceNotFound(workspaceId: String)               extends ParallelSessionError
-  case class SessionNotFound(sessionId: String)                   extends ParallelSessionError
-  case class InsufficientResources(available: Int, required: Int) extends ParallelSessionError
-  case class AgentAssignmentFailed(stepId: String, reason: String) extends ParallelSessionError
-  case class WorktreeError(detail: String)                        extends ParallelSessionError
+libraryDependencies += "io.github.riccardomerolla" %% "llm4zio" % "1.0.3"
+```
+
+```scala
+import zio.*
+import zio.stream.*
+import llm4zio.core.*
+
+val program: ZIO[LlmService, LlmError, Unit] =
+  for
+    response <- ZIO.serviceWithZIO[LlmService](
+                  _.executeStream("Explain ZIO fibers in one paragraph")
+                    .runCollect
+                )
+    _        <- Console.printLine(response.map(_.text).mkString)
+  yield ()
+
+program.provide(AnthropicLlmService.live)
+```
+
+**Typed errors — exhaustive pattern matching, no exceptions:**
+
+```scala
+def robustCall(prompt: String): ZIO[LlmService, Nothing, String] =
+  ZIO.serviceWithZIO[LlmService](_.executeStream(prompt).runCollect)
+    .map(_.map(_.text).mkString)
+    .catchAll {
+      case LlmError.RateLimited(retryAfter) =>
+        ZIO.sleep(retryAfter) *> robustCall(prompt)
+      case LlmError.ContextLengthExceeded =>
+        ZIO.succeed("Prompt too long — please truncate.")
+      case LlmError.ProviderError(msg) =>
+        ZIO.logError(s"Provider error: $msg") *> ZIO.succeed("Error")
+      case LlmError.ParseError(msg, raw) =>
+        ZIO.logError(s"Parse error: $msg (raw: $raw)") *> ZIO.succeed("Error")
+    }
 ```
 
 ---
 
-## 📚 Documentation
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Language | Scala 3.5.2 |
+| Effects | ZIO 2.1.24, ZIO Streams, ZIO HTTP 3.10.1 |
+| Persistence | EclipseStore 2.1.8 (event store + GigaMap indices) |
+| Serialization | ZIO JSON 0.9.0, ZIO Schema 1.8.0 |
+| Frontend | Scalatags 0.13.1 (SSR) + Lit 3 web components |
+| Interactivity | HTMX (server-side partials) |
+| Observability | ZIO Logging, OpenTelemetry 1.44.1, OTLP exporter |
+| Testing | ZIO Test, 1126+ unit tests, 18+ integration tests |
+
+---
+
+## Documentation
 
 - [API Reference](docs/api-reference.md)
 - [Provider Setup (OpenAI, Anthropic, Gemini, Local)](docs/providers.md)
@@ -314,16 +292,13 @@ object ParallelSessionError:
 
 ---
 
-## 🗺️ Roadmap
+## Contributing
 
-- [ ] Persistent event store backend (PostgreSQL / EclipseStore)
-- [ ] Parallel session review UI — branch diff viewer per worktree
-- [ ] Workflow marketplace — shareable DAG templates
-- [ ] Cost tracking and budget enforcement per session
-- [ ] Agent performance history dashboard
+Contributions welcome. The codebase follows **Scala 3 idioms**, **ZIO 2 effect-oriented programming**, and the **BCE architecture pattern** (Boundary/Control/Entity). See [AGENTS.md](AGENTS.md) for ZIO coding standards and [CLAUDE.md](CLAUDE.md) for project conventions.
 
----
-
-## 🤝 Contributing
-
-We welcome contributions! Please ensure your code follows Scala 3 idioms, uses `ZLayer` for DI, and maintains strict typed error channels (`ZIO[R, E, A]`). See [AGENTS.md](AGENTS.md) for our ZIO coding standards.
+```bash
+sbt compile   # compile
+sbt test      # 1126+ unit tests
+sbt it:test   # 18+ integration tests (requires no external services)
+sbt fmt       # format (scalafmt + scalafix)
+```

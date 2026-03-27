@@ -11,6 +11,7 @@ import db.*
 import gateway.control.*
 import gateway.entity.{ NormalizedMessage, SessionKey, SessionScopeStrategy }
 import orchestration.control.AgentRegistry
+import shared.errors.PersistenceError
 import taskrun.entity.TaskStep
 
 object HealthMonitorSpec extends ZIOSpecDefault:

@@ -33,10 +33,10 @@ object ActivityView:
         )
       ),
       // Timeline container — Lit component handles live updates and filtering
-      tag("activity-timeline")(id := "activity-timeline")(
+      tag("ab-activity-timeline")(id := "activity-timeline")(
         eventsFragmentFrag(events)
       ),
-      JsResources.inlineModuleScript("/static/client/components/activity-timeline.js"),
+      JsResources.inlineModuleScript("/static/client/components/ab-activity-timeline.js"),
     )
 
   def eventsFragment(events: List[ActivityEvent]): String =

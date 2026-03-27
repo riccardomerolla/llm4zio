@@ -110,7 +110,7 @@ object AnalysisPipelineIntegrationSpec extends ZIOSpecDefault:
             // ── Stub collaborators ─────────────────────────────────────────────
             agentRepo    = StubAgentRepository()
             analysisRepo = StubAnalysisRepository()
-            wsRepo       = StubWorkspaceRepository(minimalWorkspace(workspaceId, repoPath))
+            wsRepo       = StubWorkspaceRepository.single(minimalWorkspace(workspaceId, repoPath))
             taskRepo     = StubTaskRepository()
             fileService <- ZIO.service[FileService].provide(FileService.live)
 

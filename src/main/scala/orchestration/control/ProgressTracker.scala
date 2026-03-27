@@ -4,7 +4,7 @@ import zio.*
 
 import activity.control.ActivityHub
 import activity.entity.{ ActivityEvent, ActivityEventType }
-import db.PersistenceError
+import shared.errors.PersistenceError
 import shared.ids.Ids.{ EventId, TaskRunId }
 import taskrun.entity.ProgressUpdate
 

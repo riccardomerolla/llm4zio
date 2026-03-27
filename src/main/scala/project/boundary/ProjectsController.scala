@@ -25,51 +25,80 @@ import shared.web.{
 }
 import workspace.entity.WorkspaceRepository
 
+trait ProjectsController:
+  def routes: Routes[Any, Response]
+
 object ProjectsController:
 
-  def routes(
+  def routes: ZIO[ProjectsController, Nothing, Routes[Any, Response]] =
+    ZIO.serviceWith[ProjectsController](_.routes)
+
+  val live
+    : ZLayer[
+      ProjectRepository & WorkspaceRepository & IssueRepository & AgentRegistry & WorkspaceAnalysisScheduler,
+      Nothing,
+      ProjectsController,
+    ] =
+    ZLayer {
+      for
+        projectRepository   <- ZIO.service[ProjectRepository]
+        workspaceRepository <- ZIO.service[WorkspaceRepository]
+        issueRepository     <- ZIO.service[IssueRepository]
+        agentRegistry       <- ZIO.service[AgentRegistry]
+        analysisScheduler   <- ZIO.service[WorkspaceAnalysisScheduler]
+      yield make(
+        projectRepository,
+        workspaceRepository,
+        issueRepository,
+        agentRegistry,
+        analysisScheduler,
+      )
+    }
+
+  def make(
     projectRepository: ProjectRepository,
     workspaceRepository: WorkspaceRepository,
     issueRepository: IssueRepository,
     agentRegistry: AgentRegistry,
     analysisScheduler: WorkspaceAnalysisScheduler,
-  ): Routes[Any, Response]                                           =
-    Routes(
-      Method.GET / "projects"                                           -> handler { (req: Request) =>
-        listPage(
-          projectRepository,
-          workspaceRepository,
-          issueRepository,
-        ).catchAll(error => ZIO.succeed(persistErr(error)))
-      },
-      Method.POST / "projects"                                          -> handler { (req: Request) =>
-        createProject(req, projectRepository)
-          .catchAll(error => ZIO.succeed(persistErr(error)))
-      },
-      Method.GET / "projects" / string("id")                            -> handler { (id: String, req: Request) =>
-        detailPage(
-          id = id,
-          req = req,
-          projectRepository = projectRepository,
-          workspaceRepository = workspaceRepository,
-          issueRepository = issueRepository,
-          agentRegistry = agentRegistry,
-          analysisScheduler = analysisScheduler,
-        ).catchAll(error => ZIO.succeed(persistErr(error)))
-      },
-      Method.POST / "projects" / string("id") / "workspaces"            -> handler { (id: String, req: Request) =>
-        addWorkspace(id, req, projectRepository, workspaceRepository)
-          .catchAll(error => ZIO.succeed(persistErr(error)))
-      },
-      Method.POST / "projects" / string("id") / "workspaces" / "remove" -> handler { (id: String, req: Request) =>
-        removeWorkspace(id, req, projectRepository)
-          .catchAll(error => ZIO.succeed(persistErr(error)))
-      },
-      Method.POST / "projects" / string("id") / "settings"              -> handler { (id: String, req: Request) =>
-        updateSettings(id, req, projectRepository)
-          .catchAll(error => ZIO.succeed(persistErr(error)))
-      },
-    )
+  ): ProjectsController =
+    new ProjectsController:
+      override val routes: Routes[Any, Response] = Routes(
+        Method.GET / "projects"                                           -> handler { (req: Request) =>
+          listPage(
+            projectRepository,
+            workspaceRepository,
+            issueRepository,
+          ).catchAll(error => ZIO.succeed(persistErr(error)))
+        },
+        Method.POST / "projects"                                          -> handler { (req: Request) =>
+          createProject(req, projectRepository)
+            .catchAll(error => ZIO.succeed(persistErr(error)))
+        },
+        Method.GET / "projects" / string("id")                            -> handler { (id: String, req: Request) =>
+          detailPage(
+            id = id,
+            req = req,
+            projectRepository = projectRepository,
+            workspaceRepository = workspaceRepository,
+            issueRepository = issueRepository,
+            agentRegistry = agentRegistry,
+            analysisScheduler = analysisScheduler,
+          ).catchAll(error => ZIO.succeed(persistErr(error)))
+        },
+        Method.POST / "projects" / string("id") / "workspaces"            -> handler { (id: String, req: Request) =>
+          addWorkspace(id, req, projectRepository, workspaceRepository)
+            .catchAll(error => ZIO.succeed(persistErr(error)))
+        },
+        Method.POST / "projects" / string("id") / "workspaces" / "remove" -> handler { (id: String, req: Request) =>
+          removeWorkspace(id, req, projectRepository)
+            .catchAll(error => ZIO.succeed(persistErr(error)))
+        },
+        Method.POST / "projects" / string("id") / "settings"              -> handler { (id: String, req: Request) =>
+          updateSettings(id, req, projectRepository)
+            .catchAll(error => ZIO.succeed(persistErr(error)))
+        },
+      )
 
   private def listPage(
     projectRepository: ProjectRepository,

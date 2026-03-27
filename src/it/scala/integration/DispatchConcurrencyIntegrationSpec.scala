@@ -120,8 +120,8 @@ object DispatchConcurrencyIntegrationSpec extends ZIOSpecDefault:
     for
       boardRepo   <- boardRepoFor(git, parser)
       resolver    <- ZIO.service[BoardDependencyResolver].provide(BoardDependencyResolver.live)
-      wsRepo       = StubWorkspaceRepository(minimalWorkspace(workspaceId, repoPath))
-      hub          = NoOpActivityHub()
+      wsRepo       = StubWorkspaceRepository.single(minimalWorkspace(workspaceId, repoPath))
+      hub          = NoOpActivityHub
       orchestrator = BoardOrchestratorLive(
                        boardRepository = boardRepo,
                        dependencyResolver = resolver,

@@ -9,6 +9,7 @@ import zio.test.*
 import activity.entity.{ ActivityEvent, ActivityEventType, ActivityRepository }
 import db.*
 import issues.entity.*
+import shared.errors.PersistenceError
 import shared.ids.Ids.{ AgentId, IssueId }
 import taskrun.boundary.DashboardControllerLive
 
@@ -40,8 +41,8 @@ object DashboardControllerSpec extends ZIOSpecDefault:
       yield assertTrue(
         response.status == Status.Ok,
         body.contains("Command Center"),
-        body.contains("Pipeline Summary"),
-        body.contains("Live Agent Ops"),
+        body.contains("In Progress"),
+        body.contains("Live"),
         body.contains("Active Runs"),
         body.contains("Recent Activity"),
         body.contains(">2<"), // open

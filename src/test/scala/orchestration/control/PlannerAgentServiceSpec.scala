@@ -5,7 +5,7 @@ import java.time.Instant
 import zio.*
 import zio.test.*
 
-import _root_.config.entity.AIProviderConfig
+import _root_.config.entity.{ AIProviderConfig, ConfigRepository }
 import activity.control.ActivityHub
 import activity.entity.ActivityEvent
 import board.entity.*
@@ -18,6 +18,7 @@ import llm4zio.core.*
 import llm4zio.providers.{ GeminiCliExecutor, HttpClient }
 import plan.entity.*
 import prompts.PromptLoader
+import shared.errors.PersistenceError
 import shared.ids.Ids.{ BoardIssueId, IssueId, PlanId, SpecificationId }
 import specification.entity.*
 import workspace.entity.*
@@ -341,7 +342,7 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
   private val failingConfigResolver: ULayer[AgentConfigResolver] =
     ZLayer.succeed(new AgentConfigResolver:
       override def resolveConfig(agentName: String): IO[PersistenceError, AIProviderConfig] =
-        ZIO.fail(PersistenceError.ConnectionFailed("resolver unavailable")))
+        ZIO.fail(PersistenceError.StoreUnavailable("resolver unavailable")))
 
   private val testConfigRepository: ULayer[ConfigRepository] =
     ZLayer.succeed(new ConfigRepository:

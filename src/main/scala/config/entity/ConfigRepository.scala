@@ -3,49 +3,128 @@ package config.entity
 import zio.*
 
 import shared.errors.PersistenceError
-import shared.ids.Ids.{ AgentId, WorkflowId }
+import shared.ids.Ids.AgentId
+import shared.store.ConfigStoreModule
 
 trait ConfigRepository:
-  def getSetting(key: String): IO[PersistenceError, Setting]
-  def putSetting(setting: Setting): IO[PersistenceError, Unit]
-  def listSettings: IO[PersistenceError, List[Setting]]
+  def getAllSettings: IO[PersistenceError, List[SettingRow]]
+  def getSetting(key: String): IO[PersistenceError, Option[SettingRow]]
+  def upsertSetting(key: String, value: String): IO[PersistenceError, Unit]
+  def upsertSettings(settings: Map[String, String]): IO[PersistenceError, Unit]   =
+    ZIO.foreachDiscard(settings) { case (key, value) => upsertSetting(key, value) }
   def deleteSetting(key: String): IO[PersistenceError, Unit]
+  def getSettingsByPrefix(prefix: String): IO[PersistenceError, List[SettingRow]] =
+    getAllSettings.map(_.filter(_.key.startsWith(prefix)))
+  def deleteSettingsByPrefix(prefix: String): IO[PersistenceError, Unit]
 
-  def listWorkflows: IO[PersistenceError, List[Workflow]]
-  def saveWorkflow(workflow: Workflow): IO[PersistenceError, Unit]
-  def deleteWorkflow(id: WorkflowId): IO[PersistenceError, Unit]
+  def listAgentChannelBindings: IO[PersistenceError, List[AgentChannelBinding]] =
+    getSettingsByPrefix("agent.binding.").map(_.flatMap(row => parseBindingKey(row.key)))
 
-  def listAgents: IO[PersistenceError, List[CustomAgent]]
-  def saveAgent(agent: CustomAgent): IO[PersistenceError, Unit]
-  def deleteAgent(id: AgentId): IO[PersistenceError, Unit]
+  def upsertAgentChannelBinding(binding: AgentChannelBinding): IO[PersistenceError, Unit] =
+    upsertSetting(bindingKey(binding), "true")
+
+  def deleteAgentChannelBinding(binding: AgentChannelBinding): IO[PersistenceError, Unit] =
+    deleteSetting(bindingKey(binding))
+
+  def createWorkflow(workflow: WorkflowRow): IO[PersistenceError, Long]
+  def getWorkflow(id: Long): IO[PersistenceError, Option[WorkflowRow]]
+  def getWorkflowByName(name: String): IO[PersistenceError, Option[WorkflowRow]]
+  def listWorkflows: IO[PersistenceError, List[WorkflowRow]]
+  def updateWorkflow(workflow: WorkflowRow): IO[PersistenceError, Unit]
+  def deleteWorkflow(id: Long): IO[PersistenceError, Unit]
+
+  def createCustomAgent(agent: CustomAgentRow): IO[PersistenceError, Long]
+  def getCustomAgent(id: Long): IO[PersistenceError, Option[CustomAgentRow]]
+  def getCustomAgentByName(name: String): IO[PersistenceError, Option[CustomAgentRow]]
+  def listCustomAgents: IO[PersistenceError, List[CustomAgentRow]]
+  def updateCustomAgent(agent: CustomAgentRow): IO[PersistenceError, Unit]
+  def deleteCustomAgent(id: Long): IO[PersistenceError, Unit]
+
+  private def bindingKey(binding: AgentChannelBinding): String =
+    val base = s"agent.binding.${binding.agentId.value}.${binding.channelName.trim.toLowerCase}"
+    binding.accountId.map(_.trim).filter(_.nonEmpty).map(id => s"$base.$id").getOrElse(base)
+
+  private def parseBindingKey(key: String): Option[AgentChannelBinding] =
+    key.stripPrefix("agent.binding.").split("\\.", -1).toList match
+      case agentId :: channelName :: Nil                                   =>
+        Some(AgentChannelBinding(AgentId(agentId), channelName, None))
+      case agentId :: channelName :: accountParts if accountParts.nonEmpty =>
+        val accountId = accountParts.mkString(".").trim
+        Some(
+          AgentChannelBinding(
+            agentId = AgentId(agentId),
+            channelName = channelName,
+            accountId = Option.when(accountId.nonEmpty)(accountId),
+          )
+        )
+      case _                                                               => None
 
 object ConfigRepository:
-  def getSetting(key: String): ZIO[ConfigRepository, PersistenceError, Setting] =
+  def getAllSettings: ZIO[ConfigRepository, PersistenceError, List[SettingRow]] =
+    ZIO.serviceWithZIO[ConfigRepository](_.getAllSettings)
+
+  def getSetting(key: String): ZIO[ConfigRepository, PersistenceError, Option[SettingRow]] =
     ZIO.serviceWithZIO[ConfigRepository](_.getSetting(key))
 
-  def putSetting(setting: Setting): ZIO[ConfigRepository, PersistenceError, Unit] =
-    ZIO.serviceWithZIO[ConfigRepository](_.putSetting(setting))
+  def upsertSetting(key: String, value: String): ZIO[ConfigRepository, PersistenceError, Unit] =
+    ZIO.serviceWithZIO[ConfigRepository](_.upsertSetting(key, value))
 
-  def listSettings: ZIO[ConfigRepository, PersistenceError, List[Setting]] =
-    ZIO.serviceWithZIO[ConfigRepository](_.listSettings)
+  def upsertSettings(settings: Map[String, String]): ZIO[ConfigRepository, PersistenceError, Unit] =
+    ZIO.serviceWithZIO[ConfigRepository](_.upsertSettings(settings))
 
   def deleteSetting(key: String): ZIO[ConfigRepository, PersistenceError, Unit] =
     ZIO.serviceWithZIO[ConfigRepository](_.deleteSetting(key))
 
-  def listWorkflows: ZIO[ConfigRepository, PersistenceError, List[Workflow]] =
+  def getSettingsByPrefix(prefix: String): ZIO[ConfigRepository, PersistenceError, List[SettingRow]] =
+    ZIO.serviceWithZIO[ConfigRepository](_.getSettingsByPrefix(prefix))
+
+  def deleteSettingsByPrefix(prefix: String): ZIO[ConfigRepository, PersistenceError, Unit] =
+    ZIO.serviceWithZIO[ConfigRepository](_.deleteSettingsByPrefix(prefix))
+
+  def listAgentChannelBindings: ZIO[ConfigRepository, PersistenceError, List[AgentChannelBinding]] =
+    ZIO.serviceWithZIO[ConfigRepository](_.listAgentChannelBindings)
+
+  def upsertAgentChannelBinding(binding: AgentChannelBinding): ZIO[ConfigRepository, PersistenceError, Unit] =
+    ZIO.serviceWithZIO[ConfigRepository](_.upsertAgentChannelBinding(binding))
+
+  def deleteAgentChannelBinding(binding: AgentChannelBinding): ZIO[ConfigRepository, PersistenceError, Unit] =
+    ZIO.serviceWithZIO[ConfigRepository](_.deleteAgentChannelBinding(binding))
+
+  def createWorkflow(workflow: WorkflowRow): ZIO[ConfigRepository, PersistenceError, Long] =
+    ZIO.serviceWithZIO[ConfigRepository](_.createWorkflow(workflow))
+
+  def getWorkflow(id: Long): ZIO[ConfigRepository, PersistenceError, Option[WorkflowRow]] =
+    ZIO.serviceWithZIO[ConfigRepository](_.getWorkflow(id))
+
+  def getWorkflowByName(name: String): ZIO[ConfigRepository, PersistenceError, Option[WorkflowRow]] =
+    ZIO.serviceWithZIO[ConfigRepository](_.getWorkflowByName(name))
+
+  def listWorkflows: ZIO[ConfigRepository, PersistenceError, List[WorkflowRow]] =
     ZIO.serviceWithZIO[ConfigRepository](_.listWorkflows)
 
-  def saveWorkflow(workflow: Workflow): ZIO[ConfigRepository, PersistenceError, Unit] =
-    ZIO.serviceWithZIO[ConfigRepository](_.saveWorkflow(workflow))
+  def updateWorkflow(workflow: WorkflowRow): ZIO[ConfigRepository, PersistenceError, Unit] =
+    ZIO.serviceWithZIO[ConfigRepository](_.updateWorkflow(workflow))
 
-  def deleteWorkflow(id: WorkflowId): ZIO[ConfigRepository, PersistenceError, Unit] =
+  def deleteWorkflow(id: Long): ZIO[ConfigRepository, PersistenceError, Unit] =
     ZIO.serviceWithZIO[ConfigRepository](_.deleteWorkflow(id))
 
-  def listAgents: ZIO[ConfigRepository, PersistenceError, List[CustomAgent]] =
-    ZIO.serviceWithZIO[ConfigRepository](_.listAgents)
+  def createCustomAgent(agent: CustomAgentRow): ZIO[ConfigRepository, PersistenceError, Long] =
+    ZIO.serviceWithZIO[ConfigRepository](_.createCustomAgent(agent))
 
-  def saveAgent(agent: CustomAgent): ZIO[ConfigRepository, PersistenceError, Unit] =
-    ZIO.serviceWithZIO[ConfigRepository](_.saveAgent(agent))
+  def getCustomAgent(id: Long): ZIO[ConfigRepository, PersistenceError, Option[CustomAgentRow]] =
+    ZIO.serviceWithZIO[ConfigRepository](_.getCustomAgent(id))
 
-  def deleteAgent(id: AgentId): ZIO[ConfigRepository, PersistenceError, Unit] =
-    ZIO.serviceWithZIO[ConfigRepository](_.deleteAgent(id))
+  def getCustomAgentByName(name: String): ZIO[ConfigRepository, PersistenceError, Option[CustomAgentRow]] =
+    ZIO.serviceWithZIO[ConfigRepository](_.getCustomAgentByName(name))
+
+  def listCustomAgents: ZIO[ConfigRepository, PersistenceError, List[CustomAgentRow]] =
+    ZIO.serviceWithZIO[ConfigRepository](_.listCustomAgents)
+
+  def updateCustomAgent(agent: CustomAgentRow): ZIO[ConfigRepository, PersistenceError, Unit] =
+    ZIO.serviceWithZIO[ConfigRepository](_.updateCustomAgent(agent))
+
+  def deleteCustomAgent(id: Long): ZIO[ConfigRepository, PersistenceError, Unit] =
+    ZIO.serviceWithZIO[ConfigRepository](_.deleteCustomAgent(id))
+
+  val live: ZLayer[ConfigStoreModule.ConfigStoreService, Nothing, ConfigRepository] =
+    ConfigRepositoryES.live

@@ -5,9 +5,10 @@ import java.time.Instant
 import zio.*
 import zio.test.*
 
+import _root_.config.entity.ConfigRepository
 import activity.control.ActivityHub
 import activity.entity.{ ActivityEvent, ActivityEventType }
-import db.{ ConfigRepository, CustomAgentRow, PersistenceError as DbPersistenceError, SettingRow, WorkflowRow }
+import db.{ CustomAgentRow, SettingRow, WorkflowRow }
 import issues.entity.*
 import orchestration.control.WorkReportEventBus
 import shared.errors.PersistenceError
@@ -140,28 +141,28 @@ object MergeAgentServiceSpec extends ZIOSpecDefault:
       yield queue
 
   final private class StubConfigRepository(settings: Ref[Map[String, String]]) extends ConfigRepository:
-    override def getAllSettings: IO[DbPersistenceError, List[SettingRow]]                           =
+    override def getAllSettings: IO[PersistenceError, List[SettingRow]]                           =
       settings.get.map(_.toList.map { case (key, value) => SettingRow(key, value, now) })
-    override def getSetting(key: String): IO[DbPersistenceError, Option[SettingRow]]                =
+    override def getSetting(key: String): IO[PersistenceError, Option[SettingRow]]                =
       settings.get.map(_.get(key).map(value => SettingRow(key, value, now)))
-    override def upsertSetting(key: String, value: String): IO[DbPersistenceError, Unit]            =
+    override def upsertSetting(key: String, value: String): IO[PersistenceError, Unit]            =
       settings.update(_.updated(key, value)).unit
-    override def deleteSetting(key: String): IO[DbPersistenceError, Unit]                           = settings.update(_ - key).unit
-    override def deleteSettingsByPrefix(prefix: String): IO[DbPersistenceError, Unit]               =
+    override def deleteSetting(key: String): IO[PersistenceError, Unit]                           = settings.update(_ - key).unit
+    override def deleteSettingsByPrefix(prefix: String): IO[PersistenceError, Unit]               =
       settings.update(_.filterNot(_._1.startsWith(prefix))).unit
-    override def createWorkflow(workflow: WorkflowRow): IO[DbPersistenceError, Long]                = ZIO.succeed(1L)
-    override def getWorkflow(id: Long): IO[DbPersistenceError, Option[WorkflowRow]]                 = ZIO.succeed(None)
-    override def getWorkflowByName(name: String): IO[DbPersistenceError, Option[WorkflowRow]]       = ZIO.succeed(None)
-    override def listWorkflows: IO[DbPersistenceError, List[WorkflowRow]]                           = ZIO.succeed(Nil)
-    override def updateWorkflow(workflow: WorkflowRow): IO[DbPersistenceError, Unit]                = ZIO.unit
-    override def deleteWorkflow(id: Long): IO[DbPersistenceError, Unit]                             = ZIO.unit
-    override def createCustomAgent(agent: CustomAgentRow): IO[DbPersistenceError, Long]             = ZIO.succeed(1L)
-    override def getCustomAgent(id: Long): IO[DbPersistenceError, Option[CustomAgentRow]]           = ZIO.succeed(None)
-    override def getCustomAgentByName(name: String): IO[DbPersistenceError, Option[CustomAgentRow]] =
+    override def createWorkflow(workflow: WorkflowRow): IO[PersistenceError, Long]                = ZIO.succeed(1L)
+    override def getWorkflow(id: Long): IO[PersistenceError, Option[WorkflowRow]]                 = ZIO.succeed(None)
+    override def getWorkflowByName(name: String): IO[PersistenceError, Option[WorkflowRow]]       = ZIO.succeed(None)
+    override def listWorkflows: IO[PersistenceError, List[WorkflowRow]]                           = ZIO.succeed(Nil)
+    override def updateWorkflow(workflow: WorkflowRow): IO[PersistenceError, Unit]                = ZIO.unit
+    override def deleteWorkflow(id: Long): IO[PersistenceError, Unit]                             = ZIO.unit
+    override def createCustomAgent(agent: CustomAgentRow): IO[PersistenceError, Long]             = ZIO.succeed(1L)
+    override def getCustomAgent(id: Long): IO[PersistenceError, Option[CustomAgentRow]]           = ZIO.succeed(None)
+    override def getCustomAgentByName(name: String): IO[PersistenceError, Option[CustomAgentRow]] =
       ZIO.succeed(None)
-    override def listCustomAgents: IO[DbPersistenceError, List[CustomAgentRow]]                     = ZIO.succeed(Nil)
-    override def updateCustomAgent(agent: CustomAgentRow): IO[DbPersistenceError, Unit]             = ZIO.unit
-    override def deleteCustomAgent(id: Long): IO[DbPersistenceError, Unit]                          = ZIO.unit
+    override def listCustomAgents: IO[PersistenceError, List[CustomAgentRow]]                     = ZIO.succeed(Nil)
+    override def updateCustomAgent(agent: CustomAgentRow): IO[PersistenceError, Unit]             = ZIO.unit
+    override def deleteCustomAgent(id: Long): IO[PersistenceError, Unit]                          = ZIO.unit
 
   final private case class Harness(
     issueId: IssueId,

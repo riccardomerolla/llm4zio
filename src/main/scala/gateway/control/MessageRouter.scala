@@ -7,9 +7,10 @@ import zio.json.*
 import zio.stream.ZStream
 
 import conversation.entity.api.StoredSessionContext
-import db.{ ChatRepository, PersistenceError }
+import db.ChatRepository
 import gateway.entity.*
 import orchestration.control.*
+import shared.errors.PersistenceError
 
 enum MessageRouterError:
   case Channel(error: MessageChannelError)

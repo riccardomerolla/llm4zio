@@ -9,6 +9,8 @@ import cats.instances.future.given
 import com.bot4s.telegram.api.RequestHandler
 import com.bot4s.telegram.methods.{ GetUpdates, Request, SendMessage }
 import com.bot4s.telegram.models.{ Message, ParsedUpdate, Update }
+import gateway.control.TelegramClient
+import gateway.entity.*
 import io.circe.parser.decode
 import io.circe.{ Decoder, Encoder }
 

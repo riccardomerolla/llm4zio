@@ -18,142 +18,128 @@ object CommandCenterView:
 
   def page(summary: PipelineSummary, recentEvents: List[ActivityEvent]): String =
     Layout.page("Command Center", "/")(
-      div(cls := "space-y-4")(
-        pipelineSummaryCard(summary),
-        activeRunsCard(),
-        liveAgentOpsCard(),
-        recentActivityCard(recentEvents),
+      div(cls := "space-y-6")(
+        Components.pageHeader("Command Center", "Platform activity and pipeline health"),
+        pipelineStrip(summary),
+        liveSection(),
+        activeRunsSection(),
+        recentActivitySection(recentEvents),
       ),
-      JsResources.inlineModuleScript("/static/client/components/run-dashboard.js"),
+      JsResources.inlineModuleScript("/static/client/components/ab-run-dashboard.js"),
     )
 
   def recentRunsFragment(runs: List[TaskRunRow]): String =
     if runs.isEmpty then
-      div(cls := "rounded-lg border border-white/10 bg-slate-950/60 p-4 text-sm text-slate-400")(
-        "No runs available."
-      ).render
+      div(cls := "text-sm text-gray-500 py-2")("No active runs.").render
     else
-      div(cls := "rounded-lg border border-white/10 bg-slate-950/60")(
-        ul(cls := "divide-y divide-white/10")(
-          runs.map { run =>
-            li(cls := "flex items-center justify-between px-4 py-2 text-sm")(
-              a(href := s"/tasks/${run.id}", cls := "font-medium text-indigo-300 hover:text-indigo-200")(s"#${run.id}"),
-              span(cls := "text-slate-300")(run.status.toString),
-            )
-          }
-        )
+      ul(cls := "divide-y divide-white/10")(
+        runs.map { run =>
+          li(cls := "flex items-center justify-between py-2 text-sm")(
+            a(href := s"/tasks/${run.id}", cls := "font-medium text-indigo-300 hover:text-indigo-200")(s"#${run.id}"),
+            span(cls := "text-gray-400")(run.status.toString),
+          )
+        }
       ).render
 
-  private def pipelineSummaryCard(summary: PipelineSummary): Frag =
+  // ── Pipeline strip ────────────────────────────────────────────────────────
+
+  private def pipelineStrip(summary: PipelineSummary): Frag =
     val segments = List(
-      ("Open", "open", summary.open, "bg-sky-400/90"),
-      ("Assigned", "assigned", summary.claimed, "bg-violet-400/90"),
-      ("InProgress", "in_progress", summary.running, "bg-amber-400/90"),
-      ("Completed", "completed", summary.completed, "bg-emerald-400/90"),
-      ("Failed", "failed", summary.failed, "bg-rose-400/90"),
+      ("Open", "open", summary.open, "bg-sky-400/90", "text-sky-300"),
+      ("Assigned", "assigned", summary.claimed, "bg-violet-400/90", "text-violet-300"),
+      ("In Progress", "in_progress", summary.running, "bg-amber-400/90", "text-amber-300"),
+      ("Completed", "completed", summary.completed, "bg-emerald-400/90", "text-emerald-300"),
+      ("Failed", "failed", summary.failed, "bg-rose-400/90", "text-rose-300"),
     )
     val total    = summary.total.max(1)
-    panel("Pipeline Summary", "Open \u2192 Assigned \u2192 InProgress \u2192 Completed \u2192 Failed")(
-      div(cls := "rounded-lg border border-white/10 bg-slate-950/60 p-4")(
-        div(cls := "mb-3 flex items-center justify-between gap-2")(
-          span(cls := "text-xs text-slate-400")("Throughput"),
-          span(
-            cls := "rounded-md border border-emerald-400/20 bg-emerald-500/10 px-2 py-1 text-xs font-semibold text-emerald-200"
-          )(
-            s"${formatThroughput(summary.throughputPerDay)} issues/day"
-          ),
-        ),
-        div(cls := "flex h-3 overflow-hidden rounded-full ring-1 ring-white/10")(
-          segments.map { (_, statusToken, count, color) =>
-            a(
-              href  := s"/issues/board?status=$statusToken",
-              cls   := color,
-              style := f"width: ${count.toDouble / total.toDouble * 100.0}%.2f%%;",
-              title := s"Filter board by $statusToken",
-            )()
-          }
-        ),
-        div(cls := "mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5")(
-          segments.map { (label, statusToken, count, color) =>
+
+    div(cls := "rounded-lg border border-white/10 bg-white/5 px-4 py-3")(
+      // progress bar
+      div(cls := "mb-3 flex h-2 overflow-hidden rounded-full ring-1 ring-white/10")(
+        segments.map { (_, statusToken, count, color, _) =>
+          a(
+            href  := s"/issues/board?status=$statusToken",
+            cls   := s"$color transition-all",
+            style := f"width: ${count.toDouble / total.toDouble * 100.0}%.2f%%;",
+            title := s"View $statusToken issues",
+          )()
+        }
+      ),
+      // counts row
+      div(cls := "flex items-center justify-between gap-4")(
+        div(cls := "flex flex-wrap items-center gap-x-5 gap-y-1")(
+          segments.map { (label, statusToken, count, _, textCls) =>
             a(
               href := s"/issues/board?status=$statusToken",
-              cls  := "rounded-md border border-white/10 bg-slate-900/70 px-2 py-2 transition-colors hover:bg-slate-900",
+              cls  := s"flex items-center gap-1.5 text-sm hover:underline",
             )(
-              div(cls := "flex items-center gap-2")(
-                span(cls := s"inline-block h-2.5 w-2.5 rounded-full $color"),
-                span(cls := "text-xs text-slate-400")(label),
-              ),
-              div(cls := "mt-1 text-lg font-semibold text-white")(count.toString),
+              span(cls := s"text-lg font-semibold tabular-nums $textCls")(count.toString),
+              span(cls := "text-xs text-gray-500")(label),
             )
           }
         ),
-      )
+        span(
+          cls := "flex-shrink-0 rounded-md border border-emerald-400/20 bg-emerald-500/10 px-2 py-1 text-xs font-medium text-emerald-300"
+        )(s"${formatThroughput(summary.throughputPerDay)} issues/day"),
+      ),
     )
 
-  private def formatThroughput(rate: Double): String =
-    f"$rate%.1f"
+  private def formatThroughput(rate: Double): String = f"$rate%.1f"
 
-  private def liveAgentOpsCard(): Frag =
-    panel("Live Agent Ops", "Embedded Agent Monitor stream")(
+  // ── Live section (left column) ────────────────────────────────────────────
+
+  private def liveSection(): Frag =
+    div(cls := "rounded-lg border border-white/10 bg-white/5 px-4 py-3 flex items-center justify-between gap-4")(
+      span(cls := "text-xs font-medium uppercase tracking-wide text-gray-400 flex-shrink-0")("Live"),
       div(
-        cls                 := "space-y-2",
         attr("hx-ext")      := "sse",
         attr("sse-connect") := "/agent-monitor/stream",
+        cls                 := "flex-1",
       )(
         div(
           id               := "agent-stats-container",
           attr("sse-swap") := "agent-stats",
+          cls              := "flex justify-end",
         )(
           AgentMonitorView.statsHeaderFragment(AgentMonitorView.AgentGlobalStats.empty)
         ),
-        tag("details")(
-          cls := "rounded-lg border border-white/10 bg-slate-950/50"
-        )(
-          tag("summary")(
-            cls := "cursor-pointer px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-300"
-          )(
-            "Show Agent Table"
-          ),
-          div(
-            cls              := "max-h-64 overflow-auto border-t border-white/10",
-            id               := "agent-table-container",
-            attr("sse-swap") := "agent-table",
-          )(
-            AgentMonitorView.tableFragment(Nil)
-          ),
-        ),
-      )
+      ),
     )
 
-  private def activeRunsCard(): Frag =
-    val fragmentUrl = "/runs/fragment?scope=active&sort=last_activity&limit=12"
-    panel("Active Runs", "Embedded runs dashboard rows")(
-      WorkspacesView.runsDashboardCollapsibleSection(fragmentUrl)
-    )
+  // ── Active runs section (right column) ───────────────────────────────────
 
-  private def recentActivityCard(recentEvents: List[ActivityEvent]): Frag =
-    panel("Recent Activity", "Last 5 events")(
+  private def activeRunsSection(): Frag =
+    div(cls := "rounded-lg border border-white/10 bg-white/5 p-4 space-y-3")(
+      sectionHeader("Active Runs"),
       div(
-        attr("hx-get")     := "/api/activity/events?limit=5",
+        id                 := "active-runs-list",
+        attr("hx-get")     := "/runs/fragment?scope=active&sort=last_activity&limit=8",
+        attr("hx-swap")    := "innerHTML",
+        attr("hx-trigger") := "load, every 15s",
+      )(
+        div(cls := "text-xs text-gray-600 py-2")("Loading…")
+      ),
+    )
+
+  // ── Recent activity section (right column) ────────────────────────────────
+
+  private def recentActivitySection(recentEvents: List[ActivityEvent]): Frag =
+    div(cls := "rounded-lg border border-white/10 bg-white/5 p-4 space-y-4")(
+      h2(cls := "text-xs font-medium uppercase tracking-wide text-gray-400")("Recent Activity"),
+      div(
+        attr("hx-get")     := "/api/activity/events?limit=10",
         attr("hx-swap")    := "innerHTML",
         attr("hx-trigger") := "load, every 10s",
-        cls                := "max-h-[36rem] overflow-auto",
+        cls                := "max-h-[32rem] overflow-auto space-y-2",
       )(
         if recentEvents.isEmpty then
-          div(
-            cls := "rounded-lg border border-white/10 bg-slate-950/60 p-4 text-sm text-slate-400"
-          )("No activity events yet.")
+          Components.emptyStateFull("No activity yet", "Events will appear here once agents start running")
         else
-          div(id := "activity-events", cls := "space-y-3")(
+          div(id := "activity-events", cls := "space-y-2")(
             recentEvents.map(ActivityView.eventCard)
           )
-      )
-    )
-  private def panel(title: String, subtitle: String)(content: Frag): Frag =
-    tag("section")(cls := "rounded-xl border border-white/10 bg-slate-900/70 p-4")(
-      div(cls := "mb-3")(
-        h2(cls := "text-base font-semibold text-white")(title),
-        p(cls := "mt-1 text-xs text-slate-400")(subtitle),
       ),
-      content,
     )
+
+  private def sectionHeader(title: String): Frag =
+    h3(cls := "text-xs font-medium uppercase tracking-wide text-gray-400")(title)

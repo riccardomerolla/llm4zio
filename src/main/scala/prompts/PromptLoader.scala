@@ -6,7 +6,7 @@ import scala.util.matching.Regex
 
 import zio.*
 
-import db.ConfigRepository
+import _root_.config.entity.ConfigRepository
 
 enum PromptError:
   case MissingPrompt(name: String)

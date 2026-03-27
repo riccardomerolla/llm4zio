@@ -13,7 +13,7 @@ object ConfigEditor:
         ),
       ),
       div(cls := "bg-white/5 ring-1 ring-white/10 rounded-lg p-4")(
-        tag("config-editor")(
+        tag("ab-config-editor")(
           attr("api-base") := "/api/config"
         )()
       ),
@@ -21,5 +21,5 @@ object ConfigEditor:
         attr("rel")  := "stylesheet",
         attr("href") := "https://cdn.jsdelivr.net/npm/highlight.js@11.11.1/styles/github-dark.min.css",
       ),
-      JsResources.inlineModuleScript("/static/client/components/config-editor.js"),
+      JsResources.inlineModuleScript("/static/client/components/ab-config-editor.js"),
     )

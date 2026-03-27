@@ -3,9 +3,8 @@ package evolution.control
 import zio.*
 import zio.schema.{ Schema, derived }
 
-import _root_.config.entity.WorkflowDefinition
+import _root_.config.entity.{ ConfigRepository, WorkflowDefinition }
 import daemon.entity.{ DaemonAgentSpec, DaemonAgentSpecRepository }
-import db.{ ConfigRepository, PersistenceError as DbPersistenceError }
 import decision.control.DecisionInbox
 import decision.entity.{ DecisionResolutionKind, DecisionStatus, DecisionUrgency }
 import evolution.entity.*
@@ -464,8 +463,8 @@ final case class EvolutionEngineLive(
       configRepository
         .deleteSetting(enabledKey(spec.projectId, spec.daemonKey))
         .catchAll {
-          case _: DbPersistenceError.NotFound => ZIO.unit
-          case other                          => ZIO.fail(EvolutionError.PersistenceFailed(other.toString))
+          case _: PersistenceError.NotFound => ZIO.unit
+          case other                        => ZIO.fail(EvolutionError.PersistenceFailed(other.toString))
         }
 
   private def daemonEnabled(spec: DaemonAgentSpec): IO[EvolutionError, Boolean] =

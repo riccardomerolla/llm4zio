@@ -2,6 +2,8 @@ package db
 
 import zio.*
 
+import shared.errors.PersistenceError
+
 trait TaskRepository:
   // Runs
   def createRun(run: TaskRunRow): IO[PersistenceError, Long]

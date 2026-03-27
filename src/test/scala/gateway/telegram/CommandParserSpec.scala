@@ -2,6 +2,8 @@ package gateway.boundary.telegram
 
 import zio.test.*
 
+import gateway.entity.{ BotCommand, BotWorkflowOperation, CommandParseError }
+
 object CommandParserSpec extends ZIOSpecDefault:
 
   def spec: Spec[TestEnvironment, Any] = suite("CommandParserSpec")(

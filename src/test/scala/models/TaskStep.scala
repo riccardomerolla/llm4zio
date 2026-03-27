@@ -1,5 +1,7 @@
 package models
 
+import shared.entity.TaskStep
+
 object TaskStep:
   val Discovery: TaskStep      = "Discovery"
   val Analysis: TaskStep       = "Analysis"

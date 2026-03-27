@@ -12,6 +12,7 @@ import db.*
 import gateway.control.*
 import gateway.entity.*
 import orchestration.control.{ OrchestratorControlPlane, WorkflowFailed }
+import shared.errors.PersistenceError
 
 object MessageRouterSpec extends ZIOSpecDefault:
 

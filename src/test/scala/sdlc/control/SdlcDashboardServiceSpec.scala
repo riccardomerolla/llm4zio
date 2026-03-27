@@ -5,10 +5,15 @@ import java.time.Instant
 import zio.*
 import zio.test.*
 
+import _root_.config.entity.{ ConfigRepository, WorkflowDefinition }
 import activity.entity.{ ActivityEvent, ActivityEventType, ActivityRepository }
-import db.{ ConfigRepository, PersistenceError as DbPersistenceError, SettingRow }
+import daemon.control.DaemonAgentScheduler
+import daemon.entity.*
+import db.SettingRow
 import decision.control.DecisionInbox
 import decision.entity.*
+import evolution.entity.*
+import governance.entity.*
 import issues.entity.*
 import plan.entity.*
 import shared.errors.PersistenceError
@@ -161,6 +166,152 @@ object SdlcDashboardServiceSpec extends ZIOSpecDefault:
     updatedAt = now.minusSeconds(20000),
   )
 
+  private val validatedPlan = planDraft.copy(
+    id = PlanId("plan-2"),
+    status = PlanStatus.Validated,
+    validation = Some(
+      PlanValidationResult(
+        status = PlanValidationStatus.Passed,
+        requiredGates = List(GovernanceGate.SpecReview),
+        missingGates = Nil,
+        humanApprovalRequired = false,
+        reason = None,
+        validatedAt = now.minusSeconds(1800),
+      )
+    ),
+    versions = List(
+      PlanVersion(
+        version = 1,
+        summary = "Plan draft",
+        rationale = "Rationale",
+        drafts = Nil,
+        validation = Some(
+          PlanValidationResult(
+            status = PlanValidationStatus.Blocked,
+            requiredGates = List(GovernanceGate.SpecReview, GovernanceGate.CiPassed),
+            missingGates = List(GovernanceGate.CiPassed),
+            humanApprovalRequired = false,
+            reason = Some("Missing CI"),
+            validatedAt = now.minusSeconds(86400),
+          )
+        ),
+        status = PlanStatus.Draft,
+        changedAt = now.minusSeconds(86400),
+      ),
+      PlanVersion(
+        version = 2,
+        summary = "Validated plan",
+        rationale = "Rationale",
+        drafts = Nil,
+        validation = Some(
+          PlanValidationResult(
+            status = PlanValidationStatus.Passed,
+            requiredGates = List(GovernanceGate.SpecReview),
+            missingGates = Nil,
+            humanApprovalRequired = false,
+            reason = None,
+            validatedAt = now.minusSeconds(1800),
+          )
+        ),
+        status = PlanStatus.Validated,
+        changedAt = now.minusSeconds(1800),
+      ),
+    ),
+    createdAt = now.minusSeconds(172800),
+    updatedAt = now.minusSeconds(1800),
+  )
+
+  private val activePolicy = GovernancePolicy(
+    id = GovernancePolicyId("policy-1"),
+    projectId = ProjectId("project-1"),
+    name = "Primary policy",
+    version = 2,
+    transitionRules = Nil,
+    daemonTriggers = Nil,
+    escalationRules = Nil,
+    completionCriteria = Nil,
+    isDefault = false,
+    createdAt = now.minusSeconds(172800),
+    updatedAt = now.minusSeconds(3600),
+    archivedAt = None,
+  )
+
+  private val archivedPolicy = activePolicy.copy(
+    id = GovernancePolicyId("policy-2"),
+    name = "Archived policy",
+    archivedAt = Some(now.minusSeconds(7200)),
+  )
+
+  private val runningDaemon = DaemonAgentStatus(
+    spec = DaemonAgentSpec(
+      id = DaemonAgentSpecId("daemon-running"),
+      daemonKey = "test-guardian",
+      projectId = ProjectId("project-1"),
+      name = "Test Guardian",
+      purpose = "Watch CI",
+      trigger = DaemonTriggerCondition.Scheduled(30.minutes),
+      workspaceIds = List("ws-1"),
+      agentName = "guardian",
+      prompt = "check",
+      limits = DaemonExecutionLimits(),
+      builtIn = true,
+      governed = true,
+    ),
+    enabled = true,
+    runtime = DaemonAgentRuntime(
+      lifecycle = DaemonLifecycle.Running,
+      health = DaemonHealth.Healthy,
+      completedAt = Some(now.minusSeconds(300)),
+    ),
+  )
+
+  private val stoppedDaemon = runningDaemon.copy(
+    spec = runningDaemon.spec.copy(
+      id = DaemonAgentSpecId("daemon-stopped"),
+      daemonKey = "debt-detector",
+      name = "Debt Detector",
+    ),
+    runtime = runningDaemon.runtime.copy(lifecycle = DaemonLifecycle.Stopped, health = DaemonHealth.Paused),
+  )
+
+  private val erroredDaemon = runningDaemon.copy(
+    spec =
+      runningDaemon.spec.copy(id = DaemonAgentSpecId("daemon-errored"), daemonKey = "custom", name = "Custom Daemon"),
+    runtime = runningDaemon.runtime.copy(health = DaemonHealth.Degraded, lastError = Some("boom")),
+  )
+
+  private val pendingProposal = EvolutionProposal(
+    id = EvolutionProposalId("proposal-pending"),
+    projectId = ProjectId("project-1"),
+    title = "Add daemon guardrail",
+    rationale = "Need tighter controls",
+    target = EvolutionTarget.WorkflowDefinitionTarget(
+      projectId = ProjectId("project-1"),
+      workflow = WorkflowDefinition(
+        id = Some("quality-gate"),
+        name = "Quality Gate",
+        description = Some("Gate workflow"),
+        steps = List("chat"),
+        isBuiltin = false,
+      ),
+    ),
+    template = Some(EvolutionTemplateKind.AddDaemonAgent),
+    proposer = EvolutionAuditRecord("planner", "proposed", now.minusSeconds(3600)),
+    status = EvolutionProposalStatus.Proposed,
+    decisionId = None,
+    createdAt = now.minusSeconds(3600),
+    updatedAt = now.minusSeconds(3600),
+  )
+
+  private val appliedProposal = pendingProposal.copy(
+    id = EvolutionProposalId("proposal-applied"),
+    title = "Roll out governance policy",
+    status = EvolutionProposalStatus.Applied,
+    application = Some(EvolutionAuditRecord("operator", "applied", now.minusSeconds(900))),
+    createdAt = now.minusSeconds(86400),
+    updatedAt = now.minusSeconds(900),
+  )
+
   private val workReportProjection: IssueWorkReportProjection = new IssueWorkReportProjection:
     override def get(issueId: IssueId): UIO[Option[IssueWorkReport]]                                                 = getAll.map(_.get(issueId))
     override def getAll: UIO[Map[IssueId, IssueWorkReport]]                                                          =
@@ -197,6 +348,9 @@ object SdlcDashboardServiceSpec extends ZIOSpecDefault:
           activityRepository = stubActivityRepository,
           configRepository = stubConfigRepository,
           workReportProjection = workReportProjection,
+          governancePolicyRepository = stubGovernancePolicyRepository,
+          daemonAgentScheduler = stubDaemonAgentScheduler,
+          evolutionProposalRepository = stubEvolutionProposalRepository,
         )
         for
           _         <- TestClock.adjust(now.toEpochMilli.millis)
@@ -211,7 +365,7 @@ object SdlcDashboardServiceSpec extends ZIOSpecDefault:
         yield assertTrue(
           lifecycle.get("idea").contains(1),
           lifecycle.get("spec").contains(1),
-          lifecycle.get("plan").contains(1),
+          lifecycle.get("plan").contains(2),
           lifecycle.get("in-progress").contains(2),
           lifecycle.get("review").contains(1),
           lifecycle.get("done").contains(1),
@@ -224,6 +378,19 @@ object SdlcDashboardServiceSpec extends ZIOSpecDefault:
           agentA.exists(_.successRate > 0.9),
           agentB.exists(_.throughput == 0),
           agentB.exists(_.costUsd > 0.0),
+          snapshot.governance.activePolicyCount == 1,
+          snapshot.governance.passCount == 1,
+          snapshot.governance.failCount == 1,
+          snapshot.governance.passRate == 0.5,
+          snapshot.daemonHealth.runningCount == 1,
+          snapshot.daemonHealth.stoppedCount == 1,
+          snapshot.daemonHealth.erroredCount == 1,
+          snapshot.evolution.pendingProposalCount == 1,
+          snapshot.evolution.recentlyApplied.map(_.proposalId) == List("proposal-applied"),
+          snapshot.specificationTrend.direction == SdlcDashboardService.TrendDirection.Up,
+          snapshot.planTrend.direction == SdlcDashboardService.TrendDirection.Up,
+          snapshot.issueTrend.direction == SdlcDashboardService.TrendDirection.Up,
+          snapshot.pendingDecisionTrend.direction == SdlcDashboardService.TrendDirection.Up,
           snapshot.recentActivity.nonEmpty,
         )
       }
@@ -267,7 +434,7 @@ object SdlcDashboardServiceSpec extends ZIOSpecDefault:
     override def append(event: PlanEvent): IO[PersistenceError, Unit]                      = ZIO.unit
     override def get(id: shared.ids.Ids.PlanId): IO[PersistenceError, Plan]                = ZIO.succeed(planDraft)
     override def history(id: shared.ids.Ids.PlanId): IO[PersistenceError, List[PlanEvent]] = ZIO.succeed(Nil)
-    override def list: IO[PersistenceError, List[Plan]]                                    = ZIO.succeed(List(planDraft))
+    override def list: IO[PersistenceError, List[Plan]]                                    = ZIO.succeed(List(planDraft, validatedPlan))
 
   private val stubIssueRepository: IssueRepository = new IssueRepository:
     override def append(event: IssueEvent): IO[PersistenceError, Unit]             = ZIO.unit
@@ -307,12 +474,12 @@ object SdlcDashboardServiceSpec extends ZIOSpecDefault:
     override def runMaintenance(now: Instant): IO[PersistenceError, List[Decision]]         = ZIO.succeed(Nil)
 
   private val stubActivityRepository: ActivityRepository = new ActivityRepository:
-    override def createEvent(event: ActivityEvent): IO[DbPersistenceError, EventId] = ZIO.succeed(event.id)
+    override def createEvent(event: ActivityEvent): IO[PersistenceError, EventId] = ZIO.succeed(event.id)
     override def listEvents(
       eventType: Option[ActivityEventType],
       since: Option[Instant],
       limit: Int,
-    ): IO[DbPersistenceError, List[ActivityEvent]] =
+    ): IO[PersistenceError, List[ActivityEvent]] =
       ZIO.succeed(
         List(
           ActivityEvent(
@@ -339,24 +506,59 @@ object SdlcDashboardServiceSpec extends ZIOSpecDefault:
       "sdlc.thresholds.decisionHours"     -> "4",
     )
 
-    override def getAllSettings: IO[DbPersistenceError, List[SettingRow]]                              =
+    override def getAllSettings: IO[PersistenceError, List[SettingRow]]                              =
       ZIO.succeed(settings.toList.map { case (key, value) => SettingRow(key, value, now) })
-    override def getSetting(key: String): IO[DbPersistenceError, Option[SettingRow]]                   =
+    override def getSetting(key: String): IO[PersistenceError, Option[SettingRow]]                   =
       ZIO.succeed(settings.get(key).map(value => SettingRow(key, value, now)))
-    override def upsertSetting(key: String, value: String): IO[DbPersistenceError, Unit]               = ZIO.unit
-    override def deleteSetting(key: String): IO[DbPersistenceError, Unit]                              = ZIO.unit
-    override def deleteSettingsByPrefix(prefix: String): IO[DbPersistenceError, Unit]                  = ZIO.unit
-    override def createWorkflow(workflow: db.WorkflowRow): IO[DbPersistenceError, Long]                = ZIO.dieMessage("unused")
-    override def getWorkflow(id: Long): IO[DbPersistenceError, Option[db.WorkflowRow]]                 = ZIO.dieMessage("unused")
-    override def getWorkflowByName(name: String): IO[DbPersistenceError, Option[db.WorkflowRow]]       =
+    override def upsertSetting(key: String, value: String): IO[PersistenceError, Unit]               = ZIO.unit
+    override def deleteSetting(key: String): IO[PersistenceError, Unit]                              = ZIO.unit
+    override def deleteSettingsByPrefix(prefix: String): IO[PersistenceError, Unit]                  = ZIO.unit
+    override def createWorkflow(workflow: db.WorkflowRow): IO[PersistenceError, Long]                = ZIO.dieMessage("unused")
+    override def getWorkflow(id: Long): IO[PersistenceError, Option[db.WorkflowRow]]                 = ZIO.dieMessage("unused")
+    override def getWorkflowByName(name: String): IO[PersistenceError, Option[db.WorkflowRow]]       =
       ZIO.dieMessage("unused")
-    override def listWorkflows: IO[DbPersistenceError, List[db.WorkflowRow]]                           = ZIO.succeed(Nil)
-    override def updateWorkflow(workflow: db.WorkflowRow): IO[DbPersistenceError, Unit]                = ZIO.dieMessage("unused")
-    override def deleteWorkflow(id: Long): IO[DbPersistenceError, Unit]                                = ZIO.dieMessage("unused")
-    override def createCustomAgent(agent: db.CustomAgentRow): IO[DbPersistenceError, Long]             = ZIO.dieMessage("unused")
-    override def getCustomAgent(id: Long): IO[DbPersistenceError, Option[db.CustomAgentRow]]           = ZIO.dieMessage("unused")
-    override def getCustomAgentByName(name: String): IO[DbPersistenceError, Option[db.CustomAgentRow]] =
+    override def listWorkflows: IO[PersistenceError, List[db.WorkflowRow]]                           = ZIO.succeed(Nil)
+    override def updateWorkflow(workflow: db.WorkflowRow): IO[PersistenceError, Unit]                = ZIO.dieMessage("unused")
+    override def deleteWorkflow(id: Long): IO[PersistenceError, Unit]                                = ZIO.dieMessage("unused")
+    override def createCustomAgent(agent: db.CustomAgentRow): IO[PersistenceError, Long]             = ZIO.dieMessage("unused")
+    override def getCustomAgent(id: Long): IO[PersistenceError, Option[db.CustomAgentRow]]           = ZIO.dieMessage("unused")
+    override def getCustomAgentByName(name: String): IO[PersistenceError, Option[db.CustomAgentRow]] =
       ZIO.dieMessage("unused")
-    override def listCustomAgents: IO[DbPersistenceError, List[db.CustomAgentRow]]                     = ZIO.succeed(Nil)
-    override def updateCustomAgent(agent: db.CustomAgentRow): IO[DbPersistenceError, Unit]             = ZIO.dieMessage("unused")
-    override def deleteCustomAgent(id: Long): IO[DbPersistenceError, Unit]                             = ZIO.dieMessage("unused")
+    override def listCustomAgents: IO[PersistenceError, List[db.CustomAgentRow]]                     = ZIO.succeed(Nil)
+    override def updateCustomAgent(agent: db.CustomAgentRow): IO[PersistenceError, Unit]             = ZIO.dieMessage("unused")
+    override def deleteCustomAgent(id: Long): IO[PersistenceError, Unit]                             = ZIO.dieMessage("unused")
+
+  private val stubGovernancePolicyRepository: GovernancePolicyRepository = new GovernancePolicyRepository:
+    override def append(event: GovernancePolicyEvent): IO[PersistenceError, Unit]                  = ZIO.unit
+    override def get(id: GovernancePolicyId): IO[PersistenceError, GovernancePolicy]               =
+      ZIO
+        .fromOption(List(activePolicy, archivedPolicy).find(_.id == id))
+        .orElseFail(PersistenceError.NotFound("governance_policy", id.value))
+    override def getActiveByProject(projectId: ProjectId): IO[PersistenceError, GovernancePolicy]  =
+      ZIO.succeed(activePolicy)
+    override def listByProject(projectId: ProjectId): IO[PersistenceError, List[GovernancePolicy]] =
+      ZIO.succeed(List(activePolicy, archivedPolicy).filter(_.projectId == projectId))
+    override def list: IO[PersistenceError, List[GovernancePolicy]]                                =
+      ZIO.succeed(List(activePolicy, archivedPolicy))
+
+  private val stubDaemonAgentScheduler: DaemonAgentScheduler = new DaemonAgentScheduler:
+    override def list: IO[PersistenceError, List[DaemonAgentStatus]]                                    = ZIO.succeed(
+      List(runningDaemon, stoppedDaemon, erroredDaemon)
+    )
+    override def start(id: DaemonAgentSpecId): IO[PersistenceError, Unit]                               = ZIO.unit
+    override def stop(id: DaemonAgentSpecId): IO[PersistenceError, Unit]                                = ZIO.unit
+    override def restart(id: DaemonAgentSpecId): IO[PersistenceError, Unit]                             = ZIO.unit
+    override def setEnabled(id: DaemonAgentSpecId, enabled: Boolean): IO[PersistenceError, Unit]        = ZIO.unit
+    override def trigger(id: DaemonAgentSpecId): IO[PersistenceError, Unit]                             = ZIO.unit
+    override def triggerGovernance(projectId: ProjectId, triggerId: String): IO[PersistenceError, Unit] = ZIO.unit
+
+  private val stubEvolutionProposalRepository: EvolutionProposalRepository = new EvolutionProposalRepository:
+    override def append(event: EvolutionProposalEvent): IO[PersistenceError, Unit]                    = ZIO.unit
+    override def get(id: EvolutionProposalId): IO[PersistenceError, EvolutionProposal]                =
+      ZIO
+        .fromOption(List[EvolutionProposal](pendingProposal, appliedProposal).find(_.id == id))
+        .orElseFail(PersistenceError.NotFound("evolution_proposal", id.value))
+    override def history(id: EvolutionProposalId): IO[PersistenceError, List[EvolutionProposalEvent]] =
+      ZIO.succeed(Nil)
+    override def list(filter: EvolutionProposalFilter): IO[PersistenceError, List[EvolutionProposal]] =
+      ZIO.succeed(List(pendingProposal, appliedProposal))

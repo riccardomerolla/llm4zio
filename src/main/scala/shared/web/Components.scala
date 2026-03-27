@@ -1,6 +1,6 @@
 package shared.web
 
-import db.{ FileType, RunStatus }
+import db.RunStatus
 import scalatags.Text.all.*
 import scalatags.Text.svgAttrs.{ d, viewBox }
 import scalatags.Text.svgTags.{ path, svg }
@@ -76,15 +76,46 @@ object Components:
       )
     )
 
+  // ── Page header ──────────────────────────────────────────────────────────
+
+  /** Standard page header with title, optional subtitle, and right-side action slot. */
+  def pageHeader(title: String, subtitle: String = "", actions: Frag*): Frag =
+    div(cls := "flex items-start justify-between gap-4 mb-6")(
+      div(cls := "min-w-0")(
+        h1(cls := "text-lg font-semibold text-white")(title),
+        if subtitle.nonEmpty then p(cls := "mt-1 text-sm text-gray-400")(subtitle) else (),
+      ),
+      if actions.nonEmpty then
+        div(cls := "flex items-center gap-2 flex-shrink-0")(actions*)
+      else (),
+    )
+
   // ── Empty state ──────────────────────────────────────────────────────────
 
+  /** Legacy single-message empty state (plain Scalatags, no web component). */
   def emptyState(message: String): Frag =
-    div(cls := "text-center py-12")(
-      svgIcon(
-        "M2.25 12.75V12A2.25 2.25 0 0 1 4.5 9.75h15A2.25 2.25 0 0 1 21.75 12v.75m-8.69-6.44-2.12-2.12a1.5 1.5 0 0 0-1.061-.44H4.5A2.25 2.25 0 0 0 2.25 6v12a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9a2.25 2.25 0 0 0-2.25-2.25h-5.379a1.5 1.5 0 0 1-1.06-.44Z",
-        "mx-auto size-12 text-gray-500 mb-4",
-      ),
-      p(cls := "text-sm text-gray-400")(message),
+    tag("ab-empty-state")(
+      attr("headline") := message
+    )
+
+  /** Full empty state with headline, description, and optional action slot. */
+  def emptyStateFull(headline: String, description: String = "", icon: String = "", action: Frag*): Frag =
+    tag("ab-empty-state")(
+      attr("headline")    := headline,
+      attr("description") := description,
+      if icon.nonEmpty then attr("icon") := icon else (),
+      if action.nonEmpty then frag(action*) else (),
+    )
+
+  // ── Stat card ─────────────────────────────────────────────────────────────
+
+  /** Compact metric card. `trend` is optional (e.g. "↑3 vs last week"). */
+  def statCard(label: String, value: String, trend: String = "", trendPositive: Boolean = false): Frag =
+    tag("ab-stat-card")(
+      attr("label") := label,
+      attr("value") := value,
+      if trend.nonEmpty then attr("trend")         := trend else (),
+      if trendPositive then attr("trend-positive") := "" else (),
     )
 
   // ── SVG icon utility ─────────────────────────────────────────────────────
@@ -118,4 +149,7 @@ object Components:
     JsResources.inlineModuleScript("/static/client/components/design-system/ab-progress-bar.js"),
     JsResources.inlineModuleScript("/static/client/components/design-system/ab-data-table.js"),
     JsResources.inlineModuleScript("/static/client/components/design-system/ab-toast.js"),
+    JsResources.inlineModuleScript("/static/client/components/design-system/ab-empty-state.js"),
+    JsResources.inlineModuleScript("/static/client/components/design-system/ab-stat-card.js"),
+    JsResources.inlineModuleScript("/static/client/components/design-system/ab-filter-bar.js"),
   )

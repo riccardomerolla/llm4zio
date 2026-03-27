@@ -5,13 +5,12 @@ import java.time.Instant
 import zio.*
 import zio.test.*
 
-import activity.control.ActivityHub
 import activity.entity.{ ActivityEvent, ActivityEventType }
-import db.{ ConfigRepository, CustomAgentRow, PersistenceError as DbPersistenceError, SettingRow, WorkflowRow }
 import decision.entity.*
 import issues.entity.*
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ DecisionId, IssueId }
+import shared.testfixtures.*
 
 object DecisionInboxSpec extends ZIOSpecDefault:
 
@@ -46,57 +45,6 @@ object DecisionInboxSpec extends ZIOSpecDefault:
         )
       )
 
-  // ── Stub: IssueRepository ─────────────────────────────────────────────────
-
-  final private class StubIssueRepository(ref: Ref[Map[IssueId, List[IssueEvent]]]) extends IssueRepository:
-    override def append(event: IssueEvent): IO[PersistenceError, Unit] =
-      ref.update(m => m.updated(event.issueId, m.getOrElse(event.issueId, Nil) :+ event))
-
-    override def get(id: IssueId): IO[PersistenceError, AgentIssue] =
-      history(id).flatMap(events =>
-        ZIO
-          .fromEither(AgentIssue.fromEvents(events))
-          .mapError(msg => PersistenceError.SerializationFailed(id.value, msg))
-      )
-
-    override def history(id: IssueId): IO[PersistenceError, List[IssueEvent]] =
-      ref.get.flatMap(m => ZIO.fromOption(m.get(id)).orElseFail(PersistenceError.NotFound("issue", id.value)))
-
-    override def list(filter: IssueFilter): IO[PersistenceError, List[AgentIssue]] =
-      ref.get.flatMap(m => ZIO.foreach(m.keys.toList)(get))
-
-    override def delete(id: IssueId): IO[PersistenceError, Unit] = ref.update(_ - id)
-
-  // ── Stub: ActivityHub ─────────────────────────────────────────────────────
-
-  final private class StubActivityHub(ref: Ref[List[ActivityEvent]]) extends ActivityHub:
-    override def publish(event: ActivityEvent): UIO[Unit] = ref.update(_ :+ event)
-    override def subscribe: UIO[Dequeue[ActivityEvent]]   =
-      Queue.unbounded[ActivityEvent].map(q => q: Dequeue[ActivityEvent])
-
-  // ── Stub: ConfigRepository ────────────────────────────────────────────────
-
-  final private class StubConfigRepository(settings: Map[String, String]) extends ConfigRepository:
-    override def getAllSettings: IO[DbPersistenceError, List[SettingRow]]                           =
-      ZIO.succeed(settings.toList.map { case (k, v) => SettingRow(k, v, now) })
-    override def getSetting(key: String): IO[DbPersistenceError, Option[SettingRow]]                =
-      ZIO.succeed(settings.get(key).map(SettingRow(key, _, now)))
-    override def upsertSetting(key: String, value: String): IO[DbPersistenceError, Unit]            = ZIO.unit
-    override def deleteSetting(key: String): IO[DbPersistenceError, Unit]                           = ZIO.unit
-    override def deleteSettingsByPrefix(prefix: String): IO[DbPersistenceError, Unit]               = ZIO.unit
-    override def createWorkflow(workflow: WorkflowRow): IO[DbPersistenceError, Long]                = ZIO.succeed(1L)
-    override def getWorkflow(id: Long): IO[DbPersistenceError, Option[WorkflowRow]]                 = ZIO.none
-    override def getWorkflowByName(name: String): IO[DbPersistenceError, Option[WorkflowRow]]       = ZIO.none
-    override def listWorkflows: IO[DbPersistenceError, List[WorkflowRow]]                           = ZIO.succeed(Nil)
-    override def updateWorkflow(workflow: WorkflowRow): IO[DbPersistenceError, Unit]                = ZIO.unit
-    override def deleteWorkflow(id: Long): IO[DbPersistenceError, Unit]                             = ZIO.unit
-    override def createCustomAgent(agent: CustomAgentRow): IO[DbPersistenceError, Long]             = ZIO.succeed(1L)
-    override def getCustomAgent(id: Long): IO[DbPersistenceError, Option[CustomAgentRow]]           = ZIO.none
-    override def getCustomAgentByName(name: String): IO[DbPersistenceError, Option[CustomAgentRow]] = ZIO.none
-    override def listCustomAgents: IO[DbPersistenceError, List[CustomAgentRow]]                     = ZIO.succeed(Nil)
-    override def updateCustomAgent(agent: CustomAgentRow): IO[DbPersistenceError, Unit]             = ZIO.unit
-    override def deleteCustomAgent(id: Long): IO[DbPersistenceError, Unit]                          = ZIO.unit
-
   // ── Helpers ───────────────────────────────────────────────────────────────
 
   private def makeInbox(
@@ -113,7 +61,7 @@ object DecisionInboxSpec extends ZIOSpecDefault:
     yield (
       DecisionInboxLive(
         decisionRepository = new StubDecisionRepository(decisionRef),
-        issueRepository = new StubIssueRepository(issueRef),
+        issueRepository = new MutableIssueRepository(issueRef),
         activityHub = new StubActivityHub(activityRef),
         configRepository = new StubConfigRepository(settings),
       ),
@@ -144,7 +92,7 @@ object DecisionInboxSpec extends ZIOSpecDefault:
           (inbox, _, activityRef) <- makeInbox(seededIssues = Map(issueId -> seedIssueEvents(issueId)))
           issue                   <- ZIO.serviceWithZIO[issues.entity.IssueRepository](_.get(issueId)).provideLayer(
                                        ZLayer.fromZIO(Ref.make(Map(issueId -> seedIssueEvents(issueId))).map(r =>
-                                         new StubIssueRepository(r)
+                                         new MutableIssueRepository(r)
                                        ))
                                      )
           _                       <- TestClock.setTime(now)

@@ -13,8 +13,8 @@ object LogsView:
         ),
       ),
       div(cls := "bg-white/5 ring-1 ring-white/10 rounded-lg p-4")(
-        tag("log-viewer")(
-          id                := "log-viewer",
+        tag("ab-log-viewer")(
+          id                := "ab-log-viewer",
           cls               := "block",
           attr("ws-url")    := "/ws/logs",
           attr("log-path")  := defaultPath,
@@ -25,5 +25,5 @@ object LogsView:
         attr("rel")  := "stylesheet",
         attr("href") := "https://cdn.jsdelivr.net/npm/highlight.js@11.11.1/styles/github-dark.min.css",
       ),
-      JsResources.inlineModuleScript("/static/client/components/log-viewer.js"),
+      JsResources.inlineModuleScript("/static/client/components/ab-log-viewer.js"),
     )

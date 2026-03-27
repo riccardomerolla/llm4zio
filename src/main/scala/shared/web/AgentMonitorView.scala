@@ -172,28 +172,25 @@ object AgentMonitorView:
     if m == 0 then s"${s}s"
     else s"${m}m ${s}s"
 
-  private val labelCls = "text-xs font-mono text-slate-500 uppercase tracking-widest w-24 flex-shrink-0"
-  private val valueCls = "text-xs font-mono text-white tabular-nums"
-
   def statsHeaderFragment(stats: AgentGlobalStats): Frag =
+    val agentCls = if stats.activeAgents > 0 then "text-emerald-400" else "text-slate-300"
     div(
-      cls                      := "rounded-lg bg-black/60 px-4 py-3 font-mono text-xs",
+      cls                      := "flex flex-wrap items-center gap-x-5 gap-y-1",
       attr("data-agent-stats") := "true",
     )(
-      div(cls := "grid grid-cols-2 gap-x-8 gap-y-1 sm:grid-cols-3")(
-        metricLine("Agents", s"${stats.activeAgents}/${stats.maxAgents}"),
-        metricLine("Runtime", formatRuntime(stats.runtimeSeconds)),
-        metricLine("Tokens In", formatTokens(stats.tokensIn)),
-        metricLine("Tokens Out", formatTokens(stats.tokensOut)),
-        metricLine("Total", formatTokens(stats.tokensTotal)),
-      )
+      statChip("Agents",     s"${stats.activeAgents} / ${stats.maxAgents}", agentCls),
+      div(cls := "h-3 w-px bg-white/10 flex-shrink-0"),
+      statChip("Tokens in",  formatTokens(stats.tokensIn),              "text-slate-300"),
+      statChip("Tokens out", formatTokens(stats.tokensOut),             "text-slate-300"),
+      div(cls := "h-3 w-px bg-white/10 flex-shrink-0"),
+      statChip("Runtime",    formatRuntime(stats.runtimeSeconds),       "text-slate-300"),
+    )
+
+  private def statChip(label: String, value: String, valueCls: String): Frag =
+    span(cls := "flex items-baseline gap-1")(
+      span(cls := "text-[11px] text-gray-500 select-none")(label),
+      span(cls := s"text-sm font-mono font-medium tabular-nums $valueCls")(value),
     )
 
   def statsHeader(stats: AgentGlobalStats): String =
     statsHeaderFragment(stats).render
-
-  private def metricLine(label: String, value: String): Frag =
-    div(cls := "flex items-baseline gap-2")(
-      span(cls := labelCls)(label),
-      span(cls := valueCls)(value),
-    )

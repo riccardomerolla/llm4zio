@@ -9,13 +9,14 @@ import zio.test.*
 import _root_.config.entity.{ MigrationConfig, WorkflowDefinition }
 import app.control.StateService
 import conversation.entity.api.{ ChatConversation, ConversationEntry, MessageType, SenderType, SessionContextLink }
-import db.{ ChatRepository, PersistenceError as DbPersistenceError }
+import db.ChatRepository
 import decision.control.DecisionInbox
 import decision.entity.*
 import issues.entity.{ TokenUsage as IssueTokenUsage, * }
 import orchestration.control.{ ActiveRun, AgentExecutionEvent, ResourceAllocationState, * }
 import shared.errors.{ ControlPlaneError, PersistenceError, StateError }
 import shared.ids.Ids.{ AgentId, DecisionId, IssueId, ReportId, TaskRunId }
+import shared.testfixtures.*
 import taskrun.entity.*
 import workspace.control.{ GitService, RunSessionManager, WorkspaceRunService }
 import workspace.entity.*
@@ -186,27 +187,6 @@ object CheckpointReviewServiceSpec extends ZIOSpecDefault:
       tokenDelta: Long,
     ): UIO[Unit] = ZIO.unit
 
-  final private class StubWorkspaceRepository extends WorkspaceRepository:
-    override def append(event: WorkspaceEvent): IO[PersistenceError, Unit]                      = ZIO.unit
-    override def list: IO[PersistenceError, List[workspace.entity.Workspace]]                   = ZIO.succeed(Nil)
-    override def get(id: String): IO[PersistenceError, Option[workspace.entity.Workspace]]      = ZIO.none
-    override def delete(id: String): IO[PersistenceError, Unit]                                 = ZIO.unit
-    override def appendRun(event: WorkspaceRunEvent): IO[PersistenceError, Unit]                = ZIO.unit
-    override def listRuns(workspaceId: String): IO[PersistenceError, List[WorkspaceRun]]        =
-      ZIO.succeed(List(workspaceRun).filter(_.workspaceId == workspaceId))
-    override def listRunsByIssueRef(issueRef: String): IO[PersistenceError, List[WorkspaceRun]] =
-      ZIO.succeed(List(workspaceRun).filter(_.issueRef == issueRef))
-    override def getRun(id: String): IO[PersistenceError, Option[WorkspaceRun]]                 =
-      ZIO.succeed(Some(workspaceRun).filter(_.id == id))
-
-  final private class StubIssueRepository extends IssueRepository:
-    override def append(event: IssueEvent): IO[PersistenceError, Unit]             = ZIO.unit
-    override def get(id: IssueId): IO[PersistenceError, AgentIssue]                = ZIO.succeed(issue)
-    override def history(id: IssueId): IO[PersistenceError, List[IssueEvent]]      = ZIO.succeed(Nil)
-    override def list(filter: IssueFilter): IO[PersistenceError, List[AgentIssue]] =
-      ZIO.succeed(List(issue).filter(_ => filter.runId.forall(_ == TaskRunId(runId))))
-    override def delete(id: IssueId): IO[PersistenceError, Unit]                   = ZIO.unit
-
   final private class StubProjection extends IssueWorkReportProjection:
     override def get(issueId: IssueId): UIO[Option[IssueWorkReport]]                                          =
       ZIO.succeed(Some(report).filter(_.issueId == issueId))
@@ -222,18 +202,18 @@ object CheckpointReviewServiceSpec extends ZIOSpecDefault:
     override def addArtifact(issueId: IssueId, artifact: IssueArtifact, at: Instant): UIO[Unit]               = ZIO.unit
 
   final private class StubChatRepository(ref: Ref[List[String]]) extends ChatRepository:
-    override def createConversation(conversation: ChatConversation): IO[DbPersistenceError, Long]                   = ZIO.succeed(1L)
-    override def getConversation(id: Long): IO[DbPersistenceError, Option[ChatConversation]]                        = ZIO.none
-    override def listConversations(offset: Int, limit: Int): IO[DbPersistenceError, List[ChatConversation]]         =
+    override def createConversation(conversation: ChatConversation): IO[PersistenceError, Long]                   = ZIO.succeed(1L)
+    override def getConversation(id: Long): IO[PersistenceError, Option[ChatConversation]]                        = ZIO.none
+    override def listConversations(offset: Int, limit: Int): IO[PersistenceError, List[ChatConversation]]         =
       ZIO.succeed(Nil)
-    override def getConversationsByChannel(channelName: String): IO[DbPersistenceError, List[ChatConversation]]     =
+    override def getConversationsByChannel(channelName: String): IO[PersistenceError, List[ChatConversation]]     =
       ZIO.succeed(Nil)
-    override def listConversationsByRun(runId: Long): IO[DbPersistenceError, List[ChatConversation]]                = ZIO.succeed(Nil)
-    override def updateConversation(conversation: ChatConversation): IO[DbPersistenceError, Unit]                   = ZIO.unit
-    override def deleteConversation(id: Long): IO[DbPersistenceError, Unit]                                         = ZIO.unit
-    override def addMessage(message: ConversationEntry): IO[DbPersistenceError, Long]                               =
+    override def listConversationsByRun(runId: Long): IO[PersistenceError, List[ChatConversation]]                = ZIO.succeed(Nil)
+    override def updateConversation(conversation: ChatConversation): IO[PersistenceError, Unit]                   = ZIO.unit
+    override def deleteConversation(id: Long): IO[PersistenceError, Unit]                                         = ZIO.unit
+    override def addMessage(message: ConversationEntry): IO[PersistenceError, Long]                               =
       ref.update(_ :+ message.content).as(1L)
-    override def getMessages(id: Long): IO[DbPersistenceError, List[ConversationEntry]]                             =
+    override def getMessages(id: Long): IO[PersistenceError, List[ConversationEntry]]                             =
       ZIO.succeed(
         List(
           ConversationEntry(
@@ -260,18 +240,18 @@ object CheckpointReviewServiceSpec extends ZIOSpecDefault:
           ),
         )
       )
-    override def getMessagesSince(id: Long, since: Instant): IO[DbPersistenceError, List[ConversationEntry]]        =
+    override def getMessagesSince(id: Long, since: Instant): IO[PersistenceError, List[ConversationEntry]]        =
       getMessages(id).map(_.filter(message => !message.createdAt.isBefore(since)))
     override def upsertSessionContext(channelName: String, sessionKey: String, contextJson: String, updatedAt: Instant)
-      : IO[DbPersistenceError, Unit] = ZIO.unit
-    override def getSessionContext(channelName: String, sessionKey: String): IO[DbPersistenceError, Option[String]] =
+      : IO[PersistenceError, Unit] = ZIO.unit
+    override def getSessionContext(channelName: String, sessionKey: String): IO[PersistenceError, Option[String]] =
       ZIO.none
     override def getSessionContextByConversation(conversationId: Long)
-      : IO[DbPersistenceError, Option[SessionContextLink]] = ZIO.none
-    override def getSessionContextByTaskRunId(taskRunId: Long): IO[DbPersistenceError, Option[SessionContextLink]]  =
+      : IO[PersistenceError, Option[SessionContextLink]] = ZIO.none
+    override def getSessionContextByTaskRunId(taskRunId: Long): IO[PersistenceError, Option[SessionContextLink]]  =
       ZIO.none
-    override def listSessionContexts: IO[DbPersistenceError, List[SessionContextLink]]                              = ZIO.succeed(Nil)
-    override def deleteSessionContext(channelName: String, sessionKey: String): IO[DbPersistenceError, Unit]        = ZIO.unit
+    override def listSessionContexts: IO[PersistenceError, List[SessionContextLink]]                              = ZIO.succeed(Nil)
+    override def deleteSessionContext(channelName: String, sessionKey: String): IO[PersistenceError, Unit]        = ZIO.unit
 
   final private class StubGitService extends GitService:
     override def status(repoPath: String): IO[GitError, GitStatus]                                            = ZIO.fail(GitError.NotAGitRepository(repoPath))
@@ -378,8 +358,8 @@ object CheckpointReviewServiceSpec extends ZIOSpecDefault:
       service      = CheckpointReviewServiceLive(
                        new StubStateService,
                        new StubControlPlane(controlRef),
-                       new StubWorkspaceRepository,
-                       new StubIssueRepository,
+                       new StubWorkspaceRepository(Nil, List(workspaceRun)),
+                       StubIssueRepository.of(issue),
                        new StubProjection,
                        new StubChatRepository(chatRef),
                        new StubGitService,

@@ -5,11 +5,12 @@ import java.time.Instant
 
 import zio.*
 
-import _root_.config.entity.{ AIProvider, AIProviderConfig }
-import db.{ ConfigRepository, PersistenceError, TaskArtifactRow, TaskReportRow, TaskRepository }
+import _root_.config.entity.{ AIProvider, AIProviderConfig, ConfigRepository }
+import db.{ TaskArtifactRow, TaskReportRow, TaskRepository }
 import llm4zio.core.*
 import llm4zio.providers.{ GeminiCliExecutor, HttpClient }
 import memory.entity.*
+import shared.errors.PersistenceError
 
 final case class StepDispatchResult(
   agentName: String,
@@ -130,7 +131,8 @@ final case class AgentDispatcherLive(
                            customPrompt   <- repository
                                                .getCustomAgentByName(agentInfo.name)
                                                .map(_.map(_.systemPrompt).filter(_.trim.nonEmpty))
-                           run            <- repository.getRun(taskRunId).someOrFail(PersistenceError.NotFound("task_runs", taskRunId))
+                           run            <-
+                             repository.getRun(taskRunId).someOrFail(PersistenceError.NotFound("task_runs", taskRunId.toString))
                            agentWorkspace <- ensureAgentWorkspace(taskRunId, agentInfo.name)
                            prompt          = buildPrompt(
                                                systemPrompt = customPrompt,

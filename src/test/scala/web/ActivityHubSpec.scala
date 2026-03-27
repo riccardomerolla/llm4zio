@@ -7,7 +7,7 @@ import zio.test.*
 
 import activity.control.ActivityHubLive
 import activity.entity.{ ActivityEvent, ActivityEventType, ActivityRepository }
-import db.PersistenceError
+import shared.errors.PersistenceError
 import shared.ids.Ids.EventId
 
 object ActivityHubSpec extends ZIOSpecDefault:

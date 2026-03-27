@@ -4,12 +4,21 @@ import java.time.{ Duration, Instant }
 
 import zio.*
 
+import _root_.config.entity.ConfigRepository
 import activity.entity.{ ActivityEvent, ActivityRepository }
-import db.{ ConfigRepository, PersistenceError as DbPersistenceError }
+import daemon.control.DaemonAgentScheduler
+import daemon.entity.{ DaemonHealth, DaemonLifecycle }
 import decision.control.DecisionInbox
 import decision.entity.{ Decision, DecisionFilter, DecisionStatus, DecisionUrgency }
+import evolution.entity.{
+  EvolutionProposal,
+  EvolutionProposalFilter,
+  EvolutionProposalRepository,
+  EvolutionProposalStatus,
+}
+import governance.entity.GovernancePolicyRepository
 import issues.entity.*
-import plan.entity.{ Plan, PlanRepository, PlanStatus }
+import plan.entity.{ Plan, PlanRepository, PlanStatus, PlanValidationResult, PlanValidationStatus }
 import shared.errors.PersistenceError
 import specification.entity.{ Specification, SpecificationRepository, SpecificationStatus }
 
@@ -71,6 +80,43 @@ object SdlcDashboardService:
     costUsd: Double,
   )
 
+  enum TrendDirection:
+    case Up
+    case Down
+    case Flat
+
+  final case class TrendIndicator(
+    direction: TrendDirection,
+    currentPeriodCount: Int,
+    previousPeriodCount: Int,
+    periodLabel: String,
+  )
+
+  final case class GovernanceOverview(
+    passCount: Int,
+    failCount: Int,
+    passRate: Double,
+    activePolicyCount: Int,
+  )
+
+  final case class DaemonHealthOverview(
+    runningCount: Int,
+    stoppedCount: Int,
+    erroredCount: Int,
+  )
+
+  final case class RecentEvolution(
+    proposalId: String,
+    title: String,
+    status: String,
+    appliedAt: Instant,
+  )
+
+  final case class EvolutionOverview(
+    pendingProposalCount: Int,
+    recentlyApplied: List[RecentEvolution],
+  )
+
   final case class Snapshot(
     generatedAt: Instant,
     thresholds: Thresholds,
@@ -79,17 +125,24 @@ object SdlcDashboardService:
     stoppages: List[StoppageAlert],
     escalations: List[EscalationIndicator],
     agentPerformance: List[AgentPerformance],
+    governance: GovernanceOverview,
+    daemonHealth: DaemonHealthOverview,
+    evolution: EvolutionOverview,
     recentActivity: List[ActivityEvent],
     specificationCount: Int,
     planCount: Int,
     issueCount: Int,
     pendingDecisionCount: Int,
+    specificationTrend: TrendIndicator,
+    planTrend: TrendIndicator,
+    issueTrend: TrendIndicator,
+    pendingDecisionTrend: TrendIndicator,
   )
 
   val live
     : ZLayer[
       SpecificationRepository & PlanRepository & IssueRepository & DecisionInbox & ActivityRepository & ConfigRepository &
-        IssueWorkReportProjection,
+        IssueWorkReportProjection & GovernancePolicyRepository & DaemonAgentScheduler & EvolutionProposalRepository,
       Nothing,
       SdlcDashboardService,
     ] =
@@ -103,27 +156,58 @@ final case class SdlcDashboardServiceLive(
   activityRepository: ActivityRepository,
   configRepository: ConfigRepository,
   workReportProjection: IssueWorkReportProjection,
+  governancePolicyRepository: GovernancePolicyRepository,
+  daemonAgentScheduler: DaemonAgentScheduler,
+  evolutionProposalRepository: EvolutionProposalRepository,
 ) extends SdlcDashboardService:
   import SdlcDashboardService.*
 
+  private val trendWindow: Duration = 7.days
+
   override def snapshot: IO[PersistenceError, Snapshot] =
     for
-      now            <- Clock.instant
-      thresholds     <- loadThresholds
-      specifications <- specificationRepository.list
-      plans          <- planRepository.list
-      issues         <- issueRepository.list(issues.entity.IssueFilter(limit = Int.MaxValue))
-      histories      <- ZIO.foreachPar(issues)(issue =>
-                          issueRepository.history(issue.id).map(events => issue.id -> events)
-                        ).map(_.toMap)
-      decisions      <- decisionInbox.list(DecisionFilter(limit = Int.MaxValue))
-      activity       <- activityRepository.listEvents(limit = 8).mapError(mapActivityError)
-      workReports    <- workReportProjection.getAll
-      lifecycle       = buildLifecycle(specifications, plans, issues)
-      churn           = buildChurnAlerts(issues, histories, thresholds)
-      stoppages       = buildStoppages(now, issues, histories, thresholds)
-      escalations     = buildEscalations(now, issues, histories, decisions, thresholds)
-      agentPerf       = buildAgentPerformance(issues, histories, workReports)
+      now                 <- Clock.instant
+      thresholds          <- loadThresholds
+      specifications      <- specificationRepository.list
+      plans               <- planRepository.list
+      issues              <- issueRepository.list(issues.entity.IssueFilter(limit = Int.MaxValue))
+      histories           <- ZIO.foreachPar(issues)(issue =>
+                               issueRepository.history(issue.id).map(events => issue.id -> events)
+                             ).map(_.toMap)
+      decisions           <- decisionInbox.list(DecisionFilter(limit = Int.MaxValue))
+      activity            <- activityRepository.listEvents(limit = 8)
+      workReports         <- workReportProjection.getAll
+      policies            <- governancePolicyRepository.list
+      daemonStatuses      <- daemonAgentScheduler.list
+      proposals           <- evolutionProposalRepository.list(EvolutionProposalFilter())
+      lifecycle            = buildLifecycle(specifications, plans, issues)
+      churn                = buildChurnAlerts(issues, histories, thresholds)
+      stoppages            = buildStoppages(now, issues, histories, thresholds)
+      escalations          = buildEscalations(now, issues, histories, decisions, thresholds)
+      agentPerf            = buildAgentPerformance(issues, histories, workReports)
+      governance           = buildGovernanceOverview(plans, policies)
+      daemonHealth         = buildDaemonHealthOverview(daemonStatuses)
+      evolution            = buildEvolutionOverview(proposals)
+      specificationTrend   = buildTrend(
+                               now,
+                               specifications,
+                               _.updatedAt,
+                             )
+      planTrend            = buildTrend(
+                               now,
+                               plans,
+                               _.updatedAt,
+                             )
+      issueTrend           = buildTrend(
+                               now,
+                               issues,
+                               issue => summarizeIssueHistory(issue, histories.getOrElse(issue.id, Nil)).lastChangedAt,
+                             )
+      pendingDecisionTrend = buildTrend(
+                               now,
+                               decisions.filter(_.status == DecisionStatus.Pending),
+                               _.createdAt,
+                             )
     yield Snapshot(
       generatedAt = now,
       thresholds = thresholds,
@@ -132,11 +216,18 @@ final case class SdlcDashboardServiceLive(
       stoppages = stoppages,
       escalations = escalations,
       agentPerformance = agentPerf,
+      governance = governance,
+      daemonHealth = daemonHealth,
+      evolution = evolution,
       recentActivity = activity,
       specificationCount = specifications.size,
       planCount = plans.size,
       issueCount = issues.size,
       pendingDecisionCount = decisions.count(_.status == DecisionStatus.Pending),
+      specificationTrend = specificationTrend,
+      planTrend = planTrend,
+      issueTrend = issueTrend,
+      pendingDecisionTrend = pendingDecisionTrend,
     )
 
   private def loadThresholds: IO[PersistenceError, Thresholds] =
@@ -373,6 +464,76 @@ final case class SdlcDashboardServiceLive(
       .sortBy(metric => (-metric.throughput, -metric.successRate, metric.agentName))
       .take(10)
 
+  private def buildGovernanceOverview(
+    plans: List[Plan],
+    policies: List[governance.entity.GovernancePolicy],
+  ): GovernanceOverview =
+    val validations = plans.flatMap(plan => planValidationAttempts(plan))
+    val passCount   = validations.count(_.status == PlanValidationStatus.Passed)
+    val failCount   = validations.count(_.status == PlanValidationStatus.Blocked)
+    GovernanceOverview(
+      passCount = passCount,
+      failCount = failCount,
+      passRate = ratio(passCount, validations.size),
+      activePolicyCount = policies.count(_.archivedAt.isEmpty),
+    )
+
+  private def buildDaemonHealthOverview(
+    statuses: List[daemon.entity.DaemonAgentStatus]
+  ): DaemonHealthOverview =
+    val counts = statuses.foldLeft((0, 0, 0)) {
+      case ((running, stopped, errored), status) =>
+        daemonBucket(status) match
+          case "running" => (running + 1, stopped, errored)
+          case "stopped" => (running, stopped + 1, errored)
+          case _         => (running, stopped, errored + 1)
+    }
+    DaemonHealthOverview(
+      runningCount = counts._1,
+      stoppedCount = counts._2,
+      erroredCount = counts._3,
+    )
+
+  private def buildEvolutionOverview(
+    proposals: List[EvolutionProposal]
+  ): EvolutionOverview =
+    EvolutionOverview(
+      pendingProposalCount = proposals.count(proposal =>
+        proposal.status == EvolutionProposalStatus.Proposed || proposal.status == EvolutionProposalStatus.Approved
+      ),
+      recentlyApplied = proposals
+        .filter(_.status == EvolutionProposalStatus.Applied)
+        .sortBy(proposal => -proposal.updatedAt.toEpochMilli)
+        .take(5)
+        .map(proposal =>
+          RecentEvolution(
+            proposalId = proposal.id.value,
+            title = proposal.title,
+            status = proposal.status.toString,
+            appliedAt = proposal.application.map(_.at).getOrElse(proposal.updatedAt),
+          )
+        ),
+    )
+
+  private def buildTrend[A](
+    now: Instant,
+    values: List[A],
+    timestamp: A => Instant,
+  ): TrendIndicator =
+    val currentStart  = now.minusMillis(trendWindow.toMillis)
+    val previousStart = currentStart.minusMillis(trendWindow.toMillis)
+    val currentCount  = values.count(value => isWithin(timestamp(value), currentStart, now))
+    val previousCount = values.count(value => isWithin(timestamp(value), previousStart, currentStart))
+    TrendIndicator(
+      direction =
+        if currentCount > previousCount then TrendDirection.Up
+        else if currentCount < previousCount then TrendDirection.Down
+        else TrendDirection.Flat,
+      currentPeriodCount = currentCount,
+      previousPeriodCount = previousCount,
+      periodLabel = "7d",
+    )
+
   private def summarizeIssueHistory(issue: AgentIssue, events: List[IssueEvent]): IssueHistorySummary =
     val ordered         = events.sortBy(_.occurredAt)
     val transitionCount = ordered.count(isTransitionEvent)
@@ -476,6 +637,21 @@ final case class SdlcDashboardServiceLive(
   private def isHighUrgency(value: String): Boolean =
     value.equalsIgnoreCase("high") || value.equalsIgnoreCase("critical")
 
+  private def planValidationAttempts(plan: Plan): List[PlanValidationResult] =
+    (plan.validation.toList ++ plan.versions.flatMap(_.validation))
+      .groupBy(result => (result.validatedAt, result.status))
+      .values
+      .map(_.head)
+      .toList
+
+  private def daemonBucket(status: daemon.entity.DaemonAgentStatus): String =
+    if status.runtime.lastError.exists(_.trim.nonEmpty) || status.runtime.health == DaemonHealth.Degraded then "errored"
+    else if !status.enabled || status.runtime.lifecycle == DaemonLifecycle.Stopped then "stopped"
+    else "running"
+
+  private def isWithin(value: Instant, startInclusive: Instant, endExclusive: Instant): Boolean =
+    !value.isBefore(startInclusive) && value.isBefore(endExclusive)
+
   private def escalationSortKey(alert: EscalationIndicator): (Int, Long) =
     val urgencyRank = alert.urgency.toLowerCase match
       case "critical" => 0
@@ -489,6 +665,9 @@ final case class SdlcDashboardServiceLive(
 
   private def hoursBetween(from: Instant, to: Instant): Double =
     Duration.between(from, to).toMillis.max(0L).toDouble / 3600000.0d
+
+  private def ratio(numerator: Int, denominator: Int): Double =
+    if denominator == 0 then 0.0d else numerator.toDouble / denominator.toDouble
 
   private def timestampFromState(state: IssueState): Instant =
     state match
@@ -506,13 +685,6 @@ final case class SdlcDashboardServiceLive(
       case IssueState.Completed(_, completedAt, _) => completedAt
       case IssueState.Failed(_, failedAt, _)       => failedAt
       case IssueState.Skipped(skippedAt, _)        => skippedAt
-
-  private def mapActivityError(error: DbPersistenceError): PersistenceError =
-    error match
-      case DbPersistenceError.ConnectionFailed(cause) => PersistenceError.StoreUnavailable(cause)
-      case DbPersistenceError.QueryFailed(op, cause)  => PersistenceError.QueryFailed(op, cause)
-      case DbPersistenceError.NotFound(entity, id)    => PersistenceError.NotFound(entity, id.toString)
-      case DbPersistenceError.SchemaInitFailed(cause) => PersistenceError.SerializationFailed("activity", cause)
 
   final private case class IssueHistorySummary(
     transitionCount: Int,

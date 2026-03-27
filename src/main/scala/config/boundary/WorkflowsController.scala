@@ -7,9 +7,9 @@ import zio.*
 import zio.http.*
 import zio.json.*
 
-import _root_.config.entity.{ AgentInfo, WorkflowDefinition, WorkflowStepAgent, WorkflowValidator }
-import db.{ ConfigRepository, PersistenceError }
+import _root_.config.entity.{ AgentInfo, ConfigRepository, WorkflowDefinition, WorkflowStepAgent, WorkflowValidator }
 import orchestration.control.{ AgentRegistry, WorkflowService, WorkflowServiceError }
+import shared.errors.PersistenceError
 import shared.web.HtmlViews
 import taskrun.entity.TaskStep
 
@@ -63,18 +63,20 @@ final case class WorkflowsControllerLive(
     Method.GET / "workflows" / long("id")          -> handler { (id: Long, _: Request) =>
       handle {
         for
-          workflow <- service
-                        .getWorkflow(id)
-                        .someOrFail(WorkflowServiceError.PersistenceFailed(PersistenceError.NotFound("workflows", id)))
+          workflow <-
+            service
+              .getWorkflow(id)
+              .someOrFail(WorkflowServiceError.PersistenceFailed(PersistenceError.NotFound("workflows", id.toString)))
         yield html(HtmlViews.workflowDetail(workflow))
       }
     },
     Method.GET / "workflows" / long("id") / "edit" -> handler { (id: Long, req: Request) =>
       handle {
         for
-          workflow <- service
-                        .getWorkflow(id)
-                        .someOrFail(WorkflowServiceError.PersistenceFailed(PersistenceError.NotFound("workflows", id)))
+          workflow <-
+            service
+              .getWorkflow(id)
+              .someOrFail(WorkflowServiceError.PersistenceFailed(PersistenceError.NotFound("workflows", id.toString)))
           _        <- {
             if workflow.isBuiltin then
               ZIO.fail(
@@ -127,7 +129,7 @@ final case class WorkflowsControllerLive(
             existing   <-
               service
                 .getWorkflow(id)
-                .someOrFail(WorkflowServiceError.PersistenceFailed(PersistenceError.NotFound("workflows", id)))
+                .someOrFail(WorkflowServiceError.PersistenceFailed(PersistenceError.NotFound("workflows", id.toString)))
             _          <- {
               if existing.isBuiltin then
                 ZIO.fail(WorkflowServiceError.ValidationFailed(List("Built-in workflows cannot be edited")))
@@ -153,9 +155,10 @@ final case class WorkflowsControllerLive(
     Method.DELETE / "workflows" / long("id")       -> handler { (id: Long, _: Request) =>
       handle {
         for
-          existing <- service
-                        .getWorkflow(id)
-                        .someOrFail(WorkflowServiceError.PersistenceFailed(PersistenceError.NotFound("workflows", id)))
+          existing <-
+            service
+              .getWorkflow(id)
+              .someOrFail(WorkflowServiceError.PersistenceFailed(PersistenceError.NotFound("workflows", id.toString)))
           _        <- {
             if existing.isBuiltin then
               ZIO.fail(WorkflowServiceError.ValidationFailed(List("Built-in workflows cannot be deleted")))
@@ -286,13 +289,13 @@ final case class WorkflowsControllerLive(
         Response.text(s"Invalid stored workflow '$workflowName': $reason").status(Status.InternalServerError)
       case WorkflowServiceError.PersistenceFailed(persistence)            =>
         persistence match
-          case PersistenceError.NotFound(entity, id)    =>
+          case PersistenceError.NotFound(entity, id)          =>
             Response.text(s"$entity with id $id not found").status(Status.NotFound)
-          case PersistenceError.ConnectionFailed(cause) =>
+          case PersistenceError.StoreUnavailable(cause)       =>
             Response.text(s"Database unavailable: $cause").status(Status.ServiceUnavailable)
-          case PersistenceError.QueryFailed(_, cause)   =>
+          case PersistenceError.QueryFailed(_, cause)         =>
             Response.text(s"Database query failed: $cause").status(Status.InternalServerError)
-          case PersistenceError.SchemaInitFailed(cause) =>
+          case PersistenceError.SerializationFailed(_, cause) =>
             Response.text(s"Database initialization failed: $cause").status(Status.InternalServerError)
 
   private def redirectToList(flash: String): Response =

@@ -5,9 +5,10 @@ import zio.http.*
 import zio.test.*
 
 import _root_.config.boundary.WorkflowsControllerLive
-import _root_.config.entity.WorkflowDefinition
+import _root_.config.entity.{ ConfigRepository, WorkflowDefinition }
 import db.*
 import orchestration.control.{ WorkflowService, WorkflowServiceError }
+import shared.errors.PersistenceError
 
 object WorkflowsControllerSpec extends ZIOSpecDefault:
 

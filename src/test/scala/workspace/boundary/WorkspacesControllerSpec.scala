@@ -102,7 +102,7 @@ object WorkspacesControllerSpec extends ZIOSpecDefault:
     def setAgentEnabled(name: String, enabled: Boolean): UIO[Unit]              = ZIO.unit
     def getMetrics(name: String): UIO[Option[AgentMetrics]]                     = ZIO.succeed(None)
     def getHealth(name: String): UIO[Option[AgentHealth]]                       = ZIO.succeed(None)
-    def loadCustomAgents(rows: List[db.CustomAgentRow]): UIO[Int]               = ZIO.succeed(0)
+    def loadCustomAgents(customAgents: List[CustomAgentRow]): UIO[Int]          = ZIO.succeed(0)
     def getRankedAgents(q: AgentQuery): UIO[List[AgentInfo]]                    = ZIO.succeed(Nil)
 
   private object StubIssueRepository extends IssueRepository:
@@ -197,14 +197,14 @@ object WorkspacesControllerSpec extends ZIOSpecDefault:
     runRef: Ref[Map[String, WorkspaceRun]],
     triggerRef: Ref[List[(String, Boolean)]],
   ) =
-    WorkspacesController.routes(
+    WorkspacesController.make(
       StubWorkspaceRepo(wsRef, runRef),
       StubRunService(),
       StubAgentRegistry,
       StubIssueRepository,
       StubGitService,
       StubAnalysisScheduler(triggerRef),
-    )
+    ).routes
 
   def spec: Spec[TestEnvironment & Scope, Any] = suite("WorkspacesControllerSpec")(
     test("GET /settings/workspaces returns 200") {

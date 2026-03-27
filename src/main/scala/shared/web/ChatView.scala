@@ -25,25 +25,55 @@ object ChatView:
     workspaceFolders: List[ChatWorkspaceFolder],
     renderedAt: Instant = Instant.EPOCH,
   ): String =
-    val latestHref = conversations.sortBy(_.updatedAt)(Ordering[java.time.Instant].reverse).flatMap(_.id).headOption
-      .map(id => s"/chat/$id")
-      .getOrElse("/chat")
+    val sorted = conversations.sortBy(_.updatedAt)(Ordering[java.time.Instant].reverse)
     Layout.page(
       "Chat",
       "/chat",
       chatWorkspaceNav = Some(buildWorkspaceNav(workspaceFolders, None, showNewChat = true, renderedAt = renderedAt)),
     )(
-      div(cls := "rounded-lg border border-white/10 bg-slate-950/70 p-4 space-y-3")(
-        div(
-          h1(cls := "text-sm font-semibold text-white")("Chat"),
-          p(cls := "text-[11px] text-gray-400")("Select a workspace chat from the left navigation."),
+      div(cls := "space-y-4")(
+        Components.pageHeader(
+          "Chat",
+          s"${conversations.size} conversation${if conversations.size == 1 then "" else "s"}",
+          a(
+            href := "/chat/new",
+            cls  := "rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-500",
+          )("New Chat"),
         ),
-        a(
-          href := latestHref,
-          cls  := "inline-flex rounded bg-indigo-600 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-indigo-700",
-        )("Open Latest Chat"),
-        sessionsSection(sessions),
+        if sorted.isEmpty then
+          Components.emptyStateFull(
+            "No conversations yet",
+            "Start a new chat to talk to an agent.",
+            action = a(
+              href := "/chat/new",
+              cls  := "rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500",
+            )("New Chat"),
+          )
+        else
+          div(cls := "rounded-xl border border-white/10 bg-slate-900/70 divide-y divide-white/5")(
+            sorted.map(conversationRow)*
+          )
+        ,
+        if sessions.nonEmpty then sessionsSection(sessions) else (),
       )
+    )
+
+  private def conversationRow(conv: ChatConversation): Frag =
+    val convId = sanitizeOptionalString(conv.id).getOrElse("")
+    val label  = Option(conv.title).map(_.trim).filter(_.nonEmpty).getOrElse("Untitled")
+    val ts     = formatTimestamp(conv.updatedAt)
+    a(
+      href := s"/chat/$convId",
+      cls  := "flex items-center justify-between gap-3 px-4 py-3 hover:bg-white/5 transition-colors",
+    )(
+      div(cls := "min-w-0")(
+        p(cls := "truncate text-sm font-medium text-white")(label),
+        p(cls := "mt-0.5 truncate text-xs text-gray-400")(ts),
+      ),
+      Components.svgIcon(
+        "M8.25 4.5l7.5 7.5-7.5 7.5",
+        "h-4 w-4 flex-shrink-0 text-gray-500",
+      ),
     )
 
   def emptyState(workspaceFolders: List[ChatWorkspaceFolder], renderedAt: Instant = Instant.EPOCH): String =
@@ -305,7 +335,7 @@ object ChatView:
             div(
               cls := "relative flex-1 min-h-0 overflow-hidden rounded-2xl bg-slate-950/55 ring-1 ring-white/5 flex flex-col"
             )(
-              tag("chat-message-stream")(
+              tag("ab-chat-stream")(
                 id                      := s"messages-$conversationId",
                 cls                     := "flex-1 min-h-0 overflow-y-auto p-4 space-y-3 block",
                 attr("conversation-id") := conversationId,
@@ -360,8 +390,8 @@ object ChatView:
       JsResources.inlineModuleScript("/static/client/components/ab-message-search.js"),
       JsResources.inlineModuleScript("/static/client/components/ab-icon-button.js"),
       JsResources.inlineModuleScript("/static/client/components/ab-tool-waterfall.js"),
-      JsResources.inlineModuleScript("/static/client/components/chat-message-stream.js"),
-      runSessionMeta.fold[Frag](JsResources.inlineModuleScript("/static/client/components/message-composer.js"))(_ =>
+      JsResources.inlineModuleScript("/static/client/components/ab-chat-stream.js"),
+      runSessionMeta.fold[Frag](JsResources.inlineModuleScript("/static/client/components/ab-message-composer.js"))(_ =>
         frag(
           JsResources.inlineModuleScript("/static/client/components/run-session-controls.js"),
           JsResources.inlineModuleScript("/static/client/components/git-panel.js"),

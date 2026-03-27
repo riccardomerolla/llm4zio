@@ -23,34 +23,37 @@ object WorkspacesView:
   ): String =
     Layout.page("Workspaces", "/workspaces")(
       div(cls := "space-y-6")(
-        div(cls := "rounded-xl border border-white/10 bg-slate-900/80 px-5 py-4")(
-          div(cls := "flex flex-wrap items-center justify-between gap-3")(
-            div(
-              h1(cls := "text-2xl font-bold text-white")("Workspaces"),
-              p(cls := "mt-1 text-sm text-slate-300")(
-                "Register local git repositories and assign issues to CLI agents"
-              ),
-            ),
-            button(
-              cls               := "rounded-md border border-emerald-400/30 bg-emerald-500/20 px-3 py-2 text-sm font-semibold text-emerald-200 hover:bg-emerald-500/30",
-              attr("hx-get")    := "/api/workspaces/new",
-              attr("hx-target") := "#modal-container",
-              attr("hx-swap")   := "innerHTML",
-            )("+ New Workspace"),
-          )
+        Components.pageHeader(
+          "Workspaces",
+          "Register local git repositories and assign issues to CLI agents",
+          button(
+            cls               := "rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-500",
+            attr("hx-get")    := "/api/workspaces/new",
+            attr("hx-target") := "#modal-container",
+            attr("hx-swap")   := "innerHTML",
+          )("New Workspace"),
         ),
         div(id := "modal-container"),
         if workspaces.isEmpty then
-          div(cls := "rounded-xl border border-white/10 bg-slate-900/60 p-10 text-center")(
-            p(cls := "text-slate-400")("No workspaces configured yet."),
-            p(cls := "mt-1 text-sm text-slate-500")(
-              "Add a workspace to start assigning issues to CLI agents."
-            ),
+          Components.emptyStateFull(
+            "No workspaces yet",
+            "Add a workspace to start assigning issues to CLI agents.",
           )
         else
-          div(cls := "space-y-4")(workspaces.map(ws =>
-            workspaceCard(ws, agents, analysisStatusByWorkspaceId.getOrElse(ws.id, Nil))
-          )*),
+          div(cls := "rounded-lg border border-white/10 overflow-hidden")(
+            tag("table")(cls := "w-full text-sm")(
+              tag("thead")(
+                tag("tr")(cls := "border-b border-white/10 bg-white/5")(
+                  tag("th")(cls := "px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-400")("Workspace"),
+                  tag("th")(cls := "hidden px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-400 sm:table-cell")("CLI"),
+                  tag("th")(cls := "hidden px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-400 sm:table-cell")("Run Mode"),
+                  tag("th")(cls := "hidden px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-400 sm:table-cell")("Default Agent"),
+                  tag("th")(cls := "px-4 py-2 text-right text-xs font-medium uppercase tracking-wide text-gray-400")("Actions"),
+                ),
+              ),
+              frag(workspaces.sortBy(_.name.toLowerCase).map(workspaceRow)*),
+            ),
+          ),
       )
     )
 
@@ -68,7 +71,7 @@ object WorkspacesView:
           )("Back to workspaces"),
           h1(cls := "text-2xl font-bold text-white")(workspace.name),
         ),
-        workspaceCard(workspace, agents, analysisStatuses, detailMode = true),
+        workspaceCard(workspace, analysisStatuses),
       )
     )
 
@@ -100,9 +103,7 @@ object WorkspacesView:
 
   private def workspaceCard(
     ws: Workspace,
-    agents: List[AgentInfo],
     analysisStatuses: List[WorkspaceAnalysisStatus],
-    detailMode: Boolean = false,
   ): Frag =
     div(
       cls                := "rounded-xl border border-white/10 bg-slate-900/60 p-5",
@@ -130,12 +131,6 @@ object WorkspacesView:
             attr("hx-target") := s"#runs-${ws.id}",
             attr("hx-swap")   := "innerHTML",
           )("Runs"),
-          if !detailMode then
-            a(
-              href := s"/settings/workspaces/${ws.id}",
-              cls  := "rounded-md border border-indigo-400/30 bg-indigo-500/15 px-2 py-1 text-xs font-semibold text-indigo-200 hover:bg-indigo-500/25",
-            )("Details")
-          else frag(),
           button(
             cls               := "rounded-md border border-cyan-400/30 bg-cyan-500/20 px-2 py-1 text-xs font-semibold text-cyan-200 hover:bg-cyan-500/30",
             attr("hx-get")    := s"/api/workspaces/${ws.id}/edit",
@@ -144,18 +139,71 @@ object WorkspacesView:
           )("Edit"),
           button(
             cls                := "rounded-md border border-rose-400/30 bg-rose-500/10 px-2 py-1 text-xs font-semibold text-rose-200 hover:bg-rose-500/20",
-            attr("hx-delete")  := s"/api/workspaces/${ws.id}?detailMode=$detailMode",
+            attr("hx-delete")  := s"/api/workspaces/${ws.id}?detailMode=true",
             attr("hx-target")  := s"#ws-${ws.id}",
             attr("hx-swap")    := "outerHTML",
             attr("hx-confirm") := s"Delete workspace '${ws.name}'?",
           )("Delete"),
         ),
       ),
-      if detailMode then raw(analysisStatusFragment(ws.id, normalizedStatuses(ws.id, analysisStatuses))) else frag(),
-      div(cls := "mt-4 border-t border-white/10 pt-4")(
-        assignForm(ws.id, ws.defaultAgent, agents)
-      ),
+      raw(analysisStatusFragment(ws.id, normalizedStatuses(ws.id, analysisStatuses))),
       div(id := s"runs-${ws.id}", cls := "mt-3"),
+    )
+
+  /** Table row (+ runs expansion row) for the workspaces list page. */
+  private def workspaceRow(ws: Workspace): Frag =
+    tag("tbody")(
+      id                 := s"ws-${ws.id}",
+      attr("data-ws-id") := ws.id,
+    )(
+      tag("tr")(cls := "hover:bg-white/5 transition-colors")(
+        tag("td")(cls := "px-4 py-3")(
+          div(cls := "flex items-center gap-2")(
+            span(cls := "font-medium text-white")(ws.name),
+            if ws.enabled then Components.badge("enabled", "success")
+            else Components.badge("disabled", "gray"),
+          ),
+          p(cls := "mt-0.5 text-xs text-slate-400 font-mono truncate max-w-xs")(ws.localPath),
+          ws.description.map(d => p(cls := "mt-0.5 text-xs text-slate-500 truncate max-w-xs")(d)).getOrElse(frag()),
+        ),
+        tag("td")(cls := "hidden px-4 py-3 text-sm text-slate-300 sm:table-cell")(ws.cliTool),
+        tag("td")(cls := "hidden px-4 py-3 text-sm text-slate-400 sm:table-cell")(runModeLabel(ws.runMode)),
+        tag("td")(cls := "hidden px-4 py-3 text-sm sm:table-cell")(
+          ws.defaultAgent.map(a => span(cls := "text-slate-300")(a)).getOrElse(em(cls := "text-slate-600")("—"))
+        ),
+        tag("td")(cls := "px-4 py-3 text-right")(
+          div(cls := "flex items-center justify-end gap-2")(
+            button(
+              cls               := "rounded px-2 py-1 text-xs font-semibold border border-slate-400/30 bg-slate-500/10 text-slate-200 hover:bg-slate-500/20",
+              attr("hx-get")    := s"/api/workspaces/${ws.id}/runs",
+              attr("hx-target") := s"#runs-${ws.id}",
+              attr("hx-swap")   := "innerHTML",
+            )("Runs"),
+            a(
+              href := s"/settings/workspaces/${ws.id}",
+              cls  := "rounded px-2 py-1 text-xs font-semibold border border-indigo-400/30 bg-indigo-500/15 text-indigo-200 hover:bg-indigo-500/25",
+            )("Details"),
+            button(
+              cls               := "rounded px-2 py-1 text-xs font-semibold border border-cyan-400/30 bg-cyan-500/20 text-cyan-200 hover:bg-cyan-500/30",
+              attr("hx-get")    := s"/api/workspaces/${ws.id}/edit",
+              attr("hx-target") := "#modal-container",
+              attr("hx-swap")   := "innerHTML",
+            )("Edit"),
+            button(
+              cls                := "rounded px-2 py-1 text-xs font-semibold border border-rose-400/30 bg-rose-500/10 text-rose-200 hover:bg-rose-500/20",
+              attr("hx-delete")  := s"/api/workspaces/${ws.id}",
+              attr("hx-target")  := s"#ws-${ws.id}",
+              attr("hx-swap")    := "outerHTML",
+              attr("hx-confirm") := s"Delete workspace '${ws.name}'?",
+            )("Delete"),
+          ),
+        ),
+      ),
+      tag("tr")()(
+        tag("td")(attr("colspan") := "5", cls := "px-4")(
+          div(id := s"runs-${ws.id}"),
+        ),
+      ),
     )
 
   private def normalizedStatuses(
@@ -569,61 +617,6 @@ object WorkspacesView:
       case RunStatus.Cancelled                           => ("Cancelled", "border-orange-400/30 bg-orange-500/20 text-orange-200")
     span(cls := s"rounded-full border px-2 py-0.5 text-xs font-semibold $colour")(label)
 
-  private def assignForm(workspaceId: String, defaultAgent: Option[String], agents: List[AgentInfo]): Frag =
-    val searchId      = s"issue-search-$workspaceId"
-    val resultsId     = s"issue-results-$workspaceId"
-    val refId         = s"issue-ref-$workspaceId"
-    val promptId      = s"issue-prompt-$workspaceId"
-    val agentSelectId = s"agent-select-$workspaceId"
-    div(cls := "space-y-3")(
-      p(cls := "text-sm font-semibold text-slate-200")("Assign run to agent"),
-      // Issue search row
-      div(cls := "relative")(
-        input(
-          id                 := searchId,
-          `type`             := "text",
-          placeholder        := "Search open issues…",
-          cls                := "w-full rounded-md border border-white/15 bg-slate-800/80 px-3 py-1.5 text-sm text-slate-100 placeholder:text-slate-500",
-          attr("hx-get")     := "/api/workspaces/issues/search",
-          attr("hx-trigger") := "input changed delay:300ms",
-          attr("hx-target")  := s"#$resultsId",
-          attr("hx-swap")    := "innerHTML",
-          attr("hx-vals")    := s"""js:{q: document.getElementById('$searchId').value}""",
-        ),
-        div(
-          id                 := resultsId,
-          cls                := "absolute z-10 mt-1 w-full rounded-md border border-white/10 bg-slate-800 shadow-lg empty:hidden",
-        ),
-      ),
-      // Hidden fields populated on issue selection
-      input(`type` := "hidden", id := refId, name    := "issueRef", value := ""),
-      input(`type` := "hidden", id := promptId, name := "prompt", value   := ""),
-      // Agent select + submit row
-      div(cls := "flex flex-wrap gap-2 items-center")(
-        span(
-          id  := s"selected-label-$workspaceId",
-          cls := "text-xs text-slate-400 italic flex-1",
-        )("No issue selected"),
-        tag("select")(
-          id   := agentSelectId,
-          name := "agentName",
-          cls  := "rounded-md border border-white/15 bg-slate-800/80 px-3 py-1.5 text-sm text-slate-100 focus:border-indigo-400/40 focus:outline-none",
-        )(
-          agents.map { a =>
-            if defaultAgent.contains(a.name) then option(value := a.name, selected)(a.displayName)
-            else option(value := a.name)(a.displayName)
-          }*
-        ),
-        button(
-          cls                := "rounded-md bg-indigo-500 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-400 disabled:opacity-40",
-          attr("hx-post")    := s"/api/workspaces/$workspaceId/runs",
-          attr("hx-include") := s"#$refId, #$promptId, #$agentSelectId",
-          attr("hx-target")  := s"#runs-$workspaceId",
-          attr("hx-swap")    := "innerHTML",
-        )("Run"),
-      ),
-    )
-
   /** HTMX fragment: list of selectable issue rows for the assign-run search dropdown. */
   def issueSearchResults(issues: List[AgentIssueView]): String =
     if issues.isEmpty then
@@ -711,7 +704,7 @@ object WorkspacesView:
           initialContent = raw(runsDashboardRowsFragment(runs, workspaceNameById)),
         ),
       ),
-      JsResources.inlineModuleScript("/static/client/components/run-dashboard.js"),
+      JsResources.inlineModuleScript("/static/client/components/ab-run-dashboard.js"),
     )
 
   def runsDashboardRoot(fragmentUrl: String, initialContent: Frag): Frag =

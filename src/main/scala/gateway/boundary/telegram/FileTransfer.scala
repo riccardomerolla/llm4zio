@@ -7,6 +7,9 @@ import java.util.zip.{ ZipEntry, ZipOutputStream }
 
 import zio.*
 
+import gateway.control.TelegramClient
+import gateway.entity.{ TelegramClientError, TelegramMessage, TelegramSendDocument }
+
 enum FileTransferError:
   case NoFilesDetected
   case InvalidAttachmentPath(raw: String)

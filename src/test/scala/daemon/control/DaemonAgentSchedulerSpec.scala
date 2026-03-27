@@ -6,16 +6,15 @@ import java.time.Instant
 import zio.*
 import zio.test.*
 
-import activity.control.ActivityHub
 import activity.entity.ActivityEvent
 import daemon.entity.*
-import db.{ ConfigRepository, CustomAgentRow, PersistenceError as DbPersistenceError, SettingRow, WorkflowRow }
 import governance.entity.*
 import issues.entity.*
 import orchestration.control.{ AgentPoolManager, PoolError, SlotHandle }
 import project.entity.*
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ IssueId, ProjectId }
+import shared.testfixtures.*
 import workspace.entity.*
 
 object DaemonAgentSchedulerSpec extends ZIOSpecDefault:
@@ -29,76 +28,12 @@ object DaemonAgentSchedulerSpec extends ZIOSpecDefault:
       ZIO.succeed(projects.find(_.id == id))
     override def delete(id: ProjectId): IO[PersistenceError, Unit]         = ZIO.unit
 
-  final private class StubWorkspaceRepository(workspaces: List[Workspace]) extends WorkspaceRepository:
-    override def append(event: WorkspaceEvent): IO[PersistenceError, Unit]                      = ZIO.unit
-    override def list: IO[PersistenceError, List[Workspace]]                                    = ZIO.succeed(workspaces)
-    override def get(id: String): IO[PersistenceError, Option[Workspace]]                       = ZIO.succeed(workspaces.find(_.id == id))
-    override def delete(id: String): IO[PersistenceError, Unit]                                 = ZIO.unit
-    override def appendRun(event: WorkspaceRunEvent): IO[PersistenceError, Unit]                = ZIO.unit
-    override def listRuns(workspaceId: String): IO[PersistenceError, List[WorkspaceRun]]        = ZIO.succeed(Nil)
-    override def listRunsByIssueRef(issueRef: String): IO[PersistenceError, List[WorkspaceRun]] = ZIO.succeed(Nil)
-    override def getRun(id: String): IO[PersistenceError, Option[WorkspaceRun]]                 = ZIO.succeed(None)
-
-  final private class StubIssueRepository(ref: Ref[Map[IssueId, List[IssueEvent]]]) extends IssueRepository:
-    override def append(event: IssueEvent): IO[PersistenceError, Unit] =
-      ref.update(current => current.updated(event.issueId, current.getOrElse(event.issueId, Nil) :+ event))
-
-    override def get(id: IssueId): IO[PersistenceError, AgentIssue] =
-      history(id).flatMap(events =>
-        ZIO
-          .fromEither(AgentIssue.fromEvents(events))
-          .mapError(error => PersistenceError.SerializationFailed(s"issue:${id.value}", error))
-      )
-
-    override def history(id: IssueId): IO[PersistenceError, List[IssueEvent]] =
-      ref.get.flatMap(current =>
-        ZIO.fromOption(current.get(id)).orElseFail(PersistenceError.NotFound("issue", id.value))
-      )
-
-    override def list(filter: IssueFilter): IO[PersistenceError, List[AgentIssue]] =
-      ref.get.flatMap(current =>
-        ZIO.foreach(current.keys.toList)(get).map(
-          _.slice(filter.offset, filter.offset + filter.limit)
-        )
-      )
-
-    override def delete(id: IssueId): IO[PersistenceError, Unit] =
-      ref.update(_ - id)
-
-  final private class StubActivityHub(ref: Ref[List[ActivityEvent]]) extends ActivityHub:
-    override def publish(event: ActivityEvent): UIO[Unit] = ref.update(_ :+ event)
-    override def subscribe: UIO[Dequeue[ActivityEvent]]   = Queue.unbounded[ActivityEvent]
-
   final private class StubAgentPoolManager extends AgentPoolManager:
     override def acquireSlot(agentName: String): IO[PoolError, SlotHandle] =
       ZIO.succeed(SlotHandle("slot-1", agentName, now))
     override def releaseSlot(handle: SlotHandle): UIO[Unit]                = ZIO.unit
     override def availableSlots(agentName: String): UIO[Int]               = ZIO.succeed(1)
     override def resize(agentName: String, newMax: Int): UIO[Unit]         = ZIO.unit
-
-  final private class StubConfigRepository(ref: Ref[Map[String, String]]) extends ConfigRepository:
-    override def getAllSettings: IO[DbPersistenceError, List[SettingRow]]                           =
-      ref.get.map(_.toList.map { case (key, value) => SettingRow(key, value, now) }.sortBy(_.key))
-    override def getSetting(key: String): IO[DbPersistenceError, Option[SettingRow]]                =
-      ref.get.map(_.get(key).map(value => SettingRow(key, value, now)))
-    override def upsertSetting(key: String, value: String): IO[DbPersistenceError, Unit]            =
-      ref.update(_.updated(key, value))
-    override def deleteSetting(key: String): IO[DbPersistenceError, Unit]                           =
-      ref.update(_ - key)
-    override def deleteSettingsByPrefix(prefix: String): IO[DbPersistenceError, Unit]               =
-      ref.update(_.filterNot(_._1.startsWith(prefix)))
-    override def createWorkflow(workflow: WorkflowRow): IO[DbPersistenceError, Long]                = ZIO.succeed(1L)
-    override def getWorkflow(id: Long): IO[DbPersistenceError, Option[WorkflowRow]]                 = ZIO.succeed(None)
-    override def getWorkflowByName(name: String): IO[DbPersistenceError, Option[WorkflowRow]]       = ZIO.succeed(None)
-    override def listWorkflows: IO[DbPersistenceError, List[WorkflowRow]]                           = ZIO.succeed(Nil)
-    override def updateWorkflow(workflow: WorkflowRow): IO[DbPersistenceError, Unit]                = ZIO.unit
-    override def deleteWorkflow(id: Long): IO[DbPersistenceError, Unit]                             = ZIO.unit
-    override def createCustomAgent(agent: CustomAgentRow): IO[DbPersistenceError, Long]             = ZIO.succeed(1L)
-    override def getCustomAgent(id: Long): IO[DbPersistenceError, Option[CustomAgentRow]]           = ZIO.succeed(None)
-    override def getCustomAgentByName(name: String): IO[DbPersistenceError, Option[CustomAgentRow]] = ZIO.succeed(None)
-    override def listCustomAgents: IO[DbPersistenceError, List[CustomAgentRow]]                     = ZIO.succeed(Nil)
-    override def updateCustomAgent(agent: CustomAgentRow): IO[DbPersistenceError, Unit]             = ZIO.unit
-    override def deleteCustomAgent(id: Long): IO[DbPersistenceError, Unit]                          = ZIO.unit
 
   final private class StubGovernancePolicyRepository(policy: Option[GovernancePolicy])
     extends GovernancePolicyRepository:
@@ -110,6 +45,8 @@ object DaemonAgentSchedulerSpec extends ZIOSpecDefault:
         .orElseFail(PersistenceError.NotFound("governance_policy", projectId.value))
     override def listByProject(projectId: ProjectId): IO[PersistenceError, List[GovernancePolicy]]  =
       ZIO.succeed(policy.filter(_.projectId == projectId).toList)
+    override def list: IO[PersistenceError, List[GovernancePolicy]]                                 =
+      ZIO.succeed(policy.toList)
 
   final private class StubDaemonAgentSpecRepository(specs: List[DaemonAgentSpec]) extends DaemonAgentSpecRepository:
     override def get(id: shared.ids.Ids.DaemonAgentSpecId): IO[PersistenceError, DaemonAgentSpec] =
@@ -159,10 +96,10 @@ object DaemonAgentSchedulerSpec extends ZIOSpecDefault:
       scheduler    = DaemonAgentSchedulerLive(
                        projectRepository = new StubProjectRepository(List(project)),
                        workspaceRepository = new StubWorkspaceRepository(List(workspace)),
-                       issueRepository = new StubIssueRepository(issueRef),
+                       issueRepository = new MutableIssueRepository(issueRef),
                        activityHub = new StubActivityHub(activityRef),
                        agentPoolManager = new StubAgentPoolManager,
-                       configRepository = new StubConfigRepository(configRef),
+                       configRepository = new MutableConfigRepository(configRef),
                        governanceRepository = new StubGovernancePolicyRepository(governancePolicy),
                        daemonRepository = new StubDaemonAgentSpecRepository(customSpecs),
                        queue = queue,
@@ -239,7 +176,7 @@ object DaemonAgentSchedulerSpec extends ZIOSpecDefault:
           _                                  <- scheduler.worker
           issues                             <- issueRef.get
           rebuilt                            <- ZIO.foreach(issues.keys.toList)(id =>
-                                                  new StubIssueRepository(issueRef).get(id)
+                                                  new MutableIssueRepository(issueRef).get(id)
                                                 )
           maintenance                         = rebuilt.filter(_.issueType == "maintenance")
           activities                         <- activityRef.get
@@ -265,7 +202,7 @@ object DaemonAgentSchedulerSpec extends ZIOSpecDefault:
           _                        <- scheduler.worker
           issues                   <- issueRef.get
           rebuilt                  <- ZIO.foreach(issues.keys.toList)(id =>
-                                        new StubIssueRepository(issueRef).get(id)
+                                        new MutableIssueRepository(issueRef).get(id)
                                       )
           maintenance               = rebuilt.filter(_.issueType == "maintenance")
         yield assertTrue(

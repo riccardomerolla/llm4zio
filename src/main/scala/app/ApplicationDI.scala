@@ -18,7 +18,7 @@ import _root_.config.boundary.{
   WorkflowsController as ConfigWorkflowsController,
 }
 import _root_.config.control.{ ConfigValidator, ModelService }
-import _root_.config.entity.{ AIProvider, AIProviderConfig, GatewayConfig }
+import _root_.config.entity.{ AIProvider, AIProviderConfig, ConfigRepository, GatewayConfig }
 import activity.boundary.ActivityController
 import activity.control.ActivityHub
 import activity.entity.ActivityRepository
@@ -26,13 +26,19 @@ import agent.entity.{ AgentEventStoreES, AgentRepositoryES }
 import analysis.control.{ AnalysisAgentRunner, WorkspaceAnalysisScheduler }
 import analysis.entity.{ AnalysisEventStoreES, AnalysisRepositoryES }
 import app.boundary.{
+  AdeRouteModule,
   AgentMonitorController as AppAgentMonitorController,
+  ConfigRouteModule,
+  CoreRouteModule,
+  GatewayRouteModule,
   HealthController as AppHealthController,
   WebServer,
+  WorkspaceRouteModule,
 }
 import app.control.{ FileService, HealthMonitor, HttpAIClient, LogTailer, StateService }
 import board.boundary.BoardController as BoardBoundaryController
 import board.control.*
+import checkpoint.boundary.CheckpointsController
 import checkpoint.control.CheckpointReviewService
 import com.bot4s.telegram.clients.FutureSttpClient
 import conversation.boundary.{
@@ -43,23 +49,25 @@ import daemon.boundary.DaemonsController
 import daemon.control.DaemonAgentScheduler
 import daemon.entity.DaemonAgentSpecRepositoryES
 import db.*
+import decision.boundary.DecisionsController
 import decision.control.DecisionInbox
 import decision.entity.{ DecisionEventStoreES, DecisionRepositoryES }
 import evolution.control.EvolutionEngine
 import evolution.entity.{ EvolutionProposalEventStoreES, EvolutionProposalRepositoryES }
-import gateway.boundary.discord.DiscordGatewayService
 import gateway.boundary.telegram.*
 import gateway.boundary.{
   ChannelController as GatewayChannelController,
   TelegramController as GatewayTelegramController,
 }
 import gateway.control.{ MessageRouter, * }
+import gateway.entity.*
 import governance.control.{ GovernancePolicyEngine, GovernancePolicyService }
 import governance.entity.{ GovernancePolicyEventStoreES, GovernancePolicyRepositoryES }
 import io.github.riccardomerolla.zio.eclipsestore.service.{ LifecycleCommand, LifecycleStatus }
 import issues.boundary.IssueController as IssuesIssueController
 import issues.control.{ IssueWorkReportHydrator, IssueWorkReportSubscriber }
 import issues.entity.IssueRepositoryBoard
+import knowledge.boundary.KnowledgeController
 import knowledge.control.{ KnowledgeExtractionService, KnowledgeGraphService }
 import knowledge.entity.{ DecisionLogEventStoreES, DecisionLogRepositoryES }
 import llm4zio.core.*
@@ -74,13 +82,16 @@ import orchestration.control.{
   IssueAssignmentOrchestrator as OrchestrationIssueAssignmentOrchestrator,
   ProgressTracker as OrchestrationProgressTracker,
 }
+import plan.boundary.PlansController
 import plan.entity.{ PlanEventStoreES, PlanRepositoryES }
+import project.boundary.ProjectsController
 import project.entity.ProjectRepository
 import prompts.PromptLoader
 import sdlc.boundary.SdlcDashboardController
 import sdlc.control.SdlcDashboardService
 import shared.store.{ ConfigStoreModule, DataStoreModule, MemoryStoreModule, StoreConfig }
 import shared.web.StreamAbortRegistry
+import specification.boundary.SpecificationsController
 import specification.entity.{ SpecificationEventStoreES, SpecificationRepositoryES }
 import sttp.client4.DefaultFutureBackend
 import taskrun.boundary.{
@@ -91,6 +102,7 @@ import taskrun.boundary.{
   TasksController as TaskRunTasksController,
 }
 import taskrun.entity.{ TaskRunEventStoreES, TaskRunRepositoryES }
+import workspace.boundary.WorkspacesController
 import workspace.control.*
 import workspace.entity.WorkspaceRepository
 
@@ -321,6 +333,13 @@ object ApplicationDI:
       WorkspaceAnalysisScheduler.live,
       KnowledgeGraphService.live,
       KnowledgeExtractionService.live,
+      ProjectsController.live,
+      SpecificationsController.live,
+      PlansController.live,
+      DecisionsController.live,
+      CheckpointsController.live,
+      KnowledgeController.live,
+      WorkspacesController.live,
       DependencyResolver.live,
       AgentPoolManager.live,
       DaemonAgentSpecRepositoryES.live,
@@ -344,6 +363,11 @@ object ApplicationDI:
       GatewayTelegramController.live,
       ConversationWebSocketController.live,
       mcp.McpService.live,
+      AdeRouteModule.live,
+      CoreRouteModule.live,
+      GatewayRouteModule.live,
+      ConfigRouteModule.live,
+      WorkspaceRouteModule.live,
       WebServer.live,
     ) >>> ZLayer.service[WebServer]
 

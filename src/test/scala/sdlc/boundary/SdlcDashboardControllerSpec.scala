@@ -12,6 +12,13 @@ import shared.errors.PersistenceError
 
 object SdlcDashboardControllerSpec extends ZIOSpecDefault:
 
+  private val flatTrend = SdlcDashboardService.TrendIndicator(
+    direction = SdlcDashboardService.TrendDirection.Flat,
+    currentPeriodCount = 0,
+    previousPeriodCount = 0,
+    periodLabel = "7d",
+  )
+
   private val snapshotData = SdlcDashboardService.Snapshot(
     generatedAt = Instant.parse("2026-03-26T12:00:00Z"),
     thresholds = SdlcDashboardService.Thresholds(6, 2, 24, 12, 8, 4),
@@ -20,6 +27,9 @@ object SdlcDashboardControllerSpec extends ZIOSpecDefault:
     stoppages = Nil,
     escalations = Nil,
     agentPerformance = Nil,
+    governance = SdlcDashboardService.GovernanceOverview(0, 0, 0.0, 1),
+    daemonHealth = SdlcDashboardService.DaemonHealthOverview(0, 0, 0),
+    evolution = SdlcDashboardService.EvolutionOverview(0, Nil),
     recentActivity = List(
       ActivityEvent(
         id = shared.ids.Ids.EventId("evt-1"),
@@ -34,6 +44,10 @@ object SdlcDashboardControllerSpec extends ZIOSpecDefault:
     planCount = 1,
     issueCount = 0,
     pendingDecisionCount = 0,
+    specificationTrend = flatTrend,
+    planTrend = flatTrend,
+    issueTrend = flatTrend,
+    pendingDecisionTrend = flatTrend,
   )
 
   private val stubService: SdlcDashboardService = new SdlcDashboardService:

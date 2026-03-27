@@ -19,138 +19,197 @@ object AgentsView:
 
   def list(cards: List[AgentCard], flash: Option[String] = None): String =
     Layout.page("Agents", "/agents")(
-      div(cls := "space-y-6")(
-        div(cls := "rounded-xl border border-white/10 bg-slate-900/80 px-5 py-4")(
-          div(cls := "flex flex-wrap items-center justify-between gap-3")(
-            div(
-              h1(cls := "text-2xl font-bold text-white")("Agents"),
-              p(cls := "mt-1 text-sm text-slate-300")(
-                "Built-in, custom config, and registry agents"
-              ),
-            ),
+      div(cls := "flex gap-0")(
+        // Main list
+        div(cls := "flex-1 min-w-0 space-y-4")(
+          Components.pageHeader(
+            "Agents",
+            "Built-in, custom config, and registry agents",
             a(
               href := "/agents/new",
-              cls  := "rounded-md border border-emerald-400/30 bg-emerald-500/20 px-3 py-2 text-sm font-semibold text-emerald-200 hover:bg-emerald-500/30",
+              cls  := "rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-500",
             )("Create Agent"),
-          )
-        ),
-        flash.map { msg =>
-          div(cls := "rounded-md border border-emerald-500/30 bg-emerald-500/10 p-4")(
-            p(cls := "text-sm text-emerald-300")(msg)
-          )
-        },
-        if cards.isEmpty then
-          div(cls := "rounded-xl border border-white/10 bg-slate-900/60 px-4 py-8 text-sm text-slate-400")(
-            "No agents configured yet."
-          )
-        else
-          div(cls := "grid grid-cols-1 gap-4 lg:grid-cols-2")(
-            cards.sortBy(_.info.displayName.toLowerCase).map(agentCard)
           ),
-      )
+          flash.map { msg =>
+            div(cls := "rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-300")(msg)
+          },
+          if cards.isEmpty then
+            Components.emptyStateFull(
+              "No agents configured yet",
+              "Create a built-in or custom agent to get started.",
+              action = a(
+                href := "/agents/new",
+                cls  := "rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-500",
+              )("Create Agent"),
+            )
+          else
+            div(cls := "rounded-lg border border-white/10 overflow-hidden")(
+              tag("table")(cls := "w-full text-sm")(
+                tag("thead")(
+                  tag("tr")(cls := "border-b border-white/10 bg-white/5")(
+                    tag("th")(cls := "px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-400")(
+                      "Agent"
+                    ),
+                    tag("th")(
+                      cls := "hidden px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-400 sm:table-cell"
+                    )("Skills"),
+                    tag("th")(cls := "px-4 py-2 text-right text-xs font-medium uppercase tracking-wide text-gray-400")(
+                      "Runs"
+                    ),
+                    tag("th")(
+                      cls := "hidden px-4 py-2 text-right text-xs font-medium uppercase tracking-wide text-gray-400 sm:table-cell"
+                    )("Success"),
+                    tag("th")(cls := "px-4 py-2")(),
+                  )
+                ),
+                tag("tbody")(cls := "divide-y divide-white/10")(
+                  cards.sortBy(_.info.displayName.toLowerCase).map(agentRow)
+                ),
+              )
+            ),
+        ),
+        // Side panel (hidden until opened)
+        tag("ab-side-panel")(
+          attr("panel-id") := "agents",
+          attr("width")    := "28rem",
+        )(),
+      ),
+      JsResources.inlineModuleScript("/static/client/components/ab-side-panel.js"),
     )
 
-  private def agentCard(card: AgentCard): Frag =
+  private def agentRow(card: AgentCard): Frag =
+    val agent       = card.info
+    val metrics     = card.metrics
+    val handle      = effectiveHandle(agent)
+    val safeName    = agent.displayName.replace("'", "\\'")
+    val panelUrl    = s"/agents/$handle/panel"
+    val openPanelJs =
+      s"window.dispatchEvent(new CustomEvent('ab-panel-open',{detail:{panelId:'agents',title:'$safeName',contentUrl:'$panelUrl'}}))"
+    tag("tr")(
+      cls     := "hover:bg-white/5 cursor-pointer transition-colors",
+      onclick := openPanelJs,
+    )(
+      tag("td")(cls := "px-4 py-3")(
+        div(cls := "flex items-center gap-2")(
+          statusBadge(card.registryAgent),
+          span(cls := "font-medium text-white")(agent.displayName),
+        ),
+        p(cls := "mt-0.5 truncate text-xs text-gray-500 max-w-xs")(agent.description),
+      ),
+      tag("td")(cls := "hidden px-4 py-3 sm:table-cell")(
+        div(cls := "flex flex-wrap gap-1")(
+          agent.tags.take(3).map(tagBadge),
+          if agent.tags.size > 3 then Components.badge(s"+${agent.tags.size - 3}", "gray") else (),
+        )
+      ),
+      tag("td")(cls := "px-4 py-3 text-right tabular-nums text-sm text-gray-300")(
+        metrics.totalRuns.toString
+      ),
+      tag("td")(cls := "hidden px-4 py-3 text-right tabular-nums text-sm sm:table-cell")(
+        span(
+          cls := (if metrics.successRate >= 0.9 then "text-emerald-400"
+                  else if metrics.successRate >= 0.7 then "text-amber-400" else "text-red-400")
+        )(f"${metrics.successRate * 100}%.0f%%")
+      ),
+      tag("td")(cls := "px-4 py-3 text-right")(
+        button(
+          `type`  := "button",
+          cls     := "rounded p-1 text-gray-400 hover:text-white hover:bg-white/10 transition-colors",
+          title   := "View details",
+          onclick := s"event.stopPropagation();$openPanelJs",
+        )("⋯")
+      ),
+    )
+
+  /** HTML fragment for the agent side-panel content (no full-page layout). */
+  def panelFragment(card: AgentCard): String =
     val agent   = card.info
     val metrics = card.metrics
-    div(cls := "rounded-xl border border-white/10 bg-slate-900/70 p-5")(
-      div(cls := "flex items-start justify-between gap-3")(
-        div(
-          h2(cls := "text-lg font-semibold text-slate-100")(agent.displayName),
-          p(cls := "mt-1 text-sm text-slate-300")(agent.description),
-          p(cls := "mt-1 font-mono text-xs text-indigo-300")(s"@${effectiveHandle(agent)}"),
-          card.registryAgent.map(reg => p(cls := "mt-1 font-mono text-[11px] text-slate-500")(s"id: ${reg.id.value}")),
-        ),
-        div(cls := "flex flex-col items-end gap-2")(
-          typeBadge(agent.agentType),
-          aiBadge(agent.usesAI),
-          statusBadge(card.registryAgent),
+    div(cls := "space-y-5 text-sm")(
+      // badges
+      div(cls := "flex flex-wrap gap-2")(
+        typeBadge(agent.agentType),
+        aiBadge(agent.usesAI),
+        statusBadge(card.registryAgent),
+      ),
+      // description
+      p(cls := "text-gray-300")(agent.description),
+      // metrics
+      div(
+        h3(cls := "mb-2 text-xs font-medium uppercase tracking-wide text-gray-400")("Metrics"),
+        div(cls := "grid grid-cols-2 gap-2")(
+          metricCard("Runs", metrics.totalRuns.toString),
+          metricCard("Success", f"${metrics.successRate * 100}%.1f%%"),
+          metricCard("Avg", formatSeconds(metrics.averageDurationSeconds)),
+          metricCard("Active", metrics.activeRuns.toString),
         ),
       ),
-      div(cls := "mt-4 grid grid-cols-2 gap-2 text-xs text-slate-300 md:grid-cols-3")(
-        metricCard("Runs", metrics.totalRuns.toString),
-        metricCard("Success", f"${metrics.successRate * 100}%.1f%%"),
-        metricCard("Avg", formatSeconds(metrics.averageDurationSeconds)),
-      ),
+      // tags
       if agent.tags.nonEmpty then
-        div(cls := "mt-4 flex flex-wrap gap-2")(
-          agent.tags.map(tagBadge)
+        div(
+          h3(cls := "mb-2 text-xs font-medium uppercase tracking-wide text-gray-400")("Skills"),
+          div(cls := "flex flex-wrap gap-1")(agent.tags.map(tagBadge)),
         )
       else (),
-      if card.activeRuns.nonEmpty then
-        div(cls := "mt-4 rounded-lg border border-amber-400/20 bg-amber-500/10 p-3")(
-          p(cls := "text-xs font-semibold uppercase tracking-wide text-amber-200")("Active Runs"),
-          ul(cls := "mt-2 space-y-1 text-xs text-amber-100")(
-            card.activeRuns.take(3).map { run =>
-              li(
-                span(cls := "font-semibold")(run.runId),
-                span(cls := "ml-2")(run.status),
-                span(cls := "ml-2 text-amber-200/70")(run.issueRef),
-              )
-            }
-          ),
-          card.registryAgent match
-            case Some(registryAgent) =>
-              div(cls := "mt-3 flex flex-wrap gap-2")(
-                monitorActionButton(registryAgent.id.value, "pause", "Pause", "amber"),
-                monitorActionButton(registryAgent.id.value, "resume", "Resume", "emerald"),
-                monitorActionButton(registryAgent.id.value, "abort", "Abort", "rose"),
-              )
-            case None                => (),
-        )
-      else (),
-      div(cls := "mt-4 flex flex-wrap gap-2")(
+      // actions
+      div(cls := "flex flex-wrap gap-2")(
         if agent.usesAI then
           a(
             href := s"/agents/${agent.name}/config",
-            cls  := "inline-flex rounded-md border border-indigo-400/30 bg-indigo-500/20 px-3 py-1.5 text-sm font-semibold text-indigo-200 hover:bg-indigo-500/30",
+            cls  := "rounded-md border border-indigo-400/30 bg-indigo-500/20 px-3 py-1.5 text-xs font-semibold text-indigo-200 hover:bg-indigo-500/30",
           )("Configure AI")
         else (),
         card.registryAgent.map { reg =>
           a(
             href := s"/agents/${reg.id.value}",
-            cls  := "inline-flex rounded-md border border-slate-400/30 bg-slate-600/20 px-3 py-1.5 text-sm font-semibold text-slate-200 hover:bg-slate-500/30",
-          )("Details")
+            cls  := "rounded-md border border-white/10 px-3 py-1.5 text-xs font-semibold text-gray-200 hover:bg-white/10",
+          )("Full Details")
         },
         if agent.agentType == AgentType.Custom then
-          List(
-            a(
-              href := s"/agents/${agent.name}/edit",
-              cls  := "inline-flex rounded-md border border-cyan-400/30 bg-cyan-500/20 px-3 py-1.5 text-sm font-semibold text-cyan-200 hover:bg-cyan-500/30",
-            )("Edit"),
-            form(method := "post", action := s"/agents/${agent.name}/delete")(
-              button(
-                `type` := "submit",
-                cls    := "inline-flex rounded-md border border-rose-400/30 bg-rose-500/10 px-3 py-1.5 text-sm font-semibold text-rose-200 hover:bg-rose-500/20",
-              )("Delete")
-            ),
-          )
-        else List.empty[Frag],
+          a(
+            href := s"/agents/${agent.name}/edit",
+            cls  := "rounded-md border border-white/10 px-3 py-1.5 text-xs font-semibold text-gray-200 hover:bg-white/10",
+          )("Edit")
+        else (),
       ),
-      div(cls := "mt-4 border-t border-white/10 pt-3")(
-        p(cls := "mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400")("Channel Bindings"),
-        if card.bindings.isEmpty then p(cls := "text-xs text-slate-500")("No bindings")
+      // active runs
+      if card.activeRuns.nonEmpty then
+        div(
+          h3(cls := "mb-2 text-xs font-medium uppercase tracking-wide text-gray-400")("Active Runs"),
+          div(cls := "rounded-lg border border-amber-400/20 bg-amber-500/10 p-2 space-y-1")(
+            card.activeRuns.take(3).map { run =>
+              div(cls := "text-xs text-amber-200")(
+                span(cls := "font-medium")(run.runId),
+                span(cls := "ml-2 text-amber-300/70")(run.status),
+              )
+            },
+            card.registryAgent.map { reg =>
+              div(cls := "mt-2 flex gap-2")(
+                monitorActionButton(reg.id.value, "pause", "Pause", "amber"),
+                monitorActionButton(reg.id.value, "resume", "Resume", "emerald"),
+                monitorActionButton(reg.id.value, "abort", "Abort", "rose"),
+              )
+            }.getOrElse(()),
+          ),
+        )
+      else (),
+      // channel bindings
+      div(
+        h3(cls := "mb-2 text-xs font-medium uppercase tracking-wide text-gray-400")("Channel Bindings"),
+        if card.bindings.isEmpty then
+          p(cls := "text-xs text-gray-500")("No bindings configured.")
         else
-          ul(cls := "mb-2 space-y-1 text-xs text-slate-300")(
+          ul(cls := "mb-2 space-y-1")(
             card.bindings.map { binding =>
               val channel = binding.channelName.trim
               val account = binding.accountId.map(_.trim).filter(_.nonEmpty)
-              val label   =
-                if channel.nonEmpty then s"$channel${account.map(id => s" ($id)").getOrElse("")}"
-                else s"(missing channel)${account.map(id => s" ($id)").getOrElse("")}"
-              li(cls := "flex items-center justify-between gap-2")(
-                span(cls := "flex-1 break-all text-slate-200")(label),
+              val label   = s"$channel${account.map(id => s" ($id)").getOrElse("")}"
+              li(cls := "flex items-center justify-between gap-2 text-xs text-gray-300")(
+                span(cls := "flex-1 break-all")(label),
                 form(method := "post", action := s"/agents/${agent.name}/bindings/remove")(
                   input(`type` := "hidden", name := "channelName", value := binding.channelName),
-                  input(
-                    `type`     := "hidden",
-                    name       := "accountId",
-                    value      := binding.accountId.getOrElse(""),
-                  ),
-                  button(
-                    `type` := "submit",
-                    cls    := "rounded border border-rose-400/30 bg-rose-500/10 px-2 py-0.5 text-[10px] font-semibold text-rose-200",
-                  )("Unbind"),
+                  input(`type` := "hidden", name := "accountId", value   := binding.accountId.getOrElse("")),
+                  button(`type` := "submit", cls := "text-xs text-rose-400 hover:text-rose-300")("Remove"),
                 ),
               )
             }
@@ -161,21 +220,21 @@ object AgentsView:
             `type`      := "text",
             name        := "channelName",
             placeholder := "channel (e.g. telegram)",
-            cls         := "w-full rounded-md border border-white/10 bg-slate-800/80 px-2 py-1 text-xs text-slate-100",
+            cls         := "flex-1 rounded-md border border-white/10 bg-slate-800/80 px-2 py-1 text-xs text-gray-100",
           ),
           input(
             `type`      := "text",
             name        := "accountId",
-            placeholder := "accountId (optional)",
-            cls         := "w-full rounded-md border border-white/10 bg-slate-800/80 px-2 py-1 text-xs text-slate-100",
+            placeholder := "accountId (opt.)",
+            cls         := "flex-1 rounded-md border border-white/10 bg-slate-800/80 px-2 py-1 text-xs text-gray-100",
           ),
           button(
             `type` := "submit",
-            cls    := "rounded-md border border-emerald-400/30 bg-emerald-500/20 px-2 py-1 text-xs font-semibold text-emerald-200",
+            cls    := "rounded-md bg-indigo-600 px-2 py-1 text-xs font-semibold text-white hover:bg-indigo-500",
           )("Bind"),
         ),
       ),
-    )
+    ).render
 
   private def monitorActionButton(agentId: String, actionName: String, label: String, palette: String): Frag =
     val buttonCls = palette match

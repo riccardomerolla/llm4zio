@@ -68,6 +68,8 @@ object GovernancePolicyServiceSpec extends ZIOSpecDefault:
         .fold(ZIO.fail(PersistenceError.NotFound("governance_policy", pid.value)))(ZIO.succeed)
     override def listByProject(pid: ProjectId): IO[PersistenceError, List[GovernancePolicy]] =
       ZIO.succeed(policy.toList)
+    override def list: IO[PersistenceError, List[GovernancePolicy]]                          =
+      ZIO.succeed(policy.toList)
 
   private def makeService(
     projects: List[Project],

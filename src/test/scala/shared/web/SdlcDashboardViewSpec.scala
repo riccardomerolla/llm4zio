@@ -9,6 +9,13 @@ import sdlc.control.SdlcDashboardService
 
 object SdlcDashboardViewSpec extends ZIOSpecDefault:
 
+  private val flatTrend = SdlcDashboardService.TrendIndicator(
+    direction = SdlcDashboardService.TrendDirection.Flat,
+    currentPeriodCount = 1,
+    previousPeriodCount = 1,
+    periodLabel = "7d",
+  )
+
   private val snapshot = SdlcDashboardService.Snapshot(
     generatedAt = Instant.parse("2026-03-26T12:00:00Z"),
     thresholds = SdlcDashboardService.Thresholds(6, 2, 24, 12, 8, 4),
@@ -35,6 +42,19 @@ object SdlcDashboardViewSpec extends ZIOSpecDefault:
     agentPerformance = List(
       SdlcDashboardService.AgentPerformance("agent-a", 2, 0.75, 3.5, 1, 0.0123)
     ),
+    governance = SdlcDashboardService.GovernanceOverview(3, 1, 0.75, 2),
+    daemonHealth = SdlcDashboardService.DaemonHealthOverview(4, 1, 1),
+    evolution = SdlcDashboardService.EvolutionOverview(
+      pendingProposalCount = 2,
+      recentlyApplied = List(
+        SdlcDashboardService.RecentEvolution(
+          proposalId = "proposal-1",
+          title = "Roll out daemon policy",
+          status = "Applied",
+          appliedAt = Instant.parse("2026-03-26T11:00:00Z"),
+        )
+      ),
+    ),
     recentActivity = List(
       ActivityEvent(
         id = shared.ids.Ids.EventId("evt-1"),
@@ -52,6 +72,10 @@ object SdlcDashboardViewSpec extends ZIOSpecDefault:
     planCount = 1,
     issueCount = 5,
     pendingDecisionCount = 1,
+    specificationTrend = flatTrend,
+    planTrend = flatTrend.copy(direction = SdlcDashboardService.TrendDirection.Up, currentPeriodCount = 2),
+    issueTrend = flatTrend.copy(direction = SdlcDashboardService.TrendDirection.Down, currentPeriodCount = 0),
+    pendingDecisionTrend = flatTrend,
   )
 
   def spec: Spec[Any, Nothing] =
@@ -63,11 +87,20 @@ object SdlcDashboardViewSpec extends ZIOSpecDefault:
           html.contains("/sdlc/fragment"),
           html.contains("load, every 10s"),
           html.contains("Pending Decisions"),
+          html.contains("↑ up"),
+          html.contains("↓ down"),
         )
       },
-      test("fragment renders lifecycle, anomaly, escalation, and agent sections") {
+      test("fragment renders lifecycle, ADE panels, anomaly, escalation, and agent sections") {
         val html = SdlcDashboardView.fragment(snapshot)
         assertTrue(
+          html.contains("Governance"),
+          html.contains("Pass Rate"),
+          html.contains("Daemon Health"),
+          html.contains("Errored"),
+          html.contains("Evolution"),
+          html.contains("Pending Proposals"),
+          html.contains("Roll out daemon policy"),
           html.contains("Lifecycle"),
           html.contains("Churn Detection"),
           html.contains("Stoppages"),

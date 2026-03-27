@@ -5,15 +5,14 @@ import java.time.Instant
 import zio.*
 import zio.test.*
 
-import activity.control.ActivityHub
 import activity.entity.ActivityEvent
 import agent.entity.{ Agent, AgentRepository }
-import db.{ ConfigRepository, CustomAgentRow, PersistenceError as DbPersistenceError, SettingRow, WorkflowRow }
 import governance.control.{ GovernanceEvaluationContext, GovernancePolicyService, GovernanceTransitionDecision }
 import governance.entity.*
 import issues.entity.{ AgentIssue, IssueEvent, IssueFilter, IssueRepository, IssueState }
 import shared.errors.PersistenceError
 import shared.ids.Ids.*
+import shared.testfixtures.*
 import workspace.control.{ AssignRunRequest, WorkspaceRunService }
 import workspace.entity.*
 
@@ -78,29 +77,6 @@ object AutoDispatcherSpec extends ZIOSpecDefault:
     createdAt = now,
     updatedAt = now,
   )
-
-  final private case class StubConfigRepository(settings: Map[String, String]) extends ConfigRepository:
-    override def getAllSettings: IO[DbPersistenceError, List[SettingRow]]                           =
-      ZIO.succeed(settings.toList.map { case (key, value) => SettingRow(key, value, now) })
-    override def getSetting(key: String): IO[DbPersistenceError, Option[SettingRow]]                =
-      ZIO.succeed(settings.get(key).map(value => SettingRow(key, value, now)))
-    override def upsertSetting(key: String, value: String): IO[DbPersistenceError, Unit]            = ZIO.unit
-    override def deleteSetting(key: String): IO[DbPersistenceError, Unit]                           = ZIO.unit
-    override def deleteSettingsByPrefix(prefix: String): IO[DbPersistenceError, Unit]               = ZIO.unit
-    override def createWorkflow(workflow: WorkflowRow): IO[DbPersistenceError, Long]                = ZIO.dieMessage("unused")
-    override def getWorkflow(id: Long): IO[DbPersistenceError, Option[WorkflowRow]]                 = ZIO.dieMessage("unused")
-    override def getWorkflowByName(name: String): IO[DbPersistenceError, Option[WorkflowRow]]       =
-      ZIO.dieMessage("unused")
-    override def listWorkflows: IO[DbPersistenceError, List[WorkflowRow]]                           = ZIO.dieMessage("unused")
-    override def updateWorkflow(workflow: WorkflowRow): IO[DbPersistenceError, Unit]                = ZIO.dieMessage("unused")
-    override def deleteWorkflow(id: Long): IO[DbPersistenceError, Unit]                             = ZIO.dieMessage("unused")
-    override def createCustomAgent(agent: CustomAgentRow): IO[DbPersistenceError, Long]             = ZIO.dieMessage("unused")
-    override def getCustomAgent(id: Long): IO[DbPersistenceError, Option[CustomAgentRow]]           = ZIO.dieMessage("unused")
-    override def getCustomAgentByName(name: String): IO[DbPersistenceError, Option[CustomAgentRow]] =
-      ZIO.dieMessage("unused")
-    override def listCustomAgents: IO[DbPersistenceError, List[CustomAgentRow]]                     = ZIO.dieMessage("unused")
-    override def updateCustomAgent(agent: CustomAgentRow): IO[DbPersistenceError, Unit]             = ZIO.dieMessage("unused")
-    override def deleteCustomAgent(id: Long): IO[DbPersistenceError, Unit]                          = ZIO.dieMessage("unused")
 
   final private case class StubIssueRepository(
     appended: Ref[List[IssueEvent]],
@@ -224,12 +200,6 @@ object AutoDispatcherSpec extends ZIOSpecDefault:
       ZIO.dieMessage("unused")
     override def registerSlot(runId: String, handle: SlotHandle): UIO[Unit]                           =
       registeredSlots.update(_ + (runId -> handle))
-
-  final private case class StubActivityHub(events: Ref[List[ActivityEvent]]) extends ActivityHub:
-    override def publish(event: ActivityEvent): UIO[Unit] =
-      events.update(_ :+ event)
-    override def subscribe: UIO[Dequeue[ActivityEvent]]   =
-      Queue.unbounded[ActivityEvent]
 
   final private case class StubAgentPoolManager(
     available: Map[String, Int] = Map.empty,

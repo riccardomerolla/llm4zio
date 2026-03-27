@@ -6,6 +6,7 @@ import zio.*
 import zio.stream.ZStream
 import zio.test.*
 
+import _root_.config.entity.ConfigRepository
 import conversation.entity.api.{ ChatConversation, ConversationEntry, SessionContextLink }
 import db.*
 import gateway.control.*
@@ -15,6 +16,7 @@ import llm4zio.tools.{ AnyTool, JsonSchema }
 import memory.entity.*
 import orchestration.control.AgentRegistry
 import prompts.PromptLoader
+import shared.errors.PersistenceError
 
 object GatewayServiceSpec extends ZIOSpecDefault:
 

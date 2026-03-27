@@ -9,14 +9,14 @@ import zio.http.*
 import zio.json.*
 import zio.stream.ZStream
 
-import _root_.config.entity.{ AgentChannelBinding, AgentInfo }
+import _root_.config.entity.{ AgentChannelBinding, AgentInfo, ConfigRepository, CustomAgentRow }
 import agent.control.{ AgentMatching, BuiltInAgentSynchronizer }
 import agent.entity.api.*
 import agent.entity.{ Agent as RegistryAgent, AgentEvent, AgentPermissions, AgentRepository, TrustLevel }
-import db.{ ConfigRepository, CustomAgentRow, PersistenceError }
 import llm4zio.core.{ LlmError, LlmService }
 import orchestration.control.{ AgentRegistry, OrchestratorControlPlane }
 import prompts.PromptLoader
+import shared.errors.PersistenceError
 import shared.ids.Ids.AgentId
 import shared.web.{ ErrorHandlingMiddleware, HtmlViews }
 import workspace.entity.{ RunStatus, WorkspaceRepository, WorkspaceRun }
@@ -326,6 +326,30 @@ final case class AgentsControllerLive(
           history        = computeHistory(workspaceRuns, 30, now)
           flash          = req.queryParam("flash").map(urlDecode).filter(_.nonEmpty)
         yield html(HtmlViews.agentDetailPage(agent, metrics.summary, runs, metrics.activeRuns, history, flash))
+      }
+    },
+    Method.GET / "agents" / string("name") / "panel"                     -> handler { (name: String, _: Request) =>
+      ErrorHandlingMiddleware.fromPersistence {
+        for
+          _             <- ensureRegistryMigrated
+          registryAgent <- agentRepository.findByName(name).mapError(mapAgentRepoError)
+          allRuns       <- loadAllWorkspaceRuns
+          bindings      <- repository.listAgentChannelBindings
+          now           <- Clock.instant
+          agentRuns      = allRuns.filter(_.agentName.equalsIgnoreCase(name))
+          metrics        = computeMetrics(agentRuns, now)
+          agentBindings  = bindings.filter(_.agentId.value.equalsIgnoreCase(name))
+          agent         <- ZIO
+                             .fromOption(registryAgent)
+                             .orElseFail(PersistenceError.NotFound("agent", name))
+          card           = shared.web.AgentsView.AgentCard(
+                             info = toAgentInfo(agent),
+                             registryAgent = Some(agent),
+                             metrics = metrics.summary,
+                             activeRuns = metrics.activeRuns,
+                             bindings = agentBindings,
+                           )
+        yield html(shared.web.AgentsView.panelFragment(card))
       }
     },
     Method.GET / "agents" / string("slug") / "edit"                      -> handler { (slug: String, req: Request) =>

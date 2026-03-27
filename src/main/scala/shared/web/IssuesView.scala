@@ -264,7 +264,7 @@ object IssuesView:
           raw(boardColumnsFragment(filteredIssues, workspaces, workReports, availableAgents, dispatchStatuses))
         ),
       ),
-      JsResources.inlineModuleScript("/static/client/components/issues-board.js"),
+      JsResources.inlineModuleScript("/static/client/components/ab-issues-board.js"),
       JsResources.inlineModuleScript("/static/client/components/issues-bulk-actions.js"),
     )
 
@@ -1107,7 +1107,7 @@ object IssuesView:
             ),
           ),
         ),
-        JsResources.inlineModuleScript("/static/client/components/issue-pipeline.js"),
+        JsResources.inlineModuleScript("/static/client/components/ab-issue-pipeline.js"),
         JsResources.inlineModuleScript("/static/client/components/issue-assignment-suggestions.js"),
       )
     )

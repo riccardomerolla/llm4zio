@@ -6,10 +6,11 @@ import zio.*
 import zio.http.*
 import zio.test.*
 
-import issues.entity.{ AgentIssue, IssueEvent, IssueFilter, IssueRepository, IssueState }
+import issues.entity.{ AgentIssue, IssueState }
 import plan.entity.*
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ IssueId, PlanId, SpecificationId }
+import shared.testfixtures.*
 import specification.entity.*
 
 object PlansControllerSpec extends ZIOSpecDefault:
@@ -42,14 +43,6 @@ object PlansControllerSpec extends ZIOSpecDefault:
     override def list: IO[PersistenceError, List[Specification]]                                                      = ZIO.succeed(List(specification))
     override def diff(id: SpecificationId, fromVersion: Int, toVersion: Int): IO[PersistenceError, SpecificationDiff] =
       ZIO.fail(PersistenceError.QueryFailed("spec_diff", "unused"))
-
-  final private class StubIssueRepository(issues: List[AgentIssue]) extends IssueRepository:
-    override def append(event: IssueEvent): IO[PersistenceError, Unit]             = ZIO.unit
-    override def get(id: IssueId): IO[PersistenceError, AgentIssue]                =
-      ZIO.fromOption(issues.find(_.id == id)).orElseFail(PersistenceError.NotFound("issue", id.value))
-    override def history(id: IssueId): IO[PersistenceError, List[IssueEvent]]      = ZIO.succeed(Nil)
-    override def list(filter: IssueFilter): IO[PersistenceError, List[AgentIssue]] = ZIO.succeed(issues)
-    override def delete(id: IssueId): IO[PersistenceError, Unit]                   = ZIO.unit
 
   private val planId          = PlanId("plan-1")
   private val specificationId = SpecificationId("spec-1")
@@ -106,11 +99,11 @@ object PlansControllerSpec extends ZIOSpecDefault:
   )
 
   private def makeRoutes(ref: Ref[Map[PlanId, List[PlanEvent]]]): Routes[Any, Response] =
-    PlansController.routes(
+    PlansController.make(
       new StubPlanRepository(ref),
       new StubSpecificationRepository(specification),
       new StubIssueRepository(List(linkedIssue)),
-    )
+    ).routes
 
   def spec: Spec[TestEnvironment & Scope, Any] =
     suite("PlansControllerSpec")(

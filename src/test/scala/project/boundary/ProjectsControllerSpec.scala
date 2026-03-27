@@ -9,11 +9,12 @@ import zio.test.*
 import _root_.config.entity.*
 import analysis.control.{ WorkspaceAnalysisScheduler, WorkspaceAnalysisState, WorkspaceAnalysisStatus }
 import analysis.entity.AnalysisType
-import issues.entity.{ AgentIssue, IssueEvent, IssueFilter, IssueRepository, IssueState }
+import issues.entity.{ AgentIssue, IssueState }
 import orchestration.control.AgentRegistry
 import project.entity.{ Project, ProjectEvent, ProjectRepository, ProjectSettings }
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ IssueId, ProjectId }
+import shared.testfixtures.*
 import taskrun.entity.TaskStep
 import workspace.entity.*
 
@@ -119,14 +120,6 @@ object ProjectsControllerSpec extends ZIOSpecDefault:
     override def listRunsByIssueRef(issueRef: String): IO[PersistenceError, List[WorkspaceRun]] = ZIO.succeed(Nil)
     override def getRun(id: String): IO[PersistenceError, Option[WorkspaceRun]]                 = ZIO.succeed(None)
 
-  final private class StubIssueRepository(issues: List[AgentIssue]) extends IssueRepository:
-    override def append(event: IssueEvent): IO[PersistenceError, Unit]             = ZIO.unit
-    override def get(id: IssueId): IO[PersistenceError, AgentIssue]                =
-      ZIO.fromOption(issues.find(_.id == id)).orElseFail(PersistenceError.NotFound("issue", id.value))
-    override def history(id: IssueId): IO[PersistenceError, List[IssueEvent]]      = ZIO.succeed(Nil)
-    override def list(filter: IssueFilter): IO[PersistenceError, List[AgentIssue]] = ZIO.succeed(issues)
-    override def delete(id: IssueId): IO[PersistenceError, Unit]                   = ZIO.unit
-
   private object StubAgentRegistry extends AgentRegistry:
     override def registerAgent(r: RegisterAgentRequest): UIO[AgentInfo]                  =
       ZIO.succeed(AgentInfo(r.name, r.name, r.displayName, r.description, r.agentType, r.usesAI, r.tags))
@@ -142,7 +135,7 @@ object ProjectsControllerSpec extends ZIOSpecDefault:
     override def setAgentEnabled(name: String, enabled: Boolean): UIO[Unit]              = ZIO.unit
     override def getMetrics(name: String): UIO[Option[AgentMetrics]]                     = ZIO.succeed(None)
     override def getHealth(name: String): UIO[Option[AgentHealth]]                       = ZIO.succeed(None)
-    override def loadCustomAgents(rows: List[db.CustomAgentRow]): UIO[Int]               = ZIO.succeed(0)
+    override def loadCustomAgents(customAgents: List[CustomAgentRow]): UIO[Int]          = ZIO.succeed(0)
     override def getRankedAgents(q: AgentQuery): UIO[List[AgentInfo]]                    = ZIO.succeed(Nil)
 
   private object StubAnalysisScheduler extends WorkspaceAnalysisScheduler:
@@ -180,13 +173,13 @@ object ProjectsControllerSpec extends ZIOSpecDefault:
     workspaceRef: Ref[Map[String, Workspace]],
     issues: List[AgentIssue] = List(sampleIssue),
   ): Routes[Any, Response] =
-    ProjectsController.routes(
+    ProjectsController.make(
       new StubProjectRepository(projectRef),
       new StubWorkspaceRepository(workspaceRef),
       new StubIssueRepository(issues),
       StubAgentRegistry,
       StubAnalysisScheduler,
-    )
+    ).routes
 
   def spec: Spec[TestEnvironment & Scope, Any] =
     suite("ProjectsControllerSpec")(
@@ -201,7 +194,7 @@ object ProjectsControllerSpec extends ZIOSpecDefault:
           resp.status == Status.Ok,
           body.contains("Quick Create"),
           body.contains("/projects/proj-1"),
-          body.contains("Active issues"),
+          body.contains("Issues"),
         )
       },
       test("POST /projects creates project and redirects to detail page") {

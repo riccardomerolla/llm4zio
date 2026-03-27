@@ -5,8 +5,15 @@ import java.time.Instant
 import zio.*
 import zio.json.*
 
-import _root_.config.entity.{ WorkflowDefinition, WorkflowGraph, WorkflowStepAgent, WorkflowValidator }
+import _root_.config.entity.{
+  ConfigRepository,
+  WorkflowDefinition,
+  WorkflowGraph,
+  WorkflowStepAgent,
+  WorkflowValidator,
+}
 import db.*
+import shared.errors.PersistenceError
 import taskrun.entity.TaskStep
 
 enum WorkflowServiceError derives JsonCodec:
@@ -95,9 +102,10 @@ final case class WorkflowServiceLive(
       existing  <- repository
                      .getWorkflow(id)
                      .mapError(WorkflowServiceError.PersistenceFailed.apply)
-      previous  <- ZIO
-                     .fromOption(existing)
-                     .orElseFail(WorkflowServiceError.PersistenceFailed(PersistenceError.NotFound("workflows", id)))
+      previous  <-
+        ZIO
+          .fromOption(existing)
+          .orElseFail(WorkflowServiceError.PersistenceFailed(PersistenceError.NotFound("workflows", id.toString)))
       now       <- Clock.instant
       _         <- repository
                      .updateWorkflow(

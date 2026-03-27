@@ -17,6 +17,7 @@ import orchestration.control.{
   WorkflowService,
   WorkflowServiceError,
 }
+import shared.errors.PersistenceError
 import shared.web.{ TaskListItem, TasksView }
 
 trait TasksController:
@@ -53,7 +54,7 @@ final case class TasksControllerLive(
     Method.GET / "tasks" / long("id")                      -> handler { (id: Long, req: Request) =>
       handle {
         for
-          run      <- repository.getRun(id).someOrFail(PersistenceError.NotFound("task_runs", id))
+          run      <- repository.getRun(id).someOrFail(PersistenceError.NotFound("task_runs", id.toString))
           workflow <- run.workflowId match
                         case Some(wid) =>
                           workflowService.getWorkflow(wid).mapError(workflowAsPersistence("getWorkflow"))
@@ -89,7 +90,7 @@ final case class TasksControllerLive(
           workflow      <- workflowService
                              .getWorkflow(workflowId)
                              .mapError(workflowAsPersistence("getWorkflow"))
-                             .someOrFail(PersistenceError.NotFound("workflows", workflowId))
+                             .someOrFail(PersistenceError.NotFound("workflows", workflowId.toString))
           _             <- ensureWorkflowHasSteps(workflow)
           now           <- Clock.instant
           runId         <- repository.createRun(
@@ -148,7 +149,7 @@ final case class TasksControllerLive(
     Method.POST / "tasks" / long("id") / "cancel"          -> handler { (id: Long, _: Request) =>
       handle {
         for
-          run <- repository.getRun(id).someOrFail(PersistenceError.NotFound("task_runs", id))
+          run <- repository.getRun(id).someOrFail(PersistenceError.NotFound("task_runs", id.toString))
           now <- Clock.instant
           _   <- repository.updateRun(
                    run.copy(
@@ -165,7 +166,7 @@ final case class TasksControllerLive(
     Method.POST / "tasks" / long("id") / "retry"           -> handler { (id: Long, _: Request) =>
       handle {
         for
-          run        <- repository.getRun(id).someOrFail(PersistenceError.NotFound("task_runs", id))
+          run        <- repository.getRun(id).someOrFail(PersistenceError.NotFound("task_runs", id.toString))
           _          <- ZIO
                           .fail(PersistenceError.QueryFailed("retryTask", "Retry is available only for failed tasks"))
                           .when(run.status != RunStatus.Failed)
@@ -175,7 +176,7 @@ final case class TasksControllerLive(
           workflow   <- workflowService
                           .getWorkflow(workflowId)
                           .mapError(workflowAsPersistence("getWorkflow"))
-                          .someOrFail(PersistenceError.NotFound("workflows", workflowId))
+                          .someOrFail(PersistenceError.NotFound("workflows", workflowId.toString))
           _          <- ensureWorkflowHasSteps(workflow)
           now        <- Clock.instant
           _          <- repository.updateRun(
@@ -228,7 +229,7 @@ final case class TasksControllerLive(
 
   private def renderProgressSnapshot(taskId: Long): IO[PersistenceError, ProgressSnapshot] =
     for
-      run      <- repository.getRun(taskId).someOrFail(PersistenceError.NotFound("task_runs", taskId))
+      run      <- repository.getRun(taskId).someOrFail(PersistenceError.NotFound("task_runs", taskId.toString))
       workflow <- run.workflowId match
                     case Some(wid) =>
                       workflowService.getWorkflow(wid).mapError(workflowAsPersistence("getWorkflow"))
@@ -279,13 +280,13 @@ final case class TasksControllerLive(
 
   private def mapPersistenceError(error: PersistenceError): Response =
     error match
-      case PersistenceError.NotFound(entity, id)    =>
+      case PersistenceError.NotFound(entity, id)          =>
         Response.text(s"$entity with id $id not found").status(Status.NotFound)
-      case PersistenceError.ConnectionFailed(cause) =>
+      case PersistenceError.StoreUnavailable(cause)       =>
         Response.text(s"Database unavailable: $cause").status(Status.ServiceUnavailable)
-      case PersistenceError.QueryFailed(_, cause)   =>
+      case PersistenceError.QueryFailed(_, cause)         =>
         Response.text(s"Request failed: $cause").status(Status.BadRequest)
-      case PersistenceError.SchemaInitFailed(cause) =>
+      case PersistenceError.SerializationFailed(_, cause) =>
         Response.text(s"Database initialization failed: $cause").status(Status.InternalServerError)
 
   private def workflowAsPersistence(action: String)(error: WorkflowServiceError): PersistenceError =

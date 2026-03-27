@@ -30,9 +30,7 @@ object SettingsView:
 
   def settingsShell(activeTab: String, pageTitle: String)(bodyContent: Frag*): String =
     Layout.page(pageTitle, s"/settings/$activeTab")(
-      div(cls := "mb-6")(
-        h1(cls := "text-2xl font-bold text-white")("Settings")
-      ),
+      Components.pageHeader("Settings"),
       div(cls := "border-b border-white/10 mb-6")(
         nav(cls := "-mb-px flex space-x-6", attr("aria-label") := "Settings tabs")(
           tabs.map {
@@ -394,11 +392,11 @@ object SettingsView:
         p(cls := "text-sm text-gray-400")("Real-time gateway, agent, channel, and resource telemetry.")
       ),
       div(cls := "bg-white/5 ring-1 ring-white/10 rounded-lg p-4")(
-        tag("health-dashboard")(
+        tag("ab-health-dashboard")(
           attr("ws-url") := "/ws/console"
         )()
       ),
-      JsResources.inlineModuleScript("/static/client/components/health-dashboard.js"),
+      JsResources.inlineModuleScript("/static/client/components/ab-health-dashboard.js"),
     )
 
   def advancedTab: String =
@@ -409,7 +407,7 @@ object SettingsView:
         )
       ),
       div(cls := "bg-white/5 ring-1 ring-white/10 rounded-lg p-4")(
-        tag("config-editor")(attr("api-base") := "/api/config")()
+        tag("ab-config-editor")(attr("api-base") := "/api/config")()
       ),
       script(src := "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"),
       tag("script")(
@@ -420,7 +418,7 @@ object SettingsView:
           |document.head.appendChild(_hlCss);
         """.stripMargin)
       ),
-      JsResources.inlineModuleScript("/static/client/components/config-editor.js"),
+      JsResources.inlineModuleScript("/static/client/components/ab-config-editor.js"),
     )
 
   def page(

@@ -4,8 +4,8 @@ import java.time.Instant
 
 import zio.*
 
+import _root_.config.entity.ConfigRepository
 import agent.entity.AgentRepository
-import db.ConfigRepository
 
 sealed trait PoolError derives CanEqual
 

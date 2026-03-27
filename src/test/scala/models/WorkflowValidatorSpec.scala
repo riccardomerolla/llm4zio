@@ -3,6 +3,8 @@ package models
 import zio.Scope
 import zio.test.*
 
+import config.entity.*
+
 object WorkflowValidatorSpec extends ZIOSpecDefault:
   private val validWorkflow = WorkflowDefinition(
     id = None,

@@ -50,7 +50,9 @@ final case class GovernancePolicyRepositoryES(
     }
 
   override def listByProject(projectId: ProjectId): IO[PersistenceError, List[GovernancePolicy]] =
-    listAll.map(_.filter(_.projectId == projectId).sortBy(_.version))
+    list.map(_.filter(_.projectId == projectId).sortBy(_.version))
+
+  override def list: IO[PersistenceError, List[GovernancePolicy]] = listAll
 
   private def rebuildSnapshot(id: GovernancePolicyId): IO[PersistenceError, Option[GovernancePolicy]] =
     for

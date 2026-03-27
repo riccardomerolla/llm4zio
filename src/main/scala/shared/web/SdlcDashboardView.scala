@@ -25,6 +25,11 @@ object SdlcDashboardView:
   def fragment(snapshot: SdlcDashboardService.Snapshot): String =
     div(cls := "space-y-4")(
       overview(snapshot),
+      div(cls := "grid gap-4 xl:grid-cols-3")(
+        governance(snapshot.governance),
+        daemonHealth(snapshot.daemonHealth),
+        evolution(snapshot.evolution),
+      ),
       lifecycle(snapshot),
       div(cls := "grid gap-4 xl:grid-cols-2")(
         churn(snapshot),
@@ -43,10 +48,20 @@ object SdlcDashboardView:
       s"Derived from issue and activity history at ${formatInstant(snapshot.generatedAt)}",
     )(
       div(cls := "grid gap-3 sm:grid-cols-2 xl:grid-cols-4")(
-        statCard("Specifications", snapshot.specificationCount.toString, "Total tracked specifications"),
-        statCard("Plans", snapshot.planCount.toString, "Persisted execution plans"),
-        statCard("Issues", snapshot.issueCount.toString, "Tracked delivery work items"),
-        statCard("Pending Decisions", snapshot.pendingDecisionCount.toString, "Open review or escalation decisions"),
+        statCard(
+          "Specifications",
+          snapshot.specificationCount.toString,
+          "Total tracked specifications",
+          snapshot.specificationTrend,
+        ),
+        statCard("Plans", snapshot.planCount.toString, "Persisted execution plans", snapshot.planTrend),
+        statCard("Issues", snapshot.issueCount.toString, "Tracked delivery work items", snapshot.issueTrend),
+        statCard(
+          "Pending Decisions",
+          snapshot.pendingDecisionCount.toString,
+          "Open review or escalation decisions",
+          snapshot.pendingDecisionTrend,
+        ),
       )
     )
 
@@ -184,17 +199,76 @@ object SdlcDashboardView:
         )
     )
 
+  private def governance(governance: SdlcDashboardService.GovernanceOverview): Frag =
+    sectionPanel("Governance", "Policy activity and validation outcomes across tracked plans")(
+      div(cls := "grid gap-3 sm:grid-cols-2")(
+        metricTile(
+          "Pass Rate",
+          s"${formatPercent(governance.passRate)}%",
+          s"${governance.passCount} pass / ${governance.failCount} fail",
+        ),
+        metricTile("Active Policies", governance.activePolicyCount.toString, "Policies currently in force"),
+      )
+    )
+
+  private def daemonHealth(daemonHealth: SdlcDashboardService.DaemonHealthOverview): Frag =
+    sectionPanel("Daemon Health", "Runtime posture for ADE daemon agents")(
+      div(cls := "grid gap-3 sm:grid-cols-3")(
+        metricTile("Running", daemonHealth.runningCount.toString, "Enabled daemons ready to execute"),
+        metricTile("Stopped", daemonHealth.stoppedCount.toString, "Disabled or explicitly stopped daemons"),
+        metricTile("Errored", daemonHealth.erroredCount.toString, "Daemons with degraded health or runtime errors"),
+      )
+    )
+
+  private def evolution(evolution: SdlcDashboardService.EvolutionOverview): Frag =
+    sectionPanel("Evolution", "Proposal backlog and the latest applied system changes")(
+      div(cls := "space-y-3")(
+        metricTile("Pending Proposals", evolution.pendingProposalCount.toString, "Awaiting approval or application"),
+        if evolution.recentlyApplied.isEmpty then emptyState("No applied evolutions have been recorded yet.")
+        else
+          div(cls := "space-y-2")(
+            evolution.recentlyApplied.map { proposal =>
+              div(cls := "rounded-lg border border-white/10 bg-slate-950/60 p-3")(
+                div(cls := "flex items-start justify-between gap-3")(
+                  div(
+                    p(cls := "font-medium text-white")(proposal.title),
+                    p(cls := "mt-1 text-xs text-slate-400")(s"#${proposal.proposalId}"),
+                  ),
+                  div(cls := "text-right")(
+                    span(
+                      cls := "rounded-md border border-emerald-400/30 bg-emerald-500/10 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-200"
+                    )(
+                      proposal.status
+                    ),
+                    p(cls := "mt-1 text-xs text-slate-400")(formatInstant(proposal.appliedAt)),
+                  ),
+                )
+              )
+            }
+          ),
+      )
+    )
+
   private def recentActivity(events: List[ActivityEvent]): Frag =
     sectionPanel("Recent Activity", "Latest activity events supporting the SDLC view")(
       if events.isEmpty then emptyState("No recent activity events are available.")
       else div(cls := "space-y-3")(events.map(ActivityView.eventCard))
     )
 
-  private def statCard(titleText: String, value: String, detail: String): Frag =
+  private def statCard(
+    titleText: String,
+    value: String,
+    detail: String,
+    trend: SdlcDashboardService.TrendIndicator,
+  ): Frag =
     div(cls := "rounded-lg border border-white/10 bg-slate-950/60 p-4")(
-      div(cls := "text-xs font-semibold uppercase tracking-wide text-slate-400")(titleText),
+      div(cls := "flex items-start justify-between gap-3")(
+        div(cls := "text-xs font-semibold uppercase tracking-wide text-slate-400")(titleText),
+        trendPill(trend),
+      ),
       div(cls := "mt-2 text-3xl font-semibold text-white")(value),
       p(cls := "mt-2 text-xs text-slate-400")(detail),
+      p(cls := "mt-2 text-xs text-slate-500")(trendSummary(trend)),
     )
 
   private def thresholdLine(titleText: String, detail: String): Frag =
@@ -214,6 +288,33 @@ object SdlcDashboardView:
 
   private def emptyState(message: String): Frag =
     div(cls := "rounded-lg border border-dashed border-white/10 bg-slate-950/40 p-4 text-sm text-slate-400")(message)
+
+  private def metricTile(titleText: String, value: String, detail: String): Frag =
+    div(cls := "rounded-lg border border-white/10 bg-slate-950/60 p-3")(
+      div(cls := "text-xs font-semibold uppercase tracking-wide text-slate-400")(titleText),
+      div(cls := "mt-2 text-2xl font-semibold text-white")(value),
+      p(cls := "mt-2 text-xs text-slate-400")(detail),
+    )
+
+  private def trendPill(trend: SdlcDashboardService.TrendIndicator): Frag =
+    span(cls := s"rounded-md border px-2 py-1 text-xs font-semibold ${trendTone(trend.direction)}")(
+      s"${trendArrow(trend.direction)} ${trend.direction.toString.toLowerCase}"
+    )
+
+  private def trendArrow(direction: SdlcDashboardService.TrendDirection): String =
+    direction match
+      case SdlcDashboardService.TrendDirection.Up   => "↑"
+      case SdlcDashboardService.TrendDirection.Down => "↓"
+      case SdlcDashboardService.TrendDirection.Flat => "→"
+
+  private def trendTone(direction: SdlcDashboardService.TrendDirection): String =
+    direction match
+      case SdlcDashboardService.TrendDirection.Up   => "border-emerald-400/30 bg-emerald-500/10 text-emerald-200"
+      case SdlcDashboardService.TrendDirection.Down => "border-amber-400/30 bg-amber-500/10 text-amber-200"
+      case SdlcDashboardService.TrendDirection.Flat => "border-white/15 bg-white/5 text-slate-200"
+
+  private def trendSummary(trend: SdlcDashboardService.TrendIndicator): String =
+    s"${trend.currentPeriodCount} vs ${trend.previousPeriodCount} in the last ${trend.periodLabel}"
 
   private def badgeClass(kind: String): String =
     val tone =
