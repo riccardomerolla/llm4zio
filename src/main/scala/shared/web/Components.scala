@@ -80,10 +80,14 @@ object Components:
 
   /** Standard page header with title, optional subtitle, and right-side action slot. */
   def pageHeader(title: String, subtitle: String = "", actions: Frag*): Frag =
-    tag("ab-page-header")(
-      attr("title")    := title,
-      attr("subtitle") := subtitle,
-      if actions.nonEmpty then div(attr("slot") := "actions")(actions*) else (),
+    div(cls := "flex items-start justify-between gap-4 mb-6")(
+      div(cls := "min-w-0")(
+        h1(cls := "text-lg font-semibold text-white")(title),
+        if subtitle.nonEmpty then p(cls := "mt-1 text-sm text-gray-400")(subtitle) else (),
+      ),
+      if actions.nonEmpty then
+        div(cls := "flex items-center gap-2 flex-shrink-0")(actions*)
+      else (),
     )
 
   // ── Empty state ──────────────────────────────────────────────────────────
@@ -145,7 +149,6 @@ object Components:
     JsResources.inlineModuleScript("/static/client/components/design-system/ab-progress-bar.js"),
     JsResources.inlineModuleScript("/static/client/components/design-system/ab-data-table.js"),
     JsResources.inlineModuleScript("/static/client/components/design-system/ab-toast.js"),
-    JsResources.inlineModuleScript("/static/client/components/design-system/ab-page-header.js"),
     JsResources.inlineModuleScript("/static/client/components/design-system/ab-empty-state.js"),
     JsResources.inlineModuleScript("/static/client/components/design-system/ab-stat-card.js"),
     JsResources.inlineModuleScript("/static/client/components/design-system/ab-filter-bar.js"),

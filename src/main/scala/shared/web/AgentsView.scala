@@ -26,9 +26,8 @@ object AgentsView:
             "Agents",
             "Built-in, custom config, and registry agents",
             a(
-              href         := "/agents/new",
-              attr("slot") := "actions",
-              cls          := "rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-500",
+              href := "/agents/new",
+              cls  := "rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-500",
             )("Create Agent"),
           ),
           flash.map { msg =>
