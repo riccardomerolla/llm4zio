@@ -173,14 +173,23 @@ object AgentMonitorView:
     else s"${m}m ${s}s"
 
   def statsHeaderFragment(stats: AgentGlobalStats): Frag =
+    val agentCls = if stats.activeAgents > 0 then "text-emerald-400" else "text-slate-300"
     div(
-      cls                      := "grid grid-cols-2 gap-3 sm:grid-cols-4",
+      cls                      := "flex flex-wrap items-center gap-x-5 gap-y-1",
       attr("data-agent-stats") := "true",
     )(
-      tag("ab-stat-card")(attr("label") := "Agents", attr("value")     := s"${stats.activeAgents} / ${stats.maxAgents}"),
-      tag("ab-stat-card")(attr("label") := "Tokens in", attr("value")  := formatTokens(stats.tokensIn)),
-      tag("ab-stat-card")(attr("label") := "Tokens out", attr("value") := formatTokens(stats.tokensOut)),
-      tag("ab-stat-card")(attr("label") := "Runtime", attr("value")    := formatRuntime(stats.runtimeSeconds)),
+      statChip("Agents",     s"${stats.activeAgents} / ${stats.maxAgents}", agentCls),
+      div(cls := "h-3 w-px bg-white/10 flex-shrink-0"),
+      statChip("Tokens in",  formatTokens(stats.tokensIn),              "text-slate-300"),
+      statChip("Tokens out", formatTokens(stats.tokensOut),             "text-slate-300"),
+      div(cls := "h-3 w-px bg-white/10 flex-shrink-0"),
+      statChip("Runtime",    formatRuntime(stats.runtimeSeconds),       "text-slate-300"),
+    )
+
+  private def statChip(label: String, value: String, valueCls: String): Frag =
+    span(cls := "flex items-baseline gap-1")(
+      span(cls := "text-[11px] text-gray-500 select-none")(label),
+      span(cls := s"text-sm font-mono font-medium tabular-nums $valueCls")(value),
     )
 
   def statsHeader(stats: AgentGlobalStats): String =

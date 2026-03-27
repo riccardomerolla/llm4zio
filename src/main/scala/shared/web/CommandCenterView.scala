@@ -90,26 +90,41 @@ object CommandCenterView:
   // ── Live section (left column) ────────────────────────────────────────────
 
   private def liveSection(): Frag =
-    div(cls := "rounded-lg border border-white/10 bg-white/5 p-4 space-y-4")(
-      h2(cls := "text-xs font-medium uppercase tracking-wide text-gray-400")("Live"),
-      // stat cards — replaced by SSE stream
+    div(cls := "rounded-lg border border-white/10 bg-white/5 p-4 space-y-3")(
+      // header row with inline stats
+      div(cls := "flex items-center justify-between gap-4")(
+        span(cls := "text-xs font-medium uppercase tracking-wide text-gray-400")("Live"),
+        div(
+          attr("hx-ext")      := "sse",
+          attr("sse-connect") := "/agent-monitor/stream",
+          cls                 := "flex-1",
+        )(
+          div(
+            id               := "agent-stats-container",
+            attr("sse-swap") := "agent-stats",
+            cls              := "flex justify-end",
+          )(
+            AgentMonitorView.statsHeaderFragment(AgentMonitorView.AgentGlobalStats.empty)
+          ),
+        ),
+      ),
+      // agent table — collapsed by default, SSE-updated when open
       div(
         attr("hx-ext")      := "sse",
         attr("sse-connect") := "/agent-monitor/stream",
       )(
-        div(
-          id               := "agent-stats-container",
-          attr("sse-swap") := "agent-stats",
-        )(
-          AgentMonitorView.statsHeaderFragment(AgentMonitorView.AgentGlobalStats.empty)
-        ),
-        // collapsed agent table
-        tag("details")(cls := "mt-2")(
+        tag("details")(cls := "group")(
           tag("summary")(
-            cls := "cursor-pointer select-none text-xs text-gray-500 hover:text-gray-300 transition-colors"
-          )("Show agent table"),
+            cls := "cursor-pointer select-none text-xs text-gray-600 hover:text-gray-400 transition-colors py-0.5 list-none flex items-center gap-1"
+          )(
+            Components.svgIcon(
+              "M19 9l-7 7-7-7",
+              "h-3 w-3 flex-shrink-0 transition-transform group-open:rotate-180",
+            ),
+            "Agent table",
+          ),
           div(
-            cls              := "mt-2 rounded-lg border border-white/10 overflow-auto max-h-48",
+            cls              := "mt-2 rounded border border-white/10 overflow-auto max-h-40",
             id               := "agent-table-container",
             attr("sse-swap") := "agent-table",
           )(
@@ -118,14 +133,18 @@ object CommandCenterView:
         ),
       ),
       // active runs
-      sectionHeader("Active Runs"),
-      div(
-        id                 := "active-runs-list",
-        attr("hx-get")     := "/runs/fragment?scope=active&sort=last_activity&limit=8",
-        attr("hx-swap")    := "innerHTML",
-        attr("hx-trigger") := "load, every 15s",
-      )(
-        div(cls := "text-sm text-gray-500 py-2")("Loading…")
+      div(cls := "border-t border-white/5 pt-3")(
+        div(cls := "flex items-center justify-between mb-2")(
+          sectionHeader("Active Runs"),
+        ),
+        div(
+          id                 := "active-runs-list",
+          attr("hx-get")     := "/runs/fragment?scope=active&sort=last_activity&limit=8",
+          attr("hx-swap")    := "innerHTML",
+          attr("hx-trigger") := "load, every 15s",
+        )(
+          div(cls := "text-xs text-gray-600 py-2")("Loading…")
+        ),
       ),
     )
 
