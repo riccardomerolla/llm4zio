@@ -10,6 +10,7 @@ trait GovernancePolicyRepository:
   def get(id: GovernancePolicyId): IO[PersistenceError, GovernancePolicy]
   def getActiveByProject(projectId: ProjectId): IO[PersistenceError, GovernancePolicy]
   def listByProject(projectId: ProjectId): IO[PersistenceError, List[GovernancePolicy]]
+  def list: IO[PersistenceError, List[GovernancePolicy]]
 
 object GovernancePolicyRepository:
   def append(event: GovernancePolicyEvent): ZIO[GovernancePolicyRepository, PersistenceError, Unit] =
@@ -23,3 +24,6 @@ object GovernancePolicyRepository:
 
   def listByProject(projectId: ProjectId): ZIO[GovernancePolicyRepository, PersistenceError, List[GovernancePolicy]] =
     ZIO.serviceWithZIO[GovernancePolicyRepository](_.listByProject(projectId))
+
+  def list: ZIO[GovernancePolicyRepository, PersistenceError, List[GovernancePolicy]] =
+    ZIO.serviceWithZIO[GovernancePolicyRepository](_.list)

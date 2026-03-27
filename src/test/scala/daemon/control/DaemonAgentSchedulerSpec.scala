@@ -45,6 +45,8 @@ object DaemonAgentSchedulerSpec extends ZIOSpecDefault:
         .orElseFail(PersistenceError.NotFound("governance_policy", projectId.value))
     override def listByProject(projectId: ProjectId): IO[PersistenceError, List[GovernancePolicy]]  =
       ZIO.succeed(policy.filter(_.projectId == projectId).toList)
+    override def list: IO[PersistenceError, List[GovernancePolicy]]                                 =
+      ZIO.succeed(policy.toList)
 
   final private class StubDaemonAgentSpecRepository(specs: List[DaemonAgentSpec]) extends DaemonAgentSpecRepository:
     override def get(id: shared.ids.Ids.DaemonAgentSpecId): IO[PersistenceError, DaemonAgentSpec] =

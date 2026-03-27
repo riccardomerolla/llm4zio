@@ -50,6 +50,8 @@ import taskrun.boundary.{
   ReportsController as TaskRunReportsController,
   TasksController as TaskRunTasksController,
 }
+import governance.boundary.GovernanceController
+import governance.entity.GovernancePolicyRepository
 import workspace.boundary.WorkspacesController
 import workspace.control.{ GitService, WorkspaceRunService }
 import workspace.entity.WorkspaceRepository
@@ -59,55 +61,56 @@ trait WebServer:
 object WebServer:
 
   val live: ZLayer[
-    TaskRunDashboardController & SdlcDashboardController & TaskRunTasksController & TaskRunReportsController & TaskRunGraphController & SettingsBoundaryController & ConfigBoundaryController & ConfigAgentsController & AppAgentMonitorController & ConversationChatController & IssuesIssueController & BoardBoundaryController & ConfigWorkflowsController & GatewayTelegramController & ActivityController & MemoryBoundaryController & GatewayChannelController & AppHealthController & TaskRunLogsController & ConversationWebSocketController & WorkspaceRepository & WorkspaceRunService & GitService & AgentRegistry & IssueRepository & ProjectRepository & SpecificationRepository & PlanRepository & DecisionInbox & McpService & WorkspaceAnalysisScheduler & DecisionLogRepository & KnowledgeGraphService & MemoryRepository & DaemonsController & DaemonAgentScheduler & CheckpointReviewService,
+    TaskRunDashboardController & SdlcDashboardController & TaskRunTasksController & TaskRunReportsController & TaskRunGraphController & SettingsBoundaryController & ConfigBoundaryController & ConfigAgentsController & AppAgentMonitorController & ConversationChatController & IssuesIssueController & BoardBoundaryController & ConfigWorkflowsController & GatewayTelegramController & ActivityController & MemoryBoundaryController & GatewayChannelController & AppHealthController & TaskRunLogsController & ConversationWebSocketController & WorkspaceRepository & WorkspaceRunService & GitService & AgentRegistry & IssueRepository & ProjectRepository & SpecificationRepository & PlanRepository & DecisionInbox & McpService & WorkspaceAnalysisScheduler & DecisionLogRepository & KnowledgeGraphService & MemoryRepository & DaemonsController & DaemonAgentScheduler & CheckpointReviewService & GovernancePolicyRepository,
     Nothing,
     WebServer,
   ] = ZLayer {
     for
-      dashboard         <- ZIO.service[TaskRunDashboardController]
-      sdlcDashboard     <- ZIO.service[SdlcDashboardController]
-      tasks             <- ZIO.service[TaskRunTasksController]
-      reports           <- ZIO.service[TaskRunReportsController]
-      graph             <- ZIO.service[TaskRunGraphController]
-      settings          <- ZIO.service[SettingsBoundaryController]
-      config            <- ZIO.service[ConfigBoundaryController]
-      agents            <- ZIO.service[ConfigAgentsController]
-      monitor           <- ZIO.service[AppAgentMonitorController]
-      chat              <- ZIO.service[ConversationChatController]
-      issues            <- ZIO.service[IssuesIssueController]
-      board             <- ZIO.service[BoardBoundaryController]
-      workflows         <- ZIO.service[ConfigWorkflowsController]
-      telegram          <- ZIO.service[GatewayTelegramController]
-      activity          <- ZIO.service[ActivityController]
-      memory            <- ZIO.service[MemoryBoundaryController]
-      channels          <- ZIO.service[GatewayChannelController]
-      health            <- ZIO.service[AppHealthController]
-      logs              <- ZIO.service[TaskRunLogsController]
-      websocket         <- ZIO.service[ConversationWebSocketController]
-      wsRepo            <- ZIO.service[WorkspaceRepository]
-      wsRunSvc          <- ZIO.service[WorkspaceRunService]
-      gitService        <- ZIO.service[GitService]
-      agentReg          <- ZIO.service[AgentRegistry]
-      issueRepo         <- ZIO.service[IssueRepository]
-      projectRepo       <- ZIO.service[ProjectRepository]
-      specificationRepo <- ZIO.service[SpecificationRepository]
-      planRepo          <- ZIO.service[PlanRepository]
-      decisionInbox     <- ZIO.service[DecisionInbox]
-      mcpSvc            <- ZIO.service[McpService]
-      analysisScheduler <- ZIO.service[WorkspaceAnalysisScheduler]
-      decisionLogs      <- ZIO.service[DecisionLogRepository]
-      knowledgeGraph    <- ZIO.service[KnowledgeGraphService]
-      memoryRepo        <- ZIO.service[MemoryRepository]
-      daemonsController <- ZIO.service[DaemonsController]
-      checkpointReview  <- ZIO.service[CheckpointReviewService]
-      staticRoutes       = Routes.serveResources(Path.empty / "static")
-      devCatalogRoutes   = Routes(
-                             Method.GET / "components" -> handler {
-                               Response
-                                 .text(shared.web.ComponentsCatalogView.page())
-                                 .contentType(MediaType.text.html)
-                             }
-                           )
+      dashboard            <- ZIO.service[TaskRunDashboardController]
+      sdlcDashboard        <- ZIO.service[SdlcDashboardController]
+      tasks                <- ZIO.service[TaskRunTasksController]
+      reports              <- ZIO.service[TaskRunReportsController]
+      graph                <- ZIO.service[TaskRunGraphController]
+      settings             <- ZIO.service[SettingsBoundaryController]
+      config               <- ZIO.service[ConfigBoundaryController]
+      agents               <- ZIO.service[ConfigAgentsController]
+      monitor              <- ZIO.service[AppAgentMonitorController]
+      chat                 <- ZIO.service[ConversationChatController]
+      issues               <- ZIO.service[IssuesIssueController]
+      board                <- ZIO.service[BoardBoundaryController]
+      workflows            <- ZIO.service[ConfigWorkflowsController]
+      telegram             <- ZIO.service[GatewayTelegramController]
+      activity             <- ZIO.service[ActivityController]
+      memory               <- ZIO.service[MemoryBoundaryController]
+      channels             <- ZIO.service[GatewayChannelController]
+      health               <- ZIO.service[AppHealthController]
+      logs                 <- ZIO.service[TaskRunLogsController]
+      websocket            <- ZIO.service[ConversationWebSocketController]
+      wsRepo               <- ZIO.service[WorkspaceRepository]
+      wsRunSvc             <- ZIO.service[WorkspaceRunService]
+      gitService           <- ZIO.service[GitService]
+      agentReg             <- ZIO.service[AgentRegistry]
+      issueRepo            <- ZIO.service[IssueRepository]
+      projectRepo          <- ZIO.service[ProjectRepository]
+      specificationRepo    <- ZIO.service[SpecificationRepository]
+      planRepo             <- ZIO.service[PlanRepository]
+      decisionInbox        <- ZIO.service[DecisionInbox]
+      mcpSvc               <- ZIO.service[McpService]
+      analysisScheduler    <- ZIO.service[WorkspaceAnalysisScheduler]
+      decisionLogs         <- ZIO.service[DecisionLogRepository]
+      knowledgeGraph       <- ZIO.service[KnowledgeGraphService]
+      memoryRepo           <- ZIO.service[MemoryRepository]
+      daemonsController    <- ZIO.service[DaemonsController]
+      checkpointReview     <- ZIO.service[CheckpointReviewService]
+      governancePolicyRepo <- ZIO.service[GovernancePolicyRepository]
+      staticRoutes          = Routes.serveResources(Path.empty / "static")
+      devCatalogRoutes      = Routes(
+                                Method.GET / "components" -> handler {
+                                  Response
+                                    .text(shared.web.ComponentsCatalogView.page())
+                                    .contentType(MediaType.text.html)
+                                }
+                              )
     yield new WebServer {
       override val routes: Routes[Any, Response] =
         dashboard.routes ++ sdlcDashboard.routes ++ tasks.routes ++ reports.routes ++ graph.routes ++ settings.routes ++ config.routes ++ agents.routes ++ monitor.routes ++ chat.routes ++ issues.routes ++ board.routes ++ workflows.routes ++ telegram.routes ++ activity.routes ++ memory.routes ++ channels.routes ++ health.routes ++ logs.routes ++ websocket.routes ++ mcpSvc.controller.routes ++ ProjectsController.routes(
@@ -138,7 +141,9 @@ object WebServer:
           issueRepo,
           gitService,
           analysisScheduler,
-        ) ++ daemonsController.routes ++ devCatalogRoutes ++ staticRoutes
+        ) ++ daemonsController.routes ++ GovernanceController.routes(
+          governancePolicyRepo
+        ) ++ devCatalogRoutes ++ staticRoutes
     }
   }
   private val defaultShutdownTimeout = java.time.Duration.ofSeconds(3L)

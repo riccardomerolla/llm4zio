@@ -246,6 +246,12 @@ object Layout:
               currentPath.startsWith("/decisions"),
             ),
             navItem(
+              "/governance",
+              "Governance",
+              Icons.documentText,
+              currentPath.startsWith("/governance"),
+            ),
+            navItem(
               "/workspaces",
               "Workspaces",
               Icons.folder,

@@ -120,6 +120,8 @@ object EvolutionEngineSpec extends ZIOSpecDefault:
         case None        => ZIO.fail(PersistenceError.NotFound("governance_policy", projectId.value)))
     override def listByProject(projectId: ProjectId): IO[PersistenceError, List[GovernancePolicy]] =
       ref.get.flatMap(state => ZIO.foreach(state.keys.toList)(get).map(_.filter(_.projectId == projectId)))
+    override def list: IO[PersistenceError, List[GovernancePolicy]]                                =
+      ref.get.flatMap(state => ZIO.foreach(state.keys.toList)(get))
 
   final private class StubWorkflowService(ref: Ref[Map[String, WorkflowDefinition]]) extends WorkflowService:
     override def createWorkflow(workflow: WorkflowDefinition): IO[WorkflowServiceError, Long]          =
