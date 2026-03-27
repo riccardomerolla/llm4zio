@@ -9,6 +9,8 @@
 
 llm4zio is a production-grade AI gateway that orchestrates autonomous coding agents across your repositories. Agents pick up issues from a structured Kanban board, produce code under governance policies, and surface decisions to human reviewers — all tracked in a fully event-sourced system. It also ships as a standalone ZIO library for direct LLM integration.
 
+![Command Center](/docs/screenshots/command-center.png "Command Center")
+
 ---
 
 ## Architecture
