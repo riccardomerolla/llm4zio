@@ -4,7 +4,6 @@ import zio.*
 
 import _root_.config.entity.*
 import shared.errors.PersistenceError
-import db.ConfigRepository
 
 /** Converts flat Map[String, String] (from DB settings) to nested config objects.
   *

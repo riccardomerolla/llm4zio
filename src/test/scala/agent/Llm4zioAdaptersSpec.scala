@@ -7,10 +7,10 @@ import zio.test.*
 
 import conversation.entity.api.{ ChatConversation, ConversationEntry, SessionContextLink }
 import db.*
-import shared.errors.PersistenceError
 import llm4zio.agents.*
 import llm4zio.core.{ Message, MessageRole }
 import orchestration.control.{ AgentRegistry, ChatRepositoryMemoryStore, Llm4zioAgentAdapters }
+import shared.errors.PersistenceError
 
 object Llm4zioAdaptersSpec extends ZIOSpecDefault:
 

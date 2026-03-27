@@ -11,10 +11,10 @@ import scala.jdk.CollectionConverters.*
 
 import zio.*
 
+import _root_.config.entity.ConfigRepository
 import activity.control.ActivityHub
 import activity.entity.{ ActivityEvent, ActivityEventType }
 import daemon.entity.*
-import db.ConfigRepository
 import governance.entity.{ GovernanceDaemonTrigger, GovernancePolicy, GovernancePolicyRepository }
 import issues.entity.*
 import orchestration.control.{ AgentPoolManager, PoolError }

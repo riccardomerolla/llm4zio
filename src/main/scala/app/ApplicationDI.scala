@@ -18,7 +18,7 @@ import _root_.config.boundary.{
   WorkflowsController as ConfigWorkflowsController,
 }
 import _root_.config.control.{ ConfigValidator, ModelService }
-import _root_.config.entity.{ AIProvider, AIProviderConfig, GatewayConfig }
+import _root_.config.entity.{ AIProvider, AIProviderConfig, ConfigRepository, GatewayConfig }
 import activity.boundary.ActivityController
 import activity.control.ActivityHub
 import activity.entity.ActivityRepository
@@ -48,12 +48,12 @@ import decision.entity.{ DecisionEventStoreES, DecisionRepositoryES }
 import evolution.control.EvolutionEngine
 import evolution.entity.{ EvolutionProposalEventStoreES, EvolutionProposalRepositoryES }
 import gateway.boundary.telegram.*
-import gateway.entity.*
 import gateway.boundary.{
   ChannelController as GatewayChannelController,
   TelegramController as GatewayTelegramController,
 }
 import gateway.control.{ MessageRouter, * }
+import gateway.entity.*
 import governance.control.{ GovernancePolicyEngine, GovernancePolicyService }
 import governance.entity.{ GovernancePolicyEventStoreES, GovernancePolicyRepositoryES }
 import io.github.riccardomerolla.zio.eclipsestore.service.{ LifecycleCommand, LifecycleStatus }

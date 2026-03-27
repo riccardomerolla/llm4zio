@@ -3,8 +3,8 @@ package orchestration
 import zio.*
 import zio.test.*
 
-import shared.errors.PersistenceError
 import orchestration.control.{ AgentTracker, ProgressTracker }
+import shared.errors.PersistenceError
 import taskrun.entity.ProgressUpdate
 
 object AgentTrackerSpec extends ZIOSpecDefault:

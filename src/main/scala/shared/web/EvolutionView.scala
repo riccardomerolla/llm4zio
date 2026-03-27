@@ -1,8 +1,7 @@
 package shared.web
 
-import scalatags.Text.all.*
-
 import evolution.entity.{ EvolutionProposal, EvolutionProposalStatus }
+import scalatags.Text.all.*
 
 object EvolutionView:
 

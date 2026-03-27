@@ -8,7 +8,7 @@ import zio.*
 import zio.json.*
 import zio.json.ast.Json
 
-import db.ConfigRepository
+import _root_.config.entity.ConfigRepository
 import gateway.entity.{ NormalizedMessage, SessionKey, SessionScopeStrategy }
 
 sealed trait DiscordRuntimeError extends Product with Serializable

@@ -1,6 +1,6 @@
 package shared.web
 
-import db.{ FileType, RunStatus }
+import db.RunStatus
 import scalatags.Text.all.*
 import scalatags.Text.svgAttrs.{ d, viewBox }
 import scalatags.Text.svgTags.{ path, svg }

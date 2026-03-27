@@ -3,17 +3,8 @@ package gateway.boundary.telegram
 import zio.*
 import zio.test.*
 
-import gateway.control.*
-import gateway.control.{ TelegramPollingConfig, TelegramPollingService, TelegramPollingServiceLive }
-import gateway.entity.{
-  NormalizedMessage,
-  TelegramChat,
-  TelegramClientError,
-  TelegramMessage,
-  TelegramSendDocument,
-  TelegramSendMessage,
-  TelegramUpdate,
-}
+import gateway.control.{ TelegramPollingConfig, TelegramPollingService, TelegramPollingServiceLive, * }
+import gateway.entity.*
 
 object TelegramPollingServiceSpec extends ZIOSpecDefault:
 

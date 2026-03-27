@@ -5,9 +5,9 @@ import java.time.Instant
 import zio.*
 import zio.json.*
 
+import _root_.config.entity.ConfigRepository
 import activity.control.ActivityHub
 import activity.entity.{ ActivityEvent, ActivityEventType }
-import db.ConfigRepository
 import decision.entity.*
 import issues.entity.{ AgentIssue, IssueEvent, IssueRepository }
 import shared.errors.PersistenceError

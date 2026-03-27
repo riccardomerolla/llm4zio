@@ -6,13 +6,12 @@ import zio.json.*
 import zio.stream.ZStream
 import zio.test.*
 
-import _root_.config.entity.AIProviderConfig
+import _root_.config.entity.{ AIProviderConfig, ConfigRepository }
 import activity.control.ActivityHubLive
 import activity.entity.{ ActivityEvent, ActivityEventType, ActivityRepository }
 import conversation.boundary.ChatControllerLive
 import conversation.entity.api.*
 import db.*
-import shared.errors.PersistenceError
 import gateway.control.*
 import gateway.entity.*
 import issues.entity.api.AgentIssueView
@@ -22,6 +21,7 @@ import llm4zio.tools.{ AnyTool, JsonSchema }
 import memory.entity.*
 import orchestration.control.{ IssueAssignmentOrchestrator, * }
 import prompts.PromptLoader
+import shared.errors.PersistenceError
 import shared.web.StreamAbortRegistryLive
 
 object ChatControllerGatewaySpec extends ZIOSpecDefault:

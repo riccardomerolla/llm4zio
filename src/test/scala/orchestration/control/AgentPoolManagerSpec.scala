@@ -5,8 +5,8 @@ import java.time.Instant
 import zio.*
 import zio.test.*
 
+import _root_.config.entity.ConfigRepository
 import agent.entity.{ Agent, AgentPermissions, AgentRepository, TrustLevel }
-import db.ConfigRepository
 import shared.errors.PersistenceError
 import shared.ids.Ids.AgentId
 import shared.testfixtures.*

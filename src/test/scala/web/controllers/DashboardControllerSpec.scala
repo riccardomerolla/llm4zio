@@ -8,8 +8,8 @@ import zio.test.*
 
 import activity.entity.{ ActivityEvent, ActivityEventType, ActivityRepository }
 import db.*
-import shared.errors.PersistenceError
 import issues.entity.*
+import shared.errors.PersistenceError
 import shared.ids.Ids.{ AgentId, IssueId }
 import taskrun.boundary.DashboardControllerLive
 

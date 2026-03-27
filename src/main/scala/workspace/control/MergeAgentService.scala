@@ -3,9 +3,9 @@ package workspace.control
 import zio.*
 import zio.json.*
 
+import _root_.config.entity.ConfigRepository
 import activity.control.ActivityHub
 import activity.entity.{ ActivityEvent, ActivityEventType }
-import db.ConfigRepository
 import issues.entity.*
 import orchestration.control.WorkReportEventBus
 import shared.errors.PersistenceError

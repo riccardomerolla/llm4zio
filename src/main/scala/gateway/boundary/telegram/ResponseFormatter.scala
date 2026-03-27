@@ -1,8 +1,6 @@
 package gateway.boundary.telegram
 
-import gateway.entity.TelegramInlineKeyboardMarkup
-
-import gateway.entity.NormalizedMessage
+import gateway.entity.{ NormalizedMessage, TelegramInlineKeyboardMarkup }
 import orchestration.control.WorkflowRunState
 
 final case class FormattedTelegramResponse(

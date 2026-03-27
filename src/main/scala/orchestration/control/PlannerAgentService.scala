@@ -7,14 +7,13 @@ import zio.json.*
 import zio.json.ast.Json
 
 import _root_.config.SettingsApplier
-import _root_.config.entity.AIProviderConfig
+import _root_.config.entity.{ AIProviderConfig, ConfigRepository }
 import activity.control.ActivityHub
 import activity.entity.{ ActivityEvent, ActivityEventType }
 import app.ApplicationDI
 import board.entity.{ IssueEstimate as BoardIssueEstimate, IssuePriority as BoardIssuePriority, * }
 import conversation.entity.api.{ ChatConversation, ConversationEntry, MessageType, SenderType }
-import shared.errors.PersistenceError
-import db.{ ChatRepository, ConfigRepository }
+import db.ChatRepository
 import governance.control.{ GovernanceEvaluationContext, GovernancePolicyService }
 import governance.entity.{ GovernanceGate, GovernanceLifecycleAction, GovernanceLifecycleStage, GovernanceTransition }
 import issues.entity.{ AgentIssue as DomainIssue, IssueEvent, IssueRepository }
@@ -23,6 +22,7 @@ import llm4zio.providers.{ GeminiCliExecutionContext, GeminiCliExecutor, HttpCli
 import llm4zio.tools.JsonSchema
 import plan.entity.*
 import prompts.{ PromptError, PromptLoader }
+import shared.errors.PersistenceError
 import shared.ids.Ids.{ BoardIssueId, EventId, IssueId, PlanId, SpecificationId }
 import specification.entity.*
 import workspace.entity.WorkspaceRepository

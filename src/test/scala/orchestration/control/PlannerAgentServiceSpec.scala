@@ -5,13 +5,12 @@ import java.time.Instant
 import zio.*
 import zio.test.*
 
-import _root_.config.entity.AIProviderConfig
+import _root_.config.entity.{ AIProviderConfig, ConfigRepository }
 import activity.control.ActivityHub
 import activity.entity.ActivityEvent
 import board.entity.*
 import conversation.entity.api.*
 import db.*
-import shared.errors.PersistenceError
 import governance.control.{ GovernanceEvaluationContext, GovernancePolicyService, GovernanceTransitionDecision }
 import governance.entity.{ GovernanceGate, GovernancePolicy }
 import issues.entity.{ IssueEvent, IssueRepository }
@@ -19,6 +18,7 @@ import llm4zio.core.*
 import llm4zio.providers.{ GeminiCliExecutor, HttpClient }
 import plan.entity.*
 import prompts.PromptLoader
+import shared.errors.PersistenceError
 import shared.ids.Ids.{ BoardIssueId, IssueId, PlanId, SpecificationId }
 import specification.entity.*
 import workspace.entity.*

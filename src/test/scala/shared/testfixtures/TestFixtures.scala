@@ -4,9 +4,10 @@ import java.time.Instant
 
 import zio.*
 
+import _root_.config.entity.ConfigRepository
 import activity.control.ActivityHub
 import activity.entity.ActivityEvent
-import db.{ ConfigRepository, CustomAgentRow, SettingRow, WorkflowRow }
+import db.{ CustomAgentRow, SettingRow, WorkflowRow }
 import issues.entity.*
 import shared.errors.PersistenceError
 import shared.ids.Ids.IssueId

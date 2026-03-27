@@ -3,15 +3,14 @@ package evolution.control
 import zio.*
 import zio.schema.{ Schema, derived }
 
-import _root_.config.entity.WorkflowDefinition
+import _root_.config.entity.{ ConfigRepository, WorkflowDefinition }
 import daemon.entity.{ DaemonAgentSpec, DaemonAgentSpecRepository }
-import shared.errors.PersistenceError
-import db.ConfigRepository
 import decision.control.DecisionInbox
 import decision.entity.{ DecisionResolutionKind, DecisionStatus, DecisionUrgency }
 import evolution.entity.*
 import governance.entity.{ GovernancePolicy, GovernancePolicyEvent, GovernancePolicyRepository }
 import orchestration.control.{ WorkflowService, WorkflowServiceError }
+import shared.errors.PersistenceError
 import shared.ids.Ids.{ DecisionId, EvolutionProposalId, GovernancePolicyId }
 
 enum EvolutionError derives zio.json.JsonCodec:

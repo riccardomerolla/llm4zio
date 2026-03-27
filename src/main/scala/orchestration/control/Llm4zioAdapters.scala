@@ -6,12 +6,12 @@ import zio.*
 
 import _root_.config.entity.AgentInfo
 import conversation.entity.api.{ ChatConversation, ConversationEntry, MessageType, SenderType }
-import shared.errors.PersistenceError
 import db.ChatRepository
 import gateway.entity.SessionKey
 import llm4zio.agents.*
 import llm4zio.core.{ Message, MessageRole }
 import memory.entity.{ MemoryFilter, ScoredMemory, SessionId as MemorySessionId, UserId as MemoryUserId }
+import shared.errors.PersistenceError
 
 object Llm4zioAgentAdapters:
   def metadataFromAgentInfo(info: AgentInfo, defaultVersion: String = "1.0.0"): AgentMetadata =

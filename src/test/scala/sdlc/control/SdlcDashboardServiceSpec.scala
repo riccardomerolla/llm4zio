@@ -5,11 +5,11 @@ import java.time.Instant
 import zio.*
 import zio.test.*
 
-import _root_.config.entity.WorkflowDefinition
+import _root_.config.entity.{ ConfigRepository, WorkflowDefinition }
 import activity.entity.{ ActivityEvent, ActivityEventType, ActivityRepository }
 import daemon.control.DaemonAgentScheduler
 import daemon.entity.*
-import db.{ ConfigRepository, SettingRow }
+import db.SettingRow
 import decision.control.DecisionInbox
 import decision.entity.*
 import evolution.entity.*

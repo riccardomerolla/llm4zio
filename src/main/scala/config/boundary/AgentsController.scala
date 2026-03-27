@@ -9,15 +9,15 @@ import zio.http.*
 import zio.json.*
 import zio.stream.ZStream
 
-import _root_.config.entity.{ AgentChannelBinding, AgentInfo }
+import _root_.config.entity.{ AgentChannelBinding, AgentInfo, ConfigRepository }
 import agent.control.{ AgentMatching, BuiltInAgentSynchronizer }
 import agent.entity.api.*
 import agent.entity.{ Agent as RegistryAgent, AgentEvent, AgentPermissions, AgentRepository, TrustLevel }
-import shared.errors.PersistenceError
-import db.{ ConfigRepository, CustomAgentRow }
+import db.CustomAgentRow
 import llm4zio.core.{ LlmError, LlmService }
 import orchestration.control.{ AgentRegistry, OrchestratorControlPlane }
 import prompts.PromptLoader
+import shared.errors.PersistenceError
 import shared.ids.Ids.AgentId
 import shared.web.{ ErrorHandlingMiddleware, HtmlViews }
 import workspace.entity.{ RunStatus, WorkspaceRepository, WorkspaceRun }

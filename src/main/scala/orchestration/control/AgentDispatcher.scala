@@ -5,12 +5,12 @@ import java.time.Instant
 
 import zio.*
 
-import _root_.config.entity.{ AIProvider, AIProviderConfig }
-import shared.errors.PersistenceError
-import db.{ ConfigRepository, TaskArtifactRow, TaskReportRow, TaskRepository }
+import _root_.config.entity.{ AIProvider, AIProviderConfig, ConfigRepository }
+import db.{ TaskArtifactRow, TaskReportRow, TaskRepository }
 import llm4zio.core.*
 import llm4zio.providers.{ GeminiCliExecutor, HttpClient }
 import memory.entity.*
+import shared.errors.PersistenceError
 
 final case class StepDispatchResult(
   agentName: String,

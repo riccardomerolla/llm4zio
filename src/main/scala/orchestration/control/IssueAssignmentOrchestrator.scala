@@ -8,11 +8,11 @@ import activity.entity.{ ActivityEvent, ActivityEventType }
 import board.control.BoardOrchestrator
 import board.entity.BoardError
 import conversation.entity.api.{ ChatConversation, ConversationEntry, MessageType, SenderType }
-import shared.errors.PersistenceError
 import db.{ ChatRepository, TaskRepository }
 import issues.entity.api.{ AgentIssueView, IssuePriority, IssueStatus }
 import issues.entity.{ IssueEvent, IssueRepository, IssueState }
 import llm4zio.core.{ LlmError, LlmService, Streaming }
+import shared.errors.PersistenceError
 import shared.ids.Ids.{ AgentId, BoardIssueId, EventId, IssueId, TaskRunId }
 import workspace.entity.WorkspaceRepository
 

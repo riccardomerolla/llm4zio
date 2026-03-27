@@ -8,22 +8,7 @@ import _root_.config.entity.{ WorkflowDefinition, WorkflowGraph, WorkflowStepAge
 import db.*
 import decision.entity.{ DecisionEvent, DecisionFilter, DecisionRepository, DecisionStatus }
 import gateway.control.*
-import gateway.entity.{
-  BotCommand,
-  CommandParseError,
-  GatewayMessageRole,
-  MessageDirection,
-  NormalizedMessage,
-  SessionKey,
-  SessionScopeStrategy,
-  TelegramCallbackQuery,
-  TelegramClientError,
-  TelegramDocument,
-  TelegramInlineKeyboardMarkup,
-  TelegramMessage,
-  TelegramSendMessage,
-  TelegramUpdate,
-}
+import gateway.entity.*
 import orchestration.control.TaskExecutor
 import taskrun.entity.TaskStep
 

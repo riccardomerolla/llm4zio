@@ -2,11 +2,11 @@ package orchestration.control
 
 import zio.*
 
+import _root_.config.entity.ConfigRepository
 import activity.control.ActivityHub
 import activity.entity.{ ActivityEvent, ActivityEventType }
 import agent.control.{ AgentMatchResult, AgentMatching }
 import agent.entity.{ Agent, AgentRepository }
-import db.ConfigRepository
 import governance.control.{ GovernanceEvaluationContext, GovernancePolicyService }
 import governance.entity.{ GovernanceLifecycleAction, GovernanceLifecycleStage, GovernanceTransition }
 import issues.entity.{ AgentIssue, IssueEvent, IssueRepository, IssueState }

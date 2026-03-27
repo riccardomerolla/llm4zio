@@ -4,9 +4,9 @@ import zio.*
 import zio.http.*
 
 import activity.entity.ActivityRepository
-import shared.errors.PersistenceError
 import db.TaskRepository
 import issues.entity.{ IssueFilter, IssueRepository, IssueStateTag }
+import shared.errors.PersistenceError
 import shared.web.{ ErrorHandlingMiddleware, HtmlViews }
 
 trait DashboardController:

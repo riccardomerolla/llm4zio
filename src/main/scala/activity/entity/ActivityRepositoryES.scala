@@ -2,8 +2,8 @@ package activity.entity
 
 import zio.*
 
-import shared.errors.PersistenceError
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
+import shared.errors.PersistenceError
 import shared.ids.Ids.EventId
 import shared.store.DataStoreModule
 

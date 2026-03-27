@@ -6,9 +6,9 @@ import java.time.Instant
 import zio.*
 import zio.test.*
 
+import db.{ CustomAgentRow, WorkflowRow }
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.error.GigaMapError
-import shared.ids.Ids
 import shared.store.{ ConfigStoreModule, StoreConfig }
 
 object ConfigRepositoryESSpec extends ZIOSpecDefault:
@@ -38,43 +38,43 @@ object ConfigRepositoryESSpec extends ZIOSpecDefault:
 
   def spec: Spec[TestEnvironment & Scope, Any] =
     suite("ConfigRepositoryESSpec")(
-      test("direct-state setting/workflow/agent CRUD") {
+      test("adapter exposes consolidated settings/workflow/agent CRUD") {
         withTempDir { path =>
           val now = Instant.parse("2026-02-23T15:00:00Z")
           (for
             repository <- ZIO.service[ConfigRepository]
-            _          <- repository.putSetting(Setting("ai.enabled", SettingValue.Flag(true), now))
+            _          <- repository.upsertSetting("ai.enabled", "true")
             setting    <- repository.getSetting("ai.enabled")
-            _          <- repository.saveWorkflow(
-                            Workflow(
-                              id = Ids.WorkflowId("wf-1"),
+            workflowId <- repository.createWorkflow(
+                            WorkflowRow(
+                              id = None,
                               name = "Chat",
-                              description = "chat workflow",
-                              steps = List("chat"),
+                              description = Some("chat workflow"),
+                              steps = """["chat"]""",
                               isBuiltin = true,
                               createdAt = now,
                               updatedAt = now,
                             )
                           )
             workflows  <- repository.listWorkflows
-            _          <- repository.saveAgent(
-                            CustomAgent(
-                              id = Ids.AgentId("agent-1"),
+            agentId    <- repository.createCustomAgent(
+                            CustomAgentRow(
+                              id = None,
                               name = "custom-agent",
                               displayName = "Custom",
-                              description = "desc",
+                              description = Some("desc"),
                               systemPrompt = "prompt",
-                              tags = List("ops", "chat"),
+                              tags = Some("""["ops","chat"]"""),
                               enabled = true,
                               createdAt = now,
                               updatedAt = now,
                             )
                           )
-            agents     <- repository.listAgents
+            agents     <- repository.listCustomAgents
           yield assertTrue(
-            setting.value == SettingValue.Flag(true),
-            workflows.map(_.id) == List(Ids.WorkflowId("wf-1")),
-            agents.map(_.id) == List(Ids.AgentId("agent-1")),
+            setting.exists(_.value == "true"),
+            workflows.map(_.id).contains(Some(workflowId)),
+            agents.map(_.id).contains(Some(agentId)),
           )).provideLayer(layerFor(path))
         }
       }

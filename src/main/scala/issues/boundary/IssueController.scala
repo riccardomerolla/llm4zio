@@ -13,6 +13,7 @@ import zio.*
 import zio.http.*
 import zio.json.*
 
+import _root_.config.entity.ConfigRepository
 import activity.control.ActivityHub
 import activity.entity.{ ActivityEvent, ActivityEventType }
 import agent.control.AgentMatching
@@ -21,14 +22,14 @@ import agent.entity.api.AgentMatchSuggestion
 import analysis.entity.{ AnalysisRepository, AnalysisType }
 import board.control.BoardOrchestrator
 import board.entity.{ IssueEstimate as BoardIssueEstimate, IssuePriority as BoardIssuePriority, * }
-import shared.errors.PersistenceError
-import db.{ ChatRepository, ConfigRepository, TaskRepository }
+import db.{ ChatRepository, TaskRepository }
 import decision.control.DecisionInbox
 import decision.entity.DecisionResolutionKind
 import issues.control.IssueAnalysisAttachment
 import issues.entity.api.*
 import issues.entity.{ AgentIssue as DomainIssue, * }
 import orchestration.control.{ IssueAssignmentOrchestrator, IssueDispatchStatusService }
+import shared.errors.PersistenceError
 import shared.ids.Ids.{ AgentId, BoardIssueId, EventId, IssueId, TaskRunId }
 import shared.web.{ ErrorHandlingMiddleware, HtmlViews }
 import workspace.control.{ AssignRunRequest, WorkspaceRunService }

@@ -7,19 +7,8 @@ import zio.*
 import com.bot4s.telegram.api.RequestHandler
 import com.bot4s.telegram.methods.{ EditMessageReplyMarkup, GetUpdates, ParseMode, SendDocument, SendMessage }
 import com.bot4s.telegram.models.{ Chat as BotChat, Message as BotMessage, Update as BotUpdate, User as BotUser, * }
+import gateway.entity.*
 import io.circe.Decoder
-
-import gateway.entity.{
-  TelegramCallbackQuery,
-  TelegramChat,
-  TelegramClientError,
-  TelegramInlineKeyboardMarkup,
-  TelegramMessage,
-  TelegramSendDocument,
-  TelegramSendMessage,
-  TelegramUpdate,
-  TelegramUser,
-}
 
 trait TelegramClient:
   def getUpdates(
