@@ -12,23 +12,33 @@ import shared.errors.PersistenceError
 import shared.ids.Ids.DecisionId
 import shared.web.DecisionsView
 
+trait DecisionsController:
+  def routes: Routes[Any, Response]
+
 object DecisionsController:
 
-  def routes(decisionInbox: DecisionInbox): Routes[Any, Response] =
-    Routes(
-      Method.GET / "decisions"                              -> handler { (req: Request) =>
-        listPage(req, decisionInbox).catchAll(error => ZIO.succeed(persistErr(error)))
-      },
-      Method.GET / "decisions" / "fragment"                 -> handler { (req: Request) =>
-        listFragment(req, decisionInbox).catchAll(error => ZIO.succeed(persistErr(error)))
-      },
-      Method.POST / "decisions" / string("id") / "resolve"  -> handler { (id: String, req: Request) =>
-        resolve(id, req, decisionInbox).catchAll(error => ZIO.succeed(persistErr(error)))
-      },
-      Method.POST / "decisions" / string("id") / "escalate" -> handler { (id: String, _: Request) =>
-        escalate(id, decisionInbox).catchAll(error => ZIO.succeed(persistErr(error)))
-      },
-    )
+  def routes: ZIO[DecisionsController, Nothing, Routes[Any, Response]] =
+    ZIO.serviceWith[DecisionsController](_.routes)
+
+  val live: ZLayer[DecisionInbox, Nothing, DecisionsController] =
+    ZLayer.fromFunction(make)
+
+  def make(decisionInbox: DecisionInbox): DecisionsController =
+    new DecisionsController:
+      override val routes: Routes[Any, Response] = Routes(
+        Method.GET / "decisions"                              -> handler { (req: Request) =>
+          listPage(req, decisionInbox).catchAll(error => ZIO.succeed(persistErr(error)))
+        },
+        Method.GET / "decisions" / "fragment"                 -> handler { (req: Request) =>
+          listFragment(req, decisionInbox).catchAll(error => ZIO.succeed(persistErr(error)))
+        },
+        Method.POST / "decisions" / string("id") / "resolve"  -> handler { (id: String, req: Request) =>
+          resolve(id, req, decisionInbox).catchAll(error => ZIO.succeed(persistErr(error)))
+        },
+        Method.POST / "decisions" / string("id") / "escalate" -> handler { (id: String, _: Request) =>
+          escalate(id, decisionInbox).catchAll(error => ZIO.succeed(persistErr(error)))
+        },
+      )
 
   private def listPage(req: Request, decisionInbox: DecisionInbox): IO[PersistenceError, Response] =
     val statusFilter  = req.queryParam("status").map(_.trim).filter(_.nonEmpty)

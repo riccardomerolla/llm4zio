@@ -99,11 +99,11 @@ object PlansControllerSpec extends ZIOSpecDefault:
   )
 
   private def makeRoutes(ref: Ref[Map[PlanId, List[PlanEvent]]]): Routes[Any, Response] =
-    PlansController.routes(
+    PlansController.make(
       new StubPlanRepository(ref),
       new StubSpecificationRepository(specification),
       new StubIssueRepository(List(linkedIssue)),
-    )
+    ).routes
 
   def spec: Spec[TestEnvironment & Scope, Any] =
     suite("PlansControllerSpec")(

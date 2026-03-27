@@ -10,7 +10,6 @@ import _root_.config.boundary.{
   WorkflowsController as ConfigWorkflowsController,
 }
 import activity.boundary.ActivityController
-import analysis.control.WorkspaceAnalysisScheduler
 import app.boundary.{ AgentMonitorController as AppAgentMonitorController, HealthController as AppHealthController }
 import board.boundary.BoardController as BoardBoundaryController
 import checkpoint.boundary.CheckpointsController
@@ -34,19 +33,12 @@ import governance.entity.GovernancePolicyRepository
 import issues.boundary.IssueController as IssuesIssueController
 import issues.entity.IssueRepository
 import knowledge.boundary.KnowledgeController
-import knowledge.control.KnowledgeGraphService
-import knowledge.entity.DecisionLogRepository
 import mcp.McpService
 import memory.boundary.MemoryController as MemoryBoundaryController
-import memory.entity.MemoryRepository
-import orchestration.control.AgentRegistry
 import plan.boundary.PlansController
-import plan.entity.PlanRepository
 import project.boundary.ProjectsController
-import project.entity.ProjectRepository
 import sdlc.boundary.SdlcDashboardController
 import specification.boundary.SpecificationsController
-import specification.entity.SpecificationRepository
 import taskrun.boundary.{
   DashboardController as TaskRunDashboardController,
   GraphController as TaskRunGraphController,
@@ -55,15 +47,13 @@ import taskrun.boundary.{
   TasksController as TaskRunTasksController,
 }
 import workspace.boundary.WorkspacesController
-import workspace.control.{ GitService, WorkspaceRunService }
-import workspace.entity.WorkspaceRepository
 trait WebServer:
   def routes: Routes[Any, Response]
 
 object WebServer:
 
   val live: ZLayer[
-    TaskRunDashboardController & SdlcDashboardController & TaskRunTasksController & TaskRunReportsController & TaskRunGraphController & SettingsBoundaryController & ConfigBoundaryController & ConfigAgentsController & AppAgentMonitorController & ConversationChatController & IssuesIssueController & BoardBoundaryController & ConfigWorkflowsController & GatewayTelegramController & ActivityController & MemoryBoundaryController & GatewayChannelController & AppHealthController & TaskRunLogsController & ConversationWebSocketController & WorkspaceRepository & WorkspaceRunService & GitService & AgentRegistry & IssueRepository & ProjectRepository & SpecificationRepository & PlanRepository & DecisionInbox & McpService & WorkspaceAnalysisScheduler & DecisionLogRepository & KnowledgeGraphService & MemoryRepository & DaemonsController & DaemonAgentScheduler & CheckpointReviewService & GovernancePolicyRepository & EvolutionProposalRepository,
+    TaskRunDashboardController & SdlcDashboardController & TaskRunTasksController & TaskRunReportsController & TaskRunGraphController & SettingsBoundaryController & ConfigBoundaryController & ConfigAgentsController & AppAgentMonitorController & ConversationChatController & IssuesIssueController & BoardBoundaryController & ConfigWorkflowsController & GatewayTelegramController & ActivityController & MemoryBoundaryController & GatewayChannelController & AppHealthController & TaskRunLogsController & ConversationWebSocketController & ProjectsController & SpecificationsController & PlansController & DecisionsController & CheckpointsController & KnowledgeController & WorkspacesController & IssueRepository & DecisionInbox & McpService & DaemonsController & DaemonAgentScheduler & CheckpointReviewService & GovernancePolicyRepository & EvolutionProposalRepository,
     Nothing,
     WebServer,
   ] = ZLayer {
@@ -88,20 +78,16 @@ object WebServer:
       health               <- ZIO.service[AppHealthController]
       logs                 <- ZIO.service[TaskRunLogsController]
       websocket            <- ZIO.service[ConversationWebSocketController]
-      wsRepo               <- ZIO.service[WorkspaceRepository]
-      wsRunSvc             <- ZIO.service[WorkspaceRunService]
-      gitService           <- ZIO.service[GitService]
-      agentReg             <- ZIO.service[AgentRegistry]
+      projects             <- ZIO.service[ProjectsController]
+      specifications       <- ZIO.service[SpecificationsController]
+      plans                <- ZIO.service[PlansController]
+      decisions            <- ZIO.service[DecisionsController]
+      checkpoints          <- ZIO.service[CheckpointsController]
+      knowledge            <- ZIO.service[KnowledgeController]
+      workspaces           <- ZIO.service[WorkspacesController]
       issueRepo            <- ZIO.service[IssueRepository]
-      projectRepo          <- ZIO.service[ProjectRepository]
-      specificationRepo    <- ZIO.service[SpecificationRepository]
-      planRepo             <- ZIO.service[PlanRepository]
       decisionInbox        <- ZIO.service[DecisionInbox]
       mcpSvc               <- ZIO.service[McpService]
-      analysisScheduler    <- ZIO.service[WorkspaceAnalysisScheduler]
-      decisionLogs         <- ZIO.service[DecisionLogRepository]
-      knowledgeGraph       <- ZIO.service[KnowledgeGraphService]
-      memoryRepo           <- ZIO.service[MemoryRepository]
       daemonsController    <- ZIO.service[DaemonsController]
       checkpointReview     <- ZIO.service[CheckpointReviewService]
       governancePolicyRepo <- ZIO.service[GovernancePolicyRepository]
@@ -116,35 +102,7 @@ object WebServer:
                               )
     yield new WebServer {
       override val routes: Routes[Any, Response] =
-        dashboard.routes ++ sdlcDashboard.routes ++ tasks.routes ++ reports.routes ++ graph.routes ++ settings.routes ++ config.routes ++ agents.routes ++ monitor.routes ++ chat.routes ++ issues.routes ++ board.routes ++ workflows.routes ++ telegram.routes ++ activity.routes ++ memory.routes ++ channels.routes ++ health.routes ++ logs.routes ++ websocket.routes ++ mcpSvc.controller.routes ++ ProjectsController.routes(
-          projectRepo,
-          wsRepo,
-          issueRepo,
-          agentReg,
-          analysisScheduler,
-        ) ++ SpecificationsController.routes(
-          specificationRepo,
-          issueRepo,
-        ) ++ PlansController.routes(
-          planRepo,
-          specificationRepo,
-          issueRepo,
-        ) ++ DecisionsController.routes(
-          decisionInbox
-        ) ++ CheckpointsController.routes(
-          checkpointReview
-        ) ++ KnowledgeController.routes(
-          decisionLogs,
-          knowledgeGraph,
-          memoryRepo,
-        ) ++ WorkspacesController.routes(
-          wsRepo,
-          wsRunSvc,
-          agentReg,
-          issueRepo,
-          gitService,
-          analysisScheduler,
-        ) ++ daemonsController.routes ++ GovernanceController.routes(
+        dashboard.routes ++ sdlcDashboard.routes ++ tasks.routes ++ reports.routes ++ graph.routes ++ settings.routes ++ config.routes ++ agents.routes ++ monitor.routes ++ chat.routes ++ issues.routes ++ board.routes ++ workflows.routes ++ telegram.routes ++ activity.routes ++ memory.routes ++ channels.routes ++ health.routes ++ logs.routes ++ websocket.routes ++ mcpSvc.controller.routes ++ projects.routes ++ specifications.routes ++ plans.routes ++ decisions.routes ++ checkpoints.routes ++ knowledge.routes ++ workspaces.routes ++ daemonsController.routes ++ GovernanceController.routes(
           governancePolicyRepo
         ) ++ EvolutionController.routes(
           evolutionRepo

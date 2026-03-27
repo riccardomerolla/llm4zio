@@ -135,7 +135,7 @@ object ProjectsControllerSpec extends ZIOSpecDefault:
     override def setAgentEnabled(name: String, enabled: Boolean): UIO[Unit]              = ZIO.unit
     override def getMetrics(name: String): UIO[Option[AgentMetrics]]                     = ZIO.succeed(None)
     override def getHealth(name: String): UIO[Option[AgentHealth]]                       = ZIO.succeed(None)
-    override def loadCustomAgents(rows: List[db.CustomAgentRow]): UIO[Int]               = ZIO.succeed(0)
+    override def loadCustomAgents(customAgents: List[CustomAgentRow]): UIO[Int]          = ZIO.succeed(0)
     override def getRankedAgents(q: AgentQuery): UIO[List[AgentInfo]]                    = ZIO.succeed(Nil)
 
   private object StubAnalysisScheduler extends WorkspaceAnalysisScheduler:
@@ -173,13 +173,13 @@ object ProjectsControllerSpec extends ZIOSpecDefault:
     workspaceRef: Ref[Map[String, Workspace]],
     issues: List[AgentIssue] = List(sampleIssue),
   ): Routes[Any, Response] =
-    ProjectsController.routes(
+    ProjectsController.make(
       new StubProjectRepository(projectRef),
       new StubWorkspaceRepository(workspaceRef),
       new StubIssueRepository(issues),
       StubAgentRegistry,
       StubAnalysisScheduler,
-    )
+    ).routes
 
   def spec: Spec[TestEnvironment & Scope, Any] =
     suite("ProjectsControllerSpec")(

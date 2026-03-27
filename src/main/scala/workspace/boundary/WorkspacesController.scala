@@ -14,462 +14,488 @@ import shared.web.WorkspacesView
 import workspace.control.{ AssignRunRequest, GitService, WorkspaceRunService }
 import workspace.entity.*
 
+trait WorkspacesController:
+  def routes: Routes[Any, Response]
+
 object WorkspacesController:
 
-  def routes(
+  def routes: ZIO[WorkspacesController, Nothing, Routes[Any, Response]] =
+    ZIO.serviceWith[WorkspacesController](_.routes)
+
+  val live
+    : ZLayer[
+      WorkspaceRepository & WorkspaceRunService & AgentRegistry & issues.entity.IssueRepository & GitService & WorkspaceAnalysisScheduler,
+      Nothing,
+      WorkspacesController,
+    ] =
+    ZLayer {
+      for
+        repo              <- ZIO.service[WorkspaceRepository]
+        runSvc            <- ZIO.service[WorkspaceRunService]
+        agentRegistry     <- ZIO.service[AgentRegistry]
+        issueRepo         <- ZIO.service[issues.entity.IssueRepository]
+        gitService        <- ZIO.service[GitService]
+        analysisScheduler <- ZIO.service[WorkspaceAnalysisScheduler]
+      yield make(repo, runSvc, agentRegistry, issueRepo, gitService, analysisScheduler)
+    }
+
+  def make(
     repo: WorkspaceRepository,
     runSvc: WorkspaceRunService,
     agentRegistry: AgentRegistry,
     issueRepo: issues.entity.IssueRepository,
     gitService: GitService,
     analysisScheduler: WorkspaceAnalysisScheduler,
-  ): Routes[Any, Response] =
-    Routes(
-      // Redirect /workspaces → /settings/workspaces
-      Method.GET / "workspaces" -> handler { (_: Request) =>
-        ZIO.succeed(
-          Response(
-            status = Status.Found,
-            headers = Headers(Header.Location(URL.decode("/settings/workspaces").getOrElse(URL.root))),
+  ): WorkspacesController =
+    new WorkspacesController:
+      override val routes: Routes[Any, Response] = Routes(
+        // Redirect /workspaces → /settings/workspaces
+        Method.GET / "workspaces" -> handler { (_: Request) =>
+          ZIO.succeed(
+            Response(
+              status = Status.Found,
+              headers = Headers(Header.Location(URL.decode("/settings/workspaces").getOrElse(URL.root))),
+            )
           )
-        )
-      },
+        },
 
-      // Runs dashboard page (across all workspaces)
-      Method.GET / "runs" -> handler { (req: Request) =>
-        ZIO.succeed(
-          Response(
-            status = Status.MovedPermanently,
-            headers = Headers(Header.Location(URL.decode("/").getOrElse(URL.root))),
+        // Runs dashboard page (across all workspaces)
+        Method.GET / "runs" -> handler { (req: Request) =>
+          ZIO.succeed(
+            Response(
+              status = Status.MovedPermanently,
+              headers = Headers(Header.Location(URL.decode("/").getOrElse(URL.root))),
+            )
           )
-        )
-      },
+        },
 
-      // Runs dashboard HTMX fragment
-      Method.GET / "runs" / "fragment" -> handler { (req: Request) =>
-        val query = parseRunsDashboardQuery(req)
-        (for
-          workspaces <- repo.list.mapError(persistErr)
-          allRuns    <- listAllRuns(repo, workspaces).mapError(persistErr)
-          filtered    = filterRuns(allRuns, query)
-          sorted      = sortRuns(filtered, query.sortBy)
-          scoped      = applyScope(sorted, query.scope)
-          limited     = scoped.take(query.limit)
-          byId        = workspaces.map(ws => ws.id -> ws.name).toMap
-        yield html(WorkspacesView.runsDashboardRowsFragment(limited, byId))).catchAll(ZIO.succeed)
-      },
+        // Runs dashboard HTMX fragment
+        Method.GET / "runs" / "fragment" -> handler { (req: Request) =>
+          val query = parseRunsDashboardQuery(req)
+          (for
+            workspaces <- repo.list.mapError(persistErr)
+            allRuns    <- listAllRuns(repo, workspaces).mapError(persistErr)
+            filtered    = filterRuns(allRuns, query)
+            sorted      = sortRuns(filtered, query.sortBy)
+            scoped      = applyScope(sorted, query.scope)
+            limited     = scoped.take(query.limit)
+            byId        = workspaces.map(ws => ws.id -> ws.name).toMap
+          yield html(WorkspacesView.runsDashboardRowsFragment(limited, byId))).catchAll(ZIO.succeed)
+        },
 
-      // Runs JSON API (across all workspaces)
-      Method.GET / "api" / "runs" -> handler { (req: Request) =>
-        val query = parseRunsDashboardQuery(req)
-        val scope = if query.status.nonEmpty then "all" else query.scope
-        (for
-          workspaces <- repo.list.mapError(persistErr)
-          allRuns    <- listAllRuns(repo, workspaces).mapError(persistErr)
-          filtered    = filterRuns(allRuns, query)
-          sorted      = sortRuns(filtered, query.sortBy)
-          scoped      = applyScope(sorted, scope)
-          limited     = scoped.take(query.limit)
-          byId        = workspaces.map(ws => ws.id -> ws.name).toMap
-          payload     = limited.map(run =>
-                          RunDashboardRow(
-                            runId = run.id,
-                            workspaceId = run.workspaceId,
-                            workspaceName = byId.getOrElse(run.workspaceId, run.workspaceId),
-                            issueRef = run.issueRef,
-                            agentName = run.agentName,
-                            status = run.status.toString,
-                            conversationId = run.conversationId,
-                            createdAt = run.createdAt,
-                            updatedAt = run.updatedAt,
-                            durationSeconds = math.max(
-                              0L,
-                              java.time.Duration
-                                .between(
-                                  run.createdAt,
-                                  run.status match
-                                    case RunStatus.Pending | RunStatus.Running(_) => run.updatedAt
-                                    case _                                        => run.updatedAt,
-                                )
-                                .getSeconds,
-                            ),
-                          )
-                        )
-        yield Response.json(payload.toJson)).catchAll(ZIO.succeed)
-      },
-
-      // Full page
-      Method.GET / "settings" / "workspaces"                -> handler { (_: Request) =>
-        (for
-          ws         <- repo.list.mapError(persistErr)
-          agents     <- agentRegistry.getAllAgents
-          statusByWs <- loadAnalysisStatuses(ws.map(_.id), analysisScheduler).mapError(persistErr)
-        yield html(WorkspacesView.page(ws, agents, statusByWs)))
-          .catchAll(ZIO.succeed)
-      },
-      Method.GET / "settings" / "workspaces" / string("id") -> handler { (id: String, _: Request) =>
-        (for
-          workspace <- repo.get(id).mapError(persistErr)
-          agents    <- agentRegistry.getAllAgents
-          response  <- workspace match
-                         case None     => ZIO.succeed(Response(status = Status.NotFound))
-                         case Some(ws) =>
-                           analysisScheduler
-                             .statusForWorkspace(id)
-                             .mapError(persistErr)
-                             .map(statuses => html(WorkspacesView.detailPage(ws, agents, statuses)))
-        yield response)
-          .catchAll(ZIO.succeed)
-      },
-
-      // JSON list
-      Method.GET / "api" / "workspaces" -> handler { (_: Request) =>
-        repo.list
-          .mapError(persistErr)
-          .map(ws => Response.json(ws.toJson))
-          .catchAll(ZIO.succeed)
-      },
-
-      // New workspace form fragment (no agents needed — modal is static)
-      Method.GET / "api" / "workspaces" / "new" -> handler { (_: Request) =>
-        ZIO.succeed(html(WorkspacesView.newWorkspaceForm))
-      },
-
-      // Edit workspace form fragment
-      Method.GET / "api" / "workspaces" / string("id") / "edit" -> handler { (id: String, _: Request) =>
-        repo.get(id)
-          .mapError(persistErr)
-          .map {
-            case None     => Response(status = Status.NotFound)
-            case Some(ws) => html(WorkspacesView.editWorkspaceForm(ws))
-          }
-          .catchAll(ZIO.succeed)
-      },
-
-      // Create
-      Method.POST / "api" / "workspaces" -> handler { (req: Request) =>
-        (for
-          patch      <- parseFormBody(req)
-          _          <- validateWorkspaceLocalPath(patch.localPath)
-          now        <- Clock.instant
-          id          = java.util.UUID.randomUUID().toString
-          _          <- repo
-                          .append(
-                            WorkspaceEvent.Created(
-                              workspaceId = id,
-                              name = patch.name,
-                              localPath = patch.localPath,
-                              defaultAgent = patch.defaultAgent,
-                              description = patch.description,
-                              cliTool = patch.cliTool,
-                              runMode = patch.runMode,
-                              occurredAt = now,
+        // Runs JSON API (across all workspaces)
+        Method.GET / "api" / "runs" -> handler { (req: Request) =>
+          val query = parseRunsDashboardQuery(req)
+          val scope = if query.status.nonEmpty then "all" else query.scope
+          (for
+            workspaces <- repo.list.mapError(persistErr)
+            allRuns    <- listAllRuns(repo, workspaces).mapError(persistErr)
+            filtered    = filterRuns(allRuns, query)
+            sorted      = sortRuns(filtered, query.sortBy)
+            scoped      = applyScope(sorted, scope)
+            limited     = scoped.take(query.limit)
+            byId        = workspaces.map(ws => ws.id -> ws.name).toMap
+            payload     = limited.map(run =>
+                            RunDashboardRow(
+                              runId = run.id,
+                              workspaceId = run.workspaceId,
+                              workspaceName = byId.getOrElse(run.workspaceId, run.workspaceId),
+                              issueRef = run.issueRef,
+                              agentName = run.agentName,
+                              status = run.status.toString,
+                              conversationId = run.conversationId,
+                              createdAt = run.createdAt,
+                              updatedAt = run.updatedAt,
+                              durationSeconds = math.max(
+                                0L,
+                                java.time.Duration
+                                  .between(
+                                    run.createdAt,
+                                    run.status match
+                                      case RunStatus.Pending | RunStatus.Running(_) => run.updatedAt
+                                      case _                                        => run.updatedAt,
+                                  )
+                                  .getSeconds,
+                              ),
                             )
                           )
-                          .mapError(persistErr)
-          _          <- analysisScheduler.triggerForWorkspaceEvent(id).forkDaemon
-          all        <- repo.list.mapError(persistErr)
-          agents     <- agentRegistry.getAllAgents
-          statusByWs <- loadAnalysisStatuses(all.map(_.id), analysisScheduler).mapError(persistErr)
-        yield html(WorkspacesView.page(all, agents, statusByWs))).catchAll(ZIO.succeed)
-      },
+          yield Response.json(payload.toJson)).catchAll(ZIO.succeed)
+        },
 
-      // Update
-      Method.PUT / "api" / "workspaces" / string("id") -> handler { (id: String, req: Request) =>
-        (for
-          patch    <- parseFormBody(req)
-          _        <- validateWorkspaceLocalPath(patch.localPath)
-          existing <- repo.get(id).mapError(persistErr)
-          now      <- Clock.instant
-          resp     <- existing match
-                        case None    => ZIO.succeed(Response(status = Status.NotFound))
-                        case Some(_) =>
-                          for
-                            _          <- repo
-                                            .append(
-                                              WorkspaceEvent.Updated(
-                                                workspaceId = id,
-                                                name = patch.name,
-                                                localPath = patch.localPath,
-                                                defaultAgent = patch.defaultAgent,
-                                                description = patch.description,
-                                                cliTool = patch.cliTool,
-                                                runMode = patch.runMode,
-                                                occurredAt = now,
+        // Full page
+        Method.GET / "settings" / "workspaces"                -> handler { (_: Request) =>
+          (for
+            ws         <- repo.list.mapError(persistErr)
+            agents     <- agentRegistry.getAllAgents
+            statusByWs <- loadAnalysisStatuses(ws.map(_.id), analysisScheduler).mapError(persistErr)
+          yield html(WorkspacesView.page(ws, agents, statusByWs)))
+            .catchAll(ZIO.succeed)
+        },
+        Method.GET / "settings" / "workspaces" / string("id") -> handler { (id: String, _: Request) =>
+          (for
+            workspace <- repo.get(id).mapError(persistErr)
+            agents    <- agentRegistry.getAllAgents
+            response  <- workspace match
+                           case None     => ZIO.succeed(Response(status = Status.NotFound))
+                           case Some(ws) =>
+                             analysisScheduler
+                               .statusForWorkspace(id)
+                               .mapError(persistErr)
+                               .map(statuses => html(WorkspacesView.detailPage(ws, agents, statuses)))
+          yield response)
+            .catchAll(ZIO.succeed)
+        },
+
+        // JSON list
+        Method.GET / "api" / "workspaces" -> handler { (_: Request) =>
+          repo.list
+            .mapError(persistErr)
+            .map(ws => Response.json(ws.toJson))
+            .catchAll(ZIO.succeed)
+        },
+
+        // New workspace form fragment (no agents needed — modal is static)
+        Method.GET / "api" / "workspaces" / "new" -> handler { (_: Request) =>
+          ZIO.succeed(html(WorkspacesView.newWorkspaceForm))
+        },
+
+        // Edit workspace form fragment
+        Method.GET / "api" / "workspaces" / string("id") / "edit" -> handler { (id: String, _: Request) =>
+          repo.get(id)
+            .mapError(persistErr)
+            .map {
+              case None     => Response(status = Status.NotFound)
+              case Some(ws) => html(WorkspacesView.editWorkspaceForm(ws))
+            }
+            .catchAll(ZIO.succeed)
+        },
+
+        // Create
+        Method.POST / "api" / "workspaces" -> handler { (req: Request) =>
+          (for
+            patch      <- parseFormBody(req)
+            _          <- validateWorkspaceLocalPath(patch.localPath)
+            now        <- Clock.instant
+            id          = java.util.UUID.randomUUID().toString
+            _          <- repo
+                            .append(
+                              WorkspaceEvent.Created(
+                                workspaceId = id,
+                                name = patch.name,
+                                localPath = patch.localPath,
+                                defaultAgent = patch.defaultAgent,
+                                description = patch.description,
+                                cliTool = patch.cliTool,
+                                runMode = patch.runMode,
+                                occurredAt = now,
+                              )
+                            )
+                            .mapError(persistErr)
+            _          <- analysisScheduler.triggerForWorkspaceEvent(id).forkDaemon
+            all        <- repo.list.mapError(persistErr)
+            agents     <- agentRegistry.getAllAgents
+            statusByWs <- loadAnalysisStatuses(all.map(_.id), analysisScheduler).mapError(persistErr)
+          yield html(WorkspacesView.page(all, agents, statusByWs))).catchAll(ZIO.succeed)
+        },
+
+        // Update
+        Method.PUT / "api" / "workspaces" / string("id") -> handler { (id: String, req: Request) =>
+          (for
+            patch    <- parseFormBody(req)
+            _        <- validateWorkspaceLocalPath(patch.localPath)
+            existing <- repo.get(id).mapError(persistErr)
+            now      <- Clock.instant
+            resp     <- existing match
+                          case None    => ZIO.succeed(Response(status = Status.NotFound))
+                          case Some(_) =>
+                            for
+                              _          <- repo
+                                              .append(
+                                                WorkspaceEvent.Updated(
+                                                  workspaceId = id,
+                                                  name = patch.name,
+                                                  localPath = patch.localPath,
+                                                  defaultAgent = patch.defaultAgent,
+                                                  description = patch.description,
+                                                  cliTool = patch.cliTool,
+                                                  runMode = patch.runMode,
+                                                  occurredAt = now,
+                                                )
                                               )
-                                            )
-                                            .mapError(persistErr)
-                            _          <- analysisScheduler.triggerForWorkspaceEvent(id).forkDaemon
-                            all        <- repo.list.mapError(persistErr)
-                            agents     <- agentRegistry.getAllAgents
-                            statusByWs <- loadAnalysisStatuses(all.map(_.id), analysisScheduler).mapError(persistErr)
-                          yield html(WorkspacesView.page(all, agents, statusByWs))
-        yield resp).catchAll(ZIO.succeed)
-      },
+                                              .mapError(persistErr)
+                              _          <- analysisScheduler.triggerForWorkspaceEvent(id).forkDaemon
+                              all        <- repo.list.mapError(persistErr)
+                              agents     <- agentRegistry.getAllAgents
+                              statusByWs <- loadAnalysisStatuses(all.map(_.id), analysisScheduler).mapError(persistErr)
+                            yield html(WorkspacesView.page(all, agents, statusByWs))
+          yield resp).catchAll(ZIO.succeed)
+        },
 
-      // Delete
-      Method.DELETE / "api" / "workspaces" / string("id") -> handler { (id: String, req: Request) =>
-        repo.delete(id)
-          .mapError(persistErr)
-          .as {
-            if req.queryParam("detailMode").contains("true") then
-              Response(
-                status = Status.Ok,
-                headers = Headers(Header.Custom("HX-Redirect", "/settings/workspaces")),
-              )
-            else Response(status = Status.NoContent)
-          }
-          .catchAll(ZIO.succeed)
-      },
-
-      // Runs list (HTMX fragment)
-      Method.GET / "api" / "workspaces" / string("id") / "runs"            -> handler { (id: String, _: Request) =>
-        repo.listRuns(id)
-          .mapError(persistErr)
-          .map(runs => html(WorkspacesView.runsFragment(runs)))
-          .catchAll(ZIO.succeed)
-      },
-      Method.GET / "api" / "workspaces" / string("id") / "analysis-status" -> handler { (id: String, _: Request) =>
-        analysisScheduler
-          .statusForWorkspace(id)
-          .mapError(persistErr)
-          .map(statuses => html(WorkspacesView.analysisStatusFragment(id, statuses)))
-          .catchAll(ZIO.succeed)
-      },
-      Method.POST / "api" / "workspaces" / string("id") / "reanalyze"      -> handler { (id: String, _: Request) =>
-        (for
-          _        <- analysisScheduler.triggerManual(id).forkDaemon
-          statuses <- analysisScheduler.statusForWorkspace(id).mapError(persistErr)
-        yield html(WorkspacesView.analysisStatusFragment(id, statuses))).catchAll(ZIO.succeed)
-      },
-
-      // Assign run
-      Method.POST / "api" / "workspaces" / string("id") / "runs" -> handler { (id: String, req: Request) =>
-        (for
-          assign <- parseAssignBody(req)
-          result <- runSvc.assign(id, assign).either
-          resp   <- result match
-                      case Right(_)                                   =>
-                        repo.listRuns(id).mapError(persistErr).map(runs => html(WorkspacesView.runsFragment(runs)))
-                      case Left(WorkspaceError.NotFound(_))           =>
-                        ZIO.succeed(html(WorkspacesView.assignErrorFragment("Workspace not found")))
-                      case Left(WorkspaceError.Disabled(_))           =>
-                        ZIO.succeed(html(WorkspacesView.assignErrorFragment("Workspace is disabled")))
-                      case Left(WorkspaceError.DockerNotAvailable(r)) =>
-                        ZIO.succeed(html(WorkspacesView.assignErrorFragment(s"Docker not available: $r")))
-                      case Left(WorkspaceError.WorktreeError(msg))    =>
-                        ZIO.succeed(html(WorkspacesView.assignErrorFragment(s"Git worktree error: $msg")))
-                      case Left(other)                                =>
-                        ZIO.succeed(html(WorkspacesView.assignErrorFragment(other.toString)))
-        yield resp)
-          .catchAll(err => ZIO.succeed(err))
-          .catchAllDefect(t =>
-            ZIO.logError(s"Unhandled defect in assign run: ${t.getMessage}\n${t.getStackTrace.mkString("\n  at ")}") *>
-              ZIO.succeed(html(WorkspacesView.assignErrorFragment(t.getMessage)))
-          )
-      },
-
-      // Run status (JSON)
-      Method.GET / "api" / "workspaces" / string("wsId") / "runs" / string("runId") ->
-        handler { (wsId: String, runId: String, _: Request) =>
-          repo.getRun(runId)
+        // Delete
+        Method.DELETE / "api" / "workspaces" / string("id") -> handler { (id: String, req: Request) =>
+          repo.delete(id)
             .mapError(persistErr)
-            .map {
-              case None      => Response(status = Status.NotFound)
-              case Some(run) => Response.json(run.toJson)
-            }
-            .catchAll(ZIO.succeed)
-        },
-
-      // Run row poll fragment (HTML) — used by HTMX to refresh a single row
-      Method.GET / "api" / "workspaces" / string("wsId") / "runs" / string("runId") / "row" ->
-        handler { (wsId: String, runId: String, _: Request) =>
-          repo.getRun(runId)
-            .mapError(persistErr)
-            .map {
-              case None      => Response(status = Status.NotFound)
-              case Some(run) => html(WorkspacesView.runRowFragment(run))
-            }
-            .catchAll(ZIO.succeed)
-        },
-
-      // Cancel run
-      Method.DELETE / "api" / "workspaces" / string("wsId") / "runs" / string("runId") ->
-        handler { (wsId: String, runId: String, _: Request) =>
-          runSvc.cancelRun(runId)
-            .as(Response(status = Status.NoContent))
-            .catchAll {
-              case WorkspaceError.NotFound(_) => ZIO.succeed(Response(status = Status.NotFound))
-              case other                      => ZIO.succeed(Response.internalServerError(other.toString))
-            }
-        },
-
-      // Continue run
-      Method.POST / "api" / "workspaces" / string("wsId") / "runs" / string("runId") / "continue" ->
-        handler { (wsId: String, runId: String, req: Request) =>
-          val wantsHtml = req.header(Header.Accept).exists(_.renderedValue.toLowerCase.contains("text/html"))
-          parseContinueBody(req)
-            .flatMap(body => runSvc.continueRun(runId, body.prompt))
-            .flatMap { continued =>
-              if wantsHtml then
-                repo.listRuns(wsId).mapError(persistErr).map(runs => html(WorkspacesView.runsFragment(runs)))
-              else
-                ZIO.succeed(Response.json(s"""{"runId":"${continued.id}"}"""))
-            }
-            .catchAll {
-              case WorkspaceError.NotFound(_)                   => ZIO.succeed(Response(status = Status.NotFound))
-              case WorkspaceError.InvalidRunState(_, _, actual) =>
-                ZIO.succeed(html(WorkspacesView.assignErrorFragment(actual)))
-              case other                                        => ZIO.succeed(Response.internalServerError(other.toString))
-            }
-        },
-
-      // Apply run branch into workspace repository
-      Method.POST / "api" / "workspaces" / string("wsId") / "runs" / string("runId") / "apply" ->
-        handler { (wsId: String, runId: String, _: Request) =>
-          resolveRunWorktree(repo, wsId, runId).flatMap {
-            case Left(resp)                      => ZIO.succeed(resp)
-            case Right((workspace, run, wtPath)) =>
-              applyRunBranchToRepo(workspace, run, wtPath)
-          }
-        },
-
-      // Git status for run worktree
-      Method.GET / "api" / "workspaces" / string("wsId") / "runs" / string("runId") / "git" / "status" ->
-        handler { (wsId: String, runId: String, _: Request) =>
-          resolveRunWorktree(repo, wsId, runId).flatMap {
-            case Left(resp)        => ZIO.succeed(resp)
-            case Right((_, _, wt)) =>
-              gitService.status(wt).map(status => Response.json(status.toJson)).catchAll(err =>
-                ZIO.succeed(gitErr(err))
-              )
-          }
-        },
-
-      // Git diff stat — ?base=<branch> shows committed changes vs that branch;
-      // without ?base, falls back to local worktree diff (?staged=true for index)
-      Method.GET / "api" / "workspaces" / string("wsId") / "runs" / string("runId") / "git" / "diff" ->
-        handler { (wsId: String, runId: String, req: Request) =>
-          val staged = req.queryParam("staged").exists(_.trim.equalsIgnoreCase("true"))
-          val base   = req.queryParam("base").map(_.trim).filter(_.nonEmpty)
-          resolveRunWorktree(repo, wsId, runId).flatMap {
-            case Left(resp)        => ZIO.succeed(resp)
-            case Right((_, _, wt)) =>
-              base match
-                case Some(b) =>
-                  gitService
-                    .diffStatVsBase(wt, b)
-                    .map(diff => Response.json(diff.toJson))
-                    .catchAll(err => ZIO.succeed(gitErr(err)))
-                case None    =>
-                  gitService
-                    .diffStat(wt, staged = staged)
-                    .map(diff => Response.json(diff.toJson))
-                    .catchAll(err => ZIO.succeed(gitErr(err)))
-          }
-        },
-
-      // Git file diff — ?base=<branch> shows committed diff for that file vs base branch
-      Method.GET / "api" / "workspaces" / string("wsId") / "runs" / string("runId") / "git" / "diff" / string(
-        "filePath"
-      ) ->
-        handler { (wsId: String, runId: String, filePath: String, req: Request) =>
-          val decoded = urlDecode(filePath)
-          val base    = req.queryParam("base").map(_.trim).filter(_.nonEmpty)
-          validateGitFilePath(decoded).flatMap {
-            case Left(resp) => ZIO.succeed(resp)
-            case Right(fp)  =>
-              resolveRunWorktree(repo, wsId, runId).flatMap {
-                case Left(resp)        => ZIO.succeed(resp)
-                case Right((_, _, wt)) =>
-                  base match
-                    case Some(b) =>
-                      gitService
-                        .diffFileVsBase(wt, fp, b)
-                        .map(diff => Response.text(diff).contentType(MediaType.text.plain))
-                        .catchAll(err => ZIO.succeed(gitErr(err)))
-                    case None    =>
-                      gitService
-                        .diffFile(wt, fp)
-                        .map(diff => Response.text(diff).contentType(MediaType.text.plain))
-                        .catchAll(err => ZIO.succeed(gitErr(err)))
-              }
-          }
-        },
-
-      // Git log
-      Method.GET / "api" / "workspaces" / string("wsId") / "runs" / string("runId") / "git" / "log" ->
-        handler { (wsId: String, runId: String, req: Request) =>
-          parseLimit(req.queryParam("limit")).flatMap {
-            case Left(resp)   => ZIO.succeed(resp)
-            case Right(limit) =>
-              resolveRunWorktree(repo, wsId, runId).flatMap {
-                case Left(resp)        => ZIO.succeed(resp)
-                case Right((_, _, wt)) =>
-                  gitService.log(wt, limit).map(log => Response.json(log.toJson)).catchAll(err =>
-                    ZIO.succeed(gitErr(err))
-                  )
-              }
-          }
-        },
-
-      // Git branch + ahead/behind main
-      Method.GET / "api" / "workspaces" / string("wsId") / "runs" / string("runId") / "git" / "branch" ->
-        handler { (wsId: String, runId: String, _: Request) =>
-          val baseBranch = "main"
-          resolveRunWorktree(repo, wsId, runId).flatMap {
-            case Left(resp)        => ZIO.succeed(resp)
-            case Right((_, _, wt)) =>
-              (for
-                info        <- gitService.branchInfo(wt)
-                aheadBehind <- gitService.aheadBehind(wt, baseBranch)
-              yield Response.json(GitBranchView(info, aheadBehind, baseBranch).toJson))
-                .catchAll(err => ZIO.succeed(gitErr(err)))
-          }
-        },
-
-      // Issue search — returns backlog/todo issues matching ?q= for the assign-run search dropdown
-      Method.GET / "api" / "workspaces" / "issues" / "search" -> handler { (req: Request) =>
-        val q = req.queryParam("q").map(_.trim.toLowerCase).filter(_.nonEmpty)
-        issueRepo
-          .list(
-            issues.entity.IssueFilter(
-              states = Set(
-                issues.entity.IssueStateTag.Backlog,
-                issues.entity.IssueStateTag.Todo,
-                issues.entity.IssueStateTag.Open,
-              ),
-              limit = 20,
-            )
-          )
-          .map { all =>
-            val filtered = q match
-              case None       => all
-              case Some(term) =>
-                all.filter(i =>
-                  i.title.toLowerCase.contains(term) ||
-                  i.description.toLowerCase.contains(term) ||
-                  i.id.value.contains(term)
+            .as {
+              if req.queryParam("detailMode").contains("true") then
+                Response(
+                  status = Status.Ok,
+                  headers = Headers(Header.Custom("HX-Redirect", "/settings/workspaces")),
                 )
-            val views    = filtered.map(i =>
-              issues.entity.api.AgentIssueView(
-                id = Some(i.id.value),
-                title = i.title,
-                description = i.description,
-                issueType = i.issueType,
-                priority = issues.entity.api.IssuePriority.values
-                  .find(_.toString.equalsIgnoreCase(i.priority))
-                  .getOrElse(issues.entity.api.IssuePriority.Medium),
-                status = issues.entity.api.IssueStatus.Todo,
-                createdAt = java.time.Instant.EPOCH,
-                updatedAt = java.time.Instant.EPOCH,
+              else Response(status = Status.NoContent)
+            }
+            .catchAll(ZIO.succeed)
+        },
+
+        // Runs list (HTMX fragment)
+        Method.GET / "api" / "workspaces" / string("id") / "runs"            -> handler { (id: String, _: Request) =>
+          repo.listRuns(id)
+            .mapError(persistErr)
+            .map(runs => html(WorkspacesView.runsFragment(runs)))
+            .catchAll(ZIO.succeed)
+        },
+        Method.GET / "api" / "workspaces" / string("id") / "analysis-status" -> handler { (id: String, _: Request) =>
+          analysisScheduler
+            .statusForWorkspace(id)
+            .mapError(persistErr)
+            .map(statuses => html(WorkspacesView.analysisStatusFragment(id, statuses)))
+            .catchAll(ZIO.succeed)
+        },
+        Method.POST / "api" / "workspaces" / string("id") / "reanalyze"      -> handler { (id: String, _: Request) =>
+          (for
+            _        <- analysisScheduler.triggerManual(id).forkDaemon
+            statuses <- analysisScheduler.statusForWorkspace(id).mapError(persistErr)
+          yield html(WorkspacesView.analysisStatusFragment(id, statuses))).catchAll(ZIO.succeed)
+        },
+
+        // Assign run
+        Method.POST / "api" / "workspaces" / string("id") / "runs" -> handler { (id: String, req: Request) =>
+          (for
+            assign <- parseAssignBody(req)
+            result <- runSvc.assign(id, assign).either
+            resp   <- result match
+                        case Right(_)                                   =>
+                          repo.listRuns(id).mapError(persistErr).map(runs => html(WorkspacesView.runsFragment(runs)))
+                        case Left(WorkspaceError.NotFound(_))           =>
+                          ZIO.succeed(html(WorkspacesView.assignErrorFragment("Workspace not found")))
+                        case Left(WorkspaceError.Disabled(_))           =>
+                          ZIO.succeed(html(WorkspacesView.assignErrorFragment("Workspace is disabled")))
+                        case Left(WorkspaceError.DockerNotAvailable(r)) =>
+                          ZIO.succeed(html(WorkspacesView.assignErrorFragment(s"Docker not available: $r")))
+                        case Left(WorkspaceError.WorktreeError(msg))    =>
+                          ZIO.succeed(html(WorkspacesView.assignErrorFragment(s"Git worktree error: $msg")))
+                        case Left(other)                                =>
+                          ZIO.succeed(html(WorkspacesView.assignErrorFragment(other.toString)))
+          yield resp)
+            .catchAll(err => ZIO.succeed(err))
+            .catchAllDefect(t =>
+              ZIO.logError(
+                s"Unhandled defect in assign run: ${t.getMessage}\n${t.getStackTrace.mkString("\n  at ")}"
+              ) *>
+                ZIO.succeed(html(WorkspacesView.assignErrorFragment(t.getMessage)))
+            )
+        },
+
+        // Run status (JSON)
+        Method.GET / "api" / "workspaces" / string("wsId") / "runs" / string("runId") ->
+          handler { (wsId: String, runId: String, _: Request) =>
+            repo.getRun(runId)
+              .mapError(persistErr)
+              .map {
+                case None      => Response(status = Status.NotFound)
+                case Some(run) => Response.json(run.toJson)
+              }
+              .catchAll(ZIO.succeed)
+          },
+
+        // Run row poll fragment (HTML) — used by HTMX to refresh a single row
+        Method.GET / "api" / "workspaces" / string("wsId") / "runs" / string("runId") / "row" ->
+          handler { (wsId: String, runId: String, _: Request) =>
+            repo.getRun(runId)
+              .mapError(persistErr)
+              .map {
+                case None      => Response(status = Status.NotFound)
+                case Some(run) => html(WorkspacesView.runRowFragment(run))
+              }
+              .catchAll(ZIO.succeed)
+          },
+
+        // Cancel run
+        Method.DELETE / "api" / "workspaces" / string("wsId") / "runs" / string("runId") ->
+          handler { (wsId: String, runId: String, _: Request) =>
+            runSvc.cancelRun(runId)
+              .as(Response(status = Status.NoContent))
+              .catchAll {
+                case WorkspaceError.NotFound(_) => ZIO.succeed(Response(status = Status.NotFound))
+                case other                      => ZIO.succeed(Response.internalServerError(other.toString))
+              }
+          },
+
+        // Continue run
+        Method.POST / "api" / "workspaces" / string("wsId") / "runs" / string("runId") / "continue" ->
+          handler { (wsId: String, runId: String, req: Request) =>
+            val wantsHtml = req.header(Header.Accept).exists(_.renderedValue.toLowerCase.contains("text/html"))
+            parseContinueBody(req)
+              .flatMap(body => runSvc.continueRun(runId, body.prompt))
+              .flatMap { continued =>
+                if wantsHtml then
+                  repo.listRuns(wsId).mapError(persistErr).map(runs => html(WorkspacesView.runsFragment(runs)))
+                else
+                  ZIO.succeed(Response.json(s"""{"runId":"${continued.id}"}"""))
+              }
+              .catchAll {
+                case WorkspaceError.NotFound(_)                   => ZIO.succeed(Response(status = Status.NotFound))
+                case WorkspaceError.InvalidRunState(_, _, actual) =>
+                  ZIO.succeed(html(WorkspacesView.assignErrorFragment(actual)))
+                case other                                        => ZIO.succeed(Response.internalServerError(other.toString))
+              }
+          },
+
+        // Apply run branch into workspace repository
+        Method.POST / "api" / "workspaces" / string("wsId") / "runs" / string("runId") / "apply" ->
+          handler { (wsId: String, runId: String, _: Request) =>
+            resolveRunWorktree(repo, wsId, runId).flatMap {
+              case Left(resp)                      => ZIO.succeed(resp)
+              case Right((workspace, run, wtPath)) =>
+                applyRunBranchToRepo(workspace, run, wtPath)
+            }
+          },
+
+        // Git status for run worktree
+        Method.GET / "api" / "workspaces" / string("wsId") / "runs" / string("runId") / "git" / "status" ->
+          handler { (wsId: String, runId: String, _: Request) =>
+            resolveRunWorktree(repo, wsId, runId).flatMap {
+              case Left(resp)        => ZIO.succeed(resp)
+              case Right((_, _, wt)) =>
+                gitService.status(wt).map(status => Response.json(status.toJson)).catchAll(err =>
+                  ZIO.succeed(gitErr(err))
+                )
+            }
+          },
+
+        // Git diff stat — ?base=<branch> shows committed changes vs that branch;
+        // without ?base, falls back to local worktree diff (?staged=true for index)
+        Method.GET / "api" / "workspaces" / string("wsId") / "runs" / string("runId") / "git" / "diff" ->
+          handler { (wsId: String, runId: String, req: Request) =>
+            val staged = req.queryParam("staged").exists(_.trim.equalsIgnoreCase("true"))
+            val base   = req.queryParam("base").map(_.trim).filter(_.nonEmpty)
+            resolveRunWorktree(repo, wsId, runId).flatMap {
+              case Left(resp)        => ZIO.succeed(resp)
+              case Right((_, _, wt)) =>
+                base match
+                  case Some(b) =>
+                    gitService
+                      .diffStatVsBase(wt, b)
+                      .map(diff => Response.json(diff.toJson))
+                      .catchAll(err => ZIO.succeed(gitErr(err)))
+                  case None    =>
+                    gitService
+                      .diffStat(wt, staged = staged)
+                      .map(diff => Response.json(diff.toJson))
+                      .catchAll(err => ZIO.succeed(gitErr(err)))
+            }
+          },
+
+        // Git file diff — ?base=<branch> shows committed diff for that file vs base branch
+        Method.GET / "api" / "workspaces" / string("wsId") / "runs" / string("runId") / "git" / "diff" / string(
+          "filePath"
+        ) ->
+          handler { (wsId: String, runId: String, filePath: String, req: Request) =>
+            val decoded = urlDecode(filePath)
+            val base    = req.queryParam("base").map(_.trim).filter(_.nonEmpty)
+            validateGitFilePath(decoded).flatMap {
+              case Left(resp) => ZIO.succeed(resp)
+              case Right(fp)  =>
+                resolveRunWorktree(repo, wsId, runId).flatMap {
+                  case Left(resp)        => ZIO.succeed(resp)
+                  case Right((_, _, wt)) =>
+                    base match
+                      case Some(b) =>
+                        gitService
+                          .diffFileVsBase(wt, fp, b)
+                          .map(diff => Response.text(diff).contentType(MediaType.text.plain))
+                          .catchAll(err => ZIO.succeed(gitErr(err)))
+                      case None    =>
+                        gitService
+                          .diffFile(wt, fp)
+                          .map(diff => Response.text(diff).contentType(MediaType.text.plain))
+                          .catchAll(err => ZIO.succeed(gitErr(err)))
+                }
+            }
+          },
+
+        // Git log
+        Method.GET / "api" / "workspaces" / string("wsId") / "runs" / string("runId") / "git" / "log" ->
+          handler { (wsId: String, runId: String, req: Request) =>
+            parseLimit(req.queryParam("limit")).flatMap {
+              case Left(resp)   => ZIO.succeed(resp)
+              case Right(limit) =>
+                resolveRunWorktree(repo, wsId, runId).flatMap {
+                  case Left(resp)        => ZIO.succeed(resp)
+                  case Right((_, _, wt)) =>
+                    gitService.log(wt, limit).map(log => Response.json(log.toJson)).catchAll(err =>
+                      ZIO.succeed(gitErr(err))
+                    )
+                }
+            }
+          },
+
+        // Git branch + ahead/behind main
+        Method.GET / "api" / "workspaces" / string("wsId") / "runs" / string("runId") / "git" / "branch" ->
+          handler { (wsId: String, runId: String, _: Request) =>
+            val baseBranch = "main"
+            resolveRunWorktree(repo, wsId, runId).flatMap {
+              case Left(resp)        => ZIO.succeed(resp)
+              case Right((_, _, wt)) =>
+                (for
+                  info        <- gitService.branchInfo(wt)
+                  aheadBehind <- gitService.aheadBehind(wt, baseBranch)
+                yield Response.json(GitBranchView(info, aheadBehind, baseBranch).toJson))
+                  .catchAll(err => ZIO.succeed(gitErr(err)))
+            }
+          },
+
+        // Issue search — returns backlog/todo issues matching ?q= for the assign-run search dropdown
+        Method.GET / "api" / "workspaces" / "issues" / "search" -> handler { (req: Request) =>
+          val q = req.queryParam("q").map(_.trim.toLowerCase).filter(_.nonEmpty)
+          issueRepo
+            .list(
+              issues.entity.IssueFilter(
+                states = Set(
+                  issues.entity.IssueStateTag.Backlog,
+                  issues.entity.IssueStateTag.Todo,
+                  issues.entity.IssueStateTag.Open,
+                ),
+                limit = 20,
               )
             )
-            html(WorkspacesView.issueSearchResults(views))
-          }
-          .catchAll(_ => ZIO.succeed(html(WorkspacesView.issueSearchResults(List.empty))))
-      },
-    )
+            .map { all =>
+              val filtered = q match
+                case None       => all
+                case Some(term) =>
+                  all.filter(i =>
+                    i.title.toLowerCase.contains(term) ||
+                    i.description.toLowerCase.contains(term) ||
+                    i.id.value.contains(term)
+                  )
+              val views    = filtered.map(i =>
+                issues.entity.api.AgentIssueView(
+                  id = Some(i.id.value),
+                  title = i.title,
+                  description = i.description,
+                  issueType = i.issueType,
+                  priority = issues.entity.api.IssuePriority.values
+                    .find(_.toString.equalsIgnoreCase(i.priority))
+                    .getOrElse(issues.entity.api.IssuePriority.Medium),
+                  status = issues.entity.api.IssueStatus.Todo,
+                  createdAt = java.time.Instant.EPOCH,
+                  updatedAt = java.time.Instant.EPOCH,
+                )
+              )
+              html(WorkspacesView.issueSearchResults(views))
+            }
+            .catchAll(_ => ZIO.succeed(html(WorkspacesView.issueSearchResults(List.empty))))
+        },
+      )
 
   /** Parse a URL-encoded form body (as sent by HTMX by default) into a WorkspaceCreateRequest. */
   private def parseFormBody(req: Request): IO[Response, WorkspaceCreateRequest] =

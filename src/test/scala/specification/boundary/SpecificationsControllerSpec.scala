@@ -100,10 +100,10 @@ object SpecificationsControllerSpec extends ZIOSpecDefault:
     specRef: Ref[Map[SpecificationId, List[SpecificationEvent]]],
     issues: List[AgentIssue] = List(linkedIssue),
   ): Routes[Any, Response] =
-    SpecificationsController.routes(
+    SpecificationsController.make(
       new StubSpecificationRepository(specRef),
       new StubIssueRepository(issues),
-    )
+    ).routes
 
   def spec: Spec[TestEnvironment & Scope, Any] =
     suite("SpecificationsControllerSpec")(

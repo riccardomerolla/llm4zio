@@ -12,29 +12,46 @@ import shared.ids.Ids.SpecificationId
 import shared.web.{ SpecificationListItem, SpecificationsView }
 import specification.entity.*
 
+trait SpecificationsController:
+  def routes: Routes[Any, Response]
+
 object SpecificationsController:
 
-  def routes(
+  def routes: ZIO[SpecificationsController, Nothing, Routes[Any, Response]] =
+    ZIO.serviceWith[SpecificationsController](_.routes)
+
+  val live: ZLayer[SpecificationRepository & IssueRepository, Nothing, SpecificationsController] =
+    ZLayer {
+      for
+        specificationRepository <- ZIO.service[SpecificationRepository]
+        issueRepository         <- ZIO.service[IssueRepository]
+      yield make(specificationRepository, issueRepository)
+    }
+
+  def make(
     specificationRepository: SpecificationRepository,
     issueRepository: IssueRepository,
-  ): Routes[Any, Response]                             =
-    Routes(
-      Method.GET / "specifications"                             -> handler { (_: Request) =>
-        listPage(specificationRepository).catchAll(error => ZIO.succeed(persistErr(error)))
-      },
-      Method.GET / "specifications" / string("id")              -> handler { (id: String, req: Request) =>
-        detailPage(id, req, specificationRepository, issueRepository).catchAll(error => ZIO.succeed(persistErr(error)))
-      },
-      Method.GET / "specifications" / string("id") / "diff"     -> handler { (id: String, req: Request) =>
-        diffPage(id, req, specificationRepository).catchAll(error => ZIO.succeed(persistErr(error)))
-      },
-      Method.POST / "specifications" / string("id") / "revise"  -> handler { (id: String, req: Request) =>
-        revise(id, req, specificationRepository).catchAll(error => ZIO.succeed(persistErr(error)))
-      },
-      Method.POST / "specifications" / string("id") / "approve" -> handler { (id: String, req: Request) =>
-        approve(id, specificationRepository).catchAll(error => ZIO.succeed(persistErr(error)))
-      },
-    )
+  ): SpecificationsController =
+    new SpecificationsController:
+      override val routes: Routes[Any, Response] = Routes(
+        Method.GET / "specifications"                             -> handler { (_: Request) =>
+          listPage(specificationRepository).catchAll(error => ZIO.succeed(persistErr(error)))
+        },
+        Method.GET / "specifications" / string("id")              -> handler { (id: String, req: Request) =>
+          detailPage(id, req, specificationRepository, issueRepository).catchAll(error =>
+            ZIO.succeed(persistErr(error))
+          )
+        },
+        Method.GET / "specifications" / string("id") / "diff"     -> handler { (id: String, req: Request) =>
+          diffPage(id, req, specificationRepository).catchAll(error => ZIO.succeed(persistErr(error)))
+        },
+        Method.POST / "specifications" / string("id") / "revise"  -> handler { (id: String, req: Request) =>
+          revise(id, req, specificationRepository).catchAll(error => ZIO.succeed(persistErr(error)))
+        },
+        Method.POST / "specifications" / string("id") / "approve" -> handler { (id: String, req: Request) =>
+          approve(id, specificationRepository).catchAll(error => ZIO.succeed(persistErr(error)))
+        },
+      )
 
   private def listPage(specificationRepository: SpecificationRepository): IO[PersistenceError, Response] =
     specificationRepository.list.map { specifications =>

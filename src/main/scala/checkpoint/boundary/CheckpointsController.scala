@@ -9,28 +9,38 @@ import zio.http.*
 import checkpoint.control.*
 import shared.web.CheckpointsView
 
+trait CheckpointsController:
+  def routes: Routes[Any, Response]
+
 object CheckpointsController:
 
-  def routes(service: CheckpointReviewService): Routes[Any, Response] =
-    Routes(
-      Method.GET / "checkpoints"                                                   -> handler { (req: Request) =>
-        listPage(service).catchAll(error => ZIO.succeed(errorResponse(error)))
-      },
-      Method.GET / "checkpoints" / string("runId")                                 -> handler { (runId: String, req: Request) =>
-        detailPage(runId, req, service).catchAll(error => ZIO.succeed(errorResponse(error)))
-      },
-      Method.GET / "checkpoints" / string("runId") / "snapshots" / string("step")  -> handler {
-        (runId: String, step: String, _: Request) =>
-          snapshotFragment(runId, step, service).catchAll(error => ZIO.succeed(errorResponse(error)))
-      },
-      Method.GET / "checkpoints" / string("runId") / "compare"                     -> handler { (runId: String, req: Request) =>
-        comparisonFragment(runId, req, service).catchAll(error => ZIO.succeed(errorResponse(error)))
-      },
-      Method.POST / "checkpoints" / string("runId") / "actions" / string("action") -> handler {
-        (runId: String, action: String, req: Request) =>
-          handleAction(runId, action, req, service).catchAll(error => ZIO.succeed(errorResponse(error)))
-      },
-    )
+  def routes: ZIO[CheckpointsController, Nothing, Routes[Any, Response]] =
+    ZIO.serviceWith[CheckpointsController](_.routes)
+
+  val live: ZLayer[CheckpointReviewService, Nothing, CheckpointsController] =
+    ZLayer.fromFunction(make)
+
+  def make(service: CheckpointReviewService): CheckpointsController =
+    new CheckpointsController:
+      override val routes: Routes[Any, Response] = Routes(
+        Method.GET / "checkpoints"                                                   -> handler { (req: Request) =>
+          listPage(service).catchAll(error => ZIO.succeed(errorResponse(error)))
+        },
+        Method.GET / "checkpoints" / string("runId")                                 -> handler { (runId: String, req: Request) =>
+          detailPage(runId, req, service).catchAll(error => ZIO.succeed(errorResponse(error)))
+        },
+        Method.GET / "checkpoints" / string("runId") / "snapshots" / string("step")  -> handler {
+          (runId: String, step: String, _: Request) =>
+            snapshotFragment(runId, step, service).catchAll(error => ZIO.succeed(errorResponse(error)))
+        },
+        Method.GET / "checkpoints" / string("runId") / "compare"                     -> handler { (runId: String, req: Request) =>
+          comparisonFragment(runId, req, service).catchAll(error => ZIO.succeed(errorResponse(error)))
+        },
+        Method.POST / "checkpoints" / string("runId") / "actions" / string("action") -> handler {
+          (runId: String, action: String, req: Request) =>
+            handleAction(runId, action, req, service).catchAll(error => ZIO.succeed(errorResponse(error)))
+        },
+      )
 
   private def listPage(service: CheckpointReviewService): IO[CheckpointReviewError, Response] =
     service.listActiveRuns.map(items => htmlResponse(CheckpointsView.page(items)))

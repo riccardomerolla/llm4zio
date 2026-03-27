@@ -95,7 +95,7 @@ object KnowledgeControllerSpec extends ZIOSpecDefault:
   def spec: Spec[TestEnvironment & Scope, Any] =
     suite("KnowledgeControllerSpec")(
       test("GET /knowledge renders the knowledge page") {
-        val routes = KnowledgeController.routes(stubDecisionLogs, stubGraph, stubMemoryRepo)
+        val routes = KnowledgeController.make(stubDecisionLogs, stubGraph, stubMemoryRepo).routes
         for
           resp <- routes.runZIO(Request.get(URL.decode("/knowledge?q=issue&workspaceId=ws-1").toOption.get))
           body <- resp.body.asString

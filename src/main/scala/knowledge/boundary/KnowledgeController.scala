@@ -9,19 +9,35 @@ import memory.entity.{ MemoryFilter, MemoryKind, MemoryRepository, UserId }
 import shared.errors.PersistenceError
 import shared.web.KnowledgeView
 
+trait KnowledgeController:
+  def routes: Routes[Any, Response]
+
 object KnowledgeController:
   private val knowledgeUserId = UserId("knowledge")
 
-  def routes(
+  def routes: ZIO[KnowledgeController, Nothing, Routes[Any, Response]] =
+    ZIO.serviceWith[KnowledgeController](_.routes)
+
+  val live: ZLayer[DecisionLogRepository & KnowledgeGraphService & MemoryRepository, Nothing, KnowledgeController] =
+    ZLayer {
+      for
+        decisionLogs <- ZIO.service[DecisionLogRepository]
+        graph        <- ZIO.service[KnowledgeGraphService]
+        memoryRepo   <- ZIO.service[MemoryRepository]
+      yield make(decisionLogs, graph, memoryRepo)
+    }
+
+  def make(
     decisionLogs: DecisionLogRepository,
     graph: KnowledgeGraphService,
     memoryRepo: MemoryRepository,
-  ): Routes[Any, Response] =
-    Routes(
-      Method.GET / "knowledge" -> handler { (req: Request) =>
-        listPage(req, decisionLogs, graph, memoryRepo).catchAll(error => ZIO.succeed(persistErr(error)))
-      }
-    )
+  ): KnowledgeController =
+    new KnowledgeController:
+      override val routes: Routes[Any, Response] = Routes(
+        Method.GET / "knowledge" -> handler { (req: Request) =>
+          listPage(req, decisionLogs, graph, memoryRepo).catchAll(error => ZIO.succeed(persistErr(error)))
+        }
+      )
 
   private def listPage(
     req: Request,

@@ -10,22 +10,38 @@ import shared.ids.Ids.PlanId
 import shared.web.{ PlanListItem, PlansView }
 import specification.entity.SpecificationRepository
 
+trait PlansController:
+  def routes: Routes[Any, Response]
+
 object PlansController:
 
-  def routes(
+  def routes: ZIO[PlansController, Nothing, Routes[Any, Response]] =
+    ZIO.serviceWith[PlansController](_.routes)
+
+  val live: ZLayer[PlanRepository & SpecificationRepository & IssueRepository, Nothing, PlansController] =
+    ZLayer {
+      for
+        planRepository          <- ZIO.service[PlanRepository]
+        specificationRepository <- ZIO.service[SpecificationRepository]
+        issueRepository         <- ZIO.service[IssueRepository]
+      yield make(planRepository, specificationRepository, issueRepository)
+    }
+
+  def make(
     planRepository: PlanRepository,
     specificationRepository: SpecificationRepository,
     issueRepository: IssueRepository,
-  ): Routes[Any, Response]                =
-    Routes(
-      Method.GET / "plans"                -> handler { (_: Request) =>
-        listPage(planRepository).catchAll(error => ZIO.succeed(persistErr(error)))
-      },
-      Method.GET / "plans" / string("id") -> handler { (id: String, _: Request) =>
-        detailPage(id, planRepository, specificationRepository, issueRepository)
-          .catchAll(error => ZIO.succeed(persistErr(error)))
-      },
-    )
+  ): PlansController =
+    new PlansController:
+      override val routes: Routes[Any, Response] = Routes(
+        Method.GET / "plans"                -> handler { (_: Request) =>
+          listPage(planRepository).catchAll(error => ZIO.succeed(persistErr(error)))
+        },
+        Method.GET / "plans" / string("id") -> handler { (id: String, _: Request) =>
+          detailPage(id, planRepository, specificationRepository, issueRepository)
+            .catchAll(error => ZIO.succeed(persistErr(error)))
+        },
+      )
 
   private def listPage(planRepository: PlanRepository): IO[PersistenceError, Response] =
     planRepository.list.map { plans =>
