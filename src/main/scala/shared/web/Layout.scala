@@ -205,28 +205,9 @@ object Layout:
     nav(cls := "flex flex-1 flex-col")(
       ul(attr("role") := "list", cls := "flex flex-1 flex-col gap-y-7")(
         li(
-          div(cls := "text-xs/6 font-semibold uppercase tracking-wide text-gray-400")("Operate"),
+          div(cls := "text-xs/6 font-semibold uppercase tracking-wide text-gray-400")("Core Gateway"),
           ul(attr("role") := "list", cls := "-mx-2 mt-2 space-y-1")(
             navItem("/", "Command Center", Icons.home, currentPath == "/"),
-            navItem("/sdlc", "SDLC Dashboard", Icons.activity, currentPath.startsWith("/sdlc")),
-            navItem(
-              "/checkpoints",
-              "Checkpoints",
-              Icons.documentText,
-              currentPath.startsWith("/checkpoints"),
-            ),
-            navItem(
-              "/board",
-              "Board",
-              Icons.tableColumns,
-              currentPath.startsWith("/board") || currentPath.startsWith("/issues/board"),
-            ),
-            chatWorkspaceNav.fold[Frag](deferredChatWorkspacesTree(currentPath))(chatWorkspacesTree),
-          ),
-        ),
-        li(
-          div(cls := "text-xs/6 font-semibold uppercase tracking-wide text-gray-400")("Configure"),
-          ul(attr("role") := "list", cls := "-mx-2 mt-2 space-y-1")(
             navItem("/projects", "Projects", Icons.workflow, currentPath.startsWith("/projects")),
             navItem(
               "/specifications",
@@ -247,25 +228,6 @@ object Layout:
               currentPath.startsWith("/knowledge"),
             ),
             navItem(
-              "/daemons",
-              "Daemons",
-              Icons.cpuChip,
-              currentPath.startsWith("/daemons"),
-            ),
-            navItem(
-              "/decisions",
-              "Decisions",
-              Icons.activity,
-              currentPath.startsWith("/decisions"),
-              pendingDecisions.filter(_ > 0),
-            ),
-            navItem(
-              "/governance",
-              "Governance",
-              Icons.documentText,
-              currentPath.startsWith("/governance"),
-            ),
-            navItem(
               "/workspaces",
               "Workspaces",
               Icons.folder,
@@ -279,6 +241,53 @@ object Layout:
               currentPath.startsWith("/settings") || currentPath.startsWith("/config") ||
               currentPath.startsWith("/models") || currentPath.startsWith("/channels") ||
               currentPath.startsWith("/health"),
+            ),
+            chatWorkspaceNav.fold[Frag](deferredChatWorkspacesTree(currentPath))(chatWorkspacesTree),
+          ),
+        ),
+        li(
+          div(cls := "text-xs/6 font-semibold uppercase tracking-wide text-gray-400")("ADE"),
+          ul(attr("role") := "list", cls := "-mx-2 mt-2 space-y-1")(
+            navItem("/sdlc", "SDLC Dashboard", Icons.activity, currentPath.startsWith("/sdlc")),
+            navItem(
+              "/board",
+              "Board",
+              Icons.tableColumns,
+              currentPath.startsWith("/board") || currentPath.startsWith("/issues/board"),
+              liveBadgePath = Some("/sidebar/badges/board"),
+            ),
+            navItem(
+              "/checkpoints",
+              "Checkpoints",
+              Icons.documentText,
+              currentPath.startsWith("/checkpoints"),
+              liveBadgePath = Some("/sidebar/badges/checkpoints"),
+            ),
+            navItem(
+              "/decisions",
+              "Decisions",
+              Icons.activity,
+              currentPath.startsWith("/decisions"),
+              pendingDecisions.filter(_ > 0),
+              liveBadgePath = Some("/sidebar/badges/decisions"),
+            ),
+            navItem(
+              "/governance",
+              "Governance",
+              Icons.documentText,
+              currentPath.startsWith("/governance"),
+            ),
+            navItem(
+              "/evolution",
+              "Evolution",
+              Icons.sparkles,
+              currentPath.startsWith("/evolution"),
+            ),
+            navItem(
+              "/daemons",
+              "Daemons",
+              Icons.cpuChip,
+              currentPath.startsWith("/daemons"),
             ),
           ),
         ),
@@ -457,21 +466,54 @@ object Layout:
       p(cls := "px-2 py-1 text-[11px] text-gray-500")("Loading workspace chats...")
     )
 
-  private def navItem(href: String, label: String, icon: Frag, active: Boolean, badge: Option[Int] = None): Frag =
-    val classes =
-      if active then "group flex gap-x-3 rounded-md bg-white/5 p-2 text-sm/6 font-semibold text-white"
-      else "group flex gap-x-3 rounded-md p-2 text-sm/6 font-semibold text-gray-400 hover:bg-white/5 hover:text-white"
+  private def navItem(
+    href: String,
+    label: String,
+    icon: Frag,
+    active: Boolean,
+    badge: Option[Int] = None,
+    liveBadgePath: Option[String] = None,
+  ): Frag =
+    val classes   =
+      if active then
+        "group relative flex gap-x-3 rounded-md border border-cyan-400/20 bg-cyan-500/10 p-2 text-sm/6 font-semibold text-white"
+      else
+        "group relative flex gap-x-3 rounded-md border border-transparent p-2 text-sm/6 font-semibold text-gray-400 hover:border-white/10 hover:bg-white/5 hover:text-white"
+    val badgeNode =
+      liveBadgePath match
+        case Some(path) =>
+          liveBadge(path, badge)
+        case None       =>
+          badge.fold[Frag](frag())(count => staticBadge(count))
     li(
-      a(attr("href") := href, cls := classes)(
+      a(
+        attr("href")         := href,
+        cls                  := classes,
+        attr("aria-current") := Option.when(active)("page").getOrElse("false"),
+        attr("data-active")  := active.toString,
+      )(
+        if active then span(cls := "absolute inset-y-1 left-0 w-1 rounded-r-full bg-cyan-300")() else frag(),
         icon,
         span(cls := "flex-1")(label),
-        badge.fold[Frag](frag())(count =>
-          span(
-            cls := "ml-auto inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-amber-200"
-          )(count.toString)
-        ),
+        badgeNode,
       )
     )
+
+  private def liveBadge(path: String, initialCount: Option[Int]): Frag =
+    span(
+      cls                     := "ml-auto contents",
+      attr("hx-get")          := path,
+      attr("hx-trigger")      := "load, every 15s",
+      attr("hx-swap")         := "outerHTML",
+      attr("data-live-badge") := path,
+    )(
+      initialCount.fold[Frag](frag())(count => staticBadge(count))
+    )
+
+  private def staticBadge(count: Int): Frag =
+    span(
+      cls := "ml-auto inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-amber-200"
+    )(count.toString)
 
   // ---------------------------------------------------------------------------
   // Icons (Heroicons outline 24x24)
@@ -513,6 +555,10 @@ object Layout:
 
     val chart: Frag = icon(
       "M10.5 6a7.5 7.5 0 1 0 7.5 7.5h-7.5V6Z M13.5 10.5H21A7.5 7.5 0 0 0 13.5 3v7.5Z"
+    )
+
+    val sparkles: Frag = icon(
+      "M9.813 15.904 9 18l-.813-2.096L6 15l2.187-.904L9 12l.813 2.096L12 15l-2.187.904ZM17.25 8.25 16.5 10.5l-2.25.75 2.25.75.75 2.25.75-2.25 2.25-.75-2.25-.75-.75-2.25ZM4.5 4.5 4 6l-1.5.5 1.5.5.5 1.5.5-1.5L6.5 6 5 5.5 4.5 4.5Z"
     )
 
     val menu: Frag = icon(

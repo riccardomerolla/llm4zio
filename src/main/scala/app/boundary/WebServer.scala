@@ -23,6 +23,8 @@ import daemon.boundary.DaemonsController
 import daemon.control.DaemonAgentScheduler
 import decision.boundary.DecisionsController
 import decision.control.DecisionInbox
+import evolution.boundary.EvolutionController
+import evolution.entity.EvolutionProposalRepository
 import gateway.boundary.{
   ChannelController as GatewayChannelController,
   TelegramController as GatewayTelegramController,
@@ -61,7 +63,7 @@ trait WebServer:
 object WebServer:
 
   val live: ZLayer[
-    TaskRunDashboardController & SdlcDashboardController & TaskRunTasksController & TaskRunReportsController & TaskRunGraphController & SettingsBoundaryController & ConfigBoundaryController & ConfigAgentsController & AppAgentMonitorController & ConversationChatController & IssuesIssueController & BoardBoundaryController & ConfigWorkflowsController & GatewayTelegramController & ActivityController & MemoryBoundaryController & GatewayChannelController & AppHealthController & TaskRunLogsController & ConversationWebSocketController & WorkspaceRepository & WorkspaceRunService & GitService & AgentRegistry & IssueRepository & ProjectRepository & SpecificationRepository & PlanRepository & DecisionInbox & McpService & WorkspaceAnalysisScheduler & DecisionLogRepository & KnowledgeGraphService & MemoryRepository & DaemonsController & DaemonAgentScheduler & CheckpointReviewService & GovernancePolicyRepository,
+    TaskRunDashboardController & SdlcDashboardController & TaskRunTasksController & TaskRunReportsController & TaskRunGraphController & SettingsBoundaryController & ConfigBoundaryController & ConfigAgentsController & AppAgentMonitorController & ConversationChatController & IssuesIssueController & BoardBoundaryController & ConfigWorkflowsController & GatewayTelegramController & ActivityController & MemoryBoundaryController & GatewayChannelController & AppHealthController & TaskRunLogsController & ConversationWebSocketController & WorkspaceRepository & WorkspaceRunService & GitService & AgentRegistry & IssueRepository & ProjectRepository & SpecificationRepository & PlanRepository & DecisionInbox & McpService & WorkspaceAnalysisScheduler & DecisionLogRepository & KnowledgeGraphService & MemoryRepository & DaemonsController & DaemonAgentScheduler & CheckpointReviewService & GovernancePolicyRepository & EvolutionProposalRepository,
     Nothing,
     WebServer,
   ] = ZLayer {
@@ -103,6 +105,7 @@ object WebServer:
       daemonsController    <- ZIO.service[DaemonsController]
       checkpointReview     <- ZIO.service[CheckpointReviewService]
       governancePolicyRepo <- ZIO.service[GovernancePolicyRepository]
+      evolutionRepo        <- ZIO.service[EvolutionProposalRepository]
       staticRoutes          = Routes.serveResources(Path.empty / "static")
       devCatalogRoutes      = Routes(
                                 Method.GET / "components" -> handler {
@@ -143,6 +146,12 @@ object WebServer:
           analysisScheduler,
         ) ++ daemonsController.routes ++ GovernanceController.routes(
           governancePolicyRepo
+        ) ++ EvolutionController.routes(
+          evolutionRepo
+        ) ++ SidebarStatusController.routes(
+          decisionInbox,
+          checkpointReview,
+          issueRepo,
         ) ++ devCatalogRoutes ++ staticRoutes
     }
   }

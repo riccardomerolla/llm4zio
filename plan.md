@@ -1,17 +1,19 @@
-## SDLC Dashboard ADE Metrics Plan
+## ADE Sidebar Navigation Improvements Plan
 
-### Group 1: Extend dashboard snapshot data
-- [x] Add ADE-oriented snapshot models for governance, daemon health, evolution, and trend indicators.
-- [x] Wire the SDLC dashboard service to load governance policies, daemon statuses, and evolution proposals.
-- [x] Derive dashboard aggregates for policy activity, evaluation pass/fail counts, daemon lifecycle/health counts, pending proposals, recently applied evolutions, and stat-card trends.
-- [x] Expand service tests to cover the new aggregates and trend calculations.
+### Group 1: Sidebar status data and routing
+- [x] Add a sidebar status aggregate for pending decisions, pending checkpoints, and in-progress board items.
+- [x] Expose a sidebar status fragment route that can refresh badge counts without changing every page controller.
+- [x] Add a minimal evolution web page and `/evolution` route backed by the existing evolution proposal repository.
+- [x] Expand controller and view tests for the new sidebar fragment and evolution route.
 
-### Group 2: Render ADE metrics in the dashboard
-- [x] Update the SDLC dashboard view to render governance, daemon health, and evolution panels.
-- [x] Add trend indicators to the headline stat cards with clear visual direction markers.
-- [x] Expand view tests to verify the new ADE panels and trend indicators are rendered.
+### Group 2: Sidebar layout updates
+- [x] Rework the sidebar navigation into clear core gateway and ADE groups.
+- [x] Add badge counts for decisions, checkpoints, and board in-progress items.
+- [x] Add the evolution link and ensure governance stays visible in the ADE group.
+- [x] Strengthen active state highlighting for the current page.
+- [x] Expand layout tests to verify grouping, badges, and active-state behavior.
 
 ### Group 3: Verify and finalize
-- [x] Run formatting for the updated Scala sources.
-- [x] Run the focused SDLC dashboard test suites and fix any regressions.
-- [x] Review the implementation against the Scala 3 + ZIO guidance and mark all completed tasks in this plan.
+- [x] Run formatting for updated Scala sources.
+- [x] Run focused sidebar and evolution test suites and fix regressions.
+- [x] Review the implementation against the Scala 3 + ZIO guidance and mark all tasks complete in this plan.
