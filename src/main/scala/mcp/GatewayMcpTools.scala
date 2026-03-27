@@ -12,14 +12,7 @@ import analysis.entity.{ AnalysisRepository, AnalysisType }
 import daemon.control.DaemonAgentScheduler
 import daemon.entity.DaemonAgentSpec
 import decision.control.DecisionInbox
-import decision.entity.{
-  Decision,
-  DecisionFilter,
-  DecisionResolutionKind,
-  DecisionSourceKind,
-  DecisionStatus,
-  DecisionUrgency,
-}
+import decision.entity.*
 import evolution.control.{ EvolutionEngine, EvolutionProposalRequest }
 import evolution.entity.*
 import governance.control.{ GovernanceEvaluationContext, GovernancePolicyService, GovernanceTransitionDecision }
@@ -28,25 +21,10 @@ import issues.entity.{ IssueEvent, IssueRepository }
 import knowledge.control.KnowledgeGraphService
 import llm4zio.tools.{ Tool, ToolExecutionError }
 import memory.entity.{ MemoryFilter, MemoryRepository, UserId }
-import plan.entity.{
-  Plan,
-  PlanEvent,
-  PlanRepository,
-  PlanStatus,
-  PlanTaskDraft,
-  PlanValidationResult,
-  PlanValidationStatus,
-}
+import plan.entity.*
 import sdlc.control.SdlcDashboardService
 import shared.ids.Ids.*
-import specification.entity.{
-  Specification,
-  SpecificationAuthor,
-  SpecificationAuthorKind,
-  SpecificationEvent,
-  SpecificationRepository,
-  SpecificationStatus,
-}
+import specification.entity.*
 import workspace.control.WorkspaceRunService
 import workspace.entity.WorkspaceRepository
 
