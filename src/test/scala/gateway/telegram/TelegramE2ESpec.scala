@@ -10,7 +10,7 @@ import zio.test.*
 
 import _root_.config.entity.WorkflowDefinition
 import db.*
-import gateway.control.MessageChannelError
+import gateway.control.{ MessageChannelError, TelegramClient, WorkflowNotifier, WorkflowNotifierLive }
 import gateway.entity.*
 import orchestration.control.{ AgentRegistry, TaskExecutor }
 

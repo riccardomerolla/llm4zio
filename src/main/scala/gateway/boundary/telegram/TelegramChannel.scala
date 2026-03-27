@@ -8,14 +8,24 @@ import _root_.config.entity.{ WorkflowDefinition, WorkflowGraph, WorkflowStepAge
 import db.*
 import decision.entity.{ DecisionEvent, DecisionFilter, DecisionRepository, DecisionStatus }
 import gateway.control.*
-import gateway.entity.{ GatewayMessageRole, MessageDirection, NormalizedMessage, SessionKey, SessionScopeStrategy }
+import gateway.entity.{
+  BotCommand,
+  CommandParseError,
+  GatewayMessageRole,
+  MessageDirection,
+  NormalizedMessage,
+  SessionKey,
+  SessionScopeStrategy,
+  TelegramCallbackQuery,
+  TelegramClientError,
+  TelegramDocument,
+  TelegramInlineKeyboardMarkup,
+  TelegramMessage,
+  TelegramSendMessage,
+  TelegramUpdate,
+}
 import orchestration.control.TaskExecutor
 import taskrun.entity.TaskStep
-
-final case class TelegramPollBatch(
-  messages: List[NormalizedMessage],
-  nextOffset: Option[Long],
-)
 
 final case class TelegramChannel(
   name: String,
@@ -31,7 +41,7 @@ final case class TelegramChannel(
   inboundQueue: Queue[NormalizedMessage],
   outboundQueuesRef: Ref[Map[SessionKey, Queue[NormalizedMessage]]],
   routingRef: Ref[Map[SessionKey, TelegramRoutingState]],
-) extends MessageChannel:
+) extends MessageChannel with PollingCapability:
 
   override def open(sessionKey: SessionKey): IO[MessageChannelError, Unit] =
     if sessionKey.channelName != name then ZIO.fail(MessageChannelError.UnsupportedSession(name, sessionKey))
@@ -164,19 +174,19 @@ final case class TelegramChannel(
   ): IO[MessageChannelError, List[NormalizedMessage]] =
     pollInboundBatch(offset, limit, timeoutSeconds, timeout).map(_.messages)
 
-  def pollInboundBatch(
+  override def pollInboundBatch(
     offset: Option[Long] = None,
     limit: Int = 100,
     timeoutSeconds: Int = 30,
     timeout: Duration = 60.seconds,
-  ): IO[MessageChannelError, TelegramPollBatch] =
+  ): IO[MessageChannelError, PollingBatch] =
     for
       updates   <- client
                      .getUpdates(offset = offset, limit = limit, timeoutSeconds = timeoutSeconds, timeout = timeout)
                      .mapError(err => MessageChannelError.InvalidMessage(s"telegram polling failed: $err"))
       mapped    <- ZIO.foreach(updates)(ingestUpdate)
       nextOffset = updates.map(_.update_id).maxOption.map(_ + 1L)
-    yield TelegramPollBatch(mapped.flatten, nextOffset)
+    yield PollingBatch(mapped.flatten, nextOffset)
 
   private def ensureConnected(sessionKey: SessionKey): IO[MessageChannelError, Unit] =
     sessionsRef.get.flatMap { sessions =>

@@ -1,4 +1,4 @@
-package gateway.boundary.discord
+package gateway.control
 
 import java.net.URI
 import java.net.http.{ HttpClient, HttpRequest, HttpResponse, WebSocket }
@@ -9,7 +9,6 @@ import zio.json.*
 import zio.json.ast.Json
 
 import db.ConfigRepository
-import gateway.control.*
 import gateway.entity.{ NormalizedMessage, SessionKey, SessionScopeStrategy }
 
 sealed trait DiscordRuntimeError extends Product with Serializable
@@ -51,23 +50,23 @@ object DiscordGatewayService:
       yield service
     }
 
-  final private[discord] case class GatewayBotResponse(url: String) derives JsonDecoder
-  final private[discord] case class GatewayEnvelope(
+  final private[control] case class GatewayBotResponse(url: String) derives JsonDecoder
+  final private[control] case class GatewayEnvelope(
     op: Int,
     d: Json = Json.Null,
     s: Option[Int] = None,
     t: Option[String] = None,
   ) derives JsonDecoder
 
-  final private[discord] case class HelloPayload(heartbeat_interval: Long) derives JsonDecoder
+  final private[control] case class HelloPayload(heartbeat_interval: Long) derives JsonDecoder
 
-  final private[discord] case class AuthorPayload(
+  final private[control] case class AuthorPayload(
     id: String,
     bot: Option[Boolean] = None,
     username: Option[String] = None,
   ) derives JsonDecoder
 
-  final private[discord] case class MessageCreatePayload(
+  final private[control] case class MessageCreatePayload(
     id: String,
     channel_id: String,
     guild_id: Option[String] = None,
@@ -76,16 +75,17 @@ object DiscordGatewayService:
     author: AuthorPayload,
   ) derives JsonDecoder
 
-  final private[discord] case class OutboundMessage(content: String) derives JsonEncoder
-  final private[discord] case class ReadyPayload(user: AuthorPayload) derives JsonDecoder
+  final private[control] case class OutboundMessage(content: String) derives JsonEncoder
+  final private[control] case class ReadyPayload(user: AuthorPayload) derives JsonDecoder
 
-  sealed private[discord] trait WsEvent
-  private[discord] object WsEvent:
+  sealed private[control] trait WsEvent
+  private[control] object WsEvent:
     final case class Text(payload: String)             extends WsEvent
     final case class Closed(code: Int, reason: String) extends WsEvent
     final case class Error(message: String)            extends WsEvent
 
-  final private[discord] class DiscordWebSocketListener(queue: LinkedBlockingQueue[WsEvent]) extends WebSocket.Listener:
+  final private[control] class DiscordWebSocketListener(queue: LinkedBlockingQueue[WsEvent])
+    extends WebSocket.Listener:
     override def onOpen(webSocket: WebSocket): Unit =
       webSocket.request(1)
 

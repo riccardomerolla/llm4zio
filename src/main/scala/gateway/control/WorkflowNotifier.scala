@@ -1,9 +1,17 @@
-package gateway.boundary.telegram
+package gateway.control
 
 import zio.*
 import zio.json.*
 
 import db.*
+import gateway.entity.{
+  BotCommand,
+  CommandParseError,
+  TelegramClientError,
+  TelegramInlineKeyboardButton,
+  TelegramInlineKeyboardMarkup,
+  TelegramSendMessage,
+}
 import orchestration.control.{ AgentRegistry, TaskExecutor }
 
 enum WorkflowNotifierError:

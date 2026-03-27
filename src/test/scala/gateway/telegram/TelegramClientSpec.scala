@@ -12,6 +12,16 @@ import com.bot4s.telegram.models.{ Message, ParsedUpdate, Update }
 import io.circe.parser.decode
 import io.circe.{ Decoder, Encoder }
 
+import gateway.control.TelegramClient
+import gateway.entity.{
+  TelegramChat,
+  TelegramClientError,
+  TelegramMessage,
+  TelegramSendMessage,
+  TelegramUpdate,
+  TelegramUser,
+}
+
 object TelegramClientSpec extends ZIOSpecDefault:
 
   private given ExecutionContext = ExecutionContext.global

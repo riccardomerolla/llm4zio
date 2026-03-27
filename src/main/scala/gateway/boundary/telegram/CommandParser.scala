@@ -1,5 +1,7 @@
 package gateway.boundary.telegram
 
+import gateway.entity.{ BotCommand, BotWorkflowOperation, CommandParseError }
+
 object CommandParser:
   def parse(input: String): Either[CommandParseError, BotCommand] =
     val text = input.trim

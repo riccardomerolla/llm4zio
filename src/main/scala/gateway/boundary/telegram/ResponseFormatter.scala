@@ -1,5 +1,7 @@
 package gateway.boundary.telegram
 
+import gateway.entity.TelegramInlineKeyboardMarkup
+
 import gateway.entity.NormalizedMessage
 import orchestration.control.WorkflowRunState
 

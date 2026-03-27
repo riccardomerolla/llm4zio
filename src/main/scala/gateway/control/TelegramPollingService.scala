@@ -1,9 +1,8 @@
-package gateway.boundary.telegram
+package gateway.control
 
 import zio.*
 
 import _root_.config.entity.{ MigrationConfig, TelegramMode }
-import gateway.control.*
 
 final case class TelegramPollingConfig(
   enabled: Boolean = false,
@@ -46,7 +45,7 @@ object TelegramPollingService:
       yield service
     }
 
-  private[telegram] def fromMigrationConfig(config: MigrationConfig): TelegramPollingConfig =
+  private[control] def fromMigrationConfig(config: MigrationConfig): TelegramPollingConfig =
     val telegram = config.telegram
     sanitizeConfig(
       TelegramPollingConfig(
@@ -58,7 +57,7 @@ object TelegramPollingService:
       )
     )
 
-  private[telegram] def pollOnce(
+  private[control] def pollOnce(
     channelRegistry: ChannelRegistry,
     gatewayService: GatewayService,
     offsetRef: Ref[Option[Long]],
@@ -68,15 +67,15 @@ object TelegramPollingService:
       offset  <- offsetRef.get
       channel <- channelRegistry.get("telegram")
       batch   <- channel match
-                   case telegram: TelegramChannel =>
+                   case telegram: PollingCapability =>
                      telegram.pollInboundBatch(
                        offset = offset,
                        limit = config.batchSize,
                        timeoutSeconds = config.timeoutSeconds,
                        timeout = config.requestTimeout,
                      )
-                   case _                         =>
-                     ZIO.fail(MessageChannelError.InvalidMessage("telegram channel is not a TelegramChannel"))
+                   case _                           =>
+                     ZIO.fail(MessageChannelError.InvalidMessage("telegram channel does not support polling"))
       _       <- ZIO.foreachDiscard(batch.messages)(message => gatewayService.processInbound(message).ignore)
       _       <- offsetRef.update(current => batch.nextOffset.orElse(current))
       now     <- Clock.instant

@@ -2,6 +2,8 @@ package gateway.boundary.telegram
 
 import zio.json.*
 
+import gateway.entity.{ TelegramMessage, TelegramUpdate }
+
 case class TelegramMessageMetadata(
   chatId: Long,
   telegramMessageId: Long,

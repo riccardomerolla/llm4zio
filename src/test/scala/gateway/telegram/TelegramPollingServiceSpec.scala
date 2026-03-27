@@ -4,7 +4,16 @@ import zio.*
 import zio.test.*
 
 import gateway.control.*
-import gateway.entity.NormalizedMessage
+import gateway.control.{ TelegramPollingConfig, TelegramPollingService, TelegramPollingServiceLive }
+import gateway.entity.{
+  NormalizedMessage,
+  TelegramChat,
+  TelegramClientError,
+  TelegramMessage,
+  TelegramSendDocument,
+  TelegramSendMessage,
+  TelegramUpdate,
+}
 
 object TelegramPollingServiceSpec extends ZIOSpecDefault:
 

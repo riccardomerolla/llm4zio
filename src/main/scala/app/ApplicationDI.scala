@@ -47,8 +47,8 @@ import decision.control.DecisionInbox
 import decision.entity.{ DecisionEventStoreES, DecisionRepositoryES }
 import evolution.control.EvolutionEngine
 import evolution.entity.{ EvolutionProposalEventStoreES, EvolutionProposalRepositoryES }
-import gateway.boundary.discord.DiscordGatewayService
 import gateway.boundary.telegram.*
+import gateway.entity.*
 import gateway.boundary.{
   ChannelController as GatewayChannelController,
   TelegramController as GatewayTelegramController,

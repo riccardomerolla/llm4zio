@@ -5,7 +5,8 @@ import zio.http.*
 import zio.json.*
 
 import _root_.config.entity.{ MigrationConfig, TelegramMode }
-import gateway.boundary.telegram.{ TelegramChannel, TelegramUpdate }
+import gateway.boundary.telegram.TelegramChannel
+import gateway.entity.TelegramUpdate
 import gateway.control.*
 
 trait TelegramController:

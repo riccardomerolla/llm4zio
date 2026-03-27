@@ -7,6 +7,7 @@ import java.time.Instant
 import zio.*
 import zio.test.*
 
+import gateway.control.{ TelegramClient, WorkflowNotifier, WorkflowNotifierError }
 import gateway.entity.*
 
 object TelegramChannelSpec extends ZIOSpecDefault:

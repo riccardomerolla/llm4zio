@@ -1,4 +1,4 @@
-package gateway.boundary.telegram
+package gateway.control
 
 import scala.concurrent.{ ExecutionContext, Future }
 
@@ -8,6 +8,18 @@ import com.bot4s.telegram.api.RequestHandler
 import com.bot4s.telegram.methods.{ EditMessageReplyMarkup, GetUpdates, ParseMode, SendDocument, SendMessage }
 import com.bot4s.telegram.models.{ Chat as BotChat, Message as BotMessage, Update as BotUpdate, User as BotUser, * }
 import io.circe.Decoder
+
+import gateway.entity.{
+  TelegramCallbackQuery,
+  TelegramChat,
+  TelegramClientError,
+  TelegramInlineKeyboardMarkup,
+  TelegramMessage,
+  TelegramSendDocument,
+  TelegramSendMessage,
+  TelegramUpdate,
+  TelegramUser,
+}
 
 trait TelegramClient:
   def getUpdates(
@@ -181,23 +193,22 @@ final case class TelegramClientLive(
       chat = fromBotChat(message.chat),
       text = message.text,
       caption = message.caption,
-      document = message.document.map(fromBotDocument),
+      document = message.document.map(d =>
+        gateway.entity.TelegramDocument(
+          file_id = d.fileId,
+          file_unique_id = d.fileUniqueId,
+          file_name = d.fileName,
+          mime_type = d.mimeType,
+          file_size = d.fileSize.map(_.toLong),
+        )
+      ),
       from = message.from.map(fromBotUser),
-    )
-
-  private def fromBotDocument(document: Document): TelegramDocument =
-    TelegramDocument(
-      file_id = document.fileId,
-      file_unique_id = document.fileUniqueId,
-      file_name = document.fileName,
-      mime_type = document.mimeType,
-      file_size = document.fileSize.flatMap(anyToLong),
     )
 
   private def fromBotChat(chat: BotChat): TelegramChat =
     TelegramChat(
       id = chat.id,
-      `type` = chat.`type`.toString.toLowerCase,
+      `type` = chat.`type`.toString,
       title = chat.title,
       username = chat.username,
     )
@@ -210,43 +221,33 @@ final case class TelegramClientLive(
       username = user.username,
     )
 
-  private def fromBotCallbackQuery(callback: CallbackQuery): TelegramCallbackQuery =
+  private def fromBotCallbackQuery(cq: CallbackQuery): TelegramCallbackQuery =
     TelegramCallbackQuery(
-      id = callback.id,
-      from = fromBotUser(callback.from),
-      message = callback.message.map(fromBotMessage),
-      data = callback.data,
+      id = cq.id,
+      from = fromBotUser(cq.from),
+      message = cq.message.map(fromBotMessage),
+      data = cq.data,
     )
 
   private def toBotReplyMarkup(markup: TelegramInlineKeyboardMarkup): InlineKeyboardMarkup =
     InlineKeyboardMarkup(
-      inlineKeyboard = markup.inline_keyboard.map(_.map(toBotInlineKeyboardButton))
+      markup.inline_keyboard.map(row =>
+        row.map(btn =>
+          InlineKeyboardButton(
+            text = btn.text,
+            callbackData = btn.callback_data,
+            url = btn.url,
+          )
+        )
+      )
     )
 
-  private def toBotInlineKeyboardButton(button: TelegramInlineKeyboardButton): InlineKeyboardButton =
-    InlineKeyboardButton(
-      text = button.text,
-      callbackData = button.callback_data,
-      url = button.url,
-    )
-
-  private def parseModeFromString(raw: String): Option[ParseMode.Value] =
-    raw.trim.toLowerCase match
+  private def parseModeFromString(s: String): Option[ParseMode.Value] =
+    s.trim.toLowerCase match
       case "markdown"   => Some(ParseMode.Markdown)
       case "markdownv2" => Some(ParseMode.MarkdownV2)
       case "html"       => Some(ParseMode.HTML)
       case _            => None
 
-  private def longToInt(value: Long): Option[Int] =
-    if value >= Int.MinValue.toLong && value <= Int.MaxValue.toLong then Some(value.toInt)
-    else None
-
-  private def anyToLong(value: Any): Option[Long] =
-    value match
-      case long: Long                       => Some(long)
-      case int: Int                         => Some(int.toLong)
-      case short: Short                     => Some(short.toLong)
-      case double: Double if double.isWhole => Some(double.toLong)
-      case float: Float if float.isWhole    => Some(float.toLong)
-      case string: String                   => string.toLongOption
-      case _                                => None
+  private def longToInt(l: Long): Option[Int] =
+    if l >= Int.MinValue && l <= Int.MaxValue then Some(l.toInt) else None
