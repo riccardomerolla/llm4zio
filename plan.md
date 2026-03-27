@@ -1,21 +1,17 @@
-# Issue #628 Implementation Plan
+## SDLC Dashboard ADE Metrics Plan
 
-## Group 1: Test Directory Moves
-- [x] Move test files from `src/test/scala/agents/` to `src/test/scala/agent/`.
-- [x] Move test files from `src/test/scala/store/` to `src/test/scala/shared/store/`.
-- [x] Verify old directories no longer contain files.
+### Group 1: Extend dashboard snapshot data
+- [x] Add ADE-oriented snapshot models for governance, daemon health, evolution, and trend indicators.
+- [x] Wire the SDLC dashboard service to load governance policies, daemon statuses, and evolution proposals.
+- [x] Derive dashboard aggregates for policy activity, evaluation pass/fail counts, daemon lifecycle/health counts, pending proposals, recently applied evolutions, and stat-card trends.
+- [x] Expand service tests to cover the new aggregates and trend calculations.
 
-## Group 2: Package Declaration Alignment
-- [x] Update package declarations in moved agent test files to `package agent`.
-- [x] Update package declarations in moved store test files to `package shared.store`.
-- [x] Verify package declarations match new paths.
+### Group 2: Render ADE metrics in the dashboard
+- [x] Update the SDLC dashboard view to render governance, daemon health, and evolution panels.
+- [x] Add trend indicators to the headline stat cards with clear visual direction markers.
+- [x] Expand view tests to verify the new ADE panels and trend indicators are rendered.
 
-## Group 3: Validation
-- [x] Run scalafmt (`sbt --client scalafmtAll`).
-- [x] Run full test suite (`sbt --client test`).
-- [x] Review resulting changes for issue scope compliance.
-
-## Execution Tracking
-- [x] Group 1 complete
-- [x] Group 2 complete
-- [x] Group 3 complete
+### Group 3: Verify and finalize
+- [x] Run formatting for the updated Scala sources.
+- [x] Run the focused SDLC dashboard test suites and fix any regressions.
+- [x] Review the implementation against the Scala 3 + ZIO guidance and mark all completed tasks in this plan.

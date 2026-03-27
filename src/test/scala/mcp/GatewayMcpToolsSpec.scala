@@ -444,11 +444,57 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
         costUsd = 4.2,
       )
     ),
+    governance = SdlcDashboardService.GovernanceOverview(
+      passCount = 4,
+      failCount = 1,
+      passRate = 0.8,
+      activePolicyCount = 2,
+    ),
+    daemonHealth = SdlcDashboardService.DaemonHealthOverview(
+      runningCount = 2,
+      stoppedCount = 1,
+      erroredCount = 0,
+    ),
+    evolution = SdlcDashboardService.EvolutionOverview(
+      pendingProposalCount = 1,
+      recentlyApplied = List(
+        SdlcDashboardService.RecentEvolution(
+          proposalId = "proposal-1",
+          title = "Add daemon",
+          status = "Applied",
+          appliedAt = java.time.Instant.EPOCH,
+        )
+      ),
+    ),
     recentActivity = Nil,
     specificationCount = 1,
     planCount = 1,
     issueCount = 2,
     pendingDecisionCount = 1,
+    specificationTrend = SdlcDashboardService.TrendIndicator(
+      direction = SdlcDashboardService.TrendDirection.Flat,
+      currentPeriodCount = 1,
+      previousPeriodCount = 1,
+      periodLabel = "7d",
+    ),
+    planTrend = SdlcDashboardService.TrendIndicator(
+      direction = SdlcDashboardService.TrendDirection.Up,
+      currentPeriodCount = 2,
+      previousPeriodCount = 1,
+      periodLabel = "7d",
+    ),
+    issueTrend = SdlcDashboardService.TrendIndicator(
+      direction = SdlcDashboardService.TrendDirection.Up,
+      currentPeriodCount = 3,
+      previousPeriodCount = 1,
+      periodLabel = "7d",
+    ),
+    pendingDecisionTrend = SdlcDashboardService.TrendIndicator(
+      direction = SdlcDashboardService.TrendDirection.Down,
+      currentPeriodCount = 0,
+      previousPeriodCount = 2,
+      periodLabel = "7d",
+    ),
   )
 
   private val stubGovernanceService: GovernancePolicyService = new GovernancePolicyService:
