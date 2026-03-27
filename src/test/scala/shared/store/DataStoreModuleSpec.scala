@@ -1,4 +1,4 @@
-package store
+package shared.store
 
 import java.nio.file.{ Files, Path }
 import java.time.Instant
@@ -8,7 +8,6 @@ import zio.test.*
 
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.error.GigaMapError
-import shared.store.*
 
 object DataStoreModuleSpec extends ZIOSpecDefault:
 
