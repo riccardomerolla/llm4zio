@@ -26,9 +26,14 @@ import agent.entity.{ AgentEventStoreES, AgentRepositoryES }
 import analysis.control.{ AnalysisAgentRunner, WorkspaceAnalysisScheduler }
 import analysis.entity.{ AnalysisEventStoreES, AnalysisRepositoryES }
 import app.boundary.{
+  AdeRouteModule,
   AgentMonitorController as AppAgentMonitorController,
+  ConfigRouteModule,
+  CoreRouteModule,
+  GatewayRouteModule,
   HealthController as AppHealthController,
   WebServer,
+  WorkspaceRouteModule,
 }
 import app.control.{ FileService, HealthMonitor, HttpAIClient, LogTailer, StateService }
 import board.boundary.BoardController as BoardBoundaryController
@@ -358,6 +363,11 @@ object ApplicationDI:
       GatewayTelegramController.live,
       ConversationWebSocketController.live,
       mcp.McpService.live,
+      AdeRouteModule.live,
+      CoreRouteModule.live,
+      GatewayRouteModule.live,
+      ConfigRouteModule.live,
+      WorkspaceRouteModule.live,
       WebServer.live,
     ) >>> ZLayer.service[WebServer]
 
