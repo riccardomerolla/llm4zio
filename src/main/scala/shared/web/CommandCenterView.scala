@@ -21,10 +21,11 @@ object CommandCenterView:
       div(cls := "space-y-6")(
         Components.pageHeader("Command Center", "Platform activity and pipeline health"),
         pipelineStrip(summary),
-        div(cls := "grid grid-cols-1 gap-6 lg:grid-cols-3")(
+        div(cls := "grid grid-cols-1 gap-6 lg:grid-cols-2")(
           liveSection(),
-          recentActivitySection(recentEvents),
+          activeRunsSection(),
         ),
+        recentActivitySection(recentEvents),
       ),
       JsResources.inlineModuleScript("/static/client/components/ab-run-dashboard.js"),
     )
@@ -132,26 +133,27 @@ object CommandCenterView:
           ),
         ),
       ),
-      // active runs
-      div(cls := "border-t border-white/5 pt-3")(
-        div(cls := "flex items-center justify-between mb-2")(
-          sectionHeader("Active Runs"),
-        ),
-        div(
-          id                 := "active-runs-list",
-          attr("hx-get")     := "/runs/fragment?scope=active&sort=last_activity&limit=8",
-          attr("hx-swap")    := "innerHTML",
-          attr("hx-trigger") := "load, every 15s",
-        )(
-          div(cls := "text-xs text-gray-600 py-2")("Loading…")
-        ),
+    )
+
+  // ── Active runs section (right column) ───────────────────────────────────
+
+  private def activeRunsSection(): Frag =
+    div(cls := "rounded-lg border border-white/10 bg-white/5 p-4 space-y-3")(
+      sectionHeader("Active Runs"),
+      div(
+        id                 := "active-runs-list",
+        attr("hx-get")     := "/runs/fragment?scope=active&sort=last_activity&limit=8",
+        attr("hx-swap")    := "innerHTML",
+        attr("hx-trigger") := "load, every 15s",
+      )(
+        div(cls := "text-xs text-gray-600 py-2")("Loading…")
       ),
     )
 
   // ── Recent activity section (right column) ────────────────────────────────
 
   private def recentActivitySection(recentEvents: List[ActivityEvent]): Frag =
-    div(cls := "lg:col-span-2 rounded-lg border border-white/10 bg-white/5 p-4 space-y-4")(
+    div(cls := "rounded-lg border border-white/10 bg-white/5 p-4 space-y-4")(
       h2(cls := "text-xs font-medium uppercase tracking-wide text-gray-400")("Recent Activity"),
       div(
         attr("hx-get")     := "/api/activity/events?limit=10",
