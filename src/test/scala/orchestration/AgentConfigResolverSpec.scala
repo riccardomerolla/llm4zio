@@ -7,6 +7,7 @@ import zio.test.*
 
 import _root_.config.entity.{ AIProvider, AIProviderConfig }
 import db.*
+import shared.errors.PersistenceError
 import orchestration.control.AgentConfigResolverLive
 
 object AgentConfigResolverSpec extends ZIOSpecDefault:

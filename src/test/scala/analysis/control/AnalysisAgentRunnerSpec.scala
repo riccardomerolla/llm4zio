@@ -106,44 +106,44 @@ object AnalysisAgentRunnerSpec extends ZIOSpecDefault:
       ZIO.succeed(agents.find(_.name.equalsIgnoreCase(name.trim)))
 
   final private case class StubTaskRepository(settings: Map[String, String]) extends TaskRepository:
-    override def getSetting(key: String): IO[db.PersistenceError, Option[SettingRow]] =
+    override def getSetting(key: String): IO[PersistenceError, Option[SettingRow]] =
       ZIO.succeed(
         settings.get(key).map(value => SettingRow(key, value, now))
       )
 
-    override def createRun(run: TaskRunRow): IO[db.PersistenceError, Long]                           = unsupportedDb("createRun")
-    override def updateRun(run: TaskRunRow): IO[db.PersistenceError, Unit]                           = unsupportedDb("updateRun")
-    override def getRun(id: Long): IO[db.PersistenceError, Option[TaskRunRow]]                       = unsupportedDb("getRun")
-    override def listRuns(offset: Int, limit: Int): IO[db.PersistenceError, List[TaskRunRow]]        =
+    override def createRun(run: TaskRunRow): IO[PersistenceError, Long]                           = unsupportedDb("createRun")
+    override def updateRun(run: TaskRunRow): IO[PersistenceError, Unit]                           = unsupportedDb("updateRun")
+    override def getRun(id: Long): IO[PersistenceError, Option[TaskRunRow]]                       = unsupportedDb("getRun")
+    override def listRuns(offset: Int, limit: Int): IO[PersistenceError, List[TaskRunRow]]        =
       unsupportedDb("listRuns")
-    override def deleteRun(id: Long): IO[db.PersistenceError, Unit]                                  = unsupportedDb("deleteRun")
-    override def saveReport(report: TaskReportRow): IO[db.PersistenceError, Long]                    = unsupportedDb("saveReport")
-    override def getReport(reportId: Long): IO[db.PersistenceError, Option[TaskReportRow]]           = unsupportedDb("getReport")
-    override def getReportsByTask(taskRunId: Long): IO[db.PersistenceError, List[TaskReportRow]]     =
+    override def deleteRun(id: Long): IO[PersistenceError, Unit]                                  = unsupportedDb("deleteRun")
+    override def saveReport(report: TaskReportRow): IO[PersistenceError, Long]                    = unsupportedDb("saveReport")
+    override def getReport(reportId: Long): IO[PersistenceError, Option[TaskReportRow]]           = unsupportedDb("getReport")
+    override def getReportsByTask(taskRunId: Long): IO[PersistenceError, List[TaskReportRow]]     =
       unsupportedDb("getReportsByTask")
-    override def saveArtifact(artifact: TaskArtifactRow): IO[db.PersistenceError, Long]              = unsupportedDb("saveArtifact")
-    override def getArtifactsByTask(taskRunId: Long): IO[db.PersistenceError, List[TaskArtifactRow]] =
+    override def saveArtifact(artifact: TaskArtifactRow): IO[PersistenceError, Long]              = unsupportedDb("saveArtifact")
+    override def getArtifactsByTask(taskRunId: Long): IO[PersistenceError, List[TaskArtifactRow]] =
       unsupportedDb("getArtifactsByTask")
-    override def getAllSettings: IO[db.PersistenceError, List[SettingRow]]                           = ZIO.succeed(Nil)
-    override def upsertSetting(key: String, value: String): IO[db.PersistenceError, Unit]            =
+    override def getAllSettings: IO[PersistenceError, List[SettingRow]]                           = ZIO.succeed(Nil)
+    override def upsertSetting(key: String, value: String): IO[PersistenceError, Unit]            =
       unsupportedDb("upsertSetting")
-    override def createWorkflow(workflow: WorkflowRow): IO[db.PersistenceError, Long]                = unsupportedDb("createWorkflow")
-    override def getWorkflow(id: Long): IO[db.PersistenceError, Option[WorkflowRow]]                 = unsupportedDb("getWorkflow")
-    override def getWorkflowByName(name: String): IO[db.PersistenceError, Option[WorkflowRow]]       =
+    override def createWorkflow(workflow: WorkflowRow): IO[PersistenceError, Long]                = unsupportedDb("createWorkflow")
+    override def getWorkflow(id: Long): IO[PersistenceError, Option[WorkflowRow]]                 = unsupportedDb("getWorkflow")
+    override def getWorkflowByName(name: String): IO[PersistenceError, Option[WorkflowRow]]       =
       unsupportedDb("getWorkflowByName")
-    override def listWorkflows: IO[db.PersistenceError, List[WorkflowRow]]                           = unsupportedDb("listWorkflows")
-    override def updateWorkflow(workflow: WorkflowRow): IO[db.PersistenceError, Unit]                = unsupportedDb("updateWorkflow")
-    override def deleteWorkflow(id: Long): IO[db.PersistenceError, Unit]                             = unsupportedDb("deleteWorkflow")
-    override def createCustomAgent(agent: CustomAgentRow): IO[db.PersistenceError, Long]             =
+    override def listWorkflows: IO[PersistenceError, List[WorkflowRow]]                           = unsupportedDb("listWorkflows")
+    override def updateWorkflow(workflow: WorkflowRow): IO[PersistenceError, Unit]                = unsupportedDb("updateWorkflow")
+    override def deleteWorkflow(id: Long): IO[PersistenceError, Unit]                             = unsupportedDb("deleteWorkflow")
+    override def createCustomAgent(agent: CustomAgentRow): IO[PersistenceError, Long]             =
       unsupportedDb("createCustomAgent")
-    override def getCustomAgent(id: Long): IO[db.PersistenceError, Option[CustomAgentRow]]           =
+    override def getCustomAgent(id: Long): IO[PersistenceError, Option[CustomAgentRow]]           =
       unsupportedDb("getCustomAgent")
-    override def getCustomAgentByName(name: String): IO[db.PersistenceError, Option[CustomAgentRow]] =
+    override def getCustomAgentByName(name: String): IO[PersistenceError, Option[CustomAgentRow]] =
       unsupportedDb("getCustomAgentByName")
-    override def listCustomAgents: IO[db.PersistenceError, List[CustomAgentRow]]                     = unsupportedDb("listCustomAgents")
-    override def updateCustomAgent(agent: CustomAgentRow): IO[db.PersistenceError, Unit]             =
+    override def listCustomAgents: IO[PersistenceError, List[CustomAgentRow]]                     = unsupportedDb("listCustomAgents")
+    override def updateCustomAgent(agent: CustomAgentRow): IO[PersistenceError, Unit]             =
       unsupportedDb("updateCustomAgent")
-    override def deleteCustomAgent(id: Long): IO[db.PersistenceError, Unit]                          = unsupportedDb("deleteCustomAgent")
+    override def deleteCustomAgent(id: Long): IO[PersistenceError, Unit]                          = unsupportedDb("deleteCustomAgent")
 
   final private case class StubAnalysisRepository(state: Ref[Map[Ids.AnalysisDocId, AnalysisDoc]])
     extends AnalysisRepository:
@@ -183,8 +183,8 @@ object AnalysisAgentRunnerSpec extends ZIOSpecDefault:
   private def unsupported[A](op: String): IO[PersistenceError, A] =
     ZIO.fail(PersistenceError.QueryFailed(op, "unsupported in test"))
 
-  private def unsupportedDb[A](op: String): IO[db.PersistenceError, A] =
-    ZIO.fail(db.PersistenceError.QueryFailed(op, "unsupported in test"))
+  private def unsupportedDb[A](op: String): IO[PersistenceError, A] =
+    ZIO.fail(PersistenceError.QueryFailed(op, "unsupported in test"))
 
   private def makeRunner(
     repoPath: Path,

@@ -8,6 +8,7 @@ import zio.test.*
 
 import conversation.entity.api.{ ChatConversation, ConversationEntry, SessionContextLink }
 import db.*
+import shared.errors.PersistenceError
 import gateway.control.*
 import gateway.entity.*
 import llm4zio.core.*

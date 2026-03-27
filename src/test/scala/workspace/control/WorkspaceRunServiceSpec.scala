@@ -10,7 +10,7 @@ import activity.entity.ActivityEvent
 import agent.entity.{ Agent, AgentPermissions, AgentRepository, TrustLevel }
 import analysis.entity.{ AnalysisDoc, AnalysisRepository, AnalysisType }
 import conversation.entity.api.{ ChatConversation, ConversationEntry }
-import db.{ PersistenceError as DbPersistenceError, * }
+import db.*
 import governance.control.{ GovernanceEvaluationContext, GovernancePolicyService, GovernanceTransitionDecision }
 import governance.entity.GovernancePolicy
 import issues.entity.{ AgentIssue, IssueEvent, IssueFilter, IssueRepository, IssueState }
@@ -23,17 +23,17 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
 
   // Minimal stub ChatRepository — records addMessage calls
   private class StubChatRepo(messages: Ref[List[String]]) extends ChatRepository:
-    def createConversation(c: ChatConversation): IO[DbPersistenceError, Long]                        = ZIO.succeed(1L)
-    def getConversation(id: Long): IO[DbPersistenceError, Option[ChatConversation]]                  = ZIO.succeed(None)
-    def listConversations(o: Int, l: Int): IO[DbPersistenceError, List[ChatConversation]]            = ZIO.succeed(Nil)
-    def getConversationsByChannel(ch: String): IO[DbPersistenceError, List[ChatConversation]]        = ZIO.succeed(Nil)
-    def listConversationsByRun(r: Long): IO[DbPersistenceError, List[ChatConversation]]              = ZIO.succeed(Nil)
-    def updateConversation(c: ChatConversation): IO[DbPersistenceError, Unit]                        = ZIO.unit
-    def deleteConversation(id: Long): IO[DbPersistenceError, Unit]                                   = ZIO.unit
-    def addMessage(m: ConversationEntry): IO[DbPersistenceError, Long]                               =
+    def createConversation(c: ChatConversation): IO[PersistenceError, Long]                        = ZIO.succeed(1L)
+    def getConversation(id: Long): IO[PersistenceError, Option[ChatConversation]]                  = ZIO.succeed(None)
+    def listConversations(o: Int, l: Int): IO[PersistenceError, List[ChatConversation]]            = ZIO.succeed(Nil)
+    def getConversationsByChannel(ch: String): IO[PersistenceError, List[ChatConversation]]        = ZIO.succeed(Nil)
+    def listConversationsByRun(r: Long): IO[PersistenceError, List[ChatConversation]]              = ZIO.succeed(Nil)
+    def updateConversation(c: ChatConversation): IO[PersistenceError, Unit]                        = ZIO.unit
+    def deleteConversation(id: Long): IO[PersistenceError, Unit]                                   = ZIO.unit
+    def addMessage(m: ConversationEntry): IO[PersistenceError, Long]                               =
       messages.update(_ :+ m.content).as(1L)
-    def getMessages(cid: Long): IO[DbPersistenceError, List[ConversationEntry]]                      = ZIO.succeed(Nil)
-    def getMessagesSince(cid: Long, since: Instant): IO[DbPersistenceError, List[ConversationEntry]] = ZIO.succeed(Nil)
+    def getMessages(cid: Long): IO[PersistenceError, List[ConversationEntry]]                      = ZIO.succeed(Nil)
+    def getMessagesSince(cid: Long, since: Instant): IO[PersistenceError, List[ConversationEntry]] = ZIO.succeed(Nil)
 
   private object StubIssueRepo extends IssueRepository:
     def append(event: issues.entity.IssueEvent): IO[PersistenceError, Unit]             = ZIO.unit
@@ -852,26 +852,26 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
         workspaceId = Some("ws-1"),
       )
       val enabledConfig                                                                                 = new ConfigRepository:
-        override def getAllSettings: IO[DbPersistenceError, List[SettingRow]]                           = ZIO.succeed(Nil)
-        override def getSetting(key: String): IO[DbPersistenceError, Option[SettingRow]]                =
+        override def getAllSettings: IO[PersistenceError, List[SettingRow]]                           = ZIO.succeed(Nil)
+        override def getSetting(key: String): IO[PersistenceError, Option[SettingRow]]                =
           ZIO.succeed(Option.when(key == "issues.autoDispatch.enabled")(SettingRow(key, "true", sampleWs.updatedAt)))
-        override def upsertSetting(key: String, value: String): IO[DbPersistenceError, Unit]            = ZIO.unit
-        override def deleteSetting(key: String): IO[DbPersistenceError, Unit]                           = ZIO.unit
-        override def deleteSettingsByPrefix(prefix: String): IO[DbPersistenceError, Unit]               = ZIO.unit
-        override def createWorkflow(workflow: WorkflowRow): IO[DbPersistenceError, Long]                = ZIO.dieMessage("unused")
-        override def getWorkflow(id: Long): IO[DbPersistenceError, Option[WorkflowRow]]                 = ZIO.dieMessage("unused")
-        override def getWorkflowByName(name: String): IO[DbPersistenceError, Option[WorkflowRow]]       =
+        override def upsertSetting(key: String, value: String): IO[PersistenceError, Unit]            = ZIO.unit
+        override def deleteSetting(key: String): IO[PersistenceError, Unit]                           = ZIO.unit
+        override def deleteSettingsByPrefix(prefix: String): IO[PersistenceError, Unit]               = ZIO.unit
+        override def createWorkflow(workflow: WorkflowRow): IO[PersistenceError, Long]                = ZIO.dieMessage("unused")
+        override def getWorkflow(id: Long): IO[PersistenceError, Option[WorkflowRow]]                 = ZIO.dieMessage("unused")
+        override def getWorkflowByName(name: String): IO[PersistenceError, Option[WorkflowRow]]       =
           ZIO.dieMessage("unused")
-        override def listWorkflows: IO[DbPersistenceError, List[WorkflowRow]]                           = ZIO.dieMessage("unused")
-        override def updateWorkflow(workflow: WorkflowRow): IO[DbPersistenceError, Unit]                = ZIO.dieMessage("unused")
-        override def deleteWorkflow(id: Long): IO[DbPersistenceError, Unit]                             = ZIO.dieMessage("unused")
-        override def createCustomAgent(agent: CustomAgentRow): IO[DbPersistenceError, Long]             = ZIO.dieMessage("unused")
-        override def getCustomAgent(id: Long): IO[DbPersistenceError, Option[CustomAgentRow]]           = ZIO.dieMessage("unused")
-        override def getCustomAgentByName(name: String): IO[DbPersistenceError, Option[CustomAgentRow]] =
+        override def listWorkflows: IO[PersistenceError, List[WorkflowRow]]                           = ZIO.dieMessage("unused")
+        override def updateWorkflow(workflow: WorkflowRow): IO[PersistenceError, Unit]                = ZIO.dieMessage("unused")
+        override def deleteWorkflow(id: Long): IO[PersistenceError, Unit]                             = ZIO.dieMessage("unused")
+        override def createCustomAgent(agent: CustomAgentRow): IO[PersistenceError, Long]             = ZIO.dieMessage("unused")
+        override def getCustomAgent(id: Long): IO[PersistenceError, Option[CustomAgentRow]]           = ZIO.dieMessage("unused")
+        override def getCustomAgentByName(name: String): IO[PersistenceError, Option[CustomAgentRow]] =
           ZIO.dieMessage("unused")
-        override def listCustomAgents: IO[DbPersistenceError, List[CustomAgentRow]]                     = ZIO.dieMessage("unused")
-        override def updateCustomAgent(agent: CustomAgentRow): IO[DbPersistenceError, Unit]             = ZIO.dieMessage("unused")
-        override def deleteCustomAgent(id: Long): IO[DbPersistenceError, Unit]                          = ZIO.dieMessage("unused")
+        override def listCustomAgents: IO[PersistenceError, List[CustomAgentRow]]                     = ZIO.dieMessage("unused")
+        override def updateCustomAgent(agent: CustomAgentRow): IO[PersistenceError, Unit]             = ZIO.dieMessage("unused")
+        override def deleteCustomAgent(id: Long): IO[PersistenceError, Unit]                          = ZIO.dieMessage("unused")
       val readyResolver                                                                                 = new DependencyResolver:
         override def dependencyGraph(issues: List[AgentIssue]): Map[IssueId, Set[IssueId]] = Map.empty
         override def readyToDispatch(issues: List[AgentIssue]): List[AgentIssue]           = issues

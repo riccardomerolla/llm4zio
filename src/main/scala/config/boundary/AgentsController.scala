@@ -13,7 +13,8 @@ import _root_.config.entity.{ AgentChannelBinding, AgentInfo }
 import agent.control.{ AgentMatching, BuiltInAgentSynchronizer }
 import agent.entity.api.*
 import agent.entity.{ Agent as RegistryAgent, AgentEvent, AgentPermissions, AgentRepository, TrustLevel }
-import db.{ ConfigRepository, CustomAgentRow, PersistenceError }
+import shared.errors.PersistenceError
+import db.{ ConfigRepository, CustomAgentRow }
 import llm4zio.core.{ LlmError, LlmService }
 import orchestration.control.{ AgentRegistry, OrchestratorControlPlane }
 import prompts.PromptLoader

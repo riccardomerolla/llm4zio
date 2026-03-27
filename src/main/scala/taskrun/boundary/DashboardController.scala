@@ -4,7 +4,8 @@ import zio.*
 import zio.http.*
 
 import activity.entity.ActivityRepository
-import db.{ PersistenceError, TaskRepository }
+import shared.errors.PersistenceError
+import db.TaskRepository
 import issues.entity.{ IssueFilter, IssueRepository, IssueStateTag }
 import shared.web.{ ErrorHandlingMiddleware, HtmlViews }
 

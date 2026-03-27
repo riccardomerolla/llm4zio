@@ -6,7 +6,8 @@ import zio.*
 
 import _root_.config.entity.AgentInfo
 import conversation.entity.api.{ ChatConversation, ConversationEntry, MessageType, SenderType }
-import db.{ ChatRepository, PersistenceError }
+import shared.errors.PersistenceError
+import db.ChatRepository
 import gateway.entity.SessionKey
 import llm4zio.agents.*
 import llm4zio.core.{ Message, MessageRole }

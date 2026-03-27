@@ -3,7 +3,8 @@ package orchestration.control
 import zio.*
 
 import _root_.config.entity.{ AIProvider, AIProviderConfig, ModelFallbackChain, ModelRef }
-import db.{ PersistenceError, TaskRepository }
+import shared.errors.PersistenceError
+import db.TaskRepository
 
 trait AgentConfigResolver:
   def resolveConfig(agentName: String): IO[PersistenceError, AIProviderConfig]

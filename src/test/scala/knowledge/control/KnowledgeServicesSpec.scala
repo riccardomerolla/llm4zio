@@ -8,7 +8,7 @@ import zio.test.*
 
 import analysis.entity.{ AnalysisDoc, AnalysisEvent, AnalysisRepository, AnalysisType }
 import conversation.entity.api.ConversationEntry
-import db.{ ChatRepository, PersistenceError as DbPersistenceError }
+import db.ChatRepository
 import issues.entity.{ AgentIssue, IssueState }
 import knowledge.entity.*
 import llm4zio.core.{ LlmChunk, LlmError, LlmService, Message, ToolCallResponse }
@@ -88,23 +88,23 @@ object KnowledgeServicesSpec extends ZIOSpecDefault:
     override def listByType(analysisType: AnalysisType): IO[PersistenceError, List[AnalysisDoc]] = ZIO.succeed(Nil)
 
   final class StubChatRepository extends ChatRepository:
-    override def createConversation(c: conversation.entity.api.ChatConversation): IO[DbPersistenceError, Long]       =
+    override def createConversation(c: conversation.entity.api.ChatConversation): IO[PersistenceError, Long]       =
       ZIO.succeed(0L)
-    override def getConversation(id: Long): IO[DbPersistenceError, Option[conversation.entity.api.ChatConversation]] =
+    override def getConversation(id: Long): IO[PersistenceError, Option[conversation.entity.api.ChatConversation]] =
       ZIO.succeed(None)
     override def listConversations(offset: Int, limit: Int)
-      : IO[DbPersistenceError, List[conversation.entity.api.ChatConversation]] = ZIO.succeed(Nil)
+      : IO[PersistenceError, List[conversation.entity.api.ChatConversation]] = ZIO.succeed(Nil)
     override def getConversationsByChannel(channelName: String)
-      : IO[DbPersistenceError, List[conversation.entity.api.ChatConversation]] = ZIO.succeed(Nil)
+      : IO[PersistenceError, List[conversation.entity.api.ChatConversation]] = ZIO.succeed(Nil)
     override def listConversationsByRun(runId: Long)
-      : IO[DbPersistenceError, List[conversation.entity.api.ChatConversation]] = ZIO.succeed(Nil)
-    override def updateConversation(c: conversation.entity.api.ChatConversation): IO[DbPersistenceError, Unit]       =
+      : IO[PersistenceError, List[conversation.entity.api.ChatConversation]] = ZIO.succeed(Nil)
+    override def updateConversation(c: conversation.entity.api.ChatConversation): IO[PersistenceError, Unit]       =
       ZIO.unit
-    override def deleteConversation(id: Long): IO[DbPersistenceError, Unit]                                          = ZIO.unit
-    override def addMessage(m: ConversationEntry): IO[DbPersistenceError, Long]                                      = ZIO.succeed(0L)
-    override def getMessages(conversationId: Long): IO[DbPersistenceError, List[ConversationEntry]]                  = ZIO.succeed(Nil)
+    override def deleteConversation(id: Long): IO[PersistenceError, Unit]                                          = ZIO.unit
+    override def addMessage(m: ConversationEntry): IO[PersistenceError, Long]                                      = ZIO.succeed(0L)
+    override def getMessages(conversationId: Long): IO[PersistenceError, List[ConversationEntry]]                  = ZIO.succeed(Nil)
     override def getMessagesSince(conversationId: Long, since: Instant)
-      : IO[DbPersistenceError, List[ConversationEntry]] =
+      : IO[PersistenceError, List[ConversationEntry]] =
       ZIO.succeed(Nil)
 
   /** LLM stub that always fails so the fallback extraction payload path is exercised. */

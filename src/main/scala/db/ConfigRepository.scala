@@ -6,6 +6,7 @@ import zio.*
 
 import _root_.config.entity.AgentChannelBinding
 import io.github.riccardomerolla.zio.eclipsestore.service.{ LifecycleCommand, LifecycleStatus }
+import shared.errors.PersistenceError
 import shared.ids.Ids.AgentId
 import shared.store.ConfigStoreModule
 
@@ -242,7 +243,7 @@ final case class ConfigRepositoryES(
       existing <-
         configStore.fetch[String, shared.store.WorkflowRow](workflowKey(id)).mapError(storeErr("updateWorkflow"))
       _        <- ZIO
-                    .fail(PersistenceError.NotFound("workflows", id))
+                    .fail(PersistenceError.NotFound("workflows", id.toString))
                     .when(existing.isEmpty)
       _        <- configStore
                     .store(workflowKey(id), toStoreWorkflowRow(workflow, id))
@@ -254,7 +255,7 @@ final case class ConfigRepositoryES(
       existing <-
         configStore.fetch[String, shared.store.WorkflowRow](workflowKey(id)).mapError(storeErr("deleteWorkflow"))
       _        <- ZIO
-                    .fail(PersistenceError.NotFound("workflows", id))
+                    .fail(PersistenceError.NotFound("workflows", id.toString))
                     .when(existing.isEmpty)
       _        <- configStore.remove[String](workflowKey(id)).mapError(storeErr("deleteWorkflow"))
     yield ()
@@ -291,7 +292,7 @@ final case class ConfigRepositoryES(
       existing <-
         configStore.fetch[String, shared.store.CustomAgentRow](agentKey(id)).mapError(storeErr("updateCustomAgent"))
       _        <- ZIO
-                    .fail(PersistenceError.NotFound("custom_agents", id))
+                    .fail(PersistenceError.NotFound("custom_agents", id.toString))
                     .when(existing.isEmpty)
       _        <- configStore
                     .store(agentKey(id), toStoreAgentRow(agent, id))
@@ -303,7 +304,7 @@ final case class ConfigRepositoryES(
       existing <-
         configStore.fetch[String, shared.store.CustomAgentRow](agentKey(id)).mapError(storeErr("deleteCustomAgent"))
       _        <- ZIO
-                    .fail(PersistenceError.NotFound("custom_agents", id))
+                    .fail(PersistenceError.NotFound("custom_agents", id.toString))
                     .when(existing.isEmpty)
       _        <- configStore.remove[String](agentKey(id)).mapError(storeErr("deleteCustomAgent"))
     yield ()

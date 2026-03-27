@@ -4,7 +4,7 @@ import java.time.Instant
 
 import zio.*
 
-import db.PersistenceError
+import shared.errors.PersistenceError
 import shared.ids.Ids.EventId
 import shared.store.DataStoreModule
 

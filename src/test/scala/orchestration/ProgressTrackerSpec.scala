@@ -7,7 +7,7 @@ import zio.test.*
 
 import activity.control.{ ActivityHub, ActivityHubLive }
 import activity.entity.{ ActivityEvent, ActivityEventType, ActivityRepository }
-import db.*
+import shared.errors.PersistenceError
 import orchestration.control.ProgressTracker
 import taskrun.entity.ProgressUpdate
 

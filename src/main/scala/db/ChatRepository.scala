@@ -6,6 +6,7 @@ import zio.*
 import zio.json.*
 
 import conversation.entity.api.*
+import shared.errors.PersistenceError
 
 trait ChatRepository:
   // Chat Conversations

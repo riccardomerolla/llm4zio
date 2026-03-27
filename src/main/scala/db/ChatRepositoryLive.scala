@@ -9,6 +9,7 @@ import zio.schema.Schema
 import conversation.entity.api.*
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.service.{ LifecycleCommand, LifecycleStatus }
+import shared.errors.PersistenceError
 import shared.store.*
 
 final case class ChatRepositoryLive(
@@ -177,7 +178,7 @@ final case class ChatRepositoryLive(
         ZIO
           .fromOption(key.drop(key.indexOf(':') + 1).toLongOption)
           .orElseFail(PersistenceError.QueryFailed(op, s"invalid numeric id key: $key"))
-          .flatMap(id => ZIO.fail(PersistenceError.NotFound(table, id)))
+          .flatMap(id => ZIO.fail(PersistenceError.NotFound(table, id.toString)))
       case Some(_) => ZIO.unit
     }
 

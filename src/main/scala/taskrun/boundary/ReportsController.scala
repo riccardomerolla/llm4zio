@@ -4,6 +4,7 @@ import zio.*
 import zio.http.*
 
 import db.*
+import shared.errors.PersistenceError
 import shared.web.{ ErrorHandlingMiddleware, HtmlViews }
 
 trait ReportsController:
@@ -35,7 +36,7 @@ final case class ReportsControllerLive(repository: TaskRepository) extends Repor
     Method.GET / "reports" / long("id") -> handler { (id: Long, _: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
-          report <- repository.getReport(id).someOrFail(PersistenceError.NotFound("task_reports", id))
+          report <- repository.getReport(id).someOrFail(PersistenceError.NotFound("task_reports", id.toString))
         yield html(HtmlViews.reportDetail(report))
       }
     },

@@ -6,6 +6,7 @@ import zio.test.*
 
 import _root_.config.entity.GatewayConfig
 import db.*
+import shared.errors.PersistenceError
 import gateway.control.*
 
 object ChannelControllerSpec extends ZIOSpecDefault:

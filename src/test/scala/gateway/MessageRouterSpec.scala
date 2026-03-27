@@ -9,6 +9,7 @@ import zio.test.*
 import _root_.config.entity.MigrationConfig
 import conversation.entity.api.{ ChatConversation, ConversationEntry, SessionContextLink }
 import db.*
+import shared.errors.PersistenceError
 import gateway.control.*
 import gateway.entity.*
 import orchestration.control.{ OrchestratorControlPlane, WorkflowFailed }

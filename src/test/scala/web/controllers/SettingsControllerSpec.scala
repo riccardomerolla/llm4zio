@@ -13,6 +13,7 @@ import _root_.config.entity.{ AIProviderConfig, MigrationConfig }
 import activity.control.ActivityHub
 import activity.entity.{ ActivityEvent, ActivityEventType, ActivityRepository }
 import db.*
+import shared.errors.PersistenceError
 import io.github.riccardomerolla.zio.eclipsestore.service.LifecycleCommand
 import llm4zio.core.*
 import llm4zio.tools.{ AnyTool, JsonSchema, ToolRegistry }

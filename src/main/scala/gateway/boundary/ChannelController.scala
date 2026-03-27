@@ -9,7 +9,8 @@ import zio.http.*
 import zio.json.*
 
 import _root_.config.entity.GatewayConfig
-import db.{ ConfigRepository, PersistenceError }
+import shared.errors.PersistenceError
+import db.ConfigRepository
 import gateway.control.*
 import gateway.entity.SessionScopeStrategy
 import shared.web.{ ChannelCardData, ChannelView, HtmlViews }

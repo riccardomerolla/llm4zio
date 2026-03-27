@@ -5,6 +5,7 @@ import zio.http.*
 import zio.json.*
 
 import db.*
+import shared.errors.PersistenceError
 import shared.web.{ ErrorHandlingMiddleware, HtmlViews }
 
 trait GraphController:
@@ -45,7 +46,7 @@ final case class GraphControllerLive(repository: TaskRepository) extends GraphCo
     Method.GET / "api" / "graph" / long("id") -> handler { (id: Long, _: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
-          report <- repository.getReport(id).someOrFail(PersistenceError.NotFound("task_reports", id))
+          report <- repository.getReport(id).someOrFail(PersistenceError.NotFound("task_reports", id.toString))
           _      <- ensureGraph(report)
         yield Response.json(
           GraphPayload(

@@ -8,7 +8,8 @@ import activity.entity.{ ActivityEvent, ActivityEventType }
 import board.control.BoardOrchestrator
 import board.entity.BoardError
 import conversation.entity.api.{ ChatConversation, ConversationEntry, MessageType, SenderType }
-import db.{ ChatRepository, PersistenceError, TaskRepository }
+import shared.errors.PersistenceError
+import db.{ ChatRepository, TaskRepository }
 import issues.entity.api.{ AgentIssueView, IssuePriority, IssueStatus }
 import issues.entity.{ IssueEvent, IssueRepository, IssueState }
 import llm4zio.core.{ LlmError, LlmService, Streaming }
@@ -246,7 +247,7 @@ final private case class IssueAssignmentOrchestratorLive(
                          )
       conv            <- chatRepository
                            .getConversation(conversationKey)
-                           .someOrFail(PersistenceError.NotFound("conversation", conversationKey))
+                           .someOrFail(PersistenceError.NotFound("conversation", conversationKey.toString))
       _               <- chatRepository.updateConversation(conv.copy(updatedAt = now2))
     yield ()
 

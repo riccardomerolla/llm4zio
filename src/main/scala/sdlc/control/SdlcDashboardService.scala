@@ -5,7 +5,7 @@ import java.time.{ Duration, Instant }
 import zio.*
 
 import activity.entity.{ ActivityEvent, ActivityRepository }
-import db.{ ConfigRepository, PersistenceError as DbPersistenceError }
+import db.ConfigRepository
 import decision.control.DecisionInbox
 import decision.entity.{ Decision, DecisionFilter, DecisionStatus, DecisionUrgency }
 import issues.entity.*
@@ -117,7 +117,7 @@ final case class SdlcDashboardServiceLive(
                           issueRepository.history(issue.id).map(events => issue.id -> events)
                         ).map(_.toMap)
       decisions      <- decisionInbox.list(DecisionFilter(limit = Int.MaxValue))
-      activity       <- activityRepository.listEvents(limit = 8).mapError(mapActivityError)
+      activity       <- activityRepository.listEvents(limit = 8)
       workReports    <- workReportProjection.getAll
       lifecycle       = buildLifecycle(specifications, plans, issues)
       churn           = buildChurnAlerts(issues, histories, thresholds)
@@ -506,13 +506,6 @@ final case class SdlcDashboardServiceLive(
       case IssueState.Completed(_, completedAt, _) => completedAt
       case IssueState.Failed(_, failedAt, _)       => failedAt
       case IssueState.Skipped(skippedAt, _)        => skippedAt
-
-  private def mapActivityError(error: DbPersistenceError): PersistenceError =
-    error match
-      case DbPersistenceError.ConnectionFailed(cause) => PersistenceError.StoreUnavailable(cause)
-      case DbPersistenceError.QueryFailed(op, cause)  => PersistenceError.QueryFailed(op, cause)
-      case DbPersistenceError.NotFound(entity, id)    => PersistenceError.NotFound(entity, id.toString)
-      case DbPersistenceError.SchemaInitFailed(cause) => PersistenceError.SerializationFailed("activity", cause)
 
   final private case class IssueHistorySummary(
     transitionCount: Int,

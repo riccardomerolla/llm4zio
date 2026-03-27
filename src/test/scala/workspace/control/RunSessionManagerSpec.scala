@@ -9,7 +9,7 @@ import zio.test.*
 
 import activity.entity.ActivityEvent
 import conversation.entity.api.{ ChatConversation, ConversationEntry }
-import db.{ ChatRepository, PersistenceError as ChatPersistenceError }
+import db.ChatRepository
 import shared.errors.PersistenceError
 import workspace.entity.*
 
@@ -73,21 +73,21 @@ object RunSessionManagerSpec extends ZIOSpecDefault:
     override def unregister(ref: AgentProcessRef): UIO[Unit]                          = processRef.set(None)
 
   final private class InMemoryChatRepo(messagesRef: Ref[List[ConversationEntry]]) extends ChatRepository:
-    override def createConversation(conversation: ChatConversation): IO[ChatPersistenceError, Long]               = ZIO.succeed(1L)
-    override def getConversation(id: Long): IO[ChatPersistenceError, Option[ChatConversation]]                    = ZIO.none
-    override def listConversations(offset: Int, limit: Int): IO[ChatPersistenceError, List[ChatConversation]]     =
+    override def createConversation(conversation: ChatConversation): IO[PersistenceError, Long]               = ZIO.succeed(1L)
+    override def getConversation(id: Long): IO[PersistenceError, Option[ChatConversation]]                    = ZIO.none
+    override def listConversations(offset: Int, limit: Int): IO[PersistenceError, List[ChatConversation]]     =
       ZIO.succeed(Nil)
-    override def getConversationsByChannel(channelName: String): IO[ChatPersistenceError, List[ChatConversation]] =
+    override def getConversationsByChannel(channelName: String): IO[PersistenceError, List[ChatConversation]] =
       ZIO.succeed(Nil)
-    override def listConversationsByRun(runId: Long): IO[ChatPersistenceError, List[ChatConversation]]            =
+    override def listConversationsByRun(runId: Long): IO[PersistenceError, List[ChatConversation]]            =
       ZIO.succeed(Nil)
-    override def updateConversation(conversation: ChatConversation): IO[ChatPersistenceError, Unit]               = ZIO.unit
-    override def deleteConversation(id: Long): IO[ChatPersistenceError, Unit]                                     = ZIO.unit
-    override def addMessage(message: ConversationEntry): IO[ChatPersistenceError, Long]                           =
+    override def updateConversation(conversation: ChatConversation): IO[PersistenceError, Unit]               = ZIO.unit
+    override def deleteConversation(id: Long): IO[PersistenceError, Unit]                                     = ZIO.unit
+    override def addMessage(message: ConversationEntry): IO[PersistenceError, Long]                           =
       messagesRef.modify(messages => (messages.size.toLong + 1L, messages :+ message))
-    override def getMessages(conversationId: Long): IO[ChatPersistenceError, List[ConversationEntry]]             = messagesRef.get
+    override def getMessages(conversationId: Long): IO[PersistenceError, List[ConversationEntry]]             = messagesRef.get
     override def getMessagesSince(conversationId: Long, since: Instant)
-      : IO[ChatPersistenceError, List[ConversationEntry]] =
+      : IO[PersistenceError, List[ConversationEntry]] =
       messagesRef.get.map(_.filter(_.createdAt.isAfter(since)))
 
   private val baseAssignedAt = Instant.parse("2026-03-02T08:00:00Z")

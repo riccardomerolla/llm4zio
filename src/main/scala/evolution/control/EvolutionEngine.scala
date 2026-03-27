@@ -5,13 +5,13 @@ import zio.schema.{ Schema, derived }
 
 import _root_.config.entity.WorkflowDefinition
 import daemon.entity.{ DaemonAgentSpec, DaemonAgentSpecRepository }
-import db.{ ConfigRepository, PersistenceError as DbPersistenceError }
+import shared.errors.PersistenceError
+import db.ConfigRepository
 import decision.control.DecisionInbox
 import decision.entity.{ DecisionResolutionKind, DecisionStatus, DecisionUrgency }
 import evolution.entity.*
 import governance.entity.{ GovernancePolicy, GovernancePolicyEvent, GovernancePolicyRepository }
 import orchestration.control.{ WorkflowService, WorkflowServiceError }
-import shared.errors.PersistenceError
 import shared.ids.Ids.{ DecisionId, EvolutionProposalId, GovernancePolicyId }
 
 enum EvolutionError derives zio.json.JsonCodec:
@@ -464,8 +464,8 @@ final case class EvolutionEngineLive(
       configRepository
         .deleteSetting(enabledKey(spec.projectId, spec.daemonKey))
         .catchAll {
-          case _: DbPersistenceError.NotFound => ZIO.unit
-          case other                          => ZIO.fail(EvolutionError.PersistenceFailed(other.toString))
+          case _: PersistenceError.NotFound => ZIO.unit
+          case other                        => ZIO.fail(EvolutionError.PersistenceFailed(other.toString))
         }
 
   private def daemonEnabled(spec: DaemonAgentSpec): IO[EvolutionError, Boolean] =

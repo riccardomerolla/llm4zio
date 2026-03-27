@@ -7,7 +7,8 @@ import zio.json.*
 import zio.stream.ZStream
 
 import conversation.entity.api.StoredSessionContext
-import db.{ ChatRepository, PersistenceError }
+import shared.errors.PersistenceError
+import db.ChatRepository
 import gateway.entity.*
 import orchestration.control.*
 

@@ -11,6 +11,7 @@ import activity.entity.ActivityEvent
 import board.entity.*
 import conversation.entity.api.*
 import db.*
+import shared.errors.PersistenceError
 import governance.control.{ GovernanceEvaluationContext, GovernancePolicyService, GovernanceTransitionDecision }
 import governance.entity.{ GovernanceGate, GovernancePolicy }
 import issues.entity.{ IssueEvent, IssueRepository }
@@ -341,7 +342,7 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
   private val failingConfigResolver: ULayer[AgentConfigResolver] =
     ZLayer.succeed(new AgentConfigResolver:
       override def resolveConfig(agentName: String): IO[PersistenceError, AIProviderConfig] =
-        ZIO.fail(PersistenceError.ConnectionFailed("resolver unavailable")))
+        ZIO.fail(PersistenceError.StoreUnavailable("resolver unavailable")))
 
   private val testConfigRepository: ULayer[ConfigRepository] =
     ZLayer.succeed(new ConfigRepository:

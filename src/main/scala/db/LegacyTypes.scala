@@ -15,12 +15,6 @@ enum RunStatus derives JsonCodec:
 enum FileType derives JsonCodec:
   case Program, Copybook, JCL, Unknown
 
-enum PersistenceError derives JsonCodec:
-  case ConnectionFailed(cause: String)
-  case QueryFailed(sql: String, cause: String)
-  case NotFound(entity: String, id: Long)
-  case SchemaInitFailed(cause: String)
-
 case class DatabaseConfig(
   jdbcUrl: String
 ) derives JsonCodec

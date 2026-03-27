@@ -5,7 +5,8 @@ import java.util.UUID
 import zio.*
 
 import _root_.config.entity.{ WorkflowContext, WorkflowDefinition }
-import db.{ PersistenceError, RunStatus, TaskRepository }
+import shared.errors.PersistenceError
+import db.{ RunStatus, TaskRepository }
 
 trait TaskExecutor:
   def execute(taskRunId: Long, workflow: WorkflowDefinition): IO[PersistenceError, Unit]
@@ -75,7 +76,7 @@ final case class TaskExecutorLive(
 
   override def execute(taskRunId: Long, workflow: WorkflowDefinition): IO[PersistenceError, Unit] =
     for
-      run           <- repository.getRun(taskRunId).someOrFail(PersistenceError.NotFound("task_runs", taskRunId))
+      run           <- repository.getRun(taskRunId).someOrFail(PersistenceError.NotFound("task_runs", taskRunId.toString))
       runId          = taskRunId.toString
       workflowId    <- ZIO
                          .fromOption(workflow.id.flatMap(_.toLongOption).orElse(run.workflowId))
@@ -205,7 +206,7 @@ final case class TaskExecutorLive(
     completedAt: Option[java.time.Instant] = None,
   ): IO[PersistenceError, Unit] =
     repository.getRun(taskRunId).flatMap {
-      case None      => ZIO.fail(PersistenceError.NotFound("task_runs", taskRunId))
+      case None      => ZIO.fail(PersistenceError.NotFound("task_runs", taskRunId.toString))
       case Some(run) =>
         repository.updateRun(
           run.copy(

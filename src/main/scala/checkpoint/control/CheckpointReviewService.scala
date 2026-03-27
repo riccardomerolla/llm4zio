@@ -44,9 +44,6 @@ object CheckpointReviewError:
   def fromGit(error: workspace.entity.GitError): CheckpointReviewError =
     CheckpointReviewError.Git(error.toString)
 
-  def fromDbPersistence(error: db.PersistenceError): CheckpointReviewError =
-    CheckpointReviewError.Persistence(error.toString)
-
 final case class CheckpointRunSummary(
   runId: String,
   agentName: String,
@@ -374,7 +371,7 @@ final case class CheckpointReviewServiceLive(
       case Some(numericId) =>
         chatRepository
           .getMessages(numericId)
-          .mapError(CheckpointReviewError.fromDbPersistence)
+          .mapError(CheckpointReviewError.fromPersistence)
           .map(
             _.filter(msg => !msg.createdAt.isAfter(createdAt))
               .takeRight(6)
@@ -573,7 +570,7 @@ final case class CheckpointReviewServiceLive(
                 updatedAt = now,
               )
             )
-            .mapError(CheckpointReviewError.fromDbPersistence)
+            .mapError(CheckpointReviewError.fromPersistence)
             .unit
         }
       case None            =>

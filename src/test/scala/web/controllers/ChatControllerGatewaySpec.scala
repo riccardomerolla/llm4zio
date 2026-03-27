@@ -12,6 +12,7 @@ import activity.entity.{ ActivityEvent, ActivityEventType, ActivityRepository }
 import conversation.boundary.ChatControllerLive
 import conversation.entity.api.*
 import db.*
+import shared.errors.PersistenceError
 import gateway.control.*
 import gateway.entity.*
 import issues.entity.api.AgentIssueView

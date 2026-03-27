@@ -7,6 +7,7 @@ import zio.schema.Schema
 
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.service.{ LifecycleCommand, LifecycleStatus }
+import shared.errors.PersistenceError
 import shared.store.*
 
 final case class TaskRepositoryLive(
@@ -46,7 +47,7 @@ final case class TaskRepositoryLive(
     for
       existing <- dataStore.fetch[String, shared.store.TaskRunRow](runKey(run.id)).mapError(storeErr("updateRun"))
       _        <- ZIO
-                    .fail(PersistenceError.NotFound("task_runs", run.id))
+                    .fail(PersistenceError.NotFound("task_runs", run.id.toString))
                     .when(existing.isEmpty)
       _        <- dataStore.store(runKey(run.id), toStoreRunRow(run)).mapError(storeErr("updateRun"))
     yield ()
@@ -65,7 +66,7 @@ final case class TaskRepositoryLive(
     for
       existing <- dataStore.fetch[String, shared.store.TaskRunRow](runKey(id)).mapError(storeErr("deleteRun"))
       _        <- ZIO
-                    .fail(PersistenceError.NotFound("task_runs", id))
+                    .fail(PersistenceError.NotFound("task_runs", id.toString))
                     .when(existing.isEmpty)
       _        <- dataStore.remove[String](runKey(id)).mapError(storeErr("deleteRun"))
     yield ()
@@ -172,7 +173,7 @@ final case class TaskRepositoryLive(
       existing <-
         configStore.fetch[String, shared.store.WorkflowRow](workflowKey(id)).mapError(storeErr("updateWorkflow"))
       _        <- ZIO
-                    .fail(PersistenceError.NotFound("workflows", id))
+                    .fail(PersistenceError.NotFound("workflows", id.toString))
                     .when(existing.isEmpty)
       _        <- configStore
                     .store(workflowKey(id), toStoreWorkflowRow(workflow, id))
@@ -184,7 +185,7 @@ final case class TaskRepositoryLive(
       existing <-
         configStore.fetch[String, shared.store.WorkflowRow](workflowKey(id)).mapError(storeErr("deleteWorkflow"))
       _        <- ZIO
-                    .fail(PersistenceError.NotFound("workflows", id))
+                    .fail(PersistenceError.NotFound("workflows", id.toString))
                     .when(existing.isEmpty)
       _        <- configStore.remove[String](workflowKey(id)).mapError(storeErr("deleteWorkflow"))
     yield ()
@@ -221,7 +222,7 @@ final case class TaskRepositoryLive(
       existing <-
         configStore.fetch[String, shared.store.CustomAgentRow](agentKey(id)).mapError(storeErr("updateCustomAgent"))
       _        <- ZIO
-                    .fail(PersistenceError.NotFound("custom_agents", id))
+                    .fail(PersistenceError.NotFound("custom_agents", id.toString))
                     .when(existing.isEmpty)
       _        <- configStore
                     .store(agentKey(id), toStoreAgentRow(agent, id))
@@ -233,7 +234,7 @@ final case class TaskRepositoryLive(
       existing <-
         configStore.fetch[String, shared.store.CustomAgentRow](agentKey(id)).mapError(storeErr("deleteCustomAgent"))
       _        <- ZIO
-                    .fail(PersistenceError.NotFound("custom_agents", id))
+                    .fail(PersistenceError.NotFound("custom_agents", id.toString))
                     .when(existing.isEmpty)
       _        <- configStore.remove[String](agentKey(id)).mapError(storeErr("deleteCustomAgent"))
     yield ()

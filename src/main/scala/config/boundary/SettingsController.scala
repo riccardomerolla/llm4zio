@@ -17,6 +17,7 @@ import _root_.config.entity.GatewayConfig
 import activity.control.ActivityHub
 import activity.entity.{ ActivityEvent, ActivityEventType }
 import db.*
+import shared.errors.PersistenceError
 import io.github.riccardomerolla.zio.eclipsestore.schema.TypedStore
 import io.github.riccardomerolla.zio.eclipsestore.service.{ LifecycleCommand, LifecycleStatus }
 import llm4zio.core.{ LlmError, LlmService, Streaming }

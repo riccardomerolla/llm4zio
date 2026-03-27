@@ -4,6 +4,7 @@ import zio.*
 import zio.json.*
 
 import db.*
+import shared.errors.PersistenceError
 import gateway.entity.{
   BotCommand,
   CommandParseError,

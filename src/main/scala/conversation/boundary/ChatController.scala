@@ -12,7 +12,8 @@ import _root_.config.entity.{ AIProvider, AIProviderConfig }
 import activity.control.ActivityHub
 import activity.entity.{ ActivityEvent, ActivityEventType }
 import conversation.entity.api.*
-import db.{ ChatRepository, PersistenceError, TaskRepository }
+import shared.errors.PersistenceError
+import db.{ ChatRepository, TaskRepository }
 import gateway.control.{ ChannelRegistry, GatewayService, GatewayServiceError, MessageChannelError }
 import gateway.entity.{ GatewayMessageRole as GatewayMessageRole, MessageDirection as GatewayMessageDirection, * }
 import issues.entity.{ IssueReport, IssueWorkReport }
@@ -173,7 +174,7 @@ final case class ChatControllerLive(
           convId           <- parseLongId("conversation", id)
           conversation     <- chatRepository
                                 .getConversation(convId)
-                                .someOrFail(PersistenceError.NotFound("conversation", convId))
+                                .someOrFail(PersistenceError.NotFound("conversation", convId.toString))
           sessionMeta      <- resolveConversationSessionMeta(id)
           runMeta          <- resolveRunSessionMeta(conversation)
           detailContext    <- resolveChatDetailContext(conversation, sessionMeta)
@@ -197,7 +198,7 @@ final case class ChatControllerLive(
           convId       <- parseLongId("conversation", id)
           conversation <- chatRepository
                             .getConversation(convId)
-                            .someOrFail(PersistenceError.NotFound("conversation", convId))
+                            .someOrFail(PersistenceError.NotFound("conversation", convId.toString))
           form         <- parseForm(req)
           rawContent   <- ZIO
                             .fromOption(form.get("content").map(_.trim).filter(_.nonEmpty))
@@ -336,7 +337,7 @@ final case class ChatControllerLive(
           convId       <- parseLongId("conversation", id)
           conversation <- chatRepository
                             .getConversation(convId)
-                            .someOrFail(PersistenceError.NotFound("conversation", convId))
+                            .someOrFail(PersistenceError.NotFound("conversation", convId.toString))
           form         <- parseForm(req)
           mode         <- parseConversationMode(form.get("mode"))
           workspaceId   = parseWorkspaceMarkerDescription(conversation.description)
@@ -395,7 +396,7 @@ final case class ChatControllerLive(
           convId      <- chatRepository.createConversation(conversation)
           created     <- chatRepository
                            .getConversation(convId)
-                           .someOrFail(PersistenceError.NotFound("conversation", convId))
+                           .someOrFail(PersistenceError.NotFound("conversation", convId.toString))
         yield Response.json(created.toJson)
       }
     },
@@ -405,7 +406,7 @@ final case class ChatControllerLive(
           convId       <- parseLongId("conversation", id)
           conversation <- chatRepository
                             .getConversation(convId)
-                            .someOrFail(PersistenceError.NotFound("conversation", convId))
+                            .someOrFail(PersistenceError.NotFound("conversation", convId.toString))
         yield Response.json(conversation.toJson)
       }
     },
@@ -558,7 +559,7 @@ final case class ChatControllerLive(
       _           <- routeThroughGateway(gatewayService.processOutbound(aiOutbound).unit)
       conv        <- chatRepository
                        .getConversation(conversationId)
-                       .someOrFail(PersistenceError.NotFound("conversation", conversationId))
+                       .someOrFail(PersistenceError.NotFound("conversation", conversationId.toString))
       _           <- chatRepository.updateConversation(conv.copy(updatedAt = now2))
     yield aiMessage
 
@@ -601,7 +602,7 @@ final case class ChatControllerLive(
         _                          <- routeThroughGateway(gatewayService.processOutbound(aiOutbound).unit)
         conv                       <- chatRepository
                                         .getConversation(conversationId)
-                                        .someOrFail(PersistenceError.NotFound("conversation", conversationId))
+                                        .someOrFail(PersistenceError.NotFound("conversation", conversationId.toString))
         _                          <- chatRepository.updateConversation(conv.copy(updatedAt = now))
       yield ()
     effect.catchAll(err => ZIO.logWarning(s"streaming response failed for conversation $conversationId: $err"))
@@ -661,7 +662,7 @@ final case class ChatControllerLive(
               conversation.copy(description = modeDescription(ConversationMode.Plan, workspaceId))
             ).as(start.conversationId)
           case None               =>
-            ZIO.fail(PersistenceError.NotFound("conversation", start.conversationId))
+            ZIO.fail(PersistenceError.NotFound("conversation", start.conversationId.toString))
         }
       }
 

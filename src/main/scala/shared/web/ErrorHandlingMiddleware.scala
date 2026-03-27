@@ -3,8 +3,7 @@ package shared.web
 import zio.*
 import zio.http.*
 
-import db.PersistenceError
-import shared.errors.OrchestratorError
+import shared.errors.{ OrchestratorError, PersistenceError }
 
 object ErrorHandlingMiddleware:
 
@@ -24,14 +23,14 @@ object ErrorHandlingMiddleware:
 
   private def mapPersistence(error: PersistenceError): Response =
     error match
-      case PersistenceError.NotFound(entity, id)    =>
+      case PersistenceError.NotFound(entity, id)          =>
         Response.text(s"$entity with id $id not found").status(Status.NotFound)
-      case PersistenceError.ConnectionFailed(cause) =>
-        Response.text(s"Database unavailable: $cause").status(Status.ServiceUnavailable)
-      case PersistenceError.QueryFailed(_, cause)   =>
-        Response.text(s"Database query failed: $cause").status(Status.InternalServerError)
-      case PersistenceError.SchemaInitFailed(cause) =>
-        Response.text(s"Database initialization failed: $cause").status(Status.InternalServerError)
+      case PersistenceError.StoreUnavailable(cause)       =>
+        Response.text(s"Storage unavailable: $cause").status(Status.ServiceUnavailable)
+      case PersistenceError.QueryFailed(_, cause)         =>
+        Response.text(s"Storage query failed: $cause").status(Status.InternalServerError)
+      case PersistenceError.SerializationFailed(_, cause) =>
+        Response.text(s"Serialization failed: $cause").status(Status.InternalServerError)
 
   private def mapOrchestrator(error: OrchestratorError): Response =
     Response

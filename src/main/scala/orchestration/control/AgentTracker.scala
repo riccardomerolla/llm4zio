@@ -2,7 +2,7 @@ package orchestration.control
 
 import zio.*
 
-import db.PersistenceError
+import shared.errors.PersistenceError
 import taskrun.entity.ProgressUpdate
 
 object AgentTracker:
