@@ -47,7 +47,7 @@ object DecisionsView:
     div(
       id                 := "decisions-list",
       attr("hx-get")     := "/decisions/fragment",
-      attr("hx-trigger") := "every 5s",
+      attr("hx-trigger") := "every 5s [!document.querySelector('#decisions-list textarea:focus')]",
       attr("hx-target")  := "#decisions-list",
       attr("hx-swap")    := "outerHTML",
       attr("hx-include") := "#decisions-filter-form",
