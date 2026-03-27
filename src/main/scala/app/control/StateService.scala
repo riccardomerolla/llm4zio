@@ -17,6 +17,8 @@ trait StateService:
   def createCheckpoint(runId: String, stepName: String): ZIO[Any, StateError, Unit]
   def getLastCheckpoint(runId: String): ZIO[Any, StateError, Option[String]]
   def listCheckpoints(runId: String): ZIO[Any, StateError, List[Checkpoint]]
+  def listCheckpointSnapshots(runId: String): ZIO[Any, StateError, List[CheckpointSnapshot]]
+  def getCheckpointSnapshot(runId: String, stepName: String): ZIO[Any, StateError, Option[CheckpointSnapshot]]
   def validateCheckpointIntegrity(runId: String): ZIO[Any, StateError, Unit]
   def listRuns(): ZIO[Any, StateError, List[TaskRunSummary]]
   def getStateDirectory(runId: String): ZIO[Any, StateError, Path]
@@ -36,6 +38,13 @@ object StateService:
 
   def listCheckpoints(runId: String): ZIO[StateService, StateError, List[Checkpoint]] =
     ZIO.serviceWithZIO[StateService](_.listCheckpoints(runId))
+
+  def listCheckpointSnapshots(runId: String): ZIO[StateService, StateError, List[CheckpointSnapshot]] =
+    ZIO.serviceWithZIO[StateService](_.listCheckpointSnapshots(runId))
+
+  def getCheckpointSnapshot(runId: String, stepName: String)
+    : ZIO[StateService, StateError, Option[CheckpointSnapshot]] =
+    ZIO.serviceWithZIO[StateService](_.getCheckpointSnapshot(runId, stepName))
 
   def validateCheckpointIntegrity(runId: String): ZIO[StateService, StateError, Unit] =
     ZIO.serviceWithZIO[StateService](_.validateCheckpointIntegrity(runId))
@@ -111,6 +120,9 @@ object StateService:
           listCheckpoints(runId).map(_.sortBy(_.createdAt.toEpochMilli).lastOption.map(_.step))
 
         override def listCheckpoints(runId: String): ZIO[Any, StateError, List[Checkpoint]] =
+          listCheckpointSnapshots(runId).map(_.map(_.checkpoint))
+
+        override def listCheckpointSnapshots(runId: String): ZIO[Any, StateError, List[CheckpointSnapshot]] =
           for
             dirExists <- fileService.exists(checkpointsDir(runId)).mapError(fe => mapFileToStateError(runId)(fe))
             snapshots <-
@@ -121,22 +133,36 @@ object StateService:
                               .runCollect
                               .mapError(fe => mapFileToStateError(runId)(fe))
                   parsed <- ZIO.foreach(files.toList)(path => readCheckpointSnapshot(path, runId))
-                yield parsed
+                yield parsed.sortBy(_.checkpoint.createdAt.toEpochMilli)
               else ZIO.succeed(List.empty)
-          yield snapshots.map(_.checkpoint).sortBy(_.createdAt.toEpochMilli)
+          yield snapshots
+
+        override def getCheckpointSnapshot(runId: String, stepName: String)
+          : ZIO[Any, StateError, Option[CheckpointSnapshot]] =
+          for
+            exists <- fileService.exists(checkpointPath(runId, stepName)).mapError(fe => mapFileToStateError(runId)(fe))
+            value  <-
+              if exists then readCheckpointSnapshot(checkpointPath(runId, stepName), runId).map(Some(_))
+              else ZIO.succeed(None)
+          yield value
 
         override def validateCheckpointIntegrity(runId: String): ZIO[Any, StateError, Unit] =
-          listCheckpoints(runId).flatMap { checkpoints =>
-            ZIO.foreachDiscard(checkpoints) { checkpoint =>
+          listCheckpointSnapshots(runId).flatMap { checkpoints =>
+            ZIO.foreachDiscard(checkpoints) { snapshot =>
               for
-                snapshot <- readCheckpointSnapshot(checkpointPath(runId, checkpoint.step), runId)
-                _        <-
+                _       <-
                   if snapshot.checkpoint.runId == runId then ZIO.unit
-                  else ZIO.fail(StateError.InvalidState(runId, s"Checkpoint ${checkpoint.step} has mismatched runId"))
-                checksum  = calculateChecksum(snapshot.state.toJson)
-                _        <-
+                  else
+                    ZIO.fail(
+                      StateError.InvalidState(runId, s"Checkpoint ${snapshot.checkpoint.step} has mismatched runId")
+                    )
+                checksum = calculateChecksum(snapshot.state.toJson)
+                _       <-
                   if checksum == snapshot.checkpoint.checksum then ZIO.unit
-                  else ZIO.fail(StateError.InvalidState(runId, s"Checkpoint ${checkpoint.step} checksum mismatch"))
+                  else
+                    ZIO.fail(
+                      StateError.InvalidState(runId, s"Checkpoint ${snapshot.checkpoint.step} checksum mismatch")
+                    )
               yield ()
             }
           }

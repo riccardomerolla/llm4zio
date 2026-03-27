@@ -11,11 +11,15 @@ import activity.entity.ActivityEvent
 import board.entity.*
 import conversation.entity.api.*
 import db.*
+import governance.control.{ GovernanceEvaluationContext, GovernancePolicyService, GovernanceTransitionDecision }
+import governance.entity.{ GovernanceGate, GovernancePolicy }
 import issues.entity.{ IssueEvent, IssueRepository }
 import llm4zio.core.*
 import llm4zio.providers.{ GeminiCliExecutor, HttpClient }
+import plan.entity.*
 import prompts.PromptLoader
-import shared.ids.Ids.BoardIssueId
+import shared.ids.Ids.{ BoardIssueId, IssueId, PlanId, SpecificationId }
+import specification.entity.*
 import workspace.entity.*
 
 object PlannerAgentServiceSpec extends ZIOSpecDefault:
@@ -156,6 +160,121 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
       ZLayer.fromZIO(Ref.make(Map.empty[String, Map[BoardIssueId, BoardIssue]]))
     val layer: ZLayer[Ref[Map[String, Map[BoardIssueId, BoardIssue]]], Nothing, BoardRepository] =
       ZLayer.fromFunction(RecordingBoardRepo.apply)
+
+  final case class InMemorySpecificationRepo(
+    histories: Ref[Map[SpecificationId, List[SpecificationEvent]]]
+  ) extends SpecificationRepository:
+    override def append(event: SpecificationEvent): IO[shared.errors.PersistenceError, Unit] =
+      histories.update { current =>
+        current.updated(event.specificationId, current.getOrElse(event.specificationId, Nil) :+ event)
+      }
+
+    override def get(id: SpecificationId): IO[shared.errors.PersistenceError, Specification] =
+      histories.get.flatMap { current =>
+        current.get(id) match
+          case Some(events) =>
+            ZIO
+              .fromEither(Specification.fromEvents(events))
+              .mapError(err => shared.errors.PersistenceError.SerializationFailed(s"specification:${id.value}", err))
+          case None         =>
+            ZIO.fail(shared.errors.PersistenceError.NotFound("specification", id.value))
+      }
+
+    override def history(id: SpecificationId): IO[shared.errors.PersistenceError, List[SpecificationEvent]] =
+      histories.get.map(_.getOrElse(id, Nil))
+
+    override def list: IO[shared.errors.PersistenceError, List[Specification]] =
+      histories.get.flatMap(current => ZIO.foreach(current.keys.toList)(get))
+
+    override def diff(
+      id: SpecificationId,
+      fromVersion: Int,
+      toVersion: Int,
+    ): IO[shared.errors.PersistenceError, SpecificationDiff] =
+      get(id).flatMap(spec =>
+        ZIO
+          .fromEither(Specification.diff(spec, fromVersion, toVersion))
+          .mapError(err => shared.errors.PersistenceError.QueryFailed("specification_diff", err))
+      )
+
+  object InMemorySpecificationRepo:
+    val refLayer: ULayer[Ref[Map[SpecificationId, List[SpecificationEvent]]]]                                =
+      ZLayer.fromZIO(Ref.make(Map.empty[SpecificationId, List[SpecificationEvent]]))
+    val layer: ZLayer[Ref[Map[SpecificationId, List[SpecificationEvent]]], Nothing, SpecificationRepository] =
+      ZLayer.fromFunction(InMemorySpecificationRepo.apply)
+
+  final case class InMemoryPlanRepo(histories: Ref[Map[PlanId, List[PlanEvent]]]) extends PlanRepository:
+    override def append(event: PlanEvent): IO[shared.errors.PersistenceError, Unit] =
+      histories.update(current => current.updated(event.planId, current.getOrElse(event.planId, Nil) :+ event))
+
+    override def get(id: PlanId): IO[shared.errors.PersistenceError, Plan] =
+      histories.get.flatMap { current =>
+        current.get(id) match
+          case Some(events) =>
+            ZIO
+              .fromEither(Plan.fromEvents(events))
+              .mapError(err => shared.errors.PersistenceError.SerializationFailed(s"plan:${id.value}", err))
+          case None         =>
+            ZIO.fail(shared.errors.PersistenceError.NotFound("plan", id.value))
+      }
+
+    override def history(id: PlanId): IO[shared.errors.PersistenceError, List[PlanEvent]] =
+      histories.get.map(_.getOrElse(id, Nil))
+
+    override def list: IO[shared.errors.PersistenceError, List[Plan]] =
+      histories.get.flatMap(current => ZIO.foreach(current.keys.toList)(get))
+
+  object InMemoryPlanRepo:
+    val refLayer: ULayer[Ref[Map[PlanId, List[PlanEvent]]]]                       =
+      ZLayer.fromZIO(Ref.make(Map.empty[PlanId, List[PlanEvent]]))
+    val layer: ZLayer[Ref[Map[PlanId, List[PlanEvent]]], Nothing, PlanRepository] =
+      ZLayer.fromFunction(InMemoryPlanRepo.apply)
+
+  private val noOpGovernancePolicyService: ULayer[GovernancePolicyService] =
+    ZLayer.succeed(new GovernancePolicyService:
+      override def resolvePolicyForWorkspace(workspaceId: String)
+        : IO[shared.errors.PersistenceError, GovernancePolicy] =
+        ZIO.succeed(GovernancePolicy.noOp)
+
+      override def evaluateForWorkspace(
+        workspaceId: String,
+        context: GovernanceEvaluationContext,
+      ): IO[shared.errors.PersistenceError, GovernanceTransitionDecision] =
+        ZIO.succeed(
+          GovernanceTransitionDecision(
+            allowed = true,
+            requiredGates = Set.empty,
+            missingGates = Set.empty,
+            humanApprovalRequired = false,
+            daemonTriggers = Nil,
+            escalationRules = Nil,
+            completionCriteria = None,
+            reason = None,
+          )
+        ))
+
+  private val blockingGovernancePolicyService: ULayer[GovernancePolicyService] =
+    ZLayer.succeed(new GovernancePolicyService:
+      override def resolvePolicyForWorkspace(workspaceId: String)
+        : IO[shared.errors.PersistenceError, GovernancePolicy] =
+        ZIO.succeed(GovernancePolicy.noOp)
+
+      override def evaluateForWorkspace(
+        workspaceId: String,
+        context: GovernanceEvaluationContext,
+      ): IO[shared.errors.PersistenceError, GovernanceTransitionDecision] =
+        ZIO.succeed(
+          GovernanceTransitionDecision(
+            allowed = false,
+            requiredGates = Set(GovernanceGate.PlanningReview),
+            missingGates = Set(GovernanceGate.PlanningReview),
+            humanApprovalRequired = false,
+            daemonTriggers = Nil,
+            escalationRules = Nil,
+            completionCriteria = None,
+            reason = Some("Missing required gates: PlanningReview"),
+          )
+        ))
 
   private val plannerStructuredResponseJson =
     """{"summary":"Generated plan","issues":[{"draftId":"issue-1","title":"Design data model","description":"Define planner data structures","issueType":"task","priority":"high","estimate":"M","requiredCapabilities":["scala","zio"],"dependencyDraftIds":[],"acceptanceCriteria":"Model compiles","promptTemplate":"Implement the data model","kaizenSkills":["task-planning"],"proofOfWorkRequirements":["tests pass","coverage > 80%"],"included":true},{"draftId":"issue-2","title":"Wire controller","description":"Expose planner routes","issueType":"task","priority":"medium","estimate":"S","requiredCapabilities":[],"dependencyDraftIds":["issue-1"],"acceptanceCriteria":"Routes are reachable","promptTemplate":"Wire the planner controller","kaizenSkills":[],"proofOfWorkRequirements":[],"included":false}]}"""
@@ -387,18 +506,24 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
     : ZLayer[
       Any,
       Nothing,
-      PlannerAgentService & ChatRepository & BoardRepository & Ref[Vector[IssueEvent]] &
-        Ref[Map[String, Map[BoardIssueId, BoardIssue]]] & Ref[Vector[llm4zio.providers.GeminiCliExecutionContext]],
+      PlannerAgentService & ChatRepository & BoardRepository & SpecificationRepository & Ref[Vector[IssueEvent]] &
+        Ref[Map[String, Map[BoardIssueId, BoardIssue]]] & Ref[Vector[llm4zio.providers.GeminiCliExecutionContext]] &
+        Ref[Map[SpecificationId, List[SpecificationEvent]]] & PlanRepository & Ref[Map[PlanId, List[PlanEvent]]],
     ] =
     ZLayer.make[
-      PlannerAgentService & ChatRepository & BoardRepository & Ref[Vector[IssueEvent]] &
-        Ref[Map[String, Map[BoardIssueId, BoardIssue]]] & Ref[Vector[llm4zio.providers.GeminiCliExecutionContext]]
+      PlannerAgentService & ChatRepository & BoardRepository & SpecificationRepository & Ref[Vector[IssueEvent]] &
+        Ref[Map[String, Map[BoardIssueId, BoardIssue]]] & Ref[Vector[llm4zio.providers.GeminiCliExecutionContext]] &
+        Ref[Map[SpecificationId, List[SpecificationEvent]]] & PlanRepository & Ref[Map[PlanId, List[PlanEvent]]]
     ](
       InMemoryChatRepo.layer,
       RecordingIssueRepo.refLayer,
       RecordingIssueRepo.layer,
       RecordingBoardRepo.refLayer,
       RecordingBoardRepo.layer,
+      InMemorySpecificationRepo.refLayer,
+      InMemorySpecificationRepo.layer,
+      InMemoryPlanRepo.refLayer,
+      InMemoryPlanRepo.layer,
       testWorkspaceRepository,
       testConfigRepository,
       noopActivityHub,
@@ -408,6 +533,7 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
       stubCliExecutorLayer,
       startupAiConfigLayer,
       PromptLoader.reloading,
+      noOpGovernancePolicyService,
       PlannerAgentService.live,
     )
 
@@ -418,6 +544,10 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
       RecordingIssueRepo.layer,
       RecordingBoardRepo.refLayer,
       RecordingBoardRepo.layer,
+      InMemorySpecificationRepo.refLayer,
+      InMemorySpecificationRepo.layer,
+      InMemoryPlanRepo.refLayer,
+      InMemoryPlanRepo.layer,
       testWorkspaceRepository,
       testConfigRepository,
       noopActivityHub,
@@ -426,6 +556,7 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
       stubCliExecutor,
       startupAiConfigLayer,
       PromptLoader.reloading,
+      noOpGovernancePolicyService,
       PlannerAgentService.live,
     )
 
@@ -443,6 +574,10 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
       RecordingIssueRepo.layer,
       RecordingBoardRepo.refLayer,
       RecordingBoardRepo.layer,
+      InMemorySpecificationRepo.refLayer,
+      InMemorySpecificationRepo.layer,
+      InMemoryPlanRepo.refLayer,
+      InMemoryPlanRepo.layer,
       testWorkspaceRepository,
       testConfigRepository,
       noopActivityHub,
@@ -452,6 +587,7 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
       stubCliExecutorLayer,
       startupAiConfigLayer,
       PromptLoader.reloading,
+      noOpGovernancePolicyService,
       PlannerAgentService.live,
     )
 
@@ -469,6 +605,10 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
       RecordingIssueRepo.layer,
       RecordingBoardRepo.refLayer,
       RecordingBoardRepo.layer,
+      InMemorySpecificationRepo.refLayer,
+      InMemorySpecificationRepo.layer,
+      InMemoryPlanRepo.refLayer,
+      InMemoryPlanRepo.layer,
       testWorkspaceRepository,
       testConfigRepository,
       noopActivityHub,
@@ -478,6 +618,7 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
       geminiStyleCliExecutorLayer,
       startupAiConfigLayer,
       PromptLoader.reloading,
+      noOpGovernancePolicyService,
       PlannerAgentService.live,
     )
 
@@ -495,6 +636,10 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
       RecordingIssueRepo.layer,
       RecordingBoardRepo.refLayer,
       RecordingBoardRepo.layer,
+      InMemorySpecificationRepo.refLayer,
+      InMemorySpecificationRepo.layer,
+      InMemoryPlanRepo.refLayer,
+      InMemoryPlanRepo.layer,
       testWorkspaceRepository,
       testConfigRepository,
       noopActivityHub,
@@ -504,6 +649,38 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
       plainTextCliExecutorLayer,
       startupAiConfigLayer,
       PromptLoader.reloading,
+      noOpGovernancePolicyService,
+      PlannerAgentService.live,
+    )
+
+  private val plannerLayerWithBlockingGovernance
+    : ZLayer[
+      Any,
+      Nothing,
+      PlannerAgentService & ChatRepository & PlanRepository,
+    ] =
+    ZLayer.make[
+      PlannerAgentService & ChatRepository & PlanRepository
+    ](
+      InMemoryChatRepo.layer,
+      RecordingIssueRepo.refLayer,
+      RecordingIssueRepo.layer,
+      RecordingBoardRepo.refLayer,
+      RecordingBoardRepo.layer,
+      InMemorySpecificationRepo.refLayer,
+      InMemorySpecificationRepo.layer,
+      InMemoryPlanRepo.refLayer,
+      InMemoryPlanRepo.layer,
+      testWorkspaceRepository,
+      testConfigRepository,
+      noopActivityHub,
+      testConfigResolver,
+      stubHttpClient,
+      cliContextRefLayer,
+      stubCliExecutorLayer,
+      startupAiConfigLayer,
+      PromptLoader.reloading,
+      blockingGovernancePolicyService,
       PlannerAgentService.live,
     )
 
@@ -521,16 +698,26 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
     suite("PlannerAgentServiceSpec")(
       test("startSession creates a planner conversation and preview") {
         for
-          service <- ZIO.service[PlannerAgentService]
-          chat    <- ZIO.service[ChatRepository]
-          start   <- service.startSession("Plan a new planner feature", Some("ws-1"))
-          state   <- awaitSettledPreview(service, start.conversationId)
-          conv    <- chat.getConversation(start.conversationId)
+          service  <- ZIO.service[PlannerAgentService]
+          chat     <- ZIO.service[ChatRepository]
+          specHist <- ZIO.service[Ref[Map[SpecificationId, List[SpecificationEvent]]]]
+          start    <- service.startSession("Plan a new planner feature", Some("ws-1"))
+          state    <- awaitSettledPreview(service, start.conversationId)
+          conv     <- chat.getConversation(start.conversationId)
+          history  <- state.specificationId match
+                        case Some(specId) => specHist.get.map(_.getOrElse(specId, Nil))
+                        case None         => ZIO.succeed(Nil)
         yield assertTrue(
           start.warning.isEmpty,
           conv.exists(_.title.startsWith("Planner:")),
           conv.flatMap(_.description).contains("planner-session|workspace:ws-1"),
           state.preview.issues.size == 2,
+          state.specificationId.isDefined,
+          history.exists {
+            case SpecificationEvent.Created(_, _, _, _, _, linkedPlanRef, _) =>
+              linkedPlanRef.contains(s"planner:${start.conversationId}")
+            case _                                                           => false
+          },
         )
       },
       test("planner Gemini CLI execution includes the selected workspace directory") {
@@ -593,7 +780,7 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
           boardRepo <- ZIO.service[BoardRepository]
           ref       <- ZIO.service[Ref[Vector[IssueEvent]]]
           start     <- service.startSession("Plan a new planner feature", Some("ws-1"))
-          _         <- awaitSettledPreview(service, start.conversationId)
+          state     <- awaitSettledPreview(service, start.conversationId)
           result    <- service.confirmPlan(start.conversationId)
           events    <- ref.get
           todo      <- boardRepo.listIssues(testWorkspace.localPath, BoardColumn.Todo)
@@ -603,6 +790,8 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
           todo.size == 1,
           todo.head.frontmatter.id.value == result.issueIds.head.value,
           todo.head.frontmatter.tags.contains("skill:task-planning"),
+          state.specificationId.exists(specId => todo.head.frontmatter.tags.contains(s"spec:${specId.value}")),
+          todo.head.frontmatter.tags.exists(_.startsWith("plan:")),
           todo.head.frontmatter.acceptanceCriteria.nonEmpty,
           todo.head.frontmatter.estimate.contains(IssueEstimate.M),
           todo.head.frontmatter.proofOfWork.nonEmpty,
@@ -613,7 +802,7 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
           service <- ZIO.service[PlannerAgentService]
           ref     <- ZIO.service[Ref[Vector[IssueEvent]]]
           start   <- service.startSession("Plan a new planner feature", None)
-          _       <- awaitSettledPreview(service, start.conversationId)
+          state   <- awaitSettledPreview(service, start.conversationId)
           result  <- service.confirmPlan(start.conversationId)
           events  <- ref.get
         yield assertTrue(
@@ -627,10 +816,130 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
           events.exists(_.isInstanceOf[IssueEvent.ProofOfWorkRequirementsUpdated]),
           events.exists(_.isInstanceOf[IssueEvent.MovedToTodo]),
           !events.exists(_.isInstanceOf[IssueEvent.WorkspaceLinked]),
+          state.specificationId.exists(specId =>
+            events.exists {
+              case IssueEvent.ExternalRefLinked(issueId, externalRef, externalUrl, _) =>
+                issueId == result.issueIds.head &&
+                externalRef == s"spec:${specId.value}" &&
+                externalUrl.contains(s"/specifications/${specId.value}")
+              case _                                                                  => false
+            }
+          ),
           events.exists {
             case IssueEvent.TagsUpdated(_, tags, _) => tags.contains("skill:task-planning")
             case _                                  => false
           },
+          events.exists {
+            case IssueEvent.TagsUpdated(_, tags, _) => tags.exists(_.startsWith("plan:"))
+            case _                                  => false
+          },
+        )
+      }.provideLayer(plannerLayer),
+      test("confirmPlan persists a plan and links the specification to it") {
+        for
+          service  <- ZIO.service[PlannerAgentService]
+          planRepo <- ZIO.service[PlanRepository]
+          specRepo <- ZIO.service[SpecificationRepository]
+          start    <- service.startSession("Plan a new planner feature", Some("ws-1"))
+          _        <- awaitSettledPreview(service, start.conversationId)
+          result   <- service.confirmPlan(start.conversationId)
+          plans    <- planRepo.list
+          plan     <- ZIO.fromOption(plans.headOption).orElseFail(new RuntimeException("expected persisted plan"))
+          spec     <- ZIO
+                        .fromOption(plan.specificationId)
+                        .orElseFail(new RuntimeException("expected specification id"))
+                        .flatMap(specRepo.get)
+        yield assertTrue(
+          result.issueIds.nonEmpty,
+          plans.size == 1,
+          plan.status == PlanStatus.Executing,
+          plan.linkedIssueIds == result.issueIds,
+          plan.versions.map(_.version) == List(1),
+          spec.linkedPlanRef.contains(s"plan:${plan.id.value}"),
+        )
+      }.provideLayer(plannerLayer),
+      test("reconfirming after preview changes revises the persisted plan without losing history") {
+        for
+          service  <- ZIO.service[PlannerAgentService]
+          planRepo <- ZIO.service[PlanRepository]
+          start    <- service.startSession("Plan a new planner feature", Some("ws-1"))
+          _        <- awaitSettledPreview(service, start.conversationId)
+          _        <- service.confirmPlan(start.conversationId)
+          _        <- service.updatePreview(
+                        start.conversationId,
+                        PlannerPlanPreview(
+                          summary = "Updated generated plan",
+                          issues = List(
+                            PlanTaskDraft(
+                              draftId = "issue-1",
+                              title = "Design data model",
+                              description = "Define planner data structures",
+                              issueType = "task",
+                              priority = "high",
+                              estimate = Some("M"),
+                              requiredCapabilities = List("scala", "zio"),
+                              acceptanceCriteria = "Model compiles",
+                              promptTemplate = "Implement the data model",
+                              kaizenSkills = List("task-planning"),
+                              proofOfWorkRequirements = List("tests pass", "coverage > 80%"),
+                            ),
+                            PlanTaskDraft(
+                              draftId = "issue-3",
+                              title = "Ship rollout",
+                              description = "Prepare rollout notes",
+                              issueType = "task",
+                              priority = "medium",
+                              dependencyDraftIds = List("issue-1"),
+                            ),
+                          ),
+                        ),
+                      )
+          _        <- service.confirmPlan(start.conversationId)
+          plans    <- planRepo.list
+          plan     <- ZIO.fromOption(plans.headOption).orElseFail(new RuntimeException("expected persisted plan"))
+        yield assertTrue(
+          plans.size == 1,
+          plan.version == 2,
+          plan.versions.map(_.version) == List(1, 2),
+          plan.summary == "Updated generated plan",
+          plan.drafts.exists(_.draftId == "issue-3"),
+        )
+      }.provideLayer(plannerLayer),
+      test("confirmPlan records blocked validation results when governance requires review") {
+        for
+          service  <- ZIO.service[PlannerAgentService]
+          planRepo <- ZIO.service[PlanRepository]
+          start    <- service.startSession("Plan a new planner feature", Some("ws-1"))
+          _        <- awaitSettledPreview(service, start.conversationId)
+          exit     <- service.confirmPlan(start.conversationId).exit
+          plans    <- planRepo.list
+          plan     <- ZIO.fromOption(plans.headOption).orElseFail(new RuntimeException("expected persisted plan"))
+        yield assertTrue(
+          exit.isFailure,
+          plan.status == PlanStatus.Draft,
+          plan.validation.exists(_.status == PlanValidationStatus.Blocked),
+          plan.validation.exists(_.missingGates.contains(GovernanceGate.PlanningReview)),
+        )
+      }.provideLayer(plannerLayerWithBlockingGovernance),
+      test("regenerating a changed preview revises the linked specification") {
+        for
+          service <- ZIO.service[PlannerAgentService]
+          start   <- service.startSession("Plan a new planner feature", Some("ws-1"))
+          state1  <- awaitSettledPreview(service, start.conversationId)
+          _       <- service.appendUserMessage(start.conversationId, "Also include rollout and migration notes")
+          state2  <- awaitSettledPreview(service, start.conversationId)
+          specId  <- ZIO
+                       .fromOption(state2.specificationId)
+                       .orElseFail(new RuntimeException("expected specification id"))
+          repo    <- ZIO.service[SpecificationRepository]
+          spec    <- repo.get(specId)
+          history <- repo.history(specId)
+        yield assertTrue(
+          state1.specificationId.contains(specId),
+          state2.specificationId.contains(specId),
+          spec.version >= 2,
+          spec.content.contains("migration notes"),
+          history.exists(_.isInstanceOf[SpecificationEvent.Revised]),
         )
       }.provideLayer(plannerLayer),
       test("updatePreview validates blank titles") {
@@ -640,7 +949,7 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
           _       <- awaitSettledPreview(service, start.conversationId)
           exit    <-
             service
-              .updatePreview(start.conversationId, PlannerPlanPreview("x", List(PlannerIssueDraft("i1", "", "desc"))))
+              .updatePreview(start.conversationId, PlannerPlanPreview("x", List(PlanTaskDraft("i1", "", "desc"))))
               .exit
         yield assertTrue(exit.isFailure)
       },
@@ -652,7 +961,7 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
           exit    <- service
                        .updatePreview(
                          start.conversationId,
-                         PlannerPlanPreview("x", List(PlannerIssueDraft("i1", "Title", "desc", estimate = Some("XXL")))),
+                         PlannerPlanPreview("x", List(PlanTaskDraft("i1", "Title", "desc", estimate = Some("XXL")))),
                        )
                        .exit
         yield assertTrue(exit.isFailure)

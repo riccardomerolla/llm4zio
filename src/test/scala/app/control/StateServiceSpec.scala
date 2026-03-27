@@ -350,6 +350,70 @@ object StateServiceSpec extends ZIOSpecDefault:
         }
       },
     ),
+    suite("checkpoint snapshot access")(
+      test("loads checkpoint snapshots in creation order") {
+        withTempStateDir { stateDir =>
+          val discovery = createTestState(currentStep = Steps.Discovery).copy(
+            artifacts = Map("summary" -> "discovery-ready")
+          )
+          val analysis  = createTestState(currentStep = Steps.Analysis, completedSteps = Set(Steps.Discovery)).copy(
+            artifacts = Map("summary" -> "analysis-ready")
+          )
+          for
+            _         <- StateService.saveState(discovery).provide(
+                           StateService.live(stateDir),
+                           FileService.live,
+                         )
+            _         <- StateService.createCheckpoint("test-run-001", Steps.Discovery).provide(
+                           StateService.live(stateDir),
+                           FileService.live,
+                         )
+            _         <- TestClock.adjust(1.second)
+            _         <- StateService.saveState(analysis).provide(
+                           StateService.live(stateDir),
+                           FileService.live,
+                         )
+            _         <- StateService.createCheckpoint("test-run-001", Steps.Analysis).provide(
+                           StateService.live(stateDir),
+                           FileService.live,
+                         )
+            snapshots <- StateService.listCheckpointSnapshots("test-run-001").provide(
+                           StateService.live(stateDir),
+                           FileService.live,
+                         )
+          yield assertTrue(
+            snapshots.map(_.checkpoint.step) == List(Steps.Discovery, Steps.Analysis),
+            snapshots.map(_.state.currentStep) == List(Steps.Discovery, Steps.Analysis),
+            snapshots.lastOption.exists(_.state.artifacts.get("summary").contains("analysis-ready")),
+          )
+        }
+      },
+      test("loads an individual checkpoint snapshot by step name") {
+        withTempStateDir { stateDir =>
+          val state = createTestState(currentStep = Steps.Analysis, completedSteps = Set(Steps.Discovery)).copy(
+            artifacts = Map("tests" -> "3 passed")
+          )
+          for
+            _        <- StateService.saveState(state).provide(
+                          StateService.live(stateDir),
+                          FileService.live,
+                        )
+            _        <- StateService.createCheckpoint("test-run-001", Steps.Analysis).provide(
+                          StateService.live(stateDir),
+                          FileService.live,
+                        )
+            snapshot <- StateService.getCheckpointSnapshot("test-run-001", Steps.Analysis).provide(
+                          StateService.live(stateDir),
+                          FileService.live,
+                        )
+          yield assertTrue(
+            snapshot.isDefined,
+            snapshot.exists(_.checkpoint.step == Steps.Analysis),
+            snapshot.exists(_.state.artifacts.get("tests").contains("3 passed")),
+          )
+        }
+      },
+    ),
     // ========================================================================
     // validateCheckpointIntegrity tests
     // ========================================================================

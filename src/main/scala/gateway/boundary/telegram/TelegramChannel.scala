@@ -6,6 +6,7 @@ import zio.stream.ZStream
 
 import _root_.config.entity.{ WorkflowDefinition, WorkflowGraph, WorkflowStepAgent }
 import db.*
+import decision.entity.{ DecisionEvent, DecisionFilter, DecisionRepository, DecisionStatus }
 import gateway.control.*
 import gateway.entity.{ GatewayMessageRole, MessageDirection, NormalizedMessage, SessionKey, SessionScopeStrategy }
 import orchestration.control.TaskExecutor
@@ -24,6 +25,7 @@ final case class TelegramChannel(
   workflowNotifier: WorkflowNotifier,
   taskRepository: Option[TaskRepository],
   taskExecutor: Option[TaskExecutor],
+  decisionRepository: Option[DecisionRepository],
   showMoreRef: Ref[Map[String, String]],
   sessionsRef: Ref[Set[SessionKey]],
   inboundQueue: Queue[NormalizedMessage],
@@ -263,38 +265,41 @@ final case class TelegramChannel(
     metadata: Map[String, String],
     now: java.time.Instant,
   ): IO[MessageChannelError, Option[NormalizedMessage]] =
-    CommandParser.parse(content) match
-      case Right(command)                         =>
-        (sendInlineControlsIfNeeded(message.chat.id, message.message_id, command) *>
+    if content.trim.equalsIgnoreCase("/decisions") then
+      handleDecisionCommand(message.chat.id, message.message_id).as(None)
+    else
+      CommandParser.parse(content) match
+        case Right(command)                         =>
+          (sendInlineControlsIfNeeded(message.chat.id, message.message_id, command) *>
+            workflowNotifier
+              .notifyCommand(
+                chatId = message.chat.id,
+                replyToMessageId = Some(message.message_id),
+                command = command,
+              ))
+            .catchAll(err => ZIO.logWarning(s"telegram command handling failed: $err"))
+            .as(None)
+        case Left(CommandParseError.NotACommand(_)) =>
+          val normalized = NormalizedMessage(
+            id = s"telegram:${update.update_id}:${message.message_id}",
+            channelName = name,
+            sessionKey = sessionKey,
+            direction = MessageDirection.Inbound,
+            role = GatewayMessageRole.User,
+            content = content,
+            metadata = metadata,
+            timestamp = now,
+          )
+          inboundQueue.offer(normalized).unit.as(Some(normalized))
+        case Left(parseError)                       =>
           workflowNotifier
-            .notifyCommand(
+            .notifyParseError(
               chatId = message.chat.id,
               replyToMessageId = Some(message.message_id),
-              command = command,
-            ))
-          .catchAll(err => ZIO.logWarning(s"telegram command handling failed: $err"))
-          .as(None)
-      case Left(CommandParseError.NotACommand(_)) =>
-        val normalized = NormalizedMessage(
-          id = s"telegram:${update.update_id}:${message.message_id}",
-          channelName = name,
-          sessionKey = sessionKey,
-          direction = MessageDirection.Inbound,
-          role = GatewayMessageRole.User,
-          content = content,
-          metadata = metadata,
-          timestamp = now,
-        )
-        inboundQueue.offer(normalized).unit.as(Some(normalized))
-      case Left(parseError)                       =>
-        workflowNotifier
-          .notifyParseError(
-            chatId = message.chat.id,
-            replyToMessageId = Some(message.message_id),
-            error = parseError,
-          )
-          .catchAll(err => ZIO.logWarning(s"telegram parse error notification failed: $err"))
-          .as(None)
+              error = parseError,
+            )
+            .catchAll(err => ZIO.logWarning(s"telegram parse error notification failed: $err"))
+            .as(None)
 
   private def handleCallbackQuery(
     update: TelegramUpdate,
@@ -315,6 +320,21 @@ final case class TelegramChannel(
                 replyToMessageId = message.message_id,
                 token = data.stripPrefix("more:").trim,
               )
+            else if data.startsWith("decision:") then
+              InlineKeyboards.parseDecisionCallbackData(data) match
+                case Left(error)   =>
+                  sendCallbackFeedback(
+                    chatId = message.chat.id,
+                    replyToMessageId = message.message_id,
+                    text = s"Invalid callback payload: $error",
+                    markup = None,
+                  )
+                case Right(action) =>
+                  routeDecisionCallbackAction(
+                    chatId = message.chat.id,
+                    replyToMessageId = message.message_id,
+                    action = action,
+                  )
             else
               InlineKeyboards.parseCallbackData(data) match
                 case Left(error)      =>
@@ -428,6 +448,82 @@ final case class TelegramChannel(
               markup = InlineKeyboards.taskStatusKeyboard(runId, run.status),
             )
         }
+
+  private def handleDecisionCommand(
+    chatId: Long,
+    replyToMessageId: Long,
+  ): IO[MessageChannelError, Unit] =
+    decisionRepository match
+      case None             =>
+        sendCallbackFeedback(
+          chatId = chatId,
+          replyToMessageId = replyToMessageId,
+          text = "Decision inbox is unavailable.",
+          markup = None,
+        )
+      case Some(repository) =>
+        repository
+          .list(DecisionFilter(statuses = Set(DecisionStatus.Pending), limit = 5))
+          .mapError(err => MessageChannelError.InvalidMessage(s"decision lookup failed: $err"))
+          .flatMap {
+            case Nil              =>
+              sendCallbackFeedback(
+                chatId = chatId,
+                replyToMessageId = replyToMessageId,
+                text = "No pending decisions.",
+                markup = None,
+              )
+            case decision :: tail =>
+              val remaining = if tail.isEmpty then "" else s"\n+${tail.size} more pending decision(s)."
+              sendCallbackFeedback(
+                chatId = chatId,
+                replyToMessageId = replyToMessageId,
+                text =
+                  s"Decision ${decision.id.value}\n${decision.title}\n${decision.context}\nStatus: ${decision.status}\nUrgency: ${decision.urgency}$remaining",
+                markup = Some(InlineKeyboards.decisionControls(decision.id.value)),
+              )
+          }
+
+  private def routeDecisionCallbackAction(
+    chatId: Long,
+    replyToMessageId: Long,
+    action: DecisionKeyboardAction,
+  ): IO[MessageChannelError, Unit] =
+    decisionRepository match
+      case None             =>
+        sendCallbackFeedback(
+          chatId = chatId,
+          replyToMessageId = replyToMessageId,
+          text = "Decision inbox is unavailable.",
+          markup = None,
+        )
+      case Some(repository) =>
+        val effect =
+          action.action match
+            case "escalate" =>
+              for
+                now <- Clock.instant
+                _   <- repository.append(
+                         DecisionEvent.Escalated(
+                           shared.ids.Ids.DecisionId(action.decisionId),
+                           "Escalated from Telegram",
+                           now,
+                         )
+                       )
+                out <- repository.get(shared.ids.Ids.DecisionId(action.decisionId))
+              yield out
+            case other      =>
+              ZIO.fail(MessageChannelError.InvalidMessage(s"Unsupported decision action: $other"))
+        effect
+          .mapError(err => MessageChannelError.InvalidMessage(s"decision action failed: $err"))
+          .flatMap(decision =>
+            sendCallbackFeedback(
+              chatId = chatId,
+              replyToMessageId = replyToMessageId,
+              text = s"Decision ${decision.id.value} is now ${decision.status.toString.toLowerCase}.",
+              markup = None,
+            )
+          )
 
   private def handleTaskAction(
     chatId: Long,
@@ -768,6 +864,7 @@ object TelegramChannel:
     workflowNotifier: WorkflowNotifier = WorkflowNotifier.noop,
     taskRepository: Option[TaskRepository] = None,
     taskExecutor: Option[TaskExecutor] = None,
+    decisionRepository: Option[DecisionRepository] = None,
     name: String = "telegram",
     scopeStrategy: SessionScopeStrategy = SessionScopeStrategy.PerConversation,
   ): UIO[TelegramChannel] =
@@ -777,6 +874,7 @@ object TelegramChannel:
       workflowNotifier = workflowNotifier,
       taskRepository = taskRepository,
       taskExecutor = taskExecutor,
+      decisionRepository = decisionRepository,
       name = name,
       scopeStrategy = scopeStrategy,
     )
@@ -787,6 +885,7 @@ object TelegramChannel:
     workflowNotifier: WorkflowNotifier,
     taskRepository: Option[TaskRepository],
     taskExecutor: Option[TaskExecutor],
+    decisionRepository: Option[DecisionRepository],
     name: String,
     scopeStrategy: SessionScopeStrategy,
   ): UIO[TelegramChannel] =
@@ -804,6 +903,7 @@ object TelegramChannel:
       workflowNotifier = workflowNotifier,
       taskRepository = taskRepository,
       taskExecutor = taskExecutor,
+      decisionRepository = decisionRepository,
       showMoreRef = showMore,
       sessionsRef = sessions,
       inboundQueue = inbound,
@@ -822,6 +922,7 @@ object TelegramChannel:
                      workflowNotifier = WorkflowNotifier.noop,
                      taskRepository = None,
                      taskExecutor = None,
+                     decisionRepository = None,
                      name = "telegram",
                      scopeStrategy = SessionScopeStrategy.PerConversation,
                    )

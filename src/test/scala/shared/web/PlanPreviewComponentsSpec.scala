@@ -2,7 +2,8 @@ package shared.web
 
 import zio.test.*
 
-import orchestration.control.{ PlannerIssueDraft, PlannerPlanPreview, PlannerPreviewState }
+import orchestration.control.{ PlannerPlanPreview, PlannerPreviewState }
+import plan.entity.PlanTaskDraft
 
 object PlanPreviewComponentsSpec extends ZIOSpecDefault:
 
@@ -12,13 +13,13 @@ object PlanPreviewComponentsSpec extends ZIOSpecDefault:
     preview = PlannerPlanPreview(
       summary = "Ship planner improvements",
       issues = List(
-        PlannerIssueDraft(
+        PlanTaskDraft(
           draftId = "issue-1",
           title = "Model",
           description = "Create the model",
           estimate = Some("M"),
         ),
-        PlannerIssueDraft(
+        PlanTaskDraft(
           draftId = "issue-2",
           title = "UI",
           description = "Create the UI",
@@ -85,7 +86,7 @@ object PlanPreviewComponentsSpec extends ZIOSpecDefault:
       },
       test("planGraph sanitizes mermaid node labels and ids") {
         val drafts = List(
-          PlannerIssueDraft(
+          PlanTaskDraft(
             draftId = "issue:one\nraw",
             title = "Create `get_greeting(name: &str,\nlang: &str) -> String` in src/main.rs [core]",
             description = "desc",

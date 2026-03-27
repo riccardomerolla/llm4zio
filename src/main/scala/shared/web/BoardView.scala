@@ -157,9 +157,9 @@ object BoardView:
       div(cls := "mt-2 flex items-center justify-end gap-2")(
         if column == BoardColumn.Review && issue.frontmatter.branchName.exists(_.nonEmpty) then
           form(
-            method          := "post",
-            action          := s"/board/$workspaceId/issues/${issue.frontmatter.id.value}/approve",
-            attr("hx-post") := s"/board/$workspaceId/issues/${issue.frontmatter.id.value}/approve",
+            method            := "post",
+            action            := s"/board/$workspaceId/issues/${issue.frontmatter.id.value}/approve",
+            attr("hx-post")   := s"/board/$workspaceId/issues/${issue.frontmatter.id.value}/approve",
             attr("hx-target") := "#fs-board-root",
             attr("hx-swap")   := "innerHTML",
           )(

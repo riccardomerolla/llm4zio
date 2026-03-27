@@ -11,6 +11,8 @@ sealed trait PoolError derives CanEqual
 
 object PoolError:
   final case class AgentNotFound(agentName: String)                     extends PoolError
+  final case class AgentPaused(agentName: String, reason: String)       extends PoolError
+  final case class CostLimitExceeded(agentName: String, limit: Long)    extends PoolError
   final case class InvalidCapacity(agentName: String, value: String)    extends PoolError
   final case class PersistenceFailure(operation: String, cause: String) extends PoolError
 
@@ -25,6 +27,8 @@ trait AgentPoolManager:
   def releaseSlot(handle: SlotHandle): UIO[Unit]
   def availableSlots(agentName: String): UIO[Int]
   def resize(agentName: String, newMax: Int): UIO[Unit]
+  def recordTokenUsage(agentName: String, deltaTokens: Long): IO[PoolError, Unit] = ZIO.unit
+  def isPaused(agentName: String): UIO[Boolean]                                   = ZIO.succeed(false)
 
 object AgentPoolManager:
   def configKey(agentName: String): String =
@@ -42,6 +46,12 @@ object AgentPoolManager:
   def resize(agentName: String, newMax: Int): ZIO[AgentPoolManager, Nothing, Unit] =
     ZIO.serviceWithZIO[AgentPoolManager](_.resize(agentName, newMax))
 
+  def recordTokenUsage(agentName: String, deltaTokens: Long): ZIO[AgentPoolManager, PoolError, Unit] =
+    ZIO.serviceWithZIO[AgentPoolManager](_.recordTokenUsage(agentName, deltaTokens))
+
+  def isPaused(agentName: String): ZIO[AgentPoolManager, Nothing, Boolean] =
+    ZIO.serviceWithZIO[AgentPoolManager](_.isPaused(agentName))
+
   val live: ZLayer[ConfigRepository & AgentRepository, Nothing, AgentPoolManager] =
     ZLayer.fromZIO {
       for
@@ -49,7 +59,9 @@ object AgentPoolManager:
         agentRepository  <- ZIO.service[AgentRepository]
         pools            <- Ref.Synchronized.make(Map.empty[String, AgentPoolState])
         acquired         <- Ref.Synchronized.make(Map.empty[String, String])
-      yield AgentPoolManagerLive(configRepository, agentRepository, pools, acquired)
+        tokenUsage       <- Ref.Synchronized.make(Map.empty[String, Long])
+        paused           <- Ref.Synchronized.make(Map.empty[String, String])
+      yield AgentPoolManagerLive(configRepository, agentRepository, pools, acquired, tokenUsage, paused)
     }
 
   private[orchestration] def normalize(agentName: String): String =
@@ -67,10 +79,17 @@ final private case class AgentPoolManagerLive(
   agentRepository: AgentRepository,
   pools: Ref.Synchronized[Map[String, AgentPoolState]],
   acquiredHandles: Ref.Synchronized[Map[String, String]],
+  tokenUsage: Ref.Synchronized[Map[String, Long]],
+  pausedAgents: Ref.Synchronized[Map[String, String]],
 ) extends AgentPoolManager:
 
   override def acquireSlot(agentName: String): IO[PoolError, SlotHandle] =
     for
+      _      <- pausedAgents.get.flatMap { paused =>
+                  paused.get(AgentPoolManager.normalize(agentName)) match
+                    case Some(reason) => ZIO.fail(PoolError.AgentPaused(agentName.trim, reason))
+                    case None         => ZIO.unit
+                }
       state  <- getOrCreatePool(agentName)
       target <- resolveConfiguredMax(agentName)
       _      <- resizeState(state, target)
@@ -128,6 +147,32 @@ final private case class AgentPoolManagerLive(
         .flatMap(resizeState(_, newMax))
         .catchAll(err => ZIO.logWarning(s"Failed to resize agent pool for ${agentName.trim}: $err"))
 
+  override def recordTokenUsage(agentName: String, deltaTokens: Long): IO[PoolError, Unit] =
+    if deltaTokens <= 0 then ZIO.unit
+    else
+      for
+        limitOpt  <- resolveTokenLimit(agentName)
+        normalized = AgentPoolManager.normalize(agentName)
+        total     <- tokenUsage.modify { usage =>
+                       val nextTotal = usage.getOrElse(normalized, 0L) + deltaTokens
+                       (nextTotal, usage.updated(normalized, nextTotal))
+                     }
+        _         <- limitOpt match
+                       case Some(limit) if total > limit =>
+                         pausedAgents
+                           .update(
+                             _.updated(
+                               normalized,
+                               s"Token budget exceeded: $total > $limit",
+                             )
+                           ) *> ZIO.fail(PoolError.CostLimitExceeded(agentName.trim, limit))
+                       case _                            =>
+                         ZIO.unit
+      yield ()
+
+  override def isPaused(agentName: String): UIO[Boolean] =
+    pausedAgents.get.map(_.contains(AgentPoolManager.normalize(agentName)))
+
   private def getOrCreatePool(agentName: String): IO[PoolError, AgentPoolState] =
     getOrCreatePoolFrom(agentName, resolveConfiguredMax(agentName))
 
@@ -179,6 +224,15 @@ final private case class AgentPoolManagerLive(
                    case None      =>
                      validatePositive(agent.name, agent.maxConcurrentRuns.toString, agent.maxConcurrentRuns)
     yield max
+
+  private def resolveTokenLimit(agentName: String): IO[PoolError, Option[Long]] =
+    agentRepository
+      .findByName(agentName)
+      .mapError(err => PoolError.PersistenceFailure("find_agent_for_token_limit", err.toString))
+      .flatMap {
+        case Some(agent) => ZIO.succeed(agent.permissions.resources.maxEstimatedTokens.filter(_ > 0))
+        case None        => ZIO.fail(PoolError.AgentNotFound(agentName.trim))
+      }
 
   private def parsePositiveInt(agentName: String, rawValue: String): IO[PoolError, Int] =
     rawValue.trim.toIntOption match

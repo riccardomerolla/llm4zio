@@ -18,6 +18,19 @@ object RunMode:
     network: Option[String] = None,
   ) extends RunMode
 
+  /** Run the agent in a remote cloud container.
+    *
+    * The concrete provider implementation is intentionally deferred; the config exists so runtime selection and
+    * serialization can be wired end-to-end before provider-specific provisioning is added.
+    */
+  final case class Cloud(
+    provider: String,
+    image: String,
+    region: Option[String] = None,
+    extraArgs: List[String] = List.empty,
+    network: Option[String] = None,
+  ) extends RunMode
+
 sealed trait RunStatus derives JsonCodec, Schema
 object RunStatus:
   case object Pending                            extends RunStatus
@@ -290,6 +303,8 @@ enum WorkspaceError:
   case RunTimeout(runId: String)
   case PersistenceFailure(cause: Throwable)
   case DockerNotAvailable(reason: String)
+  case PermissionDenied(subject: String, reason: String)
+  case CostLimitExceeded(agentName: String, limit: Long)
   case InvalidRunState(runId: String, expected: String, actual: String)
   case ControllerConflict(runId: String, controller: String, requestedBy: String)
   case InteractiveProcessUnavailable(runId: String)

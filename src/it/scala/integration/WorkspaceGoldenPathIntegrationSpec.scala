@@ -21,6 +21,8 @@ import shared.ids.Ids.BoardIssueId
 import workspace.control.{ AssignRunRequest, GitServiceLive, WorkspaceRunService }
 import workspace.entity.*
 
+import IntegrationFixtures.NoOpGovernancePolicyService
+
 /** Integration test for the gateway workspace golden path.
   *
   * Tests the end-to-end flow without real AI providers by mocking [[LlmService]], [[WorkspaceRunService]], and
@@ -267,6 +269,7 @@ object WorkspaceGoldenPathIntegrationSpec extends ZIOSpecDefault:
                              workspaceRepository = wsRepo,
                              gitService = git,
                              activityHub = hub,
+                             governancePolicyService = NoOpGovernancePolicyService,
                            )
 
             // ── Phase 1: Init board structure ──────────────────────────────────
@@ -299,6 +302,7 @@ object WorkspaceGoldenPathIntegrationSpec extends ZIOSpecDefault:
                            success = true,
                            details = "greet(name: String) implemented with unit tests",
                          )
+            _         <- orchestrator.approveIssue(workspacePath, greetingId)
 
             board2    <- boardRepo.readBoard(workspacePath)
             doneAfter1 = board2.columns.getOrElse(BoardColumn.Done, Nil)
@@ -315,6 +319,7 @@ object WorkspaceGoldenPathIntegrationSpec extends ZIOSpecDefault:
                            success = true,
                            details = "greet(name: String, language: String) implemented with unit tests",
                          )
+            _         <- orchestrator.approveIssue(workspacePath, languageId)
 
             // ── Phase 7: Collect final state for assertions ────────────────────
             boardFinal <- boardRepo.readBoard(workspacePath)

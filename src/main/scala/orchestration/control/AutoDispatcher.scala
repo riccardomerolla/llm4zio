@@ -7,6 +7,8 @@ import activity.entity.{ ActivityEvent, ActivityEventType }
 import agent.control.{ AgentMatchResult, AgentMatching }
 import agent.entity.{ Agent, AgentRepository }
 import db.ConfigRepository
+import governance.control.{ GovernanceEvaluationContext, GovernancePolicyService }
+import governance.entity.{ GovernanceLifecycleAction, GovernanceLifecycleStage, GovernanceTransition }
 import issues.entity.{ AgentIssue, IssueEvent, IssueRepository, IssueState }
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ AgentId, EventId, TaskRunId }
@@ -27,7 +29,7 @@ object AutoDispatcher:
   val live
     : ZLayer[
       ConfigRepository & IssueRepository & DependencyResolver & AgentRepository & WorkspaceRepository &
-        WorkspaceRunService & ActivityHub & AgentPoolManager,
+        WorkspaceRunService & ActivityHub & AgentPoolManager & GovernancePolicyService,
       Nothing,
       AutoDispatcher,
     ] =
@@ -41,6 +43,7 @@ object AutoDispatcher:
         workspaceRunService <- ZIO.service[WorkspaceRunService]
         activityHub         <- ZIO.service[ActivityHub]
         agentPoolManager    <- ZIO.service[AgentPoolManager]
+        governancePolicy    <- ZIO.service[GovernancePolicyService]
         service              =
           AutoDispatcherLive(
             configRepository = configRepository,
@@ -51,6 +54,7 @@ object AutoDispatcher:
             workspaceRunService = workspaceRunService,
             activityHub = activityHub,
             agentPoolManager = agentPoolManager,
+            governancePolicyService = governancePolicy,
           )
         _                   <- service.run.forever.forkScoped
       yield service
@@ -65,6 +69,7 @@ final case class AutoDispatcherLive(
   workspaceRunService: WorkspaceRunService,
   activityHub: ActivityHub,
   agentPoolManager: AgentPoolManager,
+  governancePolicyService: GovernancePolicyService,
 ) extends AutoDispatcher:
 
   override def dispatchOnce: IO[PersistenceError, Int] =
@@ -122,11 +127,16 @@ final case class AutoDispatcherLive(
       case None              =>
         ZIO.logDebug(s"Skipping auto-dispatch for issue ${issue.id.value}: no workspace linked").as(None)
       case Some(workspaceId) =>
-        selectAgent(agents, issue, activeRuns).flatMap {
-          case None         =>
-            ZIO.logDebug(s"Skipping auto-dispatch for issue ${issue.id.value}: no agent match available").as(None)
-          case Some(result) =>
-            acquireAndDispatch(issue, workspaceId, result.agent.name)
+        governanceAllowsDispatch(issue, workspaceId).flatMap {
+          case false =>
+            ZIO.logDebug(s"Skipping auto-dispatch for issue ${issue.id.value}: blocked by governance").as(None)
+          case true  =>
+            selectAgent(agents, issue, activeRuns).flatMap {
+              case None         =>
+                ZIO.logDebug(s"Skipping auto-dispatch for issue ${issue.id.value}: no agent match available").as(None)
+              case Some(result) =>
+                acquireAndDispatch(issue, workspaceId, result.agent.name)
+            }
         }
 
   private def selectAgent(
@@ -139,6 +149,38 @@ final case class AutoDispatcherLive(
         agentPoolManager.availableSlots(candidate.agent.name).map(available => candidate -> available)
       }
       .map(_.collectFirst { case (candidate, available) if available > 0 => candidate })
+
+  private def governanceAllowsDispatch(issue: AgentIssue, workspaceId: String): IO[PersistenceError, Boolean] =
+    val currentStage = issue.state match
+      case _: IssueState.Backlog     => GovernanceLifecycleStage.Backlog
+      case _: IssueState.Todo        => GovernanceLifecycleStage.Todo
+      case _: IssueState.HumanReview => GovernanceLifecycleStage.HumanReview
+      case _: IssueState.Rework      => GovernanceLifecycleStage.Rework
+      case _: IssueState.Merging     => GovernanceLifecycleStage.Merging
+      case _: IssueState.Done        => GovernanceLifecycleStage.Done
+      case _                         => GovernanceLifecycleStage.Todo
+
+    governancePolicyService
+      .evaluateForWorkspace(
+        workspaceId,
+        GovernanceEvaluationContext(
+          issueType = issue.issueType,
+          transition = GovernanceTransition(
+            from = currentStage,
+            to = GovernanceLifecycleStage.InProgress,
+            action = GovernanceLifecycleAction.Dispatch,
+          ),
+          tags = issue.tags.toSet,
+        ),
+      )
+      .tap(decision =>
+        ZIO.when(!decision.allowed)(
+          ZIO.logDebug(
+            s"Governance blocked auto-dispatch for issue ${issue.id.value}: ${decision.reason.getOrElse("policy denied transition")}"
+          )
+        )
+      )
+      .map(_.allowed)
 
   private def acquireAndDispatch(
     issue: AgentIssue,
@@ -293,9 +335,13 @@ final case class AutoDispatcherLive(
 
   private def poolErrorToPersistence(error: PoolError): PersistenceError =
     error match
-      case PoolError.AgentNotFound(agentName)         =>
+      case PoolError.AgentNotFound(agentName)            =>
         PersistenceError.NotFound("agent_pool_agent", agentName)
-      case PoolError.InvalidCapacity(agentName, raw)  =>
+      case PoolError.AgentPaused(agentName, reason)      =>
+        PersistenceError.QueryFailed("agent_pool_paused", s"$agentName -> $reason")
+      case PoolError.CostLimitExceeded(agentName, limit) =>
+        PersistenceError.QueryFailed("agent_pool_cost_limit", s"$agentName -> $limit")
+      case PoolError.InvalidCapacity(agentName, raw)     =>
         PersistenceError.QueryFailed("agent_pool_capacity", s"$agentName -> $raw")
-      case PoolError.PersistenceFailure(operation, e) =>
+      case PoolError.PersistenceFailure(operation, e)    =>
         PersistenceError.QueryFailed(operation, e.toString)

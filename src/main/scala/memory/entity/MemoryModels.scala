@@ -34,10 +34,27 @@ object SessionId:
 
 opaque type MemoryKind = String
 object MemoryKind:
-  val Preference: MemoryKind = "Preference"
-  val Fact: MemoryKind       = "Fact"
-  val Context: MemoryKind    = "Context"
-  val Summary: MemoryKind    = "Summary"
+  val Preference: MemoryKind             = "Preference"
+  val Fact: MemoryKind                   = "Fact"
+  val Context: MemoryKind                = "Context"
+  val Summary: MemoryKind                = "Summary"
+  val Decision: MemoryKind               = "Decision"
+  val ArchitecturalRationale: MemoryKind = "ArchitecturalRationale"
+  val DesignConstraint: MemoryKind       = "DesignConstraint"
+  val LessonsLearned: MemoryKind         = "LessonsLearned"
+  val SystemUnderstanding: MemoryKind    = "SystemUnderstanding"
+
+  val all: List[MemoryKind] = List(
+    Preference,
+    Fact,
+    Context,
+    Summary,
+    Decision,
+    ArchitecturalRationale,
+    DesignConstraint,
+    LessonsLearned,
+    SystemUnderstanding,
+  )
 
   def apply(value: String): MemoryKind = value
 

@@ -17,6 +17,8 @@ import board.control.BoardOrchestrator
 import board.entity.*
 import conversation.entity.api.{ ChatConversation, ConversationEntry, SessionContextLink }
 import db.*
+import decision.control.DecisionInbox
+import decision.entity.{ Decision, DecisionFilter, DecisionResolutionKind }
 import issues.boundary.IssueControllerLive
 import issues.entity.*
 import issues.entity.api.AutoAssignIssueResponse
@@ -240,6 +242,34 @@ object IssueControllerSpec extends ZIOSpecDefault:
     ): IO[SharedPersistenceError, Map[IssueId, issues.entity.api.DispatchStatusResponse]] =
       ZIO.succeed(Map.empty)
 
+  private object StubDecisionInbox extends DecisionInbox:
+    override def openIssueReviewDecision(issue: AgentIssue): IO[SharedPersistenceError, Decision]              =
+      ZIO.dieMessage("unused")
+    override def resolve(
+      id: shared.ids.Ids.DecisionId,
+      resolutionKind: DecisionResolutionKind,
+      actor: String,
+      summary: String,
+    ): IO[SharedPersistenceError, Decision] = ZIO.dieMessage("unused")
+    override def syncOpenIssueReviewDecision(
+      issueId: IssueId,
+      resolutionKind: DecisionResolutionKind,
+      actor: String,
+      summary: String,
+    ): IO[SharedPersistenceError, Option[Decision]] = ZIO.none
+    override def resolveOpenIssueReviewDecision(
+      issueId: IssueId,
+      resolutionKind: DecisionResolutionKind,
+      actor: String,
+      summary: String,
+    ): IO[SharedPersistenceError, Option[Decision]] = ZIO.none
+    override def escalate(id: shared.ids.Ids.DecisionId, reason: String): IO[SharedPersistenceError, Decision] =
+      ZIO.dieMessage("unused")
+    override def get(id: shared.ids.Ids.DecisionId): IO[SharedPersistenceError, Decision]                      =
+      ZIO.dieMessage("unused")
+    override def list(filter: DecisionFilter): IO[SharedPersistenceError, List[Decision]]                      = ZIO.succeed(Nil)
+    override def runMaintenance(now: Instant): IO[SharedPersistenceError, List[Decision]]                      = ZIO.succeed(Nil)
+
   private object StubBoardOrchestrator extends BoardOrchestrator:
     override def dispatchCycle(workspacePath: String): IO[BoardError, board.control.DispatchResult]                 =
       ZIO.succeed(board.control.DispatchResult(Nil, Nil))
@@ -358,6 +388,7 @@ object IssueControllerSpec extends ZIOSpecDefault:
           issueDispatchStatusService = StubDispatchStatusService,
           boardOrchestrator = StubBoardOrchestrator,
           boardRepository = StubBoardRepository,
+          decisionInbox = StubDecisionInbox,
           analysisRepository = StubAnalysisRepository,
           issueWorkReportProjection = StubWorkReportProjection,
         ).routes

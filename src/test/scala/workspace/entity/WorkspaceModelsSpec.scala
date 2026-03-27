@@ -25,6 +25,15 @@ object WorkspaceModelsSpec extends ZIOSpecDefault:
       val mode: RunMode = RunMode.Docker(image = "gemini:latest")
       assertTrue(mode.toJson.fromJson[RunMode] == Right(mode))
     },
+    test("RunMode.Cloud round-trips through JSON with optional fields") {
+      val mode: RunMode = RunMode.Cloud(
+        provider = "aws-fargate",
+        image = "ghcr.io/riccardomerolla/llm4zio-agent:latest",
+        region = Some("eu-west-1"),
+        network = Some("none"),
+      )
+      assertTrue(mode.toJson.fromJson[RunMode] == Right(mode))
+    },
     test("Workspace round-trips through JSON") {
       val ws      = Workspace(
         id = "ws-1",
@@ -52,6 +61,28 @@ object WorkspaceModelsSpec extends ZIOSpecDefault:
         enabled = true,
         runMode = RunMode.Docker(image = "ghcr.io/opencode-ai/opencode:latest", network = Some("none")),
         cliTool = "opencode",
+        createdAt = Instant.parse("2026-02-24T10:00:00Z"),
+        updatedAt = Instant.parse("2026-02-24T10:00:00Z"),
+      )
+      val json    = ws.toJson
+      val decoded = json.fromJson[Workspace]
+      assertTrue(decoded == Right(ws))
+    },
+    test("Workspace with RunMode.Cloud round-trips through JSON") {
+      val ws      = Workspace(
+        id = "ws-cloud",
+        name = "remote-api",
+        localPath = "/home/user/projects/remote-api",
+        defaultAgent = Some("codex"),
+        description = Some("cloud execution"),
+        enabled = true,
+        runMode = RunMode.Cloud(
+          provider = "aws-fargate",
+          image = "ghcr.io/riccardomerolla/llm4zio-agent:latest",
+          region = Some("eu-west-1"),
+          network = Some("none"),
+        ),
+        cliTool = "codex",
         createdAt = Instant.parse("2026-02-24T10:00:00Z"),
         updatedAt = Instant.parse("2026-02-24T10:00:00Z"),
       )

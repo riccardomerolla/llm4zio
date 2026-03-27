@@ -175,6 +175,18 @@ object ActivityView:
         "bg-red-500/10 text-red-400",
         "M12 3.75 21 20.25H3L12 3.75Zm0 5.25v4.5m0 3h.008v.008H12v-.008Z",
       )
+    case "DaemonStarted"     =>
+      (
+        "bg-cyan-500/10 text-cyan-400",
+        "M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347a1.125 1.125 0 0 1-1.667-.986V5.653Z",
+      )
+    case "DaemonCompleted"   =>
+      ("bg-emerald-500/10 text-emerald-400", "M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z")
+    case "DaemonFailed"      =>
+      (
+        "bg-rose-500/10 text-rose-400",
+        "M12 9v3.75m0 3.75h.007v.008H12v-.008ZM21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z",
+      )
     case _                   =>
       (
         "bg-slate-500/10 text-slate-400",
@@ -193,6 +205,9 @@ object ActivityView:
     case "AnalysisCompleted" => "Analysis Completed"
     case "AnalysisFailed"    => "Analysis Failed"
     case "MergeConflict"     => "Merge Conflict"
+    case "DaemonStarted"     => "Daemon Started"
+    case "DaemonCompleted"   => "Daemon Completed"
+    case "DaemonFailed"      => "Daemon Failed"
     case _                   => "Unknown Event"
 
   private def toDbEventType(eventType: ActivityEventType): String = eventTypeName(eventType) match
@@ -207,6 +222,9 @@ object ActivityView:
     case "AnalysisCompleted" => "analysis_completed"
     case "AnalysisFailed"    => "analysis_failed"
     case "MergeConflict"     => "merge_conflict"
+    case "DaemonStarted"     => "daemon_started"
+    case "DaemonCompleted"   => "daemon_completed"
+    case "DaemonFailed"      => "daemon_failed"
     case _                   => "unknown"
 
   private def eventTypeName(eventType: ActivityEventType): String =

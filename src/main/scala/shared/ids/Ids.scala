@@ -97,6 +97,83 @@ object Ids:
     given JsonCodec[WorkflowId] = JsonCodec.string.transform(WorkflowId.apply, _.value)
     given Schema[WorkflowId]    = stringSchema.transform(WorkflowId.apply, _.value)
 
+  opaque type GovernancePolicyId = String
+  object GovernancePolicyId:
+    def apply(value: String): GovernancePolicyId = value
+    def generate: GovernancePolicyId             = randomId()
+
+    extension (id: GovernancePolicyId)
+      def value: String = id
+
+    given JsonCodec[GovernancePolicyId] = JsonCodec.string.transform(GovernancePolicyId.apply, _.value)
+    given Schema[GovernancePolicyId]    = stringSchema.transform(GovernancePolicyId.apply, _.value)
+
+  opaque type SpecificationId = String
+  object SpecificationId:
+    def apply(value: String): SpecificationId = value
+    def generate: SpecificationId             = randomId()
+
+    extension (id: SpecificationId)
+      def value: String = id
+
+    given JsonCodec[SpecificationId] = JsonCodec.string.transform(SpecificationId.apply, _.value)
+    given Schema[SpecificationId]    = stringSchema.transform(SpecificationId.apply, _.value)
+
+  opaque type PlanId = String
+  object PlanId:
+    def apply(value: String): PlanId = value
+    def generate: PlanId             = randomId()
+
+    extension (id: PlanId)
+      def value: String = id
+
+    given JsonCodec[PlanId] = JsonCodec.string.transform(PlanId.apply, _.value)
+    given Schema[PlanId]    = stringSchema.transform(PlanId.apply, _.value)
+
+  opaque type DecisionId = String
+  object DecisionId:
+    def apply(value: String): DecisionId = value
+    def generate: DecisionId             = randomId()
+
+    extension (id: DecisionId)
+      def value: String = id
+
+    given JsonCodec[DecisionId] = JsonCodec.string.transform(DecisionId.apply, _.value)
+    given Schema[DecisionId]    = stringSchema.transform(DecisionId.apply, _.value)
+
+  opaque type DecisionLogId = String
+  object DecisionLogId:
+    def apply(value: String): DecisionLogId = value
+    def generate: DecisionLogId             = randomId()
+
+    extension (id: DecisionLogId)
+      def value: String = id
+
+    given JsonCodec[DecisionLogId] = JsonCodec.string.transform(DecisionLogId.apply, _.value)
+    given Schema[DecisionLogId]    = stringSchema.transform(DecisionLogId.apply, _.value)
+
+  opaque type EvolutionProposalId = String
+  object EvolutionProposalId:
+    def apply(value: String): EvolutionProposalId = value
+    def generate: EvolutionProposalId             = randomId()
+
+    extension (id: EvolutionProposalId)
+      def value: String = id
+
+    given JsonCodec[EvolutionProposalId] = JsonCodec.string.transform(EvolutionProposalId.apply, _.value)
+    given Schema[EvolutionProposalId]    = stringSchema.transform(EvolutionProposalId.apply, _.value)
+
+  opaque type DaemonAgentSpecId = String
+  object DaemonAgentSpecId:
+    def apply(value: String): DaemonAgentSpecId = value
+    def generate: DaemonAgentSpecId             = randomId()
+
+    extension (id: DaemonAgentSpecId)
+      def value: String = id
+
+    given JsonCodec[DaemonAgentSpecId] = JsonCodec.string.transform(DaemonAgentSpecId.apply, _.value)
+    given Schema[DaemonAgentSpecId]    = stringSchema.transform(DaemonAgentSpecId.apply, _.value)
+
   opaque type AgentId = String
   object AgentId:
     def apply(value: String): AgentId = value

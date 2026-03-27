@@ -9,9 +9,11 @@ import activity.control.ActivityHub
 import activity.entity.ActivityEvent
 import agent.entity.{ Agent, AgentRepository }
 import db.{ ConfigRepository, CustomAgentRow, PersistenceError as DbPersistenceError, SettingRow, WorkflowRow }
+import governance.control.{ GovernanceEvaluationContext, GovernancePolicyService, GovernanceTransitionDecision }
+import governance.entity.*
 import issues.entity.{ AgentIssue, IssueEvent, IssueFilter, IssueRepository, IssueState }
 import shared.errors.PersistenceError
-import shared.ids.Ids.{ AgentId, ConversationId, IssueId, TaskRunId }
+import shared.ids.Ids.*
 import workspace.control.{ AssignRunRequest, WorkspaceRunService }
 import workspace.entity.*
 
@@ -242,6 +244,37 @@ object AutoDispatcherSpec extends ZIOSpecDefault:
     override def resize(agentName: String, newMax: Int): UIO[Unit]         =
       ZIO.unit
 
+  final private case class StubGovernancePolicyService(decision: GovernanceTransitionDecision)
+    extends GovernancePolicyService:
+    override def resolvePolicyForWorkspace(workspaceId: String): IO[PersistenceError, GovernancePolicy] =
+      ZIO.succeed(
+        GovernancePolicy(
+          id = GovernancePolicyId("policy-1"),
+          projectId = ProjectId("project-1"),
+          name = "stub",
+          version = 1,
+          createdAt = now,
+          updatedAt = now,
+        )
+      )
+
+    override def evaluateForWorkspace(
+      workspaceId: String,
+      context: GovernanceEvaluationContext,
+    ): IO[PersistenceError, GovernanceTransitionDecision] =
+      ZIO.succeed(decision)
+
+  private val allowDecision = GovernanceTransitionDecision(
+    allowed = true,
+    requiredGates = Set.empty,
+    missingGates = Set.empty,
+    humanApprovalRequired = false,
+    daemonTriggers = Nil,
+    escalationRules = Nil,
+    completionCriteria = None,
+    reason = None,
+  )
+
   def spec: Spec[TestEnvironment & Scope, Any] =
     suite("AutoDispatcherSpec")(
       test("dispatchOnce is a no-op when auto-dispatch is disabled") {
@@ -259,6 +292,7 @@ object AutoDispatcherSpec extends ZIOSpecDefault:
                            workspaceRunService = StubWorkspaceRunService(assignments),
                            activityHub = StubActivityHub(activities),
                            agentPoolManager = StubAgentPoolManager(Map("coder" -> 1), acquired),
+                           governancePolicyService = StubGovernancePolicyService(allowDecision),
                          )
           count       <- service.dispatchOnce
           gotRuns     <- assignments.get
@@ -315,6 +349,7 @@ object AutoDispatcherSpec extends ZIOSpecDefault:
                            workspaceRunService = RecordingWorkspaceRunService(assignments, registered),
                            activityHub = StubActivityHub(activities),
                            agentPoolManager = StubAgentPoolManager(Map("coder" -> 1), acquired),
+                           governancePolicyService = StubGovernancePolicyService(allowDecision),
                          )
           count       <- service.dispatchOnce
           gotRuns     <- assignments.get
@@ -349,6 +384,7 @@ object AutoDispatcherSpec extends ZIOSpecDefault:
                            workspaceRunService = StubWorkspaceRunService(assignments),
                            activityHub = StubActivityHub(activities),
                            agentPoolManager = StubAgentPoolManager(Map("busy" -> 0), acquired),
+                           governancePolicyService = StubGovernancePolicyService(allowDecision),
                          )
           count       <- service.dispatchOnce
           gotRuns     <- assignments.get
@@ -412,9 +448,45 @@ object AutoDispatcherSpec extends ZIOSpecDefault:
                            workspaceRunService = RecordingWorkspaceRunService(assignments, registered),
                            activityHub = StubActivityHub(activities),
                            agentPoolManager = StubAgentPoolManager(Map("coder" -> 1), acquired),
+                           governancePolicyService = StubGovernancePolicyService(allowDecision),
                          )
           _           <- service.dispatchOnce
           gotRuns     <- assignments.get
         yield assertTrue(gotRuns.map(_.issueRef).take(2) == List("#5", "#4"))
+      },
+      test("dispatchOnce skips issues blocked by governance") {
+        val ready = issue("6", "high")
+
+        for
+          appended    <- Ref.make(List.empty[IssueEvent])
+          assignments <- Ref.make(List.empty[AssignRunRequest])
+          activities  <- Ref.make(List.empty[ActivityEvent])
+          acquired    <- Ref.make(List.empty[String])
+          service      = AutoDispatcherLive(
+                           configRepository = StubConfigRepository(Map(AutoDispatcher.enabledSettingKey -> "true")),
+                           issueRepository = StubIssueRepository(appended),
+                           dependencyResolver = StubDependencyResolver(List(ready)),
+                           agentRepository = StubAgentRepository(List(agent("coder", maxConcurrentRuns = 1))),
+                           workspaceRepository = StubWorkspaceRepository(Nil),
+                           workspaceRunService = StubWorkspaceRunService(assignments),
+                           activityHub = StubActivityHub(activities),
+                           agentPoolManager = StubAgentPoolManager(Map("coder" -> 1), acquired),
+                           governancePolicyService = StubGovernancePolicyService(
+                             allowDecision.copy(
+                               allowed = false,
+                               requiredGates = Set(GovernanceGate.SpecReview),
+                               missingGates = Set(GovernanceGate.SpecReview),
+                               reason = Some("Missing required gates: SpecReview"),
+                             )
+                           ),
+                         )
+          count       <- service.dispatchOnce
+          gotRuns     <- assignments.get
+          gotAcquired <- acquired.get
+        yield assertTrue(
+          count == 0,
+          gotRuns.isEmpty,
+          gotAcquired.isEmpty,
+        )
       },
     )

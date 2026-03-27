@@ -5,7 +5,7 @@ import java.time.Instant
 import zio.*
 import zio.test.*
 
-import agent.entity.{ Agent, AgentRepository }
+import agent.entity.{ Agent, AgentPermissions, AgentRepository, TrustLevel }
 import db.{ ConfigRepository, CustomAgentRow, PersistenceError as DbPersistenceError, SettingRow, WorkflowRow }
 import shared.errors.PersistenceError
 import shared.ids.Ids.AgentId
@@ -50,7 +50,11 @@ object AgentPoolManagerSpec extends ZIOSpecDefault:
     override def findByName(name: String): IO[PersistenceError, Option[Agent]]             =
       ZIO.succeed(agents.find(_.name.equalsIgnoreCase(name)))
 
-  private def agent(name: String, maxConcurrentRuns: Int): Agent =
+  private def agent(
+    name: String,
+    maxConcurrentRuns: Int,
+    maxEstimatedTokens: Option[Long] = None,
+  ): Agent =
     Agent(
       id = AgentId(name),
       name = name,
@@ -65,6 +69,13 @@ object AgentPoolManagerSpec extends ZIOSpecDefault:
       enabled = true,
       createdAt = now,
       updatedAt = now,
+      trustLevel = TrustLevel.Standard,
+      permissions = AgentPermissions.defaults(
+        trustLevel = TrustLevel.Standard,
+        cliTool = "codex",
+        timeout = java.time.Duration.ofMinutes(5),
+        maxEstimatedTokens = maxEstimatedTokens,
+      ),
     )
 
   private def makeManager(
@@ -122,5 +133,19 @@ object AgentPoolManagerSpec extends ZIOSpecDefault:
           after        <- manager.availableSlots("coder")
           _            <- manager.releaseSlot(first)
         yield assertTrue(before == 0, after == 1)
+      },
+      test("recordTokenUsage pauses an agent after exceeding its token budget") {
+        for
+          (manager, _) <- makeManager(agents = List(agent("coder", 1, maxEstimatedTokens = Some(100))))
+          _            <- manager.recordTokenUsage("coder", 60)
+          blocked       = manager.recordTokenUsage("coder", 50).either
+          result       <- blocked
+          paused       <- manager.isPaused("coder")
+          denied       <- manager.acquireSlot("coder").either
+        yield assertTrue(
+          result == Left(PoolError.CostLimitExceeded("coder", 100L)),
+          paused,
+          denied == Left(PoolError.AgentPaused("coder", "Token budget exceeded: 110 > 100")),
+        )
       },
     )

@@ -165,6 +165,7 @@ object BoardOrchestratorFailureIntegrationSpec extends ZIOSpecDefault:
                        workspaceRepository = wsRepo,
                        gitService = git,
                        activityHub = hub,
+                       governancePolicyService = NoOpGovernancePolicyService,
                      )
     yield (orchestrator, boardRepo)
 
@@ -229,6 +230,7 @@ object BoardOrchestratorFailureIntegrationSpec extends ZIOSpecDefault:
             // ── Cycle 2: dispatch succeeds ────────────────────────────────────
             dispatch2  <- orchOk.dispatchCycle(workspacePath)
             _          <- orchOk.completeIssue(workspacePath, issueId, success = true, details = "done in retry")
+            _          <- orchOk.approveIssue(workspacePath, issueId)
             boardFinal <- boardRepo.readBoard(workspacePath)
             doneFinal   = boardFinal.columns.getOrElse(BoardColumn.Done, Nil)
           yield assertTrue(
@@ -259,16 +261,14 @@ object BoardOrchestratorFailureIntegrationSpec extends ZIOSpecDefault:
             issueId                    = BoardIssueId("merge-conflict-issue")
             _                         <- createTodoIssue(boardRepo, workspacePath, issueId.value)
 
-            // ── Dispatch: branch created with conflicting changes on both sides ─
+            // ── Dispatch: branch created; stays on feature branch ────────────
             dispatch <- orchConflict.dispatchCycle(workspacePath)
 
-            // ── completeIssue(true) must fail: we are on feature branch, not main ─
-            mergeResult <- orchConflict.completeIssue(
-                             workspacePath,
-                             issueId,
-                             success = true,
-                             details = "",
-                           ).either
+            // ── completeIssue(true) now succeeds (moves to Review; no branch check) ─
+            _ <- orchConflict.completeIssue(workspacePath, issueId, success = true, details = "")
+
+            // ── approveIssue must fail: we are on feature branch, not main ────
+            approveResult <- orchConflict.approveIssue(workspacePath, issueId).either
 
             // ── Check out main so the repo is in a known-good state for recovery ─
             _ <- gitRun(repoPath, "git", "checkout", "main")
@@ -287,8 +287,8 @@ object BoardOrchestratorFailureIntegrationSpec extends ZIOSpecDefault:
             // Dispatch succeeded
             dispatch.dispatchedIssueIds.size == 1,
             dispatch.dispatchedIssueIds.head.value == issueId.value,
-            // completeIssue(true) failed (merge conflict)
-            mergeResult.isLeft,
+            // approveIssue failed (not on main branch)
+            approveResult.isLeft,
             // Issue is in Backlog with Rework transient state and failureReason
             backlog.size == 1,
             backlog.head.frontmatter.id == issueId,

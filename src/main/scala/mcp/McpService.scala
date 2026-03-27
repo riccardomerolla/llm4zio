@@ -4,11 +4,19 @@ import zio.*
 
 import agent.entity.AgentRepository
 import analysis.entity.AnalysisRepository
+import daemon.control.DaemonAgentScheduler
+import decision.control.DecisionInbox
+import evolution.control.EvolutionEngine
+import governance.control.GovernancePolicyService
 import issues.entity.IssueRepository
+import knowledge.control.KnowledgeGraphService
 import llm4zio.mcp.server.{ McpError, McpServer }
 import llm4zio.mcp.transport.SseTransport
 import llm4zio.tools.ToolRegistry
 import memory.entity.MemoryRepository
+import plan.entity.PlanRepository
+import sdlc.control.SdlcDashboardService
+import specification.entity.SpecificationRepository
 import workspace.control.WorkspaceRunService
 import workspace.entity.WorkspaceRepository
 
@@ -32,13 +40,36 @@ object McpService:
     agentRepo: AgentRepository,
     wsRepo: WorkspaceRepository,
     runService: WorkspaceRunService,
+    decisionInbox: DecisionInbox,
+    evolutionEngine: EvolutionEngine,
     memoryRepo: MemoryRepository,
     analysisRepo: AnalysisRepository,
+    knowledgeGraph: KnowledgeGraphService,
+    governancePolicyService: GovernancePolicyService,
+    specificationRepository: SpecificationRepository,
+    planRepository: PlanRepository,
+    daemonScheduler: DaemonAgentScheduler,
+    sdlcDashboardService: SdlcDashboardService,
   ): ZIO[Scope, Nothing, McpService] =
     for
       transport <- SseTransport.make(apiKey)
       registry  <- ToolRegistry.make
-      tools      = GatewayMcpTools(issueRepo, agentRepo, wsRepo, runService, memoryRepo, analysisRepo)
+      tools      = GatewayMcpTools(
+                     issueRepo,
+                     agentRepo,
+                     wsRepo,
+                     runService,
+                     decisionInbox,
+                     evolutionEngine,
+                     memoryRepo,
+                     analysisRepo,
+                     knowledgeGraph,
+                     governancePolicyService,
+                     specificationRepository,
+                     planRepository,
+                     daemonScheduler,
+                     sdlcDashboardService,
+                   )
       _         <- registry.registerAll(tools.all).mapError(e => new RuntimeException(e.toString)).orDie
       server    <- McpServer.make(registry, transport)
       fiber     <- server.start.forkScoped
@@ -47,26 +78,42 @@ object McpService:
 
   /** ZLayer for wiring into ApplicationDI. */
   val live: ZLayer[
-    IssueRepository & AgentRepository & WorkspaceRepository & WorkspaceRunService & MemoryRepository & AnalysisRepository,
+    IssueRepository & AgentRepository & WorkspaceRepository & WorkspaceRunService & DecisionInbox & EvolutionEngine & MemoryRepository & AnalysisRepository & KnowledgeGraphService & GovernancePolicyService & SpecificationRepository & PlanRepository & DaemonAgentScheduler & SdlcDashboardService,
     Nothing,
     McpService,
   ] =
     ZLayer.scoped {
       for
-        issueRepo    <- ZIO.service[IssueRepository]
-        agentRepo    <- ZIO.service[AgentRepository]
-        wsRepo       <- ZIO.service[WorkspaceRepository]
-        runService   <- ZIO.service[WorkspaceRunService]
-        memoryRepo   <- ZIO.service[MemoryRepository]
-        analysisRepo <- ZIO.service[AnalysisRepository]
-        svc          <- make(
-                          apiKey = None, // can be configured via GatewayConfig.mcp.apiKey later
-                          issueRepo,
-                          agentRepo,
-                          wsRepo,
-                          runService,
-                          memoryRepo,
-                          analysisRepo,
-                        )
+        issueRepo      <- ZIO.service[IssueRepository]
+        agentRepo      <- ZIO.service[AgentRepository]
+        wsRepo         <- ZIO.service[WorkspaceRepository]
+        runService     <- ZIO.service[WorkspaceRunService]
+        decisionInbox  <- ZIO.service[DecisionInbox]
+        evolution      <- ZIO.service[EvolutionEngine]
+        memoryRepo     <- ZIO.service[MemoryRepository]
+        analysisRepo   <- ZIO.service[AnalysisRepository]
+        knowledge      <- ZIO.service[KnowledgeGraphService]
+        governance     <- ZIO.service[GovernancePolicyService]
+        specifications <- ZIO.service[SpecificationRepository]
+        plans          <- ZIO.service[PlanRepository]
+        daemons        <- ZIO.service[DaemonAgentScheduler]
+        dashboard      <- ZIO.service[SdlcDashboardService]
+        svc            <- make(
+                            apiKey = None, // can be configured via GatewayConfig.mcp.apiKey later
+                            issueRepo,
+                            agentRepo,
+                            wsRepo,
+                            runService,
+                            decisionInbox,
+                            evolution,
+                            memoryRepo,
+                            analysisRepo,
+                            knowledge,
+                            governance,
+                            specifications,
+                            plans,
+                            daemons,
+                            dashboard,
+                          )
       yield svc
     }

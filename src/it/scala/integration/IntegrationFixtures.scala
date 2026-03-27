@@ -11,6 +11,9 @@ import zio.stream.ZStream
 import activity.control.ActivityHub
 import activity.entity.ActivityEvent
 import board.control.{ BoardRepositoryFS, IssueMarkdownParserLive }
+import governance.control.{ GovernanceEvaluationContext, GovernanceTransitionDecision }
+import governance.control.GovernancePolicyService
+import governance.entity.GovernancePolicy
 import llm4zio.core.{ LlmChunk, LlmError, LlmService, Message, ToolCallResponse }
 import llm4zio.tools.{ AnyTool, JsonSchema }
 import shared.errors.PersistenceError
@@ -135,3 +138,26 @@ object IntegrationFixtures:
     override def publish(event: ActivityEvent): UIO[Unit] = ZIO.unit
     override def subscribe: UIO[Dequeue[ActivityEvent]]   =
       Queue.bounded[ActivityEvent](1).map(q => q: Dequeue[ActivityEvent])
+
+  // ── NoOpGovernancePolicyService ───────────────────────────────────────────
+  // Always allows all transitions (no governance rules enforced).
+
+  object NoOpGovernancePolicyService extends GovernancePolicyService:
+    override def resolvePolicyForWorkspace(workspaceId: String): IO[PersistenceError, GovernancePolicy] =
+      ZIO.succeed(GovernancePolicy.noOp)
+    override def evaluateForWorkspace(
+      workspaceId: String,
+      context: GovernanceEvaluationContext,
+    ): IO[PersistenceError, GovernanceTransitionDecision] =
+      ZIO.succeed(
+        GovernanceTransitionDecision(
+          allowed = true,
+          requiredGates = Set.empty,
+          missingGates = Set.empty,
+          humanApprovalRequired = false,
+          daemonTriggers = Nil,
+          escalationRules = Nil,
+          completionCriteria = None,
+          reason = None,
+        )
+      )

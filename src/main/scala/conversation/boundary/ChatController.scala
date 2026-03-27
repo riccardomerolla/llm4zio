@@ -20,6 +20,7 @@ import llm4zio.core.{ ConversationThread, LlmError, LlmService, Streaming, ToolC
 import llm4zio.providers.{ GeminiCliExecutor, HttpClient }
 import llm4zio.tools.ToolRegistry
 import orchestration.control.*
+import plan.entity.PlanTaskDraft
 import shared.errors.PersistenceError as WorkspacePersistenceError
 import shared.ids.Ids.{ ConversationId, EventId, IssueId, ReportId }
 import shared.web.*
@@ -785,7 +786,7 @@ final case class ChatControllerLive(
         PlannerPlanPreview(
           summary = summary,
           issues = draftIds.indices.toList.map { idx =>
-            PlannerIssueDraft(
+            PlanTaskDraft(
               draftId = draftIds(idx),
               title = titles(idx),
               description = descriptions(idx),

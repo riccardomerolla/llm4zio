@@ -58,6 +58,22 @@ object WorkspaceRepositorySpec extends ZIOSpecDefault:
     occurredAt = now,
   )
 
+  private val createdCloudWs = WorkspaceEvent.Created(
+    workspaceId = "ws-cloud",
+    name = "remote-api",
+    localPath = "/tmp/remote-api",
+    defaultAgent = Some("codex"),
+    description = Some("cloud execution"),
+    cliTool = "codex",
+    runMode = RunMode.Cloud(
+      provider = "aws-fargate",
+      image = "ghcr.io/riccardomerolla/llm4zio-agent:latest",
+      region = Some("eu-west-1"),
+      network = Some("none"),
+    ),
+    occurredAt = now,
+  )
+
   private val assignedRun = WorkspaceRunEvent.Assigned(
     runId = "run-1",
     workspaceId = "ws-1",
@@ -232,6 +248,23 @@ object WorkspaceRepositorySpec extends ZIOSpecDefault:
               "my-image:latest",
               Nil,
               mountWorktree = true,
+              network = Some("none"),
+            ))
+          )).provideLayer(layerFor(dir))
+        }
+      },
+      test("Workspace with RunMode.Cloud round-trips through events") {
+        withTempDir { dir =>
+          (for
+            svc <- ZIO.service[DataStoreModule.DataStoreService]
+            repo = WorkspaceRepositoryES(svc)
+            _   <- repo.append(createdCloudWs)
+            got <- repo.get("ws-cloud")
+          yield assertTrue(
+            got.exists(_.runMode == RunMode.Cloud(
+              provider = "aws-fargate",
+              image = "ghcr.io/riccardomerolla/llm4zio-agent:latest",
+              region = Some("eu-west-1"),
               network = Some("none"),
             ))
           )).provideLayer(layerFor(dir))

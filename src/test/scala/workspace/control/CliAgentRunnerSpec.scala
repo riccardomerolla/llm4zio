@@ -5,6 +5,7 @@ import java.nio.file.Files
 import zio.*
 import zio.test.*
 
+import agent.entity.{ AgentPermissions, TrustLevel }
 import workspace.entity.RunMode
 
 object CliAgentRunnerSpec extends ZIOSpecDefault:
@@ -174,6 +175,36 @@ object CliAgentRunnerSpec extends ZIOSpecDefault:
       )
       assertTrue(argv.containsSlice(List("--network", "none")) && argv.contains("-i"))
     },
+    test("validatePermissions rejects CLI tools outside the allowed set") {
+      val permissions = AgentPermissions.defaults(
+        trustLevel = TrustLevel.Standard,
+        cliTool = "codex",
+        timeout = java.time.Duration.ofMinutes(5),
+        maxEstimatedTokens = None,
+      )
+
+      assertTrue(
+        CliAgentRunner.validatePermissions("gemini", Some(permissions)) ==
+          Left("CLI tool 'gemini' is not allowed by the agent permission set")
+      )
+    },
+    test("buildArgv downgrades docker network to none when permissions disable network") {
+      val permissions = AgentPermissions.defaults(
+        trustLevel = TrustLevel.Untrusted,
+        cliTool = "gemini",
+        timeout = java.time.Duration.ofMinutes(5),
+        maxEstimatedTokens = None,
+      )
+      val argv        = CliAgentRunner.buildArgv(
+        "gemini",
+        "fix it",
+        "/tmp/wt",
+        RunMode.Docker("gemini:latest", Nil, mountWorktree = true, network = Some("host")),
+        permissions = Some(permissions),
+      )
+
+      assertTrue(argv.containsSlice(List("--network", "none")))
+    },
     test("buildArgv with RunMode.Docker and mountWorktree=false omits -v and --workdir") {
       val argv = CliAgentRunner.buildArgv(
         "gemini",
@@ -182,6 +213,28 @@ object CliAgentRunnerSpec extends ZIOSpecDefault:
         RunMode.Docker("gemini:latest", Nil, mountWorktree = false, None),
       )
       assertTrue(!argv.contains("-v") && !argv.contains("--workdir"))
+    },
+    test("buildArgv with RunMode.Cloud falls back to host argv for compatibility") {
+      val argv = CliAgentRunner.buildArgv(
+        "gemini",
+        "fix it",
+        "/tmp/wt",
+        RunMode.Cloud(provider = "aws-fargate", image = "remote-image"),
+      )
+      assertTrue(argv == List("gemini", "--yolo", "--include-directories", "/tmp/wt", "-p", "fix it"))
+    },
+    test("enforceRunMode downgrades cloud network to none when permissions disable network") {
+      val permissions = AgentPermissions.defaults(
+        trustLevel = TrustLevel.Untrusted,
+        cliTool = "gemini",
+        timeout = java.time.Duration.ofMinutes(5),
+        maxEstimatedTokens = None,
+      )
+      val mode        = CliAgentRunner.enforceRunMode(
+        RunMode.Cloud(provider = "aws-fargate", image = "remote-image", network = Some("public")),
+        Some(permissions),
+      )
+      assertTrue(mode == RunMode.Cloud(provider = "aws-fargate", image = "remote-image", network = Some("none")))
     },
     test("buildInteractiveArgv for gemini includes --yolo and --include-directories") {
       val argv = CliAgentRunner.buildInteractiveArgv("gemini", "/tmp/wt")

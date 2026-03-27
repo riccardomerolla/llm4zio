@@ -20,6 +20,12 @@ object ActivityEventType:
   case object AnalysisCompleted extends ActivityEventType
   case object AnalysisFailed    extends ActivityEventType
   case object MergeConflict     extends ActivityEventType
+  case object DecisionCreated   extends ActivityEventType
+  case object DecisionResolved  extends ActivityEventType
+  case object DecisionEscalated extends ActivityEventType
+  case object DaemonStarted     extends ActivityEventType
+  case object DaemonCompleted   extends ActivityEventType
+  case object DaemonFailed      extends ActivityEventType
 
   val values: Array[ActivityEventType] =
     Array(
@@ -34,6 +40,12 @@ object ActivityEventType:
       AnalysisCompleted,
       AnalysisFailed,
       MergeConflict,
+      DecisionCreated,
+      DecisionResolved,
+      DecisionEscalated,
+      DaemonStarted,
+      DaemonCompleted,
+      DaemonFailed,
     )
 
 final case class ActivityEvent(

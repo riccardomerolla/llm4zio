@@ -129,6 +129,7 @@ object DispatchConcurrencyIntegrationSpec extends ZIOSpecDefault:
                        workspaceRepository = wsRepo,
                        gitService = git,
                        activityHub = hub,
+                       governancePolicyService = NoOpGovernancePolicyService,
                      )
     yield (orchestrator, boardRepo)
 

@@ -195,6 +195,13 @@ object Layout:
           div(cls := "text-xs/6 font-semibold uppercase tracking-wide text-gray-400")("Operate"),
           ul(attr("role") := "list", cls := "-mx-2 mt-2 space-y-1")(
             navItem("/", "Command Center", Icons.home, currentPath == "/"),
+            navItem("/sdlc", "SDLC Dashboard", Icons.activity, currentPath.startsWith("/sdlc")),
+            navItem(
+              "/checkpoints",
+              "Checkpoints",
+              Icons.documentText,
+              currentPath.startsWith("/checkpoints"),
+            ),
             navItem(
               "/board",
               "Board",
@@ -208,6 +215,36 @@ object Layout:
           div(cls := "text-xs/6 font-semibold uppercase tracking-wide text-gray-400")("Configure"),
           ul(attr("role") := "list", cls := "-mx-2 mt-2 space-y-1")(
             navItem("/projects", "Projects", Icons.workflow, currentPath.startsWith("/projects")),
+            navItem(
+              "/specifications",
+              "Specifications",
+              Icons.documentText,
+              currentPath.startsWith("/specifications"),
+            ),
+            navItem(
+              "/plans",
+              "Plans",
+              Icons.tableColumns,
+              currentPath.startsWith("/plans"),
+            ),
+            navItem(
+              "/knowledge",
+              "Knowledge",
+              Icons.documentText,
+              currentPath.startsWith("/knowledge"),
+            ),
+            navItem(
+              "/daemons",
+              "Daemons",
+              Icons.cpuChip,
+              currentPath.startsWith("/daemons"),
+            ),
+            navItem(
+              "/decisions",
+              "Decisions",
+              Icons.activity,
+              currentPath.startsWith("/decisions"),
+            ),
             navItem(
               "/workspaces",
               "Workspaces",
@@ -441,6 +478,8 @@ object Layout:
     val document: Frag = icon(
       "M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z"
     )
+
+    val documentText: Frag = document
 
     val chart: Frag = icon(
       "M10.5 6a7.5 7.5 0 1 0 7.5 7.5h-7.5V6Z M13.5 10.5H21A7.5 7.5 0 0 0 13.5 3v7.5Z"

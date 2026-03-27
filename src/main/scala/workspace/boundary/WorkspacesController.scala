@@ -497,6 +497,12 @@ object WorkspacesController:
             val network       = fields.get("dockerNetwork").filter(_.nonEmpty)
             val mountWorktree = fields.get("dockerMount").contains("on")
             RunMode.Docker(image = image, mountWorktree = mountWorktree, network = network)
+          else if runModeType == "cloud" then
+            val provider = fields.getOrElse("cloudProvider", "")
+            val image    = fields.getOrElse("cloudImage", "")
+            val region   = fields.get("cloudRegion").filter(_.nonEmpty)
+            val network  = fields.get("cloudNetwork").filter(_.nonEmpty)
+            RunMode.Cloud(provider = provider, image = image, region = region, network = network)
           else RunMode.Host
 
         if name.isEmpty || localPath.isEmpty then

@@ -18,7 +18,7 @@ final case class BoardRepositoryFS(
   locksRef: Ref[Map[String, Semaphore]],
 ) extends BoardRepository:
   private val boardRootFolder   = ".board"
-  private val boardSkillFile    = "SKILL.md"
+  private val boardSkillFile    = "BOARD.md"
   private val issueMarkdownFile = "ISSUE.md"
 
   private val columnsInOrder: List[BoardColumn] = List(
@@ -43,11 +43,11 @@ final case class BoardRepositoryFS(
           _         <- initBoardGit(boardPath, boardGitDir)
         yield ()
       } *>
-      updateGitignore(workspacePath).flatMap { changed =>
-        ZIO.when(changed)(
-          stageAndCommit(workspacePath, List(".gitignore"), "[board] Add .board/ to .gitignore").unit
-        )
-      }
+        updateGitignore(workspacePath).flatMap { changed =>
+          ZIO.when(changed)(
+            stageAndCommit(workspacePath, List(".gitignore"), "[board] Add .board/ to .gitignore").unit
+          ).unit
+        }
     }
 
   override def readBoard(workspacePath: String): IO[BoardError, Board] =
@@ -254,7 +254,7 @@ final case class BoardRepositoryFS(
         if !existing.linesIterator.exists(_.trim == "/.board/") then
           val sep        = if existing.nonEmpty && !existing.endsWith("\n") then "\n" else ""
           val newContent = s"$existing${sep}/.board/\n"
-          val tmp        = JFiles.createTempFile(Paths.get(workspacePath), ".gitignore-", null)
+          val tmp        = JFiles.createTempFile(Paths.get(workspacePath), ".gitignore-", ".tmp")
           JFiles.writeString(tmp, newContent)
           val _          = JFiles.move(tmp, gitignorePath, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
           true

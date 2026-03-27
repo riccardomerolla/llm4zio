@@ -24,6 +24,14 @@ final case class Agent(
   createdAt: Instant,
   updatedAt: Instant,
   deletedAt: Option[Instant] = None,
+  trustLevel: TrustLevel = TrustLevel.Standard,
+  permissions: AgentPermissions =
+    AgentPermissions.defaults(
+      trustLevel = TrustLevel.Standard,
+      cliTool = "",
+      timeout = Duration.ofMinutes(30),
+      maxEstimatedTokens = None,
+    ),
 ) derives Schema, JsonCodec
 
 object Agent:

@@ -8,8 +8,10 @@ import zio.test.*
 import activity.control.ActivityHub
 import activity.entity.ActivityEvent
 import board.entity.*
+import governance.control.{ GovernanceEvaluationContext, GovernancePolicyService, GovernanceTransitionDecision }
+import governance.entity.*
 import shared.errors.PersistenceError
-import shared.ids.Ids.BoardIssueId
+import shared.ids.Ids.{ BoardIssueId, GovernancePolicyId, ProjectId }
 import workspace.control.{ AssignRunRequest, GitService, WorkspaceRunService }
 import workspace.entity.*
 
@@ -196,9 +198,41 @@ object BoardOrchestratorSpec extends ZIOSpecDefault:
     override def publish(event: ActivityEvent): UIO[Unit] = ZIO.unit
     override def subscribe: UIO[Dequeue[ActivityEvent]]   = Queue.unbounded[ActivityEvent]
 
+  final private case class StubGovernancePolicyService(decision: GovernanceTransitionDecision)
+    extends GovernancePolicyService:
+    private val policy = GovernancePolicy(
+      id = GovernancePolicyId("policy-1"),
+      projectId = ProjectId("project-1"),
+      name = "stub",
+      version = 1,
+      createdAt = Instant.parse("2026-03-20T09:00:00Z"),
+      updatedAt = Instant.parse("2026-03-20T09:00:00Z"),
+    )
+
+    override def resolvePolicyForWorkspace(workspaceId: String): IO[PersistenceError, GovernancePolicy] =
+      ZIO.succeed(policy)
+
+    override def evaluateForWorkspace(
+      workspaceId: String,
+      context: GovernanceEvaluationContext,
+    ): IO[PersistenceError, GovernanceTransitionDecision] =
+      ZIO.succeed(decision)
+
+  private val allowDecision = GovernanceTransitionDecision(
+    allowed = true,
+    requiredGates = Set.empty,
+    missingGates = Set.empty,
+    humanApprovalRequired = false,
+    daemonTriggers = Nil,
+    escalationRules = Nil,
+    completionCriteria = None,
+    reason = None,
+  )
+
   private def makeOrchestrator(
     issues: List[BoardIssue],
     runsByIssueRefSeed: Map[String, List[WorkspaceRun]] = Map.empty,
+    governanceDecision: GovernanceTransitionDecision = allowDecision,
   ): UIO[(
     BoardOrchestratorLive,
     Ref[Map[BoardIssueId, BoardIssue]],
@@ -235,6 +269,7 @@ object BoardOrchestratorSpec extends ZIOSpecDefault:
                           workspaceRepository = workspaceRepo,
                           gitService = gitService,
                           activityHub = noopActivityHub,
+                          governancePolicyService = StubGovernancePolicyService(governanceDecision),
                         )
     yield (orchestrator, boardRef, assignedRef, cleanupRef, mergesRef)
 
@@ -361,6 +396,29 @@ object BoardOrchestratorSpec extends ZIOSpecDefault:
           doneIssue.frontmatter.branchName.isEmpty,
           cleanup == List("run-4"),
           merges.exists { case (_, branch, _) => branch == "agent/agent-default-task-4" },
+        )
+      },
+      test("dispatchCycle skips issue when governance blocks dispatch") {
+        val blockedIssue = issue("task-5", BoardColumn.Todo)
+
+        for
+          (orchestrator, boardRef, assignedRef, _, _) <- makeOrchestrator(
+                                                           List(blockedIssue),
+                                                           governanceDecision = allowDecision.copy(
+                                                             allowed = false,
+                                                             requiredGates = Set(GovernanceGate.SpecReview),
+                                                             missingGates = Set(GovernanceGate.SpecReview),
+                                                             reason = Some("Missing required gates: SpecReview"),
+                                                           ),
+                                                         )
+          result                                      <- orchestrator.dispatchCycle(workspacePath)
+          state                                       <- boardRef.get
+          assigned                                    <- assignedRef.get
+        yield assertTrue(
+          result.dispatchedIssueIds.isEmpty,
+          result.skippedIssueIds == List(BoardIssueId("task-5")),
+          state(BoardIssueId("task-5")).column == BoardColumn.Todo,
+          assigned.isEmpty,
         )
       },
     )

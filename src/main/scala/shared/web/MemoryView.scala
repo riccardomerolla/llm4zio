@@ -1,6 +1,6 @@
 package shared.web
 
-import memory.entity.{ MemoryEntry, ScoredMemory, UserId }
+import memory.entity.{ MemoryEntry, MemoryKind, ScoredMemory, UserId }
 import scalatags.Text.all.*
 
 object MemoryView:
@@ -112,10 +112,11 @@ object MemoryView:
             attr("hx-vals")    := "{\"format\":\"html\"}",
           )(
             option(value := "")("All"),
-            option(value := "Preference")("Preference"),
-            option(value := "Fact")("Fact"),
-            option(value := "Context")("Context"),
-            option(value := "Summary")("Summary"),
+            frag(
+              MemoryKind.all.map(kind =>
+                option(value := kind.value)(kind.value)
+              )
+            ),
           ),
         ),
         div(cls := "grid grid-cols-2 gap-2")(

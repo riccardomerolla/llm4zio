@@ -22,6 +22,8 @@ import analysis.entity.{ AnalysisRepository, AnalysisType }
 import board.control.BoardOrchestrator
 import board.entity.{ IssueEstimate as BoardIssueEstimate, IssuePriority as BoardIssuePriority, * }
 import db.{ ChatRepository, ConfigRepository, PersistenceError, TaskRepository }
+import decision.control.DecisionInbox
+import decision.entity.DecisionResolutionKind
 import issues.control.IssueAnalysisAttachment
 import issues.entity.api.*
 import issues.entity.{ AgentIssue as DomainIssue, * }
@@ -43,7 +45,7 @@ object IssueController:
     : ZLayer[
       ChatRepository & TaskRepository & ConfigRepository & AgentRepository & IssueAssignmentOrchestrator &
         IssueRepository & WorkspaceRepository & WorkspaceRunService & ActivityHub & IssueDispatchStatusService &
-        BoardOrchestrator & BoardRepository &
+        BoardOrchestrator & BoardRepository & DecisionInbox &
         AnalysisRepository & IssueWorkReportProjection,
       Nothing,
       IssueController,
@@ -63,6 +65,7 @@ final case class IssueControllerLive(
   issueDispatchStatusService: IssueDispatchStatusService,
   boardOrchestrator: BoardOrchestrator,
   boardRepository: BoardRepository,
+  decisionInbox: DecisionInbox,
   analysisRepository: AnalysisRepository,
   issueWorkReportProjection: IssueWorkReportProjection,
 ) extends IssueController:
@@ -326,6 +329,7 @@ final case class IssueControllerLive(
           _            <- ensureTransitionAllowed(issue.state, status, issueId.value)
           events       <- statusToEvents(issue, IssueStatusUpdateRequest(status = status), agentFallback, now)
           _            <- ZIO.foreachDiscard(events)(issueRepository.append(_).mapError(mapIssueRepoError))
+          _            <- syncDecisionInbox(issue, status, agentFallback)
           _            <- publishBoardStatusActivity(issue, status, agentFallback, now)
         yield Response(status = Status.SeeOther, headers = Headers(Header.Custom("Location", s"/issues/$id")))
       }
@@ -342,6 +346,14 @@ final case class IssueControllerLive(
           autoMerge <- loadAutoMergePolicy
           events     = approvalEvents(issue, approvedBy, autoMerge, now)
           _         <- ZIO.foreachDiscard(events)(issueRepository.append(_).mapError(mapIssueRepoError))
+          _         <- decisionInbox
+                         .syncOpenIssueReviewDecision(
+                           issue.id,
+                           DecisionResolutionKind.Approved,
+                           approvedBy,
+                           s"Approved by $approvedBy",
+                         )
+                         .mapError(mapIssueRepoError)
           _         <- publishBoardStatusActivity(
                          issue,
                          if autoMerge then IssueStatus.Merging else IssueStatus.Done,
@@ -1554,6 +1566,37 @@ final case class IssueControllerLive(
         createdAt = now,
       )
     )
+
+  private def syncDecisionInbox(
+    issue: DomainIssue,
+    status: IssueStatus,
+    actor: String,
+  ): IO[PersistenceError, Unit] =
+    status match
+      case IssueStatus.HumanReview                =>
+        decisionInbox.openIssueReviewDecision(issue).mapError(mapIssueRepoError).unit
+      case IssueStatus.Rework                     =>
+        decisionInbox
+          .syncOpenIssueReviewDecision(
+            issue.id,
+            DecisionResolutionKind.ReworkRequested,
+            actor,
+            s"Rework requested for issue #${issue.id.value}",
+          )
+          .mapError(mapIssueRepoError)
+          .unit
+      case IssueStatus.Done | IssueStatus.Merging =>
+        decisionInbox
+          .syncOpenIssueReviewDecision(
+            issue.id,
+            DecisionResolutionKind.Approved,
+            actor,
+            s"Issue #${issue.id.value} approved",
+          )
+          .mapError(mapIssueRepoError)
+          .unit
+      case _                                      =>
+        ZIO.unit
 
   private def parseBooleanConfig(value: String): Boolean =
     value.trim.equalsIgnoreCase("true") || value.trim == "1" || value.trim.equalsIgnoreCase("yes")

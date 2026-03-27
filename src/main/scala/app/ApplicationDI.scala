@@ -33,12 +33,20 @@ import app.boundary.{
 import app.control.{ FileService, HealthMonitor, HttpAIClient, LogTailer, StateService }
 import board.boundary.BoardController as BoardBoundaryController
 import board.control.*
+import checkpoint.control.CheckpointReviewService
 import com.bot4s.telegram.clients.FutureSttpClient
 import conversation.boundary.{
   ChatController as ConversationChatController,
   WebSocketController as ConversationWebSocketController,
 }
+import daemon.boundary.DaemonsController
+import daemon.control.DaemonAgentScheduler
+import daemon.entity.DaemonAgentSpecRepositoryES
 import db.*
+import decision.control.DecisionInbox
+import decision.entity.{ DecisionEventStoreES, DecisionRepositoryES }
+import evolution.control.EvolutionEngine
+import evolution.entity.{ EvolutionProposalEventStoreES, EvolutionProposalRepositoryES }
 import gateway.boundary.discord.DiscordGatewayService
 import gateway.boundary.telegram.*
 import gateway.boundary.{
@@ -46,10 +54,14 @@ import gateway.boundary.{
   TelegramController as GatewayTelegramController,
 }
 import gateway.control.{ MessageRouter, * }
+import governance.control.{ GovernancePolicyEngine, GovernancePolicyService }
+import governance.entity.{ GovernancePolicyEventStoreES, GovernancePolicyRepositoryES }
 import io.github.riccardomerolla.zio.eclipsestore.service.{ LifecycleCommand, LifecycleStatus }
 import issues.boundary.IssueController as IssuesIssueController
 import issues.control.{ IssueWorkReportHydrator, IssueWorkReportSubscriber }
 import issues.entity.IssueRepositoryBoard
+import knowledge.control.{ KnowledgeExtractionService, KnowledgeGraphService }
+import knowledge.entity.{ DecisionLogEventStoreES, DecisionLogRepositoryES }
 import llm4zio.core.*
 import llm4zio.observability.{ LlmMetrics, MeteredLlmService }
 import llm4zio.providers.{ GeminiCliExecutor, HttpClient }
@@ -62,10 +74,14 @@ import orchestration.control.{
   IssueAssignmentOrchestrator as OrchestrationIssueAssignmentOrchestrator,
   ProgressTracker as OrchestrationProgressTracker,
 }
+import plan.entity.{ PlanEventStoreES, PlanRepositoryES }
 import project.entity.ProjectRepository
 import prompts.PromptLoader
+import sdlc.boundary.SdlcDashboardController
+import sdlc.control.SdlcDashboardService
 import shared.store.{ ConfigStoreModule, DataStoreModule, MemoryStoreModule, StoreConfig }
 import shared.web.StreamAbortRegistry
+import specification.entity.{ SpecificationEventStoreES, SpecificationRepositoryES }
 import sttp.client4.DefaultFutureBackend
 import taskrun.boundary.{
   DashboardController as TaskRunDashboardController,
@@ -100,6 +116,7 @@ object ApplicationDI:
       WorkflowService &
       ActivityRepository &
       ActivityHub &
+      decision.entity.DecisionRepository &
       OrchestrationProgressTracker &
       ChatRepository &
       AgentRegistry &
@@ -178,6 +195,8 @@ object ApplicationDI:
       EmbeddingService.live,
       GitService.live,
       MemoryRepositoryES.live,
+      DecisionEventStoreES.live,
+      DecisionRepositoryES.live,
       WorkflowService.live,
       ActivityRepository.live,
       ActivityHub.live,
@@ -259,6 +278,8 @@ object ApplicationDI:
       BoardDependencyResolver.live,
       BoardBoundaryController.live,
       TaskRunDashboardController.live,
+      SdlcDashboardService.live,
+      SdlcDashboardController.live,
       TaskRunTasksController.live,
       TaskRunReportsController.live,
       TaskRunGraphController.live,
@@ -272,11 +293,24 @@ object ApplicationDI:
       StreamAbortRegistry.live,
       ToolRegistry.layer,
       ProjectRepository.live,
+      SpecificationEventStoreES.live,
+      SpecificationRepositoryES.live,
+      PlanEventStoreES.live,
+      PlanRepositoryES.live,
+      DecisionLogEventStoreES.live,
+      DecisionLogRepositoryES.live,
+      EvolutionProposalEventStoreES.live,
+      EvolutionProposalRepositoryES.live,
+      GovernancePolicyEventStoreES.live,
+      GovernancePolicyRepositoryES.live,
+      GovernancePolicyEngine.live,
+      GovernancePolicyService.live,
       WorkspaceRepository.live,
       AgentEventStoreES.live,
       AgentRepositoryES.live,
       InteractiveAgentRunner.live,
       RunSessionManager.live,
+      CheckpointReviewService.live,
       IssueRepositoryBoard.live,
       TaskRunEventStoreES.live,
       TaskRunRepositoryES.live,
@@ -285,9 +319,15 @@ object ApplicationDI:
       AnalysisRepositoryES.live,
       AnalysisAgentRunner.live,
       WorkspaceAnalysisScheduler.live,
+      KnowledgeGraphService.live,
+      KnowledgeExtractionService.live,
       DependencyResolver.live,
       AgentPoolManager.live,
+      DaemonAgentSpecRepositoryES.live,
+      DaemonAgentScheduler.live,
       IssueDispatchStatusService.live,
+      DecisionInbox.live,
+      EvolutionEngine.live,
       WorkspaceRunService.live,
       BoardOrchestrator.live,
       AutoDispatcher.live,
@@ -298,6 +338,7 @@ object ApplicationDI:
       IssuesIssueController.live,
       ActivityController.live,
       MemoryBoundaryController.live,
+      DaemonsController.live,
       GatewayChannelController.live,
       AppHealthController.live,
       GatewayTelegramController.live,
@@ -346,7 +387,12 @@ object ApplicationDI:
     }
 
   private val channelRegistryLayer
-    : ZLayer[Ref[GatewayConfig] & AgentRegistry & TaskRepository & TaskExecutor & ConfigRepository, Nothing, ChannelRegistry] =
+    : ZLayer[
+      Ref[GatewayConfig] & AgentRegistry & TaskRepository & TaskExecutor & ConfigRepository &
+        decision.entity.DecisionRepository,
+      Nothing,
+      ChannelRegistry,
+    ] =
     ZLayer.scoped {
       for
         configRef     <- ZIO.service[Ref[GatewayConfig]]
@@ -354,6 +400,7 @@ object ApplicationDI:
         repository    <- ZIO.service[TaskRepository]
         taskExecutor  <- ZIO.service[TaskExecutor]
         configRepo    <- ZIO.service[ConfigRepository]
+        decisionRepo  <- ZIO.service[decision.entity.DecisionRepository]
         channels      <- Ref.Synchronized.make(Map.empty[String, MessageChannel])
         runtime       <- Ref.Synchronized.make(Map.empty[String, ChannelRuntime])
         clients       <- Ref.Synchronized.make(Map.empty[String, TelegramClient])
@@ -375,6 +422,7 @@ object ApplicationDI:
                            workflowNotifier = WorkflowNotifierLive(telegramClient, agentRegistry, repository, taskExecutor),
                            taskRepository = Some(repository),
                            taskExecutor = Some(taskExecutor),
+                           decisionRepository = Some(decisionRepo),
                            scopeStrategy = parseSessionScopeStrategy(settingMap.get("telegram.sessionScopeStrategy")),
                          )
         _             <- registry.register(websocket)
