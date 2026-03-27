@@ -142,17 +142,16 @@ object AgentMonitorViewSpec extends ZIOSpecDefault:
         val html = AgentMonitorView.statsHeader(AgentGlobalStats.empty)
         assertTrue(html.contains("data-agent-stats"))
       },
-      test("statsHeader renders all 6 metrics") {
+      test("statsHeader renders all 4 metrics") {
         val html = AgentMonitorView.statsHeader(AgentGlobalStats.empty)
         assertTrue(
           html.contains("Agents"),
           html.contains("Runtime"),
-          html.contains("Tokens In"),
-          html.contains("Tokens Out"),
-          html.contains("Total"),
+          html.contains("Tokens in"),
+          html.contains("Tokens out"),
         )
       },
-      test("statsHeader formats activeAgents/maxAgents as X/Y") {
+      test("statsHeader formats activeAgents/maxAgents as X / Y") {
         val stats = AgentGlobalStats(
           activeAgents = 3,
           maxAgents = 10,
@@ -162,16 +161,16 @@ object AgentMonitorViewSpec extends ZIOSpecDefault:
           tokensTotal = 0L,
         )
         val html  = AgentMonitorView.statsHeader(stats)
-        assertTrue(html.contains("3/10"))
+        assertTrue(html.contains("3 / 10"))
       },
-      test("statsHeader formats tokensTotal with comma separators") {
+      test("statsHeader formats tokensOut with comma separators") {
         val stats = AgentGlobalStats(
           activeAgents = 0,
           maxAgents = 0,
           runtimeSeconds = 0L,
           tokensIn = 0L,
-          tokensOut = 0L,
-          tokensTotal = 1234567L,
+          tokensOut = 1234567L,
+          tokensTotal = 0L,
         )
         val html  = AgentMonitorView.statsHeader(stats)
         assertTrue(html.contains("1,234,567"))

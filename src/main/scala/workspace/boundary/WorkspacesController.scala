@@ -49,14 +49,14 @@ object WorkspacesController:
   ): WorkspacesController =
     new WorkspacesController:
       override val routes: Routes[Any, Response] = Routes(
-        // Redirect /workspaces → /settings/workspaces
+        // Standalone /workspaces page
         Method.GET / "workspaces" -> handler { (_: Request) =>
-          ZIO.succeed(
-            Response(
-              status = Status.Found,
-              headers = Headers(Header.Location(URL.decode("/settings/workspaces").getOrElse(URL.root))),
-            )
-          )
+          (for
+            ws         <- repo.list.mapError(persistErr)
+            agents     <- agentRegistry.getAllAgents
+            statusByWs <- loadAnalysisStatuses(ws.map(_.id), analysisScheduler).mapError(persistErr)
+          yield html(WorkspacesView.page(ws, agents, statusByWs)))
+            .catchAll(ZIO.succeed)
         },
 
         // Runs dashboard page (across all workspaces)

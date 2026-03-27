@@ -75,22 +75,17 @@ final case class ChatControllerLive(
     Method.GET / "chat"                                                 -> handler { (_: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
-          conversations <- chatRepository.listConversations(0, 80)
-          enriched      <- enrichConversationsWithChannel(conversations)
-          latestId       = enriched.sortBy(_.updatedAt)(Ordering[Instant].reverse).flatMap(conv =>
-                             sanitizeOptional(conv.id)
-                           ).headOption
-        yield latestId match
-          case Some(id) =>
-            Response(
-              status = Status.SeeOther,
-              headers = Headers(Header.Custom("Location", s"/chat/$id")),
-            )
-          case None     =>
-            Response(
-              status = Status.SeeOther,
-              headers = Headers(Header.Custom("Location", "/chat/new")),
-            )
+          conversations   <- chatRepository.listConversations(0, 80)
+          enriched        <- enrichConversationsWithChannel(conversations)
+          workspaceGroups <- buildWorkspaceFolders(enriched)
+          sessions        <- listChatSessions
+        yield html(
+          HtmlViews.chatDashboard(
+            conversations = enriched,
+            sessions = sessions,
+            workspaceFolders = workspaceGroups,
+          )
+        )
       }
     },
     Method.GET / "chat" / "new"                                         -> handler { (_: Request) =>

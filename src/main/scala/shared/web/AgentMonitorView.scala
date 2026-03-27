@@ -172,28 +172,16 @@ object AgentMonitorView:
     if m == 0 then s"${s}s"
     else s"${m}m ${s}s"
 
-  private val labelCls = "text-xs font-mono text-slate-500 uppercase tracking-widest w-24 flex-shrink-0"
-  private val valueCls = "text-xs font-mono text-white tabular-nums"
-
   def statsHeaderFragment(stats: AgentGlobalStats): Frag =
     div(
-      cls                      := "rounded-lg bg-black/60 px-4 py-3 font-mono text-xs",
+      cls                      := "grid grid-cols-2 gap-3 sm:grid-cols-4",
       attr("data-agent-stats") := "true",
     )(
-      div(cls := "grid grid-cols-2 gap-x-8 gap-y-1 sm:grid-cols-3")(
-        metricLine("Agents", s"${stats.activeAgents}/${stats.maxAgents}"),
-        metricLine("Runtime", formatRuntime(stats.runtimeSeconds)),
-        metricLine("Tokens In", formatTokens(stats.tokensIn)),
-        metricLine("Tokens Out", formatTokens(stats.tokensOut)),
-        metricLine("Total", formatTokens(stats.tokensTotal)),
-      )
+      tag("ab-stat-card")(attr("label") := "Agents", attr("value")     := s"${stats.activeAgents} / ${stats.maxAgents}"),
+      tag("ab-stat-card")(attr("label") := "Tokens in", attr("value")  := formatTokens(stats.tokensIn)),
+      tag("ab-stat-card")(attr("label") := "Tokens out", attr("value") := formatTokens(stats.tokensOut)),
+      tag("ab-stat-card")(attr("label") := "Runtime", attr("value")    := formatRuntime(stats.runtimeSeconds)),
     )
 
   def statsHeader(stats: AgentGlobalStats): String =
     statsHeaderFragment(stats).render
-
-  private def metricLine(label: String, value: String): Frag =
-    div(cls := "flex items-baseline gap-2")(
-      span(cls := labelCls)(label),
-      span(cls := valueCls)(value),
-    )

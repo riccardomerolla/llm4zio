@@ -17,43 +17,85 @@ object BoardView:
   def page(workspaceId: String, workspaceName: String, workspacePath: String, board: Board): String =
     Layout.page(s"Board · $workspaceName", s"/board/$workspaceId")(
       div(cls := "space-y-4")(
-        div(cls := "rounded-xl border border-white/10 bg-slate-900/80 px-5 py-4")(
-          div(cls := "flex flex-wrap items-center justify-between gap-3")(
-            div(
-              h1(cls := "text-2xl font-bold text-white")(s"$workspaceName Board"),
-              p(cls := "mt-1 text-sm text-slate-300")(s"Workspace: $workspaceId"),
-            ),
-            button(
-              `type`                      := "button",
-              attr("data-board-dispatch") := "true",
-              attr("data-workspace-id")   := workspaceId,
-              cls                         := "rounded-md border border-indigo-400/30 bg-indigo-500/20 px-3 py-2 text-sm font-semibold text-indigo-100 hover:bg-indigo-500/30",
-            )("Dispatch Cycle"),
-          )
+        // Page header
+        Components.pageHeader(
+          "Board",
+          workspaceName,
+          button(
+            `type`                      := "button",
+            attr("data-board-dispatch") := "true",
+            attr("data-workspace-id")   := workspaceId,
+            cls                         := "rounded-md border border-white/10 px-3 py-1.5 text-sm text-gray-300 hover:bg-white/5",
+          )("Dispatch Cycle"),
+          button(
+            `type`                     := "button",
+            attr("data-new-issue-btn") := "true",
+            cls                        := "rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-500",
+          )("New Issue"),
         ),
-        div(cls := "rounded-xl border border-white/10 bg-slate-900/70 p-4")(
+        // Compact status line
+        statusLine(board),
+        // New issue form (hidden by default, toggled by New Issue button)
+        div(
+          id  := "new-issue-panel",
+          cls := "hidden rounded-xl border border-white/10 bg-slate-900/70 p-4",
+        )(
           form(
             attr("data-board-create") := "true",
-            cls                       := "grid grid-cols-1 gap-2 md:grid-cols-[2fr_1fr_auto]",
+            cls                       := "flex flex-wrap gap-2",
           )(
             input(
               `type`      := "text",
               name        := "title",
-              placeholder := "New issue title",
-              cls         := "rounded border border-white/20 bg-slate-900 px-3 py-2 text-sm text-slate-100",
+              placeholder := "Issue title",
+              cls         := "flex-1 min-w-[14rem] rounded border border-white/20 bg-slate-900 px-3 py-1.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500",
             ),
             input(
               `type`      := "text",
               name        := "body",
-              placeholder := "Issue body",
-              cls         := "rounded border border-white/20 bg-slate-900 px-3 py-2 text-sm text-slate-100",
+              placeholder := "Description (optional)",
+              cls         := "flex-[2] min-w-[14rem] rounded border border-white/20 bg-slate-900 px-3 py-1.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500",
             ),
             button(
               `type` := "submit",
-              cls    := "rounded border border-emerald-400/30 bg-emerald-500/20 px-3 py-2 text-sm font-semibold text-emerald-100 hover:bg-emerald-500/30",
+              cls    := "rounded bg-emerald-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-emerald-500",
             )("Create"),
           )
         ),
+        // Filter bar (search is live; extended filters collapsed behind Filters button)
+        tag("ab-filter-bar")(
+          input(
+            attr("slot") := "search",
+            `type`       := "search",
+            name         := "q",
+            placeholder  := "Search issues…",
+            id           := "board-search",
+            cls          := "rounded-md border border-white/10 bg-slate-900/70 px-3 py-1.5 text-sm text-slate-300 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500",
+          ),
+          div(
+            attr("slot") := "filters",
+            cls          := "flex flex-wrap gap-3",
+          )(
+            select(
+              name := "priority",
+              cls  := "rounded border border-white/10 bg-slate-900 px-2 py-1.5 text-sm text-slate-300",
+            )(
+              option(value := "")("All priorities"),
+              option(value := "critical")("Critical"),
+              option(value := "high")("High"),
+              option(value := "medium")("Medium"),
+              option(value := "low")("Low"),
+            ),
+            select(
+              name := "column",
+              cls  := "rounded border border-white/10 bg-slate-900 px-2 py-1.5 text-sm text-slate-300",
+            )(
+              (option(value := "")("All columns") +:
+                columnsInOrder.map(col => option(value := col.folderName)(humanizeColumn(col))))*
+            ),
+          ),
+        ),
+        // Kanban board (HTMX-refreshed)
         div(
           id                          := "fs-board-root",
           attr("data-workspace-id")   := workspaceId,
@@ -66,7 +108,30 @@ object BoardView:
           raw(columnsFragment(workspaceId, board))
         ),
       ),
+      JsResources.inlineModuleScript("/static/client/components/design-system/ab-filter-bar.js"),
       JsResources.inlineModuleScript("/static/client/components/board-fs.js"),
+      // Toggle new-issue panel
+      script(raw("""
+        document.querySelector('[data-new-issue-btn]')?.addEventListener('click', () => {
+          const panel = document.getElementById('new-issue-panel');
+          if (panel) { panel.classList.toggle('hidden'); panel.querySelector('input')?.focus(); }
+        });
+      """)),
+    )
+
+  private def statusLine(board: Board): Frag =
+    val counts = columnsInOrder.map(col => col -> board.columns.getOrElse(col, Nil).size)
+    div(
+      cls := "flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-white/10 bg-slate-900/70 px-4 py-2 text-sm"
+    )(
+      counts.map { (col, n) =>
+        span(cls := "flex items-center gap-1.5")(
+          span(cls := "text-gray-400")(humanizeColumn(col)),
+          span(
+            cls := "min-w-[1.25rem] rounded-full bg-white/10 px-1.5 py-0.5 text-center text-xs font-semibold text-white"
+          )(n.toString),
+        )
+      }*
     )
 
   def columnsFragment(workspaceId: String, board: Board): String =

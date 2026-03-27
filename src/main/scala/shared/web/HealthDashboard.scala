@@ -11,9 +11,9 @@ object HealthDashboard:
         p(cls := "text-gray-400 text-sm mt-2")("Real-time gateway, agent, channel, and resource telemetry"),
       ),
       div(cls := "bg-white/5 ring-1 ring-white/10 rounded-lg p-4")(
-        tag("health-dashboard")(
+        tag("ab-health-dashboard")(
           attr("ws-url") := "/ws/console"
         )()
       ),
-      JsResources.inlineModuleScript("/static/client/components/health-dashboard.js"),
+      JsResources.inlineModuleScript("/static/client/components/ab-health-dashboard.js"),
     )

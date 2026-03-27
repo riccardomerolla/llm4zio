@@ -23,29 +23,21 @@ object WorkspacesView:
   ): String =
     Layout.page("Workspaces", "/workspaces")(
       div(cls := "space-y-6")(
-        div(cls := "rounded-xl border border-white/10 bg-slate-900/80 px-5 py-4")(
-          div(cls := "flex flex-wrap items-center justify-between gap-3")(
-            div(
-              h1(cls := "text-2xl font-bold text-white")("Workspaces"),
-              p(cls := "mt-1 text-sm text-slate-300")(
-                "Register local git repositories and assign issues to CLI agents"
-              ),
-            ),
-            button(
-              cls               := "rounded-md border border-emerald-400/30 bg-emerald-500/20 px-3 py-2 text-sm font-semibold text-emerald-200 hover:bg-emerald-500/30",
-              attr("hx-get")    := "/api/workspaces/new",
-              attr("hx-target") := "#modal-container",
-              attr("hx-swap")   := "innerHTML",
-            )("+ New Workspace"),
-          )
+        Components.pageHeader(
+          "Workspaces",
+          "Register local git repositories and assign issues to CLI agents",
+          button(
+            cls               := "rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-500",
+            attr("hx-get")    := "/api/workspaces/new",
+            attr("hx-target") := "#modal-container",
+            attr("hx-swap")   := "innerHTML",
+          )("New Workspace"),
         ),
         div(id := "modal-container"),
         if workspaces.isEmpty then
-          div(cls := "rounded-xl border border-white/10 bg-slate-900/60 p-10 text-center")(
-            p(cls := "text-slate-400")("No workspaces configured yet."),
-            p(cls := "mt-1 text-sm text-slate-500")(
-              "Add a workspace to start assigning issues to CLI agents."
-            ),
+          Components.emptyStateFull(
+            "No workspaces yet",
+            "Add a workspace to start assigning issues to CLI agents.",
           )
         else
           div(cls := "space-y-4")(workspaces.map(ws =>
@@ -711,7 +703,7 @@ object WorkspacesView:
           initialContent = raw(runsDashboardRowsFragment(runs, workspaceNameById)),
         ),
       ),
-      JsResources.inlineModuleScript("/static/client/components/run-dashboard.js"),
+      JsResources.inlineModuleScript("/static/client/components/ab-run-dashboard.js"),
     )
 
   def runsDashboardRoot(fragmentUrl: String, initialContent: Frag): Frag =
