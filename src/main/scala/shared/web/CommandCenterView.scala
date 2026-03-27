@@ -21,10 +21,8 @@ object CommandCenterView:
       div(cls := "space-y-6")(
         Components.pageHeader("Command Center", "Platform activity and pipeline health"),
         pipelineStrip(summary),
-        div(cls := "grid grid-cols-1 gap-6 lg:grid-cols-2")(
-          liveSection(),
-          activeRunsSection(),
-        ),
+        liveSection(),
+        activeRunsSection(),
         recentActivitySection(recentEvents),
       ),
       JsResources.inlineModuleScript("/static/client/components/ab-run-dashboard.js"),
@@ -91,46 +89,19 @@ object CommandCenterView:
   // ── Live section (left column) ────────────────────────────────────────────
 
   private def liveSection(): Frag =
-    div(cls := "rounded-lg border border-white/10 bg-white/5 p-4 space-y-3")(
-      // header row with inline stats
-      div(cls := "flex items-center justify-between gap-4")(
-        span(cls := "text-xs font-medium uppercase tracking-wide text-gray-400")("Live"),
-        div(
-          attr("hx-ext")      := "sse",
-          attr("sse-connect") := "/agent-monitor/stream",
-          cls                 := "flex-1",
-        )(
-          div(
-            id               := "agent-stats-container",
-            attr("sse-swap") := "agent-stats",
-            cls              := "flex justify-end",
-          )(
-            AgentMonitorView.statsHeaderFragment(AgentMonitorView.AgentGlobalStats.empty)
-          ),
-        ),
-      ),
-      // agent table — collapsed by default, SSE-updated when open
+    div(cls := "rounded-lg border border-white/10 bg-white/5 px-4 py-3 flex items-center justify-between gap-4")(
+      span(cls := "text-xs font-medium uppercase tracking-wide text-gray-400 flex-shrink-0")("Live"),
       div(
         attr("hx-ext")      := "sse",
         attr("sse-connect") := "/agent-monitor/stream",
+        cls                 := "flex-1",
       )(
-        tag("details")(cls := "group")(
-          tag("summary")(
-            cls := "cursor-pointer select-none text-xs text-gray-600 hover:text-gray-400 transition-colors py-0.5 list-none flex items-center gap-1"
-          )(
-            Components.svgIcon(
-              "M19 9l-7 7-7-7",
-              "h-3 w-3 flex-shrink-0 transition-transform group-open:rotate-180",
-            ),
-            "Agent table",
-          ),
-          div(
-            cls              := "mt-2 rounded border border-white/10 overflow-auto max-h-40",
-            id               := "agent-table-container",
-            attr("sse-swap") := "agent-table",
-          )(
-            AgentMonitorView.tableFragment(Nil)
-          ),
+        div(
+          id               := "agent-stats-container",
+          attr("sse-swap") := "agent-stats",
+          cls              := "flex justify-end",
+        )(
+          AgentMonitorView.statsHeaderFragment(AgentMonitorView.AgentGlobalStats.empty)
         ),
       ),
     )
