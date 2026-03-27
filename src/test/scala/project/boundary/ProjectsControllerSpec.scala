@@ -194,7 +194,7 @@ object ProjectsControllerSpec extends ZIOSpecDefault:
           resp.status == Status.Ok,
           body.contains("Quick Create"),
           body.contains("/projects/proj-1"),
-          body.contains("Active issues"),
+          body.contains("Issues"),
         )
       },
       test("POST /projects creates project and redirects to detail page") {

@@ -57,42 +57,58 @@ object ProjectsView:
 
   def page(projects: List[ProjectListItem]): String =
     Layout.page("Projects", "/projects")(
-      div(cls := "space-y-6")(
-        div(cls := "rounded-xl border border-white/10 bg-slate-900/80 px-5 py-4")(
-          div(cls := "flex flex-wrap items-start justify-between gap-4")(
-            div(
-              h1(cls := "text-2xl font-bold text-white")("Projects"),
-              p(cls := "mt-1 text-sm text-slate-300")(
-                "Group workspaces into delivery streams with shared defaults, board visibility, and analysis oversight."
-              ),
+      div(cls := "space-y-4")(
+        Components.pageHeader(
+          "Projects",
+          "Group workspaces into delivery streams with shared board, analysis, and agent defaults",
+        ),
+        // Inline Quick Create
+        div(cls := "rounded-lg border border-white/10 bg-slate-900/60 px-4 py-3")(
+          p(cls := "mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500")("Quick Create"),
+          form(action := "/projects", method := "post", cls := "flex flex-wrap items-center gap-2")(
+            input(
+              name        := "name",
+              required    := "required",
+              placeholder := "Project name",
+              cls         := "flex-1 min-w-40 rounded-md border border-white/15 bg-slate-800/80 px-3 py-1.5 text-sm text-slate-100 placeholder:text-slate-500 focus:border-indigo-400/40 focus:outline-none",
             ),
-            div(cls := "w-full max-w-md rounded-xl border border-white/10 bg-slate-950/70 p-4")(
-              h2(cls := "text-sm font-semibold uppercase tracking-wide text-slate-200")("Quick Create"),
-              form(action := "/projects", method := "post", cls := "mt-3 space-y-3")(
-                input(
-                  name        := "name",
-                  required    := "required",
-                  placeholder := "Project name",
-                  cls         := "w-full rounded border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500",
-                ),
-                textarea(
-                  name        := "description",
-                  rows        := 3,
-                  placeholder := "Optional description",
-                  cls         := "w-full rounded border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500",
-                )(),
-                div(cls := "flex justify-end")(
-                  button(
-                    `type` := "submit",
-                    cls    := "rounded bg-cyan-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-cyan-500",
-                  )("Create project")
-                ),
-              ),
+            input(
+              name        := "description",
+              placeholder := "Description (optional)",
+              cls         := "flex-[2] min-w-48 rounded-md border border-white/15 bg-slate-800/80 px-3 py-1.5 text-sm text-slate-100 placeholder:text-slate-500 focus:border-indigo-400/40 focus:outline-none",
             ),
-          )
+            button(
+              `type` := "submit",
+              cls    := "rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-500 whitespace-nowrap flex-shrink-0",
+            )("Create Project"),
+          ),
         ),
         if projects.isEmpty then emptyState
-        else div(cls := "grid gap-4 lg:grid-cols-2")(projects.sortBy(_.name.toLowerCase).map(projectCard)*),
+        else
+          div(cls := "rounded-lg border border-white/10 overflow-hidden")(
+            tag("table")(cls := "w-full text-sm")(
+              tag("thead")(
+                tag("tr")(cls := "border-b border-white/10 bg-white/5")(
+                  tag("th")(
+                    cls := "px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-400"
+                  )("Project"),
+                  tag("th")(
+                    cls := "hidden px-4 py-2 text-right text-xs font-medium uppercase tracking-wide text-gray-400 sm:table-cell"
+                  )("Workspaces"),
+                  tag("th")(
+                    cls := "hidden px-4 py-2 text-right text-xs font-medium uppercase tracking-wide text-gray-400 sm:table-cell"
+                  )("Issues"),
+                  tag("th")(
+                    cls := "hidden px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-400 sm:table-cell"
+                  )("Last Activity"),
+                  tag("th")(cls := "px-4 py-2")(),
+                ),
+              ),
+              tag("tbody")(cls := "divide-y divide-white/10")(
+                projects.sortBy(_.name.toLowerCase).map(projectRow)
+              ),
+            ),
+          ),
       )
     )
 
@@ -150,38 +166,44 @@ object ProjectsView:
     )
 
   private def emptyState: Frag =
-    div(cls := "rounded-xl border border-dashed border-white/10 bg-slate-900/60 p-10 text-center")(
-      p(cls := "text-slate-300")("No projects configured yet."),
+    div(cls := "rounded-lg border border-dashed border-white/10 bg-slate-900/60 p-10 text-center")(
+      p(cls := "text-slate-300")("No projects yet."),
       p(cls := "mt-1 text-sm text-slate-500")(
-        "Create a project to aggregate workspaces, issue boards, and analysis coverage."
+        "Use Quick Create above to add your first project."
       ),
     )
 
-  private def projectCard(project: ProjectListItem): Frag =
-    a(
-      href := s"/projects/${project.id}",
-      cls  := "block rounded-xl border border-white/10 bg-slate-900/60 p-5 transition hover:border-cyan-400/30 hover:bg-slate-900/75",
+  private def projectRow(project: ProjectListItem): Frag =
+    tag("tr")(
+      cls     := "hover:bg-white/5 cursor-pointer transition-colors",
+      onclick := s"window.location='/projects/${project.id}'",
     )(
-      div(cls := "flex items-start justify-between gap-4")(
-        div(
-          h2(cls := "text-lg font-semibold text-white")(project.name),
-          project.description.fold[Frag](frag())(desc => p(cls := "mt-1 text-sm text-slate-400")(desc)),
+      tag("td")(cls := "px-4 py-3")(
+        span(cls := "font-medium text-white")(project.name),
+        project.description.fold[Frag](frag())(d =>
+          p(cls := "mt-0.5 text-xs text-slate-400 truncate max-w-xs")(d)
         ),
-        span(
-          cls := "rounded-full border border-cyan-400/30 bg-cyan-500/15 px-2 py-0.5 text-xs font-semibold text-cyan-200"
-        )(s"${project.workspaceCount} ws"),
       ),
-      div(cls := "mt-4 grid gap-3 sm:grid-cols-2")(
-        statCard("Active issues", project.activeIssueCount.toString, "amber"),
-        statCard("Last activity", timestamp(project.lastActivity), "slate"),
+      tag("td")(cls := "hidden px-4 py-3 text-right text-sm text-slate-300 sm:table-cell")(
+        project.workspaceCount.toString
       ),
-      p(cls := "mt-4 text-xs font-semibold uppercase tracking-wide text-cyan-300")("Open project →"),
-    )
-
-  private def statCard(label: String, value: String, tone: String): Frag =
-    div(cls := "rounded-lg border border-white/10 bg-black/20 px-3 py-2")(
-      p(cls := "text-[11px] font-semibold uppercase tracking-wide text-slate-500")(label),
-      p(cls := s"mt-1 text-sm ${toneText(tone)}")(value),
+      tag("td")(cls := "hidden px-4 py-3 text-right sm:table-cell")(
+        if project.activeIssueCount > 0 then
+          span(cls := "rounded-full border border-amber-400/30 bg-amber-500/15 px-2 py-0.5 text-xs font-semibold text-amber-200")(
+            project.activeIssueCount.toString
+          )
+        else span(cls := "text-sm text-slate-500")("0")
+      ),
+      tag("td")(cls := "hidden px-4 py-3 text-sm text-slate-400 sm:table-cell")(
+        timestamp(project.lastActivity)
+      ),
+      tag("td")(cls := "px-4 py-3 text-right")(
+        a(
+          href    := s"/projects/${project.id}",
+          cls     := "text-xs font-semibold text-cyan-300 hover:text-cyan-200",
+          onclick := "event.stopPropagation()",
+        )("Open →"),
+      ),
     )
 
   private def workspacesTab(data: ProjectDetailPageData): Frag =
@@ -407,11 +429,6 @@ object ProjectsView:
       case "amber"   => "border-amber-400/30 bg-amber-500/15 text-amber-200"
       case "rose"    => "border-rose-400/30 bg-rose-500/15 text-rose-200"
       case _         => "border-slate-400/30 bg-slate-500/15 text-slate-300"
-
-  private def toneText(tone: String): String =
-    tone match
-      case "amber" => "text-amber-200"
-      case _       => "text-slate-200"
 
   private def timestamp(instant: Instant): String =
     instant.toString.take(19).replace("T", " ")
