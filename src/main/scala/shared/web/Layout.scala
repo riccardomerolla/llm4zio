@@ -1,7 +1,5 @@
 package shared.web
 
-import java.net.URLEncoder
-
 import scalatags.Text.all.*
 import scalatags.Text.svgAttrs.{ d, viewBox }
 import scalatags.Text.svgTags.{ path, svg }
@@ -9,7 +7,7 @@ import scalatags.Text.tags2.{ nav, title as titleTag }
 
 object Layout:
 
-  private val SidebarChatInitialLimit = 10
+  private val SidebarChatInitialLimit = 10 // used by chatWorkspacesTree
 
   /** A single navigation item in the sidebar.
     *
@@ -76,17 +74,8 @@ object Layout:
         script(src   := "https://unpkg.com/htmx-ext-sse@2.0.0/sse.js"),
       ),
       body(cls := "h-full text-[12px] leading-5 text-gray-200")(
-        mobileSidebar(currentPath, chatWorkspaceNav, pendingDecisions),
-        desktopSidebar(currentPath, chatWorkspaceNav, pendingDecisions),
-        mobileTopbar(pageTitleText),
-        button(
-          id                    := "desktop-sidebar-restore",
-          `type`                := "button",
-          cls                   := "hidden fixed left-3 top-3 z-40 rounded p-1.5 text-gray-300 hover:bg-white/10 hover:text-white lg:block",
-          attr("aria-label")    := "Restore sidebar",
-          attr("aria-expanded") := "false",
-        )(Icons.menu),
-        div(id := "app-main-shell", cls := "transition-all duration-150 lg:pl-72")(
+        topNavBar(currentPath, chatWorkspaceNav, pendingDecisions),
+        div(id := "app-main-shell", cls := "pt-10")(
           tag("main")(cls := "py-4")(
             div(cls := "px-4 sm:px-6 lg:px-8")(bodyContent)
           )
@@ -95,133 +84,88 @@ object Layout:
         JsResources.inlineModuleScript("/static/client/components/ab-command-palette.js"),
         tag("ab-keyboard-shortcuts")(),
         JsResources.inlineModuleScript("/static/client/components/ab-keyboard-shortcuts.js"),
+        JsResources.inlineModuleScript("/static/client/components/ab-nav-dropdown.js"),
         frag(Components.dsScripts*),
-        script(raw(
-          """(function () {
-            |  const sidebar = document.getElementById("mobile-sidebar");
-            |  const openBtn = document.getElementById("mobile-sidebar-open");
-            |  const closeBtn = document.getElementById("mobile-sidebar-close");
-            |  const backdrop = document.getElementById("mobile-sidebar-backdrop");
-            |
-            |  if (!sidebar || !openBtn || !closeBtn || !backdrop) return;
-            |
-            |  const openSidebar = function () {
-            |    sidebar.classList.remove("hidden");
-            |    document.body.classList.add("overflow-hidden");
-            |  };
-            |
-            |  const closeSidebar = function () {
-            |    sidebar.classList.add("hidden");
-            |    document.body.classList.remove("overflow-hidden");
-            |  };
-            |
-            |  openBtn.addEventListener("click", openSidebar);
-            |  closeBtn.addEventListener("click", closeSidebar);
-            |  backdrop.addEventListener("click", closeSidebar);
-            |
-            |  const desktopSidebar = document.getElementById("desktop-sidebar");
-            |  const desktopToggle = document.getElementById("desktop-sidebar-toggle");
-            |  const desktopRestore = document.getElementById("desktop-sidebar-restore");
-            |  const mainShell = document.getElementById("app-main-shell");
-            |  if (desktopSidebar && desktopToggle && desktopRestore && mainShell) {
-            |    const key = "abnormal.sidebar.collapsed";
-            |    const apply = function (collapsed) {
-            |      desktopSidebar.classList.toggle("lg:hidden", collapsed);
-            |      mainShell.classList.toggle("lg:pl-72", !collapsed);
-            |      mainShell.classList.toggle("lg:pl-0", collapsed);
-            |      desktopToggle.setAttribute("aria-expanded", String(!collapsed));
-            |      desktopRestore.classList.toggle("hidden", !collapsed);
-            |      desktopRestore.setAttribute("aria-expanded", String(!collapsed));
-            |    };
-            |    const restore = window.localStorage ? window.localStorage.getItem(key) === "1" : false;
-            |    apply(restore);
-            |    desktopToggle.addEventListener("click", function () {
-            |      const collapsed = !desktopSidebar.classList.contains("lg:hidden");
-            |      apply(collapsed);
-            |      if (window.localStorage) window.localStorage.setItem(key, collapsed ? "1" : "0");
-            |    });
-            |    desktopRestore.addEventListener("click", function () {
-            |      apply(false);
-            |      if (window.localStorage) window.localStorage.setItem(key, "0");
-            |    });
-            |  }
-            |})();
-            |""".stripMargin
-        )),
       ),
     ).render
 
   // ---------------------------------------------------------------------------
-  // Sidebar
+  // Top Navigation Bar
   // ---------------------------------------------------------------------------
 
-  private def mobileTopbar(pageTitleText: String): Frag =
-    div(
-      cls := "sticky top-0 z-40 flex items-center gap-x-4 bg-gray-900/95 px-4 py-4 backdrop-blur after:pointer-events-none after:absolute after:inset-0 after:border-b after:border-white/10 lg:hidden"
-    )(
-      button(
-        id     := "mobile-sidebar-open",
-        `type` := "button",
-        cls    := "-m-2.5 p-2.5 text-gray-300 hover:text-white",
-      )(
-        span(cls := "sr-only")("Open sidebar"),
-        Icons.menu,
-      ),
-      div(cls := "text-sm font-semibold text-white")(pageTitleText),
-    )
-
-  private def mobileSidebar(
+  private def topNavBar(
     currentPath: String,
     chatWorkspaceNav: Option[ChatWorkspaceNav],
     pendingDecisions: Option[Int],
   ): Frag =
-    div(id := "mobile-sidebar", cls := "hidden lg:hidden")(
-      div(id := "mobile-sidebar-backdrop", cls := "fixed inset-0 z-40 bg-gray-900/80")(),
-      div(cls := "fixed inset-y-0 left-0 z-50 w-full max-w-xs")(
-        div(
-          cls := "relative flex h-full flex-col gap-y-5 overflow-y-auto border-r border-white/10 bg-gray-900 px-6 pb-4 pt-4"
-        )(
-          div(cls := "flex items-center justify-between")(
-            span(cls := "text-xl font-bold text-white")("A-B-Normal"),
-            button(
-              id     := "mobile-sidebar-close",
-              `type` := "button",
-              cls    := "-m-2.5 p-2.5 text-gray-300 hover:text-white",
+    nav(
+      cls := "fixed top-0 z-50 w-full border-b border-white/10 bg-gray-900/95 backdrop-blur-sm"
+    )(
+      div(cls := "flex h-10 items-center gap-2 px-4")(
+        // Left: Brand
+        span(cls := "mr-4 text-sm font-semibold text-white")("A-B-Normal"),
+        // Center/Left: Core Gateway nav items
+        frag(
+          coreGatewayGroup.items.map { item =>
+            val active = item.activePredicate(currentPath)
+            a(
+              href                 := item.href,
+              cls                  := s"flex items-center gap-1.5 rounded px-2 py-1 text-xs hover:bg-white/5 hover:text-white ${if active then "bg-white/5 text-white" else "text-gray-400"}",
+              attr("data-active")  := active.toString,
+              attr("aria-current") := Option.when(active)("page").getOrElse("false"),
             )(
-              span(cls := "sr-only")("Close sidebar"),
-              Icons.xMark,
-            ),
-          ),
-          sidebarNav(currentPath, chatWorkspaceNav, pendingDecisions),
-        )
-      ),
-    )
-
-  private def desktopSidebar(
-    currentPath: String,
-    chatWorkspaceNav: Option[ChatWorkspaceNav],
-    pendingDecisions: Option[Int],
-  ): Frag =
-    div(
-      id  := "desktop-sidebar",
-      cls := "hidden bg-gray-900 lg:fixed lg:inset-y-0 lg:z-50 lg:flex lg:w-72 lg:flex-col",
-    )(
-      div(cls := "flex grow flex-col gap-y-5 overflow-y-auto border-r border-white/10 bg-black/10 px-6 pb-4")(
-        div(cls := "flex h-16 shrink-0 items-center justify-between")(
-          span(cls := "text-xl font-bold text-white")("A-B-Normal"),
-          button(
-            id                    := "desktop-sidebar-toggle",
-            `type`                := "button",
-            cls                   := "rounded p-1.5 text-gray-300 hover:bg-white/10 hover:text-white",
-            attr("aria-label")    := "Toggle sidebar",
-            attr("aria-expanded") := "true",
-          )(Icons.menu),
+              item.icon,
+              item.label,
+              item.liveBadgePath.fold[Frag](frag())(path => liveBadge(path, None)),
+            )
+          }*
         ),
-        sidebarNav(currentPath, chatWorkspaceNav, pendingDecisions),
+        // Spacer
+        div(cls := "flex-1"),
+        // Right: ADE dropdown
+        tag("ab-nav-dropdown")(attr("label") := "ADE", attr("align") := "right")(
+          frag(
+            adeGroup.items.map { item =>
+              val active = item.activePredicate(currentPath)
+              val badge  =
+                if item.href == "/decisions" then pendingDecisions.filter(_ > 0)
+                else None
+              a(
+                href                 := item.href,
+                attr("role")         := "menuitem",
+                cls                  := s"flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-white/5 hover:text-white ${if active then "bg-white/5 text-white" else "text-gray-300"}",
+                attr("data-active")  := active.toString,
+                attr("aria-current") := Option.when(active)("page").getOrElse("false"),
+              )(
+                item.label,
+                item.liveBadgePath match
+                  case Some(path) => liveBadge(path, badge)
+                  case None       => badge.fold[Frag](frag())(count => staticBadge(count)),
+              )
+            }*
+          )
+        ),
+        // Right: Chats dropdown (only if chatWorkspaceNav is present)
+        chatWorkspaceNav.fold[Frag](frag()) { chatNav =>
+          tag("ab-nav-dropdown")(attr("label") := "Chats", attr("align") := "right")(
+            div(cls := "max-h-96 overflow-y-auto min-w-[16rem]")(
+              chatWorkspacesTree(chatNav)
+            )
+          )
+        },
+        // Right: Command palette trigger
+        button(
+          `type`                         := "button",
+          attr("data-command-palette-trigger") := "",
+          cls                            := "ml-2 flex items-center gap-1 rounded px-2 py-1 text-xs text-gray-400 hover:bg-white/5 hover:text-white border border-white/10",
+        )(
+          span(cls := "sr-only")("Open command palette"),
+          "⌘K",
+        ),
       )
     )
 
-  lazy val coreGatewayGroup: NavGroup = NavGroup(
+  private lazy val coreGatewayGroup: NavGroup = NavGroup(
     label = "Core Gateway",
     items = List(
       NavItem("/", "Command Center", Icons.home, _ == "/"),
@@ -248,7 +192,7 @@ object Layout:
     ),
   )
 
-  lazy val adeGroup: NavGroup = NavGroup(
+  private lazy val adeGroup: NavGroup = NavGroup(
     label = "ADE",
     items = List(
       NavItem("/sdlc", "SDLC Dashboard", Icons.activity, _.startsWith("/sdlc")),
@@ -278,36 +222,6 @@ object Layout:
       NavItem("/daemons", "Daemons", Icons.cpuChip, _.startsWith("/daemons")),
     ),
   )
-
-  private def sidebarNav(
-    currentPath: String,
-    chatWorkspaceNav: Option[ChatWorkspaceNav],
-    pendingDecisions: Option[Int] = None,
-  ): Frag =
-    nav(cls := "flex flex-1 flex-col")(
-      ul(attr("role") := "list", cls := "flex flex-1 flex-col gap-y-7")(
-        li(
-          div(cls := "text-xs/6 font-semibold uppercase tracking-wide text-gray-400")(coreGatewayGroup.label),
-          ul(attr("role") := "list", cls := "-mx-2 mt-2 space-y-1")(
-            coreGatewayGroup.items.map { item =>
-              navItem(item.href, item.label, item.icon, item.activePredicate(currentPath), None, item.liveBadgePath)
-            },
-            chatWorkspaceNav.fold[Frag](deferredChatWorkspacesTree(currentPath))(chatWorkspacesTree),
-          ),
-        ),
-        li(
-          div(cls := "text-xs/6 font-semibold uppercase tracking-wide text-gray-400")(adeGroup.label),
-          ul(attr("role") := "list", cls := "-mx-2 mt-2 space-y-1")(
-            adeGroup.items.map { item =>
-              val badge =
-                if item.href == "/decisions" then pendingDecisions.filter(_ > 0)
-                else None
-              navItem(item.href, item.label, item.icon, item.activePredicate(currentPath), badge, item.liveBadgePath)
-            },
-          ),
-        ),
-      )
-    )
 
   private def relativeTime(instant: java.time.Instant, now: java.time.Instant): String =
     val minutes = java.time.temporal.ChronoUnit.MINUTES.between(instant, now)
@@ -470,49 +384,6 @@ object Layout:
           (visible, remaining)
         case _                                                                                  =>
           (initial, chats.drop(SidebarChatInitialLimit))
-
-  private def deferredChatWorkspacesTree(currentPath: String): Frag =
-    div(
-      attr("hx-get")     := s"/chat/sidebar-nav?path=${URLEncoder.encode(currentPath, "UTF-8")}",
-      attr("hx-trigger") := "load",
-      attr("hx-swap")    := "innerHTML",
-      cls                := "mt-2",
-    )(
-      p(cls := "px-2 py-1 text-[11px] text-gray-500")("Loading workspace chats...")
-    )
-
-  private def navItem(
-    href: String,
-    label: String,
-    icon: Frag,
-    active: Boolean,
-    badge: Option[Int] = None,
-    liveBadgePath: Option[String] = None,
-  ): Frag =
-    val classes   =
-      if active then
-        "group relative flex gap-x-3 rounded-md border border-cyan-400/20 bg-cyan-500/10 p-2 text-sm/6 font-semibold text-white"
-      else
-        "group relative flex gap-x-3 rounded-md border border-transparent p-2 text-sm/6 font-semibold text-gray-400 hover:border-white/10 hover:bg-white/5 hover:text-white"
-    val badgeNode =
-      liveBadgePath match
-        case Some(path) =>
-          liveBadge(path, badge)
-        case None       =>
-          badge.fold[Frag](frag())(count => staticBadge(count))
-    li(
-      a(
-        attr("href")         := href,
-        cls                  := classes,
-        attr("aria-current") := Option.when(active)("page").getOrElse("false"),
-        attr("data-active")  := active.toString,
-      )(
-        if active then span(cls := "absolute inset-y-1 left-0 w-1 rounded-r-full bg-cyan-300")() else frag(),
-        icon,
-        span(cls := "flex-1")(label),
-        badgeNode,
-      )
-    )
 
   private def liveBadge(path: String, initialCount: Option[Int]): Frag =
     span(

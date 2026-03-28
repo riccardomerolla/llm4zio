@@ -141,6 +141,7 @@ object Components:
     * globally). Views use `dsScripts` to include them.
     */
   val dsScripts: Seq[Frag] = Seq(
+    JsResources.inlineModuleScript("/static/client/components/ab-nav-dropdown.js"),
     JsResources.inlineModuleScript("/static/client/components/design-system/ab-badge.js"),
     JsResources.inlineModuleScript("/static/client/components/design-system/ab-spinner.js"),
     JsResources.inlineModuleScript("/static/client/components/design-system/ab-status.js"),
