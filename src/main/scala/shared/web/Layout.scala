@@ -97,72 +97,121 @@ object Layout:
     chatWorkspaceNav: Option[ChatWorkspaceNav],
     pendingDecisions: Option[Int],
   ): Frag =
-    nav(
-      cls := "fixed top-0 z-50 w-full border-b border-white/10 bg-gray-900/95 backdrop-blur-sm",
-      attr("aria-label") := "Main navigation",
-    )(
-      div(cls := "flex h-10 items-center gap-2 px-4")(
-        // Left: Brand
-        span(cls := "mr-4 text-sm font-semibold text-white")("A-B-Normal"),
-        // Center/Left: Core Gateway nav items
-        frag(
-          coreGatewayGroup.items.map { item =>
-            val active = item.activePredicate(currentPath)
-            a(
-              href                 := item.href,
-              cls                  := s"flex items-center gap-1.5 rounded px-2 py-1 text-xs hover:bg-white/5 hover:text-white ${if active then "bg-white/5 text-white" else "text-gray-400"}",
-              attr("data-active")  := active.toString,
-              if active then attr("aria-current") := "page" else frag(),
-            )(
-              item.icon,
-              item.label,
-              item.liveBadgePath.fold[Frag](frag())(path => liveBadge(path, None)),
-            )
-          }*
-        ),
-        // Spacer
-        div(cls := "flex-1"),
-        // Right: ADE dropdown
-        tag("ab-nav-dropdown")(attr("label") := "ADE", attr("align") := "right")(
-          frag(
-            adeGroup.items.map { item =>
+    frag(
+      nav(
+        cls := "fixed top-0 z-50 w-full border-b border-white/10 bg-gray-900/95 backdrop-blur-sm",
+        attr("aria-label") := "Main navigation",
+      )(
+        div(cls := "flex h-10 items-center px-4")(
+          // Left spacer (balances the right controls for true centering)
+          div(cls := "flex-1"),
+          // Center: Core Gateway nav items
+          div(cls := "flex items-center gap-0.5")(
+            coreGatewayGroup.items.map { item =>
               val active = item.activePredicate(currentPath)
-              val badge  =
-                if item.href == "/decisions" then pendingDecisions.filter(_ > 0)
-                else None
               a(
-                href                 := item.href,
-                attr("role")         := "menuitem",
-                cls                  := s"flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-white/5 hover:text-white ${if active then "bg-white/5 text-white" else "text-gray-300"}",
-                attr("data-active")  := active.toString,
+                href := item.href,
+                cls  := s"flex items-center gap-1 rounded px-2 py-1 text-xs ${if active then "bg-white/5 text-white" else "text-gray-400 hover:bg-white/5 hover:text-white"}",
                 if active then attr("aria-current") := "page" else frag(),
               )(
+                item.icon,
                 item.label,
-                item.liveBadgePath match
-                  case Some(path) => liveBadge(path, badge)
-                  case None       => badge.fold[Frag](frag())(count => staticBadge(count)),
+                item.liveBadgePath.fold[Frag](frag())(path => liveBadge(path, None)),
               )
             }*
-          )
+          ),
+          // Right: ADE dropdown + optional Chats + ⌘K
+          div(cls := "flex items-center gap-2 flex-1 justify-end")(
+            // ADE dropdown — pure HTML, toggled by inline script
+            div(cls := "relative", attr("data-nav-dropdown") := "")(
+              button(
+                `type`                       := "button",
+                cls                          := "flex items-center gap-1 rounded px-2 py-1 text-xs text-gray-400 hover:bg-white/5 hover:text-white",
+                attr("data-nav-trigger")     := "",
+                attr("aria-haspopup")        := "menu",
+                attr("aria-expanded")        := "false",
+              )("ADE ", span(cls := "text-[9px] opacity-60")("▼")),
+              div(
+                cls                      := "hidden absolute right-0 top-full mt-1 z-50 min-w-[10rem] rounded-lg border border-white/10 bg-slate-900 shadow-xl py-1",
+                attr("role")             := "menu",
+                attr("data-nav-panel")   := "",
+              )(
+                adeGroup.items.map { item =>
+                  val active = item.activePredicate(currentPath)
+                  val badge  =
+                    if item.href == "/decisions" then pendingDecisions.filter(_ > 0)
+                    else None
+                  a(
+                    href         := item.href,
+                    attr("role") := "menuitem",
+                    cls          := s"flex items-center gap-2 px-3 py-1.5 text-xs ${if active then "bg-white/5 text-white" else "text-gray-300 hover:bg-white/5 hover:text-white"}",
+                    if active then attr("aria-current") := "page" else frag(),
+                  )(
+                    item.label,
+                    item.liveBadgePath match
+                      case Some(path) => liveBadge(path, badge)
+                      case None       => badge.fold[Frag](frag())(count => staticBadge(count)),
+                  )
+                }*
+              ),
+            ),
+            // Chats dropdown (only when chatWorkspaceNav is present)
+            chatWorkspaceNav.fold[Frag](frag()) { chatNav =>
+              div(cls := "relative", attr("data-nav-dropdown") := "")(
+                button(
+                  `type`                   := "button",
+                  cls                      := "flex items-center gap-1 rounded px-2 py-1 text-xs text-gray-400 hover:bg-white/5 hover:text-white",
+                  attr("data-nav-trigger") := "",
+                  attr("aria-haspopup")    := "menu",
+                  attr("aria-expanded")    := "false",
+                )("Chats ", span(cls := "text-[9px] opacity-60")("▼")),
+                div(
+                  cls                    := "hidden absolute right-0 top-full mt-1 z-50 max-h-96 overflow-y-auto min-w-[16rem] rounded-lg border border-white/10 bg-slate-900 shadow-xl py-1",
+                  attr("role")           := "menu",
+                  attr("data-nav-panel") := "",
+                )(
+                  chatWorkspacesTree(chatNav)
+                ),
+              )
+            },
+            // Command palette trigger
+            button(
+              `type`                               := "button",
+              attr("data-command-palette-trigger") := "",
+              cls                                  := "flex items-center gap-1 rounded px-2 py-1 text-xs text-gray-400 hover:bg-white/5 hover:text-white border border-white/10",
+            )(
+              span(cls := "sr-only")("Open command palette"),
+              "⌘K",
+            ),
+          ),
         ),
-        // Right: Chats dropdown (only if chatWorkspaceNav is present)
-        chatWorkspaceNav.fold[Frag](frag()) { chatNav =>
-          tag("ab-nav-dropdown")(attr("label") := "Chats", attr("align") := "right")(
-            div(cls := "max-h-96 overflow-y-auto min-w-[16rem]")(
-              chatWorkspacesTree(chatNav)
-            )
-          )
-        },
-        // Right: Command palette trigger
-        button(
-          `type`                         := "button",
-          attr("data-command-palette-trigger") := "",
-          cls                            := "ml-2 flex items-center gap-1 rounded px-2 py-1 text-xs text-gray-400 hover:bg-white/5 hover:text-white border border-white/10",
-        )(
-          span(cls := "sr-only")("Open command palette"),
-          "⌘K",
-        ),
-      )
+      ),
+      // Dropdown toggle script — pure vanilla, no framework dependency
+      script(raw("""(function(){
+        |  function initDropdowns(){
+        |    document.querySelectorAll('[data-nav-dropdown]').forEach(function(el){
+        |      if(el._navInit) return;
+        |      el._navInit = true;
+        |      var trigger = el.querySelector('[data-nav-trigger]');
+        |      var panel   = el.querySelector('[data-nav-panel]');
+        |      if(!trigger || !panel) return;
+        |      trigger.addEventListener('click', function(e){
+        |        e.stopPropagation();
+        |        var opening = panel.classList.contains('hidden');
+        |        closeAll();
+        |        if(opening){ panel.classList.remove('hidden'); trigger.setAttribute('aria-expanded','true'); }
+        |      });
+        |    });
+        |  }
+        |  function closeAll(){
+        |    document.querySelectorAll('[data-nav-panel]').forEach(function(p){ p.classList.add('hidden'); });
+        |    document.querySelectorAll('[data-nav-trigger]').forEach(function(t){ t.setAttribute('aria-expanded','false'); });
+        |  }
+        |  document.addEventListener('click', closeAll);
+        |  document.addEventListener('keydown', function(e){ if(e.key==='Escape') closeAll(); });
+        |  initDropdowns();
+        |  document.addEventListener('htmx:afterSwap', initDropdowns);
+        |})();""".stripMargin)),
     )
 
   private lazy val coreGatewayGroup: NavGroup = NavGroup(

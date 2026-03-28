@@ -33,14 +33,12 @@ object LayoutSpec extends ZIOSpecDefault:
           html.contains("Specifications"),
           html.contains("Settings"),
           html.contains("Board"),
-          html.contains("A-B-Normal"),
-          html.contains("ab-nav-dropdown"),
+          html.contains("data-nav-dropdown"),
         )
       },
       test("board nav item is active when currentPath starts with /board") {
         val html = Layout.page("Test", "/board")()
         assertTrue(
-          html.contains("data-active=\"true\""),
           html.contains("aria-current=\"page\""),
         )
       },
@@ -62,7 +60,7 @@ object LayoutSpec extends ZIOSpecDefault:
         assertTrue(
           html.contains("id=\"app-main-shell\""),
           html.contains("pt-10"),
-          html.contains("ab-nav-dropdown"),
+          html.contains("data-nav-dropdown"),
           !html.contains("id=\"mobile-sidebar\""),
           !html.contains("id=\"desktop-sidebar\""),
           !html.contains("id=\"desktop-sidebar-restore\""),
