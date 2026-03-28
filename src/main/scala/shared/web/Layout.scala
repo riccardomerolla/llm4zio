@@ -11,6 +11,34 @@ object Layout:
 
   private val SidebarChatInitialLimit = 10
 
+  /** A single navigation item in the sidebar.
+    *
+    * @param href
+    *   The link target.
+    * @param label
+    *   Display text.
+    * @param icon
+    *   SVG icon fragment.
+    * @param activePredicate
+    *   Returns true when the item should be highlighted given the current path.
+    * @param liveBadgePath
+    *   Optional HTMX path used to load a live badge count.
+    * @param badgeSource
+    *   Maps the optional pending-decisions count to an initial badge value shown before the live badge loads.
+    *   Defaults to always returning None (no initial badge).
+    */
+  final case class NavItem(
+    href: String,
+    label: String,
+    icon: Frag,
+    activePredicate: String => Boolean,
+    liveBadgePath: Option[String] = None,
+    badgeSource: Option[Int] => Option[Int] = _ => None,
+  )
+
+  /** A labelled group of [[NavItem]]s rendered as a section in the sidebar. */
+  final case class NavGroup(label: String, items: List[NavItem])
+
   final case class ChatNavItem(
     conversationId: String,
     title: String,
@@ -197,6 +225,65 @@ object Layout:
       )
     )
 
+  lazy val coreGatewayGroup: NavGroup = NavGroup(
+    label = "Core Gateway",
+    items = List(
+      NavItem("/", "Command Center", Icons.home, _ == "/"),
+      NavItem("/projects", "Projects", Icons.workflow, _.startsWith("/projects")),
+      NavItem("/specifications", "Specifications", Icons.documentText, _.startsWith("/specifications")),
+      NavItem("/plans", "Plans", Icons.tableColumns, _.startsWith("/plans")),
+      NavItem("/knowledge", "Knowledge", Icons.documentText, _.startsWith("/knowledge")),
+      NavItem(
+        "/workspaces",
+        "Workspaces",
+        Icons.folder,
+        p => p.startsWith("/workspaces") || p.startsWith("/settings/workspaces"),
+      ),
+      NavItem("/agents", "Agents", Icons.cpuChip, _.startsWith("/agents")),
+      NavItem(
+        "/settings",
+        "Settings",
+        Icons.cog,
+        p =>
+          p.startsWith("/settings") || p.startsWith("/config") ||
+          p.startsWith("/models") || p.startsWith("/channels") ||
+          p.startsWith("/health"),
+      ),
+    ),
+  )
+
+  lazy val adeGroup: NavGroup = NavGroup(
+    label = "ADE",
+    items = List(
+      NavItem("/sdlc", "SDLC Dashboard", Icons.activity, _.startsWith("/sdlc")),
+      NavItem(
+        "/board",
+        "Board",
+        Icons.tableColumns,
+        p => p.startsWith("/board") || p.startsWith("/issues/board"),
+        liveBadgePath = Some("/sidebar/badges/board"),
+      ),
+      NavItem(
+        "/checkpoints",
+        "Checkpoints",
+        Icons.documentText,
+        _.startsWith("/checkpoints"),
+        liveBadgePath = Some("/sidebar/badges/checkpoints"),
+      ),
+      NavItem(
+        "/decisions",
+        "Decisions",
+        Icons.activity,
+        _.startsWith("/decisions"),
+        liveBadgePath = Some("/sidebar/badges/decisions"),
+        badgeSource = _.filter(_ > 0),
+      ),
+      NavItem("/governance", "Governance", Icons.documentText, _.startsWith("/governance")),
+      NavItem("/evolution", "Evolution", Icons.sparkles, _.startsWith("/evolution")),
+      NavItem("/daemons", "Daemons", Icons.cpuChip, _.startsWith("/daemons")),
+    ),
+  )
+
   private def sidebarNav(
     currentPath: String,
     chatWorkspaceNav: Option[ChatWorkspaceNav],
@@ -205,90 +292,20 @@ object Layout:
     nav(cls := "flex flex-1 flex-col")(
       ul(attr("role") := "list", cls := "flex flex-1 flex-col gap-y-7")(
         li(
-          div(cls := "text-xs/6 font-semibold uppercase tracking-wide text-gray-400")("Core Gateway"),
+          div(cls := "text-xs/6 font-semibold uppercase tracking-wide text-gray-400")(coreGatewayGroup.label),
           ul(attr("role") := "list", cls := "-mx-2 mt-2 space-y-1")(
-            navItem("/", "Command Center", Icons.home, currentPath == "/"),
-            navItem("/projects", "Projects", Icons.workflow, currentPath.startsWith("/projects")),
-            navItem(
-              "/specifications",
-              "Specifications",
-              Icons.documentText,
-              currentPath.startsWith("/specifications"),
-            ),
-            navItem(
-              "/plans",
-              "Plans",
-              Icons.tableColumns,
-              currentPath.startsWith("/plans"),
-            ),
-            navItem(
-              "/knowledge",
-              "Knowledge",
-              Icons.documentText,
-              currentPath.startsWith("/knowledge"),
-            ),
-            navItem(
-              "/workspaces",
-              "Workspaces",
-              Icons.folder,
-              currentPath.startsWith("/workspaces") || currentPath.startsWith("/settings/workspaces"),
-            ),
-            navItem("/agents", "Agents", Icons.cpuChip, currentPath.startsWith("/agents")),
-            navItem(
-              "/settings",
-              "Settings",
-              Icons.cog,
-              currentPath.startsWith("/settings") || currentPath.startsWith("/config") ||
-              currentPath.startsWith("/models") || currentPath.startsWith("/channels") ||
-              currentPath.startsWith("/health"),
-            ),
+            coreGatewayGroup.items.map { item =>
+              navItem(item.href, item.label, item.icon, item.activePredicate(currentPath), item.badgeSource(None), item.liveBadgePath)
+            },
             chatWorkspaceNav.fold[Frag](deferredChatWorkspacesTree(currentPath))(chatWorkspacesTree),
           ),
         ),
         li(
-          div(cls := "text-xs/6 font-semibold uppercase tracking-wide text-gray-400")("ADE"),
+          div(cls := "text-xs/6 font-semibold uppercase tracking-wide text-gray-400")(adeGroup.label),
           ul(attr("role") := "list", cls := "-mx-2 mt-2 space-y-1")(
-            navItem("/sdlc", "SDLC Dashboard", Icons.activity, currentPath.startsWith("/sdlc")),
-            navItem(
-              "/board",
-              "Board",
-              Icons.tableColumns,
-              currentPath.startsWith("/board") || currentPath.startsWith("/issues/board"),
-              liveBadgePath = Some("/sidebar/badges/board"),
-            ),
-            navItem(
-              "/checkpoints",
-              "Checkpoints",
-              Icons.documentText,
-              currentPath.startsWith("/checkpoints"),
-              liveBadgePath = Some("/sidebar/badges/checkpoints"),
-            ),
-            navItem(
-              "/decisions",
-              "Decisions",
-              Icons.activity,
-              currentPath.startsWith("/decisions"),
-              pendingDecisions.filter(_ > 0),
-              liveBadgePath = Some("/sidebar/badges/decisions"),
-            ),
-            navItem(
-              "/governance",
-              "Governance",
-              Icons.documentText,
-              currentPath.startsWith("/governance"),
-            ),
-            navItem(
-              "/evolution",
-              "Evolution",
-              Icons.sparkles,
-              currentPath.startsWith("/evolution"),
-            ),
-            navItem(
-              "/daemons",
-              "Daemons",
-              Icons.cpuChip,
-              currentPath.startsWith("/daemons"),
-            ),
+            adeGroup.items.map { item =>
+              navItem(item.href, item.label, item.icon, item.activePredicate(currentPath), item.badgeSource(pendingDecisions), item.liveBadgePath)
+            },
           ),
         ),
       )
