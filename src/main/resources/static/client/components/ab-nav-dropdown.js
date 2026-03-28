@@ -9,9 +9,11 @@ import { LitElement, html } from 'https://cdn.jsdelivr.net/npm/lit@3/+esm';
 //   label  (String)  — button label text
 //   align  (String)  — "left" (default) or "right" — panel alignment
 //
+// @slot - Nav items; slotted interactive elements should have role="menuitem" for ARIA compliance
+//
 // Usage:
 //   <ab-nav-dropdown label="ADE" align="right">
-//     <a href="/board" class="...">Board</a>
+//     <a href="/board" role="menuitem" class="...">Board</a>
 //   </ab-nav-dropdown>
 // ---------------------------------------------------------------------------
 
@@ -51,15 +53,15 @@ class AbNavDropdown extends LitElement {
   // ── Event handlers ─────────────────────────────────────────────────────────
 
   _onOutsideClick(event) {
-    if (!this.contains(event.target)) {
-      this._close();
-    }
+    if (!this.open) return;
+    const path = event.composedPath ? event.composedPath() : [];
+    if (!path.includes(this)) this._close(false);
   }
 
   _onKeydown(event) {
     if (event.key === 'Escape' && this.open) {
       event.preventDefault();
-      this._close();
+      this._close(true);
     }
   }
 
@@ -71,14 +73,14 @@ class AbNavDropdown extends LitElement {
     }
   }
 
-  _close() {
+  _close(returnFocus = true) {
     if (!this.open) return;
     this.open = false;
-    // Return focus to the trigger button
-    this.updateComplete.then(() => {
-      const btn = this.querySelector('[data-nav-trigger]');
-      if (btn) btn.focus();
-    });
+    if (returnFocus) {
+      this.updateComplete.then(() => {
+        this.querySelector('[data-nav-trigger]')?.focus();
+      });
+    }
   }
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -96,7 +98,7 @@ class AbNavDropdown extends LitElement {
         <button
           type="button"
           data-nav-trigger
-          aria-haspopup="true"
+          aria-haspopup="menu"
           aria-expanded="${this.open}"
           class="text-sm text-gray-300 hover:text-white flex items-center gap-1 rounded px-2 py-1 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
           @click="${(e) => { e.stopPropagation(); this._toggle(); }}"
