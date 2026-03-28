@@ -51,9 +51,9 @@ object LayoutSpec extends ZIOSpecDefault:
       test("ADE items include live badge loaders for board, checkpoints, and decisions") {
         val html = Layout.page("Test", "/decisions", pendingDecisions = Some(3))()
         assertTrue(
-          html.contains("/sidebar/badges/board"),
-          html.contains("/sidebar/badges/checkpoints"),
-          html.contains("/sidebar/badges/decisions"),
+          html.contains("/nav/badges/board"),
+          html.contains("/nav/badges/checkpoints"),
+          html.contains("/nav/badges/decisions"),
           html.contains(">3<"),
         )
       },

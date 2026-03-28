@@ -68,7 +68,7 @@ object AdeRouteModule:
             daemons.routes ++
             GovernanceController.routes(governancePolicyRepo) ++
             EvolutionController.routes(evolutionRepo) ++
-            SidebarStatusController.routes(
+            NavBadgeController.routes(
               decisionInbox,
               checkpointReview,
               issueRepository,
