@@ -7,7 +7,6 @@ import { LitElement, html } from 'https://cdn.jsdelivr.net/npm/lit@3/+esm';
 // Registered shortcuts:
 //   Ctrl/Cmd+K   — Open command palette (handled by ab-command-palette, documented here)
 //   Ctrl/Cmd+N   — New chat → /chat/new
-//   Ctrl/Cmd+/   — Toggle sidebar (clicks #desktop-sidebar-toggle)
 //   Ctrl/Cmd+Shift+M — Toggle memory/context panel
 //   Ctrl/Cmd+Shift+G — Toggle git panel
 //   Ctrl/Cmd+Enter   — Submit active composer form
@@ -77,13 +76,6 @@ class AbKeyboardShortcuts extends LitElement {
       return;
     }
 
-    // Ctrl/Cmd+/ — Toggle sidebar
-    if (ctrl && !shift && e.key === '/') {
-      e.preventDefault();
-      document.getElementById('desktop-sidebar-toggle')?.click();
-      return;
-    }
-
     // Ctrl/Cmd+Shift+M — Memory/context panel
     if (ctrl && shift && e.key === 'M') {
       e.preventDefault();
@@ -143,7 +135,6 @@ class AbKeyboardShortcuts extends LitElement {
     return [
       { keys: m ? '⌘K'   : 'Ctrl+K',       label: 'Command palette' },
       { keys: m ? '⌘N'   : 'Ctrl+N',        label: 'New chat' },
-      { keys: m ? '⌘/'   : 'Ctrl+/',        label: 'Toggle sidebar' },
       { keys: m ? '⌘⇧M'  : 'Ctrl+Shift+M', label: 'Memory panel' },
       { keys: m ? '⌘⇧G'  : 'Ctrl+Shift+G', label: 'Git panel' },
       { keys: m ? '⌘↵'   : 'Ctrl+Enter',   label: 'Send message' },

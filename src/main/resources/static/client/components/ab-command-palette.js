@@ -77,21 +77,6 @@ class AbCommandPalette extends LitElement {
         icon: 'plus',
         action: () => { window.location.href = '/chat/new'; },
       },
-      {
-        type: 'action',
-        label: 'Toggle sidebar',
-        shortcut: this._mac ? '⌘/' : 'Ctrl+/',
-        icon: 'sidebar',
-        action: () => {
-          // Mirror what the desktop sidebar toggle does
-          const btn = document.getElementById('desktop-sidebar-toggle');
-          if (btn) {
-            btn.click();
-          } else {
-            window.dispatchEvent(new CustomEvent('toggle-sidebar'));
-          }
-        },
-      },
     ];
   }
 
