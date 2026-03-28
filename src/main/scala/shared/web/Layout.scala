@@ -23,9 +23,6 @@ object Layout:
     *   Returns true when the item should be highlighted given the current path.
     * @param liveBadgePath
     *   Optional HTMX path used to load a live badge count.
-    * @param badgeSource
-    *   Maps the optional pending-decisions count to an initial badge value shown before the live badge loads.
-    *   Defaults to always returning None (no initial badge).
     */
   final case class NavItem(
     href: String,
@@ -33,7 +30,6 @@ object Layout:
     icon: Frag,
     activePredicate: String => Boolean,
     liveBadgePath: Option[String] = None,
-    badgeSource: Option[Int] => Option[Int] = _ => None,
   )
 
   /** A labelled group of [[NavItem]]s rendered as a section in the sidebar. */
@@ -276,7 +272,6 @@ object Layout:
         Icons.activity,
         _.startsWith("/decisions"),
         liveBadgePath = Some("/sidebar/badges/decisions"),
-        badgeSource = _.filter(_ > 0),
       ),
       NavItem("/governance", "Governance", Icons.documentText, _.startsWith("/governance")),
       NavItem("/evolution", "Evolution", Icons.sparkles, _.startsWith("/evolution")),
@@ -295,7 +290,7 @@ object Layout:
           div(cls := "text-xs/6 font-semibold uppercase tracking-wide text-gray-400")(coreGatewayGroup.label),
           ul(attr("role") := "list", cls := "-mx-2 mt-2 space-y-1")(
             coreGatewayGroup.items.map { item =>
-              navItem(item.href, item.label, item.icon, item.activePredicate(currentPath), item.badgeSource(None), item.liveBadgePath)
+              navItem(item.href, item.label, item.icon, item.activePredicate(currentPath), None, item.liveBadgePath)
             },
             chatWorkspaceNav.fold[Frag](deferredChatWorkspacesTree(currentPath))(chatWorkspacesTree),
           ),
@@ -304,7 +299,10 @@ object Layout:
           div(cls := "text-xs/6 font-semibold uppercase tracking-wide text-gray-400")(adeGroup.label),
           ul(attr("role") := "list", cls := "-mx-2 mt-2 space-y-1")(
             adeGroup.items.map { item =>
-              navItem(item.href, item.label, item.icon, item.activePredicate(currentPath), item.badgeSource(pendingDecisions), item.liveBadgePath)
+              val badge =
+                if item.href == "/decisions" then pendingDecisions.filter(_ > 0)
+                else None
+              navItem(item.href, item.label, item.icon, item.activePredicate(currentPath), badge, item.liveBadgePath)
             },
           ),
         ),
