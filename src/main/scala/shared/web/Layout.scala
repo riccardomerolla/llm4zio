@@ -98,7 +98,8 @@ object Layout:
     pendingDecisions: Option[Int],
   ): Frag =
     nav(
-      cls := "fixed top-0 z-50 w-full border-b border-white/10 bg-gray-900/95 backdrop-blur-sm"
+      cls := "fixed top-0 z-50 w-full border-b border-white/10 bg-gray-900/95 backdrop-blur-sm",
+      attr("aria-label") := "Main navigation",
     )(
       div(cls := "flex h-10 items-center gap-2 px-4")(
         // Left: Brand
@@ -111,7 +112,7 @@ object Layout:
               href                 := item.href,
               cls                  := s"flex items-center gap-1.5 rounded px-2 py-1 text-xs hover:bg-white/5 hover:text-white ${if active then "bg-white/5 text-white" else "text-gray-400"}",
               attr("data-active")  := active.toString,
-              attr("aria-current") := Option.when(active)("page").getOrElse("false"),
+              if active then attr("aria-current") := "page" else frag(),
             )(
               item.icon,
               item.label,
@@ -134,7 +135,7 @@ object Layout:
                 attr("role")         := "menuitem",
                 cls                  := s"flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-white/5 hover:text-white ${if active then "bg-white/5 text-white" else "text-gray-300"}",
                 attr("data-active")  := active.toString,
-                attr("aria-current") := Option.when(active)("page").getOrElse("false"),
+                if active then attr("aria-current") := "page" else frag(),
               )(
                 item.label,
                 item.liveBadgePath match
