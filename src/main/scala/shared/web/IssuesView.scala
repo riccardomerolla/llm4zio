@@ -133,7 +133,6 @@ object IssuesView:
     val filteredIssues              = hasProofFilter match
       case Some(true) => BoardStats.hasProofFilter(issues, workReports)
       case _          => issues
-    val stats                       = BoardStats.compute(issues, workReports)
     val queryParts                  = List(
       workspaceFilter.filter(_.nonEmpty).map(v => s"workspace=${urlEncode(v)}"),
       agentFilter.filter(_.nonEmpty).map(v => s"agent=${urlEncode(v)}"),
@@ -145,22 +144,6 @@ object IssuesView:
     val fragmentUrl                 =
       if queryParts.isEmpty then "/board/fragment"
       else s"/board/fragment?${queryParts.mkString("&")}"
-    val pipelineCounts              = boardStatuses.map { (status, label) =>
-      val token = issueStatusToken(status)
-      val count = filteredIssues.count(_.status == status)
-      (token, label, count)
-    }
-    val throughputPct               =
-      if filteredIssues.isEmpty then 0
-      else
-        ((filteredIssues.count(i =>
-          i.status == IssueStatus.Done || i.status == IssueStatus.Completed
-        ).toDouble / filteredIssues.size.toDouble) * 100).toInt
-    val (activeAgents, totalAgents) = agentUsage.getOrElse(0 -> math.max(availableAgents.size, 1))
-    val syncStateCls                =
-      if syncStatus.errorCount > 0 then "bg-rose-400"
-      else if syncStatus.lastSyncAt.isEmpty then "bg-amber-400"
-      else "bg-emerald-400"
 
     Layout.page("Issue Board", "/board")(
       div(cls := "space-y-4")(
@@ -218,38 +201,8 @@ object IssuesView:
               ),
             ),
           ),
-          div(cls := "mt-3 flex flex-wrap items-center gap-2 text-xs")(
-            pipelineCounts.map { (token, label, count) =>
-              a(
-                href := currentBoardUrl(
-                  mode = "board",
-                  workspaceFilter = workspaceFilter,
-                  agentFilter = agentFilter,
-                  priorityFilter = priorityFilter,
-                  tagFilter = tagFilter,
-                  query = query,
-                  statusFilter = Some(token),
-                  hasProofFilter = hasProofFilter,
-                ),
-                cls  := "rounded-full border border-white/15 bg-slate-800/60 px-3 py-1 text-slate-200 hover:border-indigo-300/50",
-              )(s"$label: $count")
-            },
-            span(cls := "rounded-full border border-white/15 bg-slate-800/60 px-3 py-1 text-slate-200")(
-              s"Throughput: $throughputPct%"
-            ),
-            span(cls := "rounded-full border border-white/15 bg-slate-800/60 px-3 py-1 text-slate-200")(
-              s"Agents: $activeAgents/$totalAgents"
-            ),
-            span(
-              cls := "inline-flex items-center gap-1 rounded-full border border-white/15 bg-slate-800/60 px-3 py-1 text-slate-200"
-            )(
-              span(cls := s"h-2 w-2 rounded-full $syncStateCls"),
-              s"Sync ${syncStatus.syncedCount}/${syncStatus.errorCount}",
-            ),
-          ),
         ),
         bulkToolbar("board"),
-        raw(BoardStats.statsBar(stats)),
         boardFilterBar(workspaces, workspaceFilter, agentFilter, priorityFilter, tagFilter, query, hasProofFilter),
         div(
           id                           := "issues-board-root",
