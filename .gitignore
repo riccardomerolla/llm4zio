@@ -26,3 +26,4 @@ java-output/
 migration.db
 gateway.db
 data/.worktrees/
+.worktrees/
