@@ -7,6 +7,7 @@ import config.control.{ ModelRegistryResponse, ProviderProbeStatus }
 import config.entity.{ AgentInfo, WorkflowDefinition }
 import conversation.entity.api.{ ChatConversation, ConversationEntry, ConversationSessionMeta }
 import db.{ TaskReportRow, TaskRunRow }
+import decision.entity.Decision
 import gateway.entity.ChatSession
 import issues.entity.IssueWorkReport
 import issues.entity.api.{
@@ -291,8 +292,9 @@ object HtmlViews:
     mergeHistory: List[MergeHistoryEntryView],
     workspaces: List[(String, String)],
     workReport: Option[IssueWorkReport] = None,
+    decisions: List[Decision] = Nil,
   ): String =
-    IssuesView.detail(issue, issueRuns, availableAgents, analysisDocs, mergeHistory, workspaces, workReport)
+    IssuesView.detail(issue, issueRuns, availableAgents, analysisDocs, mergeHistory, workspaces, workReport, decisions)
 
   def issueEditForm(issue: AgentIssueView, workspaces: List[(String, String)]): String =
     IssuesView.editForm(issue, workspaces)

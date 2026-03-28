@@ -5,6 +5,7 @@ import java.time.Instant
 import zio.json.*
 
 import config.entity.AgentInfo
+import decision.entity.{ Decision, DecisionResolutionKind }
 import issues.entity.IssueWorkReport
 import issues.entity.api.*
 import scalatags.Text.all.*
@@ -670,8 +671,9 @@ object IssuesView:
     mergeHistory: List[MergeHistoryEntryView],
     workspaces: List[(String, String)],
     workReport: Option[IssueWorkReport] = None,
+    decisions: List[Decision] = Nil,
   ): String =
-    detailPage(issue, issueRuns, availableAgents, analysisDocs, mergeHistory, workspaces, workReport)
+    detailPage(issue, issueRuns, availableAgents, analysisDocs, mergeHistory, workspaces, workReport, decisions)
 
   private def detailPage(
     issue: AgentIssueView,
@@ -681,6 +683,7 @@ object IssuesView:
     mergeHistory: List[MergeHistoryEntryView],
     workspaces: List[(String, String)],
     workReport: Option[IssueWorkReport],
+    decisions: List[Decision] = Nil,
   ): String =
     val issueIdStr      = safe(issue.id, "-")
     val selectedAgent   = safe(issue.preferredAgent).match
@@ -867,6 +870,56 @@ object IssuesView:
                   }
                 ),
             ),
+            // decisions
+            if decisions.nonEmpty then
+              div(cls := "rounded-xl border border-white/10 bg-slate-900/60 p-6")(
+                h2(cls := "mb-3 text-base font-semibold text-white")("Decisions"),
+                div(cls := "space-y-3")(
+                  decisions.map { d =>
+                    val (borderCls, bgCls) = d.resolution.map(_.kind) match
+                      case Some(DecisionResolutionKind.Approved)        => ("border-emerald-400/30", "bg-emerald-500/5")
+                      case Some(DecisionResolutionKind.ReworkRequested) => ("border-amber-400/30", "bg-amber-500/5")
+                      case Some(DecisionResolutionKind.Escalated)       => ("border-rose-400/30", "bg-rose-500/5")
+                      case Some(DecisionResolutionKind.Expired)         => ("border-slate-600/30", "bg-slate-700/20")
+                      case Some(DecisionResolutionKind.Acknowledged)    => ("border-sky-400/30", "bg-sky-500/5")
+                      case None                                         => ("border-white/10", "bg-slate-800/50")
+                    div(cls := s"rounded-lg border $borderCls $bgCls p-4")(
+                      div(cls := "flex flex-wrap items-start justify-between gap-2")(
+                        span(cls := "text-sm font-semibold text-slate-100")(d.title),
+                        d.resolution
+                          .map { r =>
+                            val (badgeBorder, badgeText) = r.kind match
+                              case DecisionResolutionKind.Approved        => ("border-emerald-400/40 text-emerald-300", "Approved")
+                              case DecisionResolutionKind.ReworkRequested => ("border-amber-400/40 text-amber-300", "Rework Requested")
+                              case DecisionResolutionKind.Escalated       => ("border-rose-400/40 text-rose-300", "Escalated")
+                              case DecisionResolutionKind.Expired         => ("border-slate-500/40 text-slate-400", "Expired")
+                              case DecisionResolutionKind.Acknowledged    => ("border-sky-400/40 text-sky-300", "Acknowledged")
+                            span(cls := s"rounded-full border $badgeBorder px-2 py-0.5 text-xs font-semibold")(badgeText)
+                          }
+                          .getOrElse(
+                            span(cls := "rounded-full border border-indigo-400/40 px-2 py-0.5 text-xs font-semibold text-indigo-300")(
+                              "Pending"
+                            )
+                          ),
+                      ),
+                      d.resolution
+                        .map { r =>
+                          div(cls := "mt-2 space-y-1")(
+                            div(cls := "flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400")(
+                              span(cls := "font-medium text-slate-300")(s"by ${r.actor}"),
+                              span(r.respondedAt.toString.take(16).replace("T", " ")),
+                            ),
+                            if r.summary.nonEmpty then
+                              p(cls := "mt-1 text-xs italic text-slate-300")(r.summary)
+                            else (),
+                          )
+                        }
+                        .getOrElse(()),
+                    )
+                  }
+                ),
+              )
+            else (),
             div(id := "issue-analysis-context", cls := "rounded-xl border border-white/10 bg-slate-900/60 p-6")(
               h2(cls := "mb-3 text-base font-semibold text-white")("Analysis Context"),
               if analysisDocs.isEmpty then

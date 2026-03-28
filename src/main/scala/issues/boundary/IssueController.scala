@@ -24,7 +24,7 @@ import board.control.BoardOrchestrator
 import board.entity.{ IssueEstimate as BoardIssueEstimate, IssuePriority as BoardIssuePriority, * }
 import db.{ ChatRepository, TaskRepository }
 import decision.control.DecisionInbox
-import decision.entity.DecisionResolutionKind
+import decision.entity.*
 import issues.control.IssueAnalysisAttachment
 import issues.entity.api.*
 import issues.entity.{ AgentIssue as DomainIssue, * }
@@ -198,6 +198,14 @@ final case class IssueControllerLive(
                                                                       workReport   <- issueWorkReportProjection.get(issue.id)
                                                                     yield (domainToView(issue), analysisDocs, mergeHistory, workReport)
           (issueView, analysisDocs, mergeHistory, workReport) = viewAndMeta
+          decisions                                            <- decisionInbox
+                                                                   .list(
+                                                                     DecisionFilter(
+                                                                       issueId = Some(IssueId(id)),
+                                                                       limit = Int.MaxValue,
+                                                                     )
+                                                                   )
+                                                                   .mapError(mapIssueRepoError)
         yield html(
           HtmlViews.issueDetail(
             issueView,
@@ -207,6 +215,7 @@ final case class IssueControllerLive(
             mergeHistory,
             workspaces.map(ws => ws.id -> ws.name),
             workReport,
+            decisions,
           )
         )
       }
