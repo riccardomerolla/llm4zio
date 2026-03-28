@@ -18,7 +18,7 @@ import { LitElement, html } from 'https://cdn.jsdelivr.net/npm/lit@3/+esm';
 class AbNavDropdown extends LitElement {
   static properties = {
     label: { type: String },
-    open:  { type: Boolean },
+    open:  { type: Boolean, reflect: true },
     align: { type: String },
   };
 
