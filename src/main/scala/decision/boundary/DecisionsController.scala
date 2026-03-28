@@ -41,7 +41,9 @@ object DecisionsController:
       )
 
   private def listPage(req: Request, decisionInbox: DecisionInbox): IO[PersistenceError, Response] =
-    val statusFilter  = req.queryParam("status").map(_.trim).filter(_.nonEmpty)
+    val statusFilter  = req.queryParam("status") match
+      case None    => Some("pending")
+      case Some(v) => Some(v).map(_.trim).filter(_.nonEmpty)
     val sourceFilter  = req.queryParam("source").map(_.trim).filter(_.nonEmpty)
     val urgencyFilter = req.queryParam("urgency").map(_.trim).filter(_.nonEmpty)
     val query         = req.queryParam("query").map(_.trim).filter(_.nonEmpty)
@@ -63,7 +65,9 @@ object DecisionsController:
     )
 
   private def listFragment(req: Request, decisionInbox: DecisionInbox): IO[PersistenceError, Response] =
-    val statusFilter  = req.queryParam("status").map(_.trim).filter(_.nonEmpty)
+    val statusFilter  = req.queryParam("status") match
+      case None    => Some("pending")
+      case Some(v) => Some(v).map(_.trim).filter(_.nonEmpty)
     val sourceFilter  = req.queryParam("source").map(_.trim).filter(_.nonEmpty)
     val urgencyFilter = req.queryParam("urgency").map(_.trim).filter(_.nonEmpty)
     val query         = req.queryParam("query").map(_.trim).filter(_.nonEmpty)
