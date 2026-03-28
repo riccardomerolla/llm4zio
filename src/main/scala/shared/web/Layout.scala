@@ -7,7 +7,7 @@ import scalatags.Text.tags2.{ nav, title as titleTag }
 
 object Layout:
 
-  private val SidebarChatInitialLimit = 10 // used by chatWorkspacesTree
+  private val ChatInitialLimit = 10 // used by chatWorkspacesTree and chats dropdown
 
   /** A single navigation item in the sidebar.
     *
@@ -84,7 +84,6 @@ object Layout:
         JsResources.inlineModuleScript("/static/client/components/ab-command-palette.js"),
         tag("ab-keyboard-shortcuts")(),
         JsResources.inlineModuleScript("/static/client/components/ab-keyboard-shortcuts.js"),
-        JsResources.inlineModuleScript("/static/client/components/ab-nav-dropdown.js"),
         frag(Components.dsScripts*),
       ),
     ).render
@@ -374,16 +373,16 @@ object Layout:
     )
 
   private def splitSidebarChats(chats: List[ChatNavItem]): (List[ChatNavItem], List[ChatNavItem]) =
-    val initial = chats.take(SidebarChatInitialLimit)
-    if chats.length <= SidebarChatInitialLimit then (initial, Nil)
+    val initial = chats.take(ChatInitialLimit)
+    if chats.length <= ChatInitialLimit then (initial, Nil)
     else
       chats.find(_.active) match
         case Some(activeChat) if !initial.exists(_.conversationId == activeChat.conversationId) =>
-          val visible   = (initial.take(SidebarChatInitialLimit - 1) :+ activeChat).distinctBy(_.conversationId)
+          val visible   = (initial.take(ChatInitialLimit - 1) :+ activeChat).distinctBy(_.conversationId)
           val remaining = chats.filterNot(chat => visible.exists(_.conversationId == chat.conversationId))
           (visible, remaining)
         case _                                                                                  =>
-          (initial, chats.drop(SidebarChatInitialLimit))
+          (initial, chats.drop(ChatInitialLimit))
 
   private def liveBadge(path: String, initialCount: Option[Int]): Frag =
     span(
