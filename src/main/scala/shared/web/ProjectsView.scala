@@ -162,7 +162,15 @@ object ProjectsView:
           case "board"    => boardTab(data)
           case "analysis" => analysisTab(data)
           case _          => workspacesTab(data),
-      )
+      ),
+      // Board tab requires the Fizzy board component scripts
+      if data.activeTab == "board" then
+        frag(
+          JsResources.inlineModuleScript("/static/client/components/ab-board-column.js"),
+          JsResources.inlineModuleScript("/static/client/components/ab-board-layout.js"),
+          JsResources.inlineModuleScript("/static/client/components/ab-issues-board.js"),
+        )
+      else frag(),
     )
 
   private def emptyState: Frag =

@@ -21,15 +21,18 @@ class AbBoardColumn extends HTMLElement {
 
   // Map Tailwind bg-* class names to hex colors for inline dot styling
   static _colorMap = {
-    'bg-slate-400':  '#94a3b8',
-    'bg-blue-400':   '#60a5fa',
-    'bg-amber-400':  '#fbbf24',
-    'bg-purple-400': '#c084fc',
-    'bg-orange-400': '#fb923c',
-    'bg-teal-400':   '#2dd4bf',
-    'bg-green-400':  '#4ade80',
-    'bg-gray-400':   '#9ca3af',
-    'bg-red-400':    '#f87171',
+    'bg-slate-400':   '#94a3b8',
+    'bg-slate-500':   '#64748b',
+    'bg-blue-400':    '#60a5fa',
+    'bg-amber-400':   '#fbbf24',
+    'bg-purple-400':  '#c084fc',
+    'bg-orange-400':  '#fb923c',
+    'bg-teal-400':    '#2dd4bf',
+    'bg-green-400':   '#4ade80',
+    'bg-emerald-400': '#34d399',  // Done
+    'bg-gray-400':    '#9ca3af',
+    'bg-red-400':     '#f87171',
+    'bg-rose-500':    '#f43f5e',  // Canceled
   };
 
   constructor() {
