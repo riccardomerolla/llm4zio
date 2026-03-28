@@ -12,7 +12,12 @@
  *   ab-column-toggle — bubbles, composed; detail: { status }
  */
 class AbBoardColumn extends HTMLElement {
-  static observedAttributes = ['expanded'];
+  static observedAttributes = ['expanded', 'count'];
+
+  // Progress bar sizing: 4 px per card, min 4 px, max 56 px (full at 14 cards)
+  static _PROGRESS_PX_PER_CARD = 4;
+  static _PROGRESS_MAX_PX      = 56;
+  static _PROGRESS_MIN_PX      = 4;
 
   // Map Tailwind bg-* class names to hex colors for inline dot styling
   static _colorMap = {
@@ -55,9 +60,15 @@ class AbBoardColumn extends HTMLElement {
     this.removeEventListener('click', this._boundOnClick);
   }
 
-  attributeChangedCallback(name /*, oldValue, newValue */) {
+  attributeChangedCallback(name, _oldValue, newValue) {
     if (name === 'expanded') {
       this._applyVisual();
+    } else if (name === 'count') {
+      const n = parseInt(newValue || '0', 10);
+      const countEl = this.querySelector('[data-compact-count]');
+      if (countEl) countEl.textContent = String(n);
+      const bar = this.querySelector('[data-compact-progress]');
+      if (bar) bar.style.height = `${AbBoardColumn._progressHeight(n)}px`;
     }
   }
 
@@ -70,14 +81,18 @@ class AbBoardColumn extends HTMLElement {
    * @param {number} n
    */
   updateCount(n) {
+    // Setting the attribute triggers attributeChangedCallback which updates the DOM
     this.setAttribute('count', String(n));
-    const countEl = this.querySelector('[data-compact-count]');
-    if (countEl) countEl.textContent = String(n);
   }
 
   // ---------------------------------------------------------------------------
   // Private helpers
   // ---------------------------------------------------------------------------
+
+  static _progressHeight(count) {
+    const { _PROGRESS_PX_PER_CARD: step, _PROGRESS_MIN_PX: min, _PROGRESS_MAX_PX: max } = AbBoardColumn;
+    return Math.max(min, Math.min(count * step, max));
+  }
 
   _insertCompactTitle() {
     // Avoid double-inserting if connectedCallback is called more than once
@@ -90,8 +105,8 @@ class AbBoardColumn extends HTMLElement {
 
     const strip = document.createElement('div');
     strip.setAttribute('data-column-compact-title', '');
+    // display is managed exclusively by _applyVisual (either 'none' or 'flex')
     strip.style.cssText = [
-      'display: none',           // hidden by default; _applyVisual shows/hides
       'flex-direction: column',
       'align-items: center',
       'justify-content: center',
@@ -120,7 +135,7 @@ class AbBoardColumn extends HTMLElement {
       'transform: rotate(180deg)',
       'font-size: 11px',
       'font-weight: 500',
-      'color: #374151',
+      'color: #94a3b8',   // slate-400 — readable on dark bg-slate-900
       'white-space: nowrap',
       'user-select: none',
     ].join('; ');
@@ -132,13 +147,27 @@ class AbBoardColumn extends HTMLElement {
     countEl.style.cssText = [
       'font-size: 11px',
       'font-weight: 600',
-      'color: #6b7280',
+      'color: #cbd5e1',   // slate-200 — brighter than label for visual hierarchy
     ].join('; ');
     countEl.textContent = count;
+
+    // Progress gradient bar — height proportional to card count
+    const countVal  = parseInt(this.getAttribute('count') || '0', 10);
+    const barHeight = AbBoardColumn._progressHeight(countVal);
+    const progressBar = document.createElement('div');
+    progressBar.setAttribute('data-compact-progress', '');
+    progressBar.style.cssText = [
+      `width: 6px`,
+      `height: ${barHeight}px`,
+      'border-radius: 3px',
+      `background: linear-gradient(to top, ${dotColor}, transparent)`,
+      'flex-shrink: 0',
+    ].join('; ');
 
     strip.appendChild(dot);
     strip.appendChild(labelEl);
     strip.appendChild(countEl);
+    strip.appendChild(progressBar);
 
     // Insert as first child so it appears above server-rendered content
     this.insertBefore(strip, this.firstChild);
@@ -182,12 +211,12 @@ class AbBoardColumn extends HTMLElement {
       this.style.removeProperty('cursor');
       if (compactTitle) compactTitle.style.display = 'none';
       if (cardsArea)    cardsArea.style.removeProperty('display');
-      // quick-add panel defaults to hidden via its own logic; just unset override
+      // quick-add panel visibility managed by the board controller (classList); just clear override
       if (quickAddForm) quickAddForm.style.removeProperty('display');
       if (collapseBtn)  collapseBtn.style.removeProperty('display');
     } else {
       this.style.cursor = 'pointer';
-      if (compactTitle) compactTitle.style.removeProperty('display');
+      if (compactTitle) compactTitle.style.display = 'flex'; // must be flex for column layout
       if (cardsArea)    cardsArea.style.display = 'none';
       if (quickAddForm) quickAddForm.style.display = 'none';
       if (collapseBtn)  collapseBtn.style.display = 'none';
