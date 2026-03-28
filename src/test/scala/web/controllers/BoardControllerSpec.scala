@@ -181,7 +181,7 @@ object BoardControllerSpec extends ZIOSpecDefault:
         body  <- ZIO.scoped(resp.body.asString)
       yield assertTrue(
         resp.status == Status.Ok,
-        body.contains("data-board-column"),
+        body.contains("ab-board-column"),  // Fizzy layout: columns are custom elements
       )
     },
   )
