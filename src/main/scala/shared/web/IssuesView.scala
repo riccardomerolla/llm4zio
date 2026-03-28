@@ -43,11 +43,6 @@ object IssuesView:
     case IssueStatus.Duplicated  => "bg-slate-500"
     case _                       => "bg-slate-500"
 
-  private def hideableBoardColumn(status: IssueStatus): Boolean = status match
-    case IssueStatus.HumanReview | IssueStatus.Rework | IssueStatus.Merging | IssueStatus.Done | IssueStatus.Canceled |
-         IssueStatus.Duplicated =>
-      true
-    case _ => false
 
   def list(
     runId: Option[String],
@@ -219,6 +214,8 @@ object IssuesView:
         ),
       ),
       JsResources.inlineModuleScript("/static/client/components/ab-issues-board.js"),
+      JsResources.inlineModuleScript("/static/client/components/ab-board-column.js"),
+      JsResources.inlineModuleScript("/static/client/components/ab-board-layout.js"),
       JsResources.inlineModuleScript("/static/client/components/issues-bulk-actions.js"),
     )
 
@@ -272,8 +269,8 @@ object IssuesView:
     val filteredIssues = hasProofFilter match
       case Some(true) => BoardStats.hasProofFilter(issues, workReports)
       case _          => issues
-    div(
-      cls := "flex gap-3 overflow-x-auto pb-2 snap-x snap-mandatory"
+    tag("ab-board-layout")(
+      attr("default-expanded") := "todo,in_progress",
     )(
       boardStatuses.map { (status, label) =>
         val columnIssues = filteredIssues
@@ -284,15 +281,18 @@ object IssuesView:
           )
           .reverse
         val statusToken  = issueStatusToken(status)
-        div(
-          cls                         := "min-w-0 flex-shrink-0 rounded-xl border border-white/10 bg-slate-900/70 p-3 snap-start",
-          attr("data-board-column")   := "true",
-          attr("data-drop-status")    := statusToken,
-          attr("data-column-status")  := statusToken,
-          attr("data-column-label")   := label,
-          attr("data-drop-highlight") := "false",
+        tag("ab-board-column")(
+          attr("status")            := statusToken,
+          attr("label")             := label,
+          attr("count")             := columnIssues.size.toString,
+          attr("color")             := columnStatusDotCls(status),
+          attr("data-drop-status")  := statusToken,
+          attr("data-column-status") := statusToken,
         )(
-          div(cls := "mb-2 flex items-center justify-between gap-1")(
+          div(
+            cls                        := "mb-2 flex items-center justify-between gap-1",
+            attr("data-column-header") := "",
+          )(
             div(
               cls := "flex min-w-0 flex-1 items-center gap-1.5"
             )(
@@ -304,14 +304,6 @@ object IssuesView:
               )(columnIssues.size.toString),
             ),
             div(cls := "flex items-center gap-1")(
-              if hideableBoardColumn(status) then
-                button(
-                  `type`                       := "button",
-                  cls                          := "flex-shrink-0 rounded p-0.5 text-slate-400 hover:bg-white/10 hover:text-slate-100",
-                  title                        := s"Hide $label column",
-                  attr("data-collapse-toggle") := statusToken,
-                )("−")
-              else (),
               button(
                 `type`                        := "button",
                 cls                           := "flex-shrink-0 rounded p-0.5 text-slate-400 hover:bg-white/10 hover:text-slate-100",
@@ -381,25 +373,6 @@ object IssuesView:
           ),
         )
       },
-      div(
-        cls                                := "min-w-0 flex-shrink-0 rounded-xl border border-white/10 bg-slate-900/70 p-3 snap-start",
-        attr("data-board-column")          := "true",
-        attr("data-hidden-columns-column") := "true",
-      )(
-        div(cls := "mb-2 flex items-center justify-between gap-1")(
-          h3(cls := "text-sm font-semibold text-slate-100")("Hidden Columns"),
-          span(
-            cls                               := "rounded-full bg-white/10 px-2 py-0.5 text-xs text-slate-300",
-            attr("data-hidden-columns-count") := "true",
-          )("0"),
-        ),
-        div(
-          cls                              := "space-y-1 max-h-[65vh] overflow-y-auto",
-          attr("data-hidden-columns-list") := "true",
-        )(
-          p(cls := "rounded border border-dashed border-white/10 px-2 py-3 text-xs text-slate-500")("No hidden columns")
-        ),
-      ),
     ).render
 
   /** Public entry point for rendering a single board card (used in tests and fragment endpoints). */
