@@ -229,9 +229,12 @@ object IssuesBoardProofOfWorkSpec extends ZIOSpecDefault:
           html.contains("Low"),
         )
       },
-      test("board column header renders collapse toggle button") {
+      test("board column header has data-column-header marker for collapse button injection") {
         val html = IssuesView.boardColumnsFragment(List(baseIssue), Nil, Map.empty)
-        assertTrue(html.contains("data-collapse-toggle"))
+        assertTrue(
+          html.contains("data-column-header"),
+          !html.contains("data-collapse-toggle"),  // hide button removed; ab-board-column handles collapse
+        )
       },
       test("board column cards area has data-column-cards attribute") {
         val html = IssuesView.boardColumnsFragment(List(baseIssue), Nil, Map.empty)
