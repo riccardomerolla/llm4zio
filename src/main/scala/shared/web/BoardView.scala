@@ -137,7 +137,7 @@ object BoardView:
     )
 
   def columnsFragment(workspaceId: String, board: Board): String =
-    tag("ab-board-layout")(attr("default-expanded") := "todo,in_progress")(
+    tag("ab-board-layout")(attr("default-expanded") := "todo,in-progress")(
       columnsInOrder.map { column =>
         val issues = board.columns.getOrElse(column, Nil)
         tag("ab-board-column")(
