@@ -1544,11 +1544,16 @@ object IssuesView:
       if powHtml.nonEmpty then raw(powHtml) else (),
       if issue.status == IssueStatus.HumanReview then
         div(cls := "mt-2")(
-          form(method := "post", action := s"/issues/$issueId/approve")(
+          form(
+            method  := "post",
+            action  := s"/issues/$issueId/approve",
+            onclick := "event.stopPropagation();",
+          )(
             input(`type` := "hidden", name := "approvedBy", value := "board"),
             button(
-              `type` := "submit",
-              cls    := "w-full rounded border border-purple-400/30 bg-purple-500/20 px-2 py-1.5 text-[11px] font-semibold text-purple-100 hover:bg-purple-500/30",
+              `type`   := "submit",
+              cls      := "w-full rounded border border-purple-400/30 bg-purple-500/20 px-2 py-1.5 text-[11px] font-semibold text-purple-100 hover:bg-purple-500/30 disabled:opacity-50 disabled:cursor-not-allowed",
+              onclick  := "this.disabled=true; this.textContent='Approving…'; this.form.submit();",
             )("Approve"),
           )
         )
