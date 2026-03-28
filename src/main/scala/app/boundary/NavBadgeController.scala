@@ -9,7 +9,7 @@ import decision.entity.{ DecisionFilter, DecisionStatus }
 import issues.entity.{ IssueFilter, IssueRepository, IssueStateTag }
 import shared.errors.PersistenceError
 
-object SidebarStatusController:
+object NavBadgeController:
 
   def routes(
     decisionInbox: DecisionInbox,
@@ -17,17 +17,17 @@ object SidebarStatusController:
     issueRepository: IssueRepository,
   ): Routes[Any, Response]   =
     Routes(
-      Method.GET / "sidebar" / "badges" / "decisions"   -> handler { (_: Request) =>
+      Method.GET / "nav" / "badges" / "decisions"   -> handler { (_: Request) =>
         pendingDecisionCount(decisionInbox)
           .map(count => badgeResponse(count))
           .catchAll(error => ZIO.succeed(errorResponse(error.toString)))
       },
-      Method.GET / "sidebar" / "badges" / "checkpoints" -> handler { (_: Request) =>
+      Method.GET / "nav" / "badges" / "checkpoints" -> handler { (_: Request) =>
         pendingCheckpointCount(checkpointReviewService)
           .map(count => badgeResponse(count))
           .catchAll(error => ZIO.succeed(errorResponse(error.toString)))
       },
-      Method.GET / "sidebar" / "badges" / "board"       -> handler { (_: Request) =>
+      Method.GET / "nav" / "badges" / "board"       -> handler { (_: Request) =>
         inProgressBoardCount(issueRepository)
           .map(count => badgeResponse(count))
           .catchAll(error => ZIO.succeed(errorResponse(error.toString)))

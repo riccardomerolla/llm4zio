@@ -13,7 +13,7 @@ import issues.entity.*
 import shared.errors.PersistenceError
 import shared.ids.Ids.*
 
-object SidebarStatusControllerSpec extends ZIOSpecDefault:
+object NavBadgeControllerSpec extends ZIOSpecDefault:
 
   private val pendingDecision = Decision(
     id = DecisionId("decision-1"),
@@ -119,25 +119,25 @@ object SidebarStatusControllerSpec extends ZIOSpecDefault:
       )
     override def delete(id: IssueId): IO[PersistenceError, Unit]                   = ZIO.unit
 
-  private val routes = SidebarStatusController.routes(decisionInbox, checkpointService, issueRepository)
+  private val routes = NavBadgeController.routes(decisionInbox, checkpointService, issueRepository)
 
   def spec: Spec[TestEnvironment & Scope, Any] =
-    suite("SidebarStatusControllerSpec")(
+    suite("NavBadgeControllerSpec")(
       test("decisions badge renders pending decision count") {
         for
-          response <- routes.runZIO(Request.get(URL(Path.decode("/sidebar/badges/decisions"))))
+          response <- routes.runZIO(Request.get(URL(Path.decode("/nav/badges/decisions"))))
           body     <- response.body.asString
         yield assertTrue(response.status == Status.Ok, body.contains(">1<"))
       },
       test("checkpoints badge renders active checkpoint count") {
         for
-          response <- routes.runZIO(Request.get(URL(Path.decode("/sidebar/badges/checkpoints"))))
+          response <- routes.runZIO(Request.get(URL(Path.decode("/nav/badges/checkpoints"))))
           body     <- response.body.asString
         yield assertTrue(response.status == Status.Ok, body.contains(">1<"))
       },
       test("board badge renders in-progress issue count") {
         for
-          response <- routes.runZIO(Request.get(URL(Path.decode("/sidebar/badges/board"))))
+          response <- routes.runZIO(Request.get(URL(Path.decode("/nav/badges/board"))))
           body     <- response.body.asString
         yield assertTrue(response.status == Status.Ok, body.contains(">1<"))
       },

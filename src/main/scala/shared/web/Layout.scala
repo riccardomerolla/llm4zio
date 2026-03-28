@@ -1,7 +1,5 @@
 package shared.web
 
-import java.net.URLEncoder
-
 import scalatags.Text.all.*
 import scalatags.Text.svgAttrs.{ d, viewBox }
 import scalatags.Text.svgTags.{ path, svg }
@@ -9,7 +7,31 @@ import scalatags.Text.tags2.{ nav, title as titleTag }
 
 object Layout:
 
-  private val SidebarChatInitialLimit = 10
+  private val ChatInitialLimit = 10 // used by chatWorkspacesTree and chats dropdown
+
+  /** A single navigation item in the sidebar.
+    *
+    * @param href
+    *   The link target.
+    * @param label
+    *   Display text.
+    * @param icon
+    *   SVG icon fragment.
+    * @param activePredicate
+    *   Returns true when the item should be highlighted given the current path.
+    * @param liveBadgePath
+    *   Optional HTMX path used to load a live badge count.
+    */
+  final case class NavItem(
+    href: String,
+    label: String,
+    icon: Frag,
+    activePredicate: String => Boolean,
+    liveBadgePath: Option[String] = None,
+  )
+
+  /** A labelled group of [[NavItem]]s rendered as a section in the sidebar. */
+  final case class NavGroup(label: String, items: List[NavItem])
 
   final case class ChatNavItem(
     conversationId: String,
@@ -52,17 +74,8 @@ object Layout:
         script(src   := "https://unpkg.com/htmx-ext-sse@2.0.0/sse.js"),
       ),
       body(cls := "h-full text-[12px] leading-5 text-gray-200")(
-        mobileSidebar(currentPath, chatWorkspaceNav, pendingDecisions),
-        desktopSidebar(currentPath, chatWorkspaceNav, pendingDecisions),
-        mobileTopbar(pageTitleText),
-        button(
-          id                    := "desktop-sidebar-restore",
-          `type`                := "button",
-          cls                   := "hidden fixed left-3 top-3 z-40 rounded p-1.5 text-gray-300 hover:bg-white/10 hover:text-white lg:block",
-          attr("aria-label")    := "Restore sidebar",
-          attr("aria-expanded") := "false",
-        )(Icons.menu),
-        div(id := "app-main-shell", cls := "transition-all duration-150 lg:pl-72")(
+        topNavBar(currentPath, chatWorkspaceNav, pendingDecisions),
+        div(id := "app-main-shell", cls := "pt-10")(
           tag("main")(cls := "py-4")(
             div(cls := "px-4 sm:px-6 lg:px-8")(bodyContent)
           )
@@ -72,227 +85,192 @@ object Layout:
         tag("ab-keyboard-shortcuts")(),
         JsResources.inlineModuleScript("/static/client/components/ab-keyboard-shortcuts.js"),
         frag(Components.dsScripts*),
-        script(raw(
-          """(function () {
-            |  const sidebar = document.getElementById("mobile-sidebar");
-            |  const openBtn = document.getElementById("mobile-sidebar-open");
-            |  const closeBtn = document.getElementById("mobile-sidebar-close");
-            |  const backdrop = document.getElementById("mobile-sidebar-backdrop");
-            |
-            |  if (!sidebar || !openBtn || !closeBtn || !backdrop) return;
-            |
-            |  const openSidebar = function () {
-            |    sidebar.classList.remove("hidden");
-            |    document.body.classList.add("overflow-hidden");
-            |  };
-            |
-            |  const closeSidebar = function () {
-            |    sidebar.classList.add("hidden");
-            |    document.body.classList.remove("overflow-hidden");
-            |  };
-            |
-            |  openBtn.addEventListener("click", openSidebar);
-            |  closeBtn.addEventListener("click", closeSidebar);
-            |  backdrop.addEventListener("click", closeSidebar);
-            |
-            |  const desktopSidebar = document.getElementById("desktop-sidebar");
-            |  const desktopToggle = document.getElementById("desktop-sidebar-toggle");
-            |  const desktopRestore = document.getElementById("desktop-sidebar-restore");
-            |  const mainShell = document.getElementById("app-main-shell");
-            |  if (desktopSidebar && desktopToggle && desktopRestore && mainShell) {
-            |    const key = "abnormal.sidebar.collapsed";
-            |    const apply = function (collapsed) {
-            |      desktopSidebar.classList.toggle("lg:hidden", collapsed);
-            |      mainShell.classList.toggle("lg:pl-72", !collapsed);
-            |      mainShell.classList.toggle("lg:pl-0", collapsed);
-            |      desktopToggle.setAttribute("aria-expanded", String(!collapsed));
-            |      desktopRestore.classList.toggle("hidden", !collapsed);
-            |      desktopRestore.setAttribute("aria-expanded", String(!collapsed));
-            |    };
-            |    const restore = window.localStorage ? window.localStorage.getItem(key) === "1" : false;
-            |    apply(restore);
-            |    desktopToggle.addEventListener("click", function () {
-            |      const collapsed = !desktopSidebar.classList.contains("lg:hidden");
-            |      apply(collapsed);
-            |      if (window.localStorage) window.localStorage.setItem(key, collapsed ? "1" : "0");
-            |    });
-            |    desktopRestore.addEventListener("click", function () {
-            |      apply(false);
-            |      if (window.localStorage) window.localStorage.setItem(key, "0");
-            |    });
-            |  }
-            |})();
-            |""".stripMargin
-        )),
       ),
     ).render
 
   // ---------------------------------------------------------------------------
-  // Sidebar
+  // Top Navigation Bar
   // ---------------------------------------------------------------------------
 
-  private def mobileTopbar(pageTitleText: String): Frag =
-    div(
-      cls := "sticky top-0 z-40 flex items-center gap-x-4 bg-gray-900/95 px-4 py-4 backdrop-blur after:pointer-events-none after:absolute after:inset-0 after:border-b after:border-white/10 lg:hidden"
-    )(
-      button(
-        id     := "mobile-sidebar-open",
-        `type` := "button",
-        cls    := "-m-2.5 p-2.5 text-gray-300 hover:text-white",
+  private def topNavBar(
+    currentPath: String,
+    chatWorkspaceNav: Option[ChatWorkspaceNav],
+    pendingDecisions: Option[Int],
+  ): Frag =
+    frag(
+      nav(
+        cls := "fixed top-0 z-50 w-full border-b border-white/10 bg-gray-900/95 backdrop-blur-sm",
+        attr("aria-label") := "Main navigation",
       )(
-        span(cls := "sr-only")("Open sidebar"),
-        Icons.menu,
-      ),
-      div(cls := "text-sm font-semibold text-white")(pageTitleText),
-    )
-
-  private def mobileSidebar(
-    currentPath: String,
-    chatWorkspaceNav: Option[ChatWorkspaceNav],
-    pendingDecisions: Option[Int],
-  ): Frag =
-    div(id := "mobile-sidebar", cls := "hidden lg:hidden")(
-      div(id := "mobile-sidebar-backdrop", cls := "fixed inset-0 z-40 bg-gray-900/80")(),
-      div(cls := "fixed inset-y-0 left-0 z-50 w-full max-w-xs")(
-        div(
-          cls := "relative flex h-full flex-col gap-y-5 overflow-y-auto border-r border-white/10 bg-gray-900 px-6 pb-4 pt-4"
-        )(
-          div(cls := "flex items-center justify-between")(
-            span(cls := "text-xl font-bold text-white")("A-B-Normal"),
+        div(cls := "flex h-10 items-center px-4")(
+          // Left spacer (balances the right controls for true centering)
+          div(cls := "flex-1"),
+          // Center: Core Gateway nav items
+          div(cls := "flex items-center gap-0.5")(
+            coreGatewayGroup.items.map { item =>
+              val active = item.activePredicate(currentPath)
+              a(
+                href := item.href,
+                cls  := s"flex items-center gap-1 rounded px-2 py-1 text-xs ${if active then "bg-white/5 text-white" else "text-gray-400 hover:bg-white/5 hover:text-white"}",
+                if active then attr("aria-current") := "page" else frag(),
+              )(
+                item.icon,
+                item.label,
+                item.liveBadgePath.fold[Frag](frag())(path => liveBadge(path, None)),
+              )
+            }*
+          ),
+          // Right: ADE dropdown + optional Chats + ⌘K
+          div(cls := "flex items-center gap-2 flex-1 justify-end")(
+            // ADE dropdown — pure HTML, toggled by inline script
+            div(cls := "relative", attr("data-nav-dropdown") := "")(
+              button(
+                `type`                       := "button",
+                cls                          := "flex items-center gap-1 rounded px-2 py-1 text-xs text-gray-400 hover:bg-white/5 hover:text-white",
+                attr("data-nav-trigger")     := "",
+                attr("aria-haspopup")        := "menu",
+                attr("aria-expanded")        := "false",
+              )("ADE ", span(cls := "text-[9px] opacity-60")("▼")),
+              div(
+                cls                      := "hidden absolute right-0 top-full mt-1 z-50 min-w-[10rem] rounded-lg border border-white/10 bg-slate-900 shadow-xl py-1",
+                attr("role")             := "menu",
+                attr("data-nav-panel")   := "",
+              )(
+                adeGroup.items.map { item =>
+                  val active = item.activePredicate(currentPath)
+                  val badge  =
+                    if item.href == "/decisions" then pendingDecisions.filter(_ > 0)
+                    else None
+                  a(
+                    href         := item.href,
+                    attr("role") := "menuitem",
+                    cls          := s"flex items-center gap-2 px-3 py-1.5 text-xs ${if active then "bg-white/5 text-white" else "text-gray-300 hover:bg-white/5 hover:text-white"}",
+                    if active then attr("aria-current") := "page" else frag(),
+                  )(
+                    item.label,
+                    item.liveBadgePath match
+                      case Some(path) => liveBadge(path, badge)
+                      case None       => badge.fold[Frag](frag())(count => staticBadge(count)),
+                  )
+                }*
+              ),
+            ),
+            // Chats dropdown (only when chatWorkspaceNav is present)
+            chatWorkspaceNav.fold[Frag](frag()) { chatNav =>
+              div(cls := "relative", attr("data-nav-dropdown") := "")(
+                button(
+                  `type`                   := "button",
+                  cls                      := "flex items-center gap-1 rounded px-2 py-1 text-xs text-gray-400 hover:bg-white/5 hover:text-white",
+                  attr("data-nav-trigger") := "",
+                  attr("aria-haspopup")    := "menu",
+                  attr("aria-expanded")    := "false",
+                )("Chats ", span(cls := "text-[9px] opacity-60")("▼")),
+                div(
+                  cls                    := "hidden absolute right-0 top-full mt-1 z-50 max-h-96 overflow-y-auto min-w-[16rem] rounded-lg border border-white/10 bg-slate-900 shadow-xl py-1",
+                  attr("role")           := "menu",
+                  attr("data-nav-panel") := "",
+                )(
+                  chatWorkspacesTree(chatNav)
+                ),
+              )
+            },
+            // Command palette trigger
             button(
-              id     := "mobile-sidebar-close",
-              `type` := "button",
-              cls    := "-m-2.5 p-2.5 text-gray-300 hover:text-white",
+              `type`                               := "button",
+              attr("data-command-palette-trigger") := "",
+              cls                                  := "flex items-center gap-1 rounded px-2 py-1 text-xs text-gray-400 hover:bg-white/5 hover:text-white border border-white/10",
             )(
-              span(cls := "sr-only")("Close sidebar"),
-              Icons.xMark,
+              span(cls := "sr-only")("Open command palette"),
+              "⌘K",
             ),
           ),
-          sidebarNav(currentPath, chatWorkspaceNav, pendingDecisions),
-        )
+        ),
       ),
+      // Dropdown toggle script — pure vanilla, no framework dependency
+      script(raw("""(function(){
+        |  function initDropdowns(){
+        |    document.querySelectorAll('[data-nav-dropdown]').forEach(function(el){
+        |      if(el._navInit) return;
+        |      el._navInit = true;
+        |      var trigger = el.querySelector('[data-nav-trigger]');
+        |      var panel   = el.querySelector('[data-nav-panel]');
+        |      if(!trigger || !panel) return;
+        |      trigger.addEventListener('click', function(e){
+        |        e.stopPropagation();
+        |        var opening = panel.classList.contains('hidden');
+        |        closeAll();
+        |        if(opening){ panel.classList.remove('hidden'); trigger.setAttribute('aria-expanded','true'); }
+        |      });
+        |    });
+        |  }
+        |  function closeAll(){
+        |    document.querySelectorAll('[data-nav-panel]').forEach(function(p){ p.classList.add('hidden'); });
+        |    document.querySelectorAll('[data-nav-trigger]').forEach(function(t){ t.setAttribute('aria-expanded','false'); });
+        |  }
+        |  document.addEventListener('click', closeAll);
+        |  document.addEventListener('keydown', function(e){ if(e.key==='Escape') closeAll(); });
+        |  initDropdowns();
+        |  document.addEventListener('htmx:afterSwap', initDropdowns);
+        |})();""".stripMargin)),
     )
 
-  private def desktopSidebar(
-    currentPath: String,
-    chatWorkspaceNav: Option[ChatWorkspaceNav],
-    pendingDecisions: Option[Int],
-  ): Frag =
-    div(
-      id  := "desktop-sidebar",
-      cls := "hidden bg-gray-900 lg:fixed lg:inset-y-0 lg:z-50 lg:flex lg:w-72 lg:flex-col",
-    )(
-      div(cls := "flex grow flex-col gap-y-5 overflow-y-auto border-r border-white/10 bg-black/10 px-6 pb-4")(
-        div(cls := "flex h-16 shrink-0 items-center justify-between")(
-          span(cls := "text-xl font-bold text-white")("A-B-Normal"),
-          button(
-            id                    := "desktop-sidebar-toggle",
-            `type`                := "button",
-            cls                   := "rounded p-1.5 text-gray-300 hover:bg-white/10 hover:text-white",
-            attr("aria-label")    := "Toggle sidebar",
-            attr("aria-expanded") := "true",
-          )(Icons.menu),
-        ),
-        sidebarNav(currentPath, chatWorkspaceNav, pendingDecisions),
-      )
-    )
+  private lazy val coreGatewayGroup: NavGroup = NavGroup(
+    label = "Core Gateway",
+    items = List(
+      NavItem("/", "Command Center", Icons.home, _ == "/"),
+      NavItem("/projects", "Projects", Icons.workflow, _.startsWith("/projects")),
+      NavItem("/specifications", "Specifications", Icons.documentText, _.startsWith("/specifications")),
+      NavItem("/plans", "Plans", Icons.tableColumns, _.startsWith("/plans")),
+      NavItem("/knowledge", "Knowledge", Icons.documentText, _.startsWith("/knowledge")),
+      NavItem(
+        "/workspaces",
+        "Workspaces",
+        Icons.folder,
+        p => p.startsWith("/workspaces") || p.startsWith("/settings/workspaces"),
+      ),
+      NavItem("/agents", "Agents", Icons.cpuChip, _.startsWith("/agents")),
+      NavItem(
+        "/settings",
+        "Settings",
+        Icons.cog,
+        p =>
+          p.startsWith("/settings") || p.startsWith("/config") ||
+          p.startsWith("/models") || p.startsWith("/channels") ||
+          p.startsWith("/health"),
+      ),
+    ),
+  )
 
-  private def sidebarNav(
-    currentPath: String,
-    chatWorkspaceNav: Option[ChatWorkspaceNav],
-    pendingDecisions: Option[Int] = None,
-  ): Frag =
-    nav(cls := "flex flex-1 flex-col")(
-      ul(attr("role") := "list", cls := "flex flex-1 flex-col gap-y-7")(
-        li(
-          div(cls := "text-xs/6 font-semibold uppercase tracking-wide text-gray-400")("Core Gateway"),
-          ul(attr("role") := "list", cls := "-mx-2 mt-2 space-y-1")(
-            navItem("/", "Command Center", Icons.home, currentPath == "/"),
-            navItem("/projects", "Projects", Icons.workflow, currentPath.startsWith("/projects")),
-            navItem(
-              "/specifications",
-              "Specifications",
-              Icons.documentText,
-              currentPath.startsWith("/specifications"),
-            ),
-            navItem(
-              "/plans",
-              "Plans",
-              Icons.tableColumns,
-              currentPath.startsWith("/plans"),
-            ),
-            navItem(
-              "/knowledge",
-              "Knowledge",
-              Icons.documentText,
-              currentPath.startsWith("/knowledge"),
-            ),
-            navItem(
-              "/workspaces",
-              "Workspaces",
-              Icons.folder,
-              currentPath.startsWith("/workspaces") || currentPath.startsWith("/settings/workspaces"),
-            ),
-            navItem("/agents", "Agents", Icons.cpuChip, currentPath.startsWith("/agents")),
-            navItem(
-              "/settings",
-              "Settings",
-              Icons.cog,
-              currentPath.startsWith("/settings") || currentPath.startsWith("/config") ||
-              currentPath.startsWith("/models") || currentPath.startsWith("/channels") ||
-              currentPath.startsWith("/health"),
-            ),
-            chatWorkspaceNav.fold[Frag](deferredChatWorkspacesTree(currentPath))(chatWorkspacesTree),
-          ),
-        ),
-        li(
-          div(cls := "text-xs/6 font-semibold uppercase tracking-wide text-gray-400")("ADE"),
-          ul(attr("role") := "list", cls := "-mx-2 mt-2 space-y-1")(
-            navItem("/sdlc", "SDLC Dashboard", Icons.activity, currentPath.startsWith("/sdlc")),
-            navItem(
-              "/board",
-              "Board",
-              Icons.tableColumns,
-              currentPath.startsWith("/board") || currentPath.startsWith("/issues/board"),
-              liveBadgePath = Some("/sidebar/badges/board"),
-            ),
-            navItem(
-              "/checkpoints",
-              "Checkpoints",
-              Icons.documentText,
-              currentPath.startsWith("/checkpoints"),
-              liveBadgePath = Some("/sidebar/badges/checkpoints"),
-            ),
-            navItem(
-              "/decisions",
-              "Decisions",
-              Icons.activity,
-              currentPath.startsWith("/decisions"),
-              pendingDecisions.filter(_ > 0),
-              liveBadgePath = Some("/sidebar/badges/decisions"),
-            ),
-            navItem(
-              "/governance",
-              "Governance",
-              Icons.documentText,
-              currentPath.startsWith("/governance"),
-            ),
-            navItem(
-              "/evolution",
-              "Evolution",
-              Icons.sparkles,
-              currentPath.startsWith("/evolution"),
-            ),
-            navItem(
-              "/daemons",
-              "Daemons",
-              Icons.cpuChip,
-              currentPath.startsWith("/daemons"),
-            ),
-          ),
-        ),
-      )
-    )
+  private lazy val adeGroup: NavGroup = NavGroup(
+    label = "ADE",
+    items = List(
+      NavItem("/sdlc", "SDLC Dashboard", Icons.activity, _.startsWith("/sdlc")),
+      NavItem(
+        "/board",
+        "Board",
+        Icons.tableColumns,
+        p => p.startsWith("/board") || p.startsWith("/issues/board"),
+        liveBadgePath = Some("/nav/badges/board"),
+      ),
+      NavItem(
+        "/checkpoints",
+        "Checkpoints",
+        Icons.documentText,
+        _.startsWith("/checkpoints"),
+        liveBadgePath = Some("/nav/badges/checkpoints"),
+      ),
+      NavItem(
+        "/decisions",
+        "Decisions",
+        Icons.activity,
+        _.startsWith("/decisions"),
+        liveBadgePath = Some("/nav/badges/decisions"),
+      ),
+      NavItem("/governance", "Governance", Icons.documentText, _.startsWith("/governance")),
+      NavItem("/evolution", "Evolution", Icons.sparkles, _.startsWith("/evolution")),
+      NavItem("/daemons", "Daemons", Icons.cpuChip, _.startsWith("/daemons")),
+    ),
+  )
 
   private def relativeTime(instant: java.time.Instant, now: java.time.Instant): String =
     val minutes = java.time.temporal.ChronoUnit.MINUTES.between(instant, now)
@@ -445,59 +423,16 @@ object Layout:
     )
 
   private def splitSidebarChats(chats: List[ChatNavItem]): (List[ChatNavItem], List[ChatNavItem]) =
-    val initial = chats.take(SidebarChatInitialLimit)
-    if chats.length <= SidebarChatInitialLimit then (initial, Nil)
+    val initial = chats.take(ChatInitialLimit)
+    if chats.length <= ChatInitialLimit then (initial, Nil)
     else
       chats.find(_.active) match
         case Some(activeChat) if !initial.exists(_.conversationId == activeChat.conversationId) =>
-          val visible   = (initial.take(SidebarChatInitialLimit - 1) :+ activeChat).distinctBy(_.conversationId)
+          val visible   = (initial.take(ChatInitialLimit - 1) :+ activeChat).distinctBy(_.conversationId)
           val remaining = chats.filterNot(chat => visible.exists(_.conversationId == chat.conversationId))
           (visible, remaining)
         case _                                                                                  =>
-          (initial, chats.drop(SidebarChatInitialLimit))
-
-  private def deferredChatWorkspacesTree(currentPath: String): Frag =
-    div(
-      attr("hx-get")     := s"/chat/sidebar-nav?path=${URLEncoder.encode(currentPath, "UTF-8")}",
-      attr("hx-trigger") := "load",
-      attr("hx-swap")    := "innerHTML",
-      cls                := "mt-2",
-    )(
-      p(cls := "px-2 py-1 text-[11px] text-gray-500")("Loading workspace chats...")
-    )
-
-  private def navItem(
-    href: String,
-    label: String,
-    icon: Frag,
-    active: Boolean,
-    badge: Option[Int] = None,
-    liveBadgePath: Option[String] = None,
-  ): Frag =
-    val classes   =
-      if active then
-        "group relative flex gap-x-3 rounded-md border border-cyan-400/20 bg-cyan-500/10 p-2 text-sm/6 font-semibold text-white"
-      else
-        "group relative flex gap-x-3 rounded-md border border-transparent p-2 text-sm/6 font-semibold text-gray-400 hover:border-white/10 hover:bg-white/5 hover:text-white"
-    val badgeNode =
-      liveBadgePath match
-        case Some(path) =>
-          liveBadge(path, badge)
-        case None       =>
-          badge.fold[Frag](frag())(count => staticBadge(count))
-    li(
-      a(
-        attr("href")         := href,
-        cls                  := classes,
-        attr("aria-current") := Option.when(active)("page").getOrElse("false"),
-        attr("data-active")  := active.toString,
-      )(
-        if active then span(cls := "absolute inset-y-1 left-0 w-1 rounded-r-full bg-cyan-300")() else frag(),
-        icon,
-        span(cls := "flex-1")(label),
-        badgeNode,
-      )
-    )
+          (initial, chats.drop(ChatInitialLimit))
 
   private def liveBadge(path: String, initialCount: Option[Int]): Frag =
     span(

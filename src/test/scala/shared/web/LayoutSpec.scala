@@ -7,12 +7,10 @@ object LayoutSpec extends ZIOSpecDefault:
   def spec: Spec[Any, Nothing] =
     suite("Layout")(
       test(
-        "sidebar contains core gateway and ADE sections with governance and evolution links"
+        "top nav bar contains core gateway and ADE sections with governance and evolution links"
       ) {
         val html = Layout.page("Test", "/board")()
         assertTrue(
-          html.contains("Core Gateway"),
-          html.contains("ADE"),
           html.contains("/sdlc"),
           html.contains("/checkpoints"),
           html.contains("/board"),
@@ -35,12 +33,12 @@ object LayoutSpec extends ZIOSpecDefault:
           html.contains("Specifications"),
           html.contains("Settings"),
           html.contains("Board"),
+          html.contains("data-nav-dropdown"),
         )
       },
       test("board nav item is active when currentPath starts with /board") {
         val html = Layout.page("Test", "/board")()
         assertTrue(
-          html.contains("data-active=\"true\""),
           html.contains("aria-current=\"page\""),
         )
       },
@@ -51,19 +49,21 @@ object LayoutSpec extends ZIOSpecDefault:
       test("ADE items include live badge loaders for board, checkpoints, and decisions") {
         val html = Layout.page("Test", "/decisions", pendingDecisions = Some(3))()
         assertTrue(
-          html.contains("/sidebar/badges/board"),
-          html.contains("/sidebar/badges/checkpoints"),
-          html.contains("/sidebar/badges/decisions"),
+          html.contains("/nav/badges/board"),
+          html.contains("/nav/badges/checkpoints"),
+          html.contains("/nav/badges/decisions"),
           html.contains(">3<"),
         )
       },
-      test("mobile sidebar toggle and drawer markup are present") {
+      test("top nav bar markup is present and sidebar markup is absent") {
         val html = Layout.page("Test", "/board")()
         assertTrue(
-          html.contains("id=\"mobile-sidebar-open\""),
-          html.contains("id=\"mobile-sidebar-close\""),
-          html.contains("id=\"mobile-sidebar\""),
-          html.contains("id=\"mobile-sidebar-backdrop\""),
+          html.contains("id=\"app-main-shell\""),
+          html.contains("pt-10"),
+          html.contains("data-nav-dropdown"),
+          !html.contains("id=\"mobile-sidebar\""),
+          !html.contains("id=\"desktop-sidebar\""),
+          !html.contains("id=\"desktop-sidebar-restore\""),
         )
       },
       test("workspace chat groups are collapsed by default and show load more after 10 chats") {
