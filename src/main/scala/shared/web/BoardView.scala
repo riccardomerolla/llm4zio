@@ -109,6 +109,8 @@ object BoardView:
         ),
       ),
       JsResources.inlineModuleScript("/static/client/components/design-system/ab-filter-bar.js"),
+      JsResources.inlineModuleScript("/static/client/components/ab-board-column.js"),
+      JsResources.inlineModuleScript("/static/client/components/ab-board-layout.js"),
       JsResources.inlineModuleScript("/static/client/components/board-fs.js"),
       // Toggle new-issue panel
       script(raw("""
@@ -135,14 +137,17 @@ object BoardView:
     )
 
   def columnsFragment(workspaceId: String, board: Board): String =
-    div(cls := "flex gap-3 overflow-x-auto pb-2")(
+    tag("ab-board-layout")(attr("default-expanded") := "todo,in_progress")(
       columnsInOrder.map { column =>
         val issues = board.columns.getOrElse(column, Nil)
-        div(
-          cls                       := "min-w-[18rem] flex-1 rounded-xl border border-white/10 bg-slate-900/70 p-3",
-          attr("data-board-column") := column.folderName,
+        tag("ab-board-column")(
+          attr("status")           := column.folderName,
+          attr("label")            := humanizeColumn(column),
+          attr("count")            := issues.size.toString,
+          attr("color")            := columnDotColor(column),
+          attr("data-drop-status") := column.folderName,
         )(
-          div(cls := "mb-3 flex items-center justify-between")(
+          div(cls := "mb-3 flex items-center justify-between", attr("data-column-header") := "")(
             h3(cls := "text-sm font-semibold text-slate-100")(humanizeColumn(column)),
             span(cls := "rounded-full bg-white/10 px-2 py-0.5 text-xs text-slate-300")(issues.size.toString),
           ),
@@ -253,3 +258,12 @@ object BoardView:
       case BoardColumn.Review     => "Review"
       case BoardColumn.Done       => "Done"
       case BoardColumn.Archive    => "Archive"
+
+  private def columnDotColor(column: BoardColumn): String =
+    column match
+      case BoardColumn.Backlog    => "bg-slate-400"
+      case BoardColumn.Todo       => "bg-blue-400"
+      case BoardColumn.InProgress => "bg-amber-400"
+      case BoardColumn.Review     => "bg-purple-400"
+      case BoardColumn.Done       => "bg-emerald-400"
+      case BoardColumn.Archive    => "bg-gray-400"

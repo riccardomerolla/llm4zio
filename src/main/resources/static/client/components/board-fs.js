@@ -41,18 +41,20 @@ class BoardFs {
     });
 
     this.root.addEventListener('dragover', (event) => {
-      const column = event.target?.closest?.('[data-column-drop]');
+      const column = event.target?.closest?.('[data-column-drop]')
+                  || event.target?.closest?.('ab-board-column[data-drop-status]');
       if (!column || !this.dragIssueId) return;
       event.preventDefault();
       event.dataTransfer.dropEffect = 'move';
     });
 
     this.root.addEventListener('drop', async (event) => {
-      const column = event.target?.closest?.('[data-column-drop]');
+      const column = event.target?.closest?.('[data-column-drop]')
+                  || event.target?.closest?.('ab-board-column[data-drop-status]');
       if (!column) return;
       event.preventDefault();
       const issueId = this.dragIssueId || event.dataTransfer?.getData('text/plain') || '';
-      const toColumn = column.dataset.columnDrop || '';
+      const toColumn = column.dataset.columnDrop || column.dataset.dropStatus || '';
       this.dragIssueId = null;
       if (!issueId || !toColumn) return;
       await this.moveIssue(issueId, toColumn);
