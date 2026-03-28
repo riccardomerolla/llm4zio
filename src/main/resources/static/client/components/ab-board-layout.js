@@ -32,12 +32,17 @@ class AbBoardLayout extends HTMLElement {
     this.style.display = 'grid';
     this.style.gap = '4px';
 
-    // Load state from localStorage (or defaults), then apply to children + grid
-    this._expandedStatuses = this._load();
-    this._applyState();
-
-    // Listen for toggle events bubbling up from child ab-board-column elements
+    // Attach listener immediately so no toggle events are missed
     this.addEventListener('ab-column-toggle', this._boundOnColumnToggle);
+
+    // Defer state application to the next microtask. When module scripts run
+    // (always deferred), the SSR DOM tree is already fully parsed so children
+    // are present. The Promise.resolve() guard handles the edge case where an
+    // HTMX fragment inserts this element and children are upgraded asynchronously.
+    Promise.resolve().then(() => {
+      this._expandedStatuses = this._load();
+      this._applyState();
+    });
   }
 
   disconnectedCallback() {
@@ -66,11 +71,11 @@ class AbBoardLayout extends HTMLElement {
       this._expandedStatuses.push(status);
 
       const max = this._maxExpanded();
-      // If over limit, shift the oldest (front of array) off and collapse it
+      // while (not if) defensively handles persisted state arriving with excess
+      // entries; in normal flow only one shift is ever needed per toggle.
+      // _applyState() below removes the 'expanded' attribute from the shifted column.
       while (this._expandedStatuses.length > max) {
-        const oldest = this._expandedStatuses.shift();
-        // The column for `oldest` will be collapsed in _applyState below
-        void oldest; // explicit no-op reference to satisfy linters
+        this._expandedStatuses.shift();
       }
     }
 
@@ -176,6 +181,8 @@ class AbBoardLayout extends HTMLElement {
    * Return the maximum number of simultaneously expanded columns.
    * 1 on mobile (<768px), 2 on desktop.
    * @returns {number}
+   * @remarks Viewport size is evaluated at call time. No continuous resize
+   * listener is installed — the max is not adjusted on live window resize.
    */
   _maxExpanded() {
     return window.innerWidth < AbBoardLayout._MOBILE_BREAKPOINT ? 1 : 2;
