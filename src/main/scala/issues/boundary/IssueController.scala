@@ -1067,7 +1067,7 @@ final case class IssueControllerLive(
       case BoardColumn.InProgress => IssueStatus.InProgress
       case BoardColumn.Review     => IssueStatus.HumanReview
       case BoardColumn.Done       => IssueStatus.Done
-      case BoardColumn.Archive    => IssueStatus.Done
+      case BoardColumn.Archive    => IssueStatus.Canceled
     val priority: IssuePriority                                                                      = frontmatter.priority match
       case BoardIssuePriority.Critical => IssuePriority.Critical
       case BoardIssuePriority.High     => IssuePriority.High

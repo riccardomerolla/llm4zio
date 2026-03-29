@@ -322,7 +322,7 @@ final case class BoardRepositoryFS(
           .flatMap { case (valid, orphaned) =>
             ZIO
               .foreachDiscard(orphaned) { d =>
-                ZIO.logWarning(
+                ZIO.logTrace(
                   s"[board] Orphaned issue directory (no ISSUE.md) — skipping: ${d}. " +
                     s"This can happen when ISSUE.md is deleted without removing the parent directory (e.g. via 'git rm' without -r)."
                 )
