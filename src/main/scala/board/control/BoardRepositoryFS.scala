@@ -235,15 +235,31 @@ final case class BoardRepositoryFS(
 
   private def initBoardGit(boardPath: String, boardGitDir: Path): IO[BoardError, Unit] =
     for
-      gitDirExists <- pathExists(boardGitDir)
-      _            <- ZIO.unless(gitDirExists)(runGit(boardPath, "init").unit)
-      hasCommits   <- gitService
-                        .log(boardPath, 1)
-                        .map(_.nonEmpty)
-                        .catchAll(_ => ZIO.succeed(false))
-      _            <- ZIO.unless(hasCommits)(
-                        stageAndCommit(boardPath, List("."), "[board] Init: board structure")
-                      )
+      gitInitialized <- pathExists(boardGitDir.resolve("HEAD"))
+      _              <- ZIO.unless(gitInitialized) {
+                          // The .git directory exists but is incomplete (no HEAD).
+                          // This can happen if git init was interrupted or objects were corrupted.
+                          // Remove the entire broken .git dir so git init starts completely fresh,
+                          // avoiding "unable to read tree" errors from a stale index.
+                          ZIO
+                            .attemptBlocking {
+                              if JFiles.exists(boardGitDir) then
+                                def deleteTree(p: Path): Unit =
+                                  if JFiles.isDirectory(p) then
+                                    JFiles.list(p).forEach(deleteTree)
+                                  JFiles.delete(p)
+                                deleteTree(boardGitDir)
+                            }
+                            .ignore *>
+                            runGit(boardPath, "init").unit
+                        }
+      hasCommits     <- gitService
+                          .log(boardPath, 1)
+                          .map(_.nonEmpty)
+                          .catchAll(_ => ZIO.succeed(false))
+      _              <- ZIO.unless(hasCommits)(
+                          stageAndCommit(boardPath, List("."), "[board] Init: board structure")
+                        )
     yield ()
 
   private def updateGitignore(workspacePath: String): IO[BoardError, Boolean] =
