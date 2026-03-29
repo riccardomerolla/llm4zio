@@ -102,12 +102,12 @@ object ProjectsView:
                     cls := "hidden px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-400 sm:table-cell"
                   )("Last Activity"),
                   tag("th")(cls := "px-4 py-2")(),
-                ),
+                )
               ),
               tag("tbody")(cls := "divide-y divide-white/10")(
                 projects.sortBy(_.name.toLowerCase).map(projectRow)
               ),
-            ),
+            )
           ),
       )
     )
@@ -197,7 +197,9 @@ object ProjectsView:
       ),
       tag("td")(cls := "hidden px-4 py-3 text-right sm:table-cell")(
         if project.activeIssueCount > 0 then
-          span(cls := "rounded-full border border-amber-400/30 bg-amber-500/15 px-2 py-0.5 text-xs font-semibold text-amber-200")(
+          span(
+            cls := "rounded-full border border-amber-400/30 bg-amber-500/15 px-2 py-0.5 text-xs font-semibold text-amber-200"
+          )(
             project.activeIssueCount.toString
           )
         else span(cls := "text-sm text-slate-500")("0")
@@ -210,7 +212,7 @@ object ProjectsView:
           href    := s"/projects/${project.id}",
           cls     := "text-xs font-semibold text-cyan-300 hover:text-cyan-200",
           onclick := "event.stopPropagation()",
-        )("Open →"),
+        )("Open →")
       ),
     )
 

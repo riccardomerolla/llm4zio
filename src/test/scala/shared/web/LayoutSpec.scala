@@ -39,7 +39,7 @@ object LayoutSpec extends ZIOSpecDefault:
       test("board nav item is active when currentPath starts with /board") {
         val html = Layout.page("Test", "/board")()
         assertTrue(
-          html.contains("aria-current=\"page\""),
+          html.contains("aria-current=\"page\"")
         )
       },
       test("Board nav item exists for non-board paths") {

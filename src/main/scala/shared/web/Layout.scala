@@ -99,7 +99,7 @@ object Layout:
   ): Frag =
     frag(
       nav(
-        cls := "fixed top-0 z-50 w-full border-b border-white/10 bg-gray-900/95 backdrop-blur-sm",
+        cls                := "fixed top-0 z-50 w-full border-b border-white/10 bg-gray-900/95 backdrop-blur-sm",
         attr("aria-label") := "Main navigation",
       )(
         div(cls := "flex h-10 items-center px-4")(
@@ -111,7 +111,9 @@ object Layout:
               val active = item.activePredicate(currentPath)
               a(
                 href := item.href,
-                cls  := s"flex items-center gap-1 rounded px-2 py-1 text-xs ${if active then "bg-white/5 text-white" else "text-gray-400 hover:bg-white/5 hover:text-white"}",
+                cls  := s"flex items-center gap-1 rounded px-2 py-1 text-xs ${
+                    if active then "bg-white/5 text-white" else "text-gray-400 hover:bg-white/5 hover:text-white"
+                  }",
                 if active then attr("aria-current") := "page" else frag(),
               )(
                 item.icon,
@@ -125,16 +127,16 @@ object Layout:
             // ADE dropdown — pure HTML, toggled by inline script
             div(cls := "relative", attr("data-nav-dropdown") := "")(
               button(
-                `type`                       := "button",
-                cls                          := "flex items-center gap-1 rounded px-2 py-1 text-xs text-gray-400 hover:bg-white/5 hover:text-white",
-                attr("data-nav-trigger")     := "",
-                attr("aria-haspopup")        := "menu",
-                attr("aria-expanded")        := "false",
+                `type`                   := "button",
+                cls                      := "flex items-center gap-1 rounded px-2 py-1 text-xs text-gray-400 hover:bg-white/5 hover:text-white",
+                attr("data-nav-trigger") := "",
+                attr("aria-haspopup")    := "menu",
+                attr("aria-expanded")    := "false",
               )("ADE ", span(cls := "text-[9px] opacity-60")("▼")),
               div(
-                cls                      := "hidden absolute right-0 top-full mt-1 z-50 min-w-[10rem] rounded-lg border border-white/10 bg-slate-900 shadow-xl py-1",
-                attr("role")             := "menu",
-                attr("data-nav-panel")   := "",
+                cls                    := "hidden absolute right-0 top-full mt-1 z-50 min-w-[10rem] rounded-lg border border-white/10 bg-slate-900 shadow-xl py-1",
+                attr("role")           := "menu",
+                attr("data-nav-panel") := "",
               )(
                 adeGroup.items.map { item =>
                   val active = item.activePredicate(currentPath)
@@ -144,7 +146,9 @@ object Layout:
                   a(
                     href         := item.href,
                     attr("role") := "menuitem",
-                    cls          := s"flex items-center gap-2 px-3 py-1.5 text-xs ${if active then "bg-white/5 text-white" else "text-gray-300 hover:bg-white/5 hover:text-white"}",
+                    cls          := s"flex items-center gap-2 px-3 py-1.5 text-xs ${
+                        if active then "bg-white/5 text-white" else "text-gray-300 hover:bg-white/5 hover:text-white"
+                      }",
                     if active then attr("aria-current") := "page" else frag(),
                   )(
                     item.label,
@@ -184,7 +188,7 @@ object Layout:
               "⌘K",
             ),
           ),
-        ),
+        )
       ),
       // Dropdown toggle script — pure vanilla, no framework dependency
       script(raw("""(function(){
@@ -218,9 +222,16 @@ object Layout:
     label = "Core Gateway",
     items = List(
       NavItem("/", "Command Center", Icons.home, _ == "/"),
+      NavItem(
+        "/board",
+        "Board",
+        Icons.tableColumns,
+        p => p.startsWith("/board") || p.startsWith("/issues/board"),
+        liveBadgePath = Some("/nav/badges/board"),
+      ),
       NavItem("/projects", "Projects", Icons.workflow, _.startsWith("/projects")),
       NavItem("/specifications", "Specifications", Icons.documentText, _.startsWith("/specifications")),
-      NavItem("/plans", "Plans", Icons.tableColumns, _.startsWith("/plans")),
+      NavItem("/plans", "Plans", Icons.chart, _.startsWith("/plans")),
       NavItem("/knowledge", "Knowledge", Icons.documentText, _.startsWith("/knowledge")),
       NavItem(
         "/workspaces",

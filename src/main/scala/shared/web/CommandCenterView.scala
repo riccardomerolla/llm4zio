@@ -19,9 +19,8 @@ object CommandCenterView:
   def page(summary: PipelineSummary, recentEvents: List[ActivityEvent]): String =
     Layout.page("Command Center", "/")(
       div(cls := "space-y-6")(
-        Components.pageHeader("Command Center", "Platform activity and pipeline health"),
-        pipelineStrip(summary),
         adeModuleGrid(),
+        pipelineStrip(summary),
         liveSection(),
         activeRunsSection(),
         recentActivitySection(recentEvents),

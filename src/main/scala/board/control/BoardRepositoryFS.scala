@@ -319,15 +319,16 @@ final case class BoardRepositoryFS(
         ZIO
           .attemptBlocking(dirs.partition(d => JFiles.exists(d.resolve(issueMarkdownFile))))
           .mapError(err => BoardError.ParseError(s"Unable to check column '${column.folderName}': ${err.getMessage}"))
-          .flatMap { case (valid, orphaned) =>
-            ZIO
-              .foreachDiscard(orphaned) { d =>
-                ZIO.logTrace(
-                  s"[board] Orphaned issue directory (no ISSUE.md) — skipping: ${d}. " +
-                    s"This can happen when ISSUE.md is deleted without removing the parent directory (e.g. via 'git rm' without -r)."
-                )
-              }
-              .as(valid)
+          .flatMap {
+            case (valid, orphaned) =>
+              ZIO
+                .foreachDiscard(orphaned) { d =>
+                  ZIO.logTrace(
+                    s"[board] Orphaned issue directory (no ISSUE.md) — skipping: ${d}. " +
+                      s"This can happen when ISSUE.md is deleted without removing the parent directory (e.g. via 'git rm' without -r)."
+                  )
+                }
+                .as(valid)
           }
       }
 

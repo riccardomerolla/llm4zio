@@ -44,15 +44,25 @@ object WorkspacesView:
             tag("table")(cls := "w-full text-sm")(
               tag("thead")(
                 tag("tr")(cls := "border-b border-white/10 bg-white/5")(
-                  tag("th")(cls := "px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-400")("Workspace"),
-                  tag("th")(cls := "hidden px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-400 sm:table-cell")("CLI"),
-                  tag("th")(cls := "hidden px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-400 sm:table-cell")("Run Mode"),
-                  tag("th")(cls := "hidden px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-400 sm:table-cell")("Default Agent"),
-                  tag("th")(cls := "px-4 py-2 text-right text-xs font-medium uppercase tracking-wide text-gray-400")("Actions"),
-                ),
+                  tag("th")(cls := "px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-400")(
+                    "Workspace"
+                  ),
+                  tag("th")(
+                    cls := "hidden px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-400 sm:table-cell"
+                  )("CLI"),
+                  tag("th")(
+                    cls := "hidden px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-400 sm:table-cell"
+                  )("Run Mode"),
+                  tag("th")(
+                    cls := "hidden px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-400 sm:table-cell"
+                  )("Default Agent"),
+                  tag("th")(cls := "px-4 py-2 text-right text-xs font-medium uppercase tracking-wide text-gray-400")(
+                    "Actions"
+                  ),
+                )
               ),
               frag(workspaces.sortBy(_.name.toLowerCase).map(workspaceRow)*),
-            ),
+            )
           ),
       )
     )
@@ -196,13 +206,13 @@ object WorkspacesView:
               attr("hx-swap")    := "outerHTML",
               attr("hx-confirm") := s"Delete workspace '${ws.name}'?",
             )("Delete"),
-          ),
+          )
         ),
       ),
       tag("tr")()(
         tag("td")(attr("colspan") := "5", cls := "px-4")(
-          div(id := s"runs-${ws.id}"),
-        ),
+          div(id := s"runs-${ws.id}")
+        )
       ),
     )
 
