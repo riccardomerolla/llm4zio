@@ -17,3 +17,9 @@
 - [x] Replace the static question preview with an interactive wizard flow that lets the user move through the seven standard questions while keeping the prompt editor visible.
 - [x] Add a live brief panel that reflects the current wizard answers, including conditional run-mode details, scaffold outputs, and next issue cards.
 - [x] Update tests and verification for the revised interactive wizard experience, then review the final result for visual and behavioral regressions.
+
+## Group 4: Template Selector Regression
+
+- [x] Restore the original workspace-template card styling from commit 82ab6d71211fe4a251ae3d3dd27591456adcb15f while preserving the interactive wizard flow below it.
+- [x] Fix the template-selection behavior so switching cards updates the active template panel, wizard answers, and live brief reliably.
+- [x] Refresh the focused view and controller checks, then run formatting and verification for the selector regression fix.

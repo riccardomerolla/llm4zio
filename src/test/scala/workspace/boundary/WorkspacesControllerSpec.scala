@@ -221,6 +221,7 @@ object WorkspacesControllerSpec extends ZIOSpecDefault:
         body.contains("Workspace Prompt"),
         body.contains("Template Wizard"),
         body.contains("Question 1 of 7"),
+        body.contains("window.__workspaceTemplateSelect = selectTemplate"),
         !body.contains("Install the wizard skill"),
       )
     },

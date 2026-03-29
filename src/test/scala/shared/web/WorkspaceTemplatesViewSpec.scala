@@ -13,6 +13,7 @@ object WorkspaceTemplatesViewSpec extends ZIOSpecDefault:
         html.contains("Question 1 of 7"),
         html.contains("Next question"),
         html.contains("Live Brief"),
+        html.contains("window.__workspaceTemplateSelect = selectTemplate"),
       )
     },
     test("page keeps the cleaner card layout and removes install-specific copy") {
@@ -23,6 +24,7 @@ object WorkspaceTemplatesViewSpec extends ZIOSpecDefault:
         html.contains("Spring Boot"),
         html.contains("React + TypeScript"),
         html.contains("How the wizard works"),
+        html.contains("View reference ↗"),
       )
     },
   )

@@ -24,6 +24,7 @@ object WorkspaceTemplatesView:
     description: String,
     stackLabel: String,
     stackClasses: String,
+    cardFeatures: List[String],
     focusLabel: String,
     buildCommand: String,
     referenceLabel: String,
@@ -42,6 +43,15 @@ object WorkspaceTemplatesView:
         "Effect-oriented backend service built on ZIO 2.x. Ideal for REST APIs, event-sourced domains, streaming pipelines, and CLI tools.",
       stackLabel = "Scala 3",
       stackClasses = "border-red-500/30 bg-red-500/12 text-red-300",
+      cardFeatures = List(
+        "Scala 3 + ZIO 2.x core",
+        "zio-http for REST APIs (optional)",
+        "zio-json for serialization (optional)",
+        "ZIO Test + sbt test framework",
+        "sbt-scalafmt + sbt-scalafix",
+        "ZLayer dependency injection",
+        "CLAUDE.md with BCE conventions",
+      ),
       focusLabel = "Best for APIs, daemons, and workflow services",
       buildCommand = "sbt compile",
       referenceLabel = "View Scala 3 + ZIO reference",
@@ -143,6 +153,15 @@ object WorkspaceTemplatesView:
         "Production-ready enterprise REST API with Spring Boot 3.x and Java 21. Includes layered architecture, validation, and Actuator health endpoints.",
       stackLabel = "Java 21",
       stackClasses = "border-green-500/30 bg-green-500/12 text-green-300",
+      cardFeatures = List(
+        "Spring Boot 3.4.x + Java 21",
+        "spring-web, spring-validation",
+        "Spring Data JPA (optional)",
+        "Spring Security 6 / OAuth2 (optional)",
+        "spring-boot-actuator",
+        "JUnit 5 + Spring Boot Test",
+        "CLAUDE.md with layered-arch conventions",
+      ),
       focusLabel = "Best for REST platforms and integration-heavy backends",
       buildCommand = "./mvnw compile",
       referenceLabel = "View Spring Boot reference",
@@ -244,6 +263,15 @@ object WorkspaceTemplatesView:
         "Modern frontend SPA with React 19, TypeScript strict mode, and Vite 6. Batteries-included with Vitest, ESLint, and optional Tailwind CSS.",
       stackLabel = "TypeScript",
       stackClasses = "border-blue-500/30 bg-blue-500/12 text-blue-300",
+      cardFeatures = List(
+        "React 19 + TypeScript 5 (strict)",
+        "Vite 6 dev server + bundler",
+        "Vitest + Testing Library",
+        "ESLint 9 with react-hooks rules",
+        "Tailwind CSS v4 (optional)",
+        "Zustand state management (optional)",
+        "CLAUDE.md with functional-component conventions",
+      ),
       focusLabel = "Best for dashboards, portals, and SPA product surfaces",
       buildCommand = "npm install && npm run dev",
       referenceLabel = "View React + TypeScript reference",
@@ -371,37 +399,42 @@ object WorkspaceTemplatesView:
       attr("data-template-button") := template.id,
       attr("aria-controls")        := s"workspace-template-panel-${template.id}",
       attr("aria-selected")        := (template.id == defaultTemplateId).toString,
+      onclick                      := s"window.__workspaceTemplateSelect && window.__workspaceTemplateSelect('${template.id}'); return false;",
       cls                          := selectorButtonClasses(template.id == defaultTemplateId),
     )(
       div(cls := "flex items-start justify-between gap-3")(
         div(
-          h3(cls := "text-base font-semibold text-white")(template.name),
-          p(cls := "mt-1 text-sm leading-6 text-slate-400")(template.description),
+          h3(cls := "text-sm font-semibold text-white")(template.name),
+          p(cls := "mt-1 text-xs leading-relaxed text-gray-400")(template.description),
         ),
-        span(cls := s"shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-semibold ${template.stackClasses}")(
+        span(cls := s"shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${template.stackClasses}")(
           template.stackLabel
         ),
       ),
-      ul(cls := "mt-5 space-y-2")(
-        template.scaffoldOutputs.take(3).map { item =>
-          li(cls := "flex items-start gap-2 text-sm text-slate-300")(
-            span(cls := "mt-1 text-emerald-400")("✓"),
+      ul(cls := "flex-1 space-y-1")(
+        template.cardFeatures.map { item =>
+          li(cls := "flex items-center gap-2 text-xs text-gray-400")(
+            span(cls := "shrink-0 text-emerald-500")("✓"),
             span(item),
           )
         }*
       ),
-      div(cls := "mt-5 flex items-center gap-3 border-t border-white/8 pt-4 text-xs")(
-        span(cls := "text-indigo-300")(template.focusLabel),
+      div(cls := "flex items-center gap-3 border-t border-white/8 pt-2")(
+        a(
+          href   := s"/static/skills/workspace-template/references/${template.id}.md",
+          target := "_blank",
+          cls    := "text-xs text-indigo-400 hover:text-indigo-300",
+        )("View reference ↗"),
         span(cls := "text-white/20")("·"),
-        span(cls := "font-mono text-slate-500")(template.buildCommand),
+        span(cls := "font-mono text-[10px] text-gray-500")(template.buildCommand),
       ),
     )
 
   private def selectorButtonClasses(selected: Boolean): String =
     val base =
-      "flex h-full flex-col rounded-lg border p-5 text-left transition duration-150 focus:outline-none focus:ring-2 focus:ring-indigo-400/70"
-    if selected then s"$base border-indigo-500/40 bg-indigo-500/6 shadow-[0_0_0_1px_rgba(99,102,241,0.18)]"
-    else s"$base border-white/10 bg-white/3 hover:border-white/20 hover:bg-white/[0.045]"
+      "flex h-full flex-col space-y-4 rounded-lg border border-white/10 bg-white/3 p-5 text-left transition duration-150 focus:outline-none focus:ring-2 focus:ring-indigo-400/70"
+    if selected then s"$base border-indigo-500/35 bg-indigo-500/[0.05] shadow-[0_0_0_1px_rgba(99,102,241,0.14)]"
+    else s"$base hover:border-white/20 hover:bg-white/[0.05]"
 
   private def templatePanel(template: TemplateInfo): Frag =
     div(
@@ -827,7 +860,7 @@ object WorkspaceTemplatesView:
 
   private def flowOverview: Frag =
     div(cls := "rounded-lg border border-white/10 bg-white/3 p-5")(
-      h3(cls := "text-sm font-semibold text-white")("How the wizard works"),
+      h3(cls := "mb-4 text-sm font-semibold text-white")("How the wizard works"),
       div(cls := "mt-4 grid grid-cols-1 gap-3 sm:grid-cols-5")(
         List(
           ("1", "Prompt", "Capture the user request that should drive the scaffold and issue backlog."),
@@ -842,8 +875,8 @@ object WorkspaceTemplatesView:
                 cls := "flex size-6 shrink-0 items-center justify-center rounded-full bg-indigo-600/30 text-xs font-bold text-indigo-300"
               )(n),
               div(
-                p(cls := "text-xs font-semibold text-slate-200")(title),
-                p(cls := "mt-0.5 text-xs leading-5 text-slate-500")(desc),
+                p(cls := "text-xs font-semibold text-gray-200")(title),
+                p(cls := "mt-0.5 text-xs text-gray-500")(desc),
               ),
             )
         }*
@@ -909,10 +942,10 @@ object WorkspaceTemplatesView:
     script(raw(
       """(function () {
         |  function selectorButtonClass(selected) {
-        |    var base = 'flex h-full flex-col rounded-lg border p-5 text-left transition duration-150 focus:outline-none focus:ring-2 focus:ring-indigo-400/70';
+        |    var base = 'flex h-full flex-col space-y-4 rounded-lg border border-white/10 bg-white/3 p-5 text-left transition duration-150 focus:outline-none focus:ring-2 focus:ring-indigo-400/70';
         |    return selected
-        |      ? base + ' border-indigo-500/40 bg-indigo-500/6 shadow-[0_0_0_1px_rgba(99,102,241,0.18)]'
-        |      : base + ' border-white/10 bg-white/3 hover:border-white/20 hover:bg-white/[0.045]';
+        |      ? base + ' border-indigo-500/35 bg-indigo-500/[0.05] shadow-[0_0_0_1px_rgba(99,102,241,0.14)]'
+        |      : base + ' hover:border-white/20 hover:bg-white/[0.05]';
         |  }
         |
         |  function wizardNavClass(active) {
@@ -1024,6 +1057,8 @@ object WorkspaceTemplatesView:
         |        panel.classList.toggle('hidden', !selected);
         |      });
         |    }
+        |
+        |    window.__workspaceTemplateSelect = selectTemplate;
         |
         |    buttons.forEach(function (button) {
         |      if (button.dataset.templateWizardInit === 'true') return;
