@@ -60,11 +60,12 @@ object KnowledgeView:
     )(
       option(value := "", if selected.isEmpty then attr("selected") := "selected" else ())("All workspaces"),
       frag(
-        workspaces.map { case (wsId, wsName) =>
-          option(
-            attr("value") := wsId,
-            if selected.contains(wsId) then attr("selected") := "selected" else (),
-          )(wsName)
+        workspaces.map {
+          case (wsId, wsName) =>
+            option(
+              attr("value") := wsId,
+              if selected.contains(wsId) then attr("selected") := "selected" else (),
+            )(wsName)
         }
       ),
     )

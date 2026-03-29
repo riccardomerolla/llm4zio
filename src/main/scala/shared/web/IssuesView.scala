@@ -150,7 +150,7 @@ object IssuesView:
               action := "/board",
               cls    := "flex flex-wrap items-center gap-2",
             )(
-              boardFilterBar(workspaces, workspaceFilter, agentFilter, priorityFilter, tagFilter, query, hasProofFilter),
+              boardFilterBar(workspaces, workspaceFilter, agentFilter, priorityFilter, tagFilter, query, hasProofFilter)
             ),
             div(cls := "flex items-center gap-3")(
               modeToggle(
@@ -240,7 +240,8 @@ object IssuesView:
           workspaceFilter,
           agentFilter,
           priorityFilter,
-          rightSide = Some(modeToggle("list", workspaceFilter, agentFilter, priorityFilter, tagFilter, query, statusFilter, None)),
+          rightSide =
+            Some(modeToggle("list", workspaceFilter, agentFilter, priorityFilter, tagFilter, query, statusFilter, None)),
         ),
         if issues.isEmpty then
           div(cls := "rounded-xl border border-white/10 bg-slate-900/60 px-6 py-16 text-center")(
@@ -1219,73 +1220,73 @@ object IssuesView:
     val idleInput   =
       "rounded-full border border-white/15 bg-slate-800/70 px-3 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none"
     div(cls := "flex flex-wrap items-center gap-2")(
+      input(
+        `type`      := "text",
+        name        := "q",
+        value       := query.getOrElse(""),
+        placeholder := "Search",
+        cls         := (if query.exists(_.nonEmpty) then activeInput else idleInput),
+      ),
+      select(
+        name := "workspace",
+        cls  := (if workspaceFilter.exists(_.nonEmpty) then s"$activeInput border-indigo-400"
+                else idleInput),
+      )(
+        option(value := "")("Any workspace"),
+        workspaces.sortBy(_._2.toLowerCase).map { (id, name) =>
+          option(value := id, if workspaceFilter.contains(id) then selected := "selected" else ())(name)
+        },
+      ),
+      input(
+        `type`      := "text",
+        name        := "agent",
+        value       := agentFilter.getOrElse(""),
+        placeholder := "Agent",
+        cls         := (if agentFilter.exists(_.nonEmpty) then activeInput else idleInput),
+      ),
+      select(
+        name := "priority",
+        cls  := (if priorityFilter.exists(_.nonEmpty) then activeInput else idleInput),
+      )(
+        option(value := "")("Any priority"),
+        option(value := "critical", if priorityFilter.contains("critical") then selected := "selected" else ())(
+          "Critical"
+        ),
+        option(value := "high", if priorityFilter.contains("high") then selected := "selected" else ())("High"),
+        option(value := "medium", if priorityFilter.contains("medium") then selected := "selected" else ())("Medium"),
+        option(value := "low", if priorityFilter.contains("low") then selected := "selected" else ())("Low"),
+      ),
+      input(
+        `type`      := "text",
+        name        := "tag",
+        value       := tagFilter.getOrElse(""),
+        placeholder := "Tag",
+        cls         := (if tagFilter.exists(_.nonEmpty) then activeInput else idleInput),
+      ),
+      label(
+        cls := s"flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs ${
+            if hasProofFilter.contains(true) then "border-indigo-400/60 bg-indigo-500/20 text-indigo-200"
+            else "border-white/15 bg-slate-800/70 text-slate-300"
+          }"
+      )(
         input(
-          `type`      := "text",
-          name        := "q",
-          value       := query.getOrElse(""),
-          placeholder := "Search",
-          cls         := (if query.exists(_.nonEmpty) then activeInput else idleInput),
+          `type` := "checkbox",
+          name   := "hasProof",
+          value  := "true",
+          cls    := "sr-only",
+          if hasProofFilter.contains(true) then checked := "checked" else (),
         ),
-        select(
-          name := "workspace",
-          cls  := (if workspaceFilter.exists(_.nonEmpty) then s"$activeInput border-indigo-400"
-                  else idleInput),
-        )(
-          option(value := "")("Any workspace"),
-          workspaces.sortBy(_._2.toLowerCase).map { (id, name) =>
-            option(value := id, if workspaceFilter.contains(id) then selected := "selected" else ())(name)
-          },
-        ),
-        input(
-          `type`      := "text",
-          name        := "agent",
-          value       := agentFilter.getOrElse(""),
-          placeholder := "Agent",
-          cls         := (if agentFilter.exists(_.nonEmpty) then activeInput else idleInput),
-        ),
-        select(
-          name := "priority",
-          cls  := (if priorityFilter.exists(_.nonEmpty) then activeInput else idleInput),
-        )(
-          option(value := "")("Any priority"),
-          option(value := "critical", if priorityFilter.contains("critical") then selected := "selected" else ())(
-            "Critical"
-          ),
-          option(value := "high", if priorityFilter.contains("high") then selected := "selected" else ())("High"),
-          option(value := "medium", if priorityFilter.contains("medium") then selected := "selected" else ())("Medium"),
-          option(value := "low", if priorityFilter.contains("low") then selected := "selected" else ())("Low"),
-        ),
-        input(
-          `type`      := "text",
-          name        := "tag",
-          value       := tagFilter.getOrElse(""),
-          placeholder := "Tag",
-          cls         := (if tagFilter.exists(_.nonEmpty) then activeInput else idleInput),
-        ),
-        label(
-          cls := s"flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs ${
-              if hasProofFilter.contains(true) then "border-indigo-400/60 bg-indigo-500/20 text-indigo-200"
-              else "border-white/15 bg-slate-800/70 text-slate-300"
-            }"
-        )(
-          input(
-            `type` := "checkbox",
-            name   := "hasProof",
-            value  := "true",
-            cls    := "sr-only",
-            if hasProofFilter.contains(true) then checked := "checked" else (),
-          ),
-          span("Has proof"),
-        ),
-        button(
-          `type` := "submit",
-          cls    := "rounded-full bg-indigo-500 px-4 py-1.5 text-xs font-semibold text-white hover:bg-indigo-400",
-        )("Apply"),
-        a(
-          href := "/board",
-          cls  := "rounded-full border border-white/20 px-3 py-1.5 text-xs text-slate-300 hover:bg-white/5",
-        )("Reset"),
-      )
+        span("Has proof"),
+      ),
+      button(
+        `type` := "submit",
+        cls    := "rounded-full bg-indigo-500 px-4 py-1.5 text-xs font-semibold text-white hover:bg-indigo-400",
+      )("Apply"),
+      a(
+        href := "/board",
+        cls  := "rounded-full border border-white/20 px-3 py-1.5 text-xs text-slate-300 hover:bg-white/5",
+      )("Reset"),
+    )
 
   private def boardListFilterBar(
     statusFilter: Option[String],

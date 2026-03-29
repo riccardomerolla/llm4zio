@@ -19,7 +19,8 @@ object KnowledgeController:
   def routes: ZIO[KnowledgeController, Nothing, Routes[Any, Response]] =
     ZIO.serviceWith[KnowledgeController](_.routes)
 
-  val live: ZLayer[DecisionLogRepository & KnowledgeGraphService & MemoryRepository & WorkspaceRepository, Nothing, KnowledgeController] =
+  val live
+    : ZLayer[DecisionLogRepository & KnowledgeGraphService & MemoryRepository & WorkspaceRepository, Nothing, KnowledgeController] =
     ZLayer {
       for
         decisionLogs  <- ZIO.service[DecisionLogRepository]
@@ -38,7 +39,9 @@ object KnowledgeController:
     new KnowledgeController:
       override val routes: Routes[Any, Response] = Routes(
         Method.GET / "knowledge" -> handler { (req: Request) =>
-          listPage(req, decisionLogs, graph, memoryRepo, workspaceRepo).catchAll(error => ZIO.succeed(persistErr(error)))
+          listPage(req, decisionLogs, graph, memoryRepo, workspaceRepo).catchAll(error =>
+            ZIO.succeed(persistErr(error))
+          )
         }
       )
 

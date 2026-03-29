@@ -12,6 +12,7 @@ import knowledge.entity.*
 import memory.entity.*
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ AgentId, DecisionLogId }
+import workspace.entity.{ Workspace, WorkspaceRepository }
 
 object KnowledgeControllerSpec extends ZIOSpecDefault:
 
@@ -92,10 +93,21 @@ object KnowledgeControllerSpec extends ZIOSpecDefault:
     override def deleteById(userId: UserId, id: MemoryId): IO[Throwable, Unit] = ZIO.unit
     override def deleteBySession(sessionId: SessionId): IO[Throwable, Unit]    = ZIO.unit
 
+  private val stubWorkspaceRepo: WorkspaceRepository = new WorkspaceRepository:
+    override def append(event: workspace.entity.WorkspaceEvent): IO[PersistenceError, Unit]                      = ZIO.unit
+    override def list: IO[PersistenceError, List[Workspace]]                                                     = ZIO.succeed(Nil)
+    override def get(id: String): IO[PersistenceError, Option[Workspace]]                                        = ZIO.succeed(None)
+    override def delete(id: String): IO[PersistenceError, Unit]                                                  = ZIO.unit
+    override def appendRun(event: workspace.entity.WorkspaceRunEvent): IO[PersistenceError, Unit]                = ZIO.unit
+    override def listRuns(wid: String): IO[PersistenceError, List[workspace.entity.WorkspaceRun]]                = ZIO.succeed(Nil)
+    override def listRunsByIssueRef(issueRef: String): IO[PersistenceError, List[workspace.entity.WorkspaceRun]] =
+      ZIO.succeed(Nil)
+    override def getRun(id: String): IO[PersistenceError, Option[workspace.entity.WorkspaceRun]]                 = ZIO.succeed(None)
+
   def spec: Spec[TestEnvironment & Scope, Any] =
     suite("KnowledgeControllerSpec")(
       test("GET /knowledge renders the knowledge page") {
-        val routes = KnowledgeController.make(stubDecisionLogs, stubGraph, stubMemoryRepo).routes
+        val routes = KnowledgeController.make(stubDecisionLogs, stubGraph, stubMemoryRepo, stubWorkspaceRepo).routes
         for
           resp <- routes.runZIO(Request.get(URL.decode("/knowledge?q=issue&workspaceId=ws-1").toOption.get))
           body <- resp.body.asString

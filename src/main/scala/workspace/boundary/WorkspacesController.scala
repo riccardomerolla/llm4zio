@@ -10,7 +10,7 @@ import zio.json.*
 import analysis.control.WorkspaceAnalysisScheduler
 import orchestration.control.AgentRegistry
 import shared.errors.PersistenceError
-import shared.web.WorkspacesView
+import shared.web.{ WorkspaceTemplatesView, WorkspacesView }
 import workspace.control.{ AssignRunRequest, GitService, WorkspaceRunService }
 import workspace.entity.*
 
@@ -49,6 +49,11 @@ object WorkspacesController:
   ): WorkspacesController =
     new WorkspacesController:
       override val routes: Routes[Any, Response] = Routes(
+        // Workspace templates gallery
+        Method.GET / "workspace-templates" -> handler { (_: Request) =>
+          ZIO.succeed(html(WorkspaceTemplatesView.page()))
+        },
+
         // Standalone /workspaces page
         Method.GET / "workspaces" -> handler { (_: Request) =>
           (for
