@@ -7,6 +7,6 @@
 
 ## Group 2: Tests and Verification
 
-- [ ] Add focused view and route coverage for the new workspace template wizard content.
-- [ ] Run formatting and the relevant test suites, fixing any regressions discovered during verification.
-- [ ] Review the final changes for correctness, regressions, and adherence to the Scala 3 + ZIO project guidelines.
+- [x] Add focused view and route coverage for the new workspace template wizard content.
+- [x] Run formatting and the relevant test suites, fixing any regressions discovered during verification.
+- [x] Review the final changes for correctness, regressions, and adherence to the Scala 3 + ZIO project guidelines.

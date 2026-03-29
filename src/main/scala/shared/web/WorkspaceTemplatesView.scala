@@ -4,7 +4,7 @@ import scalatags.Text.all.*
 
 object WorkspaceTemplatesView:
 
-  private final case class QuestionPreview(
+  final private case class QuestionPreview(
     number: String,
     label: String,
     field: String,
@@ -12,13 +12,13 @@ object WorkspaceTemplatesView:
     helper: String,
   )
 
-  private final case class IssuePreview(
+  final private case class IssuePreview(
     title: String,
     summary: String,
     meta: String,
   )
 
-  private final case class TemplateInfo(
+  final private case class TemplateInfo(
     id: String,
     name: String,
     description: String,
@@ -48,16 +48,34 @@ object WorkspaceTemplatesView:
       prompt =
         "Create a new Scala 3 + ZIO workspace called payments-api. Scaffold a service that ingests payment events, exposes settlement endpoints, validates incoming payloads, and seeds the board with the next implementation issues before I start coding.",
       questions = List(
-        QuestionPreview("1", "Name", "name", List("payments-api"), "Keep it lowercase, stable, and usable as both workspace name and repository slug."),
-        QuestionPreview("2", "Path", "path", List("~/workspaces/payments-api"), "Prefer an empty absolute path so the skill can scaffold, initialize git, and register in one pass."),
+        QuestionPreview(
+          "1",
+          "Name",
+          "name",
+          List("payments-api"),
+          "Keep it lowercase, stable, and usable as both workspace name and repository slug.",
+        ),
+        QuestionPreview(
+          "2",
+          "Path",
+          "path",
+          List("~/workspaces/payments-api"),
+          "Prefer an empty absolute path so the skill can scaffold, initialize git, and register in one pass.",
+        ),
         QuestionPreview(
           "3",
           "Description",
           "description",
           List("Process payment events and expose settlement workflows for operations."),
-          "This sentence becomes the workspace description and shapes the generated issue backlog."
+          "This sentence becomes the workspace description and shapes the generated issue backlog.",
         ),
-        QuestionPreview("4", "Stack", "stack", List("scala3-zio"), "Locks the scaffold to the Scala 3 + ZIO reference and build conventions."),
+        QuestionPreview(
+          "4",
+          "Stack",
+          "stack",
+          List("scala3-zio"),
+          "Locks the scaffold to the Scala 3 + ZIO reference and build conventions.",
+        ),
         QuestionPreview(
           "5",
           "Features",
@@ -68,16 +86,22 @@ object WorkspaceTemplatesView:
             "Expose status endpoints for support operations.",
             "Add ZIO Test coverage for the happy path and typed failures.",
           ),
-          "This prompt is the source material for the next issue cards."
+          "This prompt is the source material for the next issue cards.",
         ),
         QuestionPreview(
           "6",
           "CLI Tool",
           "cliTool",
           List("codex", "Alternatives: claude, gemini, copilot, opencode"),
-          "The page stays provider-neutral: choose the agent CLI that should execute runs inside the registered workspace."
+          "The page stays provider-neutral: choose the agent CLI that should execute runs inside the registered workspace.",
         ),
-        QuestionPreview("7", "Run Mode", "runMode", List("host"), "Host is the fastest default for local sbt workflows; switching modes adds a few follow-up questions."),
+        QuestionPreview(
+          "7",
+          "Run Mode",
+          "runMode",
+          List("host"),
+          "Host is the fastest default for local sbt workflows; switching modes adds a few follow-up questions.",
+        ),
       ),
       runModeFollowUps = List(
         "Docker adds image, mount-worktree, and network prompts before registration.",
@@ -90,10 +114,26 @@ object WorkspaceTemplatesView:
         "Turns the feature prompt into setup, feature, testing, and documentation issue cards.",
       ),
       issuePreviews = List(
-        IssuePreview("Set up the ZIO service skeleton and dependency layers", "Establish modules, wiring, and a compile-safe build baseline.", "high · setup · M"),
-        IssuePreview("Implement webhook ingestion with typed validation failures", "Capture invalid payload handling and domain event mapping.", "high · feature · M"),
-        IssuePreview("Add settlement status endpoints and JSON contracts", "Expose operational visibility for retries and reconciliation.", "medium · feature · M"),
-        IssuePreview("Cover ingest and retry flows with ZIO Test", "Protect the first end-to-end flow before more features land.", "medium · testing · S"),
+        IssuePreview(
+          "Set up the ZIO service skeleton and dependency layers",
+          "Establish modules, wiring, and a compile-safe build baseline.",
+          "high · setup · M",
+        ),
+        IssuePreview(
+          "Implement webhook ingestion with typed validation failures",
+          "Capture invalid payload handling and domain event mapping.",
+          "high · feature · M",
+        ),
+        IssuePreview(
+          "Add settlement status endpoints and JSON contracts",
+          "Expose operational visibility for retries and reconciliation.",
+          "medium · feature · M",
+        ),
+        IssuePreview(
+          "Cover ingest and retry flows with ZIO Test",
+          "Protect the first end-to-end flow before more features land.",
+          "medium · testing · S",
+        ),
       ),
     ),
     TemplateInfo(
@@ -109,16 +149,34 @@ object WorkspaceTemplatesView:
       prompt =
         "Create a new Spring Boot workspace called order-ops. Scaffold an operations API for order intake, validation, fulfillment retries, and dashboard-ready monitoring. Generate the first issue cards from that scope before registering the workspace.",
       questions = List(
-        QuestionPreview("1", "Name", "name", List("order-ops"), "Use the final product or bounded-context name so the workspace and issue cards stay coherent."),
-        QuestionPreview("2", "Path", "path", List("~/workspaces/order-ops"), "An empty path keeps the scaffold deterministic and safe to register automatically."),
+        QuestionPreview(
+          "1",
+          "Name",
+          "name",
+          List("order-ops"),
+          "Use the final product or bounded-context name so the workspace and issue cards stay coherent.",
+        ),
+        QuestionPreview(
+          "2",
+          "Path",
+          "path",
+          List("~/workspaces/order-ops"),
+          "An empty path keeps the scaffold deterministic and safe to register automatically.",
+        ),
         QuestionPreview(
           "3",
           "Description",
           "description",
           List("Operate order intake, fulfillment retries, and support-facing status APIs."),
-          "A strong description helps the generated board separate platform work from domain work."
+          "A strong description helps the generated board separate platform work from domain work.",
         ),
-        QuestionPreview("4", "Stack", "stack", List("spring-boot"), "Pins the generator to Maven wrapper, layered packaging, and Java 21 defaults."),
+        QuestionPreview(
+          "4",
+          "Stack",
+          "stack",
+          List("spring-boot"),
+          "Pins the generator to Maven wrapper, layered packaging, and Java 21 defaults.",
+        ),
         QuestionPreview(
           "5",
           "Features",
@@ -129,16 +187,22 @@ object WorkspaceTemplatesView:
             "Expose health and metrics endpoints for operators.",
             "Document external API contracts and integration assumptions.",
           ),
-          "These become the backbone of the first backlog, not just project notes."
+          "These become the backbone of the first backlog, not just project notes.",
         ),
         QuestionPreview(
           "6",
           "CLI Tool",
           "cliTool",
           List("codex", "Alternatives: claude, gemini, copilot, opencode"),
-          "Provider selection is decoupled from the template, so the same scaffold works across agent ecosystems."
+          "Provider selection is decoupled from the template, so the same scaffold works across agent ecosystems.",
         ),
-        QuestionPreview("7", "Run Mode", "runMode", List("docker"), "Docker is often a practical default for Java services that need a repeatable runtime or local dependencies."),
+        QuestionPreview(
+          "7",
+          "Run Mode",
+          "runMode",
+          List("docker"),
+          "Docker is often a practical default for Java services that need a repeatable runtime or local dependencies.",
+        ),
       ),
       runModeFollowUps = List(
         "Docker prompts for the runtime image and whether to mount the worktree for live editing.",
@@ -151,10 +215,26 @@ object WorkspaceTemplatesView:
         "Builds the initial issue stack around setup, core APIs, observability, and test coverage.",
       ),
       issuePreviews = List(
-        IssuePreview("Bootstrap the Spring Boot service and Maven conventions", "Lay down the runtime, formatting, and test harness essentials.", "high · setup · S"),
-        IssuePreview("Implement order intake validation and persistence", "Create the first domain slice with request validation and storage.", "high · feature · M"),
-        IssuePreview("Add fulfillment retry orchestration and operational endpoints", "Make retries visible and actionable for support workflows.", "high · feature · M"),
-        IssuePreview("Wire Actuator health checks and baseline integration tests", "Protect the service contract and readiness story early.", "medium · testing · S"),
+        IssuePreview(
+          "Bootstrap the Spring Boot service and Maven conventions",
+          "Lay down the runtime, formatting, and test harness essentials.",
+          "high · setup · S",
+        ),
+        IssuePreview(
+          "Implement order intake validation and persistence",
+          "Create the first domain slice with request validation and storage.",
+          "high · feature · M",
+        ),
+        IssuePreview(
+          "Add fulfillment retry orchestration and operational endpoints",
+          "Make retries visible and actionable for support workflows.",
+          "high · feature · M",
+        ),
+        IssuePreview(
+          "Wire Actuator health checks and baseline integration tests",
+          "Protect the service contract and readiness story early.",
+          "medium · testing · S",
+        ),
       ),
     ),
     TemplateInfo(
@@ -170,16 +250,34 @@ object WorkspaceTemplatesView:
       prompt =
         "Create a new React + TypeScript workspace called customer-portal. Scaffold a portal with authentication, account overview, payment activity, and support messaging. Generate the starter issue cards from the user experience goals before registering the workspace.",
       questions = List(
-        QuestionPreview("1", "Name", "name", List("customer-portal"), "Choose the product-facing name the team will recognize in the board and workspace switcher."),
-        QuestionPreview("2", "Path", "path", List("~/workspaces/customer-portal"), "Use a fresh frontend directory so the generator can add Vite, testing, and linting in one shot."),
+        QuestionPreview(
+          "1",
+          "Name",
+          "name",
+          List("customer-portal"),
+          "Choose the product-facing name the team will recognize in the board and workspace switcher.",
+        ),
+        QuestionPreview(
+          "2",
+          "Path",
+          "path",
+          List("~/workspaces/customer-portal"),
+          "Use a fresh frontend directory so the generator can add Vite, testing, and linting in one shot.",
+        ),
         QuestionPreview(
           "3",
           "Description",
           "description",
           List("Customer portal for account visibility, payment activity, and support interactions."),
-          "This description becomes the short summary for the workspace and the generated issue set."
+          "This description becomes the short summary for the workspace and the generated issue set.",
         ),
-        QuestionPreview("4", "Stack", "stack", List("react-ts"), "Locks the scaffold to React, TypeScript strict mode, and the Vite reference."),
+        QuestionPreview(
+          "4",
+          "Stack",
+          "stack",
+          List("react-ts"),
+          "Locks the scaffold to React, TypeScript strict mode, and the Vite reference.",
+        ),
         QuestionPreview(
           "5",
           "Features",
@@ -190,16 +288,22 @@ object WorkspaceTemplatesView:
             "Support guided actions like downloading statements and opening support requests.",
             "Add component and page tests for critical journeys.",
           ),
-          "Feature phrasing should describe user journeys because those become the next issue cards."
+          "Feature phrasing should describe user journeys because those become the next issue cards.",
         ),
         QuestionPreview(
           "6",
           "CLI Tool",
           "cliTool",
           List("codex", "Alternatives: claude, gemini, copilot, opencode"),
-          "Pick whichever agent runtime should operate on the workspace once the scaffold is registered."
+          "Pick whichever agent runtime should operate on the workspace once the scaffold is registered.",
         ),
-        QuestionPreview("7", "Run Mode", "runMode", List("host"), "Host keeps local Vite feedback loops tight, while Docker stays available for reproducible review environments."),
+        QuestionPreview(
+          "7",
+          "Run Mode",
+          "runMode",
+          List("host"),
+          "Host keeps local Vite feedback loops tight, while Docker stays available for reproducible review environments.",
+        ),
       ),
       runModeFollowUps = List(
         "Docker asks for the frontend image and whether the worktree should be mounted for live reload.",
@@ -212,10 +316,26 @@ object WorkspaceTemplatesView:
         "Seeds the backlog with UX, state management, testing, and docs issues derived from the feature prompt.",
       ),
       issuePreviews = List(
-        IssuePreview("Bootstrap the React app shell and developer workflow", "Set up routing, linting, test harnesses, and base layout.", "high · setup · S"),
-        IssuePreview("Implement authentication and session handling flows", "Cover sign-in state, guards, and error handling.", "high · feature · M"),
-        IssuePreview("Build account overview and payment activity surfaces", "Turn the main user journey into navigable screens and data states.", "high · feature · M"),
-        IssuePreview("Add user-journey tests for portal entry and activity views", "Protect the first critical customer flows before expanding the UI.", "medium · testing · S"),
+        IssuePreview(
+          "Bootstrap the React app shell and developer workflow",
+          "Set up routing, linting, test harnesses, and base layout.",
+          "high · setup · S",
+        ),
+        IssuePreview(
+          "Implement authentication and session handling flows",
+          "Cover sign-in state, guards, and error handling.",
+          "high · feature · M",
+        ),
+        IssuePreview(
+          "Build account overview and payment activity surfaces",
+          "Turn the main user journey into navigable screens and data states.",
+          "high · feature · M",
+        ),
+        IssuePreview(
+          "Add user-journey tests for portal entry and activity views",
+          "Protect the first critical customer flows before expanding the UI.",
+          "medium · testing · S",
+        ),
       ),
     ),
   )
@@ -241,32 +361,42 @@ object WorkspaceTemplatesView:
     )
 
   private def wizardFlowSummary: Frag =
-    div(cls := "rounded-2xl border border-white/10 bg-[linear-gradient(135deg,rgba(15,23,42,0.96),rgba(30,41,59,0.86))] p-6 shadow-[0_18px_60px_rgba(15,23,42,0.45)]")(
+    div(
+      cls := "rounded-2xl border border-white/10 bg-[linear-gradient(135deg,rgba(15,23,42,0.96),rgba(30,41,59,0.86))] p-6 shadow-[0_18px_60px_rgba(15,23,42,0.45)]"
+    )(
       div(cls := "flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between")(
         div(cls := "max-w-3xl")(
           p(cls := "text-[11px] font-semibold uppercase tracking-[0.28em] text-cyan-300")("Wizard-first flow"),
-          h2(cls := "mt-2 text-2xl font-semibold text-white")("Turn a template into a registered workspace and a usable backlog"),
+          h2(
+            cls := "mt-2 text-2xl font-semibold text-white"
+          )("Turn a template into a registered workspace and a usable backlog"),
           p(cls := "mt-3 max-w-2xl text-sm leading-6 text-slate-300")(
             "The page now mirrors the workspace-template skill itself: start from a template, craft the user prompt, answer the standard questions, then review scaffold and issue outputs before handing execution to an agent."
           ),
         ),
         div(cls := "rounded-xl border border-cyan-400/20 bg-cyan-500/10 px-4 py-3 text-sm text-cyan-100")(
           span(cls := "font-semibold text-white")("Outcome: "),
-          "one prompt, one scaffold, one registered workspace, and a first set of issue cards."
+          "one prompt, one scaffold, one registered workspace, and a first set of issue cards.",
         ),
       ),
       div(cls := "mt-6 grid grid-cols-1 gap-3 lg:grid-cols-4")(
         flowStep("1", "Select template", "Pick the stack and see the matching prompt, defaults, and scaffold plan."),
         flowStep("2", "Prompt first", "Capture the user intent that should drive scaffolding and backlog generation."),
         flowStep("3", "Answer 7 questions", "Name, path, description, stack, features, CLI tool, and run mode."),
-        flowStep("4", "Scaffold + plan", "Create the workspace and seed the board with the next actionable issue cards."),
+        flowStep(
+          "4",
+          "Scaffold + plan",
+          "Create the workspace and seed the board with the next actionable issue cards.",
+        ),
       ),
     )
 
   private def flowStep(number: String, title: String, body: String): Frag =
     div(cls := "rounded-xl border border-white/10 bg-black/20 p-4")(
       div(cls := "flex items-center gap-3")(
-        div(cls := "flex size-8 items-center justify-center rounded-full bg-cyan-400/15 text-sm font-semibold text-cyan-200")(number),
+        div(
+          cls := "flex size-8 items-center justify-center rounded-full bg-cyan-400/15 text-sm font-semibold text-cyan-200"
+        )(number),
         h3(cls := "text-sm font-semibold text-white")(title),
       ),
       p(cls := "mt-3 text-sm leading-6 text-slate-400")(body),
@@ -290,18 +420,20 @@ object WorkspaceTemplatesView:
 
   private def templateSelectorButton(template: TemplateInfo): Frag =
     button(
-      `type`                          := "button",
-      attr("data-template-button")   := template.id,
-      attr("aria-controls")          := s"workspace-template-panel-${template.id}",
-      attr("aria-selected")          := (template.id == defaultTemplateId).toString,
-      cls                            := selectorButtonClasses(template.id == defaultTemplateId),
+      `type`                       := "button",
+      attr("data-template-button") := template.id,
+      attr("aria-controls")        := s"workspace-template-panel-${template.id}",
+      attr("aria-selected")        := (template.id == defaultTemplateId).toString,
+      cls                          := selectorButtonClasses(template.id == defaultTemplateId),
     )(
       div(cls := "flex items-start justify-between gap-3")(
         div(cls := "min-w-0 text-left")(
           p(cls := "text-sm font-semibold text-white")(template.name),
           p(cls := "mt-1 text-sm leading-6 text-slate-400")(template.focusLabel),
         ),
-        span(cls := s"rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] ${template.stackClasses}")(
+        span(
+          cls := s"rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] ${template.stackClasses}"
+        )(
           template.stackLabel
         ),
       ),
@@ -309,18 +441,21 @@ object WorkspaceTemplatesView:
     )
 
   private def selectorButtonClasses(selected: Boolean): String =
-    val base = "group rounded-2xl border p-4 text-left transition duration-150 focus:outline-none focus:ring-2 focus:ring-cyan-400/70"
+    val base =
+      "group rounded-2xl border p-4 text-left transition duration-150 focus:outline-none focus:ring-2 focus:ring-cyan-400/70"
     if selected then s"$base border-cyan-400/40 bg-cyan-500/10 shadow-[0_0_0_1px_rgba(34,211,238,0.15)]"
     else s"$base border-white/10 bg-black/20 hover:border-white/20 hover:bg-white/[0.05]"
 
   private def templatePanel(template: TemplateInfo): Frag =
     div(
-      id                             := s"workspace-template-panel-${template.id}",
-      attr("data-template-panel")    := template.id,
-      attr("data-selected")          := (template.id == defaultTemplateId).toString,
-      cls                            := (if template.id == defaultTemplateId then "space-y-6" else "hidden space-y-6"),
+      id                          := s"workspace-template-panel-${template.id}",
+      attr("data-template-panel") := template.id,
+      attr("data-selected")       := (template.id == defaultTemplateId).toString,
+      cls                         := (if template.id == defaultTemplateId then "space-y-6" else "hidden space-y-6"),
     )(
-      div(cls := "rounded-[28px] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(56,189,248,0.18),transparent_32%),linear-gradient(160deg,rgba(15,23,42,0.96),rgba(17,24,39,0.96))] p-5 sm:p-6 shadow-[0_24px_90px_rgba(2,6,23,0.38)]")(
+      div(
+        cls := "rounded-[28px] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(56,189,248,0.18),transparent_32%),linear-gradient(160deg,rgba(15,23,42,0.96),rgba(17,24,39,0.96))] p-5 sm:p-6 shadow-[0_24px_90px_rgba(2,6,23,0.38)]"
+      )(
         div(cls := "flex flex-col gap-4 border-b border-white/10 pb-5 lg:flex-row lg:items-start lg:justify-between")(
           div(cls := "max-w-3xl")(
             p(cls := "text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-400")("Selected template"),
@@ -328,10 +463,14 @@ object WorkspaceTemplatesView:
             p(cls := "mt-3 text-sm leading-6 text-slate-300")(template.description),
           ),
           div(cls := "flex flex-wrap items-center gap-2")(
-            span(cls := s"rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${template.stackClasses}")(
+            span(
+              cls := s"rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${template.stackClasses}"
+            )(
               template.stackLabel
             ),
-            span(cls := "rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-300")(
+            span(
+              cls := "rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-300"
+            )(
               template.focusLabel
             ),
             a(
@@ -361,14 +500,18 @@ object WorkspaceTemplatesView:
           p(cls := "text-[11px] font-semibold uppercase tracking-[0.24em] text-cyan-300")("Prompt first"),
           h3(cls := "mt-2 text-lg font-semibold text-white")("User prompt to place above the wizard questions"),
         ),
-        span(cls := "rounded-full border border-cyan-400/25 bg-black/20 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan-100")(
+        span(
+          cls := "rounded-full border border-cyan-400/25 bg-black/20 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan-100"
+        )(
           "Template-aware"
         ),
       ),
       p(cls := "mt-3 text-sm leading-6 text-slate-300")(
         "Use this prompt as the opening instruction for any supported agent. It frames the workspace goal before the skill starts asking the seven standard questions."
       ),
-      div(cls := "mt-4 rounded-2xl border border-white/10 bg-slate-950/80 p-4 font-mono text-[13px] leading-7 text-emerald-200 shadow-inner")(
+      div(
+        cls := "mt-4 rounded-2xl border border-white/10 bg-slate-950/80 p-4 font-mono text-[13px] leading-7 text-emerald-200 shadow-inner"
+      )(
         template.prompt
       ),
     )
@@ -383,7 +526,7 @@ object WorkspaceTemplatesView:
         span(cls := "text-xs text-slate-500")("name · path · description · stack · features · CLI tool · run mode"),
       ),
       div(cls := "mt-5 space-y-3")(
-        template.questions.map(renderQuestion)*,
+        template.questions.map(renderQuestion)*
       ),
       div(cls := "mt-5 rounded-2xl border border-amber-400/20 bg-amber-500/[0.06] p-4")(
         p(cls := "text-xs font-semibold uppercase tracking-[0.22em] text-amber-200")("Run-mode follow-ups"),
@@ -401,14 +544,18 @@ object WorkspaceTemplatesView:
   private def renderQuestion(question: QuestionPreview): Frag =
     div(cls := "rounded-2xl border border-white/10 bg-white/[0.04] p-4")(
       div(cls := "flex gap-4")(
-        div(cls := "flex size-9 shrink-0 items-center justify-center rounded-full bg-white/10 text-sm font-semibold text-white")(question.number),
+        div(
+          cls := "flex size-9 shrink-0 items-center justify-center rounded-full bg-white/10 text-sm font-semibold text-white"
+        )(question.number),
         div(cls := "min-w-0 flex-1")(
           div(cls := "flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between")(
             div(
               p(cls := "text-sm font-semibold text-white")(question.label),
               p(cls := "text-xs uppercase tracking-[0.18em] text-slate-500")(question.field),
             ),
-            span(cls := "rounded-full border border-white/10 bg-black/20 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-300")(
+            span(
+              cls := "rounded-full border border-white/10 bg-black/20 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-300"
+            )(
               "Suggested answer"
             ),
           ),
@@ -417,15 +564,17 @@ object WorkspaceTemplatesView:
               case answer :: Nil => p(cls := "font-mono text-[13px] text-emerald-200")(answer)
               case many          =>
                 ul(cls := "space-y-2 font-mono text-[13px] text-emerald-200")(
-                  many.map(item => li(cls := "flex gap-3")(
-                    span(cls := "text-cyan-200")("•"),
-                    span(item),
-                  ))*
-                ),
+                  many.map(item =>
+                    li(cls := "flex gap-3")(
+                      span(cls := "text-cyan-200")("•"),
+                      span(item),
+                    )
+                  )*
+                )
           ),
           p(cls := "mt-3 text-sm leading-6 text-slate-400")(question.helper),
         ),
-      ),
+      )
     )
 
   private def scaffoldPanel(template: TemplateInfo): Frag =
@@ -441,7 +590,9 @@ object WorkspaceTemplatesView:
       ),
       ul(cls := "mt-5 space-y-3")(
         template.scaffoldOutputs.map { item =>
-          li(cls := "flex gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-3 text-sm leading-6 text-slate-300")(
+          li(
+            cls := "flex gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-3 text-sm leading-6 text-slate-300"
+          )(
             span(cls := "mt-1 text-cyan-300")("◆"),
             span(item),
           )
@@ -456,7 +607,9 @@ object WorkspaceTemplatesView:
           p(cls := "text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400")("Next issue cards"),
           h3(cls := "mt-2 text-lg font-semibold text-white")("Backlog preview generated from the user prompt"),
         ),
-        span(cls := "rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-300")(
+        span(
+          cls := "rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-300"
+        )(
           s"${template.issuePreviews.size} starter cards"
         ),
       ),
@@ -464,19 +617,22 @@ object WorkspaceTemplatesView:
         "These are the first cards the wizard should propose after scaffolding. They stay concrete, execution-ready, and tied to the selected feature prompt."
       ),
       div(cls := "mt-5 space-y-3")(
-        template.issuePreviews.zipWithIndex.map { case (issue, index) =>
-          div(cls := "rounded-2xl border border-white/10 bg-white/[0.04] p-4")(
-            div(cls := "flex items-start justify-between gap-3")(
-              div(
-                p(cls := "text-xs uppercase tracking-[0.22em] text-slate-500")(s"Issue ${index + 1}"),
-                h4(cls := "mt-1 text-sm font-semibold text-white")(issue.title),
+        template.issuePreviews.zipWithIndex.map {
+          case (issue, index) =>
+            div(cls := "rounded-2xl border border-white/10 bg-white/[0.04] p-4")(
+              div(cls := "flex items-start justify-between gap-3")(
+                div(
+                  p(cls := "text-xs uppercase tracking-[0.22em] text-slate-500")(s"Issue ${index + 1}"),
+                  h4(cls := "mt-1 text-sm font-semibold text-white")(issue.title),
+                ),
+                span(
+                  cls := "rounded-full border border-cyan-400/20 bg-cyan-500/[0.08] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan-100"
+                )(
+                  issue.meta
+                ),
               ),
-              span(cls := "rounded-full border border-cyan-400/20 bg-cyan-500/[0.08] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan-100")(
-                issue.meta
-              ),
-            ),
-            p(cls := "mt-3 text-sm leading-6 text-slate-400")(issue.summary),
-          )
+              p(cls := "mt-3 text-sm leading-6 text-slate-400")(issue.summary),
+            )
         }*
       ),
     )

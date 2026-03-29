@@ -207,6 +207,22 @@ object WorkspacesControllerSpec extends ZIOSpecDefault:
     ).routes
 
   def spec: Spec[TestEnvironment & Scope, Any] = suite("WorkspacesControllerSpec")(
+    test("GET /workspace-templates returns the wizard page") {
+      for
+        wsRef      <- Ref.make(Map("ws-1" -> sampleWs))
+        runRef     <- Ref.make(Map("run-1" -> sampleRun))
+        triggerRef <- Ref.make(List.empty[(String, Boolean)])
+        routes      = makeRoutes(wsRef, runRef, triggerRef)
+        req         = Request.get(URL(Path.decode("/workspace-templates")))
+        resp       <- routes.runZIO(req)
+        body       <- resp.body.asString
+      yield assertTrue(
+        resp.status == Status.Ok,
+        body.contains("User prompt to place above the wizard questions"),
+        body.contains("Seven standard answers for this template"),
+        !body.contains("Install the wizard skill"),
+      )
+    },
     test("GET /settings/workspaces returns 200") {
       for
         wsRef      <- Ref.make(Map("ws-1" -> sampleWs))

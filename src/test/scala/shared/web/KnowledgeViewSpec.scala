@@ -72,7 +72,14 @@ object KnowledgeViewSpec extends ZIOSpecDefault:
   def spec: Spec[Any, Nothing] =
     suite("KnowledgeViewSpec")(
       test("page renders decision timeline and context sections") {
-        val html = KnowledgeView.page(List(decision), context, List(memory), Some("graph"), Some("ws-1"))
+        val html = KnowledgeView.page(
+          List(decision),
+          context,
+          List(memory),
+          Some("graph"),
+          Some("ws-1"),
+          List("ws-1" -> "Knowledge Workspace"),
+        )
         assertTrue(
           html.contains("Knowledge Base"),
           html.contains("Decision Timeline"),
