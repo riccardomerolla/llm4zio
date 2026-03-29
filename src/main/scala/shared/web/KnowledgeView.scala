@@ -13,11 +13,11 @@ object KnowledgeView:
     browserEntries: List[MemoryEntry],
     query: Option[String],
     workspaceId: Option[String],
+    workspaces: List[(String, String)],
   ): String =
     Layout.page("Knowledge", "/knowledge")(
       div(cls := "space-y-6")(
-        hero(query, workspaceId),
-        filters(query, workspaceId),
+        header(query, workspaceId, workspaces),
         stats(context, timeline, browserEntries),
         decisionTimeline(timeline),
         rationaleBrowser(browserEntries),
@@ -25,31 +25,47 @@ object KnowledgeView:
       )
     )
 
-  private def hero(query: Option[String], workspaceId: Option[String]): Frag =
-    div(cls := "rounded-xl border border-white/10 bg-slate-900/80 px-5 py-4")(
-      h1(cls := "text-2xl font-bold text-white")("Knowledge Base"),
-      p(cls := "mt-1 text-sm text-slate-300")(
-        "Browse decision logs, architectural rationale, constraints, and extracted system understanding."
-      ),
-      div(cls := "mt-3 flex flex-wrap gap-2 text-xs text-slate-300")(
-        chip(s"Query ${query.getOrElse("recent")}"),
-        workspaceId.map(id => chip(s"Workspace $id")).getOrElse(chip("All workspaces")),
-      ),
-    )
-
-  private def filters(query: Option[String], workspaceId: Option[String]): Frag =
-    form(
-      action := "/knowledge",
-      method := "get",
-      cls    := "grid gap-3 rounded-xl border border-white/10 bg-slate-900/60 p-4 lg:grid-cols-[2fr,1fr,auto]",
-    )(
-      textField("q", "Search", query.getOrElse(""), "decision, rationale, constraint"),
-      textField("workspaceId", "Workspace", workspaceId.getOrElse(""), "workspace id"),
-      div(cls := "flex items-end justify-end")(
+  private def header(
+    query: Option[String],
+    workspaceId: Option[String],
+    workspaces: List[(String, String)],
+  ): Frag =
+    div(cls := "rounded-xl border border-white/10 bg-slate-900/80 px-5 py-3")(
+      form(
+        action := "/knowledge",
+        method := "get",
+        cls    := "flex flex-wrap items-center gap-3",
+      )(
+        h1(cls := "shrink-0 text-lg font-bold text-white mr-2")("Knowledge Base"),
+        input(
+          id           := "q",
+          attr("name") := "q",
+          value        := query.getOrElse(""),
+          placeholder  := "Search decisions, rationale, constraints…",
+          cls          := "min-w-0 flex-1 rounded border border-white/10 bg-black/20 px-3 py-1.5 text-sm text-slate-100 placeholder:text-slate-500",
+        ),
+        workspaceSelect(workspaceId, workspaces),
         button(
           `type` := "submit",
-          cls    := "rounded bg-cyan-600 px-3 py-2 text-xs font-semibold text-white hover:bg-cyan-500",
-        )("Search")
+          cls    := "shrink-0 rounded bg-cyan-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-cyan-500",
+        )("Search"),
+      )
+    )
+
+  private def workspaceSelect(selected: Option[String], workspaces: List[(String, String)]): Frag =
+    select(
+      id           := "workspaceId",
+      attr("name") := "workspaceId",
+      cls          := "shrink-0 rounded border border-white/10 bg-black/20 px-3 py-1.5 text-sm text-slate-100",
+    )(
+      option(value := "", if selected.isEmpty then attr("selected") := "selected" else ())("All workspaces"),
+      frag(
+        workspaces.map { case (wsId, wsName) =>
+          option(
+            attr("value") := wsId,
+            if selected.contains(wsId) then attr("selected") := "selected" else (),
+          )(wsName)
+        }
       ),
     )
 
@@ -169,18 +185,6 @@ object KnowledgeView:
     div(cls := "rounded-xl border border-white/10 bg-slate-900/60 p-5")(
       h2(cls := "text-lg font-semibold text-white")(titleText),
       div(cls := "mt-4")(content),
-    )
-
-  private def textField(fieldName: String, labelText: String, valueText: String, placeholderText: String): Frag =
-    div(cls := "space-y-2")(
-      label(cls := "text-xs font-semibold uppercase tracking-wide text-slate-400", `for` := fieldName)(labelText),
-      input(
-        id           := fieldName,
-        attr("name") := fieldName,
-        value        := valueText,
-        placeholder  := placeholderText,
-        cls          := "w-full rounded border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-100",
-      ),
     )
 
   private def statCard(labelText: String, valueText: String): Frag =
