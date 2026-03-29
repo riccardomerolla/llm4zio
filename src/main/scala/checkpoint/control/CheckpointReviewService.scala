@@ -475,7 +475,7 @@ final case class CheckpointReviewServiceLive(
               "Redirect sent and paused run resumed.",
             ))
       case Some(run)
-          if run.status == RunStatus.Completed || run.status == RunStatus.Failed || run.status == RunStatus.Cancelled =>
+           if run.status == RunStatus.Completed || run.status == RunStatus.Failed || run.status == RunStatus.Cancelled =>
         workspaceRunService
           .continueRun(runId, message)
           .mapError(CheckpointReviewError.fromWorkspace)
@@ -484,7 +484,7 @@ final case class CheckpointReviewServiceLive(
             runId,
             "New continuation run started with redirect note.",
           ))
-      case Some(_)                                                                                                    =>
+      case Some(_)                                                             =>
         runSessionManager
           .attach(runId, operatorUser)
           .ignore *>
@@ -501,7 +501,7 @@ final case class CheckpointReviewServiceLive(
                   s"Redirect queued for continuation: ${value.reason}",
                 )
             }
-      case None                                                                                                       =>
+      case None                                                                =>
         appendConversationNote(agent.conversationId, message).as(
           CheckpointActionResult(CheckpointOperatorAction.Redirect, runId, "Redirect note recorded on conversation.")
         )

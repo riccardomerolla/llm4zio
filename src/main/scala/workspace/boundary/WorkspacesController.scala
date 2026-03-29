@@ -10,7 +10,7 @@ import zio.json.*
 import analysis.control.WorkspaceAnalysisScheduler
 import orchestration.control.AgentRegistry
 import shared.errors.PersistenceError
-import shared.web.{ WorkspacesView, WorkspaceTemplatesView }
+import shared.web.{ WorkspaceTemplatesView, WorkspacesView }
 import workspace.control.{ AssignRunRequest, GitService, WorkspaceRunService }
 import workspace.entity.*
 

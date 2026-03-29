@@ -66,7 +66,12 @@ object DecisionsView:
           )(s"$pendingCount pending")
         else frag(),
         inlineSelect("status", statusFilter, List("pending", "resolved", "escalated", "expired"), "Status"),
-        inlineSelect("source", sourceFilter, List("issue_review", "governance", "agent_escalation", "manual"), "Source"),
+        inlineSelect(
+          "source",
+          sourceFilter,
+          List("issue_review", "governance", "agent_escalation", "manual"),
+          "Source",
+        ),
         inlineSelect("urgency", urgencyFilter, List("low", "medium", "high", "critical"), "Urgency"),
         input(
           id          := "query",

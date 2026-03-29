@@ -94,15 +94,15 @@ object KnowledgeControllerSpec extends ZIOSpecDefault:
     override def deleteBySession(sessionId: SessionId): IO[Throwable, Unit]    = ZIO.unit
 
   private val stubWorkspaceRepo: WorkspaceRepository = new WorkspaceRepository:
-    override def append(event: workspace.entity.WorkspaceEvent): IO[PersistenceError, Unit]                = ZIO.unit
-    override def list: IO[PersistenceError, List[Workspace]]                                               = ZIO.succeed(Nil)
-    override def get(id: String): IO[PersistenceError, Option[Workspace]]                                  = ZIO.succeed(None)
-    override def delete(id: String): IO[PersistenceError, Unit]                                            = ZIO.unit
-    override def appendRun(event: workspace.entity.WorkspaceRunEvent): IO[PersistenceError, Unit]          = ZIO.unit
-    override def listRuns(wid: String): IO[PersistenceError, List[workspace.entity.WorkspaceRun]]          = ZIO.succeed(Nil)
+    override def append(event: workspace.entity.WorkspaceEvent): IO[PersistenceError, Unit]                      = ZIO.unit
+    override def list: IO[PersistenceError, List[Workspace]]                                                     = ZIO.succeed(Nil)
+    override def get(id: String): IO[PersistenceError, Option[Workspace]]                                        = ZIO.succeed(None)
+    override def delete(id: String): IO[PersistenceError, Unit]                                                  = ZIO.unit
+    override def appendRun(event: workspace.entity.WorkspaceRunEvent): IO[PersistenceError, Unit]                = ZIO.unit
+    override def listRuns(wid: String): IO[PersistenceError, List[workspace.entity.WorkspaceRun]]                = ZIO.succeed(Nil)
     override def listRunsByIssueRef(issueRef: String): IO[PersistenceError, List[workspace.entity.WorkspaceRun]] =
       ZIO.succeed(Nil)
-    override def getRun(id: String): IO[PersistenceError, Option[workspace.entity.WorkspaceRun]] = ZIO.succeed(None)
+    override def getRun(id: String): IO[PersistenceError, Option[workspace.entity.WorkspaceRun]]                 = ZIO.succeed(None)
 
   def spec: Spec[TestEnvironment & Scope, Any] =
     suite("KnowledgeControllerSpec")(
