@@ -940,7 +940,7 @@ object WorkspaceTemplatesView:
 
   private def selectorScript: Frag =
     script(raw(
-      """(function () {
+      s"""(function () {
         |  function selectorButtonClass(selected) {
         |    var base = 'flex h-full flex-col space-y-4 rounded-lg border border-white/10 bg-white/3 p-5 text-left transition duration-150 focus:outline-none focus:ring-2 focus:ring-indigo-400/70';
         |    return selected
@@ -1069,7 +1069,7 @@ object WorkspaceTemplatesView:
         |    });
         |
         |    var activeButton = document.querySelector('[data-template-button][aria-selected="true"]');
-        |    selectTemplate(activeButton ? activeButton.getAttribute('data-template-button') : '""" + defaultTemplateId + """');
+        |    selectTemplate(activeButton ? activeButton.getAttribute('data-template-button') : '$defaultTemplateId');
         |  }
         |
         |  if (document.readyState === 'loading') {

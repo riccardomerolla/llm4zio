@@ -23,3 +23,8 @@
 - [x] Restore the original workspace-template card styling from commit 82ab6d71211fe4a251ae3d3dd27591456adcb15f while preserving the interactive wizard flow below it.
 - [x] Fix the template-selection behavior so switching cards updates the active template panel, wizard answers, and live brief reliably.
 - [x] Refresh the focused view and controller checks, then run formatting and verification for the selector regression fix.
+
+## Group 5: Inline Script Emission Fix
+
+- [x] Fix the workspace template inline script generation so the browser receives valid JavaScript instead of raw Scala margin markers.
+- [x] Re-verify template selection in the rendered page and keep focused checks aligned with the fix.
