@@ -14,6 +14,17 @@ metadata:
 
 Guided wizard for bootstrapping a new ADE workspace from scratch. Scaffolds the project, registers it with the gateway, and populates the board with initial issues derived from user requirements.
 
+> **Install this skill** (run once, with the gateway running at `http://localhost:8080`):
+> ```bash
+> GATEWAY=http://localhost:8080
+> SKILL_DIR=~/.claude/skills/workspace-template
+> mkdir -p "$SKILL_DIR/references"
+> curl -s "$GATEWAY/static/skills/workspace-template/SKILL.md" -o "$SKILL_DIR/SKILL.md"
+> curl -s "$GATEWAY/static/skills/workspace-template/references/scala3-zio.md" -o "$SKILL_DIR/references/scala3-zio.md"
+> curl -s "$GATEWAY/static/skills/workspace-template/references/spring-boot.md" -o "$SKILL_DIR/references/spring-boot.md"
+> curl -s "$GATEWAY/static/skills/workspace-template/references/react-ts.md" -o "$SKILL_DIR/references/react-ts.md"
+> ```
+
 ## Core Workflow
 
 1. **Gather** — Collect project details via wizard questions
@@ -64,15 +75,22 @@ git init
 
 ### 2.2 Load the stack-specific reference
 
-Based on the `stack` answer, load the appropriate reference file for detailed scaffolding instructions:
+Based on the `stack` answer, load the appropriate reference file for detailed scaffolding instructions.
 
-| Stack | Reference file |
-|-------|---------------|
-| `scala3-zio` | `references/scala3-zio.md` |
-| `spring-boot` | `references/spring-boot.md` |
-| `react-ts` | `references/react-ts.md` |
-| `python` | Create: `pyproject.toml`, `src/{name}/__init__.py`, `tests/`, `.gitignore`, `CLAUDE.md` |
-| `custom` | Ask the user what files/structure they want. At minimum create: `.gitignore`, `CLAUDE.md` |
+If this skill is installed locally, read the reference from `references/{stack}.md` (relative to this file).
+If not available locally, fetch it from the gateway:
+
+```bash
+curl -s http://localhost:8080/static/skills/workspace-template/references/{stack}.md
+```
+
+| Stack | Reference | Gateway URL |
+|-------|-----------|-------------|
+| `scala3-zio` | `references/scala3-zio.md` | `/static/skills/workspace-template/references/scala3-zio.md` |
+| `spring-boot` | `references/spring-boot.md` | `/static/skills/workspace-template/references/spring-boot.md` |
+| `react-ts` | `references/react-ts.md` | `/static/skills/workspace-template/references/react-ts.md` |
+| `python` | — (inline) | Create: `pyproject.toml`, `src/{name}/__init__.py`, `tests/`, `.gitignore`, `CLAUDE.md` |
+| `custom` | — (inline) | Ask the user what files/structure they want. At minimum create: `.gitignore`, `CLAUDE.md` |
 
 Follow the reference file instructions to create all scaffolding files.
 

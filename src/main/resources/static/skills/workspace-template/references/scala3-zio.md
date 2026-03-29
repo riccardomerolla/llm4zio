@@ -81,7 +81,8 @@ sbt.version=1.10.11
 ### project/plugins.sbt
 
 ```scala
-addSbtPlugin("org.scalameta" % "sbt-scalafmt" % "2.5.4")
+addSbtPlugin("org.scalameta"  % "sbt-scalafmt"  % "2.5.4")
+addSbtPlugin("ch.epfl.scala"  % "sbt-scalafix"  % "0.14.2")
 ```
 
 ### .scalafmt.conf
