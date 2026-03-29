@@ -225,6 +225,12 @@ object IssueEvent:
     occurredAt: Instant,
   ) extends IssueEvent
 
+  final case class Archived(
+    issueId: IssueId,
+    archivedAt: Instant,
+    occurredAt: Instant,
+  ) extends IssueEvent
+
   final case class Reopened(
     issueId: IssueId,
     reopenedAt: Instant,

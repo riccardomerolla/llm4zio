@@ -314,6 +314,7 @@ final case class AutoDispatcherLive(
       case IssueState.Completed(_, at, _) => at
       case IssueState.Failed(_, at, _)    => at
       case IssueState.Skipped(at, _)      => at
+      case IssueState.Archived(at)        => at
 
   private def isEnabled: IO[PersistenceError, Boolean] =
     configRepository

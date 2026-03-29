@@ -336,6 +336,7 @@ final private case class IssueAssignmentOrchestratorLive(
       case IssueState.Completed(_, at, _)   => (IssueStatus.Done, None, None, Some(at), None)
       case IssueState.Failed(_, at, msg)    => (IssueStatus.Rework, None, None, Some(at), Some(msg))
       case IssueState.Skipped(at, _)        => (IssueStatus.Canceled, None, None, Some(at), None)
+      case IssueState.Archived(at)          => (IssueStatus.Archived, None, None, Some(at), None)
     val priority                                                       = IssuePriority.values.find(_.toString.equalsIgnoreCase(i.priority)).getOrElse(IssuePriority.Medium)
     val createdAt                                                      = i.state match
       case IssueState.Backlog(at) => at

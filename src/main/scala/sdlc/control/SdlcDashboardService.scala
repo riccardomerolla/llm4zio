@@ -607,7 +607,7 @@ final case class SdlcDashboardServiceLive(
   private def isTerminal(state: IssueState): Boolean =
     state match
       case _: IssueState.Done | _: IssueState.Completed | _: IssueState.Canceled | _: IssueState.Duplicated |
-           _: IssueState.Skipped | _: IssueState.Failed => true
+           _: IssueState.Archived | _: IssueState.Skipped | _: IssueState.Failed => true
       case _ => false
 
   private def formatState(state: IssueState): String =
@@ -623,6 +623,7 @@ final case class SdlcDashboardServiceLive(
       case _: IssueState.Done        => "Done"
       case _: IssueState.Canceled    => "Canceled"
       case _: IssueState.Duplicated  => "Duplicated"
+      case _: IssueState.Archived    => "Archived"
       case _: IssueState.Completed   => "Completed"
       case _: IssueState.Failed      => "Failed"
       case _: IssueState.Skipped     => "Skipped"
@@ -682,6 +683,7 @@ final case class SdlcDashboardServiceLive(
       case IssueState.Done(doneAt, _)              => doneAt
       case IssueState.Canceled(canceledAt, _)      => canceledAt
       case IssueState.Duplicated(duplicatedAt, _)  => duplicatedAt
+      case IssueState.Archived(archivedAt)         => archivedAt
       case IssueState.Completed(_, completedAt, _) => completedAt
       case IssueState.Failed(_, failedAt, _)       => failedAt
       case IssueState.Skipped(skippedAt, _)        => skippedAt

@@ -29,6 +29,7 @@ object IssuesView:
     IssueStatus.Done        -> "Done",
     IssueStatus.Canceled    -> "Canceled",
     IssueStatus.Duplicated  -> "Duplicated",
+    IssueStatus.Archived    -> "Archived",
   )
 
   private def columnStatusDotCls(status: IssueStatus): String = status match
@@ -41,13 +42,8 @@ object IssuesView:
     case IssueStatus.Done        => "bg-emerald-400"
     case IssueStatus.Canceled    => "bg-rose-500"
     case IssueStatus.Duplicated  => "bg-slate-500"
+    case IssueStatus.Archived    => "bg-gray-400"
     case _                       => "bg-slate-500"
-
-  private def hideableBoardColumn(status: IssueStatus): Boolean = status match
-    case IssueStatus.HumanReview | IssueStatus.Rework | IssueStatus.Merging | IssueStatus.Done | IssueStatus.Canceled |
-         IssueStatus.Duplicated =>
-      true
-    case _ => false
 
   def list(
     runId: Option[String],
@@ -130,10 +126,10 @@ object IssuesView:
     workReports: Map[IssueId, IssueWorkReport] = Map.empty,
     hasProofFilter: Option[Boolean] = None,
   ): String =
-    val filteredIssues              = hasProofFilter match
+    val filteredIssues = hasProofFilter match
       case Some(true) => BoardStats.hasProofFilter(issues, workReports)
       case _          => issues
-    val queryParts                  = List(
+    val queryParts     = List(
       workspaceFilter.filter(_.nonEmpty).map(v => s"workspace=${urlEncode(v)}"),
       agentFilter.filter(_.nonEmpty).map(v => s"agent=${urlEncode(v)}"),
       priorityFilter.filter(_.nonEmpty).map(v => s"priority=${urlEncode(v)}"),
@@ -141,7 +137,7 @@ object IssuesView:
       query.filter(_.nonEmpty).map(v => s"q=${urlEncode(v)}"),
       hasProofFilter.filter(identity).map(_ => "hasProof=true"),
     ).flatten
-    val fragmentUrl                 =
+    val fragmentUrl    =
       if queryParts.isEmpty then "/board/fragment"
       else s"/board/fragment?${queryParts.mkString("&")}"
 
@@ -200,7 +196,7 @@ object IssuesView:
                 span("Select all visible"),
               ),
             ),
-          ),
+          )
         ),
         bulkToolbar("board"),
         boardFilterBar(workspaces, workspaceFilter, agentFilter, priorityFilter, tagFilter, query, hasProofFilter),
@@ -218,6 +214,8 @@ object IssuesView:
           raw(boardColumnsFragment(filteredIssues, workspaces, workReports, availableAgents, dispatchStatuses))
         ),
       ),
+      JsResources.inlineModuleScript("/static/client/components/ab-board-column.js"),
+      JsResources.inlineModuleScript("/static/client/components/ab-board-layout.js"),
       JsResources.inlineModuleScript("/static/client/components/ab-issues-board.js"),
       JsResources.inlineModuleScript("/static/client/components/issues-bulk-actions.js"),
     )
@@ -272,8 +270,8 @@ object IssuesView:
     val filteredIssues = hasProofFilter match
       case Some(true) => BoardStats.hasProofFilter(issues, workReports)
       case _          => issues
-    div(
-      cls := "flex gap-3 overflow-x-auto pb-2 snap-x snap-mandatory"
+    tag("ab-board-layout")(
+      attr("default-expanded") := "todo,in_progress"
     )(
       boardStatuses.map { (status, label) =>
         val columnIssues = filteredIssues
@@ -284,15 +282,18 @@ object IssuesView:
           )
           .reverse
         val statusToken  = issueStatusToken(status)
-        div(
-          cls                         := "min-w-0 flex-shrink-0 rounded-xl border border-white/10 bg-slate-900/70 p-3 snap-start",
-          attr("data-board-column")   := "true",
-          attr("data-drop-status")    := statusToken,
-          attr("data-column-status")  := statusToken,
-          attr("data-column-label")   := label,
-          attr("data-drop-highlight") := "false",
+        tag("ab-board-column")(
+          attr("status")             := statusToken,
+          attr("label")              := label,
+          attr("count")              := columnIssues.size.toString,
+          attr("color")              := columnStatusDotCls(status),
+          attr("data-drop-status")   := statusToken,
+          attr("data-column-status") := statusToken,
         )(
-          div(cls := "mb-2 flex items-center justify-between gap-1")(
+          div(
+            cls                        := "mb-2 flex items-center justify-between gap-1",
+            attr("data-column-header") := "",
+          )(
             div(
               cls := "flex min-w-0 flex-1 items-center gap-1.5"
             )(
@@ -304,20 +305,12 @@ object IssuesView:
               )(columnIssues.size.toString),
             ),
             div(cls := "flex items-center gap-1")(
-              if hideableBoardColumn(status) then
-                button(
-                  `type`                       := "button",
-                  cls                          := "flex-shrink-0 rounded p-0.5 text-slate-400 hover:bg-white/10 hover:text-slate-100",
-                  title                        := s"Hide $label column",
-                  attr("data-collapse-toggle") := statusToken,
-                )("−")
-              else (),
               button(
                 `type`                        := "button",
                 cls                           := "flex-shrink-0 rounded p-0.5 text-slate-400 hover:bg-white/10 hover:text-slate-100",
                 title                         := s"Quick-add $label issue",
                 attr("data-quick-add-toggle") := statusToken,
-              )("+"),
+              )("+")
             ),
           ),
           div(
@@ -380,26 +373,7 @@ object IssuesView:
               }
           ),
         )
-      },
-      div(
-        cls                                := "min-w-0 flex-shrink-0 rounded-xl border border-white/10 bg-slate-900/70 p-3 snap-start",
-        attr("data-board-column")          := "true",
-        attr("data-hidden-columns-column") := "true",
-      )(
-        div(cls := "mb-2 flex items-center justify-between gap-1")(
-          h3(cls := "text-sm font-semibold text-slate-100")("Hidden Columns"),
-          span(
-            cls                               := "rounded-full bg-white/10 px-2 py-0.5 text-xs text-slate-300",
-            attr("data-hidden-columns-count") := "true",
-          )("0"),
-        ),
-        div(
-          cls                              := "space-y-1 max-h-[65vh] overflow-y-auto",
-          attr("data-hidden-columns-list") := "true",
-        )(
-          p(cls := "rounded border border-dashed border-white/10 px-2 py-3 text-xs text-slate-500")("No hidden columns")
-        ),
-      ),
+      }
     ).render
 
   /** Public entry point for rendering a single board card (used in tests and fragment endpoints). */
@@ -842,15 +816,22 @@ object IssuesView:
                         d.resolution
                           .map { r =>
                             val (badgeBorder, badgeText) = r.kind match
-                              case DecisionResolutionKind.Approved        => ("border-emerald-400/40 text-emerald-300", "Approved")
-                              case DecisionResolutionKind.ReworkRequested => ("border-amber-400/40 text-amber-300", "Rework Requested")
+                              case DecisionResolutionKind.Approved        =>
+                                ("border-emerald-400/40 text-emerald-300", "Approved")
+                              case DecisionResolutionKind.ReworkRequested =>
+                                ("border-amber-400/40 text-amber-300", "Rework Requested")
                               case DecisionResolutionKind.Escalated       => ("border-rose-400/40 text-rose-300", "Escalated")
                               case DecisionResolutionKind.Expired         => ("border-slate-500/40 text-slate-400", "Expired")
-                              case DecisionResolutionKind.Acknowledged    => ("border-sky-400/40 text-sky-300", "Acknowledged")
-                            span(cls := s"rounded-full border $badgeBorder px-2 py-0.5 text-xs font-semibold")(badgeText)
+                              case DecisionResolutionKind.Acknowledged    =>
+                                ("border-sky-400/40 text-sky-300", "Acknowledged")
+                            span(
+                              cls := s"rounded-full border $badgeBorder px-2 py-0.5 text-xs font-semibold"
+                            )(badgeText)
                           }
                           .getOrElse(
-                            span(cls := "rounded-full border border-indigo-400/40 px-2 py-0.5 text-xs font-semibold text-indigo-300")(
+                            span(
+                              cls := "rounded-full border border-indigo-400/40 px-2 py-0.5 text-xs font-semibold text-indigo-300"
+                            )(
                               "Pending"
                             )
                           ),
@@ -1001,6 +982,7 @@ object IssuesView:
                     statusOption("done", "Done", Some(statusToken)),
                     statusOption("canceled", "Canceled", Some(statusToken)),
                     statusOption("duplicated", "Duplicated", Some(statusToken)),
+                    statusOption("archived", "Archived", Some(statusToken)),
                   ),
                   button(
                     `type` := "submit",
@@ -1475,6 +1457,7 @@ object IssuesView:
       case IssueStatus.Done        => "border-l-4 border-l-emerald-400"
       case IssueStatus.Canceled    => "border-l-4 border-l-rose-500"
       case IssueStatus.Duplicated  => "border-l-4 border-l-slate-500"
+      case IssueStatus.Archived    => "border-l-4 border-l-gray-400"
       case IssueStatus.Open        => "border-l-4 border-l-slate-400"
       case IssueStatus.Assigned    => "border-l-4 border-l-blue-400"
       case IssueStatus.Completed   => "border-l-4 border-l-emerald-400"
@@ -1490,6 +1473,7 @@ object IssuesView:
       case IssueStatus.Done        => "rounded-full bg-emerald-400"
       case IssueStatus.Canceled    => "rounded-full bg-rose-500"
       case IssueStatus.Duplicated  => "rounded-full bg-slate-500"
+      case IssueStatus.Archived    => "rounded-full bg-gray-400"
       case IssueStatus.Open        => "rounded-full border-2 border-slate-400 bg-transparent"
       case IssueStatus.Assigned    => "rounded-full border-2 border-blue-400 bg-transparent"
       case IssueStatus.Completed   => "rounded-full bg-emerald-400"
@@ -1551,9 +1535,9 @@ object IssuesView:
           )(
             input(`type` := "hidden", name := "approvedBy", value := "board"),
             button(
-              `type`   := "submit",
-              cls      := "w-full rounded border border-purple-400/30 bg-purple-500/20 px-2 py-1.5 text-[11px] font-semibold text-purple-100 hover:bg-purple-500/30 disabled:opacity-50 disabled:cursor-not-allowed",
-              onclick  := "this.disabled=true; this.textContent='Approving…'; this.form.submit();",
+              `type`  := "submit",
+              cls     := "w-full rounded border border-purple-400/30 bg-purple-500/20 px-2 py-1.5 text-[11px] font-semibold text-purple-100 hover:bg-purple-500/30 disabled:opacity-50 disabled:cursor-not-allowed",
+              onclick := "this.disabled=true; this.textContent='Approving…'; this.form.submit();",
             )("Approve"),
           )
         )
@@ -1928,6 +1912,7 @@ object IssuesView:
       case IssueStatus.Done        => "done"
       case IssueStatus.Canceled    => "canceled"
       case IssueStatus.Duplicated  => "duplicated"
+      case IssueStatus.Archived    => "archived"
       case IssueStatus.Completed   => "completed"
       case IssueStatus.Failed      => "failed"
       case IssueStatus.Skipped     => "skipped"

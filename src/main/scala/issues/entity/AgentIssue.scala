@@ -20,6 +20,7 @@ enum IssueState derives JsonCodec, Schema:
   case Done(doneAt: Instant, result: String)
   case Canceled(canceledAt: Instant, reason: String)
   case Duplicated(duplicatedAt: Instant, reason: String)
+  case Archived(archivedAt: Instant)
   case Completed(agent: AgentId, completedAt: Instant, result: String)
   case Failed(agent: AgentId, failedAt: Instant, errorMessage: String)
   case Skipped(skippedAt: Instant, reason: String)
@@ -290,6 +291,11 @@ object AgentIssue:
         current
           .toRight(s"Issue ${conflict.issueId.value} not initialized before MergeConflictRecorded event")
           .map(issue => Some(issue.copy(mergeConflictFiles = sanitizeFilePaths(conflict.conflictingFiles))))
+
+      case archived: IssueEvent.Archived =>
+        current
+          .toRight(s"Issue ${archived.issueId.value} not initialized before Archived event")
+          .map(issue => Some(issue.copy(state = IssueState.Archived(archived.archivedAt))))
 
       case reopened: IssueEvent.Reopened =>
         current

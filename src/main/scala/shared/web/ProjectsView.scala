@@ -102,12 +102,12 @@ object ProjectsView:
                     cls := "hidden px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-400 sm:table-cell"
                   )("Last Activity"),
                   tag("th")(cls := "px-4 py-2")(),
-                ),
+                )
               ),
               tag("tbody")(cls := "divide-y divide-white/10")(
                 projects.sortBy(_.name.toLowerCase).map(projectRow)
               ),
-            ),
+            )
           ),
       )
     )
@@ -162,7 +162,15 @@ object ProjectsView:
           case "board"    => boardTab(data)
           case "analysis" => analysisTab(data)
           case _          => workspacesTab(data),
-      )
+      ),
+      // Board tab requires the Fizzy board component scripts
+      if data.activeTab == "board" then
+        frag(
+          JsResources.inlineModuleScript("/static/client/components/ab-board-column.js"),
+          JsResources.inlineModuleScript("/static/client/components/ab-board-layout.js"),
+          JsResources.inlineModuleScript("/static/client/components/ab-issues-board.js"),
+        )
+      else frag(),
     )
 
   private def emptyState: Frag =
@@ -189,7 +197,9 @@ object ProjectsView:
       ),
       tag("td")(cls := "hidden px-4 py-3 text-right sm:table-cell")(
         if project.activeIssueCount > 0 then
-          span(cls := "rounded-full border border-amber-400/30 bg-amber-500/15 px-2 py-0.5 text-xs font-semibold text-amber-200")(
+          span(
+            cls := "rounded-full border border-amber-400/30 bg-amber-500/15 px-2 py-0.5 text-xs font-semibold text-amber-200"
+          )(
             project.activeIssueCount.toString
           )
         else span(cls := "text-sm text-slate-500")("0")
@@ -202,7 +212,7 @@ object ProjectsView:
           href    := s"/projects/${project.id}",
           cls     := "text-xs font-semibold text-cyan-300 hover:text-cyan-200",
           onclick := "event.stopPropagation()",
-        )("Open →"),
+        )("Open →")
       ),
     )
 

@@ -17,7 +17,7 @@ import orchestration.control.{ ActiveRun, AgentExecutionEvent, ResourceAllocatio
 import shared.errors.{ ControlPlaneError, PersistenceError, StateError }
 import shared.ids.Ids.{ AgentId, DecisionId, IssueId, ReportId, TaskRunId }
 import shared.testfixtures.*
-import taskrun.entity.*
+import taskrun.entity.{ RunStatus as _, * }
 import workspace.control.{ GitService, RunSessionManager, WorkspaceRunService }
 import workspace.entity.*
 

@@ -198,14 +198,14 @@ final case class IssueControllerLive(
                                                                       workReport   <- issueWorkReportProjection.get(issue.id)
                                                                     yield (domainToView(issue), analysisDocs, mergeHistory, workReport)
           (issueView, analysisDocs, mergeHistory, workReport) = viewAndMeta
-          decisions                                            <- decisionInbox
-                                                                   .list(
-                                                                     DecisionFilter(
-                                                                       issueId = Some(IssueId(id)),
-                                                                       limit = Int.MaxValue,
-                                                                     )
-                                                                   )
-                                                                   .mapError(mapIssueRepoError)
+          decisions                                          <- decisionInbox
+                                                                  .list(
+                                                                    DecisionFilter(
+                                                                      issueId = Some(IssueId(id)),
+                                                                      limit = Int.MaxValue,
+                                                                    )
+                                                                  )
+                                                                  .mapError(mapIssueRepoError)
         yield html(
           HtmlViews.issueDetail(
             issueView,
@@ -332,6 +332,7 @@ final case class IssueControllerLive(
                               case IssueStateTag.Done        => IssueStatus.Done
                               case IssueStateTag.Canceled    => IssueStatus.Canceled
                               case IssueStateTag.Duplicated  => IssueStatus.Duplicated
+                              case IssueStateTag.Archived    => IssueStatus.Archived
                               case IssueStateTag.Completed   => IssueStatus.Completed
                               case IssueStateTag.Failed      => IssueStatus.Failed
                               case IssueStateTag.Skipped     => IssueStatus.Skipped
@@ -1020,6 +1021,7 @@ final case class IssueControllerLive(
       case IssueState.Done(at, _)           => (IssueStatus.Done, None, None, Some(at), None)
       case IssueState.Canceled(at, msg)     => (IssueStatus.Canceled, None, None, Some(at), Some(msg))
       case IssueState.Duplicated(at, msg)   => (IssueStatus.Duplicated, None, None, Some(at), Some(msg))
+      case IssueState.Archived(at)          => (IssueStatus.Archived, None, None, Some(at), None)
       case IssueState.Completed(_, at, _)   => (IssueStatus.Done, None, None, Some(at), None)
       case IssueState.Failed(_, at, msg)    => (IssueStatus.Rework, None, None, Some(at), Some(msg))
       case IssueState.Skipped(at, reason)   => (IssueStatus.Canceled, None, None, Some(at), Some(reason))
@@ -1067,7 +1069,8 @@ final case class IssueControllerLive(
       case BoardColumn.InProgress => IssueStatus.InProgress
       case BoardColumn.Review     => IssueStatus.HumanReview
       case BoardColumn.Done       => IssueStatus.Done
-      case BoardColumn.Archive    => IssueStatus.Done
+      case BoardColumn.Archive    =>
+        if frontmatter.failureReason.isDefined then IssueStatus.Canceled else IssueStatus.Archived
     val priority: IssuePriority                                                                      = frontmatter.priority match
       case BoardIssuePriority.Critical => IssuePriority.Critical
       case BoardIssuePriority.High     => IssuePriority.High
@@ -1408,6 +1411,7 @@ final case class IssueControllerLive(
       case (IssueStatus.Done, "done")                => true
       case (IssueStatus.Canceled, "canceled")        => true
       case (IssueStatus.Duplicated, "duplicated")    => true
+      case (IssueStatus.Archived, "archived")        => true
       // Legacy aliases
       case (IssueStatus.Backlog, "open")             => true
       case (IssueStatus.Todo, "assigned")            => true
@@ -1435,6 +1439,7 @@ final case class IssueControllerLive(
       case "canceled"     => Some(IssueStateTag.Canceled)
       case "cancelled"    => Some(IssueStateTag.Canceled)
       case "duplicated"   => Some(IssueStateTag.Duplicated)
+      case "archived"     => Some(IssueStateTag.Archived)
       case "open"         => Some(IssueStateTag.Open)
       case "assigned"     => Some(IssueStateTag.Assigned)
       case "in_progress"  => Some(IssueStateTag.InProgress)
@@ -1445,28 +1450,47 @@ final case class IssueControllerLive(
       case _              => None
 
   private val allowedBoardTransitions: Map[IssueStatus, Set[IssueStatus]] = Map(
-    IssueStatus.Backlog     -> Set(IssueStatus.Todo, IssueStatus.Done, IssueStatus.Canceled, IssueStatus.Duplicated),
+    IssueStatus.Backlog     ->
+      Set(IssueStatus.Todo, IssueStatus.Done, IssueStatus.Canceled, IssueStatus.Duplicated, IssueStatus.Archived),
     IssueStatus.Todo        -> Set(
       IssueStatus.Backlog,
       IssueStatus.InProgress,
       IssueStatus.Done,
       IssueStatus.Canceled,
       IssueStatus.Duplicated,
+      IssueStatus.Archived,
     ),
     IssueStatus.InProgress  -> Set(
       IssueStatus.HumanReview,
       IssueStatus.Done,
       IssueStatus.Canceled,
       IssueStatus.Duplicated,
+      IssueStatus.Archived,
     ),
     IssueStatus.HumanReview ->
-      Set(IssueStatus.Rework, IssueStatus.Merging, IssueStatus.Done, IssueStatus.Canceled, IssueStatus.Duplicated),
+      Set(
+        IssueStatus.Rework,
+        IssueStatus.Merging,
+        IssueStatus.Done,
+        IssueStatus.Canceled,
+        IssueStatus.Duplicated,
+        IssueStatus.Archived,
+      ),
     IssueStatus.Rework      ->
-      Set(IssueStatus.InProgress, IssueStatus.Merging, IssueStatus.Done, IssueStatus.Canceled, IssueStatus.Duplicated),
-    IssueStatus.Merging     -> Set(IssueStatus.Done, IssueStatus.Canceled, IssueStatus.Duplicated),
-    IssueStatus.Done        -> Set.empty,
-    IssueStatus.Canceled    -> Set(IssueStatus.Backlog),
-    IssueStatus.Duplicated  -> Set.empty,
+      Set(
+        IssueStatus.InProgress,
+        IssueStatus.Merging,
+        IssueStatus.Done,
+        IssueStatus.Canceled,
+        IssueStatus.Duplicated,
+        IssueStatus.Archived,
+      ),
+    IssueStatus.Merging     ->
+      Set(IssueStatus.Done, IssueStatus.Canceled, IssueStatus.Duplicated, IssueStatus.Archived),
+    IssueStatus.Done        -> Set(IssueStatus.Backlog, IssueStatus.Archived),
+    IssueStatus.Canceled    -> Set(IssueStatus.Backlog, IssueStatus.Archived),
+    IssueStatus.Duplicated  -> Set(IssueStatus.Archived),
+    IssueStatus.Archived    -> Set(IssueStatus.Backlog),
   )
 
   private def canonicalBoardStatus(status: IssueStatus): IssueStatus =
@@ -1491,6 +1515,7 @@ final case class IssueControllerLive(
       case IssueState.Done(_, _)         => IssueStatus.Done
       case IssueState.Canceled(_, _)     => IssueStatus.Canceled
       case IssueState.Duplicated(_, _)   => IssueStatus.Duplicated
+      case IssueState.Archived(_)        => IssueStatus.Archived
       case IssueState.Completed(_, _, _) => IssueStatus.Done
       case IssueState.Failed(_, _, _)    => IssueStatus.Rework
       case IssueState.Skipped(_, _)      => IssueStatus.Canceled
@@ -1659,6 +1684,12 @@ final case class IssueControllerLive(
           issueId = issueId,
           duplicatedAt = now,
           reason = request.reason.map(_.trim).filter(_.nonEmpty).getOrElse("Marked duplicated from board"),
+          occurredAt = now,
+        )
+      case IssueStatus.Archived    =>
+        IssueEvent.Archived(
+          issueId = issueId,
+          archivedAt = now,
           occurredAt = now,
         )
       case IssueStatus.Completed   =>

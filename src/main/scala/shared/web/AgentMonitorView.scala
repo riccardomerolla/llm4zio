@@ -178,12 +178,12 @@ object AgentMonitorView:
       cls                      := "flex flex-wrap items-center gap-x-5 gap-y-1",
       attr("data-agent-stats") := "true",
     )(
-      statChip("Agents",     s"${stats.activeAgents} / ${stats.maxAgents}", agentCls),
+      statChip("Agents", s"${stats.activeAgents} / ${stats.maxAgents}", agentCls),
       div(cls := "h-3 w-px bg-white/10 flex-shrink-0"),
-      statChip("Tokens in",  formatTokens(stats.tokensIn),              "text-slate-300"),
-      statChip("Tokens out", formatTokens(stats.tokensOut),             "text-slate-300"),
+      statChip("Tokens in", formatTokens(stats.tokensIn), "text-slate-300"),
+      statChip("Tokens out", formatTokens(stats.tokensOut), "text-slate-300"),
       div(cls := "h-3 w-px bg-white/10 flex-shrink-0"),
-      statChip("Runtime",    formatRuntime(stats.runtimeSeconds),       "text-slate-300"),
+      statChip("Runtime", formatRuntime(stats.runtimeSeconds), "text-slate-300"),
     )
 
   private def statChip(label: String, value: String, valueCls: String): Frag =

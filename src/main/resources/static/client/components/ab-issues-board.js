@@ -12,15 +12,12 @@ class IssuesBoard {
     this._refreshInFlight = false;
     this._refreshPending = false;
     this._pointerDragging = false;
-    this._visibleColumns = new Set();
-    this._customVisibleColumns = null;
     this.dragFromStatus = null;
     this._toastHost = null;
     this._pendingPostRefreshToast = null;
 
     this.bindDragDrop();
     this.bindPointerDrag();
-    this.bindCollapse();
     this.bindQuickAdd();
     this.bindQuickDispatch();
     this.bindRefreshGuards();
@@ -420,182 +417,6 @@ class IssuesBoard {
       this._refreshPending = true;
     });
 
-    // HTMX polling swaps board HTML directly; re-apply client-side visibility state
-    // so hidden columns stay hidden across fragment refreshes.
-    this.root.addEventListener('htmx:afterSwap', (event) => {
-      const requestTarget = event?.detail?.target;
-      if (requestTarget !== this.root) return;
-      this.bindCollapse();
-    });
-  }
-
-  // ---------------------------------------------------------------------------
-  // Column visibility / hidden columns lane (persisted in localStorage)
-  // ---------------------------------------------------------------------------
-
-  bindCollapse() {
-    if (!this._columnVisibilityBound) {
-      this._columnVisibilityBound = true;
-
-      this.root.addEventListener('click', (event) => {
-        const hideBtn = event.target.closest('[data-collapse-toggle]');
-        if (hideBtn) {
-          const statusToken = hideBtn.dataset.collapseToggle;
-          this._hideColumn(statusToken);
-          return;
-        }
-
-        const showBtn = event.target.closest('[data-show-column]');
-        if (showBtn) {
-          const statusToken = showBtn.dataset.showColumn;
-          this._showColumn(statusToken);
-        }
-      });
-
-      this._customVisibleColumns = this._loadVisibleColumns();
-      window.addEventListener('resize', () => {
-        if (this._customVisibleColumns) {
-          this._resizeColumnsToViewport();
-          return;
-        }
-        this._syncVisibleColumns();
-      });
-    }
-
-    this._syncVisibleColumns();
-  }
-
-  _visibleColumnsKey() {
-    return 'board-visible-columns:v1';
-  }
-
-  _allBoardColumns() {
-    return Array.from(this.root.querySelectorAll('[data-column-status]'));
-  }
-
-  _defaultVisibleColumns() {
-    const showHumanReview = window.matchMedia('(min-width: 1280px)').matches;
-    return showHumanReview
-      ? ['backlog', 'todo', 'in_progress', 'human_review']
-      : ['backlog', 'todo', 'in_progress'];
-  }
-
-  _canHideColumn(statusToken) {
-    return ['human_review', 'rework', 'merging', 'done', 'canceled', 'duplicated'].includes(String(statusToken || ''));
-  }
-
-  _loadVisibleColumns() {
-    try {
-      const raw = localStorage.getItem(this._visibleColumnsKey());
-      if (!raw) return null;
-      const parsed = JSON.parse(raw);
-      if (!Array.isArray(parsed)) return null;
-      return parsed.map((v) => String(v || '').trim()).filter((v) => v.length > 0);
-    } catch (_ignored) {
-      return null;
-    }
-  }
-
-  _saveVisibleColumns() {
-    localStorage.setItem(this._visibleColumnsKey(), JSON.stringify(Array.from(this._visibleColumns)));
-  }
-
-  _syncVisibleColumns() {
-    const statusTokens = this._allBoardColumns()
-      .map((col) => col.dataset.columnStatus)
-      .filter((v) => v && v.length > 0);
-    const source = this._customVisibleColumns || this._defaultVisibleColumns();
-    const visible = source.filter((status) => statusTokens.includes(status));
-
-    this._visibleColumns = new Set(visible);
-    this._applyColumnVisibility();
-  }
-
-  _applyColumnVisibility() {
-    this._allBoardColumns().forEach((col) => {
-      const statusToken = col.dataset.columnStatus;
-      col.classList.toggle('hidden', !this._visibleColumns.has(statusToken));
-    });
-    this._renderHiddenColumnLane();
-    this._resizeColumnsToViewport();
-  }
-
-  _hideColumn(statusToken) {
-    if (!statusToken || !this._visibleColumns.has(statusToken)) return;
-    if (!this._canHideColumn(statusToken)) return;
-    if (this._visibleColumns.size <= 3) return;
-
-    this._visibleColumns.delete(statusToken);
-    this._customVisibleColumns = Array.from(this._visibleColumns);
-    this._saveVisibleColumns();
-    this._applyColumnVisibility();
-  }
-
-  _showColumn(statusToken) {
-    if (!statusToken || this._visibleColumns.has(statusToken)) return;
-    this._visibleColumns.add(statusToken);
-    this._customVisibleColumns = Array.from(this._visibleColumns);
-    this._saveVisibleColumns();
-    this._applyColumnVisibility();
-  }
-
-  _renderHiddenColumnLane() {
-    const lane = this.root.querySelector('[data-hidden-columns-column]');
-    const list = this.root.querySelector('[data-hidden-columns-list]');
-    const countNode = this.root.querySelector('[data-hidden-columns-count]');
-    if (!lane || !list || !countNode) return;
-
-    const hiddenColumns = [];
-    this._allBoardColumns().forEach((col) => {
-      const statusToken = col.dataset.columnStatus || '';
-      if (!statusToken || this._visibleColumns.has(statusToken)) return;
-      hiddenColumns.push({
-        statusToken,
-        label: col.dataset.columnLabel || statusToken,
-        count: col.querySelector(`[data-column-count="${statusToken}"]`)?.textContent || '0',
-      });
-    });
-
-    countNode.textContent = String(hiddenColumns.length);
-    list.textContent = '';
-
-    if (hiddenColumns.length === 0) {
-      const empty = document.createElement('p');
-      empty.className = 'rounded border border-dashed border-white/10 px-2 py-3 text-xs text-slate-500';
-      empty.textContent = 'No hidden columns';
-      list.appendChild(empty);
-      return;
-    }
-
-    hiddenColumns.forEach(({ statusToken, label, count }) => {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'w-full rounded border border-white/10 bg-slate-800/70 px-2 py-1.5 text-left text-xs text-slate-200 hover:bg-slate-700';
-      button.dataset.showColumn = statusToken;
-      button.textContent = `${label} (${count})`;
-      list.appendChild(button);
-    });
-  }
-
-  _resizeColumnsToViewport() {
-    const laneColumns = Array.from(this.root.querySelectorAll('[data-board-column]'))
-      .filter((el) => !el.classList.contains('hidden'));
-    if (laneColumns.length === 0) return;
-
-    const rootWidth = this.root.clientWidth;
-    if (!rootWidth || rootWidth <= 0) return;
-
-    const style = window.getComputedStyle(this.root);
-    const gap = parseFloat(style.columnGap || style.gap || '12') || 12;
-    const minWidth = 280;
-    const available = rootWidth - (gap * (laneColumns.length - 1));
-    const target = Math.floor(available / laneColumns.length);
-    const laneWidth = Math.max(minWidth, target);
-
-    laneColumns.forEach((col) => {
-      col.style.flex = `0 0 ${laneWidth}px`;
-      col.style.width = `${laneWidth}px`;
-    });
   }
 
   // ---------------------------------------------------------------------------
@@ -911,6 +732,7 @@ class IssuesBoard {
       case 'done': return 'Done';
       case 'canceled': return 'Canceled';
       case 'duplicated': return 'Duplicated';
+      case 'archived': return 'Archived';
       default: return 'Backlog';
     }
   }
@@ -950,15 +772,16 @@ class IssuesBoard {
     if (!from || !to || from === to) return false;
 
     const matrix = {
-      backlog: new Set(['todo', 'done', 'canceled', 'duplicated']),
-      todo: new Set(['backlog', 'in_progress', 'done', 'canceled', 'duplicated']),
-      in_progress: new Set(['human_review', 'done', 'canceled', 'duplicated']),
-      human_review: new Set(['rework', 'merging', 'done', 'canceled', 'duplicated']),
-      rework: new Set(['in_progress', 'done', 'canceled', 'duplicated']),
-      merging: new Set(['done', 'canceled', 'duplicated']),
-      done: new Set([]),
-      canceled: new Set(['backlog']),
-      duplicated: new Set([]),
+      backlog: new Set(['todo', 'done', 'canceled', 'duplicated', 'archived']),
+      todo: new Set(['backlog', 'in_progress', 'done', 'canceled', 'duplicated', 'archived']),
+      in_progress: new Set(['human_review', 'done', 'canceled', 'duplicated', 'archived']),
+      human_review: new Set(['rework', 'merging', 'done', 'canceled', 'duplicated', 'archived']),
+      rework: new Set(['in_progress', 'done', 'canceled', 'duplicated', 'archived']),
+      merging: new Set(['done', 'canceled', 'duplicated', 'archived']),
+      done: new Set(['backlog', 'archived']),
+      canceled: new Set(['backlog', 'archived']),
+      duplicated: new Set(['archived']),
+      archived: new Set(['backlog']),
     };
     return matrix[from]?.has(to) === true;
   }
@@ -1023,7 +846,6 @@ class IssuesBoard {
         swap: 'innerHTML',
       }).then(() => {
         this.bindDragDrop();
-        this.bindCollapse();
         this.bindQuickAdd();
         this.bindQuickDispatch();
         this._flashLandedCard(landedIssueId);
@@ -1038,7 +860,6 @@ class IssuesBoard {
         // html is server-rendered markup from our own trusted endpoint
         this.root.innerHTML = html; // nosec: trusted server HTML, same origin
         this.bindDragDrop();
-        this.bindCollapse();
         this.bindQuickAdd();
         this.bindQuickDispatch();
         this._flashLandedCard(landedIssueId);

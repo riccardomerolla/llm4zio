@@ -83,10 +83,7 @@ object SdlcDashboardView:
     sectionPanel("Lifecycle", "Idea to done flow stitched across specifications, plans, and issue states")(
       div(cls := "grid gap-3 md:grid-cols-2 xl:grid-cols-4")(
         snapshot.lifecycle.map { stage =>
-          a(
-            href := stage.href,
-            cls  := "rounded-lg border border-white/10 bg-slate-950/60 p-4 transition-colors hover:bg-slate-950",
-          )(
+          Components.interactiveCard(stage.href)(
             div(cls := "text-xs font-semibold uppercase tracking-wide text-slate-400")(stage.label),
             div(cls := "mt-2 text-3xl font-semibold text-white")(stage.count.toString),
             p(cls := "mt-2 text-xs text-slate-400")(stage.description),

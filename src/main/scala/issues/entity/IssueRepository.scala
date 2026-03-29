@@ -14,7 +14,7 @@ final case class IssueFilter(
 )
 
 enum IssueStateTag:
-  case Backlog, Todo, InProgress, HumanReview, Rework, Merging, Done, Canceled, Duplicated
+  case Backlog, Todo, InProgress, HumanReview, Rework, Merging, Done, Canceled, Duplicated, Archived
   case Open, Assigned, Completed, Failed, Skipped
 
 object IssueStateTag:
@@ -31,6 +31,7 @@ object IssueStateTag:
       case _: IssueState.Done        => IssueStateTag.Done
       case _: IssueState.Canceled    => IssueStateTag.Canceled
       case _: IssueState.Duplicated  => IssueStateTag.Duplicated
+      case _: IssueState.Archived    => IssueStateTag.Archived
       case _: IssueState.Completed   => IssueStateTag.Completed
       case _: IssueState.Failed      => IssueStateTag.Failed
       case _: IssueState.Skipped     => IssueStateTag.Skipped
