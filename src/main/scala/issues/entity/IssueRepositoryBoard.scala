@@ -425,6 +425,24 @@ final case class IssueRepositoryBoard(
               .mapError(mapBoardError)
               .unit
         }
+      case archived: IssueEvent.Archived                      =>
+        withExistingIssue(archived.issueId) {
+          case (workspace, issue) =>
+            for
+              _ <- moveIssue(workspace.localPath, issue.frontmatter.id, BoardColumn.Archive)
+              _ <- boardRepository
+                     .updateIssue(
+                       workspace.localPath,
+                       issue.frontmatter.id,
+                       _.copy(
+                         transientState = TransientState.None,
+                         failureReason = None,
+                         completedAt = Some(archived.archivedAt),
+                       ),
+                     )
+                     .mapError(mapBoardError)
+            yield ()
+        }
       case reopened: IssueEvent.Reopened                      =>
         withExistingIssue(reopened.issueId) {
           case (workspace, issue) =>
@@ -594,7 +612,14 @@ final case class IssueRepositoryBoard(
               IssueState.InProgress(agent, fm.createdAt)
             case BoardColumn.Review     => IssueState.HumanReview(fm.createdAt)
             case BoardColumn.Done       => IssueState.Done(fm.completedAt.getOrElse(fm.createdAt), "completed")
-            case BoardColumn.Archive    => IssueState.Done(fm.completedAt.getOrElse(fm.createdAt), "archived")
+            case BoardColumn.Archive    =>
+              if fm.failureReason.isDefined then
+                IssueState.Canceled(
+                  fm.completedAt.getOrElse(fm.createdAt),
+                  fm.failureReason.getOrElse("canceled"),
+                )
+              else
+                IssueState.Archived(fm.completedAt.getOrElse(fm.createdAt))
 
     AgentIssue(
       id = IssueId(fm.id.value),

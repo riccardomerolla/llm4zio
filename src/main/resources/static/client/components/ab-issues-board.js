@@ -732,6 +732,7 @@ class IssuesBoard {
       case 'done': return 'Done';
       case 'canceled': return 'Canceled';
       case 'duplicated': return 'Duplicated';
+      case 'archived': return 'Archived';
       default: return 'Backlog';
     }
   }
@@ -771,15 +772,16 @@ class IssuesBoard {
     if (!from || !to || from === to) return false;
 
     const matrix = {
-      backlog: new Set(['todo', 'done', 'canceled', 'duplicated']),
-      todo: new Set(['backlog', 'in_progress', 'done', 'canceled', 'duplicated']),
-      in_progress: new Set(['human_review', 'done', 'canceled', 'duplicated']),
-      human_review: new Set(['rework', 'merging', 'done', 'canceled', 'duplicated']),
-      rework: new Set(['in_progress', 'done', 'canceled', 'duplicated']),
-      merging: new Set(['done', 'canceled', 'duplicated']),
-      done: new Set([]),
-      canceled: new Set(['backlog']),
-      duplicated: new Set([]),
+      backlog: new Set(['todo', 'done', 'canceled', 'duplicated', 'archived']),
+      todo: new Set(['backlog', 'in_progress', 'done', 'canceled', 'duplicated', 'archived']),
+      in_progress: new Set(['human_review', 'done', 'canceled', 'duplicated', 'archived']),
+      human_review: new Set(['rework', 'merging', 'done', 'canceled', 'duplicated', 'archived']),
+      rework: new Set(['in_progress', 'done', 'canceled', 'duplicated', 'archived']),
+      merging: new Set(['done', 'canceled', 'duplicated', 'archived']),
+      done: new Set(['backlog', 'archived']),
+      canceled: new Set(['backlog', 'archived']),
+      duplicated: new Set(['archived']),
+      archived: new Set(['backlog']),
     };
     return matrix[from]?.has(to) === true;
   }

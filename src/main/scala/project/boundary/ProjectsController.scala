@@ -328,14 +328,15 @@ object ProjectsController:
       case IssueState.Done(at, _)         => at
       case IssueState.Canceled(at, _)     => at
       case IssueState.Duplicated(at, _)   => at
+      case IssueState.Archived(at)        => at
       case IssueState.Completed(_, at, _) => at
       case IssueState.Failed(_, at, _)    => at
       case IssueState.Skipped(at, _)      => at
 
   private def isActiveIssue(status: IssueStatus): Boolean =
     status match
-      case IssueStatus.Done | IssueStatus.Canceled | IssueStatus.Duplicated | IssueStatus.Completed |
-           IssueStatus.Failed | IssueStatus.Skipped =>
+      case IssueStatus.Done | IssueStatus.Canceled | IssueStatus.Duplicated | IssueStatus.Archived |
+           IssueStatus.Completed | IssueStatus.Failed | IssueStatus.Skipped =>
         false
       case _ =>
         true
@@ -436,6 +437,7 @@ object ProjectsController:
       case IssueState.Done(at, _)           => (IssueStatus.Done, None, None, Some(at), None)
       case IssueState.Canceled(at, msg)     => (IssueStatus.Canceled, None, None, Some(at), Some(msg))
       case IssueState.Duplicated(at, msg)   => (IssueStatus.Duplicated, None, None, Some(at), Some(msg))
+      case IssueState.Archived(at)          => (IssueStatus.Archived, None, None, Some(at), None)
       case IssueState.Completed(_, at, _)   => (IssueStatus.Done, None, None, Some(at), None)
       case IssueState.Failed(_, at, msg)    => (IssueStatus.Rework, None, None, Some(at), Some(msg))
       case IssueState.Skipped(at, reason)   => (IssueStatus.Canceled, None, None, Some(at), Some(reason))

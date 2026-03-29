@@ -633,8 +633,8 @@ final case class DaemonAgentSchedulerLive(
 
   private def isTerminal(state: IssueState): Boolean =
     state match
-      case _: IssueState.Done | _: IssueState.Canceled | _: IssueState.Duplicated | _: IssueState.Completed |
-           _: IssueState.Failed | _: IssueState.Skipped => true
+      case _: IssueState.Done | _: IssueState.Canceled | _: IssueState.Duplicated | _: IssueState.Archived |
+           _: IssueState.Completed | _: IssueState.Failed | _: IssueState.Skipped => true
       case _ => false
 
   private def normalize(value: String): String =
