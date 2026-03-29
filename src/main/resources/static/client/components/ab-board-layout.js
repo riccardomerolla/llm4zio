@@ -31,6 +31,7 @@ class AbBoardLayout extends HTMLElement {
     // Apply grid container styles
     this.style.display = 'grid';
     this.style.gap = '4px';
+    this.style.height = '100%';  // fill the flex-1 board root container
 
     // Attach listener immediately so no toggle events are missed
     this.addEventListener('ab-column-toggle', this._boundOnColumnToggle);

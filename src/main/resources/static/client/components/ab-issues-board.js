@@ -401,6 +401,9 @@ class IssuesBoard {
     if (this._refreshGuardsBound) return;
     this._refreshGuardsBound = true;
 
+    // Persist column scroll positions across HTMX fragment refreshes
+    this._savedScrolls = {};
+
     this.root.addEventListener('htmx:beforeRequest', (event) => {
       const requestTarget = event?.detail?.target;
       if (requestTarget !== this.root) return;
@@ -412,9 +415,33 @@ class IssuesBoard {
     this.root.addEventListener('htmx:beforeSwap', (event) => {
       const requestTarget = event?.detail?.target;
       if (requestTarget !== this.root) return;
+
+      // Save each column's card-list scroll offset keyed by status token
+      this.root.querySelectorAll('[data-column-cards]').forEach(el => {
+        const key = el.dataset.columnCards;
+        if (key) this._savedScrolls[key] = el.scrollTop;
+      });
+
       if (!this._shouldDeferRefresh()) return;
       event.preventDefault();
       this._refreshPending = true;
+    });
+
+    this.root.addEventListener('htmx:afterSwap', (event) => {
+      const requestTarget = event?.detail?.target;
+      if (requestTarget !== this.root) return;
+
+      // ab-board-layout defers _applyState() via Promise.resolve() (microtask).
+      // The microtask runs before any macrotask, so a double-rAF here guarantees
+      // we restore scroll only after expanded columns are visible.
+      const saved = this._savedScrolls;
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        this.root.querySelectorAll('[data-column-cards]').forEach(el => {
+          const key = el.dataset.columnCards;
+          if (key && saved[key]) el.scrollTop = saved[key];
+        });
+        this._savedScrolls = {};
+      }));
     });
 
   }

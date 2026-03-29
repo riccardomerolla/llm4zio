@@ -46,16 +46,20 @@ class AbBoardColumn extends HTMLElement {
     const status = this.getAttribute('status') || '';
     this.dataset.dropStatus = status;
 
-    // 2. Insert compact title strip as first child
+    // 2. Always fill the grid cell height (compact strip also uses height:100%)
+    this.style.height   = '100%';
+    this.style.overflow = 'hidden';  // contain flex children; cards area scrolls internally
+
+    // 3. Insert compact title strip as first child
     this._insertCompactTitle();
 
-    // 3. Insert collapse button into the column header (if present)
+    // 4. Insert collapse button into the column header (if present)
     this._insertCollapseButton();
 
-    // 4. Apply initial visual state
+    // 5. Apply initial visual state
     this._applyVisual();
 
-    // 5. Attach click listener
+    // 6. Attach click listener
     this.addEventListener('click', this._boundOnClick);
   }
 
@@ -211,16 +215,37 @@ class AbBoardColumn extends HTMLElement {
     const collapseBtn  = this.querySelector('[data-column-collapse-btn]');
 
     if (expanded) {
+      // Use flex-column so cards area can flex-1 and fill remaining column height
+      this.style.display       = 'flex';
+      this.style.flexDirection = 'column';
       this.style.removeProperty('cursor');
       if (compactTitle) compactTitle.style.display = 'none';
-      if (cardsArea)    cardsArea.style.removeProperty('display');
+      // Header and quick-add must not shrink so they stay at the top
+      const header = this.querySelector('[data-column-header]');
+      if (header) header.style.flexShrink = '0';
+      if (cardsArea) {
+        cardsArea.style.removeProperty('display');
+        cardsArea.style.flex      = '1';
+        cardsArea.style.minHeight = '0';
+        cardsArea.style.overflowY = 'auto';
+      }
       // quick-add panel visibility managed by the board controller (classList); just clear override
-      if (quickAddForm) quickAddForm.style.removeProperty('display');
+      if (quickAddForm) {
+        quickAddForm.style.removeProperty('display');
+        quickAddForm.style.flexShrink = '0';
+      }
       if (collapseBtn)  collapseBtn.style.removeProperty('display');
     } else {
+      this.style.removeProperty('display');
+      this.style.removeProperty('flex-direction');
       this.style.cursor = 'pointer';
       if (compactTitle) compactTitle.style.display = 'flex'; // must be flex for column layout
-      if (cardsArea)    cardsArea.style.display = 'none';
+      if (cardsArea) {
+        cardsArea.style.display = 'none';
+        cardsArea.style.removeProperty('flex');
+        cardsArea.style.removeProperty('min-height');
+        cardsArea.style.removeProperty('overflow-y');
+      }
       if (quickAddForm) quickAddForm.style.display = 'none';
       if (collapseBtn)  collapseBtn.style.display = 'none';
     }

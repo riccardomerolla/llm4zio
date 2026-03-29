@@ -142,12 +142,15 @@ object IssuesView:
       else s"/board/fragment?${queryParts.mkString("&")}"
 
     Layout.page("Issue Board", "/board")(
-      div(cls := "space-y-4")(
-        div(cls := "rounded-xl border border-white/10 bg-slate-900/80 px-5 py-4")(
+      div(cls := "flex flex-col gap-2 h-[calc(100dvh-3.5rem)] -mb-4")(
+        div(cls := "rounded-xl border border-white/10 bg-slate-900/60 px-4 py-3 flex-shrink-0")(
           div(cls := "flex flex-wrap items-center justify-between gap-3")(
-            div(
-              h1(cls := "text-2xl font-bold text-white")("Issue Board"),
-              p(cls := "mt-1 text-sm text-slate-300")("Kanban view for issue workflow"),
+            form(
+              method := "get",
+              action := "/board",
+              cls    := "flex flex-wrap items-center gap-2",
+            )(
+              boardFilterBar(workspaces, workspaceFilter, agentFilter, priorityFilter, tagFilter, query, hasProofFilter),
             ),
             div(cls := "flex items-center gap-3")(
               modeToggle(
@@ -199,7 +202,6 @@ object IssuesView:
           )
         ),
         bulkToolbar("board"),
-        boardFilterBar(workspaces, workspaceFilter, agentFilter, priorityFilter, tagFilter, query, hasProofFilter),
         div(
           id                           := "issues-board-root",
           attr("data-fragment-url")    := fragmentUrl,
@@ -208,7 +210,7 @@ object IssuesView:
           attr("hx-get")               := fragmentUrl,
           attr("hx-trigger")           := "load, every 10s",
           attr("hx-swap")              := "innerHTML",
-          cls                          := "min-h-[32rem]",
+          cls                          := "flex-1 min-h-0 overflow-hidden",
           attr("data-bulk-scope")      := "board",
         )(
           raw(boardColumnsFragment(filteredIssues, workspaces, workReports, availableAgents, dispatchStatuses))
@@ -231,16 +233,15 @@ object IssuesView:
   ): String =
     Layout.page("Issue Board", "/board")(
       div(cls := "space-y-4")(
-        div(cls := "rounded-xl border border-white/10 bg-slate-900/80 px-5 py-4")(
-          div(cls := "flex flex-wrap items-center justify-between gap-3")(
-            div(
-              h1(cls := "text-2xl font-bold text-white")("Issue Board"),
-              p(cls := "mt-1 text-sm text-slate-300")("Table view of issue workflow"),
-            ),
-            modeToggle("list", workspaceFilter, agentFilter, priorityFilter, tagFilter, query, statusFilter, None),
-          )
+        boardListFilterBar(
+          statusFilter,
+          query,
+          tagFilter,
+          workspaceFilter,
+          agentFilter,
+          priorityFilter,
+          rightSide = Some(modeToggle("list", workspaceFilter, agentFilter, priorityFilter, tagFilter, query, statusFilter, None)),
         ),
-        boardListFilterBar(statusFilter, query, tagFilter, workspaceFilter, agentFilter, priorityFilter),
         if issues.isEmpty then
           div(cls := "rounded-xl border border-white/10 bg-slate-900/60 px-6 py-16 text-center")(
             p(cls := "text-base text-slate-300")("No matching issues found")
@@ -359,7 +360,7 @@ object IssuesView:
             ),
           ),
           div(
-            cls                       := "space-y-2 max-h-[65vh] overflow-y-auto",
+            cls                       := "space-y-2 overflow-y-auto",
             attr("data-role")         := "column-cards",
             attr("data-column-cards") := statusToken,
           )(
@@ -1217,12 +1218,7 @@ object IssuesView:
       "rounded-full border border-indigo-400/40 bg-slate-800/70 px-3 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none"
     val idleInput   =
       "rounded-full border border-white/15 bg-slate-800/70 px-3 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none"
-    form(
-      method := "get",
-      action := "/board",
-      cls    := "rounded-xl border border-white/10 bg-slate-900/60 px-4 py-3",
-    )(
-      div(cls := "flex flex-wrap items-center gap-2")(
+    div(cls := "flex flex-wrap items-center gap-2")(
         input(
           `type`      := "text",
           name        := "q",
@@ -1290,7 +1286,6 @@ object IssuesView:
           cls  := "rounded-full border border-white/20 px-3 py-1.5 text-xs text-slate-300 hover:bg-white/5",
         )("Reset"),
       )
-    )
 
   private def boardListFilterBar(
     statusFilter: Option[String],
@@ -1299,9 +1294,13 @@ object IssuesView:
     workspaceFilter: Option[String],
     agentFilter: Option[String],
     priorityFilter: Option[String],
+    rightSide: Option[Frag] = None,
   ): Frag =
     form(method := "get", action := "/board", cls := "rounded-xl border border-white/10 bg-slate-900/60 p-4")(
       input(`type` := "hidden", name := "mode", value := "list"),
+      rightSide.map { rs =>
+        div(cls := "mb-3 flex items-center justify-end")(rs)
+      },
       div(cls := "grid grid-cols-1 gap-3 md:grid-cols-3 lg:grid-cols-6")(
         input(
           `type`      := "text",
