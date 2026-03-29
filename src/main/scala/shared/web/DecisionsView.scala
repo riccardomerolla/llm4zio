@@ -19,22 +19,7 @@ object DecisionsView:
           ".decision-critical{animation:decision-pulse 2s ease-in-out infinite}"
       )),
       div(cls := "space-y-6")(
-        div(cls := "rounded-xl border border-white/10 bg-slate-900/80 px-5 py-4")(
-          div(cls := "flex flex-wrap items-center justify-between gap-4")(
-            div(
-              h1(cls := "text-2xl font-bold text-white")("Decision Inbox"),
-              p(cls := "mt-1 text-sm text-slate-300")(
-                "Review queued human decisions, resolve issue reviews, and monitor overdue escalations."
-              ),
-            ),
-            if pendingCount > 0 then
-              span(
-                cls := "inline-flex items-center rounded-full border border-amber-400/30 bg-amber-500/10 px-3 py-1 text-sm font-semibold text-amber-200"
-              )(s"$pendingCount pending")
-            else frag(),
-          )
-        ),
-        filterBar(statusFilter, sourceFilter, urgencyFilter, query),
+        header(statusFilter, sourceFilter, urgencyFilter, query, pendingCount),
         decisionsList(decisions),
       ),
       keyboardNavScript,
@@ -60,60 +45,59 @@ object DecisionsView:
         div(cls := "space-y-4")(decisions.map(card)*)
     )
 
-  private def filterBar(
+  private def header(
     statusFilter: Option[String],
     sourceFilter: Option[String],
     urgencyFilter: Option[String],
     query: Option[String],
+    pendingCount: Int,
   ): Frag =
-    form(
-      id     := "decisions-filter-form",
-      action := "/decisions",
-      method := "get",
-      cls    := "grid gap-3 rounded-xl border border-white/10 bg-slate-900/60 p-4 lg:grid-cols-4",
-    )(
-      selectField("status", statusFilter, List("pending", "resolved", "escalated", "expired")),
-      selectField("source", sourceFilter, List("issue_review", "governance", "agent_escalation", "manual")),
-      selectField("urgency", urgencyFilter, List("low", "medium", "high", "critical")),
-      div(cls := "space-y-2")(
-        label(cls := "text-xs font-semibold uppercase tracking-wide text-slate-400", `for` := "query")("Search"),
+    div(cls := "rounded-xl border border-white/10 bg-slate-900/80 px-5 py-3")(
+      form(
+        id     := "decisions-filter-form",
+        action := "/decisions",
+        method := "get",
+        cls    := "flex flex-wrap items-center gap-3",
+      )(
+        h1(cls := "shrink-0 text-lg font-bold text-white mr-2")("Decision Inbox"),
+        if pendingCount > 0 then
+          span(
+            cls := "shrink-0 inline-flex items-center rounded-full border border-amber-400/30 bg-amber-500/10 px-3 py-1 text-xs font-semibold text-amber-200 mr-1"
+          )(s"$pendingCount pending")
+        else frag(),
+        inlineSelect("status", statusFilter, List("pending", "resolved", "escalated", "expired"), "Status"),
+        inlineSelect("source", sourceFilter, List("issue_review", "governance", "agent_escalation", "manual"), "Source"),
+        inlineSelect("urgency", urgencyFilter, List("low", "medium", "high", "critical"), "Urgency"),
         input(
           id          := "query",
           name        := "query",
           value       := query.getOrElse(""),
-          placeholder := "issue, title, context",
-          cls         := "w-full rounded border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-100",
+          placeholder := "Search issue, title, context…",
+          cls         := "min-w-0 flex-1 rounded border border-white/10 bg-black/20 px-3 py-1.5 text-sm text-slate-100 placeholder:text-slate-500",
         ),
-        div(cls := "flex justify-end")(
-          button(
-            `type` := "submit",
-            cls    := "rounded bg-cyan-600 px-3 py-2 text-xs font-semibold text-white hover:bg-cyan-500",
-          )(
-            "Apply"
-          )
-        ),
-      ),
+        button(
+          `type` := "submit",
+          cls    := "shrink-0 rounded bg-cyan-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-cyan-500",
+        )("Apply"),
+      )
     )
 
-  private def selectField(name: String, selected: Option[String], values: List[String]): Frag =
-    div(cls := "space-y-2")(
-      label(cls := "text-xs font-semibold uppercase tracking-wide text-slate-400", `for` := name)(name.capitalize),
-      select(
-        id           := name,
-        attr("name") := name,
-        cls          := "w-full rounded border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-100",
-      )(
-        option(value := "", if selected.isEmpty then attr("selected") := "selected" else ())("Any"),
-        frag(
-          values.map { rawValue =>
-            option(
-              attr("value") := rawValue,
-              if selected.contains(rawValue) then attr("selected") := "selected" else (),
-            )(
-              rawValue.split("_").map(_.capitalize).mkString(" ")
-            )
-          }
-        ),
+  private def inlineSelect(name: String, selected: Option[String], values: List[String], placeholder: String): Frag =
+    select(
+      id           := name,
+      attr("name") := name,
+      cls          := "shrink-0 rounded border border-white/10 bg-black/20 px-3 py-1.5 text-sm text-slate-100",
+    )(
+      option(value := "", if selected.isEmpty then attr("selected") := "selected" else ())(placeholder),
+      frag(
+        values.map { rawValue =>
+          option(
+            attr("value") := rawValue,
+            if selected.contains(rawValue) then attr("selected") := "selected" else (),
+          )(
+            rawValue.split("_").map(_.capitalize).mkString(" ")
+          )
+        }
       ),
     )
 
