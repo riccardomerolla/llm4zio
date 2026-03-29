@@ -218,8 +218,9 @@ object WorkspacesControllerSpec extends ZIOSpecDefault:
         body       <- resp.body.asString
       yield assertTrue(
         resp.status == Status.Ok,
-        body.contains("User prompt to place above the wizard questions"),
-        body.contains("Seven standard answers for this template"),
+        body.contains("Workspace Prompt"),
+        body.contains("Template Wizard"),
+        body.contains("Question 1 of 7"),
         !body.contains("Install the wizard skill"),
       )
     },

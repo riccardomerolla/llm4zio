@@ -10,3 +10,10 @@
 - [x] Add focused view and route coverage for the new workspace template wizard content.
 - [x] Run formatting and the relevant test suites, fixing any regressions discovered during verification.
 - [x] Review the final changes for correctness, regressions, and adherence to the Scala 3 + ZIO project guidelines.
+
+## Group 3: Wizard UX Revision
+
+- [x] Rework the workspace template page styling to recover the cleaner card layout and calmer typography from the earlier version.
+- [x] Replace the static question preview with an interactive wizard flow that lets the user move through the seven standard questions while keeping the prompt editor visible.
+- [x] Add a live brief panel that reflects the current wizard answers, including conditional run-mode details, scaffold outputs, and next issue cards.
+- [x] Update tests and verification for the revised interactive wizard experience, then review the final result for visual and behavioral regressions.
