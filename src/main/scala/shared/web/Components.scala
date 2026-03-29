@@ -118,6 +118,50 @@ object Components:
       if trendPositive then attr("trend-positive") := "" else (),
     )
 
+  // ── Interactive card ─────────────────────────────────────────────────────
+
+  /** Navigable card with hover lift effect, focus ring, and transition.
+    * Emits an `<a>` so the entire card is keyboard-accessible.
+    */
+  def interactiveCard(href: String)(content: Frag*): Frag =
+    a(
+      cls            := "group block rounded-xl border border-white/10 bg-slate-800/70 p-5 " +
+                        "transition-all duration-150 hover:-translate-y-0.5 hover:shadow-lg " +
+                        "hover:shadow-black/30 hover:border-white/20 " +
+                        "focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-2 focus:ring-offset-slate-900",
+      attr("href")   := href,
+    )(content*)
+
+  // ── Button helpers ────────────────────────────────────────────────────────
+
+  /** Primary action button — indigo bg, white text, consistent hover/active states. */
+  def primaryButton(text: String, tpe: String = "button"): Frag =
+    button(
+      `type` := tpe,
+      cls    := "rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white " +
+                "transition-all duration-150 hover:bg-indigo-500 active:scale-95 " +
+                "focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-slate-900 " +
+                "disabled:cursor-not-allowed disabled:opacity-50",
+    )(text)
+
+  /** Secondary button — border outline, transparent bg, hover fill. */
+  def secondaryButton(text: String, tpe: String = "button"): Frag =
+    button(
+      `type` := tpe,
+      cls    := "rounded-md border border-white/20 bg-transparent px-4 py-2 text-sm font-semibold text-slate-200 " +
+                "transition-all duration-150 hover:bg-white/10 active:scale-95 " +
+                "focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-2 focus:ring-offset-slate-900",
+    )(text)
+
+  /** Ghost button — no border, subtle hover bg. */
+  def ghostButton(text: String, tpe: String = "button"): Frag =
+    button(
+      `type` := tpe,
+      cls    := "rounded-md bg-transparent px-4 py-2 text-sm font-semibold text-slate-300 " +
+                "transition-all duration-150 hover:bg-white/10 hover:text-white active:scale-95 " +
+                "focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-2",
+    )(text)
+
   // ── SVG icon utility ─────────────────────────────────────────────────────
 
   def svgIcon(pathD: String, classes: String): Frag =
