@@ -79,6 +79,18 @@ object IssueControllerSpec extends ZIOSpecDefault:
       IssueEvent.MovedToTodo(issueId = issueId, movedAt = now, occurredAt = now),
     )
 
+  private def unlinkedIssueSeedEvents(issueId: IssueId, title: String): List[IssueEvent] =
+    List(
+      IssueEvent.Created(
+        issueId = issueId,
+        title = title,
+        description = s"$title description",
+        issueType = "bug",
+        priority = "medium",
+        occurredAt = now,
+      )
+    )
+
   final private class InMemoryIssueRepository(ref: Ref[Map[IssueId, List[IssueEvent]]]) extends IssueRepository:
     override def append(event: IssueEvent): IO[PersistenceError, Unit] =
       ref.update(current =>
@@ -407,6 +419,38 @@ object IssueControllerSpec extends ZIOSpecDefault:
           resp.status == Status.InternalServerError,
           !history.exists(_.isInstanceOf[IssueEvent.Assigned]),
           !history.exists(_.isInstanceOf[IssueEvent.Started]),
+        )
+      },
+      test("canceled issues remain visible in the board fragment after a board status update") {
+        val canceledIssueId = IssueId("issue-canceled")
+        for
+          issueEvents  <- Ref.make(Map(canceledIssueId -> unlinkedIssueSeedEvents(canceledIssueId, "Canceled issue")))
+          runRequests  <- Ref.make(List.empty[AssignRunRequest])
+          issueRepo     = InMemoryIssueRepository(issueEvents)
+          routes       <- makeRoutes(issueRepo, StubWorkspaceRunService(runRequests, failAssign = false))
+          updateReq     = Request.patch(
+                            s"/api/issues/${canceledIssueId.value}/status",
+                            Body.fromString("""{"status":"Canceled","reason":"Canceled from board"}"""),
+                          )
+          updateResp   <- routes.runZIO(
+                            updateReq.addHeaders(Headers(Header.ContentType(MediaType.application.json)))
+                          )
+          fragmentResp <- routes.runZIO(Request.get("/board/fragment"))
+          fragmentBody <- fragmentResp.body.asString
+          serverTiming  = fragmentResp.headers.headers
+                            .find(_.headerName.toString.equalsIgnoreCase("Server-Timing"))
+                            .map(_.renderedValue)
+          renderMs      = fragmentResp.headers.headers
+                            .find(_.headerName.toString.equalsIgnoreCase("X-Board-Render-Ms"))
+                            .map(_.renderedValue)
+        yield assertTrue(
+          updateResp.status == Status.Ok,
+          fragmentResp.status == Status.Ok,
+          serverTiming.exists(_.contains("board_total")),
+          renderMs.exists(_.nonEmpty),
+          fragmentBody.contains("Canceled"),
+          fragmentBody.contains("Canceled issue"),
+          fragmentBody.contains("""data-column-status="canceled""""),
         )
       },
     )

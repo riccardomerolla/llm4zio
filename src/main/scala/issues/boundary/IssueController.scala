@@ -72,6 +72,8 @@ final case class IssueControllerLive(
   issueWorkReportProjection: IssueWorkReportProjection,
 ) extends IssueController:
 
+  final private case class TimedResult[+A](value: A, durationMs: Long)
+
   override val routes: Routes[Any, Response] = Routes(
     Method.GET / "issues"                                            -> handler { (req: Request) =>
       ZIO.succeed(redirectPermanent(withQuery("/board?mode=list", req)))
@@ -906,51 +908,78 @@ final case class IssueControllerLive(
     val hasProofFilter  = req.queryParam("hasProof").exists(_.trim.equalsIgnoreCase("true"))
     ErrorHandlingMiddleware.fromPersistence {
       for
-        workspaces          <- workspaceRepository.list.mapError(mapIssueRepoError)
-        issues              <- loadBoardIssues(query, tagFilter, workspaceFilter, agentFilter, priorityFilter, statusFilter)
-        workReports         <- issueWorkReportProjection.getAll
-        allAgents           <- agentRepository.list().mapError(mapIssueRepoError)
-        availableAgents      = allAgents.filter(_.enabled).map(registryAgentToAgentInfo)
-        dispatchStatuses    <- loadDispatchStatuses(issues)
-        autoDispatchEnabled <- settingBoolean("issues.autoDispatch.enabled", default = false)
-        syncStatus          <- loadTrackerSyncStatus
-        activeByAgent       <- activeRunsByAgent.mapError(mapIssueRepoError)
-        activeAgents         = activeByAgent.values.count(_ > 0)
-        enabledAgentsTotal   = math.max(availableAgents.size, 1)
-        rendered            <- mode match
-                                 case "list" =>
-                                   ZIO.succeed(
-                                     HtmlViews.issuesBoardList(
-                                       issues = issues,
-                                       statusFilter = statusFilter,
-                                       query = query,
-                                       tagFilter = tagFilter,
-                                       workspaceFilter = workspaceFilter,
-                                       agentFilter = agentFilter,
-                                       priorityFilter = priorityFilter,
-                                     )
+        startedAt         <- Clock.nanoTime
+        workspacesFiber   <- timed("board.workspaces")(workspaceRepository.list.mapError(mapIssueRepoError)).fork
+        issuesFiber       <- timed("board.issues")(
+                               loadBoardIssues(
+                                 query,
+                                 tagFilter,
+                                 workspaceFilter,
+                                 agentFilter,
+                                 priorityFilter,
+                                 statusFilter,
+                               )
+                             ).fork
+        workReportsFiber  <- timedUio("board.workReports")(issueWorkReportProjection.getAll).fork
+        autoDispatchFiber <- timed("board.autoDispatch") {
+                               settingBoolean("issues.autoDispatch.enabled", default = false)
+                             }.fork
+        workspacesTimed   <- workspacesFiber.join
+        issuesTimed       <- issuesFiber.join
+        workReportsTimed  <- workReportsFiber.join
+        autoDispatchTimed <- autoDispatchFiber.join
+        dispatchTimed     <- timed("board.dispatchStatuses")(loadDispatchStatuses(issuesTimed.value))
+        completedAt       <- Clock.nanoTime
+        totalDurationMs    = nanosToMillis(completedAt - startedAt)
+        workReports        = selectWorkReports(workReportsTimed.value, issuesTimed.value)
+        rendered          <- mode match
+                               case "list" =>
+                                 ZIO.succeed(
+                                   HtmlViews.issuesBoardList(
+                                     issues = issuesTimed.value,
+                                     statusFilter = statusFilter,
+                                     query = query,
+                                     tagFilter = tagFilter,
+                                     workspaceFilter = workspaceFilter,
+                                     agentFilter = agentFilter,
+                                     priorityFilter = priorityFilter,
                                    )
-                                 case _      =>
-                                   ZIO.succeed(
-                                     HtmlViews.issuesBoard(
-                                       issues = issues,
-                                       workspaces = workspaces.map(ws => ws.id -> ws.name),
-                                       workReports = workReports,
-                                       workspaceFilter = workspaceFilter,
-                                       agentFilter = agentFilter,
-                                       priorityFilter = priorityFilter,
-                                       tagFilter = tagFilter,
-                                       query = query,
-                                       statusFilter = statusFilter,
-                                       availableAgents = availableAgents,
-                                       dispatchStatuses = dispatchStatuses,
-                                       autoDispatchEnabled = autoDispatchEnabled,
-                                       syncStatus = syncStatus,
-                                       agentUsage = Some(activeAgents -> enabledAgentsTotal),
-                                       hasProofFilter = if hasProofFilter then Some(true) else None,
-                                     )
+                                 )
+                               case _      =>
+                                 ZIO.succeed(
+                                   HtmlViews.issuesBoard(
+                                     issues = issuesTimed.value,
+                                     workspaces = workspacesTimed.value.map(ws => ws.id -> ws.name),
+                                     workReports = workReports,
+                                     workspaceFilter = workspaceFilter,
+                                     agentFilter = agentFilter,
+                                     priorityFilter = priorityFilter,
+                                     tagFilter = tagFilter,
+                                     query = query,
+                                     statusFilter = statusFilter,
+                                     dispatchStatuses = dispatchTimed.value,
+                                     autoDispatchEnabled = autoDispatchTimed.value,
+                                     hasProofFilter = if hasProofFilter then Some(true) else None,
                                    )
-      yield html(rendered)
+                                 )
+        _                 <- logBoardTiming(
+                               route = "page",
+                               totalDurationMs = totalDurationMs,
+                               workspacesDurationMs = workspacesTimed.durationMs,
+                               issuesDurationMs = issuesTimed.durationMs,
+                               workReportsDurationMs = workReportsTimed.durationMs,
+                               dispatchDurationMs = dispatchTimed.durationMs,
+                               issueCount = issuesTimed.value.size,
+                             )
+      yield html(rendered).addHeaders(boardTimingHeaders(
+        route = "page",
+        totalDurationMs = totalDurationMs,
+        workspacesDurationMs = workspacesTimed.durationMs,
+        issuesDurationMs = issuesTimed.durationMs,
+        workReportsDurationMs = workReportsTimed.durationMs,
+        dispatchDurationMs = dispatchTimed.durationMs,
+        issueCount = issuesTimed.value.size,
+      ))
     }
 
   private def boardFragment(req: Request): UIO[Response] =
@@ -963,22 +992,52 @@ final case class IssueControllerLive(
     val hasProofFilter  = req.queryParam("hasProof").exists(_.trim.equalsIgnoreCase("true"))
     ErrorHandlingMiddleware.fromPersistence {
       for
-        workspaces       <- workspaceRepository.list.mapError(mapIssueRepoError)
-        issues           <- loadBoardIssues(query, tagFilter, workspaceFilter, agentFilter, priorityFilter, statusFilter)
-        workReports      <- issueWorkReportProjection.getAll
-        allAgents        <- agentRepository.list().mapError(mapIssueRepoError)
-        availableAgents   = allAgents.filter(_.enabled).map(registryAgentToAgentInfo)
-        dispatchStatuses <- loadDispatchStatuses(issues)
+        startedAt        <- Clock.nanoTime
+        workspacesFiber  <- timed("boardFragment.workspaces")(workspaceRepository.list.mapError(mapIssueRepoError)).fork
+        issuesFiber      <- timed("boardFragment.issues")(
+                              loadBoardIssues(
+                                query,
+                                tagFilter,
+                                workspaceFilter,
+                                agentFilter,
+                                priorityFilter,
+                                statusFilter,
+                              )
+                            ).fork
+        workReportsFiber <- timedUio("boardFragment.workReports")(issueWorkReportProjection.getAll).fork
+        workspacesTimed  <- workspacesFiber.join
+        issuesTimed      <- issuesFiber.join
+        workReportsTimed <- workReportsFiber.join
+        dispatchTimed    <- timed("boardFragment.dispatchStatuses")(loadDispatchStatuses(issuesTimed.value))
+        completedAt      <- Clock.nanoTime
+        totalDurationMs   = nanosToMillis(completedAt - startedAt)
+        workReports       = selectWorkReports(workReportsTimed.value, issuesTimed.value)
+        _                <- logBoardTiming(
+                              route = "fragment",
+                              totalDurationMs = totalDurationMs,
+                              workspacesDurationMs = workspacesTimed.durationMs,
+                              issuesDurationMs = issuesTimed.durationMs,
+                              workReportsDurationMs = workReportsTimed.durationMs,
+                              dispatchDurationMs = dispatchTimed.durationMs,
+                              issueCount = issuesTimed.value.size,
+                            )
       yield html(
         HtmlViews.issuesBoardColumns(
-          issues = issues,
-          workspaces = workspaces.map(ws => ws.id -> ws.name),
+          issues = issuesTimed.value,
+          workspaces = workspacesTimed.value.map(ws => ws.id -> ws.name),
           workReports = workReports,
-          availableAgents = availableAgents,
-          dispatchStatuses = dispatchStatuses,
+          dispatchStatuses = dispatchTimed.value,
           hasProofFilter = if hasProofFilter then Some(true) else None,
         )
-      )
+      ).addHeaders(boardTimingHeaders(
+        route = "fragment",
+        totalDurationMs = totalDurationMs,
+        workspacesDurationMs = workspacesTimed.durationMs,
+        issuesDurationMs = issuesTimed.durationMs,
+        workReportsDurationMs = workReportsTimed.durationMs,
+        dispatchDurationMs = dispatchTimed.durationMs,
+        issueCount = issuesTimed.value.size,
+      ))
     }
 
   private def html(content: String): Response =
@@ -1291,15 +1350,16 @@ final case class IssueControllerLive(
       .mapError(mapIssueRepoError)
       .map(_.filter(ws => workspaceFilter.forall(_.equalsIgnoreCase(ws.id))))
       .flatMap { workspaces =>
-        ZIO.foreach(workspaces) { ws =>
+        ZIO.foreachPar(workspaces) { ws =>
           ZIO
-            .foreach(boardColumns)(column => boardRepository.listIssues(ws.localPath, column))
+            .foreachPar(boardColumns)(column => boardRepository.listIssues(ws.localPath, column))
+            .withParallelism(boardColumns.size)
             .map(_.flatten.map(issue => boardToView(issue, ws.id)))
             .catchAll {
               case _: BoardError.BoardNotFound => ZIO.succeed(Nil)
               case other                       => ZIO.fail(mapBoardError(other))
             }
-        }.map(_.flatten)
+        }.withParallelism(math.max(1, math.min(workspaces.size, 4))).map(_.flatten)
       }
 
   private def loadApiIssues(runIdStr: Option[String]): IO[PersistenceError, List[AgentIssueView]] =
@@ -1327,23 +1387,25 @@ final case class IssueControllerLive(
     statusFilter: Option[String],
   ): IO[PersistenceError, List[AgentIssueView]] =
     for
-      boardIssues <- loadWorkspaceBoardIssues(workspaceFilter)
-      esIssues    <- issueRepository
-                       .list(IssueFilter())
-                       .mapError(mapIssueRepoError)
-                       .map(_.filter(_.workspaceId.forall(_.trim.isEmpty)).map(domainToView))
-      merged       = boardIssues ++ esIssues
-      filtered     = filterIssues(merged, query, tagFilter).filter(issue =>
-                       workspaceFilter.forall(_.equalsIgnoreCase(issue.workspaceId.getOrElse(""))) &&
-                       agentFilter.forall(agent =>
-                         issue.assignedAgent.exists(_.equalsIgnoreCase(agent)) || issue.preferredAgent.exists(
-                           _.equalsIgnoreCase(agent)
-                         )
-                       ) &&
-                       statusFilter.forall(status => statusMatches(issue.status, status)) &&
-                       priorityFilter.forall(p => issue.priority.toString.equalsIgnoreCase(p))
-                     )
-    yield filtered.filter(_.status != IssueStatus.Canceled)
+      pair                   <- loadWorkspaceBoardIssues(workspaceFilter).zipPar(
+                                  issueRepository
+                                    .list(IssueFilter())
+                                    .mapError(mapIssueRepoError)
+                                    .map(_.filter(_.workspaceId.forall(_.trim.isEmpty)).map(domainToView))
+                                )
+      (boardIssues, esIssues) = pair
+      merged                  = boardIssues ++ esIssues
+      filtered                = filterIssues(merged, query, tagFilter).filter(issue =>
+                                  workspaceFilter.forall(_.equalsIgnoreCase(issue.workspaceId.getOrElse(""))) &&
+                                  agentFilter.forall(agent =>
+                                    issue.assignedAgent.exists(_.equalsIgnoreCase(agent)) || issue.preferredAgent.exists(
+                                      _.equalsIgnoreCase(agent)
+                                    )
+                                  ) &&
+                                  statusFilter.forall(status => statusMatches(issue.status, status)) &&
+                                  priorityFilter.forall(p => issue.priority.toString.equalsIgnoreCase(p))
+                                )
+    yield filtered
 
   private def loadIssueAnalysisContext(
     issue: DomainIssue
@@ -2741,8 +2803,73 @@ final case class IssueControllerLive(
     issues: List[AgentIssueView]
   ): IO[PersistenceError, Map[IssueId, DispatchStatusResponse]] =
     issueDispatchStatusService
-      .statusesFor(issues.flatMap(_.id).map(IssueId.apply))
+      .statusesFor(
+        issues.collect {
+          case issue if issue.status == IssueStatus.Todo =>
+            issue.id.map(IssueId.apply)
+        }.flatten
+      )
       .mapError(mapIssueRepoError)
+
+  private def selectWorkReports(
+    reports: Map[IssueId, IssueWorkReport],
+    issues: List[AgentIssueView],
+  ): Map[IssueId, IssueWorkReport] =
+    val visibleIssueIds = issues.flatMap(_.id).map(IssueId.apply).toSet
+    reports.filter { case (issueId, _) => visibleIssueIds.contains(issueId) }
+
+  private def timed[A](label: String)(effect: IO[PersistenceError, A]): IO[PersistenceError, TimedResult[A]] =
+    for
+      startedAt   <- Clock.nanoTime
+      value       <- effect
+      completedAt <- Clock.nanoTime
+      durationMs   = nanosToMillis(completedAt - startedAt)
+      _           <- ZIO.logTrace(s"[board] $label completed in ${durationMs}ms")
+    yield TimedResult(value, durationMs)
+
+  private def timedUio[A](label: String)(effect: UIO[A]): UIO[TimedResult[A]] =
+    for
+      startedAt   <- Clock.nanoTime
+      value       <- effect
+      completedAt <- Clock.nanoTime
+      durationMs   = nanosToMillis(completedAt - startedAt)
+      _           <- ZIO.logTrace(s"[board] $label completed in ${durationMs}ms")
+    yield TimedResult(value, durationMs)
+
+  private def boardTimingHeaders(
+    route: String,
+    totalDurationMs: Long,
+    workspacesDurationMs: Long,
+    issuesDurationMs: Long,
+    workReportsDurationMs: Long,
+    dispatchDurationMs: Long,
+    issueCount: Int,
+  ): Headers =
+    Headers(
+      Header.Custom(
+        "Server-Timing",
+        s"""board_total;dur=$totalDurationMs,board_workspaces;dur=$workspacesDurationMs,board_issues;dur=$issuesDurationMs,board_work_reports;dur=$workReportsDurationMs,board_dispatch;dur=$dispatchDurationMs""",
+      ),
+      Header.Custom("X-Board-Route", route),
+      Header.Custom("X-Board-Render-Ms", totalDurationMs.toString),
+      Header.Custom("X-Board-Issue-Count", issueCount.toString),
+    )
+
+  private def logBoardTiming(
+    route: String,
+    totalDurationMs: Long,
+    workspacesDurationMs: Long,
+    issuesDurationMs: Long,
+    workReportsDurationMs: Long,
+    dispatchDurationMs: Long,
+    issueCount: Int,
+  ): UIO[Unit] =
+    ZIO.logTrace(
+      s"[board] route=$route totalMs=$totalDurationMs workspacesMs=$workspacesDurationMs issuesMs=$issuesDurationMs workReportsMs=$workReportsDurationMs dispatchMs=$dispatchDurationMs issueCount=$issueCount"
+    )
+
+  private def nanosToMillis(value: Long): Long =
+    value / 1000000L
 
   private def registryAgentToAgentInfo(registryAgent: _root_.agent.entity.Agent): _root_.config.entity.AgentInfo =
     _root_.config.entity.AgentInfo(
@@ -2905,37 +3032,6 @@ final case class IssueControllerLive(
       .getSetting(key)
       .map(_.exists(v => Option(v.value).getOrElse("").trim.equalsIgnoreCase("true")))
       .orElseSucceed(default)
-
-  private def settingLong(key: String): IO[PersistenceError, Option[Long]] =
-    configRepository
-      .getSetting(key)
-      .map(_.flatMap(v => Option(v.value).map(_.trim).filter(_.nonEmpty).flatMap(_.toLongOption)))
-      .orElseSucceed(None)
-
-  private def settingString(key: String): IO[PersistenceError, Option[String]] =
-    configRepository
-      .getSetting(key)
-      .map(_.flatMap(v => Option(v.value).map(_.trim).filter(_.nonEmpty)))
-      .orElseSucceed(None)
-
-  private def loadTrackerSyncStatus: IO[PersistenceError, shared.web.IssuesView.SyncStatus] =
-    for
-      lastSync <- settingString("trackers.sync.lastAt")
-                    .flatMap {
-                      case some @ Some(_) => ZIO.succeed(some)
-                      case None           => settingString("trackers.lastSyncAt")
-                    }
-      synced   <- settingLong("trackers.sync.syncedCount")
-                    .flatMap {
-                      case some @ Some(_) => ZIO.succeed(some)
-                      case None           => settingLong("trackers.syncedCount")
-                    }
-      errors   <- settingLong("trackers.sync.errorCount")
-                    .flatMap {
-                      case some @ Some(_) => ZIO.succeed(some)
-                      case None           => settingLong("trackers.errorCount")
-                    }
-    yield shared.web.IssuesView.SyncStatus(lastSync, synced.getOrElse(0L).toInt, errors.getOrElse(0L).toInt)
 
   private def withQuery(basePath: String, req: Request): String =
     val knownKeys = List("mode", "run_id", "status", "q", "tag", "workspace", "agent", "priority", "hasProof")

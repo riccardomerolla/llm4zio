@@ -15,6 +15,11 @@ class IssuesBoard {
     this.dragFromStatus = null;
     this._toastHost = null;
     this._pendingPostRefreshToast = null;
+    this._loadingCount = 0;
+    this._loadingResetTimer = null;
+    this._loadingRoot = null;
+    this._loadingFill = null;
+    this._loadingVisibleSince = 0;
 
     this.bindDragDrop();
     this.bindPointerDrag();
@@ -378,6 +383,7 @@ class IssuesBoard {
     this._closeQuickAdd(statusToken);
 
     try {
+      this._beginLoading();
       await fetch('/api/issues', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
@@ -392,6 +398,8 @@ class IssuesBoard {
       });
     } catch (_ignored) {
       // Best effort; board refresh will show current state
+    } finally {
+      this._endLoading();
     }
 
     this.refreshBoard();
@@ -410,6 +418,7 @@ class IssuesBoard {
       if (!this._shouldDeferRefresh()) return;
       event.preventDefault();
       this._refreshPending = true;
+      this._endLoading();
     });
 
     this.root.addEventListener('htmx:beforeSwap', (event) => {
@@ -425,6 +434,7 @@ class IssuesBoard {
       if (!this._shouldDeferRefresh()) return;
       event.preventDefault();
       this._refreshPending = true;
+      this._endLoading();
     });
 
     this.root.addEventListener('htmx:afterSwap', (event) => {
@@ -442,8 +452,21 @@ class IssuesBoard {
         });
         this._savedScrolls = {};
       }));
+
+      this._endLoading();
     });
 
+    this.root.addEventListener('htmx:responseError', (event) => {
+      const requestTarget = event?.detail?.target;
+      if (requestTarget !== this.root) return;
+      this._endLoading();
+    });
+
+    this.root.addEventListener('htmx:sendError', (event) => {
+      const requestTarget = event?.detail?.target;
+      if (requestTarget !== this.root) return;
+      this._endLoading();
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -581,6 +604,7 @@ class IssuesBoard {
     if (targetStatus === 'duplicated') payload.reason = 'Marked duplicated from board';
 
     try {
+      this._beginLoading();
       const response = await fetch(`/api/issues/${encodeURIComponent(issueId)}/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
@@ -609,11 +633,14 @@ class IssuesBoard {
     } catch (_error) {
       this._showToast('Could not update issue status. Check your connection and retry.');
       return false;
+    } finally {
+      this._endLoading();
     }
   }
 
   async quickAssign(issueId, agentName) {
     try {
+      this._beginLoading();
       const card = this.root.querySelector(`[data-issue-id="${CSS.escape(issueId)}"]`);
       const workspaceId = (card?.dataset?.workspaceId || '').trim();
       const body = { agentName };
@@ -632,11 +659,14 @@ class IssuesBoard {
     } catch (_error) {
       this._showToast('Could not assign issue. Check your connection and retry.');
       return false;
+    } finally {
+      this._endLoading();
     }
   }
 
   async autoAssignIssue(issueId, workspaceId = null) {
     try {
+      this._beginLoading();
       const payload = {};
       if (workspaceId && workspaceId.trim()) payload.workspaceId = workspaceId.trim();
       const response = await fetch(`/api/issues/${encodeURIComponent(issueId)}/auto-assign`, {
@@ -665,7 +695,64 @@ class IssuesBoard {
         assigned: false,
         message: 'Could not auto-assign issue. Check your connection and retry.',
       };
+    } finally {
+      this._endLoading();
     }
+  }
+
+  _ensureLoadingBar() {
+    if (this._loadingRoot?.isConnected && this._loadingFill?.isConnected) {
+      return { root: this._loadingRoot, fill: this._loadingFill };
+    }
+
+    const loadingRoot = document.querySelector('[data-board-loading]');
+    const loadingFill = loadingRoot?.querySelector('[data-board-loading-fill]') || null;
+    this._loadingRoot = loadingRoot || null;
+    this._loadingFill = loadingFill;
+    return { root: this._loadingRoot, fill: this._loadingFill };
+  }
+
+  _beginLoading() {
+    this._loadingCount += 1;
+    const { root, fill } = this._ensureLoadingBar();
+    if (!root || !fill) return;
+
+    if (this._loadingResetTimer) {
+      window.clearTimeout(this._loadingResetTimer);
+      this._loadingResetTimer = null;
+    }
+
+    this._loadingVisibleSince = Date.now();
+    this.root.dataset.boardBusy = 'true';
+    root.style.opacity = '1';
+    fill.style.transitionDuration = '480ms';
+    fill.style.transform = 'scaleX(0.28)';
+    requestAnimationFrame(() => {
+      fill.style.transform = 'scaleX(0.78)';
+    });
+  }
+
+  _endLoading() {
+    if (this._loadingCount > 0) this._loadingCount -= 1;
+    if (this._loadingCount > 0) return;
+
+    const { root, fill } = this._ensureLoadingBar();
+    delete this.root.dataset.boardBusy;
+    if (!root || !fill) return;
+
+    const visibleForMs = Date.now() - this._loadingVisibleSince;
+    const remainingMs = Math.max(0, 320 - visibleForMs);
+
+    fill.style.transitionDuration = '160ms';
+    fill.style.transform = 'scaleX(1)';
+
+    this._loadingResetTimer = window.setTimeout(() => {
+      root.style.opacity = '0';
+      fill.style.transitionDuration = '0ms';
+      fill.style.transform = 'scaleX(0)';
+      this._loadingResetTimer = null;
+      this._loadingVisibleSince = 0;
+    }, remainingMs + 160);
   }
 
   _ensureToastHost() {
@@ -861,9 +948,11 @@ class IssuesBoard {
     }
 
     this._refreshInFlight = true;
+    this._beginLoading();
 
     const onSettled = () => {
       this._refreshInFlight = false;
+      this._endLoading();
       this._flushPendingRefresh();
     };
 

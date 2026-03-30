@@ -1,17 +1,16 @@
-## Workspace Default Branch
+## Board Refresh And Cancel Flow
 
-### Group 1: Domain and persistence
-- [x] Add a workspace default branch field to the read model with a `"main"` fallback for existing event streams.
-- [x] Introduce a dedicated workspace event for default-branch changes so persisted event schemas remain backward compatible.
-- [x] Update repository and model tests to cover the new default-branch behaviour.
+### Group 1: Status correctness
+- [x] Stop filtering canceled issues out of the board data set so drag-and-drop into Canceled remains visible after refresh.
+- [x] Align board status loading and rendering with the supported board columns and verify canceled/archive behavior for workspace-backed board issues.
+- [x] Add focused controller and view coverage for canceled issues on the board.
 
-### Group 2: Workspace create/edit flow
-- [x] Extend workspace create and update request parsing to accept a default branch, normalizing empty input to `"main"`.
-- [x] Persist default-branch changes during workspace add/edit operations.
-- [x] Update the workspace UI to expose the default branch on create and edit forms and show it in workspace details.
-- [x] Add controller and view coverage for the new form field.
+### Group 2: Drag-and-drop feedback
+- [x] Add a lightweight top loading bar for board page and fragment refresh activity.
+- [x] Surface in-flight feedback during drag-and-drop mutations and refreshes so the user can tell when the board is updating.
+- [x] Add focused client-side rendering coverage for the new loading affordance where practical.
 
-### Group 3: Board orchestration
-- [x] Replace the hard-coded `ensureMainBranch` check with validation against the workspace-configured default branch.
-- [x] Add board orchestrator coverage for non-`main` default branches and mismatch failures.
-- [x] Run formatting, targeted tests, and review the completed changes before finishing.
+### Group 3: Fragment performance
+- [x] Reduce board and fragment latency by removing unnecessary work from the refresh path and parallelizing independent data loads.
+- [x] Add lightweight timing instrumentation for board page and fragment rendering to make future slowdowns visible in logs and responses.
+- [x] Run formatting, targeted tests, and a review pass for the completed changes before finishing.

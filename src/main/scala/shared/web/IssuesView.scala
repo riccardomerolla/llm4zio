@@ -141,6 +141,18 @@ object IssuesView:
       else s"/board/fragment?${queryParts.mkString("&")}"
 
     Layout.page("Issue Board", "/board")(
+      div(
+        attr("data-board-loading") := "true",
+        cls                        := "pointer-events-none fixed inset-x-0 top-0 z-[90]",
+        attr("aria-hidden")        := "true",
+        style                      := "height:3px;opacity:0;transition:opacity 140ms ease;",
+      )(
+        div(
+          attr("data-board-loading-fill") := "true",
+          cls                             := "h-full w-full",
+          style                           := "transform-origin:left center;transform:scaleX(0);background:linear-gradient(90deg,#34d399 0%,#38bdf8 55%,#6366f1 100%);box-shadow:0 0 18px rgba(56,189,248,0.45);transition:transform 420ms ease;",
+        )
+      ),
       div(cls := "flex flex-col gap-2 h-[calc(100dvh-3.5rem)] -mb-4")(
         div(cls := "rounded-xl border border-white/10 bg-slate-900/60 px-4 py-3 flex-shrink-0")(
           div(cls := "flex flex-wrap items-center justify-between gap-3")(
