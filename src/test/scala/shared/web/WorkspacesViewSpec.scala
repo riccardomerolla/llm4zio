@@ -33,6 +33,7 @@ object WorkspacesViewSpec extends ZIOSpecDefault:
     cliTool = "claude",
     createdAt = Instant.parse("2026-02-24T10:00:00Z"),
     updatedAt = Instant.parse("2026-02-24T10:00:00Z"),
+    defaultBranch = "main",
   )
 
   private val dockerWs  = sampleWs.copy(
@@ -72,6 +73,7 @@ object WorkspacesViewSpec extends ZIOSpecDefault:
         html.contains("my-api"),
         html.contains("/home/user/my-api"),
         html.contains("claude"), // default cliTool
+        html.contains("Default branch"),
       )
     },
     test("page renders empty state when no workspaces") {
@@ -130,10 +132,18 @@ object WorkspacesViewSpec extends ZIOSpecDefault:
         html.contains("Re-analyze"),
         html.contains("Re-analyzing..."),
         html.contains("aria-busy"),
+        html.contains("Default branch: main"),
         html.contains("Code Review"),
         html.contains("Architecture"),
         html.contains("Running"),
         html.contains("Completed"),
+      )
+    },
+    test("new workspace form renders default branch field") {
+      val html = WorkspacesView.newWorkspaceForm
+      assertTrue(
+        html.contains("""name="defaultBranch""""),
+        html.contains("""value="main""""),
       )
     },
     test("runsDashboardPage renders dashboard table and quick actions") {

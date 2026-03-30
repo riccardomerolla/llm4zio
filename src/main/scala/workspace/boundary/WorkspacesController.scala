@@ -196,6 +196,15 @@ object WorkspacesController:
                               )
                             )
                             .mapError(persistErr)
+            _          <- repo
+                            .append(
+                              WorkspaceEvent.DefaultBranchChanged(
+                                workspaceId = id,
+                                defaultBranch = patch.defaultBranch,
+                                occurredAt = now,
+                              )
+                            )
+                            .mapError(persistErr)
             _          <- analysisScheduler.triggerForWorkspaceEvent(id).forkDaemon
             all        <- repo.list.mapError(persistErr)
             agents     <- agentRegistry.getAllAgents
@@ -224,6 +233,15 @@ object WorkspacesController:
                                                   description = patch.description,
                                                   cliTool = patch.cliTool,
                                                   runMode = patch.runMode,
+                                                  occurredAt = now,
+                                                )
+                                              )
+                                              .mapError(persistErr)
+                              _          <- repo
+                                              .append(
+                                                WorkspaceEvent.DefaultBranchChanged(
+                                                  workspaceId = id,
+                                                  defaultBranch = patch.defaultBranch,
                                                   occurredAt = now,
                                                 )
                                               )
@@ -516,13 +534,15 @@ object WorkspacesController:
           }
           .toMap
 
-        val name         = fields.getOrElse("name", "")
-        val localPath    = fields.getOrElse("localPath", "")
-        val defaultAgent = fields.get("defaultAgent").filter(_.nonEmpty)
-        val description  = fields.get("description").filter(_.nonEmpty)
-        val cliTool      = fields.get("cliTool").filter(_.nonEmpty).getOrElse("claude")
-        val runModeType  = fields.getOrElse("runModeType", "host")
-        val runMode      =
+        val name          = fields.getOrElse("name", "")
+        val localPath     = fields.getOrElse("localPath", "")
+        val defaultAgent  = fields.get("defaultAgent").filter(_.nonEmpty)
+        val defaultBranch =
+          Workspace.normalizeDefaultBranch(fields.getOrElse("defaultBranch", Workspace.DefaultBranch))
+        val description   = fields.get("description").filter(_.nonEmpty)
+        val cliTool       = fields.get("cliTool").filter(_.nonEmpty).getOrElse("claude")
+        val runModeType   = fields.getOrElse("runModeType", "host")
+        val runMode       =
           if runModeType == "docker" then
             val image         = fields.getOrElse("dockerImage", "")
             val network       = fields.get("dockerNetwork").filter(_.nonEmpty)
@@ -539,7 +559,15 @@ object WorkspacesController:
         if name.isEmpty || localPath.isEmpty then
           ZIO.fail(Response.badRequest("name and localPath are required"))
         else
-          ZIO.succeed(WorkspaceCreateRequest(name, localPath, defaultAgent, description, runMode, cliTool))
+          ZIO.succeed(WorkspaceCreateRequest(
+            name,
+            localPath,
+            defaultAgent,
+            defaultBranch,
+            description,
+            runMode,
+            cliTool,
+          ))
       }
 
   /** Parse a URL-encoded form body into an AssignRunRequest. */
@@ -945,6 +973,7 @@ case class WorkspaceCreateRequest(
   name: String,
   localPath: String,
   defaultAgent: Option[String],
+  defaultBranch: String = Workspace.DefaultBranch,
   description: Option[String],
   runMode: RunMode = RunMode.Host,
   cliTool: String = "claude",

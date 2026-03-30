@@ -59,9 +59,15 @@ case class Workspace(
   cliTool: String,
   createdAt: Instant,
   updatedAt: Instant,
+  defaultBranch: String = Workspace.DefaultBranch,
 ) derives JsonCodec, Schema
 
 object Workspace:
+  val DefaultBranch = "main"
+
+  def normalizeDefaultBranch(value: String): String =
+    Option(value).map(_.trim).filter(_.nonEmpty).getOrElse(DefaultBranch)
+
   def fromEvents(events: List[WorkspaceEvent]): Either[String, Workspace] =
     events match
       case Nil => Left("Cannot rebuild Workspace from an empty event stream")
@@ -91,6 +97,7 @@ object Workspace:
                   name = e.name,
                   localPath = e.localPath,
                   defaultAgent = e.defaultAgent,
+                  defaultBranch = DefaultBranch,
                   description = e.description,
                   enabled = true,
                   runMode = e.runMode,
@@ -127,6 +134,18 @@ object Workspace:
         current
           .toRight(s"Workspace ${e.workspaceId} not initialised before Disabled event")
           .map(ws => Some(ws.copy(enabled = false, updatedAt = e.occurredAt)))
+
+      case e: WorkspaceEvent.DefaultBranchChanged =>
+        current
+          .toRight(s"Workspace ${e.workspaceId} not initialised before DefaultBranchChanged event")
+          .map(ws =>
+            Some(
+              ws.copy(
+                defaultBranch = normalizeDefaultBranch(e.defaultBranch),
+                updatedAt = e.occurredAt,
+              )
+            )
+          )
 
       case _: WorkspaceEvent.Deleted => Right(None)
 

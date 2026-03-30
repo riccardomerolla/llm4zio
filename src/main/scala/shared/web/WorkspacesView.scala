@@ -133,6 +133,7 @@ object WorkspacesView:
           ),
           p(cls := "mt-1 text-sm text-slate-400 font-mono")(ws.localPath),
           p(cls := "mt-1 text-xs text-slate-500")(s"CLI: ${ws.cliTool}"),
+          p(cls := "mt-1 text-xs text-slate-500")(s"Default branch: ${ws.defaultBranch}"),
           p(cls := "mt-1 text-xs text-slate-500")(runModeLabel(ws.runMode)),
           ws.description.map(d =>
             p(cls := "mt-1 text-sm text-slate-400")(d)
@@ -178,6 +179,7 @@ object WorkspacesView:
             else Components.badge("disabled", "gray"),
           ),
           p(cls := "mt-0.5 text-xs text-slate-400 font-mono truncate max-w-xs")(ws.localPath),
+          p(cls := "mt-0.5 text-xs text-slate-500")(s"Default branch: ${ws.defaultBranch}"),
           ws.description.map(d => p(cls := "mt-0.5 text-xs text-slate-500 truncate max-w-xs")(d)).getOrElse(frag()),
         ),
         tag("td")(cls := "hidden px-4 py-3 text-sm text-slate-300 sm:table-cell")(ws.cliTool),
@@ -328,6 +330,12 @@ object WorkspacesView:
       )(
         formField("name", "Name", ws.map(_.name).getOrElse(""), required = true),
         formField("localPath", "Local path", ws.flatMap(v => Some(v.localPath)).getOrElse(""), required = true),
+        formField(
+          "defaultBranch",
+          "Default branch",
+          ws.map(_.defaultBranch).getOrElse(workspace.entity.Workspace.DefaultBranch),
+          required = true,
+        ),
         formField("description", "Description", ws.flatMap(_.description).getOrElse(""), required = false),
         cliToolSelectField(ws.map(_.cliTool).getOrElse("gemini")),
         runModeField(ws.map(_.runMode).getOrElse(RunMode.Host), formId),

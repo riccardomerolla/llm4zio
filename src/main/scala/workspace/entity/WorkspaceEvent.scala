@@ -38,6 +38,12 @@ object WorkspaceEvent:
     occurredAt: Instant,
   ) extends WorkspaceEvent
 
+  final case class DefaultBranchChanged(
+    workspaceId: String,
+    defaultBranch: String,
+    occurredAt: Instant,
+  ) extends WorkspaceEvent
+
   final case class Enabled(workspaceId: String, occurredAt: Instant)  extends WorkspaceEvent
   final case class Disabled(workspaceId: String, occurredAt: Instant) extends WorkspaceEvent
   final case class Deleted(workspaceId: String, occurredAt: Instant)  extends WorkspaceEvent

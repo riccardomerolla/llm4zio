@@ -30,6 +30,7 @@ object WorkspacesControllerSpec extends ZIOSpecDefault:
     cliTool = "claude",
     createdAt = Instant.parse("2026-02-24T10:00:00Z"),
     updatedAt = Instant.parse("2026-02-24T10:00:00Z"),
+    defaultBranch = "main",
   )
 
   private val sampleRun = WorkspaceRun(
@@ -53,7 +54,7 @@ object WorkspacesControllerSpec extends ZIOSpecDefault:
     extends WorkspaceRepository:
     def append(event: WorkspaceEvent): IO[shared.errors.PersistenceError, Unit]                      =
       event match
-        case e: WorkspaceEvent.Created =>
+        case e: WorkspaceEvent.Created              =>
           ref.update(_ + (e.workspaceId -> Workspace(
             e.workspaceId,
             e.name,
@@ -65,9 +66,16 @@ object WorkspacesControllerSpec extends ZIOSpecDefault:
             e.cliTool,
             e.occurredAt,
             e.occurredAt,
+            Workspace.DefaultBranch,
           )))
-        case e: WorkspaceEvent.Deleted => ref.update(_ - e.workspaceId)
-        case _                         => ZIO.unit
+        case e: WorkspaceEvent.DefaultBranchChanged =>
+          ref.update(m =>
+            m.get(e.workspaceId).fold(m)(ws =>
+              m + (e.workspaceId -> ws.copy(defaultBranch = Workspace.normalizeDefaultBranch(e.defaultBranch)))
+            )
+          )
+        case e: WorkspaceEvent.Deleted              => ref.update(_ - e.workspaceId)
+        case _                                      => ZIO.unit
     def list: IO[shared.errors.PersistenceError, List[Workspace]]                                    = ref.get.map(_.values.toList)
     def get(id: String): IO[shared.errors.PersistenceError, Option[Workspace]]                       = ref.get.map(_.get(id))
     def delete(id: String): IO[shared.errors.PersistenceError, Unit]                                 = ref.update(_ - id)
@@ -334,6 +342,7 @@ object WorkspacesControllerSpec extends ZIOSpecDefault:
         name = "my-api",
         localPath = "/tmp/my-api",
         defaultAgent = Some("code-agent"),
+        defaultBranch = "main",
         description = None,
       )
       val decoded = req.toJson.fromJson[WorkspaceCreateRequest]
@@ -344,6 +353,7 @@ object WorkspacesControllerSpec extends ZIOSpecDefault:
         name = "sandboxed",
         localPath = "/tmp/sandboxed",
         defaultAgent = Some("code-agent"),
+        defaultBranch = "develop",
         description = None,
         runMode = RunMode.Docker(image = "opencode:latest", network = Some("none")),
       )
@@ -355,6 +365,7 @@ object WorkspacesControllerSpec extends ZIOSpecDefault:
         name = "remote",
         localPath = "/tmp/remote",
         defaultAgent = Some("code-agent"),
+        defaultBranch = "release",
         description = Some("cloud runtime"),
         runMode = RunMode.Cloud(
           provider = "aws-fargate",
@@ -365,6 +376,26 @@ object WorkspacesControllerSpec extends ZIOSpecDefault:
       )
       val decoded = req.toJson.fromJson[WorkspaceCreateRequest]
       assertTrue(decoded == Right(req))
+    },
+    test("POST /api/workspaces stores configured default branch") {
+      for
+        wsRef      <- Ref.make(Map.empty[String, Workspace])
+        runRef     <- Ref.make(Map.empty[String, WorkspaceRun])
+        triggerRef <- Ref.make(List.empty[(String, Boolean)])
+        routes      = makeRoutes(wsRef, runRef, triggerRef)
+        req         = Request(
+                        method = Method.POST,
+                        url = URL(Path.decode("/api/workspaces")),
+                        body = Body.fromString(
+                          s"name=Repo&localPath=${java.net.URLEncoder.encode(sys.props("user.dir"), "UTF-8")}&defaultBranch=develop"
+                        ),
+                      )
+        resp       <- routes.runZIO(req)
+        workspaces <- wsRef.get
+      yield assertTrue(
+        resp.status == Status.Ok,
+        workspaces.values.exists(_.defaultBranch == "develop"),
+      )
     },
     test("GET git status endpoint returns GitStatus JSON") {
       for

@@ -104,7 +104,7 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
 
     def append(event: WorkspaceEvent): IO[PersistenceError, Unit] =
       event match
-        case e: WorkspaceEvent.Created  =>
+        case e: WorkspaceEvent.Created              =>
           val ws = Workspace(
             id = e.workspaceId,
             name = e.name,
@@ -118,7 +118,7 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
             updatedAt = e.occurredAt,
           )
           wsRef.update(_ + (ws.id -> ws))
-        case e: WorkspaceEvent.Updated  =>
+        case e: WorkspaceEvent.Updated              =>
           wsRef.update(m =>
             m.get(e.workspaceId).fold(m)(ws =>
               m + (e.workspaceId -> ws.copy(
@@ -132,11 +132,17 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
               ))
             )
           )
-        case e: WorkspaceEvent.Enabled  =>
+        case e: WorkspaceEvent.DefaultBranchChanged =>
+          wsRef.update(m =>
+            m.get(e.workspaceId).fold(m)(ws =>
+              m + (e.workspaceId -> ws.copy(defaultBranch = Workspace.normalizeDefaultBranch(e.defaultBranch)))
+            )
+          )
+        case e: WorkspaceEvent.Enabled              =>
           wsRef.update(m => m.get(e.workspaceId).fold(m)(ws => m + (e.workspaceId -> ws.copy(enabled = true))))
-        case e: WorkspaceEvent.Disabled =>
+        case e: WorkspaceEvent.Disabled             =>
           wsRef.update(m => m.get(e.workspaceId).fold(m)(ws => m + (e.workspaceId -> ws.copy(enabled = false))))
-        case e: WorkspaceEvent.Deleted  => wsRef.update(_ - e.workspaceId)
+        case e: WorkspaceEvent.Deleted              => wsRef.update(_ - e.workspaceId)
 
     def list: IO[PersistenceError, List[Workspace]]              = wsRef.get.map(_.values.toList)
     def get(id: String): IO[PersistenceError, Option[Workspace]] = wsRef.get.map(_.get(id))

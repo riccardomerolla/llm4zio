@@ -100,6 +100,7 @@ object WorkspaceRepositorySpec extends ZIOSpecDefault:
             got.isDefined &&
             got.get.name == "my-api" &&
             got.get.cliTool == "gemini" &&
+            got.get.defaultBranch == "main" &&
             got.get.enabled == true
           )).provideLayer(layerFor(dir))
         }
@@ -123,6 +124,13 @@ object WorkspaceRepositorySpec extends ZIOSpecDefault:
             repo = WorkspaceRepositoryES(svc)
             _   <- repo.append(createdWs)
             _   <- repo.append(
+                     WorkspaceEvent.DefaultBranchChanged(
+                       workspaceId = "ws-1",
+                       defaultBranch = "develop",
+                       occurredAt = now.plusSeconds(1),
+                     )
+                   )
+            _   <- repo.append(
                      WorkspaceEvent.Updated(
                        workspaceId = "ws-1",
                        name = "my-api-v2",
@@ -138,6 +146,7 @@ object WorkspaceRepositorySpec extends ZIOSpecDefault:
           yield assertTrue(
             got.exists(_.name == "my-api-v2") &&
             got.exists(_.cliTool == "claude") &&
+            got.exists(_.defaultBranch == "develop") &&
             got.exists(_.description.contains("updated"))
           )).provideLayer(layerFor(dir))
         }

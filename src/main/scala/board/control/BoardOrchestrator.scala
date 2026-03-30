@@ -99,10 +99,10 @@ final case class BoardOrchestratorLive(
 
   override def dispatchCycle(workspacePath: String): IO[BoardError, DispatchResult] =
     for
-      _         <- ensureMainBranch(workspacePath)
+      workspace <- resolveWorkspaceByPath(workspacePath)
+      _         <- ensureDefaultBranch(workspace)
       board     <- boardRepository.readBoard(workspacePath)
       ready     <- dependencyResolver.readyToDispatch(board)
-      workspace <- resolveWorkspaceByPath(workspacePath)
       result    <- ZIO.foldLeft(ready)(DispatchResult(Nil, Nil)) { (acc, issue) =>
                      dispatchIssue(
                        workspacePath = workspacePath,
@@ -130,9 +130,9 @@ final case class BoardOrchestratorLive(
 
   override def approveIssue(workspacePath: String, issueId: BoardIssueId): IO[BoardError, Unit] =
     for
-      _         <- ensureMainBranch(workspacePath)
-      issue     <- boardRepository.readIssue(workspacePath, issueId)
       workspace <- resolveWorkspaceByPath(workspacePath)
+      _         <- ensureDefaultBranch(workspace)
+      issue     <- boardRepository.readIssue(workspacePath, issueId)
       _         <- ensureGovernanceAllows(
                      workspaceId = workspace.id,
                      issue = issue,
@@ -188,7 +188,7 @@ final case class BoardOrchestratorLive(
 
   override def assignIssue(workspacePath: String, issueId: BoardIssueId, agentName: String): IO[BoardError, Unit] =
     for
-      _   <- ensureMainBranch(workspacePath)
+      _   <- ensureDefaultBranch(workspacePath)
       now <- Clock.instant
       _   <- boardRepository.updateIssue(
                workspacePath,
@@ -208,7 +208,7 @@ final case class BoardOrchestratorLive(
     branchName: String,
   ): IO[BoardError, Unit] =
     for
-      _   <- ensureMainBranch(workspacePath)
+      _   <- ensureDefaultBranch(workspacePath)
       now <- Clock.instant
       _   <- boardRepository.moveIssue(workspacePath, issueId, BoardColumn.InProgress)
       _   <- boardRepository.updateIssue(
@@ -343,7 +343,7 @@ final case class BoardOrchestratorLive(
 
   private def completeFailure(workspacePath: String, issueId: BoardIssueId, details: String): IO[BoardError, Unit] =
     for
-      _     <- ensureMainBranch(workspacePath)
+      _     <- ensureDefaultBranch(workspacePath)
       now   <- Clock.instant
       reason = Option(details).map(_.trim).filter(_.nonEmpty).getOrElse("Run failed")
       _     <- boardRepository.moveIssue(workspacePath, issueId, BoardColumn.Backlog)
@@ -381,16 +381,20 @@ final case class BoardOrchestratorLive(
           case None            => ZIO.fail(BoardError.BoardNotFound(workspacePath))
       )
 
-  private def ensureMainBranch(workspacePath: String): IO[BoardError, Unit] =
+  private def ensureDefaultBranch(workspacePath: String): IO[BoardError, Unit] =
+    resolveWorkspaceByPath(workspacePath).flatMap(ensureDefaultBranch)
+
+  private def ensureDefaultBranch(ws: workspace.entity.Workspace): IO[BoardError, Unit] =
+    val targetBranch = workspace.entity.Workspace.normalizeDefaultBranch(ws.defaultBranch)
     gitService
-      .branchInfo(workspacePath)
+      .branchInfo(ws.localPath)
       .mapError(mapGitError("git branch --show-current"))
       .flatMap { info =>
-        if !info.isDetached && info.current == "main" then ZIO.unit
+        if !info.isDetached && info.current == targetBranch then ZIO.unit
         else
           ZIO.fail(
             BoardError.ConcurrencyConflict(
-              s"Board mutations are allowed only on 'main' (current='${info.current}', detached=${info.isDetached})"
+              s"Board mutations are allowed only on '$targetBranch' (current='${info.current}', detached=${info.isDetached})"
             )
           )
       }

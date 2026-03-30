@@ -62,6 +62,18 @@ object RunModeSchemaRoundTripSpec extends ZIOSpecDefault:
         case _            => "failed"
       assertTrue(result == "matched")
     },
+    test("WorkspaceEvent.DefaultBranchChanged round-trips via ZIO Schema JsonCodec") {
+      val schema  = summon[Schema[WorkspaceEvent]]
+      val codec   = JsonCodec.jsonCodec(schema)
+      val event   = WorkspaceEvent.DefaultBranchChanged(
+        workspaceId = "ws-1",
+        defaultBranch = "develop",
+        occurredAt = Instant.parse("2026-03-30T08:00:00Z"),
+      )
+      val json    = codec.encodeJson(event, None).toString
+      val decoded = codec.decodeJson(json)
+      assertTrue(decoded == Right(event))
+    },
     test("RunMode.Cloud round-trips via ZIO Schema JsonCodec") {
       val schema  = summon[Schema[RunMode]]
       val codec   = JsonCodec.jsonCodec(schema)

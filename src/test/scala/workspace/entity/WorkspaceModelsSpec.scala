@@ -46,6 +46,7 @@ object WorkspaceModelsSpec extends ZIOSpecDefault:
         cliTool = "gemini",
         createdAt = Instant.parse("2026-02-24T10:00:00Z"),
         updatedAt = Instant.parse("2026-02-24T10:00:00Z"),
+        defaultBranch = "main",
       )
       val json    = ws.toJson
       val decoded = json.fromJson[Workspace]
@@ -63,6 +64,7 @@ object WorkspaceModelsSpec extends ZIOSpecDefault:
         cliTool = "opencode",
         createdAt = Instant.parse("2026-02-24T10:00:00Z"),
         updatedAt = Instant.parse("2026-02-24T10:00:00Z"),
+        defaultBranch = "main",
       )
       val json    = ws.toJson
       val decoded = json.fromJson[Workspace]
@@ -85,6 +87,7 @@ object WorkspaceModelsSpec extends ZIOSpecDefault:
         cliTool = "codex",
         createdAt = Instant.parse("2026-02-24T10:00:00Z"),
         updatedAt = Instant.parse("2026-02-24T10:00:00Z"),
+        defaultBranch = "release",
       )
       val json    = ws.toJson
       val decoded = json.fromJson[Workspace]
@@ -110,6 +113,47 @@ object WorkspaceModelsSpec extends ZIOSpecDefault:
       val json    = run.toJson
       val decoded = json.fromJson[WorkspaceRun]
       assertTrue(decoded == Right(run))
+    },
+    test("Workspace defaults to main branch when rebuilt from legacy events") {
+      val now       = Instant.parse("2026-03-30T08:00:00Z")
+      val workspace = Workspace.fromEvents(
+        List(
+          WorkspaceEvent.Created(
+            workspaceId = "ws-legacy",
+            name = "legacy",
+            localPath = "/tmp/legacy",
+            defaultAgent = None,
+            description = None,
+            cliTool = "codex",
+            runMode = RunMode.Host,
+            occurredAt = now,
+          )
+        )
+      )
+      assertTrue(workspace.exists(_.defaultBranch == "main"))
+    },
+    test("Workspace applies explicit default branch change event") {
+      val now       = Instant.parse("2026-03-30T08:00:00Z")
+      val workspace = Workspace.fromEvents(
+        List(
+          WorkspaceEvent.Created(
+            workspaceId = "ws-branch",
+            name = "branchy",
+            localPath = "/tmp/branchy",
+            defaultAgent = None,
+            description = None,
+            cliTool = "codex",
+            runMode = RunMode.Host,
+            occurredAt = now,
+          ),
+          WorkspaceEvent.DefaultBranchChanged(
+            workspaceId = "ws-branch",
+            defaultBranch = "develop",
+            occurredAt = now.plusSeconds(1),
+          ),
+        )
+      )
+      assertTrue(workspace.exists(_.defaultBranch == "develop"))
     },
     test("RunStatus values round-trip through JSON") {
       val statuses: List[RunStatus] = List(

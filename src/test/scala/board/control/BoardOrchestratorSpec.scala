@@ -233,6 +233,9 @@ object BoardOrchestratorSpec extends ZIOSpecDefault:
     issues: List[BoardIssue],
     runsByIssueRefSeed: Map[String, List[WorkspaceRun]] = Map.empty,
     governanceDecision: GovernanceTransitionDecision = allowDecision,
+    workspaceDefaultBranch: String = "main",
+    currentBranch: String = "main",
+    detached: Boolean = false,
   ): UIO[(
     BoardOrchestratorLive,
     Ref[Map[BoardIssueId, BoardIssue]],
@@ -259,9 +262,10 @@ object BoardOrchestratorSpec extends ZIOSpecDefault:
                           cliTool = "codex",
                           createdAt = Instant.parse("2026-03-20T09:00:00Z"),
                           updatedAt = Instant.parse("2026-03-20T09:00:00Z"),
+                          defaultBranch = workspaceDefaultBranch,
                         )
       workspaceRepo   = StubWorkspaceRepo(workspace, runsByIssueRef)
-      gitService      = StubGitService(mergesRef)
+      gitService      = StubGitService(mergesRef, currentBranch = currentBranch, detached = detached)
       orchestrator    = BoardOrchestratorLive(
                           boardRepository = repo,
                           dependencyResolver = BoardDependencyResolverLive(),
@@ -419,6 +423,43 @@ object BoardOrchestratorSpec extends ZIOSpecDefault:
           result.skippedIssueIds == List(BoardIssueId("task-5")),
           state(BoardIssueId("task-5")).column == BoardColumn.Todo,
           assigned.isEmpty,
+        )
+      },
+      test("dispatchCycle allows configured default branch different from main") {
+        val readyTask = issue("task-6", BoardColumn.Todo)
+
+        for
+          (orchestrator, boardRef, assignedRef, _, _) <- makeOrchestrator(
+                                                           List(readyTask),
+                                                           workspaceDefaultBranch = "develop",
+                                                           currentBranch = "develop",
+                                                         )
+          result                                      <- orchestrator.dispatchCycle(workspacePath)
+          state                                       <- boardRef.get
+          assigned                                    <- assignedRef.get
+        yield assertTrue(
+          result.dispatchedIssueIds == List(BoardIssueId("task-6")),
+          result.skippedIssueIds.isEmpty,
+          state(BoardIssueId("task-6")).column == BoardColumn.InProgress,
+          assigned.nonEmpty,
+        )
+      },
+      test("dispatchCycle fails when current branch does not match configured default branch") {
+        val readyTask = issue("task-7", BoardColumn.Todo)
+
+        for
+          (orchestrator, _, _, _, _) <- makeOrchestrator(
+                                          List(readyTask),
+                                          workspaceDefaultBranch = "develop",
+                                          currentBranch = "main",
+                                        )
+          result                     <- orchestrator.dispatchCycle(workspacePath).either
+        yield assertTrue(
+          result == Left(
+            BoardError.ConcurrencyConflict(
+              "Board mutations are allowed only on 'develop' (current='main', detached=false)"
+            )
+          )
         )
       },
     )
