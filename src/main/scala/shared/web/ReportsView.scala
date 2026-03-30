@@ -29,7 +29,7 @@ object ReportsView:
         div(cls := "px-6 py-4 border-b border-white/10")(
           h2(cls := "text-lg font-semibold text-white")("Task Reports")
         ),
-        if reports.isEmpty then Components.emptyState("No reports found for this task.")
+        if reports.isEmpty then Components.emptyStateFull("No reports found for this task.")
         else
           div(cls := "overflow-x-auto")(
             table(cls := "min-w-full divide-y divide-white/10")(

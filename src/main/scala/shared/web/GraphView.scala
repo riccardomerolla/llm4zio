@@ -26,7 +26,7 @@ object GraphView:
           "Back to Task"
         ),
       ),
-      if graphReports.isEmpty then Components.emptyState("No graph reports available for this task.")
+      if graphReports.isEmpty then Components.emptyStateFull("No graph reports available for this task.")
       else
         div(cls := "space-y-4")(
           selector(graphReports),

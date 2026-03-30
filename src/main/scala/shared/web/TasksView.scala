@@ -1,9 +1,8 @@
 package shared.web
 
 import _root_.config.entity.WorkflowDefinition
-import db.{ RunStatus, TaskRunRow }
 import scalatags.Text.all.*
-import taskrun.entity.TaskStep
+import taskrun.entity.{ RunStatus, TaskRunRow, TaskStep }
 
 final case class TaskListItem(
   run: TaskRunRow,
@@ -37,7 +36,7 @@ object TasksView:
           div(cls := "px-6 py-4 border-b border-white/10")(
             h2(cls := "text-lg font-semibold text-white")("Recent Tasks")
           ),
-          if tasks.isEmpty then Components.emptyState("No tasks yet. Create one from the form.")
+          if tasks.isEmpty then Components.emptyStateFull("No tasks yet. Create one from the form.")
           else tasksTable(tasks),
         ),
         createTaskForm(workflows),
@@ -102,7 +101,7 @@ object TasksView:
     div(cls := "grid grid-cols-1 lg:grid-cols-3 gap-6")(
       div(cls := "lg:col-span-2 bg-white/5 ring-1 ring-white/10 rounded-lg p-6")(
         h2(cls := "text-lg font-semibold text-white mb-4")("Step Progress"),
-        if task.steps.isEmpty then Components.emptyState("No workflow steps available for this task.")
+        if task.steps.isEmpty then Components.emptyStateFull("No workflow steps available for this task.")
         else
           ul(cls := "space-y-3")(
             task.steps.zipWithIndex.map {

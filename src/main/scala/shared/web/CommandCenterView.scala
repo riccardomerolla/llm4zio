@@ -1,8 +1,8 @@
 package shared.web
 
 import activity.entity.ActivityEvent
-import db.TaskRunRow
 import scalatags.Text.all.*
+import taskrun.entity.TaskRunRow
 
 object CommandCenterView:
 

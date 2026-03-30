@@ -43,7 +43,6 @@ object IssuesView:
     case IssueStatus.Canceled    => "bg-rose-500"
     case IssueStatus.Duplicated  => "bg-slate-500"
     case IssueStatus.Archived    => "bg-gray-400"
-    case _                       => "bg-slate-500"
 
   def list(
     runId: Option[String],
@@ -1458,11 +1457,6 @@ object IssuesView:
       case IssueStatus.Canceled    => "border-l-4 border-l-rose-500"
       case IssueStatus.Duplicated  => "border-l-4 border-l-slate-500"
       case IssueStatus.Archived    => "border-l-4 border-l-gray-400"
-      case IssueStatus.Open        => "border-l-4 border-l-slate-400"
-      case IssueStatus.Assigned    => "border-l-4 border-l-blue-400"
-      case IssueStatus.Completed   => "border-l-4 border-l-emerald-400"
-      case IssueStatus.Failed      => "border-l-4 border-l-orange-400"
-      case IssueStatus.Skipped     => "border-l-4 border-l-rose-500"
     val statusDotCls  = issue.status match
       case IssueStatus.Backlog     => "rounded-full border-2 border-slate-400 bg-transparent"
       case IssueStatus.Todo        => "rounded-full border-2 border-blue-400 bg-transparent"
@@ -1474,11 +1468,6 @@ object IssuesView:
       case IssueStatus.Canceled    => "rounded-full bg-rose-500"
       case IssueStatus.Duplicated  => "rounded-full bg-slate-500"
       case IssueStatus.Archived    => "rounded-full bg-gray-400"
-      case IssueStatus.Open        => "rounded-full border-2 border-slate-400 bg-transparent"
-      case IssueStatus.Assigned    => "rounded-full border-2 border-blue-400 bg-transparent"
-      case IssueStatus.Completed   => "rounded-full bg-emerald-400"
-      case IssueStatus.Failed      => "rounded-full bg-orange-400"
-      case IssueStatus.Skipped     => "rounded-full bg-rose-500"
     val shortId       = s"#${issueId.take(8)}"
     val powHtml       = workReport.map(r => ProofOfWorkView.evidenceBar(r)).getOrElse("")
     val requiredCaps  = safeTags(issue.requiredCapabilities)
@@ -1903,8 +1892,6 @@ object IssuesView:
     status match
       case IssueStatus.Backlog     => "backlog"
       case IssueStatus.Todo        => "todo"
-      case IssueStatus.Open        => "open"
-      case IssueStatus.Assigned    => "assigned"
       case IssueStatus.InProgress  => "in_progress"
       case IssueStatus.HumanReview => "human_review"
       case IssueStatus.Rework      => "rework"
@@ -1913,9 +1900,6 @@ object IssuesView:
       case IssueStatus.Canceled    => "canceled"
       case IssueStatus.Duplicated  => "duplicated"
       case IssueStatus.Archived    => "archived"
-      case IssueStatus.Completed   => "completed"
-      case IssueStatus.Failed      => "failed"
-      case IssueStatus.Skipped     => "skipped"
 
   private def modeToggle(
     currentMode: String,

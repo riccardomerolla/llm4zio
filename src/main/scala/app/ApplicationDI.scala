@@ -54,7 +54,6 @@ import gateway.control.{ MessageRouter, * }
 import gateway.entity.*
 import governance.control.{ GovernancePolicyEngine, GovernancePolicyService }
 import governance.entity.{ GovernancePolicyEventStoreES, GovernancePolicyRepositoryES }
-import io.github.riccardomerolla.zio.eclipsestore.service.{ LifecycleCommand, LifecycleStatus }
 import issues.boundary.IssueController as IssuesIssueController
 import issues.control.{ IssueWorkReportHydrator, IssueWorkReportSubscriber }
 import issues.entity.IssueRepositoryBoard
@@ -274,7 +273,6 @@ object ApplicationDI:
   def webServerLayer(config: GatewayConfig, storeConfig: StoreConfig): ZLayer[Any, Nothing, WebServer] =
     ZLayer.make[WebServer & AutoDispatcher & MergeAgentService & BoardOrchestrator](
       commonLayers(config, storeConfig),
-      purgeLegacyIssueDataLayer,
       IssueMarkdownParser.live,
       (BoardRepositoryFS.live ++ ZLayer.service[GitService]) >>> BoardCache.live(),
       GitWatcher.live,
@@ -361,32 +359,6 @@ object ApplicationDI:
       WorkspaceRouteModule.live,
       WebServer.live,
     ) >>> ZLayer.service[WebServer]
-
-  private val purgeLegacyIssueDataLayer: ZLayer[DataStoreModule.DataStoreService, Nothing, Unit] =
-    ZLayer.fromZIO {
-      for
-        dataStore <- ZIO.service[DataStoreModule.DataStoreService]
-        keys      <- dataStore.rawStore
-                       .streamKeys[String]
-                       .filter(key => key.startsWith("snapshot:issue:") || key.startsWith("events:issue:"))
-                       .runCollect
-                       .catchAll(_ => ZIO.succeed(Chunk.empty[String]))
-        _         <- ZIO
-                       .foreachDiscard(keys)(key => dataStore.remove[String](key).ignore)
-                       .when(keys.nonEmpty)
-        _         <- dataStore.rawStore
-                       .maintenance(LifecycleCommand.Checkpoint)
-                       .flatMap {
-                         case LifecycleStatus.Failed(message) =>
-                           ZIO.logWarning(s"Legacy issue data purge checkpoint failed: $message")
-                         case _                               =>
-                           ZIO.unit
-                       }
-                       .catchAll(err => ZIO.logWarning(s"Legacy issue data purge checkpoint failed: ${err.toString}"))
-                       .when(keys.nonEmpty)
-        _         <- ZIO.logInfo(s"Purged ${keys.size} legacy IssueRepositoryES key(s) from data store").when(keys.nonEmpty)
-      yield ()
-    }
 
   private val issueWorkReportProjectionLayer
     : ZLayer[WorkReportEventBus & issues.entity.IssueRepository & taskrun.entity.TaskRunRepository, Nothing, issues.entity.IssueWorkReportProjection] =

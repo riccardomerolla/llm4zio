@@ -103,7 +103,7 @@ object ChannelView:
     )
 
   def cardsFragment(cards: List[ChannelCardData], nowMs: Long): Frag =
-    if cards.isEmpty then Components.emptyState("No channels registered.")
+    if cards.isEmpty then Components.emptyStateFull("No channels registered.")
     else
       div(cls := "grid grid-cols-1 gap-4 lg:grid-cols-2")(
         cards.sortBy(_.name).map(card => channelCard(card, nowMs))

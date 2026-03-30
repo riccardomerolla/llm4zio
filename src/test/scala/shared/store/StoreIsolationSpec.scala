@@ -66,7 +66,7 @@ object StoreIsolationSpec extends ZIOSpecDefault:
                           contextPath = None,
                           sourceFolder = None,
                           priority = IssuePriority.Medium.toString,
-                          status = IssueStatus.Open.toString,
+                          status = IssueStatus.Backlog.toString,
                           assignedAgent = None,
                           assignedAt = None,
                           completedAt = None,
