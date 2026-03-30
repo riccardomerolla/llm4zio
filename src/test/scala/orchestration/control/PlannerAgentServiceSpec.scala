@@ -4,6 +4,7 @@ import java.time.Instant
 
 import zio.*
 import zio.test.*
+import zio.test.Assertion.*
 
 import _root_.config.entity.{ AIProviderConfig, ConfigRepository }
 import activity.control.ActivityHub
@@ -798,43 +799,13 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
           todo.head.frontmatter.proofOfWork.nonEmpty,
         )
       }.provideLayer(plannerLayer),
-      test("confirmPlan emits events for non-workspace plans") {
+      test("confirmPlan fails with IssueDraftInvalid when no workspace is set") {
         for
           service <- ZIO.service[PlannerAgentService]
-          ref     <- ZIO.service[Ref[Vector[IssueEvent]]]
           start   <- service.startSession("Plan a new planner feature", None)
-          state   <- awaitSettledPreview(service, start.conversationId)
-          result  <- service.confirmPlan(start.conversationId)
-          events  <- ref.get
-        yield assertTrue(
-          result.issueIds.size == 1,
-          events.count(_.isInstanceOf[IssueEvent.Created]) == 1,
-          !events.exists(_.isInstanceOf[IssueEvent.DependencyLinked]),
-          events.exists(_.isInstanceOf[IssueEvent.PromptTemplateUpdated]),
-          events.exists(_.isInstanceOf[IssueEvent.AcceptanceCriteriaUpdated]),
-          events.exists(_.isInstanceOf[IssueEvent.EstimateUpdated]),
-          events.exists(_.isInstanceOf[IssueEvent.KaizenSkillUpdated]),
-          events.exists(_.isInstanceOf[IssueEvent.ProofOfWorkRequirementsUpdated]),
-          events.exists(_.isInstanceOf[IssueEvent.MovedToTodo]),
-          !events.exists(_.isInstanceOf[IssueEvent.WorkspaceLinked]),
-          state.specificationId.exists(specId =>
-            events.exists {
-              case IssueEvent.ExternalRefLinked(issueId, externalRef, externalUrl, _) =>
-                issueId == result.issueIds.head &&
-                externalRef == s"spec:${specId.value}" &&
-                externalUrl.contains(s"/specifications/${specId.value}")
-              case _                                                                  => false
-            }
-          ),
-          events.exists {
-            case IssueEvent.TagsUpdated(_, tags, _) => tags.contains("skill:task-planning")
-            case _                                  => false
-          },
-          events.exists {
-            case IssueEvent.TagsUpdated(_, tags, _) => tags.exists(_.startsWith("plan:"))
-            case _                                  => false
-          },
-        )
+          _       <- awaitSettledPreview(service, start.conversationId)
+          result  <- service.confirmPlan(start.conversationId).exit
+        yield assert(result)(fails(isSubtype[PlannerAgentError.IssueDraftInvalid](anything)))
       }.provideLayer(plannerLayer),
       test("confirmPlan persists a plan and links the specification to it") {
         for

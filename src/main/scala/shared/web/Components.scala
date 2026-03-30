@@ -1,6 +1,6 @@
 package shared.web
 
-import db.RunStatus
+import taskrun.entity.RunStatus
 import scalatags.Text.all.*
 import scalatags.Text.svgAttrs.{ d, viewBox }
 import scalatags.Text.svgTags.{ path, svg }
@@ -47,12 +47,6 @@ object Components:
   def spinner(size: String = "md", label: String = "Loading"): Frag =
     tag("ab-spinner")(attr("size") := size, attr("label") := label)
 
-  /** Legacy alias used by views (wraps in htmx-indicator div for compatibility). */
-  def loadingSpinner: Frag =
-    div(cls := "htmx-indicator flex justify-center items-center p-4")(
-      spinner()
-    )
-
   // ── Progress bar ─────────────────────────────────────────────────────────
 
   /** Animated progress bar — emits `<ab-progress-bar value="current" max="total">`. */
@@ -91,12 +85,6 @@ object Components:
     )
 
   // ── Empty state ──────────────────────────────────────────────────────────
-
-  /** Legacy single-message empty state (plain Scalatags, no web component). */
-  def emptyState(message: String): Frag =
-    tag("ab-empty-state")(
-      attr("headline") := message
-    )
 
   /** Full empty state with headline, description, and optional action slot. */
   def emptyStateFull(headline: String, description: String = "", icon: String = "", action: Frag*): Frag =

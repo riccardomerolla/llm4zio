@@ -10,8 +10,6 @@ enum IssuePriority derives JsonCodec, Schema:
 
 enum IssueStatus derives JsonCodec, Schema:
   case Backlog, Todo, InProgress, HumanReview, Rework, Merging, Done, Canceled, Duplicated, Archived
-  // Legacy values kept for backward compatibility with existing data and clients.
-  case Open, Assigned, Completed, Failed, Skipped
 
 enum PipelineExecutionMode derives JsonCodec, Schema:
   case Sequential, Parallel

@@ -70,12 +70,12 @@ object IssuesBoardProofOfWorkSpec extends ZIOSpecDefault:
         assertTrue(html.contains("border-l-amber-400"))
       },
       test("board card for Open issue has slate left border class") {
-        val issue = baseIssue.copy(status = IssueStatus.Open)
+        val issue = baseIssue.copy(status = IssueStatus.Backlog)
         val html  = IssuesView.boardCardFragment(issue, Nil, workReport = None)
         assertTrue(html.contains("border-l-slate-400"))
       },
       test("board card for Failed issue has orange left border class") {
-        val issue = baseIssue.copy(status = IssueStatus.Failed)
+        val issue = baseIssue.copy(status = IssueStatus.Rework)
         val html  = IssuesView.boardCardFragment(issue, Nil, workReport = None)
         assertTrue(html.contains("border-l-orange-400"))
       },
@@ -85,7 +85,7 @@ object IssuesBoardProofOfWorkSpec extends ZIOSpecDefault:
         assertTrue(html.contains("animate-pulse"))
       },
       test("board card for Completed issue does not show animate-pulse dot") {
-        val issue = baseIssue.copy(status = IssueStatus.Completed)
+        val issue = baseIssue.copy(status = IssueStatus.Done)
         val html  = IssuesView.boardCardFragment(issue, Nil, workReport = None)
         assertTrue(!html.contains("animate-pulse"))
       },
@@ -158,7 +158,7 @@ object IssuesBoardProofOfWorkSpec extends ZIOSpecDefault:
         )
       },
       test("board card renders status dot for Open issue (ring style)") {
-        val issue = baseIssue.copy(status = IssueStatus.Open)
+        val issue = baseIssue.copy(status = IssueStatus.Backlog)
         val html  = IssuesView.boardCardFragment(issue, Nil, workReport = None)
         assertTrue(html.contains("border-slate-400"))
       },
@@ -171,7 +171,7 @@ object IssuesBoardProofOfWorkSpec extends ZIOSpecDefault:
         )
       },
       test("board card renders status dot for Failed issue") {
-        val issue = baseIssue.copy(status = IssueStatus.Failed)
+        val issue = baseIssue.copy(status = IssueStatus.Rework)
         val html  = IssuesView.boardCardFragment(issue, Nil, workReport = None)
         assertTrue(html.contains("bg-orange-400"))
       },

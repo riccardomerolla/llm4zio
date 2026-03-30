@@ -16,7 +16,7 @@ import conversation.entity.api.{ ChatConversation, ConversationEntry, MessageTyp
 import db.ChatRepository
 import governance.control.{ GovernanceEvaluationContext, GovernancePolicyService }
 import governance.entity.{ GovernanceGate, GovernanceLifecycleAction, GovernanceLifecycleStage, GovernanceTransition }
-import issues.entity.{ AgentIssue as DomainIssue, IssueEvent, IssueRepository }
+import issues.entity.{ AgentIssue as DomainIssue, IssueRepository }
 import llm4zio.core.{ LlmConfig, LlmError, LlmProvider, LlmService }
 import llm4zio.providers.{ GeminiCliExecutionContext, GeminiCliExecutor, HttpClient }
 import llm4zio.tools.JsonSchema
@@ -480,14 +480,7 @@ final case class PlannerAgentServiceLive(
               now = now,
             )
           case None              =>
-            createLegacyIssues(
-              workspaceId = None,
-              orderedDrafts = orderedDrafts,
-              specificationId = validatedPlan.specificationId,
-              planReference = persistedPlanRef(validatedPlan.id),
-              initialStatus = initialStatus,
-              now = now,
-            )
+            ZIO.fail(PlannerAgentError.IssueDraftInvalid("A workspace board is required to create issues from a plan"))
       confirmation     =
         PlannerConfirmation(state.conversationId, orderedDrafts.flatMap(draft => issueIdsByDraft.get(draft.draftId)))
       _               <- planRepository
@@ -668,113 +661,6 @@ final case class PlannerAgentServiceLive(
 
   private def persistedPlanRef(planId: PlanId): String =
     s"plan:${planId.value}"
-
-  private def createLegacyIssues(
-    workspaceId: Option[String],
-    orderedDrafts: List[PlanTaskDraft],
-    specificationId: Option[SpecificationId],
-    planReference: String,
-    initialStatus: PlannerInitialStatus,
-    now: Instant,
-  ): IO[PlannerAgentError, Map[String, IssueId]] =
-    for
-      issueIdsByDraft <- ZIO.foreach(orderedDrafts) { draft =>
-                           val issueId   = IssueId.generate
-                           val created   = IssueEvent.Created(
-                             issueId = issueId,
-                             title = draft.title.trim,
-                             description = draft.description.trim,
-                             issueType = normalizedIssueType(draft.issueType),
-                             priority = normalizedPriority(draft.priority),
-                             occurredAt = now,
-                             requiredCapabilities = sanitizeList(draft.requiredCapabilities),
-                           )
-                           val skillTags = issueLinkTags(draft.kaizenSkills, specificationId, planReference)
-                           for
-                             _ <- issueRepository.append(created).mapError(mapIssuePersistence("planner_create_issue"))
-                             _ <- ZIO.when(skillTags.nonEmpty) {
-                                    issueRepository
-                                      .append(IssueEvent.TagsUpdated(issueId, skillTags, now))
-                                      .mapError(mapIssuePersistence("planner_tags"))
-                                  }
-                             _ <- ZIO.when(draft.promptTemplate.trim.nonEmpty) {
-                                    issueRepository
-                                      .append(IssueEvent.PromptTemplateUpdated(issueId, draft.promptTemplate.trim, now))
-                                      .mapError(mapIssuePersistence("planner_prompt_template"))
-                                  }
-                             _ <- ZIO.when(draft.acceptanceCriteria.trim.nonEmpty) {
-                                    issueRepository
-                                      .append(IssueEvent.AcceptanceCriteriaUpdated(
-                                        issueId,
-                                        draft.acceptanceCriteria.trim,
-                                        now,
-                                      ))
-                                      .mapError(mapIssuePersistence("planner_acceptance"))
-                                  }
-                             _ <- draft.estimate.fold[IO[PlannerAgentError, Unit]](ZIO.unit) { estimate =>
-                                    issueRepository
-                                      .append(IssueEvent.EstimateUpdated(issueId, estimate, now))
-                                      .mapError(mapIssuePersistence("planner_estimate"))
-                                  }
-                             _ <- ZIO.when(draft.kaizenSkills.nonEmpty) {
-                                    issueRepository
-                                      .append(
-                                        IssueEvent.KaizenSkillUpdated(
-                                          issueId,
-                                          sanitizeList(draft.kaizenSkills).mkString(", "),
-                                          now,
-                                        )
-                                      )
-                                      .mapError(mapIssuePersistence("planner_kaizen"))
-                                  }
-                             _ <- ZIO.when(draft.proofOfWorkRequirements.nonEmpty) {
-                                    issueRepository
-                                      .append(
-                                        IssueEvent.ProofOfWorkRequirementsUpdated(
-                                          issueId,
-                                          sanitizeList(draft.proofOfWorkRequirements),
-                                          now,
-                                        )
-                                      )
-                                      .mapError(mapIssuePersistence("planner_proof_of_work"))
-                                  }
-                             _ <- ZIO.when(initialStatus == PlannerInitialStatus.Todo) {
-                                    issueRepository
-                                      .append(IssueEvent.MovedToTodo(issueId, movedAt = now, occurredAt = now))
-                                      .mapError(mapIssuePersistence("planner_move_todo"))
-                                  }
-                             _ <- workspaceId.fold[IO[PlannerAgentError, Unit]](ZIO.unit) { value =>
-                                    issueRepository
-                                      .append(IssueEvent.WorkspaceLinked(issueId, value, now))
-                                      .mapError(mapIssuePersistence("planner_workspace_link"))
-                                  }
-                             _ <- specificationId.fold[IO[PlannerAgentError, Unit]](ZIO.unit) { specId =>
-                                    issueRepository
-                                      .append(
-                                        IssueEvent.ExternalRefLinked(
-                                          issueId = issueId,
-                                          externalRef = specificationRef(specId),
-                                          externalUrl = Some(s"/specifications/${specId.value}"),
-                                          occurredAt = now,
-                                        )
-                                      )
-                                      .mapError(mapIssuePersistence("planner_specification_link"))
-                                  }
-                           yield draft.draftId -> issueId
-                         }.map(_.toMap)
-      _               <- ZIO.foreachDiscard(orderedDrafts) { draft =>
-                           val issueId = issueIdsByDraft(draft.draftId)
-                           ZIO.foreachDiscard(sanitizeList(draft.dependencyDraftIds)) { dependencyDraftId =>
-                             issueIdsByDraft.get(dependencyDraftId) match
-                               case Some(blockerId) =>
-                                 issueRepository
-                                   .append(IssueEvent.DependencyLinked(issueId, blockerId, now))
-                                   .mapError(mapIssuePersistence("planner_dependency_link"))
-                               case None            =>
-                                 ZIO.unit
-                           }
-                         }
-    yield issueIdsByDraft
 
   private def createWorkspaceBoardIssues(
     workspaceId: String,
@@ -1559,9 +1445,6 @@ final case class PlannerAgentServiceLive(
     )
 
   private def mapPersistence(operation: String)(error: PersistenceError): PlannerAgentError =
-    PlannerAgentError.PersistenceFailure(operation, error.toString)
-
-  private def mapIssuePersistence(operation: String)(error: shared.errors.PersistenceError): PlannerAgentError =
     PlannerAgentError.PersistenceFailure(operation, error.toString)
 
   private def mapBoardPersistence(operation: String)(error: BoardError): PlannerAgentError =

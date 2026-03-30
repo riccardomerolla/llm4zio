@@ -323,8 +323,8 @@ final case class IssueControllerLive(
                             .fromOption(parseIssueStateTag(rawStatus).map {
                               case IssueStateTag.Backlog     => IssueStatus.Backlog
                               case IssueStateTag.Todo        => IssueStatus.Todo
-                              case IssueStateTag.Open        => IssueStatus.Open
-                              case IssueStateTag.Assigned    => IssueStatus.Assigned
+                              case IssueStateTag.Open        => IssueStatus.Backlog
+                              case IssueStateTag.Assigned    => IssueStatus.Todo
                               case IssueStateTag.InProgress  => IssueStatus.InProgress
                               case IssueStateTag.HumanReview => IssueStatus.HumanReview
                               case IssueStateTag.Rework      => IssueStatus.Rework
@@ -333,9 +333,9 @@ final case class IssueControllerLive(
                               case IssueStateTag.Canceled    => IssueStatus.Canceled
                               case IssueStateTag.Duplicated  => IssueStatus.Duplicated
                               case IssueStateTag.Archived    => IssueStatus.Archived
-                              case IssueStateTag.Completed   => IssueStatus.Completed
-                              case IssueStateTag.Failed      => IssueStatus.Failed
-                              case IssueStateTag.Skipped     => IssueStatus.Skipped
+                              case IssueStateTag.Completed   => IssueStatus.Done
+                              case IssueStateTag.Failed      => IssueStatus.Rework
+                              case IssueStateTag.Skipped     => IssueStatus.Canceled
                             })
                             .orElseFail(PersistenceError.QueryFailed("status_parse", s"Unknown status: $rawStatus"))
           _            <- ensureTransitionAllowed(issue.state, status, issueId.value)
@@ -1343,7 +1343,7 @@ final case class IssueControllerLive(
                        statusFilter.forall(status => statusMatches(issue.status, status)) &&
                        priorityFilter.forall(p => issue.priority.toString.equalsIgnoreCase(p))
                      )
-    yield filtered.filter(_.status != IssueStatus.Skipped)
+    yield filtered.filter(_.status != IssueStatus.Canceled)
 
   private def loadIssueAnalysisContext(
     issue: DomainIssue
@@ -1418,13 +1418,6 @@ final case class IssueControllerLive(
       case (IssueStatus.Done, "completed")           => true
       case (IssueStatus.Rework, "failed")            => true
       case (IssueStatus.Canceled, "skipped")         => true
-      case (IssueStatus.Open, "open")                => true
-      case (IssueStatus.Assigned, "assigned")        => true
-      case (IssueStatus.InProgress, "in_progress")   => true
-      case (IssueStatus.InProgress, "inprogress")    => true
-      case (IssueStatus.Completed, "completed")      => true
-      case (IssueStatus.Failed, "failed")            => true
-      case (IssueStatus.Skipped, "skipped")          => true
       case _                                         => false
 
   private def parseIssueStateTag(raw: String): Option[IssueStateTag] =
@@ -1493,14 +1486,7 @@ final case class IssueControllerLive(
     IssueStatus.Archived    -> Set(IssueStatus.Backlog),
   )
 
-  private def canonicalBoardStatus(status: IssueStatus): IssueStatus =
-    status match
-      case IssueStatus.Open      => IssueStatus.Backlog
-      case IssueStatus.Assigned  => IssueStatus.Todo
-      case IssueStatus.Completed => IssueStatus.Done
-      case IssueStatus.Failed    => IssueStatus.Rework
-      case IssueStatus.Skipped   => IssueStatus.Canceled
-      case other                 => other
+  private def canonicalBoardStatus(status: IssueStatus): IssueStatus = status
 
   private def boardStatusFromState(state: IssueState): IssueStatus =
     state match
@@ -1647,8 +1633,6 @@ final case class IssueControllerLive(
     val primaryEvent: IssueEvent = request.status match
       case IssueStatus.Backlog     => IssueEvent.MovedToBacklog(issueId = issueId, movedAt = now, occurredAt = now)
       case IssueStatus.Todo        => IssueEvent.MovedToTodo(issueId = issueId, movedAt = now, occurredAt = now)
-      case IssueStatus.Open        => IssueEvent.MovedToBacklog(issueId = issueId, movedAt = now, occurredAt = now)
-      case IssueStatus.Assigned    => IssueEvent.MovedToTodo(issueId = issueId, movedAt = now, occurredAt = now)
       case IssueStatus.InProgress  =>
         IssueEvent.Started(
           issueId = issueId,
@@ -1690,27 +1674,6 @@ final case class IssueControllerLive(
         IssueEvent.Archived(
           issueId = issueId,
           archivedAt = now,
-          occurredAt = now,
-        )
-      case IssueStatus.Completed   =>
-        IssueEvent.MarkedDone(
-          issueId = issueId,
-          doneAt = now,
-          result = request.resultData.map(_.trim).filter(_.nonEmpty).getOrElse("Marked completed from board"),
-          occurredAt = now,
-        )
-      case IssueStatus.Failed      =>
-        IssueEvent.MovedToRework(
-          issueId = issueId,
-          movedAt = now,
-          reason = request.reason.map(_.trim).filter(_.nonEmpty).getOrElse("Marked failed from board"),
-          occurredAt = now,
-        )
-      case IssueStatus.Skipped     =>
-        IssueEvent.Canceled(
-          issueId = issueId,
-          canceledAt = now,
-          reason = request.reason.map(_.trim).filter(_.nonEmpty).getOrElse("Skipped from board"),
           occurredAt = now,
         )
     request.status match
@@ -2260,21 +2223,6 @@ final case class IssueControllerLive(
     workspaceId: String,
     agentName: String,
   ): IO[PersistenceError, Unit] =
-    val appendLegacyStartedEvent =
-      for
-        now <- Clock.instant
-        _   <- issueRepository
-                 .append(
-                   IssueEvent.Started(
-                     issueId = issue.id,
-                     agent = AgentId(agentName),
-                     startedAt = now,
-                     occurredAt = now,
-                   )
-                 )
-                 .mapError(mapIssueRepoError)
-      yield ()
-
     for
       run <- workspaceRunService
                .assign(
@@ -2295,7 +2243,7 @@ final case class IssueControllerLive(
                    branchName = run.branchName,
                  )
                case None    =>
-                 appendLegacyStartedEvent
+                 ZIO.unit
     yield ()
 
   private def markWorkspaceBoardIssueStarted(

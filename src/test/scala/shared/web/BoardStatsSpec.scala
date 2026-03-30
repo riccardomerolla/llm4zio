@@ -50,15 +50,15 @@ object BoardStatsSpec extends ZIOSpecDefault:
         val issues = List(
           mkIssue("i1", IssueStatus.InProgress),
           mkIssue("i2", IssueStatus.InProgress),
-          mkIssue("i3", IssueStatus.Open),
+          mkIssue("i3", IssueStatus.Backlog),
         )
         val stats  = BoardStats.compute(issues, Map.empty)
         assertTrue(stats.running == 2)
       },
       test("computeStats counts completed issues") {
         val issues = List(
-          mkIssue("i1", IssueStatus.Completed),
-          mkIssue("i2", IssueStatus.Completed),
+          mkIssue("i1", IssueStatus.Done),
+          mkIssue("i2", IssueStatus.Done),
           mkIssue("i3", IssueStatus.InProgress),
         )
         val stats  = BoardStats.compute(issues, Map.empty)
@@ -67,21 +67,21 @@ object BoardStatsSpec extends ZIOSpecDefault:
       test("computeStats sums token usage from work reports") {
         val id1     = IssueId("i1")
         val id2     = IssueId("i2")
-        val issues  = List(mkIssue("i1", IssueStatus.Completed), mkIssue("i2", IssueStatus.Completed))
+        val issues  = List(mkIssue("i1", IssueStatus.Done), mkIssue("i2", IssueStatus.Done))
         val reports = Map(id1 -> mkReport(id1, 1000L), id2 -> mkReport(id2, 500L))
         val stats   = BoardStats.compute(issues, reports)
         assertTrue(stats.tokensTotal == 2250L) // 1500 + 750
       },
       test("hasProofFilter keeps only issues with a proof-of-work entry") {
         val id1     = IssueId("i1")
-        val issues  = List(mkIssue("i1", IssueStatus.Completed), mkIssue("i2", IssueStatus.Open))
+        val issues  = List(mkIssue("i1", IssueStatus.Done), mkIssue("i2", IssueStatus.Backlog))
         val report  = IssueWorkReport.empty(id1, now).copy(walkthrough = Some("Done."))
         val reports = Map(id1 -> report)
         val result  = BoardStats.hasProofFilter(issues, reports)
         assertTrue(result.map(_.id) == List(Some("i1")))
       },
       test("hasProofFilter returns empty list when no reports have proof signals") {
-        val issues = List(mkIssue("i1", IssueStatus.Open), mkIssue("i2", IssueStatus.Open))
+        val issues = List(mkIssue("i1", IssueStatus.Backlog), mkIssue("i2", IssueStatus.Backlog))
         assertTrue(BoardStats.hasProofFilter(issues, Map.empty).isEmpty)
       },
       test("boardStatsBar renders running and completed counts") {

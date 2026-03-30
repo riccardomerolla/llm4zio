@@ -17,7 +17,7 @@ object BoardStats:
   /** Compute board-level stats from the current issue list and projection snapshot. */
   def compute(issues: List[AgentIssueView], workReports: Map[IssueId, IssueWorkReport]): Stats =
     val running   = issues.count(_.status == IssueStatus.InProgress)
-    val completed = issues.count(s => s.status == IssueStatus.Done || s.status == IssueStatus.Completed)
+    val completed = issues.count(s => s.status == IssueStatus.Done)
     val tokens    = workReports.values.flatMap(_.tokenUsage.map(_.totalTokens)).sum
     Stats(running, completed, tokens)
 

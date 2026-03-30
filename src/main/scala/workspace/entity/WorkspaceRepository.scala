@@ -24,11 +24,6 @@ object WorkspaceRepository:
       for
         svc <- ZIO.service[DataStoreModule.DataStoreService]
         repo = WorkspaceRepositoryES(svc)
-        // One-time cleanup: remove pre-event-sourcing keys (workspace:* / workspace-run:*)
-        // and any snapshot:workspace:* entries (which can contain badly-serialised ADTs
-        // from earlier EclipseStore type-dictionary entries).  After the first clean run
-        // this is a no-op.  Events are the durable source-of-truth and are never removed here.
-        _   <- repo.purgeSnapshotsAndLegacyKeys.ignoreLogged
       yield repo
     )
 
@@ -207,37 +202,6 @@ final case class WorkspaceRepositoryES(
             }
         ).map(_.flatten)
       )
-
-  /** Removes all snapshot keys (snapshot:workspace:* / snapshot:workspace-run:*) and pre-event-sourcing bare keys
-    * (workspace:* / workspace-run:*). Called once at startup; idempotent. Events are never removed here.
-    */
-  private[entity] def purgeSnapshotsAndLegacyKeys: IO[PersistenceError, Unit] =
-    for
-      allKeys <- dataStore.rawStore
-                   .streamKeys[String]
-                   .runCollect
-                   .mapError(storeErr("purgeSnapshotsAndLegacyKeys"))
-      toRemove = allKeys.filter { k =>
-                   // old mutable-snapshot keys (pre-event-sourcing)
-                   val isLegacy   =
-                     (k.startsWith("workspace:") && !k.startsWith("workspace-run:") &&
-                       !k.startsWith("workspace-events:")) ||
-                     (k.startsWith("workspace-run:") && !k.startsWith("workspace-run-events:"))
-                   // snapshot keys — these bypass the JSON codec and land in EclipseStore's
-                   // type-dictionary with native field-level serialisation; on class reload
-                   // the ADT cases (RunMode.Host, RunStatus.*) come back as fresh instances
-                   // that fail Scala pattern-matching.  Always regenerate from events instead.
-                   val isSnapshot =
-                     k.startsWith("snapshot:workspace:") || k.startsWith("snapshot:workspace-run:")
-                   isLegacy || isSnapshot
-                 }
-      _       <- ZIO.when(toRemove.nonEmpty)(
-                   ZIO.logWarning(s"Purging ${toRemove.size} legacy/snapshot workspace keys from store") *>
-                     ZIO.foreachDiscard(toRemove)(key =>
-                       dataStore.remove[String](key).mapError(storeErr("purgeSnapshotsAndLegacyKeys"))
-                     )
-                 )
-    yield ()
 
   private def removeByPrefix(prefix: String, op: String): IO[PersistenceError, Unit] =
     dataStore.rawStore

@@ -1,6 +1,6 @@
 package gateway.boundary.telegram
 
-import db.RunStatus
+import taskrun.entity.RunStatus
 import gateway.entity.{ TelegramInlineKeyboardButton, TelegramInlineKeyboardMarkup }
 
 case class InlineKeyboardAction(

@@ -243,7 +243,7 @@ object ProjectsController:
         ws.id -> ws.name
       )
     val projectIssues       = issues.filter(issue => issue.workspaceId.exists(project.workspaceIds.contains))
-    val boardIssues         = projectIssues.map(domainToView).filter(_.status != IssueStatus.Skipped)
+    val boardIssues         = projectIssues.map(domainToView).filter(_.status != IssueStatus.Canceled)
     val workspaceRows       = assignedWorkspaces.map { workspace =>
       val statuses = statusesByWorkspace.getOrElse(workspace.id, Nil)
       val health   = workspaceHealth(workspace.enabled, statuses)
@@ -335,10 +335,9 @@ object ProjectsController:
 
   private def isActiveIssue(status: IssueStatus): Boolean =
     status match
-      case IssueStatus.Done | IssueStatus.Canceled | IssueStatus.Duplicated | IssueStatus.Archived |
-           IssueStatus.Completed | IssueStatus.Failed | IssueStatus.Skipped =>
+      case IssueStatus.Done | IssueStatus.Canceled | IssueStatus.Duplicated | IssueStatus.Archived =>
         false
-      case _ =>
+      case _                                                                                       =>
         true
 
   private def workspaceHealth(enabled: Boolean, statuses: List[WorkspaceAnalysisStatus]): (String, String) =
