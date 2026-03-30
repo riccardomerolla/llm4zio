@@ -1,9 +1,9 @@
 package shared.web
 
-import taskrun.entity.RunStatus
 import scalatags.Text.all.*
 import scalatags.Text.svgAttrs.{ d, viewBox }
 import scalatags.Text.svgTags.{ path, svg }
+import taskrun.entity.RunStatus
 
 /** Design-system component wrappers.
   *
