@@ -1,3 +1,5 @@
+import { LitElement } from 'https://cdn.jsdelivr.net/npm/lit@3/+esm';
+
 const createBoardSyncHooks = window.__issuesBoardSync?.createBoardSyncHooks || (() => ({
   _flushPendingRefresh() {},
   refreshBoard() {},
@@ -6,11 +8,20 @@ const createBoardSyncHooks = window.__issuesBoardSync?.createBoardSyncHooks || (
   onWsMessage() {},
 }));
 
-class AbIssuesBoard extends HTMLElement {
-  connectedCallback() {
-    if (this._initialized) return;
-    this._initialized = true;
+class AbIssuesBoard extends LitElement {
+  // Light DOM — content is server-rendered inside the custom element
+  createRenderRoot() { return this; }
 
+  // Never re-render — HTMX manages the inner div's content
+  shouldUpdate() { return false; }
+
+  connectedCallback() {
+    super.connectedCallback();
+    // The inner #issues-board-root div is where HTMX does its polling.
+    // We operate on it via this.root so htmx.ajax() targets the inner div,
+    // keeping HTMX's internal request state completely isolated from
+    // LitElement's lifecycle on the outer custom element.
+    this.root = this.querySelector('#issues-board-root') || this;
     this.fragmentUrl = this.dataset.fragmentUrl || '/board/fragment';
     this.wsTopic = this.dataset.wsTopic || 'activity:feed';
     this.dragIssueId = null;
@@ -50,7 +61,7 @@ class AbIssuesBoard extends HTMLElement {
     }
     this._dragDropBound = true;
 
-    this.addEventListener('dragstart', (event) => {
+    this.root.addEventListener('dragstart', (event) => {
       if (this._isInteractiveTarget(event.target)) {
         event.preventDefault();
         return;
@@ -76,11 +87,11 @@ class AbIssuesBoard extends HTMLElement {
       this._insertSourceGhost(card);
     });
 
-    this.addEventListener('dragend', (event) => {
+    this.root.addEventListener('dragend', (event) => {
       const card = event.target.closest('[data-issue-id]');
       card?.classList.remove('opacity-40', '-translate-y-0.5', 'shadow-xl');
       if (card) delete card.dataset.dragging;
-      this.querySelectorAll('[data-issue-id][data-dragging="true"]').forEach((el) => {
+      this.root.querySelectorAll('[data-issue-id][data-dragging="true"]').forEach((el) => {
         delete el.dataset.dragging;
       });
       this._cleanupGhostArtifacts();
@@ -103,7 +114,7 @@ class AbIssuesBoard extends HTMLElement {
     if (this._delegatedDragDropBound) return;
     this._delegatedDragDropBound = true;
 
-    this.addEventListener('dragover', (event) => {
+    this.root.addEventListener('dragover', (event) => {
       const column = this._eventColumn(event);
       if (!column) return;
 
@@ -124,7 +135,7 @@ class AbIssuesBoard extends HTMLElement {
       }
     });
 
-    this.addEventListener('dragleave', (event) => {
+    this.root.addEventListener('dragleave', (event) => {
       const column = this._eventColumn(event);
       if (!column) return;
       const related = event.relatedTarget;
@@ -133,7 +144,7 @@ class AbIssuesBoard extends HTMLElement {
       if (this._placeholderColumn() === column) this._removePlaceholder();
     });
 
-    this.addEventListener('drop', async (event) => {
+    this.root.addEventListener('drop', async (event) => {
       const column = this._eventColumn(event);
       if (!column) return;
 
@@ -193,7 +204,7 @@ class AbIssuesBoard extends HTMLElement {
   _cleanupGhostArtifacts() {
     this._removePlaceholder();
     this._removeSourceGhost();
-    this.querySelectorAll('[data-board-ghost]').forEach((el) => el.remove());
+    this.root.querySelectorAll('[data-board-ghost]').forEach((el) => el.remove());
   }
 
   _eventColumn(event) {
@@ -214,7 +225,7 @@ class AbIssuesBoard extends HTMLElement {
     if (this.dragIssueId && this.dragFromStatus) return;
 
     const nativeIssueId = event?.dataTransfer?.getData('text/plain') || '';
-    const draggingCard = this.querySelector('[data-issue-id][data-dragging="true"]');
+    const draggingCard = this.root.querySelector('[data-issue-id][data-dragging="true"]');
     const resolvedCard = this.dragCard || draggingCard;
     const resolvedIssueId = this.dragIssueId || nativeIssueId || resolvedCard?.dataset?.issueId || null;
     const resolvedFromStatus = this.dragFromStatus || this._issueCardStatus(resolvedCard);
@@ -249,7 +260,7 @@ class AbIssuesBoard extends HTMLElement {
   }
 
   clearHighlights() {
-    this.querySelectorAll('[data-drop-status]').forEach((column) => {
+    this.root.querySelectorAll('[data-drop-status]').forEach((column) => {
       column.classList.remove(
         'ring-2',
         'ring-emerald-400/60',
@@ -267,12 +278,12 @@ class AbIssuesBoard extends HTMLElement {
   // ---------------------------------------------------------------------------
 
   bindQuickAdd() {
-    // Use event delegation so it works after HTMX injects content.
+    // Use event delegation on this.root so it works after HTMX injects content.
     // Guard with a flag so we only register once (constructor + refreshBoard both call this).
     if (this._quickAddBound) return;
     this._quickAddBound = true;
 
-    this.addEventListener('click', (event) => {
+    this.root.addEventListener('click', (event) => {
       // Toggle button
       const toggleBtn = event.target.closest('[data-quick-add-toggle]');
       if (toggleBtn) {
@@ -294,14 +305,14 @@ class AbIssuesBoard extends HTMLElement {
       }
     });
 
-    this.addEventListener('keydown', (event) => {
+    this.root.addEventListener('keydown', (event) => {
       const input = event.target.closest('[data-quick-add-title]');
       if (!input) return;
       if (event.key === 'Enter') this._submitQuickAdd(input.dataset.quickAddTitle);
       if (event.key === 'Escape') this._closeQuickAdd(input.dataset.quickAddTitle);
     });
 
-    this.addEventListener('focusout', (event) => {
+    this.root.addEventListener('focusout', (event) => {
       const input = event.target.closest('[data-quick-add-title]');
       if (!input) return;
       requestAnimationFrame(() => this._flushPendingRefresh());
@@ -310,7 +321,7 @@ class AbIssuesBoard extends HTMLElement {
     // Outside-click dismissal on document
     this._quickAddOutsideHandler = (event) => {
       if (!event.target.closest('[data-quick-add-form]') && !event.target.closest('[data-quick-add-toggle]')) {
-        this.querySelectorAll('[data-quick-add-form]:not(.hidden)').forEach((form) => {
+        this.root.querySelectorAll('[data-quick-add-form]:not(.hidden)').forEach((form) => {
           form.classList.add('hidden');
           const titleInput = form.querySelector('[data-quick-add-title]');
           if (titleInput) titleInput.value = '';
@@ -325,14 +336,14 @@ class AbIssuesBoard extends HTMLElement {
     if (this._quickAssignBound) return;
     this._quickAssignBound = true;
 
-    this.addEventListener('click', async (event) => {
+    this.root.addEventListener('click', async (event) => {
       const btn = event.target.closest('[data-quick-assign-action]');
       if (!btn) return;
 
       const issueId = btn.dataset.quickAssignAction || '';
       if (!issueId) return;
 
-      const select = this.querySelector(`[data-quick-assign-agent="${CSS.escape(issueId)}"]`);
+      const select = this.root.querySelector(`[data-quick-assign-agent="${CSS.escape(issueId)}"]`);
       const agentName = select?.value?.trim() || '';
       if (!agentName) {
         this._showToast('Select an agent before assigning.', 'warning');
@@ -355,10 +366,10 @@ class AbIssuesBoard extends HTMLElement {
 
   _openQuickAdd(statusToken) {
     // Close any other open forms first
-    this.querySelectorAll('[data-quick-add-form]').forEach((form) => {
+    this.root.querySelectorAll('[data-quick-add-form]').forEach((form) => {
       form.classList.add('hidden');
     });
-    const form = this.querySelector(`[data-quick-add-form="${CSS.escape(statusToken)}"]`);
+    const form = this.root.querySelector(`[data-quick-add-form="${CSS.escape(statusToken)}"]`);
     if (!form) return;
     form.classList.remove('hidden');
     const titleInput = form.querySelector('[data-quick-add-title]');
@@ -366,7 +377,7 @@ class AbIssuesBoard extends HTMLElement {
   }
 
   _closeQuickAdd(statusToken) {
-    const form = this.querySelector(`[data-quick-add-form="${CSS.escape(statusToken)}"]`);
+    const form = this.root.querySelector(`[data-quick-add-form="${CSS.escape(statusToken)}"]`);
     if (!form) return;
     form.classList.add('hidden');
     const titleInput = form.querySelector('[data-quick-add-title]');
@@ -375,7 +386,7 @@ class AbIssuesBoard extends HTMLElement {
   }
 
   async _submitQuickAdd(statusToken) {
-    const form = this.querySelector(`[data-quick-add-form="${CSS.escape(statusToken)}"]`);
+    const form = this.root.querySelector(`[data-quick-add-form="${CSS.escape(statusToken)}"]`);
     if (!form) return;
 
     const titleInput     = form.querySelector('[data-quick-add-title]');
@@ -422,21 +433,21 @@ class AbIssuesBoard extends HTMLElement {
     // Persist column scroll positions across HTMX fragment refreshes
     this._savedScrolls = {};
 
-    this.addEventListener('htmx:beforeRequest', (event) => {
+    this.root.addEventListener('htmx:beforeRequest', (event) => {
       const requestTarget = event?.detail?.target;
-      if (requestTarget !== this) return;
+      if (requestTarget !== this.root) return;
       if (!this._shouldDeferRefresh()) return;
       event.preventDefault();
       this._refreshPending = true;
       this._endLoading();
     });
 
-    this.addEventListener('htmx:beforeSwap', (event) => {
+    this.root.addEventListener('htmx:beforeSwap', (event) => {
       const requestTarget = event?.detail?.target;
-      if (requestTarget !== this) return;
+      if (requestTarget !== this.root) return;
 
       // Save each column's card-list scroll offset keyed by status token
-      this.querySelectorAll('[data-column-cards]').forEach(el => {
+      this.root.querySelectorAll('[data-column-cards]').forEach(el => {
         const key = el.dataset.columnCards;
         if (key) this._savedScrolls[key] = el.scrollTop;
       });
@@ -447,16 +458,16 @@ class AbIssuesBoard extends HTMLElement {
       this._endLoading();
     });
 
-    this.addEventListener('htmx:afterSwap', (event) => {
+    this.root.addEventListener('htmx:afterSwap', (event) => {
       const requestTarget = event?.detail?.target;
-      if (requestTarget !== this) return;
+      if (requestTarget !== this.root) return;
 
       // ab-board-layout defers _applyState() via Promise.resolve() (microtask).
       // The microtask runs before any macrotask, so a double-rAF here guarantees
       // we restore scroll only after expanded columns are visible.
       const saved = this._savedScrolls;
       requestAnimationFrame(() => requestAnimationFrame(() => {
-        this.querySelectorAll('[data-column-cards]').forEach(el => {
+        this.root.querySelectorAll('[data-column-cards]').forEach(el => {
           const key = el.dataset.columnCards;
           if (key && saved[key]) el.scrollTop = saved[key];
         });
@@ -466,15 +477,15 @@ class AbIssuesBoard extends HTMLElement {
       this._endLoading();
     });
 
-    this.addEventListener('htmx:responseError', (event) => {
+    this.root.addEventListener('htmx:responseError', (event) => {
       const requestTarget = event?.detail?.target;
-      if (requestTarget !== this) return;
+      if (requestTarget !== this.root) return;
       this._endLoading();
     });
 
-    this.addEventListener('htmx:sendError', (event) => {
+    this.root.addEventListener('htmx:sendError', (event) => {
       const requestTarget = event?.detail?.target;
-      if (requestTarget !== this) return;
+      if (requestTarget !== this.root) return;
       this._endLoading();
     });
   }
@@ -589,7 +600,7 @@ class AbIssuesBoard extends HTMLElement {
       }
     };
 
-    this.addEventListener('pointerdown', onPointerDown);
+    this.root.addEventListener('pointerdown', onPointerDown);
     window.addEventListener('pointermove', onPointerMove);
     window.addEventListener('pointerup', onPointerUp);
   }
@@ -599,7 +610,7 @@ class AbIssuesBoard extends HTMLElement {
   // ---------------------------------------------------------------------------
 
   async patchIssueStatus(issueId, status) {
-    const card = this.querySelector(`[data-issue-id="${CSS.escape(issueId)}"]`);
+    const card = this.root.querySelector(`[data-issue-id="${CSS.escape(issueId)}"]`);
     const currentStatus = this._issueCardStatus(card);
     const targetStatus = this._normalizeStatusToken(status);
     if (!targetStatus || !this.isTransitionAllowed(currentStatus, targetStatus)) return false;
@@ -651,7 +662,7 @@ class AbIssuesBoard extends HTMLElement {
   async quickAssign(issueId, agentName) {
     try {
       this._beginLoading();
-      const card = this.querySelector(`[data-issue-id="${CSS.escape(issueId)}"]`);
+      const card = this.root.querySelector(`[data-issue-id="${CSS.escape(issueId)}"]`);
       const workspaceId = (card?.dataset?.workspaceId || '').trim();
       const body = { agentName };
       if (workspaceId) body.workspaceId = workspaceId;
@@ -733,7 +744,7 @@ class AbIssuesBoard extends HTMLElement {
     }
 
     this._loadingVisibleSince = Date.now();
-    this.dataset.boardBusy = 'true';
+    this.root.dataset.boardBusy = 'true';
     root.style.opacity = '1';
     fill.style.transitionDuration = '480ms';
     fill.style.transform = 'scaleX(0.28)';
@@ -747,7 +758,7 @@ class AbIssuesBoard extends HTMLElement {
     if (this._loadingCount > 0) return;
 
     const { root, fill } = this._ensureLoadingBar();
-    delete this.dataset.boardBusy;
+    delete this.root.dataset.boardBusy;
     if (!root || !fill) return;
 
     const visibleForMs = Date.now() - this._loadingVisibleSince;
@@ -767,14 +778,14 @@ class AbIssuesBoard extends HTMLElement {
 
   _ensureToastHost() {
     if (this._toastHost && this._toastHost.isConnected) return this._toastHost;
-    this.classList.add('relative');
+    this.root.classList.add('relative');
 
-    let host = this.querySelector('[data-inline-toast-host]');
+    let host = this.root.querySelector('[data-inline-toast-host]');
     if (!host) {
       host = document.createElement('div');
       host.dataset.inlineToastHost = 'true';
       host.className = 'pointer-events-none absolute right-3 top-3 z-50 flex max-w-xs flex-col gap-2';
-      this.appendChild(host);
+      this.root.appendChild(host);
     }
 
     this._toastHost = host;
@@ -867,7 +878,7 @@ class AbIssuesBoard extends HTMLElement {
 
   _canDropTo(targetStatus, issueId = null) {
     const fromStatus = this.dragFromStatus || this._issueCardStatus(
-      issueId ? this.querySelector(`[data-issue-id="${CSS.escape(issueId)}"]`) : this.dragCard,
+      issueId ? this.root.querySelector(`[data-issue-id="${CSS.escape(issueId)}"]`) : this.dragCard,
     );
     return this.isTransitionAllowed(fromStatus, targetStatus);
   }
@@ -912,7 +923,7 @@ class AbIssuesBoard extends HTMLElement {
 
   _flashLandedCard(issueId) {
     if (!issueId) return;
-    const landed = this.querySelector(`[data-issue-id="${CSS.escape(issueId)}"]`);
+    const landed = this.root.querySelector(`[data-issue-id="${CSS.escape(issueId)}"]`);
     if (landed) {
       landed.classList.add('bg-white/10');
       setTimeout(() => landed.classList.remove('bg-white/10'), 300);
@@ -929,7 +940,7 @@ class AbIssuesBoard extends HTMLElement {
       return true;
     }
 
-    const openForms = this.querySelectorAll('[data-quick-add-form]:not(.hidden)');
+    const openForms = this.root.querySelectorAll('[data-quick-add-form]:not(.hidden)');
     for (const form of openForms) {
       const titleInput = form.querySelector('[data-quick-add-title]');
       if (titleInput?.value?.trim()) return true;

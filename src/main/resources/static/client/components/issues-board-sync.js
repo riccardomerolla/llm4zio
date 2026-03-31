@@ -39,7 +39,7 @@ function createBoardSyncHooks({
 
       if (window.htmx?.ajax) {
         window.htmx.ajax('GET', this.fragmentUrl, {
-          target: this,
+          target: this.root,
           swap: 'innerHTML',
         }).then(onRefreshed).catch(() => {}).finally(onSettled);
         return;
@@ -49,7 +49,7 @@ function createBoardSyncHooks({
         .then((response) => response.ok ? response.text() : Promise.reject(new Error('refresh failed')))
         .then((html) => {
           // html is server-rendered markup from our own trusted endpoint
-          this.innerHTML = html; // nosec: trusted server HTML, same origin
+          this.root.innerHTML = html; // nosec: trusted server HTML, same origin
           onRefreshed();
         })
         .catch(() => {})
