@@ -13,10 +13,10 @@
 - [x] Perform a review pass for Group 2, apply any remarks, then commit the group.
 
 ### Group 3: Large-file decomposition
-- [ ] Extract chat session and session-id helper logic from `ChatController.scala` into an internal support module without changing routes or service wiring.
-- [ ] Update the controller to delegate to the extracted support module and keep behavior unchanged.
-- [ ] Run focused specs for the chat controller surface after the split.
-- [ ] Perform a review pass for Group 3, apply any remarks, then commit the group.
+- [x] Extract chat session and session-id helper logic from `ChatController.scala` into an internal support module without changing routes or service wiring.
+- [x] Update the controller to delegate to the extracted support module and keep behavior unchanged.
+- [x] Run focused specs for the chat controller surface after the split.
+- [x] Perform a review pass for Group 3, apply any remarks, then commit the group.
 
 ### Group 4: Final verification
 - [ ] Run `sbt --client scalafmtAll`.
