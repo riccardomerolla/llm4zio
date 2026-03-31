@@ -10,7 +10,7 @@ import zio.test.*
 import _root_.config.entity.*
 import analysis.control.{ WorkspaceAnalysisScheduler, WorkspaceAnalysisState, WorkspaceAnalysisStatus }
 import analysis.entity.AnalysisType
-import issues.entity.{ AgentIssue, IssueEvent, IssueFilter, IssueRepository }
+import issues.entity.{ AgentIssue, IssueEvent, IssueFilter, IssueRepository, IssueState }
 import orchestration.control.AgentRegistry
 import shared.ids.Ids.IssueId
 import taskrun.entity.TaskStep
@@ -204,12 +204,13 @@ object WorkspacesControllerSpec extends ZIOSpecDefault:
     wsRef: Ref[Map[String, Workspace]],
     runRef: Ref[Map[String, WorkspaceRun]],
     triggerRef: Ref[List[(String, Boolean)]],
+    issueRepository: IssueRepository = StubIssueRepository,
   ) =
     WorkspacesController.make(
       StubWorkspaceRepo(wsRef, runRef),
       StubRunService(),
       StubAgentRegistry,
-      StubIssueRepository,
+      issueRepository,
       StubGitService,
       StubAnalysisScheduler(triggerRef),
     ).routes
@@ -242,6 +243,46 @@ object WorkspacesControllerSpec extends ZIOSpecDefault:
         req         = Request.get(URL(Path.decode("/settings/workspaces")))
         resp       <- routes.runZIO(req)
       yield assertTrue(resp.status == Status.Ok)
+    },
+    test("GET /api/workspaces/issues/search keeps legacy open issues reachable through centralized compatibility tags") {
+      val legacyOpenIssue = AgentIssue(
+        id = IssueId("legacy-open"),
+        runId = None,
+        conversationId = None,
+        title = "Legacy open issue",
+        description = "Still searchable",
+        issueType = "task",
+        priority = "Medium",
+        requiredCapabilities = Nil,
+        state = IssueState.Open(Instant.parse("2026-02-24T10:00:00Z")),
+        tags = Nil,
+        contextPath = "",
+        sourceFolder = "",
+        workspaceId = None,
+      )
+
+      final class SearchIssueRepository extends IssueRepository:
+        def append(event: IssueEvent): IO[shared.errors.PersistenceError, Unit]        = ZIO.unit
+        def get(id: IssueId): IO[shared.errors.PersistenceError, AgentIssue]           =
+          ZIO.fail(shared.errors.PersistenceError.NotFound("issue", id.value))
+        def history(id: IssueId): IO[shared.errors.PersistenceError, List[IssueEvent]] = ZIO.succeed(Nil)
+        def delete(id: IssueId): IO[shared.errors.PersistenceError, Unit]              = ZIO.unit
+        def list(filter: IssueFilter): IO[shared.errors.PersistenceError, List[AgentIssue]] =
+          ZIO.succeed(if filter.states.contains(issues.entity.IssueStateTag.Open) then List(legacyOpenIssue) else Nil)
+
+      for
+        wsRef      <- Ref.make(Map("ws-1" -> sampleWs))
+        runRef     <- Ref.make(Map("run-1" -> sampleRun))
+        triggerRef <- Ref.make(List.empty[(String, Boolean)])
+        routes      = makeRoutes(wsRef, runRef, triggerRef, SearchIssueRepository())
+        req         = Request.get(URL.decode("/api/workspaces/issues/search?q=legacy").toOption.get)
+        resp       <- routes.runZIO(req)
+        body       <- resp.body.asString
+      yield assertTrue(
+        resp.status == Status.Ok,
+        body.contains("legacy-open"),
+        body.contains("Legacy open issue"),
+      )
     },
     test("POST /api/workspaces rejects a localPath that is not a git repository") {
       for

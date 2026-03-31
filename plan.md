@@ -1,30 +1,27 @@
-## Third Modernization Iteration
+## Fourth Modernization Iteration
 
-### Group 1: Legacy and canonical status cleanup
-- [x] Replace the previous plan with this iteration plan.
-- [x] Remove the remaining board-status parsing path that still routes through legacy `IssueStateTag` aliases inside `IssueController`.
-- [x] Move issue state-to-view mapping helpers out of `IssueController.scala` into support code so the controller uses a single canonical conversion path.
-- [x] Run focused tests for the issue controller and board rendering surfaces.
+### Group 1: Internal legacy compatibility cleanup
+- [x] Replace scattered issue-state compatibility sets with shared canonical helpers so legacy state aliases stay centralized instead of leaking through controllers.
+- [x] Remove dead issue controller compatibility helpers that are no longer referenced.
+- [x] Run focused issue and workspace controller specs for the compatibility cleanup.
 - [x] Perform a review pass for Group 1, apply any remarks, then commit the group.
 
 ### Group 2: Effect-oriented runtime cleanup
-- [x] Refactor `McpController` request-body handling to avoid `orDie` and use explicit request decoding failures.
-- [x] Refactor `McpService` startup so MCP tool registration failure is modeled explicitly before the app boundary converts it to a defect.
-- [x] Replace broad websocket fallback handling with explicit strict-or-default helpers.
-- [x] Collapse the repeated `WorkspaceRunService` persistence wrapper tail onto the shared workspace error helpers.
-- [x] Run focused tests for the touched runtime surfaces.
-- [x] Perform a review pass for Group 2, apply any remarks, then commit the group.
+- [ ] Replace the broad issue lookup fallback in `WorkspaceRunService` with explicit not-found handling and typed persistence mapping.
+- [ ] Replace the broad channel-close fallback in `ChatController` with explicit channel error handling.
+- [ ] Run focused specs for the touched workspace and chat runtime surfaces.
+- [ ] Perform a review pass for Group 2, apply any remarks, then commit the group.
 
 ### Group 3: Large-file decomposition
-- [x] Keep `IssueController.scala` slimmer by moving canonical state-to-view and status parsing support into `IssueControllerSupport.scala`.
-- [x] Extract the workspace run git and lifecycle helper block into an internal support module without changing service entrypoints.
-- [x] Run focused tests for the decomposed controller and workspace surfaces.
-- [x] Perform a review pass for Group 3, apply any remarks, then commit the group.
+- [ ] Extract chat session and session-id helper logic from `ChatController.scala` into an internal support module without changing routes or service wiring.
+- [ ] Update the controller to delegate to the extracted support module and keep behavior unchanged.
+- [ ] Run focused specs for the chat controller surface after the split.
+- [ ] Perform a review pass for Group 3, apply any remarks, then commit the group.
 
 ### Group 4: Final verification
-- [x] Run `sbt --client scalafmtAll`.
-- [x] Run targeted specs for the touched areas.
-- [x] Run `sbt --client compile`.
-- [x] Run `sbt --client test`.
-- [x] Perform a final review pass and apply any last remarks.
-- [x] Commit the final verification updates if needed.
+- [ ] Run `sbt --client scalafmtAll`.
+- [ ] Run targeted specs for the touched areas.
+- [ ] Run `sbt --client compile`.
+- [ ] Run `sbt --client test`.
+- [ ] Perform a final review pass and apply any last remarks.
+- [ ] Commit the final verification updates if needed.

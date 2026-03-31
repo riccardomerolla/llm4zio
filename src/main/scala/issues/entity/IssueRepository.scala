@@ -36,6 +36,13 @@ object IssueStateTag:
       case _: IssueState.Failed      => IssueStateTag.Failed
       case _: IssueState.Skipped     => IssueStateTag.Skipped
 
+object IssueFilter:
+  val assignableTodoCandidates: Set[IssueStateTag] =
+    Set(IssueStateTag.Todo, IssueStateTag.Open)
+
+  val workspaceSearchCandidates: Set[IssueStateTag] =
+    Set(IssueStateTag.Backlog, IssueStateTag.Todo, IssueStateTag.Open)
+
 trait IssueRepository:
   def append(event: IssueEvent): IO[PersistenceError, Unit]
   def get(id: IssueId): IO[PersistenceError, AgentIssue]

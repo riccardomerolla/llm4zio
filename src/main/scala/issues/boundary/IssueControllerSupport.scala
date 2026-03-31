@@ -62,45 +62,7 @@ object IssueControllerSupport:
     s"vscode://file${resolved.toUri.getRawPath}"
 
   def statusMatches(status: IssueStatus, token: String): Boolean =
-    (status, token.trim.toLowerCase) match
-      case (IssueStatus.Backlog, "backlog")          => true
-      case (IssueStatus.Todo, "todo")                => true
-      case (IssueStatus.HumanReview, "human_review") => true
-      case (IssueStatus.HumanReview, "humanreview")  => true
-      case (IssueStatus.Rework, "rework")            => true
-      case (IssueStatus.Merging, "merging")          => true
-      case (IssueStatus.Done, "done")                => true
-      case (IssueStatus.Canceled, "canceled")        => true
-      case (IssueStatus.Duplicated, "duplicated")    => true
-      case (IssueStatus.Archived, "archived")        => true
-      case (IssueStatus.Backlog, "open")             => true
-      case (IssueStatus.Todo, "assigned")            => true
-      case (IssueStatus.Done, "completed")           => true
-      case (IssueStatus.Rework, "failed")            => true
-      case (IssueStatus.Canceled, "skipped")         => true
-      case _                                         => false
-
-  def parseIssueStateTag(raw: String): Option[IssueStateTag] =
-    raw.trim.toLowerCase match
-      case "backlog"      => Some(IssueStateTag.Backlog)
-      case "todo"         => Some(IssueStateTag.Todo)
-      case "human_review" => Some(IssueStateTag.HumanReview)
-      case "humanreview"  => Some(IssueStateTag.HumanReview)
-      case "rework"       => Some(IssueStateTag.Rework)
-      case "merging"      => Some(IssueStateTag.Merging)
-      case "done"         => Some(IssueStateTag.Done)
-      case "canceled"     => Some(IssueStateTag.Canceled)
-      case "cancelled"    => Some(IssueStateTag.Canceled)
-      case "duplicated"   => Some(IssueStateTag.Duplicated)
-      case "archived"     => Some(IssueStateTag.Archived)
-      case "open"         => Some(IssueStateTag.Open)
-      case "assigned"     => Some(IssueStateTag.Assigned)
-      case "in_progress"  => Some(IssueStateTag.InProgress)
-      case "inprogress"   => Some(IssueStateTag.InProgress)
-      case "completed"    => Some(IssueStateTag.Completed)
-      case "failed"       => Some(IssueStateTag.Failed)
-      case "skipped"      => Some(IssueStateTag.Skipped)
-      case _              => None
+    parseIssueStatusToken(token).contains(status)
 
   def parseIssueStatusToken(raw: String): Option[IssueStatus] =
     raw.trim.toLowerCase match

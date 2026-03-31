@@ -868,7 +868,7 @@ final case class IssueControllerLive(
       ErrorHandlingMiddleware.fromPersistence {
         val filter = IssueFilter(
           runId = Some(TaskRunId(runId)),
-          states = Set(IssueStateTag.Todo, IssueStateTag.Open),
+          states = IssueFilter.assignableTodoCandidates,
         )
         issueRepository.list(filter).mapError(mapIssueRepoError)
           .map(issues => Response.json(issues.map(domainToView).toJson))
