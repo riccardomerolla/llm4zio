@@ -94,7 +94,7 @@ object WorkspacesView:
       id                 := s"analysis-status-$workspaceId",
       cls                := "rounded-xl border border-white/10 bg-slate-950/60 p-4",
       attr("hx-get")     := s"/api/workspaces/$workspaceId/analysis-status",
-      attr("hx-trigger") := "load, every 5s",
+      attr("hx-trigger") := "every 5s",
       attr("hx-swap")    := "outerHTML",
     )(
       div(cls := "flex items-center justify-between gap-3")(
