@@ -222,19 +222,20 @@ object IssuesView:
           cls                          := "flex-1 min-h-0 overflow-hidden",
         )(
           div(
-            id                           := "issues-board-root",
-            attr("hx-get")               := fragmentUrl,
-            attr("hx-trigger")           := "load, every 10s",
-            attr("hx-swap")              := "innerHTML",
-            cls                          := "h-full",
-            attr("data-bulk-scope")      := "board",
+            id                      := "issues-board-root",
+            attr("hx-get")          := fragmentUrl,
+            attr("hx-trigger")      := "load, every 10s",
+            attr("hx-swap")         := "innerHTML",
+            cls                     := "h-full",
+            attr("data-bulk-scope") := "board",
           )(
             raw(boardColumnsFragment(filteredIssues, workspaces, workReports, availableAgents, dispatchStatuses))
-          ),
+          )
         ),
       ),
       JsResources.inlineModuleScript("/static/client/components/ab-board-column.js"),
       JsResources.inlineModuleScript("/static/client/components/ab-board-layout.js"),
+      JsResources.inlineModuleScript("/static/client/components/issues-board-sync.js"),
       JsResources.inlineModuleScript("/static/client/components/ab-issues-board.js"),
       JsResources.inlineModuleScript("/static/client/components/issues-bulk-actions.js"),
     )

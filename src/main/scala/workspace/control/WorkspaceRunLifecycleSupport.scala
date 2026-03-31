@@ -24,7 +24,7 @@ private[control] object WorkspaceRunLifecycleSupport:
   enum CleanupMode:
     case OnCancelled, AfterMergeSuccess
 
-private[control] final case class WorkspaceRunLifecycleSupport(
+final private[control] case class WorkspaceRunLifecycleSupport(
   wsRepo: WorkspaceRepository,
   chatRepo: ChatRepository,
   issueRepo: IssueRepository,
@@ -103,7 +103,8 @@ private[control] final case class WorkspaceRunLifecycleSupport(
           val status   = scala.io.Source.fromInputStream(statusP.getInputStream).mkString.trim
           val statusRc = statusP.waitFor()
 
-          if headRc == 0 && statusRc == 0 && head.nonEmpty then Some(GitSnapshot(headRevision = head, statusSummary = status))
+          if headRc == 0 && statusRc == 0 && head.nonEmpty then
+            Some(GitSnapshot(headRevision = head, statusSummary = status))
           else None
         }
         .mapWorktreeFailure("capture_git_snapshot")

@@ -22,9 +22,9 @@
 - [x] Perform a review pass for Group 3, apply any remarks, then commit the group.
 
 ### Group 4: Final verification
-- [ ] Run `sbt --client scalafmtAll`.
-- [ ] Run targeted specs for the touched areas.
-- [ ] Run `sbt --client compile`.
-- [ ] Run `sbt --client test`.
-- [ ] Perform a final review pass and apply any last remarks.
-- [ ] Commit the final verification updates if needed.
+- [x] Run `sbt --client scalafmtAll`.
+- [x] Run targeted specs for the touched areas.
+- [x] Run `sbt --client compile`.
+- [x] Run `sbt --client test`.
+- [x] Perform a final review pass and apply any last remarks.
+- [x] Commit the final verification updates if needed.

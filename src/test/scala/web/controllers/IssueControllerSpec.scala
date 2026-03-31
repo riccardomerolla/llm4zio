@@ -456,7 +456,8 @@ object IssueControllerSpec extends ZIOSpecDefault:
       test("POST /issues/:id/status accepts legacy completed alias through canonical status parsing") {
         val legacyIssueId = IssueId("issue-legacy-completed")
         for
-          issueEvents <- Ref.make(Map(legacyIssueId -> unlinkedIssueSeedEvents(legacyIssueId, "Legacy completed issue")))
+          issueEvents <-
+            Ref.make(Map(legacyIssueId -> unlinkedIssueSeedEvents(legacyIssueId, "Legacy completed issue")))
           runRequests <- Ref.make(List.empty[AssignRunRequest])
           issueRepo    = InMemoryIssueRepository(issueEvents)
           routes      <- makeRoutes(issueRepo, StubWorkspaceRunService(runRequests, failAssign = false))
