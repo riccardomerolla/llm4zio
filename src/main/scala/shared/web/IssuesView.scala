@@ -215,23 +215,26 @@ object IssuesView:
           )
         ),
         bulkToolbar("board"),
-        div(
-          id                           := "issues-board-root",
+        tag("ab-issues-board")(
           attr("data-fragment-url")    := fragmentUrl,
           attr("data-status-endpoint") := "/api/issues",
           attr("data-ws-topic")        := "activity:feed",
-          attr("hx-get")               := fragmentUrl,
-          attr("hx-trigger")           := "load, every 10s",
-          attr("hx-swap")              := "innerHTML",
           cls                          := "flex-1 min-h-0 overflow-hidden",
-          attr("data-bulk-scope")      := "board",
         )(
-          raw(boardColumnsFragment(filteredIssues, workspaces, workReports, availableAgents, dispatchStatuses))
+          div(
+            id                           := "issues-board-root",
+            attr("hx-get")               := fragmentUrl,
+            attr("hx-trigger")           := "load, every 10s",
+            attr("hx-swap")              := "innerHTML",
+            cls                          := "h-full",
+            attr("data-bulk-scope")      := "board",
+          )(
+            raw(boardColumnsFragment(filteredIssues, workspaces, workReports, availableAgents, dispatchStatuses))
+          ),
         ),
       ),
       JsResources.inlineModuleScript("/static/client/components/ab-board-column.js"),
       JsResources.inlineModuleScript("/static/client/components/ab-board-layout.js"),
-      JsResources.inlineModuleScript("/static/client/components/issues-board-sync.js"),
       JsResources.inlineModuleScript("/static/client/components/ab-issues-board.js"),
       JsResources.inlineModuleScript("/static/client/components/issues-bulk-actions.js"),
     )

@@ -96,7 +96,7 @@ object BoardView:
           ),
         ),
         // Kanban board (HTMX-refreshed)
-        div(
+        tag("ab-board-fs")(
           id                          := "fs-board-root",
           attr("data-workspace-id")   := workspaceId,
           attr("data-workspace-path") := workspacePath,
@@ -111,7 +111,7 @@ object BoardView:
       JsResources.inlineModuleScript("/static/client/components/design-system/ab-filter-bar.js"),
       JsResources.inlineModuleScript("/static/client/components/ab-board-column.js"),
       JsResources.inlineModuleScript("/static/client/components/ab-board-layout.js"),
-      JsResources.inlineModuleScript("/static/client/components/board-fs.js"),
+      JsResources.inlineModuleScript("/static/client/components/ab-board-fs.js"),
       // Toggle new-issue panel
       script(raw("""
         document.querySelector('[data-new-issue-btn]')?.addEventListener('click', () => {

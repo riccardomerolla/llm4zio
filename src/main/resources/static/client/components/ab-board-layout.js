@@ -1,10 +1,10 @@
 /**
- * ab-board-layout — plain HTMLElement orchestrator for Fizzy-style board columns.
+ * ab-board-layout — LitElement orchestrator for Fizzy-style board columns.
  *
  * Manages up to 2 expanded columns on desktop (1 on mobile <768px), using CSS Grid
  * to size expanded columns at 1fr and compact columns at 40px.
  *
- * Attributes:
+ * Properties / Attributes:
  *   default-expanded  (String) — comma-separated status tokens expanded by default
  *                                e.g. "todo,in_progress"
  *
@@ -13,25 +13,36 @@
  *
  * localStorage key: board-expanded-columns:v2  — JSON array of up to 2 status strings
  */
-class AbBoardLayout extends HTMLElement {
+import { LitElement, html } from 'https://cdn.jsdelivr.net/npm/lit@3/+esm';
+
+class AbBoardLayout extends LitElement {
   static _STORAGE_KEY = 'board-expanded-columns:v2';
   static _MOBILE_BREAKPOINT = 768;
 
+  static properties = {
+    defaultExpanded:   { type: String, attribute: 'default-expanded' },
+    _expandedStatuses: { state: true },
+  };
+
   constructor() {
     super();
-    this._expandedStatuses = [];
+    this.defaultExpanded    = '';
+    this._expandedStatuses  = [];
     this._boundOnColumnToggle = this._onColumnToggle.bind(this);
   }
+
+  createRenderRoot() { return this; }
 
   // ---------------------------------------------------------------------------
   // Lifecycle
   // ---------------------------------------------------------------------------
 
   connectedCallback() {
+    super.connectedCallback();
     // Apply grid container styles
     this.style.display = 'grid';
-    this.style.gap = '4px';
-    this.style.height = '100%';  // fill the flex-1 board root container
+    this.style.gap     = '4px';
+    this.style.height  = '100%';  // fill the flex-1 board root container
 
     // Attach listener immediately so no toggle events are missed
     this.addEventListener('ab-column-toggle', this._boundOnColumnToggle);
@@ -42,12 +53,22 @@ class AbBoardLayout extends HTMLElement {
     // HTMX fragment inserts this element and children are upgraded asynchronously.
     Promise.resolve().then(() => {
       this._expandedStatuses = this._load();
-      this._applyState();
     });
   }
 
   disconnectedCallback() {
+    super.disconnectedCallback();
     this.removeEventListener('ab-column-toggle', this._boundOnColumnToggle);
+  }
+
+  updated(changedProperties) {
+    if (changedProperties.has('_expandedStatuses')) {
+      this._applyState();
+    }
+  }
+
+  render() {
+    return html``;
   }
 
   // ---------------------------------------------------------------------------
@@ -63,25 +84,24 @@ class AbBoardLayout extends HTMLElement {
     if (!status) return;
 
     const alreadyExpanded = this._expandedStatuses.includes(status);
+    const max = this._maxExpanded();
 
+    let newStatuses;
     if (alreadyExpanded) {
       // Collapse: remove from the list
-      this._expandedStatuses = this._expandedStatuses.filter(s => s !== status);
+      newStatuses = this._expandedStatuses.filter(s => s !== status);
     } else {
-      // Expand: push to end (most recently interacted)
-      this._expandedStatuses.push(status);
-
-      const max = this._maxExpanded();
+      // Expand: push to end (most recently interacted), then clamp to max
+      newStatuses = [...this._expandedStatuses, status];
       // while (not if) defensively handles persisted state arriving with excess
       // entries; in normal flow only one shift is ever needed per toggle.
-      // _applyState() below removes the 'expanded' attribute from the shifted column.
-      while (this._expandedStatuses.length > max) {
-        this._expandedStatuses.shift();
+      while (newStatuses.length > max) {
+        newStatuses.shift();
       }
     }
 
+    this._expandedStatuses = newStatuses;
     this._save();
-    this._applyState();
   }
 
   // ---------------------------------------------------------------------------
@@ -161,7 +181,7 @@ class AbBoardLayout extends HTMLElement {
     }
 
     // 2. Fall back to default-expanded attribute
-    const defaultAttr = this.getAttribute('default-expanded');
+    const defaultAttr = this.defaultExpanded;
     if (defaultAttr) {
       return defaultAttr
         .split(',')

@@ -1,102 +1,147 @@
-class GitPanel {
-  constructor(root) {
-    this.root = root;
-    this.workspaceId = root?.dataset?.workspaceId || '';
-    this.runId = root?.dataset?.runId || '';
-    this.topic = root?.dataset?.topic || `runs:${this.runId}:git`;
-    this.statusEndpoint = root?.dataset?.statusEndpoint || '';
-    this.diffEndpoint = root?.dataset?.diffEndpoint || '';
-    this.logEndpoint = root?.dataset?.logEndpoint || '';
-    this.branchEndpoint = root?.dataset?.branchEndpoint || '';
-    this.applyEndpoint = root?.dataset?.applyEndpoint || '';
+import { LitElement, html } from 'https://cdn.jsdelivr.net/npm/lit@3/+esm';
 
-    this.summaryEl = root.querySelector('[data-role="summary"]');
-    this.filesGroupsEl = root.querySelector('[data-role="files-groups"]');
-    this.diffViewerEl = root.querySelector('[data-role="diff-viewer"]');
-    this.diffTitleEl = root.querySelector('[data-role="diff-title"]');
-    this.diffContentEl = root.querySelector('[data-role="diff-content"]');
-    this.branchCurrentEl = root.querySelector('[data-role="branch-current"]');
-    this.aheadBehindEl = root.querySelector('[data-role="ahead-behind"]');
-    this.applyButtonEl = root.querySelector('[data-role="apply-button"]');
-    this.applyFeedbackEl = root.querySelector('[data-role="apply-feedback"]');
-    this.commitLogEl = root.querySelector('[data-role="commit-log"]');
+class AbGitPanel extends LitElement {
+  static properties = {
+    workspaceId:    { type: String, attribute: 'data-workspace-id' },
+    runId:          { type: String, attribute: 'data-run-id' },
+    topic:          { type: String, attribute: 'data-topic' },
+    statusEndpoint: { type: String, attribute: 'data-status-endpoint' },
+    diffEndpoint:   { type: String, attribute: 'data-diff-endpoint' },
+    logEndpoint:    { type: String, attribute: 'data-log-endpoint' },
+    branchEndpoint: { type: String, attribute: 'data-branch-endpoint' },
+    applyEndpoint:  { type: String, attribute: 'data-apply-endpoint' },
+  };
 
-    this.ws = null;
-    this.currentDiffPath = null;
-    this.changedFiles = new Set();
-    this.status = null;
-    this.diffStat = null;
-    this.branch = null;
+  constructor() {
+    super();
+    this.workspaceId    = '';
+    this.runId          = '';
+    this.topic          = '';
 
-    this.bind();
-    this.loadAll();
-    this.connectWs();
+    this._resolvedTopic   = '';
+    this.statusEndpoint = '';
+    this.diffEndpoint   = '';
+    this.logEndpoint    = '';
+    this.branchEndpoint = '';
+    this.applyEndpoint  = '';
+
+    this._summaryEl       = null;
+    this._filesGroupsEl   = null;
+    this._diffViewerEl    = null;
+    this._diffTitleEl     = null;
+    this._diffContentEl   = null;
+    this._branchCurrentEl = null;
+    this._aheadBehindEl   = null;
+    this._applyButtonEl   = null;
+    this._applyFeedbackEl = null;
+    this._commitLogEl     = null;
+
+    this._ws              = null;
+    this._currentDiffPath = null;
+    this._changedFiles    = new Set();
+    this._status          = null;
+    this._diffStat        = null;
+    this._branch          = null;
   }
 
-  bind() {
-    this.filesGroupsEl?.addEventListener('click', (event) => {
+  createRenderRoot() { return this; }
+
+  connectedCallback() {
+    super.connectedCallback();
+    // Derive topic from data-run-id only when data-topic was not provided explicitly
+    if (!this.topic && this.runId) {
+      this._resolvedTopic = `runs:${this.runId}:git`;
+    } else {
+      this._resolvedTopic = this.topic || '';
+    }
+
+    this._summaryEl       = this.querySelector('[data-role="summary"]');
+    this._filesGroupsEl   = this.querySelector('[data-role="files-groups"]');
+    this._diffViewerEl    = this.querySelector('[data-role="diff-viewer"]');
+    this._diffTitleEl     = this.querySelector('[data-role="diff-title"]');
+    this._diffContentEl   = this.querySelector('[data-role="diff-content"]');
+    this._branchCurrentEl = this.querySelector('[data-role="branch-current"]');
+    this._aheadBehindEl   = this.querySelector('[data-role="ahead-behind"]');
+    this._applyButtonEl   = this.querySelector('[data-role="apply-button"]');
+    this._applyFeedbackEl = this.querySelector('[data-role="apply-feedback"]');
+    this._commitLogEl     = this.querySelector('[data-role="commit-log"]');
+
+    this._bind();
+    this._loadAll();
+    this._connectWs();
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    this._disconnectWs();
+  }
+
+  render() { return html``; }
+
+  _bind() {
+    this._filesGroupsEl?.addEventListener('click', (event) => {
       const button = event.target.closest('[data-role="file"]');
       if (!button) return;
       event.preventDefault();
       const path = button.dataset.filePath || '';
       if (!path) return;
-      this.toggleDiff(path);
+      this._toggleDiff(path);
     });
 
-    this.diffContentEl?.addEventListener('htmx:afterSwap', () => {
-      this.renderDiffText(this.diffContentEl.textContent || '');
+    this._diffContentEl?.addEventListener('htmx:afterSwap', () => {
+      this._renderDiffText(this._diffContentEl.textContent || '');
     });
-    this.applyButtonEl?.addEventListener('click', () => this.applyToRepo());
+    this._applyButtonEl?.addEventListener('click', () => this._applyToRepo());
 
-    window.addEventListener('beforeunload', () => this.disconnectWs());
+    window.addEventListener('beforeunload', () => this._disconnectWs());
   }
 
-  async loadAll() {
-    await Promise.all([this.refreshFiles(false), this.refreshBranchAndCommits()]);
+  async _loadAll() {
+    await Promise.all([this._refreshFiles(false), this._refreshBranchAndCommits()]);
   }
 
-  async refreshFiles(shouldFlash) {
+  async _refreshFiles(shouldFlash) {
     const [status, diffStat] = await Promise.all([
-      this.fetchJson(this.statusEndpoint),
+      this._fetchJson(this.statusEndpoint),
       // Always compare against main so only committed, tracked changes are shown —
       // build artefacts and other gitignored files are excluded naturally.
-      this.fetchJson(`${this.diffEndpoint}?base=main`),
+      this._fetchJson(`${this.diffEndpoint}?base=main`),
     ]);
     if (!status || !diffStat) return;
 
-    const previous = this.changedFiles;
-    this.status = status;
-    this.diffStat = diffStat;
+    const previous = this._changedFiles;
+    this._status = status;
+    this._diffStat = diffStat;
 
-    const nextChanged = this.computeChangedFiles(status, diffStat);
-    this.changedFiles = nextChanged;
+    const nextChanged = this._computeChangedFiles(status, diffStat);
+    this._changedFiles = nextChanged;
 
     const flash = shouldFlash
       ? new Set(Array.from(nextChanged).filter((entry) => !previous.has(entry)))
       : new Set();
 
-    this.renderFiles(status, diffStat, flash);
+    this._renderFiles(status, diffStat, flash);
   }
 
-  async refreshBranchAndCommits() {
-    const branch = await this.fetchJson(this.branchEndpoint);
+  async _refreshBranchAndCommits() {
+    const branch = await this._fetchJson(this.branchEndpoint);
     if (!branch) return;
-    this.branch = branch;
-    this.renderBranch(branch);
+    this._branch = branch;
+    this._renderBranch(branch);
 
     const ahead = Number(branch?.aheadBehind?.ahead || 0);
     if (ahead <= 0) {
-      this.renderCommits([]);
+      this._renderCommits([]);
       return;
     }
     const commitLimit = Math.max(Math.min(ahead, 30), 5);
-    const commits = await this.fetchJson(`${this.logEndpoint}?limit=${commitLimit}`);
+    const commits = await this._fetchJson(`${this.logEndpoint}?limit=${commitLimit}`);
     if (Array.isArray(commits)) {
-      this.renderCommits(commits.slice(0, ahead));
+      this._renderCommits(commits.slice(0, ahead));
     }
   }
 
-  computeChangedFiles(status, diffStat) {
+  _computeChangedFiles(status, diffStat) {
     const key = (entry) => `${entry.status}:${entry.path}`;
     const tracked = [
       ...(status?.staged || []).map((entry) => key(entry)),
@@ -106,7 +151,7 @@ class GitPanel {
     return new Set(tracked);
   }
 
-  renderFiles(status, diffStat, flashEntries) {
+  _renderFiles(status, diffStat, flashEntries) {
     const statsByPath = new Map((diffStat?.files || []).map((file) => [file.path, file]));
     const staged = (status?.staged || []).map((entry) => ({
       path: entry.path,
@@ -138,11 +183,11 @@ class GitPanel {
     const insertions = (diffStat?.files || []).reduce((total, item) => total + Number(item.additions || 0), 0);
     const deletions = (diffStat?.files || []).reduce((total, item) => total + Number(item.deletions || 0), 0);
 
-    if (this.summaryEl) {
-      this.summaryEl.textContent = `${uniquePaths.size} files changed, ${insertions} insertions, ${deletions} deletions`;
+    if (this._summaryEl) {
+      this._summaryEl.textContent = `${uniquePaths.size} files changed, ${insertions} insertions, ${deletions} deletions`;
     }
 
-    if (!this.filesGroupsEl) return;
+    if (!this._filesGroupsEl) return;
 
     const renderedGroups = grouped
       .map((group) => {
@@ -155,16 +200,16 @@ class GitPanel {
             const additions = Number(stat?.additions || 0);
             const deletions = Number(stat?.deletions || 0);
             const flashClass = flashEntries.has(entry.key) ? ' flash' : '';
-            const badge = this.renderStatusBadge(entry.status);
+            const badge = this._renderStatusBadge(entry.status);
             // Committed-group files request diff against main so the viewer shows the full branch diff
             const diffUrl = entry.group === 'Committed'
               ? `${this.diffEndpoint}/${encodeURIComponent(entry.path)}?base=main`
               : `${this.diffEndpoint}/${encodeURIComponent(entry.path)}`;
-            return `<button type="button" data-role="file" data-file-path="${this.escapeAttr(entry.path)}" hx-get="${this.escapeAttr(diffUrl)}" hx-target="this" class="git-file-row${flashClass} w-full text-left rounded-md border border-white/10 bg-white/5 px-2 py-1.5 hover:bg-white/10">
+            return `<button type="button" data-role="file" data-file-path="${this._escapeAttr(entry.path)}" hx-get="${this._escapeAttr(diffUrl)}" hx-target="this" class="git-file-row${flashClass} w-full text-left rounded-md border border-white/10 bg-white/5 px-2 py-1.5 hover:bg-white/10">
               <div class="flex items-center justify-between gap-2">
                 <div class="min-w-0 flex items-center gap-2">
                   ${badge}
-                  <span class="truncate text-xs text-gray-100 font-mono">${this.escapeHtml(entry.path)}</span>
+                  <span class="truncate text-xs text-gray-100 font-mono">${this._escapeHtml(entry.path)}</span>
                 </div>
                 <span class="text-[11px] text-gray-400">+${additions} / -${deletions}</span>
               </div>
@@ -175,10 +220,10 @@ class GitPanel {
       })
       .join('');
 
-    this.filesGroupsEl.innerHTML = renderedGroups;
+    this._filesGroupsEl.innerHTML = renderedGroups;
   }
 
-  renderStatusBadge(status) {
+  _renderStatusBadge(status) {
     const normalized = String(status || '').toLowerCase();
     if (normalized === 'modified') return '<span class="inline-flex h-5 w-5 items-center justify-center rounded bg-blue-500/30 text-blue-200 text-[10px] font-bold">M</span>';
     if (normalized === 'added') return '<span class="inline-flex h-5 w-5 items-center justify-center rounded bg-emerald-500/30 text-emerald-200 text-[10px] font-bold">A</span>';
@@ -187,20 +232,20 @@ class GitPanel {
     return '<span class="inline-flex h-5 w-5 items-center justify-center rounded bg-slate-500/30 text-slate-200 text-[10px] font-bold">?</span>';
   }
 
-  renderBranch(branchView) {
+  _renderBranch(branchView) {
     const current = branchView?.branch?.current || 'unknown';
     const ahead = Number(branchView?.aheadBehind?.ahead || 0);
     const behind = Number(branchView?.aheadBehind?.behind || 0);
     const base = branchView?.baseBranch || 'main';
 
-    if (this.branchCurrentEl) {
-      const safeCurrent = this.escapeHtml(current);
-      const safeCurrentAttr = this.escapeAttr(current);
-      this.branchCurrentEl.innerHTML = `<div class="flex items-center gap-2">
+    if (this._branchCurrentEl) {
+      const safeCurrent = this._escapeHtml(current);
+      const safeCurrentAttr = this._escapeAttr(current);
+      this._branchCurrentEl.innerHTML = `<div class="flex items-center gap-2">
         <span class="font-mono text-gray-100">${safeCurrent}</span>
         <button type="button" data-role="copy-branch" data-branch="${safeCurrentAttr}" class="rounded bg-white/10 px-2 py-0.5 text-[11px] text-gray-200 hover:bg-white/20">Copy</button>
       </div>`;
-      const copyBtn = this.branchCurrentEl.querySelector('[data-role="copy-branch"]');
+      const copyBtn = this._branchCurrentEl.querySelector('[data-role="copy-branch"]');
       copyBtn?.addEventListener('click', async () => {
         try {
           await navigator.clipboard.writeText(current);
@@ -216,24 +261,24 @@ class GitPanel {
         }
       });
     }
-    if (this.aheadBehindEl) {
-      this.aheadBehindEl.textContent = `${ahead} commits ahead of ${base}, ${behind} behind`;
+    if (this._aheadBehindEl) {
+      this._aheadBehindEl.textContent = `${ahead} commits ahead of ${base}, ${behind} behind`;
     }
   }
 
-  renderCommits(commits) {
-    if (!this.commitLogEl) return;
+  _renderCommits(commits) {
+    if (!this._commitLogEl) return;
     if (!commits.length) {
-      this.commitLogEl.innerHTML = '<p class="text-xs text-gray-500">No commits ahead of main.</p>';
+      this._commitLogEl.innerHTML = '<p class="text-xs text-gray-500">No commits ahead of main.</p>';
       return;
     }
 
-    this.commitLogEl.innerHTML = commits
+    this._commitLogEl.innerHTML = commits
       .map((entry) => {
-        const hash = this.escapeHtml(entry.shortHash || '').slice(0, 12);
-        const message = this.truncate(this.escapeHtml(entry.message || ''), 74);
-        const author = this.escapeHtml(entry.author || 'unknown');
-        const relative = this.relativeTime(entry.date);
+        const hash = this._escapeHtml(entry.shortHash || '').slice(0, 12);
+        const message = this._truncate(this._escapeHtml(entry.message || ''), 74);
+        const author = this._escapeHtml(entry.author || 'unknown');
+        const relative = this._relativeTime(entry.date);
         return `<article class="rounded border border-white/10 bg-white/5 px-2 py-1.5">
           <div class="flex items-center justify-between gap-2 text-[11px] text-gray-400">
             <span class="font-mono text-indigo-200">${hash}</span>
@@ -246,32 +291,32 @@ class GitPanel {
       .join('');
   }
 
-  toggleDiff(path) {
-    if (!this.diffViewerEl || !this.diffTitleEl || !this.diffContentEl) return;
-    if (this.currentDiffPath === path && !this.diffViewerEl.classList.contains('hidden')) {
-      this.diffViewerEl.classList.add('hidden');
-      this.currentDiffPath = null;
+  _toggleDiff(path) {
+    if (!this._diffViewerEl || !this._diffTitleEl || !this._diffContentEl) return;
+    if (this._currentDiffPath === path && !this._diffViewerEl.classList.contains('hidden')) {
+      this._diffViewerEl.classList.add('hidden');
+      this._currentDiffPath = null;
       return;
     }
 
-    this.currentDiffPath = path;
-    this.diffViewerEl.classList.remove('hidden');
-    this.diffTitleEl.textContent = path;
-    this.diffContentEl.textContent = 'Loading diff...';
+    this._currentDiffPath = path;
+    this._diffViewerEl.classList.remove('hidden');
+    this._diffTitleEl.textContent = path;
+    this._diffContentEl.textContent = 'Loading diff...';
 
     const url = `${this.diffEndpoint}/${encodeURIComponent(path)}`;
     fetch(url)
       .then((response) => response.ok ? response.text() : Promise.reject(new Error('Failed to load diff')))
       .then((text) => {
-        this.renderDiffText(text);
+        this._renderDiffText(text);
       })
       .catch(() => {
-        this.diffContentEl.textContent = 'Unable to load diff.';
+        this._diffContentEl.textContent = 'Unable to load diff.';
       });
   }
 
-  renderDiffText(rawDiff) {
-    if (!this.diffContentEl) return;
+  _renderDiffText(rawDiff) {
+    if (!this._diffContentEl) return;
     const lines = String(rawDiff || '').split('\n');
     let oldNo = 0;
     let newNo = 0;
@@ -284,7 +329,7 @@ class GitPanel {
             oldNo = Number(match[1]);
             newNo = Number(match[2]);
           }
-          return `<div class="git-diff-line git-diff-hunk"><span class="line-no old"></span><span class="line-no new"></span><span class="code">${this.escapeHtml(line)}</span></div>`;
+          return `<div class="git-diff-line git-diff-hunk"><span class="line-no old"></span><span class="line-no new"></span><span class="code">${this._escapeHtml(line)}</span></div>`;
         }
 
         const isMeta =
@@ -295,7 +340,7 @@ class GitPanel {
           line.startsWith('new file mode ') ||
           line.startsWith('deleted file mode ');
         if (isMeta) {
-          return `<div class="git-diff-line git-diff-meta"><span class="line-no old"></span><span class="line-no new"></span><span class="code">${this.escapeHtml(line)}</span></div>`;
+          return `<div class="git-diff-line git-diff-meta"><span class="line-no old"></span><span class="line-no new"></span><span class="code">${this._escapeHtml(line)}</span></div>`;
         }
 
         let cls = 'git-diff-line git-diff-context';
@@ -318,30 +363,31 @@ class GitPanel {
           }
         }
 
-        return `<div class="${cls}"><span class="line-no old">${oldDisplay}</span><span class="line-no new">${newDisplay}</span><span class="code">${this.escapeHtml(line)}</span></div>`;
+        return `<div class="${cls}"><span class="line-no old">${oldDisplay}</span><span class="line-no new">${newDisplay}</span><span class="code">${this._escapeHtml(line)}</span></div>`;
       })
       .join('');
 
-    this.diffContentEl.innerHTML = html;
+    this._diffContentEl.innerHTML = html;
   }
 
-  connectWs() {
+  _connectWs() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    this.ws = new WebSocket(`${protocol}//${window.location.host}/ws/console`);
-    this.ws.onopen = () => {
-      this.ws?.send(JSON.stringify({ Subscribe: { topic: this.topic, params: {} } }));
+    this._ws = new WebSocket(`${protocol}//${window.location.host}/ws/console`);
+    this._ws.onopen = () => {
+      this._ws?.send(JSON.stringify({ Subscribe: { topic: this._resolvedTopic, params: {} } }));
     };
-    this.ws.onmessage = (event) => this.onWsMessage(event.data);
+    this._ws.onmessage = (event) => this._onWsMessage(event.data);
   }
 
-  disconnectWs() {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ Unsubscribe: { topic: this.topic } }));
-      this.ws.close();
+  _disconnectWs() {
+    if (this._ws && this._ws.readyState === WebSocket.OPEN) {
+      this._ws.send(JSON.stringify({ Unsubscribe: { topic: this._resolvedTopic } }));
+      this._ws.close();
     }
+    this._ws = null;
   }
 
-  onWsMessage(raw) {
+  _onWsMessage(raw) {
     let parsed;
     try {
       parsed = JSON.parse(raw);
@@ -350,20 +396,20 @@ class GitPanel {
     }
 
     const event = parsed?.Event;
-    if (!event || event.topic !== this.topic) return;
+    if (!event || event.topic !== this._resolvedTopic) return;
 
     if (event.eventType === 'git-status-update') {
-      this.refreshFiles(true);
-      this.refreshBranchAndCommits();
+      this._refreshFiles(true);
+      this._refreshBranchAndCommits();
       return;
     }
 
     if (event.eventType === 'git-new-commit') {
-      this.refreshBranchAndCommits();
+      this._refreshBranchAndCommits();
     }
   }
 
-  async fetchJson(url) {
+  async _fetchJson(url) {
     if (!url) return null;
     try {
       const response = await fetch(url, { headers: { Accept: 'application/json' } });
@@ -374,15 +420,15 @@ class GitPanel {
     }
   }
 
-  async applyToRepo() {
-    if (!this.applyEndpoint || !this.applyButtonEl) return;
+  async _applyToRepo() {
+    if (!this.applyEndpoint || !this._applyButtonEl) return;
     if (!window.confirm('Apply this run branch to the workspace repository?')) return;
 
-    const button = this.applyButtonEl;
+    const button = this._applyButtonEl;
     const prevText = button.textContent || 'Apply to repo';
     button.disabled = true;
     button.textContent = 'Applying...';
-    this.setApplyFeedback('Applying run branch to repository...', false);
+    this._setApplyFeedback('Applying run branch to repository...', false);
 
     try {
       const response = await fetch(this.applyEndpoint, {
@@ -399,34 +445,34 @@ class GitPanel {
 
       if (!response.ok) {
         const message = payload?.message || text || 'Apply failed.';
-        this.setApplyFeedback(message, true);
+        this._setApplyFeedback(message, true);
         return;
       }
 
       const message = payload?.message || 'Applied successfully.';
-      this.setApplyFeedback(message, false);
-      await this.refreshFiles(true);
-      await this.refreshBranchAndCommits();
+      this._setApplyFeedback(message, false);
+      await this._refreshFiles(true);
+      await this._refreshBranchAndCommits();
     } catch (_err) {
-      this.setApplyFeedback('Apply failed: network error.', true);
+      this._setApplyFeedback('Apply failed: network error.', true);
     } finally {
       button.disabled = false;
       button.textContent = prevText;
     }
   }
 
-  setApplyFeedback(message, isError) {
-    if (!this.applyFeedbackEl) return;
-    this.applyFeedbackEl.textContent = message || '';
-    this.applyFeedbackEl.className = isError ? 'text-xs text-rose-300' : 'text-xs text-emerald-300';
+  _setApplyFeedback(message, isError) {
+    if (!this._applyFeedbackEl) return;
+    this._applyFeedbackEl.textContent = message || '';
+    this._applyFeedbackEl.className = isError ? 'text-xs text-rose-300' : 'text-xs text-emerald-300';
   }
 
-  truncate(text, max) {
+  _truncate(text, max) {
     if (text.length <= max) return text;
     return `${text.slice(0, Math.max(0, max - 3))}...`;
   }
 
-  relativeTime(isoTimestamp) {
+  _relativeTime(isoTimestamp) {
     const ms = Date.parse(isoTimestamp || '');
     if (!Number.isFinite(ms)) return 'unknown';
 
@@ -440,7 +486,7 @@ class GitPanel {
     return `${deltaDays}d ago`;
   }
 
-  escapeHtml(value) {
+  _escapeHtml(value) {
     return String(value || '')
       .replaceAll('&', '&amp;')
       .replaceAll('<', '&lt;')
@@ -449,13 +495,11 @@ class GitPanel {
       .replaceAll("'", '&#39;');
   }
 
-  escapeAttr(value) {
-    return this.escapeHtml(value);
+  _escapeAttr(value) {
+    return this._escapeHtml(value);
   }
 }
 
-document.querySelectorAll('[data-role="git-panel"]').forEach((root) => {
-  if (!root.__gitPanel) {
-    root.__gitPanel = new GitPanel(root);
-  }
-});
+if (!customElements.get('ab-git-panel')) {
+  customElements.define('ab-git-panel', AbGitPanel);
+}

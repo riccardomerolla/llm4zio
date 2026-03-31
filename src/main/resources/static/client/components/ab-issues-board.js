@@ -1,16 +1,99 @@
-const createBoardSyncHooks = window.__issuesBoardSync?.createBoardSyncHooks || (() => ({
-  _flushPendingRefresh() {},
-  refreshBoard() {},
-  _flushPostRefreshToast() {},
-  connectWs() {},
-  onWsMessage() {},
-}));
+import { LitElement } from 'https://cdn.jsdelivr.net/npm/lit@3/+esm';
 
-class IssuesBoard {
-  constructor(root) {
-    this.root = root;
-    this.fragmentUrl = root?.dataset?.fragmentUrl || '/board/fragment';
-    this.wsTopic = root?.dataset?.wsTopic || 'activity:feed';
+function createBoardSyncHooks({
+  beforeRefresh = () => {},
+  afterRefresh = () => {},
+  afterSettle = () => {},
+} = {}) {
+  return {
+    _flushPendingRefresh() {
+      if (!this._refreshPending) return;
+      if (this._refreshInFlight) return;
+      if (this._shouldDeferRefresh()) return;
+      this._refreshPending = false;
+      this.refreshBoard();
+    },
+
+    refreshBoard(landedIssueId = null) {
+      if (this._refreshInFlight) {
+        this._refreshPending = true;
+        return;
+      }
+
+      if (this._shouldDeferRefresh()) {
+        this._refreshPending = true;
+        return;
+      }
+
+      this._refreshInFlight = true;
+      beforeRefresh.call(this);
+
+      const onSettled = () => {
+        this._refreshInFlight = false;
+        afterSettle.call(this);
+        this._flushPendingRefresh();
+      };
+
+      const onRefreshed = () => {
+        afterRefresh.call(this, landedIssueId);
+        this._flushPostRefreshToast();
+      };
+
+      window.htmx.ajax('GET', this.fragmentUrl, {
+        target: this.root,
+        swap: 'innerHTML',
+      }).then(onRefreshed).catch(() => {}).finally(onSettled);
+    },
+
+    _flushPostRefreshToast() {
+      const toast = this._pendingPostRefreshToast;
+      this._pendingPostRefreshToast = null;
+      if (!toast?.message) return;
+      this._showToast(toast.message, toast.type || 'warning');
+    },
+
+    connectWs() {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      this.ws = new WebSocket(`${protocol}//${window.location.host}/ws/console`);
+      this.ws.onopen = () => {
+        this.ws?.send(JSON.stringify({ Subscribe: { topic: this.wsTopic, params: {} } }));
+      };
+      this.ws.onmessage = (event) => this.onWsMessage(event.data);
+    },
+
+    onWsMessage(raw) {
+      let parsed;
+      try {
+        parsed = JSON.parse(raw);
+      } catch (_ignored) {
+        return;
+      }
+
+      const evt = parsed?.Event;
+      if (!evt || evt.topic !== this.wsTopic) return;
+      if (evt.eventType === 'activity-feed') {
+        this.refreshBoard();
+      }
+    },
+  };
+}
+
+class AbIssuesBoard extends LitElement {
+  // Light DOM — content is server-rendered inside the custom element
+  createRenderRoot() { return this; }
+
+  // Never re-render — HTMX manages the inner div's content
+  shouldUpdate() { return false; }
+
+  connectedCallback() {
+    super.connectedCallback();
+    // The inner #issues-board-root div is where HTMX does its polling.
+    // We operate on it via this.root so htmx.ajax() targets the inner div,
+    // keeping HTMX's internal request state completely isolated from
+    // LitElement's lifecycle on the outer custom element.
+    this.root = this.querySelector('#issues-board-root') || this;
+    this.fragmentUrl = this.dataset.fragmentUrl || '/board/fragment';
+    this.wsTopic = this.dataset.wsTopic || 'activity:feed';
     this.dragIssueId = null;
     this.dragCard = null;
     this.ghost = null;          // semi-transparent placeholder in source column
@@ -938,7 +1021,7 @@ class IssuesBoard {
 
 }
 
-Object.assign(IssuesBoard.prototype, createBoardSyncHooks({
+Object.assign(AbIssuesBoard.prototype, createBoardSyncHooks({
   beforeRefresh() {
     this._beginLoading();
   },
@@ -953,8 +1036,6 @@ Object.assign(IssuesBoard.prototype, createBoardSyncHooks({
   },
 }));
 
-document.querySelectorAll('#issues-board-root').forEach((root) => {
-  if (!root.__issuesBoard) {
-    root.__issuesBoard = new IssuesBoard(root);
-  }
-});
+if (!customElements.get('ab-issues-board')) {
+  customElements.define('ab-issues-board', AbIssuesBoard);
+}
