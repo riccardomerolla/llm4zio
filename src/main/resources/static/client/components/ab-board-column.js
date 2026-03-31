@@ -1,18 +1,26 @@
 /**
- * ab-board-column — plain HTMLElement custom element for Fizzy-style board columns.
+ * ab-board-column — LitElement custom element for Fizzy-style board columns.
  *
- * Attributes:
+ * Properties / Attributes:
  *   status   (String)  — column status token e.g. "todo", "in_progress"
  *   label    (String)  — display name e.g. "In Progress"
  *   count    (String)  — number of cards e.g. "5"
- *   expanded (Boolean) — reflected; presence = expanded, absence = compact
+ *   expanded (Boolean) — reflected; true = expanded, false = compact
  *   color    (String)  — Tailwind dot class e.g. "bg-amber-400"
  *
  * Events:
  *   ab-column-toggle — bubbles, composed; detail: { status }
  */
-class AbBoardColumn extends HTMLElement {
-  static observedAttributes = ['expanded', 'count'];
+import { LitElement, html } from 'https://cdn.jsdelivr.net/npm/lit@3/+esm';
+
+class AbBoardColumn extends LitElement {
+  static properties = {
+    status:   { type: String },
+    label:    { type: String },
+    count:    { type: String },
+    expanded: { type: Boolean, reflect: true },
+    color:    { type: String },
+  };
 
   // Progress bar sizing: 4 px per card, min 4 px, max 56 px (full at 14 cards)
   static _PROGRESS_PX_PER_CARD = 4;
@@ -37,46 +45,55 @@ class AbBoardColumn extends HTMLElement {
 
   constructor() {
     super();
-    // Bind click handler so we can remove the exact same reference later
+    this.status   = '';
+    this.label    = '';
+    this.count    = '0';
+    this.expanded = false;
+    this.color    = '';
     this._boundOnClick = this._onClick.bind(this);
   }
 
-  connectedCallback() {
-    // 1. Set data-drop-status so drag-and-drop code can find this column
-    const status = this.getAttribute('status') || '';
-    this.dataset.dropStatus = status;
+  /**
+   * Render Lit content into the compact title strip container so that
+   * server-rendered column children (header, cards, quick-add) are untouched.
+   * Must be called after _ensureCompactTitle() has inserted the container.
+   */
+  createRenderRoot() {
+    return this._compactTitleEl ?? this;
+  }
 
-    // 2. Always fill the grid cell height (compact strip also uses height:100%)
+  connectedCallback() {
+    // Create the compact title strip container BEFORE calling super.connectedCallback()
+    // because super calls createRenderRoot() synchronously and needs the container to exist.
+    this._ensureCompactTitle();
+
+    super.connectedCallback();
+    // Set data-drop-status so drag-and-drop code can find this column
+    this.dataset.dropStatus = this.status || '';
+
+    // Always fill the grid cell height (compact strip also uses height:100%)
     this.style.height   = '100%';
     this.style.overflow = 'hidden';  // contain flex children; cards area scrolls internally
 
-    // 3. Insert compact title strip as first child
-    this._insertCompactTitle();
-
-    // 4. Insert collapse button into the column header (if present)
+    // Insert collapse button into the column header (if present)
     this._insertCollapseButton();
 
-    // 5. Apply initial visual state
+    // Apply initial visual state
     this._applyVisual();
 
-    // 6. Attach click listener
     this.addEventListener('click', this._boundOnClick);
   }
 
   disconnectedCallback() {
+    super.disconnectedCallback();
     this.removeEventListener('click', this._boundOnClick);
   }
 
-  attributeChangedCallback(name, _oldValue, newValue) {
-    if (name === 'expanded') {
+  updated(changedProperties) {
+    if (changedProperties.has('expanded')) {
       this._applyVisual();
-    } else if (name === 'count') {
-      const n = parseInt(newValue || '0', 10);
-      const countEl = this.querySelector('[data-compact-count]');
-      if (countEl) countEl.textContent = String(n);
-      const bar = this.querySelector('[data-compact-progress]');
-      if (bar) bar.style.height = `${AbBoardColumn._progressHeight(n)}px`;
     }
+    // count / color / label changes are handled automatically by Lit re-rendering render()
   }
 
   // ---------------------------------------------------------------------------
@@ -84,12 +101,11 @@ class AbBoardColumn extends HTMLElement {
   // ---------------------------------------------------------------------------
 
   /**
-   * Update the displayed card count on both the attribute and the compact strip.
+   * Update the displayed card count.
    * @param {number} n
    */
   updateCount(n) {
-    // Setting the attribute triggers attributeChangedCallback which updates the DOM
-    this.setAttribute('count', String(n));
+    this.count = String(n);
   }
 
   // ---------------------------------------------------------------------------
@@ -101,14 +117,12 @@ class AbBoardColumn extends HTMLElement {
     return Math.max(min, Math.min(count * step, max));
   }
 
-  _insertCompactTitle() {
-    // Avoid double-inserting if connectedCallback is called more than once
-    if (this.querySelector('[data-column-compact-title]')) return;
+  get _compactTitleEl() {
+    return this.querySelector('[data-column-compact-title]');
+  }
 
-    const label    = this.getAttribute('label') || '';
-    const count    = this.getAttribute('count') || '0';
-    const colorKey = this.getAttribute('color') || '';
-    const dotColor = AbBoardColumn._colorMap[colorKey] || '#6b7280';
+  _ensureCompactTitle() {
+    if (this._compactTitleEl) return;
 
     const strip = document.createElement('div');
     strip.setAttribute('data-column-compact-title', '');
@@ -123,58 +137,6 @@ class AbBoardColumn extends HTMLElement {
       'height: 100%',
       'min-height: 80px',
     ].join('; ');
-
-    // Colored dot
-    const dot = document.createElement('span');
-    dot.style.cssText = [
-      'display: inline-block',
-      'width: 6px',
-      'height: 6px',
-      'border-radius: 50%',
-      `background-color: ${dotColor}`,
-      'flex-shrink: 0',
-    ].join('; ');
-
-    // Vertical label text
-    const labelEl = document.createElement('span');
-    labelEl.style.cssText = [
-      'writing-mode: vertical-rl',
-      'transform: rotate(180deg)',
-      'font-size: 11px',
-      'font-weight: 500',
-      'color: #94a3b8',   // slate-400 — readable on dark bg-slate-900
-      'white-space: nowrap',
-      'user-select: none',
-    ].join('; ');
-    labelEl.textContent = label;
-
-    // Count number
-    const countEl = document.createElement('span');
-    countEl.setAttribute('data-compact-count', '');
-    countEl.style.cssText = [
-      'font-size: 11px',
-      'font-weight: 600',
-      'color: #cbd5e1',   // slate-200 — brighter than label for visual hierarchy
-    ].join('; ');
-    countEl.textContent = count;
-
-    // Progress gradient bar — height proportional to card count
-    const countVal  = parseInt(this.getAttribute('count') || '0', 10);
-    const barHeight = AbBoardColumn._progressHeight(countVal);
-    const progressBar = document.createElement('div');
-    progressBar.setAttribute('data-compact-progress', '');
-    progressBar.style.cssText = [
-      `width: 6px`,
-      `height: ${barHeight}px`,
-      'border-radius: 3px',
-      `background: linear-gradient(to top, ${dotColor}, transparent)`,
-      'flex-shrink: 0',
-    ].join('; ');
-
-    strip.appendChild(dot);
-    strip.appendChild(labelEl);
-    strip.appendChild(countEl);
-    strip.appendChild(progressBar);
 
     // Insert as first child so it appears above server-rendered content
     this.insertBefore(strip, this.firstChild);
@@ -207,14 +169,13 @@ class AbBoardColumn extends HTMLElement {
   }
 
   _applyVisual() {
-    const expanded     = this.hasAttribute('expanded');
-    const compactTitle = this.querySelector('[data-column-compact-title]');
+    const compactTitle = this._compactTitleEl;
     const cardsArea    = this.querySelector('[data-role="column-cards"]') ||
                          this.querySelector('[data-column-cards]');
     const quickAddForm = this.querySelector('[data-quick-add-form]');
     const collapseBtn  = this.querySelector('[data-column-collapse-btn]');
 
-    if (expanded) {
+    if (this.expanded) {
       // Use flex-column so cards area can flex-1 and fill remaining column height
       this.style.display       = 'flex';
       this.style.flexDirection = 'column';
@@ -234,7 +195,7 @@ class AbBoardColumn extends HTMLElement {
         quickAddForm.style.removeProperty('display');
         quickAddForm.style.flexShrink = '0';
       }
-      if (collapseBtn)  collapseBtn.style.removeProperty('display');
+      if (collapseBtn) collapseBtn.style.removeProperty('display');
     } else {
       this.style.removeProperty('display');
       this.style.removeProperty('flex-direction');
@@ -252,7 +213,7 @@ class AbBoardColumn extends HTMLElement {
   }
 
   _onClick(e) {
-    if (!this.hasAttribute('expanded')) {
+    if (!this.expanded) {
       // Compact — click anywhere expands
       this._emitToggle();
       return;
@@ -267,8 +228,21 @@ class AbBoardColumn extends HTMLElement {
     this.dispatchEvent(new CustomEvent('ab-column-toggle', {
       bubbles:  true,
       composed: true,
-      detail:   { status: this.getAttribute('status') },
+      detail:   { status: this.status },
     }));
+  }
+
+  render() {
+    const dotColor  = AbBoardColumn._colorMap[this.color] || '#6b7280';
+    const countVal  = parseInt(this.count || '0', 10);
+    const barHeight = AbBoardColumn._progressHeight(countVal);
+
+    return html`
+      <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background-color:${dotColor};flex-shrink:0;"></span>
+      <span style="writing-mode:vertical-rl;transform:rotate(180deg);font-size:11px;font-weight:500;color:#94a3b8;white-space:nowrap;user-select:none;">${this.label}</span>
+      <span style="font-size:11px;font-weight:600;color:#cbd5e1;">${countVal}</span>
+      <div style="width:6px;height:${barHeight}px;border-radius:3px;background:linear-gradient(to top,${dotColor},transparent);flex-shrink:0;"></div>
+    `;
   }
 }
 
