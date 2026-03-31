@@ -35,10 +35,9 @@ final class McpController(transport: SseTransport):
           transport.sessions.exists(sessionId).flatMap {
             case false => ZIO.succeed(Response.status(Status.NotFound))
             case true  =>
-              req.body.asString.orDie.flatMap { body =>
-                body.fromJson[JsonRpcRequest] match
-                  case Left(_)    => ZIO.succeed(Response.status(Status.BadRequest))
-                  case Right(rpc) => transport.accept(sessionId, rpc).as(Response.status(Status.Accepted))
+              decodeRequest(req).flatMap {
+                case Left(_)    => ZIO.succeed(Response.status(Status.BadRequest))
+                case Right(rpc) => transport.accept(sessionId, rpc).as(Response.status(Status.Accepted))
               }
           }
 
@@ -69,3 +68,9 @@ final class McpController(transport: SseTransport):
           body = Body.fromCharSequenceStreamChunked(stream),
         )
       }
+
+  private def decodeRequest(req: Request): UIO[Either[Unit, JsonRpcRequest]] =
+    req.body.asString.either.map {
+      case Left(_)     => Left(())
+      case Right(body) => body.fromJson[JsonRpcRequest].left.map(_ => ())
+    }

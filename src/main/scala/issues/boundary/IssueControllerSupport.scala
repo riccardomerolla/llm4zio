@@ -102,6 +102,28 @@ object IssueControllerSupport:
       case "skipped"      => Some(IssueStateTag.Skipped)
       case _              => None
 
+  def parseIssueStatusToken(raw: String): Option[IssueStatus] =
+    raw.trim.toLowerCase match
+      case "backlog"      => Some(IssueStatus.Backlog)
+      case "todo"         => Some(IssueStatus.Todo)
+      case "human_review" => Some(IssueStatus.HumanReview)
+      case "humanreview"  => Some(IssueStatus.HumanReview)
+      case "rework"       => Some(IssueStatus.Rework)
+      case "merging"      => Some(IssueStatus.Merging)
+      case "done"         => Some(IssueStatus.Done)
+      case "canceled"     => Some(IssueStatus.Canceled)
+      case "cancelled"    => Some(IssueStatus.Canceled)
+      case "duplicated"   => Some(IssueStatus.Duplicated)
+      case "archived"     => Some(IssueStatus.Archived)
+      case "open"         => Some(IssueStatus.Backlog)
+      case "assigned"     => Some(IssueStatus.Todo)
+      case "in_progress"  => Some(IssueStatus.InProgress)
+      case "inprogress"   => Some(IssueStatus.InProgress)
+      case "completed"    => Some(IssueStatus.Done)
+      case "failed"       => Some(IssueStatus.Rework)
+      case "skipped"      => Some(IssueStatus.Canceled)
+      case _              => None
+
   private val allowedBoardTransitions: Map[IssueStatus, Set[IssueStatus]] = Map(
     IssueStatus.Backlog     ->
       Set(IssueStatus.Todo, IssueStatus.Done, IssueStatus.Canceled, IssueStatus.Duplicated, IssueStatus.Archived),
@@ -165,6 +187,60 @@ object IssueControllerSupport:
       case IssueState.Completed(_, _, _) => IssueStatus.Done
       case IssueState.Failed(_, _, _)    => IssueStatus.Rework
       case IssueState.Skipped(_, _)      => IssueStatus.Canceled
+
+  def domainIssueToView(issue: DomainIssue): AgentIssueView =
+    val (status, assignedAgent, assignedAt, completedAt, errorMessage) = issue.state match
+      case IssueState.Backlog(_)            => (IssueStatus.Backlog, None, None, None, None)
+      case IssueState.Todo(at)              => (IssueStatus.Todo, None, Some(at), None, None)
+      case IssueState.Open(_)               => (IssueStatus.Backlog, None, None, None, None)
+      case IssueState.Assigned(agent, at)   => (IssueStatus.Todo, Some(agent.value), Some(at), None, None)
+      case IssueState.InProgress(agent, at) => (IssueStatus.InProgress, Some(agent.value), Some(at), None, None)
+      case IssueState.HumanReview(at)       => (IssueStatus.HumanReview, None, None, Some(at), None)
+      case IssueState.Rework(at, msg)       => (IssueStatus.Rework, None, None, Some(at), Some(msg))
+      case IssueState.Merging(at)           => (IssueStatus.Merging, None, None, Some(at), None)
+      case IssueState.Done(at, _)           => (IssueStatus.Done, None, None, Some(at), None)
+      case IssueState.Canceled(at, msg)     => (IssueStatus.Canceled, None, None, Some(at), Some(msg))
+      case IssueState.Duplicated(at, msg)   => (IssueStatus.Duplicated, None, None, Some(at), Some(msg))
+      case IssueState.Archived(at)          => (IssueStatus.Archived, None, None, Some(at), None)
+      case IssueState.Completed(_, at, _)   => (IssueStatus.Done, None, None, Some(at), None)
+      case IssueState.Failed(_, at, msg)    => (IssueStatus.Rework, None, None, Some(at), Some(msg))
+      case IssueState.Skipped(at, reason)   => (IssueStatus.Canceled, None, None, Some(at), Some(reason))
+    val priority                                                       =
+      IssuePriority.values.find(_.toString.equalsIgnoreCase(issue.priority)).getOrElse(IssuePriority.Medium)
+    val createdAt                                                      = issue.state match
+      case IssueState.Backlog(at) => at
+      case IssueState.Open(at)    => at
+      case _                      => Instant.EPOCH
+    AgentIssueView(
+      id = Some(issue.id.value),
+      runId = issue.runId.map(_.value),
+      conversationId = issue.conversationId.map(_.value),
+      title = issue.title,
+      description = issue.description,
+      issueType = issue.issueType,
+      tags = if issue.tags.isEmpty then None else Some(issue.tags.mkString(",")),
+      requiredCapabilities =
+        if issue.requiredCapabilities.isEmpty then None else Some(issue.requiredCapabilities.mkString(",")),
+      contextPath = Option(issue.contextPath).filter(_.nonEmpty),
+      sourceFolder = Option(issue.sourceFolder).filter(_.nonEmpty),
+      workspaceId = issue.workspaceId,
+      externalRef = issue.externalRef,
+      externalUrl = issue.externalUrl,
+      promptTemplate = issue.promptTemplate,
+      acceptanceCriteria = issue.acceptanceCriteria,
+      estimate = issue.estimate,
+      kaizenSkill = issue.kaizenSkill,
+      proofOfWorkRequirements = issue.proofOfWorkRequirements,
+      priority = priority,
+      status = status,
+      assignedAgent = assignedAgent,
+      assignedAt = assignedAt,
+      completedAt = completedAt,
+      errorMessage = errorMessage,
+      mergeConflictFiles = issue.mergeConflictFiles,
+      createdAt = createdAt,
+      updatedAt = assignedAt.orElse(completedAt).getOrElse(createdAt),
+    )
 
   def ensureTransitionAllowed(
     currentState: IssueState,

@@ -34,6 +34,13 @@ final class McpService(
 
 object McpService:
 
+  enum McpServiceInitError:
+    case ToolRegistration(detail: String)
+
+    def message: String =
+      this match
+        case ToolRegistration(detail) => s"Failed to register MCP tools: $detail"
+
   def make(
     apiKey: Option[String],
     issueRepo: IssueRepository,
@@ -50,7 +57,7 @@ object McpService:
     planRepository: PlanRepository,
     daemonScheduler: DaemonAgentScheduler,
     sdlcDashboardService: SdlcDashboardService,
-  ): ZIO[Scope, Nothing, McpService] =
+  ): ZIO[Scope, McpServiceInitError, McpService] =
     for
       transport <- SseTransport.make(apiKey)
       registry  <- ToolRegistry.make
@@ -70,7 +77,9 @@ object McpService:
                      daemonScheduler,
                      sdlcDashboardService,
                    )
-      _         <- registry.registerAll(tools.all).mapError(e => new RuntimeException(e.toString)).orDie
+      _         <- registry
+                     .registerAll(tools.all)
+                     .mapError(error => McpServiceInitError.ToolRegistration(error.toString))
       server    <- McpServer.make(registry, transport)
       fiber     <- server.start.forkScoped
       controller = McpController(transport)
@@ -114,6 +123,6 @@ object McpService:
                             plans,
                             daemons,
                             dashboard,
-                          )
+                          ).catchAll(error => ZIO.logError(error.message) *> ZIO.dieMessage(error.message))
       yield svc
     }

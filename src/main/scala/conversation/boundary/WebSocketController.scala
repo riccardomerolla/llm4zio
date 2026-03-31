@@ -463,11 +463,14 @@ final case class WebSocketControllerLive(
     nowMillis.flatMap(effect)
 
   private def fetchRecentRunsPayload: UIO[String] =
-    (for
+    fetchRecentRunsPayloadStrict.orElseSucceed("[]")
+
+  private def fetchRecentRunsPayloadStrict: IO[String, String] =
+    for
       workspaces <- workspaceRepository.list.mapError(_.toString)
       runs       <- ZIO.foreach(workspaces)(ws => workspaceRepository.listRuns(ws.id).mapError(_.toString)).map(_.flatten)
       sorted      = runs.sortBy(_.updatedAt)(Ordering[java.time.Instant].reverse).take(100)
-    yield sorted.toJson).catchAll(_ => ZIO.succeed("[]"))
+    yield sorted.toJson
 
   private def workspaceError(err: workspace.entity.WorkspaceError): String =
     err match

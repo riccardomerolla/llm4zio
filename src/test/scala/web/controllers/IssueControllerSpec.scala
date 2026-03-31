@@ -453,4 +453,22 @@ object IssueControllerSpec extends ZIOSpecDefault:
           fragmentBody.contains("""data-column-status="canceled""""),
         )
       },
+      test("POST /issues/:id/status accepts legacy completed alias through canonical status parsing") {
+        val legacyIssueId = IssueId("issue-legacy-completed")
+        for
+          issueEvents <- Ref.make(Map(legacyIssueId -> unlinkedIssueSeedEvents(legacyIssueId, "Legacy completed issue")))
+          runRequests <- Ref.make(List.empty[AssignRunRequest])
+          issueRepo    = InMemoryIssueRepository(issueEvents)
+          routes      <- makeRoutes(issueRepo, StubWorkspaceRunService(runRequests, failAssign = false))
+          request      = Request.post(
+                           URL.decode(s"/issues/${legacyIssueId.value}/status").toOption.get,
+                           Body.fromString("status=completed"),
+                         ).addHeaders(Headers(Header.ContentType(MediaType.application.`x-www-form-urlencoded`)))
+          response    <- routes.runZIO(request)
+          history     <- issueRepo.history(legacyIssueId)
+        yield assertTrue(
+          response.status == Status.SeeOther,
+          history.exists(_.isInstanceOf[IssueEvent.MarkedDone]),
+        )
+      },
     )

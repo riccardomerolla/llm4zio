@@ -1,28 +1,30 @@
-## Second Modernization Iteration
+## Third Modernization Iteration
 
-### Group 1: Legacy and dead-code removal
-- [x] Replace the previous plan with this narrower implementation plan.
-- [x] Remove dead legacy client assets that are no longer referenced by any rendered page or test.
-- [x] Run focused checks for the legacy removal surface.
+### Group 1: Legacy and canonical status cleanup
+- [x] Replace the previous plan with this iteration plan.
+- [x] Remove the remaining board-status parsing path that still routes through legacy `IssueStateTag` aliases inside `IssueController`.
+- [x] Move issue state-to-view mapping helpers out of `IssueController.scala` into support code so the controller uses a single canonical conversion path.
+- [x] Run focused tests for the issue controller and board rendering surfaces.
 - [x] Perform a review pass for Group 1, apply any remarks, then commit the group.
 
-### Group 2: Effect-oriented cleanup
-- [x] Replace remaining request parsing built around `Try(...)` in activity endpoints with explicit helper functions.
-- [x] Refactor config-controller initialization to use explicit startup error modeling instead of inner `orDie` calls.
-- [x] Collapse repeated application startup defect conversion into a single explicit helper at the wiring boundary.
-- [x] Run focused tests for the touched runtime and controller surfaces.
+### Group 2: Effect-oriented runtime cleanup
+- [x] Refactor `McpController` request-body handling to avoid `orDie` and use explicit request decoding failures.
+- [x] Refactor `McpService` startup so MCP tool registration failure is modeled explicitly before the app boundary converts it to a defect.
+- [x] Replace broad websocket fallback handling with explicit strict-or-default helpers.
+- [x] Collapse the repeated `WorkspaceRunService` persistence wrapper tail onto the shared workspace error helpers.
+- [x] Run focused tests for the touched runtime surfaces.
 - [x] Perform a review pass for Group 2, apply any remarks, then commit the group.
 
-### Group 3: Gateway MCP helper extraction
-- [x] Extract the pure JSON parsing, enum parsing, rendering, and markdown summarization helpers from `GatewayMcpTools.scala` into an internal support module.
-- [x] Keep the public `GatewayMcpTools` construction and tool list unchanged while switching call sites to the support module.
-- [x] Run focused tests for the MCP tool surface.
+### Group 3: Large-file decomposition
+- [x] Keep `IssueController.scala` slimmer by moving canonical state-to-view and status parsing support into `IssueControllerSupport.scala`.
+- [x] Extract the workspace run git and lifecycle helper block into an internal support module without changing service entrypoints.
+- [x] Run focused tests for the decomposed controller and workspace surfaces.
 - [x] Perform a review pass for Group 3, apply any remarks, then commit the group.
 
 ### Group 4: Final verification
-- [x] Run `sbt --client scalafmtAll`.
-- [x] Run targeted specs for the touched areas.
-- [x] Run `sbt --client compile`.
-- [x] Run `sbt --client test`.
-- [x] Perform a final review pass and apply any last remarks.
-- [x] Commit the final verification updates if needed.
+- [ ] Run `sbt --client scalafmtAll`.
+- [ ] Run targeted specs for the touched areas.
+- [ ] Run `sbt --client compile`.
+- [ ] Run `sbt --client test`.
+- [ ] Perform a final review pass and apply any last remarks.
+- [ ] Commit the final verification updates if needed.

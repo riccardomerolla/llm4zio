@@ -322,23 +322,7 @@ final case class IssueControllerLive(
                             case _                             => None
                           }.getOrElse("manual")
           status       <- ZIO
-                            .fromOption(parseIssueStateTag(rawStatus).map {
-                              case IssueStateTag.Backlog     => IssueStatus.Backlog
-                              case IssueStateTag.Todo        => IssueStatus.Todo
-                              case IssueStateTag.Open        => IssueStatus.Backlog
-                              case IssueStateTag.Assigned    => IssueStatus.Todo
-                              case IssueStateTag.InProgress  => IssueStatus.InProgress
-                              case IssueStateTag.HumanReview => IssueStatus.HumanReview
-                              case IssueStateTag.Rework      => IssueStatus.Rework
-                              case IssueStateTag.Merging     => IssueStatus.Merging
-                              case IssueStateTag.Done        => IssueStatus.Done
-                              case IssueStateTag.Canceled    => IssueStatus.Canceled
-                              case IssueStateTag.Duplicated  => IssueStatus.Duplicated
-                              case IssueStateTag.Archived    => IssueStatus.Archived
-                              case IssueStateTag.Completed   => IssueStatus.Done
-                              case IssueStateTag.Failed      => IssueStatus.Rework
-                              case IssueStateTag.Skipped     => IssueStatus.Canceled
-                            })
+                            .fromOption(parseIssueStatusToken(rawStatus))
                             .orElseFail(PersistenceError.QueryFailed("status_parse", s"Unknown status: $rawStatus"))
           _            <- ensureTransitionAllowed(issue.state, status, issueId.value)
           events       <- statusToEvents(issue, IssueStatusUpdateRequest(status = status), agentFallback, now)
@@ -1068,57 +1052,7 @@ final case class IssueControllerLive(
       case BoardError.ConcurrencyConflict(message)    => PersistenceError.QueryFailed("board_concurrency", message)
 
   private def domainToView(i: DomainIssue): AgentIssueView =
-    val (status, assignedAgent, assignedAt, completedAt, errorMessage) = i.state match
-      case IssueState.Backlog(_)            => (IssueStatus.Backlog, None, None, None, None)
-      case IssueState.Todo(at)              => (IssueStatus.Todo, None, Some(at), None, None)
-      case IssueState.Open(_)               => (IssueStatus.Backlog, None, None, None, None)
-      case IssueState.Assigned(agent, at)   => (IssueStatus.Todo, Some(agent.value), Some(at), None, None)
-      case IssueState.InProgress(agent, at) => (IssueStatus.InProgress, Some(agent.value), Some(at), None, None)
-      case IssueState.HumanReview(at)       => (IssueStatus.HumanReview, None, None, Some(at), None)
-      case IssueState.Rework(at, msg)       => (IssueStatus.Rework, None, None, Some(at), Some(msg))
-      case IssueState.Merging(at)           => (IssueStatus.Merging, None, None, Some(at), None)
-      case IssueState.Done(at, _)           => (IssueStatus.Done, None, None, Some(at), None)
-      case IssueState.Canceled(at, msg)     => (IssueStatus.Canceled, None, None, Some(at), Some(msg))
-      case IssueState.Duplicated(at, msg)   => (IssueStatus.Duplicated, None, None, Some(at), Some(msg))
-      case IssueState.Archived(at)          => (IssueStatus.Archived, None, None, Some(at), None)
-      case IssueState.Completed(_, at, _)   => (IssueStatus.Done, None, None, Some(at), None)
-      case IssueState.Failed(_, at, msg)    => (IssueStatus.Rework, None, None, Some(at), Some(msg))
-      case IssueState.Skipped(at, reason)   => (IssueStatus.Canceled, None, None, Some(at), Some(reason))
-    val priority                                                       = IssuePriority.values.find(_.toString.equalsIgnoreCase(i.priority)).getOrElse(IssuePriority.Medium)
-    val createdAt                                                      = i.state match
-      case IssueState.Backlog(at) => at
-      case IssueState.Open(at)    => at
-      case _                      => java.time.Instant.EPOCH
-    AgentIssueView(
-      id = Some(i.id.value),
-      runId = i.runId.map(_.value),
-      conversationId = i.conversationId.map(_.value),
-      title = i.title,
-      description = i.description,
-      issueType = i.issueType,
-      tags = if i.tags.isEmpty then None else Some(i.tags.mkString(",")),
-      requiredCapabilities =
-        if i.requiredCapabilities.isEmpty then None else Some(i.requiredCapabilities.mkString(",")),
-      contextPath = Option(i.contextPath).filter(_.nonEmpty),
-      sourceFolder = Option(i.sourceFolder).filter(_.nonEmpty),
-      workspaceId = i.workspaceId,
-      externalRef = i.externalRef,
-      externalUrl = i.externalUrl,
-      promptTemplate = i.promptTemplate,
-      acceptanceCriteria = i.acceptanceCriteria,
-      estimate = i.estimate,
-      kaizenSkill = i.kaizenSkill,
-      proofOfWorkRequirements = i.proofOfWorkRequirements,
-      priority = priority,
-      status = status,
-      assignedAgent = assignedAgent,
-      assignedAt = assignedAt,
-      completedAt = completedAt,
-      errorMessage = errorMessage,
-      mergeConflictFiles = i.mergeConflictFiles,
-      createdAt = createdAt,
-      updatedAt = assignedAt.orElse(completedAt).getOrElse(createdAt),
-    )
+    domainIssueToView(i)
 
   private def boardToView(issue: BoardIssue, workspaceId: String): AgentIssueView =
     val frontmatter                                                                                  = issue.frontmatter
