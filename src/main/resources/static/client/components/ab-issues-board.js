@@ -448,10 +448,17 @@ class AbIssuesBoard extends LitElement {
     this.addEventListener('htmx:beforeRequest', (event) => {
       const requestTarget = event?.detail?.target;
       if (requestTarget !== this) return;
-      if (!this._shouldDeferRefresh()) return;
+      // Defer the HTMX poll if a drag is in progress OR a manual fetch refresh is
+      // already in flight (avoids a poll swap overwriting the fetch result mid-flight).
+      // The HTMX setInterval is NOT stopped — the current tick is simply skipped and
+      // the next poll fires automatically in 10 s. Setting _refreshPending = true
+      // causes _flushPendingRefresh() to call refreshBoard() once the condition clears.
+      if (!this._shouldDeferRefresh() && !this._refreshInFlight) return;
       event.preventDefault();
       this._refreshPending = true;
-      this._endLoading();
+      // Do NOT call _endLoading() here: HTMX polling never calls _beginLoading(), and
+      // when deferred due to _refreshInFlight the loading state belongs to the manual
+      // fetch already in progress — decrementing would prematurely hide the bar.
     });
 
     this.addEventListener('htmx:beforeSwap', (event) => {

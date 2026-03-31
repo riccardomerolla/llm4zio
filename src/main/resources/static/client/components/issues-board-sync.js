@@ -26,6 +26,13 @@ function createBoardSyncHooks({
       this._refreshInFlight = true;
       beforeRefresh.call(this);
 
+      // Snapshot column scroll positions before replacing innerHTML
+      const savedScrolls = {};
+      this.querySelectorAll('[data-column-cards]').forEach(el => {
+        const key = el.dataset.columnCards;
+        if (key) savedScrolls[key] = el.scrollTop;
+      });
+
       const onSettled = () => {
         this._refreshInFlight = false;
         afterSettle.call(this);
@@ -35,16 +42,20 @@ function createBoardSyncHooks({
       const onRefreshed = () => {
         afterRefresh.call(this, landedIssueId);
         this._flushPostRefreshToast();
+        // ab-board-layout defers _applyState() via Promise.resolve() (microtask).
+        // The microtask runs before any macrotask, so a double-rAF guarantees
+        // scroll is restored only after expanded columns are fully visible.
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          this.querySelectorAll('[data-column-cards]').forEach(el => {
+            const key = el.dataset.columnCards;
+            if (key && savedScrolls[key]) el.scrollTop = savedScrolls[key];
+          });
+        }));
       };
 
-      if (window.htmx?.ajax) {
-        window.htmx.ajax('GET', this.fragmentUrl, {
-          target: this,
-          swap: 'innerHTML',
-        }).then(onRefreshed).catch(() => {}).finally(onSettled);
-        return;
-      }
-
+      // Use fetch() directly — never htmx.ajax() — so HTMX's internal requestConfig
+      // flag is not set on this element, which would block the hx-trigger="every 10s"
+      // setInterval from firing while a manual refresh is in flight.
       fetch(this.fragmentUrl)
         .then((response) => response.ok ? response.text() : Promise.reject(new Error('refresh failed')))
         .then((html) => {
