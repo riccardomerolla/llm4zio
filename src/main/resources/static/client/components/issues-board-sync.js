@@ -53,14 +53,16 @@ function createBoardSyncHooks({
         }));
       };
 
-      // Use fetch() directly — never htmx.ajax() — so HTMX's internal requestConfig
-      // flag is not set on this element, which would block the hx-trigger="every 10s"
-      // setInterval from firing while a manual refresh is in flight.
+      // Polling and manual refresh both use fetch() directly — HTMX is NOT involved
+      // in the board refresh lifecycle.  This avoids HTMX internal state (requestConfig,
+      // requestInFlight) interfering with polling when a manual refresh is in flight.
       fetch(this.fragmentUrl)
         .then((response) => response.ok ? response.text() : Promise.reject(new Error('refresh failed')))
         .then((html) => {
           // html is server-rendered markup from our own trusted endpoint
           this.innerHTML = html; // nosec: trusted server HTML, same origin
+          // Let HTMX process any hx-* attributes on newly added child elements
+          if (window.htmx?.process) window.htmx.process(this);
           onRefreshed();
         })
         .catch(() => {})

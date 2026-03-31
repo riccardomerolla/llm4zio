@@ -1,4 +1,4 @@
-import { LitElement, html } from 'https://cdn.jsdelivr.net/npm/lit@3/+esm';
+import { LitElement } from 'https://cdn.jsdelivr.net/npm/lit@3/+esm';
 
 const createBoardSyncHooks = window.__issuesBoardSync?.createBoardSyncHooks || (() => ({
   _flushPendingRefresh() {},
@@ -38,7 +38,13 @@ class AbIssuesBoard extends LitElement {
     this._loadingRoot         = null;
     this._loadingFill         = null;
     this._loadingVisibleSince = 0;
+    this._pollTimer           = null;
   }
+
+  // Prevent Lit from rendering — content is managed entirely by setInterval polling
+  // and manual refreshBoard() calls.  Without this, Lit's first render would clear
+  // the SSR-injected board columns.
+  shouldUpdate() { return false; }
 
   createRenderRoot() { return this; }
 
@@ -48,19 +54,34 @@ class AbIssuesBoard extends LitElement {
     this.bindPointerDrag();
     this.bindQuickAdd();
     this.bindQuickDispatch();
-    this.bindRefreshGuards();
     this.connectWs();
+    this._startPolling();
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
+    this._stopPolling();
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.close();
     }
     this.ws = null;
   }
 
-  render() { return html``; }
+  _startPolling() {
+    this._stopPolling();
+    const intervalMs = parseInt(this.dataset.pollInterval, 10) || 10_000;
+    this._pollTimer = window.setInterval(() => {
+      if (this._shouldDeferRefresh() || this._refreshInFlight) return;
+      this.refreshBoard();
+    }, intervalMs);
+  }
+
+  _stopPolling() {
+    if (this._pollTimer) {
+      window.clearInterval(this._pollTimer);
+      this._pollTimer = null;
+    }
+  }
 
   // ---------------------------------------------------------------------------
   // HTML5 drag & drop
@@ -436,77 +457,6 @@ class AbIssuesBoard extends LitElement {
     }
 
     this.refreshBoard();
-  }
-
-  bindRefreshGuards() {
-    if (this._refreshGuardsBound) return;
-    this._refreshGuardsBound = true;
-
-    // Persist column scroll positions across HTMX fragment refreshes
-    this._savedScrolls = {};
-
-    this.addEventListener('htmx:beforeRequest', (event) => {
-      const requestTarget = event?.detail?.target;
-      if (requestTarget !== this) return;
-      // Defer the HTMX poll if a drag is in progress OR a manual fetch refresh is
-      // already in flight (avoids a poll swap overwriting the fetch result mid-flight).
-      // The HTMX setInterval is NOT stopped — the current tick is simply skipped and
-      // the next poll fires automatically in 10 s. Setting _refreshPending = true
-      // causes _flushPendingRefresh() to call refreshBoard() once the condition clears.
-      if (!this._shouldDeferRefresh() && !this._refreshInFlight) return;
-      event.preventDefault();
-      this._refreshPending = true;
-      // Do NOT call _endLoading() here: HTMX polling never calls _beginLoading(), and
-      // when deferred due to _refreshInFlight the loading state belongs to the manual
-      // fetch already in progress — decrementing would prematurely hide the bar.
-    });
-
-    this.addEventListener('htmx:beforeSwap', (event) => {
-      const requestTarget = event?.detail?.target;
-      if (requestTarget !== this) return;
-
-      // Save each column's card-list scroll offset keyed by status token
-      this.querySelectorAll('[data-column-cards]').forEach(el => {
-        const key = el.dataset.columnCards;
-        if (key) this._savedScrolls[key] = el.scrollTop;
-      });
-
-      if (!this._shouldDeferRefresh()) return;
-      event.preventDefault();
-      this._refreshPending = true;
-      this._endLoading();
-    });
-
-    this.addEventListener('htmx:afterSwap', (event) => {
-      const requestTarget = event?.detail?.target;
-      if (requestTarget !== this) return;
-
-      // ab-board-layout defers _applyState() via Promise.resolve() (microtask).
-      // The microtask runs before any macrotask, so a double-rAF here guarantees
-      // we restore scroll only after expanded columns are visible.
-      const saved = this._savedScrolls;
-      requestAnimationFrame(() => requestAnimationFrame(() => {
-        this.querySelectorAll('[data-column-cards]').forEach(el => {
-          const key = el.dataset.columnCards;
-          if (key && saved[key]) el.scrollTop = saved[key];
-        });
-        this._savedScrolls = {};
-      }));
-
-      this._endLoading();
-    });
-
-    this.addEventListener('htmx:responseError', (event) => {
-      const requestTarget = event?.detail?.target;
-      if (requestTarget !== this) return;
-      this._endLoading();
-    });
-
-    this.addEventListener('htmx:sendError', (event) => {
-      const requestTarget = event?.detail?.target;
-      if (requestTarget !== this) return;
-      this._endLoading();
-    });
   }
 
   // ---------------------------------------------------------------------------
