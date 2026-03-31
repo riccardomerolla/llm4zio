@@ -98,8 +98,8 @@ import workspace.entity.WorkspaceRepository
 
 object ApplicationDI:
 
-  private final case class StartupLayerFailure(component: String, detail: String)
-      extends RuntimeException(s"$component failed to initialize: $detail")
+  final private case class StartupLayerFailure(component: String, detail: String)
+    extends RuntimeException(s"$component failed to initialize: $detail")
 
   type CommonServices =
     FileService &

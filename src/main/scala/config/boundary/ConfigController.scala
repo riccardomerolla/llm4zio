@@ -42,9 +42,9 @@ enum ConfigControllerInitError:
 
   def message: String =
     this match
-      case ResolveWorkingDirectory(cause)             =>
+      case ResolveWorkingDirectory(cause)              =>
         s"Failed to resolve the current working directory: ${Option(cause.getMessage).getOrElse(cause.toString)}"
-      case SelectInitialTarget(cause)                 =>
+      case SelectInitialTarget(cause)                  =>
         s"Failed to determine the initial config editor target: ${Option(cause.getMessage).getOrElse(cause.toString)}"
       case FilesystemOperation(operation, path, cause) =>
         s"Failed to $operation at $path: ${Option(cause.getMessage).getOrElse(cause.toString)}"

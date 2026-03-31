@@ -32,7 +32,8 @@ object ActivityControllerSpec extends ZIOSpecDefault:
       for
         seenSince  <- Ref.make(Option.empty[Instant])
         controller <- ZIO.service[ActivityController].provideLayer(controllerLayer(seenSince))
-        response   <- controller.routes.runZIO(Request.get(URL.decode("/api/activity/events?since=not-a-date").toOption.get))
+        response   <-
+          controller.routes.runZIO(Request.get(URL.decode("/api/activity/events?since=not-a-date").toOption.get))
         parsed     <- seenSince.get
       yield assertTrue(response.status == Status.Ok, parsed.isEmpty)
     },

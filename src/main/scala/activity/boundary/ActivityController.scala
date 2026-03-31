@@ -35,7 +35,7 @@ final case class ActivityControllerLive(
     Method.GET / "api" / "activity" / "events"                 -> handler { (req: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
-          since <- ZIO.foreach(req.queryParam("since"))(parseInstantOption).map(_.flatten)
+          since  <- ZIO.foreach(req.queryParam("since"))(parseInstantOption).map(_.flatten)
           events <- activityRepository.listEvents(
                       eventType = req.queryParam("type").flatMap(parseEventType),
                       since = since,
