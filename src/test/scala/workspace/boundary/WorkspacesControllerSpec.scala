@@ -244,7 +244,9 @@ object WorkspacesControllerSpec extends ZIOSpecDefault:
         resp       <- routes.runZIO(req)
       yield assertTrue(resp.status == Status.Ok)
     },
-    test("GET /api/workspaces/issues/search keeps legacy open issues reachable through centralized compatibility tags") {
+    test(
+      "GET /api/workspaces/issues/search keeps legacy open issues reachable through centralized compatibility tags"
+    ) {
       val legacyOpenIssue = AgentIssue(
         id = IssueId("legacy-open"),
         runId = None,
@@ -262,11 +264,11 @@ object WorkspacesControllerSpec extends ZIOSpecDefault:
       )
 
       final class SearchIssueRepository extends IssueRepository:
-        def append(event: IssueEvent): IO[shared.errors.PersistenceError, Unit]        = ZIO.unit
-        def get(id: IssueId): IO[shared.errors.PersistenceError, AgentIssue]           =
+        def append(event: IssueEvent): IO[shared.errors.PersistenceError, Unit]             = ZIO.unit
+        def get(id: IssueId): IO[shared.errors.PersistenceError, AgentIssue]                =
           ZIO.fail(shared.errors.PersistenceError.NotFound("issue", id.value))
-        def history(id: IssueId): IO[shared.errors.PersistenceError, List[IssueEvent]] = ZIO.succeed(Nil)
-        def delete(id: IssueId): IO[shared.errors.PersistenceError, Unit]              = ZIO.unit
+        def history(id: IssueId): IO[shared.errors.PersistenceError, List[IssueEvent]]      = ZIO.succeed(Nil)
+        def delete(id: IssueId): IO[shared.errors.PersistenceError, Unit]                   = ZIO.unit
         def list(filter: IssueFilter): IO[shared.errors.PersistenceError, List[AgentIssue]] =
           ZIO.succeed(if filter.states.contains(issues.entity.IssueStateTag.Open) then List(legacyOpenIssue) else Nil)
 

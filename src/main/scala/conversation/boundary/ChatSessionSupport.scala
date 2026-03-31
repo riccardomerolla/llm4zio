@@ -10,7 +10,7 @@ import gateway.control.{ ChannelRegistry, MessageChannelError }
 import gateway.entity.{ ChatSession, SessionKey }
 import shared.errors.PersistenceError
 
-private[boundary] final case class ChatSessionSupport(
+final private[boundary] case class ChatSessionSupport(
   chatRepository: ChatRepository,
   channelRegistry: ChannelRegistry,
   sanitizeString: String => Option[String],
@@ -101,7 +101,7 @@ private[boundary] final case class ChatSessionSupport(
       .catchAll {
         case MessageChannelError.ChannelNotFound(_) =>
           ZIO.unit
-        case other                                 =>
+        case other                                  =>
           ZIO.logWarning(s"Failed to close session $channelName:$sessionKey: $other")
       }
 

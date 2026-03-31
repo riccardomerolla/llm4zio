@@ -370,8 +370,9 @@ final case class WorkspaceRunServiceLive(
     else
       issueRepo.get(IssueId(refStr))
         .map(Some(_))
-        .catchSome { case PersistenceError.NotFound("issue", _) =>
-          ZIO.none
+        .catchSome {
+          case PersistenceError.NotFound("issue", _) =>
+            ZIO.none
         }
         .mapWorkspacePersistence("load_issue_for_assign")
 
