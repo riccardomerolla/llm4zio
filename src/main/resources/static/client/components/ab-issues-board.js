@@ -8,11 +8,11 @@ const createBoardSyncHooks = window.__issuesBoardSync?.createBoardSyncHooks || (
 
 class AbIssuesBoard extends HTMLElement {
   connectedCallback() {
-    if (this.__initialized) return;
-    this.__initialized = true;
+    if (this._initialized) return;
+    this._initialized = true;
 
-    this.fragmentUrl = this.dataset?.fragmentUrl || '/board/fragment';
-    this.wsTopic = this.dataset?.wsTopic || 'activity:feed';
+    this.fragmentUrl = this.dataset.fragmentUrl || '/board/fragment';
+    this.wsTopic = this.dataset.wsTopic || 'activity:feed';
     this.dragIssueId = null;
     this.dragCard = null;
     this.ghost = null;          // semi-transparent placeholder in source column
