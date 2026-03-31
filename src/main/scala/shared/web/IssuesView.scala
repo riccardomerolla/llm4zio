@@ -220,6 +220,9 @@ object IssuesView:
           attr("data-fragment-url")    := fragmentUrl,
           attr("data-status-endpoint") := "/api/issues",
           attr("data-ws-topic")        := "activity:feed",
+          attr("hx-get")               := fragmentUrl,
+          attr("hx-trigger")           := "load, every 10s",
+          attr("hx-swap")              := "innerHTML",
           cls                          := "flex-1 min-h-0 overflow-hidden",
           attr("data-bulk-scope")      := "board",
         )(
