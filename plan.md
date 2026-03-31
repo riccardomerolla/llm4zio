@@ -14,10 +14,10 @@
 - [x] Perform a review pass for Group 2, apply any remarks, then commit the group.
 
 ### Group 3: Gateway MCP helper extraction
-- [ ] Extract the pure JSON parsing, enum parsing, rendering, and markdown summarization helpers from `GatewayMcpTools.scala` into an internal support module.
-- [ ] Keep the public `GatewayMcpTools` construction and tool list unchanged while switching call sites to the support module.
-- [ ] Run focused tests for the MCP tool surface.
-- [ ] Perform a review pass for Group 3, apply any remarks, then commit the group.
+- [x] Extract the pure JSON parsing, enum parsing, rendering, and markdown summarization helpers from `GatewayMcpTools.scala` into an internal support module.
+- [x] Keep the public `GatewayMcpTools` construction and tool list unchanged while switching call sites to the support module.
+- [x] Run focused tests for the MCP tool surface.
+- [x] Perform a review pass for Group 3, apply any remarks, then commit the group.
 
 ### Group 4: Final verification
 - [ ] Run `sbt --client scalafmtAll`.
