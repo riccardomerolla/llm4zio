@@ -14,8 +14,7 @@ object DockerSupportSpec extends ZIOSpecDefault:
 
   def spec: Spec[TestEnvironment & Scope, Any] = suite("DockerSupportSpec")(
     test("isAvailable returns a Boolean without throwing") {
-      for result <- DockerSupport.isAvailable.either
-      yield assertTrue(result.isRight)
+      DockerSupport.isAvailable.map(result => assertTrue(result == true || result == false))
     },
     test("requireDocker succeeds when Docker is available (stubbed true)") {
       for result <- requireDockerWith(true).either

@@ -9,6 +9,7 @@ import conversation.entity.api.{ ConversationEntry, MessageType, SenderType }
 import db.ChatRepository
 import shared.ids.Ids.{ EventId, TaskRunId }
 import workspace.entity.*
+import workspace.control.WorkspaceErrorSupport.*
 
 trait RunSessionManager:
   def getSession(runId: String): IO[WorkspaceError, RunSession]
@@ -70,7 +71,7 @@ final case class RunSessionManagerLive(
       now <- Clock.instant
       _   <- workspaceRepo
                .appendRun(WorkspaceRunEvent.UserAttached(runId, userId, now))
-               .mapError(e => WorkspaceError.PersistenceFailure(RuntimeException(e.toString)))
+               .mapWorkspacePersistence("attach_run_user")
       out <- getRunOrFail(runId).map(r => RunSession(r.id, r.status, r.attachedUsers, r.controllerUserId))
       _   <- publishState(runId, s"User $userId attached", out.status)
     yield out
@@ -81,7 +82,7 @@ final case class RunSessionManagerLive(
       now <- Clock.instant
       _   <- workspaceRepo
                .appendRun(WorkspaceRunEvent.UserDetached(runId, userId, now))
-               .mapError(e => WorkspaceError.PersistenceFailure(RuntimeException(e.toString)))
+               .mapWorkspacePersistence("detach_run_user")
       run <- getRunOrFail(runId)
       _   <- publishState(runId, s"User $userId detached", run.status)
     yield ()
@@ -93,16 +94,16 @@ final case class RunSessionManagerLive(
       _   <- ensureRunning(run)
       _   <- interactiveRunner
                .resolve(AgentProcessRef(runId))
-               .mapError(e => WorkspaceError.WorktreeError(e.getMessage))
+               .mapWorktreeFailure("resolve_interactive_process")
                .flatMap {
                  case Some(process) =>
-                   interactiveRunner.pause(process).mapError(e => WorkspaceError.WorktreeError(e.getMessage))
+                   interactiveRunner.pause(process).mapWorktreeFailure("pause_interactive_process")
                  case None          => ZIO.fail(WorkspaceError.InteractiveProcessUnavailable(runId))
                }
       now <- Clock.instant
       _   <- workspaceRepo
                .appendRun(WorkspaceRunEvent.RunInterrupted(runId, userId, now))
-               .mapError(e => WorkspaceError.PersistenceFailure(RuntimeException(e.toString)))
+               .mapWorkspacePersistence("interrupt_run")
       _   <- publishState(runId, s"Run interrupted by $userId", RunStatus.Running(RunSessionMode.Paused))
     yield ()
 
@@ -113,19 +114,17 @@ final case class RunSessionManagerLive(
       _   <- ensurePaused(run)
       _   <- interactiveRunner
                .resolve(AgentProcessRef(runId))
-               .mapError(e => WorkspaceError.WorktreeError(e.getMessage))
+               .mapWorktreeFailure("resolve_interactive_process")
                .flatMap {
                  case Some(process) =>
-                   interactiveRunner.resume(process).mapError(e => WorkspaceError.WorktreeError(e.getMessage)) *>
-                     interactiveRunner.sendInput(process, prompt).mapError(e =>
-                       WorkspaceError.WorktreeError(e.getMessage)
-                     )
+                   interactiveRunner.resume(process).mapWorktreeFailure("resume_interactive_process") *>
+                     interactiveRunner.sendInput(process, prompt).mapWorktreeFailure("send_resume_prompt")
                  case None          => ZIO.fail(WorkspaceError.InteractiveProcessUnavailable(runId))
                }
       now <- Clock.instant
       _   <- workspaceRepo
                .appendRun(WorkspaceRunEvent.RunResumed(runId, userId, prompt, now))
-               .mapError(e => WorkspaceError.PersistenceFailure(RuntimeException(e.toString)))
+               .mapWorkspacePersistence("resume_run")
       _   <- publishState(runId, s"Run resumed by $userId", RunStatus.Running(RunSessionMode.Interactive))
     yield ()
 
@@ -139,7 +138,7 @@ final case class RunSessionManagerLive(
       messageIdOpt <- appendRunUserMessage(run, userId, content, run.status)
       ws           <- workspaceRepo
                         .get(run.workspaceId)
-                        .mapError(e => WorkspaceError.PersistenceFailure(RuntimeException(e.toString)))
+                        .mapWorkspacePersistence("load_workspace_for_run_input")
                         .flatMap(
                           _.fold[IO[WorkspaceError, Workspace]](ZIO.fail(WorkspaceError.NotFound(run.workspaceId)))(ZIO.succeed)
                         )
@@ -150,12 +149,10 @@ final case class RunSessionManagerLive(
                              ) =>
                           interactiveRunner
                             .resolve(AgentProcessRef(runId))
-                            .mapError(e => WorkspaceError.WorktreeError(e.getMessage))
+                            .mapWorktreeFailure("resolve_interactive_process")
                             .flatMap {
                               case Some(process) =>
-                                interactiveRunner.sendInput(process, content).mapError(e =>
-                                  WorkspaceError.WorktreeError(e.getMessage)
-                                ) *>
+                                interactiveRunner.sendInput(process, content).mapWorktreeFailure("send_interactive_input") *>
                                   ZIO.succeed(Right(RunInputAccepted(runId, messageIdOpt.getOrElse(0L))))
                               case None          =>
                                 ZIO.succeed(
@@ -214,7 +211,7 @@ final case class RunSessionManagerLive(
   private def getRunOrFail(runId: String): IO[WorkspaceError, WorkspaceRun] =
     workspaceRepo
       .getRun(runId)
-      .mapError(e => WorkspaceError.PersistenceFailure(RuntimeException(e.toString)))
+      .mapWorkspacePersistence("load_run")
       .flatMap(_.fold[IO[WorkspaceError, WorkspaceRun]](ZIO.fail(WorkspaceError.NotFound(runId)))(ZIO.succeed))
 
   private def ensureRunning(run: WorkspaceRun): IO[WorkspaceError, Unit] =
@@ -272,5 +269,5 @@ final case class RunSessionManagerLive(
                          updatedAt = now,
                        )
                      )
-                     .mapError(e => WorkspaceError.PersistenceFailure(RuntimeException(e.toString)))
+                     .mapWorkspacePersistence("append_run_user_message")
     yield Some(messageId)

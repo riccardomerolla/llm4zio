@@ -422,7 +422,7 @@ final case class ChatControllerLive(
     },
     Method.GET / "api" / "chat" / string("id") / "messages"             -> handler { (id: String, req: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
-        val since = req.queryParam("since").flatMap(s => scala.util.Try(Instant.parse(s)).toOption)
+        val since = req.queryParam("since").flatMap(parseInstantOption)
         for
           convId   <- parseLongId("conversation", id)
           messages <-
@@ -1190,6 +1190,13 @@ final case class ChatControllerLive(
     safeOption(value) match
       case Some(raw) => raw.toLongOption
       case None      => None
+
+  private def parseInstantOption(value: String): Option[Instant] =
+    Option(value).map(_.trim).filter(_.nonEmpty).flatMap { raw =>
+      raw.toLongOption.map(Instant.ofEpochMilli).orElse(
+        scala.util.control.Exception.nonFatalCatch.opt(Instant.parse(raw))
+      )
+    }
 
   private def safeConversationId(conversation: ChatConversation): Option[Long] =
     Option(conversation) match

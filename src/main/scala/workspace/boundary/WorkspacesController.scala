@@ -932,11 +932,9 @@ object WorkspacesController:
     case RunStatus.Cancelled  => "cancelled"
 
   private def filterRuns(runs: List[WorkspaceRun], q: RunsDashboardQuery): List[WorkspaceRun] =
-    val fromInstant = q.dateFrom.flatMap(s => scala.util.Try(LocalDate.parse(s)).toOption).map(
-      _.atStartOfDay().toInstant(ZoneOffset.UTC)
-    )
+    val fromInstant = q.dateFrom.flatMap(parseLocalDateOption).map(_.atStartOfDay().toInstant(ZoneOffset.UTC))
     val toInstant   = q.dateTo
-      .flatMap(s => scala.util.Try(LocalDate.parse(s)).toOption)
+      .flatMap(parseLocalDateOption)
       .map(_.plusDays(1).atStartOfDay().toInstant(ZoneOffset.UTC).minusMillis(1))
     runs.filter { run =>
       q.workspace.forall(_.equalsIgnoreCase(run.workspaceId)) &&
@@ -955,6 +953,11 @@ object WorkspacesController:
       case "all"    => runs
       case _        =>
         runs.filter(run => run.status == RunStatus.Pending || run.status.isInstanceOf[RunStatus.Running])
+
+  private def parseLocalDateOption(raw: String): Option[LocalDate] =
+    Option(raw).map(_.trim).filter(_.nonEmpty).flatMap(value =>
+      scala.util.control.Exception.nonFatalCatch.opt(LocalDate.parse(value))
+    )
 
   private def sortRuns(runs: List[WorkspaceRun], sortBy: String): List[WorkspaceRun] =
     sortBy match

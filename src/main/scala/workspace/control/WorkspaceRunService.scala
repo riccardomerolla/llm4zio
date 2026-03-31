@@ -18,6 +18,7 @@ import knowledge.control.KnowledgeExtractionService
 import orchestration.control.{ AgentExecutionState, AgentPoolManager, OrchestratorControlPlane, PoolError, SlotHandle }
 import shared.ids.Ids.{ EventId, IssueId, TaskRunId }
 import workspace.entity.*
+import workspace.control.WorkspaceErrorSupport.*
 
 case class AssignRunRequest(issueRef: String, prompt: String, agentName: String) derives JsonCodec
 
@@ -73,16 +74,16 @@ object WorkspaceRunService:
           pool.recordTokenUsage(agentName, tokens).mapError(poolErrorToWorkspace),
         resolveAgentProfile = name =>
           agents.findByName(name)
-            .mapError(err => WorkspaceError.PersistenceFailure(RuntimeException(err.toString))),
+            .mapWorkspacePersistence("resolve_agent_profile"),
         onIssueEnteredHumanReview = issue =>
           decisions
             .openIssueReviewDecision(issue)
-            .mapError(err => WorkspaceError.PersistenceFailure(RuntimeException(err.toString)))
+            .mapWorkspacePersistence("open_issue_review_decision")
             .unit,
         extractKnowledgeFromCompletedRun = (run, issue) =>
           knowledge
             .extractFromCompletedRun(run, issue)
-            .mapError(err => WorkspaceError.PersistenceFailure(RuntimeException(err.toString)))
+            .mapWorkspacePersistence("extract_completed_run_knowledge")
             .unit,
         notifyControlPlane = (agentName, state, runId, convId, msg, tokens) =>
           controlPlane.notifyWorkspaceAgent(agentName, state, runId, convId, msg, tokens),
@@ -107,7 +108,7 @@ object WorkspaceRunService:
           actual = s"configured capacity = $raw",
         )
       case PoolError.PersistenceFailure(_, cause)        =>
-        WorkspaceError.PersistenceFailure(RuntimeException(cause))
+        WorkspaceError.PersistenceFailure(RuntimeException(s"agent_pool failed: $cause"))
 
 object WorkspaceRunServiceLive:
   final case class WorkspaceExecutionFailure(error: WorkspaceError)
@@ -215,7 +216,7 @@ final case class WorkspaceRunServiceLive(
   override def cleanupAfterSuccessfulMerge(runId: String): UIO[Unit] =
     wsRepo
       .getRun(runId)
-      .mapError(e => WorkspaceError.PersistenceFailure(RuntimeException(e.toString)))
+      .mapWorkspacePersistence("load_run_for_post_merge_cleanup")
       .flatMap {
         case Some(run) => maybeCleanupWorktree(run, WorkspaceRunCleanup.AfterMergeSuccess)
         case None      => ZIO.logWarning(s"[run:$runId] skipping post-merge cleanup: run not found")
@@ -227,7 +228,7 @@ final case class WorkspaceRunServiceLive(
     for
       ws      <- wsRepo
                    .get(workspaceId)
-                   .mapError(e => WorkspaceError.PersistenceFailure(RuntimeException(e.toString)))
+                   .mapWorkspacePersistence("load_workspace_for_assign")
                    .flatMap(
                      _.fold[IO[WorkspaceError, Workspace]](ZIO.fail(WorkspaceError.NotFound(workspaceId)))(ZIO.succeed)
                    )
@@ -241,7 +242,7 @@ final case class WorkspaceRunServiceLive(
                      else
                        issueRepo.get(IssueId(refStr))
                          .map(Some(_))
-                         .mapError(e => WorkspaceError.PersistenceFailure(RuntimeException(e.toString)))
+                         .mapWorkspacePersistence("load_issue_for_assign")
                          .catchAll(_ => ZIO.succeed(None))
                    }
                    runId       = java.util.UUID.randomUUID().toString
@@ -278,7 +279,7 @@ final case class WorkspaceRunServiceLive(
                                  )
                    convId     <- chatRepo
                                    .createConversation(conv)
-                                   .mapError(e => WorkspaceError.PersistenceFailure(RuntimeException(e.toString)))
+                                   .mapWorkspacePersistence("create_run_conversation")
                    _          <- chatRepo
                                    .addMessage(
                                      ConversationEntry(
@@ -291,7 +292,7 @@ final case class WorkspaceRunServiceLive(
                                        updatedAt = now,
                                      )
                                    )
-                                   .mapError(e => WorkspaceError.PersistenceFailure(RuntimeException(e.toString)))
+                                   .mapWorkspacePersistence("append_run_prompt_message")
                    _          <- wsRepo
                                    .appendRun(
                                      WorkspaceRunEvent.Assigned(
@@ -307,10 +308,10 @@ final case class WorkspaceRunServiceLive(
                                        occurredAt = now,
                                      )
                                    )
-                                   .mapError(e => WorkspaceError.PersistenceFailure(RuntimeException(e.toString)))
+                                   .mapWorkspacePersistence("append_assigned_run")
                    run        <- wsRepo
                                    .getRun(runId)
-                                   .mapError(e => WorkspaceError.PersistenceFailure(RuntimeException(e.toString)))
+                                   .mapWorkspacePersistence("load_assigned_run")
                                    .flatMap(
                                      _.fold[IO[WorkspaceError, WorkspaceRun]](ZIO.fail(WorkspaceError.NotFound(runId)))(
                                        ZIO.succeed
@@ -329,7 +330,7 @@ final case class WorkspaceRunServiceLive(
                                        updatedAt = now,
                                      )
                                    )
-                                   .mapError(e => WorkspaceError.PersistenceFailure(RuntimeException(e.toString)))
+                                   .mapWorkspacePersistence("append_run_started_message")
                    _          <- registerSlot(run.id, slot)
                    fiber      <- executeInFiber(
                                    run = run,
@@ -368,7 +369,7 @@ final case class WorkspaceRunServiceLive(
     for
       run           <- wsRepo
                          .getRun(runId)
-                         .mapError(e => WorkspaceError.PersistenceFailure(RuntimeException(e.toString)))
+                         .mapWorkspacePersistence("load_run_for_continuation")
                          .flatMap(
                            _.fold[IO[WorkspaceError, WorkspaceRun]](ZIO.fail(WorkspaceError.NotFound(runId)))(ZIO.succeed)
                          )
@@ -378,7 +379,7 @@ final case class WorkspaceRunServiceLive(
       slot          <- reserveAgentSlot(effectiveAgent)
       ws            <- wsRepo
                          .get(run.workspaceId)
-                         .mapError(e => WorkspaceError.PersistenceFailure(RuntimeException(e.toString)))
+                         .mapWorkspacePersistence("load_workspace_for_continuation")
                          .flatMap(
                            _.fold[IO[WorkspaceError, Workspace]](ZIO.fail(WorkspaceError.NotFound(run.workspaceId)))(ZIO.succeed)
                          )
@@ -413,7 +414,7 @@ final case class WorkspaceRunServiceLive(
                                                 updatedAt = now,
                                               )
                                             )
-                                            .mapError(e => WorkspaceError.PersistenceFailure(RuntimeException(e.toString)))
+                                            .mapWorkspacePersistence("create_continuation_conversation")
                          _             <- chatRepo
                                             .addMessage(
                                               ConversationEntry(
@@ -427,9 +428,7 @@ final case class WorkspaceRunServiceLive(
                                                 updatedAt = now,
                                               )
                                             )
-                                            .mapError(e =>
-                                              WorkspaceError.PersistenceFailure(RuntimeException(e.toString))
-                                            )
+                                            .mapWorkspacePersistence("append_continuation_prompt_message")
                          _             <- wsRepo
                                             .appendRun(
                                               WorkspaceRunEvent.Assigned(
@@ -445,13 +444,11 @@ final case class WorkspaceRunServiceLive(
                                                 occurredAt = now,
                                               )
                                             )
-                                            .mapError(e =>
-                                              WorkspaceError.PersistenceFailure(RuntimeException(e.toString))
-                                            )
+                                            .mapWorkspacePersistence("append_continuation_run")
                          continuedRun  <-
                            wsRepo
                              .getRun(newRunId)
-                             .mapError(e => WorkspaceError.PersistenceFailure(RuntimeException(e.toString)))
+                             .mapWorkspacePersistence("load_continuation_run")
                              .flatMap(
                                _.fold[IO[WorkspaceError, WorkspaceRun]](ZIO.fail(WorkspaceError.NotFound(newRunId)))(
                                  ZIO.succeed

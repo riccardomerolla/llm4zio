@@ -1,3 +1,5 @@
+import { createBoardSyncHooks } from './issues-board-sync.js';
+
 class IssuesBoard {
   constructor(root) {
     this.root = root;
@@ -928,98 +930,22 @@ class IssuesBoard {
     return false;
   }
 
-  _flushPendingRefresh() {
-    if (!this._refreshPending) return;
-    if (this._refreshInFlight) return;
-    if (this._shouldDeferRefresh()) return;
-    this._refreshPending = false;
-    this.refreshBoard();
-  }
-
-  refreshBoard(landedIssueId = null) {
-    if (this._refreshInFlight) {
-      this._refreshPending = true;
-      return;
-    }
-
-    if (this._shouldDeferRefresh()) {
-      this._refreshPending = true;
-      return;
-    }
-
-    this._refreshInFlight = true;
-    this._beginLoading();
-
-    const onSettled = () => {
-      this._refreshInFlight = false;
-      this._endLoading();
-      this._flushPendingRefresh();
-    };
-
-    if (window.htmx?.ajax) {
-      window.htmx.ajax('GET', this.fragmentUrl, {
-        target: this.root,
-        swap: 'innerHTML',
-      }).then(() => {
-        this.bindDragDrop();
-        this.bindQuickAdd();
-        this.bindQuickDispatch();
-        this._flashLandedCard(landedIssueId);
-        this._flushPostRefreshToast();
-      }).catch(() => {}).finally(onSettled);
-      return;
-    }
-
-    fetch(this.fragmentUrl)
-      .then((response) => response.ok ? response.text() : Promise.reject(new Error('refresh failed')))
-      .then((html) => {
-        // html is server-rendered markup from our own trusted endpoint
-        this.root.innerHTML = html; // nosec: trusted server HTML, same origin
-        this.bindDragDrop();
-        this.bindQuickAdd();
-        this.bindQuickDispatch();
-        this._flashLandedCard(landedIssueId);
-        this._flushPostRefreshToast();
-      })
-      .catch(() => {})
-      .finally(onSettled);
-  }
-
-  _flushPostRefreshToast() {
-    const toast = this._pendingPostRefreshToast;
-    this._pendingPostRefreshToast = null;
-    if (!toast?.message) return;
-    this._showToast(toast.message, toast.type || 'warning');
-  }
-
-  // ---------------------------------------------------------------------------
-  // WebSocket
-  // ---------------------------------------------------------------------------
-
-  connectWs() {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    this.ws = new WebSocket(`${protocol}//${window.location.host}/ws/console`);
-    this.ws.onopen = () => {
-      this.ws?.send(JSON.stringify({ Subscribe: { topic: this.wsTopic, params: {} } }));
-    };
-    this.ws.onmessage = (event) => this.onWsMessage(event.data);
-  }
-
-  onWsMessage(raw) {
-    let parsed;
-    try {
-      parsed = JSON.parse(raw);
-    } catch (_ignored) {
-      return;
-    }
-
-    const evt = parsed?.Event;
-    if (!evt || evt.topic !== this.wsTopic) return;
-    if (evt.eventType === 'activity-feed') {
-      this.refreshBoard();
-    }
-  }
 }
+
+Object.assign(IssuesBoard.prototype, createBoardSyncHooks({
+  beforeRefresh() {
+    this._beginLoading();
+  },
+  afterRefresh(landedIssueId) {
+    this.bindDragDrop();
+    this.bindQuickAdd();
+    this.bindQuickDispatch();
+    this._flashLandedCard(landedIssueId);
+  },
+  afterSettle() {
+    this._endLoading();
+  },
+}));
 
 document.querySelectorAll('#issues-board-root').forEach((root) => {
   if (!root.__issuesBoard) {
