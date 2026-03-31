@@ -168,6 +168,7 @@ object ProjectsView:
         frag(
           JsResources.inlineModuleScript("/static/client/components/ab-board-column.js"),
           JsResources.inlineModuleScript("/static/client/components/ab-board-layout.js"),
+          JsResources.inlineModuleScript("/static/client/components/issues-board-sync.js"),
           JsResources.inlineModuleScript("/static/client/components/ab-issues-board.js"),
         )
       else frag(),

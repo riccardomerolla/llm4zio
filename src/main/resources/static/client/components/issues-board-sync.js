@@ -1,4 +1,4 @@
-export function createBoardSyncHooks({
+function createBoardSyncHooks({
   beforeRefresh = () => {},
   afterRefresh = () => {},
   afterSettle = () => {},
@@ -88,3 +88,7 @@ export function createBoardSyncHooks({
     },
   };
 }
+
+window.__issuesBoardSync = Object.freeze({ createBoardSyncHooks });
+
+export { createBoardSyncHooks };

@@ -163,6 +163,7 @@ object IssuesViewSpec extends ZIOSpecDefault:
         html.contains("Board"),
         html.contains("List"),
         html.contains("issues-select-all-board"),
+        html.contains("__issuesBoardSync"),
         html.contains("data-board-loading"),
         html.contains("Open"),
         html.contains("Assigned"),

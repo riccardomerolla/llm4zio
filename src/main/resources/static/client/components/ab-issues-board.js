@@ -1,4 +1,10 @@
-import { createBoardSyncHooks } from './issues-board-sync.js';
+const createBoardSyncHooks = window.__issuesBoardSync?.createBoardSyncHooks || (() => ({
+  _flushPendingRefresh() {},
+  refreshBoard() {},
+  _flushPostRefreshToast() {},
+  connectWs() {},
+  onWsMessage() {},
+}));
 
 class IssuesBoard {
   constructor(root) {
