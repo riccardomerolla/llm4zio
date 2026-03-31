@@ -221,7 +221,6 @@ object HtmlViews:
     autoDispatchEnabled: Boolean = false,
     syncStatus: IssuesView.SyncStatus = IssuesView.SyncStatus(None, 0, 0),
     agentUsage: Option[(Int, Int)] = None,
-    hasProofFilter: Option[Boolean] = None,
   ): String =
     IssuesView.board(
       issues = issues,
@@ -238,7 +237,6 @@ object HtmlViews:
       autoDispatchEnabled = autoDispatchEnabled,
       syncStatus = syncStatus,
       agentUsage = agentUsage,
-      hasProofFilter = hasProofFilter,
     )
 
   def issuesBoardColumns(
@@ -247,7 +245,6 @@ object HtmlViews:
     workReports: Map[IssueId, IssueWorkReport] = Map.empty,
     availableAgents: List[AgentInfo] = Nil,
     dispatchStatuses: Map[IssueId, DispatchStatusResponse] = Map.empty,
-    hasProofFilter: Option[Boolean] = None,
   ): String =
     IssuesView.boardColumnsFragment(
       issues = issues,
@@ -255,7 +252,6 @@ object HtmlViews:
       workReports = workReports,
       availableAgents = availableAgents,
       dispatchStatuses = dispatchStatuses,
-      hasProofFilter = hasProofFilter,
     )
 
   def issuesBoardList(

@@ -20,12 +20,11 @@ object BoardFilterBarSpec extends ZIOSpecDefault:
           priorityFilter = None,
           tagFilter = None,
           query = None,
-          hasProofFilter = None,
         )
         // Apply button should use rounded-full, not rounded-md
         assertTrue(html.contains("rounded-full bg-indigo-500"))
       },
-      test("filter bar has-proof toggle is a rounded-full pill label") {
+      test("filter bar reset action is rendered as a rounded-full pill") {
         val html = IssuesView.board(
           issues = emptyIssues,
           workspaces = emptyWorkspaces,
@@ -34,11 +33,10 @@ object BoardFilterBarSpec extends ZIOSpecDefault:
           priorityFilter = None,
           tagFilter = None,
           query = None,
-          hasProofFilter = None,
         )
         assertTrue(html.contains("rounded-full border"))
       },
-      test("filter bar has-proof toggle highlighted when hasProofFilter=true") {
+      test("filter bar no longer renders the has-proof label") {
         val html = IssuesView.board(
           issues = emptyIssues,
           workspaces = emptyWorkspaces,
@@ -47,8 +45,7 @@ object BoardFilterBarSpec extends ZIOSpecDefault:
           priorityFilter = None,
           tagFilter = None,
           query = None,
-          hasProofFilter = Some(true),
         )
-        assertTrue(html.contains("bg-indigo-500/20"))
+        assertTrue(!html.contains("Has proof"))
       },
     )

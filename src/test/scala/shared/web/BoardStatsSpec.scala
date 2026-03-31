@@ -72,18 +72,6 @@ object BoardStatsSpec extends ZIOSpecDefault:
         val stats   = BoardStats.compute(issues, reports)
         assertTrue(stats.tokensTotal == 2250L) // 1500 + 750
       },
-      test("hasProofFilter keeps only issues with a proof-of-work entry") {
-        val id1     = IssueId("i1")
-        val issues  = List(mkIssue("i1", IssueStatus.Done), mkIssue("i2", IssueStatus.Backlog))
-        val report  = IssueWorkReport.empty(id1, now).copy(walkthrough = Some("Done."))
-        val reports = Map(id1 -> report)
-        val result  = BoardStats.hasProofFilter(issues, reports)
-        assertTrue(result.map(_.id) == List(Some("i1")))
-      },
-      test("hasProofFilter returns empty list when no reports have proof signals") {
-        val issues = List(mkIssue("i1", IssueStatus.Backlog), mkIssue("i2", IssueStatus.Backlog))
-        assertTrue(BoardStats.hasProofFilter(issues, Map.empty).isEmpty)
-      },
       test("boardStatsBar renders running and completed counts") {
         val stats = BoardStats.Stats(running = 3, completed = 7, tokensTotal = 12000L)
         val html  = BoardStats.statsBar(stats)

@@ -379,7 +379,7 @@ object IssueControllerSupport:
     )
 
   def withQuery(basePath: String, req: Request): String =
-    val knownKeys = List("mode", "run_id", "status", "q", "tag", "workspace", "agent", "priority", "hasProof")
+    val knownKeys = List("mode", "run_id", "status", "q", "tag", "workspace", "agent", "priority")
     knownKeys.flatMap(key => req.queryParam(key).map(v => s"${urlEncode(key)}=${urlEncode(v)}")) match
       case Nil    => basePath
       case params =>

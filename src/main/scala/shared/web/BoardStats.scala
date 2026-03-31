@@ -21,17 +21,6 @@ object BoardStats:
     val tokens    = workReports.values.flatMap(_.tokenUsage.map(_.totalTokens)).sum
     Stats(running, completed, tokens)
 
-  /** Keep only issues that have at least one proof-of-work signal in the projection. */
-  def hasProofFilter(
-    issues: List[AgentIssueView],
-    workReports: Map[IssueId, IssueWorkReport],
-  ): List[AgentIssueView] =
-    issues.filter { issue =>
-      issue.id.exists { id =>
-        workReports.get(IssueId(id)).exists(hasSignal)
-      }
-    }
-
   /** Render a compact stats bar to embed above the board columns. */
   def statsBar(stats: Stats): String =
     val tokensLabel =
@@ -57,13 +46,3 @@ object BoardStats:
         span(cls := "text-xs text-slate-400")("tokens"),
       ),
     ).render
-
-  private def hasSignal(r: IssueWorkReport): Boolean =
-    r.walkthrough.isDefined ||
-    r.agentSummary.isDefined ||
-    r.diffStats.isDefined ||
-    r.prLink.isDefined ||
-    r.ciStatus.isDefined ||
-    r.tokenUsage.isDefined ||
-    r.reports.nonEmpty ||
-    r.artifacts.nonEmpty

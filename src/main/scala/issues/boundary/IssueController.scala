@@ -889,7 +889,6 @@ final case class IssueControllerLive(
     val agentFilter     = req.queryParam("agent").map(_.trim).filter(_.nonEmpty)
     val priorityFilter  = req.queryParam("priority").map(_.trim.toLowerCase).filter(_.nonEmpty)
     val statusFilter    = req.queryParam("status").map(_.trim.toLowerCase).filter(_.nonEmpty)
-    val hasProofFilter  = req.queryParam("hasProof").exists(_.trim.equalsIgnoreCase("true"))
     ErrorHandlingMiddleware.fromPersistence {
       for
         startedAt         <- Clock.nanoTime
@@ -943,7 +942,6 @@ final case class IssueControllerLive(
                                      statusFilter = statusFilter,
                                      dispatchStatuses = dispatchTimed.value,
                                      autoDispatchEnabled = autoDispatchTimed.value,
-                                     hasProofFilter = if hasProofFilter then Some(true) else None,
                                    )
                                  )
         _                 <- logBoardTiming(
@@ -973,7 +971,6 @@ final case class IssueControllerLive(
     val agentFilter     = req.queryParam("agent").map(_.trim).filter(_.nonEmpty)
     val priorityFilter  = req.queryParam("priority").map(_.trim.toLowerCase).filter(_.nonEmpty)
     val statusFilter    = req.queryParam("status").map(_.trim.toLowerCase).filter(_.nonEmpty)
-    val hasProofFilter  = req.queryParam("hasProof").exists(_.trim.equalsIgnoreCase("true"))
     ErrorHandlingMiddleware.fromPersistence {
       for
         startedAt        <- Clock.nanoTime
@@ -1011,7 +1008,6 @@ final case class IssueControllerLive(
           workspaces = workspacesTimed.value.map(ws => ws.id -> ws.name),
           workReports = workReports,
           dispatchStatuses = dispatchTimed.value,
-          hasProofFilter = if hasProofFilter then Some(true) else None,
         )
       ).addHeaders(boardTimingHeaders(
         route = "fragment",

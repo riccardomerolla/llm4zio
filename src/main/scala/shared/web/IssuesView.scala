@@ -125,20 +125,15 @@ object IssuesView:
     syncStatus: SyncStatus = SyncStatus(None, 0, 0),
     agentUsage: Option[(Int, Int)] = None,
     workReports: Map[IssueId, IssueWorkReport] = Map.empty,
-    hasProofFilter: Option[Boolean] = None,
   ): String =
-    val filteredIssues = hasProofFilter match
-      case Some(true) => BoardStats.hasProofFilter(issues, workReports)
-      case _          => issues
-    val queryParts     = List(
+    val queryParts = List(
       workspaceFilter.filter(_.nonEmpty).map(v => s"workspace=${urlEncode(v)}"),
       agentFilter.filter(_.nonEmpty).map(v => s"agent=${urlEncode(v)}"),
       priorityFilter.filter(_.nonEmpty).map(v => s"priority=${urlEncode(v)}"),
       tagFilter.filter(_.nonEmpty).map(v => s"tag=${urlEncode(v)}"),
       query.filter(_.nonEmpty).map(v => s"q=${urlEncode(v)}"),
-      hasProofFilter.filter(identity).map(_ => "hasProof=true"),
     ).flatten
-    val fragmentUrl    =
+    val fragmentUrl =
       if queryParts.isEmpty then "/board/fragment"
       else s"/board/fragment?${queryParts.mkString("&")}"
 
@@ -163,7 +158,7 @@ object IssuesView:
               action := "/board",
               cls    := "flex flex-wrap items-center gap-2",
             )(
-              boardFilterBar(workspaces, workspaceFilter, agentFilter, priorityFilter, tagFilter, query, hasProofFilter)
+              boardFilterBar(workspaces, workspaceFilter, agentFilter, priorityFilter, tagFilter, query)
             ),
             div(cls := "flex items-center gap-3")(
               modeToggle(
@@ -174,7 +169,6 @@ object IssuesView:
                 tagFilter,
                 query,
                 statusFilter,
-                hasProofFilter,
               ),
               form(method := "post", action := "/board/auto-dispatch", cls := "flex items-center gap-2")(
                 input(
@@ -188,7 +182,6 @@ object IssuesView:
                     tagFilter = tagFilter,
                     query = query,
                     statusFilter = statusFilter,
-                    hasProofFilter = hasProofFilter,
                   ),
                 ),
                 label(cls := "flex cursor-pointer items-center gap-1.5 text-xs text-slate-300")(
@@ -229,7 +222,7 @@ object IssuesView:
             cls                     := "h-full",
             attr("data-bulk-scope") := "board",
           )(
-            raw(boardColumnsFragment(filteredIssues, workspaces, workReports, availableAgents, dispatchStatuses))
+            raw(boardColumnsFragment(issues, workspaces, workReports, availableAgents, dispatchStatuses))
           )
         ),
       ),
@@ -259,7 +252,7 @@ object IssuesView:
           agentFilter,
           priorityFilter,
           rightSide =
-            Some(modeToggle("list", workspaceFilter, agentFilter, priorityFilter, tagFilter, query, statusFilter, None)),
+            Some(modeToggle("list", workspaceFilter, agentFilter, priorityFilter, tagFilter, query, statusFilter)),
         ),
         if issues.isEmpty then
           div(cls := "rounded-xl border border-white/10 bg-slate-900/60 px-6 py-16 text-center")(
@@ -285,16 +278,12 @@ object IssuesView:
     workReports: Map[IssueId, IssueWorkReport],
     availableAgents: List[AgentInfo] = Nil,
     dispatchStatuses: Map[IssueId, DispatchStatusResponse] = Map.empty,
-    hasProofFilter: Option[Boolean] = None,
   ): String =
-    val filteredIssues = hasProofFilter match
-      case Some(true) => BoardStats.hasProofFilter(issues, workReports)
-      case _          => issues
     tag("ab-board-layout")(
       attr("default-expanded") := "todo,in_progress"
     )(
       boardStatuses.map { (status, label) =>
-        val columnIssues = filteredIssues
+        val columnIssues = issues
           .filter(_.status == status)
           .sortBy(i =>
             try i.updatedAt
@@ -1231,7 +1220,6 @@ object IssuesView:
     priorityFilter: Option[String],
     tagFilter: Option[String],
     query: Option[String],
-    hasProofFilter: Option[Boolean] = None,
   ): Frag =
     val activeInput =
       "rounded-full border border-indigo-400/40 bg-slate-800/70 px-3 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none"
@@ -1280,21 +1268,6 @@ object IssuesView:
         value       := tagFilter.getOrElse(""),
         placeholder := "Tag",
         cls         := (if tagFilter.exists(_.nonEmpty) then activeInput else idleInput),
-      ),
-      label(
-        cls := s"flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs ${
-            if hasProofFilter.contains(true) then "border-indigo-400/60 bg-indigo-500/20 text-indigo-200"
-            else "border-white/15 bg-slate-800/70 text-slate-300"
-          }"
-      )(
-        input(
-          `type` := "checkbox",
-          name   := "hasProof",
-          value  := "true",
-          cls    := "sr-only",
-          if hasProofFilter.contains(true) then checked := "checked" else (),
-        ),
-        span("Has proof"),
       ),
       button(
         `type` := "submit",
@@ -1928,7 +1901,6 @@ object IssuesView:
     tagFilter: Option[String],
     query: Option[String],
     statusFilter: Option[String],
-    hasProofFilter: Option[Boolean],
   ): Frag =
     div(cls := "inline-flex items-center rounded-lg border border-white/10 bg-slate-900/60 p-1")(
       a(
@@ -1940,7 +1912,6 @@ object IssuesView:
           tagFilter = tagFilter,
           query = query,
           statusFilter = statusFilter,
-          hasProofFilter = hasProofFilter,
         ),
         cls  := (if currentMode == "board" then
                   "rounded-md bg-indigo-500/30 px-2.5 py-1 text-xs font-semibold text-indigo-100"
@@ -1956,7 +1927,6 @@ object IssuesView:
           tagFilter = tagFilter,
           query = query,
           statusFilter = statusFilter,
-          hasProofFilter = None,
         ),
         cls  := (if currentMode == "list" then
                   "rounded-md bg-indigo-500/30 px-2.5 py-1 text-xs font-semibold text-indigo-100"
@@ -1973,7 +1943,6 @@ object IssuesView:
     tagFilter: Option[String],
     query: Option[String],
     statusFilter: Option[String],
-    hasProofFilter: Option[Boolean],
   ): String =
     val params = List(
       Some("mode" -> mode),
@@ -1983,7 +1952,6 @@ object IssuesView:
       tagFilter.filter(_.nonEmpty).map("tag" -> _),
       query.filter(_.nonEmpty).map("q" -> _),
       statusFilter.filter(_.nonEmpty).map("status" -> _),
-      hasProofFilter.filter(identity).map(_ => "hasProof" -> "true"),
     ).flatten
     if params.isEmpty then "/board"
     else

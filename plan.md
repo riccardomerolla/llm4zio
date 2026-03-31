@@ -1,27 +1,7 @@
-## Fourth Modernization Iteration
+## Remove Board Proof Filter
 
-### Group 1: Internal legacy compatibility cleanup
-- [x] Replace scattered issue-state compatibility sets with shared canonical helpers so legacy state aliases stay centralized instead of leaking through controllers.
-- [x] Remove dead issue controller compatibility helpers that are no longer referenced.
-- [x] Run focused issue and workspace controller specs for the compatibility cleanup.
-- [x] Perform a review pass for Group 1, apply any remarks, then commit the group.
-
-### Group 2: Effect-oriented runtime cleanup
-- [x] Replace the broad issue lookup fallback in `WorkspaceRunService` with explicit not-found handling and typed persistence mapping.
-- [x] Replace the broad channel-close fallback in `ChatController` with explicit channel error handling.
-- [x] Run focused specs for the touched workspace and chat runtime surfaces.
-- [x] Perform a review pass for Group 2, apply any remarks, then commit the group.
-
-### Group 3: Large-file decomposition
-- [x] Extract chat session and session-id helper logic from `ChatController.scala` into an internal support module without changing routes or service wiring.
-- [x] Update the controller to delegate to the extracted support module and keep behavior unchanged.
-- [x] Run focused specs for the chat controller surface after the split.
-- [x] Perform a review pass for Group 3, apply any remarks, then commit the group.
-
-### Group 4: Final verification
-- [x] Run `sbt --client scalafmtAll`.
-- [x] Run targeted specs for the touched areas.
-- [x] Run `sbt --client compile`.
-- [x] Run `sbt --client test`.
-- [x] Perform a final review pass and apply any last remarks.
-- [x] Commit the final verification updates if needed.
+### Group 1: Remove board proof-filter plumbing
+- [x] Remove the `hasProof` query parsing from the board controller routes.
+- [x] Remove the proof-filter controls and parameter plumbing from the board view.
+- [x] Delete any now-unused helper logic that existed only for the board proof filter.
+- [x] Run focused board controller and view verification.
