@@ -215,7 +215,7 @@ object IssuesView:
           )
         ),
         bulkToolbar("board"),
-        div(
+        tag("ab-issues-board")(
           id                           := "issues-board-root",
           attr("data-fragment-url")    := fragmentUrl,
           attr("data-status-endpoint") := "/api/issues",

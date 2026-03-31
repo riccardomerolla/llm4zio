@@ -1,18 +1,51 @@
-class MessageComposer {
-  constructor(root) {
-    this.root = root;
-    this.form = root.closest('form');
-    this.input = root.querySelector('textarea[name="content"]');
-    this.writePane = root.querySelector('[data-role="write-pane"]');
-    this.previewPane = root.querySelector('[data-role="preview-pane"]');
-    this.mentionsEl = root.querySelector('[data-role="mentions"]');
+import { LitElement, html } from 'https://cdn.jsdelivr.net/npm/lit@3/+esm';
 
-    this.agentsEndpoint = root.dataset.agentsEndpoint || '/api/agents';
-    this.mode = 'write';
-    this.agents = [];
-    this.filteredAgents = [];
-    this.mentionState = null;
+class AbMessageComposer extends LitElement {
+  static properties = {
+    agentsEndpoint: { type: String, attribute: 'data-agents-endpoint' },
+  };
+
+  constructor() {
+    super();
+    this.agentsEndpoint = '/api/agents';
+
+    this.form           = null;
+    this.input          = null;
+    this.writePane      = null;
+    this.previewPane    = null;
+    this.mentionsEl     = null;
+    this.sendBtn        = null;
+
+    this.mode                 = 'write';
+    this.agents               = [];
+    this.filteredAgents        = [];
+    this.mentionState         = null;
     this.selectedMentionIndex = 0;
+  }
+
+  createRenderRoot() { return this; }
+
+  connectedCallback() {
+    super.connectedCallback();
+    // highlight.js global used by marked highlighter callback
+    import('https://cdn.jsdelivr.net/npm/highlight.js@11.11.1/+esm')
+      .then((module) => {
+        window.hljs = module.default;
+        this._init();
+      })
+      .catch(() => {
+        this._init();
+      });
+  }
+
+  render() { return html``; }
+
+  _init() {
+    this.form        = this.closest('form');
+    this.input       = this.querySelector('textarea[name="content"]');
+    this.writePane   = this.querySelector('[data-role="write-pane"]');
+    this.previewPane = this.querySelector('[data-role="preview-pane"]');
+    this.mentionsEl  = this.querySelector('[data-role="mentions"]');
 
     if (!this.form || !this.input) return;
 
@@ -22,10 +55,10 @@ class MessageComposer {
 
   bind() {
     // Wire ab-icon-button elements (they emit native click events)
-    const slashCommandBtn = this.root.querySelector('[data-role="slash-command"]');
-    const insertCodeBtn = this.root.querySelector('[data-role="insert-code"]');
-    const mentionTrigger = this.root.querySelector('[data-role="mention-trigger"]');
-    const modeToggle = this.root.querySelector('[data-role="mode-toggle"]');
+    const slashCommandBtn = this.querySelector('[data-role="slash-command"]');
+    const insertCodeBtn = this.querySelector('[data-role="insert-code"]');
+    const mentionTrigger = this.querySelector('[data-role="mention-trigger"]');
+    const modeToggle = this.querySelector('[data-role="mode-toggle"]');
 
     slashCommandBtn?.addEventListener('click', () => this._triggerSlash());
     insertCodeBtn?.addEventListener('click', () => this.insertCodeBlock());
@@ -59,7 +92,7 @@ class MessageComposer {
     });
 
     document.addEventListener('click', (event) => {
-      if (!this.root.contains(event.target)) this.hideMentions();
+      if (!this.contains(event.target)) this.hideMentions();
     });
 
     this.updatePreview();
@@ -345,15 +378,6 @@ class MessageComposer {
   }
 }
 
-const composerRoot = document.getElementById('chat-composer');
-if (composerRoot) {
-  // highlight.js global used by marked highlighter callback
-  import('https://cdn.jsdelivr.net/npm/highlight.js@11.11.1/+esm')
-    .then((module) => {
-      window.hljs = module.default;
-      new MessageComposer(composerRoot);
-    })
-    .catch(() => {
-      new MessageComposer(composerRoot);
-    });
+if (!customElements.get('ab-message-composer')) {
+  customElements.define('ab-message-composer', AbMessageComposer);
 }

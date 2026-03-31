@@ -393,8 +393,8 @@ object ChatView:
       JsResources.inlineModuleScript("/static/client/components/ab-chat-stream.js"),
       runSessionMeta.fold[Frag](JsResources.inlineModuleScript("/static/client/components/ab-message-composer.js"))(_ =>
         frag(
-          JsResources.inlineModuleScript("/static/client/components/run-session-controls.js"),
-          JsResources.inlineModuleScript("/static/client/components/git-panel.js"),
+          JsResources.inlineModuleScript("/static/client/components/ab-run-session-controls.js"),
+          JsResources.inlineModuleScript("/static/client/components/ab-git-panel.js"),
           JsResources.inlineModuleScript("/static/client/components/ab-git-summary.js"),
         )
       ),
@@ -984,7 +984,7 @@ object ChatView:
       )(
         input(`type` := "hidden", name := "fragment", value := "true"),
         // Textarea
-        div(
+        tag("ab-message-composer")(
           id                           := "chat-composer",
           cls                          := "px-4 pt-3 pb-2",
           attr("data-conversation-id") := conversationId,
@@ -1102,7 +1102,7 @@ object ChatView:
     )
 
   private def runInteractionComposer(conversationId: String, runControlId: String, meta: RunSessionUiMeta): Frag =
-    div(
+    tag("ab-run-session-controls")(
       id                           := runControlId,
       cls                          := "sticky bottom-0 mt-3 rounded-[1.4rem] bg-slate-900/90 ring-1 ring-white/10 px-3 pt-2.5 pb-2 backdrop-blur-xl shadow-[0_12px_40px_rgba(2,6,23,0.45)]",
       attr("data-conversation-id") := conversationId,
@@ -1177,9 +1177,8 @@ object ChatView:
 
   private def gitPanelHtml(meta: RunSessionUiMeta, conversationId: String): Frag =
     val basePath = s"/api/workspaces/${meta.workspaceId}/runs/${meta.runId}/git"
-    div(
+    tag("ab-git-panel")(
       id                           := s"git-panel-$conversationId",
-      attr("data-role")            := "git-panel",
       attr("data-workspace-id")    := meta.workspaceId,
       attr("data-run-id")          := meta.runId,
       attr("data-conversation-id") := conversationId,

@@ -730,7 +730,7 @@ object WorkspacesView:
     )
 
   def runsDashboardRoot(fragmentUrl: String, initialContent: Frag): Frag =
-    div(
+    tag("ab-run-dashboard")(
       id                        := "runs-dashboard-root",
       attr("data-fragment-url") := fragmentUrl,
       attr("hx-get")            := fragmentUrl,

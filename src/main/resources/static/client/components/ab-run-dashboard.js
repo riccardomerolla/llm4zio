@@ -1,27 +1,54 @@
-class RunDashboard {
-  constructor(root) {
-    this.root = root;
-    this.fragmentUrl = root?.dataset?.fragmentUrl || '/runs/fragment';
-    this.ws = null;
-    this.timer = null;
+import { LitElement, html } from 'https://cdn.jsdelivr.net/npm/lit@3/+esm';
 
-    this.tickDurations();
-    this.startTicker();
-    this.connectWs();
+class AbRunDashboard extends LitElement {
+  static properties = {
+    fragmentUrl: { type: String, attribute: 'data-fragment-url' },
+  };
 
-    document.body.addEventListener('htmx:afterSwap', (event) => {
-      if (event.target && event.target.id === 'runs-dashboard-root') {
-        this.tickDurations();
-      }
-    });
+  constructor() {
+    super();
+    this.fragmentUrl = '/runs/fragment';
+    this._ws = null;
+    this._timer = null;
+    // Store a bound reference so the same function object can be removed in
+    // disconnectedCallback (addEventListener/removeEventListener require the same reference).
+    this._boundAfterSwap = () => this.tickDurations();
   }
 
-  startTicker() {
-    this.timer = window.setInterval(() => this.tickDurations(), 1000);
+  createRenderRoot() { return this; }
+
+  connectedCallback() {
+    super.connectedCallback();
+    this.tickDurations();
+    this._startTicker();
+    this._connectWs();
+    // htmx:afterSwap fires on the target element and bubbles; listen here to
+    // re-tick durations after every HTMX innerHTML swap into this element.
+    this.addEventListener('htmx:afterSwap', this._boundAfterSwap);
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    this.removeEventListener('htmx:afterSwap', this._boundAfterSwap);
+    if (this._timer !== null) {
+      clearInterval(this._timer);
+      this._timer = null;
+    }
+    if (this._ws && this._ws.readyState === WebSocket.OPEN) {
+      this._ws.send(JSON.stringify({ Unsubscribe: { topic: 'dashboard:recent-runs' } }));
+      this._ws.close();
+    }
+    this._ws = null;
+  }
+
+  render() { return html``; }
+
+  _startTicker() {
+    this._timer = window.setInterval(() => this.tickDurations(), 1000);
   }
 
   tickDurations() {
-    this.root.querySelectorAll('[data-role="run-duration"]').forEach((el) => {
+    this.querySelectorAll('[data-role="run-duration"]').forEach((el) => {
       const startedAt = Date.parse(el.dataset.startedAt || '');
       if (!Number.isFinite(startedAt)) return;
 
@@ -29,11 +56,11 @@ class RunDashboard {
       const endedAt = Date.parse(el.dataset.finishedAt || '');
       const end = isRunning || !Number.isFinite(endedAt) ? Date.now() : endedAt;
       const totalSeconds = Math.max(0, Math.floor((end - startedAt) / 1000));
-      el.textContent = this.formatDuration(totalSeconds);
+      el.textContent = this._formatDuration(totalSeconds);
     });
   }
 
-  formatDuration(totalSeconds) {
+  _formatDuration(totalSeconds) {
     const h = Math.floor(totalSeconds / 3600);
     const m = Math.floor((totalSeconds % 3600) / 60);
     const s = totalSeconds % 60;
@@ -43,21 +70,21 @@ class RunDashboard {
     return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   }
 
-  connectWs() {
+  _connectWs() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    this.ws = new WebSocket(`${protocol}//${window.location.host}/ws/console`);
-    this.ws.onopen = () => {
-      this.ws?.send(JSON.stringify({ Subscribe: { topic: 'dashboard:recent-runs', params: {} } }));
+    this._ws = new WebSocket(`${protocol}//${window.location.host}/ws/console`);
+    this._ws.onopen = () => {
+      this._ws?.send(JSON.stringify({ Subscribe: { topic: 'dashboard:recent-runs', params: {} } }));
     };
-    this.ws.onmessage = (event) => this.onWsMessage(event.data);
+    this._ws.onmessage = (event) => this._onWsMessage(event.data);
     window.addEventListener('beforeunload', () => {
-      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-        this.ws.send(JSON.stringify({ Unsubscribe: { topic: 'dashboard:recent-runs' } }));
+      if (this._ws && this._ws.readyState === WebSocket.OPEN) {
+        this._ws.send(JSON.stringify({ Unsubscribe: { topic: 'dashboard:recent-runs' } }));
       }
     });
   }
 
-  onWsMessage(raw) {
+  _onWsMessage(raw) {
     let parsed;
     try {
       parsed = JSON.parse(raw);
@@ -67,13 +94,13 @@ class RunDashboard {
 
     const event = parsed?.Event;
     if (!event || event.topic !== 'dashboard:recent-runs') return;
-    this.refresh();
+    this._refresh();
   }
 
-  refresh() {
+  _refresh() {
     if (window.htmx?.ajax) {
       window.htmx.ajax('GET', this.fragmentUrl, {
-        target: this.root,
+        target: this,
         swap: 'innerHTML',
       }).then(() => this.tickDurations());
       return;
@@ -82,15 +109,13 @@ class RunDashboard {
     fetch(this.fragmentUrl)
       .then((response) => response.ok ? response.text() : Promise.reject(new Error('refresh failed')))
       .then((html) => {
-        this.root.innerHTML = html;
+        this.innerHTML = html;
         this.tickDurations();
       })
       .catch(() => {});
   }
 }
 
-document.querySelectorAll('#runs-dashboard-root').forEach((root) => {
-  if (!root.__runDashboard) {
-    root.__runDashboard = new RunDashboard(root);
-  }
-});
+if (!customElements.get('ab-run-dashboard')) {
+  customElements.define('ab-run-dashboard', AbRunDashboard);
+}
