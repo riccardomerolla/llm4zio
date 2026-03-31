@@ -29,9 +29,25 @@ object ConfigController:
         migrationConfig <- ZIO.service[MigrationConfig]
         validator       <- ZIO.service[ConfigValidator]
         activityHub     <- ZIO.service[ActivityHub]
-        state           <- ConfigControllerState.initialize(migrationConfig)
+        state           <- ConfigControllerState
+                             .initialize(migrationConfig)
+                             .catchAll(error => ZIO.logError(error.message) *> ZIO.dieMessage(error.message))
       yield ConfigControllerLive(migrationConfig, validator, activityHub, state)
     }
+
+enum ConfigControllerInitError:
+  case ResolveWorkingDirectory(cause: Throwable)
+  case SelectInitialTarget(cause: Throwable)
+  case FilesystemOperation(operation: String, path: String, cause: Throwable)
+
+  def message: String =
+    this match
+      case ResolveWorkingDirectory(cause)             =>
+        s"Failed to resolve the current working directory: ${Option(cause.getMessage).getOrElse(cause.toString)}"
+      case SelectInitialTarget(cause)                 =>
+        s"Failed to determine the initial config editor target: ${Option(cause.getMessage).getOrElse(cause.toString)}"
+      case FilesystemOperation(operation, path, cause) =>
+        s"Failed to $operation at $path: ${Option(cause.getMessage).getOrElse(cause.toString)}"
 
 final case class ConfigControllerState(
   configPathRef: Ref[JPath],
@@ -43,21 +59,28 @@ final case class ConfigControllerState(
 
 object ConfigControllerState:
 
-  def initialize(initial: MigrationConfig): UIO[ConfigControllerState] =
+  def initialize(initial: MigrationConfig): IO[ConfigControllerInitError, ConfigControllerState] =
     for
-      cwd        <- ZIO.attemptBlocking(Paths.get("").toAbsolutePath.normalize()).orDie
+      cwd        <- ZIO
+                      .attemptBlocking(Paths.get("").toAbsolutePath.normalize())
+                      .mapError(ConfigControllerInitError.ResolveWorkingDirectory.apply)
       defaultConf = cwd.resolve("application.conf")
       defaultJson = cwd.resolve("application.json")
-      target     <- ZIO.attemptBlocking {
-                      if Files.exists(defaultConf) then defaultConf
-                      else if Files.exists(defaultJson) then defaultJson
-                      else initial.stateDir.resolve("migration.editor.conf")
-                    }.orDie
+      target     <- ZIO
+                      .attemptBlocking {
+                        if Files.exists(defaultConf) then defaultConf
+                        else if Files.exists(defaultJson) then defaultJson
+                        else initial.stateDir.resolve("migration.editor.conf")
+                      }
+                      .mapError(ConfigControllerInitError.SelectInitialTarget.apply)
       format      = if target.toString.endsWith(".json") then ConfigFormat.Json else ConfigFormat.Hocon
-      _          <- ZIO.attemptBlocking(Files.createDirectories(target.getParent)).orDie
-      _          <- ZIO.whenZIO(ZIO.attemptBlocking(!Files.exists(target)).orDie) {
+      _          <- filesystemOperation("create config directory", target.getParent)(Files.createDirectories(target.getParent))
+      _          <- ZIO.whenZIO(filesystemOperation("inspect config file", target)(!Files.exists(target))) {
                       val bootstrap = ConfigControllerLive.renderAsHocon(initial)
-                      ZIO.attemptBlocking(
+                      filesystemOperation(
+                        operation = "bootstrap config file",
+                        path = target,
+                      )(
                         Files.writeString(
                           target,
                           bootstrap,
@@ -65,15 +88,20 @@ object ConfigControllerState:
                           StandardOpenOption.CREATE,
                           StandardOpenOption.TRUNCATE_EXISTING,
                         )
-                      ).orDie.unit
+                      ).unit
                     }
       historyDir  = initial.stateDir.resolve("config-history")
-      _          <- ZIO.attemptBlocking(Files.createDirectories(historyDir)).orDie
+      _          <- filesystemOperation("create config history directory", historyDir)(Files.createDirectories(historyDir))
       pathRef    <- Ref.make(target)
       formatRef  <- Ref.make(format)
       configRef  <- Ref.make(initial)
       historyRef <- Ref.make(List.empty[ConfigHistoryEntry])
     yield ConfigControllerState(pathRef, formatRef, configRef, historyRef, historyDir)
+
+  private def filesystemOperation[A](operation: String, path: JPath)(effect: => A): IO[ConfigControllerInitError, A] =
+    ZIO
+      .attemptBlocking(effect)
+      .mapError(ConfigControllerInitError.FilesystemOperation(operation, path.toAbsolutePath.toString, _))
 
 final case class ConfigControllerLive(
   migrationConfig: MigrationConfig,

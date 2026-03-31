@@ -7,11 +7,11 @@
 - [x] Perform a review pass for Group 1, apply any remarks, then commit the group.
 
 ### Group 2: Effect-oriented cleanup
-- [ ] Replace remaining request parsing built around `Try(...)` in activity endpoints with explicit helper functions.
-- [ ] Refactor config-controller initialization to use explicit startup error modeling instead of inner `orDie` calls.
-- [ ] Collapse repeated application startup defect conversion into a single explicit helper at the wiring boundary.
-- [ ] Run focused tests for the touched runtime and controller surfaces.
-- [ ] Perform a review pass for Group 2, apply any remarks, then commit the group.
+- [x] Replace remaining request parsing built around `Try(...)` in activity endpoints with explicit helper functions.
+- [x] Refactor config-controller initialization to use explicit startup error modeling instead of inner `orDie` calls.
+- [x] Collapse repeated application startup defect conversion into a single explicit helper at the wiring boundary.
+- [x] Run focused tests for the touched runtime and controller surfaces.
+- [x] Perform a review pass for Group 2, apply any remarks, then commit the group.
 
 ### Group 3: Gateway MCP helper extraction
 - [ ] Extract the pure JSON parsing, enum parsing, rendering, and markdown summarization helpers from `GatewayMcpTools.scala` into an internal support module.

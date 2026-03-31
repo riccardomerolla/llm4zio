@@ -34,12 +34,14 @@ final case class ActivityControllerLive(
     },
     Method.GET / "api" / "activity" / "events"                 -> handler { (req: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
-        val eventType = req.queryParam("type").flatMap(parseEventType)
-        val since     = req.queryParam("since").flatMap(s => scala.util.Try(Instant.parse(s)).toOption)
-        val limit     = req.queryParam("limit").flatMap(_.toIntOption).getOrElse(50)
-        activityRepository.listEvents(eventType, since, limit).map { events =>
-          htmlResponse(ActivityView.eventsFragment(events))
-        }
+        for
+          since <- ZIO.foreach(req.queryParam("since"))(parseInstantOption).map(_.flatten)
+          events <- activityRepository.listEvents(
+                      eventType = req.queryParam("type").flatMap(parseEventType),
+                      since = since,
+                      limit = req.queryParam("limit").flatMap(_.toIntOption).getOrElse(50),
+                    )
+        yield htmlResponse(ActivityView.eventsFragment(events))
       }
     },
     Method.GET / "api" / "activity" / "events" / "latest-card" -> handler {
@@ -54,6 +56,10 @@ final case class ActivityControllerLive(
 
   private def htmlResponse(content: String): Response =
     Response.text(content).contentType(MediaType.text.html)
+
+  private def parseInstantOption(raw: String): UIO[Option[Instant]] =
+    if raw.trim.isEmpty then ZIO.none
+    else ZIO.attempt(Instant.parse(raw)).asSome.orElseSucceed(None)
 
   private def parseEventType(raw: String): Option[ActivityEventType] = raw.toLowerCase match
     case "run_started"        => Some(ActivityEventType.RunStarted)

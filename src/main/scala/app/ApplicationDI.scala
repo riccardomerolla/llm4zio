@@ -98,6 +98,9 @@ import workspace.entity.WorkspaceRepository
 
 object ApplicationDI:
 
+  private final case class StartupLayerFailure(component: String, detail: String)
+      extends RuntimeException(s"$component failed to initialize: $detail")
+
   type CommonServices =
     FileService &
       StoreConfig &
@@ -174,15 +177,15 @@ object ApplicationDI:
       ZLayer.succeed(config),
 
       // Service implementations
-      httpClientLayer(config).orDie,
+      fatalStartupLayer("http client", httpClientLayer(config))(errorMessage),
       HttpAIClient.live,
       HttpClient.live,
       GeminiCliExecutor.live,
       StateService.live(config.stateDir),
       ZLayer.succeed(storeConfig),
-      ConfigStoreModule.live.mapError(err => new RuntimeException(err.toString)).orDie,
-      DataStoreModule.live.mapError(err => new RuntimeException(err.toString)).orDie,
-      MemoryStoreModule.live.mapError(err => new RuntimeException(err.toString)).orDie,
+      fatalStartupLayer("config store module", ConfigStoreModule.live)(_.toString),
+      fatalStartupLayer("data store module", DataStoreModule.live)(_.toString),
+      fatalStartupLayer("memory store module", MemoryStoreModule.live)(_.toString),
       ConfigRepository.live,
       TaskRepository.live,
       ZLayer.succeed(config.resolvedProviderConfig),
@@ -219,6 +222,13 @@ object ApplicationDI:
       DiscordGatewayService.live,
       TaskProgressNotifier.live,
     )
+
+  private def fatalStartupLayer[R, E, A](component: String, layer: ZLayer[R, E, A])(render: E => String)
+    : ZLayer[R, Nothing, A] =
+    layer.mapError(error => StartupLayerFailure(component, render(error))).orDie
+
+  private def errorMessage(error: Throwable): String =
+    Option(error.getMessage).filter(_.nonEmpty).getOrElse(error.toString)
 
   /** Create a Ref[GatewayConfig] that reads and merges DB settings on startup */
   private val configRefLayer: ZLayer[GatewayConfig & ConfigRepository & StoreConfig, Nothing, Ref[GatewayConfig]] =
