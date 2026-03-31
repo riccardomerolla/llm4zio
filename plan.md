@@ -7,10 +7,10 @@
 - [x] Perform a review pass for Group 1, apply any remarks, then commit the group.
 
 ### Group 2: Effect-oriented runtime cleanup
-- [ ] Replace the broad issue lookup fallback in `WorkspaceRunService` with explicit not-found handling and typed persistence mapping.
-- [ ] Replace the broad channel-close fallback in `ChatController` with explicit channel error handling.
-- [ ] Run focused specs for the touched workspace and chat runtime surfaces.
-- [ ] Perform a review pass for Group 2, apply any remarks, then commit the group.
+- [x] Replace the broad issue lookup fallback in `WorkspaceRunService` with explicit not-found handling and typed persistence mapping.
+- [x] Replace the broad channel-close fallback in `ChatController` with explicit channel error handling.
+- [x] Run focused specs for the touched workspace and chat runtime surfaces.
+- [x] Perform a review pass for Group 2, apply any remarks, then commit the group.
 
 ### Group 3: Large-file decomposition
 - [ ] Extract chat session and session-id helper logic from `ChatController.scala` into an internal support module without changing routes or service wiring.

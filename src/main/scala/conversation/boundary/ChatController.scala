@@ -1226,8 +1226,19 @@ final case class ChatControllerLive(
                     }
                   }
       _        <- chatRepository.deleteSessionContext(ch, key)
-      _        <- channelRegistry.get(ch).flatMap(_.close(SessionKey(ch, key))).catchAll(_ => ZIO.unit)
+      _        <- closeSessionChannel(ch, key)
     yield ()
+
+  private def closeSessionChannel(channelName: String, sessionKey: String): UIO[Unit] =
+    channelRegistry
+      .get(channelName)
+      .flatMap(_.close(SessionKey(channelName, sessionKey)))
+      .catchAll {
+        case MessageChannelError.ChannelNotFound(_) =>
+          ZIO.unit
+        case other                                 =>
+          ZIO.logWarning(s"Failed to close session $channelName:$sessionKey: $other")
+      }
 
   private def parseSessionId(sessionId: String): IO[PersistenceError, (String, String)] =
     val normalized = sessionId.trim

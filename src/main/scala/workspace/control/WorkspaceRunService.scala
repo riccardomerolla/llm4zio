@@ -15,6 +15,7 @@ import decision.control.DecisionInbox
 import issues.entity.{ AgentIssue as DomainIssue, IssueRepository }
 import knowledge.control.KnowledgeExtractionService
 import orchestration.control.{ AgentExecutionState, AgentPoolManager, OrchestratorControlPlane, PoolError, SlotHandle }
+import shared.errors.PersistenceError
 import shared.ids.Ids.IssueId
 import workspace.entity.*
 import workspace.control.WorkspaceErrorSupport.*
@@ -246,15 +247,7 @@ final case class WorkspaceRunServiceLive(
       profile <- resolveAgentProfile(req.agentName)
       slot    <- reserveAgentSlot(req.agentName)
       run     <- (for
-                   issue      <- {
-                     val refStr = req.issueRef.stripPrefix("#")
-                     if refStr.isEmpty then ZIO.succeed(None)
-                     else
-                       issueRepo.get(IssueId(refStr))
-                         .map(Some(_))
-                         .mapWorkspacePersistence("load_issue_for_assign")
-                         .catchAll(_ => ZIO.succeed(None))
-                   }
+                   issue      <- loadIssueForAssign(req.issueRef)
                    runId       = java.util.UUID.randomUUID().toString
                    short       = runId.take(8)
                    branch      = s"agent/${sanitizeBranchPart(req.agentName)}-${req.issueRef.stripPrefix("#")}-$short"
@@ -370,6 +363,17 @@ final case class WorkspaceRunServiceLive(
                    _          <- fiberRegistry.update(_ + (run.id -> fiber))
                  yield run).tapError(_ => releaseAgentSlot(slot))
     yield run
+
+  private def loadIssueForAssign(issueRef: String): IO[WorkspaceError, Option[DomainIssue]] =
+    val refStr = issueRef.stripPrefix("#").trim
+    if refStr.isEmpty then ZIO.none
+    else
+      issueRepo.get(IssueId(refStr))
+        .map(Some(_))
+        .catchSome { case PersistenceError.NotFound("issue", _) =>
+          ZIO.none
+        }
+        .mapWorkspacePersistence("load_issue_for_assign")
 
   override def continueRun(
     runId: String,

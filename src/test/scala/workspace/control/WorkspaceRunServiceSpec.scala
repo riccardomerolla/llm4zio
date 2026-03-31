@@ -981,6 +981,37 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
         saved.exists(_.branchName == parent.branchName),
       )
     } @@ TestAspect.withLiveClock,
+    test("assign surfaces non-not-found issue lookup failures explicitly") {
+      for
+        messages <- Ref.make(List.empty[String])
+        wsMap    <- Ref.make(Map(sampleWs.id -> sampleWs))
+        runMap   <- Ref.make(Map.empty[String, WorkspaceRun])
+        registry <- Ref.make(Map.empty[String, Fiber[WorkspaceError, Unit]])
+        svc       = WorkspaceRunServiceLive(
+                      StubWorkspaceRepo(wsMap, runMap),
+                      StubChatRepo(messages),
+                      new IssueRepository:
+                        def append(e: IssueEvent): IO[PersistenceError, Unit]            = ZIO.unit
+                        def get(id: IssueId): IO[PersistenceError, AgentIssue]           =
+                          ZIO.fail(PersistenceError.QueryFailed("get_issue", "boom"))
+                        def history(id: IssueId): IO[PersistenceError, List[IssueEvent]] = ZIO.succeed(Nil)
+                        def list(f: IssueFilter): IO[PersistenceError, List[AgentIssue]] = ZIO.succeed(Nil)
+                        def delete(id: IssueId): IO[PersistenceError, Unit]              = ZIO.unit
+                      ,
+                      StubAnalysisRepo,
+                      worktreeAdd = noopWorktreeAdd,
+                      worktreeRemove = noopWorktreeRemove,
+                      branchDelete = noopBranchDelete,
+                      fiberRegistry = registry,
+                    )
+        result   <- svc.assign("ws-1", AssignRunRequest("#broken", "do the thing", "echo")).either
+      yield assertTrue(
+        result match
+          case Left(WorkspaceError.PersistenceFailure(cause)) =>
+            cause.getMessage.contains("load_issue_for_assign failed")
+          case _                                              => false
+      )
+    },
     suite("buildPrompt content")(
       test("None branch includes req.prompt as Task field") {
         for

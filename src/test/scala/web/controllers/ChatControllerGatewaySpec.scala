@@ -652,6 +652,53 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
         sessions.forall(_.sessionId != "websocket:broken-session"),
       )).provideSomeLayer[Scope](appLayer)
     } @@ TestAspect.withLiveClock,
+    test("DELETE /api/sessions/:id succeeds when the backing channel is no longer registered") {
+      (for
+        chatRepo      <- ZIO.service[ChatRepository]
+        migrRepo      <- ZIO.service[TaskRepository]
+        llm           <- ZIO.service[LlmService]
+        gateway       <- ZIO.service[GatewayService]
+        convId        <- newConversation(chatRepo)
+        now           <- Clock.instant
+        _             <- chatRepo.upsertSessionContext(
+                           channelName = "websocket",
+                           sessionKey = "orphaned-session",
+                           contextJson = StoredSessionContext(conversationId = Some(convId)).toJson,
+                           updatedAt = now,
+                         )
+        channelsRef   <- Ref.Synchronized.make(Map.empty[String, MessageChannel])
+        runtimeRef    <- Ref.Synchronized.make(Map.empty[String, ChannelRuntime])
+        emptyRegistry  = ChannelRegistryLive(channelsRef, runtimeRef)
+        abortReg      <- Ref.make(Map.empty[Long, UIO[Unit]]).map(StreamAbortRegistryLive.apply)
+        actHub        <- Ref.make(Set.empty[Queue[ActivityEvent]]).map(subs => ActivityHubLive(stubActivityRepo, subs))
+        toolReg       <- llm4zio.tools.ToolRegistry.make
+        controller     = ChatControllerLive(
+                           chatRepository = chatRepo,
+                           llmService = llm,
+                           migrationRepository = migrRepo,
+                           issueAssignmentOrchestrator = testIssueAssignment,
+                           configResolver = testConfigResolver,
+                           gatewayService = gateway,
+                           channelRegistry = emptyRegistry,
+                           streamAbortRegistry = abortReg,
+                           activityHub = actHub,
+                           toolRegistry = toolReg,
+                           httpClient = stubHttpClient,
+                           cliExecutor = stubCliExecutor,
+                           workspaceRepository = stubWorkspaceRepo,
+                           plannerAgentService = stubPlannerAgentService,
+                         )
+        response      <- controller.routes.runZIO(Request.delete("/api/sessions/websocket%3Aorphaned-session"))
+        body          <- response.body.asString
+        deleted       <- chatRepo.getSessionContextState("websocket", "orphaned-session")
+        conversation  <- chatRepo.getConversation(convId)
+      yield assertTrue(
+        response.status == Status.Ok,
+        body.contains(""""deleted":true"""),
+        deleted.isEmpty,
+        conversation.exists(_.status == "closed"),
+      )).provideSomeLayer[Scope](appLayer)
+    } @@ TestAspect.withLiveClock,
     test("POST /api/chat/:id/messages with toolsEnabled routes through tool loop") {
       (for
         chatRepo  <- ZIO.service[ChatRepository]
