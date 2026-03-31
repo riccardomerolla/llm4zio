@@ -37,23 +37,10 @@ function createBoardSyncHooks({
         this._flushPostRefreshToast();
       };
 
-      if (window.htmx?.ajax) {
-        window.htmx.ajax('GET', this.fragmentUrl, {
-          target: this.root,
-          swap: 'innerHTML',
-        }).then(onRefreshed).catch(() => {}).finally(onSettled);
-        return;
-      }
-
-      fetch(this.fragmentUrl)
-        .then((response) => response.ok ? response.text() : Promise.reject(new Error('refresh failed')))
-        .then((html) => {
-          // html is server-rendered markup from our own trusted endpoint
-          this.root.innerHTML = html; // nosec: trusted server HTML, same origin
-          onRefreshed();
-        })
-        .catch(() => {})
-        .finally(onSettled);
+      window.htmx.ajax('GET', this.fragmentUrl, {
+        target: this.root,
+        swap: 'innerHTML',
+      }).then(onRefreshed).catch(() => {}).finally(onSettled);
     },
 
     _flushPostRefreshToast() {
@@ -90,5 +77,3 @@ function createBoardSyncHooks({
 }
 
 window.__issuesBoardSync = Object.freeze({ createBoardSyncHooks });
-
-export { createBoardSyncHooks };
