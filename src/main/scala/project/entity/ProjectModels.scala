@@ -26,7 +26,6 @@ case class Project(
   id: ProjectId,
   name: String,
   description: Option[String],
-  workspaceIds: List[String],
   settings: ProjectSettings,
   createdAt: Instant,
   updatedAt: Instant,
@@ -59,7 +58,6 @@ object Project:
                   id = e.projectId,
                   name = e.name,
                   description = e.description,
-                  workspaceIds = Nil,
                   settings = ProjectSettings(),
                   createdAt = e.occurredAt,
                   updatedAt = e.occurredAt,
@@ -76,30 +74,6 @@ object Project:
                 name = e.name,
                 description = e.description,
                 settings = e.settings,
-                updatedAt = e.occurredAt,
-              )
-            )
-          )
-
-      case e: ProjectEvent.WorkspaceAdded =>
-        current
-          .toRight(s"Project ${e.projectId.value} not initialised before WorkspaceAdded event")
-          .map(project =>
-            Some(
-              project.copy(
-                workspaceIds = (project.workspaceIds :+ e.workspaceId).distinct,
-                updatedAt = e.occurredAt,
-              )
-            )
-          )
-
-      case e: ProjectEvent.WorkspaceRemoved =>
-        current
-          .toRight(s"Project ${e.projectId.value} not initialised before WorkspaceRemoved event")
-          .map(project =>
-            Some(
-              project.copy(
-                workspaceIds = project.workspaceIds.filterNot(_ == e.workspaceId),
                 updatedAt = e.occurredAt,
               )
             )

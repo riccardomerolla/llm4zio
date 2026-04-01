@@ -55,11 +55,10 @@ object ProjectRepositorySpec extends ZIOSpecDefault:
             got <- repo.get(ProjectId("proj-1"))
           yield assertTrue(
             got.exists(_.name == "Platform"),
-            got.exists(_.workspaceIds.isEmpty),
           )).provideLayer(layerFor(dir))
         }
       },
-      test("update and workspace events rebuild project state") {
+      test("update events rebuild project state") {
         withTempDir { dir =>
           (for
             svc <- ZIO.service[DataStoreModule.DataStoreService]
@@ -72,7 +71,6 @@ object ProjectRepositorySpec extends ZIOSpecDefault:
                        occurredAt = now,
                      )
                    )
-            _   <- repo.append(ProjectEvent.WorkspaceAdded(ProjectId("proj-1"), "ws-1", now.plusSeconds(5)))
             _   <- repo.append(
                      ProjectEvent.ProjectUpdated(
                        projectId = ProjectId("proj-1"),
@@ -88,7 +86,6 @@ object ProjectRepositorySpec extends ZIOSpecDefault:
             got <- repo.get(ProjectId("proj-1"))
           yield assertTrue(
             got.exists(_.name == "Platform Core"),
-            got.exists(_.workspaceIds == List("ws-1")),
             got.exists(_.settings.mergePolicy.requireCi),
           )).provideLayer(layerFor(dir))
         }

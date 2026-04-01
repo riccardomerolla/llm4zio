@@ -75,6 +75,7 @@ import orchestration.control.{
 import plan.boundary.PlansController
 import plan.entity.{ PlanEventStoreES, PlanRepositoryES }
 import project.boundary.ProjectsController
+import project.control.ProjectStorageService
 import project.entity.ProjectRepository
 import prompts.PromptLoader
 import sdlc.boundary.SdlcDashboardController
@@ -304,6 +305,7 @@ object ApplicationDI:
       StreamAbortRegistry.live,
       ToolRegistry.layer,
       ProjectRepository.live,
+      ProjectStorageService.live,
       SpecificationEventStoreES.live,
       SpecificationRepositoryES.live,
       PlanEventStoreES.live,

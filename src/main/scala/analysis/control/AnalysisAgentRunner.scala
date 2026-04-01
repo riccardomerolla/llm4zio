@@ -1,6 +1,6 @@
 package analysis.control
 
-import java.nio.file.{ Files, Path, Paths }
+import java.nio.file.{ Files, Path }
 import java.time.{ Duration as JavaDuration, Instant }
 
 import zio.*
@@ -16,6 +16,7 @@ import db.TaskRepository
 import llm4zio.core.*
 import llm4zio.providers.{ GeminiCliExecutionContext, GeminiCliExecutor, HttpClient }
 import orchestration.control.AgentConfigResolver
+import project.control.ProjectStorageService
 import prompts.{ PromptError, PromptLoader }
 import shared.errors.FileError
 import shared.ids.Ids
@@ -79,7 +80,7 @@ object AnalysisAgentRunner:
   val live
     : ZLayer[
       WorkspaceRepository & AgentRepository & AnalysisRepository & TaskRepository & FileService &
-        AgentConfigResolver & LlmService & HttpClient & GeminiCliExecutor & PromptLoader,
+        AgentConfigResolver & LlmService & HttpClient & GeminiCliExecutor & PromptLoader & ProjectStorageService,
       Nothing,
       AnalysisAgentRunner,
     ] =
@@ -94,14 +95,16 @@ object AnalysisAgentRunner:
         llmService          <- ZIO.service[LlmService]
         httpClient          <- ZIO.service[HttpClient]
         cliExecutor         <- ZIO.service[GeminiCliExecutor]
-        promptLoader        <- ZIO.service[PromptLoader]
-        providerCache       <- Ref.Synchronized.make(Map.empty[LlmConfig, LlmService])
+        promptLoader         <- ZIO.service[PromptLoader]
+        projectStorageService <- ZIO.service[ProjectStorageService]
+        providerCache        <- Ref.Synchronized.make(Map.empty[LlmConfig, LlmService])
       yield AnalysisAgentRunnerLive(
         workspaceRepository = workspaceRepository,
         agentRepository = agentRepository,
         analysisRepository = analysisRepository,
         taskRepository = taskRepository,
         fileService = fileService,
+        projectStorageService = projectStorageService,
         promptLoader = Some(promptLoader),
         llmPromptExecutor = Some(
           promptExecutor(
@@ -351,6 +354,7 @@ final case class AnalysisAgentRunnerLive(
   analysisRepository: AnalysisRepository,
   taskRepository: TaskRepository,
   fileService: FileService,
+  projectStorageService: ProjectStorageService,
   promptLoader: Option[PromptLoader] = None,
   llmPromptExecutor: Option[(Workspace, Agent, String) => IO[AnalysisAgentRunnerError, String]] = None,
   processRunner: (List[String], String, String => Task[Unit], Map[String, String]) => Task[Int] =
@@ -382,11 +386,12 @@ final case class AnalysisAgentRunnerLive(
       _         <- ZIO.logDebug(
                      s"Executing ${profile.slug} analysis for workspace '${workspace.name}' with agent '${agent.name}'"
                    )
-      markdown  <- executeReview(workspace, agent, profile, prompt)
-      filePath   = Paths.get(workspace.localPath).resolve(profile.relativePath)
-      _         <- writeAnalysisFile(filePath, markdown)
-      _         <- commitAnalysisFile(workspace, profile)
-      doc       <- persistAnalysisDoc(workspace, agent, profile, markdown, filePath)
+      markdown    <- executeReview(workspace, agent, profile, prompt)
+      projectRoot <- projectStorageService.projectRoot(workspace.projectId)
+      filePath     = projectRoot.resolve("workspaces").resolve(workspace.id).resolve(profile.relativePath)
+      _           <- writeAnalysisFile(filePath, markdown)
+      _           <- commitAnalysisFile(workspace, profile, projectRoot)
+      doc         <- persistAnalysisDoc(workspace, agent, profile, markdown, filePath)
     yield doc
 
   private def loadWorkspace(workspaceId: String): IO[AnalysisAgentRunnerError, Workspace] =
@@ -596,16 +601,18 @@ final case class AnalysisAgentRunnerLive(
     workspace: Workspace,
     profile: AnalysisProfile,
   ): IO[AnalysisAgentRunnerError, Path] =
-    ZIO.attemptBlocking {
-      val dir = Paths.get(workspace.localPath).resolve(".llm4zio").resolve("analysis").resolve(".tmp")
-      Files.createDirectories(dir)
-      Files.createTempFile(dir, s"${profile.slug}-", ".md")
-    }.mapError(err =>
-      AnalysisAgentRunnerError.FileWriteFailed(
-        workspace.localPath,
-        s"createCodexOutputFile: ${err.getMessage}",
+    projectStorageService.workspaceAnalysisPath(workspace.projectId, workspace.id).flatMap { analysisPath =>
+      ZIO.attemptBlocking {
+        val dir = analysisPath.resolve(".tmp")
+        Files.createDirectories(dir)
+        Files.createTempFile(dir, s"${profile.slug}-", ".md")
+      }.mapError(err =>
+        AnalysisAgentRunnerError.FileWriteFailed(
+          workspace.localPath,
+          s"createCodexOutputFile: ${err.getMessage}",
+        )
       )
-    )
+    }
 
   private def deleteIfExists(path: Path): UIO[Unit] =
     ZIO.attemptBlocking(Files.deleteIfExists(path)).ignore
@@ -620,15 +627,20 @@ final case class AnalysisAgentRunnerLive(
              .mapError(mapFileError("writeAnalysisFile", path))
     yield ()
 
-  private def commitAnalysisFile(workspace: Workspace, profile: AnalysisProfile): IO[AnalysisAgentRunnerError, Unit] =
+  private def commitAnalysisFile(
+    workspace: Workspace,
+    profile: AnalysisProfile,
+    projectRoot: Path,
+  ): IO[AnalysisAgentRunnerError, Unit] =
+    val addPath = s"workspaces/${workspace.id}/${profile.relativePath}"
     for
-      _             <- runGitChecked(workspace.localPath, "git add", List("add", "--", profile.relativePath))
-      (_, diffExit) <- runGit(workspace.localPath, List("diff", "--cached", "--quiet", "--exit-code"))
+      _             <- runGitChecked(projectRoot.toString, "git add", List("add", "--", addPath))
+      (_, diffExit) <- runGit(projectRoot.toString, List("diff", "--cached", "--quiet", "--exit-code"))
       _             <- diffExit match
                          case 0    => ZIO.unit
                          case 1    =>
                            runGitChecked(
-                             workspace.localPath,
+                             projectRoot.toString,
                              "git commit",
                              List("commit", "-m", s"Add ${profile.commitLabel} analysis for ${workspace.name}"),
                            )

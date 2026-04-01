@@ -516,7 +516,7 @@ final case class DaemonAgentSchedulerLive(
       projects     <- projectRepository.list
       workspaces   <- workspaceRepository.list
       builtInSpecs <- ZIO.foreach(projects)(project =>
-                        deriveSpecs(project, workspaces.filter(ws => project.workspaceIds.contains(ws.id)))
+                        deriveSpecs(project, workspaces.filter(_.projectId == project.id))
                       )
       customSpecs  <- ZIO.foreach(projects)(project => daemonRepository.listByProject(project.id))
     yield (builtInSpecs.flatten ++ customSpecs.flatten).distinctBy(_.id)

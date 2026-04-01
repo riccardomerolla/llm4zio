@@ -13,6 +13,7 @@ import analysis.control.{ WorkspaceAnalysisScheduler, WorkspaceAnalysisState, Wo
 import issues.entity.api.{ AgentIssueView, IssuePriority, IssueStatus }
 import issues.entity.{ AgentIssue, IssueFilter, IssueRepository, IssueState }
 import orchestration.control.AgentRegistry
+import project.control.ProjectStorageService
 import project.entity.{ MergePolicy, Project, ProjectEvent, ProjectRepository, ProjectSettings }
 import shared.errors.PersistenceError
 import shared.ids.Ids.ProjectId
@@ -35,7 +36,8 @@ object ProjectsController:
 
   val live
     : ZLayer[
-      ProjectRepository & WorkspaceRepository & IssueRepository & AgentRegistry & WorkspaceAnalysisScheduler,
+      ProjectRepository & WorkspaceRepository & IssueRepository & AgentRegistry & WorkspaceAnalysisScheduler &
+        ProjectStorageService,
       Nothing,
       ProjectsController,
     ] =
@@ -46,12 +48,14 @@ object ProjectsController:
         issueRepository     <- ZIO.service[IssueRepository]
         agentRegistry       <- ZIO.service[AgentRegistry]
         analysisScheduler   <- ZIO.service[WorkspaceAnalysisScheduler]
+        storageService      <- ZIO.service[ProjectStorageService]
       yield make(
         projectRepository,
         workspaceRepository,
         issueRepository,
         agentRegistry,
         analysisScheduler,
+        storageService,
       )
     }
 
@@ -61,6 +65,7 @@ object ProjectsController:
     issueRepository: IssueRepository,
     agentRegistry: AgentRegistry,
     analysisScheduler: WorkspaceAnalysisScheduler,
+    storageService: ProjectStorageService,
   ): ProjectsController =
     new ProjectsController:
       override val routes: Routes[Any, Response] = Routes(
@@ -72,7 +77,7 @@ object ProjectsController:
           ).catchAll(error => ZIO.succeed(persistErr(error)))
         },
         Method.POST / "projects"                                          -> handler { (req: Request) =>
-          createProject(req, projectRepository)
+          createProject(req, projectRepository, storageService)
             .catchAll(error => ZIO.succeed(persistErr(error)))
         },
         Method.GET / "projects" / string("id")                            -> handler { (id: String, req: Request) =>
@@ -85,14 +90,6 @@ object ProjectsController:
             agentRegistry = agentRegistry,
             analysisScheduler = analysisScheduler,
           ).catchAll(error => ZIO.succeed(persistErr(error)))
-        },
-        Method.POST / "projects" / string("id") / "workspaces"            -> handler { (id: String, req: Request) =>
-          addWorkspace(id, req, projectRepository, workspaceRepository)
-            .catchAll(error => ZIO.succeed(persistErr(error)))
-        },
-        Method.POST / "projects" / string("id") / "workspaces" / "remove" -> handler { (id: String, req: Request) =>
-          removeWorkspace(id, req, projectRepository)
-            .catchAll(error => ZIO.succeed(persistErr(error)))
         },
         Method.POST / "projects" / string("id") / "settings"              -> handler { (id: String, req: Request) =>
           updateSettings(id, req, projectRepository)
@@ -131,7 +128,7 @@ object ProjectsController:
       issues       <- issueRepository.list(IssueFilter(limit = Int.MaxValue))
       agents       <- agentRegistry.getAllAgents
       activeTab     = selectedTab(req)
-      statusesByWs <- loadAnalysisStatuses(project.workspaceIds, analysisScheduler)
+      statusesByWs <- loadAnalysisStatuses(workspaces.filter(_.projectId == project.id).map(_.id), analysisScheduler)
       data          = buildDetailPageData(
                         project = project,
                         workspaces = workspaces,
@@ -145,6 +142,7 @@ object ProjectsController:
   private def createProject(
     req: Request,
     projectRepository: ProjectRepository,
+    storageService: ProjectStorageService,
   ): IO[PersistenceError, Response] =
     for
       form       <- parseForm(req)
@@ -160,40 +158,8 @@ object ProjectsController:
                         occurredAt = now,
                       )
                     )
+      _          <- storageService.initProjectStorage(projectId)
     yield redirect(s"/projects/${projectId.value}")
-
-  private def addWorkspace(
-    id: String,
-    req: Request,
-    projectRepository: ProjectRepository,
-    workspaceRepository: WorkspaceRepository,
-  ): IO[PersistenceError, Response] =
-    for
-      form         <- parseForm(req)
-      workspaceId  <- required(form, "workspace_id")
-      projectOpt   <- projectRepository.get(ProjectId(id))
-      _            <- ZIO.fromOption(projectOpt).orElseFail(PersistenceError.NotFound("project", id))
-      workspaceOpt <- workspaceRepository.get(workspaceId)
-      _            <- ZIO
-                        .fromOption(workspaceOpt)
-                        .orElseFail(PersistenceError.QueryFailed("workspace", s"Not found: $workspaceId"))
-      now          <- Clock.instant
-      _            <- projectRepository.append(ProjectEvent.WorkspaceAdded(ProjectId(id), workspaceId, now))
-    yield redirect(s"/projects/$id?tab=workspaces")
-
-  private def removeWorkspace(
-    id: String,
-    req: Request,
-    projectRepository: ProjectRepository,
-  ): IO[PersistenceError, Response] =
-    for
-      form        <- parseForm(req)
-      workspaceId <- required(form, "workspace_id")
-      projectOpt  <- projectRepository.get(ProjectId(id))
-      _           <- ZIO.fromOption(projectOpt).orElseFail(PersistenceError.NotFound("project", id))
-      now         <- Clock.instant
-      _           <- projectRepository.append(ProjectEvent.WorkspaceRemoved(ProjectId(id), workspaceId, now))
-    yield redirect(s"/projects/$id?tab=workspaces")
 
   private def updateSettings(
     id: String,
@@ -237,12 +203,12 @@ object ProjectsController:
     agents: List[AgentInfo],
     activeTab: String,
   ): ProjectDetailPageData =
-    val assignedWorkspaces  = workspaces.filter(ws => project.workspaceIds.contains(ws.id)).sortBy(_.name.toLowerCase)
+    val assignedWorkspaces  = workspaces.filter(_.projectId == project.id).sortBy(_.name.toLowerCase)
     val availableWorkspaces =
-      workspaces.filterNot(ws => project.workspaceIds.contains(ws.id)).sortBy(_.name.toLowerCase).map(ws =>
+      workspaces.filterNot(_.projectId == project.id).sortBy(_.name.toLowerCase).map(ws =>
         ws.id -> ws.name
       )
-    val projectIssues       = issues.filter(issue => issue.workspaceId.exists(project.workspaceIds.contains))
+    val projectIssues       = issues.filter(issue => issue.workspaceId.exists(wsId => assignedWorkspaces.exists(_.id == wsId)))
     val boardIssues         = projectIssues.map(domainToView).filter(_.status != IssueStatus.Canceled)
     val workspaceRows       = assignedWorkspaces.map { workspace =>
       val statuses = statusesByWorkspace.getOrElse(workspace.id, Nil)
@@ -298,14 +264,15 @@ object ProjectsController:
     issues: List[AgentIssue],
     now: Instant,
   ): ProjectListItem =
-    val workspaceCount    = project.workspaceIds.distinct.size
+    val projectWorkspaces = workspaces.filter(_.projectId == project.id)
+    val workspaceCount    = projectWorkspaces.size
     val activeIssues      =
-      issues.filter(issue => issue.workspaceId.exists(project.workspaceIds.contains)).map(domainToView).count(issue =>
+      issues.filter(issue => issue.workspaceId.exists(wsId => projectWorkspaces.exists(_.id == wsId))).map(domainToView).count(issue =>
         isActiveIssue(issue.status)
       )
-    val latestWorkspaceAt = workspaces.filter(ws => project.workspaceIds.contains(ws.id)).map(_.updatedAt).maxOption
+    val latestWorkspaceAt = projectWorkspaces.map(_.updatedAt).maxOption
     val latestIssueAt     =
-      issues.filter(issue => issue.workspaceId.exists(project.workspaceIds.contains)).map(issueActivityAt).maxOption
+      issues.filter(issue => issue.workspaceId.exists(wsId => projectWorkspaces.exists(_.id == wsId))).map(issueActivityAt).maxOption
     ProjectListItem(
       id = project.id.value,
       name = project.name,

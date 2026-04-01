@@ -10,6 +10,7 @@ import zio.json.*
 
 import board.control.{ BoardOrchestrator, DispatchResult, IssueMarkdownParser }
 import board.entity.*
+import project.control.ProjectStorageService
 import shared.ids.Ids.BoardIssueId
 import shared.web.{ BoardView, IssuesView }
 import workspace.entity.WorkspaceRepository
@@ -19,7 +20,11 @@ trait BoardController:
 
 object BoardController:
   val live
-    : ZLayer[BoardRepository & BoardOrchestrator & WorkspaceRepository & IssueMarkdownParser, Nothing, BoardController] =
+    : ZLayer[
+      BoardRepository & BoardOrchestrator & WorkspaceRepository & IssueMarkdownParser & ProjectStorageService,
+      Nothing,
+      BoardController,
+    ] =
     ZLayer.fromFunction(BoardControllerLive.apply)
 
   def routes: ZIO[BoardController, Nothing, Routes[Any, Response]] =
@@ -30,6 +35,7 @@ final case class BoardControllerLive(
   boardOrchestrator: BoardOrchestrator,
   workspaceRepository: WorkspaceRepository,
   issueParser: IssueMarkdownParser,
+  projectStorageService: ProjectStorageService,
 ) extends BoardController:
 
   override val routes: Routes[Any, Response] = Routes(
@@ -72,30 +78,30 @@ final case class BoardControllerLive(
   private def renderBoardPage(workspaceId: String): UIO[Response] =
     val effect =
       for
-        workspace <- resolveWorkspace(workspaceId)
-        _         <- boardRepository.initBoard(workspace.localPath).ignore
-        board     <- boardRepository.readBoard(workspace.localPath)
+        (workspace, projectRoot) <- resolveBoardPath(workspaceId)
+        _                        <- boardRepository.initBoard(projectRoot).ignore
+        board                    <- boardRepository.readBoard(projectRoot)
       yield Response.html(BoardView.page(workspaceId, workspace.name, workspace.localPath, board))
 
     effect.catchAll(boardErrorResponse)
 
   private def renderBoardFragment(workspaceId: String): UIO[Response] =
     (for
-      workspace <- resolveWorkspace(workspaceId)
-      board     <- boardRepository.readBoard(workspace.localPath)
+      (_, projectRoot) <- resolveBoardPath(workspaceId)
+      board            <- boardRepository.readBoard(projectRoot)
     yield Response.html(BoardView.columnsFragment(workspaceId, board))).catchAll(boardErrorResponse)
 
   private def renderIssueDetail(workspaceId: String, issueId: BoardIssueId): IO[BoardError, Response] =
     for
-      workspace        <- resolveWorkspace(workspaceId)
-      issue            <- boardRepository.readIssue(workspace.localPath, issueId)
-      renderedIssueRaw <- issueParser.render(issue.frontmatter, issue.body)
+      (_, projectRoot)  <- resolveBoardPath(workspaceId)
+      issue             <- boardRepository.readIssue(projectRoot, issueId)
+      renderedIssueRaw  <- issueParser.render(issue.frontmatter, issue.body)
     yield Response.html(BoardView.detailPage(workspaceId, issue, IssuesView.markdownFragment(renderedIssueRaw)))
 
   private def createIssue(workspaceId: String, req: Request): IO[BoardError, Response] =
     for
-      workspace <- resolveWorkspace(workspaceId)
-      request   <- parseCreateIssueRequest(req)
+      (_, projectRoot) <- resolveBoardPath(workspaceId)
+      request          <- parseCreateIssueRequest(req)
       issueId   <- parseOrGenerateId(request.id)
       now       <- Clock.instant
       column    <- parseColumn(request.column.getOrElse("backlog"))
@@ -103,7 +109,7 @@ final case class BoardControllerLive(
       estimate  <- parseEstimate(request.estimate)
       blockedBy <- parseIssueIds(Some(request.blockedBy))
       created   <- boardRepository.createIssue(
-                     workspace.localPath,
+                     projectRoot,
                      column,
                      BoardIssue(
                        frontmatter = IssueFrontmatter(
@@ -135,19 +141,19 @@ final case class BoardControllerLive(
 
   private def moveIssue(workspaceId: String, issueIdRaw: String, req: Request): IO[BoardError, Response] =
     for
-      workspace <- resolveWorkspace(workspaceId)
-      issueId   <- readBoardIssueId(issueIdRaw)
-      request   <- parseMoveRequest(req)
-      toColumn  <- parseColumn(request.toColumn)
-      moved     <- boardRepository.moveIssue(workspace.localPath, issueId, toColumn)
-      response  <- if isHtmx(req) then renderBoardFragment(workspaceId) else ZIO.succeed(Response.json(moved.toJson))
+      (_, projectRoot) <- resolveBoardPath(workspaceId)
+      issueId          <- readBoardIssueId(issueIdRaw)
+      request          <- parseMoveRequest(req)
+      toColumn         <- parseColumn(request.toColumn)
+      moved            <- boardRepository.moveIssue(projectRoot, issueId, toColumn)
+      response         <- if isHtmx(req) then renderBoardFragment(workspaceId) else ZIO.succeed(Response.json(moved.toJson))
     yield response
 
   private def updateIssue(workspaceId: String, issueIdRaw: String, req: Request): IO[BoardError, Response] =
     for
-      workspace <- resolveWorkspace(workspaceId)
-      issueId   <- readBoardIssueId(issueIdRaw)
-      request   <- parseUpdateIssueRequest(req)
+      (_, projectRoot) <- resolveBoardPath(workspaceId)
+      issueId          <- readBoardIssueId(issueIdRaw)
+      request          <- parseUpdateIssueRequest(req)
       blockedBy <- request.blockedBy match
                      case Some(values) => parseIssueIds(Some(values)).map(Some(_))
                      case None         => ZIO.succeed(None)
@@ -158,7 +164,7 @@ final case class BoardControllerLive(
                      case Some(value) => parseEstimate(Some(value)).map(Some(_))
                      case None        => ZIO.succeed(None)
       updated   <- boardRepository.updateIssue(
-                     workspace.localPath,
+                     projectRoot,
                      issueId,
                      fm =>
                        fm.copy(
@@ -184,19 +190,19 @@ final case class BoardControllerLive(
 
   private def deleteIssue(workspaceId: String, issueIdRaw: String, req: Request): IO[BoardError, Response] =
     for
-      workspace <- resolveWorkspace(workspaceId)
-      issueId   <- readBoardIssueId(issueIdRaw)
-      _         <- boardRepository.deleteIssue(workspace.localPath, issueId)
-      response  <-
+      (_, projectRoot) <- resolveBoardPath(workspaceId)
+      issueId          <- readBoardIssueId(issueIdRaw)
+      _                <- boardRepository.deleteIssue(projectRoot, issueId)
+      response         <-
         if isHtmx(req) then renderBoardFragment(workspaceId) else ZIO.succeed(Response(status = Status.NoContent))
     yield response
 
   private def dispatch(workspaceId: String, req: Request): IO[BoardError, Response] =
     for
-      workspace <- resolveWorkspace(workspaceId)
-      result    <- boardOrchestrator.dispatchCycle(workspace.localPath)
-      encoded    = encodeDispatchResult(result)
-      response  <-
+      (_, projectRoot) <- resolveBoardPath(workspaceId)
+      result           <- boardOrchestrator.dispatchCycle(projectRoot)
+      encoded           = encodeDispatchResult(result)
+      response         <-
         if isHtmx(req) then
           renderBoardFragment(workspaceId).map(_.addHeaders(Headers(Header.Custom("X-Dispatch-Result", encoded))))
         else ZIO.succeed(Response.json(encoded))
@@ -204,13 +210,19 @@ final case class BoardControllerLive(
 
   private def approveIssue(workspaceId: String, issueIdRaw: String, req: Request): IO[BoardError, Response] =
     for
-      workspace <- resolveWorkspace(workspaceId)
-      issueId   <- readBoardIssueId(issueIdRaw)
-      _         <- boardOrchestrator.approveIssue(workspace.localPath, issueId)
-      response  <-
+      (_, projectRoot) <- resolveBoardPath(workspaceId)
+      issueId          <- readBoardIssueId(issueIdRaw)
+      _                <- boardOrchestrator.approveIssue(projectRoot, issueId)
+      response         <-
         if isHtmx(req) then renderBoardFragment(workspaceId)
         else ZIO.succeed(Response.redirect(URL.decode(s"/board/$workspaceId").toOption.getOrElse(URL.root)))
     yield response
+
+  private def resolveBoardPath(workspaceId: String): IO[BoardError, (workspace.entity.Workspace, String)] =
+    for
+      ws          <- resolveWorkspace(workspaceId)
+      projectRoot <- projectStorageService.projectRoot(ws.projectId).map(_.toString)
+    yield (ws, projectRoot)
 
   private def resolveWorkspace(workspaceId: String): IO[BoardError, workspace.entity.Workspace] =
     workspaceRepository

@@ -85,8 +85,7 @@ object BoardRepositoryFSSpec extends ZIOSpecDefault:
                            JFiles.isDirectory(boardDir.resolve("archive")),
                          )
                        )
-          boardLog  <- runCmd(repoPath.resolve(".board"), "git", "log", "--oneline", "-n", "1")
-          gitignore <- ZIO.attemptBlocking(JFiles.readString(repoPath.resolve(".gitignore")))
+          boardLog  <- runCmd(repoPath, "git", "log", "--oneline", "-n", "1")
         yield assertTrue(
           checks._1,
           boardLog.contains("[board] Init: board structure"),
@@ -96,7 +95,6 @@ object BoardRepositoryFSSpec extends ZIOSpecDefault:
           checks._5,
           checks._6,
           checks._7,
-          gitignore.linesIterator.exists(_.trim == "/.board/"),
         )
       }
     },
@@ -120,7 +118,7 @@ object BoardRepositoryFSSpec extends ZIOSpecDefault:
           _        <- repo.deleteIssue(repoPath.toString, BoardIssueId("fix-auth-timeout"))
           backlog  <- repo.listIssues(repoPath.toString, BoardColumn.Backlog)
           todo     <- repo.listIssues(repoPath.toString, BoardColumn.Todo)
-          logs     <- runCmd(repoPath.resolve(".board"), "git", "log", "--pretty=%s", "-n", "5")
+          logs     <- runCmd(repoPath, "git", "log", "--pretty=%s", "-n", "5")
         yield assertTrue(
           created.column == BoardColumn.Todo,
           moved.column == BoardColumn.InProgress,
@@ -149,7 +147,7 @@ object BoardRepositoryFSSpec extends ZIOSpecDefault:
           todo     <- repo.listIssues(repoPath.toString, BoardColumn.Todo)
           logCount <-
             runCmd(
-              repoPath.resolve(".board"),
+              repoPath,
               "git",
               "log",
               "--pretty=%s",
@@ -177,12 +175,12 @@ object BoardRepositoryFSSpec extends ZIOSpecDefault:
                           java.nio.file.StandardCopyOption.REPLACE_EXISTING,
                         )
                       }
-          _        <- runCmd(repoPath.resolve(".board"), "git", "add", "review/dup-issue")
-          _        <- runCmd(repoPath.resolve(".board"), "git", "commit", "-m", "simulate duplicate placement from merge")
+          _        <- runCmd(repoPath, "git", "add", ".board/review/dup-issue")
+          _        <- runCmd(repoPath, "git", "commit", "-m", "simulate duplicate placement from merge")
           board    <- repo.readBoard(repoPath.toString)
           todo      = board.columns.getOrElse(BoardColumn.Todo, Nil).map(_.frontmatter.id.value)
           review    = board.columns.getOrElse(BoardColumn.Review, Nil).map(_.frontmatter.id.value)
-          logs     <- runCmd(repoPath.resolve(".board"), "git", "log", "--pretty=%s", "-n", "1")
+          logs     <- runCmd(repoPath, "git", "log", "--pretty=%s", "-n", "1")
         yield assertTrue(
           !todo.contains("dup-issue"),
           review.contains("dup-issue"),
@@ -197,27 +195,10 @@ object BoardRepositoryFSSpec extends ZIOSpecDefault:
           repo      <- repository
           _         <- repo.initBoard(repoPath.toString)
           _         <- repo.initBoard(repoPath.toString)
-          logCount  <- runCmd(repoPath.resolve(".board"), "git", "log", "--pretty=%s")
+          logCount  <- runCmd(repoPath, "git", "log", "--pretty=%s")
                          .map(_.linesIterator.count(_.contains("[board] Init:")))
-          gitignore <- ZIO.attemptBlocking(JFiles.readString(repoPath.resolve(".gitignore")))
         yield assertTrue(
           logCount == 1,
-          gitignore.linesIterator.count(_.trim == "/.board/") == 1,
-        )
-      }
-    },
-    test("updateGitignore does not add duplicate /.board/ entry when already present") {
-      ZIO.scoped {
-        for
-          repoPath  <- initRepo
-          repo      <- repository
-          _         <- ZIO.attemptBlocking(
-                         JFiles.writeString(repoPath.resolve(".gitignore"), "/.board/\n")
-                       )
-          _         <- repo.initBoard(repoPath.toString)
-          gitignore <- ZIO.attemptBlocking(JFiles.readString(repoPath.resolve(".gitignore")))
-        yield assertTrue(
-          gitignore.linesIterator.count(_.trim == "/.board/") == 1
         )
       }
     },
