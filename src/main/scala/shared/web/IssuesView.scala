@@ -126,7 +126,7 @@ object IssuesView:
     agentUsage: Option[(Int, Int)] = None,
     workReports: Map[IssueId, IssueWorkReport] = Map.empty,
   ): String =
-    val queryParts = List(
+    val queryParts  = List(
       workspaceFilter.filter(_.nonEmpty).map(v => s"workspace=${urlEncode(v)}"),
       agentFilter.filter(_.nonEmpty).map(v => s"agent=${urlEncode(v)}"),
       priorityFilter.filter(_.nonEmpty).map(v => s"priority=${urlEncode(v)}"),
@@ -215,14 +215,14 @@ object IssuesView:
           cls                          := "flex-1 min-h-0 overflow-hidden",
         )(
           div(
-            id                        := "issues-board-root",
-            attr("hx-get")            := fragmentUrl,
-            attr("hx-trigger")        := "load, every 10s",
-            attr("hx-swap")           := "innerHTML",
-            attr("hx-sync")           := "this:drop",
-            attr("hx-request")        := """{"timeout": 15000}""",
-            cls                       := "h-full",
-            attr("data-bulk-scope")   := "board",
+            id                      := "issues-board-root",
+            attr("hx-get")          := fragmentUrl,
+            attr("hx-trigger")      := "load, every 10s",
+            attr("hx-swap")         := "innerHTML",
+            attr("hx-sync")         := "this:drop",
+            attr("hx-request")      := """{"timeout": 15000}""",
+            cls                     := "h-full",
+            attr("data-bulk-scope") := "board",
           )(
             raw(boardColumnsFragment(issues, workspaces, workReports, availableAgents, dispatchStatuses))
           )
@@ -610,8 +610,9 @@ object IssuesView:
     workspaces: List[(String, String)],
     workReport: Option[IssueWorkReport] = None,
     decisions: List[Decision] = Nil,
+    flash: Option[String] = None,
   ): String =
-    detailPage(issue, issueRuns, availableAgents, analysisDocs, mergeHistory, workspaces, workReport, decisions)
+    detailPage(issue, issueRuns, availableAgents, analysisDocs, mergeHistory, workspaces, workReport, decisions, flash)
 
   private def detailPage(
     issue: AgentIssueView,
@@ -622,6 +623,7 @@ object IssuesView:
     workspaces: List[(String, String)],
     workReport: Option[IssueWorkReport],
     decisions: List[Decision] = Nil,
+    flash: Option[String] = None,
   ): String =
     val issueIdStr      = safe(issue.id, "-")
     val selectedAgent   = safe(issue.preferredAgent).match
@@ -643,6 +645,9 @@ object IssuesView:
 
     Layout.page(s"Issue #$issueIdStr", "/issues")(
       div(cls := "mt-2 mx-auto max-w-6xl space-y-4")(
+        flash.map(msg =>
+          div(cls := "rounded-xl border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100")(msg)
+        ).getOrElse(frag()),
         // ── breadcrumb ──────────────────────────────────────────────────────
         div(cls := "flex items-center gap-3")(
           a(href := "/board", cls := "text-sm font-medium text-indigo-300 hover:text-indigo-200")("← Board"),

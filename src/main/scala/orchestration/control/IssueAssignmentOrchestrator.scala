@@ -12,6 +12,7 @@ import db.{ ChatRepository, TaskRepository }
 import issues.entity.api.{ AgentIssueView, IssuePriority, IssueStatus }
 import issues.entity.{ IssueEvent, IssueRepository, IssueState }
 import llm4zio.core.{ LlmError, LlmService, Streaming }
+import project.control.ProjectStorageService
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ AgentId, BoardIssueId, EventId, IssueId, TaskRunId }
 import workspace.entity.WorkspaceRepository
@@ -39,7 +40,7 @@ object IssueAssignmentOrchestrator:
 
   val live: ZLayer[
     ChatRepository & TaskRepository & LlmService & AgentConfigResolver & ActivityHub & IssueRepository &
-      BoardOrchestrator & WorkspaceRepository,
+      BoardOrchestrator & WorkspaceRepository & ProjectStorageService,
     Nothing,
     IssueAssignmentOrchestrator,
   ] =
@@ -53,6 +54,7 @@ object IssueAssignmentOrchestrator:
         issueRepository     <- ZIO.service[IssueRepository]
         boardOrchestrator   <- ZIO.service[BoardOrchestrator]
         workspaceRepository <- ZIO.service[WorkspaceRepository]
+        projectStorageSvc   <- ZIO.service[ProjectStorageService]
         queue               <- Queue.unbounded[AssignmentTask]
         service              =
           IssueAssignmentOrchestratorLive(
@@ -64,6 +66,7 @@ object IssueAssignmentOrchestrator:
             issueRepository,
             boardOrchestrator,
             workspaceRepository,
+            projectStorageSvc,
             queue,
           )
         _                   <- service.processQueue.forever.forkScoped
@@ -85,6 +88,7 @@ final private case class IssueAssignmentOrchestratorLive(
   issueRepository: IssueRepository,
   boardOrchestrator: BoardOrchestrator,
   workspaceRepository: WorkspaceRepository,
+  projectStorageService: ProjectStorageService,
   queue: Queue[AssignmentTask],
 ) extends IssueAssignmentOrchestrator:
 
@@ -164,8 +168,9 @@ final private case class IssueAssignmentOrchestratorLive(
       boardIssueId <- ZIO
                         .fromEither(BoardIssueId.fromString(issueId))
                         .mapError(message => PersistenceError.QueryFailed("board_issue_id", message))
+      boardPath    <- projectStorageService.projectRoot(workspace.projectId).map(_.toString)
       _            <- boardOrchestrator
-                        .assignIssue(workspace.localPath, boardIssueId, agentName)
+                        .assignIssue(boardPath, boardIssueId, agentName)
                         .mapError(mapBoardError)
     yield ()
 

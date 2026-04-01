@@ -21,6 +21,7 @@ object WorkspacesControllerSpec extends ZIOSpecDefault:
 
   private val sampleWs = Workspace(
     id = "ws-1",
+    projectId = shared.ids.Ids.ProjectId("test-project"),
     name = "my-api",
     localPath = "/tmp/my-api",
     defaultAgent = Some("code-agent"),
@@ -52,11 +53,12 @@ object WorkspacesControllerSpec extends ZIOSpecDefault:
 
   private class StubWorkspaceRepo(ref: Ref[Map[String, Workspace]], runRef: Ref[Map[String, WorkspaceRun]])
     extends WorkspaceRepository:
-    def append(event: WorkspaceEvent): IO[shared.errors.PersistenceError, Unit]                      =
+    def append(event: WorkspaceEvent): IO[shared.errors.PersistenceError, Unit]                                 =
       event match
         case e: WorkspaceEvent.Created              =>
           ref.update(_ + (e.workspaceId -> Workspace(
             e.workspaceId,
+            e.projectId,
             e.name,
             e.localPath,
             e.defaultAgent,
@@ -76,14 +78,16 @@ object WorkspacesControllerSpec extends ZIOSpecDefault:
           )
         case e: WorkspaceEvent.Deleted              => ref.update(_ - e.workspaceId)
         case _                                      => ZIO.unit
-    def list: IO[shared.errors.PersistenceError, List[Workspace]]                                    = ref.get.map(_.values.toList)
-    def get(id: String): IO[shared.errors.PersistenceError, Option[Workspace]]                       = ref.get.map(_.get(id))
-    def delete(id: String): IO[shared.errors.PersistenceError, Unit]                                 = ref.update(_ - id)
-    def appendRun(event: WorkspaceRunEvent): IO[shared.errors.PersistenceError, Unit]                = ZIO.unit
-    def listRuns(wid: String): IO[shared.errors.PersistenceError, List[WorkspaceRun]]                = runRef.get.map(_.values.toList)
-    def listRunsByIssueRef(issueRef: String): IO[shared.errors.PersistenceError, List[WorkspaceRun]] =
+    def list: IO[shared.errors.PersistenceError, List[Workspace]]                                               = ref.get.map(_.values.toList)
+    def listByProject(projectId: shared.ids.Ids.ProjectId): IO[shared.errors.PersistenceError, List[Workspace]] =
+      ref.get.map(_.values.filter(_.projectId == projectId).toList)
+    def get(id: String): IO[shared.errors.PersistenceError, Option[Workspace]]                                  = ref.get.map(_.get(id))
+    def delete(id: String): IO[shared.errors.PersistenceError, Unit]                                            = ref.update(_ - id)
+    def appendRun(event: WorkspaceRunEvent): IO[shared.errors.PersistenceError, Unit]                           = ZIO.unit
+    def listRuns(wid: String): IO[shared.errors.PersistenceError, List[WorkspaceRun]]                           = runRef.get.map(_.values.toList)
+    def listRunsByIssueRef(issueRef: String): IO[shared.errors.PersistenceError, List[WorkspaceRun]]            =
       runRef.get.map(_.values.toList.filter(_.issueRef == issueRef))
-    def getRun(id: String): IO[shared.errors.PersistenceError, Option[WorkspaceRun]]                 = runRef.get.map(_.get(id))
+    def getRun(id: String): IO[shared.errors.PersistenceError, Option[WorkspaceRun]]                            = runRef.get.map(_.get(id))
 
   private class StubRunService extends WorkspaceRunService:
     def assign(wid: String, req: AssignRunRequest): IO[WorkspaceError, WorkspaceRun] =
@@ -299,7 +303,9 @@ object WorkspacesControllerSpec extends ZIOSpecDefault:
                         method = Method.POST,
                         url = URL(Path.decode("/api/workspaces")),
                         body =
-                          Body.fromString(s"name=Broken&localPath=${java.net.URLEncoder.encode(tempDir.toString, "UTF-8")}"),
+                          Body.fromString(
+                            s"name=Broken&projectId=proj-1&localPath=${java.net.URLEncoder.encode(tempDir.toString, "UTF-8")}"
+                          ),
                       )
         resp       <- routes.runZIO(req)
         body       <- resp.body.asString
@@ -383,6 +389,7 @@ object WorkspacesControllerSpec extends ZIOSpecDefault:
     test("WorkspaceCreateRequest with default RunMode.Host round-trips through JSON") {
       val req     = WorkspaceCreateRequest(
         name = "my-api",
+        projectId = shared.ids.Ids.ProjectId("test-project"),
         localPath = "/tmp/my-api",
         defaultAgent = Some("code-agent"),
         defaultBranch = "main",
@@ -394,6 +401,7 @@ object WorkspacesControllerSpec extends ZIOSpecDefault:
     test("WorkspaceCreateRequest with RunMode.Docker round-trips through JSON") {
       val req     = WorkspaceCreateRequest(
         name = "sandboxed",
+        projectId = shared.ids.Ids.ProjectId("test-project"),
         localPath = "/tmp/sandboxed",
         defaultAgent = Some("code-agent"),
         defaultBranch = "develop",
@@ -406,6 +414,7 @@ object WorkspacesControllerSpec extends ZIOSpecDefault:
     test("WorkspaceCreateRequest with RunMode.Cloud round-trips through JSON") {
       val req     = WorkspaceCreateRequest(
         name = "remote",
+        projectId = shared.ids.Ids.ProjectId("test-project"),
         localPath = "/tmp/remote",
         defaultAgent = Some("code-agent"),
         defaultBranch = "release",
@@ -430,7 +439,7 @@ object WorkspacesControllerSpec extends ZIOSpecDefault:
                         method = Method.POST,
                         url = URL(Path.decode("/api/workspaces")),
                         body = Body.fromString(
-                          s"name=Repo&localPath=${java.net.URLEncoder.encode(sys.props("user.dir"), "UTF-8")}&defaultBranch=develop"
+                          s"name=Repo&projectId=proj-1&localPath=${java.net.URLEncoder.encode(sys.props("user.dir"), "UTF-8")}&defaultBranch=develop"
                         ),
                       )
         resp       <- routes.runZIO(req)

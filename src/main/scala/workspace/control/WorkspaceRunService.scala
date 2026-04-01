@@ -17,9 +17,9 @@ import knowledge.control.KnowledgeExtractionService
 import orchestration.control.{ AgentExecutionState, AgentPoolManager, OrchestratorControlPlane, PoolError, SlotHandle }
 import shared.errors.PersistenceError
 import shared.ids.Ids.IssueId
-import workspace.entity.*
 import workspace.control.WorkspaceErrorSupport.*
 import workspace.control.WorkspaceRunLifecycleSupport.*
+import workspace.entity.*
 
 case class AssignRunRequest(issueRef: String, prompt: String, agentName: String) derives JsonCodec
 

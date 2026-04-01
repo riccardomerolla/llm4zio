@@ -342,10 +342,11 @@ final case class ChatControllerLive(
                             .someOrFail(PersistenceError.NotFound("conversation", convId.toString))
           form         <- parseForm(req)
           mode         <- parseConversationMode(form.get("mode"))
-          workspaceId   = parseWorkspaceMarkerDescription(conversation.description)
+          workspaceId   = conversation.workspaceId
+                            .orElse(parseWorkspaceMarkerDescription(conversation.description))
           updatedAt    <- Clock.instant
           updated       = conversation.copy(
-                            description = modeDescription(mode, workspaceId),
+                            workspaceId = workspaceId,
                             updatedAt = updatedAt,
                           )
           _            <- chatRepository.updateConversation(updated)
@@ -618,9 +619,9 @@ final case class ChatControllerLive(
       conversation = ChatConversation(
                        runId = None,
                        title = "",
-                       description = modeDescription(ConversationMode.Chat, workspaceId),
                        createdAt = now,
                        updatedAt = now,
+                       workspaceId = workspaceId,
                      )
       convId      <- chatRepository.createConversation(conversation)
       mention      = parsePreferredAgentMention(rawContent)
@@ -661,7 +662,7 @@ final case class ChatControllerLive(
         chatRepository.getConversation(start.conversationId).flatMap {
           case Some(conversation) =>
             chatRepository.updateConversation(
-              conversation.copy(description = modeDescription(ConversationMode.Plan, workspaceId))
+              conversation.copy(workspaceId = workspaceId)
             ).as(start.conversationId)
           case None               =>
             ZIO.fail(PersistenceError.NotFound("conversation", start.conversationId.toString))
@@ -1022,13 +1023,6 @@ final case class ChatControllerLive(
       case _ =>
         ConversationMode.Chat
 
-  private def modeDescription(mode: ConversationMode, workspaceId: Option[String]): Option[String] =
-    (mode, workspaceId) match
-      case (ConversationMode.Plan, Some(ws)) => Some(s"mode:plan|workspace:$ws")
-      case (ConversationMode.Plan, None)     => Some("mode:plan")
-      case (ConversationMode.Chat, Some(ws)) => Some(s"workspace:$ws")
-      case (ConversationMode.Chat, None)     => None
-
   private def parseWorkspaceMarkerDescription(raw: Option[String]): Option[String] =
     try
       sanitizeOptional(raw) match
@@ -1064,13 +1058,11 @@ final case class ChatControllerLive(
                          }
       workspaceById    = workspaces.map(ws => ws.id -> ws).toMap
       grouped          = conversations.foldLeft(Map.empty[String, List[ChatConversation]]) { (acc, conversation) =>
-                           val descriptionWorkspace =
-                             conversationMode(conversation) match
-                               case ConversationMode.Plan => parseWorkspaceMarkerDescription(conversation.description)
-                               case ConversationMode.Chat => parseWorkspaceMarkerDescription(conversation.description)
+                           val descriptionWorkspace = parseWorkspaceMarkerDescription(conversation.description)
                            val folderId             =
                              sanitizeOptional(conversation.runId)
                                .flatMap(runIdToWorkspace.get)
+                               .orElse(conversation.workspaceId.filter(workspaceById.contains))
                                .orElse(descriptionWorkspace.filter(workspaceById.contains))
                                .getOrElse("chat")
                            val existing             = acc.getOrElse(folderId, Nil)

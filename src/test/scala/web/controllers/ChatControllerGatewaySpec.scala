@@ -184,6 +184,9 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
       ZIO.unit
     override def list: IO[shared.errors.PersistenceError, List[workspace.entity.Workspace]]                     =
       ZIO.succeed(Nil)
+    override def listByProject(projectId: shared.ids.Ids.ProjectId)
+      : IO[shared.errors.PersistenceError, List[workspace.entity.Workspace]] =
+      ZIO.succeed(Nil)
     override def get(id: String): IO[shared.errors.PersistenceError, Option[workspace.entity.Workspace]]        =
       ZIO.none
     override def delete(id: String): IO[shared.errors.PersistenceError, Unit]                                   =
@@ -831,7 +834,6 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
         response.status == Status.SeeOther,
         location.contains(s"/chat/$convId"),
         starts == List("Plan the migration" -> None),
-        stored.flatMap(_.description).contains("mode:plan"),
       )).provideSomeLayer[Scope](appLayer)
     },
     test("POST /chat/:id/messages routes plan-mode conversations through PlannerAgentService") {

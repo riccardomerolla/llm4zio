@@ -29,6 +29,7 @@ import app.boundary.{ AgentMonitorController as AppAgentMonitorController, Healt
 import app.control.{ FileService, HealthMonitor, HttpAIClient, LogTailer, StateService }
 import board.boundary.BoardController as BoardBoundaryController
 import board.control.*
+import board.entity.BoardRepository
 import checkpoint.boundary.CheckpointsController
 import checkpoint.control.CheckpointReviewService
 import com.bot4s.telegram.clients.FutureSttpClient
@@ -75,6 +76,7 @@ import orchestration.control.{
 import plan.boundary.PlansController
 import plan.entity.{ PlanEventStoreES, PlanRepositoryES }
 import project.boundary.ProjectsController
+import project.control.ProjectStorageService
 import project.entity.ProjectRepository
 import prompts.PromptLoader
 import sdlc.boundary.SdlcDashboardController
@@ -304,6 +306,7 @@ object ApplicationDI:
       StreamAbortRegistry.live,
       ToolRegistry.layer,
       ProjectRepository.live,
+      ProjectStorageService.live,
       SpecificationEventStoreES.live,
       SpecificationRepositoryES.live,
       PlanEventStoreES.live,
@@ -322,7 +325,18 @@ object ApplicationDI:
       InteractiveAgentRunner.live,
       RunSessionManager.live,
       CheckpointReviewService.live,
-      IssueRepositoryBoard.live,
+      ZLayer.fromZIO {
+        for
+          boardRepo      <- ZIO.service[BoardRepository]
+          workspaceRepo  <- ZIO.service[WorkspaceRepository]
+          projectStorage <- ZIO.service[ProjectStorageService]
+          repo           <- IssueRepositoryBoard.make(
+                              boardRepo,
+                              workspaceRepo,
+                              ws => projectStorage.projectRoot(ws.projectId).map(_.toString),
+                            )
+        yield repo
+      },
       TaskRunEventStoreES.live,
       TaskRunRepositoryES.live,
       PlannerAgentService.live,

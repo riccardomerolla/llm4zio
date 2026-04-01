@@ -18,6 +18,7 @@ import governance.entity.*
 import issues.entity.{ IssueEvent, IssueRepository }
 import knowledge.control.KnowledgeGraphService
 import llm4zio.tools.{ Tool, ToolExecutionError }
+import mcp.GatewayMcpToolSupport.*
 import memory.entity.{ MemoryFilter, MemoryRepository, UserId }
 import plan.entity.*
 import sdlc.control.SdlcDashboardService
@@ -25,7 +26,6 @@ import shared.ids.Ids.*
 import specification.entity.*
 import workspace.control.WorkspaceRunService
 import workspace.entity.WorkspaceRepository
-import GatewayMcpToolSupport.*
 
 /** Gateway tools exposed over MCP.
   *

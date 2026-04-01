@@ -107,6 +107,7 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
         case e: WorkspaceEvent.Created              =>
           val ws = Workspace(
             id = e.workspaceId,
+            projectId = e.projectId,
             name = e.name,
             localPath = e.localPath,
             defaultAgent = e.defaultAgent,
@@ -144,9 +145,11 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
           wsRef.update(m => m.get(e.workspaceId).fold(m)(ws => m + (e.workspaceId -> ws.copy(enabled = false))))
         case e: WorkspaceEvent.Deleted              => wsRef.update(_ - e.workspaceId)
 
-    def list: IO[PersistenceError, List[Workspace]]              = wsRef.get.map(_.values.toList)
-    def get(id: String): IO[PersistenceError, Option[Workspace]] = wsRef.get.map(_.get(id))
-    def delete(id: String): IO[PersistenceError, Unit]           = wsRef.update(_ - id)
+    def list: IO[PersistenceError, List[Workspace]]                                               = wsRef.get.map(_.values.toList)
+    def listByProject(projectId: shared.ids.Ids.ProjectId): IO[PersistenceError, List[Workspace]] =
+      wsRef.get.map(_.values.filter(_.projectId == projectId).toList)
+    def get(id: String): IO[PersistenceError, Option[Workspace]]                                  = wsRef.get.map(_.get(id))
+    def delete(id: String): IO[PersistenceError, Unit]                                            = wsRef.update(_ - id)
 
     def appendRun(event: WorkspaceRunEvent): IO[PersistenceError, Unit] =
       event match
@@ -237,6 +240,7 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
 
   private val sampleWs = Workspace(
     id = "ws-1",
+    projectId = shared.ids.Ids.ProjectId("test-project"),
     name = "test-repo",
     localPath = "/tmp",
     defaultAgent = Some("echo"),

@@ -3,8 +3,8 @@ package governance.control
 import zio.*
 
 import governance.entity.*
-import project.entity.ProjectRepository
 import shared.errors.PersistenceError
+import workspace.entity.WorkspaceRepository
 
 trait GovernancePolicyService:
   def resolvePolicyForWorkspace(workspaceId: String): IO[PersistenceError, GovernancePolicy]
@@ -24,33 +24,32 @@ object GovernancePolicyService:
     ZIO.serviceWithZIO[GovernancePolicyService](_.evaluateForWorkspace(workspaceId, context))
 
   val live
-    : ZLayer[ProjectRepository & GovernancePolicyRepository & GovernancePolicyEngine, Nothing, GovernancePolicyService] =
+    : ZLayer[WorkspaceRepository & GovernancePolicyRepository & GovernancePolicyEngine, Nothing, GovernancePolicyService] =
     ZLayer.fromZIO {
       for
-        projectRepository <- ZIO.service[ProjectRepository]
-        policyRepository  <- ZIO.service[GovernancePolicyRepository]
-        engine            <- ZIO.service[GovernancePolicyEngine]
-      yield GovernancePolicyServiceLive(projectRepository, policyRepository, engine)
+        workspaceRepository <- ZIO.service[WorkspaceRepository]
+        policyRepository    <- ZIO.service[GovernancePolicyRepository]
+        engine              <- ZIO.service[GovernancePolicyEngine]
+      yield GovernancePolicyServiceLive(workspaceRepository, policyRepository, engine)
     }
 
 final case class GovernancePolicyServiceLive(
-  projectRepository: ProjectRepository,
+  workspaceRepository: WorkspaceRepository,
   policyRepository: GovernancePolicyRepository,
   engine: GovernancePolicyEngine,
 ) extends GovernancePolicyService:
 
   override def resolvePolicyForWorkspace(workspaceId: String): IO[PersistenceError, GovernancePolicy] =
-    projectRepository
-      .list
-      .flatMap { projects =>
-        projects.find(_.workspaceIds.contains(workspaceId.trim)) match
-          case Some(project) =>
-            policyRepository.getActiveByProject(project.id).catchAll {
-              case _: PersistenceError.NotFound => ZIO.succeed(GovernancePolicy.noOp)
-              case other                        => ZIO.fail(other)
-            }
-          case None          =>
-            ZIO.succeed(GovernancePolicy.noOp)
+    workspaceRepository
+      .get(workspaceId.trim)
+      .flatMap {
+        case Some(workspace) =>
+          policyRepository.getActiveByProject(workspace.projectId).catchAll {
+            case _: PersistenceError.NotFound => ZIO.succeed(GovernancePolicy.noOp)
+            case other                        => ZIO.fail(other)
+          }
+        case None            =>
+          ZIO.succeed(GovernancePolicy.noOp)
       }
 
   override def evaluateForWorkspace(

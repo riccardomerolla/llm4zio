@@ -5,6 +5,8 @@ import java.time.Instant
 import zio.json.JsonCodec
 import zio.schema.{ Schema, derived }
 
+import shared.ids.Ids.ProjectId
+
 /** Immutable domain events for the Workspace aggregate.
   *
   * Events are the source of truth. The `Workspace` read-side projection is rebuilt by folding these events. Adding a
@@ -18,6 +20,7 @@ sealed trait WorkspaceEvent derives JsonCodec, Schema:
 object WorkspaceEvent:
   final case class Created(
     workspaceId: String,
+    projectId: ProjectId,
     name: String,
     localPath: String,
     defaultAgent: Option[String],

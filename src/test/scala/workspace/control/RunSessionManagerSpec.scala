@@ -17,13 +17,16 @@ object RunSessionManagerSpec extends ZIOSpecDefault:
 
   final private class InMemoryWorkspaceRepo(eventsRef: Ref[Map[String, List[WorkspaceRunEvent]]])
     extends WorkspaceRepository:
-    override def append(event: WorkspaceEvent): IO[PersistenceError, Unit] = ZIO.unit
-    override def list: IO[PersistenceError, List[Workspace]]               = ZIO.succeed(Nil)
-    override def get(id: String): IO[PersistenceError, Option[Workspace]]  =
+    override def append(event: WorkspaceEvent): IO[PersistenceError, Unit]                                 = ZIO.unit
+    override def list: IO[PersistenceError, List[Workspace]]                                               = ZIO.succeed(Nil)
+    override def listByProject(projectId: shared.ids.Ids.ProjectId): IO[PersistenceError, List[Workspace]] =
+      ZIO.succeed(Nil)
+    override def get(id: String): IO[PersistenceError, Option[Workspace]]                                  =
       ZIO.succeed(
         Some(
           Workspace(
             id = "ws-1",
+            projectId = shared.ids.Ids.ProjectId("test-project"),
             name = "repo",
             localPath = "/tmp",
             defaultAgent = None,
@@ -36,7 +39,7 @@ object RunSessionManagerSpec extends ZIOSpecDefault:
           )
         ).filter(_.id == id)
       )
-    override def delete(id: String): IO[PersistenceError, Unit]            = ZIO.unit
+    override def delete(id: String): IO[PersistenceError, Unit]                                            = ZIO.unit
 
     override def appendRun(event: WorkspaceRunEvent): IO[PersistenceError, Unit] =
       eventsRef.update(current => current.updated(event.runId, current.getOrElse(event.runId, Nil) :+ event))

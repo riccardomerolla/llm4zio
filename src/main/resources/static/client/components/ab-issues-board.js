@@ -570,6 +570,13 @@ class AbIssuesBoard extends LitElement {
       const requestTarget = event?.detail?.target;
       if (requestTarget !== this.root) return;
 
+      // Keep inline editors stable while users are interacting with quick-add.
+      if (this._shouldDeferRefresh()) {
+        event.preventDefault();
+        this._refreshPending = true;
+        return;
+      }
+
       // Capture each column's scroll offset before the DOM replacement.
       this.root.querySelectorAll('[data-column-cards]').forEach(el => {
         const key = el.dataset.columnCards;
@@ -1052,12 +1059,16 @@ class AbIssuesBoard extends LitElement {
       return true;
     }
 
+    const openForms = this.root.querySelectorAll('[data-quick-add-form]:not(.hidden)');
+    if (openForms.length > 0) {
+      return true;
+    }
+
     const activeElement = document.activeElement;
     if (activeElement && activeElement.closest && activeElement.closest('[data-quick-add-form]')) {
       return true;
     }
 
-    const openForms = this.root.querySelectorAll('[data-quick-add-form]:not(.hidden)');
     for (const form of openForms) {
       const titleInput = form.querySelector('[data-quick-add-title]');
       if (titleInput?.value?.trim()) return true;

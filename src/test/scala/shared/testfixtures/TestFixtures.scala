@@ -10,7 +10,7 @@ import activity.entity.ActivityEvent
 import db.{ CustomAgentRow, SettingRow, WorkflowRow }
 import issues.entity.*
 import shared.errors.PersistenceError
-import shared.ids.Ids.IssueId
+import shared.ids.Ids.{ IssueId, ProjectId }
 import workspace.entity.*
 
 // ── ActivityHub stubs ──────────────────────────────────────────────────────
@@ -101,6 +101,8 @@ final class StubWorkspaceRepository(
 ) extends WorkspaceRepository:
   override def append(event: WorkspaceEvent): IO[PersistenceError, Unit]                      = ZIO.unit
   override def list: IO[PersistenceError, List[Workspace]]                                    = ZIO.succeed(workspaces)
+  override def listByProject(projectId: ProjectId): IO[PersistenceError, List[Workspace]]     =
+    ZIO.succeed(workspaces.filter(_.projectId == projectId))
   override def get(id: String): IO[PersistenceError, Option[Workspace]]                       =
     ZIO.succeed(workspaces.find(_.id == id))
   override def delete(id: String): IO[PersistenceError, Unit]                                 = ZIO.unit

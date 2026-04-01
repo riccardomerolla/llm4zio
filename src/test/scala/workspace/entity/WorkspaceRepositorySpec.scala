@@ -7,6 +7,7 @@ import zio.*
 import zio.test.*
 
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
+import shared.ids.Ids.ProjectId
 import shared.store.{ DataStoreModule, StoreConfig }
 
 object WorkspaceRepositorySpec extends ZIOSpecDefault:
@@ -38,6 +39,7 @@ object WorkspaceRepositorySpec extends ZIOSpecDefault:
 
   private val createdWs = WorkspaceEvent.Created(
     workspaceId = "ws-1",
+    projectId = ProjectId("test-project"),
     name = "my-api",
     localPath = "/tmp/my-api",
     defaultAgent = Some("gemini"),
@@ -49,6 +51,7 @@ object WorkspaceRepositorySpec extends ZIOSpecDefault:
 
   private val createdDockerWs = WorkspaceEvent.Created(
     workspaceId = "ws-docker",
+    projectId = ProjectId("test-project"),
     name = "sandboxed-api",
     localPath = "/tmp/sandboxed-api",
     defaultAgent = Some("opencode"),
@@ -60,6 +63,7 @@ object WorkspaceRepositorySpec extends ZIOSpecDefault:
 
   private val createdCloudWs = WorkspaceEvent.Created(
     workspaceId = "ws-cloud",
+    projectId = ProjectId("test-project"),
     name = "remote-api",
     localPath = "/tmp/remote-api",
     defaultAgent = Some("codex"),
@@ -99,6 +103,7 @@ object WorkspaceRepositorySpec extends ZIOSpecDefault:
           yield assertTrue(
             got.isDefined &&
             got.get.name == "my-api" &&
+            got.get.projectId == ProjectId("test-project") &&
             got.get.cliTool == "gemini" &&
             got.get.defaultBranch == "main" &&
             got.get.enabled == true
@@ -276,6 +281,37 @@ object WorkspaceRepositorySpec extends ZIOSpecDefault:
               region = Some("eu-west-1"),
               network = Some("none"),
             ))
+          )).provideLayer(layerFor(dir))
+        }
+      },
+      test("listByProject returns only workspaces with matching projectId") {
+        withTempDir { dir =>
+          val otherProjectWs = WorkspaceEvent.Created(
+            workspaceId = "ws-other",
+            projectId = ProjectId("other-project"),
+            name = "other-api",
+            localPath = "/tmp/other-api",
+            defaultAgent = None,
+            description = None,
+            cliTool = "codex",
+            runMode = RunMode.Host,
+            occurredAt = now,
+          )
+          (for
+            svc     <- ZIO.service[DataStoreModule.DataStoreService]
+            repo     = WorkspaceRepositoryES(svc)
+            _       <- repo.append(createdWs)
+            _       <- repo.append(createdDockerWs)
+            _       <- repo.append(otherProjectWs)
+            byTest  <- repo.listByProject(ProjectId("test-project"))
+            byOther <- repo.listByProject(ProjectId("other-project"))
+            byNone  <- repo.listByProject(ProjectId("no-such-project"))
+          yield assertTrue(
+            byTest.map(_.id).toSet == Set("ws-1", "ws-docker"),
+            byOther.map(_.id) == List("other-api").map(_ => "ws-other"),
+            byOther.length == 1,
+            byOther.head.id == "ws-other",
+            byNone.isEmpty,
           )).provideLayer(layerFor(dir))
         }
       },

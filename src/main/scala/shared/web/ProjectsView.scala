@@ -3,7 +3,7 @@ package shared.web
 import java.time.Instant
 
 import issues.entity.api.AgentIssueView
-import project.entity.Project
+import project.entity.{ Project, ProjectFilter }
 import scalatags.Text.all.*
 
 final case class ProjectListItem(
@@ -39,7 +39,6 @@ final case class ProjectDetailPageData(
   project: Project,
   activeTab: String,
   assignedWorkspaces: List[ProjectWorkspaceRow],
-  availableWorkspaces: List[(String, String)],
   boardIssues: List[AgentIssueView],
   boardWorkspaces: List[(String, String)],
   analysisRows: List[ProjectAnalysisRow],
@@ -111,6 +110,75 @@ object ProjectsView:
           ),
       )
     )
+
+  def filterOptionsFragment(projects: List[Project], currentFilter: ProjectFilter): String =
+    val selectedId     = currentFilter match
+      case ProjectFilter.All              => "all"
+      case ProjectFilter.Selected(projId) => projId.value
+    val selectedLabel  = currentFilter match
+      case ProjectFilter.All              => "All Projects"
+      case ProjectFilter.Selected(projId) => projects.find(_.id == projId).map(_.name).getOrElse("All Projects")
+    val sortedProjects = projects.sortBy(_.name.toLowerCase)
+    div(
+      cls                       := "relative flex-1",
+      attr("data-nav-dropdown") := "",
+    )(
+      button(
+        `type`                   := "button",
+        cls                      := "flex items-center gap-1 rounded px-2 py-1 text-xs text-gray-400 hover:bg-white/5 hover:text-white",
+        attr("data-nav-trigger") := "",
+        attr("aria-haspopup")    := "menu",
+        attr("aria-expanded")    := "false",
+      )(selectedLabel, " ", span(cls := "text-[9px] opacity-60")("▼")),
+      div(
+        cls                    := "hidden absolute left-0 top-full mt-1 z-50 min-w-[14rem] rounded-lg border border-white/10 bg-slate-900 shadow-xl py-1",
+        attr("role")           := "menu",
+        attr("data-nav-panel") := "",
+      )(
+        div(cls := "px-2 pb-1 border-b border-white/10 mb-1")(
+          input(
+            `type`                            := "text",
+            placeholder                       := "Filter projects…",
+            cls                               := "w-full rounded border border-white/10 bg-black/30 px-2 py-1 text-xs text-gray-300 placeholder-gray-600 focus:outline-none focus:border-white/30",
+            oninput                           := "filterProjectDropdown(this)",
+            onclick                           := "event.stopPropagation()",
+            attr("data-project-filter-input") := "",
+          )
+        ),
+        div(attr("data-project-items") := "")(
+          frag(
+            a(
+              href                      := "#",
+              attr("role")              := "menuitem",
+              cls                       := s"flex items-center gap-2 px-3 py-1.5 text-xs ${
+                  if selectedId == "all" then "bg-white/5 text-white"
+                  else "text-gray-300 hover:bg-white/5 hover:text-white"
+                }",
+              onclick                   := "setProjectFilter('all'); return false;",
+              attr("data-project-name") := "all projects",
+            )(
+              "All Projects",
+              if selectedId == "all" then span(cls := "ml-auto text-cyan-400 text-[9px]")("✓") else frag(),
+            ) +:
+              sortedProjects.map { p =>
+                a(
+                  href                      := "#",
+                  attr("role")              := "menuitem",
+                  cls                       := s"flex items-center gap-2 px-3 py-1.5 text-xs ${
+                      if selectedId == p.id.value then "bg-white/5 text-white"
+                      else "text-gray-300 hover:bg-white/5 hover:text-white"
+                    }",
+                  onclick                   := s"setProjectFilter('${p.id.value}'); return false;",
+                  attr("data-project-name") := p.name.toLowerCase,
+                )(
+                  p.name,
+                  if selectedId == p.id.value then span(cls := "ml-auto text-cyan-400 text-[9px]")("✓") else frag(),
+                )
+              }*
+          )
+        ),
+      ),
+    ).render
 
   def detailPage(data: ProjectDetailPageData): String =
     val project = data.project
@@ -234,30 +302,37 @@ object ProjectsView:
             "No workspaces assigned to this project yet."
           )
         else
-          div(cls := "mt-4 space-y-3")(data.assignedWorkspaces.map(workspaceRow(data.project.id.value, _))*),
+          div(cls := "mt-4 space-y-3")(data.assignedWorkspaces.map(workspaceRow)*),
       ),
       div(cls := "rounded-xl border border-white/10 bg-slate-900/70 p-5")(
-        h2(cls := "text-sm font-semibold uppercase tracking-wide text-slate-200")("Add Workspace"),
-        p(cls := "mt-1 text-xs text-slate-500")("Quick-assign existing workspaces into the project."),
-        if data.availableWorkspaces.isEmpty then
-          div(cls := "mt-4 rounded-lg border border-dashed border-white/10 p-6 text-sm text-slate-400")(
-            "All known workspaces are already assigned."
-          )
-        else
-          form(action := s"/projects/${data.project.id.value}/workspaces", method := "post", cls := "mt-4 space-y-3")(
+        h2(cls := "text-sm font-semibold uppercase tracking-wide text-slate-200")("Create Workspace"),
+        p(cls := "mt-1 text-xs text-slate-500")("Create a new workspace directly linked to this project."),
+        form(
+          action := s"/projects/${data.project.id.value}/workspaces/create",
+          method := "post",
+          cls    := "mt-4 space-y-3",
+        )(
+          labeledInput("Name", "name", ""),
+          labeledInput("Local path", "localPath", ""),
+          label(cls := "block text-[11px] font-semibold uppercase tracking-wide text-slate-400")(
+            "CLI Tool",
             select(
-              name := "workspace_id",
-              cls  := "w-full rounded border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-100",
+              name := "cliTool",
+              cls  := "mt-1 w-full rounded border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-100",
             )(
-              data.availableWorkspaces.map { case (id, name) => option(value := id)(name) }
-            ),
-            div(cls := "flex justify-end")(
-              button(
-                `type` := "submit",
-                cls    := "rounded bg-cyan-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-cyan-500",
-              )("Assign workspace")
+              option(value := "claude")("claude"),
+              option(value := "codex")("codex"),
+              option(value := "gemini")("gemini"),
             ),
           ),
+          labeledInput("Default branch", "defaultBranch", "main"),
+          div(cls := "flex justify-end")(
+            button(
+              `type` := "submit",
+              cls    := "rounded bg-cyan-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-cyan-500",
+            )("Create workspace")
+          ),
+        ),
       ),
     )
 
@@ -365,7 +440,7 @@ object ProjectsView:
         div(cls := "grid gap-4 lg:grid-cols-2")(data.analysisRows.map(analysisRow)*),
     )
 
-  private def workspaceRow(projectId: String, row: ProjectWorkspaceRow): Frag =
+  private def workspaceRow(row: ProjectWorkspaceRow): Frag =
     div(cls := "rounded-lg border border-white/10 bg-black/20 p-4")(
       div(cls := "flex flex-wrap items-start justify-between gap-3")(
         div(
@@ -375,14 +450,7 @@ object ProjectsView:
           ),
           p(cls := "mt-1 text-xs font-mono text-slate-500")(row.workspaceId),
           row.description.fold[Frag](frag())(desc => p(cls := "mt-2 text-sm text-slate-400")(desc)),
-        ),
-        form(action := s"/projects/$projectId/workspaces/remove", method := "post")(
-          input(`type` := "hidden", name := "workspace_id", value := row.workspaceId),
-          button(
-            `type` := "submit",
-            cls    := "rounded border border-rose-400/30 bg-rose-500/10 px-2 py-1 text-xs font-semibold text-rose-200 hover:bg-rose-500/20",
-          )("Remove"),
-        ),
+        )
       ),
       div(cls := "mt-4 grid gap-3 md:grid-cols-3")(
         infoCell("Default agent", row.defaultAgent.getOrElse("—")),

@@ -5,6 +5,8 @@ import java.time.Instant
 import zio.json.*
 import zio.schema.{ Schema, derived }
 
+import shared.ids.Ids.ProjectId
+
 sealed trait RunMode derives JsonCodec, Schema
 object RunMode:
   /** Run the agent directly on the host (default, current behaviour). */
@@ -50,6 +52,7 @@ object RunSessionMode:
   */
 case class Workspace(
   id: String,
+  projectId: ProjectId,
   name: String,
   localPath: String,
   defaultAgent: Option[String],
@@ -63,7 +66,7 @@ case class Workspace(
 ) derives JsonCodec, Schema
 
 object Workspace:
-  val DefaultBranch = "main"
+  val DefaultBranch: String = "main"
 
   def normalizeDefaultBranch(value: String): String =
     Option(value).map(_.trim).filter(_.nonEmpty).getOrElse(DefaultBranch)
@@ -94,6 +97,7 @@ object Workspace:
               Some(
                 Workspace(
                   id = e.workspaceId,
+                  projectId = e.projectId,
                   name = e.name,
                   localPath = e.localPath,
                   defaultAgent = e.defaultAgent,

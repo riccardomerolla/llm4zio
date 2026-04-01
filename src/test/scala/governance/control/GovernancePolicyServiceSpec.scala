@@ -6,9 +6,9 @@ import zio.*
 import zio.test.*
 
 import governance.entity.*
-import project.entity.{ Project, ProjectEvent, ProjectRepository, ProjectSettings }
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ GovernancePolicyId, ProjectId }
+import workspace.entity.{ Workspace, WorkspaceEvent, WorkspaceRepository, WorkspaceRun, WorkspaceRunEvent }
 
 object GovernancePolicyServiceSpec extends ZIOSpecDefault:
 
@@ -37,25 +37,35 @@ object GovernancePolicyServiceSpec extends ZIOSpecDefault:
       updatedAt = now,
     )
 
-  private def makeProject(wsIds: List[String] = List(workspaceA)): Project =
-    Project(
-      id = projectId,
-      name = "Project A",
+  private def makeWorkspace(): Workspace =
+    Workspace(
+      id = workspaceA,
+      projectId = projectId,
+      name = "Workspace A",
+      localPath = "/tmp/ws-a",
+      defaultAgent = None,
       description = None,
-      workspaceIds = wsIds,
-      settings = ProjectSettings(),
+      enabled = true,
+      runMode = workspace.entity.RunMode.Host,
+      cliTool = "codex",
       createdAt = now,
       updatedAt = now,
     )
 
   // ─── Stubs ────────────────────────────────────────────────────────────────
 
-  final class StubProjectRepository(projects: List[Project]) extends ProjectRepository:
-    override def append(event: ProjectEvent): IO[PersistenceError, Unit]   = ZIO.unit
-    override def list: IO[PersistenceError, List[Project]]                 = ZIO.succeed(projects)
-    override def get(id: ProjectId): IO[PersistenceError, Option[Project]] =
-      ZIO.succeed(projects.find(_.id == id))
-    override def delete(id: ProjectId): IO[PersistenceError, Unit]         = ZIO.unit
+  final class StubWorkspaceRepository(workspaces: List[Workspace]) extends WorkspaceRepository:
+    override def append(event: WorkspaceEvent): IO[PersistenceError, Unit]                      = ZIO.unit
+    override def list: IO[PersistenceError, List[Workspace]]                                    = ZIO.succeed(workspaces)
+    override def listByProject(pid: ProjectId): IO[PersistenceError, List[Workspace]]           =
+      ZIO.succeed(workspaces.filter(_.projectId == pid))
+    override def get(id: String): IO[PersistenceError, Option[Workspace]]                       =
+      ZIO.succeed(workspaces.find(_.id == id))
+    override def delete(id: String): IO[PersistenceError, Unit]                                 = ZIO.unit
+    override def appendRun(event: WorkspaceRunEvent): IO[PersistenceError, Unit]                = ZIO.unit
+    override def listRuns(workspaceId: String): IO[PersistenceError, List[WorkspaceRun]]        = ZIO.succeed(Nil)
+    override def listRunsByIssueRef(issueRef: String): IO[PersistenceError, List[WorkspaceRun]] = ZIO.succeed(Nil)
+    override def getRun(id: String): IO[PersistenceError, Option[WorkspaceRun]]                 = ZIO.succeed(None)
 
   final class StubGovernancePolicyRepository(policy: Option[GovernancePolicy])
     extends GovernancePolicyRepository:
@@ -72,11 +82,11 @@ object GovernancePolicyServiceSpec extends ZIOSpecDefault:
       ZIO.succeed(policy.toList)
 
   private def makeService(
-    projects: List[Project],
+    workspaces: List[Workspace],
     policy: Option[GovernancePolicy],
   ): GovernancePolicyServiceLive =
     GovernancePolicyServiceLive(
-      projectRepository = StubProjectRepository(projects),
+      workspaceRepository = StubWorkspaceRepository(workspaces),
       policyRepository = StubGovernancePolicyRepository(policy),
       engine = GovernancePolicyEngineLive(),
     )
@@ -87,26 +97,26 @@ object GovernancePolicyServiceSpec extends ZIOSpecDefault:
     suite("GovernancePolicyServiceSpec")(
       test("resolves active policy when workspace belongs to project") {
         val policy  = makePolicy()
-        val service = makeService(List(makeProject()), Some(policy))
+        val service = makeService(List(makeWorkspace()), Some(policy))
         for
           resolved <- service.resolvePolicyForWorkspace(workspaceA)
         yield assertTrue(resolved.id == policyId, resolved.projectId == projectId)
       },
       test("returns noOp when workspace has no associated project") {
-        val service = makeService(projects = Nil, policy = None)
+        val service = makeService(workspaces = Nil, policy = None)
         for
           resolved <- service.resolvePolicyForWorkspace("ws-unknown")
         yield assertTrue(resolved.isDefault, resolved.id == GovernancePolicyId("governance-default"))
       },
       test("returns noOp when project exists but has no active policy") {
-        val service = makeService(List(makeProject()), policy = None)
+        val service = makeService(List(makeWorkspace()), policy = None)
         for
           resolved <- service.resolvePolicyForWorkspace(workspaceA)
         yield assertTrue(resolved.isDefault)
       },
       test("returns noOp when project's only policy is archived") {
         val archived = makePolicy().copy(archivedAt = Some(now))
-        val service  = makeService(List(makeProject()), policy = Some(archived))
+        val service  = makeService(List(makeWorkspace()), policy = Some(archived))
         for
           resolved <- service.resolvePolicyForWorkspace(workspaceA)
         yield assertTrue(resolved.isDefault)
@@ -120,7 +130,7 @@ object GovernancePolicyServiceSpec extends ZIOSpecDefault:
             )
           )
         )
-        val service = makeService(List(makeProject()), Some(policy))
+        val service = makeService(List(makeWorkspace()), Some(policy))
         for
           decision <- service.evaluateForWorkspace(
                         workspaceA,
@@ -143,7 +153,7 @@ object GovernancePolicyServiceSpec extends ZIOSpecDefault:
             )
           )
         )
-        val service = makeService(List(makeProject()), Some(policy))
+        val service = makeService(List(makeWorkspace()), Some(policy))
         for
           decision <- service.evaluateForWorkspace(
                         workspaceA,

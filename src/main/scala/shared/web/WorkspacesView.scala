@@ -21,7 +21,7 @@ object WorkspacesView:
     agents: List[AgentInfo],
     analysisStatusByWorkspaceId: Map[String, List[WorkspaceAnalysisStatus]],
   ): String =
-    Layout.page("Workspaces", "/workspaces")(
+    Layout.page("Workspaces", "/settings/workspaces")(
       div(cls := "space-y-6")(
         Components.pageHeader(
           "Workspaces",

@@ -28,14 +28,13 @@ object ProjectModelsSpec extends ZIOSpecDefault:
           id = ProjectId("proj-1"),
           name = "Platform",
           description = Some("Shared runtime work"),
-          workspaceIds = List("ws-1", "ws-2"),
           settings = ProjectSettings(defaultAgent = Some("claude")),
           createdAt = now,
           updatedAt = now,
         )
         assertTrue(project.toJson.fromJson[Project] == Right(project))
       },
-      test("Project folds create, update, add, and remove events") {
+      test("Project folds create and update events") {
         val later  = now.plusSeconds(30)
         val events = List[ProjectEvent](
           ProjectEvent.ProjectCreated(
@@ -44,8 +43,6 @@ object ProjectModelsSpec extends ZIOSpecDefault:
             description = Some("Shared runtime work"),
             occurredAt = now,
           ),
-          ProjectEvent.WorkspaceAdded(ProjectId("proj-1"), "ws-1", now.plusSeconds(5)),
-          ProjectEvent.WorkspaceAdded(ProjectId("proj-1"), "ws-2", now.plusSeconds(10)),
           ProjectEvent.ProjectUpdated(
             projectId = ProjectId("proj-1"),
             name = "Platform Core",
@@ -58,16 +55,14 @@ object ProjectModelsSpec extends ZIOSpecDefault:
             ),
             occurredAt = later,
           ),
-          ProjectEvent.WorkspaceRemoved(ProjectId("proj-1"), "ws-1", later.plusSeconds(5)),
         )
 
         val project = Project.fromEvents(events)
 
         assertTrue(
           project.exists(_.name == "Platform Core"),
-          project.exists(_.workspaceIds == List("ws-2")),
           project.exists(_.settings.defaultAgent.contains("codex")),
-          project.exists(_.updatedAt == later.plusSeconds(5)),
+          project.exists(_.updatedAt == later),
         )
       },
     )

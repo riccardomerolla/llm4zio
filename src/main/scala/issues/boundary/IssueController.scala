@@ -28,6 +28,7 @@ import issues.control.IssueAnalysisAttachment
 import issues.entity.api.*
 import issues.entity.{ AgentIssue as DomainIssue, * }
 import orchestration.control.{ IssueAssignmentOrchestrator, IssueDispatchStatusService }
+import project.control.ProjectStorageService
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ AgentId, BoardIssueId, EventId, IssueId, TaskRunId }
 import shared.web.{ ErrorHandlingMiddleware, HtmlViews }
@@ -47,7 +48,7 @@ object IssueController:
       ChatRepository & TaskRepository & ConfigRepository & AgentRepository & IssueAssignmentOrchestrator &
         IssueRepository & WorkspaceRepository & WorkspaceRunService & ActivityHub & IssueDispatchStatusService &
         BoardOrchestrator & BoardRepository & DecisionInbox &
-        AnalysisRepository & IssueWorkReportProjection,
+        AnalysisRepository & IssueWorkReportProjection & ProjectStorageService,
       Nothing,
       IssueController,
     ] =
@@ -69,6 +70,7 @@ final case class IssueControllerLive(
   decisionInbox: DecisionInbox,
   analysisRepository: AnalysisRepository,
   issueWorkReportProjection: IssueWorkReportProjection,
+  projectStorageService: ProjectStorageService,
 ) extends IssueController:
 
   final private case class TimedResult[+A](value: A, durationMs: Long)
@@ -178,6 +180,7 @@ final case class IssueControllerLive(
       ErrorHandlingMiddleware.fromPersistence {
         for
           workspaceHint                                      <- ZIO.succeed(req.queryParam("workspace").map(_.trim).filter(_.nonEmpty))
+          flash                                               = req.queryParam("flash").map(_.trim).filter(_.nonEmpty)
           boardIssueOpt                                      <- resolveWorkspaceBoardIssue(id, workspaceHint)
           issueRuns                                          <- workspaceRepository.listRunsByIssueRef(s"#$id").mapError(mapIssueRepoError)
           workspaces                                         <- workspaceRepository.list.mapError(mapIssueRepoError)
@@ -218,6 +221,7 @@ final case class IssueControllerLive(
             workspaces.map(ws => ws.id -> ws.name),
             workReport,
             decisions,
+            flash,
           )
         )
       }
@@ -334,31 +338,41 @@ final case class IssueControllerLive(
     },
     Method.POST / "issues" / string("id") / "approve"                -> handler { (id: String, req: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
-        for
-          form      <- parseForm(req)
-          issueId    = IssueId(id)
-          issue     <- issueRepository.get(issueId).mapError(mapIssueRepoError)
-          now       <- Clock.instant
-          approvedBy = form.get("approvedBy").map(_.trim).filter(_.nonEmpty).getOrElse("human")
-          _         <- ensureHumanReviewApprovalAllowed(issue)
-          autoMerge <- loadAutoMergePolicy
-          events     = approvalEvents(issue, approvedBy, autoMerge, now)
-          _         <- ZIO.foreachDiscard(events)(issueRepository.append(_).mapError(mapIssueRepoError))
-          _         <- decisionInbox
-                         .syncOpenIssueReviewDecision(
-                           issue.id,
-                           DecisionResolutionKind.Approved,
-                           approvedBy,
-                           s"Approved by $approvedBy",
+        val approve: IO[PersistenceError, Response] =
+          for
+            form      <- parseForm(req)
+            issueId    = IssueId(id)
+            issue     <- issueRepository.get(issueId).mapError(mapIssueRepoError)
+            now       <- Clock.instant
+            approvedBy = form.get("approvedBy").map(_.trim).filter(_.nonEmpty).getOrElse("human")
+            _         <- ensureHumanReviewApprovalAllowed(issue)
+            autoMerge <- loadAutoMergePolicy
+            events     = approvalEvents(issue, approvedBy, autoMerge, now)
+            _         <- ZIO.foreachDiscard(events)(issueRepository.append(_).mapError(mapIssueRepoError))
+            _         <- decisionInbox
+                           .syncOpenIssueReviewDecision(
+                             issue.id,
+                             DecisionResolutionKind.Approved,
+                             approvedBy,
+                             s"Approved by $approvedBy",
+                           )
+                           .mapError(mapIssueRepoError)
+            _         <- publishBoardStatusActivity(
+                           issue,
+                           if autoMerge then IssueStatus.Merging else IssueStatus.Done,
+                           fallbackAgent = "human",
+                           now = now,
                          )
-                         .mapError(mapIssueRepoError)
-          _         <- publishBoardStatusActivity(
-                         issue,
-                         if autoMerge then IssueStatus.Merging else IssueStatus.Done,
-                         fallbackAgent = "human",
-                         now = now,
-                       )
-        yield Response(status = Status.SeeOther, headers = Headers(Header.Custom("Location", s"/issues/$id")))
+          yield Response(status = Status.SeeOther, headers = Headers(Header.Custom("Location", s"/issues/$id")))
+        approve.catchSome {
+          case PersistenceError.QueryFailed("approve_issue", cause) =>
+            ZIO.succeed(
+              Response(
+                status = Status.SeeOther,
+                headers = Headers(Header.Custom("Location", s"/issues/$id?flash=${urlEncode(cause)}")),
+              )
+            )
+        }
       }
     },
     Method.POST / "issues" / string("id") / "assign"                 -> handler { (id: String, req: Request) =>
@@ -975,7 +989,8 @@ final case class IssueControllerLive(
       val fragmentEffect =
         for
           startedAt        <- Clock.nanoTime
-          workspacesFiber  <- timed("boardFragment.workspaces")(workspaceRepository.list.mapError(mapIssueRepoError)).fork
+          workspacesFiber  <-
+            timed("boardFragment.workspaces")(workspaceRepository.list.mapError(mapIssueRepoError)).fork
           issuesFiber      <- timed("boardFragment.issues")(
                                 loadBoardIssues(
                                   query,
@@ -1131,17 +1146,33 @@ final case class IssueControllerLive(
 
             ZIO
               .foreach(prioritized) { ws =>
-                boardRepository
-                  .readIssue(ws.localPath, boardId)
-                  .map(issue => Some(ws -> issue))
-                  .catchAll {
-                    case _: BoardError.IssueNotFound => ZIO.none
-                    case _: BoardError.BoardNotFound => ZIO.none
-                    case other                       => ZIO.fail(mapBoardError(other))
-                  }
+                resolveWorkspaceBoardIssueById(ws, boardId).map(_.map(ws -> _))
               }
               .map(_.collectFirst { case Some(found) => found })
           }
+    }
+
+  private def resolveWorkspaceBoardIssueById(
+    ws: workspace.entity.Workspace,
+    issueId: BoardIssueId,
+  ): IO[PersistenceError, Option[BoardIssue]] =
+    projectStorageService.projectRoot(ws.projectId).flatMap { root =>
+      val boardPath = root.toString
+      boardRepository
+        .readIssue(boardPath, issueId)
+        .map(Some(_))
+        .catchAll {
+          case _: BoardError.IssueNotFound =>
+            ZIO
+              .foreach(boardColumns)(column => boardRepository.listIssues(boardPath, column))
+              .map(_.flatten.find(_.frontmatter.id == issueId))
+              .catchAll {
+                case _: BoardError.BoardNotFound => ZIO.none
+                case other                       => ZIO.fail(mapBoardError(other))
+              }
+          case _: BoardError.BoardNotFound => ZIO.none
+          case other                       => ZIO.fail(mapBoardError(other))
+        }
     }
 
   private def createWorkspaceBoardIssue(
@@ -1157,14 +1188,15 @@ final case class IssueControllerLive(
   ): IO[PersistenceError, AgentIssueView] =
     for
       workspace <- resolveWorkspace(workspaceId)
-      _         <- boardRepository.initBoard(workspace.localPath).mapError(mapBoardError)
+      boardPath <- projectStorageService.projectRoot(workspace.projectId).map(_.toString)
+      _         <- boardRepository.initBoard(boardPath).mapError(mapBoardError)
       now       <- Clock.instant
       boardId    = BoardIssueId(IssueId.generate.value.toLowerCase)
       boardPrio  = toBoardPriority(priority)
       boardEst  <- toBoardEstimate(estimate)
       issue     <- boardRepository
                      .createIssue(
-                       workspace.localPath,
+                       boardPath,
                        BoardColumn.Backlog,
                        BoardIssue(
                          frontmatter = IssueFrontmatter(
@@ -1221,12 +1253,18 @@ final case class IssueControllerLive(
                                  ),
                                  body = description.trim,
                                )
+      // Use the actual directory name on disk (not the frontmatter UUID) so that
+      // locateIssue can find the issue even when the directory was named after the
+      // issue title rather than its ID.
+      dirKey                 = Option(Paths.get(existing.directoryPath).getFileName)
+                                 .fold(existing.frontmatter.id)(p => BoardIssueId(p.toString))
+      boardPath             <- projectStorageService.projectRoot(workspace.projectId).map(_.toString)
       _                     <- boardRepository
-                                 .deleteIssue(workspace.localPath, existing.frontmatter.id)
+                                 .deleteIssue(boardPath, dirKey)
                                  .mapError(mapBoardError)
       _                     <- boardRepository
                                  .createIssue(
-                                   workspace.localPath,
+                                   boardPath,
                                    existing.column,
                                    updatedIssue,
                                  )
@@ -1251,14 +1289,16 @@ final case class IssueControllerLive(
       .map(_.filter(ws => workspaceFilter.forall(_.equalsIgnoreCase(ws.id))))
       .flatMap { workspaces =>
         ZIO.foreachPar(workspaces) { ws =>
-          ZIO
-            .foreachPar(boardColumns)(column => boardRepository.listIssues(ws.localPath, column))
-            .withParallelism(boardColumns.size)
-            .map(_.flatten.map(issue => boardToView(issue, ws.id)))
-            .catchAll {
-              case _: BoardError.BoardNotFound => ZIO.succeed(Nil)
-              case other                       => ZIO.fail(mapBoardError(other))
-            }
+          projectStorageService.projectRoot(ws.projectId).flatMap { root =>
+            ZIO
+              .foreachPar(boardColumns)(column => boardRepository.listIssues(root.toString, column))
+              .withParallelism(boardColumns.size)
+              .map(_.flatten.map(issue => boardToView(issue, ws.id)))
+              .catchAll {
+                case _: BoardError.BoardNotFound => ZIO.succeed(Nil)
+                case other                       => ZIO.fail(mapBoardError(other))
+              }
+          }
         }.withParallelism(math.max(1, math.min(workspaces.size, 4))).map(_.flatten)
       }
 
@@ -2049,8 +2089,9 @@ final case class IssueControllerLive(
       boardIssueId <- ZIO
                         .fromEither(BoardIssueId.fromString(issueId))
                         .mapError(err => PersistenceError.QueryFailed("board_issue_id", err))
+      boardPath    <- projectStorageService.projectRoot(workspace.projectId).map(_.toString)
       _            <- boardOrchestrator
-                        .markIssueStarted(workspace.localPath, boardIssueId, agentName, branchName)
+                        .markIssueStarted(boardPath, boardIssueId, agentName, branchName)
                         .mapError(mapBoardError)
     yield ()
 

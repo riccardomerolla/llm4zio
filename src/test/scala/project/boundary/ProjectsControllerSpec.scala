@@ -11,6 +11,7 @@ import analysis.control.{ WorkspaceAnalysisScheduler, WorkspaceAnalysisState, Wo
 import analysis.entity.AnalysisType
 import issues.entity.{ AgentIssue, IssueState }
 import orchestration.control.AgentRegistry
+import project.control.ProjectStorageService
 import project.entity.{ Project, ProjectEvent, ProjectRepository, ProjectSettings }
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ IssueId, ProjectId }
@@ -26,7 +27,6 @@ object ProjectsControllerSpec extends ZIOSpecDefault:
     id = ProjectId("proj-1"),
     name = "Platform",
     description = Some("Shared platform work"),
-    workspaceIds = List("ws-1"),
     settings = ProjectSettings(defaultAgent = Some("task-planner")),
     createdAt = now,
     updatedAt = now,
@@ -34,6 +34,7 @@ object ProjectsControllerSpec extends ZIOSpecDefault:
 
   private val sampleWorkspace = Workspace(
     id = "ws-1",
+    projectId = ProjectId("proj-1"),
     name = "gateway",
     localPath = "/tmp/gateway",
     defaultAgent = Some("codex"),
@@ -44,8 +45,6 @@ object ProjectsControllerSpec extends ZIOSpecDefault:
     createdAt = now,
     updatedAt = now,
   )
-
-  private val extraWorkspace = sampleWorkspace.copy(id = "ws-2", name = "planner", localPath = "/tmp/planner")
 
   private val sampleIssue = AgentIssue(
     id = IssueId("issue-1"),
@@ -69,35 +68,26 @@ object ProjectsControllerSpec extends ZIOSpecDefault:
     override def append(event: ProjectEvent): IO[PersistenceError, Unit] =
       ref.update { current =>
         event match
-          case e: ProjectEvent.ProjectCreated   =>
+          case e: ProjectEvent.ProjectCreated =>
             current.updated(
               e.projectId.value,
               Project(
                 id = e.projectId,
                 name = e.name,
                 description = e.description,
-                workspaceIds = Nil,
                 settings = ProjectSettings(),
                 createdAt = e.occurredAt,
                 updatedAt = e.occurredAt,
               ),
             )
-          case e: ProjectEvent.ProjectUpdated   =>
+          case e: ProjectEvent.ProjectUpdated =>
             current.updatedWith(e.projectId.value)(_.map(_.copy(
               name = e.name,
               description = e.description,
               settings = e.settings,
               updatedAt = e.occurredAt,
             )))
-          case e: ProjectEvent.WorkspaceAdded   =>
-            current.updatedWith(e.projectId.value)(_.map(project =>
-              project.copy(workspaceIds = (project.workspaceIds :+ e.workspaceId).distinct, updatedAt = e.occurredAt)
-            ))
-          case e: ProjectEvent.WorkspaceRemoved =>
-            current.updatedWith(e.projectId.value)(_.map(project =>
-              project.copy(workspaceIds = project.workspaceIds.filterNot(_ == e.workspaceId), updatedAt = e.occurredAt)
-            ))
-          case e: ProjectEvent.ProjectDeleted   =>
+          case e: ProjectEvent.ProjectDeleted =>
             current - e.projectId.value
       }
 
@@ -113,6 +103,8 @@ object ProjectsControllerSpec extends ZIOSpecDefault:
   final private class StubWorkspaceRepository(ref: Ref[Map[String, Workspace]]) extends WorkspaceRepository:
     override def append(event: WorkspaceEvent): IO[PersistenceError, Unit]                      = ZIO.unit
     override def list: IO[PersistenceError, List[Workspace]]                                    = ref.get.map(_.values.toList)
+    override def listByProject(projectId: ProjectId): IO[PersistenceError, List[Workspace]]     =
+      ref.get.map(_.values.filter(_.projectId == projectId).toList)
     override def get(id: String): IO[PersistenceError, Option[Workspace]]                       = ref.get.map(_.get(id))
     override def delete(id: String): IO[PersistenceError, Unit]                                 = ZIO.unit
     override def appendRun(event: WorkspaceRunEvent): IO[PersistenceError, Unit]                = ZIO.unit
@@ -168,6 +160,16 @@ object ProjectsControllerSpec extends ZIOSpecDefault:
         )
       )
 
+  private object StubProjectStorageService extends ProjectStorageService:
+    override def initProjectStorage(projectId: ProjectId): IO[PersistenceError, java.nio.file.Path]        =
+      ZIO.succeed(java.nio.file.Paths.get("/tmp", "projects", projectId.value))
+    override def projectRoot(projectId: ProjectId): UIO[java.nio.file.Path]                                =
+      ZIO.succeed(java.nio.file.Paths.get("/tmp", "projects", projectId.value))
+    override def boardPath(projectId: ProjectId): UIO[java.nio.file.Path]                                  =
+      ZIO.succeed(java.nio.file.Paths.get("/tmp", "projects", projectId.value, ".board"))
+    override def workspaceAnalysisPath(projectId: ProjectId, workspaceId: String): UIO[java.nio.file.Path] =
+      ZIO.succeed(java.nio.file.Paths.get("/tmp", "projects", projectId.value, "workspaces", workspaceId))
+
   private def makeRoutes(
     projectRef: Ref[Map[String, Project]],
     workspaceRef: Ref[Map[String, Workspace]],
@@ -179,6 +181,7 @@ object ProjectsControllerSpec extends ZIOSpecDefault:
       new StubIssueRepository(issues),
       StubAgentRegistry,
       StubAnalysisScheduler,
+      StubProjectStorageService,
     ).routes
 
   def spec: Spec[TestEnvironment & Scope, Any] =
@@ -229,25 +232,6 @@ object ProjectsControllerSpec extends ZIOSpecDefault:
           body.contains("Projects"),
           body.contains("Analysis Coverage"),
           body.contains("2/3 complete"),
-        )
-      },
-      test("POST /projects/:id/workspaces assigns workspace and redirects to workspaces tab") {
-        for
-          projectRef   <- Ref.make(Map(sampleProject.id.value -> sampleProject.copy(workspaceIds = Nil)))
-          workspaceRef <- Ref.make(Map(sampleWorkspace.id -> sampleWorkspace, extraWorkspace.id -> extraWorkspace))
-          routes        = makeRoutes(projectRef, workspaceRef)
-          req           = Request(
-                            method = Method.POST,
-                            url = URL(Path.decode("/projects/proj-1/workspaces")),
-                            body = Body.fromString("workspace_id=ws-2"),
-                          )
-          resp         <- routes.runZIO(req)
-          projectOpt   <- projectRef.get.map(_.get("proj-1"))
-          location      = resp.headers.header(Header.Location).map(_.renderedValue)
-        yield assertTrue(
-          resp.status == Status.SeeOther,
-          projectOpt.exists(_.workspaceIds.contains("ws-2")),
-          location.contains("/projects/proj-1?tab=workspaces"),
         )
       },
       test("POST /projects/:id/settings updates settings and redirects") {

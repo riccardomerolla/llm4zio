@@ -10,8 +10,10 @@ import agent.entity.{ Agent, AgentEvent, AgentRepository }
 import analysis.entity.{ AnalysisDoc, AnalysisEvent, AnalysisRepository, AnalysisType }
 import app.control.FileService
 import db.*
+import project.control.ProjectStorageService
 import shared.errors.PersistenceError
 import shared.ids.Ids
+import shared.ids.Ids.ProjectId
 import workspace.entity.*
 
 object AnalysisAgentRunnerSpec extends ZIOSpecDefault:
@@ -20,6 +22,7 @@ object AnalysisAgentRunnerSpec extends ZIOSpecDefault:
 
   private val workspace = Workspace(
     id = "ws-1",
+    projectId = ProjectId("test-project"),
     name = "billing-service",
     localPath = "",
     defaultAgent = None,
@@ -80,17 +83,19 @@ object AnalysisAgentRunnerSpec extends ZIOSpecDefault:
   )
 
   final private case class StubWorkspaceRepository(current: Option[Workspace]) extends WorkspaceRepository:
-    override def append(event: WorkspaceEvent): IO[PersistenceError, Unit]                      = unsupported("appendWorkspace")
-    override def list: IO[PersistenceError, List[Workspace]]                                    = ZIO.succeed(current.toList)
-    override def get(id: String): IO[PersistenceError, Option[Workspace]]                       = ZIO.succeed(current.filter(_.id == id))
-    override def delete(id: String): IO[PersistenceError, Unit]                                 = unsupported("deleteWorkspace")
-    override def appendRun(event: WorkspaceRunEvent): IO[PersistenceError, Unit]                =
+    override def append(event: WorkspaceEvent): IO[PersistenceError, Unit]                                 = unsupported("appendWorkspace")
+    override def list: IO[PersistenceError, List[Workspace]]                                               = ZIO.succeed(current.toList)
+    override def listByProject(projectId: shared.ids.Ids.ProjectId): IO[PersistenceError, List[Workspace]] =
+      ZIO.succeed(current.filter(_.projectId == projectId).toList)
+    override def get(id: String): IO[PersistenceError, Option[Workspace]]                                  = ZIO.succeed(current.filter(_.id == id))
+    override def delete(id: String): IO[PersistenceError, Unit]                                            = unsupported("deleteWorkspace")
+    override def appendRun(event: WorkspaceRunEvent): IO[PersistenceError, Unit]                           =
       unsupported("appendRun")
-    override def listRuns(workspaceId: String): IO[PersistenceError, List[WorkspaceRun]]        =
+    override def listRuns(workspaceId: String): IO[PersistenceError, List[WorkspaceRun]]                   =
       ZIO.succeed(Nil)
-    override def listRunsByIssueRef(issueRef: String): IO[PersistenceError, List[WorkspaceRun]] =
+    override def listRunsByIssueRef(issueRef: String): IO[PersistenceError, List[WorkspaceRun]]            =
       ZIO.succeed(Nil)
-    override def getRun(id: String): IO[PersistenceError, Option[WorkspaceRun]]                 =
+    override def getRun(id: String): IO[PersistenceError, Option[WorkspaceRun]]                            =
       ZIO.succeed(None)
 
   final private case class StubAgentRepository(agents: List[Agent]) extends AgentRepository:
@@ -186,6 +191,16 @@ object AnalysisAgentRunnerSpec extends ZIOSpecDefault:
   private def unsupportedDb[A](op: String): IO[PersistenceError, A] =
     ZIO.fail(PersistenceError.QueryFailed(op, "unsupported in test"))
 
+  final private case class StubProjectStorageService(repoPath: Path) extends ProjectStorageService:
+    override def initProjectStorage(projectId: shared.ids.Ids.ProjectId): IO[PersistenceError, Path]        =
+      ZIO.succeed(repoPath)
+    override def projectRoot(projectId: shared.ids.Ids.ProjectId): UIO[Path]                                =
+      ZIO.succeed(repoPath)
+    override def boardPath(projectId: shared.ids.Ids.ProjectId): UIO[Path]                                  =
+      ZIO.succeed(repoPath.resolve(".board"))
+    override def workspaceAnalysisPath(projectId: shared.ids.Ids.ProjectId, workspaceId: String): UIO[Path] =
+      ZIO.succeed(repoPath.resolve("workspaces").resolve(workspaceId).resolve(".llm4zio").resolve("analysis"))
+
   private def makeRunner(
     repoPath: Path,
     agents: List[Agent],
@@ -225,6 +240,7 @@ object AnalysisAgentRunnerSpec extends ZIOSpecDefault:
                        analysisRepository = StubAnalysisRepository(docsRef),
                        taskRepository = StubTaskRepository(settings),
                        fileService = fileService,
+                       projectStorageService = StubProjectStorageService(repoPath),
                        llmPromptExecutor = llmOutput.map(output =>
                          (workspace: Workspace, agent: Agent, prompt: String) =>
                            providerRef.update(_ :+ ProviderInvocation(workspace.localPath, agent.name, prompt)).as(output)
@@ -299,7 +315,12 @@ object AnalysisAgentRunnerSpec extends ZIOSpecDefault:
           (runner, processRef, _, _, gitRef, docsRef) = tuple
           doc                                        <- runner.runCodeReview("ws-1")
           savedContent                               <- ZIO.attemptBlocking(
-                                                          Files.readString(repoPath.resolve(AnalysisAgentRunner.CodeReviewRelativePath))
+                                                          Files.readString(
+                                                            repoPath
+                                                              .resolve("workspaces")
+                                                              .resolve("ws-1")
+                                                              .resolve(AnalysisAgentRunner.CodeReviewRelativePath)
+                                                          )
                                                         )
           processCalls                               <- processRef.get
           gitCalls                                   <- gitRef.get
@@ -317,7 +338,7 @@ object AnalysisAgentRunnerSpec extends ZIOSpecDefault:
           promptArg.contains("## Technical Debt Areas"),
           promptArg.contains(repoPath.toString),
           gitCalls.map(_.argv.drop(1)) == Vector(
-            List("add", "--", AnalysisAgentRunner.CodeReviewRelativePath),
+            List("add", "--", s"workspaces/ws-1/${AnalysisAgentRunner.CodeReviewRelativePath}"),
             List("diff", "--cached", "--quiet", "--exit-code"),
             List("commit", "-m", "Add code review analysis for billing-service"),
           ),
@@ -352,7 +373,12 @@ object AnalysisAgentRunnerSpec extends ZIOSpecDefault:
           processCalls                             <- processRef.get
           commandCalls                             <- commandRef.get
           savedContent                             <- ZIO.attemptBlocking(
-                                                        Files.readString(repoPath.resolve(AnalysisAgentRunner.CodeReviewRelativePath))
+                                                        Files.readString(
+                                                          repoPath
+                                                            .resolve("workspaces")
+                                                            .resolve("ws-1")
+                                                            .resolve(AnalysisAgentRunner.CodeReviewRelativePath)
+                                                        )
                                                       )
         yield assertTrue(
           doc.content == savedContent,
@@ -481,7 +507,12 @@ object AnalysisAgentRunnerSpec extends ZIOSpecDefault:
           gitCalls                                   <- gitRef.get
           docs                                       <- docsRef.get
           savedContent                               <- ZIO.attemptBlocking(
-                                                          Files.readString(repoPath.resolve(AnalysisAgentRunner.ArchitectureRelativePath))
+                                                          Files.readString(
+                                                            repoPath
+                                                              .resolve("workspaces")
+                                                              .resolve("ws-1")
+                                                              .resolve(AnalysisAgentRunner.ArchitectureRelativePath)
+                                                          )
                                                         )
           promptArg                                   = processCalls.head.argv.drop(1).mkString(" ")
         yield assertTrue(
@@ -492,7 +523,7 @@ object AnalysisAgentRunnerSpec extends ZIOSpecDefault:
           promptArg.contains("WORKSPACE-ARCH"),
           !promptArg.contains("GLOBAL-ARCH"),
           gitCalls.map(_.argv.drop(1)) == Vector(
-            List("add", "--", AnalysisAgentRunner.ArchitectureRelativePath),
+            List("add", "--", s"workspaces/ws-1/${AnalysisAgentRunner.ArchitectureRelativePath}"),
             List("diff", "--cached", "--quiet", "--exit-code"),
             List("commit", "-m", "Add architecture analysis for billing-service"),
           ),

@@ -37,6 +37,8 @@ case class ChatConversation(
   createdAt: Instant,
   updatedAt: Instant,
   createdBy: Option[String] = None,
+  projectId: Option[String] = None,
+  workspaceId: Option[String] = None,
 ) derives JsonCodec
 
 object ChatConversation:

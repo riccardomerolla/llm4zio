@@ -226,6 +226,8 @@ final case class ChatRepositoryLive(
       updatedAt = c.updatedAt,
       runId = c.runId,
       createdBy = c.createdBy,
+      projectId = c.projectId,
+      workspaceId = c.workspaceId,
     )
 
   private def fromConversationRow(r: ConversationRow): ChatConversation =
@@ -240,6 +242,8 @@ final case class ChatRepositoryLive(
       createdAt = r.createdAt,
       updatedAt = r.updatedAt,
       createdBy = r.createdBy,
+      projectId = r.projectId,
+      workspaceId = r.workspaceId,
     )
 
   private def toMessageRow(id: String, m: ConversationEntry): ChatMessageRow =

@@ -14,6 +14,8 @@ final case class ConversationRow(
   updatedAt: Instant,
   runId: Option[String],
   createdBy: Option[String],
+  projectId: Option[String] = None,
+  workspaceId: Option[String] = None,
 ) derives Schema
 
 final case class ChatMessageRow(

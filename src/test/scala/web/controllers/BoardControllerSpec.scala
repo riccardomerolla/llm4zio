@@ -9,6 +9,7 @@ import zio.test.*
 import board.boundary.*
 import board.control.*
 import board.entity.*
+import project.control.ProjectStorageService
 import shared.ids.Ids.BoardIssueId
 import shared.testfixtures.*
 import workspace.entity.*
@@ -17,6 +18,7 @@ object BoardControllerSpec extends ZIOSpecDefault:
 
   private val workspace = Workspace(
     id = "ws-1",
+    projectId = shared.ids.Ids.ProjectId("test-project"),
     name = "Gateway",
     localPath = "/tmp/ws-1",
     defaultAgent = Some("codex"),
@@ -111,12 +113,25 @@ object BoardControllerSpec extends ZIOSpecDefault:
 
     override def approveIssue(workspacePath: String, issueId: BoardIssueId): IO[BoardError, Unit] = ZIO.unit
 
+  private object StubProjectStorageService extends ProjectStorageService:
+    override def initProjectStorage(projectId: shared.ids.Ids.ProjectId)
+      : IO[shared.errors.PersistenceError, java.nio.file.Path] =
+      ZIO.succeed(java.nio.file.Paths.get("/tmp/test-project"))
+    override def projectRoot(projectId: shared.ids.Ids.ProjectId): UIO[java.nio.file.Path] =
+      ZIO.succeed(java.nio.file.Paths.get("/tmp/test-project"))
+    override def boardPath(projectId: shared.ids.Ids.ProjectId): UIO[java.nio.file.Path]   =
+      ZIO.succeed(java.nio.file.Paths.get("/tmp/test-project/.board"))
+    override def workspaceAnalysisPath(projectId: shared.ids.Ids.ProjectId, workspaceId: String)
+      : UIO[java.nio.file.Path] =
+      ZIO.succeed(java.nio.file.Paths.get(s"/tmp/test-project/workspaces/$workspaceId/.llm4zio/analysis"))
+
   private def controller(repo: BoardRepository): BoardControllerLive =
     BoardControllerLive(
       repo,
       StubBoardOrchestrator,
       StubWorkspaceRepository.single(workspace),
       IssueMarkdownParserLive(),
+      StubProjectStorageService,
     )
 
   def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("BoardControllerSpec")(

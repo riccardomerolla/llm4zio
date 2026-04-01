@@ -5,7 +5,7 @@ import java.time.Instant
 import zio.json.JsonCodec
 import zio.schema.{ Schema, derived }
 
-import shared.ids.Ids.{ ConversationId, MessageId, TaskRunId }
+import shared.ids.Ids.{ ConversationId, MessageId, ProjectId, TaskRunId }
 
 enum ConversationState derives JsonCodec, Schema:
   case Active(startedAt: Instant)
@@ -50,6 +50,8 @@ final case class Conversation(
   messages: List[Message],
   runId: Option[TaskRunId],
   createdBy: Option[String],
+  projectId: Option[ProjectId] = None,
+  workspaceId: Option[String] = None,
 ) derives JsonCodec, Schema
 
 object Conversation:
@@ -84,6 +86,8 @@ object Conversation:
                   messages = Nil,
                   runId = created.runId,
                   createdBy = created.createdBy,
+                  projectId = created.projectId,
+                  workspaceId = created.workspaceId,
                 )
               )
             )

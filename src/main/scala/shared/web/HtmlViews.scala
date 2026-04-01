@@ -289,8 +289,19 @@ object HtmlViews:
     workspaces: List[(String, String)],
     workReport: Option[IssueWorkReport] = None,
     decisions: List[Decision] = Nil,
+    flash: Option[String] = None,
   ): String =
-    IssuesView.detail(issue, issueRuns, availableAgents, analysisDocs, mergeHistory, workspaces, workReport, decisions)
+    IssuesView.detail(
+      issue,
+      issueRuns,
+      availableAgents,
+      analysisDocs,
+      mergeHistory,
+      workspaces,
+      workReport,
+      decisions,
+      flash,
+    )
 
   def issueEditForm(issue: AgentIssueView, workspaces: List[(String, String)]): String =
     IssuesView.editForm(issue, workspaces)

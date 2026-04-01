@@ -27,18 +27,6 @@ object ProjectEvent:
     occurredAt: Instant,
   ) extends ProjectEvent
 
-  final case class WorkspaceAdded(
-    projectId: ProjectId,
-    workspaceId: String,
-    occurredAt: Instant,
-  ) extends ProjectEvent
-
-  final case class WorkspaceRemoved(
-    projectId: ProjectId,
-    workspaceId: String,
-    occurredAt: Instant,
-  ) extends ProjectEvent
-
   final case class ProjectDeleted(
     projectId: ProjectId,
     occurredAt: Instant,
