@@ -610,8 +610,9 @@ object IssuesView:
     workspaces: List[(String, String)],
     workReport: Option[IssueWorkReport] = None,
     decisions: List[Decision] = Nil,
+    flash: Option[String] = None,
   ): String =
-    detailPage(issue, issueRuns, availableAgents, analysisDocs, mergeHistory, workspaces, workReport, decisions)
+    detailPage(issue, issueRuns, availableAgents, analysisDocs, mergeHistory, workspaces, workReport, decisions, flash)
 
   private def detailPage(
     issue: AgentIssueView,
@@ -622,6 +623,7 @@ object IssuesView:
     workspaces: List[(String, String)],
     workReport: Option[IssueWorkReport],
     decisions: List[Decision] = Nil,
+    flash: Option[String] = None,
   ): String =
     val issueIdStr      = safe(issue.id, "-")
     val selectedAgent   = safe(issue.preferredAgent).match
@@ -643,6 +645,9 @@ object IssuesView:
 
     Layout.page(s"Issue #$issueIdStr", "/issues")(
       div(cls := "mt-2 mx-auto max-w-6xl space-y-4")(
+        flash.map(msg =>
+          div(cls := "rounded-xl border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100")(msg)
+        ).getOrElse(frag()),
         // ── breadcrumb ──────────────────────────────────────────────────────
         div(cls := "flex items-center gap-3")(
           a(href := "/board", cls := "text-sm font-medium text-indigo-300 hover:text-indigo-200")("← Board"),

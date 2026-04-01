@@ -180,6 +180,7 @@ final case class IssueControllerLive(
       ErrorHandlingMiddleware.fromPersistence {
         for
           workspaceHint                                      <- ZIO.succeed(req.queryParam("workspace").map(_.trim).filter(_.nonEmpty))
+          flash                                               = req.queryParam("flash").map(_.trim).filter(_.nonEmpty)
           boardIssueOpt                                      <- resolveWorkspaceBoardIssue(id, workspaceHint)
           issueRuns                                          <- workspaceRepository.listRunsByIssueRef(s"#$id").mapError(mapIssueRepoError)
           workspaces                                         <- workspaceRepository.list.mapError(mapIssueRepoError)
@@ -220,6 +221,7 @@ final case class IssueControllerLive(
             workspaces.map(ws => ws.id -> ws.name),
             workReport,
             decisions,
+            flash,
           )
         )
       }
@@ -336,7 +338,7 @@ final case class IssueControllerLive(
     },
     Method.POST / "issues" / string("id") / "approve"                -> handler { (id: String, req: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
-        for
+        val approve: IO[PersistenceError, Response] = for
           form      <- parseForm(req)
           issueId    = IssueId(id)
           issue     <- issueRepository.get(issueId).mapError(mapIssueRepoError)
@@ -361,6 +363,14 @@ final case class IssueControllerLive(
                          now = now,
                        )
         yield Response(status = Status.SeeOther, headers = Headers(Header.Custom("Location", s"/issues/$id")))
+        approve.catchSome { case PersistenceError.QueryFailed("approve_issue", cause) =>
+          ZIO.succeed(
+            Response(
+              status  = Status.SeeOther,
+              headers = Headers(Header.Custom("Location", s"/issues/$id?flash=${urlEncode(cause)}")),
+            )
+          )
+        }
       }
     },
     Method.POST / "issues" / string("id") / "assign"                 -> handler { (id: String, req: Request) =>
