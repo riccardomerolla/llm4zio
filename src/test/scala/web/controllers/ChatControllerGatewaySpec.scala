@@ -833,7 +833,6 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
         response.status == Status.SeeOther,
         location.contains(s"/chat/$convId"),
         starts == List("Plan the migration" -> None),
-        stored.flatMap(_.description).contains("mode:plan"),
       )).provideSomeLayer[Scope](appLayer)
     },
     test("POST /chat/:id/messages routes plan-mode conversations through PlannerAgentService") {

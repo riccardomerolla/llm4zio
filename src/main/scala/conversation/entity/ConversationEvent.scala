@@ -5,7 +5,7 @@ import java.time.Instant
 import zio.json.JsonCodec
 import zio.schema.{ Schema, derived }
 
-import shared.ids.Ids.{ ConversationId, TaskRunId }
+import shared.ids.Ids.{ ConversationId, ProjectId, TaskRunId }
 
 sealed trait ConversationEvent derives JsonCodec, Schema:
   def conversationId: ConversationId
@@ -20,6 +20,8 @@ object ConversationEvent:
     runId: Option[TaskRunId],
     createdBy: Option[String],
     occurredAt: Instant,
+    projectId: Option[ProjectId] = None,
+    workspaceId: Option[String] = None,
   ) extends ConversationEvent
 
   final case class MessageSent(
