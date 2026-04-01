@@ -67,6 +67,7 @@ object AutoDispatcherSpec extends ZIOSpecDefault:
 
   private val workspace = Workspace(
     id = "ws-1",
+    projectId = shared.ids.Ids.ProjectId("test-project"),
     name = "Workspace 1",
     localPath = "/tmp/ws-1",
     defaultAgent = None,
@@ -120,6 +121,8 @@ object AutoDispatcherSpec extends ZIOSpecDefault:
       ZIO.dieMessage("unused")
     override def list: IO[PersistenceError, List[Workspace]]                                       =
       ZIO.succeed(List(workspace))
+    override def listByProject(projectId: shared.ids.Ids.ProjectId): IO[PersistenceError, List[Workspace]] =
+      ZIO.succeed(List(workspace).filter(_.projectId == projectId))
     override def get(id: String): IO[PersistenceError, Option[Workspace]]                          =
       ZIO.succeed(Option.when(id == workspace.id)(workspace))
     override def delete(id: String): IO[PersistenceError, Unit]                                    =

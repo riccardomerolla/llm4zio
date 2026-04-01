@@ -17,6 +17,7 @@ object BoardControllerSpec extends ZIOSpecDefault:
 
   private val workspace = Workspace(
     id = "ws-1",
+    projectId = shared.ids.Ids.ProjectId("test-project"),
     name = "Gateway",
     localPath = "/tmp/ws-1",
     defaultAgent = Some("codex"),

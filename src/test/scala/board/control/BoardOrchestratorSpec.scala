@@ -147,6 +147,8 @@ object BoardOrchestratorSpec extends ZIOSpecDefault:
   ) extends WorkspaceRepository:
     override def append(event: WorkspaceEvent): IO[PersistenceError, Unit] = ZIO.unit
     override def list: IO[PersistenceError, List[Workspace]]               = ZIO.succeed(List(workspace))
+    override def listByProject(projectId: ProjectId): IO[PersistenceError, List[Workspace]] =
+      ZIO.succeed(List(workspace).filter(_.projectId == projectId))
     override def get(id: String): IO[PersistenceError, Option[Workspace]]  =
       ZIO.succeed(Option.when(id == workspace.id)(workspace))
     override def delete(id: String): IO[PersistenceError, Unit]            = ZIO.unit
@@ -253,6 +255,7 @@ object BoardOrchestratorSpec extends ZIOSpecDefault:
       runService      = StubWorkspaceRunService(assignedRef, cleanupRef)
       workspace       = Workspace(
                           id = "ws-1",
+                          projectId = ProjectId("test-project"),
                           name = "workspace",
                           localPath = workspacePath,
                           defaultAgent = Some("agent-default"),

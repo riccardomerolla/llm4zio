@@ -19,11 +19,13 @@ object RunSessionManagerSpec extends ZIOSpecDefault:
     extends WorkspaceRepository:
     override def append(event: WorkspaceEvent): IO[PersistenceError, Unit] = ZIO.unit
     override def list: IO[PersistenceError, List[Workspace]]               = ZIO.succeed(Nil)
+    override def listByProject(projectId: shared.ids.Ids.ProjectId): IO[PersistenceError, List[Workspace]] = ZIO.succeed(Nil)
     override def get(id: String): IO[PersistenceError, Option[Workspace]]  =
       ZIO.succeed(
         Some(
           Workspace(
             id = "ws-1",
+            projectId = shared.ids.Ids.ProjectId("test-project"),
             name = "repo",
             localPath = "/tmp",
             defaultAgent = None,

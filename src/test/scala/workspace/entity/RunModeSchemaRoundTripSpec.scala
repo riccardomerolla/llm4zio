@@ -7,6 +7,8 @@ import zio.schema.*
 import zio.schema.codec.JsonCodec
 import zio.test.*
 
+import shared.ids.Ids.ProjectId
+
 /** Regression test: verifies that RunMode.Host survives a ZIO Schema JSON codec round-trip and still matches in a Scala
   * pattern match. This is the exact codec path used by SchemaBinaryCodec inside WorkspaceRepositoryES.
   */
@@ -33,6 +35,7 @@ object RunModeSchemaRoundTripSpec extends ZIOSpecDefault:
       val now      = Instant.parse("2026-02-27T10:00:00Z")
       val ev       = WorkspaceEvent.Created(
         workspaceId = "ws-1",
+        projectId = ProjectId("test-project"),
         name = "my-api",
         localPath = "/tmp/my-api",
         defaultAgent = Some("gemini"),
@@ -46,11 +49,11 @@ object RunModeSchemaRoundTripSpec extends ZIOSpecDefault:
       assertTrue(
         decoded.isRight,
         decoded.exists {
-          case WorkspaceEvent.Created(_, _, _, _, _, _, runMode, _) =>
+          case WorkspaceEvent.Created(_, _, _, _, _, _, _, runMode, _) =>
             runMode match
               case RunMode.Host => true
               case _            => false
-          case _                                                    => false
+          case _                                                       => false
         },
       )
     },

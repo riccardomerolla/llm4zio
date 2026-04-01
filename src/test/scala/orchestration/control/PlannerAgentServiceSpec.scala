@@ -307,6 +307,7 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
 
   private val testWorkspace = Workspace(
     id = "ws-1",
+    projectId = shared.ids.Ids.ProjectId("test-project"),
     name = "Planner Workspace",
     localPath = "/tmp/planner-workspace",
     defaultAgent = Some("task-planner"),
@@ -322,6 +323,8 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
     override def append(event: WorkspaceEvent): IO[shared.errors.PersistenceError, Unit]                      = ZIO.unit
     override def list: IO[shared.errors.PersistenceError, List[Workspace]]                                    =
       ZIO.succeed(workspaces.values.toList)
+    override def listByProject(projectId: shared.ids.Ids.ProjectId): IO[shared.errors.PersistenceError, List[Workspace]] =
+      ZIO.succeed(workspaces.values.filter(_.projectId == projectId).toList)
     override def get(id: String): IO[shared.errors.PersistenceError, Option[Workspace]]                       =
       ZIO.succeed(workspaces.get(id))
     override def delete(id: String): IO[shared.errors.PersistenceError, Unit]                                 = ZIO.unit

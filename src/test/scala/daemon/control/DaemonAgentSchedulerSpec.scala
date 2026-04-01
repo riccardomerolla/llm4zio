@@ -83,6 +83,7 @@ object DaemonAgentSchedulerSpec extends ZIOSpecDefault:
                      )
       workspace    = Workspace(
                        id = "ws-1",
+                       projectId = ProjectId("test-project"),
                        name = "Workspace One",
                        localPath = workspacePath,
                        defaultAgent = Some("code-agent"),

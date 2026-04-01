@@ -24,6 +24,7 @@ object WorkspacesViewSpec extends ZIOSpecDefault:
 
   private val sampleWs = Workspace(
     id = "ws-1",
+    projectId = shared.ids.Ids.ProjectId("test-project"),
     name = "my-api",
     localPath = "/home/user/my-api",
     defaultAgent = Some("code-agent"),

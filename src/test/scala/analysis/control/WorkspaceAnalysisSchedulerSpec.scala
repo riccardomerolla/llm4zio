@@ -10,7 +10,7 @@ import analysis.entity.{ AnalysisDoc, AnalysisEvent, AnalysisRepository, Analysi
 import board.entity.*
 import db.*
 import shared.errors.PersistenceError
-import shared.ids.Ids.{ AgentId, AnalysisDocId, BoardIssueId }
+import shared.ids.Ids.{ AgentId, AnalysisDocId, BoardIssueId, ProjectId }
 import shared.testfixtures.*
 import workspace.entity.*
 
@@ -140,6 +140,7 @@ object WorkspaceAnalysisSchedulerSpec extends ZIOSpecDefault:
                          List(
                            Workspace(
                              id = "ws-1",
+                             projectId = ProjectId("test-project"),
                              name = "workspace-1",
                              localPath = "/tmp/ws-1",
                              defaultAgent = None,

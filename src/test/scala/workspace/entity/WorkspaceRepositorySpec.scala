@@ -103,6 +103,7 @@ object WorkspaceRepositorySpec extends ZIOSpecDefault:
           yield assertTrue(
             got.isDefined &&
             got.get.name == "my-api" &&
+            got.get.projectId == ProjectId("test-project") &&
             got.get.cliTool == "gemini" &&
             got.get.defaultBranch == "main" &&
             got.get.enabled == true
@@ -280,6 +281,37 @@ object WorkspaceRepositorySpec extends ZIOSpecDefault:
               region = Some("eu-west-1"),
               network = Some("none"),
             ))
+          )).provideLayer(layerFor(dir))
+        }
+      },
+      test("listByProject returns only workspaces with matching projectId") {
+        withTempDir { dir =>
+          val otherProjectWs = WorkspaceEvent.Created(
+            workspaceId = "ws-other",
+            projectId = ProjectId("other-project"),
+            name = "other-api",
+            localPath = "/tmp/other-api",
+            defaultAgent = None,
+            description = None,
+            cliTool = "codex",
+            runMode = RunMode.Host,
+            occurredAt = now,
+          )
+          (for
+            svc     <- ZIO.service[DataStoreModule.DataStoreService]
+            repo     = WorkspaceRepositoryES(svc)
+            _       <- repo.append(createdWs)
+            _       <- repo.append(createdDockerWs)
+            _       <- repo.append(otherProjectWs)
+            byTest  <- repo.listByProject(ProjectId("test-project"))
+            byOther <- repo.listByProject(ProjectId("other-project"))
+            byNone  <- repo.listByProject(ProjectId("no-such-project"))
+          yield assertTrue(
+            byTest.map(_.id).toSet == Set("ws-1", "ws-docker"),
+            byOther.map(_.id) == List("other-api").map(_ => "ws-other"),
+            byOther.length == 1,
+            byOther.head.id == "ws-other",
+            byNone.isEmpty,
           )).provideLayer(layerFor(dir))
         }
       },

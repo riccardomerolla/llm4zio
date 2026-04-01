@@ -12,6 +12,7 @@ import app.control.FileService
 import db.*
 import shared.errors.PersistenceError
 import shared.ids.Ids
+import shared.ids.Ids.ProjectId
 import workspace.entity.*
 
 object AnalysisAgentRunnerSpec extends ZIOSpecDefault:
@@ -20,6 +21,7 @@ object AnalysisAgentRunnerSpec extends ZIOSpecDefault:
 
   private val workspace = Workspace(
     id = "ws-1",
+    projectId = ProjectId("test-project"),
     name = "billing-service",
     localPath = "",
     defaultAgent = None,
@@ -82,6 +84,8 @@ object AnalysisAgentRunnerSpec extends ZIOSpecDefault:
   final private case class StubWorkspaceRepository(current: Option[Workspace]) extends WorkspaceRepository:
     override def append(event: WorkspaceEvent): IO[PersistenceError, Unit]                      = unsupported("appendWorkspace")
     override def list: IO[PersistenceError, List[Workspace]]                                    = ZIO.succeed(current.toList)
+    override def listByProject(projectId: shared.ids.Ids.ProjectId): IO[PersistenceError, List[Workspace]] =
+      ZIO.succeed(current.filter(_.projectId == projectId).toList)
     override def get(id: String): IO[PersistenceError, Option[Workspace]]                       = ZIO.succeed(current.filter(_.id == id))
     override def delete(id: String): IO[PersistenceError, Unit]                                 = unsupported("deleteWorkspace")
     override def appendRun(event: WorkspaceRunEvent): IO[PersistenceError, Unit]                =

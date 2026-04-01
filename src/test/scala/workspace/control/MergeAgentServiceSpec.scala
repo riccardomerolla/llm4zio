@@ -67,6 +67,8 @@ object MergeAgentServiceSpec extends ZIOSpecDefault:
   ) extends WorkspaceRepository:
     override def append(event: WorkspaceEvent): IO[PersistenceError, Unit] = ZIO.unit
     override def list: IO[PersistenceError, List[Workspace]]               = ZIO.succeed(workspaces.values.toList)
+    override def listByProject(projectId: shared.ids.Ids.ProjectId): IO[PersistenceError, List[Workspace]] =
+      ZIO.succeed(workspaces.values.filter(_.projectId == projectId).toList)
     override def get(id: String): IO[PersistenceError, Option[Workspace]]  = ZIO.succeed(workspaces.get(id))
     override def delete(id: String): IO[PersistenceError, Unit]            = ZIO.unit
 
@@ -226,6 +228,7 @@ object MergeAgentServiceSpec extends ZIOSpecDefault:
                         )
       workspace       = Workspace(
                           id = "ws-1",
+                          projectId = shared.ids.Ids.ProjectId("test-project"),
                           name = "repo",
                           localPath = "/tmp/repo",
                           defaultAgent = None,

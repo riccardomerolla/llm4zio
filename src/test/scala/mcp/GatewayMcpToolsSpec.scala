@@ -75,6 +75,7 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
     import workspace.entity.*
     private val testWorkspace                                                                   = Workspace(
       id = "ws1",
+      projectId = shared.ids.Ids.ProjectId("test-project"),
       name = "main-repo",
       localPath = "/repos/main",
       defaultAgent = None,
@@ -87,6 +88,8 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
     )
     override def append(event: WorkspaceEvent): IO[PersistenceError, Unit]                      = ZIO.unit
     override def list: IO[PersistenceError, List[Workspace]]                                    = ZIO.succeed(List(testWorkspace))
+    override def listByProject(projectId: shared.ids.Ids.ProjectId): IO[PersistenceError, List[Workspace]] =
+      ZIO.succeed(List(testWorkspace).filter(_.projectId == projectId))
     override def get(id: String): IO[PersistenceError, Option[Workspace]]                       = list.map(_.find(_.id == id))
     override def delete(id: String): IO[PersistenceError, Unit]                                 = ZIO.unit
     override def appendRun(event: WorkspaceRunEvent): IO[PersistenceError, Unit]                = ZIO.unit

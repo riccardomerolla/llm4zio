@@ -34,6 +34,7 @@ object ProjectsControllerSpec extends ZIOSpecDefault:
 
   private val sampleWorkspace = Workspace(
     id = "ws-1",
+    projectId = ProjectId("proj-1"),
     name = "gateway",
     localPath = "/tmp/gateway",
     defaultAgent = Some("codex"),
@@ -113,6 +114,8 @@ object ProjectsControllerSpec extends ZIOSpecDefault:
   final private class StubWorkspaceRepository(ref: Ref[Map[String, Workspace]]) extends WorkspaceRepository:
     override def append(event: WorkspaceEvent): IO[PersistenceError, Unit]                      = ZIO.unit
     override def list: IO[PersistenceError, List[Workspace]]                                    = ref.get.map(_.values.toList)
+    override def listByProject(projectId: ProjectId): IO[PersistenceError, List[Workspace]]     =
+      ref.get.map(_.values.filter(_.projectId == projectId).toList)
     override def get(id: String): IO[PersistenceError, Option[Workspace]]                       = ref.get.map(_.get(id))
     override def delete(id: String): IO[PersistenceError, Unit]                                 = ZIO.unit
     override def appendRun(event: WorkspaceRunEvent): IO[PersistenceError, Unit]                = ZIO.unit

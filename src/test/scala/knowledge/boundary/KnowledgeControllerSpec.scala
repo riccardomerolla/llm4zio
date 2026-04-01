@@ -96,6 +96,7 @@ object KnowledgeControllerSpec extends ZIOSpecDefault:
   private val stubWorkspaceRepo: WorkspaceRepository = new WorkspaceRepository:
     override def append(event: workspace.entity.WorkspaceEvent): IO[PersistenceError, Unit]                      = ZIO.unit
     override def list: IO[PersistenceError, List[Workspace]]                                                     = ZIO.succeed(Nil)
+    override def listByProject(projectId: shared.ids.Ids.ProjectId): IO[PersistenceError, List[Workspace]]       = ZIO.succeed(Nil)
     override def get(id: String): IO[PersistenceError, Option[Workspace]]                                        = ZIO.succeed(None)
     override def delete(id: String): IO[PersistenceError, Unit]                                                  = ZIO.unit
     override def appendRun(event: workspace.entity.WorkspaceRunEvent): IO[PersistenceError, Unit]                = ZIO.unit

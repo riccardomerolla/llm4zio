@@ -51,6 +51,7 @@ object IssueControllerSpec extends ZIOSpecDefault:
 
   private val sampleWorkspace = Workspace(
     id = "ws-1",
+    projectId = shared.ids.Ids.ProjectId("test-project"),
     name = "gateway",
     localPath = "/tmp/gateway",
     defaultAgent = Some("scala-agent"),
