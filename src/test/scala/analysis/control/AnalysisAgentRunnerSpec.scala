@@ -83,19 +83,19 @@ object AnalysisAgentRunnerSpec extends ZIOSpecDefault:
   )
 
   final private case class StubWorkspaceRepository(current: Option[Workspace]) extends WorkspaceRepository:
-    override def append(event: WorkspaceEvent): IO[PersistenceError, Unit]                      = unsupported("appendWorkspace")
-    override def list: IO[PersistenceError, List[Workspace]]                                    = ZIO.succeed(current.toList)
+    override def append(event: WorkspaceEvent): IO[PersistenceError, Unit]                                 = unsupported("appendWorkspace")
+    override def list: IO[PersistenceError, List[Workspace]]                                               = ZIO.succeed(current.toList)
     override def listByProject(projectId: shared.ids.Ids.ProjectId): IO[PersistenceError, List[Workspace]] =
       ZIO.succeed(current.filter(_.projectId == projectId).toList)
-    override def get(id: String): IO[PersistenceError, Option[Workspace]]                       = ZIO.succeed(current.filter(_.id == id))
-    override def delete(id: String): IO[PersistenceError, Unit]                                 = unsupported("deleteWorkspace")
-    override def appendRun(event: WorkspaceRunEvent): IO[PersistenceError, Unit]                =
+    override def get(id: String): IO[PersistenceError, Option[Workspace]]                                  = ZIO.succeed(current.filter(_.id == id))
+    override def delete(id: String): IO[PersistenceError, Unit]                                            = unsupported("deleteWorkspace")
+    override def appendRun(event: WorkspaceRunEvent): IO[PersistenceError, Unit]                           =
       unsupported("appendRun")
-    override def listRuns(workspaceId: String): IO[PersistenceError, List[WorkspaceRun]]        =
+    override def listRuns(workspaceId: String): IO[PersistenceError, List[WorkspaceRun]]                   =
       ZIO.succeed(Nil)
-    override def listRunsByIssueRef(issueRef: String): IO[PersistenceError, List[WorkspaceRun]] =
+    override def listRunsByIssueRef(issueRef: String): IO[PersistenceError, List[WorkspaceRun]]            =
       ZIO.succeed(Nil)
-    override def getRun(id: String): IO[PersistenceError, Option[WorkspaceRun]]                 =
+    override def getRun(id: String): IO[PersistenceError, Option[WorkspaceRun]]                            =
       ZIO.succeed(None)
 
   final private case class StubAgentRepository(agents: List[Agent]) extends AgentRepository:
@@ -192,11 +192,11 @@ object AnalysisAgentRunnerSpec extends ZIOSpecDefault:
     ZIO.fail(PersistenceError.QueryFailed(op, "unsupported in test"))
 
   final private case class StubProjectStorageService(repoPath: Path) extends ProjectStorageService:
-    override def initProjectStorage(projectId: shared.ids.Ids.ProjectId): IO[PersistenceError, Path] =
+    override def initProjectStorage(projectId: shared.ids.Ids.ProjectId): IO[PersistenceError, Path]        =
       ZIO.succeed(repoPath)
-    override def projectRoot(projectId: shared.ids.Ids.ProjectId): UIO[Path] =
+    override def projectRoot(projectId: shared.ids.Ids.ProjectId): UIO[Path]                                =
       ZIO.succeed(repoPath)
-    override def boardPath(projectId: shared.ids.Ids.ProjectId): UIO[Path] =
+    override def boardPath(projectId: shared.ids.Ids.ProjectId): UIO[Path]                                  =
       ZIO.succeed(repoPath.resolve(".board"))
     override def workspaceAnalysisPath(projectId: shared.ids.Ids.ProjectId, workspaceId: String): UIO[Path] =
       ZIO.succeed(repoPath.resolve("workspaces").resolve(workspaceId).resolve(".llm4zio").resolve("analysis"))

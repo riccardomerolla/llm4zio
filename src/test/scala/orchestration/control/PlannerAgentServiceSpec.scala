@@ -18,6 +18,7 @@ import issues.entity.{ IssueEvent, IssueRepository }
 import llm4zio.core.*
 import llm4zio.providers.{ GeminiCliExecutor, HttpClient }
 import plan.entity.*
+import project.control.ProjectStorageService
 import prompts.PromptLoader
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ BoardIssueId, IssueId, PlanId, SpecificationId }
@@ -323,7 +324,8 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
     override def append(event: WorkspaceEvent): IO[shared.errors.PersistenceError, Unit]                      = ZIO.unit
     override def list: IO[shared.errors.PersistenceError, List[Workspace]]                                    =
       ZIO.succeed(workspaces.values.toList)
-    override def listByProject(projectId: shared.ids.Ids.ProjectId): IO[shared.errors.PersistenceError, List[Workspace]] =
+    override def listByProject(projectId: shared.ids.Ids.ProjectId)
+      : IO[shared.errors.PersistenceError, List[Workspace]] =
       ZIO.succeed(workspaces.values.filter(_.projectId == projectId).toList)
     override def get(id: String): IO[shared.errors.PersistenceError, Option[Workspace]]                       =
       ZIO.succeed(workspaces.get(id))
@@ -507,6 +509,24 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
             )
     }
 
+  private object StubProjectStorageService extends ProjectStorageService:
+    override def initProjectStorage(projectId: shared.ids.Ids.ProjectId): IO[PersistenceError, java.nio.file.Path] =
+      ZIO.succeed(java.nio.file.Paths.get(s"/tmp/projects/${projectId.value}"))
+    override def projectRoot(projectId: shared.ids.Ids.ProjectId): UIO[java.nio.file.Path]                         =
+      ZIO.succeed(java.nio.file.Paths.get(s"/tmp/projects/${projectId.value}"))
+    override def boardPath(projectId: shared.ids.Ids.ProjectId): UIO[java.nio.file.Path]                           =
+      ZIO.succeed(java.nio.file.Paths.get(s"/tmp/projects/${projectId.value}/.board"))
+    override def workspaceAnalysisPath(
+      projectId: shared.ids.Ids.ProjectId,
+      workspaceId: String,
+    ): UIO[java.nio.file.Path] =
+      ZIO.succeed(
+        java.nio.file.Paths.get(s"/tmp/projects/${projectId.value}/workspaces/$workspaceId/.llm4zio/analysis")
+      )
+
+  private val stubProjectStorageServiceLayer: ULayer[ProjectStorageService] =
+    ZLayer.succeed(StubProjectStorageService)
+
   private val plannerLayer
     : ZLayer[
       Any,
@@ -539,6 +559,7 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
       startupAiConfigLayer,
       PromptLoader.reloading,
       noOpGovernancePolicyService,
+      stubProjectStorageServiceLayer,
       PlannerAgentService.live,
     )
 
@@ -562,6 +583,7 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
       startupAiConfigLayer,
       PromptLoader.reloading,
       noOpGovernancePolicyService,
+      stubProjectStorageServiceLayer,
       PlannerAgentService.live,
     )
 
@@ -593,6 +615,7 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
       startupAiConfigLayer,
       PromptLoader.reloading,
       noOpGovernancePolicyService,
+      stubProjectStorageServiceLayer,
       PlannerAgentService.live,
     )
 
@@ -624,6 +647,7 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
       startupAiConfigLayer,
       PromptLoader.reloading,
       noOpGovernancePolicyService,
+      stubProjectStorageServiceLayer,
       PlannerAgentService.live,
     )
 
@@ -655,6 +679,7 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
       startupAiConfigLayer,
       PromptLoader.reloading,
       noOpGovernancePolicyService,
+      stubProjectStorageServiceLayer,
       PlannerAgentService.live,
     )
 
@@ -686,6 +711,7 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
       startupAiConfigLayer,
       PromptLoader.reloading,
       blockingGovernancePolicyService,
+      stubProjectStorageServiceLayer,
       PlannerAgentService.live,
     )
 
@@ -788,7 +814,7 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
           state     <- awaitSettledPreview(service, start.conversationId)
           result    <- service.confirmPlan(start.conversationId)
           events    <- ref.get
-          todo      <- boardRepo.listIssues(testWorkspace.localPath, BoardColumn.Todo)
+          todo      <- boardRepo.listIssues("/tmp/projects/test-project", BoardColumn.Todo)
         yield assertTrue(
           result.issueIds.size == 1,
           events.isEmpty,

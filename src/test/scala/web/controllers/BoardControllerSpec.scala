@@ -114,13 +114,15 @@ object BoardControllerSpec extends ZIOSpecDefault:
     override def approveIssue(workspacePath: String, issueId: BoardIssueId): IO[BoardError, Unit] = ZIO.unit
 
   private object StubProjectStorageService extends ProjectStorageService:
-    override def initProjectStorage(projectId: shared.ids.Ids.ProjectId): IO[shared.errors.PersistenceError, java.nio.file.Path] =
+    override def initProjectStorage(projectId: shared.ids.Ids.ProjectId)
+      : IO[shared.errors.PersistenceError, java.nio.file.Path] =
       ZIO.succeed(java.nio.file.Paths.get("/tmp/test-project"))
     override def projectRoot(projectId: shared.ids.Ids.ProjectId): UIO[java.nio.file.Path] =
       ZIO.succeed(java.nio.file.Paths.get("/tmp/test-project"))
-    override def boardPath(projectId: shared.ids.Ids.ProjectId): UIO[java.nio.file.Path] =
+    override def boardPath(projectId: shared.ids.Ids.ProjectId): UIO[java.nio.file.Path]   =
       ZIO.succeed(java.nio.file.Paths.get("/tmp/test-project/.board"))
-    override def workspaceAnalysisPath(projectId: shared.ids.Ids.ProjectId, workspaceId: String): UIO[java.nio.file.Path] =
+    override def workspaceAnalysisPath(projectId: shared.ids.Ids.ProjectId, workspaceId: String)
+      : UIO[java.nio.file.Path] =
       ZIO.succeed(java.nio.file.Paths.get(s"/tmp/test-project/workspaces/$workspaceId/.llm4zio/analysis"))
 
   private def controller(repo: BoardRepository): BoardControllerLive =

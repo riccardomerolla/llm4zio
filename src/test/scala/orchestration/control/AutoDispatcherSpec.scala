@@ -117,23 +117,23 @@ object AutoDispatcherSpec extends ZIOSpecDefault:
       ZIO.succeed(agents.find(_.name.equalsIgnoreCase(name)))
 
   final private case class StubWorkspaceRepository(runs: List[WorkspaceRun]) extends WorkspaceRepository:
-    override def append(event: _root_.workspace.entity.WorkspaceEvent): IO[PersistenceError, Unit] =
+    override def append(event: _root_.workspace.entity.WorkspaceEvent): IO[PersistenceError, Unit]         =
       ZIO.dieMessage("unused")
-    override def list: IO[PersistenceError, List[Workspace]]                                       =
+    override def list: IO[PersistenceError, List[Workspace]]                                               =
       ZIO.succeed(List(workspace))
     override def listByProject(projectId: shared.ids.Ids.ProjectId): IO[PersistenceError, List[Workspace]] =
       ZIO.succeed(List(workspace).filter(_.projectId == projectId))
-    override def get(id: String): IO[PersistenceError, Option[Workspace]]                          =
+    override def get(id: String): IO[PersistenceError, Option[Workspace]]                                  =
       ZIO.succeed(Option.when(id == workspace.id)(workspace))
-    override def delete(id: String): IO[PersistenceError, Unit]                                    =
+    override def delete(id: String): IO[PersistenceError, Unit]                                            =
       ZIO.dieMessage("unused")
-    override def appendRun(event: WorkspaceRunEvent): IO[PersistenceError, Unit]                   =
+    override def appendRun(event: WorkspaceRunEvent): IO[PersistenceError, Unit]                           =
       ZIO.dieMessage("unused")
-    override def listRuns(workspaceId: String): IO[PersistenceError, List[WorkspaceRun]]           =
+    override def listRuns(workspaceId: String): IO[PersistenceError, List[WorkspaceRun]]                   =
       ZIO.succeed(Option.when(workspaceId == workspace.id)(runs).getOrElse(Nil))
-    override def listRunsByIssueRef(issueRef: String): IO[PersistenceError, List[WorkspaceRun]]    =
+    override def listRunsByIssueRef(issueRef: String): IO[PersistenceError, List[WorkspaceRun]]            =
       ZIO.succeed(runs.filter(_.issueRef == issueRef))
-    override def getRun(id: String): IO[PersistenceError, Option[WorkspaceRun]]                    =
+    override def getRun(id: String): IO[PersistenceError, Option[WorkspaceRun]]                            =
       ZIO.succeed(runs.find(_.id == id))
 
   final private case class StubWorkspaceRunService(assignments: Ref[List[AssignRunRequest]])

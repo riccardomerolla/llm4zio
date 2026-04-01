@@ -53,7 +53,7 @@ object WorkspacesControllerSpec extends ZIOSpecDefault:
 
   private class StubWorkspaceRepo(ref: Ref[Map[String, Workspace]], runRef: Ref[Map[String, WorkspaceRun]])
     extends WorkspaceRepository:
-    def append(event: WorkspaceEvent): IO[shared.errors.PersistenceError, Unit]                      =
+    def append(event: WorkspaceEvent): IO[shared.errors.PersistenceError, Unit]                                 =
       event match
         case e: WorkspaceEvent.Created              =>
           ref.update(_ + (e.workspaceId -> Workspace(
@@ -78,16 +78,16 @@ object WorkspacesControllerSpec extends ZIOSpecDefault:
           )
         case e: WorkspaceEvent.Deleted              => ref.update(_ - e.workspaceId)
         case _                                      => ZIO.unit
-    def list: IO[shared.errors.PersistenceError, List[Workspace]]                                    = ref.get.map(_.values.toList)
+    def list: IO[shared.errors.PersistenceError, List[Workspace]]                                               = ref.get.map(_.values.toList)
     def listByProject(projectId: shared.ids.Ids.ProjectId): IO[shared.errors.PersistenceError, List[Workspace]] =
       ref.get.map(_.values.filter(_.projectId == projectId).toList)
-    def get(id: String): IO[shared.errors.PersistenceError, Option[Workspace]]                       = ref.get.map(_.get(id))
-    def delete(id: String): IO[shared.errors.PersistenceError, Unit]                                 = ref.update(_ - id)
-    def appendRun(event: WorkspaceRunEvent): IO[shared.errors.PersistenceError, Unit]                = ZIO.unit
-    def listRuns(wid: String): IO[shared.errors.PersistenceError, List[WorkspaceRun]]                = runRef.get.map(_.values.toList)
-    def listRunsByIssueRef(issueRef: String): IO[shared.errors.PersistenceError, List[WorkspaceRun]] =
+    def get(id: String): IO[shared.errors.PersistenceError, Option[Workspace]]                                  = ref.get.map(_.get(id))
+    def delete(id: String): IO[shared.errors.PersistenceError, Unit]                                            = ref.update(_ - id)
+    def appendRun(event: WorkspaceRunEvent): IO[shared.errors.PersistenceError, Unit]                           = ZIO.unit
+    def listRuns(wid: String): IO[shared.errors.PersistenceError, List[WorkspaceRun]]                           = runRef.get.map(_.values.toList)
+    def listRunsByIssueRef(issueRef: String): IO[shared.errors.PersistenceError, List[WorkspaceRun]]            =
       runRef.get.map(_.values.toList.filter(_.issueRef == issueRef))
-    def getRun(id: String): IO[shared.errors.PersistenceError, Option[WorkspaceRun]]                 = runRef.get.map(_.get(id))
+    def getRun(id: String): IO[shared.errors.PersistenceError, Option[WorkspaceRun]]                            = runRef.get.map(_.get(id))
 
   private class StubRunService extends WorkspaceRunService:
     def assign(wid: String, req: AssignRunRequest): IO[WorkspaceError, WorkspaceRun] =
@@ -303,7 +303,9 @@ object WorkspacesControllerSpec extends ZIOSpecDefault:
                         method = Method.POST,
                         url = URL(Path.decode("/api/workspaces")),
                         body =
-                          Body.fromString(s"name=Broken&projectId=proj-1&localPath=${java.net.URLEncoder.encode(tempDir.toString, "UTF-8")}"),
+                          Body.fromString(
+                            s"name=Broken&projectId=proj-1&localPath=${java.net.URLEncoder.encode(tempDir.toString, "UTF-8")}"
+                          ),
                       )
         resp       <- routes.runZIO(req)
         body       <- resp.body.asString

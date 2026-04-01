@@ -65,12 +65,12 @@ object MergeAgentServiceSpec extends ZIOSpecDefault:
     workspaces: Map[String, Workspace],
     runs: Map[String, WorkspaceRun],
   ) extends WorkspaceRepository:
-    override def append(event: WorkspaceEvent): IO[PersistenceError, Unit] = ZIO.unit
-    override def list: IO[PersistenceError, List[Workspace]]               = ZIO.succeed(workspaces.values.toList)
+    override def append(event: WorkspaceEvent): IO[PersistenceError, Unit]                                 = ZIO.unit
+    override def list: IO[PersistenceError, List[Workspace]]                                               = ZIO.succeed(workspaces.values.toList)
     override def listByProject(projectId: shared.ids.Ids.ProjectId): IO[PersistenceError, List[Workspace]] =
       ZIO.succeed(workspaces.values.filter(_.projectId == projectId).toList)
-    override def get(id: String): IO[PersistenceError, Option[Workspace]]  = ZIO.succeed(workspaces.get(id))
-    override def delete(id: String): IO[PersistenceError, Unit]            = ZIO.unit
+    override def get(id: String): IO[PersistenceError, Option[Workspace]]                                  = ZIO.succeed(workspaces.get(id))
+    override def delete(id: String): IO[PersistenceError, Unit]                                            = ZIO.unit
 
     override def appendRun(event: WorkspaceRunEvent): IO[PersistenceError, Unit]                = ZIO.unit
     override def listRuns(workspaceId: String): IO[PersistenceError, List[WorkspaceRun]]        =

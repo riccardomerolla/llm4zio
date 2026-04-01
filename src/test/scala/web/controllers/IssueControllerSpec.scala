@@ -23,6 +23,7 @@ import issues.entity.api.AutoAssignIssueResponse
 import llm4zio.core.*
 import llm4zio.tools.{ AnyTool, JsonSchema }
 import orchestration.control.{ AgentConfigResolver, IssueAssignmentOrchestrator, IssueDispatchStatusService }
+import project.control.ProjectStorageService
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ AgentId, AnalysisDocId, BoardIssueId, IssueId }
 import shared.testfixtures.*
@@ -64,6 +65,19 @@ object IssueControllerSpec extends ZIOSpecDefault:
   )
 
   private val issueId = IssueId("issue-1")
+
+  private object StubProjectStorageService extends ProjectStorageService:
+    override def initProjectStorage(projectId: shared.ids.Ids.ProjectId): IO[PersistenceError, java.nio.file.Path] =
+      ZIO.succeed(java.nio.file.Paths.get(s"/tmp/projects/${projectId.value}"))
+    override def projectRoot(projectId: shared.ids.Ids.ProjectId): UIO[java.nio.file.Path]                         =
+      ZIO.succeed(java.nio.file.Paths.get(s"/tmp/projects/${projectId.value}"))
+    override def boardPath(projectId: shared.ids.Ids.ProjectId): UIO[java.nio.file.Path]                           =
+      ZIO.succeed(java.nio.file.Paths.get(s"/tmp/projects/${projectId.value}/.board"))
+    override def workspaceAnalysisPath(projectId: shared.ids.Ids.ProjectId, workspaceId: String)
+      : UIO[java.nio.file.Path] =
+      ZIO.succeed(
+        java.nio.file.Paths.get(s"/tmp/projects/${projectId.value}/workspaces/$workspaceId/.llm4zio/analysis")
+      )
 
   private def issueSeedEvents: List[IssueEvent] =
     List(
@@ -346,7 +360,8 @@ object IssueControllerSpec extends ZIOSpecDefault:
         ZLayer.succeed(NoOpActivityHub) ++
         ZLayer.succeed(issueRepo) ++
         ZLayer.succeed(StubBoardOrchestrator) ++
-        ZLayer.succeed(workspaceRepository)) >>> IssueAssignmentOrchestrator.live
+        ZLayer.succeed(workspaceRepository) ++
+        ZLayer.succeed(StubProjectStorageService)) >>> IssueAssignmentOrchestrator.live
 
     ZIO
       .service[IssueAssignmentOrchestrator]
@@ -368,6 +383,7 @@ object IssueControllerSpec extends ZIOSpecDefault:
           decisionInbox = StubDecisionInbox,
           analysisRepository = StubAnalysisRepository,
           issueWorkReportProjection = StubWorkReportProjection,
+          projectStorageService = StubProjectStorageService,
         ).routes
       )
 

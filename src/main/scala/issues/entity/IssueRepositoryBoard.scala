@@ -12,6 +12,7 @@ import workspace.entity.{ Workspace, WorkspaceRepository }
 final case class IssueRepositoryBoard(
   boardRepository: BoardRepository,
   workspaceRepository: WorkspaceRepository,
+  boardPathResolver: Workspace => UIO[String],
   historyRef: Ref[Map[IssueId, List[IssueEvent]]],
   pendingCreatedRef: Ref[Map[IssueId, IssueEvent.Created]],
 ) extends IssueRepository:
@@ -51,9 +52,11 @@ final case class IssueRepositoryBoard(
       found <- resolveWorkspaceBoardIssue(id)
       _     <- found match
                  case Some((workspace, issue)) =>
-                   boardRepository
-                     .deleteIssue(workspace.localPath, issue.frontmatter.id)
-                     .mapError(mapBoardError)
+                   resolveBoardPath(workspace).flatMap(path =>
+                     boardRepository
+                       .deleteIssue(path, issue.frontmatter.id)
+                       .mapError(mapBoardError)
+                   )
                  case None                     =>
                    ZIO.unit
       _     <- historyRef.update(_ - id)
@@ -68,10 +71,10 @@ final case class IssueRepositoryBoard(
         ensureCreatedFromPending(linked)
       case metadata: IssueEvent.MetadataUpdated               =>
         withExistingIssue(metadata.issueId) {
-          case (workspace, issue) =>
+          case (boardPath, issue) =>
             boardRepository
               .updateIssue(
-                workspace.localPath,
+                boardPath,
                 issue.frontmatter.id,
                 fm =>
                   fm.copy(
@@ -85,10 +88,10 @@ final case class IssueRepositoryBoard(
         }
       case updated: IssueEvent.TagsUpdated                    =>
         withExistingIssue(updated.issueId) {
-          case (workspace, issue) =>
+          case (boardPath, issue) =>
             boardRepository
               .updateIssue(
-                workspace.localPath,
+                boardPath,
                 issue.frontmatter.id,
                 _.copy(tags = sanitizeList(updated.tags)),
               )
@@ -97,11 +100,11 @@ final case class IssueRepositoryBoard(
         }
       case linked: IssueEvent.DependencyLinked                =>
         withExistingIssue(linked.issueId) {
-          case (workspace, issue) =>
+          case (boardPath, issue) =>
             toBoardIssueId(linked.blockedByIssueId).fold[IO[PersistenceError, Unit]](ZIO.unit) { blockedById =>
               boardRepository
                 .updateIssue(
-                  workspace.localPath,
+                  boardPath,
                   issue.frontmatter.id,
                   fm => fm.copy(blockedBy = (fm.blockedBy :+ blockedById).distinct),
                 )
@@ -111,11 +114,11 @@ final case class IssueRepositoryBoard(
         }
       case unlinked: IssueEvent.DependencyUnlinked            =>
         withExistingIssue(unlinked.issueId) {
-          case (workspace, issue) =>
+          case (boardPath, issue) =>
             toBoardIssueId(unlinked.blockedByIssueId).fold[IO[PersistenceError, Unit]](ZIO.unit) { blockedById =>
               boardRepository
                 .updateIssue(
-                  workspace.localPath,
+                  boardPath,
                   issue.frontmatter.id,
                   fm => fm.copy(blockedBy = fm.blockedBy.filterNot(_ == blockedById)),
                 )
@@ -125,10 +128,10 @@ final case class IssueRepositoryBoard(
         }
       case assigned: IssueEvent.Assigned                      =>
         withExistingIssue(assigned.issueId) {
-          case (workspace, issue) =>
+          case (boardPath, issue) =>
             boardRepository
               .updateIssue(
-                workspace.localPath,
+                boardPath,
                 issue.frontmatter.id,
                 _.copy(
                   assignedAgent = Some(assigned.agent.value),
@@ -140,11 +143,11 @@ final case class IssueRepositoryBoard(
         }
       case started: IssueEvent.Started                        =>
         withExistingIssue(started.issueId) {
-          case (workspace, issue) =>
+          case (boardPath, issue) =>
             for
               _ <- boardRepository
                      .updateIssue(
-                       workspace.localPath,
+                       boardPath,
                        issue.frontmatter.id,
                        _.copy(
                          assignedAgent = Some(started.agent.value),
@@ -152,17 +155,17 @@ final case class IssueRepositoryBoard(
                        ),
                      )
                      .mapError(mapBoardError)
-              _ <- moveIssue(workspace.localPath, issue.frontmatter.id, BoardColumn.InProgress)
+              _ <- moveIssue(boardPath, issue.frontmatter.id, BoardColumn.InProgress)
             yield ()
         }
       case moved: IssueEvent.MovedToBacklog                   =>
         withExistingIssue(moved.issueId) {
-          case (workspace, issue) =>
+          case (boardPath, issue) =>
             for
-              _ <- moveIssue(workspace.localPath, issue.frontmatter.id, BoardColumn.Backlog)
+              _ <- moveIssue(boardPath, issue.frontmatter.id, BoardColumn.Backlog)
               _ <- boardRepository
                      .updateIssue(
-                       workspace.localPath,
+                       boardPath,
                        issue.frontmatter.id,
                        _.copy(
                          transientState = TransientState.None,
@@ -175,12 +178,12 @@ final case class IssueRepositoryBoard(
         }
       case moved: IssueEvent.MovedToTodo                      =>
         withExistingIssue(moved.issueId) {
-          case (workspace, issue) =>
+          case (boardPath, issue) =>
             for
-              _ <- moveIssue(workspace.localPath, issue.frontmatter.id, BoardColumn.Todo)
+              _ <- moveIssue(boardPath, issue.frontmatter.id, BoardColumn.Todo)
               _ <- boardRepository
                      .updateIssue(
-                       workspace.localPath,
+                       boardPath,
                        issue.frontmatter.id,
                        _.copy(transientState = TransientState.None),
                      )
@@ -189,17 +192,17 @@ final case class IssueRepositoryBoard(
         }
       case moved: IssueEvent.MovedToHumanReview               =>
         withExistingIssue(moved.issueId) {
-          case (workspace, issue) =>
-            moveIssue(workspace.localPath, issue.frontmatter.id, BoardColumn.Review)
+          case (boardPath, issue) =>
+            moveIssue(boardPath, issue.frontmatter.id, BoardColumn.Review)
         }
       case moved: IssueEvent.MovedToRework                    =>
         withExistingIssue(moved.issueId) {
-          case (workspace, issue) =>
+          case (boardPath, issue) =>
             for
-              _ <- moveIssue(workspace.localPath, issue.frontmatter.id, BoardColumn.Backlog)
+              _ <- moveIssue(boardPath, issue.frontmatter.id, BoardColumn.Backlog)
               _ <- boardRepository
                      .updateIssue(
-                       workspace.localPath,
+                       boardPath,
                        issue.frontmatter.id,
                        _.copy(
                          transientState = TransientState.Rework(moved.reason, moved.movedAt),
@@ -211,10 +214,10 @@ final case class IssueRepositoryBoard(
         }
       case moved: IssueEvent.MovedToMerging                   =>
         withExistingIssue(moved.issueId) {
-          case (workspace, issue) =>
+          case (boardPath, issue) =>
             boardRepository
               .updateIssue(
-                workspace.localPath,
+                boardPath,
                 issue.frontmatter.id,
                 _.copy(transientState = TransientState.Merging(moved.movedAt)),
               )
@@ -223,12 +226,12 @@ final case class IssueRepositoryBoard(
         }
       case done: IssueEvent.MarkedDone                        =>
         withExistingIssue(done.issueId) {
-          case (workspace, issue) =>
+          case (boardPath, issue) =>
             for
-              _ <- moveIssue(workspace.localPath, issue.frontmatter.id, BoardColumn.Done)
+              _ <- moveIssue(boardPath, issue.frontmatter.id, BoardColumn.Done)
               _ <- boardRepository
                      .updateIssue(
-                       workspace.localPath,
+                       boardPath,
                        issue.frontmatter.id,
                        _.copy(
                          transientState = TransientState.None,
@@ -241,12 +244,12 @@ final case class IssueRepositoryBoard(
         }
       case completed: IssueEvent.Completed                    =>
         withExistingIssue(completed.issueId) {
-          case (workspace, issue) =>
+          case (boardPath, issue) =>
             for
-              _ <- moveIssue(workspace.localPath, issue.frontmatter.id, BoardColumn.Done)
+              _ <- moveIssue(boardPath, issue.frontmatter.id, BoardColumn.Done)
               _ <- boardRepository
                      .updateIssue(
-                       workspace.localPath,
+                       boardPath,
                        issue.frontmatter.id,
                        _.copy(
                          transientState = TransientState.None,
@@ -259,12 +262,12 @@ final case class IssueRepositoryBoard(
         }
       case succeeded: IssueEvent.MergeSucceeded               =>
         withExistingIssue(succeeded.issueId) {
-          case (workspace, issue) =>
+          case (boardPath, issue) =>
             for
-              _ <- moveIssue(workspace.localPath, issue.frontmatter.id, BoardColumn.Done)
+              _ <- moveIssue(boardPath, issue.frontmatter.id, BoardColumn.Done)
               _ <- boardRepository
                      .updateIssue(
-                       workspace.localPath,
+                       boardPath,
                        issue.frontmatter.id,
                        _.copy(transientState = TransientState.None, completedAt = Some(succeeded.mergedAt)),
                      )
@@ -273,12 +276,12 @@ final case class IssueRepositoryBoard(
         }
       case canceled: IssueEvent.Canceled                      =>
         withExistingIssue(canceled.issueId) {
-          case (workspace, issue) =>
+          case (boardPath, issue) =>
             for
-              _ <- moveIssue(workspace.localPath, issue.frontmatter.id, BoardColumn.Archive)
+              _ <- moveIssue(boardPath, issue.frontmatter.id, BoardColumn.Archive)
               _ <- boardRepository
                      .updateIssue(
-                       workspace.localPath,
+                       boardPath,
                        issue.frontmatter.id,
                        _.copy(
                          transientState = TransientState.None,
@@ -291,12 +294,12 @@ final case class IssueRepositoryBoard(
         }
       case duplicated: IssueEvent.Duplicated                  =>
         withExistingIssue(duplicated.issueId) {
-          case (workspace, issue) =>
+          case (boardPath, issue) =>
             for
-              _ <- moveIssue(workspace.localPath, issue.frontmatter.id, BoardColumn.Archive)
+              _ <- moveIssue(boardPath, issue.frontmatter.id, BoardColumn.Archive)
               _ <- boardRepository
                      .updateIssue(
-                       workspace.localPath,
+                       boardPath,
                        issue.frontmatter.id,
                        _.copy(
                          transientState = TransientState.None,
@@ -309,12 +312,12 @@ final case class IssueRepositoryBoard(
         }
       case skipped: IssueEvent.Skipped                        =>
         withExistingIssue(skipped.issueId) {
-          case (workspace, issue) =>
+          case (boardPath, issue) =>
             for
-              _ <- moveIssue(workspace.localPath, issue.frontmatter.id, BoardColumn.Archive)
+              _ <- moveIssue(boardPath, issue.frontmatter.id, BoardColumn.Archive)
               _ <- boardRepository
                      .updateIssue(
-                       workspace.localPath,
+                       boardPath,
                        issue.frontmatter.id,
                        _.copy(
                          transientState = TransientState.None,
@@ -327,10 +330,10 @@ final case class IssueRepositoryBoard(
         }
       case failed: IssueEvent.Failed                          =>
         withExistingIssue(failed.issueId) {
-          case (workspace, issue) =>
+          case (boardPath, issue) =>
             boardRepository
               .updateIssue(
-                workspace.localPath,
+                boardPath,
                 issue.frontmatter.id,
                 _.copy(
                   assignedAgent = Some(failed.agent.value),
@@ -342,13 +345,13 @@ final case class IssueRepositoryBoard(
         }
       case failed: IssueEvent.MergeFailed                     =>
         withExistingIssue(failed.issueId) {
-          case (workspace, issue) =>
+          case (boardPath, issue) =>
             val reason =
               if failed.conflictFiles.isEmpty then "Merge failed"
               else s"Merge failed: conflicts in ${failed.conflictFiles.mkString(", ")}"
             boardRepository
               .updateIssue(
-                workspace.localPath,
+                boardPath,
                 issue.frontmatter.id,
                 _.copy(
                   failureReason = Some(reason)
@@ -359,13 +362,13 @@ final case class IssueRepositoryBoard(
         }
       case conflict: IssueEvent.MergeConflictRecorded         =>
         withExistingIssue(conflict.issueId) {
-          case (workspace, issue) =>
+          case (boardPath, issue) =>
             val reason =
               if conflict.conflictingFiles.isEmpty then "Merge conflicts detected"
               else s"Merge conflicts: ${conflict.conflictingFiles.mkString(", ")}"
             boardRepository
               .updateIssue(
-                workspace.localPath,
+                boardPath,
                 issue.frontmatter.id,
                 _.copy(
                   failureReason = Some(reason)
@@ -376,10 +379,10 @@ final case class IssueRepositoryBoard(
         }
       case updated: IssueEvent.AcceptanceCriteriaUpdated      =>
         withExistingIssue(updated.issueId) {
-          case (workspace, issue) =>
+          case (boardPath, issue) =>
             boardRepository
               .updateIssue(
-                workspace.localPath,
+                boardPath,
                 issue.frontmatter.id,
                 _.copy(
                   acceptanceCriteria = splitListField(updated.acceptanceCriteria)
@@ -390,10 +393,10 @@ final case class IssueRepositoryBoard(
         }
       case updated: IssueEvent.EstimateUpdated                =>
         withExistingIssue(updated.issueId) {
-          case (workspace, issue) =>
+          case (boardPath, issue) =>
             boardRepository
               .updateIssue(
-                workspace.localPath,
+                boardPath,
                 issue.frontmatter.id,
                 _.copy(estimate = toBoardEstimate(updated.estimate)),
               )
@@ -402,11 +405,11 @@ final case class IssueRepositoryBoard(
         }
       case updated: IssueEvent.KaizenSkillUpdated             =>
         withExistingIssue(updated.issueId) {
-          case (workspace, issue) =>
+          case (boardPath, issue) =>
             val skillTags = splitListField(updated.kaizenSkill).map(skill => s"skill:$skill")
             boardRepository
               .updateIssue(
-                workspace.localPath,
+                boardPath,
                 issue.frontmatter.id,
                 fm => fm.copy(tags = (fm.tags ++ skillTags).distinct),
               )
@@ -415,10 +418,10 @@ final case class IssueRepositoryBoard(
         }
       case updated: IssueEvent.ProofOfWorkRequirementsUpdated =>
         withExistingIssue(updated.issueId) {
-          case (workspace, issue) =>
+          case (boardPath, issue) =>
             boardRepository
               .updateIssue(
-                workspace.localPath,
+                boardPath,
                 issue.frontmatter.id,
                 _.copy(proofOfWork = sanitizeList(updated.requirements)),
               )
@@ -427,12 +430,12 @@ final case class IssueRepositoryBoard(
         }
       case archived: IssueEvent.Archived                      =>
         withExistingIssue(archived.issueId) {
-          case (workspace, issue) =>
+          case (boardPath, issue) =>
             for
-              _ <- moveIssue(workspace.localPath, issue.frontmatter.id, BoardColumn.Archive)
+              _ <- moveIssue(boardPath, issue.frontmatter.id, BoardColumn.Archive)
               _ <- boardRepository
                      .updateIssue(
-                       workspace.localPath,
+                       boardPath,
                        issue.frontmatter.id,
                        _.copy(
                          transientState = TransientState.None,
@@ -445,12 +448,12 @@ final case class IssueRepositoryBoard(
         }
       case reopened: IssueEvent.Reopened                      =>
         withExistingIssue(reopened.issueId) {
-          case (workspace, issue) =>
+          case (boardPath, issue) =>
             for
-              _ <- moveIssue(workspace.localPath, issue.frontmatter.id, BoardColumn.Backlog)
+              _ <- moveIssue(boardPath, issue.frontmatter.id, BoardColumn.Backlog)
               _ <- boardRepository
                      .updateIssue(
-                       workspace.localPath,
+                       boardPath,
                        issue.frontmatter.id,
                        _.copy(
                          transientState = TransientState.None,
@@ -509,12 +512,13 @@ final case class IssueRepositoryBoard(
     created: IssueEvent.Created,
   ): IO[PersistenceError, Unit] =
     for
-      _      <- boardRepository.initBoard(workspace.localPath).mapError(mapBoardError)
+      path   <- resolveBoardPath(workspace)
+      _      <- boardRepository.initBoard(path).mapError(mapBoardError)
       boardId = toBoardIssueId(created.issueId).getOrElse(BoardIssueId(created.issueId.value))
       now     = created.occurredAt
       _      <- boardRepository
                   .createIssue(
-                    workspace.localPath,
+                    path,
                     BoardColumn.Backlog,
                     BoardIssue(
                       frontmatter = IssueFrontmatter(
@@ -546,12 +550,16 @@ final case class IssueRepositoryBoard(
   private def withExistingIssue(
     issueId: IssueId
   )(
-    f: (Workspace, BoardIssue) => IO[PersistenceError, Unit]
+    f: (String, BoardIssue) => IO[PersistenceError, Unit]
   ): IO[PersistenceError, Unit] =
     resolveWorkspaceBoardIssue(issueId).flatMap {
-      case Some((workspace, issue)) => f(workspace, issue)
+      case Some((workspace, issue)) =>
+        resolveBoardPath(workspace).flatMap(path => f(path, issue))
       case None                     => ZIO.unit
     }
+
+  private def resolveBoardPath(workspace: Workspace): UIO[String] =
+    boardPathResolver(workspace)
 
   private def moveIssue(workspacePath: String, issueId: BoardIssueId, to: BoardColumn): IO[PersistenceError, Unit] =
     boardRepository
@@ -570,10 +578,12 @@ final case class IssueRepositoryBoard(
           .flatMap { workspaces =>
             ZIO
               .foreach(workspaces) { ws =>
-                boardRepository.readIssue(ws.localPath, boardId).map(issue => Some(ws -> issue)).catchAll {
-                  case _: BoardError.IssueNotFound => ZIO.none
-                  case _: BoardError.BoardNotFound => ZIO.none
-                  case other                       => ZIO.fail(mapBoardError(other))
+                resolveBoardPath(ws).flatMap { path =>
+                  boardRepository.readIssue(path, boardId).map(issue => Some(ws -> issue)).catchAll {
+                    case _: BoardError.IssueNotFound => ZIO.none
+                    case _: BoardError.BoardNotFound => ZIO.none
+                    case other                       => ZIO.fail(mapBoardError(other))
+                  }
                 }
               }
               .map(_.collectFirst { case Some(found) => found })
@@ -585,13 +595,15 @@ final case class IssueRepositoryBoard(
       .mapError(mapRepoError)
       .flatMap(workspaces =>
         ZIO.foreach(workspaces) { ws =>
-          ZIO
-            .foreach(boardColumns)(column => boardRepository.listIssues(ws.localPath, column))
-            .map(_.flatten.map(issue => boardToDomain(issue, ws.id)))
-            .catchAll {
-              case _: BoardError.BoardNotFound => ZIO.succeed(Nil)
-              case other                       => ZIO.fail(mapBoardError(other))
-            }
+          resolveBoardPath(ws).flatMap { path =>
+            ZIO
+              .foreach(boardColumns)(column => boardRepository.listIssues(path, column))
+              .map(_.flatten.map(issue => boardToDomain(issue, ws.id)))
+              .catchAll {
+                case _: BoardError.BoardNotFound => ZIO.succeed(Nil)
+                case other                       => ZIO.fail(mapBoardError(other))
+              }
+          }
         }.map(_.flatten)
       )
 
@@ -718,12 +730,12 @@ final case class IssueRepositoryBoard(
       case BoardError.ConcurrencyConflict(message)    => PersistenceError.QueryFailed("board_concurrency", message)
 
 object IssueRepositoryBoard:
-  val live: ZLayer[BoardRepository & WorkspaceRepository, Nothing, IssueRepository] =
-    ZLayer.fromZIO {
-      for
-        boardRepo  <- ZIO.service[BoardRepository]
-        workspace  <- ZIO.service[WorkspaceRepository]
-        historyRef <- Ref.make(Map.empty[IssueId, List[IssueEvent]])
-        pendingRef <- Ref.make(Map.empty[IssueId, IssueEvent.Created])
-      yield IssueRepositoryBoard(boardRepo, workspace, historyRef, pendingRef)
-    }
+  def make(
+    boardRepository: BoardRepository,
+    workspaceRepository: WorkspaceRepository,
+    boardPathResolver: Workspace => UIO[String],
+  ): UIO[IssueRepository] =
+    for
+      historyRef <- Ref.make(Map.empty[IssueId, List[IssueEvent]])
+      pendingRef <- Ref.make(Map.empty[IssueId, IssueEvent.Created])
+    yield IssueRepositoryBoard(boardRepository, workspaceRepository, boardPathResolver, historyRef, pendingRef)

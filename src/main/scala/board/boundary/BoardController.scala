@@ -93,48 +93,48 @@ final case class BoardControllerLive(
 
   private def renderIssueDetail(workspaceId: String, issueId: BoardIssueId): IO[BoardError, Response] =
     for
-      (_, projectRoot)  <- resolveBoardPath(workspaceId)
-      issue             <- boardRepository.readIssue(projectRoot, issueId)
-      renderedIssueRaw  <- issueParser.render(issue.frontmatter, issue.body)
+      (_, projectRoot) <- resolveBoardPath(workspaceId)
+      issue            <- boardRepository.readIssue(projectRoot, issueId)
+      renderedIssueRaw <- issueParser.render(issue.frontmatter, issue.body)
     yield Response.html(BoardView.detailPage(workspaceId, issue, IssuesView.markdownFragment(renderedIssueRaw)))
 
   private def createIssue(workspaceId: String, req: Request): IO[BoardError, Response] =
     for
       (_, projectRoot) <- resolveBoardPath(workspaceId)
       request          <- parseCreateIssueRequest(req)
-      issueId   <- parseOrGenerateId(request.id)
-      now       <- Clock.instant
-      column    <- parseColumn(request.column.getOrElse("backlog"))
-      priority  <- parsePriority(Some(request.priority))
-      estimate  <- parseEstimate(request.estimate)
-      blockedBy <- parseIssueIds(Some(request.blockedBy))
-      created   <- boardRepository.createIssue(
-                     projectRoot,
-                     column,
-                     BoardIssue(
-                       frontmatter = IssueFrontmatter(
-                         id = issueId,
-                         title = request.title.trim,
-                         priority = priority,
-                         assignedAgent = request.assignedAgent.map(_.trim).filter(_.nonEmpty),
-                         requiredCapabilities = request.requiredCapabilities.map(_.trim).filter(_.nonEmpty).distinct,
-                         blockedBy = blockedBy,
-                         tags = request.tags.map(_.trim).filter(_.nonEmpty).distinct,
-                         acceptanceCriteria = request.acceptanceCriteria.map(_.trim).filter(_.nonEmpty),
-                         estimate = estimate,
-                         proofOfWork = Nil,
-                         transientState = TransientState.None,
-                         branchName = None,
-                         failureReason = None,
-                         completedAt = None,
-                         createdAt = now,
-                       ),
-                       body = request.body.trim,
-                       column = column,
-                       directoryPath = "",
-                     ),
-                   )
-      response  <-
+      issueId          <- parseOrGenerateId(request.id)
+      now              <- Clock.instant
+      column           <- parseColumn(request.column.getOrElse("backlog"))
+      priority         <- parsePriority(Some(request.priority))
+      estimate         <- parseEstimate(request.estimate)
+      blockedBy        <- parseIssueIds(Some(request.blockedBy))
+      created          <- boardRepository.createIssue(
+                            projectRoot,
+                            column,
+                            BoardIssue(
+                              frontmatter = IssueFrontmatter(
+                                id = issueId,
+                                title = request.title.trim,
+                                priority = priority,
+                                assignedAgent = request.assignedAgent.map(_.trim).filter(_.nonEmpty),
+                                requiredCapabilities = request.requiredCapabilities.map(_.trim).filter(_.nonEmpty).distinct,
+                                blockedBy = blockedBy,
+                                tags = request.tags.map(_.trim).filter(_.nonEmpty).distinct,
+                                acceptanceCriteria = request.acceptanceCriteria.map(_.trim).filter(_.nonEmpty),
+                                estimate = estimate,
+                                proofOfWork = Nil,
+                                transientState = TransientState.None,
+                                branchName = None,
+                                failureReason = None,
+                                completedAt = None,
+                                createdAt = now,
+                              ),
+                              body = request.body.trim,
+                              column = column,
+                              directoryPath = "",
+                            ),
+                          )
+      response         <-
         if isHtmx(req) then renderBoardFragment(workspaceId)
         else ZIO.succeed(Response.json(created.toJson).copy(status = Status.Created))
     yield response
@@ -154,38 +154,38 @@ final case class BoardControllerLive(
       (_, projectRoot) <- resolveBoardPath(workspaceId)
       issueId          <- readBoardIssueId(issueIdRaw)
       request          <- parseUpdateIssueRequest(req)
-      blockedBy <- request.blockedBy match
-                     case Some(values) => parseIssueIds(Some(values)).map(Some(_))
-                     case None         => ZIO.succeed(None)
-      priority  <- request.priority match
-                     case Some(value) => parsePriority(Some(value)).map(Some(_))
-                     case None        => ZIO.succeed(None)
-      estimate  <- request.estimate match
-                     case Some(value) => parseEstimate(Some(value)).map(Some(_))
-                     case None        => ZIO.succeed(None)
-      updated   <- boardRepository.updateIssue(
-                     projectRoot,
-                     issueId,
-                     fm =>
-                       fm.copy(
-                         title = request.title.map(_.trim).filter(_.nonEmpty).getOrElse(fm.title),
-                         priority = priority.getOrElse(fm.priority),
-                         assignedAgent = request.assignedAgent match
-                           case Some(agent) => Option(agent).map(_.trim).filter(_.nonEmpty)
-                           case None        => fm.assignedAgent,
-                         requiredCapabilities = request.requiredCapabilities
-                           .map(_.map(_.trim).filter(_.nonEmpty).distinct)
-                           .getOrElse(fm.requiredCapabilities),
-                         blockedBy = blockedBy.getOrElse(fm.blockedBy),
-                         tags = request.tags.map(_.map(_.trim).filter(_.nonEmpty).distinct).getOrElse(fm.tags),
-                         acceptanceCriteria = request.acceptanceCriteria
-                           .map(_.map(_.trim).filter(_.nonEmpty))
-                           .getOrElse(fm.acceptanceCriteria),
-                         estimate = estimate.flatMap(identity).orElse(fm.estimate),
-                         proofOfWork = request.proofOfWork.map(_.map(_.trim).filter(_.nonEmpty)).getOrElse(fm.proofOfWork),
-                       ),
-                   )
-      response  <- if isHtmx(req) then renderBoardFragment(workspaceId) else ZIO.succeed(Response.json(updated.toJson))
+      blockedBy        <- request.blockedBy match
+                            case Some(values) => parseIssueIds(Some(values)).map(Some(_))
+                            case None         => ZIO.succeed(None)
+      priority         <- request.priority match
+                            case Some(value) => parsePriority(Some(value)).map(Some(_))
+                            case None        => ZIO.succeed(None)
+      estimate         <- request.estimate match
+                            case Some(value) => parseEstimate(Some(value)).map(Some(_))
+                            case None        => ZIO.succeed(None)
+      updated          <- boardRepository.updateIssue(
+                            projectRoot,
+                            issueId,
+                            fm =>
+                              fm.copy(
+                                title = request.title.map(_.trim).filter(_.nonEmpty).getOrElse(fm.title),
+                                priority = priority.getOrElse(fm.priority),
+                                assignedAgent = request.assignedAgent match
+                                  case Some(agent) => Option(agent).map(_.trim).filter(_.nonEmpty)
+                                  case None        => fm.assignedAgent,
+                                requiredCapabilities = request.requiredCapabilities
+                                  .map(_.map(_.trim).filter(_.nonEmpty).distinct)
+                                  .getOrElse(fm.requiredCapabilities),
+                                blockedBy = blockedBy.getOrElse(fm.blockedBy),
+                                tags = request.tags.map(_.map(_.trim).filter(_.nonEmpty).distinct).getOrElse(fm.tags),
+                                acceptanceCriteria = request.acceptanceCriteria
+                                  .map(_.map(_.trim).filter(_.nonEmpty))
+                                  .getOrElse(fm.acceptanceCriteria),
+                                estimate = estimate.flatMap(identity).orElse(fm.estimate),
+                                proofOfWork = request.proofOfWork.map(_.map(_.trim).filter(_.nonEmpty)).getOrElse(fm.proofOfWork),
+                              ),
+                          )
+      response         <- if isHtmx(req) then renderBoardFragment(workspaceId) else ZIO.succeed(Response.json(updated.toJson))
     yield response
 
   private def deleteIssue(workspaceId: String, issueIdRaw: String, req: Request): IO[BoardError, Response] =

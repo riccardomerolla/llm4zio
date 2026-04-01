@@ -21,6 +21,7 @@ import llm4zio.core.{ LlmConfig, LlmError, LlmProvider, LlmService }
 import llm4zio.providers.{ GeminiCliExecutionContext, GeminiCliExecutor, HttpClient }
 import llm4zio.tools.JsonSchema
 import plan.entity.*
+import project.control.ProjectStorageService
 import prompts.{ PromptError, PromptLoader }
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ BoardIssueId, EventId, IssueId, PlanId, SpecificationId }
@@ -132,7 +133,7 @@ object PlannerAgentService:
     : ZLayer[
       ChatRepository & IssueRepository & BoardRepository & ConfigRepository & ActivityHub & AgentConfigResolver &
         HttpClient & GeminiCliExecutor & WorkspaceRepository & AIProviderConfig & PromptLoader & SpecificationRepository &
-        PlanRepository & GovernancePolicyService,
+        PlanRepository & GovernancePolicyService & ProjectStorageService,
       Nothing,
       PlannerAgentService,
     ] =
@@ -152,6 +153,7 @@ object PlannerAgentService:
         specificationRepo <- ZIO.service[SpecificationRepository]
         planRepository    <- ZIO.service[PlanRepository]
         governanceService <- ZIO.service[GovernancePolicyService]
+        projectStorage    <- ZIO.service[ProjectStorageService]
         previewState      <- Ref.Synchronized.make(Map.empty[Long, PlannerPreviewState])
       yield PlannerAgentServiceLive(
         chatRepository = chatRepository,
@@ -168,6 +170,7 @@ object PlannerAgentService:
         specificationRepository = specificationRepo,
         planRepository = planRepository,
         governancePolicyService = governanceService,
+        projectStorageService = projectStorage,
         previewState = previewState,
       )
     }
@@ -199,6 +202,7 @@ final case class PlannerAgentServiceLive(
   specificationRepository: SpecificationRepository,
   planRepository: PlanRepository,
   governancePolicyService: GovernancePolicyService,
+  projectStorageService: ProjectStorageService,
   previewState: Ref.Synchronized[Map[Long, PlannerPreviewState]],
 ) extends PlannerAgentService:
 
@@ -1391,13 +1395,9 @@ final case class PlannerAgentServiceLive(
       .mapError(err => PlannerAgentError.PersistenceFailure("planner_workspace_lookup", err.toString))
       .flatMap {
         case Some(workspace) =>
-          val path = Option(workspace.localPath).map(_.trim).filter(_.nonEmpty)
-          ZIO
-            .fromOption(path)
-            .orElseFail(PlannerAgentError.PersistenceFailure(
-              "planner_workspace_lookup",
-              s"Workspace $workspaceId has no local path",
-            ))
+          projectStorageService
+            .projectRoot(workspace.projectId)
+            .map(_.toString)
         case None            =>
           ZIO.fail(PlannerAgentError.PersistenceFailure(
             "planner_workspace_lookup",

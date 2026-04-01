@@ -10,6 +10,7 @@ import governance.entity.{ GovernanceGate, GovernanceLifecycleAction, Governance
 import shared.ids.Ids.BoardIssueId
 import workspace.control.{ AssignRunRequest, GitService, WorkspaceRunService }
 import workspace.entity.{ GitError, WorkspaceRepository }
+import project.control.ProjectStorageService
 
 final case class DispatchResult(
   dispatchedIssueIds: List[BoardIssueId],
@@ -61,29 +62,31 @@ object BoardOrchestrator:
   val live
     : ZLayer[
       BoardRepository & BoardDependencyResolver & WorkspaceRunService & WorkspaceRepository & GitService & ActivityHub &
-        GovernancePolicyService,
+        GovernancePolicyService & ProjectStorageService,
       Nothing,
       BoardOrchestrator,
     ] =
     ZLayer.scoped {
       for
-        boardRepository <- ZIO.service[BoardRepository]
-        resolver        <- ZIO.service[BoardDependencyResolver]
-        runService      <- ZIO.service[WorkspaceRunService]
-        workspaceRepo   <- ZIO.service[WorkspaceRepository]
-        gitService      <- ZIO.service[GitService]
-        activityHub     <- ZIO.service[ActivityHub]
-        governance      <- ZIO.service[GovernancePolicyService]
-        service          = BoardOrchestratorLive(
-                             boardRepository = boardRepository,
-                             dependencyResolver = resolver,
-                             workspaceRunService = runService,
-                             workspaceRepository = workspaceRepo,
-                             gitService = gitService,
-                             activityHub = activityHub,
-                             governancePolicyService = governance,
-                           )
-        _               <- service.listenForRunCompletion.forkScoped
+        boardRepository   <- ZIO.service[BoardRepository]
+        resolver          <- ZIO.service[BoardDependencyResolver]
+        runService        <- ZIO.service[WorkspaceRunService]
+        workspaceRepo     <- ZIO.service[WorkspaceRepository]
+        gitService        <- ZIO.service[GitService]
+        activityHub       <- ZIO.service[ActivityHub]
+        governance        <- ZIO.service[GovernancePolicyService]
+        projectStorageSvc <- ZIO.service[ProjectStorageService]
+        service            = BoardOrchestratorLive(
+                               boardRepository = boardRepository,
+                               dependencyResolver = resolver,
+                               workspaceRunService = runService,
+                               workspaceRepository = workspaceRepo,
+                               gitService = gitService,
+                               activityHub = activityHub,
+                               governancePolicyService = governance,
+                               projectStorageService = projectStorageSvc,
+                             )
+        _                 <- service.listenForRunCompletion.forkScoped
       yield service
     }
 
@@ -95,6 +98,7 @@ final case class BoardOrchestratorLive(
   gitService: GitService,
   activityHub: ActivityHub,
   governancePolicyService: GovernancePolicyService,
+  projectStorageService: ProjectStorageService,
 ) extends BoardOrchestrator:
 
   override def dispatchCycle(workspacePath: String): IO[BoardError, DispatchResult] =
@@ -154,7 +158,7 @@ final case class BoardOrchestratorLive(
       _         <- (for
                      _    <- gitService
                                .mergeNoFastForward(
-                                 workspacePath,
+                                 workspace.localPath,
                                  branch,
                                  s"[board] Merge issue ${issueId.value}: ${issue.frontmatter.title}",
                                )
@@ -254,12 +258,14 @@ final case class BoardOrchestratorLive(
                               .flatMap {
                                 case None            => ZIO.unit
                                 case Some(workspace) =>
-                                  completeIssue(
-                                    workspace.localPath,
-                                    issueId,
-                                    success = success,
-                                    details = event.summary,
-                                  )
+                                  projectStorageService.projectRoot(workspace.projectId).flatMap { boardPath =>
+                                    completeIssue(
+                                      boardPath.toString,
+                                      issueId,
+                                      success = success,
+                                      details = event.summary,
+                                    )
+                                  }
                               }
         yield ()).catchAll(err => ZIO.logWarning(s"[board] completion from activity failed: ${renderBoardError(err)}"))
 
@@ -375,11 +381,16 @@ final case class BoardOrchestratorLive(
     workspaceRepository
       .list
       .mapError(err => BoardError.ParseError(s"workspace list failed: $err"))
-      .flatMap(workspaces =>
-        workspaces.find(_.localPath == workspacePath) match
-          case Some(workspace) => ZIO.succeed(workspace)
-          case None            => ZIO.fail(BoardError.BoardNotFound(workspacePath))
-      )
+      .flatMap { workspaces =>
+        ZIO
+          .foreach(workspaces)(ws =>
+            projectStorageService.projectRoot(ws.projectId).map(p => (ws, p.toString))
+          )
+          .flatMap { pairs =>
+            ZIO.fromOption(pairs.find(_._2 == workspacePath).map(_._1))
+              .orElseFail(BoardError.BoardNotFound(workspacePath))
+          }
+      }
 
   private def ensureDefaultBranch(workspacePath: String): IO[BoardError, Unit] =
     resolveWorkspaceByPath(workspacePath).flatMap(ensureDefaultBranch)

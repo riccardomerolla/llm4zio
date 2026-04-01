@@ -122,7 +122,7 @@ object WorkspaceGoldenPathIntegrationSpec extends ZIOSpecDefault:
   final private class StubWorkspaceRepository(ws: Workspace) extends WorkspaceRepository:
     override def append(event: WorkspaceEvent): IO[PersistenceError, Unit]                      = ZIO.unit
     override def list: IO[PersistenceError, List[Workspace]]                                    = ZIO.succeed(List(ws))
-    override def listByProject(projectId: ProjectId): IO[PersistenceError, List[Workspace]]    =
+    override def listByProject(projectId: ProjectId): IO[PersistenceError, List[Workspace]]     =
       list.map(_.filter(_.projectId == projectId))
     override def get(id: String): IO[PersistenceError, Option[Workspace]]                       =
       ZIO.succeed(Option.when(id == ws.id)(ws))

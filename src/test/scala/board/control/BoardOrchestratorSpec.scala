@@ -14,9 +14,11 @@ import shared.errors.PersistenceError
 import shared.ids.Ids.{ BoardIssueId, GovernancePolicyId, ProjectId }
 import workspace.control.{ AssignRunRequest, GitService, WorkspaceRunService }
 import workspace.entity.*
+import project.control.ProjectStorageService
 
 object BoardOrchestratorSpec extends ZIOSpecDefault:
   private val workspacePath = "/tmp/workspace"
+  private val projectPath   = "/tmp/projects/test-project"
 
   private def issue(
     id: String,
@@ -44,7 +46,7 @@ object BoardOrchestratorSpec extends ZIOSpecDefault:
       ),
       body = s"Body for $id",
       column = column,
-      directoryPath = s"$workspacePath/.board/${column.folderName}/$id",
+      directoryPath = s"$projectPath/.board/${column.folderName}/$id",
     )
 
   final private case class InMemoryBoardRepo(ref: Ref[Map[BoardIssueId, BoardIssue]]) extends BoardRepository:
@@ -145,13 +147,13 @@ object BoardOrchestratorSpec extends ZIOSpecDefault:
     workspace: Workspace,
     runsByIssueRef: Ref[Map[String, List[WorkspaceRun]]],
   ) extends WorkspaceRepository:
-    override def append(event: WorkspaceEvent): IO[PersistenceError, Unit] = ZIO.unit
-    override def list: IO[PersistenceError, List[Workspace]]               = ZIO.succeed(List(workspace))
+    override def append(event: WorkspaceEvent): IO[PersistenceError, Unit]                  = ZIO.unit
+    override def list: IO[PersistenceError, List[Workspace]]                                = ZIO.succeed(List(workspace))
     override def listByProject(projectId: ProjectId): IO[PersistenceError, List[Workspace]] =
       ZIO.succeed(List(workspace).filter(_.projectId == projectId))
-    override def get(id: String): IO[PersistenceError, Option[Workspace]]  =
+    override def get(id: String): IO[PersistenceError, Option[Workspace]]                   =
       ZIO.succeed(Option.when(id == workspace.id)(workspace))
-    override def delete(id: String): IO[PersistenceError, Unit]            = ZIO.unit
+    override def delete(id: String): IO[PersistenceError, Unit]                             = ZIO.unit
 
     override def appendRun(event: WorkspaceRunEvent): IO[PersistenceError, Unit] = ZIO.unit
 
@@ -269,6 +271,19 @@ object BoardOrchestratorSpec extends ZIOSpecDefault:
                         )
       workspaceRepo   = StubWorkspaceRepo(workspace, runsByIssueRef)
       gitService      = StubGitService(mergesRef, currentBranch = currentBranch, detached = detached)
+      projectStorage  = new ProjectStorageService:
+                          override def initProjectStorage(projectId: ProjectId)
+                            : IO[PersistenceError, java.nio.file.Path] =
+                            ZIO.succeed(java.nio.file.Paths.get(projectPath))
+                          override def projectRoot(projectId: ProjectId): UIO[java.nio.file.Path] =
+                            ZIO.succeed(java.nio.file.Paths.get(projectPath))
+                          override def boardPath(projectId: ProjectId): UIO[java.nio.file.Path]   =
+                            ZIO.succeed(java.nio.file.Paths.get(projectPath).resolve(".board"))
+                          override def workspaceAnalysisPath(projectId: ProjectId, workspaceId: String)
+                            : UIO[java.nio.file.Path] =
+                            ZIO.succeed(java.nio.file.Paths.get(
+                              projectPath
+                            ).resolve("workspaces").resolve(workspaceId).resolve(".llm4zio").resolve("analysis"))
       orchestrator    = BoardOrchestratorLive(
                           boardRepository = repo,
                           dependencyResolver = BoardDependencyResolverLive(),
@@ -277,6 +292,7 @@ object BoardOrchestratorSpec extends ZIOSpecDefault:
                           gitService = gitService,
                           activityHub = noopActivityHub,
                           governancePolicyService = StubGovernancePolicyService(governanceDecision),
+                          projectStorageService = projectStorage,
                         )
     yield (orchestrator, boardRef, assignedRef, cleanupRef, mergesRef)
 
@@ -288,7 +304,7 @@ object BoardOrchestratorSpec extends ZIOSpecDefault:
 
         for
           (orchestrator, boardRef, assignedRef, _, _) <- makeOrchestrator(List(readyTask, depDone))
-          result                                      <- orchestrator.dispatchCycle(workspacePath)
+          result                                      <- orchestrator.dispatchCycle(projectPath)
           state                                       <- boardRef.get
           assigned                                    <- assignedRef.get
           task                                         = state(BoardIssueId("task-1"))
@@ -331,7 +347,7 @@ object BoardOrchestratorSpec extends ZIOSpecDefault:
           (orchestrator, boardRef, _, cleanupRef, mergesRef) <-
             makeOrchestrator(List(inProgress), runsByIssueRefSeed = Map("task-2" -> List(run)))
           _                                                  <- orchestrator.completeIssue(
-                                                                  workspacePath,
+                                                                  projectPath,
                                                                   BoardIssueId("task-2"),
                                                                   success = true,
                                                                   details = "linked PR #22",
@@ -355,7 +371,7 @@ object BoardOrchestratorSpec extends ZIOSpecDefault:
         for
           (orchestrator, boardRef, _, _, _) <- makeOrchestrator(List(inProgress))
           _                                 <- orchestrator.completeIssue(
-                                                 workspacePath,
+                                                 projectPath,
                                                  BoardIssueId("task-3"),
                                                  success = false,
                                                  details = "tests are failing",
@@ -392,7 +408,7 @@ object BoardOrchestratorSpec extends ZIOSpecDefault:
         for
           (orchestrator, boardRef, _, cleanupRef, mergesRef) <-
             makeOrchestrator(List(reviewIssue), runsByIssueRefSeed = Map("task-4" -> List(run)))
-          _                                                  <- orchestrator.approveIssue(workspacePath, BoardIssueId("task-4"))
+          _                                                  <- orchestrator.approveIssue(projectPath, BoardIssueId("task-4"))
           state                                              <- boardRef.get
           doneIssue                                           = state(BoardIssueId("task-4"))
           cleanup                                            <- cleanupRef.get
@@ -418,7 +434,7 @@ object BoardOrchestratorSpec extends ZIOSpecDefault:
                                                              reason = Some("Missing required gates: SpecReview"),
                                                            ),
                                                          )
-          result                                      <- orchestrator.dispatchCycle(workspacePath)
+          result                                      <- orchestrator.dispatchCycle(projectPath)
           state                                       <- boardRef.get
           assigned                                    <- assignedRef.get
         yield assertTrue(
@@ -437,7 +453,7 @@ object BoardOrchestratorSpec extends ZIOSpecDefault:
                                                            workspaceDefaultBranch = "develop",
                                                            currentBranch = "develop",
                                                          )
-          result                                      <- orchestrator.dispatchCycle(workspacePath)
+          result                                      <- orchestrator.dispatchCycle(projectPath)
           state                                       <- boardRef.get
           assigned                                    <- assignedRef.get
         yield assertTrue(
@@ -456,7 +472,7 @@ object BoardOrchestratorSpec extends ZIOSpecDefault:
                                           workspaceDefaultBranch = "develop",
                                           currentBranch = "main",
                                         )
-          result                     <- orchestrator.dispatchCycle(workspacePath).either
+          result                     <- orchestrator.dispatchCycle(projectPath).either
         yield assertTrue(
           result == Left(
             BoardError.ConcurrencyConflict(

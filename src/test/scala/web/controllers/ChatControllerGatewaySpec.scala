@@ -184,7 +184,8 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
       ZIO.unit
     override def list: IO[shared.errors.PersistenceError, List[workspace.entity.Workspace]]                     =
       ZIO.succeed(Nil)
-    override def listByProject(projectId: shared.ids.Ids.ProjectId): IO[shared.errors.PersistenceError, List[workspace.entity.Workspace]] =
+    override def listByProject(projectId: shared.ids.Ids.ProjectId)
+      : IO[shared.errors.PersistenceError, List[workspace.entity.Workspace]] =
       ZIO.succeed(Nil)
     override def get(id: String): IO[shared.errors.PersistenceError, Option[workspace.entity.Workspace]]        =
       ZIO.none

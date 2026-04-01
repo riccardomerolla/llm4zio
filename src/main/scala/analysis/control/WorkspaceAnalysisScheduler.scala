@@ -9,6 +9,7 @@ import activity.entity.{ ActivityEvent, ActivityEventType }
 import analysis.entity.{ AnalysisDoc, AnalysisRepository, AnalysisType }
 import board.entity.*
 import db.TaskRepository
+import project.control.ProjectStorageService
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ BoardIssueId, EventId, IssueId }
 import workspace.entity.WorkspaceRepository
@@ -60,31 +61,34 @@ object WorkspaceAnalysisScheduler:
 
   val live
     : ZLayer[
-      AnalysisAgentRunner & AnalysisRepository & ActivityHub & TaskRepository & BoardRepository & WorkspaceRepository,
+      AnalysisAgentRunner & AnalysisRepository & ActivityHub & TaskRepository & BoardRepository & WorkspaceRepository &
+        ProjectStorageService,
       Nothing,
       WorkspaceAnalysisScheduler,
     ] =
     ZLayer.scoped {
       for
-        runner        <- ZIO.service[AnalysisAgentRunner]
-        repository    <- ZIO.service[AnalysisRepository]
-        activityHub   <- ZIO.service[ActivityHub]
-        taskRepo      <- ZIO.service[TaskRepository]
-        boardRepo     <- ZIO.service[BoardRepository]
-        workspaceRepo <- ZIO.service[WorkspaceRepository]
-        queue         <- Queue.unbounded[WorkspaceAnalysisJob]
-        runtimeState  <- Ref.Synchronized.make(Map.empty[(String, AnalysisType), WorkspaceAnalysisStatus])
-        service        = WorkspaceAnalysisSchedulerLive(
-                           runner = runner,
-                           repository = repository,
-                           activityHub = activityHub,
-                           taskRepository = taskRepo,
-                           boardRepository = boardRepo,
-                           workspaceRepository = workspaceRepo,
-                           queue = queue,
-                           runtimeState = runtimeState,
-                         )
-        _             <- ZIO.foreachParDiscard(1 to trackedTypes.size)(_ => service.worker.forever.forkScoped)
+        runner         <- ZIO.service[AnalysisAgentRunner]
+        repository     <- ZIO.service[AnalysisRepository]
+        activityHub    <- ZIO.service[ActivityHub]
+        taskRepo       <- ZIO.service[TaskRepository]
+        boardRepo      <- ZIO.service[BoardRepository]
+        workspaceRepo  <- ZIO.service[WorkspaceRepository]
+        projectStorage <- ZIO.service[ProjectStorageService]
+        queue          <- Queue.unbounded[WorkspaceAnalysisJob]
+        runtimeState   <- Ref.Synchronized.make(Map.empty[(String, AnalysisType), WorkspaceAnalysisStatus])
+        service         = WorkspaceAnalysisSchedulerLive(
+                            runner = runner,
+                            repository = repository,
+                            activityHub = activityHub,
+                            taskRepository = taskRepo,
+                            boardRepository = boardRepo,
+                            workspaceRepository = workspaceRepo,
+                            projectStorageService = projectStorage,
+                            queue = queue,
+                            runtimeState = runtimeState,
+                          )
+        _              <- ZIO.foreachParDiscard(1 to trackedTypes.size)(_ => service.worker.forever.forkScoped)
       yield service
     }
 
@@ -95,6 +99,7 @@ final case class WorkspaceAnalysisSchedulerLive(
   taskRepository: TaskRepository,
   boardRepository: BoardRepository,
   workspaceRepository: WorkspaceRepository,
+  projectStorageService: ProjectStorageService,
   queue: Queue[WorkspaceAnalysisJob],
   runtimeState: Ref.Synchronized[Map[(String, AnalysisType), WorkspaceAnalysisStatus]],
 ) extends WorkspaceAnalysisScheduler:
@@ -274,9 +279,10 @@ final case class WorkspaceAnalysisSchedulerLive(
     for
       workspaceOpt <- workspaceRepository.get(workspaceId)
       workspace    <- ZIO.fromOption(workspaceOpt).orElseFail(PersistenceError.NotFound("workspace", workspaceId))
-      _            <- boardRepository.initBoard(workspace.localPath).mapError(mapBoardError)
+      boardPath    <- projectStorageService.projectRoot(workspace.projectId).map(_.toString)
+      _            <- boardRepository.initBoard(boardPath).mapError(mapBoardError)
       existing     <- ZIO
-                        .foreach(boardColumns)(column => boardRepository.listIssues(workspace.localPath, column))
+                        .foreach(boardColumns)(column => boardRepository.listIssues(boardPath, column))
                         .map(_.flatten)
                         .mapError(mapBoardError)
       hasReview     = existing.exists(issue =>
@@ -284,7 +290,7 @@ final case class WorkspaceAnalysisSchedulerLive(
                         issue.frontmatter.title.equalsIgnoreCase(title)
                       )
       _            <- ZIO.unless(hasReview) {
-                        createWorkspaceBoardReviewIssue(workspace.localPath, title, description, now)
+                        createWorkspaceBoardReviewIssue(boardPath, title, description, now)
                       }
     yield ()
 

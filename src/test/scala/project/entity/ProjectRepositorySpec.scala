@@ -54,7 +54,7 @@ object ProjectRepositorySpec extends ZIOSpecDefault:
                    )
             got <- repo.get(ProjectId("proj-1"))
           yield assertTrue(
-            got.exists(_.name == "Platform"),
+            got.exists(_.name == "Platform")
           )).provideLayer(layerFor(dir))
         }
       },

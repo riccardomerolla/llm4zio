@@ -161,11 +161,11 @@ object ProjectsControllerSpec extends ZIOSpecDefault:
       )
 
   private object StubProjectStorageService extends ProjectStorageService:
-    override def initProjectStorage(projectId: ProjectId): IO[PersistenceError, java.nio.file.Path] =
+    override def initProjectStorage(projectId: ProjectId): IO[PersistenceError, java.nio.file.Path]        =
       ZIO.succeed(java.nio.file.Paths.get("/tmp", "projects", projectId.value))
-    override def projectRoot(projectId: ProjectId): UIO[java.nio.file.Path] =
+    override def projectRoot(projectId: ProjectId): UIO[java.nio.file.Path]                                =
       ZIO.succeed(java.nio.file.Paths.get("/tmp", "projects", projectId.value))
-    override def boardPath(projectId: ProjectId): UIO[java.nio.file.Path] =
+    override def boardPath(projectId: ProjectId): UIO[java.nio.file.Path]                                  =
       ZIO.succeed(java.nio.file.Paths.get("/tmp", "projects", projectId.value, ".board"))
     override def workspaceAnalysisPath(projectId: ProjectId, workspaceId: String): UIO[java.nio.file.Path] =
       ZIO.succeed(java.nio.file.Paths.get("/tmp", "projects", projectId.value, "workspaces", workspaceId))

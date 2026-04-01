@@ -101,7 +101,7 @@ final class StubWorkspaceRepository(
 ) extends WorkspaceRepository:
   override def append(event: WorkspaceEvent): IO[PersistenceError, Unit]                      = ZIO.unit
   override def list: IO[PersistenceError, List[Workspace]]                                    = ZIO.succeed(workspaces)
-  override def listByProject(projectId: ProjectId): IO[PersistenceError, List[Workspace]]    =
+  override def listByProject(projectId: ProjectId): IO[PersistenceError, List[Workspace]]     =
     ZIO.succeed(workspaces.filter(_.projectId == projectId))
   override def get(id: String): IO[PersistenceError, Option[Workspace]]                       =
     ZIO.succeed(workspaces.find(_.id == id))

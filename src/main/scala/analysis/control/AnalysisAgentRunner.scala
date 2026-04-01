@@ -86,18 +86,18 @@ object AnalysisAgentRunner:
     ] =
     ZLayer.fromZIO {
       for
-        workspaceRepository <- ZIO.service[WorkspaceRepository]
-        agentRepository     <- ZIO.service[AgentRepository]
-        analysisRepository  <- ZIO.service[AnalysisRepository]
-        taskRepository      <- ZIO.service[TaskRepository]
-        fileService         <- ZIO.service[FileService]
-        configResolver      <- ZIO.service[AgentConfigResolver]
-        llmService          <- ZIO.service[LlmService]
-        httpClient          <- ZIO.service[HttpClient]
-        cliExecutor         <- ZIO.service[GeminiCliExecutor]
-        promptLoader         <- ZIO.service[PromptLoader]
+        workspaceRepository   <- ZIO.service[WorkspaceRepository]
+        agentRepository       <- ZIO.service[AgentRepository]
+        analysisRepository    <- ZIO.service[AnalysisRepository]
+        taskRepository        <- ZIO.service[TaskRepository]
+        fileService           <- ZIO.service[FileService]
+        configResolver        <- ZIO.service[AgentConfigResolver]
+        llmService            <- ZIO.service[LlmService]
+        httpClient            <- ZIO.service[HttpClient]
+        cliExecutor           <- ZIO.service[GeminiCliExecutor]
+        promptLoader          <- ZIO.service[PromptLoader]
         projectStorageService <- ZIO.service[ProjectStorageService]
-        providerCache        <- Ref.Synchronized.make(Map.empty[LlmConfig, LlmService])
+        providerCache         <- Ref.Synchronized.make(Map.empty[LlmConfig, LlmService])
       yield AnalysisAgentRunnerLive(
         workspaceRepository = workspaceRepository,
         agentRepository = agentRepository,
@@ -376,16 +376,16 @@ final case class AnalysisAgentRunnerLive(
 
   private def runAnalysis(workspaceId: String, profile: AnalysisProfile): IO[AnalysisAgentRunnerError, AnalysisDoc] =
     for
-      _         <- ZIO.logDebug(s"Starting ${profile.slug} analysis for workspace $workspaceId")
-      workspace <- loadWorkspace(workspaceId)
-      agent     <- selectAgent(workspace, profile)
-      _         <- ZIO.logDebug(
-                     s"Selected agent '${agent.name}' for ${profile.slug} analysis in workspace '${workspace.name}'"
-                   )
-      prompt    <- resolvePrompt(workspace, agent, profile)
-      _         <- ZIO.logDebug(
-                     s"Executing ${profile.slug} analysis for workspace '${workspace.name}' with agent '${agent.name}'"
-                   )
+      _           <- ZIO.logDebug(s"Starting ${profile.slug} analysis for workspace $workspaceId")
+      workspace   <- loadWorkspace(workspaceId)
+      agent       <- selectAgent(workspace, profile)
+      _           <- ZIO.logDebug(
+                       s"Selected agent '${agent.name}' for ${profile.slug} analysis in workspace '${workspace.name}'"
+                     )
+      prompt      <- resolvePrompt(workspace, agent, profile)
+      _           <- ZIO.logDebug(
+                       s"Executing ${profile.slug} analysis for workspace '${workspace.name}' with agent '${agent.name}'"
+                     )
       markdown    <- executeReview(workspace, agent, profile, prompt)
       projectRoot <- projectStorageService.projectRoot(workspace.projectId)
       filePath     = projectRoot.resolve("workspaces").resolve(workspace.id).resolve(profile.relativePath)

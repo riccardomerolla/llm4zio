@@ -9,6 +9,7 @@ import activity.entity.{ ActivityEvent, ActivityEventType }
 import analysis.entity.{ AnalysisDoc, AnalysisEvent, AnalysisRepository, AnalysisType }
 import board.entity.*
 import db.*
+import project.control.ProjectStorageService
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ AgentId, AnalysisDocId, BoardIssueId, ProjectId }
 import shared.testfixtures.*
@@ -121,6 +122,21 @@ object WorkspaceAnalysisSchedulerSpec extends ZIOSpecDefault:
       boardRef.get.map(_.values.filter(_.column == column).toList)
     override def invalidateWorkspace(workspacePath: String): UIO[Unit]                                    = ZIO.unit
 
+  private object StubProjectStorageService extends ProjectStorageService:
+    override def initProjectStorage(projectId: shared.ids.Ids.ProjectId): IO[PersistenceError, java.nio.file.Path] =
+      ZIO.succeed(java.nio.file.Paths.get(s"/tmp/projects/${projectId.value}"))
+    override def projectRoot(projectId: shared.ids.Ids.ProjectId): UIO[java.nio.file.Path]                         =
+      ZIO.succeed(java.nio.file.Paths.get(s"/tmp/projects/${projectId.value}"))
+    override def boardPath(projectId: shared.ids.Ids.ProjectId): UIO[java.nio.file.Path]                           =
+      ZIO.succeed(java.nio.file.Paths.get(s"/tmp/projects/${projectId.value}/.board"))
+    override def workspaceAnalysisPath(
+      projectId: shared.ids.Ids.ProjectId,
+      workspaceId: String,
+    ): UIO[java.nio.file.Path] =
+      ZIO.succeed(
+        java.nio.file.Paths.get(s"/tmp/projects/${projectId.value}/workspaces/$workspaceId/.llm4zio/analysis")
+      )
+
   private def makeHarness(blockTypes: Set[AnalysisType] = Set.empty, settings: Map[String, String] = Map.empty): ZIO[
     Scope,
     Nothing,
@@ -191,6 +207,7 @@ object WorkspaceAnalysisSchedulerSpec extends ZIOSpecDefault:
                          taskRepository = taskRepository,
                          boardRepository = boardRepo,
                          workspaceRepository = workspaceRepo,
+                         projectStorageService = StubProjectStorageService,
                          queue = queue,
                          runtimeState = runtimeState,
                        )

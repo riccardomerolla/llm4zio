@@ -214,10 +214,11 @@ object ProjectsController:
     agents: List[AgentInfo],
     activeTab: String,
   ): ProjectDetailPageData =
-    val assignedWorkspaces  = workspaces.filter(_.projectId == project.id).sortBy(_.name.toLowerCase)
-    val projectIssues       = issues.filter(issue => issue.workspaceId.exists(wsId => assignedWorkspaces.exists(_.id == wsId)))
-    val boardIssues         = projectIssues.map(domainToView).filter(_.status != IssueStatus.Canceled)
-    val workspaceRows       = assignedWorkspaces.map { workspace =>
+    val assignedWorkspaces = workspaces.filter(_.projectId == project.id).sortBy(_.name.toLowerCase)
+    val projectIssues      =
+      issues.filter(issue => issue.workspaceId.exists(wsId => assignedWorkspaces.exists(_.id == wsId)))
+    val boardIssues        = projectIssues.map(domainToView).filter(_.status != IssueStatus.Canceled)
+    val workspaceRows      = assignedWorkspaces.map { workspace =>
       val statuses = statusesByWorkspace.getOrElse(workspace.id, Nil)
       val health   = workspaceHealth(workspace.enabled, statuses)
       ProjectWorkspaceRow(
@@ -232,7 +233,7 @@ object ProjectsController:
         lastRunAt = latestAnalysisAt(statuses),
       )
     }
-    val analysisRows        = assignedWorkspaces.map { workspace =>
+    val analysisRows       = assignedWorkspaces.map { workspace =>
       val statuses = statusesByWorkspace.getOrElse(workspace.id, Nil)
       ProjectAnalysisRow(
         workspaceId = workspace.id,
@@ -280,52 +281,52 @@ object ProjectsController:
     analysisScheduler: WorkspaceAnalysisScheduler,
   ): IO[Response, Response] =
     for
-      body          <- req.body.asString.mapError(_ => Response.internalServerError("body read failed"))
-      fields         = body
-                         .split("&")
-                         .collect {
-                           case s if s.contains("=") =>
-                             val idx = s.indexOf('=')
-                             urlDecode(s.substring(0, idx)) -> urlDecode(s.substring(idx + 1))
-                         }
-                         .toMap
-      name          <- ZIO
-                         .fromOption(fields.get("name").map(_.trim).filter(_.nonEmpty))
-                         .orElseFail(Response.badRequest("name is required"))
-      localPath     <- ZIO
-                         .fromOption(fields.get("localPath").map(_.trim).filter(_.nonEmpty))
-                         .orElseFail(Response.badRequest("localPath is required"))
-      cliTool        = fields.get("cliTool").map(_.trim).filter(_.nonEmpty).getOrElse("claude")
-      defaultBranch  = Workspace.normalizeDefaultBranch(
-                         fields.getOrElse("defaultBranch", Workspace.DefaultBranch)
-                       )
-      now           <- Clock.instant
-      id             = UUID.randomUUID().toString
-      _             <- workspaceRepository
-                         .append(
-                           WorkspaceEvent.Created(
-                             workspaceId = id,
-                             projectId = ProjectId(projectId),
-                             name = name,
-                             localPath = localPath,
-                             defaultAgent = None,
-                             description = None,
-                             cliTool = cliTool,
-                             runMode = RunMode.Host,
-                             occurredAt = now,
-                           )
-                         )
-                         .mapError(err => Response.internalServerError(err.toString))
-      _             <- workspaceRepository
-                         .append(
-                           WorkspaceEvent.DefaultBranchChanged(
-                             workspaceId = id,
-                             defaultBranch = defaultBranch,
-                             occurredAt = now,
-                           )
-                         )
-                         .mapError(err => Response.internalServerError(err.toString))
-      _             <- analysisScheduler.triggerForWorkspaceEvent(id).forkDaemon
+      body         <- req.body.asString.mapError(_ => Response.internalServerError("body read failed"))
+      fields        = body
+                        .split("&")
+                        .collect {
+                          case s if s.contains("=") =>
+                            val idx = s.indexOf('=')
+                            urlDecode(s.substring(0, idx)) -> urlDecode(s.substring(idx + 1))
+                        }
+                        .toMap
+      name         <- ZIO
+                        .fromOption(fields.get("name").map(_.trim).filter(_.nonEmpty))
+                        .orElseFail(Response.badRequest("name is required"))
+      localPath    <- ZIO
+                        .fromOption(fields.get("localPath").map(_.trim).filter(_.nonEmpty))
+                        .orElseFail(Response.badRequest("localPath is required"))
+      cliTool       = fields.get("cliTool").map(_.trim).filter(_.nonEmpty).getOrElse("claude")
+      defaultBranch = Workspace.normalizeDefaultBranch(
+                        fields.getOrElse("defaultBranch", Workspace.DefaultBranch)
+                      )
+      now          <- Clock.instant
+      id            = UUID.randomUUID().toString
+      _            <- workspaceRepository
+                        .append(
+                          WorkspaceEvent.Created(
+                            workspaceId = id,
+                            projectId = ProjectId(projectId),
+                            name = name,
+                            localPath = localPath,
+                            defaultAgent = None,
+                            description = None,
+                            cliTool = cliTool,
+                            runMode = RunMode.Host,
+                            occurredAt = now,
+                          )
+                        )
+                        .mapError(err => Response.internalServerError(err.toString))
+      _            <- workspaceRepository
+                        .append(
+                          WorkspaceEvent.DefaultBranchChanged(
+                            workspaceId = id,
+                            defaultBranch = defaultBranch,
+                            occurredAt = now,
+                          )
+                        )
+                        .mapError(err => Response.internalServerError(err.toString))
+      _            <- analysisScheduler.triggerForWorkspaceEvent(id).forkDaemon
     yield redirect(s"/projects/$projectId?tab=workspaces")
 
   private def projectListItem(
@@ -337,12 +338,16 @@ object ProjectsController:
     val projectWorkspaces = workspaces.filter(_.projectId == project.id)
     val workspaceCount    = projectWorkspaces.size
     val activeIssues      =
-      issues.filter(issue => issue.workspaceId.exists(wsId => projectWorkspaces.exists(_.id == wsId))).map(domainToView).count(issue =>
+      issues.filter(issue => issue.workspaceId.exists(wsId => projectWorkspaces.exists(_.id == wsId))).map(
+        domainToView
+      ).count(issue =>
         isActiveIssue(issue.status)
       )
     val latestWorkspaceAt = projectWorkspaces.map(_.updatedAt).maxOption
     val latestIssueAt     =
-      issues.filter(issue => issue.workspaceId.exists(wsId => projectWorkspaces.exists(_.id == wsId))).map(issueActivityAt).maxOption
+      issues.filter(issue => issue.workspaceId.exists(wsId => projectWorkspaces.exists(_.id == wsId))).map(
+        issueActivityAt
+      ).maxOption
     ProjectListItem(
       id = project.id.value,
       name = project.name,

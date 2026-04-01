@@ -116,7 +116,7 @@ object ProjectsView:
       case ProjectFilter.All              => "all"
       case ProjectFilter.Selected(projId) => projId.value
     div(
-      cls := "flex-1",
+      cls := "flex-1"
     )(
       select(
         id       := "project-filter-select",
@@ -403,7 +403,7 @@ object ProjectsView:
           ),
           p(cls := "mt-1 text-xs font-mono text-slate-500")(row.workspaceId),
           row.description.fold[Frag](frag())(desc => p(cls := "mt-2 text-sm text-slate-400")(desc)),
-        ),
+        )
       ),
       div(cls := "mt-4 grid gap-3 md:grid-cols-3")(
         infoCell("Default agent", row.defaultAgent.getOrElse("—")),

@@ -29,6 +29,7 @@ import app.boundary.{ AgentMonitorController as AppAgentMonitorController, Healt
 import app.control.{ FileService, HealthMonitor, HttpAIClient, LogTailer, StateService }
 import board.boundary.BoardController as BoardBoundaryController
 import board.control.*
+import board.entity.BoardRepository
 import checkpoint.boundary.CheckpointsController
 import checkpoint.control.CheckpointReviewService
 import com.bot4s.telegram.clients.FutureSttpClient
@@ -324,7 +325,18 @@ object ApplicationDI:
       InteractiveAgentRunner.live,
       RunSessionManager.live,
       CheckpointReviewService.live,
-      IssueRepositoryBoard.live,
+      ZLayer.fromZIO {
+        for
+          boardRepo      <- ZIO.service[BoardRepository]
+          workspaceRepo  <- ZIO.service[WorkspaceRepository]
+          projectStorage <- ZIO.service[ProjectStorageService]
+          repo           <- IssueRepositoryBoard.make(
+                              boardRepo,
+                              workspaceRepo,
+                              ws => projectStorage.projectRoot(ws.projectId).map(_.toString),
+                            )
+        yield repo
+      },
       TaskRunEventStoreES.live,
       TaskRunRepositoryES.live,
       PlannerAgentService.live,

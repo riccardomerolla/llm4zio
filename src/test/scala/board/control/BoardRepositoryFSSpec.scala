@@ -70,22 +70,22 @@ object BoardRepositoryFSSpec extends ZIOSpecDefault:
     test("initBoard creates .board structure and initial commit") {
       ZIO.scoped {
         for
-          repoPath  <- initRepo
-          repo      <- repository
-          _         <- repo.initBoard(repoPath.toString)
-          boardDir   = repoPath.resolve(".board")
-          checks    <- ZIO.attempt(
-                         (
-                           JFiles.exists(boardDir.resolve("BOARD.md")),
-                           JFiles.isDirectory(boardDir.resolve("backlog")),
-                           JFiles.isDirectory(boardDir.resolve("todo")),
-                           JFiles.isDirectory(boardDir.resolve("in-progress")),
-                           JFiles.isDirectory(boardDir.resolve("review")),
-                           JFiles.isDirectory(boardDir.resolve("done")),
-                           JFiles.isDirectory(boardDir.resolve("archive")),
-                         )
-                       )
-          boardLog  <- runCmd(repoPath, "git", "log", "--oneline", "-n", "1")
+          repoPath <- initRepo
+          repo     <- repository
+          _        <- repo.initBoard(repoPath.toString)
+          boardDir  = repoPath.resolve(".board")
+          checks   <- ZIO.attempt(
+                        (
+                          JFiles.exists(boardDir.resolve("BOARD.md")),
+                          JFiles.isDirectory(boardDir.resolve("backlog")),
+                          JFiles.isDirectory(boardDir.resolve("todo")),
+                          JFiles.isDirectory(boardDir.resolve("in-progress")),
+                          JFiles.isDirectory(boardDir.resolve("review")),
+                          JFiles.isDirectory(boardDir.resolve("done")),
+                          JFiles.isDirectory(boardDir.resolve("archive")),
+                        )
+                      )
+          boardLog <- runCmd(repoPath, "git", "log", "--oneline", "-n", "1")
         yield assertTrue(
           checks._1,
           boardLog.contains("[board] Init: board structure"),
@@ -191,14 +191,14 @@ object BoardRepositoryFSSpec extends ZIOSpecDefault:
     test("initBoard is idempotent — second call does not create extra commits") {
       ZIO.scoped {
         for
-          repoPath  <- initRepo
-          repo      <- repository
-          _         <- repo.initBoard(repoPath.toString)
-          _         <- repo.initBoard(repoPath.toString)
-          logCount  <- runCmd(repoPath, "git", "log", "--pretty=%s")
-                         .map(_.linesIterator.count(_.contains("[board] Init:")))
+          repoPath <- initRepo
+          repo     <- repository
+          _        <- repo.initBoard(repoPath.toString)
+          _        <- repo.initBoard(repoPath.toString)
+          logCount <- runCmd(repoPath, "git", "log", "--pretty=%s")
+                        .map(_.linesIterator.count(_.contains("[board] Init:")))
         yield assertTrue(
-          logCount == 1,
+          logCount == 1
         )
       }
     },
