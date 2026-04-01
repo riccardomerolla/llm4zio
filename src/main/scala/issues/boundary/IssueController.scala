@@ -972,52 +972,55 @@ final case class IssueControllerLive(
     val priorityFilter  = req.queryParam("priority").map(_.trim.toLowerCase).filter(_.nonEmpty)
     val statusFilter    = req.queryParam("status").map(_.trim.toLowerCase).filter(_.nonEmpty)
     ErrorHandlingMiddleware.fromPersistence {
-      for
-        startedAt        <- Clock.nanoTime
-        workspacesFiber  <- timed("boardFragment.workspaces")(workspaceRepository.list.mapError(mapIssueRepoError)).fork
-        issuesFiber      <- timed("boardFragment.issues")(
-                              loadBoardIssues(
-                                query,
-                                tagFilter,
-                                workspaceFilter,
-                                agentFilter,
-                                priorityFilter,
-                                statusFilter,
+      val fragmentEffect =
+        for
+          startedAt        <- Clock.nanoTime
+          workspacesFiber  <- timed("boardFragment.workspaces")(workspaceRepository.list.mapError(mapIssueRepoError)).fork
+          issuesFiber      <- timed("boardFragment.issues")(
+                                loadBoardIssues(
+                                  query,
+                                  tagFilter,
+                                  workspaceFilter,
+                                  agentFilter,
+                                  priorityFilter,
+                                  statusFilter,
+                                )
+                              ).fork
+          workReportsFiber <- timedUio("boardFragment.workReports")(issueWorkReportProjection.getAll).fork
+          workspacesTimed  <- workspacesFiber.join
+          issuesTimed      <- issuesFiber.join
+          workReportsTimed <- workReportsFiber.join
+          dispatchTimed    <- timed("boardFragment.dispatchStatuses")(loadDispatchStatuses(issuesTimed.value))
+          completedAt      <- Clock.nanoTime
+          totalDurationMs   = nanosToMillis(completedAt - startedAt)
+          workReports       = selectWorkReports(workReportsTimed.value, issuesTimed.value)
+          _                <- logBoardTiming(
+                                route = "fragment",
+                                totalDurationMs = totalDurationMs,
+                                workspacesDurationMs = workspacesTimed.durationMs,
+                                issuesDurationMs = issuesTimed.durationMs,
+                                workReportsDurationMs = workReportsTimed.durationMs,
+                                dispatchDurationMs = dispatchTimed.durationMs,
+                                issueCount = issuesTimed.value.size,
                               )
-                            ).fork
-        workReportsFiber <- timedUio("boardFragment.workReports")(issueWorkReportProjection.getAll).fork
-        workspacesTimed  <- workspacesFiber.join
-        issuesTimed      <- issuesFiber.join
-        workReportsTimed <- workReportsFiber.join
-        dispatchTimed    <- timed("boardFragment.dispatchStatuses")(loadDispatchStatuses(issuesTimed.value))
-        completedAt      <- Clock.nanoTime
-        totalDurationMs   = nanosToMillis(completedAt - startedAt)
-        workReports       = selectWorkReports(workReportsTimed.value, issuesTimed.value)
-        _                <- logBoardTiming(
-                              route = "fragment",
-                              totalDurationMs = totalDurationMs,
-                              workspacesDurationMs = workspacesTimed.durationMs,
-                              issuesDurationMs = issuesTimed.durationMs,
-                              workReportsDurationMs = workReportsTimed.durationMs,
-                              dispatchDurationMs = dispatchTimed.durationMs,
-                              issueCount = issuesTimed.value.size,
-                            )
-      yield html(
-        HtmlViews.issuesBoardColumns(
-          issues = issuesTimed.value,
-          workspaces = workspacesTimed.value.map(ws => ws.id -> ws.name),
-          workReports = workReports,
-          dispatchStatuses = dispatchTimed.value,
-        )
-      ).addHeaders(boardTimingHeaders(
-        route = "fragment",
-        totalDurationMs = totalDurationMs,
-        workspacesDurationMs = workspacesTimed.durationMs,
-        issuesDurationMs = issuesTimed.durationMs,
-        workReportsDurationMs = workReportsTimed.durationMs,
-        dispatchDurationMs = dispatchTimed.durationMs,
-        issueCount = issuesTimed.value.size,
-      ))
+        yield html(
+          HtmlViews.issuesBoardColumns(
+            issues = issuesTimed.value,
+            workspaces = workspacesTimed.value.map(ws => ws.id -> ws.name),
+            workReports = workReports,
+            dispatchStatuses = dispatchTimed.value,
+          )
+        ).addHeaders(boardTimingHeaders(
+          route = "fragment",
+          totalDurationMs = totalDurationMs,
+          workspacesDurationMs = workspacesTimed.durationMs,
+          issuesDurationMs = issuesTimed.durationMs,
+          workReportsDurationMs = workReportsTimed.durationMs,
+          dispatchDurationMs = dispatchTimed.durationMs,
+          issueCount = issuesTimed.value.size,
+        ))
+      fragmentEffect
+        .timeoutFail(PersistenceError.QueryFailed("boardFragment", "timed out after 10s"))(10.seconds)
     }
 
   private def html(content: String): Response =

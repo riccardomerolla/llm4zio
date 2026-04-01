@@ -215,12 +215,14 @@ object IssuesView:
           cls                          := "flex-1 min-h-0 overflow-hidden",
         )(
           div(
-            id                      := "issues-board-root",
-            attr("hx-get")          := fragmentUrl,
-            attr("hx-trigger")      := "load, every 10s",
-            attr("hx-swap")         := "innerHTML",
-            cls                     := "h-full",
-            attr("data-bulk-scope") := "board",
+            id                        := "issues-board-root",
+            attr("hx-get")            := fragmentUrl,
+            attr("hx-trigger")        := "load, every 10s",
+            attr("hx-swap")           := "innerHTML",
+            attr("hx-sync")           := "this:drop",
+            attr("hx-request")        := """{"timeout": 15000}""",
+            cls                       := "h-full",
+            attr("data-bulk-scope")   := "board",
           )(
             raw(boardColumnsFragment(issues, workspaces, workReports, availableAgents, dispatchStatuses))
           )

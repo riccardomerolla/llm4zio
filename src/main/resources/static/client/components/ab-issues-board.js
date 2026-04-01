@@ -1,5 +1,13 @@
 import { LitElement } from 'https://cdn.jsdelivr.net/npm/lit@3/+esm';
 
+// Timeout for a single board fragment fetch (ms). Sized above the server-side
+// 10-second limit so the server can return a clean error first.
+const REFRESH_FETCH_TIMEOUT_MS = 15_000;
+
+// Watchdog: if _refreshInFlight is still true after this long, force-reset it.
+// Handles any unforeseen Promise hang (e.g., future regressions, browser bugs).
+const REFRESH_WATCHDOG_MS = 20_000;
+
 function createBoardSyncHooks({
   beforeRefresh = () => {},
   afterRefresh = () => {},
@@ -12,6 +20,32 @@ function createBoardSyncHooks({
       if (this._shouldDeferRefresh()) return;
       this._refreshPending = false;
       this.refreshBoard();
+    },
+
+    _clearRefreshWatchdog() {
+      if (this._refreshWatchdogTimer) {
+        window.clearTimeout(this._refreshWatchdogTimer);
+        this._refreshWatchdogTimer = null;
+      }
+    },
+
+    _armRefreshWatchdog() {
+      this._clearRefreshWatchdog();
+      this._refreshWatchdogTimer = window.setTimeout(() => {
+        this._refreshWatchdogTimer = null;
+        if (!this._refreshInFlight) return;
+        console.warn('[ab-issues-board] Refresh watchdog fired — forcing _refreshInFlight reset');
+        this._refreshInFlight = false;
+        afterSettle.call(this);
+        this._flushPendingRefresh();
+      }, REFRESH_WATCHDOG_MS);
+    },
+
+    _settleRefresh() {
+      this._clearRefreshWatchdog();
+      this._refreshInFlight = false;
+      afterSettle.call(this);
+      this._flushPendingRefresh();
     },
 
     refreshBoard(landedIssueId = null) {
@@ -27,22 +61,36 @@ function createBoardSyncHooks({
 
       this._refreshInFlight = true;
       beforeRefresh.call(this);
+      this._armRefreshWatchdog();
 
-      const onSettled = () => {
-        this._refreshInFlight = false;
-        afterSettle.call(this);
-        this._flushPendingRefresh();
-      };
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), REFRESH_FETCH_TIMEOUT_MS);
 
-      const onRefreshed = () => {
-        afterRefresh.call(this, landedIssueId);
-        this._flushPostRefreshToast();
-      };
-
-      window.htmx.ajax('GET', this.fragmentUrl, {
-        target: this.root,
-        swap: 'innerHTML',
-      }).then(onRefreshed).catch(() => {}).finally(onSettled);
+      fetch(this.fragmentUrl, {
+        method: 'GET',
+        headers: { Accept: 'text/html' },
+        signal: controller.signal,
+      })
+        .then((response) => {
+          if (!response.ok) throw new Error(`Board fragment returned ${response.status}`);
+          return response.text();
+        })
+        .then((html) => {
+          this.root.innerHTML = html;
+          // Let HTMX process any hx-* attributes inside the freshly injected HTML.
+          if (window.htmx) window.htmx.process(this.root);
+          afterRefresh.call(this, landedIssueId);
+          this._flushPostRefreshToast();
+        })
+        .catch((err) => {
+          if (err?.name !== 'AbortError') {
+            console.warn('[ab-issues-board] Board refresh failed:', err);
+          }
+        })
+        .finally(() => {
+          window.clearTimeout(timeoutId);
+          this._settleRefresh();
+        });
     },
 
     _flushPostRefreshToast() {
@@ -72,7 +120,13 @@ function createBoardSyncHooks({
       const evt = parsed?.Event;
       if (!evt || evt.topic !== this.wsTopic) return;
       if (evt.eventType === 'activity-feed') {
-        this.refreshBoard();
+        // If dragging or a form is open, defer rather than triggering a refresh
+        // that would be immediately blocked, leaving _refreshInFlight stuck.
+        if (this._shouldDeferRefresh()) {
+          this._refreshPending = true;
+        } else {
+          this.refreshBoard();
+        }
       }
     },
   };
@@ -87,10 +141,10 @@ class AbIssuesBoard extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
-    // The inner #issues-board-root div is where HTMX does its polling.
-    // We operate on it via this.root so htmx.ajax() targets the inner div,
-    // keeping HTMX's internal request state completely isolated from
-    // LitElement's lifecycle on the outer custom element.
+    // The inner #issues-board-root div is where HTMX does its periodic polling.
+    // Programmatic refreshes (after drag-drop, quick-add, etc.) use fetch() +
+    // manual innerHTML replacement to avoid HTMX's internal request tracking,
+    // which can permanently strand _refreshInFlight if beforeRequest is cancelled.
     this.root = this.querySelector('#issues-board-root') || this;
     this.fragmentUrl = this.dataset.fragmentUrl || '/board/fragment';
     this.wsTopic = this.dataset.wsTopic || 'activity:feed';
@@ -102,6 +156,7 @@ class AbIssuesBoard extends LitElement {
     this.ws = null;
     this._refreshInFlight = false;
     this._refreshPending = false;
+    this._refreshWatchdogTimer = null;
     this._pointerDragging = false;
     this.dragFromStatus = null;
     this._toastHost = null;
@@ -500,32 +555,26 @@ class AbIssuesBoard extends LitElement {
     if (this._refreshGuardsBound) return;
     this._refreshGuardsBound = true;
 
-    // Persist column scroll positions across HTMX fragment refreshes
+    // Persist column scroll positions across both programmatic (fetch) and
+    // native HTMX periodic refreshes (every 10s).
     this._savedScrolls = {};
 
-    this.root.addEventListener('htmx:beforeRequest', (event) => {
-      const requestTarget = event?.detail?.target;
-      if (requestTarget !== this.root) return;
-      if (!this._shouldDeferRefresh()) return;
-      event.preventDefault();
-      this._refreshPending = true;
-      this._endLoading();
-    });
+    // NOTE: We intentionally do NOT listen to htmx:beforeRequest here.
+    // Cancelling htmx:beforeRequest on a htmx.ajax() call causes the returned
+    // Promise to never resolve/reject, permanently stranding _refreshInFlight.
+    // Instead, we guard at the call site (refreshBoard / onWsMessage) so we
+    // never start a refresh while _shouldDeferRefresh() is true.
 
+    // Save scroll positions before any native HTMX poll swap on this element.
     this.root.addEventListener('htmx:beforeSwap', (event) => {
       const requestTarget = event?.detail?.target;
       if (requestTarget !== this.root) return;
 
-      // Save each column's card-list scroll offset keyed by status token
+      // Capture each column's scroll offset before the DOM replacement.
       this.root.querySelectorAll('[data-column-cards]').forEach(el => {
         const key = el.dataset.columnCards;
         if (key) this._savedScrolls[key] = el.scrollTop;
       });
-
-      if (!this._shouldDeferRefresh()) return;
-      event.preventDefault();
-      this._refreshPending = true;
-      this._endLoading();
     });
 
     this.root.addEventListener('htmx:afterSwap', (event) => {
@@ -543,8 +592,6 @@ class AbIssuesBoard extends LitElement {
         });
         this._savedScrolls = {};
       }));
-
-      this._endLoading();
     });
 
     this.root.addEventListener('htmx:responseError', (event) => {
