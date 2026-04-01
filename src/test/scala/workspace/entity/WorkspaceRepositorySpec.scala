@@ -7,6 +7,7 @@ import zio.*
 import zio.test.*
 
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
+import shared.ids.Ids.ProjectId
 import shared.store.{ DataStoreModule, StoreConfig }
 
 object WorkspaceRepositorySpec extends ZIOSpecDefault:
@@ -38,6 +39,7 @@ object WorkspaceRepositorySpec extends ZIOSpecDefault:
 
   private val createdWs = WorkspaceEvent.Created(
     workspaceId = "ws-1",
+    projectId = ProjectId("test-project"),
     name = "my-api",
     localPath = "/tmp/my-api",
     defaultAgent = Some("gemini"),
@@ -49,6 +51,7 @@ object WorkspaceRepositorySpec extends ZIOSpecDefault:
 
   private val createdDockerWs = WorkspaceEvent.Created(
     workspaceId = "ws-docker",
+    projectId = ProjectId("test-project"),
     name = "sandboxed-api",
     localPath = "/tmp/sandboxed-api",
     defaultAgent = Some("opencode"),
@@ -60,6 +63,7 @@ object WorkspaceRepositorySpec extends ZIOSpecDefault:
 
   private val createdCloudWs = WorkspaceEvent.Created(
     workspaceId = "ws-cloud",
+    projectId = ProjectId("test-project"),
     name = "remote-api",
     localPath = "/tmp/remote-api",
     defaultAgent = Some("codex"),

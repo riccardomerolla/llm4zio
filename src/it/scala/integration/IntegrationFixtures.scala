@@ -17,6 +17,7 @@ import governance.entity.GovernancePolicy
 import llm4zio.core.{ LlmChunk, LlmError, LlmService, Message, ToolCallResponse }
 import llm4zio.tools.{ AnyTool, JsonSchema }
 import shared.errors.PersistenceError
+import shared.ids.Ids.ProjectId
 import shared.testfixtures.{ NoOpActivityHub, StubWorkspaceRepository }
 import workspace.control.GitServiceLive
 import workspace.entity.*
@@ -108,6 +109,7 @@ object IntegrationFixtures:
   def minimalWorkspace(id: String, path: Path): Workspace =
     Workspace(
       id = id,
+      projectId = ProjectId("test-project"),
       name = id,
       localPath = path.toString,
       defaultAgent = Some("codex"),

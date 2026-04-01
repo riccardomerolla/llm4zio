@@ -5,11 +5,13 @@ import zio.json.*
 
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import shared.errors.PersistenceError
+import shared.ids.Ids.ProjectId
 import shared.store.DataStoreModule
 
 trait WorkspaceRepository:
   def append(event: WorkspaceEvent): IO[PersistenceError, Unit]
   def list: IO[PersistenceError, List[Workspace]]
+  def listByProject(projectId: ProjectId): IO[PersistenceError, List[Workspace]]
   def get(id: String): IO[PersistenceError, Option[Workspace]]
   def delete(id: String): IO[PersistenceError, Unit]
 
@@ -62,6 +64,9 @@ final case class WorkspaceRepositoryES(
       ZIO.foreach(ids)(id => rebuildWorkspace(id, "listWorkspaces"))
         .map(_.flatten.sortBy(_.name.toLowerCase))
     }
+
+  override def listByProject(projectId: ProjectId): IO[PersistenceError, List[Workspace]] =
+    list.map(_.filter(_.projectId == projectId))
 
   override def get(id: String): IO[PersistenceError, Option[Workspace]] =
     rebuildWorkspace(id, "getWorkspace")

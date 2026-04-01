@@ -10,6 +10,7 @@ import zio.json.*
 import analysis.control.WorkspaceAnalysisScheduler
 import orchestration.control.AgentRegistry
 import shared.errors.PersistenceError
+import shared.ids.Ids.ProjectId
 import shared.web.{ WorkspaceTemplatesView, WorkspacesView }
 import workspace.control.{ AssignRunRequest, GitService, WorkspaceRunService }
 import workspace.entity.*
@@ -186,6 +187,7 @@ object WorkspacesController:
                             .append(
                               WorkspaceEvent.Created(
                                 workspaceId = id,
+                                projectId = patch.projectId,
                                 name = patch.name,
                                 localPath = patch.localPath,
                                 defaultAgent = patch.defaultAgent,
@@ -531,6 +533,7 @@ object WorkspacesController:
           .toMap
 
         val name          = fields.getOrElse("name", "")
+        val projectIdStr  = fields.getOrElse("projectId", "")
         val localPath     = fields.getOrElse("localPath", "")
         val defaultAgent  = fields.get("defaultAgent").filter(_.nonEmpty)
         val defaultBranch =
@@ -552,11 +555,12 @@ object WorkspacesController:
             RunMode.Cloud(provider = provider, image = image, region = region, network = network)
           else RunMode.Host
 
-        if name.isEmpty || localPath.isEmpty then
-          ZIO.fail(Response.badRequest("name and localPath are required"))
+        if name.isEmpty || projectIdStr.isEmpty || localPath.isEmpty then
+          ZIO.fail(Response.badRequest("name, projectId, and localPath are required"))
         else
           ZIO.succeed(WorkspaceCreateRequest(
             name,
+            ProjectId(projectIdStr),
             localPath,
             defaultAgent,
             defaultBranch,
@@ -970,6 +974,7 @@ object WorkspacesController:
 
 case class WorkspaceCreateRequest(
   name: String,
+  projectId: ProjectId,
   localPath: String,
   defaultAgent: Option[String],
   defaultBranch: String = Workspace.DefaultBranch,

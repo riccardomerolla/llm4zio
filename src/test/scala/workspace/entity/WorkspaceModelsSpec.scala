@@ -6,6 +6,8 @@ import zio.Scope
 import zio.json.*
 import zio.test.*
 
+import shared.ids.Ids.ProjectId
+
 object WorkspaceModelsSpec extends ZIOSpecDefault:
   def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("WorkspaceModelsSpec")(
     test("RunMode.Host round-trips through JSON") {
@@ -37,6 +39,7 @@ object WorkspaceModelsSpec extends ZIOSpecDefault:
     test("Workspace round-trips through JSON") {
       val ws      = Workspace(
         id = "ws-1",
+        projectId = ProjectId("test-project"),
         name = "my-api",
         localPath = "/home/user/projects/my-api",
         defaultAgent = Some("gemini"),
@@ -55,6 +58,7 @@ object WorkspaceModelsSpec extends ZIOSpecDefault:
     test("Workspace with RunMode.Docker round-trips through JSON") {
       val ws      = Workspace(
         id = "ws-docker",
+        projectId = ProjectId("test-project"),
         name = "sandboxed-api",
         localPath = "/home/user/projects/sandboxed-api",
         defaultAgent = Some("opencode"),
@@ -73,6 +77,7 @@ object WorkspaceModelsSpec extends ZIOSpecDefault:
     test("Workspace with RunMode.Cloud round-trips through JSON") {
       val ws      = Workspace(
         id = "ws-cloud",
+        projectId = ProjectId("test-project"),
         name = "remote-api",
         localPath = "/home/user/projects/remote-api",
         defaultAgent = Some("codex"),
@@ -120,6 +125,7 @@ object WorkspaceModelsSpec extends ZIOSpecDefault:
         List(
           WorkspaceEvent.Created(
             workspaceId = "ws-legacy",
+            projectId = ProjectId("test-project"),
             name = "legacy",
             localPath = "/tmp/legacy",
             defaultAgent = None,
@@ -138,6 +144,7 @@ object WorkspaceModelsSpec extends ZIOSpecDefault:
         List(
           WorkspaceEvent.Created(
             workspaceId = "ws-branch",
+            projectId = ProjectId("test-project"),
             name = "branchy",
             localPath = "/tmp/branchy",
             defaultAgent = None,
