@@ -55,16 +55,6 @@ object WorkspacesController:
           ZIO.succeed(html(WorkspaceTemplatesView.page()))
         },
 
-        // Standalone /workspaces page
-        Method.GET / "workspaces" -> handler { (_: Request) =>
-          (for
-            ws         <- repo.list.mapError(persistErr)
-            agents     <- agentRegistry.getAllAgents
-            statusByWs <- loadAnalysisStatuses(ws.map(_.id), analysisScheduler).mapError(persistErr)
-          yield html(WorkspacesView.page(ws, agents, statusByWs)))
-            .catchAll(ZIO.succeed)
-        },
-
         // Runs dashboard page (across all workspaces)
         Method.GET / "runs" -> handler { (req: Request) =>
           ZIO.succeed(

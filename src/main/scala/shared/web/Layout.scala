@@ -233,12 +233,6 @@ object Layout:
       NavItem("/specifications", "Specifications", Icons.documentText, _.startsWith("/specifications")),
       NavItem("/plans", "Plans", Icons.chart, _.startsWith("/plans")),
       NavItem("/knowledge", "Knowledge", Icons.documentText, _.startsWith("/knowledge")),
-      NavItem(
-        "/workspaces",
-        "Workspaces",
-        Icons.folder,
-        p => p.startsWith("/workspaces") || p.startsWith("/settings/workspaces"),
-      ),
       NavItem("/agents", "Agents", Icons.cpuChip, _.startsWith("/agents")),
       NavItem(
         "/settings",

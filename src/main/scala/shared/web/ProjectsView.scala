@@ -39,7 +39,6 @@ final case class ProjectDetailPageData(
   project: Project,
   activeTab: String,
   assignedWorkspaces: List[ProjectWorkspaceRow],
-  availableWorkspaces: List[(String, String)],
   boardIssues: List[AgentIssueView],
   boardWorkspaces: List[(String, String)],
   analysisRows: List[ProjectAnalysisRow],
@@ -234,30 +233,37 @@ object ProjectsView:
             "No workspaces assigned to this project yet."
           )
         else
-          div(cls := "mt-4 space-y-3")(data.assignedWorkspaces.map(workspaceRow(data.project.id.value, _))*),
+          div(cls := "mt-4 space-y-3")(data.assignedWorkspaces.map(workspaceRow)*),
       ),
       div(cls := "rounded-xl border border-white/10 bg-slate-900/70 p-5")(
-        h2(cls := "text-sm font-semibold uppercase tracking-wide text-slate-200")("Add Workspace"),
-        p(cls := "mt-1 text-xs text-slate-500")("Quick-assign existing workspaces into the project."),
-        if data.availableWorkspaces.isEmpty then
-          div(cls := "mt-4 rounded-lg border border-dashed border-white/10 p-6 text-sm text-slate-400")(
-            "All known workspaces are already assigned."
-          )
-        else
-          form(action := s"/projects/${data.project.id.value}/workspaces", method := "post", cls := "mt-4 space-y-3")(
+        h2(cls := "text-sm font-semibold uppercase tracking-wide text-slate-200")("Create Workspace"),
+        p(cls := "mt-1 text-xs text-slate-500")("Create a new workspace directly linked to this project."),
+        form(
+          action := s"/projects/${data.project.id.value}/workspaces/create",
+          method := "post",
+          cls    := "mt-4 space-y-3",
+        )(
+          labeledInput("Name", "name", ""),
+          labeledInput("Local path", "localPath", ""),
+          label(cls := "block text-[11px] font-semibold uppercase tracking-wide text-slate-400")(
+            "CLI Tool",
             select(
-              name := "workspace_id",
-              cls  := "w-full rounded border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-100",
+              name := "cliTool",
+              cls  := "mt-1 w-full rounded border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-100",
             )(
-              data.availableWorkspaces.map { case (id, name) => option(value := id)(name) }
-            ),
-            div(cls := "flex justify-end")(
-              button(
-                `type` := "submit",
-                cls    := "rounded bg-cyan-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-cyan-500",
-              )("Assign workspace")
+              option(value := "claude")("claude"),
+              option(value := "codex")("codex"),
+              option(value := "gemini")("gemini"),
             ),
           ),
+          labeledInput("Default branch", "defaultBranch", "main"),
+          div(cls := "flex justify-end")(
+            button(
+              `type` := "submit",
+              cls    := "rounded bg-cyan-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-cyan-500",
+            )("Create workspace")
+          ),
+        ),
       ),
     )
 
@@ -365,7 +371,7 @@ object ProjectsView:
         div(cls := "grid gap-4 lg:grid-cols-2")(data.analysisRows.map(analysisRow)*),
     )
 
-  private def workspaceRow(projectId: String, row: ProjectWorkspaceRow): Frag =
+  private def workspaceRow(row: ProjectWorkspaceRow): Frag =
     div(cls := "rounded-lg border border-white/10 bg-black/20 p-4")(
       div(cls := "flex flex-wrap items-start justify-between gap-3")(
         div(
@@ -375,13 +381,6 @@ object ProjectsView:
           ),
           p(cls := "mt-1 text-xs font-mono text-slate-500")(row.workspaceId),
           row.description.fold[Frag](frag())(desc => p(cls := "mt-2 text-sm text-slate-400")(desc)),
-        ),
-        form(action := s"/projects/$projectId/workspaces/remove", method := "post")(
-          input(`type` := "hidden", name := "workspace_id", value := row.workspaceId),
-          button(
-            `type` := "submit",
-            cls    := "rounded border border-rose-400/30 bg-rose-500/10 px-2 py-1 text-xs font-semibold text-rose-200 hover:bg-rose-500/20",
-          )("Remove"),
         ),
       ),
       div(cls := "mt-4 grid gap-3 md:grid-cols-3")(
