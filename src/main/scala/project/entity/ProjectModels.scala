@@ -8,6 +8,17 @@ import zio.schema.{ Schema, derived }
 
 import shared.ids.Ids.ProjectId
 
+/** Filter applied to project-scoped views. */
+enum ProjectFilter:
+  case All
+  case Selected(projectId: ProjectId)
+
+object ProjectFilter:
+  def parse(value: Option[String]): ProjectFilter =
+    value.map(_.trim).filter(_.nonEmpty) match
+      case None | Some("all") => ProjectFilter.All
+      case Some(id)           => ProjectFilter.Selected(ProjectId(id))
+
 final case class MergePolicy(
   requireCi: Boolean = false,
   ciCommand: Option[String] = None,

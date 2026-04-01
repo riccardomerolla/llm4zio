@@ -85,6 +85,18 @@ object Layout:
         tag("ab-keyboard-shortcuts")(),
         JsResources.inlineModuleScript("/static/client/components/ab-keyboard-shortcuts.js"),
         frag(Components.dsScripts*),
+        script(raw("""
+          |function setProjectFilter(projectId) {
+          |  localStorage.setItem('project-filter', projectId);
+          |  var maxAge = projectId === 'all' ? 0 : 86400;
+          |  document.cookie = 'project-filter=' + encodeURIComponent(projectId) + ';path=/;max-age=' + maxAge;
+          |  location.reload();
+          |}
+          |document.addEventListener('htmx:configRequest', function(evt) {
+          |  var filter = localStorage.getItem('project-filter') || 'all';
+          |  evt.detail.headers['X-Project-Filter'] = filter;
+          |});
+          |""".stripMargin)),
       ),
     ).render
 
@@ -103,8 +115,13 @@ object Layout:
         attr("aria-label") := "Main navigation",
       )(
         div(cls := "flex h-10 items-center px-4")(
-          // Left spacer (balances the right controls for true centering)
-          div(cls := "flex-1"),
+          // Left: project filter dropdown (loaded via HTMX on page load)
+          div(
+            cls                := "flex-1",
+            attr("hx-get")     := "/api/projects/filter-options",
+            attr("hx-trigger") := "load",
+            attr("hx-swap")    := "outerHTML",
+          )(),
           // Center: Core Gateway nav items
           div(cls := "flex items-center gap-0.5")(
             coreGatewayGroup.items.map { item =>

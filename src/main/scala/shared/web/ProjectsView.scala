@@ -3,7 +3,7 @@ package shared.web
 import java.time.Instant
 
 import issues.entity.api.AgentIssueView
-import project.entity.Project
+import project.entity.{ Project, ProjectFilter }
 import scalatags.Text.all.*
 
 final case class ProjectListItem(
@@ -110,6 +110,28 @@ object ProjectsView:
           ),
       )
     )
+
+  def filterOptionsFragment(projects: List[Project], currentFilter: ProjectFilter): String =
+    val selectedId = currentFilter match
+      case ProjectFilter.All              => "all"
+      case ProjectFilter.Selected(projId) => projId.value
+    div(
+      cls := "flex-1",
+    )(
+      select(
+        id       := "project-filter-select",
+        cls      := "rounded border border-white/10 bg-transparent px-2 py-0.5 text-xs text-gray-300 hover:text-white cursor-pointer",
+        onchange := "setProjectFilter(this.value)",
+      )(
+        option(value := "all", if selectedId == "all" then selected := "selected" else frag())("All Projects"),
+        projects.sortBy(_.name.toLowerCase).map { p =>
+          option(
+            value := p.id.value,
+            if selectedId == p.id.value then selected := "selected" else frag(),
+          )(p.name)
+        },
+      )
+    ).render
 
   def detailPage(data: ProjectDetailPageData): String =
     val project = data.project

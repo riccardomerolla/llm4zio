@@ -14,7 +14,7 @@ import issues.entity.api.{ AgentIssueView, IssuePriority, IssueStatus }
 import issues.entity.{ AgentIssue, IssueFilter, IssueRepository, IssueState }
 import orchestration.control.AgentRegistry
 import project.control.ProjectStorageService
-import project.entity.{ MergePolicy, Project, ProjectEvent, ProjectRepository, ProjectSettings }
+import project.entity.{ MergePolicy, Project, ProjectEvent, ProjectFilter, ProjectRepository, ProjectSettings }
 import shared.errors.PersistenceError
 import shared.ids.Ids.ProjectId
 import shared.web.{
@@ -99,6 +99,12 @@ object ProjectsController:
           (id: String, req: Request) =>
             createWorkspace(id, req, workspaceRepository, analysisScheduler)
               .catchAll(ZIO.succeed)
+        },
+        Method.GET / "api" / "projects" / "filter-options"                -> handler { (req: Request) =>
+          projectRepository.list
+            .mapError(persistErr)
+            .map(projects => htmlResponse(ProjectsView.filterOptionsFragment(projects, parseProjectFilter(req))))
+            .catchAll(ZIO.succeed)
         },
       )
 
@@ -257,6 +263,15 @@ object ProjectsController:
     ZIO.foreach(workspaceIds.distinct)(workspaceId =>
       analysisScheduler.statusForWorkspace(workspaceId).map(workspaceId -> _)
     ).map(_.toMap)
+
+  private def parseProjectFilter(req: Request): ProjectFilter =
+    val headerVal = req.headers.get("X-Project-Filter").map(_.trim).filter(_.nonEmpty)
+    val cookieVal =
+      req.cookies
+        .find(_.name == "project-filter")
+        .map(_.content.trim)
+        .filter(_.nonEmpty)
+    ProjectFilter.parse(headerVal.orElse(cookieVal))
 
   private def createWorkspace(
     projectId: String,
