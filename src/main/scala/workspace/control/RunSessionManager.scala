@@ -8,8 +8,8 @@ import activity.entity.{ ActivityEvent, ActivityEventType }
 import conversation.entity.api.{ ConversationEntry, MessageType, SenderType }
 import db.ChatRepository
 import shared.ids.Ids.{ EventId, TaskRunId }
-import workspace.entity.*
 import workspace.control.WorkspaceErrorSupport.*
+import workspace.entity.*
 
 trait RunSessionManager:
   def getSession(runId: String): IO[WorkspaceError, RunSession]

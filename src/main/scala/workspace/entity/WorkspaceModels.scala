@@ -66,7 +66,7 @@ case class Workspace(
 ) derives JsonCodec, Schema
 
 object Workspace:
-  val DefaultBranch = "main"
+  val DefaultBranch: String = "main"
 
   def normalizeDefaultBranch(value: String): String =
     Option(value).map(_.trim).filter(_.nonEmpty).getOrElse(DefaultBranch)

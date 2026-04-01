@@ -92,6 +92,15 @@ object Layout:
           |  document.cookie = 'project-filter=' + encodeURIComponent(projectId) + ';path=/;max-age=' + maxAge;
           |  location.reload();
           |}
+          |function filterProjectDropdown(input) {
+          |  var q = input.value.toLowerCase();
+          |  var container = input.closest('[data-nav-dropdown]');
+          |  if (!container) return;
+          |  container.querySelectorAll('[data-project-name]').forEach(function(item) {
+          |    var name = item.getAttribute('data-project-name') || '';
+          |    item.style.display = (q === '' || name.indexOf(q) !== -1) ? '' : 'none';
+          |  });
+          |}
           |document.addEventListener('htmx:configRequest', function(evt) {
           |  var filter = localStorage.getItem('project-filter') || 'all';
           |  evt.detail.headers['X-Project-Filter'] = filter;

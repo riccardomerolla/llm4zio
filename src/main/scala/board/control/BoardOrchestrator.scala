@@ -7,10 +7,10 @@ import activity.entity.ActivityEventType
 import board.entity.*
 import governance.control.{ GovernanceEvaluationContext, GovernancePolicyService }
 import governance.entity.{ GovernanceGate, GovernanceLifecycleAction, GovernanceLifecycleStage, GovernanceTransition }
+import project.control.ProjectStorageService
 import shared.ids.Ids.BoardIssueId
 import workspace.control.{ AssignRunRequest, GitService, WorkspaceRunService }
 import workspace.entity.{ GitError, WorkspaceRepository }
-import project.control.ProjectStorageService
 
 final case class DispatchResult(
   dispatchedIssueIds: List[BoardIssueId],

@@ -10,11 +10,11 @@ import activity.entity.ActivityEvent
 import board.entity.*
 import governance.control.{ GovernanceEvaluationContext, GovernancePolicyService, GovernanceTransitionDecision }
 import governance.entity.*
+import project.control.ProjectStorageService
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ BoardIssueId, GovernancePolicyId, ProjectId }
 import workspace.control.{ AssignRunRequest, GitService, WorkspaceRunService }
 import workspace.entity.*
-import project.control.ProjectStorageService
 
 object BoardOrchestratorSpec extends ZIOSpecDefault:
   private val workspacePath = "/tmp/workspace"

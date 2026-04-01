@@ -28,12 +28,12 @@ import issues.control.IssueAnalysisAttachment
 import issues.entity.api.*
 import issues.entity.{ AgentIssue as DomainIssue, * }
 import orchestration.control.{ IssueAssignmentOrchestrator, IssueDispatchStatusService }
+import project.control.ProjectStorageService
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ AgentId, BoardIssueId, EventId, IssueId, TaskRunId }
 import shared.web.{ ErrorHandlingMiddleware, HtmlViews }
 import workspace.control.{ AssignRunRequest, WorkspaceRunService }
 import workspace.entity.WorkspaceRepository
-import project.control.ProjectStorageService
 
 trait IssueController:
   def routes: Routes[Any, Response]
@@ -338,38 +338,40 @@ final case class IssueControllerLive(
     },
     Method.POST / "issues" / string("id") / "approve"                -> handler { (id: String, req: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
-        val approve: IO[PersistenceError, Response] = for
-          form      <- parseForm(req)
-          issueId    = IssueId(id)
-          issue     <- issueRepository.get(issueId).mapError(mapIssueRepoError)
-          now       <- Clock.instant
-          approvedBy = form.get("approvedBy").map(_.trim).filter(_.nonEmpty).getOrElse("human")
-          _         <- ensureHumanReviewApprovalAllowed(issue)
-          autoMerge <- loadAutoMergePolicy
-          events     = approvalEvents(issue, approvedBy, autoMerge, now)
-          _         <- ZIO.foreachDiscard(events)(issueRepository.append(_).mapError(mapIssueRepoError))
-          _         <- decisionInbox
-                         .syncOpenIssueReviewDecision(
-                           issue.id,
-                           DecisionResolutionKind.Approved,
-                           approvedBy,
-                           s"Approved by $approvedBy",
+        val approve: IO[PersistenceError, Response] =
+          for
+            form      <- parseForm(req)
+            issueId    = IssueId(id)
+            issue     <- issueRepository.get(issueId).mapError(mapIssueRepoError)
+            now       <- Clock.instant
+            approvedBy = form.get("approvedBy").map(_.trim).filter(_.nonEmpty).getOrElse("human")
+            _         <- ensureHumanReviewApprovalAllowed(issue)
+            autoMerge <- loadAutoMergePolicy
+            events     = approvalEvents(issue, approvedBy, autoMerge, now)
+            _         <- ZIO.foreachDiscard(events)(issueRepository.append(_).mapError(mapIssueRepoError))
+            _         <- decisionInbox
+                           .syncOpenIssueReviewDecision(
+                             issue.id,
+                             DecisionResolutionKind.Approved,
+                             approvedBy,
+                             s"Approved by $approvedBy",
+                           )
+                           .mapError(mapIssueRepoError)
+            _         <- publishBoardStatusActivity(
+                           issue,
+                           if autoMerge then IssueStatus.Merging else IssueStatus.Done,
+                           fallbackAgent = "human",
+                           now = now,
                          )
-                         .mapError(mapIssueRepoError)
-          _         <- publishBoardStatusActivity(
-                         issue,
-                         if autoMerge then IssueStatus.Merging else IssueStatus.Done,
-                         fallbackAgent = "human",
-                         now = now,
-                       )
-        yield Response(status = Status.SeeOther, headers = Headers(Header.Custom("Location", s"/issues/$id")))
-        approve.catchSome { case PersistenceError.QueryFailed("approve_issue", cause) =>
-          ZIO.succeed(
-            Response(
-              status  = Status.SeeOther,
-              headers = Headers(Header.Custom("Location", s"/issues/$id?flash=${urlEncode(cause)}")),
+          yield Response(status = Status.SeeOther, headers = Headers(Header.Custom("Location", s"/issues/$id")))
+        approve.catchSome {
+          case PersistenceError.QueryFailed("approve_issue", cause) =>
+            ZIO.succeed(
+              Response(
+                status = Status.SeeOther,
+                headers = Headers(Header.Custom("Location", s"/issues/$id?flash=${urlEncode(cause)}")),
+              )
             )
-          )
         }
       }
     },

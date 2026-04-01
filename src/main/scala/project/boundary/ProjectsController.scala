@@ -14,7 +14,7 @@ import issues.entity.api.{ AgentIssueView, IssuePriority, IssueStatus }
 import issues.entity.{ AgentIssue, IssueFilter, IssueRepository, IssueState }
 import orchestration.control.AgentRegistry
 import project.control.ProjectStorageService
-import project.entity.{ MergePolicy, Project, ProjectEvent, ProjectFilter, ProjectRepository, ProjectSettings }
+import project.entity.*
 import shared.errors.PersistenceError
 import shared.ids.Ids.ProjectId
 import shared.web.{

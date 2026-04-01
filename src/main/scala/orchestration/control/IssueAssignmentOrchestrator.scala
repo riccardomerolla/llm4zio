@@ -12,10 +12,10 @@ import db.{ ChatRepository, TaskRepository }
 import issues.entity.api.{ AgentIssueView, IssuePriority, IssueStatus }
 import issues.entity.{ IssueEvent, IssueRepository, IssueState }
 import llm4zio.core.{ LlmError, LlmService, Streaming }
+import project.control.ProjectStorageService
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ AgentId, BoardIssueId, EventId, IssueId, TaskRunId }
 import workspace.entity.WorkspaceRepository
-import project.control.ProjectStorageService
 
 trait IssueAssignmentOrchestrator:
   def assignIssue(issueId: String, agentName: String): IO[PersistenceError, AgentIssueView]

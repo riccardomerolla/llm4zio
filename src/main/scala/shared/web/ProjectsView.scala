@@ -112,25 +112,72 @@ object ProjectsView:
     )
 
   def filterOptionsFragment(projects: List[Project], currentFilter: ProjectFilter): String =
-    val selectedId = currentFilter match
+    val selectedId     = currentFilter match
       case ProjectFilter.All              => "all"
       case ProjectFilter.Selected(projId) => projId.value
+    val selectedLabel  = currentFilter match
+      case ProjectFilter.All              => "All Projects"
+      case ProjectFilter.Selected(projId) => projects.find(_.id == projId).map(_.name).getOrElse("All Projects")
+    val sortedProjects = projects.sortBy(_.name.toLowerCase)
     div(
-      cls := "flex-1"
+      cls                       := "relative flex-1",
+      attr("data-nav-dropdown") := "",
     )(
-      select(
-        id       := "project-filter-select",
-        cls      := "rounded border border-white/10 bg-transparent px-2 py-0.5 text-xs text-gray-300 hover:text-white cursor-pointer",
-        onchange := "setProjectFilter(this.value)",
+      button(
+        `type`                   := "button",
+        cls                      := "flex items-center gap-1 rounded px-2 py-1 text-xs text-gray-400 hover:bg-white/5 hover:text-white",
+        attr("data-nav-trigger") := "",
+        attr("aria-haspopup")    := "menu",
+        attr("aria-expanded")    := "false",
+      )(selectedLabel, " ", span(cls := "text-[9px] opacity-60")("▼")),
+      div(
+        cls                    := "hidden absolute left-0 top-full mt-1 z-50 min-w-[14rem] rounded-lg border border-white/10 bg-slate-900 shadow-xl py-1",
+        attr("role")           := "menu",
+        attr("data-nav-panel") := "",
       )(
-        option(value := "all", if selectedId == "all" then selected := "selected" else frag())("All Projects"),
-        projects.sortBy(_.name.toLowerCase).map { p =>
-          option(
-            value := p.id.value,
-            if selectedId == p.id.value then selected := "selected" else frag(),
-          )(p.name)
-        },
-      )
+        div(cls := "px-2 pb-1 border-b border-white/10 mb-1")(
+          input(
+            `type`                            := "text",
+            placeholder                       := "Filter projects…",
+            cls                               := "w-full rounded border border-white/10 bg-black/30 px-2 py-1 text-xs text-gray-300 placeholder-gray-600 focus:outline-none focus:border-white/30",
+            oninput                           := "filterProjectDropdown(this)",
+            onclick                           := "event.stopPropagation()",
+            attr("data-project-filter-input") := "",
+          )
+        ),
+        div(attr("data-project-items") := "")(
+          frag(
+            a(
+              href                      := "#",
+              attr("role")              := "menuitem",
+              cls                       := s"flex items-center gap-2 px-3 py-1.5 text-xs ${
+                  if selectedId == "all" then "bg-white/5 text-white"
+                  else "text-gray-300 hover:bg-white/5 hover:text-white"
+                }",
+              onclick                   := "setProjectFilter('all'); return false;",
+              attr("data-project-name") := "all projects",
+            )(
+              "All Projects",
+              if selectedId == "all" then span(cls := "ml-auto text-cyan-400 text-[9px]")("✓") else frag(),
+            ) +:
+              sortedProjects.map { p =>
+                a(
+                  href                      := "#",
+                  attr("role")              := "menuitem",
+                  cls                       := s"flex items-center gap-2 px-3 py-1.5 text-xs ${
+                      if selectedId == p.id.value then "bg-white/5 text-white"
+                      else "text-gray-300 hover:bg-white/5 hover:text-white"
+                    }",
+                  onclick                   := s"setProjectFilter('${p.id.value}'); return false;",
+                  attr("data-project-name") := p.name.toLowerCase,
+                )(
+                  p.name,
+                  if selectedId == p.id.value then span(cls := "ml-auto text-cyan-400 text-[9px]")("✓") else frag(),
+                )
+              }*
+          )
+        ),
+      ),
     ).render
 
   def detailPage(data: ProjectDetailPageData): String =
