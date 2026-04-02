@@ -233,7 +233,9 @@ final case class BoardRepositoryFS(
                               if JFiles.exists(boardGitDir) then
                                 def deleteTree(p: Path): Unit =
                                   if JFiles.isDirectory(p) then
-                                    JFiles.list(p).forEach(deleteTree)
+                                    val s = JFiles.list(p)
+                                    try s.forEach(deleteTree)
+                                    finally s.close()
                                   JFiles.delete(p)
                                 deleteTree(boardGitDir)
                             }
@@ -274,13 +276,15 @@ final case class BoardRepositoryFS(
     ZIO
       .attemptBlocking {
         if JFiles.exists(issuesDir) then
-          JFiles
-            .list(issuesDir)
-            .iterator()
-            .asScala
-            .filter(path => JFiles.isDirectory(path))
-            .toList
-            .sortBy(_.getFileName.toString)
+          val stream = JFiles.list(issuesDir)
+          try
+            stream
+              .iterator()
+              .asScala
+              .filter(path => JFiles.isDirectory(path))
+              .toList
+              .sortBy(_.getFileName.toString)
+          finally stream.close()
         else Nil
       }
       .mapError(err =>

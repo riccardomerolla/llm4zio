@@ -125,6 +125,7 @@ final case class AgentConfigResolverLive(
       case AIProvider.LmStudio  => "openai/gpt-oss-20b"
       case AIProvider.Ollama    => "llama3.2:3b"
       case AIProvider.OpenCode  => "gpt-4o-mini"
+      case AIProvider.Mock      => "mock-model"
 
   private def parseFallbackChain(raw: Option[String], defaultProvider: AIProvider): ModelFallbackChain =
     val refs = raw

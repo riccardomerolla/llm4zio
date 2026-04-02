@@ -682,7 +682,7 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
         },
       )
     } @@ TestAspect.withLiveClock,
-    test("failed workspace run moves issue to Rework") {
+    test("failed workspace run appends RunFailed event") {
       val failingCliAgent: (List[String], String, String => Task[Unit], Map[String, String]) => Task[Int] =
         (_, _, _, _) => ZIO.succeed(2)
       for
@@ -692,8 +692,8 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
         events             <- issueEvents.get
       yield assertTrue(
         events.exists {
-          case IssueEvent.MovedToRework(issueId, _, _, _) => issueId.value == "sync-fail"
-          case _                                          => false
+          case IssueEvent.RunFailed(issueId, _, _, _) => issueId.value == "sync-fail"
+          case _                                      => false
         }
       )
     } @@ TestAspect.withLiveClock,

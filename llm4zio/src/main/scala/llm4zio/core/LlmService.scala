@@ -66,6 +66,7 @@ object LlmService:
             case LlmProvider.LmStudio  => LmStudioProvider.make(cfg, http)
             case LlmProvider.Ollama    => OllamaProvider.make(cfg, http)
             case LlmProvider.OpenCode  => OpenCodeProvider.make(cfg, http)
+            case LlmProvider.Mock      => MockProvider.make(cfg)
 
         private val provider = buildProvider(config)
 

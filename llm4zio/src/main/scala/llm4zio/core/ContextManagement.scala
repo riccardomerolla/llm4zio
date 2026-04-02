@@ -40,10 +40,11 @@ object TokenCounter:
       override def countText(provider: LlmProvider, text: String): Int =
         val chars = text.length.max(1)
         provider match
-          case LlmProvider.OpenAI | LlmProvider.OpenCode     => math.ceil(chars.toDouble / 4.0).toInt.max(1)
-          case LlmProvider.Anthropic                         => math.ceil(chars.toDouble / 3.8).toInt.max(1)
-          case LlmProvider.GeminiApi | LlmProvider.GeminiCli => math.ceil(chars.toDouble / 4.2).toInt.max(1)
-          case LlmProvider.LmStudio | LlmProvider.Ollama     => math.ceil(chars.toDouble / 4.5).toInt.max(1)
+          case LlmProvider.OpenAI | LlmProvider.OpenCode                    => math.ceil(chars.toDouble / 4.0).toInt.max(1)
+          case LlmProvider.Anthropic                                        => math.ceil(chars.toDouble / 3.8).toInt.max(1)
+          case LlmProvider.GeminiApi | LlmProvider.GeminiCli                => math.ceil(chars.toDouble / 4.2).toInt.max(1)
+          case LlmProvider.LmStudio | LlmProvider.Ollama | LlmProvider.Mock =>
+            math.ceil(chars.toDouble / 4.5).toInt.max(1)
 
       override def countMessage(provider: LlmProvider, message: ConversationMessage): Int =
         val roleOverhead = message.role match

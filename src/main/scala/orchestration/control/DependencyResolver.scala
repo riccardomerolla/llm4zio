@@ -65,10 +65,11 @@ final private case class DependencyResolverLive(issueRepository: IssueRepository
 
   private def isDependencyResolved(issue: AgentIssue): Boolean =
     issue.state match
-      case _: IssueState.Done      => true
-      case _: IssueState.Completed => true
-      case _: IssueState.Skipped   => true
-      case _                       => false
+      case _: IssueState.Done        => true
+      case _: IssueState.Completed   => true
+      case _: IssueState.Skipped     => true
+      case _: IssueState.HumanReview => true
+      case _                         => false
 
   private def findCyclicIssues(graph: Map[IssueId, Set[IssueId]]): Set[IssueId] =
     enum VisitState:

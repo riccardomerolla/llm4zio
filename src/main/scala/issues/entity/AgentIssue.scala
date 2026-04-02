@@ -205,6 +205,11 @@ object AgentIssue:
           .toRight(s"Issue ${failed.issueId.value} not initialized before MergeFailed event")
           .map(issue => Some(issue.copy(mergeConflictFiles = sanitizeFilePaths(failed.conflictFiles))))
 
+      case failed: IssueEvent.RunFailed =>
+        current
+          .toRight(s"Issue ${failed.issueId.value} not initialized before RunFailed event")
+          .map(issue => Some(issue))
+
       case verified: IssueEvent.CiVerificationResult =>
         current
           .toRight(s"Issue ${verified.issueId.value} not initialized before CiVerificationResult event")

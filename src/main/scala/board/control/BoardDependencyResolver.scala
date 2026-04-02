@@ -42,7 +42,7 @@ final private case class BoardDependencyResolverLive() extends BoardDependencyRe
     issue.column == BoardColumn.Todo
 
   private def isResolved(issue: BoardIssue): Boolean =
-    issue.column == BoardColumn.Done || issue.column == BoardColumn.Archive
+    issue.column == BoardColumn.Done || issue.column == BoardColumn.Archive || issue.column == BoardColumn.Review
 
   private def priorityRank(priority: IssuePriority): Int =
     priority match

@@ -144,7 +144,7 @@ final case class ModelServiceLive(
           rateLimitHeadroom = None,
         )
       )
-    else if cfg.baseUrl.forall(_.trim.isEmpty) && provider != AIProvider.GeminiCli then
+    else if cfg.baseUrl.forall(_.trim.isEmpty) && provider != AIProvider.GeminiCli && provider != AIProvider.Mock then
       Left(
         ProviderProbeStatus(
           provider = provider,
@@ -178,6 +178,8 @@ final case class ModelServiceLive(
         )
         val url     = s"${config.baseUrl.getOrElse("").stripSuffix("/")}/v1/models"
         http.get(url = url, headers = headers, timeout = 10.seconds)
+      case AIProvider.Mock                                               =>
+        ZIO.succeed("Mock provider; always available")
 
   private def authHeader(apiKey: Option[String]): Map[String, String] =
     apiKey.filter(_.trim.nonEmpty) match
@@ -325,6 +327,19 @@ final case class ModelServiceLive(
           ModelCapability.Chat,
           ModelCapability.Streaming,
           ModelCapability.ToolCalling,
+          ModelCapability.StructuredOutput,
+        ),
+      )
+    ),
+    AIProvider.Mock      -> List(
+      AIModel(
+        AIProvider.Mock,
+        "mock-model",
+        "Mock Model (Demo)",
+        128_000,
+        Set(
+          ModelCapability.Chat,
+          ModelCapability.Streaming,
           ModelCapability.StructuredOutput,
         ),
       )

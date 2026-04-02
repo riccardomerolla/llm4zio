@@ -44,6 +44,9 @@ import db.*
 import decision.boundary.DecisionsController
 import decision.control.DecisionInbox
 import decision.entity.{ DecisionEventStoreES, DecisionRepositoryES }
+import demo.boundary.DemoController
+import demo.control.{ DemoOrchestrator, MockAgentRunner }
+import demo.entity.DemoConfig
 import evolution.control.EvolutionEngine
 import evolution.entity.{ EvolutionProposalEventStoreES, EvolutionProposalRepositoryES }
 import gateway.boundary.telegram.*
@@ -156,6 +159,7 @@ object ApplicationDI:
       case AIProvider.LmStudio  => LlmProvider.LmStudio
       case AIProvider.Ollama    => LlmProvider.Ollama
       case AIProvider.OpenCode  => LlmProvider.OpenCode
+      case AIProvider.Mock      => LlmProvider.Mock
 
   def aiConfigToLlmConfig(aiConfig: AIProviderConfig): LlmConfig =
     LlmConfig(
@@ -360,9 +364,11 @@ object ApplicationDI:
       IssueDispatchStatusService.live,
       DecisionInbox.live,
       EvolutionEngine.live,
-      WorkspaceRunService.live,
+      workspaceRunServiceLayer,
       BoardOrchestrator.live,
       AutoDispatcher.live,
+      DemoOrchestrator.live,
+      DemoController.live,
       WorkReportEventBus.layer,
       issueWorkReportProjectionLayer,
       MergeAgentService.live,
@@ -383,6 +389,24 @@ object ApplicationDI:
       WorkspaceRouteModule.live,
       WebServer.live,
     ) >>> ZLayer.service[WebServer]
+
+  private val workspaceRunServiceLayer
+    : ZLayer[ConfigRepository & WorkspaceRunService.LiveDeps, Nothing, WorkspaceRunService] =
+    ZLayer.scoped {
+      for
+        configRepo                               <- ZIO.service[ConfigRepository]
+        rows                                     <- configRepo.getAllSettings.orElseSucceed(Nil)
+        demoConfig                                = DemoConfig.fromSettings(rows.map(r => r.key -> r.value).toMap)
+        mockFn                                    = MockAgentRunner.runner(demoConfig)
+        // Route at invocation time: use MockAgentRunner when cliTool=="mock", real CLI otherwise.
+        // This allows demo mode to work regardless of whether it was enabled at startup.
+        runner: WorkspaceRunService.RunCliAgentFn =
+          (argv, cwd, onLine, envVars) =>
+            if argv.headOption.contains("mock") then mockFn(argv, cwd, onLine, envVars)
+            else CliAgentRunner.runProcessStreaming(argv, cwd, onLine, envVars)
+        wsService                                <- WorkspaceRunService.liveWithAgent(runner).build.map(_.get[WorkspaceRunService])
+      yield wsService
+    }
 
   private val issueWorkReportProjectionLayer
     : ZLayer[WorkReportEventBus & issues.entity.IssueRepository & taskrun.entity.TaskRunRepository, Nothing, issues.entity.IssueWorkReportProjection] =
@@ -646,3 +670,4 @@ object ApplicationDI:
         case LlmProvider.LmStudio  => LmStudioProvider.make(cfg, http)
         case LlmProvider.Ollama    => OllamaProvider.make(cfg, http)
         case LlmProvider.OpenCode  => OpenCodeProvider.make(cfg, http)
+        case LlmProvider.Mock      => MockProvider.make(cfg)

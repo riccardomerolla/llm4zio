@@ -264,7 +264,14 @@ final case class BoardOrchestratorLive(
                                       issueId,
                                       success = success,
                                       details = event.summary,
-                                    )
+                                    ) *>
+                                      dispatchCycle(boardPath.toString)
+                                        .catchAll(err =>
+                                          ZIO.logDebug(
+                                            s"[board] post-completion dispatch cycle failed: ${renderBoardError(err)}"
+                                          )
+                                        )
+                                        .unit
                                   }
                               }
         yield ()).catchAll(err => ZIO.logWarning(s"[board] completion from activity failed: ${renderBoardError(err)}"))
@@ -278,7 +285,7 @@ final case class BoardOrchestratorLive(
     val agent =
       issue.frontmatter.assignedAgent.map(_.trim).filter(_.nonEmpty)
         .orElse(defaultAgent.map(_.trim).filter(_.nonEmpty))
-        .getOrElse("codex")
+        .getOrElse("code-agent")
 
     (for
       _   <- ensureGovernanceAllows(
@@ -352,12 +359,11 @@ final case class BoardOrchestratorLive(
       _     <- ensureDefaultBranch(workspacePath)
       now   <- Clock.instant
       reason = Option(details).map(_.trim).filter(_.nonEmpty).getOrElse("Run failed")
-      _     <- boardRepository.moveIssue(workspacePath, issueId, BoardColumn.Backlog)
       _     <- boardRepository.updateIssue(
                  workspacePath,
                  issueId,
                  _.copy(
-                   transientState = TransientState.Rework(reason, now),
+                   transientState = TransientState.None,
                    failureReason = Some(reason),
                    completedAt = None,
                  ),

@@ -85,6 +85,7 @@ object SettingsApplier:
       case "LmStudio"  => Some(AIProvider.LmStudio)
       case "Ollama"    => Some(AIProvider.Ollama)
       case "OpenCode"  => Some(AIProvider.OpenCode)
+      case "Mock"      => Some(AIProvider.Mock)
       case _           => None
 
   private def parseFallbackChain(valueOpt: Option[String], defaultProvider: AIProvider): ModelFallbackChain =

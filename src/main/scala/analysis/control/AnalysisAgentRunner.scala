@@ -299,6 +299,7 @@ object AnalysisAgentRunner:
       case LlmProvider.LmStudio  => llm4zio.providers.LmStudioProvider.make(cfg, httpClient)
       case LlmProvider.Ollama    => llm4zio.providers.OllamaProvider.make(cfg, httpClient)
       case LlmProvider.OpenCode  => llm4zio.providers.OpenCodeProvider.make(cfg, httpClient)
+      case LlmProvider.Mock      => llm4zio.providers.MockProvider.make(cfg)
 
   private def aiConfigToLlmConfig(aiConfig: AIProviderConfig): LlmConfig =
     LlmConfig(
@@ -324,6 +325,7 @@ object AnalysisAgentRunner:
       case AIProvider.LmStudio  => LlmProvider.LmStudio
       case AIProvider.Ollama    => LlmProvider.Ollama
       case AIProvider.OpenCode  => LlmProvider.OpenCode
+      case AIProvider.Mock      => LlmProvider.Mock
 
   private def renderLlmError(err: LlmError): String =
     err match

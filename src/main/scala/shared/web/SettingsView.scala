@@ -26,6 +26,7 @@ object SettingsView:
     ("issues-templates", "Issue Templates"),
     ("system", "System"),
     ("advanced", "Advanced Config"),
+    ("demo", "Demo"),
   )
 
   def settingsShell(activeTab: String, pageTitle: String)(bodyContent: Frag*): String =

@@ -365,7 +365,7 @@ object BoardOrchestratorSpec extends ZIOSpecDefault:
           merges.isEmpty,
         )
       },
-      test("completeIssue failure moves issue to backlog with rework reason") {
+      test("completeIssue failure keeps issue in InProgress with failure reason") {
         val inProgress = issue("task-3", BoardColumn.InProgress, branchName = Some("agent/agent-default-task-3"))
 
         for
@@ -379,9 +379,9 @@ object BoardOrchestratorSpec extends ZIOSpecDefault:
           state                             <- boardRef.get
           failed                             = state(BoardIssueId("task-3"))
         yield assertTrue(
-          failed.column == BoardColumn.Backlog,
+          failed.column == BoardColumn.InProgress,
           failed.frontmatter.failureReason.contains("tests are failing"),
-          failed.frontmatter.transientState.isInstanceOf[TransientState.Rework],
+          failed.frontmatter.transientState == TransientState.None,
           failed.frontmatter.completedAt.isEmpty,
         )
       },

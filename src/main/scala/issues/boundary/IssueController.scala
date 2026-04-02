@@ -919,7 +919,7 @@ final case class IssueControllerLive(
                              ).fork
         workReportsFiber  <- timedUio("board.workReports")(issueWorkReportProjection.getAll).fork
         autoDispatchFiber <- timed("board.autoDispatch") {
-                               settingBoolean("issues.autoDispatch.enabled", default = false)
+                               settingBoolean("issues.autoDispatch.enabled", default = true)
                              }.fork
         workspacesTimed   <- workspacesFiber.join
         issuesTimed       <- issuesFiber.join

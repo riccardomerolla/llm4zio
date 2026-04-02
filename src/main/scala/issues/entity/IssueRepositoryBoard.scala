@@ -171,6 +171,7 @@ final case class IssueRepositoryBoard(
                          transientState = TransientState.None,
                          failureReason = None,
                          completedAt = None,
+                         assignedAgent = None,
                        ),
                      )
                      .mapError(mapBoardError)
@@ -355,6 +356,21 @@ final case class IssueRepositoryBoard(
                 issue.frontmatter.id,
                 _.copy(
                   failureReason = Some(reason)
+                ),
+              )
+              .mapError(mapBoardError)
+              .unit
+        }
+      case failed: IssueEvent.RunFailed                       =>
+        withExistingIssue(failed.issueId) {
+          case (boardPath, issue) =>
+            boardRepository
+              .updateIssue(
+                boardPath,
+                issue.frontmatter.id,
+                _.copy(
+                  transientState = TransientState.None,
+                  failureReason = Some(failed.reason),
                 ),
               )
               .mapError(mapBoardError)

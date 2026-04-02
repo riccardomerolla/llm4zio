@@ -35,14 +35,16 @@ trait WorkspaceRunService:
   def registerSlot(runId: String, handle: SlotHandle): UIO[Unit] = ZIO.unit
 
 object WorkspaceRunService:
-  val live
-    : ZLayer[
-      WorkspaceRepository & ChatRepository & IssueRepository & ActivityHub & GitWatcher & AgentRepository &
-        AnalysisRepository & DecisionInbox & KnowledgeExtractionService &
-        AgentPoolManager & OrchestratorControlPlane,
-      Nothing,
-      WorkspaceRunService,
-    ] =
+  type RunCliAgentFn = (List[String], String, String => Task[Unit], Map[String, String]) => Task[Int]
+
+  type LiveDeps =
+    WorkspaceRepository & ChatRepository & IssueRepository & ActivityHub & GitWatcher & AgentRepository &
+      AnalysisRepository & DecisionInbox & KnowledgeExtractionService & AgentPoolManager & OrchestratorControlPlane
+
+  val live: ZLayer[LiveDeps, Nothing, WorkspaceRunService] =
+    liveWithAgent(CliAgentRunner.runProcessStreaming)
+
+  def liveWithAgent(runCliAgent: RunCliAgentFn): ZLayer[LiveDeps, Nothing, WorkspaceRunService] =
     ZLayer {
       for
         repo         <- ZIO.service[WorkspaceRepository]
@@ -63,6 +65,7 @@ object WorkspaceRunService:
         chat,
         issueRepo,
         analysis,
+        runCliAgent = runCliAgent,
         activityPublish = event => activity.publish(event),
         gitWatcher = watcher,
         fiberRegistry = registry,

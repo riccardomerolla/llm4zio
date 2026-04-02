@@ -78,7 +78,9 @@ final case class ProjectStorageServiceLive(storeConfig: StoreConfig, gitService:
                       if JFiles.exists(gitDir) then
                         def deleteTree(p: Path): Unit =
                           if JFiles.isDirectory(p) then
-                            JFiles.list(p).forEach(deleteTree)
+                            val s = JFiles.list(p)
+                            try s.forEach(deleteTree)
+                            finally s.close()
                           JFiles.delete(p)
                         deleteTree(gitDir)
                     }

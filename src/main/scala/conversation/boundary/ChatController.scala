@@ -1306,6 +1306,7 @@ final case class ChatControllerLive(
       case llm4zio.core.LlmProvider.LmStudio  => llm4zio.providers.LmStudioProvider.make(cfg, httpClient)
       case llm4zio.core.LlmProvider.Ollama    => llm4zio.providers.OllamaProvider.make(cfg, httpClient)
       case llm4zio.core.LlmProvider.OpenCode  => llm4zio.providers.OpenCodeProvider.make(cfg, httpClient)
+      case llm4zio.core.LlmProvider.Mock      => llm4zio.providers.MockProvider.make(cfg)
 
   private def aiConfigToLlmConfig(aiConfig: AIProviderConfig): llm4zio.core.LlmConfig =
     llm4zio.core.LlmConfig(
@@ -1331,6 +1332,7 @@ final case class ChatControllerLive(
       case AIProvider.LmStudio  => llm4zio.core.LlmProvider.LmStudio
       case AIProvider.Ollama    => llm4zio.core.LlmProvider.Ollama
       case AIProvider.OpenCode  => llm4zio.core.LlmProvider.OpenCode
+      case AIProvider.Mock      => llm4zio.core.LlmProvider.Mock
 
   private def sanitizeOptional[A](value: Option[A]): Option[A] =
     try

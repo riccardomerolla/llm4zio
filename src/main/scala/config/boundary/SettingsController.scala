@@ -85,6 +85,10 @@ final case class SettingsControllerLive(
     "memory.summarizationThreshold",
     "memory.retentionDays",
     "prompts.reloading",
+    "demo.enabled",
+    "demo.issueCount",
+    "demo.agentDelaySeconds",
+    "demo.previousProvider",
   )
 
   final private case class StoreDebugEntry(
@@ -284,6 +288,55 @@ final case class SettingsControllerLive(
                         )
                       )
         yield html(HtmlViews.settingsGatewayTab(saved, Some("Gateway settings saved.")))
+      }
+    },
+    Method.GET / "settings" / "demo"                  -> handler {
+      ErrorHandlingMiddleware.fromPersistence {
+        for
+          rows    <- repository.getAllSettings
+          settings = rows.map(r => r.key -> r.value).toMap
+        yield html(HtmlViews.settingsDemoTab(settings))
+      }
+    },
+    Method.POST / "settings" / "demo"                 -> handler { (req: Request) =>
+      ErrorHandlingMiddleware.fromPersistence {
+        val demoKeys = List(
+          "demo.enabled",
+          "demo.issueCount",
+          "demo.agentDelaySeconds",
+          "demo.repoBaseDir",
+          "demo.previousProvider",
+        )
+        for
+          form          <- parseForm(req)
+          // Persist ai.provider=Mock when demo is being enabled
+          enabled        = form.get("demo.enabled").exists(v => v.equalsIgnoreCase("on") || v.equalsIgnoreCase("true"))
+          // Store previous provider before overwriting (only on first enable)
+          rows          <- repository.getAllSettings
+          saved0         = rows.map(r => r.key -> r.value).toMap
+          providerSwitch =
+            if enabled && saved0.get("ai.provider").exists(_ != "Mock") then
+              repository.upsertSetting("demo.previousProvider", saved0.getOrElse("ai.provider", "GeminiCli")) *>
+                repository.upsertSetting("ai.provider", "Mock")
+            else if !enabled && saved0.get("demo.previousProvider").exists(_.nonEmpty) then
+              repository.upsertSetting("ai.provider", saved0("demo.previousProvider"))
+            else
+              ZIO.unit
+          _             <- providerSwitch
+          _             <- ZIO.foreachDiscard(demoKeys) { key =>
+                             val value = key match
+                               case "demo.enabled" =>
+                                 if enabled then "true" else "false"
+                               case _              => form.getOrElse(key, "")
+                             repository.upsertSetting(key, value)
+                           }
+          _             <- checkpointConfigStore
+          rows2         <- repository.getAllSettings
+          saved          = rows2.map(r => r.key -> r.value).toMap
+          newCfg         = SettingsApplier.toGatewayConfig(saved)
+          _             <- configRef.set(newCfg)
+          _             <- writeSettingsSnapshot(saved)
+        yield html(HtmlViews.settingsDemoTab(saved, Some("Demo settings saved.")))
       }
     },
   )

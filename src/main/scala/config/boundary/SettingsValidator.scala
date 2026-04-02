@@ -7,7 +7,7 @@ package config.boundary
 object SettingsValidator:
 
   /** Allowed setting key prefixes — anything else is rejected */
-  val allowedPrefixes: Set[String] = Set("ai.", "gateway.", "telegram.", "prompts.")
+  val allowedPrefixes: Set[String] = Set("ai.", "gateway.", "telegram.", "prompts.", "demo.")
 
   /** Predicate to check if a key should be saved */
   def isAllowedKey(key: String): Boolean =
@@ -81,7 +81,7 @@ object SettingsValidator:
 
   /** Validate AI provider string is a known provider */
   private def validateAIProvider(value: String): Either[String, String] =
-    val providers = Seq("GeminiCli", "GeminiApi", "OpenAi", "Anthropic", "LmStudio", "Ollama", "OpenCode")
+    val providers = Seq("GeminiCli", "GeminiApi", "OpenAi", "Anthropic", "LmStudio", "Ollama", "OpenCode", "Mock")
     if providers.contains(value) then Right(value)
     else Left(s"Invalid AI provider: $value (must be one of: ${providers.mkString(", ")})")
 

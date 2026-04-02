@@ -112,6 +112,17 @@ object IssueEvent:
     occurredAt: Instant,
   ) extends IssueEvent
 
+  /** Records that an agent workspace run failed while the issue was InProgress. Unlike MovedToRework, this event does
+    * NOT change the column — the card stays InProgress with a failure indicator so the operator can retry or
+    * investigate.
+    */
+  final case class RunFailed(
+    issueId: IssueId,
+    runId: String,
+    reason: String,
+    occurredAt: Instant,
+  ) extends IssueEvent
+
   final case class CiVerificationResult(
     issueId: IssueId,
     passed: Boolean,

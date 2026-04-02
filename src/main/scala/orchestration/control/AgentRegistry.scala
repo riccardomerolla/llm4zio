@@ -292,7 +292,7 @@ object AgentRegistry:
       description = "Generates markdown reports and mermaid diagrams from task artifacts.",
       agentType = AgentType.BuiltIn,
       usesAI = false,
-      tags = List("reports", "markdown", "mermaid"),
+      tags = List("reports", "markdown", "mermaid", "report-generation"),
       skills = List(
         AgentSkill(
           skill = "report-generation",

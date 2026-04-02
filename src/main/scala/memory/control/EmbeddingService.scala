@@ -48,6 +48,12 @@ final case class EmbeddingServiceLive(
                                 "Embedding endpoint is not supported for Gemini CLI provider; use GeminiApi/OpenAi/Ollama"
                               )
                             )
+                          case AIProvider.Mock                                               =>
+                            ZIO.fail(
+                              new RuntimeException(
+                                "Embedding endpoint is not supported for Mock provider; use GeminiApi/OpenAi/Ollama"
+                              )
+                            )
     yield result
 
   override def embedBatch(texts: List[String]): IO[Throwable, List[Vector[Float]]] =
@@ -156,7 +162,7 @@ final case class EmbeddingServiceLive(
           case AIProvider.OpenAi | AIProvider.LmStudio | AIProvider.OpenCode => "text-embedding-3-small"
           case AIProvider.GeminiApi                                          => "text-embedding-004"
           case AIProvider.Ollama                                             => "nomic-embed-text"
-          case AIProvider.Anthropic | AIProvider.GeminiCli                   => "text-embedding-3-small"
+          case AIProvider.Anthropic | AIProvider.GeminiCli | AIProvider.Mock => "text-embedding-3-small"
       )
 
   private def authorizationHeaders(apiKey: Option[String]): Map[String, String] =

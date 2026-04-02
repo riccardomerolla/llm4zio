@@ -9,6 +9,7 @@ import checkpoint.control.CheckpointReviewService
 import daemon.boundary.DaemonsController
 import decision.boundary.DecisionsController
 import decision.control.DecisionInbox
+import demo.boundary.DemoController
 import evolution.boundary.EvolutionController
 import evolution.entity.EvolutionProposalRepository
 import governance.boundary.GovernanceController
@@ -33,6 +34,7 @@ object AdeRouteModule:
         CheckpointsController &
         KnowledgeController &
         DaemonsController &
+        DemoController &
         DecisionInbox &
         CheckpointReviewService &
         IssueRepository &
@@ -51,6 +53,7 @@ object AdeRouteModule:
         checkpoints          <- ZIO.service[CheckpointsController]
         knowledge            <- ZIO.service[KnowledgeController]
         daemons              <- ZIO.service[DaemonsController]
+        demoController       <- ZIO.service[DemoController]
         decisionInbox        <- ZIO.service[DecisionInbox]
         checkpointReview     <- ZIO.service[CheckpointReviewService]
         issueRepository      <- ZIO.service[IssueRepository]
@@ -66,6 +69,7 @@ object AdeRouteModule:
             checkpoints.routes ++
             knowledge.routes ++
             daemons.routes ++
+            demoController.routes ++
             GovernanceController.routes(governancePolicyRepo) ++
             EvolutionController.routes(evolutionRepo) ++
             NavBadgeController.routes(

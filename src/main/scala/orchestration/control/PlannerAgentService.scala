@@ -1304,6 +1304,7 @@ final case class PlannerAgentServiceLive(
         case LlmProvider.LmStudio  => llm4zio.providers.LmStudioProvider.make(config, httpClient)
         case LlmProvider.Ollama    => llm4zio.providers.OllamaProvider.make(config, httpClient)
         case LlmProvider.OpenCode  => llm4zio.providers.OpenCodeProvider.make(config, httpClient)
+        case LlmProvider.Mock      => llm4zio.providers.MockProvider.make(config)
     }
 
   private def loadWorkspaceContext(

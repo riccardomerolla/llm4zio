@@ -4,7 +4,7 @@ import zio.*
 import zio.json.*
 
 enum AIProvider derives JsonCodec:
-  case GeminiCli, GeminiApi, OpenAi, Anthropic, LmStudio, Ollama, OpenCode
+  case GeminiCli, GeminiApi, OpenAi, Anthropic, LmStudio, Ollama, OpenCode, Mock
 
 object AIProvider:
   def defaultBaseUrl(provider: AIProvider): Option[String] = provider match
@@ -15,6 +15,7 @@ object AIProvider:
     case AIProvider.LmStudio  => Some("http://localhost:1234")
     case AIProvider.Ollama    => Some("http://localhost:11434")
     case AIProvider.OpenCode  => Some("http://localhost:4096")
+    case AIProvider.Mock      => None
 
 case class AIResponse(
   output: String,

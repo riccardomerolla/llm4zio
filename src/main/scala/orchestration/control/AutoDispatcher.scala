@@ -320,7 +320,7 @@ final case class AutoDispatcherLive(
     configRepository
       .getSetting(AutoDispatcher.enabledSettingKey)
       .mapError(err => PersistenceError.QueryFailed("auto_dispatch_enabled", err.toString))
-      .map(_.exists(_.value.trim.equalsIgnoreCase("true")))
+      .map(_.forall(_.value.trim.equalsIgnoreCase("true")))
 
   private def pollInterval: IO[PersistenceError, Duration] =
     configRepository

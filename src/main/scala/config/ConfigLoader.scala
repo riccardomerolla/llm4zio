@@ -392,7 +392,8 @@ object ConfigLoader:
       case "gemini-api" => Right(AIProvider.GeminiApi)
       case "openai"     => Right(AIProvider.OpenAi)
       case "anthropic"  => Right(AIProvider.Anthropic)
-      case other        => Left(s"Invalid AI provider '$other'. Expected one of: gemini-cli|gemini-api|openai|anthropic")
+      case "mock"       => Right(AIProvider.Mock)
+      case other        => Left(s"Invalid AI provider '$other'. Expected one of: gemini-cli|gemini-api|openai|anthropic|mock")
 
   private def parseInt(name: String, raw: String): Either[String, Int] =
     scala.util.Try(raw.toInt).toEither.left.map(_ => s"$name must be an integer, got: $raw")

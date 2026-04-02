@@ -91,6 +91,12 @@ object HtmlViews:
 
   def settingsSystemTab: String = SettingsView.systemTab
 
+  def settingsDemoTab(
+    settings: Map[String, String],
+    flash: Option[String] = None,
+  ): String =
+    DemoView.demoTab(settings, flash)
+
   def settingsAdvancedTab: String = SettingsView.advancedTab
 
   def settingsIssueTemplatesTab(

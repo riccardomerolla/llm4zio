@@ -115,6 +115,8 @@ object IssueControllerSupport:
       ),
     IssueStatus.Rework      ->
       Set(
+        IssueStatus.Backlog,
+        IssueStatus.Todo,
         IssueStatus.InProgress,
         IssueStatus.Merging,
         IssueStatus.Done,

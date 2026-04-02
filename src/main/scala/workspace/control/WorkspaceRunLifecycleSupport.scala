@@ -300,14 +300,14 @@ final private[control] case class WorkspaceRunLifecycleSupport(
                case RunStatus.Failed    =>
                  issueRepo
                    .append(
-                     IssueEvent.MovedToRework(
+                     IssueEvent.RunFailed(
                        issueId = issueId,
-                       movedAt = now,
+                       runId = runId,
                        reason = s"Workspace run $runId failed",
                        occurredAt = now,
                      )
                    )
-                   .mapWorkspacePersistence("append_issue_failure_event")
+                   .mapWorkspacePersistence("append_issue_run_failed_event")
                case RunStatus.Cancelled =>
                  issueRepo
                    .append(IssueEvent.MovedToTodo(issueId = issueId, movedAt = now, occurredAt = now))
