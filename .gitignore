@@ -27,3 +27,4 @@ migration.db
 gateway.db
 data/.worktrees/
 .worktrees/
+plan.md
