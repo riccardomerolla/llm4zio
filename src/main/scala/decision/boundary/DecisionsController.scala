@@ -26,16 +26,16 @@ object DecisionsController:
   def make(decisionInbox: DecisionInbox): DecisionsController =
     new DecisionsController:
       override val routes: Routes[Any, Response] = Routes(
-        Method.GET / "decisions"                              -> handler { (req: Request) =>
+        Method.GET / "decisions"                                 -> handler { (req: Request) =>
           listPage(req, decisionInbox).catchAll(error => ZIO.succeed(persistErr(error)))
         },
-        Method.GET / "decisions" / "fragment"                 -> handler { (req: Request) =>
+        Method.GET / "decisions" / "fragment"                    -> handler { (req: Request) =>
           listFragment(req, decisionInbox).catchAll(error => ZIO.succeed(persistErr(error)))
         },
-        Method.POST / "decisions" / string("id") / "resolve"  -> handler { (id: String, req: Request) =>
+        Method.POST / "decisions" / string("id") / "resolve"     -> handler { (id: String, req: Request) =>
           resolve(id, req, decisionInbox).catchAll(error => ZIO.succeed(persistErr(error)))
         },
-        Method.POST / "decisions" / string("id") / "escalate" -> handler { (id: String, _: Request) =>
+        Method.POST / "decisions" / string("id") / "escalate"    -> handler { (id: String, _: Request) =>
           escalate(id, decisionInbox).catchAll(error => ZIO.succeed(persistErr(error)))
         },
         Method.GET / "decisions" / "run-panel" / string("runId") -> handler { (runId: String, _: Request) =>

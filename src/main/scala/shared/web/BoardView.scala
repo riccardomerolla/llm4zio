@@ -189,16 +189,18 @@ object BoardView:
               span(cls := "text-slate-500")("will be merged into main"),
             ),
             form(
-              method             := "post",
-              action             := s"/board/$workspaceId/issues/${issue.frontmatter.id.value}/approve",
-              attr("hx-post")    := s"/board/$workspaceId/issues/${issue.frontmatter.id.value}/approve",
-              attr("hx-confirm") := s"Approve and merge branch '${issue.frontmatter.branchName.getOrElse("")}' into main?",
+              method          := "post",
+              action          := s"/board/$workspaceId/issues/${issue.frontmatter.id.value}/approve",
+              attr("hx-post") := s"/board/$workspaceId/issues/${issue.frontmatter.id.value}/approve",
+              attr(
+                "hx-confirm"
+              )               := s"Approve and merge branch '${issue.frontmatter.branchName.getOrElse("")}' into main?",
             )(
               button(
                 `type` := "submit",
                 cls    := "rounded border border-emerald-400/30 bg-emerald-500/20 px-3 py-2 text-sm font-semibold text-emerald-100 hover:bg-emerald-500/30",
               )("Approve & Merge")
-            )
+            ),
           )
         else (),
         div(cls := "rounded-xl border border-white/10 bg-slate-900/70 p-6")(
@@ -233,18 +235,20 @@ object BoardView:
       else (),
       if column == BoardColumn.Review && issue.frontmatter.branchName.exists(_.nonEmpty) then
         div(cls := "mt-1 flex items-center gap-1.5 text-[10px] text-slate-400")(
-          span(cls := "font-mono text-indigo-300 truncate")(issue.frontmatter.branchName.getOrElse("")),
+          span(cls := "font-mono text-indigo-300 truncate")(issue.frontmatter.branchName.getOrElse(""))
         )
       else (),
       div(cls := "mt-2 flex items-center justify-end gap-2")(
         if column == BoardColumn.Review && issue.frontmatter.branchName.exists(_.nonEmpty) then
           form(
-            method              := "post",
-            action              := s"/board/$workspaceId/issues/${issue.frontmatter.id.value}/approve",
-            attr("hx-post")     := s"/board/$workspaceId/issues/${issue.frontmatter.id.value}/approve",
-            attr("hx-target")   := "#fs-board-root",
-            attr("hx-swap")     := "innerHTML",
-            attr("hx-confirm")  := s"Approve and merge branch '${issue.frontmatter.branchName.getOrElse("")}' into main?",
+            method               := "post",
+            action               := s"/board/$workspaceId/issues/${issue.frontmatter.id.value}/approve",
+            attr("hx-post")      := s"/board/$workspaceId/issues/${issue.frontmatter.id.value}/approve",
+            attr("hx-target")    := "#fs-board-root",
+            attr("hx-swap")      := "innerHTML",
+            attr(
+              "hx-confirm"
+            )                    := s"Approve and merge branch '${issue.frontmatter.branchName.getOrElse("")}' into main?",
             attr("hx-indicator") := s"#approve-spinner-${issue.frontmatter.id.value}",
           )(
             button(
