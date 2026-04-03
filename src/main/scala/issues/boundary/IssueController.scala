@@ -179,51 +179,49 @@ final case class IssueControllerLive(
     Method.GET / "issues" / string("id")                             -> handler { (id: String, req: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
-          workspaceHint                                      <- ZIO.succeed(req.queryParam("workspace").map(_.trim).filter(_.nonEmpty))
-          flash                                               = req.queryParam("flash").map(_.trim).filter(_.nonEmpty)
-          boardIssueOpt                                      <- resolveWorkspaceBoardIssue(id, workspaceHint)
-          issueRuns                                          <- workspaceRepository.listRunsByIssueRef(s"#$id").mapError(mapIssueRepoError)
-          workspaces                                         <- workspaceRepository.list.mapError(mapIssueRepoError)
-          allAgents                                          <- agentRepository.list().mapError(mapIssueRepoError)
-          availableAgents                                     = allAgents.filter(_.enabled).map(registryAgentToAgentInfo)
-          viewAndMeta                                        <- boardIssueOpt match
-                                                                  case Some((ws, boardIssue)) =>
-                                                                    for
-                                                                      analysisDocs <- loadWorkspaceAnalysisContext(ws.id).mapError(
-                                                                                        mapIssueRepoError
-                                                                                      )
-                                                                      mergeHistory <- loadMergeHistory(IssueId(id))
-                                                                      workReport   <- issueWorkReportProjection.get(IssueId(id))
-                                                                    yield (boardToView(boardIssue, ws.id), analysisDocs, mergeHistory, workReport)
-                                                                  case None                   =>
-                                                                    for
-                                                                      issue        <- issueRepository.get(IssueId(id)).mapError(mapIssueRepoError)
-                                                                      analysisDocs <- loadIssueAnalysisContext(issue).mapError(mapIssueRepoError)
-                                                                      mergeHistory <- loadMergeHistory(issue.id)
-                                                                      workReport   <- issueWorkReportProjection.get(issue.id)
-                                                                    yield (domainToView(issue), analysisDocs, mergeHistory, workReport)
-          (issueView, analysisDocs, mergeHistory, workReport) = viewAndMeta
-          decisions                                          <- decisionInbox
-                                                                  .list(
-                                                                    DecisionFilter(
-                                                                      issueId = Some(IssueId(id)),
-                                                                      limit = Int.MaxValue,
-                                                                    )
-                                                                  )
-                                                                  .mapError(mapIssueRepoError)
-        yield html(
-          HtmlViews.issueDetail(
-            issueView,
-            issueRuns,
-            availableAgents,
-            analysisDocs,
-            mergeHistory,
-            workspaces.map(ws => ws.id -> ws.name),
-            workReport,
-            decisions,
-            flash,
-          )
-        )
+          workspaceHint <- ZIO.succeed(req.queryParam("workspace").map(_.trim).filter(_.nonEmpty))
+          boardIssueOpt <- resolveWorkspaceBoardIssue(id, workspaceHint)
+          response      <- boardIssueOpt match
+                             case Some((ws, _)) =>
+                               ZIO.succeed(
+                                 Response(
+                                   status = Status.SeeOther,
+                                   headers = Headers(Header.Location(URL.decode(s"/board/${ws.id}/issues/$id").getOrElse(URL.root))),
+                                 )
+                               )
+                             case None          =>
+                               for
+                                 flash           <- ZIO.succeed(req.queryParam("flash").map(_.trim).filter(_.nonEmpty))
+                                 issueRuns       <- workspaceRepository.listRunsByIssueRef(s"#$id").mapError(mapIssueRepoError)
+                                 workspaces      <- workspaceRepository.list.mapError(mapIssueRepoError)
+                                 allAgents       <- agentRepository.list().mapError(mapIssueRepoError)
+                                 availableAgents  = allAgents.filter(_.enabled).map(registryAgentToAgentInfo)
+                                 issue           <- issueRepository.get(IssueId(id)).mapError(mapIssueRepoError)
+                                 analysisDocs    <- loadIssueAnalysisContext(issue).mapError(mapIssueRepoError)
+                                 mergeHistory    <- loadMergeHistory(issue.id)
+                                 workReport      <- issueWorkReportProjection.get(issue.id)
+                                 decisions       <- decisionInbox
+                                                      .list(
+                                                        DecisionFilter(
+                                                          issueId = Some(IssueId(id)),
+                                                          limit = Int.MaxValue,
+                                                        )
+                                                      )
+                                                      .mapError(mapIssueRepoError)
+                               yield html(
+                                 HtmlViews.issueDetail(
+                                   domainToView(issue),
+                                   issueRuns,
+                                   availableAgents,
+                                   analysisDocs,
+                                   mergeHistory,
+                                   workspaces.map(ws => ws.id -> ws.name),
+                                   workReport,
+                                   decisions,
+                                   flash,
+                                 )
+                               )
+        yield response
       }
     },
     Method.GET / "api" / "issues" / string("id") / "dispatch-status" -> handler { (id: String, _: Request) =>
@@ -1367,24 +1365,6 @@ final case class IssueControllerLive(
           ZIO.succeed(None)
       }
     }.map(_.flatten)
-
-  private def loadWorkspaceAnalysisContext(
-    workspaceId: String
-  ): IO[shared.errors.PersistenceError, List[AnalysisContextDocView]] =
-    for
-      docs          <- analysisRepository.listByWorkspace(workspaceId)
-      workspacePath <- loadWorkspacePath(workspaceId)
-    yield docs
-      .sortBy(_.updatedAt)
-      .reverse
-      .map(doc =>
-        AnalysisContextDocView(
-          title = analysisTitle(doc.analysisType),
-          content = doc.content,
-          filePath = doc.filePath,
-          vscodeUrl = workspacePath.map(buildVscodeUrl(_, doc.filePath)),
-        )
-      )
 
   private def loadWorkspacePath(workspaceId: String): IO[shared.errors.PersistenceError, Option[String]] =
     workspaceRepository.get(workspaceId).map(_.flatMap(ws => Option(ws.localPath).map(_.trim).filter(_.nonEmpty)))
