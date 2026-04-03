@@ -8,11 +8,17 @@ import zio.*
 import zio.http.*
 import zio.json.*
 
-import board.control.{ BoardOrchestrator, DispatchResult, IssueMarkdownParser }
+import board.control.{
+  BoardOrchestrator,
+  DispatchResult,
+  IssueApprovalService,
+  IssueMarkdownParser,
+  IssueTimelineService,
+}
 import board.entity.*
 import project.control.ProjectStorageService
 import shared.ids.Ids.BoardIssueId
-import shared.web.{ BoardView, IssuesView }
+import shared.web.{ BoardView, IssueTimelineView }
 import workspace.entity.WorkspaceRepository
 
 trait BoardController:
@@ -21,7 +27,8 @@ trait BoardController:
 object BoardController:
   val live
     : ZLayer[
-      BoardRepository & BoardOrchestrator & WorkspaceRepository & IssueMarkdownParser & ProjectStorageService,
+      BoardRepository & BoardOrchestrator & WorkspaceRepository & IssueMarkdownParser & ProjectStorageService &
+        IssueApprovalService & IssueTimelineService,
       Nothing,
       BoardController,
     ] =
@@ -36,42 +43,52 @@ final case class BoardControllerLive(
   workspaceRepository: WorkspaceRepository,
   issueParser: IssueMarkdownParser,
   projectStorageService: ProjectStorageService,
+  issueApprovalService: IssueApprovalService,
+  issueTimelineService: IssueTimelineService,
 ) extends BoardController:
 
   override val routes: Routes[Any, Response] = Routes(
-    Method.GET / "board" / string("workspaceId")                                             -> handler { (workspaceId: String, _: Request) =>
+    Method.GET / "board" / string("workspaceId")                                                   -> handler { (workspaceId: String, _: Request) =>
       renderBoardPage(workspaceId)
     },
-    Method.GET / "board" / string("workspaceId") / "fragment"                                -> handler {
+    Method.GET / "board" / string("workspaceId") / "fragment"                                      -> handler {
       (workspaceId: String, _: Request) =>
         renderBoardFragment(workspaceId)
     },
-    Method.GET / "board" / string("workspaceId") / "issues" / string("issueId")              -> handler {
+    Method.GET / "board" / string("workspaceId") / "issues" / string("issueId")                    -> handler {
       (workspaceId: String, issueId: String, _: Request) =>
         readBoardIssueId(issueId).flatMap(id => renderIssueDetail(workspaceId, id)).catchAll(boardErrorResponse)
     },
-    Method.POST / "board" / string("workspaceId") / "issues"                                 -> handler { (workspaceId: String, req: Request) =>
+    Method.POST / "board" / string("workspaceId") / "issues"                                       -> handler { (workspaceId: String, req: Request) =>
       createIssue(workspaceId, req).catchAll(boardErrorResponse)
     },
-    Method.PUT / "board" / string("workspaceId") / "issues" / string("issueId") / "move"     -> handler {
+    Method.PUT / "board" / string("workspaceId") / "issues" / string("issueId") / "move"           -> handler {
       (workspaceId: String, issueId: String, req: Request) =>
         moveIssue(workspaceId, issueId, req).catchAll(boardErrorResponse)
     },
-    Method.PUT / "board" / string("workspaceId") / "issues" / string("issueId")              -> handler {
+    Method.PUT / "board" / string("workspaceId") / "issues" / string("issueId")                    -> handler {
       (workspaceId: String, issueId: String, req: Request) =>
         updateIssue(workspaceId, issueId, req).catchAll(boardErrorResponse)
     },
-    Method.DELETE / "board" / string("workspaceId") / "issues" / string("issueId")           -> handler {
+    Method.DELETE / "board" / string("workspaceId") / "issues" / string("issueId")                 -> handler {
       (workspaceId: String, issueId: String, req: Request) =>
         deleteIssue(workspaceId, issueId, req).catchAll(boardErrorResponse)
     },
-    Method.POST / "board" / string("workspaceId") / "dispatch"                               -> handler {
+    Method.POST / "board" / string("workspaceId") / "dispatch"                                     -> handler {
       (workspaceId: String, req: Request) =>
         dispatch(workspaceId, req).catchAll(boardErrorResponse)
     },
-    Method.POST / "board" / string("workspaceId") / "issues" / string("issueId") / "approve" -> handler {
+    Method.POST / "board" / string("workspaceId") / "issues" / string("issueId") / "approve"       -> handler {
       (workspaceId: String, issueId: String, req: Request) =>
         approveIssue(workspaceId, issueId, req).catchAll(boardErrorResponse)
+    },
+    Method.POST / "board" / string("workspaceId") / "issues" / string("issueId") / "quick-approve" -> handler {
+      (workspaceId: String, issueId: String, req: Request) =>
+        quickApproveIssue(workspaceId, issueId, req).catchAll(boardErrorResponse)
+    },
+    Method.POST / "board" / string("workspaceId") / "issues" / string("issueId") / "rework"        -> handler {
+      (workspaceId: String, issueId: String, req: Request) =>
+        reworkIssue(workspaceId, issueId, req).catchAll(boardErrorResponse)
     },
   )
 
@@ -95,8 +112,10 @@ final case class BoardControllerLive(
     for
       (_, projectRoot) <- resolveBoardPath(workspaceId)
       issue            <- boardRepository.readIssue(projectRoot, issueId)
-      renderedIssueRaw <- issueParser.render(issue.frontmatter, issue.body)
-    yield Response.html(BoardView.detailPage(workspaceId, issue, IssuesView.markdownFragment(renderedIssueRaw)))
+      timeline         <- issueTimelineService
+                            .buildTimeline(workspaceId, issueId)
+                            .mapError(err => BoardError.ParseError(s"timeline lookup failed: $err"))
+    yield Response.html(IssueTimelineView.page(workspaceId, issue, timeline))
 
   private def createIssue(workspaceId: String, req: Request): IO[BoardError, Response] =
     for
@@ -216,6 +235,31 @@ final case class BoardControllerLive(
       response         <-
         if isHtmx(req) then renderBoardFragment(workspaceId)
         else ZIO.succeed(Response.redirect(URL.decode(s"/board/$workspaceId").toOption.getOrElse(URL.root)))
+    yield response
+
+  private def quickApproveIssue(workspaceId: String, issueIdRaw: String, req: Request): IO[BoardError, Response] =
+    for
+      issueId  <- readBoardIssueId(issueIdRaw)
+      form     <- req.body.asString
+                    .mapError(err => BoardError.ParseError(err.getMessage))
+                    .flatMap(parseForm)
+      notes     = form.getOrElse("notes", "").trim
+      _        <- issueApprovalService.quickApprove(workspaceId, issueId, notes)
+      response <- if isHtmx(req) then renderBoardPage(workspaceId)
+                  else ZIO.succeed(Response.redirect(URL.decode(s"/board/$workspaceId").toOption.getOrElse(URL.root)))
+    yield response
+
+  private def reworkIssue(workspaceId: String, issueIdRaw: String, req: Request): IO[BoardError, Response] =
+    for
+      issueId  <- readBoardIssueId(issueIdRaw)
+      form     <- req.body.asString
+                    .mapError(err => BoardError.ParseError(err.getMessage))
+                    .flatMap(parseForm)
+      comment   =
+        form.get("comment").orElse(form.get("notes")).map(_.trim).filter(_.nonEmpty).getOrElse("Rework requested")
+      _        <- issueApprovalService.reworkIssue(workspaceId, issueId, comment, actor = "web")
+      response <- if isHtmx(req) then renderBoardPage(workspaceId)
+                  else ZIO.succeed(Response.redirect(URL.decode(s"/board/$workspaceId").toOption.getOrElse(URL.root)))
     yield response
 
   private def resolveBoardPath(workspaceId: String): IO[BoardError, (workspace.entity.Workspace, String)] =
