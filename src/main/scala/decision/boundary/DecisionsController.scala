@@ -38,6 +38,9 @@ object DecisionsController:
         Method.POST / "decisions" / string("id") / "escalate" -> handler { (id: String, _: Request) =>
           escalate(id, decisionInbox).catchAll(error => ZIO.succeed(persistErr(error)))
         },
+        Method.GET / "decisions" / "run-panel" / string("runId") -> handler { (runId: String, _: Request) =>
+          runPanel(runId, decisionInbox).catchAll(error => ZIO.succeed(persistErr(error)))
+        },
       )
 
   private def listPage(req: Request, decisionInbox: DecisionInbox): IO[PersistenceError, Response] =
@@ -92,10 +95,19 @@ object DecisionsController:
       summary     = form.get("summary").flatMap(_.headOption).map(_.trim).filter(_.nonEmpty)
                       .getOrElse("Resolved from web inbox")
       _          <- decisionInbox.resolve(DecisionId(id), resolution, actor = "web", summary = summary)
-    yield redirect("/decisions")
+      runIdOpt    = form.get("_run_id").flatMap(_.headOption).map(_.trim).filter(_.nonEmpty)
+      response   <- (isHtmx(req), runIdOpt) match
+                      case (true, Some(runId)) => runPanel(runId, decisionInbox)
+                      case _                   => ZIO.succeed(redirect("/decisions"))
+    yield response
 
   private def escalate(id: String, decisionInbox: DecisionInbox): IO[PersistenceError, Response] =
     decisionInbox.escalate(DecisionId(id), "Escalated from web inbox").as(redirect("/decisions"))
+
+  private def runPanel(runId: String, decisionInbox: DecisionInbox): IO[PersistenceError, Response] =
+    decisionInbox
+      .list(DecisionFilter(query = Some(runId), limit = 50))
+      .map(items => htmlResponse(DecisionsView.sidePanelFragment(items, runId)))
 
   private def parseResolutionKind(raw: String): Option[DecisionResolutionKind] =
     raw.trim.toLowerCase match
@@ -143,6 +155,11 @@ object DecisionsController:
 
   private def urlDecode(value: String): String =
     URLDecoder.decode(value, StandardCharsets.UTF_8)
+
+  private def isHtmx(req: Request): Boolean =
+    req.headers.headers.exists { header =>
+      header.headerName.toString.equalsIgnoreCase("HX-Request") && header.renderedValue.equalsIgnoreCase("true")
+    }
 
   private def redirect(location: String): Response =
     Response(status = Status.SeeOther, headers = Headers(Header.Location(URL.decode(location).getOrElse(URL.root))))

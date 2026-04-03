@@ -422,7 +422,19 @@ class AbGitPanel extends LitElement {
 
   async _applyToRepo() {
     if (!this.applyEndpoint || !this._applyButtonEl) return;
-    if (!window.confirm('Apply this run branch to the workspace repository?')) return;
+
+    let modal = this.querySelector('ab-confirm-modal');
+    if (!modal) {
+      modal = document.createElement('ab-confirm-modal');
+      this.appendChild(modal);
+    }
+    const confirmed = await modal.confirm({
+      heading: 'Apply to repository',
+      message: 'Merge this run branch into the workspace repository? This will apply all committed changes.',
+      confirmText: 'Apply',
+      cancelText: 'Cancel',
+    });
+    if (!confirmed) return;
 
     const button = this._applyButtonEl;
     const prevText = button.textContent || 'Apply to repo';
