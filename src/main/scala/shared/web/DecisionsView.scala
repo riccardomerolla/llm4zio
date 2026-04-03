@@ -32,7 +32,7 @@ object DecisionsView:
     div(cls := "space-y-3 p-1", attr("data-decision-panel") := runId)(
       if decisions.isEmpty then
         div(cls := "rounded-lg border border-dashed border-white/10 bg-slate-900/40 p-6 text-center")(
-          p(cls := "text-xs text-gray-400")("No pending decisions for this run."),
+          p(cls := "text-xs text-gray-400")("No pending decisions for this run.")
         )
       else
         frag(
@@ -217,9 +217,9 @@ object DecisionsView:
     else
       div(cls := "mt-2 space-y-2")(
         form(
-          action          := s"/decisions/${decision.id.value}/resolve",
-          method          := "post",
-          attr("hx-post") := s"/decisions/${decision.id.value}/resolve",
+          action            := s"/decisions/${decision.id.value}/resolve",
+          method            := "post",
+          attr("hx-post")   := s"/decisions/${decision.id.value}/resolve",
           attr("hx-target") := "closest [data-decision-panel]",
           attr("hx-swap")   := "outerHTML",
         )(
@@ -253,7 +253,7 @@ object DecisionsView:
               attr("hx-swap")   := "outerHTML",
             )("Escalate"),
           ),
-        ),
+        )
       )
 
   private def keyboardNavScript: Frag =

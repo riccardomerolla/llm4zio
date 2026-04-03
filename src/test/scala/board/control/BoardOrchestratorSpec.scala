@@ -463,6 +463,47 @@ object BoardOrchestratorSpec extends ZIOSpecDefault:
           assigned.nonEmpty,
         )
       },
+      test("dispatchCycle reuses existing pending run for rework cards instead of creating a new run") {
+        val reworkTask  = issue("task-8", BoardColumn.Todo, branchName = Some("agent/existing-task-8")).copy(
+          frontmatter = issue("task-8", BoardColumn.Todo, branchName = Some("agent/existing-task-8")).frontmatter.copy(
+            assignedAgent = Some("agent-default")
+          )
+        )
+        val existingRun = WorkspaceRun(
+          id = "run-8",
+          workspaceId = "ws-1",
+          parentRunId = Some("run-7"),
+          issueRef = "#task-8",
+          agentName = "agent-default",
+          prompt = "Address review feedback",
+          conversationId = "8",
+          worktreePath = s"$workspacePath/.worktree/run-8",
+          branchName = "agent/existing-task-8",
+          status = RunStatus.Pending,
+          attachedUsers = Set.empty,
+          controllerUserId = None,
+          createdAt = Instant.parse("2026-03-20T10:20:00Z"),
+          updatedAt = Instant.parse("2026-03-20T10:21:00Z"),
+        )
+
+        for
+          (orchestrator, boardRef, assignedRef, _, _) <- makeOrchestrator(
+                                                           List(reworkTask),
+                                                           runsByIssueRefSeed = Map("#task-8" -> List(existingRun)),
+                                                         )
+          result                                      <- orchestrator.dispatchCycle(projectPath)
+          state                                       <- boardRef.get
+          assigned                                    <- assignedRef.get
+          task                                         = state(BoardIssueId("task-8"))
+        yield assertTrue(
+          result.dispatchedIssueIds == List(BoardIssueId("task-8")),
+          result.skippedIssueIds.isEmpty,
+          assigned.isEmpty,
+          task.column == BoardColumn.InProgress,
+          task.frontmatter.branchName.contains("agent/existing-task-8"),
+          task.frontmatter.assignedAgent.contains("agent-default"),
+        )
+      },
       test("dispatchCycle fails when current branch does not match configured default branch") {
         val readyTask = issue("task-7", BoardColumn.Todo)
 

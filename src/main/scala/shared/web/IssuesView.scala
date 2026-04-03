@@ -500,10 +500,10 @@ object IssuesView:
   def editForm(issue: AgentIssueView, workspaces: List[(String, String)]): String =
     val issueIdStr = safe(issue.id, "-")
     Layout.page(s"Edit Issue #$issueIdStr", "/issues")(
-      div(cls := "-mt-6 mx-auto max-w-4xl")(
+      div(cls := "mx-auto max-w-4xl")(
         div(cls := "mb-5 flex items-center gap-3")(
           a(
-            href := s"/issues/$issueIdStr",
+            href := "/board",
             cls  := "text-sm font-medium text-indigo-300 hover:text-indigo-200",
           )("← Back"),
           h1(cls := "text-2xl font-bold text-white")(s"Edit issue #$issueIdStr"),
@@ -1487,7 +1487,7 @@ object IssuesView:
       attr("data-workspace-id")   := workspaceId,
       attr("data-required-caps")  := requiredCaps.mkString(","),
     )(
-      a(href := s"/issues/$issueId", cls := "block")(
+      a(href := cardHref(issue.status, workspaceId, issueId), cls := "block")(
         div(cls := "mb-1.5 flex items-center gap-1.5")(
           span(cls := s"inline-block h-2.5 w-2.5 flex-shrink-0 $statusDotCls"),
           span(cls := "text-[10px] font-mono text-slate-500")(shortId),
@@ -1886,6 +1886,11 @@ object IssuesView:
         val hours = minutes / 60
         val mins  = minutes % 60
         s"${hours}h ${mins}m"
+
+  private def cardHref(status: IssueStatus, workspaceId: String, issueId: String): String =
+    if status == IssueStatus.Backlog then s"/issues/$issueId/edit"
+    else if workspaceId.nonEmpty then s"/board/$workspaceId/issues/$issueId"
+    else s"/issues/$issueId"
 
   private def issueStatusToken(status: IssueStatus): String =
     status match

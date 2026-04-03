@@ -308,16 +308,20 @@ final case class BoardOrchestratorLive(
                ),
              )
       _   <- boardRepository.moveIssue(workspacePath, issue.frontmatter.id, BoardColumn.InProgress)
-      run <- workspaceRunService
-               .assign(
-                 workspaceId,
-                 AssignRunRequest(
-                   issueRef = issue.frontmatter.id.value,
-                   prompt = issue.body,
-                   agentName = agent,
-                 ),
-               )
-               .mapError(err => BoardError.ConcurrencyConflict(s"workspace run assign failed: $err"))
+      run <- existingPendingRun(workspaceId, issue.frontmatter.id).flatMap {
+               case Some(existingRun) => ZIO.succeed(existingRun)
+               case None              =>
+                 workspaceRunService
+                   .assign(
+                     workspaceId,
+                     AssignRunRequest(
+                       issueRef = issue.frontmatter.id.value,
+                       prompt = issue.body,
+                       agentName = agent,
+                     ),
+                   )
+                   .mapError(err => BoardError.ConcurrencyConflict(s"workspace run assign failed: $err"))
+             }
       _   <- boardRepository.updateIssue(
                workspacePath,
                issue.frontmatter.id,
@@ -383,6 +387,17 @@ final case class BoardOrchestratorLive(
       _      <- ZIO.when(latest.isDefined)(workspaceRunService.cleanupAfterSuccessfulMerge(latest.get.id))
     yield ()
 
+  private def existingPendingRun(workspaceId: String, issueId: BoardIssueId)
+    : IO[BoardError, Option[workspace.entity.WorkspaceRun]] =
+    workspaceRepository
+      .listRuns(workspaceId)
+      .mapError(err => BoardError.ParseError(s"list runs failed: $err"))
+      .map(
+        _.filter(run => issueRefMatches(run.issueRef, issueId) && run.status == workspace.entity.RunStatus.Pending)
+          .sortBy(_.updatedAt.toEpochMilli)(Ordering.Long.reverse)
+          .headOption
+      )
+
   private def resolveWorkspaceByPath(workspacePath: String): IO[BoardError, workspace.entity.Workspace] =
     workspaceRepository
       .list
@@ -437,6 +452,9 @@ final case class BoardOrchestratorLive(
 
   private def issueIdFromIssueRef(issueRef: String): Option[BoardIssueId] =
     BoardIssueId.fromString(issueRef.trim.stripPrefix("#")).toOption
+
+  private def issueRefMatches(issueRef: String, issueId: BoardIssueId): Boolean =
+    issueRef.trim.stripPrefix("#") == issueId.value
 
   private def appendDetail(existing: List[String], details: String): List[String] =
     Option(details).map(_.trim).filter(_.nonEmpty) match

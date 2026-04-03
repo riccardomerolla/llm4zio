@@ -25,6 +25,7 @@ class AbBoardFs extends LitElement {
     if (!this.workspaceId || !this.fragmentUrl) return;
     this._bindDragDrop();
     this._bindDeleteButtons();
+    this._bindCardClick();
     this._bindCreateForm();
     this._bindDispatchButton();
     this._bindWs();
@@ -34,6 +35,7 @@ class AbBoardFs extends LitElement {
         this._dragBound = false;
         this._bindDragDrop();
         this._bindDeleteButtons();
+        this._bindCardClick();
         this._bindCreateForm();
         this._bindDispatchButton();
       }
@@ -99,6 +101,19 @@ class AbBoardFs extends LitElement {
         const ok = window.confirm(`Delete issue ${issueId}?`);
         if (!ok) return;
         await this._deleteIssue(issueId);
+      });
+    });
+  }
+
+  _bindCardClick() {
+    this.querySelectorAll('[data-card-href]').forEach((card) => {
+      if (card.dataset.boundCardClick === 'true') return;
+      card.dataset.boundCardClick = 'true';
+      card.addEventListener('click', (e) => {
+        // Don't navigate if clicking on interactive elements (buttons, links, inputs, forms)
+        if (e.target.closest('a, button, input, textarea, select, form, [data-board-delete]')) return;
+        const href = card.dataset.cardHref;
+        if (href) window.location.href = href;
       });
     });
   }

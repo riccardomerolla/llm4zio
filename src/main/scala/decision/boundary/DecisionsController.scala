@@ -6,10 +6,11 @@ import java.nio.charset.StandardCharsets
 import zio.*
 import zio.http.*
 
+import board.control.IssueApprovalService
 import decision.control.DecisionInbox
 import decision.entity.*
 import shared.errors.PersistenceError
-import shared.ids.Ids.DecisionId
+import shared.ids.Ids.{ BoardIssueId, DecisionId }
 import shared.web.DecisionsView
 
 trait DecisionsController:
@@ -20,22 +21,22 @@ object DecisionsController:
   def routes: ZIO[DecisionsController, Nothing, Routes[Any, Response]] =
     ZIO.serviceWith[DecisionsController](_.routes)
 
-  val live: ZLayer[DecisionInbox, Nothing, DecisionsController] =
+  val live: ZLayer[DecisionInbox & IssueApprovalService, Nothing, DecisionsController] =
     ZLayer.fromFunction(make)
 
-  def make(decisionInbox: DecisionInbox): DecisionsController =
+  def make(decisionInbox: DecisionInbox, issueApprovalService: IssueApprovalService): DecisionsController =
     new DecisionsController:
       override val routes: Routes[Any, Response] = Routes(
-        Method.GET / "decisions"                              -> handler { (req: Request) =>
+        Method.GET / "decisions"                                 -> handler { (req: Request) =>
           listPage(req, decisionInbox).catchAll(error => ZIO.succeed(persistErr(error)))
         },
-        Method.GET / "decisions" / "fragment"                 -> handler { (req: Request) =>
+        Method.GET / "decisions" / "fragment"                    -> handler { (req: Request) =>
           listFragment(req, decisionInbox).catchAll(error => ZIO.succeed(persistErr(error)))
         },
-        Method.POST / "decisions" / string("id") / "resolve"  -> handler { (id: String, req: Request) =>
-          resolve(id, req, decisionInbox).catchAll(error => ZIO.succeed(persistErr(error)))
+        Method.POST / "decisions" / string("id") / "resolve"     -> handler { (id: String, req: Request) =>
+          resolve(id, req, decisionInbox, issueApprovalService).catchAll(error => ZIO.succeed(persistErr(error)))
         },
-        Method.POST / "decisions" / string("id") / "escalate" -> handler { (id: String, _: Request) =>
+        Method.POST / "decisions" / string("id") / "escalate"    -> handler { (id: String, _: Request) =>
           escalate(id, decisionInbox).catchAll(error => ZIO.succeed(persistErr(error)))
         },
         Method.GET / "decisions" / "run-panel" / string("runId") -> handler { (runId: String, _: Request) =>
@@ -86,7 +87,12 @@ object DecisionsController:
       )
       .map(items => htmlResponse(DecisionsView.cardsFragment(items)))
 
-  private def resolve(id: String, req: Request, decisionInbox: DecisionInbox): IO[PersistenceError, Response] =
+  private def resolve(
+    id: String,
+    req: Request,
+    decisionInbox: DecisionInbox,
+    issueApprovalService: IssueApprovalService,
+  ): IO[PersistenceError, Response] =
     for
       form       <- parseForm(req)
       resolution <- ZIO
@@ -94,12 +100,60 @@ object DecisionsController:
                       .orElseFail(PersistenceError.QueryFailed("decision_resolution", "Missing resolution"))
       summary     = form.get("summary").flatMap(_.headOption).map(_.trim).filter(_.nonEmpty)
                       .getOrElse("Resolved from web inbox")
-      _          <- decisionInbox.resolve(DecisionId(id), resolution, actor = "web", summary = summary)
+      decision   <- decisionInbox.get(DecisionId(id))
+      _          <- resolveDecision(decision, resolution, summary, decisionInbox, issueApprovalService)
       runIdOpt    = form.get("_run_id").flatMap(_.headOption).map(_.trim).filter(_.nonEmpty)
       response   <- (isHtmx(req), runIdOpt) match
                       case (true, Some(runId)) => runPanel(runId, decisionInbox)
                       case _                   => ZIO.succeed(redirect("/decisions"))
     yield response
+
+  private def resolveDecision(
+    decision: Decision,
+    resolution: DecisionResolutionKind,
+    summary: String,
+    decisionInbox: DecisionInbox,
+    issueApprovalService: IssueApprovalService,
+  ): IO[PersistenceError, Unit] =
+    decision.source.kind match
+      case DecisionSourceKind.IssueReview =>
+        resolution match
+          case DecisionResolutionKind.Approved        =>
+            for
+              workspaceId <- issueReviewWorkspaceId(decision)
+              issueId     <- issueReviewBoardIssueId(decision)
+              _           <- issueApprovalService
+                               .quickApprove(workspaceId, issueId, summary)
+                               .mapError(err => PersistenceError.QueryFailed("quick_approve", err.toString))
+            yield ()
+          case DecisionResolutionKind.ReworkRequested =>
+            for
+              workspaceId <- issueReviewWorkspaceId(decision)
+              issueId     <- issueReviewBoardIssueId(decision)
+              _           <- issueApprovalService
+                               .reworkIssue(workspaceId, issueId, summary, actor = "web")
+                               .mapError(err => PersistenceError.QueryFailed("rework", err.toString))
+            yield ()
+          case _                                      =>
+            decisionInbox.resolve(decision.id, resolution, actor = "web", summary = summary).unit
+      case _                              =>
+        decisionInbox.resolve(decision.id, resolution, actor = "web", summary = summary).unit
+
+  private def issueReviewWorkspaceId(decision: Decision): IO[PersistenceError, String] =
+    ZIO
+      .fromOption(decision.source.workspaceId.map(_.trim).filter(_.nonEmpty))
+      .orElseFail(PersistenceError.QueryFailed(
+        "issue_review_workspace",
+        s"Decision ${decision.id.value} missing workspaceId",
+      ))
+
+  private def issueReviewBoardIssueId(decision: Decision): IO[PersistenceError, BoardIssueId] =
+    val rawIssueId =
+      decision.source.issueId.map(_.value).orElse(Option(decision.source.referenceId).map(_.trim).filter(_.nonEmpty))
+    ZIO
+      .fromOption(rawIssueId)
+      .map(BoardIssueId(_))
+      .orElseFail(PersistenceError.QueryFailed("issue_review_issue", s"Decision ${decision.id.value} missing issueId"))
 
   private def escalate(id: String, decisionInbox: DecisionInbox): IO[PersistenceError, Response] =
     decisionInbox.escalate(DecisionId(id), "Escalated from web inbox").as(redirect("/decisions"))
