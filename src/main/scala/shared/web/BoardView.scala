@@ -164,15 +164,20 @@ object BoardView:
     ).render
 
   private def issueCard(workspaceId: String, issue: BoardIssue, column: BoardColumn): Frag =
+    val issueId = issue.frontmatter.id.value
+    val cardHref =
+      if column == BoardColumn.Backlog then s"/issues/$issueId/edit"
+      else s"/board/$workspaceId/issues/$issueId"
     div(
-      cls                         := "rounded-lg border border-white/10 bg-slate-800/70 p-3",
+      cls                         := "rounded-lg border border-white/10 bg-slate-800/70 p-3 cursor-pointer hover:border-white/20 transition-colors",
       attr("draggable")           := "true",
-      attr("data-board-issue-id") := issue.frontmatter.id.value,
+      attr("data-board-issue-id") := issueId,
       attr("data-board-from")     := column.folderName,
+      attr("data-card-href")      := cardHref,
     )(
       div(cls := "mb-1 flex items-start justify-between gap-2")(
         a(
-          href := s"/board/$workspaceId/issues/${issue.frontmatter.id.value}",
+          href := cardHref,
           cls  := "text-sm font-semibold text-white hover:text-indigo-200",
         )(issue.frontmatter.title),
         span(cls := "rounded bg-white/10 px-1.5 py-0.5 text-[10px] text-slate-300")(issue.frontmatter.priority.toString),

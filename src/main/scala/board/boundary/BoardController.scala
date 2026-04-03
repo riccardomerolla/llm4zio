@@ -98,7 +98,7 @@ final case class BoardControllerLive(
         (workspace, projectRoot) <- resolveBoardPath(workspaceId)
         _                        <- boardRepository.initBoard(projectRoot).ignore
         board                    <- boardRepository.readBoard(projectRoot)
-      yield Response.html(BoardView.page(workspaceId, workspace.name, workspace.localPath, board))
+      yield htmlResponse(BoardView.page(workspaceId, workspace.name, workspace.localPath, board))
 
     effect.catchAll(boardErrorResponse)
 
@@ -106,7 +106,7 @@ final case class BoardControllerLive(
     (for
       (_, projectRoot) <- resolveBoardPath(workspaceId)
       board            <- boardRepository.readBoard(projectRoot)
-    yield Response.html(BoardView.columnsFragment(workspaceId, board))).catchAll(boardErrorResponse)
+    yield htmlResponse(BoardView.columnsFragment(workspaceId, board))).catchAll(boardErrorResponse)
 
   private def renderIssueDetail(workspaceId: String, issueId: BoardIssueId): IO[BoardError, Response] =
     for
@@ -115,7 +115,7 @@ final case class BoardControllerLive(
       timeline         <- issueTimelineService
                             .buildTimeline(workspaceId, issueId)
                             .mapError(err => BoardError.ParseError(s"timeline lookup failed: $err"))
-    yield Response.html(IssueTimelineView.page(workspaceId, issue, timeline))
+    yield htmlResponse(IssueTimelineView.page(workspaceId, issue, timeline))
 
   private def createIssue(workspaceId: String, req: Request): IO[BoardError, Response] =
     for
@@ -243,10 +243,9 @@ final case class BoardControllerLive(
       form     <- req.body.asString
                     .mapError(err => BoardError.ParseError(err.getMessage))
                     .flatMap(parseForm)
-      notes     = form.getOrElse("notes", "").trim
+      notes     = form.get("notes").orElse(form.get("comment")).map(_.trim).getOrElse("")
       _        <- issueApprovalService.quickApprove(workspaceId, issueId, notes)
-      response <- if isHtmx(req) then renderBoardPage(workspaceId)
-                  else ZIO.succeed(Response.redirect(URL.decode(s"/board/$workspaceId").toOption.getOrElse(URL.root)))
+      response <- ZIO.succeed(htmxRedirect(req, "/board"))
     yield response
 
   private def reworkIssue(workspaceId: String, issueIdRaw: String, req: Request): IO[BoardError, Response] =
@@ -258,8 +257,7 @@ final case class BoardControllerLive(
       comment   =
         form.get("comment").orElse(form.get("notes")).map(_.trim).filter(_.nonEmpty).getOrElse("Rework requested")
       _        <- issueApprovalService.reworkIssue(workspaceId, issueId, comment, actor = "web")
-      response <- if isHtmx(req) then renderBoardPage(workspaceId)
-                  else ZIO.succeed(Response.redirect(URL.decode(s"/board/$workspaceId").toOption.getOrElse(URL.root)))
+      response <- ZIO.succeed(htmxRedirect(req, "/board"))
     yield response
 
   private def resolveBoardPath(workspaceId: String): IO[BoardError, (workspace.entity.Workspace, String)] =
@@ -412,6 +410,13 @@ final case class BoardControllerLive(
     val dispatched = result.dispatchedIssueIds.map(_.value.toJson).mkString(",")
     val skipped    = result.skippedIssueIds.map(_.value.toJson).mkString(",")
     s"""{"dispatchedIssueIds":[$dispatched],"skippedIssueIds":[$skipped]}"""
+
+  private def htmlResponse(content: String): Response =
+    Response.text(content).contentType(MediaType.text.html)
+
+  private def htmxRedirect(req: Request, path: String): Response =
+    if isHtmx(req) then Response.ok.addHeader(Header.Custom("HX-Redirect", path))
+    else Response.redirect(URL.decode(path).toOption.getOrElse(URL.root))
 
   private def boardErrorResponse(error: BoardError): UIO[Response] =
     error match
