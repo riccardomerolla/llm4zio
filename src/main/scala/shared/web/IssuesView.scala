@@ -500,13 +500,11 @@ object IssuesView:
   def editForm(issue: AgentIssueView, workspaces: List[(String, String)]): String =
     val issueIdStr = safe(issue.id, "-")
     Layout.page(s"Edit Issue #$issueIdStr", "/issues")(
-      div(cls := "mx-auto max-w-4xl")(
-        div(cls := "mb-5 flex items-center gap-3")(
-          a(
-            href := "/board",
-            cls  := "text-sm font-medium text-indigo-300 hover:text-indigo-200",
-          )("← Back"),
-          h1(cls := "text-2xl font-bold text-white")(s"Edit issue #$issueIdStr"),
+      div(cls := "mx-auto max-w-4xl space-y-4")(
+        Components.pageHeader(
+          title = s"Edit issue #$issueIdStr",
+          backHref = "/board",
+          backText = "Board",
         ),
         form(method := "post", action := s"/issues/$issueIdStr/edit", cls := "space-y-5")(
           div(cls := "rounded-xl border border-white/10 bg-slate-900/70 p-5")(

@@ -33,12 +33,12 @@ object ChatView:
     )(
       div(cls := "space-y-4")(
         Components.pageHeader(
-          "Chat",
-          s"${conversations.size} conversation${if conversations.size == 1 then "" else "s"}",
-          a(
+          title = "Chat",
+          subtitle = s"${conversations.size} conversation${if conversations.size == 1 then "" else "s"}",
+          actions = Seq(a(
             href := "/chat/new",
             cls  := "rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-500",
-          )("New Chat"),
+          )("New Chat")),
         ),
         if sorted.isEmpty then
           Components.emptyStateFull(

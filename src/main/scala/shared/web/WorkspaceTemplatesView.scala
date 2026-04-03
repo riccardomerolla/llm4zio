@@ -374,12 +374,10 @@ object WorkspaceTemplatesView:
     Layout.page("Workspace Templates", "/workspace-templates")(
       div(cls := "space-y-8")(
         Components.pageHeader(
-          "Workspace Templates",
-          "Pick a stack, refine the prompt, and walk through the seven template questions before the workspace is scaffolded and the first issue cards are generated.",
-          a(
-            href := "/settings/workspaces",
-            cls  := "rounded-md border border-white/15 px-3 py-1.5 text-sm text-slate-300 hover:bg-white/5",
-          )("← Workspaces"),
+          title = "Workspace Templates",
+          subtitle = "Pick a stack, refine the prompt, and walk through the seven template questions before the workspace is scaffolded and the first issue cards are generated.",
+          backHref = "/settings/workspaces",
+          backText = "Workspaces",
         ),
         templateSelector,
         div(cls := "space-y-5")(templates.map(templatePanel)*),

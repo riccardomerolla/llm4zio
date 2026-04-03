@@ -72,15 +72,53 @@ object Components:
 
   // ── Page header ──────────────────────────────────────────────────────────
 
-  /** Standard page header with title, optional subtitle, and right-side action slot. */
-  def pageHeader(title: String, subtitle: String = "", actions: Frag*): Frag =
-    div(cls := "flex items-start justify-between gap-4 mb-6")(
-      div(cls := "min-w-0")(
-        h1(cls := "text-lg font-semibold text-white")(title),
-        if subtitle.nonEmpty then p(cls := "mt-1 text-sm text-gray-400")(subtitle) else (),
+  /** Compact inline page header bar — single-row layout with optional back link, badges, title, and actions.
+    *
+    * Renders `<ab-page-header>` which is a compact, rounded card-style bar consistent across all views.
+    *
+    * @param title
+    *   Primary heading text (truncated when space is tight).
+    * @param subtitle
+    *   Optional secondary text shown after title on wider screens.
+    * @param backHref
+    *   If non-empty, renders a back navigation link on the far left.
+    * @param backText
+    *   Label for the back link (default: "Back").
+    * @param sticky
+    *   If true, header sticks below the top nav bar on scroll.
+    * @param badges
+    *   Inline badge/metadata fragments shown between back link and title.
+    * @param actions
+    *   Right-aligned action buttons.
+    */
+  def pageHeader(
+    title: String,
+    subtitle: String = "",
+    backHref: String = "",
+    backText: String = "Back",
+    sticky: Boolean = false,
+    badges: Seq[Frag] = Nil,
+    actions: Seq[Frag] = Nil,
+  ): Frag =
+    val stickyClass =
+      if sticky then "sticky top-10 z-20 shadow-lg backdrop-blur bg-slate-900/95"
+      else "bg-slate-900/70"
+    div(cls := s"flex items-center gap-3 rounded-xl border border-white/10 px-4 py-2.5 $stickyClass")(
+      if backHref.nonEmpty then
+        a(
+          href := backHref,
+          cls  := "flex-shrink-0 rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-slate-300 hover:bg-white/10 transition-colors",
+        )(s"← $backText")
+      else (),
+      badges,
+      h1(cls := "min-w-0 flex-1 truncate text-sm font-semibold text-white")(
+        title,
+        if subtitle.nonEmpty then
+          span(cls := "ml-2 hidden font-normal text-slate-400 sm:inline")(subtitle)
+        else (),
       ),
       if actions.nonEmpty then
-        div(cls := "flex items-center gap-2 flex-shrink-0")(actions*)
+        div(cls := "flex items-center gap-2 flex-shrink-0")(actions)
       else (),
     )
 
@@ -185,4 +223,5 @@ object Components:
     JsResources.inlineModuleScript("/static/client/components/design-system/ab-empty-state.js"),
     JsResources.inlineModuleScript("/static/client/components/design-system/ab-stat-card.js"),
     JsResources.inlineModuleScript("/static/client/components/design-system/ab-filter-bar.js"),
+    JsResources.inlineModuleScript("/static/client/components/design-system/ab-page-header.js"),
   )

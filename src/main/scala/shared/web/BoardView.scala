@@ -19,19 +19,23 @@ object BoardView:
       div(cls := "space-y-4")(
         // Page header
         Components.pageHeader(
-          "Board",
-          workspaceName,
-          button(
-            `type`                      := "button",
-            attr("data-board-dispatch") := "true",
-            attr("data-workspace-id")   := workspaceId,
-            cls                         := "rounded-md border border-white/10 px-3 py-1.5 text-sm text-gray-300 hover:bg-white/5",
-          )("Dispatch Cycle"),
-          button(
-            `type`                     := "button",
-            attr("data-new-issue-btn") := "true",
-            cls                        := "rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-500",
-          )("New Issue"),
+          title = "Board",
+          subtitle = workspaceName,
+          backHref = "/board",
+          backText = "Board",
+          actions = Seq(
+            button(
+              `type`                      := "button",
+              attr("data-board-dispatch") := "true",
+              attr("data-workspace-id")   := workspaceId,
+              cls                         := "rounded-md border border-white/10 px-3 py-1.5 text-sm text-gray-300 hover:bg-white/5",
+            )("Dispatch Cycle"),
+            button(
+              `type`                     := "button",
+              attr("data-new-issue-btn") := "true",
+              cls                        := "rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-500",
+            )("New Issue"),
+          ),
         ),
         // Compact status line
         statusLine(board),

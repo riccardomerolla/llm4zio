@@ -58,8 +58,8 @@ object ProjectsView:
     Layout.page("Projects", "/projects")(
       div(cls := "space-y-4")(
         Components.pageHeader(
-          "Projects",
-          "Group workspaces into delivery streams with shared board, analysis, and agent defaults",
+          title = "Projects",
+          subtitle = "Group workspaces into delivery streams with shared board, analysis, and agent defaults",
         ),
         // Inline Quick Create
         div(cls := "rounded-lg border border-white/10 bg-slate-900/60 px-4 py-3")(

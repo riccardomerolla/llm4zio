@@ -24,18 +24,20 @@ object WorkspacesView:
     Layout.page("Workspaces", "/settings/workspaces")(
       div(cls := "space-y-6")(
         Components.pageHeader(
-          "Workspaces",
-          "Register local git repositories and assign issues to CLI agents",
-          a(
-            href := "/workspace-templates",
-            cls  := "rounded-md border border-white/15 px-3 py-1.5 text-sm text-slate-300 hover:bg-white/5",
-          )("Templates"),
-          button(
-            cls               := "rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-500",
-            attr("hx-get")    := "/api/workspaces/new",
-            attr("hx-target") := "#modal-container",
-            attr("hx-swap")   := "innerHTML",
-          )("New Workspace"),
+          title = "Workspaces",
+          subtitle = "Register local git repositories and assign issues to CLI agents",
+          actions = Seq(
+            a(
+              href := "/workspace-templates",
+              cls  := "rounded-md border border-white/15 px-3 py-1.5 text-sm text-slate-300 hover:bg-white/5",
+            )("Templates"),
+            button(
+              cls               := "rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-500",
+              attr("hx-get")    := "/api/workspaces/new",
+              attr("hx-target") := "#modal-container",
+              attr("hx-swap")   := "innerHTML",
+            )("New Workspace"),
+          ),
         ),
         div(id := "modal-container"),
         if workspaces.isEmpty then

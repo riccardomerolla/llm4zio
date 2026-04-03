@@ -31,7 +31,7 @@ object SettingsView:
 
   def settingsShell(activeTab: String, pageTitle: String)(bodyContent: Frag*): String =
     Layout.page(pageTitle, s"/settings/$activeTab")(
-      Components.pageHeader("Settings"),
+      Components.pageHeader(title = "Settings"),
       div(cls := "border-b border-white/10 mb-6")(
         nav(cls := "-mb-px flex space-x-6", attr("aria-label") := "Settings tabs")(
           tabs.map {

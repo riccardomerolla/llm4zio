@@ -23,12 +23,12 @@ object AgentsView:
         // Main list
         div(cls := "flex-1 min-w-0 space-y-4")(
           Components.pageHeader(
-            "Agents",
-            "Built-in, custom config, and registry agents",
-            a(
+            title = "Agents",
+            subtitle = "Built-in, custom config, and registry agents",
+            actions = Seq(a(
               href := "/agents/new",
               cls  := "rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-500",
-            )("Create Agent"),
+            )("Create Agent")),
           ),
           flash.map { msg =>
             div(cls := "rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-300")(msg)
