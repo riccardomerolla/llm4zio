@@ -6,13 +6,23 @@ import java.nio.file.Path
 import zio.*
 import zio.test.*
 
-import board.entity.BoardError
+import board.entity.{
+  Board,
+  BoardColumn,
+  BoardError,
+  BoardIssue,
+  BoardRepository,
+  IssueFrontmatter,
+  IssuePriority,
+  TransientState,
+}
 import decision.control.DecisionInbox
 import decision.entity.*
 import issues.entity.AgentIssue
 import project.control.ProjectStorageService
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ BoardIssueId, DecisionId, IssueId, ProjectId }
+import workspace.control.WorkspaceRunService
 import workspace.entity.{ Workspace, WorkspaceEvent, WorkspaceRepository, WorkspaceRun, WorkspaceRunEvent }
 
 object IssueApprovalServiceSpec extends ZIOSpecDefault:
@@ -40,6 +50,8 @@ object IssueApprovalServiceSpec extends ZIOSpecDefault:
                                resolvedRef.update(_ :+ ((issueId, resolutionKind, actor, summary))),
                              onApprove = (workspacePath, issueId) =>
                                approvedRef.update(_ :+ ((workspacePath, issueId))),
+                             onMoveToTodo = (_, _, _) => ZIO.unit,
+                             onContinueRun = (_, _, _) => ZIO.unit,
                            )
             _           <- service.quickApprove(workspaceId, issueId, "Looks good")
             resolved    <- resolvedRef.get
@@ -59,6 +71,8 @@ object IssueApprovalServiceSpec extends ZIOSpecDefault:
                              projectRoot = Path.of("/tmp/projects/project-1"),
                              onResolve = (_, _, _, _) => resolvedRef.update(_ + 1),
                              onApprove = (_, _) => approvedRef.update(_ + 1),
+                             onMoveToTodo = (_, _, _) => ZIO.unit,
+                             onContinueRun = (_, _, _) => ZIO.unit,
                            )
             result      <- service.quickApprove(workspaceId, issueId, "").either
             resolved    <- resolvedRef.get
@@ -69,7 +83,78 @@ object IssueApprovalServiceSpec extends ZIOSpecDefault:
             approved == 0,
           )
         },
-      )
+      ),
+      suite("reworkIssue")(
+        test("resolves decision as rework, moves the card to todo, and continues the latest completed run") {
+          for
+            resolvedRef  <- Ref.make(List.empty[(IssueId, DecisionResolutionKind, String, String)])
+            movedRef     <- Ref.make(List.empty[(String, BoardIssueId, BoardColumn)])
+            continuedRef <- Ref.make(List.empty[(String, String, Option[String])])
+            service       = makeService(
+                              workspaceOpt = Some(sampleWorkspace),
+                              runs = List(
+                                sampleRun(
+                                  "run-failed",
+                                  createdAt.plusSeconds(60),
+                                  status = workspace.entity.RunStatus.Failed,
+                                ),
+                                sampleRun("run-completed-old", createdAt.plusSeconds(120)),
+                                sampleRun("run-completed-new", createdAt.plusSeconds(180)),
+                              ),
+                              projectRoot = Path.of("/tmp/projects/project-1"),
+                              onResolve = (issueId, resolutionKind, actor, summary) =>
+                                resolvedRef.update(_ :+ ((issueId, resolutionKind, actor, summary))),
+                              onApprove = (_, _) => ZIO.unit,
+                              onMoveToTodo = (workspacePath, issueId, column) =>
+                                movedRef.update(_ :+ ((workspacePath, issueId, column))),
+                              onContinueRun = (runId, prompt, overrideAgent) =>
+                                continuedRef.update(_ :+ ((runId, prompt, overrideAgent))),
+                            )
+            _            <- service.reworkIssue(workspaceId, issueId, "Fix the error handling", "reviewer")
+            resolved     <- resolvedRef.get
+            moved        <- movedRef.get
+            continued    <- continuedRef.get
+          yield assertTrue(
+            resolved == List((
+              IssueId(issueId.value),
+              DecisionResolutionKind.ReworkRequested,
+              "reviewer",
+              "Fix the error handling",
+            )),
+            moved == List(("/tmp/projects/project-1", issueId, BoardColumn.Todo)),
+            continued == List(("run-completed-new", "Fix the error handling", None)),
+          )
+        },
+        test("fails before mutating the board when no completed run exists for the issue") {
+          for
+            resolvedRef  <- Ref.make(0)
+            movedRef     <- Ref.make(0)
+            continuedRef <- Ref.make(0)
+            service       = makeService(
+                              workspaceOpt = Some(sampleWorkspace),
+                              runs = List(sampleRun(
+                                "run-failed",
+                                createdAt.plusSeconds(60),
+                                status = workspace.entity.RunStatus.Failed,
+                              )),
+                              projectRoot = Path.of("/tmp/projects/project-1"),
+                              onResolve = (_, _, _, _) => resolvedRef.update(_ + 1),
+                              onApprove = (_, _) => ZIO.unit,
+                              onMoveToTodo = (_, _, _) => movedRef.update(_ + 1),
+                              onContinueRun = (_, _, _) => continuedRef.update(_ + 1),
+                            )
+            result       <- service.reworkIssue(workspaceId, issueId, "Needs work", "reviewer").either
+            resolved     <- resolvedRef.get
+            moved        <- movedRef.get
+            continued    <- continuedRef.get
+          yield assertTrue(
+            result == Left(BoardError.ParseError(s"latest completed run not found for issue '${issueId.value}'")),
+            resolved == 0,
+            moved == 0,
+            continued == 0,
+          )
+        },
+      ),
     )
 
   private val sampleWorkspace = Workspace(
@@ -87,7 +172,11 @@ object IssueApprovalServiceSpec extends ZIOSpecDefault:
     defaultBranch = "main",
   )
 
-  private def sampleRun(id: String, updatedAt: Instant): WorkspaceRun =
+  private def sampleRun(
+    id: String,
+    updatedAt: Instant,
+    status: workspace.entity.RunStatus = workspace.entity.RunStatus.Completed,
+  ): WorkspaceRun =
     WorkspaceRun(
       id = id,
       workspaceId = workspaceId,
@@ -98,7 +187,7 @@ object IssueApprovalServiceSpec extends ZIOSpecDefault:
       conversationId = "100",
       worktreePath = s"/tmp/worktrees/$id",
       branchName = s"agent/$id",
-      status = workspace.entity.RunStatus.Completed,
+      status = status,
       attachedUsers = Set.empty,
       controllerUserId = None,
       createdAt = createdAt,
@@ -111,10 +200,14 @@ object IssueApprovalServiceSpec extends ZIOSpecDefault:
     projectRoot: Path,
     onResolve: (IssueId, DecisionResolutionKind, String, String) => UIO[Unit],
     onApprove: (String, BoardIssueId) => UIO[Unit],
+    onMoveToTodo: (String, BoardIssueId, BoardColumn) => UIO[Unit],
+    onContinueRun: (String, String, Option[String]) => UIO[Unit],
   ): IssueApprovalService =
     IssueApprovalServiceLive(
       boardOrchestrator = StubBoardOrchestrator(onApprove),
+      boardRepository = StubBoardRepository(onMoveToTodo),
       decisionInbox = StubDecisionInbox(onResolve),
+      workspaceRunService = StubWorkspaceRunService(onContinueRun),
       workspaceRepository = StubWorkspaceRepository(workspaceOpt, runs),
       projectStorageService = StubProjectStorageService(projectRoot),
     )
@@ -145,6 +238,62 @@ object IssueApprovalServiceSpec extends ZIOSpecDefault:
 
     override def approveIssue(workspacePath: String, issueId: BoardIssueId): IO[BoardError, Unit] =
       onApprove(workspacePath, issueId)
+
+  final private case class StubBoardRepository(onMoveToTodo: (String, BoardIssueId, BoardColumn) => UIO[Unit])
+    extends BoardRepository:
+    override def initBoard(workspacePath: String): IO[BoardError, Unit] =
+      ZIO.dieMessage("initBoard unused in IssueApprovalServiceSpec")
+
+    override def readBoard(workspacePath: String): IO[BoardError, Board] =
+      ZIO.dieMessage("readBoard unused in IssueApprovalServiceSpec")
+
+    override def readIssue(workspacePath: String, issueId: BoardIssueId): IO[BoardError, BoardIssue] =
+      ZIO.dieMessage("readIssue unused in IssueApprovalServiceSpec")
+
+    override def createIssue(workspacePath: String, column: BoardColumn, issue: BoardIssue)
+      : IO[BoardError, BoardIssue] =
+      ZIO.dieMessage("createIssue unused in IssueApprovalServiceSpec")
+
+    override def moveIssue(workspacePath: String, issueId: BoardIssueId, toColumn: BoardColumn)
+      : IO[BoardError, BoardIssue] =
+      onMoveToTodo(workspacePath, issueId, toColumn).as(sampleBoardIssue(issueId, toColumn, workspacePath))
+
+    override def updateIssue(
+      workspacePath: String,
+      issueId: BoardIssueId,
+      update: IssueFrontmatter => IssueFrontmatter,
+    ): IO[BoardError, BoardIssue] =
+      ZIO.dieMessage("updateIssue unused in IssueApprovalServiceSpec")
+
+    override def deleteIssue(workspacePath: String, issueId: BoardIssueId): IO[BoardError, Unit] =
+      ZIO.dieMessage("deleteIssue unused in IssueApprovalServiceSpec")
+
+    override def listIssues(workspacePath: String, column: BoardColumn): IO[BoardError, List[BoardIssue]] =
+      ZIO.dieMessage("listIssues unused in IssueApprovalServiceSpec")
+
+    override def invalidateWorkspace(workspacePath: String): UIO[Unit] =
+      ZIO.unit
+
+  final private case class StubWorkspaceRunService(onContinueRun: (String, String, Option[String]) => UIO[Unit])
+    extends WorkspaceRunService:
+    override def assign(
+      workspaceId: String,
+      req: workspace.control.AssignRunRequest,
+    ): IO[workspace.entity.WorkspaceError, WorkspaceRun] =
+      ZIO.dieMessage("assign unused in IssueApprovalServiceSpec")
+
+    override def continueRun(
+      runId: String,
+      followUpPrompt: String,
+      agentNameOverride: Option[String],
+    ): IO[workspace.entity.WorkspaceError, WorkspaceRun] =
+      onContinueRun(runId, followUpPrompt, agentNameOverride).as(
+        sampleRun(s"$runId-child", createdAt.plusSeconds(300), status = workspace.entity.RunStatus.Pending)
+          .copy(parentRunId = Some(runId), prompt = followUpPrompt)
+      )
+
+    override def cancelRun(runId: String): IO[workspace.entity.WorkspaceError, Unit] =
+      ZIO.dieMessage("cancelRun unused in IssueApprovalServiceSpec")
 
   final private case class StubDecisionInbox(
     onResolve: (IssueId, DecisionResolutionKind, String, String) => UIO[Unit]
@@ -231,3 +380,27 @@ object IssueApprovalServiceSpec extends ZIOSpecDefault:
 
     override def workspaceAnalysisPath(projectId: ProjectId, workspaceId: String): UIO[Path] =
       ZIO.succeed(projectRootPath.resolve("analysis").resolve(workspaceId))
+
+  private def sampleBoardIssue(issueId: BoardIssueId, column: BoardColumn, workspacePath: String): BoardIssue =
+    BoardIssue(
+      frontmatter = IssueFrontmatter(
+        id = issueId,
+        title = s"Issue ${issueId.value}",
+        priority = IssuePriority.Medium,
+        assignedAgent = Some("code-agent"),
+        requiredCapabilities = Nil,
+        blockedBy = Nil,
+        tags = Nil,
+        acceptanceCriteria = Nil,
+        estimate = None,
+        proofOfWork = Nil,
+        transientState = TransientState.None,
+        branchName = Some("agent/branch"),
+        failureReason = None,
+        completedAt = None,
+        createdAt = createdAt,
+      ),
+      body = "Body",
+      column = column,
+      directoryPath = s"$workspacePath/.board/${column.folderName}/${issueId.value}",
+    )
