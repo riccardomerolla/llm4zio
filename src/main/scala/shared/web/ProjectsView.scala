@@ -25,6 +25,10 @@ final case class ProjectWorkspaceRow(
   healthTone: String,
   coverage: String,
   lastRunAt: Option[Instant],
+  localPath: String,
+  defaultBranch: String,
+  cliTool: String,
+  runModeLabel: String,
 )
 
 final case class ProjectAnalysisRow(
@@ -285,8 +289,18 @@ object ProjectsView:
       ),
     )
 
+  private val supportedCliTools: List[(String, String)] = List(
+    "claude"   -> "Claude (claude --print)",
+    "gemini"   -> "Gemini CLI (gemini -p)",
+    "opencode" -> "OpenCode (opencode run)",
+    "codex"    -> "Codex (codex)",
+    "copilot"  -> "GitHub Copilot (gh copilot)",
+  )
+
   private def workspacesTab(data: ProjectDetailPageData): Frag =
-    div(cls := "grid gap-6 xl:grid-cols-[1.1fr,0.9fr]")(
+    val projectId = data.project.id.value
+    div(cls := "space-y-4")(
+      // Assigned workspaces list
       div(cls := "rounded-xl border border-white/10 bg-slate-900/70 p-5")(
         div(cls := "flex items-center justify-between gap-3")(
           div(
@@ -299,41 +313,48 @@ object ProjectsView:
         ),
         if data.assignedWorkspaces.isEmpty then
           div(cls := "mt-4 rounded-lg border border-dashed border-white/10 p-6 text-sm text-slate-400")(
-            "No workspaces assigned to this project yet."
+            "No workspaces assigned to this project yet. Use the form below to create one."
           )
         else
-          div(cls := "mt-4 space-y-3")(data.assignedWorkspaces.map(workspaceRow)*),
+          div(cls := "mt-4 space-y-4")(data.assignedWorkspaces.map(row => workspaceRow(row, projectId))*),
       ),
+      // Create workspace form
       div(cls := "rounded-xl border border-white/10 bg-slate-900/70 p-5")(
-        h2(cls := "text-sm font-semibold uppercase tracking-wide text-slate-200")("Create Workspace"),
-        p(cls := "mt-1 text-xs text-slate-500")("Create a new workspace directly linked to this project."),
+        div(cls := "flex items-center justify-between gap-3")(
+          div(
+            h2(cls := "text-sm font-semibold uppercase tracking-wide text-slate-200")("Create Workspace"),
+            p(cls := "mt-1 text-xs text-slate-500")("Create a new workspace directly linked to this project."),
+          ),
+          a(
+            href := "/workspace-templates",
+            cls  := "rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-slate-300 hover:bg-white/10",
+          )("From Template"),
+        ),
         form(
-          action := s"/projects/${data.project.id.value}/workspaces/create",
+          action := s"/projects/$projectId/workspaces/create",
           method := "post",
           cls    := "mt-4 space-y-3",
         )(
-          labeledInput("Name", "name", ""),
-          labeledInput("Local path", "localPath", ""),
-          label(cls := "block text-[11px] font-semibold uppercase tracking-wide text-slate-400")(
-            "CLI Tool",
-            select(
-              name := "cliTool",
-              cls  := "mt-1 w-full rounded border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-100",
-            )(
-              option(value := "claude")("claude"),
-              option(value := "codex")("codex"),
-              option(value := "gemini")("gemini"),
-            ),
+          div(cls := "grid gap-3 md:grid-cols-2")(
+            labeledInput("Name", "name", ""),
+            labeledInput("Local path", "localPath", ""),
           ),
-          labeledInput("Default branch", "defaultBranch", "main"),
+          div(cls := "grid gap-3 md:grid-cols-3")(
+            cliToolSelect("cliTool", "claude"),
+            labeledInput("Default branch", "defaultBranch", "main"),
+            labeledInput("Description", "description", ""),
+          ),
+          runModeFields("ws-create"),
           div(cls := "flex justify-end")(
             button(
               `type` := "submit",
-              cls    := "rounded bg-cyan-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-cyan-500",
-            )("Create workspace")
+              cls    := "rounded-md bg-cyan-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-cyan-500",
+            )("Create workspace"),
           ),
         ),
       ),
+      // Modal container for edit forms
+      div(id := "ws-modal-container"),
     )
 
   private def settingsTab(data: ProjectDetailPageData): Frag =
@@ -440,23 +461,74 @@ object ProjectsView:
         div(cls := "grid gap-4 lg:grid-cols-2")(data.analysisRows.map(analysisRow)*),
     )
 
-  private def workspaceRow(row: ProjectWorkspaceRow): Frag =
+  private def workspaceRow(row: ProjectWorkspaceRow, projectId: String): Frag =
+    val returnUrl = s"/projects/$projectId?tab=workspaces"
     div(cls := "rounded-lg border border-white/10 bg-black/20 p-4")(
+      // Header: name + badges + action buttons
       div(cls := "flex flex-wrap items-start justify-between gap-3")(
         div(
           div(cls := "flex items-center gap-2")(
-            h3(cls := "text-base font-semibold text-white")(row.workspaceName),
+            h3(cls := "text-sm font-semibold text-white")(row.workspaceName),
             statusChip(row.healthLabel, row.healthTone),
+            if !row.enabled then statusChip("Disabled", "slate") else frag(),
           ),
-          p(cls := "mt-1 text-xs font-mono text-slate-500")(row.workspaceId),
-          row.description.fold[Frag](frag())(desc => p(cls := "mt-2 text-sm text-slate-400")(desc)),
-        )
+          p(cls := "mt-1 text-xs font-mono text-slate-500")(row.localPath),
+          row.description.fold[Frag](frag())(desc => p(cls := "mt-1 text-xs text-slate-400")(desc)),
+        ),
+        div(cls := "flex items-center gap-1.5 flex-shrink-0")(
+          // Runs toggle
+          button(
+            `type`           := "button",
+            cls              := "rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-slate-300 hover:bg-white/10",
+            attr("hx-get")   := s"/api/workspaces/${row.workspaceId}/runs",
+            attr("hx-target") := s"#runs-${row.workspaceId}",
+            attr("hx-swap")  := "innerHTML",
+          )("Runs"),
+          // Edit
+          button(
+            `type`           := "button",
+            cls              := "rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-slate-300 hover:bg-white/10",
+            attr("hx-get")   := s"/api/workspaces/${row.workspaceId}/edit?returnUrl=${java.net.URLEncoder.encode(returnUrl, "UTF-8")}",
+            attr("hx-target") := "#ws-modal-container",
+            attr("hx-swap")  := "innerHTML",
+          )("Edit"),
+          // Re-analyze
+          button(
+            `type`           := "button",
+            cls              := "rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-slate-300 hover:bg-white/10",
+            attr("hx-post")  := s"/api/workspaces/${row.workspaceId}/reanalyze",
+            attr("hx-swap")  := "none",
+          )("Analyze"),
+          // Delete
+          button(
+            `type`             := "button",
+            cls                := "rounded-md border border-rose-400/20 bg-rose-500/10 px-2 py-1 text-[11px] text-rose-300 hover:bg-rose-500/20",
+            attr("hx-delete")  := s"/api/workspaces/${row.workspaceId}",
+            attr("hx-confirm") := s"Delete workspace '${row.workspaceName}'? This cannot be undone.",
+            attr("hx-target")  := "closest div.rounded-lg",
+            attr("hx-swap")    := "outerHTML",
+          )("Delete"),
+        ),
       ),
-      div(cls := "mt-4 grid gap-3 md:grid-cols-3")(
-        infoCell("Default agent", row.defaultAgent.getOrElse("—")),
+      // Info grid
+      div(cls := "mt-3 grid gap-2 sm:grid-cols-3 lg:grid-cols-6")(
+        infoCell("Branch", row.defaultBranch),
+        infoCell("CLI tool", row.cliTool),
+        infoCell("Run mode", row.runModeLabel),
+        infoCell("Agent", row.defaultAgent.getOrElse("—")),
         infoCell("Coverage", row.coverage),
         infoCell("Last run", row.lastRunAt.map(timestamp).getOrElse("—")),
       ),
+      // Analysis status (live polling)
+      div(
+        id                  := s"analysis-status-${row.workspaceId}",
+        cls                 := "mt-3",
+        attr("hx-get")      := s"/api/workspaces/${row.workspaceId}/analysis-status",
+        attr("hx-trigger")  := "load, every 10s",
+        attr("hx-swap")     := "innerHTML",
+      )(),
+      // Runs expansion area
+      div(id := s"runs-${row.workspaceId}", cls := "mt-2")(),
     )
 
   private def analysisRow(row: ProjectAnalysisRow): Frag =
@@ -471,6 +543,69 @@ object ProjectsView:
       div(cls := "mt-4 grid gap-3 sm:grid-cols-2")(
         infoCell("Coverage", row.coverage),
         infoCell("Last run", row.lastRunAt.map(timestamp).getOrElse("—")),
+      ),
+    )
+
+  private def cliToolSelect(fieldName: String, current: String): Frag =
+    label(cls := "block text-[11px] font-semibold uppercase tracking-wide text-slate-400")(
+      "CLI Tool",
+      select(
+        name := fieldName,
+        cls  := "mt-1 w-full rounded border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-100",
+      )(
+        supportedCliTools.map { case (toolValue, toolLabel) =>
+          if toolValue == current then option(value := toolValue, selected)(toolLabel)
+          else option(value := toolValue)(toolLabel)
+        }*
+      ),
+    )
+
+  private def runModeFields(scopeId: String): Frag =
+    div(cls := "space-y-2")(
+      label(cls := "block text-[11px] font-semibold uppercase tracking-wide text-slate-400")("Run Mode"),
+      div(cls := "flex gap-4")(
+        label(cls := "flex items-center gap-1.5 text-xs text-slate-200")(
+          input(
+            `type`           := "radio",
+            name             := "runModeType",
+            value            := "host",
+            checked,
+            attr("onchange") := s"document.getElementById('docker-fields-$scopeId').style.display='none';document.getElementById('cloud-fields-$scopeId').style.display='none'",
+          ),
+          "Host",
+        ),
+        label(cls := "flex items-center gap-1.5 text-xs text-slate-200")(
+          input(
+            `type`           := "radio",
+            name             := "runModeType",
+            value            := "docker",
+            attr("onchange") := s"document.getElementById('docker-fields-$scopeId').style.display='block';document.getElementById('cloud-fields-$scopeId').style.display='none'",
+          ),
+          "Docker",
+        ),
+        label(cls := "flex items-center gap-1.5 text-xs text-slate-200")(
+          input(
+            `type`           := "radio",
+            name             := "runModeType",
+            value            := "cloud",
+            attr("onchange") := s"document.getElementById('docker-fields-$scopeId').style.display='none';document.getElementById('cloud-fields-$scopeId').style.display='block'",
+          ),
+          "Cloud",
+        ),
+      ),
+      div(id := s"docker-fields-$scopeId", style := "display:none", cls := "space-y-2 pl-2 border-l border-white/10")(
+        labeledInput("Docker image", "dockerImage", ""),
+        div(cls := "flex items-center gap-2")(
+          input(`type` := "checkbox", name := "dockerMount", value := "on", checked),
+          label(cls := "text-xs text-slate-300")("Mount worktree at /workspace"),
+        ),
+        labeledInput("Network (optional)", "dockerNetwork", ""),
+      ),
+      div(id := s"cloud-fields-$scopeId", style := "display:none", cls := "space-y-2 pl-2 border-l border-white/10")(
+        labeledInput("Cloud provider", "cloudProvider", ""),
+        labeledInput("Runtime image", "cloudImage", ""),
+        labeledInput("Region", "cloudRegion", ""),
+        labeledInput("Network policy", "cloudNetwork", ""),
       ),
     )
 

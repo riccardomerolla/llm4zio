@@ -231,6 +231,13 @@ object ProjectsController:
         healthTone = health._2,
         coverage = coverageLabel(statuses),
         lastRunAt = latestAnalysisAt(statuses),
+        localPath = workspace.localPath,
+        defaultBranch = workspace.defaultBranch,
+        cliTool = workspace.cliTool,
+        runModeLabel = workspace.runMode match
+          case RunMode.Host                => "Host"
+          case d: RunMode.Docker           => s"Docker (${d.image})"
+          case c: RunMode.Cloud            => s"Cloud (${c.provider})",
       )
     }
     val analysisRows       = assignedWorkspaces.map { workspace =>
@@ -300,6 +307,23 @@ object ProjectsController:
       defaultBranch = Workspace.normalizeDefaultBranch(
                         fields.getOrElse("defaultBranch", Workspace.DefaultBranch)
                       )
+      description   = fields.get("description").map(_.trim).filter(_.nonEmpty)
+      runModeType   = fields.getOrElse("runModeType", "host")
+      runMode       = runModeType match
+                        case "docker" =>
+                          RunMode.Docker(
+                            image = fields.getOrElse("dockerImage", ""),
+                            mountWorktree = fields.get("dockerMount").contains("on"),
+                            network = fields.get("dockerNetwork").map(_.trim).filter(_.nonEmpty),
+                          )
+                        case "cloud"  =>
+                          RunMode.Cloud(
+                            provider = fields.getOrElse("cloudProvider", ""),
+                            image = fields.getOrElse("cloudImage", ""),
+                            region = fields.get("cloudRegion").map(_.trim).filter(_.nonEmpty),
+                            network = fields.get("cloudNetwork").map(_.trim).filter(_.nonEmpty),
+                          )
+                        case _        => RunMode.Host
       now          <- Clock.instant
       id            = UUID.randomUUID().toString
       _            <- workspaceRepository
@@ -310,9 +334,9 @@ object ProjectsController:
                             name = name,
                             localPath = localPath,
                             defaultAgent = None,
-                            description = None,
+                            description = description,
                             cliTool = cliTool,
-                            runMode = RunMode.Host,
+                            runMode = runMode,
                             occurredAt = now,
                           )
                         )

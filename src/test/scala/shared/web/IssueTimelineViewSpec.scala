@@ -81,7 +81,7 @@ object IssueTimelineViewSpec extends ZIOSpecDefault:
       test("page renders sticky header, timeline entries, and review actions for review issues") {
         val html = IssueTimelineView.page("ws-1", reviewIssue, timeline)
         assertTrue(
-          html.contains("sticky top-12"),
+          html.contains("sticky top-10"),
           html.contains("Polish timeline workflow"),
           html.contains("agent/timeline-42"),
           html.contains("Approve &amp; Merge") || html.contains("Approve & Merge"),
@@ -89,7 +89,7 @@ object IssueTimelineViewSpec extends ZIOSpecDefault:
           html.contains("""/board/ws-1/issues/issue-42/quick-approve"""),
           html.contains("""/board/ws-1/issues/issue-42/rework"""),
           html.contains("Open full conversation 77"),
-          html.contains("""hx-get="/api/workspaces/ws-1/runs/run-42/git/diff?base=main""""),
+          html.contains("""diff-url="/api/workspaces/ws-1/runs/run-42/git/diff?base=main""""),
           html.contains("Tighten the sticky header spacing."),
           html.contains("Merged successfully"),
         )

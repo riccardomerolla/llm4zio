@@ -4,52 +4,10 @@ import java.time.Instant
 
 import zio.test.*
 
-import _root_.config.entity.{ AgentInfo, AgentType }
-import analysis.control.{ WorkspaceAnalysisState, WorkspaceAnalysisStatus }
-import analysis.entity.AnalysisType
-import workspace.entity.{ RunMode, RunStatus, Workspace, WorkspaceRun }
+import workspace.entity.{ RunStatus, WorkspaceRun }
 
 object WorkspacesViewSpec extends ZIOSpecDefault:
-  private val sampleAgents: List[AgentInfo] = List(
-    AgentInfo(
-      name = "code-agent",
-      handle = "code-agent",
-      displayName = "Code Agent",
-      description = "Coding assistant",
-      agentType = AgentType.BuiltIn,
-      usesAI = true,
-      tags = List("code"),
-    )
-  )
 
-  private val sampleWs = Workspace(
-    id = "ws-1",
-    projectId = shared.ids.Ids.ProjectId("test-project"),
-    name = "my-api",
-    localPath = "/home/user/my-api",
-    defaultAgent = Some("code-agent"),
-    description = Some("main API repo"),
-    enabled = true,
-    runMode = RunMode.Host,
-    cliTool = "claude",
-    createdAt = Instant.parse("2026-02-24T10:00:00Z"),
-    updatedAt = Instant.parse("2026-02-24T10:00:00Z"),
-    defaultBranch = "main",
-  )
-
-  private val dockerWs  = sampleWs.copy(
-    id = "ws-docker",
-    runMode = RunMode.Docker(image = "gemini:latest", network = Some("none")),
-  )
-  private val cloudWs   = sampleWs.copy(
-    id = "ws-cloud",
-    runMode = RunMode.Cloud(
-      provider = "aws-fargate",
-      image = "ghcr.io/riccardomerolla/llm4zio-agent:latest",
-      region = Some("eu-west-1"),
-      network = Some("none"),
-    ),
-  )
   private val sampleRun = WorkspaceRun(
     id = "run-1",
     workspaceId = "ws-1",
@@ -68,19 +26,6 @@ object WorkspacesViewSpec extends ZIOSpecDefault:
   )
 
   def spec: Spec[TestEnvironment, Any] = suite("WorkspacesViewSpec")(
-    test("page renders workspace name and path") {
-      val html = WorkspacesView.page(List(sampleWs), sampleAgents)
-      assertTrue(
-        html.contains("my-api"),
-        html.contains("/home/user/my-api"),
-        html.contains("claude"), // default cliTool
-        html.contains("Default branch"),
-      )
-    },
-    test("page renders empty state when no workspaces") {
-      val html = WorkspacesView.page(List.empty, List.empty)
-      assertTrue(html.contains("No workspaces"))
-    },
     test("runsFragment renders run row with status and conversation link") {
       val html = WorkspacesView.runsFragment(List(sampleRun))
       assertTrue(
@@ -93,52 +38,6 @@ object WorkspacesViewSpec extends ZIOSpecDefault:
     test("runsFragment renders empty state") {
       val html = WorkspacesView.runsFragment(List.empty)
       assertTrue(html.contains("No runs"))
-    },
-    test("workspace card with RunMode.Host renders 'Host'") {
-      val html = WorkspacesView.page(List(sampleWs), sampleAgents)
-      assertTrue(html.contains("Host"))
-    },
-    test("workspace card with RunMode.Docker renders 'Docker' and image name") {
-      val html = WorkspacesView.page(List(dockerWs), sampleAgents)
-      assertTrue(html.contains("Docker") && html.contains("gemini:latest"))
-    },
-    test("workspace card with RunMode.Cloud renders provider and image name") {
-      val html = WorkspacesView.page(List(cloudWs), sampleAgents)
-      assertTrue(html.contains("Cloud") && html.contains("aws-fargate") && html.contains("llm4zio-agent:latest"))
-    },
-    test("detail page renders re-analyze button and analysis statuses") {
-      val html = WorkspacesView.detailPage(
-        sampleWs,
-        sampleAgents,
-        List(
-          WorkspaceAnalysisStatus(
-            workspaceId = sampleWs.id,
-            analysisType = AnalysisType.CodeReview,
-            state = WorkspaceAnalysisState.Running,
-            startedAt = Some(Instant.parse("2026-02-24T10:30:00Z")),
-            lastUpdatedAt = Instant.parse("2026-02-24T10:30:00Z"),
-          ),
-          WorkspaceAnalysisStatus(
-            workspaceId = sampleWs.id,
-            analysisType = AnalysisType.Architecture,
-            state = WorkspaceAnalysisState.Completed,
-            startedAt = Some(Instant.parse("2026-02-24T10:31:00Z")),
-            completedAt = Some(Instant.parse("2026-02-24T10:32:00Z")),
-            lastUpdatedAt = Instant.parse("2026-02-24T10:32:00Z"),
-          ),
-        ),
-      )
-      assertTrue(
-        html.contains("Analysis Status"),
-        html.contains("Re-analyze"),
-        html.contains("Re-analyzing..."),
-        html.contains("aria-busy"),
-        html.contains("Default branch: main"),
-        html.contains("Code Review"),
-        html.contains("Architecture"),
-        html.contains("Running"),
-        html.contains("Completed"),
-      )
     },
     test("new workspace form renders default branch field") {
       val html = WorkspacesView.newWorkspaceForm

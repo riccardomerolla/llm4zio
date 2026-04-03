@@ -238,16 +238,6 @@ object WorkspacesControllerSpec extends ZIOSpecDefault:
         !body.contains("Install the wizard skill"),
       )
     },
-    test("GET /settings/workspaces returns 200") {
-      for
-        wsRef      <- Ref.make(Map("ws-1" -> sampleWs))
-        runRef     <- Ref.make(Map("run-1" -> sampleRun))
-        triggerRef <- Ref.make(List.empty[(String, Boolean)])
-        routes      = makeRoutes(wsRef, runRef, triggerRef)
-        req         = Request.get(URL(Path.decode("/settings/workspaces")))
-        resp       <- routes.runZIO(req)
-      yield assertTrue(resp.status == Status.Ok)
-    },
     test(
       "GET /api/workspaces/issues/search keeps legacy open issues reachable through centralized compatibility tags"
     ) {
@@ -335,23 +325,7 @@ object WorkspacesControllerSpec extends ZIOSpecDefault:
         routes      = makeRoutes(wsRef, runRef, triggerRef)
         req         = Request(method = Method.DELETE, url = URL(Path.decode("/api/workspaces/ws-1")))
         resp       <- routes.runZIO(req)
-      yield assertTrue(resp.status == Status.NoContent)
-    },
-    test("DELETE /api/workspaces/:id from detail view redirects back to workspace list") {
-      for
-        wsRef      <- Ref.make(Map("ws-1" -> sampleWs))
-        runRef     <- Ref.make(Map("run-1" -> sampleRun))
-        triggerRef <- Ref.make(List.empty[(String, Boolean)])
-        routes      = makeRoutes(wsRef, runRef, triggerRef)
-        req         = Request(method = Method.DELETE, url = URL.decode("/api/workspaces/ws-1?detailMode=true").toOption.get)
-        resp       <- routes.runZIO(req)
-        redirect    = resp.headers.headers
-                        .find(_.headerName.toString.equalsIgnoreCase("HX-Redirect"))
-                        .map(_.renderedValue)
-      yield assertTrue(
-        resp.status == Status.Ok,
-        redirect.contains("/settings/workspaces"),
-      )
+      yield assertTrue(resp.status == Status.Ok)
     },
     test("GET /api/workspaces/:id/runs returns 200") {
       for
@@ -524,17 +498,6 @@ object WorkspacesControllerSpec extends ZIOSpecDefault:
         req         = Request.get(URL(Path.decode("/api/workspaces/ws-1/runs/run-1/git/diff/..%2Fsecret")))
         resp       <- routes.runZIO(req)
       yield assertTrue(resp.status == Status.BadRequest)
-    },
-    test("GET /settings/workspaces/:id returns detail page") {
-      for
-        wsRef      <- Ref.make(Map("ws-1" -> sampleWs))
-        runRef     <- Ref.make(Map("run-1" -> sampleRun))
-        triggerRef <- Ref.make(List.empty[(String, Boolean)])
-        routes      = makeRoutes(wsRef, runRef, triggerRef)
-        req         = Request.get(URL(Path.decode("/settings/workspaces/ws-1")))
-        resp       <- routes.runZIO(req)
-        body       <- resp.body.asString
-      yield assertTrue(resp.status == Status.Ok && body.contains("Analysis Status") && body.contains("Re-analyze"))
     },
     test("POST /api/workspaces/:id/reanalyze triggers scheduler") {
       for

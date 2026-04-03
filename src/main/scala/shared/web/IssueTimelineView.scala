@@ -270,6 +270,7 @@ object IssueTimelineView:
       id  := "issue-review-form",
       cls := "rounded-xl border border-white/10 bg-slate-900/70 p-5",
     )(
+      h3(cls := "mb-3 text-sm font-semibold text-white")("Review action"),
       textarea(
         id          := "review-comment",
         name        := "comment",

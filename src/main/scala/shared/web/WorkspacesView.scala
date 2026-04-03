@@ -4,7 +4,6 @@ import java.time.Instant
 
 import analysis.control.{ WorkspaceAnalysisState, WorkspaceAnalysisStatus }
 import analysis.entity.AnalysisType
-import config.entity.AgentInfo
 import issues.entity.api.AgentIssueView
 import scalatags.Text.all.*
 import workspace.entity.{ RunMode, RunSessionMode, RunStatus, Workspace, WorkspaceRun }
@@ -12,84 +11,6 @@ import workspace.entity.{ RunMode, RunSessionMode, RunStatus, Workspace, Workspa
 object WorkspacesView:
 
   val supportedCliTools: List[String] = List("gemini", "claude", "opencode", "codex", "copilot")
-
-  def page(workspaces: List[Workspace], agents: List[AgentInfo]): String =
-    page(workspaces, agents, Map.empty)
-
-  def page(
-    workspaces: List[Workspace],
-    agents: List[AgentInfo],
-    analysisStatusByWorkspaceId: Map[String, List[WorkspaceAnalysisStatus]],
-  ): String =
-    Layout.page("Workspaces", "/settings/workspaces")(
-      div(cls := "space-y-6")(
-        Components.pageHeader(
-          title = "Workspaces",
-          subtitle = "Register local git repositories and assign issues to CLI agents",
-          actions = Seq(
-            a(
-              href := "/workspace-templates",
-              cls  := "rounded-md border border-white/15 px-3 py-1.5 text-sm text-slate-300 hover:bg-white/5",
-            )("Templates"),
-            button(
-              cls               := "rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-500",
-              attr("hx-get")    := "/api/workspaces/new",
-              attr("hx-target") := "#modal-container",
-              attr("hx-swap")   := "innerHTML",
-            )("New Workspace"),
-          ),
-        ),
-        div(id := "modal-container"),
-        if workspaces.isEmpty then
-          Components.emptyStateFull(
-            "No workspaces yet",
-            "Add a workspace to start assigning issues to CLI agents.",
-          )
-        else
-          div(cls := "rounded-lg border border-white/10 overflow-hidden")(
-            tag("table")(cls := "w-full text-sm")(
-              tag("thead")(
-                tag("tr")(cls := "border-b border-white/10 bg-white/5")(
-                  tag("th")(cls := "px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-400")(
-                    "Workspace"
-                  ),
-                  tag("th")(
-                    cls := "hidden px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-400 sm:table-cell"
-                  )("CLI"),
-                  tag("th")(
-                    cls := "hidden px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-400 sm:table-cell"
-                  )("Run Mode"),
-                  tag("th")(
-                    cls := "hidden px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-400 sm:table-cell"
-                  )("Default Agent"),
-                  tag("th")(cls := "px-4 py-2 text-right text-xs font-medium uppercase tracking-wide text-gray-400")(
-                    "Actions"
-                  ),
-                )
-              ),
-              frag(workspaces.sortBy(_.name.toLowerCase).map(workspaceRow)*),
-            )
-          ),
-      )
-    )
-
-  def detailPage(
-    workspace: Workspace,
-    agents: List[AgentInfo],
-    analysisStatuses: List[WorkspaceAnalysisStatus],
-  ): String =
-    Layout.page(workspace.name, s"/settings/workspaces/${workspace.id}")(
-      div(cls := "space-y-6")(
-        div(cls := "flex items-center gap-3")(
-          a(
-            href := "/settings/workspaces",
-            cls  := "inline-flex rounded-md border border-white/15 px-3 py-1.5 text-sm text-slate-300 hover:bg-white/5",
-          )("Back to workspaces"),
-          h1(cls := "text-2xl font-bold text-white")(workspace.name),
-        ),
-        workspaceCard(workspace, analysisStatuses),
-      )
-    )
 
   def analysisStatusFragment(workspaceId: String, statuses: List[WorkspaceAnalysisStatus]): String =
     div(
@@ -116,130 +37,6 @@ object WorkspacesView:
       ),
       div(cls := "mt-4 grid gap-3 md:grid-cols-3")(statuses.map(renderAnalysisStatusCard)*),
     ).render
-
-  private def workspaceCard(
-    ws: Workspace,
-    analysisStatuses: List[WorkspaceAnalysisStatus],
-  ): Frag =
-    div(
-      cls                := "rounded-xl border border-white/10 bg-slate-900/60 p-5",
-      id                 := s"ws-${ws.id}",
-      attr("data-ws-id") := ws.id,
-    )(
-      div(cls := "flex items-start justify-between gap-4")(
-        div(
-          div(cls := "flex items-center gap-2")(
-            h2(cls := "text-lg font-semibold text-white")(ws.name),
-            if ws.enabled then Components.badge("enabled", "success")
-            else Components.badge("disabled", "gray"),
-          ),
-          p(cls := "mt-1 text-sm text-slate-400 font-mono")(ws.localPath),
-          p(cls := "mt-1 text-xs text-slate-500")(s"CLI: ${ws.cliTool}"),
-          p(cls := "mt-1 text-xs text-slate-500")(s"Default branch: ${ws.defaultBranch}"),
-          p(cls := "mt-1 text-xs text-slate-500")(runModeLabel(ws.runMode)),
-          ws.description.map(d =>
-            p(cls := "mt-1 text-sm text-slate-400")(d)
-          ).getOrElse(frag()),
-        ),
-        div(cls := "flex shrink-0 gap-2")(
-          button(
-            cls               := "rounded-md border border-slate-400/30 bg-slate-500/10 px-2 py-1 text-xs font-semibold text-slate-200 hover:bg-slate-500/20",
-            attr("hx-get")    := s"/api/workspaces/${ws.id}/runs",
-            attr("hx-target") := s"#runs-${ws.id}",
-            attr("hx-swap")   := "innerHTML",
-          )("Runs"),
-          button(
-            cls               := "rounded-md border border-cyan-400/30 bg-cyan-500/20 px-2 py-1 text-xs font-semibold text-cyan-200 hover:bg-cyan-500/30",
-            attr("hx-get")    := s"/api/workspaces/${ws.id}/edit",
-            attr("hx-target") := "#modal-container",
-            attr("hx-swap")   := "innerHTML",
-          )("Edit"),
-          button(
-            cls                := "rounded-md border border-rose-400/30 bg-rose-500/10 px-2 py-1 text-xs font-semibold text-rose-200 hover:bg-rose-500/20",
-            attr("hx-delete")  := s"/api/workspaces/${ws.id}?detailMode=true",
-            attr("hx-target")  := s"#ws-${ws.id}",
-            attr("hx-swap")    := "outerHTML",
-            attr("hx-confirm") := s"Delete workspace '${ws.name}'?",
-          )("Delete"),
-        ),
-      ),
-      raw(analysisStatusFragment(ws.id, normalizedStatuses(ws.id, analysisStatuses))),
-      div(id := s"runs-${ws.id}", cls := "mt-3"),
-    )
-
-  /** Table row (+ runs expansion row) for the workspaces list page. */
-  private def workspaceRow(ws: Workspace): Frag =
-    tag("tbody")(
-      id                 := s"ws-${ws.id}",
-      attr("data-ws-id") := ws.id,
-    )(
-      tag("tr")(cls := "hover:bg-white/5 transition-colors")(
-        tag("td")(cls := "px-4 py-3")(
-          div(cls := "flex items-center gap-2")(
-            span(cls := "font-medium text-white")(ws.name),
-            if ws.enabled then Components.badge("enabled", "success")
-            else Components.badge("disabled", "gray"),
-          ),
-          p(cls := "mt-0.5 text-xs text-slate-400 font-mono truncate max-w-xs")(ws.localPath),
-          p(cls := "mt-0.5 text-xs text-slate-500")(s"Default branch: ${ws.defaultBranch}"),
-          ws.description.map(d => p(cls := "mt-0.5 text-xs text-slate-500 truncate max-w-xs")(d)).getOrElse(frag()),
-        ),
-        tag("td")(cls := "hidden px-4 py-3 text-sm text-slate-300 sm:table-cell")(ws.cliTool),
-        tag("td")(cls := "hidden px-4 py-3 text-sm text-slate-400 sm:table-cell")(runModeLabel(ws.runMode)),
-        tag("td")(cls := "hidden px-4 py-3 text-sm sm:table-cell")(
-          ws.defaultAgent.map(a => span(cls := "text-slate-300")(a)).getOrElse(em(cls := "text-slate-600")("—"))
-        ),
-        tag("td")(cls := "px-4 py-3 text-right")(
-          div(cls := "flex items-center justify-end gap-2")(
-            button(
-              cls               := "rounded px-2 py-1 text-xs font-semibold border border-slate-400/30 bg-slate-500/10 text-slate-200 hover:bg-slate-500/20",
-              attr("hx-get")    := s"/api/workspaces/${ws.id}/runs",
-              attr("hx-target") := s"#runs-${ws.id}",
-              attr("hx-swap")   := "innerHTML",
-            )("Runs"),
-            a(
-              href := s"/settings/workspaces/${ws.id}",
-              cls  := "rounded px-2 py-1 text-xs font-semibold border border-indigo-400/30 bg-indigo-500/15 text-indigo-200 hover:bg-indigo-500/25",
-            )("Details"),
-            button(
-              cls               := "rounded px-2 py-1 text-xs font-semibold border border-cyan-400/30 bg-cyan-500/20 text-cyan-200 hover:bg-cyan-500/30",
-              attr("hx-get")    := s"/api/workspaces/${ws.id}/edit",
-              attr("hx-target") := "#modal-container",
-              attr("hx-swap")   := "innerHTML",
-            )("Edit"),
-            button(
-              cls                := "rounded px-2 py-1 text-xs font-semibold border border-rose-400/30 bg-rose-500/10 text-rose-200 hover:bg-rose-500/20",
-              attr("hx-delete")  := s"/api/workspaces/${ws.id}",
-              attr("hx-target")  := s"#ws-${ws.id}",
-              attr("hx-swap")    := "outerHTML",
-              attr("hx-confirm") := s"Delete workspace '${ws.name}'?",
-            )("Delete"),
-          )
-        ),
-      ),
-      tag("tr")()(
-        tag("td")(attr("colspan") := "5", cls := "px-4")(
-          div(id := s"runs-${ws.id}")
-        )
-      ),
-    )
-
-  private def normalizedStatuses(
-    workspaceId: String,
-    statuses: List[WorkspaceAnalysisStatus],
-  ): List[WorkspaceAnalysisStatus] =
-    val byType = statuses.map(status => status.analysisType -> status).toMap
-    List(AnalysisType.CodeReview, AnalysisType.Architecture, AnalysisType.Security).map { analysisType =>
-      byType.getOrElse(
-        analysisType,
-        WorkspaceAnalysisStatus(
-          workspaceId = workspaceId,
-          analysisType = analysisType,
-          state = WorkspaceAnalysisState.Idle,
-          lastUpdatedAt = Instant.EPOCH,
-        ),
-      )
-    }
 
   private def renderAnalysisStatusCard(status: WorkspaceAnalysisStatus): Frag =
     val (label, variant) = status.state match
@@ -280,13 +77,14 @@ object WorkspacesView:
       ws = None,
     )
 
-  def editWorkspaceForm(ws: Workspace): String =
+  def editWorkspaceForm(ws: Workspace, returnUrl: String = "/projects"): String =
     modalForm(
       title = s"Edit — ${ws.name}",
       formId = s"ws-edit-form-${ws.id}",
-      submitUrl = s"/api/workspaces/${ws.id}",
+      submitUrl = s"/api/workspaces/${ws.id}?returnUrl=${java.net.URLEncoder.encode(returnUrl, "UTF-8")}",
       method = "put",
       ws = Some(ws),
+      closeUrl = returnUrl,
     )
 
   private def cliToolLabel(tool: String): String = tool match
@@ -297,18 +95,13 @@ object WorkspacesView:
     case "copilot"  => "GitHub Copilot (gh copilot)"
     case other      => other
 
-  private def runModeLabel(runMode: RunMode): String =
-    runMode match
-      case RunMode.Host                            => "Run mode: Host"
-      case RunMode.Docker(image, _, _, _)          => s"Run mode: \uD83D\uDC33 Docker ($image)"
-      case RunMode.Cloud(provider, image, _, _, _) => s"Run mode: Cloud ($provider / $image)"
-
   private def modalForm(
     title: String,
     formId: String,
     submitUrl: String,
     method: String,
     ws: Option[Workspace],
+    closeUrl: String = "/projects",
   ): String =
     div(cls := "rounded-xl border border-white/10 bg-slate-900/90 p-6 shadow-xl")(
       div(cls := "mb-4 flex items-center justify-between")(
@@ -316,7 +109,7 @@ object WorkspacesView:
         button(
           `type`              := "button",
           cls                 := "text-slate-400 hover:text-white text-xl leading-none",
-          attr("hx-get")      := "/settings/workspaces",
+          attr("hx-get")      := closeUrl,
           attr("hx-target")   := "body",
           attr("hx-swap")     := "outerHTML",
           attr("hx-push-url") := "true",
@@ -327,7 +120,7 @@ object WorkspacesView:
         attr("hx-" + method) := submitUrl,
         attr("hx-target")    := "body",
         attr("hx-swap")      := "outerHTML",
-        attr("hx-push-url")  := "/settings/workspaces",
+        attr("hx-push-url")  := closeUrl,
         cls                  := "space-y-4",
       )(
         formField("name", "Name", ws.map(_.name).getOrElse(""), required = true),
@@ -347,7 +140,7 @@ object WorkspacesView:
             cls    := "rounded-md bg-indigo-500 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-400",
           )("Save"),
           a(
-            href := "/settings/workspaces",
+            href := closeUrl,
             cls  := "rounded-md border border-white/20 px-4 py-2 text-sm font-semibold text-slate-300 hover:text-white",
           )("Cancel"),
         ),

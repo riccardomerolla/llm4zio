@@ -118,30 +118,6 @@ object WorkspacesController:
           yield Response.json(payload.toJson)).catchAll(ZIO.succeed)
         },
 
-        // Full page
-        Method.GET / "settings" / "workspaces"                -> handler { (_: Request) =>
-          (for
-            ws         <- repo.list.mapError(persistErr)
-            agents     <- agentRegistry.getAllAgents
-            statusByWs <- loadAnalysisStatuses(ws.map(_.id), analysisScheduler).mapError(persistErr)
-          yield html(WorkspacesView.page(ws, agents, statusByWs)))
-            .catchAll(ZIO.succeed)
-        },
-        Method.GET / "settings" / "workspaces" / string("id") -> handler { (id: String, _: Request) =>
-          (for
-            workspace <- repo.get(id).mapError(persistErr)
-            agents    <- agentRegistry.getAllAgents
-            response  <- workspace match
-                           case None     => ZIO.succeed(Response(status = Status.NotFound))
-                           case Some(ws) =>
-                             analysisScheduler
-                               .statusForWorkspace(id)
-                               .mapError(persistErr)
-                               .map(statuses => html(WorkspacesView.detailPage(ws, agents, statuses)))
-          yield response)
-            .catchAll(ZIO.succeed)
-        },
-
         // JSON list
         Method.GET / "api" / "workspaces" -> handler { (_: Request) =>
           repo.list
@@ -156,12 +132,13 @@ object WorkspacesController:
         },
 
         // Edit workspace form fragment
-        Method.GET / "api" / "workspaces" / string("id") / "edit" -> handler { (id: String, _: Request) =>
+        Method.GET / "api" / "workspaces" / string("id") / "edit" -> handler { (id: String, req: Request) =>
+          val returnUrl = req.queryParam("returnUrl").getOrElse("/projects")
           repo.get(id)
             .mapError(persistErr)
             .map {
               case None     => Response(status = Status.NotFound)
-              case Some(ws) => html(WorkspacesView.editWorkspaceForm(ws))
+              case Some(ws) => html(WorkspacesView.editWorkspaceForm(ws, returnUrl))
             }
             .catchAll(ZIO.succeed)
         },
@@ -198,14 +175,13 @@ object WorkspacesController:
                             )
                             .mapError(persistErr)
             _          <- analysisScheduler.triggerForWorkspaceEvent(id).forkDaemon
-            all        <- repo.list.mapError(persistErr)
-            agents     <- agentRegistry.getAllAgents
-            statusByWs <- loadAnalysisStatuses(all.map(_.id), analysisScheduler).mapError(persistErr)
-          yield html(WorkspacesView.page(all, agents, statusByWs))).catchAll(ZIO.succeed)
+            returnUrl   = req.queryParam("returnUrl").getOrElse("/projects")
+          yield Response.ok.addHeader(Header.Custom("HX-Redirect", returnUrl))).catchAll(ZIO.succeed)
         },
 
         // Update
         Method.PUT / "api" / "workspaces" / string("id") -> handler { (id: String, req: Request) =>
+          val returnUrl = req.queryParam("returnUrl")
           (for
             patch    <- parseFormBody(req)
             _        <- validateWorkspaceLocalPath(patch.localPath)
@@ -239,10 +215,16 @@ object WorkspacesController:
                                               )
                                               .mapError(persistErr)
                               _          <- analysisScheduler.triggerForWorkspaceEvent(id).forkDaemon
-                              all        <- repo.list.mapError(persistErr)
-                              agents     <- agentRegistry.getAllAgents
-                              statusByWs <- loadAnalysisStatuses(all.map(_.id), analysisScheduler).mapError(persistErr)
-                            yield html(WorkspacesView.page(all, agents, statusByWs))
+                              result     <- returnUrl match
+                                              case Some(url) =>
+                                                ZIO.succeed(
+                                                  Response.ok.addHeader(Header.Custom("HX-Redirect", url))
+                                                )
+                                              case None      =>
+                                                ZIO.succeed(
+                                                  Response.ok.addHeader(Header.Custom("HX-Redirect", "/projects"))
+                                                )
+                            yield result
           yield resp).catchAll(ZIO.succeed)
         },
 
@@ -251,12 +233,8 @@ object WorkspacesController:
           repo.delete(id)
             .mapError(persistErr)
             .as {
-              if req.queryParam("detailMode").contains("true") then
-                Response(
-                  status = Status.Ok,
-                  headers = Headers(Header.Custom("HX-Redirect", "/settings/workspaces")),
-                )
-              else Response(status = Status.NoContent)
+              // Return empty response — HTMX outerHTML swap removes the card
+              Response(status = Status.Ok, body = Body.fromString(""))
             }
             .catchAll(ZIO.succeed)
         },
@@ -893,14 +871,6 @@ object WorkspacesController:
     workspaces: List[Workspace],
   ): IO[PersistenceError, List[WorkspaceRun]] =
     ZIO.foreach(workspaces)(ws => repo.listRuns(ws.id)).map(_.flatten)
-
-  private def loadAnalysisStatuses(
-    workspaceIds: List[String],
-    analysisScheduler: WorkspaceAnalysisScheduler,
-  ): IO[PersistenceError, Map[String, List[analysis.control.WorkspaceAnalysisStatus]]] =
-    ZIO.foreach(workspaceIds)(workspaceId =>
-      analysisScheduler.statusForWorkspace(workspaceId).map(workspaceId -> _)
-    ).map(_.toMap)
 
   private def parseRunsDashboardQuery(req: Request): RunsDashboardQuery =
     RunsDashboardQuery(
