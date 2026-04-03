@@ -163,52 +163,6 @@ object BoardView:
       }
     ).render
 
-  def detailPage(workspaceId: String, issue: BoardIssue, renderedIssueMarkdown: Frag): String =
-    Layout.page(s"Board Issue · ${issue.frontmatter.id.value}", s"/board/$workspaceId")(
-      div(cls := "space-y-4")(
-        div(cls := "flex items-center gap-3")(
-          a(
-            href := s"/board/$workspaceId",
-            cls  := "text-sm font-medium text-indigo-300 hover:text-indigo-200",
-          )("← Back to board"),
-          h1(cls := "text-xl font-bold text-white")(issue.frontmatter.title),
-        ),
-        div(cls := "rounded-xl border border-white/10 bg-slate-900/70 p-4")(
-          div(cls := "flex flex-wrap items-center gap-2 text-xs")(
-            badge(issue.column.folderName),
-            badge(issue.frontmatter.priority.toString),
-            issue.frontmatter.assignedAgent.filter(_.nonEmpty).map(a => badge(s"agent:$a")).getOrElse(()),
-            issue.frontmatter.tags.map(tag => badge(tag)),
-          )
-        ),
-        if issue.column == BoardColumn.Review && issue.frontmatter.branchName.exists(_.nonEmpty) then
-          div(cls := "rounded-xl border border-white/10 bg-slate-900/70 p-4")(
-            div(cls := "mb-2 flex items-center gap-2 text-xs text-slate-300")(
-              span("Branch:"),
-              span(cls := "font-mono text-indigo-300")(issue.frontmatter.branchName.getOrElse("")),
-              span(cls := "text-slate-500")("will be merged into main"),
-            ),
-            form(
-              method          := "post",
-              action          := s"/board/$workspaceId/issues/${issue.frontmatter.id.value}/approve",
-              attr("hx-post") := s"/board/$workspaceId/issues/${issue.frontmatter.id.value}/approve",
-              attr(
-                "hx-confirm"
-              )               := s"Approve and merge branch '${issue.frontmatter.branchName.getOrElse("")}' into main?",
-            )(
-              button(
-                `type` := "submit",
-                cls    := "rounded border border-emerald-400/30 bg-emerald-500/20 px-3 py-2 text-sm font-semibold text-emerald-100 hover:bg-emerald-500/30",
-              )("Approve & Merge")
-            ),
-          )
-        else (),
-        div(cls := "rounded-xl border border-white/10 bg-slate-900/70 p-6")(
-          div(cls := "prose prose-invert prose-sm max-w-none text-slate-100")(renderedIssueMarkdown)
-        ),
-      )
-    )
-
   private def issueCard(workspaceId: String, issue: BoardIssue, column: BoardColumn): Frag =
     div(
       cls                         := "rounded-lg border border-white/10 bg-slate-800/70 p-3",
@@ -233,6 +187,14 @@ object BoardView:
           )
         )
       else (),
+      if hasReworkState(issue) then
+        div(cls := "mt-2 flex flex-wrap gap-1")(
+          span(cls := "rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] text-amber-200")("Rework"),
+          if hasPendingRework(issue, column) then
+            span(cls := "rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] text-amber-200")("Rework pending")
+          else (),
+        )
+      else (),
       if column == BoardColumn.Review && issue.frontmatter.branchName.exists(_.nonEmpty) then
         div(cls := "mt-1 flex items-center gap-1.5 text-[10px] text-slate-400")(
           span(cls := "font-mono text-indigo-300 truncate")(issue.frontmatter.branchName.getOrElse(""))
@@ -242,8 +204,8 @@ object BoardView:
         if column == BoardColumn.Review && issue.frontmatter.branchName.exists(_.nonEmpty) then
           form(
             method               := "post",
-            action               := s"/board/$workspaceId/issues/${issue.frontmatter.id.value}/approve",
-            attr("hx-post")      := s"/board/$workspaceId/issues/${issue.frontmatter.id.value}/approve",
+            action               := s"/board/$workspaceId/issues/${issue.frontmatter.id.value}/quick-approve",
+            attr("hx-post")      := s"/board/$workspaceId/issues/${issue.frontmatter.id.value}/quick-approve",
             attr("hx-target")    := "#fs-board-root",
             attr("hx-swap")      := "innerHTML",
             attr(
@@ -269,8 +231,15 @@ object BoardView:
       ),
     )
 
-  private def badge(value: String): Frag =
-    span(cls := "rounded-full border border-white/15 bg-slate-800/60 px-3 py-1 text-slate-200")(value)
+  private def hasReworkState(issue: BoardIssue): Boolean =
+    issue.frontmatter.transientState match
+      case TransientState.Rework(_, _) => true
+      case _                           => false
+
+  private def hasPendingRework(issue: BoardIssue, column: BoardColumn): Boolean =
+    column == BoardColumn.Todo &&
+    issue.frontmatter.assignedAgent.exists(_.nonEmpty) &&
+    hasReworkState(issue)
 
   private def humanizeColumn(column: BoardColumn): String =
     column match
