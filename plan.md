@@ -1,17 +1,17 @@
-# Plan: Implement GitHub Issue #688 IssueTimelineService
+# Plan: Implement GitHub Issue #689 Quick Approve Flow
 
 ## Task Group 1: Planning
-- [x] Task 1.1: Replace the previous issue plan with an issue-specific implementation plan for #688
+- [x] Task 1.1: Replace the previous plan with an issue-specific implementation plan for #689
 
-## Task Group 2: Timeline aggregation service
-- [x] Task 2.1: Create `board/control/IssueTimelineService.scala` with the service trait, layer, and live implementation
-- [x] Task 2.2: Map issue events, workspace runs, decisions, and chat messages into chronological `TimelineEntry` values
-- [x] Task 2.3: Add focused tests covering aggregation and ordering behavior
+## Task Group 2: Issue approval service
+- [x] Task 2.1: Add `IssueApprovalService` with a `quickApprove` workflow that resolves the review decision and delegates board approval
+- [x] Task 2.2: Resolve the board path correctly from the current workspace model so the service works with the existing `BoardOrchestrator` contract
+- [x] Task 2.3: Keep the implementation scoped to the quick-approve flow only, without pulling in later rework tasks
 
-## Task Group 3: Review and validation
-- [x] Task 3.1: Review the completed service task group for API alignment and unnecessary scope
-- [x] Task 3.2: Run formatting, compile, and tests
+## Task Group 3: Test coverage
+- [x] Task 3.1: Add focused service tests for the happy path and the key error-handling path
+- [x] Task 3.2: Review the new service/tests for unnecessary behavior and weak assertions
 
-## Task Group 4: Finalize
-- [x] Task 4.1: Mark all completed tasks in this plan
-- [x] Task 4.2: Commit the implementation
+## Task Group 4: Validation and handoff
+- [x] Task 4.1: Run formatting, compile, targeted tests, and the full test suite
+- [x] Task 4.2: Mark the plan complete and leave changes uncommitted for user-managed commit flow
