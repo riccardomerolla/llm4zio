@@ -5,6 +5,7 @@ import java.time.Instant
 import zio.*
 import zio.test.*
 
+import analysis.entity.{ AnalysisDoc, AnalysisEvent, AnalysisRepository, AnalysisType }
 import board.entity.TimelineEntry
 import board.entity.TimelineEntry.*
 import conversation.entity.api.{ ChatConversation, ConversationEntry, MessageType, SenderType, SessionContextLink }
@@ -122,6 +123,7 @@ object IssueTimelineServiceSpec extends ZIOSpecDefault:
           workspaceRepository = StubWorkspaceRepository(List(run)),
           decisionInbox = StubDecisionInbox(List(decision)),
           chatRepository = StubChatRepository(Map(101L -> messages)),
+          analysisRepository = EmptyAnalysisRepository,
         )
 
         for entries <- service.buildTimeline(workspaceId, boardIssueId)
@@ -217,6 +219,7 @@ object IssueTimelineServiceSpec extends ZIOSpecDefault:
           ),
           decisionInbox = StubDecisionInbox(Nil),
           chatRepository = StubChatRepository(Map.empty),
+          analysisRepository = EmptyAnalysisRepository,
         )
 
         for entries <- service.buildTimeline(workspaceId, boardIssueId)
@@ -317,3 +320,10 @@ object IssueTimelineServiceSpec extends ZIOSpecDefault:
       ZIO.none
     override def listSessionContexts: IO[PersistenceError, List[SessionContextLink]]                                   = ZIO.succeed(Nil)
     override def deleteSessionContext(channelName: String, sessionKey: String): IO[PersistenceError, Unit]             = ZIO.unit
+
+  private object EmptyAnalysisRepository extends AnalysisRepository:
+    override def append(event: AnalysisEvent): IO[PersistenceError, Unit]                        = ZIO.unit
+    override def get(id: AnalysisDocId): IO[PersistenceError, AnalysisDoc]                       =
+      ZIO.fail(PersistenceError.NotFound("analysis_doc", id.value))
+    override def listByWorkspace(workspaceId: String): IO[PersistenceError, List[AnalysisDoc]]   = ZIO.succeed(Nil)
+    override def listByType(analysisType: AnalysisType): IO[PersistenceError, List[AnalysisDoc]] = ZIO.succeed(Nil)

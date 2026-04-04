@@ -6,6 +6,7 @@ import java.time.format.DateTimeFormatter
 import board.entity.*
 import board.entity.TimelineEntry.*
 import scalatags.Text.all.*
+import shared.web.IssuesMarkdownSupport.markdownFragment
 
 object IssueTimelineView:
 
@@ -207,6 +208,8 @@ object IssueTimelineView:
         ("Done", "Issue completed", mutedText(e.result), "bg-emerald-400")
       case e: IssueFailed     =>
         ("Failure", "Issue failed", mutedText(e.reason), "bg-red-400")
+      case e: AnalysisDocAttached =>
+        ("Analysis", e.title, analysisDocBlock(e), "bg-teal-400")
 
     div(cls := "relative mb-4")(
       // Timeline dot — centered on the spine line (left-5 = 20px from container)
@@ -267,6 +270,36 @@ object IssueTimelineView:
         span(cls := "font-mono text-violet-200")(entry.branchName),
       ),
     )
+
+  private def analysisDocBlock(entry: AnalysisDocAttached): Frag =
+    tag("details")(cls := "group overflow-hidden rounded-lg border border-white/10 bg-black/20")(
+      tag("summary")(
+        cls := "flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-medium text-slate-100"
+      )(
+        span(entry.title),
+        div(cls := "flex items-center gap-3")(
+          entry.vscodeUrl.map(url =>
+            a(
+              href    := url,
+              cls     := "text-xs font-medium text-indigo-300 hover:text-indigo-200",
+              onclick := "event.stopPropagation();",
+            )("Open in VSCode")
+          ).getOrElse(frag()),
+          span(cls := "text-xs text-teal-300 group-open:hidden")("Expand"),
+          span(cls := "hidden text-xs text-teal-300 group-open:inline")("Collapse"),
+        ),
+      ),
+      div(cls := "space-y-3 border-t border-white/10 px-4 py-4")(
+        p(cls := "text-xs text-slate-500")(entry.filePath),
+        div(cls := "prose prose-invert prose-sm max-w-none text-slate-100")(
+          markdownFragment(safeContent(entry.content)),
+        ),
+      ),
+    )
+
+  private def safeContent(value: String): String =
+    try Option(value).getOrElse("")
+    catch case _: Throwable => ""
 
   private def reviewActionForm(workspaceId: String, issue: BoardIssue): Frag =
     val issueUrl = s"/board/$workspaceId/issues/${issue.frontmatter.id.value}"

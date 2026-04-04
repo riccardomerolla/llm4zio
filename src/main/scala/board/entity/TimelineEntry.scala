@@ -98,3 +98,12 @@ object TimelineEntry:
     reason: String,
     occurredAt: Instant,
   ) extends TimelineEntry
+
+  final case class AnalysisDocAttached(
+    title: String,
+    analysisType: String,
+    content: String,
+    filePath: String,
+    vscodeUrl: Option[String],
+    occurredAt: Instant,
+  ) extends TimelineEntry

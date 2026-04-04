@@ -586,7 +586,7 @@ object WorkspacesView:
     val running       = run.status match
       case RunStatus.Pending | RunStatus.Running(_) => true
       case _                                        => false
-    val lastActivity  = run.updatedAt.toString.take(19).replace("T", " ")
+    val lastActivity  = formatLocalTime(run.updatedAt)
     tr(
       id  := s"dashboard-run-${run.id}",
       cls := "hover:bg-white/5",
@@ -739,6 +739,12 @@ object WorkspacesView:
         ),
       )
     )
+
+  private def formatLocalTime(instant: java.time.Instant): String =
+    java.time.format.DateTimeFormatter
+      .ofPattern("yyyy-MM-dd HH:mm:ss")
+      .withZone(java.time.ZoneId.systemDefault())
+      .format(instant)
 
   private def formatDuration(from: java.time.Instant, to: java.time.Instant): String =
     val totalSec = math.max(0L, java.time.Duration.between(from, to).getSeconds)

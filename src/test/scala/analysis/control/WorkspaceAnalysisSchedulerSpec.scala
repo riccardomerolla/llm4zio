@@ -365,18 +365,17 @@ object WorkspaceAnalysisSchedulerSpec extends ZIOSpecDefault:
         complete.forall(_.completedAt.nonEmpty),
       )
     },
-    test("completed analyses create one analysis review board issue when none exists for the workspace") {
+    test("completed analyses create one board issue per analysis type") {
       for
         harness <- makeHarness()
         _       <- harness.service.triggerManual("ws-1")
         _       <- processQueued(harness.service)
         issues  <- harness.boardRef.get.map(_.values.toList)
-        review   = issues.find(_.frontmatter.tags.contains("analysis-review"))
+        reviewTags = issues.flatMap(_.frontmatter.tags).filter(_.startsWith("analysis-review-"))
       yield assertTrue(
-        issues.size == 1,
-        review.isDefined,
-        review.exists(_.column == BoardColumn.Review),
-        review.exists(_.frontmatter.tags.contains("analysis-review")),
+        issues.size == 3,
+        issues.forall(_.column == BoardColumn.Review),
+        reviewTags.toSet == Set("analysis-review-code-review", "analysis-review-architecture", "analysis-review-security"),
       )
     },
     test("completed analyses do not create duplicate analysis review board issues") {
@@ -388,7 +387,7 @@ object WorkspaceAnalysisSchedulerSpec extends ZIOSpecDefault:
         _       <- processQueued(harness.service)
         issues  <- harness.boardRef.get.map(_.values.toList)
       yield assertTrue(
-        issues.count(_.frontmatter.tags.contains("analysis-review")) == 1
+        issues.count(_.frontmatter.tags.exists(_.startsWith("analysis-review-"))) == 3
       )
     },
     test("analysis jobs create WorkspaceRun records linked to the board issue") {
@@ -399,12 +398,12 @@ object WorkspaceAnalysisSchedulerSpec extends ZIOSpecDefault:
         runEvents <- harness.runEventsRef.get
         assigned   = runEvents.collect { case e: WorkspaceRunEvent.Assigned => e }
         issues    <- harness.boardRef.get.map(_.values.toList)
-        reviewId   = issues.find(_.frontmatter.tags.contains("analysis-review")).map(_.frontmatter.id.value)
+        issueIds   = issues.map(_.frontmatter.id.value).toSet
       yield assertTrue(
         assigned.size == 3,
         assigned.map(_.agentName).toSet == Set("analysis-code-review", "analysis-architecture", "analysis-security"),
         assigned.forall(_.workspaceId == "ws-1"),
-        assigned.forall(a => reviewId.contains(a.issueRef)),
+        assigned.forall(a => issueIds.contains(a.issueRef)),
       )
     },
     test("analysis run status transitions through Running to Completed") {

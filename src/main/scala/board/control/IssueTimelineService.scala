@@ -2,12 +2,14 @@ package board.control
 
 import zio.*
 
+import analysis.entity.{ AnalysisRepository, AnalysisType }
 import board.entity.*
 import board.entity.TimelineEntry.*
 import conversation.entity.api.ConversationEntry
 import db.ChatRepository
 import decision.control.DecisionInbox
 import decision.entity.*
+import issues.boundary.IssueControllerSupport
 import issues.entity.*
 import shared.errors.PersistenceError
 import shared.ids.Ids.*
@@ -23,8 +25,11 @@ object IssueTimelineService:
   ): ZIO[IssueTimelineService, PersistenceError, List[TimelineEntry]] =
     ZIO.serviceWithZIO[IssueTimelineService](_.buildTimeline(workspaceId, issueId))
 
-  val live
-    : ZLayer[IssueRepository & WorkspaceRepository & DecisionInbox & ChatRepository, Nothing, IssueTimelineService] =
+  val live: ZLayer[
+    IssueRepository & WorkspaceRepository & DecisionInbox & ChatRepository & AnalysisRepository,
+    Nothing,
+    IssueTimelineService,
+  ] =
     ZLayer.fromFunction(IssueTimelineServiceLive.apply)
 
 final case class IssueTimelineServiceLive(
@@ -32,22 +37,25 @@ final case class IssueTimelineServiceLive(
   workspaceRepository: WorkspaceRepository,
   decisionInbox: DecisionInbox,
   chatRepository: ChatRepository,
+  analysisRepository: AnalysisRepository,
 ) extends IssueTimelineService:
 
   override def buildTimeline(workspaceId: String, issueId: BoardIssueId): IO[PersistenceError, List[TimelineEntry]] =
     val agentIssueId = IssueId(issueId.value)
 
     for
-      issueEvents <- issueRepository.history(agentIssueId)
-      runs        <- workspaceRepository
-                       .listRunsByIssueRef(issueId.value)
-                       .map(_.filter(_.workspaceId == workspaceId))
-      decisions   <- decisionInbox.list(DecisionFilter(issueId = Some(agentIssueId), workspaceId = Some(workspaceId)))
-      chatEntries <- ZIO.foreach(runs)(loadRunChatEntries)
-      timeline     = issueEvents.flatMap(mapIssueEvent) ++
-                       runs.flatMap(mapRun) ++
-                       decisions.flatMap(mapDecision) ++
-                       chatEntries.flatten
+      issueEvents    <- issueRepository.history(agentIssueId)
+      runs           <- workspaceRepository
+                          .listRunsByIssueRef(issueId.value)
+                          .map(_.filter(_.workspaceId == workspaceId))
+      decisions      <- decisionInbox.list(DecisionFilter(issueId = Some(agentIssueId), workspaceId = Some(workspaceId)))
+      chatEntries    <- ZIO.foreach(runs)(loadRunChatEntries)
+      analysisEntries <- loadAnalysisEntries(workspaceId, issueEvents, runs)
+      timeline        = issueEvents.flatMap(mapIssueEvent) ++
+                          runs.flatMap(mapRun) ++
+                          decisions.flatMap(mapDecision) ++
+                          chatEntries.flatten ++
+                          analysisEntries
     yield timeline.sortBy(_.occurredAt)
 
   private def mapIssueEvent(event: IssueEvent): List[TimelineEntry] =
@@ -154,6 +162,57 @@ final case class IssueTimelineServiceLive(
       fullContent = message.content,
       timestamp = message.createdAt,
     )
+
+  private def loadAnalysisEntries(
+    workspaceId: String,
+    issueEvents: List[IssueEvent],
+    runs: List[WorkspaceRun],
+  ): IO[PersistenceError, List[TimelineEntry]] =
+    // Try event-linked doc IDs first; fall back to querying the workspace directly
+    // because analysis runs (WorkspaceAnalysisScheduler) don't emit AnalysisAttached events.
+    val eventDocIds = issueEvents.collect { case e: IssueEvent.AnalysisAttached => e }.flatMap(_.analysisDocIds).distinct
+
+    // Derive which AnalysisTypes this issue's runs cover (agent names like "analysis-code-review")
+    val runAnalysisTypes = runs.flatMap(r => agentNameToAnalysisType(r.agentName)).distinct
+
+    val loadDocs =
+      if eventDocIds.nonEmpty then
+        ZIO
+          .foreach(eventDocIds)(docId => analysisRepository.get(docId).either.map(_.toOption))
+          .map(_.flatten)
+      else
+        analysisRepository.listByWorkspace(workspaceId).map { allDocs =>
+          if runAnalysisTypes.nonEmpty then
+            // Only show docs matching this issue's analysis types
+            allDocs.filter(doc => runAnalysisTypes.contains(doc.analysisType))
+          else allDocs
+        }
+
+    for
+      workspace    <- workspaceRepository.get(workspaceId)
+      workspacePath = workspace.flatMap(ws => Option(ws.localPath).map(_.trim).filter(_.nonEmpty))
+      docs         <- loadDocs
+    yield docs.map { doc =>
+      val title     = IssueControllerSupport.analysisTitle(doc.analysisType)
+      val vscodeUrl = workspacePath.map(IssueControllerSupport.buildVscodeUrl(_, doc.filePath))
+      AnalysisDocAttached(
+        title = title,
+        analysisType = title,
+        content = doc.content,
+        filePath = doc.filePath,
+        vscodeUrl = vscodeUrl,
+        occurredAt = doc.createdAt,
+      )
+    }
+
+  private def agentNameToAnalysisType(agentName: String): Option[AnalysisType] =
+    agentName match
+      case "analysis-code-review"  => Some(AnalysisType.CodeReview)
+      case "analysis-architecture" => Some(AnalysisType.Architecture)
+      case "analysis-security"     => Some(AnalysisType.Security)
+      case name if name.startsWith("analysis-") =>
+        Some(AnalysisType.Custom(name.stripPrefix("analysis-")))
+      case _ => None
 
   private def parseIssuePriority(value: String): IssuePriority =
     value.trim.toLowerCase match

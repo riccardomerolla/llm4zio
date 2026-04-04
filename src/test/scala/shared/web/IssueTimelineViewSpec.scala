@@ -74,6 +74,14 @@ object IssueTimelineViewSpec extends ZIOSpecDefault:
     ReviewAction("decision-42", "Approved", "reviewer", "Looks good", now.plusSeconds(180)),
     Merged("agent/timeline-42", now.plusSeconds(181)),
     IssueDone("Merged successfully", now.plusSeconds(182)),
+    AnalysisDocAttached(
+      title = "Code Review",
+      analysisType = "Code Review",
+      content = "## Summary\n\nCode looks clean.\n\n- No major issues found.",
+      filePath = ".llm4zio/analysis/code-review.md",
+      vscodeUrl = Some("vscode://file/tmp/project/.llm4zio/analysis/code-review.md"),
+      occurredAt = now.plusSeconds(190),
+    ),
   )
 
   def spec: Spec[Any, Nothing] =
@@ -103,6 +111,20 @@ object IssueTimelineViewSpec extends ZIOSpecDefault:
           html.contains("Done, adding sticky header."),
           html.contains("Expand"),
           html.contains("Collapse"),
+        )
+      },
+      test("analysis doc renders as expandable details block with VSCode link") {
+        val html = IssueTimelineView.page("ws-1", reviewIssue, timeline)
+        assertTrue(
+          html.contains("Code Review"),
+          html.contains("<details"),
+          html.contains("code-review.md"),
+          html.contains("Open in VSCode"),
+          html.contains("vscode://file/tmp/project/.llm4zio/analysis/code-review.md"),
+          html.contains("Expand"),
+          html.contains("Collapse"),
+          html.contains("Code looks clean."),
+          html.contains("No major issues found."),
         )
       },
       test("review action form is hidden when the issue is not in review") {

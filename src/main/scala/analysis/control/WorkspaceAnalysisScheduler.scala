@@ -171,7 +171,7 @@ final case class WorkspaceAnalysisSchedulerLive(
     Ref.make(Option.empty[String]).flatMap { runIdRef =>
       val effect = for
         startedAt <- Clock.instant
-        issueId   <- ensureHumanReviewIssueWithAnalysis(job.workspaceId, startedAt)
+        issueId   <- ensureHumanReviewIssueWithAnalysis(job.workspaceId, job.analysisType, startedAt)
         runId      = java.util.UUID.randomUUID().toString
         _         <- runIdRef.set(Some(runId))
         workspace <- workspaceRepository.get(job.workspaceId)
@@ -315,18 +315,14 @@ final case class WorkspaceAnalysisSchedulerLive(
 
   private def ensureHumanReviewIssueWithAnalysis(
     workspaceId: String,
+    analysisType: AnalysisType,
     now: Instant,
   ): IO[PersistenceError, BoardIssueId] =
-    upsertHumanReviewIssue(workspaceId, now)
-
-  private def upsertHumanReviewIssue(
-    workspaceId: String,
-    now: Instant,
-  ): IO[PersistenceError, BoardIssueId] =
-    val title       = s"Analysis docs for workspace $workspaceId"
-    val description =
-      s"Automatically created review issue for workspace $workspaceId. Review the latest code review, architecture, and security analysis docs."
-    ensureWorkspaceBoardReviewIssue(workspaceId, title, description, now)
+    val typeName    = renderAnalysisType(analysisType)
+    val typeTag     = analysisReviewTag(analysisType)
+    val title       = s"$typeName analysis for workspace $workspaceId"
+    val description = s"Review the latest $typeName analysis docs for workspace $workspaceId."
+    ensureWorkspaceBoardReviewIssue(workspaceId, title, description, typeTag, now)
 
   private val boardColumns: List[BoardColumn] = List(
     BoardColumn.Backlog,
@@ -341,6 +337,7 @@ final case class WorkspaceAnalysisSchedulerLive(
     workspaceId: String,
     title: String,
     description: String,
+    typeTag: String,
     now: Instant,
   ): IO[PersistenceError, BoardIssueId] =
     for
@@ -353,18 +350,20 @@ final case class WorkspaceAnalysisSchedulerLive(
                          .map(_.flatten)
                          .mapError(mapBoardError)
       existingReview = existing.find(issue =>
-                         issue.frontmatter.tags.exists(_.equalsIgnoreCase("analysis-review")) ||
+                         issue.frontmatter.tags.exists(_.equalsIgnoreCase(typeTag)) ||
                          issue.frontmatter.title.equalsIgnoreCase(title)
                        )
       issueId       <- existingReview match
                          case Some(issue) => ZIO.succeed(issue.frontmatter.id)
-                         case None        => createWorkspaceBoardReviewIssue(boardPath, title, description, now)
+                         case None        =>
+                           createWorkspaceBoardReviewIssue(boardPath, title, description, List(typeTag, "auto-generated"), now)
     yield issueId
 
   private def createWorkspaceBoardReviewIssue(
     workspacePath: String,
     title: String,
     description: String,
+    tags: List[String],
     now: Instant,
   ): IO[PersistenceError, BoardIssueId] =
     for
@@ -383,7 +382,7 @@ final case class WorkspaceAnalysisSchedulerLive(
                               assignedAgent = None,
                               requiredCapabilities = Nil,
                               blockedBy = Nil,
-                              tags = List("analysis-review", "auto-generated"),
+                              tags = tags,
                               acceptanceCriteria = Nil,
                               estimate = None,
                               proofOfWork = Nil,
@@ -493,6 +492,13 @@ final case class WorkspaceAnalysisSchedulerLive(
       case ActivityEventType.AnalysisCompleted => "Completed"
       case ActivityEventType.AnalysisFailed    => "Failed"
       case _                                   => "Updated"
+
+  private def analysisReviewTag(analysisType: AnalysisType): String =
+    analysisType match
+      case AnalysisType.CodeReview   => "analysis-review-code-review"
+      case AnalysisType.Architecture => "analysis-review-architecture"
+      case AnalysisType.Security     => "analysis-review-security"
+      case AnalysisType.Custom(name) => s"analysis-review-${name.toLowerCase}"
 
   private def analysisAgentName(analysisType: AnalysisType): String =
     analysisType match
