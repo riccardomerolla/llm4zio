@@ -21,11 +21,22 @@ object AnalysisType:
     * compile-time derived zio-json codec, causing "Index N out of bounds" errors. Pattern matching
     * on field values (not identity) produces a clean instance safe for JSON encoding.
     */
-  def normalize(at: AnalysisType): AnalysisType = at match
-    case _: CodeReview.type   => CodeReview
-    case _: Architecture.type => Architecture
-    case _: Security.type     => Security
-    case c: Custom            => Custom(c.name)
+  def normalize(at: AnalysisType): AnalysisType =
+    // Cannot use typed pattern matching (e.g. `case _: CodeReview.type`) because
+    // EclipseStore binary deserialization produces instances from a different
+    // classloader whose runtime class doesn't match the current compilation unit.
+    // Matching on the simple class name is the only reliable approach.
+    val className = at.getClass.getSimpleName.stripSuffix("$")
+    className match
+      case "CodeReview"   => CodeReview
+      case "Architecture" => Architecture
+      case "Security"     => Security
+      case "Custom"       =>
+        // Use productElement to access the name field since asInstanceOf may fail
+        // across classloader boundaries.
+        val name = at.asInstanceOf[Product].productElement(0).asInstanceOf[String]
+        Custom(name)
+      case _              => at
 
   // Hand-rolled codec avoids ordinal-based encoding which breaks after EclipseStore
   // binary deserialization (see WorkspaceRepository.scala line 171 for the same issue).
@@ -35,7 +46,8 @@ object AnalysisType:
   private val analysisTypeEncoder: JsonEncoder[AnalysisType] =
     JsonEncoder[zio.json.ast.Json].contramap { at =>
       import zio.json.ast.Json.*
-      normalize(at) match
+      val normalized = normalize(at)
+      normalized match
         case CodeReview   => Obj("CodeReview" -> Obj())
         case Architecture => Obj("Architecture" -> Obj())
         case Security     => Obj("Security" -> Obj())
