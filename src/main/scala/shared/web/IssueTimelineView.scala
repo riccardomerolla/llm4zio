@@ -128,12 +128,14 @@ object IssueTimelineView:
           "Agent run started",
           div(cls := "space-y-2 text-sm text-slate-300")(
             metadataRow("Run", e.runId),
-            metadataRow("Branch", e.branchName, mono = true),
-            a(
-              href := s"/chat/${e.conversationId}",
-              cls  := "inline-flex text-xs font-medium text-indigo-300 hover:text-indigo-200",
-            )(
-              s"Open conversation ${e.conversationId}"
+            Option.when(e.branchName.nonEmpty)(metadataRow("Branch", e.branchName, mono = true)),
+            Option.when(e.conversationId.nonEmpty)(
+              a(
+                href := s"/chat/${e.conversationId}",
+                cls  := "inline-flex text-xs font-medium text-indigo-300 hover:text-indigo-200",
+              )(
+                "Open conversation"
+              )
             ),
           ),
           "bg-cyan-400",
@@ -245,10 +247,12 @@ object IssueTimelineView:
             p(cls := "whitespace-pre-wrap text-sm leading-6 text-slate-300")(message.fullContent),
           )
         },
-        a(
-          href := s"/chat/${entry.conversationId}",
-          cls  := "inline-flex pt-1 text-xs font-medium text-indigo-300 hover:text-indigo-200",
-        )(s"Open full conversation ${entry.conversationId}"),
+        Option.when(entry.conversationId.nonEmpty)(
+          a(
+            href := s"/chat/${entry.conversationId}",
+            cls  := "inline-flex pt-1 text-xs font-medium text-indigo-300 hover:text-indigo-200",
+          )("Open full conversation")
+        ),
       ),
     )
 

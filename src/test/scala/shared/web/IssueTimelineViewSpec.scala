@@ -88,7 +88,7 @@ object IssueTimelineViewSpec extends ZIOSpecDefault:
           html.contains("Request Rework"),
           html.contains("""/board/ws-1/issues/issue-42/quick-approve"""),
           html.contains("""/board/ws-1/issues/issue-42/rework"""),
-          html.contains("Open full conversation 77"),
+          html.contains("Open full conversation"),
           html.contains("""diff-url="/api/workspaces/ws-1/runs/run-42/git/diff?base=main""""),
           html.contains("Tighten the sticky header spacing."),
           html.contains("Merged successfully"),
