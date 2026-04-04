@@ -12,6 +12,7 @@ import db.TaskRepository
 import project.control.ProjectStorageService
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ BoardIssueId, EventId, IssueId }
+import orchestration.control.{ AgentExecutionState, OrchestratorControlPlane }
 import workspace.entity.{ RunSessionMode, RunStatus, WorkspaceRepository, WorkspaceRunEvent }
 
 final private[analysis] case class WorkspaceAnalysisJob(
@@ -62,7 +63,7 @@ object WorkspaceAnalysisScheduler:
   val live
     : ZLayer[
       AnalysisAgentRunner & AnalysisRepository & ActivityHub & TaskRepository & BoardRepository & WorkspaceRepository &
-        ProjectStorageService,
+        ProjectStorageService & OrchestratorControlPlane,
       Nothing,
       WorkspaceAnalysisScheduler,
     ] =
@@ -75,6 +76,7 @@ object WorkspaceAnalysisScheduler:
         boardRepo      <- ZIO.service[BoardRepository]
         workspaceRepo  <- ZIO.service[WorkspaceRepository]
         projectStorage <- ZIO.service[ProjectStorageService]
+        controlPlane   <- ZIO.service[OrchestratorControlPlane]
         queue          <- Queue.unbounded[WorkspaceAnalysisJob]
         runtimeState   <- Ref.Synchronized.make(Map.empty[(String, AnalysisType), WorkspaceAnalysisStatus])
         service         = WorkspaceAnalysisSchedulerLive(
@@ -85,6 +87,7 @@ object WorkspaceAnalysisScheduler:
                             boardRepository = boardRepo,
                             workspaceRepository = workspaceRepo,
                             projectStorageService = projectStorage,
+                            controlPlane = controlPlane,
                             queue = queue,
                             runtimeState = runtimeState,
                           )
@@ -100,6 +103,7 @@ final case class WorkspaceAnalysisSchedulerLive(
   boardRepository: BoardRepository,
   workspaceRepository: WorkspaceRepository,
   projectStorageService: ProjectStorageService,
+  controlPlane: OrchestratorControlPlane,
   queue: Queue[WorkspaceAnalysisJob],
   runtimeState: Ref.Synchronized[Map[(String, AnalysisType), WorkspaceAnalysisStatus]],
 ) extends WorkspaceAnalysisScheduler:
@@ -198,6 +202,15 @@ final case class WorkspaceAnalysisSchedulerLive(
                        .appendRun(
                          WorkspaceRunEvent.StatusChanged(runId, RunStatus.Running(RunSessionMode.Autonomous), startedAt)
                        )
+        agentName  = analysisAgentName(job.analysisType)
+        _         <- controlPlane.notifyWorkspaceAgent(
+                       agentName,
+                       AgentExecutionState.Executing,
+                       Some(runId),
+                       None,
+                       Some(s"Running ${renderAnalysisType(job.analysisType)} analysis"),
+                       0L,
+                     )
         _         <- publishActivity(
                        job.workspaceId,
                        job.analysisType,
@@ -209,6 +222,14 @@ final case class WorkspaceAnalysisSchedulerLive(
         completed <- Clock.instant
         _         <- workspaceRepository
                        .appendRun(WorkspaceRunEvent.StatusChanged(runId, RunStatus.Completed, completed))
+        _         <- controlPlane.notifyWorkspaceAgent(
+                       agentName,
+                       AgentExecutionState.Idle,
+                       Some(runId),
+                       None,
+                       Some(s"Completed ${renderAnalysisType(job.analysisType)} analysis"),
+                       0L,
+                     )
         _         <- updateStatus(job.workspaceId, job.analysisType) { current =>
                        current.copy(
                          state = WorkspaceAnalysisState.Completed,
@@ -235,6 +256,14 @@ final case class WorkspaceAnalysisSchedulerLive(
                   .ignore
               case None     => ZIO.unit
             markRunFailed *>
+              controlPlane.notifyWorkspaceAgent(
+                analysisAgentName(job.analysisType),
+                AgentExecutionState.Failed,
+                maybeRunId,
+                None,
+                Some(s"Failed ${renderAnalysisType(job.analysisType)} analysis: ${renderJobError(err)}"),
+                0L,
+              ) *>
               updateStatus(job.workspaceId, job.analysisType) { current =>
                 current.copy(state = WorkspaceAnalysisState.Failed, lastUpdatedAt = failedAt)
               } *>

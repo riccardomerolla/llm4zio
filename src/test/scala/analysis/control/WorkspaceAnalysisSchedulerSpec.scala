@@ -139,6 +139,8 @@ object WorkspaceAnalysisSchedulerSpec extends ZIOSpecDefault:
         java.nio.file.Paths.get(s"/tmp/projects/${projectId.value}/workspaces/$workspaceId/.llm4zio/analysis")
       )
 
+  private val NoOpControlPlane = NoOpOrchestratorControlPlane
+
   final private class CapturingWorkspaceRepository(
     workspaces: List[Workspace],
     runEventsRef: Ref[List[WorkspaceRunEvent]],
@@ -239,6 +241,7 @@ object WorkspaceAnalysisSchedulerSpec extends ZIOSpecDefault:
                          boardRepository = boardRepo,
                          workspaceRepository = workspaceRepo,
                          projectStorageService = StubProjectStorageService,
+                         controlPlane = NoOpControlPlane,
                          queue = queue,
                          runtimeState = runtimeState,
                        )
@@ -294,6 +297,7 @@ object WorkspaceAnalysisSchedulerSpec extends ZIOSpecDefault:
                          boardRepository = boardRepo,
                          workspaceRepository = workspaceRepo,
                          projectStorageService = StubProjectStorageService,
+                         controlPlane = NoOpControlPlane,
                          queue = queue,
                          runtimeState = runtimeState,
                        )
