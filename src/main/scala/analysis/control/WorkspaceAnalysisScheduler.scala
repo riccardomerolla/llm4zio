@@ -12,7 +12,7 @@ import db.TaskRepository
 import project.control.ProjectStorageService
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ BoardIssueId, EventId, IssueId }
-import workspace.entity.WorkspaceRepository
+import workspace.entity.{ RunSessionMode, RunStatus, WorkspaceRepository, WorkspaceRunEvent }
 
 final private[analysis] case class WorkspaceAnalysisJob(
   workspaceId: String,
@@ -164,54 +164,94 @@ final case class WorkspaceAnalysisSchedulerLive(
     }
 
   private def runJob(job: WorkspaceAnalysisJob): UIO[Unit] =
-    (for
-      startedAt <- Clock.instant
-      _         <- updateStatus(job.workspaceId, job.analysisType) { current =>
-                     current.copy(
-                       state = WorkspaceAnalysisState.Running,
-                       startedAt = Some(startedAt),
-                       lastUpdatedAt = startedAt,
+    Ref.make(Option.empty[String]).flatMap { runIdRef =>
+      val effect = for
+        startedAt <- Clock.instant
+        issueId   <- ensureHumanReviewIssueWithAnalysis(job.workspaceId, startedAt)
+        runId      = java.util.UUID.randomUUID().toString
+        _         <- runIdRef.set(Some(runId))
+        workspace <- workspaceRepository.get(job.workspaceId)
+        localPath  = workspace.map(_.localPath).getOrElse("")
+        _         <- workspaceRepository
+                       .appendRun(
+                         WorkspaceRunEvent.Assigned(
+                           runId = runId,
+                           workspaceId = job.workspaceId,
+                           issueRef = issueId.value,
+                           agentName = analysisAgentName(job.analysisType),
+                           prompt =
+                             s"${renderAnalysisType(job.analysisType)} analysis for workspace ${job.workspaceId}",
+                           conversationId = "",
+                           worktreePath = localPath,
+                           branchName = "",
+                           occurredAt = startedAt,
+                         )
+                       )
+        _         <- updateStatus(job.workspaceId, job.analysisType) { current =>
+                       current.copy(
+                         state = WorkspaceAnalysisState.Running,
+                         startedAt = Some(startedAt),
+                         lastUpdatedAt = startedAt,
+                       )
+                     }
+        _         <- workspaceRepository
+                       .appendRun(
+                         WorkspaceRunEvent.StatusChanged(runId, RunStatus.Running(RunSessionMode.Autonomous), startedAt)
+                       )
+        _         <- publishActivity(
+                       job.workspaceId,
+                       job.analysisType,
+                       ActivityEventType.AnalysisStarted,
+                       startedAt,
+                       None,
                      )
-                   }
-      _         <- publishActivity(job.workspaceId, job.analysisType, ActivityEventType.AnalysisStarted, startedAt, None)
-      doc       <- runAnalysis(job.workspaceId, job.analysisType)
-      completed <- Clock.instant
-      _         <- ensureHumanReviewIssueWithAnalysis(job.workspaceId, completed)
-      _         <- updateStatus(job.workspaceId, job.analysisType) { current =>
-                     current.copy(
-                       state = WorkspaceAnalysisState.Completed,
-                       completedAt = Some(doc.updatedAt),
-                       lastUpdatedAt = completed,
+        doc       <- runAnalysis(job.workspaceId, job.analysisType)
+        completed <- Clock.instant
+        _         <- workspaceRepository
+                       .appendRun(WorkspaceRunEvent.StatusChanged(runId, RunStatus.Completed, completed))
+        _         <- updateStatus(job.workspaceId, job.analysisType) { current =>
+                       current.copy(
+                         state = WorkspaceAnalysisState.Completed,
+                         completedAt = Some(doc.updatedAt),
+                         lastUpdatedAt = completed,
+                       )
+                     }
+        _         <- publishActivity(
+                       job.workspaceId,
+                       job.analysisType,
+                       ActivityEventType.AnalysisCompleted,
+                       completed,
+                       Some(doc.generatedBy.value),
                      )
-                   }
-      _         <- publishActivity(
-                     job.workspaceId,
-                     job.analysisType,
-                     ActivityEventType.AnalysisCompleted,
-                     completed,
-                     Some(doc.generatedBy.value),
-                   )
-    yield ())
-      .catchAll { err =>
+      yield ()
+
+      effect.catchAll { err =>
         Clock.instant.flatMap { failedAt =>
-          updateStatus(job.workspaceId, job.analysisType) { current =>
-            current.copy(
-              state = WorkspaceAnalysisState.Failed,
-              lastUpdatedAt = failedAt,
-            )
-          } *>
-            publishActivity(
-              job.workspaceId,
-              job.analysisType,
-              ActivityEventType.AnalysisFailed,
-              failedAt,
-              None,
-            ) *>
-            ZIO.logWarning(
-              s"Analysis execution failed for ${job.workspaceId}/${renderAnalysisType(job.analysisType)}: ${renderJobError(err)}"
-            )
+          runIdRef.get.flatMap { maybeRunId =>
+            val markRunFailed = maybeRunId match
+              case Some(id) =>
+                workspaceRepository
+                  .appendRun(WorkspaceRunEvent.StatusChanged(id, RunStatus.Failed, failedAt))
+                  .ignore
+              case None     => ZIO.unit
+            markRunFailed *>
+              updateStatus(job.workspaceId, job.analysisType) { current =>
+                current.copy(state = WorkspaceAnalysisState.Failed, lastUpdatedAt = failedAt)
+              } *>
+              publishActivity(
+                job.workspaceId,
+                job.analysisType,
+                ActivityEventType.AnalysisFailed,
+                failedAt,
+                None,
+              ) *>
+              ZIO.logWarning(
+                s"Analysis execution failed for ${job.workspaceId}/${renderAnalysisType(job.analysisType)}: ${renderJobError(err)}"
+              )
+          }
         }
       }
+    }
 
   private def runAnalysis(workspaceId: String, analysisType: AnalysisType): IO[AnalysisAgentRunnerError, AnalysisDoc] =
     analysisType match
@@ -247,15 +287,13 @@ final case class WorkspaceAnalysisSchedulerLive(
   private def ensureHumanReviewIssueWithAnalysis(
     workspaceId: String,
     now: Instant,
-  ): IO[PersistenceError, Unit] =
-    runtimeState.modifyZIO { current =>
-      upsertHumanReviewIssue(workspaceId, now).as(((), current))
-    }
+  ): IO[PersistenceError, BoardIssueId] =
+    upsertHumanReviewIssue(workspaceId, now)
 
   private def upsertHumanReviewIssue(
     workspaceId: String,
     now: Instant,
-  ): IO[PersistenceError, Unit] =
+  ): IO[PersistenceError, BoardIssueId] =
     val title       = s"Analysis docs for workspace $workspaceId"
     val description =
       s"Automatically created review issue for workspace $workspaceId. Review the latest code review, architecture, and security analysis docs."
@@ -275,31 +313,31 @@ final case class WorkspaceAnalysisSchedulerLive(
     title: String,
     description: String,
     now: Instant,
-  ): IO[PersistenceError, Unit] =
+  ): IO[PersistenceError, BoardIssueId] =
     for
-      workspaceOpt <- workspaceRepository.get(workspaceId)
-      workspace    <- ZIO.fromOption(workspaceOpt).orElseFail(PersistenceError.NotFound("workspace", workspaceId))
-      boardPath    <- projectStorageService.projectRoot(workspace.projectId).map(_.toString)
-      _            <- boardRepository.initBoard(boardPath).mapError(mapBoardError)
-      existing     <- ZIO
-                        .foreach(boardColumns)(column => boardRepository.listIssues(boardPath, column))
-                        .map(_.flatten)
-                        .mapError(mapBoardError)
-      hasReview     = existing.exists(issue =>
-                        issue.frontmatter.tags.exists(_.equalsIgnoreCase("analysis-review")) ||
-                        issue.frontmatter.title.equalsIgnoreCase(title)
-                      )
-      _            <- ZIO.unless(hasReview) {
-                        createWorkspaceBoardReviewIssue(boardPath, title, description, now)
-                      }
-    yield ()
+      workspaceOpt  <- workspaceRepository.get(workspaceId)
+      workspace     <- ZIO.fromOption(workspaceOpt).orElseFail(PersistenceError.NotFound("workspace", workspaceId))
+      boardPath     <- projectStorageService.projectRoot(workspace.projectId).map(_.toString)
+      _             <- boardRepository.initBoard(boardPath).mapError(mapBoardError)
+      existing      <- ZIO
+                         .foreach(boardColumns)(column => boardRepository.listIssues(boardPath, column))
+                         .map(_.flatten)
+                         .mapError(mapBoardError)
+      existingReview = existing.find(issue =>
+                         issue.frontmatter.tags.exists(_.equalsIgnoreCase("analysis-review")) ||
+                         issue.frontmatter.title.equalsIgnoreCase(title)
+                       )
+      issueId       <- existingReview match
+                         case Some(issue) => ZIO.succeed(issue.frontmatter.id)
+                         case None        => createWorkspaceBoardReviewIssue(boardPath, title, description, now)
+    yield issueId
 
   private def createWorkspaceBoardReviewIssue(
     workspacePath: String,
     title: String,
     description: String,
     now: Instant,
-  ): IO[PersistenceError, Unit] =
+  ): IO[PersistenceError, BoardIssueId] =
     for
       boardIssueId <- ZIO
                         .fromEither(BoardIssueId.fromString(IssueId.generate.value))
@@ -333,7 +371,7 @@ final case class WorkspaceAnalysisSchedulerLive(
                         )
                         .unit
                         .mapError(mapBoardError)
-    yield ()
+    yield boardIssueId
 
   private def mapBoardError(error: BoardError): PersistenceError =
     error match
@@ -426,6 +464,13 @@ final case class WorkspaceAnalysisSchedulerLive(
       case ActivityEventType.AnalysisCompleted => "Completed"
       case ActivityEventType.AnalysisFailed    => "Failed"
       case _                                   => "Updated"
+
+  private def analysisAgentName(analysisType: AnalysisType): String =
+    analysisType match
+      case AnalysisType.CodeReview   => "analysis-code-review"
+      case AnalysisType.Architecture => "analysis-architecture"
+      case AnalysisType.Security     => "analysis-security"
+      case AnalysisType.Custom(name) => s"analysis-${name.toLowerCase}"
 
   private def statusOrder(status: WorkspaceAnalysisStatus): Int =
     status.analysisType match

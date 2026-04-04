@@ -4,6 +4,7 @@ import java.time.Instant
 
 import zio.*
 import zio.test.*
+import zio.test.Live
 
 import activity.entity.{ ActivityEvent, ActivityEventType }
 import analysis.entity.{ AnalysisDoc, AnalysisEvent, AnalysisRepository, AnalysisType }
@@ -23,6 +24,7 @@ object WorkspaceAnalysisSchedulerSpec extends ZIOSpecDefault:
     docsRef: Ref[List[AnalysisDoc]],
     activityRef: Ref[List[ActivityEvent]],
     boardRef: Ref[Map[BoardIssueId, BoardIssue]],
+    runEventsRef: Ref[List[WorkspaceRunEvent]],
     releaseAll: UIO[Unit],
   )
 
@@ -137,6 +139,33 @@ object WorkspaceAnalysisSchedulerSpec extends ZIOSpecDefault:
         java.nio.file.Paths.get(s"/tmp/projects/${projectId.value}/workspaces/$workspaceId/.llm4zio/analysis")
       )
 
+  final private class CapturingWorkspaceRepository(
+    workspaces: List[Workspace],
+    runEventsRef: Ref[List[WorkspaceRunEvent]],
+  ) extends WorkspaceRepository:
+    override def append(event: WorkspaceEvent): IO[PersistenceError, Unit]                      = ZIO.unit
+    override def list: IO[PersistenceError, List[Workspace]]                                    = ZIO.succeed(workspaces)
+    override def listByProject(projectId: ProjectId): IO[PersistenceError, List[Workspace]]     =
+      ZIO.succeed(workspaces.filter(_.projectId == projectId))
+    override def get(id: String): IO[PersistenceError, Option[Workspace]]                       =
+      ZIO.succeed(workspaces.find(_.id == id))
+    override def delete(id: String): IO[PersistenceError, Unit]                                 = ZIO.unit
+    override def appendRun(event: WorkspaceRunEvent): IO[PersistenceError, Unit]                =
+      runEventsRef.update(_ :+ event)
+    override def listRuns(workspaceId: String): IO[PersistenceError, List[WorkspaceRun]]        =
+      runEventsRef.get.map(buildRuns(_).filter(_.workspaceId == workspaceId))
+    override def listRunsByIssueRef(issueRef: String): IO[PersistenceError, List[WorkspaceRun]] =
+      runEventsRef.get.map(buildRuns(_).filter(_.issueRef == issueRef))
+    override def getRun(id: String): IO[PersistenceError, Option[WorkspaceRun]]                 =
+      runEventsRef.get.map(buildRuns(_).find(_.id == id))
+
+    private def buildRuns(events: List[WorkspaceRunEvent]): List[WorkspaceRun] =
+      events
+        .groupBy(_.runId)
+        .values
+        .flatMap(evts => WorkspaceRun.fromEvents(evts.toList).toOption)
+        .toList
+
   private def makeHarness(blockTypes: Set[AnalysisType] = Set.empty, settings: Map[String, String] = Map.empty): ZIO[
     Scope,
     Nothing,
@@ -152,7 +181,8 @@ object WorkspaceAnalysisSchedulerSpec extends ZIOSpecDefault:
       repository     = StubAnalysisRepository(docsRef)
       activityHub    = new StubActivityHub(activityRef)
       taskRepository = StubTaskRepository(settings)
-      workspaceRepo  = new StubWorkspaceRepository(
+      runEventsRef  <- Ref.make(List.empty[WorkspaceRunEvent])
+      workspaceRepo  = CapturingWorkspaceRepository(
                          List(
                            Workspace(
                              id = "ws-1",
@@ -167,7 +197,8 @@ object WorkspaceAnalysisSchedulerSpec extends ZIOSpecDefault:
                              createdAt = Instant.EPOCH,
                              updatedAt = Instant.EPOCH,
                            )
-                         )
+                         ),
+                         runEventsRef,
                        )
       boardRepo      = StubBoardRepository(boardRef)
       runner         = new AnalysisAgentRunner:
@@ -212,10 +243,62 @@ object WorkspaceAnalysisSchedulerSpec extends ZIOSpecDefault:
                          runtimeState = runtimeState,
                        )
       releaseAll     = ZIO.foreachDiscard(blockers.values)(_.succeed(()).unit)
-    yield Harness(service, countsRef, docsRef, activityRef, boardRef, releaseAll)
+    yield Harness(service, countsRef, docsRef, activityRef, boardRef, runEventsRef, releaseAll)
 
   private def processQueued(service: WorkspaceAnalysisSchedulerLive, jobs: Int = 3): UIO[Unit] =
     ZIO.foreachDiscard(1 to jobs)(_ => service.worker)
+
+  private def makeFailingHarness: ZIO[Scope, Nothing, Harness] =
+    for
+      countsRef    <- Ref.make(Map.empty[AnalysisType, Int])
+      docsRef      <- Ref.make(List.empty[AnalysisDoc])
+      activityRef  <- Ref.make(List.empty[ActivityEvent])
+      boardRef     <- Ref.make(Map.empty[BoardIssueId, BoardIssue])
+      runEventsRef <- Ref.make(List.empty[WorkspaceRunEvent])
+      repository    = StubAnalysisRepository(docsRef)
+      activityHub   = new StubActivityHub(activityRef)
+      taskRepository = StubTaskRepository(Map.empty)
+      workspaceRepo = CapturingWorkspaceRepository(
+                        List(
+                          Workspace(
+                            id = "ws-1",
+                            projectId = ProjectId("test-project"),
+                            name = "workspace-1",
+                            localPath = "/tmp/ws-1",
+                            defaultAgent = None,
+                            description = None,
+                            enabled = true,
+                            runMode = RunMode.Host,
+                            cliTool = "codex",
+                            createdAt = Instant.EPOCH,
+                            updatedAt = Instant.EPOCH,
+                          )
+                        ),
+                        runEventsRef,
+                      )
+      boardRepo     = StubBoardRepository(boardRef)
+      failingRunner = new AnalysisAgentRunner:
+                        override def runCodeReview(workspaceId: String): IO[AnalysisAgentRunnerError, AnalysisDoc]   =
+                          ZIO.fail(AnalysisAgentRunnerError.ProcessFailed("code-review", "simulated failure"))
+                        override def runArchitecture(workspaceId: String): IO[AnalysisAgentRunnerError, AnalysisDoc] =
+                          ZIO.fail(AnalysisAgentRunnerError.ProcessFailed("architecture", "simulated failure"))
+                        override def runSecurity(workspaceId: String): IO[AnalysisAgentRunnerError, AnalysisDoc]     =
+                          ZIO.fail(AnalysisAgentRunnerError.ProcessFailed("security", "simulated failure"))
+      queue         <- Queue.unbounded[WorkspaceAnalysisJob]
+      runtimeState  <- Ref.Synchronized.make(Map.empty[(String, AnalysisType), WorkspaceAnalysisStatus])
+      service        = WorkspaceAnalysisSchedulerLive(
+                         runner = failingRunner,
+                         repository = repository,
+                         activityHub = activityHub,
+                         taskRepository = taskRepository,
+                         boardRepository = boardRepo,
+                         workspaceRepository = workspaceRepo,
+                         projectStorageService = StubProjectStorageService,
+                         queue = queue,
+                         runtimeState = runtimeState,
+                       )
+      releaseAll     = ZIO.unit
+    yield Harness(service, countsRef, docsRef, activityRef, boardRef, runEventsRef, releaseAll)
 
   def spec: Spec[TestEnvironment & Scope, Any] = suite("WorkspaceAnalysisSchedulerSpec")(
     test("auto trigger queues all three analyses and emits start/complete activity events") {
@@ -267,7 +350,7 @@ object WorkspaceAnalysisSchedulerSpec extends ZIOSpecDefault:
         harness  <- makeHarness(blockTypes = WorkspaceAnalysisScheduler.trackedTypes.toSet)
         _        <- harness.service.triggerManual("ws-1")
         fibers   <- ZIO.foreach(1 to 3)(_ => harness.service.worker.fork)
-        _        <- ZIO.yieldNow.repeatN(20)
+        _        <- Live.live(ZIO.sleep(200.millis))
         running  <- harness.service.statusForWorkspace("ws-1")
         _        <- harness.releaseAll
         _        <- ZIO.foreachDiscard(fibers)(_.join)
@@ -302,6 +385,48 @@ object WorkspaceAnalysisSchedulerSpec extends ZIOSpecDefault:
         issues  <- harness.boardRef.get.map(_.values.toList)
       yield assertTrue(
         issues.count(_.frontmatter.tags.contains("analysis-review")) == 1
+      )
+    },
+    test("analysis jobs create WorkspaceRun records linked to the board issue") {
+      for
+        harness   <- makeHarness()
+        _         <- harness.service.triggerManual("ws-1")
+        _         <- processQueued(harness.service)
+        runEvents <- harness.runEventsRef.get
+        assigned   = runEvents.collect { case e: WorkspaceRunEvent.Assigned => e }
+        issues    <- harness.boardRef.get.map(_.values.toList)
+        reviewId   = issues.find(_.frontmatter.tags.contains("analysis-review")).map(_.frontmatter.id.value)
+      yield assertTrue(
+        assigned.size == 3,
+        assigned.map(_.agentName).toSet == Set("analysis-code-review", "analysis-architecture", "analysis-security"),
+        assigned.forall(_.workspaceId == "ws-1"),
+        assigned.forall(a => reviewId.contains(a.issueRef)),
+      )
+    },
+    test("analysis run status transitions through Running to Completed") {
+      for
+        harness   <- makeHarness()
+        _         <- harness.service.triggerManual("ws-1")
+        _         <- processQueued(harness.service)
+        runEvents <- harness.runEventsRef.get
+        statuses   = runEvents.collect { case e: WorkspaceRunEvent.StatusChanged => e }
+        running    = statuses.filter(_.status == workspace.entity.RunStatus.Running(workspace.entity.RunSessionMode.Autonomous))
+        completed  = statuses.filter(_.status == workspace.entity.RunStatus.Completed)
+      yield assertTrue(
+        running.size == 3,
+        completed.size == 3,
+      )
+    },
+    test("failed analysis sets run status to Failed") {
+      for
+        harness   <- makeFailingHarness
+        _         <- harness.service.triggerManual("ws-1")
+        _         <- processQueued(harness.service)
+        runEvents <- harness.runEventsRef.get
+        statuses   = runEvents.collect { case e: WorkspaceRunEvent.StatusChanged => e }
+        failed     = statuses.filter(_.status == workspace.entity.RunStatus.Failed)
+      yield assertTrue(
+        failed.size == 3,
       )
     },
   )
