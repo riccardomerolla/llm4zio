@@ -6,11 +6,11 @@ import zio.json.*
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import shared.errors.PersistenceError
 import shared.ids.Ids.IssueId
-import shared.store.{ DataStoreModule, EventStore }
+import shared.store.{ DataStoreService, EventStore }
 
 final case class IssueRepositoryES(
   eventStore: EventStore[IssueId, IssueEvent],
-  dataStore: DataStoreModule.DataStoreService,
+  dataStore: DataStoreService,
 ) extends IssueRepository:
 
   private def enrichBlockingRelationships(issues: List[AgentIssue]): List[AgentIssue] =
@@ -153,10 +153,10 @@ final case class IssueRepositoryES(
     runMatches && stateMatches && (filter.agentId.isEmpty || agentMatches)
 
 object IssueRepositoryES:
-  val live: ZLayer[EventStore[IssueId, IssueEvent] & DataStoreModule.DataStoreService, Nothing, IssueRepository] =
+  val live: ZLayer[EventStore[IssueId, IssueEvent] & DataStoreService, Nothing, IssueRepository] =
     ZLayer.fromZIO {
       for
         eventStore <- ZIO.service[EventStore[IssueId, IssueEvent]]
-        dataStore  <- ZIO.service[DataStoreModule.DataStoreService]
+        dataStore  <- ZIO.service[DataStoreService]
       yield IssueRepositoryES(eventStore, dataStore)
     }

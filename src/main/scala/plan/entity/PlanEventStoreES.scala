@@ -6,9 +6,9 @@ import zio.json.*
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import shared.errors.PersistenceError
 import shared.ids.Ids.PlanId
-import shared.store.{ DataStoreModule, EventStore }
+import shared.store.{ DataStoreService, EventStore }
 
-final case class PlanEventStoreES(dataStore: DataStoreModule.DataStoreService) extends EventStore[PlanId, PlanEvent]:
+final case class PlanEventStoreES(dataStore: DataStoreService) extends EventStore[PlanId, PlanEvent]:
 
   private def eventKey(id: PlanId, seq: Long): String = s"events:plan:${id.value}:$seq"
   private def prefix(id: PlanId): String              = s"events:plan:${id.value}:"
@@ -63,5 +63,5 @@ final case class PlanEventStoreES(dataStore: DataStoreModule.DataStoreService) e
       .map(_.flatten)
 
 object PlanEventStoreES:
-  val live: ZLayer[DataStoreModule.DataStoreService, Nothing, EventStore[PlanId, PlanEvent]] =
+  val live: ZLayer[DataStoreService, Nothing, EventStore[PlanId, PlanEvent]] =
     ZLayer.fromFunction(PlanEventStoreES.apply)

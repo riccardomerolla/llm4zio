@@ -6,7 +6,7 @@ import zio.json.*
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import shared.errors.PersistenceError
 import shared.ids.Ids.ProjectId
-import shared.store.DataStoreModule
+import shared.store.DataStoreService
 
 trait ProjectRepository:
   def append(event: ProjectEvent): IO[PersistenceError, Unit]
@@ -15,11 +15,11 @@ trait ProjectRepository:
   def delete(id: ProjectId): IO[PersistenceError, Unit]
 
 object ProjectRepository:
-  val live: ZLayer[DataStoreModule.DataStoreService, Nothing, ProjectRepository] =
+  val live: ZLayer[DataStoreService, Nothing, ProjectRepository] =
     ZLayer.fromFunction(ProjectRepositoryES.apply)
 
 final case class ProjectRepositoryES(
-  dataStore: DataStoreModule.DataStoreService
+  dataStore: DataStoreService
 ) extends ProjectRepository:
 
   private def eventKey(id: ProjectId, seq: Long): String = s"events:project:${id.value}:$seq"

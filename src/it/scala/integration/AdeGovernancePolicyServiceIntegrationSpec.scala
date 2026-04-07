@@ -13,7 +13,7 @@ import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.error.GigaMapError
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ GovernancePolicyId, ProjectId }
-import shared.store.{ DataStoreModule, EventStore, StoreConfig }
+import shared.store.{ DataStoreModule, DataStoreService, EventStore, StoreConfig }
 import shared.testfixtures.StubWorkspaceRepository
 import workspace.entity.*
 
@@ -49,7 +49,7 @@ object AdeGovernancePolicyServiceIntegrationSpec extends ZIOSpecDefault:
     )(use)
 
   private type EsEnv =
-    DataStoreModule.DataStoreService &
+    DataStoreService &
       EventStore[GovernancePolicyId, GovernancePolicyEvent] &
       GovernancePolicyRepository &
       GovernancePolicyEngine

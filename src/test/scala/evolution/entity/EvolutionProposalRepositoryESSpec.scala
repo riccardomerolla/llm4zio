@@ -10,12 +10,12 @@ import _root_.config.entity.WorkflowDefinition
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.error.GigaMapError
 import shared.ids.Ids.{ EvolutionProposalId, ProjectId }
-import shared.store.{ DataStoreModule, EventStore, StoreConfig }
+import shared.store.{ DataStoreModule, DataStoreService, EventStore, StoreConfig }
 
 object EvolutionProposalRepositoryESSpec extends ZIOSpecDefault:
 
   private type Env =
-    DataStoreModule.DataStoreService & EventStore[
+    DataStoreService & EventStore[
       EvolutionProposalId,
       EvolutionProposalEvent,
     ] & EvolutionProposalRepository

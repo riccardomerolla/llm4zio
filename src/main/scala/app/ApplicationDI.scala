@@ -84,7 +84,7 @@ import project.entity.ProjectRepository
 import prompts.PromptLoader
 import sdlc.boundary.SdlcDashboardController
 import sdlc.control.SdlcDashboardService
-import shared.store.{ ConfigStoreModule, DataStoreModule, MemoryStoreModule, StoreConfig }
+import shared.store.{ ConfigStoreModule, DataStoreModule, DataStoreService, MemoryStoreModule, StoreConfig }
 import shared.web.StreamAbortRegistry
 import specification.boundary.SpecificationsController
 import specification.entity.{ SpecificationEventStoreES, SpecificationRepositoryES }
@@ -110,7 +110,7 @@ object ApplicationDI:
     FileService &
       StoreConfig &
       ConfigStoreModule.ConfigStoreService &
-      DataStoreModule.DataStoreService &
+      DataStoreService &
       MemoryStoreModule.MemoryEntriesStore &
       GatewayConfig &
       AIProviderConfig &

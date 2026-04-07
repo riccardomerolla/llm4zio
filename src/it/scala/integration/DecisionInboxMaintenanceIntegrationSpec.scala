@@ -17,7 +17,7 @@ import io.github.riccardomerolla.zio.eclipsestore.gigamap.error.GigaMapError
 import issues.entity.*
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ DecisionId, IssueId }
-import shared.store.{ DataStoreModule, EventStore, StoreConfig }
+import shared.store.{ DataStoreModule, DataStoreService, EventStore, StoreConfig }
 
 /** Integration test: `DecisionInbox.runMaintenance` with real `DecisionRepositoryES`.
   *
@@ -82,7 +82,7 @@ object DecisionInboxMaintenanceIntegrationSpec extends ZIOSpecDefault:
     )(use)
 
   private type EsEnv =
-    DataStoreModule.DataStoreService & EventStore[DecisionId, DecisionEvent] & DecisionRepository
+    DataStoreService & EventStore[DecisionId, DecisionEvent] & DecisionRepository
 
   private def esLayer(path: Path): ZLayer[Any, EclipseStoreError | GigaMapError, EsEnv] =
     ZLayer.make[EsEnv](

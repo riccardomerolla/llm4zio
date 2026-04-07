@@ -5,11 +5,11 @@ import zio.*
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import shared.errors.PersistenceError
 import shared.ids.Ids.TaskRunId
-import shared.store.{ DataStoreModule, EventStore }
+import shared.store.{ DataStoreService, EventStore }
 
 final case class TaskRunRepositoryES(
   eventStore: EventStore[TaskRunId, TaskRunEvent],
-  dataStore: DataStoreModule.DataStoreService,
+  dataStore: DataStoreService,
 ) extends TaskRunRepository:
 
   private def snapshotKey(id: TaskRunId): String = s"snapshot:taskrun:${id.value}"
@@ -87,10 +87,10 @@ final case class TaskRunRepositoryES(
       }
 
 object TaskRunRepositoryES:
-  val live: ZLayer[EventStore[TaskRunId, TaskRunEvent] & DataStoreModule.DataStoreService, Nothing, TaskRunRepository] =
+  val live: ZLayer[EventStore[TaskRunId, TaskRunEvent] & DataStoreService, Nothing, TaskRunRepository] =
     ZLayer.fromZIO {
       for
         eventStore <- ZIO.service[EventStore[TaskRunId, TaskRunEvent]]
-        dataStore  <- ZIO.service[DataStoreModule.DataStoreService]
+        dataStore  <- ZIO.service[DataStoreService]
       yield TaskRunRepositoryES(eventStore, dataStore)
     }

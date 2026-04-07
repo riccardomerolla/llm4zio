@@ -5,10 +5,10 @@ import zio.*
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ DaemonAgentSpecId, ProjectId }
-import shared.store.DataStoreModule
+import shared.store.DataStoreService
 
 final case class DaemonAgentSpecRepositoryES(
-  dataStore: DataStoreModule.DataStoreService
+  dataStore: DataStoreService
 ) extends DaemonAgentSpecRepository:
 
   private def key(id: DaemonAgentSpecId): String = s"daemon-spec:${id.value}"
@@ -48,5 +48,5 @@ final case class DaemonAgentSpecRepositoryES(
     dataStore.remove[String](key(id)).mapError(storeErr("deleteDaemonSpec"))
 
 object DaemonAgentSpecRepositoryES:
-  val live: ZLayer[DataStoreModule.DataStoreService, Nothing, DaemonAgentSpecRepository] =
+  val live: ZLayer[DataStoreService, Nothing, DaemonAgentSpecRepository] =
     ZLayer.fromFunction(DaemonAgentSpecRepositoryES.apply)

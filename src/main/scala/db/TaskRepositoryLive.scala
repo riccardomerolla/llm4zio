@@ -21,7 +21,7 @@ import taskrun.entity.{
 }
 
 final case class TaskRepositoryLive(
-  dataStore: DataStoreModule.DataStoreService,
+  dataStore: DataStoreService,
   configStore: ConfigStoreModule.ConfigStoreService,
 ) extends TaskRepository:
 
@@ -444,13 +444,13 @@ final case class TaskRepositoryLive(
 object TaskRepositoryLive:
   val live
     : ZLayer[
-      DataStoreModule.DataStoreService & ConfigStoreModule.ConfigStoreService,
+      DataStoreService & ConfigStoreModule.ConfigStoreService,
       Nothing,
       TaskRepository,
     ] =
     ZLayer.fromZIO {
       for
-        dataStore   <- ZIO.service[DataStoreModule.DataStoreService]
+        dataStore   <- ZIO.service[DataStoreService]
         configStore <- ZIO.service[ConfigStoreModule.ConfigStoreService]
       yield TaskRepositoryLive(dataStore, configStore)
     }

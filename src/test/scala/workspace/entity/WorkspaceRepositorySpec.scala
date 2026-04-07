@@ -8,7 +8,7 @@ import zio.test.*
 
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import shared.ids.Ids.ProjectId
-import shared.store.{ DataStoreModule, StoreConfig }
+import shared.store.{ DataStoreModule, DataStoreService, StoreConfig }
 
 object WorkspaceRepositorySpec extends ZIOSpecDefault:
 
@@ -27,7 +27,7 @@ object WorkspaceRepositorySpec extends ZIOSpecDefault:
       }.ignore
     )(use)
 
-  private def layerFor(dataDir: Path): ZLayer[Any, EclipseStoreError, DataStoreModule.DataStoreService] =
+  private def layerFor(dataDir: Path): ZLayer[Any, EclipseStoreError, DataStoreService] =
     ZLayer.succeed(
       StoreConfig(
         configStorePath = dataDir.resolve("config-store").toString,
@@ -96,7 +96,7 @@ object WorkspaceRepositorySpec extends ZIOSpecDefault:
       test("append Created event and get snapshot") {
         withTempDir { dir =>
           (for
-            svc <- ZIO.service[DataStoreModule.DataStoreService]
+            svc <- ZIO.service[DataStoreService]
             repo = WorkspaceRepositoryES(svc)
             _   <- repo.append(createdWs)
             got <- repo.get("ws-1")
@@ -113,7 +113,7 @@ object WorkspaceRepositorySpec extends ZIOSpecDefault:
       test("list returns all workspaces sorted by name") {
         withTempDir { dir =>
           (for
-            svc  <- ZIO.service[DataStoreModule.DataStoreService]
+            svc  <- ZIO.service[DataStoreService]
             repo  = WorkspaceRepositoryES(svc)
             _    <- repo.append(createdWs)
             _    <- repo.append(createdDockerWs)
@@ -125,7 +125,7 @@ object WorkspaceRepositorySpec extends ZIOSpecDefault:
       test("append Updated event changes fields") {
         withTempDir { dir =>
           (for
-            svc <- ZIO.service[DataStoreModule.DataStoreService]
+            svc <- ZIO.service[DataStoreService]
             repo = WorkspaceRepositoryES(svc)
             _   <- repo.append(createdWs)
             _   <- repo.append(
@@ -159,7 +159,7 @@ object WorkspaceRepositorySpec extends ZIOSpecDefault:
       test("delete removes workspace from list and get") {
         withTempDir { dir =>
           (for
-            svc  <- ZIO.service[DataStoreModule.DataStoreService]
+            svc  <- ZIO.service[DataStoreService]
             repo  = WorkspaceRepositoryES(svc)
             _    <- repo.append(createdWs)
             _    <- repo.delete("ws-1")
@@ -171,7 +171,7 @@ object WorkspaceRepositorySpec extends ZIOSpecDefault:
       test("get returns None for missing id") {
         withTempDir { dir =>
           (for
-            svc <- ZIO.service[DataStoreModule.DataStoreService]
+            svc <- ZIO.service[DataStoreService]
             repo = WorkspaceRepositoryES(svc)
             got <- repo.get("missing")
           yield assertTrue(got.isEmpty)).provideLayer(layerFor(dir))
@@ -180,7 +180,7 @@ object WorkspaceRepositorySpec extends ZIOSpecDefault:
       test("appendRun Assigned event and getRun snapshot") {
         withTempDir { dir =>
           (for
-            svc    <- ZIO.service[DataStoreModule.DataStoreService]
+            svc    <- ZIO.service[DataStoreService]
             repo    = WorkspaceRepositoryES(svc)
             _      <- repo.appendRun(assignedRun)
             loaded <- repo.getRun("run-1")
@@ -196,7 +196,7 @@ object WorkspaceRepositorySpec extends ZIOSpecDefault:
       test("appendRun StatusChanged updates run status") {
         withTempDir { dir =>
           (for
-            svc    <- ZIO.service[DataStoreModule.DataStoreService]
+            svc    <- ZIO.service[DataStoreService]
             repo    = WorkspaceRepositoryES(svc)
             _      <- repo.appendRun(assignedRun)
             _      <- repo.appendRun(WorkspaceRunEvent.StatusChanged("run-1", RunStatus.Completed, now.plusSeconds(5)))
@@ -207,7 +207,7 @@ object WorkspaceRepositorySpec extends ZIOSpecDefault:
       test("appendRun CleanupRecorded updates run timestamp without changing status") {
         withTempDir { dir =>
           (for
-            svc    <- ZIO.service[DataStoreModule.DataStoreService]
+            svc    <- ZIO.service[DataStoreService]
             repo    = WorkspaceRepositoryES(svc)
             _      <- repo.appendRun(assignedRun)
             _      <- repo.appendRun(WorkspaceRunEvent.StatusChanged("run-1", RunStatus.Completed, now.plusSeconds(5)))
@@ -242,7 +242,7 @@ object WorkspaceRepositorySpec extends ZIOSpecDefault:
             occurredAt = now,
           )
           (for
-            svc  <- ZIO.service[DataStoreModule.DataStoreService]
+            svc  <- ZIO.service[DataStoreService]
             repo  = WorkspaceRepositoryES(svc)
             _    <- repo.appendRun(assignedRun)
             _    <- repo.appendRun(run2)
@@ -253,7 +253,7 @@ object WorkspaceRepositorySpec extends ZIOSpecDefault:
       test("Workspace with RunMode.Docker round-trips through events") {
         withTempDir { dir =>
           (for
-            svc <- ZIO.service[DataStoreModule.DataStoreService]
+            svc <- ZIO.service[DataStoreService]
             repo = WorkspaceRepositoryES(svc)
             _   <- repo.append(createdDockerWs)
             got <- repo.get("ws-docker")
@@ -270,7 +270,7 @@ object WorkspaceRepositorySpec extends ZIOSpecDefault:
       test("Workspace with RunMode.Cloud round-trips through events") {
         withTempDir { dir =>
           (for
-            svc <- ZIO.service[DataStoreModule.DataStoreService]
+            svc <- ZIO.service[DataStoreService]
             repo = WorkspaceRepositoryES(svc)
             _   <- repo.append(createdCloudWs)
             got <- repo.get("ws-cloud")
@@ -298,7 +298,7 @@ object WorkspaceRepositorySpec extends ZIOSpecDefault:
             occurredAt = now,
           )
           (for
-            svc     <- ZIO.service[DataStoreModule.DataStoreService]
+            svc     <- ZIO.service[DataStoreService]
             repo     = WorkspaceRepositoryES(svc)
             _       <- repo.append(createdWs)
             _       <- repo.append(createdDockerWs)

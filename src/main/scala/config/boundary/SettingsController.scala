@@ -39,7 +39,7 @@ object SettingsController:
   val live
     : ZLayer[
       ConfigRepository & ActivityHub & Ref[GatewayConfig] & LlmService & ModelService & ConfigStoreModule.ConfigStoreService &
-        DataStoreModule.DataStoreService & StoreConfig &
+        DataStoreService & StoreConfig &
         MemoryStoreModule.MemoryEntriesStore & ToolRegistry,
       Nothing,
       SettingsController,
@@ -53,7 +53,7 @@ final case class SettingsControllerLive(
   llmService: LlmService,
   modelService: ModelService,
   configStoreService: ConfigStoreModule.ConfigStoreService,
-  dataStoreService: DataStoreModule.DataStoreService,
+  dataStoreService: DataStoreService,
   storeConfig: StoreConfig,
   memoryEntriesStore: MemoryStoreModule.MemoryEntriesStore,
   toolRegistry: ToolRegistry,

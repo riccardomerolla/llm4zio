@@ -6,11 +6,11 @@ import zio.json.*
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import shared.errors.PersistenceError
 import shared.ids.Ids.EvolutionProposalId
-import shared.store.{ DataStoreModule, EventStore }
+import shared.store.{ DataStoreService, EventStore }
 
 final case class EvolutionProposalRepositoryES(
   eventStore: EventStore[EvolutionProposalId, EvolutionProposalEvent],
-  dataStore: DataStoreModule.DataStoreService,
+  dataStore: DataStoreService,
 ) extends EvolutionProposalRepository:
 
   private def snapshotKey(id: EvolutionProposalId): String = s"snapshot:evolution-proposal:${id.value}"
@@ -108,13 +108,13 @@ final case class EvolutionProposalRepositoryES(
 object EvolutionProposalRepositoryES:
   val live
     : ZLayer[
-      EventStore[EvolutionProposalId, EvolutionProposalEvent] & DataStoreModule.DataStoreService,
+      EventStore[EvolutionProposalId, EvolutionProposalEvent] & DataStoreService,
       Nothing,
       EvolutionProposalRepository,
     ] =
     ZLayer.fromZIO {
       for
         eventStore <- ZIO.service[EventStore[EvolutionProposalId, EvolutionProposalEvent]]
-        dataStore  <- ZIO.service[DataStoreModule.DataStoreService]
+        dataStore  <- ZIO.service[DataStoreService]
       yield EvolutionProposalRepositoryES(eventStore, dataStore)
     }

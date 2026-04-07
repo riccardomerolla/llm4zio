@@ -5,9 +5,9 @@ import zio.*
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import shared.errors.PersistenceError
 import shared.ids.Ids.AnalysisDocId
-import shared.store.{ DataStoreModule, EventStore }
+import shared.store.{ DataStoreService, EventStore }
 
-final case class AnalysisEventStoreES(dataStore: DataStoreModule.DataStoreService)
+final case class AnalysisEventStoreES(dataStore: DataStoreService)
   extends EventStore[AnalysisDocId, AnalysisEvent]:
 
   private def eventKey(id: AnalysisDocId, sequence: Long): String =
@@ -57,5 +57,5 @@ final case class AnalysisEventStoreES(dataStore: DataStoreModule.DataStoreServic
       .map(_.flatten)
 
 object AnalysisEventStoreES:
-  val live: ZLayer[DataStoreModule.DataStoreService, Nothing, EventStore[AnalysisDocId, AnalysisEvent]] =
+  val live: ZLayer[DataStoreService, Nothing, EventStore[AnalysisDocId, AnalysisEvent]] =
     ZLayer.fromFunction(AnalysisEventStoreES.apply)

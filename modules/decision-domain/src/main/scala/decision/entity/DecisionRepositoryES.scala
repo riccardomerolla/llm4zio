@@ -6,11 +6,11 @@ import zio.json.*
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import shared.errors.PersistenceError
 import shared.ids.Ids.DecisionId
-import shared.store.{ DataStoreModule, EventStore }
+import shared.store.{ DataStoreService, EventStore }
 
 final case class DecisionRepositoryES(
   eventStore: EventStore[DecisionId, DecisionEvent],
-  dataStore: DataStoreModule.DataStoreService,
+  dataStore: DataStoreService,
 ) extends DecisionRepository:
 
   private def snapshotKey(id: DecisionId): String =
@@ -123,13 +123,13 @@ final case class DecisionRepositoryES(
 
 object DecisionRepositoryES:
   val live: ZLayer[
-    EventStore[DecisionId, DecisionEvent] & DataStoreModule.DataStoreService,
+    EventStore[DecisionId, DecisionEvent] & DataStoreService,
     Nothing,
     DecisionRepository,
   ] =
     ZLayer.fromZIO {
       for
         eventStore <- ZIO.service[EventStore[DecisionId, DecisionEvent]]
-        dataStore  <- ZIO.service[DataStoreModule.DataStoreService]
+        dataStore  <- ZIO.service[DataStoreService]
       yield DecisionRepositoryES(eventStore, dataStore)
     }

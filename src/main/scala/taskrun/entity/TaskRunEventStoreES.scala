@@ -5,9 +5,9 @@ import zio.*
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import shared.errors.PersistenceError
 import shared.ids.Ids.TaskRunId
-import shared.store.{ DataStoreModule, EventStore }
+import shared.store.{ DataStoreService, EventStore }
 
-final case class TaskRunEventStoreES(dataStore: DataStoreModule.DataStoreService)
+final case class TaskRunEventStoreES(dataStore: DataStoreService)
   extends EventStore[TaskRunId, TaskRunEvent]:
 
   private def eventKey(id: TaskRunId, sequence: Long): String =
@@ -60,5 +60,5 @@ final case class TaskRunEventStoreES(dataStore: DataStoreModule.DataStoreService
       .map(_.flatten)
 
 object TaskRunEventStoreES:
-  val live: ZLayer[DataStoreModule.DataStoreService, Nothing, EventStore[TaskRunId, TaskRunEvent]] =
+  val live: ZLayer[DataStoreService, Nothing, EventStore[TaskRunId, TaskRunEvent]] =
     ZLayer.fromFunction(TaskRunEventStoreES.apply)

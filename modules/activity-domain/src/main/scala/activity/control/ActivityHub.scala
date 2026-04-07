@@ -3,7 +3,6 @@ package activity.control
 import zio.*
 
 import activity.entity.{ ActivityEvent, ActivityRepository }
-import app.control.Logger
 
 trait ActivityHub:
   def publish(event: ActivityEvent): UIO[Unit]
@@ -33,7 +32,7 @@ final case class ActivityHubLive(
   override def publish(event: ActivityEvent): UIO[Unit] =
     repository
       .createEvent(event)
-      .catchAll(err => Logger.warn(s"Failed to persist activity event: $err"))
+      .catchAll(err => ZIO.logWarning(s"Failed to persist activity event: $err"))
       .unit *>
       subscribers.get.flatMap { queues =>
         ZIO.foreachDiscard(queues)(_.offer(event).unit)

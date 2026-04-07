@@ -8,7 +8,7 @@ import zio.test.*
 
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import shared.ids.Ids.ProjectId
-import shared.store.{ DataStoreModule, StoreConfig }
+import shared.store.{ DataStoreModule, DataStoreService, StoreConfig }
 
 object ProjectRepositorySpec extends ZIOSpecDefault:
 
@@ -27,7 +27,7 @@ object ProjectRepositorySpec extends ZIOSpecDefault:
       }.ignore
     )(use)
 
-  private def layerFor(dataDir: Path): ZLayer[Any, EclipseStoreError, DataStoreModule.DataStoreService] =
+  private def layerFor(dataDir: Path): ZLayer[Any, EclipseStoreError, DataStoreService] =
     ZLayer.succeed(
       StoreConfig(
         configStorePath = dataDir.resolve("config-store").toString,
@@ -42,7 +42,7 @@ object ProjectRepositorySpec extends ZIOSpecDefault:
       test("append create event and load project") {
         withTempDir { dir =>
           (for
-            svc <- ZIO.service[DataStoreModule.DataStoreService]
+            svc <- ZIO.service[DataStoreService]
             repo = ProjectRepositoryES(svc)
             _   <- repo.append(
                      ProjectEvent.ProjectCreated(
@@ -61,7 +61,7 @@ object ProjectRepositorySpec extends ZIOSpecDefault:
       test("update events rebuild project state") {
         withTempDir { dir =>
           (for
-            svc <- ZIO.service[DataStoreModule.DataStoreService]
+            svc <- ZIO.service[DataStoreService]
             repo = ProjectRepositoryES(svc)
             _   <- repo.append(
                      ProjectEvent.ProjectCreated(
@@ -93,7 +93,7 @@ object ProjectRepositorySpec extends ZIOSpecDefault:
       test("list returns projects sorted by name") {
         withTempDir { dir =>
           (for
-            svc  <- ZIO.service[DataStoreModule.DataStoreService]
+            svc  <- ZIO.service[DataStoreService]
             repo  = ProjectRepositoryES(svc)
             _    <- repo.append(ProjectEvent.ProjectCreated(ProjectId("proj-2"), "Zulu", None, now))
             _    <- repo.append(ProjectEvent.ProjectCreated(ProjectId("proj-1"), "Alpha", None, now.plusSeconds(1)))
@@ -104,7 +104,7 @@ object ProjectRepositorySpec extends ZIOSpecDefault:
       test("delete removes project from list and get") {
         withTempDir { dir =>
           (for
-            svc  <- ZIO.service[DataStoreModule.DataStoreService]
+            svc  <- ZIO.service[DataStoreService]
             repo  = ProjectRepositoryES(svc)
             _    <- repo.append(ProjectEvent.ProjectCreated(ProjectId("proj-1"), "Platform", None, now))
             _    <- repo.delete(ProjectId("proj-1"))

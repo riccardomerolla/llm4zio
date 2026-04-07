@@ -6,10 +6,10 @@ import zio.json.*
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import shared.errors.PersistenceError
 import shared.ids.Ids.GovernancePolicyId
-import shared.store.{ DataStoreModule, EventStore }
+import shared.store.{ DataStoreService, EventStore }
 
 final case class GovernancePolicyEventStoreES(
-  dataStore: DataStoreModule.DataStoreService
+  dataStore: DataStoreService
 ) extends EventStore[GovernancePolicyId, GovernancePolicyEvent]:
 
   private def eventKey(id: GovernancePolicyId, seq: Long): String = s"events:governance-policy:${id.value}:$seq"
@@ -76,5 +76,5 @@ final case class GovernancePolicyEventStoreES(
       .map(_.flatten)
 
 object GovernancePolicyEventStoreES:
-  val live: ZLayer[DataStoreModule.DataStoreService, Nothing, EventStore[GovernancePolicyId, GovernancePolicyEvent]] =
+  val live: ZLayer[DataStoreService, Nothing, EventStore[GovernancePolicyId, GovernancePolicyEvent]] =
     ZLayer.fromFunction(GovernancePolicyEventStoreES.apply)

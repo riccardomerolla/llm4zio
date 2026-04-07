@@ -61,8 +61,8 @@ object ChatRepositoryESSpec extends ZIOSpecDefault:
 
   private def layerForWithConversations(
     path: Path
-  ): ZLayer[Any, EclipseStoreError | GigaMapError, ChatRepository & DataStoreModule.DataStoreService] =
-    ZLayer.make[ChatRepository & DataStoreModule.DataStoreService](
+  ): ZLayer[Any, EclipseStoreError | GigaMapError, ChatRepository & DataStoreService] =
+    ZLayer.make[ChatRepository & DataStoreService](
       ZLayer.succeed(
         StoreConfig(
           configStorePath = path.resolve("config-store").toString,
@@ -166,7 +166,7 @@ object ChatRepositoryESSpec extends ZIOSpecDefault:
 
           val program =
             for
-              dataStore <- ZIO.service[DataStoreModule.DataStoreService]
+              dataStore <- ZIO.service[DataStoreService]
               repo      <- ZIO.service[ChatRepository]
               _         <- dataStore.store(
                              "conv:101",
@@ -200,7 +200,7 @@ object ChatRepositoryESSpec extends ZIOSpecDefault:
 
           val program =
             for
-              dataStore <- ZIO.service[DataStoreModule.DataStoreService]
+              dataStore <- ZIO.service[DataStoreService]
               repo      <- ZIO.service[ChatRepository]
               _         <- dataStore.store(
                              "conv:102",
@@ -277,7 +277,7 @@ object ChatRepositoryESSpec extends ZIOSpecDefault:
           val writeAndClose =
             ZIO
               .service[ChatRepository]
-              .zipWith(ZIO.service[DataStoreModule.DataStoreService])((repo, dataStore) => (repo, dataStore))
+              .zipWith(ZIO.service[DataStoreService])((repo, dataStore) => (repo, dataStore))
               .flatMap {
                 case (repo, dataStore) =>
                   for
@@ -300,7 +300,7 @@ object ChatRepositoryESSpec extends ZIOSpecDefault:
           def reopenAndRead(convId: Long) =
             ZIO
               .service[ChatRepository]
-              .zipWith(ZIO.service[DataStoreModule.DataStoreService])((repo, dataStore) => (repo, dataStore))
+              .zipWith(ZIO.service[DataStoreService])((repo, dataStore) => (repo, dataStore))
               .flatMap((repo, dataStore) =>
                 dataStore.rawStore.reloadRoots *> repo
                   .getConversation(convId)

@@ -5,10 +5,10 @@ import zio.*
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import shared.errors.PersistenceError
 import shared.ids.Ids.EventId
-import shared.store.DataStoreModule
+import shared.store.DataStoreService
 
 final case class ActivityRepositoryES(
-  dataStore: DataStoreModule.DataStoreService
+  dataStore: DataStoreService
 ) extends ActivityRepository:
 
   private def eventKey(id: EventId): String = s"event:${id.value}"
@@ -59,5 +59,5 @@ final case class ActivityRepositoryES(
     PersistenceError.QueryFailed(op, e.toString)
 
 object ActivityRepositoryES:
-  val live: ZLayer[DataStoreModule.DataStoreService, Nothing, ActivityRepository] =
+  val live: ZLayer[DataStoreService, Nothing, ActivityRepository] =
     ZLayer.fromFunction(ActivityRepositoryES.apply)

@@ -5,7 +5,7 @@ import zio.json.*
 
 import shared.errors.PersistenceError
 import shared.ids.Ids.AgentId
-import shared.store.{ DataStoreModule, EventStore }
+import shared.store.{ DataStoreService, EventStore }
 
 trait AgentRepository:
   def append(event: AgentEvent): IO[PersistenceError, Unit]
@@ -28,7 +28,7 @@ object AgentRepository:
 
 final case class AgentRepositoryES(
   eventStore: EventStore[AgentId, AgentEvent],
-  dataStore: DataStoreModule.DataStoreService,
+  dataStore: DataStoreService,
 ) extends AgentRepository:
 
   private def snapshotKey(id: AgentId): String = s"snapshot:agent:${id.value}"
@@ -93,10 +93,10 @@ final case class AgentRepositoryES(
     list(includeDeleted = true).map(_.find(_.name.equalsIgnoreCase(name.trim)))
 
 object AgentRepositoryES:
-  val live: ZLayer[EventStore[AgentId, AgentEvent] & DataStoreModule.DataStoreService, Nothing, AgentRepository] =
+  val live: ZLayer[EventStore[AgentId, AgentEvent] & DataStoreService, Nothing, AgentRepository] =
     ZLayer.fromZIO {
       for
         eventStore <- ZIO.service[EventStore[AgentId, AgentEvent]]
-        dataStore  <- ZIO.service[DataStoreModule.DataStoreService]
+        dataStore  <- ZIO.service[DataStoreService]
       yield AgentRepositoryES(eventStore, dataStore)
     }

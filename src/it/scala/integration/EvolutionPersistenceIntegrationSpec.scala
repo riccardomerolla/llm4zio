@@ -19,7 +19,7 @@ import io.github.riccardomerolla.zio.eclipsestore.gigamap.error.GigaMapError
 import orchestration.control.{ WorkflowService, WorkflowServiceError }
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ DecisionId, DaemonAgentSpecId, EvolutionProposalId, GovernancePolicyId, ProjectId }
-import shared.store.{ DataStoreModule, EventStore, StoreConfig }
+import shared.store.{ DataStoreModule, DataStoreService, EventStore, StoreConfig }
 
 /** Integration test: Evolution lifecycle with real EclipseStore repos.
   *
@@ -146,7 +146,7 @@ object EvolutionPersistenceIntegrationSpec extends ZIOSpecDefault:
     )(use)
 
   private type EsEnv =
-    DataStoreModule.DataStoreService &
+    DataStoreService &
       EventStore[EvolutionProposalId, EvolutionProposalEvent] &
       EvolutionProposalRepository &
       EventStore[GovernancePolicyId, GovernancePolicyEvent] &

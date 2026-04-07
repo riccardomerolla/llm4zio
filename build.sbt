@@ -158,6 +158,64 @@ lazy val sharedStoreCore = (project in file("modules/shared-store-core"))
     ),
   )
 
+// ── Domain modules (entity + control layers, no boundary/web dependencies) ──
+
+val domainDeps = Seq(
+  "dev.zio" %% "zio" % zioVersion,
+  zioJsonDep,
+  "dev.zio" %% "zio-schema"            % zioSchemaVersion,
+  "dev.zio" %% "zio-schema-derivation" % zioSchemaVersion,
+  "io.github.riccardomerolla" %% "zio-eclipsestore" % zioEclipseStoreVersion,
+)
+
+lazy val activityDomain = (project in file("modules/activity-domain"))
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore)
+  .settings(foundationSettings)
+  .settings(
+    name := "activity-domain",
+    libraryDependencies ++= domainDeps,
+  )
+
+lazy val memoryDomain = (project in file("modules/memory-domain"))
+  .dependsOn(sharedIds, sharedStoreCore)
+  .settings(foundationSettings)
+  .settings(
+    name := "memory-domain",
+    libraryDependencies ++= domainDeps,
+  )
+
+lazy val governanceDomain = (project in file("modules/governance-domain"))
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore)
+  .settings(foundationSettings)
+  .settings(
+    name := "governance-domain",
+    libraryDependencies ++= domainDeps,
+  )
+
+lazy val agentDomain = (project in file("modules/agent-domain"))
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore)
+  .settings(foundationSettings)
+  .settings(
+    name := "agent-domain",
+    libraryDependencies ++= domainDeps,
+  )
+
+lazy val decisionDomain = (project in file("modules/decision-domain"))
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore)
+  .settings(foundationSettings)
+  .settings(
+    name := "decision-domain",
+    libraryDependencies ++= domainDeps,
+  )
+
+lazy val specificationDomain = (project in file("modules/specification-domain"))
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore)
+  .settings(foundationSettings)
+  .settings(
+    name := "specification-domain",
+    libraryDependencies ++= domainDeps,
+  )
+
 // ── LLM library ──────────────────────────────────────────────────────────────
 
 lazy val llm4zio = (project in file("llm4zio"))
@@ -174,8 +232,10 @@ lazy val llm4zio = (project in file("llm4zio"))
   )
 
 lazy val root = (project in file("."))
-  .aggregate(llm4zio, sharedJson, sharedIds, sharedErrors, sharedStoreCore)
-  .dependsOn(llm4zio, sharedJson, sharedIds, sharedErrors, sharedStoreCore)
+  .aggregate(llm4zio, sharedJson, sharedIds, sharedErrors, sharedStoreCore,
+    activityDomain, memoryDomain, governanceDomain, agentDomain, decisionDomain, specificationDomain)
+  .dependsOn(llm4zio, sharedJson, sharedIds, sharedErrors, sharedStoreCore,
+    activityDomain, memoryDomain, governanceDomain, agentDomain, decisionDomain, specificationDomain)
   .configs(It)
   .settings(inConfig(It)(Defaults.testSettings): _*)
   .settings(

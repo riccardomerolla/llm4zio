@@ -14,7 +14,7 @@ import shared.errors.PersistenceError
 import shared.store.*
 
 final case class ChatRepositoryLive(
-  dataStore: DataStoreModule.DataStoreService
+  dataStore: DataStoreService
 ) extends ChatRepository:
 
   // Key helpers — prefix-based KV namespace per entity type
@@ -280,7 +280,7 @@ final case class ChatRepositoryLive(
     )
 
 object ChatRepositoryLive:
-  val live: ZLayer[DataStoreModule.DataStoreService, Nothing, ChatRepository] =
+  val live: ZLayer[DataStoreService, Nothing, ChatRepository] =
     ZLayer.fromFunction(ChatRepositoryLive.apply)
 
 final private case class SessionContextFields(

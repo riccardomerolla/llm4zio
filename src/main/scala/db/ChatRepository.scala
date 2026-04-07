@@ -115,7 +115,7 @@ trait ChatRepository:
   ): IO[PersistenceError, Unit] =
     ZIO.fail(PersistenceError.QueryFailed("deleteSessionContext", "Not implemented"))
 
-import shared.store.DataStoreModule
+import shared.store.DataStoreService
 
 object ChatRepository:
   private def decodeStoredSessionContext(raw: String): UIO[Option[StoredSessionContext]] =
@@ -229,7 +229,7 @@ object ChatRepository:
 
   val live
     : ZLayer[
-      DataStoreModule.DataStoreService,
+      DataStoreService,
       Nothing,
       ChatRepository,
     ] =

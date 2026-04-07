@@ -33,7 +33,7 @@ object DataStoreModuleSpec extends ZIOSpecDefault:
   ): ZLayer[
     Any,
     EclipseStoreError | GigaMapError,
-    DataStoreModule.DataStoreService,
+    DataStoreService,
   ] =
     ZLayer.succeed(
       StoreConfig(
@@ -62,7 +62,7 @@ object DataStoreModuleSpec extends ZIOSpecDefault:
             failedConversions = 1,
           )
           (for
-            data   <- ZIO.service[DataStoreModule.DataStoreService]
+            data   <- ZIO.service[DataStoreService]
             _      <- data.store("run:run-1", row)
             loaded <- data.fetch[String, StoredTaskRunRow]("run:run-1")
           yield assertTrue(loaded.contains(row))).provideLayer(layerFor(dir))
@@ -82,7 +82,7 @@ object DataStoreModuleSpec extends ZIOSpecDefault:
             createdBy = Some("system"),
           )
           (for
-            data   <- ZIO.service[DataStoreModule.DataStoreService]
+            data   <- ZIO.service[DataStoreService]
             _      <- data.store("conv:1", row)
             loaded <- data.fetch[String, ConversationRow]("conv:1")
           yield assertTrue(loaded.contains(row))).provideLayer(layerFor(dir))

@@ -9,11 +9,11 @@ import zio.test.*
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.error.GigaMapError
 import shared.ids.Ids.AgentId
-import shared.store.{ DataStoreModule, EventStore, StoreConfig }
+import shared.store.{ DataStoreModule, DataStoreService, EventStore, StoreConfig }
 
 object AgentRepositoryESSpec extends ZIOSpecDefault:
 
-  private type Env = DataStoreModule.DataStoreService & EventStore[AgentId, AgentEvent] & AgentRepository
+  private type Env = DataStoreService & EventStore[AgentId, AgentEvent] & AgentRepository
 
   private def withTempDir[R, E, A](use: Path => ZIO[R, E, A]): ZIO[R, E, A] =
     ZIO.acquireReleaseWith(

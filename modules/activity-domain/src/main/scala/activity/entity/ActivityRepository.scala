@@ -6,7 +6,7 @@ import zio.*
 
 import shared.errors.PersistenceError
 import shared.ids.Ids.EventId
-import shared.store.DataStoreModule
+import shared.store.DataStoreService
 
 trait ActivityRepository:
   def createEvent(event: ActivityEvent): IO[PersistenceError, EventId]
@@ -28,5 +28,5 @@ object ActivityRepository:
   ): ZIO[ActivityRepository, PersistenceError, List[ActivityEvent]] =
     ZIO.serviceWithZIO[ActivityRepository](_.listEvents(eventType, since, limit))
 
-  val live: ZLayer[DataStoreModule.DataStoreService, Nothing, ActivityRepository] =
+  val live: ZLayer[DataStoreService, Nothing, ActivityRepository] =
     ActivityRepositoryES.live

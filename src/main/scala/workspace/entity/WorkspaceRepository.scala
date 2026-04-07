@@ -6,7 +6,7 @@ import zio.json.*
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import shared.errors.PersistenceError
 import shared.ids.Ids.ProjectId
-import shared.store.DataStoreModule
+import shared.store.DataStoreService
 
 trait WorkspaceRepository:
   def append(event: WorkspaceEvent): IO[PersistenceError, Unit]
@@ -21,16 +21,16 @@ trait WorkspaceRepository:
   def getRun(id: String): IO[PersistenceError, Option[WorkspaceRun]]
 
 object WorkspaceRepository:
-  val live: ZLayer[DataStoreModule.DataStoreService, Nothing, WorkspaceRepository] =
+  val live: ZLayer[DataStoreService, Nothing, WorkspaceRepository] =
     ZLayer.fromZIO(
       for
-        svc <- ZIO.service[DataStoreModule.DataStoreService]
+        svc <- ZIO.service[DataStoreService]
         repo = WorkspaceRepositoryES(svc)
       yield repo
     )
 
 final case class WorkspaceRepositoryES(
-  dataStore: DataStoreModule.DataStoreService
+  dataStore: DataStoreService
 ) extends WorkspaceRepository:
 
   // ── key conventions ──────────────────────────────────────────────────────
