@@ -111,6 +111,55 @@ lazy val It = config("it") extend Test
 
 resolvers += "jitpack" at "https://jitpack.io"
 
+// ── Foundation modules ────────────────────────────────────────────────────────
+
+val foundationSettings = Seq(
+  publish / skip := true,
+  libraryDependencySchemes += "dev.zio" %% "zio-json" % VersionScheme.Always,
+)
+
+lazy val sharedJson = (project in file("modules/shared-json"))
+  .settings(foundationSettings)
+  .settings(
+    name := "shared-json",
+    libraryDependencies ++= Seq(zioJsonDep),
+  )
+
+lazy val sharedIds = (project in file("modules/shared-ids"))
+  .settings(foundationSettings)
+  .settings(
+    name := "shared-ids",
+    libraryDependencies ++= Seq(
+      zioJsonDep,
+      "dev.zio" %% "zio-schema" % zioSchemaVersion,
+    ),
+  )
+
+lazy val sharedErrors = (project in file("modules/shared-errors"))
+  .dependsOn(sharedJson)
+  .settings(foundationSettings)
+  .settings(
+    name := "shared-errors",
+    libraryDependencies ++= Seq(
+      zioJsonDep,
+      "dev.zio" %% "zio-schema"            % zioSchemaVersion,
+      "dev.zio" %% "zio-schema-derivation" % zioSchemaVersion,
+    ),
+  )
+
+lazy val sharedStoreCore = (project in file("modules/shared-store-core"))
+  .dependsOn(sharedErrors)
+  .settings(foundationSettings)
+  .settings(
+    name := "shared-store-core",
+    libraryDependencies ++= Seq(
+      "dev.zio" %% "zio" % zioVersion,
+      "io.github.riccardomerolla" %% "zio-eclipsestore" % zioEclipseStoreVersion,
+    ),
+  )
+
+// ── LLM library ──────────────────────────────────────────────────────────────
+
 lazy val llm4zio = (project in file("llm4zio"))
   .configs(It)
   .settings(inConfig(It)(Defaults.testSettings): _*)
@@ -125,8 +174,8 @@ lazy val llm4zio = (project in file("llm4zio"))
   )
 
 lazy val root = (project in file("."))
-  .aggregate(llm4zio)
-  .dependsOn(llm4zio)
+  .aggregate(llm4zio, sharedJson, sharedIds, sharedErrors, sharedStoreCore)
+  .dependsOn(llm4zio, sharedJson, sharedIds, sharedErrors, sharedStoreCore)
   .configs(It)
   .settings(inConfig(It)(Defaults.testSettings): _*)
   .settings(
