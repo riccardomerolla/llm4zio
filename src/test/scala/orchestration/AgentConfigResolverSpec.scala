@@ -6,7 +6,9 @@ import zio.*
 import zio.test.*
 
 import _root_.config.entity.{ AIProvider, AIProviderConfig }
+import _root_.config.entity.SettingRow
 import db.*
+import taskrun.entity.{ TaskArtifactRow, TaskReportRow, TaskRunRow }
 import orchestration.control.AgentConfigResolverLive
 import shared.errors.PersistenceError
 

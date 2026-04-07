@@ -9,9 +9,11 @@ import zio.test.*
 import _root_.config.entity.{ AIProviderConfig, ConfigRepository }
 import activity.control.ActivityHubLive
 import activity.entity.{ ActivityEvent, ActivityEventType, ActivityRepository }
+import _root_.config.entity.{ CustomAgentRow, SettingRow, WorkflowRow }
 import conversation.boundary.ChatControllerLive
 import conversation.entity.api.*
 import db.*
+import taskrun.entity.{ TaskArtifactRow, TaskReportRow, TaskRunRow }
 import gateway.control.*
 import gateway.entity.*
 import issues.entity.api.AgentIssueView

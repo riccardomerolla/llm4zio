@@ -8,7 +8,8 @@ import zio.stream.*
 
 import _root_.config.entity.{ AgentHealthStatus, AgentInfo, GatewayConfig }
 import com.sun.management.OperatingSystemMXBean
-import db.{ RunStatus, TaskRepository }
+import db.TaskRepository
+import taskrun.entity.RunStatus
 import gateway.control.{ ChannelRegistry, GatewayService }
 import orchestration.control.AgentRegistry
 

@@ -7,7 +7,7 @@ import zio.*
 import _root_.config.entity.ConfigRepository
 import activity.control.ActivityHub
 import activity.entity.ActivityEvent
-import db.{ CustomAgentRow, SettingRow, WorkflowRow }
+import _root_.config.entity.{ CustomAgentRow, SettingRow, WorkflowRow }
 import issues.entity.*
 import _root_.config.entity.WorkflowDefinition
 import orchestration.control.{

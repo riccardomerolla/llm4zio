@@ -6,7 +6,8 @@ import java.time.Instant
 import zio.*
 
 import _root_.config.entity.{ AIProvider, AIProviderConfig, ConfigRepository }
-import db.{ TaskArtifactRow, TaskReportRow, TaskRepository }
+import db.TaskRepository
+import taskrun.entity.{ TaskArtifactRow, TaskReportRow }
 import llm4zio.core.*
 import llm4zio.providers.{ GeminiCliExecutor, HttpClient }
 import memory.entity.*

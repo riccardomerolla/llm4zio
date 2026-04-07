@@ -1,6 +1,6 @@
 package shared.web
 
-import db.TaskReportRow
+import taskrun.entity.TaskReportRow
 import scalatags.Text.all.*
 
 object ReportsView:

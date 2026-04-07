@@ -11,10 +11,11 @@ import governance.control.*
 import governance.entity.*
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.error.GigaMapError
-import project.entity.*
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ GovernancePolicyId, ProjectId }
 import shared.store.{ DataStoreModule, EventStore, StoreConfig }
+import shared.testfixtures.StubWorkspaceRepository
+import workspace.entity.*
 
 /** Integration test: `GovernancePolicyService` with real EclipseStore repositories.
   *
@@ -62,23 +63,24 @@ object AdeGovernancePolicyServiceIntegrationSpec extends ZIOSpecDefault:
       GovernancePolicyEngine.live,
     )
 
-  /** Stub project repository that maps the given workspace IDs to `projectId`. */
-  private def stubProjectRepo(workspaceIds: List[String]): ProjectRepository =
-    new ProjectRepository:
-      private val project                                                    = Project(
-        id = projectId,
-        name = "Project A",
+  /** Stub workspace repository that maps the given workspace IDs to workspaces linked to `projectId`. */
+  private def stubWorkspaceRepo(workspaceIds: List[String]): WorkspaceRepository =
+    val workspaces = workspaceIds.map(id =>
+      Workspace(
+        id = id,
+        projectId = projectId,
+        name = id,
+        localPath = s"/tmp/$id",
+        defaultAgent = None,
         description = None,
-        workspaceIds = workspaceIds,
-        settings = ProjectSettings(),
+        enabled = true,
+        runMode = RunMode.Host,
+        cliTool = "codex",
         createdAt = now,
         updatedAt = now,
       )
-      override def append(event: ProjectEvent): IO[PersistenceError, Unit]   = ZIO.unit
-      override def list: IO[PersistenceError, List[Project]]                 = ZIO.succeed(List(project))
-      override def get(id: ProjectId): IO[PersistenceError, Option[Project]] =
-        ZIO.succeed(Option.when(id == projectId)(project))
-      override def delete(id: ProjectId): IO[PersistenceError, Unit]         = ZIO.unit
+    )
+    StubWorkspaceRepository.of(workspaces*)
 
   private def makePolicyCreated(
     policyId: GovernancePolicyId,
@@ -109,7 +111,7 @@ object AdeGovernancePolicyServiceIntegrationSpec extends ZIOSpecDefault:
             repo     <- ZIO.service[GovernancePolicyRepository]
             engine   <- ZIO.service[GovernancePolicyEngine]
             _        <- repo.append(makePolicyCreated(policyId, version = 1))
-            service   = GovernancePolicyServiceLive(stubProjectRepo(List(wsId)), repo, engine)
+            service   = GovernancePolicyServiceLive(stubWorkspaceRepo(List(wsId)), repo, engine)
             resolved <- service.resolvePolicyForWorkspace(wsId)
           yield assertTrue(resolved.id == policyId, !resolved.isDefault))
             .provideLayer(esLayer(path))
@@ -122,7 +124,7 @@ object AdeGovernancePolicyServiceIntegrationSpec extends ZIOSpecDefault:
             repo     <- ZIO.service[GovernancePolicyRepository]
             engine   <- ZIO.service[GovernancePolicyEngine]
             _        <- repo.append(makePolicyCreated(policyId, version = 1))
-            service   = GovernancePolicyServiceLive(stubProjectRepo(Nil), repo, engine)
+            service   = GovernancePolicyServiceLive(stubWorkspaceRepo(Nil), repo, engine)
             resolved <- service.resolvePolicyForWorkspace("ws-other")
           yield assertTrue(resolved.isDefault))
             .provideLayer(esLayer(path))
@@ -143,7 +145,7 @@ object AdeGovernancePolicyServiceIntegrationSpec extends ZIOSpecDefault:
                             occurredAt = now,
                           )
                         )
-            service   = GovernancePolicyServiceLive(stubProjectRepo(List(wsId)), repo, engine)
+            service   = GovernancePolicyServiceLive(stubWorkspaceRepo(List(wsId)), repo, engine)
             resolved <- service.resolvePolicyForWorkspace(wsId)
           yield assertTrue(resolved.isDefault))
             .provideLayer(esLayer(path))
@@ -160,7 +162,7 @@ object AdeGovernancePolicyServiceIntegrationSpec extends ZIOSpecDefault:
             repo     <- ZIO.service[GovernancePolicyRepository]
             engine   <- ZIO.service[GovernancePolicyEngine]
             _        <- repo.append(makePolicyCreated(policyId, version = 1, rules = List(rule)))
-            service   = GovernancePolicyServiceLive(stubProjectRepo(List(wsId)), repo, engine)
+            service   = GovernancePolicyServiceLive(stubWorkspaceRepo(List(wsId)), repo, engine)
             decision <- service.evaluateForWorkspace(
                           wsId,
                           GovernanceEvaluationContext(issueType = "task", transition = dispatchTransition),
@@ -182,7 +184,7 @@ object AdeGovernancePolicyServiceIntegrationSpec extends ZIOSpecDefault:
             repo     <- ZIO.service[GovernancePolicyRepository]
             engine   <- ZIO.service[GovernancePolicyEngine]
             _        <- repo.append(makePolicyCreated(policyId, version = 1, rules = List(rule)))
-            service   = GovernancePolicyServiceLive(stubProjectRepo(List(wsId)), repo, engine)
+            service   = GovernancePolicyServiceLive(stubWorkspaceRepo(List(wsId)), repo, engine)
             decision <- service.evaluateForWorkspace(
                           wsId,
                           GovernanceEvaluationContext(

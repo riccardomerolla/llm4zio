@@ -6,6 +6,7 @@ import java.time.Instant
 import zio.*
 import zio.test.*
 
+import conversation.entity.ConversationRow
 import conversation.entity.api.{ ChatConversation, ConversationEntry, MessageType, SenderType }
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.error.GigaMapError

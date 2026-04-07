@@ -10,6 +10,7 @@ import _root_.config.entity.{ AIProviderConfig, ConfigRepository }
 import activity.control.ActivityHub
 import activity.entity.ActivityEvent
 import board.entity.*
+import _root_.config.entity.{ CustomAgentRow, SettingRow, WorkflowRow }
 import conversation.entity.api.*
 import db.*
 import governance.control.{ GovernanceEvaluationContext, GovernancePolicyService, GovernanceTransitionDecision }

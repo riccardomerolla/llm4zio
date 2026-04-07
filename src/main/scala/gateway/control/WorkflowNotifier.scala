@@ -3,8 +3,10 @@ package gateway.control
 import zio.*
 import zio.json.*
 
+import _root_.config.entity.WorkflowRow
 import db.*
 import gateway.entity.*
+import taskrun.entity.{ RunStatus, TaskRunRow }
 import orchestration.control.{ AgentRegistry, TaskExecutor }
 import shared.errors.PersistenceError
 

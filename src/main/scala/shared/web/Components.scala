@@ -3,7 +3,6 @@ package shared.web
 import scalatags.Text.all.*
 import scalatags.Text.svgAttrs.{ d, viewBox }
 import scalatags.Text.svgTags.{ path, svg }
-import taskrun.entity.RunStatus
 
 /** Design-system component wrappers.
   *
@@ -20,17 +19,6 @@ object Components:
   /** Generic badge — emits `<ab-badge text="..." variant="...">`. */
   def badge(text: String, variant: String = "default"): Frag =
     tag("ab-badge")(attr("text") := text, attr("variant") := variant)
-
-  /** Status-mapped badge for `RunStatus`. */
-  def statusBadge(status: RunStatus): Frag =
-    val (variant, label) = status match
-      case RunStatus.Pending   => ("warning", "Pending")
-      case RunStatus.Running   => ("info", "Running")
-      case RunStatus.Paused    => ("amber", "Paused")
-      case RunStatus.Completed => ("success", "Completed")
-      case RunStatus.Failed    => ("error", "Failed")
-      case RunStatus.Cancelled => ("gray", "Cancelled")
-    badge(label, variant)
 
   /** File-type badge for `FileType`. */
   def fileTypeBadge(ft: FileType): Frag =

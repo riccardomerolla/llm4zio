@@ -16,6 +16,7 @@ import board.control.*
 import board.entity.*
 import llm4zio.core.{ LlmChunk, LlmError, LlmService, Message, ToolCallResponse }
 import llm4zio.tools.{ AnyTool, JsonSchema }
+import project.control.ProjectStorageService
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ BoardIssueId, ProjectId }
 import workspace.control.{ AssignRunRequest, GitServiceLive, WorkspaceRunService }
@@ -191,6 +192,13 @@ object WorkspaceGoldenPathIntegrationSpec extends ZIOSpecDefault:
     override def subscribe: UIO[Dequeue[ActivityEvent]]   =
       Queue.bounded[ActivityEvent](1).map(q => q: Dequeue[ActivityEvent])
 
+  final private class StubProjectStorage(repoPath: Path) extends ProjectStorageService:
+    override def initProjectStorage(projectId: ProjectId): IO[PersistenceError, Path]        = ZIO.succeed(repoPath)
+    override def projectRoot(projectId: ProjectId): UIO[Path]                                = ZIO.succeed(repoPath)
+    override def boardPath(projectId: ProjectId): UIO[Path]                                  = ZIO.succeed(repoPath.resolve(".board"))
+    override def workspaceAnalysisPath(projectId: ProjectId, workspaceId: String): UIO[Path] =
+      ZIO.succeed(repoPath.resolve(".llm4zio").resolve("analysis"))
+
   // ── Pre-canned LLM response ────────────────────────────────────────────────
   // JSON matching GeneratedIssueBatch: two issues with a one-way dependency.
 
@@ -273,6 +281,7 @@ object WorkspaceGoldenPathIntegrationSpec extends ZIOSpecDefault:
                              gitService = git,
                              activityHub = hub,
                              governancePolicyService = NoOpGovernancePolicyService,
+                             projectStorageService = StubProjectStorage(repoPath),
                            )
 
             // ── Phase 1: Init board structure ──────────────────────────────────

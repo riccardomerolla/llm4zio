@@ -9,10 +9,10 @@ import _root_.config.entity.{
   ConfigRepository,
   WorkflowDefinition,
   WorkflowGraph,
+  WorkflowRow,
   WorkflowStepAgent,
   WorkflowValidator,
 }
-import db.*
 import shared.errors.PersistenceError
 import taskrun.entity.TaskStep
 

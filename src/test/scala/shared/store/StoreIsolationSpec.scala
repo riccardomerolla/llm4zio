@@ -9,6 +9,7 @@ import zio.test.*
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.error.GigaMapError
 import io.github.riccardomerolla.zio.eclipsestore.service.LifecycleCommand
+import issues.entity.AgentIssueRow
 import issues.entity.api.{ IssuePriority, IssueStatus }
 
 object StoreIsolationSpec extends ZIOSpecDefault:

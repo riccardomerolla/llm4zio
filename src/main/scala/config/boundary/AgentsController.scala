@@ -9,7 +9,7 @@ import zio.http.*
 import zio.json.*
 import zio.stream.ZStream
 
-import _root_.config.entity.{ AgentChannelBinding, AgentInfo, ConfigRepository, CustomAgentRow }
+import _root_.config.entity.{ AgentChannelBinding, AgentInfo, ConfigRepository, CustomAgentRow, SettingRow }
 import agent.control.{ AgentMatching, BuiltInAgentSynchronizer }
 import agent.entity.api.*
 import agent.entity.{ Agent as RegistryAgent, AgentEvent, AgentPermissions, AgentRepository, TrustLevel }
@@ -1002,10 +1002,10 @@ final case class AgentsControllerLive(
       }
       .toMap
 
-  private def toKeyMap(rows: List[db.SettingRow]): Map[String, String] =
+  private def toKeyMap(rows: List[SettingRow]): Map[String, String] =
     rows.map(row => row.key -> row.value).toMap
 
-  private def toBaseKeyMap(rows: List[db.SettingRow], prefix: String): Map[String, String] =
+  private def toBaseKeyMap(rows: List[SettingRow], prefix: String): Map[String, String] =
     rows.flatMap { row =>
       row.key.stripPrefix(prefix) match
         case suffix if suffix.nonEmpty => Some(s"ai.$suffix" -> row.value)

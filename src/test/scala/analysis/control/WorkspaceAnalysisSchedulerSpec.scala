@@ -9,7 +9,9 @@ import zio.test.Live
 import activity.entity.{ ActivityEvent, ActivityEventType }
 import analysis.entity.{ AnalysisDoc, AnalysisEvent, AnalysisRepository, AnalysisType }
 import board.entity.*
+import _root_.config.entity.SettingRow
 import db.*
+import taskrun.entity.{ TaskArtifactRow, TaskReportRow, TaskRunRow }
 import project.control.ProjectStorageService
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ AgentId, AnalysisDocId, BoardIssueId, ProjectId }

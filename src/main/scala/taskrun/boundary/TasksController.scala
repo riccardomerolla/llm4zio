@@ -10,6 +10,7 @@ import zio.stream.ZStream
 
 import _root_.config.entity.WorkflowDefinition
 import db.*
+import taskrun.entity.{ RunStatus, TaskArtifactRow, TaskRunRow }
 import orchestration.control.{
   OrchestratorControlPlane,
   TaskExecutor,

@@ -5,7 +5,7 @@ import java.time.Instant
 import zio.Scope
 import zio.test.*
 
-import config.entity.{ AgentHealth, AgentHealthStatus, AgentMetrics }
+import _root_.config.entity.{ AgentHealth, AgentHealthStatus, AgentMetrics }
 import conversation.entity.api.{ ChatConversationCreateRequest, ConversationMessageRequest, MessageType }
 import issues.entity.api.{ AgentAssignmentView, AgentIssueCreateRequest, AgentIssueView, IssuePriority }
 import orchestration.control.*

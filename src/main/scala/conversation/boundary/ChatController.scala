@@ -23,6 +23,7 @@ import orchestration.control.*
 import plan.entity.PlanTaskDraft
 import shared.errors.PersistenceError
 import shared.errors.PersistenceError as WorkspacePersistenceError
+import taskrun.entity.TaskReportRow
 import shared.ids.Ids.{ ConversationId, EventId, IssueId, ReportId }
 import shared.web.*
 import workspace.entity.WorkspaceRepository
@@ -922,7 +923,7 @@ final case class ChatControllerLive(
   private def toSyntheticProofOfWork(
     conversation: ChatConversation,
     runId: Long,
-    reports: List[db.TaskReportRow],
+    reports: List[TaskReportRow],
   ): Option[IssueWorkReport] =
     val issueId = issueIdFromConversation(conversation, runId)
     if reports.isEmpty then None

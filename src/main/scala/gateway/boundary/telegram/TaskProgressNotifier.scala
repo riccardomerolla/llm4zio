@@ -4,7 +4,8 @@ import zio.*
 import zio.stream.ZStream
 
 import _root_.config.entity.MigrationConfig
-import db.{ ChatRepository, TaskRepository, TaskRunRow }
+import db.{ ChatRepository, TaskRepository }
+import taskrun.entity.TaskRunRow
 import gateway.control.{ ChannelRegistry, TelegramClient }
 import gateway.entity.{
   TelegramClientError,

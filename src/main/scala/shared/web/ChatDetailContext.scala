@@ -1,6 +1,6 @@
 package shared.web
 
-import db.TaskReportRow
+import taskrun.entity.TaskReportRow
 import issues.entity.IssueWorkReport
 import orchestration.control.PlannerPreviewState
 

@@ -13,8 +13,10 @@ import agent.entity.{ Agent, AgentEvent, AgentRepository }
 import analysis.entity.{ AnalysisDoc, AnalysisEvent, AnalysisRepository, AnalysisType }
 import board.control.BoardOrchestrator
 import board.entity.*
+import _root_.config.entity.SettingRow
 import conversation.entity.api.{ ChatConversation, ConversationEntry, SessionContextLink }
 import db.*
+import taskrun.entity.{ TaskArtifactRow, TaskReportRow, TaskRunRow }
 import decision.control.DecisionInbox
 import decision.entity.{ Decision, DecisionFilter, DecisionResolutionKind }
 import issues.boundary.IssueControllerLive
@@ -213,8 +215,8 @@ object IssueControllerSpec extends ZIOSpecDefault:
     override def saveArtifact(artifact: TaskArtifactRow): IO[PersistenceError, Long]              = ZIO.dieMessage("unused")
     override def getArtifactsByTask(taskRunId: Long): IO[PersistenceError, List[TaskArtifactRow]] =
       ZIO.dieMessage("unused")
-    override def getAllSettings: IO[PersistenceError, List[db.SettingRow]]                        = ZIO.succeed(Nil)
-    override def getSetting(key: String): IO[PersistenceError, Option[db.SettingRow]]             = ZIO.succeed(None)
+    override def getAllSettings: IO[PersistenceError, List[SettingRow]]                        = ZIO.succeed(Nil)
+    override def getSetting(key: String): IO[PersistenceError, Option[SettingRow]]             = ZIO.succeed(None)
     override def upsertSetting(key: String, value: String): IO[PersistenceError, Unit]            = ZIO.dieMessage("unused")
 
   private object StubAgentRepository extends AgentRepository:

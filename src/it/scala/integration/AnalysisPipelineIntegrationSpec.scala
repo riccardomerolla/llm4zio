@@ -1,6 +1,6 @@
 package integration
 
-import java.nio.file.{ Files as JFiles, Paths }
+import java.nio.file.{ Files as JFiles, Path }
 import java.time.{ Duration as JavaDuration, Instant }
 
 import zio.*
@@ -10,16 +10,14 @@ import agent.entity.{ Agent, AgentEvent, AgentRepository }
 import analysis.control.{ AnalysisAgentRunner, AnalysisAgentRunnerLive }
 import analysis.entity.{ AnalysisDoc, AnalysisEvent, AnalysisRepository, AnalysisType }
 import app.control.FileService
-import db.{
-  PersistenceError as DbPersistenceError,
-  SettingRow,
-  TaskArtifactRow,
-  TaskReportRow,
-  TaskRunRow,
-  TaskRepository,
-}
+import _root_.config.entity.SettingRow
+import db.TaskRepository
+import taskrun.entity.{ TaskArtifactRow, TaskReportRow, TaskRunRow }
+import project.control.ProjectStorageService
 import shared.errors.PersistenceError
-import shared.ids.Ids.{ AgentId, AnalysisDocId }
+import shared.ids.Ids.{ AgentId, AnalysisDocId, ProjectId }
+import shared.testfixtures.StubWorkspaceRepository
+import workspace.entity.Workspace
 import IntegrationFixtures.*
 
 /** Integration test for [[AnalysisAgentRunnerLive]].
@@ -84,20 +82,27 @@ object AnalysisPipelineIntegrationSpec extends ZIOSpecDefault:
   // ── StubTaskRepository ────────────────────────────────────────────────────────
   // All settings return None so the runner falls back to defaults.
 
+  final private class StubProjectStorageService(repoPath: Path) extends ProjectStorageService:
+    override def initProjectStorage(projectId: ProjectId): IO[PersistenceError, Path]        = ZIO.succeed(repoPath)
+    override def projectRoot(projectId: ProjectId): UIO[Path]                                = ZIO.succeed(repoPath)
+    override def boardPath(projectId: ProjectId): UIO[Path]                                  = ZIO.succeed(repoPath.resolve(".board"))
+    override def workspaceAnalysisPath(projectId: ProjectId, workspaceId: String): UIO[Path] =
+      ZIO.succeed(repoPath.resolve(".llm4zio").resolve("analysis"))
+
   final private class StubTaskRepository extends TaskRepository:
-    override def createRun(run: TaskRunRow): IO[DbPersistenceError, Long]                           = ZIO.succeed(0L)
-    override def updateRun(run: TaskRunRow): IO[DbPersistenceError, Unit]                           = ZIO.unit
-    override def getRun(id: Long): IO[DbPersistenceError, Option[TaskRunRow]]                       = ZIO.succeed(None)
-    override def listRuns(offset: Int, limit: Int): IO[DbPersistenceError, List[TaskRunRow]]        = ZIO.succeed(Nil)
-    override def deleteRun(id: Long): IO[DbPersistenceError, Unit]                                  = ZIO.unit
-    override def saveReport(report: TaskReportRow): IO[DbPersistenceError, Long]                    = ZIO.succeed(0L)
-    override def getReport(reportId: Long): IO[DbPersistenceError, Option[TaskReportRow]]           = ZIO.succeed(None)
-    override def getReportsByTask(taskRunId: Long): IO[DbPersistenceError, List[TaskReportRow]]     = ZIO.succeed(Nil)
-    override def saveArtifact(artifact: TaskArtifactRow): IO[DbPersistenceError, Long]              = ZIO.succeed(0L)
-    override def getArtifactsByTask(taskRunId: Long): IO[DbPersistenceError, List[TaskArtifactRow]] = ZIO.succeed(Nil)
-    override def getAllSettings: IO[DbPersistenceError, List[SettingRow]]                           = ZIO.succeed(Nil)
-    override def getSetting(key: String): IO[DbPersistenceError, Option[SettingRow]]                = ZIO.succeed(None)
-    override def upsertSetting(key: String, value: String): IO[DbPersistenceError, Unit]            = ZIO.unit
+    override def createRun(run: TaskRunRow): IO[PersistenceError, Long]                           = ZIO.succeed(0L)
+    override def updateRun(run: TaskRunRow): IO[PersistenceError, Unit]                           = ZIO.unit
+    override def getRun(id: Long): IO[PersistenceError, Option[TaskRunRow]]                       = ZIO.succeed(None)
+    override def listRuns(offset: Int, limit: Int): IO[PersistenceError, List[TaskRunRow]]        = ZIO.succeed(Nil)
+    override def deleteRun(id: Long): IO[PersistenceError, Unit]                                  = ZIO.unit
+    override def saveReport(report: TaskReportRow): IO[PersistenceError, Long]                    = ZIO.succeed(0L)
+    override def getReport(reportId: Long): IO[PersistenceError, Option[TaskReportRow]]           = ZIO.succeed(None)
+    override def getReportsByTask(taskRunId: Long): IO[PersistenceError, List[TaskReportRow]]     = ZIO.succeed(Nil)
+    override def saveArtifact(artifact: TaskArtifactRow): IO[PersistenceError, Long]              = ZIO.succeed(0L)
+    override def getArtifactsByTask(taskRunId: Long): IO[PersistenceError, List[TaskArtifactRow]] = ZIO.succeed(Nil)
+    override def getAllSettings: IO[PersistenceError, List[SettingRow]]                           = ZIO.succeed(Nil)
+    override def getSetting(key: String): IO[PersistenceError, Option[SettingRow]]                = ZIO.succeed(None)
+    override def upsertSetting(key: String, value: String): IO[PersistenceError, Unit]            = ZIO.unit
 
   override def spec: Spec[TestEnvironment & Scope, Any] =
     suite("AnalysisPipelineIntegrationSpec")(
@@ -121,8 +126,9 @@ object AnalysisPipelineIntegrationSpec extends ZIOSpecDefault:
                        analysisRepository = analysisRepo,
                        taskRepository = taskRepo,
                        fileService = fileService,
+                       projectStorageService = StubProjectStorageService(repoPath),
                        promptLoader = None,
-                       llmPromptExecutor = Some { (_, _, _) =>
+                       llmPromptExecutor = Some { (_: Workspace, _: Agent, _: String) =>
                          ZIO.succeed("# Code Review Analysis\n\nCode looks good.\n")
                        },
                      )
@@ -132,7 +138,7 @@ object AnalysisPipelineIntegrationSpec extends ZIOSpecDefault:
 
             // ── Collect state for assertions ───────────────────────────────────
             eventsCapture <- analysisRepo.events.get
-            analysisFile   = Paths.get(workspacePath).resolve(AnalysisAgentRunner.CodeReviewRelativePath)
+            analysisFile   = repoPath.resolve("workspaces").resolve(workspaceId).resolve(AnalysisAgentRunner.CodeReviewRelativePath)
             fileExists    <- ZIO.attemptBlocking(JFiles.exists(analysisFile))
             fileContent   <- ZIO.attemptBlocking(JFiles.readString(analysisFile))
           yield assertTrue(

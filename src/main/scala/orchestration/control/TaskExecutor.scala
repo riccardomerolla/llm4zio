@@ -5,7 +5,8 @@ import java.util.UUID
 import zio.*
 
 import _root_.config.entity.{ WorkflowContext, WorkflowDefinition }
-import db.{ RunStatus, TaskRepository }
+import db.TaskRepository
+import taskrun.entity.RunStatus
 import shared.errors.PersistenceError
 
 trait TaskExecutor:

@@ -6,7 +6,7 @@ import activity.entity.ActivityEvent
 import config.control.{ ModelRegistryResponse, ProviderProbeStatus }
 import config.entity.{ AgentInfo, WorkflowDefinition }
 import conversation.entity.api.{ ChatConversation, ConversationEntry, ConversationSessionMeta }
-import db.{ TaskReportRow, TaskRunRow }
+import taskrun.entity.{ TaskReportRow, TaskRunRow }
 import decision.entity.Decision
 import gateway.entity.ChatSession
 import issues.entity.IssueWorkReport

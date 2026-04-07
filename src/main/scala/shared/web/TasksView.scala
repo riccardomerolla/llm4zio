@@ -119,7 +119,7 @@ object TasksView:
       ),
       div(cls := "bg-white/5 ring-1 ring-white/10 rounded-lg p-6 space-y-4")(
         h2(cls := "text-lg font-semibold text-white")("Task Metadata"),
-        metadataRow("Status", Components.statusBadge(run.status)),
+        metadataRow("Status", runStatusBadge(run.status)),
         metadataRow("Workflow", span(cls := "text-sm text-gray-300")(task.workflowName.getOrElse("-"))),
         metadataRow("Current Step", span(cls := "text-sm text-gray-300")(run.currentPhase.getOrElse("-"))),
         metadataRow("Steps", span(cls := "text-sm text-gray-300")(stepProgressLabel(task))),
@@ -146,7 +146,7 @@ object TasksView:
               td(cls := "whitespace-nowrap py-4 pl-6 pr-3 text-sm font-medium text-white")(
                 a(href := s"/tasks/${item.run.id}", cls := "text-indigo-400 hover:text-indigo-300")(item.name)
               ),
-              td(cls := "whitespace-nowrap px-3 py-4 text-sm")(Components.statusBadge(item.run.status)),
+              td(cls := "whitespace-nowrap px-3 py-4 text-sm")(runStatusBadge(item.run.status)),
               td(cls := "whitespace-nowrap px-3 py-4 text-sm text-gray-300")(item.workflowName.getOrElse("-")),
               td(cls := "whitespace-nowrap px-3 py-4 text-sm text-gray-400")(item.run.currentPhase.getOrElse("-")),
               td(cls := "relative whitespace-nowrap py-4 pl-3 pr-6 text-right text-sm")(
@@ -157,6 +157,16 @@ object TasksView:
         ),
       )
     )
+
+  private def runStatusBadge(status: RunStatus): Frag =
+    val (variant, label) = status match
+      case RunStatus.Pending   => ("warning", "Pending")
+      case RunStatus.Running   => ("info", "Running")
+      case RunStatus.Paused    => ("amber", "Paused")
+      case RunStatus.Completed => ("success", "Completed")
+      case RunStatus.Failed    => ("error", "Failed")
+      case RunStatus.Cancelled => ("gray", "Cancelled")
+    Components.badge(label, variant)
 
   private def createTaskForm(workflows: List[WorkflowDefinition]): Frag =
     div(cls := "bg-white/5 ring-1 ring-white/10 rounded-lg p-6")(

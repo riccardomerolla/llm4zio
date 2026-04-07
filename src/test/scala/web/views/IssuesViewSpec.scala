@@ -4,7 +4,7 @@ import java.time.Instant
 
 import zio.test.*
 
-import config.entity.{ AgentInfo, AgentType }
+import _root_.config.entity.{ AgentInfo, AgentType }
 import issues.entity.api.*
 
 object IssuesViewSpec extends ZIOSpecDefault:

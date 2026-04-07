@@ -6,7 +6,7 @@ import zio.test.*
 
 import _root_.config.boundary.WorkflowsControllerLive
 import _root_.config.entity.{ ConfigRepository, WorkflowDefinition }
-import db.*
+import _root_.config.entity.{ CustomAgentRow, SettingRow, WorkflowRow }
 import orchestration.control.{ WorkflowService, WorkflowServiceError }
 import shared.errors.PersistenceError
 

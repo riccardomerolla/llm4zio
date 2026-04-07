@@ -9,7 +9,10 @@ import zio.test.*
 
 import board.control.*
 import board.entity.*
-import shared.ids.Ids.BoardIssueId
+import project.control.ProjectStorageService
+import shared.errors.PersistenceError
+import shared.ids.Ids.{ BoardIssueId, ProjectId }
+import shared.testfixtures.{ NoOpActivityHub, StubWorkspaceRepository }
 import workspace.control.{ AssignRunRequest, GitServiceLive, WorkspaceRunService }
 import workspace.entity.*
 
@@ -111,6 +114,13 @@ object DispatchConcurrencyIntegrationSpec extends ZIOSpecDefault:
 
   // ── Helper: build orchestrator ────────────────────────────────────────────────
 
+  final private class StubProjectStorage(repoPath: Path) extends ProjectStorageService:
+    override def initProjectStorage(projectId: ProjectId): IO[PersistenceError, Path]        = ZIO.succeed(repoPath)
+    override def projectRoot(projectId: ProjectId): UIO[Path]                                = ZIO.succeed(repoPath)
+    override def boardPath(projectId: ProjectId): UIO[Path]                                  = ZIO.succeed(repoPath.resolve(".board"))
+    override def workspaceAnalysisPath(projectId: ProjectId, workspaceId: String): UIO[Path] =
+      ZIO.succeed(repoPath.resolve(".llm4zio").resolve("analysis"))
+
   private def buildOrchestrator(
     repoPath: Path,
     runService: WorkspaceRunService,
@@ -130,6 +140,7 @@ object DispatchConcurrencyIntegrationSpec extends ZIOSpecDefault:
                        gitService = git,
                        activityHub = hub,
                        governancePolicyService = NoOpGovernancePolicyService,
+                       projectStorageService = StubProjectStorage(repoPath),
                      )
     yield (orchestrator, boardRepo)
 

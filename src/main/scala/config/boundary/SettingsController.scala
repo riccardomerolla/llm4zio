@@ -22,8 +22,11 @@ import llm4zio.core.{ LlmError, LlmService, Streaming }
 import llm4zio.tools.ToolRegistry
 import shared.errors.PersistenceError
 import shared.ids.Ids.EventId
+import conversation.entity.{ ChatMessageRow, ConversationRow, SessionContextRow }
+import issues.entity.{ AgentAssignmentRow, AgentIssueRow }
 import shared.store.{ MemoryStoreModule, * }
 import shared.web.{ ErrorHandlingMiddleware, HtmlViews, SettingsView }
+import taskrun.entity.{ StoredTaskArtifactRow, StoredTaskReportRow, StoredTaskRunRow }
 
 trait SettingsController:
   def routes: Routes[Any, Response]
@@ -419,17 +422,17 @@ final case class SettingsControllerLive(
       case "assignment" => fetchAs[AgentAssignmentRow](typedStore, key)
       case "session"    => fetchAs[SessionContextRow](typedStore, key)
       case "activity"   => fetchAs[ActivityEvent](typedStore, key)
-      case "run"        => fetchAs[shared.store.TaskRunRow](typedStore, key)
-      case "report"     => fetchAs[shared.store.TaskReportRow](typedStore, key)
-      case "artifact"   => fetchAs[shared.store.TaskArtifactRow](typedStore, key)
+      case "run"        => fetchAs[StoredTaskRunRow](typedStore, key)
+      case "report"     => fetchAs[StoredTaskReportRow](typedStore, key)
+      case "artifact"   => fetchAs[StoredTaskArtifactRow](typedStore, key)
       case "setting"    => fetchAs[String](typedStore, key)
       case other        => ZIO.succeed((None, Some(s"unknown data-store prefix: $other")))
 
   private def decodeConfigRaw(typedStore: TypedStore, key: String): UIO[(Option[String], Option[String])] =
     keyPrefix(key) match
       case "setting"  => fetchAs[String](typedStore, key)
-      case "workflow" => fetchAs[shared.store.WorkflowRow](typedStore, key)
-      case "agent"    => fetchAs[shared.store.CustomAgentRow](typedStore, key)
+      case "workflow" => fetchAs[_root_.config.entity.StoredWorkflowRow](typedStore, key)
+      case "agent"    => fetchAs[_root_.config.entity.StoredCustomAgentRow](typedStore, key)
       case other      => ZIO.succeed((None, Some(s"unknown config-store prefix: $other")))
 
   private def fetchAs[V: Schema](typedStore: TypedStore, key: String): UIO[(Option[String], Option[String])] =
