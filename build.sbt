@@ -328,6 +328,28 @@ lazy val evolutionDomain = (project in file("modules/evolution-domain"))
     libraryDependencies ++= domainDeps,
   )
 
+lazy val issuesDomain = (project in file("modules/issues-domain"))
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore, boardDomain, workspaceDomain,
+    taskrunDomain, analysisDomain)
+  .settings(foundationSettings)
+  .settings(
+    name := "issues-domain",
+    libraryDependencies ++= domainDeps ++ Seq(
+      zioHttpDep,
+    ),
+  )
+
+lazy val demoDomain = (project in file("modules/demo-domain"))
+  .dependsOn(sharedIds, boardDomain)
+  .settings(foundationSettings)
+  .settings(
+    name := "demo-domain",
+    libraryDependencies ++= Seq(
+      "dev.zio" %% "zio" % zioVersion,
+      zioJsonDep,
+    ),
+  )
+
 // ── LLM library ──────────────────────────────────────────────────────────────
 
 lazy val llm4zio = (project in file("llm4zio"))
@@ -348,7 +370,7 @@ lazy val allModules = Seq(
   activityDomain, memoryDomain, governanceDomain, agentDomain, decisionDomain, specificationDomain,
   planDomain, taskrunDomain, boardDomain, knowledgeDomain, projectDomain, configDomain,
   conversationDomain, daemonDomain, analysisDomain, workspaceDomain, gatewayDomain,
-  orchestrationDomain, evolutionDomain,
+  orchestrationDomain, evolutionDomain, issuesDomain, demoDomain,
 )
 
 lazy val root = (project in file("."))
