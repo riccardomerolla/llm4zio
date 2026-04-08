@@ -23,9 +23,9 @@ import orchestration.control.*
 import plan.entity.PlanTaskDraft
 import shared.errors.PersistenceError
 import shared.errors.PersistenceError as WorkspacePersistenceError
-import taskrun.entity.TaskReportRow
 import shared.ids.Ids.{ ConversationId, EventId, IssueId, ReportId }
 import shared.web.*
+import taskrun.entity.TaskReportRow
 import workspace.entity.WorkspaceRepository
 
 trait ChatController:

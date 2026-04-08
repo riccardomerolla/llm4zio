@@ -46,7 +46,7 @@ object DecisionInboxMaintenanceIntegrationSpec extends ZIOSpecDefault:
   /** Short timeout so maintenance test can expire decisions without waiting. */
   private def configRepoWithTimeout(timeoutSeconds: Long): ConfigRepository =
     new ConfigRepository:
-      private val settings                                                                            = Map("decisions.timeoutSeconds.default" -> timeoutSeconds.toString)
+      private val settings                                                                          = Map("decisions.timeoutSeconds.default" -> timeoutSeconds.toString)
       override def getAllSettings: IO[PersistenceError, List[SettingRow]]                           =
         ZIO.succeed(settings.toList.map((k, v) => SettingRow(k, v, now)))
       override def getSetting(key: String): IO[PersistenceError, Option[SettingRow]]                =

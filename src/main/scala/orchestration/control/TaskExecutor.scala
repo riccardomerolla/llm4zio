@@ -6,8 +6,8 @@ import zio.*
 
 import _root_.config.entity.{ WorkflowContext, WorkflowDefinition }
 import db.TaskRepository
-import taskrun.entity.RunStatus
 import shared.errors.PersistenceError
+import taskrun.entity.RunStatus
 
 trait TaskExecutor:
   def execute(taskRunId: Long, workflow: WorkflowDefinition): IO[PersistenceError, Unit]

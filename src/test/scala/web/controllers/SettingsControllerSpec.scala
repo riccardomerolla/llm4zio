@@ -9,15 +9,14 @@ import zio.test.*
 
 import _root_.config.boundary.SettingsController
 import _root_.config.control.{ ModelRegistryResponse, ModelService, ProviderProbeStatus }
-import _root_.config.entity.{ AIProviderConfig, ConfigRepository, MigrationConfig }
+import _root_.config.entity.*
 import activity.control.ActivityHub
 import activity.entity.{ ActivityEvent, ActivityEventType, ActivityRepository }
-import _root_.config.entity.{ CustomAgentRow, SettingRow, WorkflowRow }
+import conversation.entity.ConversationRow
 import io.github.riccardomerolla.zio.eclipsestore.service.LifecycleCommand
 import llm4zio.core.*
 import llm4zio.tools.{ AnyTool, JsonSchema, ToolRegistry }
 import shared.errors.PersistenceError
-import conversation.entity.ConversationRow
 import shared.store.{ ConfigStoreModule, DataStoreModule, DataStoreService, MemoryStoreModule, StoreConfig }
 
 object SettingsControllerSpec extends ZIOSpecDefault:

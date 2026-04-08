@@ -375,7 +375,8 @@ object WorkspaceTemplatesView:
       div(cls := "space-y-8")(
         Components.pageHeader(
           title = "Workspace Templates",
-          subtitle = "Pick a stack, refine the prompt, and walk through the seven template questions before the workspace is scaffolded and the first issue cards are generated.",
+          subtitle =
+            "Pick a stack, refine the prompt, and walk through the seven template questions before the workspace is scaffolded and the first issue cards are generated.",
           backHref = "/projects",
           backText = "Projects",
         ),

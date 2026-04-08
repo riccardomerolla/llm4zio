@@ -6,8 +6,8 @@ import zio.*
 import zio.json.*
 import zio.schema.Schema
 
-import conversation.entity.{ ChatMessageRow, ConversationRow, SessionContextRow }
 import conversation.entity.api.*
+import conversation.entity.{ ChatMessageRow, ConversationRow, SessionContextRow }
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.service.{ LifecycleCommand, LifecycleStatus }
 import shared.errors.PersistenceError

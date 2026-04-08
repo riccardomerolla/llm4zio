@@ -5,10 +5,9 @@ import java.time.Instant
 import zio.*
 import zio.test.*
 
-import _root_.config.entity.ConfigRepository
+import _root_.config.entity.{ ConfigRepository, CustomAgentRow, SettingRow, WorkflowRow }
 import activity.control.ActivityHub
 import activity.entity.{ ActivityEvent, ActivityEventType }
-import _root_.config.entity.{ CustomAgentRow, SettingRow, WorkflowRow }
 import issues.entity.*
 import orchestration.control.WorkReportEventBus
 import shared.errors.PersistenceError

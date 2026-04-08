@@ -138,7 +138,8 @@ object AnalysisPipelineIntegrationSpec extends ZIOSpecDefault:
 
             // ── Collect state for assertions ───────────────────────────────────
             eventsCapture <- analysisRepo.events.get
-            analysisFile   = repoPath.resolve("workspaces").resolve(workspaceId).resolve(AnalysisAgentRunner.CodeReviewRelativePath)
+            analysisFile   =
+              repoPath.resolve("workspaces").resolve(workspaceId).resolve(AnalysisAgentRunner.CodeReviewRelativePath)
             fileExists    <- ZIO.attemptBlocking(JFiles.exists(analysisFile))
             fileContent   <- ZIO.attemptBlocking(JFiles.readString(analysisFile))
           yield assertTrue(

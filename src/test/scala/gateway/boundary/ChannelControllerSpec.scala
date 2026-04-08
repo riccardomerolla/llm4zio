@@ -4,8 +4,7 @@ import zio.*
 import zio.http.*
 import zio.test.*
 
-import _root_.config.entity.{ ConfigRepository, GatewayConfig }
-import _root_.config.entity.{ CustomAgentRow, SettingRow, WorkflowRow }
+import _root_.config.entity.{ ConfigRepository, CustomAgentRow, GatewayConfig, SettingRow, WorkflowRow }
 import gateway.control.*
 import shared.errors.PersistenceError
 

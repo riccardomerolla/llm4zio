@@ -6,14 +6,14 @@ import zio.*
 import zio.http.*
 import zio.test.*
 
-import activity.entity.{ ActivityEvent, ActivityEventType, ActivityRepository }
 import _root_.config.entity.SettingRow
+import activity.entity.{ ActivityEvent, ActivityEventType, ActivityRepository }
 import db.*
-import taskrun.entity.{ RunStatus, TaskArtifactRow, TaskReportRow, TaskRunRow }
 import issues.entity.*
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ AgentId, IssueId }
 import taskrun.boundary.DashboardControllerLive
+import taskrun.entity.{ RunStatus, TaskArtifactRow, TaskReportRow, TaskRunRow }
 
 object DashboardControllerSpec extends ZIOSpecDefault:
   private val sampleRun = TaskRunRow(

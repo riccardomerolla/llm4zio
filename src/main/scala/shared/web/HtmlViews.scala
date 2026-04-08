@@ -6,7 +6,6 @@ import activity.entity.ActivityEvent
 import config.control.{ ModelRegistryResponse, ProviderProbeStatus }
 import config.entity.{ AgentInfo, WorkflowDefinition }
 import conversation.entity.api.{ ChatConversation, ConversationEntry, ConversationSessionMeta }
-import taskrun.entity.{ TaskReportRow, TaskRunRow }
 import decision.entity.Decision
 import gateway.entity.ChatSession
 import issues.entity.IssueWorkReport
@@ -19,6 +18,7 @@ import issues.entity.api.{
 }
 import sdlc.control.SdlcDashboardService
 import shared.ids.Ids.IssueId
+import taskrun.entity.{ TaskReportRow, TaskRunRow }
 import workspace.entity.WorkspaceRun
 
 object HtmlViews:

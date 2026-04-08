@@ -5,20 +5,12 @@ import java.time.Instant
 import zio.*
 import zio.schema.Schema
 
+import _root_.config.entity.{ CustomAgentRow, SettingRow, StoredCustomAgentRow, StoredWorkflowRow, WorkflowRow }
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.service.{ LifecycleCommand, LifecycleStatus }
-import _root_.config.entity.{ CustomAgentRow, SettingRow, StoredCustomAgentRow, StoredWorkflowRow, WorkflowRow }
 import shared.errors.PersistenceError
 import shared.store.*
-import taskrun.entity.{
-  RunStatus,
-  StoredTaskArtifactRow,
-  StoredTaskReportRow,
-  StoredTaskRunRow,
-  TaskArtifactRow,
-  TaskReportRow,
-  TaskRunRow,
-}
+import taskrun.entity.*
 
 final case class TaskRepositoryLive(
   dataStore: DataStoreService,

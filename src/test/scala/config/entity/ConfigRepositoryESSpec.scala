@@ -6,7 +6,6 @@ import java.time.Instant
 import zio.*
 import zio.test.*
 
-// config.entity types are in scope via package
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.error.GigaMapError
 import shared.store.{ ConfigStoreModule, StoreConfig }

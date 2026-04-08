@@ -4,14 +4,7 @@ import java.time.Instant
 
 import zio.*
 
-import _root_.config.entity.{
-  AgentChannelBinding,
-  CustomAgentRow,
-  SettingRow,
-  StoredCustomAgentRow,
-  StoredWorkflowRow,
-  WorkflowRow,
-}
+import _root_.config.entity.*
 import io.github.riccardomerolla.zio.eclipsestore.service.{ LifecycleCommand, LifecycleStatus }
 import shared.errors.PersistenceError
 import shared.ids.Ids.AgentId

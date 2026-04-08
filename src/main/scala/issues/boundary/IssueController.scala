@@ -186,28 +186,29 @@ final case class IssueControllerLive(
                                ZIO.succeed(
                                  Response(
                                    status = Status.SeeOther,
-                                   headers = Headers(Header.Location(URL.decode(s"/board/${ws.id}/issues/$id").getOrElse(URL.root))),
+                                   headers =
+                                     Headers(Header.Location(URL.decode(s"/board/${ws.id}/issues/$id").getOrElse(URL.root))),
                                  )
                                )
                              case None          =>
                                for
-                                 flash           <- ZIO.succeed(req.queryParam("flash").map(_.trim).filter(_.nonEmpty))
-                                 issueRuns       <- workspaceRepository.listRunsByIssueRef(s"#$id").mapError(mapIssueRepoError)
-                                 workspaces      <- workspaceRepository.list.mapError(mapIssueRepoError)
-                                 allAgents       <- agentRepository.list().mapError(mapIssueRepoError)
-                                 availableAgents  = allAgents.filter(_.enabled).map(registryAgentToAgentInfo)
-                                 issue           <- issueRepository.get(IssueId(id)).mapError(mapIssueRepoError)
-                                 analysisDocs    <- loadIssueAnalysisContext(issue).mapError(mapIssueRepoError)
-                                 mergeHistory    <- loadMergeHistory(issue.id)
-                                 workReport      <- issueWorkReportProjection.get(issue.id)
-                                 decisions       <- decisionInbox
-                                                      .list(
-                                                        DecisionFilter(
-                                                          issueId = Some(IssueId(id)),
-                                                          limit = Int.MaxValue,
-                                                        )
-                                                      )
-                                                      .mapError(mapIssueRepoError)
+                                 flash          <- ZIO.succeed(req.queryParam("flash").map(_.trim).filter(_.nonEmpty))
+                                 issueRuns      <- workspaceRepository.listRunsByIssueRef(s"#$id").mapError(mapIssueRepoError)
+                                 workspaces     <- workspaceRepository.list.mapError(mapIssueRepoError)
+                                 allAgents      <- agentRepository.list().mapError(mapIssueRepoError)
+                                 availableAgents = allAgents.filter(_.enabled).map(registryAgentToAgentInfo)
+                                 issue          <- issueRepository.get(IssueId(id)).mapError(mapIssueRepoError)
+                                 analysisDocs   <- loadIssueAnalysisContext(issue).mapError(mapIssueRepoError)
+                                 mergeHistory   <- loadMergeHistory(issue.id)
+                                 workReport     <- issueWorkReportProjection.get(issue.id)
+                                 decisions      <- decisionInbox
+                                                     .list(
+                                                       DecisionFilter(
+                                                         issueId = Some(IssueId(id)),
+                                                         limit = Int.MaxValue,
+                                                       )
+                                                     )
+                                                     .mapError(mapIssueRepoError)
                                yield html(
                                  HtmlViews.issueDetail(
                                    domainToView(issue),

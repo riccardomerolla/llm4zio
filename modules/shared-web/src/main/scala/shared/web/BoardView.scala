@@ -168,7 +168,7 @@ object BoardView:
     ).render
 
   private def issueCard(workspaceId: String, issue: BoardIssue, column: BoardColumn): Frag =
-    val issueId = issue.frontmatter.id.value
+    val issueId  = issue.frontmatter.id.value
     val cardHref =
       if column == BoardColumn.Backlog then s"/issues/$issueId/edit"
       else s"/board/$workspaceId/issues/$issueId"

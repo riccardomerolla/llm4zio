@@ -5,14 +5,7 @@ import java.time.Instant
 import zio.*
 import zio.json.*
 
-import _root_.config.entity.{
-  ConfigRepository,
-  WorkflowDefinition,
-  WorkflowGraph,
-  WorkflowRow,
-  WorkflowStepAgent,
-  WorkflowValidator,
-}
+import _root_.config.entity.*
 import shared.errors.PersistenceError
 import taskrun.entity.TaskStep
 

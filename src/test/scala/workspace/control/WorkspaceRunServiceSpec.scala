@@ -5,13 +5,12 @@ import java.time.Instant
 import zio.*
 import zio.test.*
 
-import _root_.config.entity.ConfigRepository
+import _root_.config.entity.{ ConfigRepository, CustomAgentRow, SettingRow, WorkflowRow }
 import activity.control.ActivityHub
 import activity.entity.ActivityEvent
 import agent.entity.{ Agent, AgentPermissions, AgentRepository, TrustLevel }
 import analysis.entity.{ AnalysisDoc, AnalysisRepository, AnalysisType }
 import conversation.entity.api.{ ChatConversation, ConversationEntry }
-import _root_.config.entity.{ CustomAgentRow, SettingRow, WorkflowRow }
 import db.*
 import governance.control.{ GovernanceEvaluationContext, GovernancePolicyService, GovernanceTransitionDecision }
 import governance.entity.GovernancePolicy

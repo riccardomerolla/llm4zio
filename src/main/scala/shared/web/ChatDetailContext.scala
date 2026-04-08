@@ -1,8 +1,8 @@
 package shared.web
 
-import taskrun.entity.TaskReportRow
 import issues.entity.IssueWorkReport
 import orchestration.control.PlannerPreviewState
+import taskrun.entity.TaskReportRow
 
 final case class ChatDetailContext(
   proofOfWork: Option[IssueWorkReport],

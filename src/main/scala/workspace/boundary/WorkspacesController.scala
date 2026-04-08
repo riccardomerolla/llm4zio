@@ -146,36 +146,36 @@ object WorkspacesController:
         // Create
         Method.POST / "api" / "workspaces" -> handler { (req: Request) =>
           (for
-            patch      <- parseFormBody(req)
-            _          <- validateWorkspaceLocalPath(patch.localPath)
-            now        <- Clock.instant
-            id          = java.util.UUID.randomUUID().toString
-            _          <- repo
-                            .append(
-                              WorkspaceEvent.Created(
-                                workspaceId = id,
-                                projectId = patch.projectId,
-                                name = patch.name,
-                                localPath = patch.localPath,
-                                defaultAgent = patch.defaultAgent,
-                                description = patch.description,
-                                cliTool = patch.cliTool,
-                                runMode = patch.runMode,
-                                occurredAt = now,
-                              )
+            patch    <- parseFormBody(req)
+            _        <- validateWorkspaceLocalPath(patch.localPath)
+            now      <- Clock.instant
+            id        = java.util.UUID.randomUUID().toString
+            _        <- repo
+                          .append(
+                            WorkspaceEvent.Created(
+                              workspaceId = id,
+                              projectId = patch.projectId,
+                              name = patch.name,
+                              localPath = patch.localPath,
+                              defaultAgent = patch.defaultAgent,
+                              description = patch.description,
+                              cliTool = patch.cliTool,
+                              runMode = patch.runMode,
+                              occurredAt = now,
                             )
-                            .mapError(persistErr)
-            _          <- repo
-                            .append(
-                              WorkspaceEvent.DefaultBranchChanged(
-                                workspaceId = id,
-                                defaultBranch = patch.defaultBranch,
-                                occurredAt = now,
-                              )
+                          )
+                          .mapError(persistErr)
+            _        <- repo
+                          .append(
+                            WorkspaceEvent.DefaultBranchChanged(
+                              workspaceId = id,
+                              defaultBranch = patch.defaultBranch,
+                              occurredAt = now,
                             )
-                            .mapError(persistErr)
-            _          <- analysisScheduler.triggerForWorkspaceEvent(id).forkDaemon
-            returnUrl   = req.queryParam("returnUrl").getOrElse("/projects")
+                          )
+                          .mapError(persistErr)
+            _        <- analysisScheduler.triggerForWorkspaceEvent(id).forkDaemon
+            returnUrl = req.queryParam("returnUrl").getOrElse("/projects")
           yield Response.ok.addHeader(Header.Custom("HX-Redirect", returnUrl))).catchAll(ZIO.succeed)
         },
 
@@ -191,39 +191,39 @@ object WorkspacesController:
                           case None    => ZIO.succeed(Response(status = Status.NotFound))
                           case Some(_) =>
                             for
-                              _          <- repo
-                                              .append(
-                                                WorkspaceEvent.Updated(
-                                                  workspaceId = id,
-                                                  name = patch.name,
-                                                  localPath = patch.localPath,
-                                                  defaultAgent = patch.defaultAgent,
-                                                  description = patch.description,
-                                                  cliTool = patch.cliTool,
-                                                  runMode = patch.runMode,
-                                                  occurredAt = now,
-                                                )
-                                              )
-                                              .mapError(persistErr)
-                              _          <- repo
-                                              .append(
-                                                WorkspaceEvent.DefaultBranchChanged(
-                                                  workspaceId = id,
-                                                  defaultBranch = patch.defaultBranch,
-                                                  occurredAt = now,
-                                                )
-                                              )
-                                              .mapError(persistErr)
-                              _          <- analysisScheduler.triggerForWorkspaceEvent(id).forkDaemon
-                              result     <- returnUrl match
-                                              case Some(url) =>
-                                                ZIO.succeed(
-                                                  Response.ok.addHeader(Header.Custom("HX-Redirect", url))
-                                                )
-                                              case None      =>
-                                                ZIO.succeed(
-                                                  Response.ok.addHeader(Header.Custom("HX-Redirect", "/projects"))
-                                                )
+                              _      <- repo
+                                          .append(
+                                            WorkspaceEvent.Updated(
+                                              workspaceId = id,
+                                              name = patch.name,
+                                              localPath = patch.localPath,
+                                              defaultAgent = patch.defaultAgent,
+                                              description = patch.description,
+                                              cliTool = patch.cliTool,
+                                              runMode = patch.runMode,
+                                              occurredAt = now,
+                                            )
+                                          )
+                                          .mapError(persistErr)
+                              _      <- repo
+                                          .append(
+                                            WorkspaceEvent.DefaultBranchChanged(
+                                              workspaceId = id,
+                                              defaultBranch = patch.defaultBranch,
+                                              occurredAt = now,
+                                            )
+                                          )
+                                          .mapError(persistErr)
+                              _      <- analysisScheduler.triggerForWorkspaceEvent(id).forkDaemon
+                              result <- returnUrl match
+                                          case Some(url) =>
+                                            ZIO.succeed(
+                                              Response.ok.addHeader(Header.Custom("HX-Redirect", url))
+                                            )
+                                          case None      =>
+                                            ZIO.succeed(
+                                              Response.ok.addHeader(Header.Custom("HX-Redirect", "/projects"))
+                                            )
                             yield result
           yield resp).catchAll(ZIO.succeed)
         },

@@ -17,9 +17,9 @@ object AnalysisType:
 
   /** Normalize a potentially stale (binary-deserialized) AnalysisType back to a fresh JVM instance.
     *
-    * EclipseStore binary serialization creates new JVM objects whose `ordinal()` may not match the
-    * compile-time derived zio-json codec, causing "Index N out of bounds" errors. Pattern matching
-    * on field values (not identity) produces a clean instance safe for JSON encoding.
+    * EclipseStore binary serialization creates new JVM objects whose `ordinal()` may not match the compile-time derived
+    * zio-json codec, causing "Index N out of bounds" errors. Pattern matching on field values (not identity) produces a
+    * clean instance safe for JSON encoding.
     */
   def normalize(at: AnalysisType): AnalysisType =
     // Cannot use typed pattern matching (e.g. `case _: CodeReview.type`) because
@@ -58,15 +58,15 @@ object AnalysisType:
     JsonDecoder[zio.json.ast.Json].mapOrFail {
       case zio.json.ast.Json.Obj(fields) =>
         fields.headOption match
-          case Some(("CodeReview", _))   => Right(CodeReview)
-          case Some(("Architecture", _)) => Right(Architecture)
-          case Some(("Security", _))     => Right(Security)
+          case Some(("CodeReview", _))                              => Right(CodeReview)
+          case Some(("Architecture", _))                            => Right(Architecture)
+          case Some(("Security", _))                                => Right(Security)
           case Some(("Custom", zio.json.ast.Json.Obj(innerFields))) =>
             innerFields.collectFirst { case ("name", zio.json.ast.Json.Str(n)) => n } match
               case Some(name) => Right(Custom(name))
               case None       => Left("Custom AnalysisType missing 'name' field")
-          case other => Left(s"Unknown AnalysisType variant: $other")
-      case other => Left(s"Expected JSON object for AnalysisType, got: $other")
+          case other                                                => Left(s"Unknown AnalysisType variant: $other")
+      case other                         => Left(s"Expected JSON object for AnalysisType, got: $other")
     }
 
 final case class AnalysisDoc(

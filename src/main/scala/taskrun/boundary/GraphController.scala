@@ -6,8 +6,8 @@ import zio.json.*
 
 import db.*
 import shared.errors.PersistenceError
-import taskrun.entity.TaskReportRow
 import shared.web.{ ErrorHandlingMiddleware, HtmlViews }
+import taskrun.entity.TaskReportRow
 
 trait GraphController:
   def routes: Routes[Any, Response]

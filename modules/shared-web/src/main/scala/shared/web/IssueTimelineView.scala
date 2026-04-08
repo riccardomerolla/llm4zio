@@ -81,9 +81,13 @@ object IssueTimelineView:
     div(cls := "rounded-xl border border-white/10 bg-slate-900/70 px-5 py-5 sm:px-6")(
       div(cls := "relative pl-10")(
         // Timeline spine
-        div(cls := "absolute bottom-0 left-5 top-0 w-px bg-gradient-to-b from-indigo-400/30 via-white/10 to-transparent")(),
+        div(
+          cls := "absolute bottom-0 left-5 top-0 w-px bg-gradient-to-b from-indigo-400/30 via-white/10 to-transparent"
+        )(),
         if timeline.isEmpty then
-          div(cls := "rounded-xl border border-dashed border-white/10 bg-white/[0.03] px-4 py-8 text-sm text-slate-400")(
+          div(
+            cls := "rounded-xl border border-dashed border-white/10 bg-white/[0.03] px-4 py-8 text-sm text-slate-400"
+          )(
             "No timeline activity yet."
           )
         else
@@ -93,7 +97,7 @@ object IssueTimelineView:
 
   private def timelineEntry(workspaceId: String, entry: TimelineEntry): Frag =
     val (eyebrow, titleText, bodyContent, dotColor) = entry match
-      case e: IssueCreated    =>
+      case e: IssueCreated        =>
         (
           "Opened",
           e.title,
@@ -109,21 +113,21 @@ object IssueTimelineView:
           ),
           "bg-cyan-400",
         )
-      case e: MovedToTodo     =>
+      case e: MovedToTodo         =>
         (
           "Workflow",
           "Moved back to Todo",
           mutedText(s"Issue ${e.issueId.value} is queued for another pass."),
           "bg-slate-400",
         )
-      case e: AgentAssigned   =>
+      case e: AgentAssigned       =>
         (
           "Dispatch",
           s"Assigned to ${e.agentName}",
           mutedText("The issue is ready for the selected agent."),
           "bg-indigo-400",
         )
-      case e: RunStarted      =>
+      case e: RunStarted          =>
         (
           "Run",
           "Agent run started",
@@ -141,14 +145,14 @@ object IssueTimelineView:
           ),
           "bg-cyan-400",
         )
-      case e: ChatMessages    =>
+      case e: ChatMessages        =>
         (
           "Conversation",
           s"${e.messages.size} chat message${if e.messages.size == 1 then "" else "s"}",
           chatBlock(e),
           "bg-purple-400",
         )
-      case e: RunCompleted    =>
+      case e: RunCompleted        =>
         (
           "Run",
           "Run completed",
@@ -158,14 +162,14 @@ object IssueTimelineView:
           ),
           "bg-emerald-400",
         )
-      case e: GitChanges      =>
+      case e: GitChanges          =>
         (
           "Diff",
           "Git changes",
           gitChangesBlock(workspaceId, e),
           "bg-violet-400",
         )
-      case e: DecisionRaised  =>
+      case e: DecisionRaised      =>
         (
           "Review",
           e.title,
@@ -175,7 +179,7 @@ object IssueTimelineView:
           ),
           "bg-amber-400",
         )
-      case e: ReviewAction    =>
+      case e: ReviewAction        =>
         (
           "Review",
           e.action,
@@ -185,7 +189,7 @@ object IssueTimelineView:
           ),
           "bg-emerald-400",
         )
-      case e: ReworkRequested =>
+      case e: ReworkRequested     =>
         (
           "Rework",
           "Changes requested",
@@ -197,16 +201,16 @@ object IssueTimelineView:
           ),
           "bg-amber-400",
         )
-      case e: Merged          =>
+      case e: Merged              =>
         (
           "Merge",
           s"Merged ${e.branchName}",
           mutedText("Branch merged into the workspace default branch."),
           "bg-emerald-400",
         )
-      case e: IssueDone       =>
+      case e: IssueDone           =>
         ("Done", "Issue completed", mutedText(e.result), "bg-emerald-400")
-      case e: IssueFailed     =>
+      case e: IssueFailed         =>
         ("Failure", "Issue failed", mutedText(e.reason), "bg-red-400")
       case e: AnalysisDocAttached =>
         ("Analysis", e.title, analysisDocBlock(e), "bg-teal-400")
@@ -267,7 +271,7 @@ object IssueTimelineView:
         attr("diff-url")   := s"$basePath/diff?base=main",
       ),
       div(cls := "mt-2 flex items-center gap-2 text-xs text-slate-500")(
-        span(cls := "font-mono text-violet-200")(entry.branchName),
+        span(cls := "font-mono text-violet-200")(entry.branchName)
       ),
     )
 
@@ -292,7 +296,7 @@ object IssueTimelineView:
       div(cls := "space-y-3 border-t border-white/10 px-4 py-4")(
         p(cls := "text-xs text-slate-500")(entry.filePath),
         div(cls := "prose prose-invert prose-sm max-w-none text-slate-100")(
-          markdownFragment(safeContent(entry.content)),
+          markdownFragment(safeContent(entry.content))
         ),
       ),
     )

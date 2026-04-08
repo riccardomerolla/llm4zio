@@ -5,9 +5,8 @@ import java.time.Instant
 import zio.*
 import zio.test.*
 
-import _root_.config.entity.{ ConfigRepository, WorkflowDefinition }
+import _root_.config.entity.{ ConfigRepository, CustomAgentRow, SettingRow, WorkflowDefinition, WorkflowRow }
 import daemon.entity.*
-import _root_.config.entity.{ CustomAgentRow, SettingRow, WorkflowRow }
 import decision.control.DecisionInbox
 import decision.entity.*
 import evolution.entity.*

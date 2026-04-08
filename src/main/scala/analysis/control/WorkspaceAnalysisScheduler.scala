@@ -9,10 +9,10 @@ import activity.entity.{ ActivityEvent, ActivityEventType }
 import analysis.entity.{ AnalysisDoc, AnalysisRepository, AnalysisType }
 import board.entity.*
 import db.TaskRepository
+import orchestration.control.{ AgentExecutionState, OrchestratorControlPlane }
 import project.control.ProjectStorageService
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ BoardIssueId, EventId, IssueId }
-import orchestration.control.{ AgentExecutionState, OrchestratorControlPlane }
 import workspace.entity.{ RunSessionMode, RunStatus, WorkspaceRepository, WorkspaceRunEvent }
 
 final private[analysis] case class WorkspaceAnalysisJob(
@@ -169,82 +169,83 @@ final case class WorkspaceAnalysisSchedulerLive(
 
   private def runJob(job: WorkspaceAnalysisJob): UIO[Unit] =
     Ref.make(Option.empty[String]).flatMap { runIdRef =>
-      val effect = for
-        startedAt <- Clock.instant
-        issueId   <- ensureHumanReviewIssueWithAnalysis(job.workspaceId, job.analysisType, startedAt)
-        runId      = java.util.UUID.randomUUID().toString
-        _         <- runIdRef.set(Some(runId))
-        workspace <- workspaceRepository.get(job.workspaceId)
-        localPath  = workspace.map(_.localPath).getOrElse("")
-        _         <- workspaceRepository
-                       .appendRun(
-                         WorkspaceRunEvent.Assigned(
-                           runId = runId,
-                           workspaceId = job.workspaceId,
-                           issueRef = issueId.value,
-                           agentName = analysisAgentName(job.analysisType),
-                           prompt =
-                             s"${renderAnalysisType(job.analysisType)} analysis for workspace ${job.workspaceId}",
-                           conversationId = "",
-                           worktreePath = localPath,
-                           branchName = "",
-                           occurredAt = startedAt,
+      val effect =
+        for
+          startedAt <- Clock.instant
+          issueId   <- ensureHumanReviewIssueWithAnalysis(job.workspaceId, job.analysisType, startedAt)
+          runId      = java.util.UUID.randomUUID().toString
+          _         <- runIdRef.set(Some(runId))
+          workspace <- workspaceRepository.get(job.workspaceId)
+          localPath  = workspace.map(_.localPath).getOrElse("")
+          _         <- workspaceRepository
+                         .appendRun(
+                           WorkspaceRunEvent.Assigned(
+                             runId = runId,
+                             workspaceId = job.workspaceId,
+                             issueRef = issueId.value,
+                             agentName = analysisAgentName(job.analysisType),
+                             prompt =
+                               s"${renderAnalysisType(job.analysisType)} analysis for workspace ${job.workspaceId}",
+                             conversationId = "",
+                             worktreePath = localPath,
+                             branchName = "",
+                             occurredAt = startedAt,
+                           )
                          )
+          _         <- updateStatus(job.workspaceId, job.analysisType) { current =>
+                         current.copy(
+                           state = WorkspaceAnalysisState.Running,
+                           startedAt = Some(startedAt),
+                           lastUpdatedAt = startedAt,
+                         )
+                       }
+          _         <- workspaceRepository
+                         .appendRun(
+                           WorkspaceRunEvent.StatusChanged(runId, RunStatus.Running(RunSessionMode.Autonomous), startedAt)
+                         )
+          agentName  = analysisAgentName(job.analysisType)
+          _         <- controlPlane.notifyWorkspaceAgent(
+                         agentName,
+                         AgentExecutionState.Executing,
+                         Some(runId),
+                         None,
+                         Some(s"Running ${renderAnalysisType(job.analysisType)} analysis"),
+                         0L,
                        )
-        _         <- updateStatus(job.workspaceId, job.analysisType) { current =>
-                       current.copy(
-                         state = WorkspaceAnalysisState.Running,
-                         startedAt = Some(startedAt),
-                         lastUpdatedAt = startedAt,
+          _         <- publishActivity(
+                         job.workspaceId,
+                         job.analysisType,
+                         ActivityEventType.AnalysisStarted,
+                         startedAt,
+                         None,
                        )
-                     }
-        _         <- workspaceRepository
-                       .appendRun(
-                         WorkspaceRunEvent.StatusChanged(runId, RunStatus.Running(RunSessionMode.Autonomous), startedAt)
+          doc       <- runAnalysis(job.workspaceId, job.analysisType)
+          completed <- Clock.instant
+          _         <- workspaceRepository
+                         .appendRun(WorkspaceRunEvent.StatusChanged(runId, RunStatus.Completed, completed))
+          _         <- controlPlane.notifyWorkspaceAgent(
+                         agentName,
+                         AgentExecutionState.Idle,
+                         Some(runId),
+                         None,
+                         Some(s"Completed ${renderAnalysisType(job.analysisType)} analysis"),
+                         0L,
                        )
-        agentName  = analysisAgentName(job.analysisType)
-        _         <- controlPlane.notifyWorkspaceAgent(
-                       agentName,
-                       AgentExecutionState.Executing,
-                       Some(runId),
-                       None,
-                       Some(s"Running ${renderAnalysisType(job.analysisType)} analysis"),
-                       0L,
-                     )
-        _         <- publishActivity(
-                       job.workspaceId,
-                       job.analysisType,
-                       ActivityEventType.AnalysisStarted,
-                       startedAt,
-                       None,
-                     )
-        doc       <- runAnalysis(job.workspaceId, job.analysisType)
-        completed <- Clock.instant
-        _         <- workspaceRepository
-                       .appendRun(WorkspaceRunEvent.StatusChanged(runId, RunStatus.Completed, completed))
-        _         <- controlPlane.notifyWorkspaceAgent(
-                       agentName,
-                       AgentExecutionState.Idle,
-                       Some(runId),
-                       None,
-                       Some(s"Completed ${renderAnalysisType(job.analysisType)} analysis"),
-                       0L,
-                     )
-        _         <- updateStatus(job.workspaceId, job.analysisType) { current =>
-                       current.copy(
-                         state = WorkspaceAnalysisState.Completed,
-                         completedAt = Some(doc.updatedAt),
-                         lastUpdatedAt = completed,
+          _         <- updateStatus(job.workspaceId, job.analysisType) { current =>
+                         current.copy(
+                           state = WorkspaceAnalysisState.Completed,
+                           completedAt = Some(doc.updatedAt),
+                           lastUpdatedAt = completed,
+                         )
+                       }
+          _         <- publishActivity(
+                         job.workspaceId,
+                         job.analysisType,
+                         ActivityEventType.AnalysisCompleted,
+                         completed,
+                         Some(doc.generatedBy.value),
                        )
-                     }
-        _         <- publishActivity(
-                       job.workspaceId,
-                       job.analysisType,
-                       ActivityEventType.AnalysisCompleted,
-                       completed,
-                       Some(doc.generatedBy.value),
-                     )
-      yield ()
+        yield ()
 
       effect.catchAll { err =>
         Clock.instant.flatMap { failedAt =>
@@ -356,7 +357,13 @@ final case class WorkspaceAnalysisSchedulerLive(
       issueId       <- existingReview match
                          case Some(issue) => ZIO.succeed(issue.frontmatter.id)
                          case None        =>
-                           createWorkspaceBoardReviewIssue(boardPath, title, description, List(typeTag, "auto-generated"), now)
+                           createWorkspaceBoardReviewIssue(
+                             boardPath,
+                             title,
+                             description,
+                             List(typeTag, "auto-generated"),
+                             now,
+                           )
     yield issueId
 
   private def createWorkspaceBoardReviewIssue(

@@ -235,9 +235,9 @@ object ProjectsController:
         defaultBranch = workspace.defaultBranch,
         cliTool = workspace.cliTool,
         runModeLabel = workspace.runMode match
-          case RunMode.Host                => "Host"
-          case d: RunMode.Docker           => s"Docker (${d.image})"
-          case c: RunMode.Cloud            => s"Cloud (${c.provider})",
+          case RunMode.Host      => "Host"
+          case d: RunMode.Docker => s"Docker (${d.image})"
+          case c: RunMode.Cloud  => s"Cloud (${c.provider})",
       )
     }
     val analysisRows       = assignedWorkspaces.map { workspace =>

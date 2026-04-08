@@ -16,14 +16,14 @@ import _root_.config.control.ModelService
 import _root_.config.entity.{ ConfigRepository, GatewayConfig }
 import activity.control.ActivityHub
 import activity.entity.{ ActivityEvent, ActivityEventType }
+import conversation.entity.{ ChatMessageRow, ConversationRow, SessionContextRow }
 import io.github.riccardomerolla.zio.eclipsestore.schema.TypedStore
 import io.github.riccardomerolla.zio.eclipsestore.service.{ LifecycleCommand, LifecycleStatus }
+import issues.entity.{ AgentAssignmentRow, AgentIssueRow }
 import llm4zio.core.{ LlmError, LlmService, Streaming }
 import llm4zio.tools.ToolRegistry
 import shared.errors.PersistenceError
 import shared.ids.Ids.EventId
-import conversation.entity.{ ChatMessageRow, ConversationRow, SessionContextRow }
-import issues.entity.{ AgentAssignmentRow, AgentIssueRow }
 import shared.store.{ MemoryStoreModule, * }
 import shared.web.{ ErrorHandlingMiddleware, HtmlViews, SettingsView }
 import taskrun.entity.{ StoredTaskArtifactRow, StoredTaskReportRow, StoredTaskRunRow }

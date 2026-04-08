@@ -10,7 +10,6 @@ import zio.stream.ZStream
 
 import _root_.config.entity.WorkflowDefinition
 import db.*
-import taskrun.entity.{ RunStatus, TaskArtifactRow, TaskRunRow }
 import orchestration.control.{
   OrchestratorControlPlane,
   TaskExecutor,
@@ -20,6 +19,7 @@ import orchestration.control.{
 }
 import shared.errors.PersistenceError
 import shared.web.{ TaskListItem, TasksView }
+import taskrun.entity.{ RunStatus, TaskArtifactRow, TaskRunRow }
 
 trait TasksController:
   def routes: Routes[Any, Response]

@@ -4,8 +4,7 @@ import java.time.Instant
 
 import zio.*
 
-import _root_.config.entity.*
-import _root_.config.entity.CustomAgentRow
+import _root_.config.entity.{ CustomAgentRow, * }
 import taskrun.entity.TaskStep
 
 /** Enhanced agent registry with capability discovery and dynamic registration

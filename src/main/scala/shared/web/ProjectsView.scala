@@ -349,7 +349,7 @@ object ProjectsView:
             button(
               `type` := "submit",
               cls    := "rounded-md bg-cyan-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-cyan-500",
-            )("Create workspace"),
+            )("Create workspace")
           ),
         ),
       ),
@@ -478,26 +478,28 @@ object ProjectsView:
         div(cls := "flex items-center gap-1.5 flex-shrink-0")(
           // Runs toggle
           button(
-            `type`           := "button",
-            cls              := "rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-slate-300 hover:bg-white/10",
-            attr("hx-get")   := s"/api/workspaces/${row.workspaceId}/runs",
+            `type`            := "button",
+            cls               := "rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-slate-300 hover:bg-white/10",
+            attr("hx-get")    := s"/api/workspaces/${row.workspaceId}/runs",
             attr("hx-target") := s"#runs-${row.workspaceId}",
-            attr("hx-swap")  := "innerHTML",
+            attr("hx-swap")   := "innerHTML",
           )("Runs"),
           // Edit
           button(
-            `type`           := "button",
-            cls              := "rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-slate-300 hover:bg-white/10",
-            attr("hx-get")   := s"/api/workspaces/${row.workspaceId}/edit?returnUrl=${java.net.URLEncoder.encode(returnUrl, "UTF-8")}",
+            `type`            := "button",
+            cls               := "rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-slate-300 hover:bg-white/10",
+            attr(
+              "hx-get"
+            )                 := s"/api/workspaces/${row.workspaceId}/edit?returnUrl=${java.net.URLEncoder.encode(returnUrl, "UTF-8")}",
             attr("hx-target") := "#ws-modal-container",
-            attr("hx-swap")  := "innerHTML",
+            attr("hx-swap")   := "innerHTML",
           )("Edit"),
           // Re-analyze
           button(
-            `type`           := "button",
-            cls              := "rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-slate-300 hover:bg-white/10",
-            attr("hx-post")  := s"/api/workspaces/${row.workspaceId}/reanalyze",
-            attr("hx-swap")  := "none",
+            `type`          := "button",
+            cls             := "rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-slate-300 hover:bg-white/10",
+            attr("hx-post") := s"/api/workspaces/${row.workspaceId}/reanalyze",
+            attr("hx-swap") := "none",
           )("Analyze"),
           // Delete
           button(
@@ -521,11 +523,11 @@ object ProjectsView:
       ),
       // Analysis status (live polling)
       div(
-        id                  := s"analysis-status-${row.workspaceId}",
-        cls                 := "mt-3",
-        attr("hx-get")      := s"/api/workspaces/${row.workspaceId}/analysis-status",
-        attr("hx-trigger")  := "load, every 10s",
-        attr("hx-swap")     := "innerHTML",
+        id                 := s"analysis-status-${row.workspaceId}",
+        cls                := "mt-3",
+        attr("hx-get")     := s"/api/workspaces/${row.workspaceId}/analysis-status",
+        attr("hx-trigger") := "load, every 10s",
+        attr("hx-swap")    := "innerHTML",
       )(),
       // Runs expansion area
       div(id := s"runs-${row.workspaceId}", cls := "mt-2")(),
@@ -553,9 +555,10 @@ object ProjectsView:
         name := fieldName,
         cls  := "mt-1 w-full rounded border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-100",
       )(
-        supportedCliTools.map { case (toolValue, toolLabel) =>
-          if toolValue == current then option(value := toolValue, selected)(toolLabel)
-          else option(value := toolValue)(toolLabel)
+        supportedCliTools.map {
+          case (toolValue, toolLabel) =>
+            if toolValue == current then option(value := toolValue, selected)(toolLabel)
+            else option(value := toolValue)(toolLabel)
         }*
       ),
     )

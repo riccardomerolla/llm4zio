@@ -1,7 +1,7 @@
 package shared.web
 
-import taskrun.entity.TaskReportRow
 import scalatags.Text.all.*
+import taskrun.entity.TaskReportRow
 
 object GraphView:
 

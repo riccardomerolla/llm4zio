@@ -1,21 +1,12 @@
 package board.control
 
-import java.time.Instant
 import java.nio.file.Path
+import java.time.Instant
 
 import zio.*
 import zio.test.*
 
-import board.entity.{
-  Board,
-  BoardColumn,
-  BoardError,
-  BoardIssue,
-  BoardRepository,
-  IssueFrontmatter,
-  IssuePriority,
-  TransientState,
-}
+import board.entity.*
 import decision.control.DecisionInbox
 import decision.entity.*
 import issues.entity.AgentIssue
