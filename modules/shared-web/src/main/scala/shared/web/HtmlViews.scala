@@ -31,21 +31,8 @@ object HtmlViews:
   def sdlcDashboardFragment(snapshot: SdlcSnapshot): String =
     SdlcDashboardView.fragment(snapshot)
 
-  def channelsPage(cards: List[ChannelCardData], nowMs: Long): String =
-    ChannelView.page(cards, nowMs)
-
   def recentRunsFragment(runs: List[TaskRunRow]): String =
     CommandCenterView.recentRunsFragment(runs)
-
-  def tasksList(
-    tasks: List[TaskListItem],
-    workflows: List[WorkflowDefinition],
-    flash: Option[String] = None,
-  ): String =
-    TasksView.tasksList(tasks, workflows, flash)
-
-  def taskDetail(task: TaskListItem): String =
-    TasksView.taskDetail(task)
 
   def reportsList(taskId: Long, reports: List[TaskReportRow]): String =
     ReportsView.reportsList(taskId, reports)
@@ -103,9 +90,6 @@ object HtmlViews:
     flash: Option[String] = None,
   ): String =
     SettingsView.issueTemplatesTab(templates, flash)
-
-  def modelsPage(registry: ModelRegistryResponse, statuses: List[ProviderProbeStatus]): String =
-    ModelsView.page(registry, statuses)
 
   def workflowsList(
     workflows: List[WorkflowDefinition],
@@ -176,12 +160,6 @@ object HtmlViews:
   ): String =
     ChatView.dashboard(conversations, sessionMetaByConversation, sessions, workspaceFolders, renderedAt)
 
-  def chatEmpty(
-    workspaceFolders: List[ChatView.ChatWorkspaceFolder] = Nil,
-    renderedAt: Instant = Instant.EPOCH,
-  ): String =
-    ChatView.emptyState(workspaceFolders, renderedAt)
-
   def chatNew(
     workspaceFolders: List[ChatView.ChatWorkspaceFolder] = Nil,
     workspaces: List[(String, String)] = Nil,
@@ -201,15 +179,6 @@ object HtmlViews:
 
   def chatMessagesFragment(messages: List[ConversationEntry]): String =
     ChatView.messagesFragment(messages)
-
-  def issuesView(
-    runId: Option[String],
-    issues: List[AgentIssueView],
-    statusFilter: Option[String],
-    query: Option[String],
-    tagFilter: Option[String],
-  ): String =
-    IssuesView.list(runId, issues, statusFilter, query, tagFilter)
 
   def issuesBoard(
     issues: List[AgentIssueView],
