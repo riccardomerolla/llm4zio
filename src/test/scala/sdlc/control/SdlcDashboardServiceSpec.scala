@@ -15,9 +15,9 @@ import evolution.entity.*
 import governance.entity.*
 import issues.entity.*
 import plan.entity.*
+import sdlc.entity.*
 import shared.errors.PersistenceError
 import shared.ids.Ids.*
-import sdlc.entity.*
 import specification.entity.*
 
 object SdlcDashboardServiceSpec extends ZIOSpecDefault:

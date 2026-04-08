@@ -33,8 +33,7 @@ import shared.errors.PersistenceError
 import shared.ids.Ids.{ AgentId, BoardIssueId, EventId, IssueId, TaskRunId }
 import shared.web.{ ErrorHandlingMiddleware, HtmlViews }
 import workspace.control.WorkspaceRunService
-import workspace.entity.AssignRunRequest
-import workspace.entity.WorkspaceRepository
+import workspace.entity.{ AssignRunRequest, WorkspaceRepository }
 
 trait IssueController:
   def routes: Routes[Any, Response]

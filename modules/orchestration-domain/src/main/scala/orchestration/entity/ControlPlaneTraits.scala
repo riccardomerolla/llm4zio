@@ -8,7 +8,8 @@ import shared.errors.ControlPlaneError
 
 /** Focused trait for workflow lifecycle operations.
   *
-  * Consumers that only need to start/route/update workflows depend on this instead of the full OrchestratorControlPlane.
+  * Consumers that only need to start/route/update workflows depend on this instead of the full
+  * OrchestratorControlPlane.
   */
 trait WorkflowOrchestrator:
   def startWorkflow(

@@ -11,8 +11,7 @@ import gateway.control.MessageRouter
 import gateway.entity.SessionKey
 import orchestration.entity.*
 import workspace.control.WorkspaceRunService
-import workspace.entity.AssignRunRequest
-import workspace.entity.WorkspaceRepository
+import workspace.entity.{ AssignRunRequest, WorkspaceRepository }
 
 trait ParallelSessionCoordinator:
   def launch(

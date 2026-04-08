@@ -1,7 +1,6 @@
 package shared.web
 
-import knowledge.entity.ArchitecturalContext
-import knowledge.entity.DecisionLog
+import knowledge.entity.{ ArchitecturalContext, DecisionLog }
 import memory.entity.MemoryEntry
 import scalatags.Text.all.*
 

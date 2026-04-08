@@ -7,7 +7,7 @@ import zio.test.{ Live, * }
 
 import _root_.config.entity.SettingRow
 import activity.entity.{ ActivityEvent, ActivityEventType }
-import analysis.entity.{ AnalysisDoc, AnalysisEvent, AnalysisRepository, AnalysisType, WorkspaceAnalysisState, WorkspaceAnalysisStatus }
+import analysis.entity.*
 import board.entity.*
 import db.*
 import project.control.ProjectStorageService

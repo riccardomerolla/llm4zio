@@ -4,9 +4,9 @@ import zio.*
 import zio.stream.ZStream
 
 import _root_.config.entity.{ MigrationConfig, WorkflowDefinition }
-import orchestration.entity.*
 import gateway.control.MessageRouter
 import gateway.entity.SessionScopeStrategy
+import orchestration.entity.*
 import shared.errors.ControlPlaneError
 import taskrun.entity.TaskStep
 
@@ -17,9 +17,9 @@ import taskrun.entity.TaskStep
   */
 trait OrchestratorControlPlane
   extends WorkflowOrchestrator
-  with ResourceAllocator
-  with AgentMonitorService
-  with EventPublisher
+     with ResourceAllocator
+     with AgentMonitorService
+     with EventPublisher
 
 object OrchestratorControlPlane:
 

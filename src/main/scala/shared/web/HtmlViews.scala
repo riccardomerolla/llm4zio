@@ -3,8 +3,7 @@ package shared.web
 import java.time.Instant
 
 import activity.entity.ActivityEvent
-import config.entity.{ ModelRegistryResponse, ProviderProbeStatus }
-import config.entity.{ AgentInfo, WorkflowDefinition }
+import config.entity.{ AgentInfo, ModelRegistryResponse, ProviderProbeStatus, WorkflowDefinition }
 import conversation.entity.api.{ ChatConversation, ConversationEntry, ConversationSessionMeta }
 import decision.entity.Decision
 import gateway.entity.ChatSession

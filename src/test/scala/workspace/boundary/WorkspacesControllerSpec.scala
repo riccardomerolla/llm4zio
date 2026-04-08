@@ -9,8 +9,7 @@ import zio.test.*
 
 import _root_.config.entity.*
 import analysis.control.WorkspaceAnalysisScheduler
-import analysis.entity.{ WorkspaceAnalysisState, WorkspaceAnalysisStatus }
-import analysis.entity.AnalysisType
+import analysis.entity.{ AnalysisType, WorkspaceAnalysisState, WorkspaceAnalysisStatus }
 import issues.entity.{ AgentIssue, IssueEvent, IssueFilter, IssueRepository, IssueState }
 import orchestration.control.AgentRegistry
 import shared.ids.Ids.IssueId

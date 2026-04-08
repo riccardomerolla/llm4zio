@@ -21,38 +21,39 @@ import issues.entity.*
 import plan.entity.{ Plan, PlanRepository, PlanStatus, PlanValidationResult, PlanValidationStatus }
 import shared.errors.PersistenceError
 import specification.entity.{ Specification, SpecificationRepository, SpecificationStatus }
+import sdlc.entity.SdlcSnapshot
 
 trait SdlcDashboardService:
   def snapshot: IO[PersistenceError, SdlcDashboardService.Snapshot]
 
 object SdlcDashboardService:
   // Re-export entity types for backward compat with SdlcDashboardService.* qualified access
-  type Thresholds          = sdlc.entity.Thresholds
-  val Thresholds           = sdlc.entity.Thresholds
-  type LifecycleStage      = sdlc.entity.LifecycleStage
-  val LifecycleStage       = sdlc.entity.LifecycleStage
-  type ChurnAlert          = sdlc.entity.ChurnAlert
-  val ChurnAlert           = sdlc.entity.ChurnAlert
-  type StoppageAlert       = sdlc.entity.StoppageAlert
-  val StoppageAlert        = sdlc.entity.StoppageAlert
+  type Thresholds = sdlc.entity.Thresholds
+  val Thresholds: sdlc.entity.Thresholds.type = sdlc.entity.Thresholds
+  type LifecycleStage = sdlc.entity.LifecycleStage
+  val LifecycleStage: sdlc.entity.LifecycleStage.type = sdlc.entity.LifecycleStage
+  type ChurnAlert = sdlc.entity.ChurnAlert
+  val ChurnAlert: sdlc.entity.ChurnAlert.type = sdlc.entity.ChurnAlert
+  type StoppageAlert = sdlc.entity.StoppageAlert
+  val StoppageAlert: sdlc.entity.StoppageAlert.type = sdlc.entity.StoppageAlert
   type EscalationIndicator = sdlc.entity.EscalationIndicator
-  val EscalationIndicator  = sdlc.entity.EscalationIndicator
-  type AgentPerformance    = sdlc.entity.AgentPerformance
-  val AgentPerformance     = sdlc.entity.AgentPerformance
-  type TrendDirection      = sdlc.entity.TrendDirection
-  val TrendDirection       = sdlc.entity.TrendDirection
-  type TrendIndicator      = sdlc.entity.TrendIndicator
-  val TrendIndicator       = sdlc.entity.TrendIndicator
-  type GovernanceOverview  = sdlc.entity.GovernanceOverview
-  val GovernanceOverview   = sdlc.entity.GovernanceOverview
+  val EscalationIndicator: sdlc.entity.EscalationIndicator.type = sdlc.entity.EscalationIndicator
+  type AgentPerformance = sdlc.entity.AgentPerformance
+  val AgentPerformance: sdlc.entity.AgentPerformance.type = sdlc.entity.AgentPerformance
+  type TrendDirection = sdlc.entity.TrendDirection
+  val TrendDirection: sdlc.entity.TrendDirection.type = sdlc.entity.TrendDirection
+  type TrendIndicator = sdlc.entity.TrendIndicator
+  val TrendIndicator: sdlc.entity.TrendIndicator.type = sdlc.entity.TrendIndicator
+  type GovernanceOverview = sdlc.entity.GovernanceOverview
+  val GovernanceOverview: sdlc.entity.GovernanceOverview.type = sdlc.entity.GovernanceOverview
   type DaemonHealthOverview = sdlc.entity.DaemonHealthOverview
-  val DaemonHealthOverview  = sdlc.entity.DaemonHealthOverview
-  type RecentEvolution     = sdlc.entity.RecentEvolution
-  val RecentEvolution      = sdlc.entity.RecentEvolution
-  type EvolutionOverview   = sdlc.entity.EvolutionOverview
-  val EvolutionOverview    = sdlc.entity.EvolutionOverview
-  type Snapshot            = sdlc.entity.SdlcSnapshot
-  val Snapshot             = sdlc.entity.SdlcSnapshot
+  val DaemonHealthOverview: sdlc.entity.DaemonHealthOverview.type = sdlc.entity.DaemonHealthOverview
+  type RecentEvolution = sdlc.entity.RecentEvolution
+  val RecentEvolution: sdlc.entity.RecentEvolution.type = sdlc.entity.RecentEvolution
+  type EvolutionOverview = sdlc.entity.EvolutionOverview
+  val EvolutionOverview: sdlc.entity.EvolutionOverview.type = sdlc.entity.EvolutionOverview
+  type Snapshot = sdlc.entity.SdlcSnapshot
+  val Snapshot: SdlcSnapshot.type = sdlc.entity.SdlcSnapshot
 
   val live
     : ZLayer[

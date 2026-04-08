@@ -13,8 +13,7 @@ import issues.entity.{ AgentIssue, IssueEvent, IssueRepository, IssueState }
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ AgentId, EventId, TaskRunId }
 import workspace.control.WorkspaceRunService
-import workspace.entity.AssignRunRequest
-import workspace.entity.WorkspaceRepository
+import workspace.entity.{ AssignRunRequest, WorkspaceRepository }
 
 trait AutoDispatcher:
   def dispatchOnce: IO[PersistenceError, Int]
