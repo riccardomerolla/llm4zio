@@ -9,6 +9,7 @@ import activity.control.ActivityHub
 import activity.entity.ActivityEvent
 import issues.entity.*
 import orchestration.control.{ Workspace as _, * }
+import orchestration.entity.*
 import shared.errors.{ ControlPlaneError, PersistenceError }
 import shared.ids.Ids.{ IssueId, ProjectId }
 import taskrun.entity.TaskStep

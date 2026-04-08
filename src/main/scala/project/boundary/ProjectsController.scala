@@ -9,7 +9,8 @@ import zio.*
 import zio.http.*
 
 import _root_.config.entity.AgentInfo
-import analysis.control.{ WorkspaceAnalysisScheduler, WorkspaceAnalysisState, WorkspaceAnalysisStatus }
+import analysis.control.WorkspaceAnalysisScheduler
+import analysis.entity.{ WorkspaceAnalysisState, WorkspaceAnalysisStatus }
 import issues.entity.api.{ AgentIssueView, IssuePriority, IssueStatus }
 import issues.entity.{ AgentIssue, IssueFilter, IssueRepository, IssueState }
 import orchestration.control.AgentRegistry

@@ -9,7 +9,8 @@ import governance.control.{ GovernanceEvaluationContext, GovernancePolicyService
 import governance.entity.{ GovernanceGate, GovernanceLifecycleAction, GovernanceLifecycleStage, GovernanceTransition }
 import project.control.ProjectStorageService
 import shared.ids.Ids.BoardIssueId
-import workspace.control.{ AssignRunRequest, GitService, WorkspaceRunService }
+import workspace.control.{ GitService, WorkspaceRunService }
+import workspace.entity.AssignRunRequest
 import workspace.entity.{ GitError, WorkspaceRepository }
 
 final case class DispatchResult(

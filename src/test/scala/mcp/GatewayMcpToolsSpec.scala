@@ -22,7 +22,8 @@ import evolution.entity.{
 import governance.control.{ GovernanceEvaluationContext, GovernancePolicyService, GovernanceTransitionDecision }
 import governance.entity.*
 import issues.entity.{ AgentIssue, IssueEvent, IssueFilter, IssueRepository }
-import knowledge.control.{ ArchitecturalContext, KnowledgeDecisionMatch, KnowledgeEdge, KnowledgeGraphService }
+import knowledge.control.KnowledgeGraphService
+import knowledge.entity.{ ArchitecturalContext, KnowledgeDecisionMatch, KnowledgeEdge }
 import knowledge.entity.{ DecisionLog, DecisionMaker, DecisionMakerKind }
 import llm4zio.tools.ToolRegistry
 import memory.entity.MemoryRepository
@@ -31,7 +32,8 @@ import sdlc.control.SdlcDashboardService
 import shared.errors.PersistenceError
 import shared.ids.Ids.*
 import specification.entity.*
-import workspace.control.{ AssignRunRequest, WorkspaceRunService }
+import workspace.control.WorkspaceRunService
+import workspace.entity.AssignRunRequest
 import workspace.entity.{ WorkspaceError, WorkspaceRepository, WorkspaceRun }
 
 object GatewayMcpToolsSpec extends ZIOSpecDefault:

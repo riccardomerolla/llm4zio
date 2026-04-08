@@ -6,10 +6,11 @@ import zio.*
 
 import activity.control.ActivityHub
 import activity.entity.{ ActivityEvent, ActivityEventType }
-import analysis.entity.{ AnalysisDoc, AnalysisRepository, AnalysisType }
+import analysis.entity.{ AnalysisDoc, AnalysisRepository, AnalysisType, WorkspaceAnalysisState, WorkspaceAnalysisStatus }
 import board.entity.*
 import db.TaskRepository
-import orchestration.control.{ AgentExecutionState, OrchestratorControlPlane }
+import orchestration.control.OrchestratorControlPlane
+import orchestration.entity.AgentExecutionState
 import project.control.ProjectStorageService
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ BoardIssueId, EventId, IssueId }
@@ -18,23 +19,6 @@ import workspace.entity.{ RunSessionMode, RunStatus, WorkspaceRepository, Worksp
 final private[analysis] case class WorkspaceAnalysisJob(
   workspaceId: String,
   analysisType: AnalysisType,
-)
-
-enum WorkspaceAnalysisState:
-  case Idle
-  case Pending
-  case Running
-  case Completed
-  case Failed
-
-final case class WorkspaceAnalysisStatus(
-  workspaceId: String,
-  analysisType: AnalysisType,
-  state: WorkspaceAnalysisState,
-  queuedAt: Option[Instant] = None,
-  startedAt: Option[Instant] = None,
-  completedAt: Option[Instant] = None,
-  lastUpdatedAt: Instant,
 )
 
 trait WorkspaceAnalysisScheduler:

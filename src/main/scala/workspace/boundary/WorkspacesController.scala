@@ -12,7 +12,7 @@ import orchestration.control.AgentRegistry
 import shared.errors.PersistenceError
 import shared.ids.Ids.ProjectId
 import shared.web.{ WorkspaceTemplatesView, WorkspacesView }
-import workspace.control.{ AssignRunRequest, GitService, WorkspaceRunService }
+import workspace.control.{ GitService, WorkspaceRunService }
 import workspace.entity.*
 
 trait WorkspacesController:

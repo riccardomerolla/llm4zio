@@ -13,7 +13,7 @@ import issues.entity.{ AgentIssue, IssueEvent, IssueFilter, IssueRepository, Iss
 import shared.errors.PersistenceError
 import shared.ids.Ids.*
 import shared.testfixtures.*
-import workspace.control.{ AssignRunRequest, WorkspaceRunService }
+import workspace.control.WorkspaceRunService
 import workspace.entity.*
 
 object AutoDispatcherSpec extends ZIOSpecDefault:

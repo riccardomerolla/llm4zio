@@ -1,6 +1,6 @@
 package shared.web
 
-import config.control.{ ModelRegistryResponse, ProviderAvailability, ProviderProbeStatus }
+import config.entity.{ ModelRegistryResponse, ProviderAvailability, ProviderProbeStatus }
 import scalatags.Text.all.*
 
 object ModelsView:

@@ -1,10 +1,10 @@
-package orchestration.control
+package orchestration.entity
 
 import java.time.Instant
 
 import zio.json.*
 
-import taskrun.entity.TaskStep
+import shared.entity.TaskStep
 
 /** Workflow execution status
   */

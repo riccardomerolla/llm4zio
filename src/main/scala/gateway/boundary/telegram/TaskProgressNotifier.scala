@@ -13,6 +13,7 @@ import gateway.entity.{
   TelegramSendMessage,
 }
 import orchestration.control.*
+import orchestration.entity.*
 import shared.errors.{ ControlPlaneError, PersistenceError }
 import taskrun.entity.TaskRunRow
 

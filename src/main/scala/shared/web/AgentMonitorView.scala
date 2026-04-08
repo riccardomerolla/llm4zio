@@ -1,7 +1,7 @@
 package shared.web
 
 import llm4zio.observability.MetricsSnapshot
-import orchestration.control.{ AgentExecutionInfo, AgentExecutionState, AgentMonitorSnapshot }
+import orchestration.entity.{ AgentExecutionInfo, AgentExecutionState, AgentMonitorSnapshot }
 import scalatags.Text.all.*
 
 /** Renders the Agent Monitor as a Symphony-style dark terminal table.

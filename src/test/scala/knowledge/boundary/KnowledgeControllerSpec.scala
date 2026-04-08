@@ -7,7 +7,7 @@ import zio.http.*
 import zio.test.*
 
 import analysis.entity.{ AnalysisDoc, AnalysisType }
-import knowledge.control.{ ArchitecturalContext, KnowledgeDecisionMatch, KnowledgeEdge, KnowledgeGraphService }
+import knowledge.control.KnowledgeGraphService
 import knowledge.entity.*
 import memory.entity.*
 import shared.errors.PersistenceError

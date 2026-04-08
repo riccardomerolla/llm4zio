@@ -4,6 +4,7 @@ import zio.*
 import zio.stream.ZStream
 
 import _root_.config.entity.{ MigrationConfig, WorkflowDefinition }
+import orchestration.entity.*
 import gateway.control.MessageRouter
 import gateway.entity.SessionScopeStrategy
 import shared.errors.ControlPlaneError

@@ -6,6 +6,7 @@ import zio.test.*
 
 import _root_.config.entity.{ ConfigRepository, CustomAgentRow, GatewayConfig, SettingRow, WorkflowRow }
 import gateway.control.*
+import gateway.entity.GatewayMetricsSnapshot
 import shared.errors.PersistenceError
 
 object ChannelControllerSpec extends ZIOSpecDefault:

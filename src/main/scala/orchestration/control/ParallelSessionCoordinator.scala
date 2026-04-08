@@ -10,7 +10,8 @@ import zio.*
 import gateway.control.MessageRouter
 import gateway.entity.SessionKey
 import orchestration.entity.*
-import workspace.control.{ AssignRunRequest, WorkspaceRunService }
+import workspace.control.WorkspaceRunService
+import workspace.entity.AssignRunRequest
 import workspace.entity.WorkspaceRepository
 
 trait ParallelSessionCoordinator:

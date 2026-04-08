@@ -3,30 +3,10 @@ package knowledge.control
 import zio.*
 
 import analysis.entity.{ AnalysisDoc, AnalysisRepository, AnalysisType }
+import knowledge.entity.*
 import knowledge.entity.{ DecisionLog, DecisionLogFilter, DecisionLogRepository }
 import memory.entity.{ MemoryEntry, MemoryFilter, MemoryKind, MemoryRepository, UserId }
 import shared.errors.PersistenceError
-
-final case class KnowledgeEdge(
-  fromId: String,
-  toId: String,
-  relation: String,
-  score: Double,
-  explicit: Boolean,
-)
-
-final case class KnowledgeDecisionMatch(
-  decision: DecisionLog,
-  score: Double,
-  @annotation.unused relatedEdges: List[KnowledgeEdge] = Nil,
-)
-
-final case class ArchitecturalContext(
-  decisions: List[KnowledgeDecisionMatch],
-  knowledgeEntries: List[MemoryEntry],
-  analysisDocs: List[AnalysisDoc],
-  edges: List[KnowledgeEdge],
-)
 
 trait KnowledgeGraphService:
   def searchDecisions(

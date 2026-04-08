@@ -8,7 +8,7 @@ import zio.stream.ZStream
 import zio.test.*
 
 import _root_.config.boundary.SettingsController
-import _root_.config.control.{ ModelRegistryResponse, ModelService, ProviderProbeStatus }
+import _root_.config.control.ModelService
 import _root_.config.entity.*
 import activity.control.ActivityHub
 import activity.entity.{ ActivityEvent, ActivityEventType, ActivityRepository }

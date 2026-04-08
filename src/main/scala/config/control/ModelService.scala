@@ -4,38 +4,10 @@ import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 
 import zio.*
-import zio.json.*
 
 import _root_.config.entity.*
 import app.control.HttpAIClient
 import shared.errors.AIError
-
-enum ProviderAvailability derives JsonCodec:
-  case Healthy, Degraded, Unhealthy, Unknown
-
-enum AuthStatus derives JsonCodec:
-  case Valid, Missing, Invalid, Unknown
-
-final case class ProviderProbeStatus(
-  provider: AIProvider,
-  availability: ProviderAvailability,
-  auth: AuthStatus,
-  statusMessage: String,
-  checkedAt: java.time.Instant,
-  rateLimitHeadroom: Option[Double] = None,
-) derives JsonCodec
-
-final case class ProviderModelGroup(
-  provider: AIProvider,
-  models: List[AIModel],
-) derives JsonCodec
-
-final case class ModelRegistryResponse(
-  providers: List[ProviderModelGroup]
-) derives JsonCodec
-
-enum ModelServiceError derives JsonCodec:
-  case ProbeFailed(provider: AIProvider, message: String)
 
 trait ModelService:
   def listAvailableModels: UIO[ModelRegistryResponse]

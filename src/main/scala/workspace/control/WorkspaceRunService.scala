@@ -3,7 +3,6 @@ package workspace.control
 import java.nio.file.{ Path, Paths }
 
 import zio.*
-import zio.json.*
 
 import activity.control.ActivityHub
 import activity.entity.ActivityEvent
@@ -14,14 +13,13 @@ import db.ChatRepository
 import decision.control.DecisionInbox
 import issues.entity.{ AgentIssue as DomainIssue, IssueRepository }
 import knowledge.control.KnowledgeExtractionService
-import orchestration.control.{ AgentExecutionState, AgentPoolManager, OrchestratorControlPlane, PoolError, SlotHandle }
+import orchestration.control.{ AgentPoolManager, OrchestratorControlPlane, PoolError, SlotHandle }
+import orchestration.entity.AgentExecutionState
 import shared.errors.PersistenceError
 import shared.ids.Ids.IssueId
 import workspace.control.WorkspaceErrorSupport.*
 import workspace.control.WorkspaceRunLifecycleSupport.*
 import workspace.entity.*
-
-case class AssignRunRequest(issueRef: String, prompt: String, agentName: String) derives JsonCodec
 
 trait WorkspaceRunService:
   def assign(workspaceId: String, req: AssignRunRequest): IO[WorkspaceError, WorkspaceRun]

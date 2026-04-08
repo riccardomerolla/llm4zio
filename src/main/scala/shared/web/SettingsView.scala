@@ -54,8 +54,8 @@ object SettingsView:
 
   def aiTab(
     settings: Map[String, String],
-    registry: config.control.ModelRegistryResponse,
-    statuses: List[config.control.ProviderProbeStatus],
+    registry: config.entity.ModelRegistryResponse,
+    statuses: List[config.entity.ProviderProbeStatus],
     flash: Option[String] = None,
     errors: Map[String, String] = Map.empty,
   ): String =

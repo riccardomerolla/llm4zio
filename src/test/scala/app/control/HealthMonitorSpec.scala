@@ -9,7 +9,7 @@ import zio.test.*
 import _root_.config.entity.{ CustomAgentRow, SettingRow, * }
 import db.*
 import gateway.control.*
-import gateway.entity.{ NormalizedMessage, SessionKey, SessionScopeStrategy }
+import gateway.entity.{ GatewayMetricsSnapshot, NormalizedMessage, SessionKey, SessionScopeStrategy }
 import orchestration.control.AgentRegistry
 import shared.errors.PersistenceError
 import taskrun.entity.{ RunStatus, TaskArtifactRow, TaskReportRow, TaskRunRow, TaskStep }

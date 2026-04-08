@@ -269,7 +269,7 @@ object IssueApprovalServiceSpec extends ZIOSpecDefault:
     extends WorkspaceRunService:
     override def assign(
       workspaceId: String,
-      req: workspace.control.AssignRunRequest,
+      req: workspace.entity.AssignRunRequest,
     ): IO[workspace.entity.WorkspaceError, WorkspaceRun] =
       ZIO.dieMessage("assign unused in IssueApprovalServiceSpec")
 

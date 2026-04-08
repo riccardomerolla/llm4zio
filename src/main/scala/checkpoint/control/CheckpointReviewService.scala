@@ -12,7 +12,8 @@ import db.ChatRepository
 import decision.control.DecisionInbox
 import decision.entity.DecisionUrgency
 import issues.entity.{ AgentIssue, IssueFilter, IssueRepository, IssueWorkReport, IssueWorkReportProjection }
-import orchestration.control.{ AgentExecutionInfo, AgentExecutionState, OrchestratorControlPlane }
+import orchestration.control.OrchestratorControlPlane
+import orchestration.entity.{ AgentExecutionInfo, AgentExecutionState }
 import shared.errors.{ ControlPlaneError, PersistenceError, StateError }
 import shared.ids.Ids.{ IssueId, TaskRunId }
 import taskrun.entity.CheckpointSnapshot

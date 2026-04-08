@@ -241,7 +241,7 @@ lazy val boardDomain = (project in file("modules/board-domain"))
   )
 
 lazy val knowledgeDomain = (project in file("modules/knowledge-domain"))
-  .dependsOn(sharedIds, sharedErrors, sharedStoreCore)
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore, analysisDomain, memoryDomain)
   .settings(foundationSettings)
   .settings(
     name := "knowledge-domain",

@@ -13,10 +13,10 @@ import db.*
 import orchestration.control.{
   OrchestratorControlPlane,
   TaskExecutor,
-  WorkflowRunState,
   WorkflowService,
   WorkflowServiceError,
 }
+import orchestration.entity.WorkflowRunState
 import shared.errors.PersistenceError
 import shared.web.{ TaskListItem, TasksView }
 import taskrun.entity.{ RunStatus, TaskArtifactRow, TaskRunRow }

@@ -2,7 +2,7 @@ package shared.web
 
 import java.time.Instant
 
-import analysis.control.{ WorkspaceAnalysisState, WorkspaceAnalysisStatus }
+import analysis.entity.{ WorkspaceAnalysisState, WorkspaceAnalysisStatus }
 import analysis.entity.AnalysisType
 import issues.entity.api.AgentIssueView
 import scalatags.Text.all.*
