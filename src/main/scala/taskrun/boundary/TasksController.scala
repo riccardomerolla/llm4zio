@@ -11,12 +11,11 @@ import zio.stream.ZStream
 import _root_.config.entity.WorkflowDefinition
 import db.*
 import orchestration.control.{
-  OrchestratorControlPlane,
   TaskExecutor,
   WorkflowService,
   WorkflowServiceError,
 }
-import orchestration.entity.WorkflowRunState
+import orchestration.entity.{ EventPublisher, WorkflowOrchestrator, WorkflowRunState }
 import shared.errors.PersistenceError
 import shared.web.{ TaskListItem, TasksView }
 import taskrun.entity.{ RunStatus, TaskArtifactRow, TaskRunRow }
@@ -30,14 +29,15 @@ object TasksController:
     ZIO.serviceWith[TasksController](_.routes)
 
   val live
-    : ZLayer[TaskRepository & WorkflowService & TaskExecutor & OrchestratorControlPlane, Nothing, TasksController] =
+    : ZLayer[TaskRepository & WorkflowService & TaskExecutor & WorkflowOrchestrator & EventPublisher, Nothing, TasksController] =
     ZLayer.fromFunction(TasksControllerLive.apply)
 
 final case class TasksControllerLive(
   repository: TaskRepository,
   workflowService: WorkflowService,
   taskExecutor: TaskExecutor,
-  controlPlane: OrchestratorControlPlane,
+  controlPlane: WorkflowOrchestrator,
+  eventPublisher: EventPublisher,
 ) extends TasksController:
 
   override val routes: Routes[Any, Response] = Routes(
@@ -218,7 +218,7 @@ final case class TasksControllerLive(
     renderProgressSnapshot(taskId).map { initial =>
       val runId   = taskId.toString
       val updates = ZStream.scoped {
-        for queue <- controlPlane.subscribeToEvents(runId)
+        for queue <- eventPublisher.subscribeToEvents(runId)
         yield ZStream.fromQueue(queue)
       }.flatten
         .mapZIO(_ => renderProgressSnapshot(taskId).orElseSucceed(initial))
