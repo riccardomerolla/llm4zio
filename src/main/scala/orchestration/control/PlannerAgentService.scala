@@ -23,6 +23,7 @@ import llm4zio.tools.JsonSchema
 import plan.entity.*
 import project.control.ProjectStorageService
 import prompts.{ PromptError, PromptLoader }
+import orchestration.entity.{ PlannerPlanPreview, PlannerPreviewState }
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ BoardIssueId, EventId, IssueId, PlanId, SpecificationId }
 import specification.entity.*
@@ -47,22 +48,6 @@ enum PlannerAgentError:
         s"$operation failed: $details"
       case LlmFailure(details)                    => s"Planner agent failed: $details"
       case PlanValidationFailed(details)          => details
-
-final case class PlannerPlanPreview(
-  summary: String,
-  issues: List[PlanTaskDraft],
-) derives JsonCodec
-
-final case class PlannerPreviewState(
-  conversationId: Long,
-  workspaceId: Option[String],
-  preview: PlannerPlanPreview,
-  specificationId: Option[SpecificationId] = None,
-  planId: Option[PlanId] = None,
-  confirmedIssueIds: Option[List[IssueId]] = None,
-  isGenerating: Boolean = false,
-  lastError: Option[String] = None,
-)
 
 final case class PlannerSessionStart(
   conversationId: Long,

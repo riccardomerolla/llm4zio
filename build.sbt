@@ -313,7 +313,7 @@ lazy val gatewayDomain = (project in file("modules/gateway-domain"))
   )
 
 lazy val orchestrationDomain = (project in file("modules/orchestration-domain"))
-  .dependsOn(sharedIds, sharedErrors, gatewayDomain, configDomain)
+  .dependsOn(sharedIds, sharedErrors, gatewayDomain, configDomain, planDomain)
   .settings(foundationSettings)
   .settings(
     name := "orchestration-domain",
@@ -334,7 +334,7 @@ lazy val sharedWeb = (project in file("modules/shared-web"))
     daemonDomain, decisionDomain, demoDomain, evolutionDomain, gatewayDomain,
     governanceDomain, issuesDomain, knowledgeDomain, memoryDomain,
     planDomain, projectDomain, specificationDomain, taskrunDomain, workspaceDomain,
-    checkpointDomain, sdlcDomain)
+    orchestrationDomain, checkpointDomain, sdlcDomain, llm4zio)
   .settings(foundationSettings)
   .settings(
     name := "shared-web",

@@ -23,6 +23,7 @@ import prompts.PromptLoader
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ BoardIssueId, IssueId, PlanId, SpecificationId }
 import specification.entity.*
+import orchestration.entity.{ PlannerPlanPreview, PlannerPreviewState }
 import workspace.entity.*
 
 object PlannerAgentServiceSpec extends ZIOSpecDefault:

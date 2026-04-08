@@ -2,7 +2,7 @@ package shared.web
 
 import issues.entity.{ IssueCiStatus, IssuePrStatus, IssueWorkReport }
 import scalatags.Text.all.*
-import workspace.control.ProofOfWorkExtractor
+import workspace.entity.RequirementCheck
 
 /** Renders the proof-of-work panel for an issue.
   *
@@ -18,10 +18,9 @@ object ProofOfWorkView:
     * @param collapsed
     *   if true the panel is rendered collapsed (toggle-able by JS)
     */
-  def panel(report: IssueWorkReport, collapsed: Boolean, requirements: List[String] = Nil): String =
-    if !hasAnySignal(report) && requirements.isEmpty then ""
+  def panel(report: IssueWorkReport, collapsed: Boolean, checks: List[RequirementCheck] = Nil): String =
+    if !hasAnySignal(report) && checks.isEmpty then ""
     else
-      val checks = ProofOfWorkExtractor.validateRequirements(requirements, report)
       div(
         cls                        := "mt-3 rounded-lg border border-white/10 bg-slate-950/60 p-3 text-xs text-slate-200",
         attr("data-proof-of-work") := report.issueId.value,

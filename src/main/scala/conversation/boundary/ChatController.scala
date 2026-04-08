@@ -20,6 +20,7 @@ import llm4zio.core.{ ConversationThread, LlmError, LlmService, Streaming, ToolC
 import llm4zio.providers.{ GeminiCliExecutor, HttpClient }
 import llm4zio.tools.ToolRegistry
 import orchestration.control.*
+import orchestration.entity.{ PlannerPlanPreview, PlannerPreviewState }
 import plan.entity.PlanTaskDraft
 import shared.errors.PersistenceError
 import shared.errors.PersistenceError as WorkspacePersistenceError

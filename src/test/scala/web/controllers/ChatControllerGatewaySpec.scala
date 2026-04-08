@@ -20,6 +20,7 @@ import llm4zio.providers.{ GeminiCliExecutor, HttpClient }
 import llm4zio.tools.{ AnyTool, JsonSchema }
 import memory.entity.*
 import orchestration.control.{ IssueAssignmentOrchestrator, * }
+import orchestration.entity.{ PlannerPlanPreview, PlannerPreviewState }
 import prompts.PromptLoader
 import shared.errors.PersistenceError
 import shared.web.StreamAbortRegistryLive

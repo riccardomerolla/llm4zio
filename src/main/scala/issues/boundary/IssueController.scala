@@ -32,7 +32,7 @@ import project.control.ProjectStorageService
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ AgentId, BoardIssueId, EventId, IssueId, TaskRunId }
 import shared.web.{ ErrorHandlingMiddleware, HtmlViews }
-import workspace.control.WorkspaceRunService
+import workspace.control.{ ProofOfWorkExtractor, WorkspaceRunService }
 import workspace.entity.{ AssignRunRequest, WorkspaceRepository }
 
 trait IssueController:
@@ -209,6 +209,9 @@ final case class IssueControllerLive(
                                                        )
                                                      )
                                                      .mapError(mapIssueRepoError)
+                                 checks = workReport.toList.flatMap(r =>
+                                   ProofOfWorkExtractor.validateRequirements(issue.proofOfWorkRequirements, r)
+                                 )
                                yield html(
                                  HtmlViews.issueDetail(
                                    domainToView(issue),
@@ -220,6 +223,7 @@ final case class IssueControllerLive(
                                    workReport,
                                    decisions,
                                    flash,
+                                   checks,
                                  )
                                )
         yield response

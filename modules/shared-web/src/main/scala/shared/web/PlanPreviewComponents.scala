@@ -1,6 +1,6 @@
 package shared.web
 
-import orchestration.control.PlannerPreviewState
+import orchestration.entity.PlannerPreviewState
 import plan.entity.PlanTaskDraft
 import scalatags.Text.all.*
 

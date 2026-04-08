@@ -295,6 +295,7 @@ object HtmlViews:
     workReport: Option[IssueWorkReport] = None,
     decisions: List[Decision] = Nil,
     flash: Option[String] = None,
+    checks: List[workspace.entity.RequirementCheck] = Nil,
   ): String =
     IssuesView.detail(
       issue,
@@ -306,6 +307,7 @@ object HtmlViews:
       workReport,
       decisions,
       flash,
+      checks,
     )
 
   def issueEditForm(issue: AgentIssueView, workspaces: List[(String, String)]): String =

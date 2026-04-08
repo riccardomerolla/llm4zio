@@ -10,7 +10,7 @@ import issues.entity.IssueWorkReport
 import issues.entity.api.*
 import scalatags.Text.all.*
 import shared.ids.Ids.IssueId
-import workspace.entity.{ RunSessionMode, RunStatus, WorkspaceRun }
+import workspace.entity.{ RequirementCheck, RunSessionMode, RunStatus, WorkspaceRun }
 
 object IssuesView:
   import IssuesMarkdownSupport.*
@@ -609,8 +609,9 @@ object IssuesView:
     workReport: Option[IssueWorkReport] = None,
     decisions: List[Decision] = Nil,
     flash: Option[String] = None,
+    checks: List[RequirementCheck] = Nil,
   ): String =
-    detailPage(issue, issueRuns, availableAgents, analysisDocs, mergeHistory, workspaces, workReport, decisions, flash)
+    detailPage(issue, issueRuns, availableAgents, analysisDocs, mergeHistory, workspaces, workReport, decisions, flash, checks)
 
   private def detailPage(
     issue: AgentIssueView,
@@ -622,6 +623,7 @@ object IssuesView:
     workReport: Option[IssueWorkReport],
     decisions: List[Decision] = Nil,
     flash: Option[String] = None,
+    checks: List[RequirementCheck] = Nil,
   ): String =
     val issueIdStr      = safe(issue.id, "-")
     val selectedAgent   = safe(issue.preferredAgent).match
@@ -776,7 +778,7 @@ object IssuesView:
             else (),
             // proof-of-work (when available)
             effectiveReport
-              .map(r => ProofOfWorkView.panel(r, collapsed = false, requirements = issue.proofOfWorkRequirements))
+              .map(r => ProofOfWorkView.panel(r, collapsed = false, checks = checks))
               .filter(_.nonEmpty)
               .map(html => div(cls := "rounded-xl border border-white/10 bg-slate-900/60 p-6")(raw(html)))
               .getOrElse(()),

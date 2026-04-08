@@ -2,7 +2,7 @@ package shared.web
 
 import zio.test.*
 
-import orchestration.control.{ PlannerPlanPreview, PlannerPreviewState }
+import orchestration.entity.{ PlannerPlanPreview, PlannerPreviewState }
 import plan.entity.PlanTaskDraft
 
 object PlanPreviewComponentsSpec extends ZIOSpecDefault:

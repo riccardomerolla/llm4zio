@@ -5,7 +5,7 @@ import java.time.Instant
 import zio.test.*
 
 import conversation.entity.api.{ ChatConversation, ConversationEntry, MessageType, SenderType }
-import orchestration.control.{ PlannerPlanPreview, PlannerPreviewState }
+import orchestration.entity.{ PlannerPlanPreview, PlannerPreviewState }
 import workspace.entity.{ RunSessionMode, RunStatus }
 
 object ChatViewSpec extends ZIOSpecDefault:

@@ -1,7 +1,7 @@
 package shared.web
 
 import issues.entity.IssueWorkReport
-import orchestration.control.PlannerPreviewState
+import orchestration.entity.PlannerPreviewState
 import taskrun.entity.TaskReportRow
 
 final case class ChatDetailContext(

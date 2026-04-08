@@ -6,6 +6,7 @@ import zio.test.*
 
 import issues.entity.*
 import shared.ids.Ids.{ IssueId, ReportId }
+import workspace.control.ProofOfWorkExtractor
 
 object ProofOfWorkViewSpec extends ZIOSpecDefault:
 
@@ -90,7 +91,9 @@ object ProofOfWorkViewSpec extends ZIOSpecDefault:
           ciStatus = Some(IssueCiStatus.Passed),
         )
         val html   =
-          ProofOfWorkView.panel(report, collapsed = false, requirements = List("tests pass", "coverage > 80%"))
+          val requirements = List("tests pass", "coverage > 80%")
+          val checks       = ProofOfWorkExtractor.validateRequirements(requirements, report)
+          ProofOfWorkView.panel(report, collapsed = false, checks = checks)
         assertTrue(
           html.contains("Verification Checklist"),
           html.contains("tests pass"),
