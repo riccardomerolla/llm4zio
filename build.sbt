@@ -328,6 +328,23 @@ lazy val evolutionDomain = (project in file("modules/evolution-domain"))
     libraryDependencies ++= domainDeps,
   )
 
+lazy val sharedWeb = (project in file("modules/shared-web"))
+  .dependsOn(sharedIds, sharedErrors,
+    activityDomain, agentDomain, boardDomain, configDomain, conversationDomain,
+    daemonDomain, decisionDomain, demoDomain, evolutionDomain, gatewayDomain,
+    governanceDomain, issuesDomain, knowledgeDomain, memoryDomain,
+    planDomain, projectDomain, specificationDomain, taskrunDomain, workspaceDomain)
+  .settings(foundationSettings)
+  .settings(
+    name := "shared-web",
+    libraryDependencies ++= Seq(
+      "dev.zio" %% "zio" % zioVersion,
+      zioJsonDep,
+      zioHttpDep,
+      "com.lihaoyi" %% "scalatags" % scalatagsVersion,
+    ),
+  )
+
 lazy val issuesDomain = (project in file("modules/issues-domain"))
   .dependsOn(sharedIds, sharedErrors, sharedStoreCore, boardDomain, workspaceDomain,
     taskrunDomain, analysisDomain)
@@ -370,7 +387,7 @@ lazy val allModules = Seq(
   activityDomain, memoryDomain, governanceDomain, agentDomain, decisionDomain, specificationDomain,
   planDomain, taskrunDomain, boardDomain, knowledgeDomain, projectDomain, configDomain,
   conversationDomain, daemonDomain, analysisDomain, workspaceDomain, gatewayDomain,
-  orchestrationDomain, evolutionDomain, issuesDomain, demoDomain,
+  orchestrationDomain, evolutionDomain, issuesDomain, demoDomain, sharedWeb,
 )
 
 lazy val root = (project in file("."))
