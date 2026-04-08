@@ -13,19 +13,12 @@ import workspace.control.{ GitService, WorkspaceRunService }
 import workspace.entity.AssignRunRequest
 import workspace.entity.{ GitError, WorkspaceRepository }
 
-final case class DispatchResult(
-  dispatchedIssueIds: List[BoardIssueId],
-  skippedIssueIds: List[BoardIssueId],
-)
-
-trait BoardOrchestrator:
-  def dispatchCycle(workspacePath: String): IO[BoardError, DispatchResult]
-  def assignIssue(workspacePath: String, issueId: BoardIssueId, agentName: String): IO[BoardError, Unit]
-  def markIssueStarted(workspacePath: String, issueId: BoardIssueId, agentName: String, branchName: String)
-    : IO[BoardError, Unit]
-  def completeIssue(workspacePath: String, issueId: BoardIssueId, success: Boolean, details: String)
-    : IO[BoardError, Unit]
-  def approveIssue(workspacePath: String, issueId: BoardIssueId): IO[BoardError, Unit]
+/** Central board orchestrator for issue lifecycle management.
+  *
+  * Extends focused sub-traits from board.entity so that consumers can depend on the narrower interface they actually
+  * need (e.g. IssueDispatcher for dispatch-only consumers, IssueApprover for approval controllers).
+  */
+trait BoardOrchestrator extends IssueDispatcher with IssueApprover
 
 object BoardOrchestrator:
   def dispatchCycle(workspacePath: String): ZIO[BoardOrchestrator, BoardError, DispatchResult] =

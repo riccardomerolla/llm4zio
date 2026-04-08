@@ -263,8 +263,8 @@ object IssueControllerSpec extends ZIOSpecDefault:
     override def runMaintenance(now: Instant): IO[PersistenceError, List[Decision]]                      = ZIO.succeed(Nil)
 
   private object StubBoardOrchestrator extends BoardOrchestrator:
-    override def dispatchCycle(workspacePath: String): IO[BoardError, board.control.DispatchResult]                 =
-      ZIO.succeed(board.control.DispatchResult(Nil, Nil))
+    override def dispatchCycle(workspacePath: String): IO[BoardError, board.entity.DispatchResult]                 =
+      ZIO.succeed(board.entity.DispatchResult(Nil, Nil))
     override def assignIssue(workspacePath: String, issueId: BoardIssueId, agentName: String): IO[BoardError, Unit] =
       ZIO.unit
     override def markIssueStarted(

@@ -10,98 +10,16 @@ import gateway.entity.SessionScopeStrategy
 import shared.errors.ControlPlaneError
 import taskrun.entity.TaskStep
 
-/** Central control plane for workflow coordination and agent routing
+/** Central control plane for workflow coordination and agent routing.
+  *
+  * Extends focused sub-traits from orchestration.entity so that consumers can depend on the narrower interface they
+  * actually need (e.g. AgentMonitorService for the monitor view, WorkflowOrchestrator for task execution).
   */
-trait OrchestratorControlPlane:
-  /** Start a new workflow and allocate resources
-    */
-  def startWorkflow(
-    runId: String,
-    workflowId: Long,
-    definition: WorkflowDefinition,
-  ): ZIO[Any, ControlPlaneError, String]
-
-  /** Get the next step and assigned agent for a run
-    */
-  def routeStep(
-    runId: String,
-    step: TaskStep,
-    capabilities: List[AgentCapability],
-  ): ZIO[Any, ControlPlaneError, String]
-
-  /** Allocate a parallelism slot for a run
-    */
-  def allocateResource(runId: String): ZIO[Any, ControlPlaneError, Int]
-
-  /** Release a parallelism slot
-    */
-  def releaseResource(runId: String, slot: Int): ZIO[Any, ControlPlaneError, Unit]
-
-  /** Publish a control plane event
-    */
-  def publishEvent(event: ControlPlaneEvent): ZIO[Any, ControlPlaneError, Unit]
-
-  /** Subscribe to events for a specific run
-    */
-  def subscribeToEvents(runId: String): ZIO[Scope, Nothing, Dequeue[ControlPlaneEvent]]
-
-  /** Subscribe to events for all runs
-    */
-  def subscribeAllEvents: ZIO[Scope, Nothing, Dequeue[ControlPlaneEvent]]
-
-  /** Get all active runs
-    */
-  def getActiveRuns: ZIO[Any, ControlPlaneError, List[ActiveRun]]
-
-  /** Get active run state
-    */
-  def getRunState(runId: String): ZIO[Any, ControlPlaneError, Option[ActiveRun]]
-
-  /** Update run state
-    */
-  def updateRunState(runId: String, newState: WorkflowRunState): ZIO[Any, ControlPlaneError, Unit]
-
-  /** Process control command
-    */
-  def executeCommand(command: ControlCommand): ZIO[Any, ControlPlaneError, Unit]
-
-  /** Get current resource allocation state
-    */
-  def getResourceState: ZIO[Any, ControlPlaneError, ResourceAllocationState]
-
-  /** Get current agent execution monitor snapshot
-    */
-  def getAgentMonitorSnapshot: ZIO[Any, ControlPlaneError, AgentMonitorSnapshot]
-
-  /** Get agent execution history timeline (most recent first)
-    */
-  def getAgentExecutionHistory(limit: Int): ZIO[Any, ControlPlaneError, List[AgentExecutionEvent]]
-
-  /** Pause active execution for specific agent
-    */
-  def pauseAgentExecution(agentName: String): ZIO[Any, ControlPlaneError, Unit]
-
-  /** Resume paused execution for specific agent
-    */
-  def resumeAgentExecution(agentName: String): ZIO[Any, ControlPlaneError, Unit]
-
-  /** Abort active execution for specific agent
-    */
-  def abortAgentExecution(agentName: String): ZIO[Any, ControlPlaneError, Unit]
-
-  /** Register or update a workspace CLI agent run directly in the agent monitor.
-    *
-    * Called by [[workspace.control.WorkspaceRunService]] at run start, completion, and cancellation. Unlike
-    * routeStep-based flows, workspace runs are long-running CLI processes with no step decomposition.
-    */
-  def notifyWorkspaceAgent(
-    agentName: String,
-    state: AgentExecutionState,
-    runId: Option[String],
-    conversationId: Option[String],
-    message: Option[String],
-    tokenDelta: Long,
-  ): UIO[Unit]
+trait OrchestratorControlPlane
+  extends WorkflowOrchestrator
+  with ResourceAllocator
+  with AgentMonitorService
+  with EventPublisher
 
 object OrchestratorControlPlane:
 

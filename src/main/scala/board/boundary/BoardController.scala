@@ -10,7 +10,6 @@ import zio.json.*
 
 import board.control.{
   BoardOrchestrator,
-  DispatchResult,
   IssueApprovalService,
   IssueMarkdownParser,
   IssueTimelineService,

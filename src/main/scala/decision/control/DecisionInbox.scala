@@ -13,36 +13,13 @@ import issues.entity.{ AgentIssue, IssueEvent, IssueRepository }
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ DecisionId, EventId, IssueId }
 
-trait DecisionInbox:
-  def openIssueReviewDecision(issue: AgentIssue): IO[PersistenceError, Decision]
-  def openManualDecision(
-    title: String,
-    context: String,
-    referenceId: String,
-    summary: String,
-    urgency: DecisionUrgency = DecisionUrgency.Medium,
-    workspaceId: Option[String] = None,
-    issueId: Option[IssueId] = None,
-  ): IO[PersistenceError, Decision] =
-    ZIO.fail(PersistenceError.QueryFailed("decision_manual", "Manual decision creation not implemented"))
-  def resolve(id: DecisionId, resolutionKind: DecisionResolutionKind, actor: String, summary: String)
-    : IO[PersistenceError, Decision]
-  def syncOpenIssueReviewDecision(
-    issueId: IssueId,
-    resolutionKind: DecisionResolutionKind,
-    actor: String,
-    summary: String,
-  ): IO[PersistenceError, Option[Decision]]
-  def resolveOpenIssueReviewDecision(
-    issueId: IssueId,
-    resolutionKind: DecisionResolutionKind,
-    actor: String,
-    summary: String,
-  ): IO[PersistenceError, Option[Decision]]
-  def escalate(id: DecisionId, reason: String): IO[PersistenceError, Decision]
-  def get(id: DecisionId): IO[PersistenceError, Decision]
-  def list(filter: DecisionFilter = DecisionFilter()): IO[PersistenceError, List[Decision]]
-  def runMaintenance(now: Instant): IO[PersistenceError, List[Decision]]
+/** Central decision inbox for human-in-the-loop decisions.
+  *
+  * Extends focused sub-traits from decision.entity so that consumers can depend on the narrower interface they actually
+  * need (e.g. DecisionResolver for controllers that only resolve decisions, DecisionCreator for services that open new
+  * decisions).
+  */
+trait DecisionInbox extends DecisionCreator with DecisionResolver
 
 object DecisionInbox:
   def openIssueReviewDecision(issue: AgentIssue): ZIO[DecisionInbox, PersistenceError, Decision] =

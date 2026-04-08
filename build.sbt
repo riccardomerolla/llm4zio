@@ -201,7 +201,7 @@ lazy val agentDomain = (project in file("modules/agent-domain"))
   )
 
 lazy val decisionDomain = (project in file("modules/decision-domain"))
-  .dependsOn(sharedIds, sharedErrors, sharedStoreCore)
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore, issuesDomain)
   .settings(foundationSettings)
   .settings(
     name := "decision-domain",
@@ -313,7 +313,7 @@ lazy val gatewayDomain = (project in file("modules/gateway-domain"))
   )
 
 lazy val orchestrationDomain = (project in file("modules/orchestration-domain"))
-  .dependsOn(sharedIds, gatewayDomain)
+  .dependsOn(sharedIds, sharedErrors, gatewayDomain, configDomain)
   .settings(foundationSettings)
   .settings(
     name := "orchestration-domain",
