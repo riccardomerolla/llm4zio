@@ -8,7 +8,7 @@ import _root_.config.entity.{ ConfigRepository, CustomAgentRow, SettingRow, Work
 import activity.control.ActivityHub
 import activity.entity.ActivityEvent
 import issues.entity.*
-import orchestration.control.*
+import orchestration.control.{ Workspace as _, * }
 import shared.errors.{ ControlPlaneError, PersistenceError }
 import shared.ids.Ids.{ IssueId, ProjectId }
 import taskrun.entity.TaskStep
