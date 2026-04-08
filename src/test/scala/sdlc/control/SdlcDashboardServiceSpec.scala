@@ -17,6 +17,7 @@ import issues.entity.*
 import plan.entity.*
 import shared.errors.PersistenceError
 import shared.ids.Ids.*
+import sdlc.entity.*
 import specification.entity.*
 
 object SdlcDashboardServiceSpec extends ZIOSpecDefault:
@@ -386,10 +387,10 @@ object SdlcDashboardServiceSpec extends ZIOSpecDefault:
           snapshot.daemonHealth.erroredCount == 1,
           snapshot.evolution.pendingProposalCount == 1,
           snapshot.evolution.recentlyApplied.map(_.proposalId) == List("proposal-applied"),
-          snapshot.specificationTrend.direction == SdlcDashboardService.TrendDirection.Up,
-          snapshot.planTrend.direction == SdlcDashboardService.TrendDirection.Up,
-          snapshot.issueTrend.direction == SdlcDashboardService.TrendDirection.Up,
-          snapshot.pendingDecisionTrend.direction == SdlcDashboardService.TrendDirection.Up,
+          snapshot.specificationTrend.direction == TrendDirection.Up,
+          snapshot.planTrend.direction == TrendDirection.Up,
+          snapshot.issueTrend.direction == TrendDirection.Up,
+          snapshot.pendingDecisionTrend.direction == TrendDirection.Up,
           snapshot.recentActivity.nonEmpty,
         )
       }

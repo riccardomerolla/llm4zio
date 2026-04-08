@@ -5,7 +5,7 @@ import java.time.{ Duration, Instant }
 import zio.*
 
 import _root_.config.entity.ConfigRepository
-import activity.entity.{ ActivityEvent, ActivityRepository }
+import activity.entity.ActivityRepository
 import daemon.control.DaemonAgentScheduler
 import daemon.entity.{ DaemonHealth, DaemonLifecycle }
 import decision.control.DecisionInbox
@@ -26,118 +26,33 @@ trait SdlcDashboardService:
   def snapshot: IO[PersistenceError, SdlcDashboardService.Snapshot]
 
 object SdlcDashboardService:
-
-  final case class Thresholds(
-    churnTransitions: Int,
-    churnBounces: Int,
-    stalledHours: Long,
-    blockedHours: Long,
-    reviewHours: Long,
-    decisionHours: Long,
-  )
-
-  final case class LifecycleStage(
-    key: String,
-    label: String,
-    count: Int,
-    href: String,
-    description: String,
-  )
-
-  final case class ChurnAlert(
-    issueId: String,
-    title: String,
-    transitionCount: Int,
-    bounceCount: Int,
-    currentState: String,
-    lastChangedAt: Instant,
-  )
-
-  final case class StoppageAlert(
-    kind: String,
-    issueId: String,
-    title: String,
-    currentState: String,
-    ageHours: Long,
-    blockedBy: List[String],
-  )
-
-  final case class EscalationIndicator(
-    kind: String,
-    referenceId: String,
-    title: String,
-    urgency: String,
-    ageHours: Long,
-    summary: String,
-  )
-
-  final case class AgentPerformance(
-    agentName: String,
-    throughput: Int,
-    successRate: Double,
-    averageCycleHours: Double,
-    activeIssues: Int,
-    costUsd: Double,
-  )
-
-  enum TrendDirection:
-    case Up
-    case Down
-    case Flat
-
-  final case class TrendIndicator(
-    direction: TrendDirection,
-    currentPeriodCount: Int,
-    previousPeriodCount: Int,
-    periodLabel: String,
-  )
-
-  final case class GovernanceOverview(
-    passCount: Int,
-    failCount: Int,
-    passRate: Double,
-    activePolicyCount: Int,
-  )
-
-  final case class DaemonHealthOverview(
-    runningCount: Int,
-    stoppedCount: Int,
-    erroredCount: Int,
-  )
-
-  final case class RecentEvolution(
-    proposalId: String,
-    title: String,
-    status: String,
-    appliedAt: Instant,
-  )
-
-  final case class EvolutionOverview(
-    pendingProposalCount: Int,
-    recentlyApplied: List[RecentEvolution],
-  )
-
-  final case class Snapshot(
-    generatedAt: Instant,
-    thresholds: Thresholds,
-    lifecycle: List[LifecycleStage],
-    churnAlerts: List[ChurnAlert],
-    stoppages: List[StoppageAlert],
-    escalations: List[EscalationIndicator],
-    agentPerformance: List[AgentPerformance],
-    governance: GovernanceOverview,
-    daemonHealth: DaemonHealthOverview,
-    evolution: EvolutionOverview,
-    recentActivity: List[ActivityEvent],
-    specificationCount: Int,
-    planCount: Int,
-    issueCount: Int,
-    pendingDecisionCount: Int,
-    specificationTrend: TrendIndicator,
-    planTrend: TrendIndicator,
-    issueTrend: TrendIndicator,
-    pendingDecisionTrend: TrendIndicator,
-  )
+  // Re-export entity types for backward compat with SdlcDashboardService.* qualified access
+  type Thresholds          = sdlc.entity.Thresholds
+  val Thresholds           = sdlc.entity.Thresholds
+  type LifecycleStage      = sdlc.entity.LifecycleStage
+  val LifecycleStage       = sdlc.entity.LifecycleStage
+  type ChurnAlert          = sdlc.entity.ChurnAlert
+  val ChurnAlert           = sdlc.entity.ChurnAlert
+  type StoppageAlert       = sdlc.entity.StoppageAlert
+  val StoppageAlert        = sdlc.entity.StoppageAlert
+  type EscalationIndicator = sdlc.entity.EscalationIndicator
+  val EscalationIndicator  = sdlc.entity.EscalationIndicator
+  type AgentPerformance    = sdlc.entity.AgentPerformance
+  val AgentPerformance     = sdlc.entity.AgentPerformance
+  type TrendDirection      = sdlc.entity.TrendDirection
+  val TrendDirection       = sdlc.entity.TrendDirection
+  type TrendIndicator      = sdlc.entity.TrendIndicator
+  val TrendIndicator       = sdlc.entity.TrendIndicator
+  type GovernanceOverview  = sdlc.entity.GovernanceOverview
+  val GovernanceOverview   = sdlc.entity.GovernanceOverview
+  type DaemonHealthOverview = sdlc.entity.DaemonHealthOverview
+  val DaemonHealthOverview  = sdlc.entity.DaemonHealthOverview
+  type RecentEvolution     = sdlc.entity.RecentEvolution
+  val RecentEvolution      = sdlc.entity.RecentEvolution
+  type EvolutionOverview   = sdlc.entity.EvolutionOverview
+  val EvolutionOverview    = sdlc.entity.EvolutionOverview
+  type Snapshot            = sdlc.entity.SdlcSnapshot
+  val Snapshot             = sdlc.entity.SdlcSnapshot
 
   val live
     : ZLayer[

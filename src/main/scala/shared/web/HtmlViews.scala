@@ -16,7 +16,7 @@ import issues.entity.api.{
   IssueTemplate,
   MergeHistoryEntryView,
 }
-import sdlc.control.SdlcDashboardService
+import sdlc.entity.SdlcSnapshot
 import shared.ids.Ids.IssueId
 import taskrun.entity.{ TaskReportRow, TaskRunRow }
 import workspace.entity.WorkspaceRun
@@ -26,10 +26,10 @@ object HtmlViews:
   def dashboard(summary: CommandCenterView.PipelineSummary, recentEvents: List[ActivityEvent]): String =
     CommandCenterView.page(summary, recentEvents)
 
-  def sdlcDashboard(snapshot: SdlcDashboardService.Snapshot): String =
+  def sdlcDashboard(snapshot: SdlcSnapshot): String =
     SdlcDashboardView.page(snapshot)
 
-  def sdlcDashboardFragment(snapshot: SdlcDashboardService.Snapshot): String =
+  def sdlcDashboardFragment(snapshot: SdlcSnapshot): String =
     SdlcDashboardView.fragment(snapshot)
 
   def channelsPage(cards: List[ChannelCardData], nowMs: Long): String =

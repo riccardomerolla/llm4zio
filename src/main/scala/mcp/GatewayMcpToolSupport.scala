@@ -13,7 +13,7 @@ import governance.control.GovernanceTransitionDecision
 import governance.entity.*
 import llm4zio.tools.ToolExecutionError
 import plan.entity.*
-import sdlc.control.SdlcDashboardService
+import sdlc.entity.*
 import shared.ids.Ids.ProjectId
 import specification.entity.*
 
@@ -207,7 +207,7 @@ private[mcp] object GatewayMcpToolSupport:
       "reason"                -> Json.Str(decision.reason.getOrElse("")),
     )
 
-  def renderDashboardSnapshot(snapshot: SdlcDashboardService.Snapshot): Json =
+  def renderDashboardSnapshot(snapshot: SdlcSnapshot): Json =
     Json.Obj(
       "generatedAt"      -> Json.Str(snapshot.generatedAt.toString),
       "counts"           -> Json.Obj(
@@ -241,7 +241,7 @@ private[mcp] object GatewayMcpToolSupport:
       "recentActivity"   -> Json.Num(BigDecimal(snapshot.recentActivity.size)),
     )
 
-  def renderChurnAlert(alert: SdlcDashboardService.ChurnAlert): Json =
+  def renderChurnAlert(alert: ChurnAlert): Json =
     Json.Obj(
       "issueId"         -> Json.Str(alert.issueId),
       "title"           -> Json.Str(alert.title),
@@ -251,7 +251,7 @@ private[mcp] object GatewayMcpToolSupport:
       "lastChangedAt"   -> Json.Str(alert.lastChangedAt.toString),
     )
 
-  def renderStoppage(alert: SdlcDashboardService.StoppageAlert): Json =
+  def renderStoppage(alert: StoppageAlert): Json =
     Json.Obj(
       "kind"         -> Json.Str(alert.kind),
       "issueId"      -> Json.Str(alert.issueId),
@@ -261,7 +261,7 @@ private[mcp] object GatewayMcpToolSupport:
       "blockedBy"    -> Json.Arr(Chunk.fromIterable(alert.blockedBy.map(Json.Str(_)))),
     )
 
-  def renderEscalationIndicator(indicator: SdlcDashboardService.EscalationIndicator): Json =
+  def renderEscalationIndicator(indicator: EscalationIndicator): Json =
     Json.Obj(
       "kind"        -> Json.Str(indicator.kind),
       "referenceId" -> Json.Str(indicator.referenceId),

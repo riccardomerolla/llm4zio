@@ -7,6 +7,7 @@ import zio.http.*
 import zio.test.*
 
 import checkpoint.control.*
+import checkpoint.entity.*
 import decision.control.DecisionInbox
 import decision.entity.*
 import issues.entity.*

@@ -5,6 +5,7 @@ import java.time.Instant
 import zio.test.*
 
 import checkpoint.control.*
+import checkpoint.entity.*
 import issues.entity.*
 import shared.ids.Ids.*
 import taskrun.entity.*

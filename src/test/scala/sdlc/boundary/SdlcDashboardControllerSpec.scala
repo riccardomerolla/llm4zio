@@ -8,28 +8,29 @@ import zio.test.*
 
 import activity.entity.{ ActivityEvent, ActivityEventType }
 import sdlc.control.SdlcDashboardService
+import sdlc.entity.*
 import shared.errors.PersistenceError
 
 object SdlcDashboardControllerSpec extends ZIOSpecDefault:
 
-  private val flatTrend = SdlcDashboardService.TrendIndicator(
-    direction = SdlcDashboardService.TrendDirection.Flat,
+  private val flatTrend = TrendIndicator(
+    direction = TrendDirection.Flat,
     currentPeriodCount = 0,
     previousPeriodCount = 0,
     periodLabel = "7d",
   )
 
-  private val snapshotData = SdlcDashboardService.Snapshot(
+  private val snapshotData = SdlcSnapshot(
     generatedAt = Instant.parse("2026-03-26T12:00:00Z"),
-    thresholds = SdlcDashboardService.Thresholds(6, 2, 24, 12, 8, 4),
-    lifecycle = List(SdlcDashboardService.LifecycleStage("idea", "Idea", 1, "/specifications", "Draft specs")),
+    thresholds = Thresholds(6, 2, 24, 12, 8, 4),
+    lifecycle = List(LifecycleStage("idea", "Idea", 1, "/specifications", "Draft specs")),
     churnAlerts = Nil,
     stoppages = Nil,
     escalations = Nil,
     agentPerformance = Nil,
-    governance = SdlcDashboardService.GovernanceOverview(0, 0, 0.0, 1),
-    daemonHealth = SdlcDashboardService.DaemonHealthOverview(0, 0, 0),
-    evolution = SdlcDashboardService.EvolutionOverview(0, Nil),
+    governance = GovernanceOverview(0, 0, 0.0, 1),
+    daemonHealth = DaemonHealthOverview(0, 0, 0),
+    evolution = EvolutionOverview(0, Nil),
     recentActivity = List(
       ActivityEvent(
         id = shared.ids.Ids.EventId("evt-1"),
@@ -51,7 +52,7 @@ object SdlcDashboardControllerSpec extends ZIOSpecDefault:
   )
 
   private val stubService: SdlcDashboardService = new SdlcDashboardService:
-    override def snapshot: IO[PersistenceError, SdlcDashboardService.Snapshot] = ZIO.succeed(snapshotData)
+    override def snapshot: IO[PersistenceError, SdlcSnapshot] = ZIO.succeed(snapshotData)
 
   def spec: Spec[TestEnvironment & Scope, Any] =
     suite("SdlcDashboardControllerSpec")(

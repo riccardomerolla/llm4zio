@@ -7,6 +7,7 @@ import scala.util.Try
 import zio.*
 
 import app.control.StateService
+import checkpoint.entity.*
 import conversation.entity.api.{ ConversationEntry, SenderType }
 import db.ChatRepository
 import decision.control.DecisionInbox
@@ -19,73 +20,6 @@ import shared.ids.Ids.{ IssueId, TaskRunId }
 import taskrun.entity.CheckpointSnapshot
 import workspace.control.{ GitService, RunSessionManager, WorkspaceRunService }
 import workspace.entity.*
-
-enum CheckpointReviewError:
-  case Persistence(message: String)
-  case State(message: String)
-  case Control(message: String)
-  case Workspace(message: String)
-  case Git(message: String)
-  case NotFound(runId: String)
-  case InvalidAction(runId: String, action: String, reason: String)
-
-object CheckpointReviewError:
-  def fromPersistence(error: PersistenceError): CheckpointReviewError =
-    CheckpointReviewError.Persistence(error.toString)
-
-  def fromState(error: StateError): CheckpointReviewError =
-    CheckpointReviewError.State(error.toString)
-
-  def fromControl(error: ControlPlaneError): CheckpointReviewError =
-    CheckpointReviewError.Control(error.toString)
-
-  def fromWorkspace(error: WorkspaceError): CheckpointReviewError =
-    CheckpointReviewError.Workspace(error.toString)
-
-  def fromGit(error: workspace.entity.GitError): CheckpointReviewError =
-    CheckpointReviewError.Git(error.toString)
-
-final case class CheckpointRunSummary(
-  runId: String,
-  agentName: String,
-  stage: String,
-  currentStepLabel: String,
-  conversationId: Option[String],
-  workspaceId: Option[String],
-  issueId: Option[String],
-  checkpointCount: Int,
-  lastCheckpointAt: Option[Instant],
-  statusMessage: Option[String],
-)
-
-final case class CheckpointTextEvidence(
-  label: String,
-  content: String,
-)
-
-final case class CheckpointConversationExcerpt(
-  sender: String,
-  senderType: String,
-  content: String,
-  createdAt: Instant,
-)
-
-final case class CheckpointArtifactDelta(
-  key: String,
-  before: Option[String],
-  after: Option[String],
-)
-
-final case class CheckpointComparison(
-  leftStep: String,
-  rightStep: String,
-  currentStepChanged: Boolean,
-  completedStepsAdded: List[String],
-  completedStepsRemoved: List[String],
-  artifactDeltas: List[CheckpointArtifactDelta],
-  errorsAdded: List[String],
-  errorsResolved: List[String],
-)
 
 final case class CheckpointSnapshotReview(
   snapshot: CheckpointSnapshot,
@@ -102,19 +36,6 @@ final case class CheckpointRunReview(
   checkpoints: List[CheckpointSnapshot],
   selected: Option[CheckpointSnapshotReview],
   comparison: Option[CheckpointComparison],
-)
-
-enum CheckpointOperatorAction:
-  case ApproveContinue
-  case Redirect
-  case Pause
-  case Abort
-  case FlagFullReview
-
-final case class CheckpointActionResult(
-  action: CheckpointOperatorAction,
-  runId: String,
-  summary: String,
 )
 
 trait CheckpointReviewService:

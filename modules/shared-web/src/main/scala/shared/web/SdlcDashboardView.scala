@@ -5,11 +5,11 @@ import java.time.temporal.ChronoUnit
 
 import activity.entity.ActivityEvent
 import scalatags.Text.all.*
-import sdlc.control.SdlcDashboardService
+import sdlc.entity.*
 
 object SdlcDashboardView:
 
-  def page(snapshot: SdlcDashboardService.Snapshot): String =
+  def page(snapshot: SdlcSnapshot): String =
     Layout.page("SDLC Dashboard", "/sdlc")(
       div(cls := "space-y-4")(
         header(snapshot),
@@ -22,7 +22,7 @@ object SdlcDashboardView:
       )
     )
 
-  def fragment(snapshot: SdlcDashboardService.Snapshot): String =
+  def fragment(snapshot: SdlcSnapshot): String =
     div(cls := "space-y-4")(
       overview(snapshot),
       div(cls := "grid gap-4 xl:grid-cols-3")(
@@ -42,7 +42,7 @@ object SdlcDashboardView:
       recentActivity(snapshot.recentActivity),
     ).render
 
-  private def header(snapshot: SdlcDashboardService.Snapshot): Frag =
+  private def header(snapshot: SdlcSnapshot): Frag =
     sectionPanel(
       "SDLC Dashboard",
       s"Derived from issue and activity history at ${formatInstant(snapshot.generatedAt)}",
@@ -65,7 +65,7 @@ object SdlcDashboardView:
       )
     )
 
-  private def overview(snapshot: SdlcDashboardService.Snapshot): Frag =
+  private def overview(snapshot: SdlcSnapshot): Frag =
     sectionPanel("Thresholds", "Live operating thresholds loaded from configuration")(
       div(cls := "grid gap-3 sm:grid-cols-2 xl:grid-cols-3")(
         thresholdLine(
@@ -79,7 +79,7 @@ object SdlcDashboardView:
       )
     )
 
-  private def lifecycle(snapshot: SdlcDashboardService.Snapshot): Frag =
+  private def lifecycle(snapshot: SdlcSnapshot): Frag =
     sectionPanel("Lifecycle", "Idea to done flow stitched across specifications, plans, and issue states")(
       div(cls := "grid gap-3 md:grid-cols-2 xl:grid-cols-4")(
         snapshot.lifecycle.map { stage =>
@@ -92,7 +92,7 @@ object SdlcDashboardView:
       )
     )
 
-  private def churn(snapshot: SdlcDashboardService.Snapshot): Frag =
+  private def churn(snapshot: SdlcSnapshot): Frag =
     sectionPanel("Churn Detection", "Issues with abnormal transition volume or repeated bouncing")(
       if snapshot.churnAlerts.isEmpty then emptyState("No churn alerts above the configured threshold.")
       else
@@ -122,7 +122,7 @@ object SdlcDashboardView:
         )
     )
 
-  private def stoppages(snapshot: SdlcDashboardService.Snapshot): Frag =
+  private def stoppages(snapshot: SdlcSnapshot): Frag =
     sectionPanel("Stoppages", "Items stalled in place or blocked by unresolved dependencies")(
       if snapshot.stoppages.isEmpty then emptyState("No stalled or blocked items over threshold.")
       else
@@ -147,7 +147,7 @@ object SdlcDashboardView:
         )
     )
 
-  private def escalations(snapshot: SdlcDashboardService.Snapshot): Frag =
+  private def escalations(snapshot: SdlcSnapshot): Frag =
     sectionPanel("Escalations", "Pending human review and decision queues ranked by urgency and age")(
       if snapshot.escalations.isEmpty then emptyState("No review or decision escalations need attention.")
       else
@@ -171,7 +171,7 @@ object SdlcDashboardView:
         )
     )
 
-  private def agentPerformance(snapshot: SdlcDashboardService.Snapshot): Frag =
+  private def agentPerformance(snapshot: SdlcSnapshot): Frag =
     sectionPanel("Agent Performance", "Throughput, quality, cycle time, and token-based cost rollup")(
       if snapshot.agentPerformance.isEmpty then emptyState("No agent performance data is available yet.")
       else
@@ -196,7 +196,7 @@ object SdlcDashboardView:
         )
     )
 
-  private def governance(governance: SdlcDashboardService.GovernanceOverview): Frag =
+  private def governance(governance: GovernanceOverview): Frag =
     sectionPanel("Governance", "Policy activity and validation outcomes across tracked plans")(
       div(cls := "grid gap-3 sm:grid-cols-2")(
         metricTile(
@@ -208,7 +208,7 @@ object SdlcDashboardView:
       )
     )
 
-  private def daemonHealth(daemonHealth: SdlcDashboardService.DaemonHealthOverview): Frag =
+  private def daemonHealth(daemonHealth: DaemonHealthOverview): Frag =
     sectionPanel("Daemon Health", "Runtime posture for ADE daemon agents")(
       div(cls := "grid gap-3 sm:grid-cols-3")(
         metricTile("Running", daemonHealth.runningCount.toString, "Enabled daemons ready to execute"),
@@ -217,7 +217,7 @@ object SdlcDashboardView:
       )
     )
 
-  private def evolution(evolution: SdlcDashboardService.EvolutionOverview): Frag =
+  private def evolution(evolution: EvolutionOverview): Frag =
     sectionPanel("Evolution", "Proposal backlog and the latest applied system changes")(
       div(cls := "space-y-3")(
         metricTile("Pending Proposals", evolution.pendingProposalCount.toString, "Awaiting approval or application"),
@@ -256,7 +256,7 @@ object SdlcDashboardView:
     titleText: String,
     value: String,
     detail: String,
-    trend: SdlcDashboardService.TrendIndicator,
+    trend: TrendIndicator,
   ): Frag =
     div(cls := "rounded-lg border border-white/10 bg-slate-950/60 p-4")(
       div(cls := "flex items-start justify-between gap-3")(
@@ -293,24 +293,24 @@ object SdlcDashboardView:
       p(cls := "mt-2 text-xs text-slate-400")(detail),
     )
 
-  private def trendPill(trend: SdlcDashboardService.TrendIndicator): Frag =
+  private def trendPill(trend: TrendIndicator): Frag =
     span(cls := s"rounded-md border px-2 py-1 text-xs font-semibold ${trendTone(trend.direction)}")(
       s"${trendArrow(trend.direction)} ${trend.direction.toString.toLowerCase}"
     )
 
-  private def trendArrow(direction: SdlcDashboardService.TrendDirection): String =
+  private def trendArrow(direction: TrendDirection): String =
     direction match
-      case SdlcDashboardService.TrendDirection.Up   => "↑"
-      case SdlcDashboardService.TrendDirection.Down => "↓"
-      case SdlcDashboardService.TrendDirection.Flat => "→"
+      case TrendDirection.Up   => "↑"
+      case TrendDirection.Down => "↓"
+      case TrendDirection.Flat => "→"
 
-  private def trendTone(direction: SdlcDashboardService.TrendDirection): String =
+  private def trendTone(direction: TrendDirection): String =
     direction match
-      case SdlcDashboardService.TrendDirection.Up   => "border-emerald-400/30 bg-emerald-500/10 text-emerald-200"
-      case SdlcDashboardService.TrendDirection.Down => "border-amber-400/30 bg-amber-500/10 text-amber-200"
-      case SdlcDashboardService.TrendDirection.Flat => "border-white/15 bg-white/5 text-slate-200"
+      case TrendDirection.Up   => "border-emerald-400/30 bg-emerald-500/10 text-emerald-200"
+      case TrendDirection.Down => "border-amber-400/30 bg-amber-500/10 text-amber-200"
+      case TrendDirection.Flat => "border-white/15 bg-white/5 text-slate-200"
 
-  private def trendSummary(trend: SdlcDashboardService.TrendIndicator): String =
+  private def trendSummary(trend: TrendIndicator): String =
     s"${trend.currentPeriodCount} vs ${trend.previousPeriodCount} in the last ${trend.periodLabel}"
 
   private def badgeClass(kind: String): String =

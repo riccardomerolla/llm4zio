@@ -3,7 +3,8 @@ package app.boundary
 import zio.*
 import zio.http.*
 
-import checkpoint.control.{ CheckpointReviewError, CheckpointReviewService }
+import checkpoint.control.CheckpointReviewService
+import checkpoint.entity.CheckpointReviewError
 import decision.control.DecisionInbox
 import decision.entity.{ DecisionFilter, DecisionStatus }
 import issues.entity.{ IssueFilter, IssueRepository, IssueStateTag }

@@ -8,6 +8,7 @@ import zio.http.*
 import zio.test.*
 
 import checkpoint.control.*
+import checkpoint.entity.*
 import issues.entity.IssueWorkReport
 import shared.ids.Ids.IssueId
 import taskrun.entity.*

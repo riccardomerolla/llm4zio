@@ -8,6 +8,7 @@ import zio.test.*
 
 import _root_.config.entity.{ MigrationConfig, WorkflowDefinition }
 import app.control.StateService
+import checkpoint.entity.*
 import conversation.entity.api.{ ChatConversation, ConversationEntry, MessageType, SenderType, SessionContextLink }
 import db.ChatRepository
 import decision.control.DecisionInbox

@@ -29,6 +29,7 @@ import llm4zio.tools.ToolRegistry
 import memory.entity.MemoryRepository
 import plan.entity.*
 import sdlc.control.SdlcDashboardService
+import sdlc.entity.*
 import shared.errors.PersistenceError
 import shared.ids.Ids.*
 import specification.entity.*
@@ -397,11 +398,11 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
     runtime = DaemonAgentRuntime(health = DaemonHealth.Healthy),
   )
 
-  private val stubDashboardSnapshot = SdlcDashboardService.Snapshot(
+  private val stubDashboardSnapshot = SdlcSnapshot(
     generatedAt = java.time.Instant.EPOCH,
-    thresholds = SdlcDashboardService.Thresholds(6, 2, 24L, 12L, 8L, 4L),
+    thresholds = Thresholds(6, 2, 24L, 12L, 8L, 4L),
     lifecycle = List(
-      SdlcDashboardService.LifecycleStage(
+      LifecycleStage(
         key = "plan",
         label = "Plan",
         count = 1,
@@ -410,7 +411,7 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
       )
     ),
     churnAlerts = List(
-      SdlcDashboardService.ChurnAlert(
+      ChurnAlert(
         issueId = "issue-1",
         title = "Stabilize MCP tools",
         transitionCount = 7,
@@ -420,7 +421,7 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
       )
     ),
     stoppages = List(
-      SdlcDashboardService.StoppageAlert(
+      StoppageAlert(
         kind = "blocked",
         issueId = "issue-2",
         title = "Wire MCP dashboard tools",
@@ -430,7 +431,7 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
       )
     ),
     escalations = List(
-      SdlcDashboardService.EscalationIndicator(
+      EscalationIndicator(
         kind = "decision",
         referenceId = "decision-1",
         title = "Approve daemon rollout",
@@ -440,7 +441,7 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
       )
     ),
     agentPerformance = List(
-      SdlcDashboardService.AgentPerformance(
+      AgentPerformance(
         agentName = "planner",
         throughput = 3,
         successRate = 0.95,
@@ -449,21 +450,21 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
         costUsd = 4.2,
       )
     ),
-    governance = SdlcDashboardService.GovernanceOverview(
+    governance = GovernanceOverview(
       passCount = 4,
       failCount = 1,
       passRate = 0.8,
       activePolicyCount = 2,
     ),
-    daemonHealth = SdlcDashboardService.DaemonHealthOverview(
+    daemonHealth = DaemonHealthOverview(
       runningCount = 2,
       stoppedCount = 1,
       erroredCount = 0,
     ),
-    evolution = SdlcDashboardService.EvolutionOverview(
+    evolution = EvolutionOverview(
       pendingProposalCount = 1,
       recentlyApplied = List(
-        SdlcDashboardService.RecentEvolution(
+        RecentEvolution(
           proposalId = "proposal-1",
           title = "Add daemon",
           status = "Applied",
@@ -476,26 +477,26 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
     planCount = 1,
     issueCount = 2,
     pendingDecisionCount = 1,
-    specificationTrend = SdlcDashboardService.TrendIndicator(
-      direction = SdlcDashboardService.TrendDirection.Flat,
+    specificationTrend = TrendIndicator(
+      direction = TrendDirection.Flat,
       currentPeriodCount = 1,
       previousPeriodCount = 1,
       periodLabel = "7d",
     ),
-    planTrend = SdlcDashboardService.TrendIndicator(
-      direction = SdlcDashboardService.TrendDirection.Up,
+    planTrend = TrendIndicator(
+      direction = TrendDirection.Up,
       currentPeriodCount = 2,
       previousPeriodCount = 1,
       periodLabel = "7d",
     ),
-    issueTrend = SdlcDashboardService.TrendIndicator(
-      direction = SdlcDashboardService.TrendDirection.Up,
+    issueTrend = TrendIndicator(
+      direction = TrendDirection.Up,
       currentPeriodCount = 3,
       previousPeriodCount = 1,
       periodLabel = "7d",
     ),
-    pendingDecisionTrend = SdlcDashboardService.TrendIndicator(
-      direction = SdlcDashboardService.TrendDirection.Down,
+    pendingDecisionTrend = TrendIndicator(
+      direction = TrendDirection.Down,
       currentPeriodCount = 0,
       previousPeriodCount = 2,
       periodLabel = "7d",
@@ -562,7 +563,7 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
     override def triggerGovernance(projectId: ProjectId, triggerId: String): IO[PersistenceError, Unit] = ZIO.unit
 
   private val stubDashboardService: SdlcDashboardService = new SdlcDashboardService:
-    override def snapshot: IO[PersistenceError, SdlcDashboardService.Snapshot] = ZIO.succeed(stubDashboardSnapshot)
+    override def snapshot: IO[PersistenceError, SdlcSnapshot] = ZIO.succeed(stubDashboardSnapshot)
 
   private def makeSpecificationRepository(
     initial: List[SpecificationEvent]
