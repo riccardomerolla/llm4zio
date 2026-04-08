@@ -293,22 +293,27 @@ lazy val workspaceDomain = (project in file("modules/workspace-domain"))
   .settings(foundationSettings)
   .settings(
     name := "workspace-domain",
-    libraryDependencies ++= domainDeps,
+    libraryDependencies ++= domainDeps ++ Seq(
+      "dev.zio" %% "zio-streams" % zioVersion,
+      "dev.zio" %% "zio-process" % zioProcessVersion,
+    ),
   )
 
 lazy val gatewayDomain = (project in file("modules/gateway-domain"))
-  .dependsOn(sharedIds)
+  .dependsOn(sharedIds, sharedErrors)
   .settings(foundationSettings)
   .settings(
     name := "gateway-domain",
     libraryDependencies ++= Seq(
       "dev.zio" %% "zio" % zioVersion,
+      "dev.zio" %% "zio-streams" % zioVersion,
       zioJsonDep,
+      "com.bot4s" %% "telegram-core" % bot4sTelegramCoreVersion,
     ),
   )
 
 lazy val orchestrationDomain = (project in file("modules/orchestration-domain"))
-  .dependsOn(sharedIds)
+  .dependsOn(sharedIds, gatewayDomain)
   .settings(foundationSettings)
   .settings(
     name := "orchestration-domain",
