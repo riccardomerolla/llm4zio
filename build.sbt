@@ -216,6 +216,113 @@ lazy val specificationDomain = (project in file("modules/specification-domain"))
     libraryDependencies ++= domainDeps,
   )
 
+lazy val planDomain = (project in file("modules/plan-domain"))
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore, governanceDomain)
+  .settings(foundationSettings)
+  .settings(
+    name := "plan-domain",
+    libraryDependencies ++= domainDeps,
+  )
+
+lazy val taskrunDomain = (project in file("modules/taskrun-domain"))
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore)
+  .settings(foundationSettings)
+  .settings(
+    name := "taskrun-domain",
+    libraryDependencies ++= domainDeps,
+  )
+
+lazy val boardDomain = (project in file("modules/board-domain"))
+  .dependsOn(sharedIds, sharedErrors)
+  .settings(foundationSettings)
+  .settings(
+    name := "board-domain",
+    libraryDependencies ++= domainDeps,
+  )
+
+lazy val knowledgeDomain = (project in file("modules/knowledge-domain"))
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore)
+  .settings(foundationSettings)
+  .settings(
+    name := "knowledge-domain",
+    libraryDependencies ++= domainDeps,
+  )
+
+lazy val projectDomain = (project in file("modules/project-domain"))
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore)
+  .settings(foundationSettings)
+  .settings(
+    name := "project-domain",
+    libraryDependencies ++= domainDeps,
+  )
+
+lazy val configDomain = (project in file("modules/config-domain"))
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore)
+  .settings(foundationSettings)
+  .settings(
+    name := "config-domain",
+    libraryDependencies ++= domainDeps,
+  )
+
+lazy val conversationDomain = (project in file("modules/conversation-domain"))
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore)
+  .settings(foundationSettings)
+  .settings(
+    name := "conversation-domain",
+    libraryDependencies ++= domainDeps,
+  )
+
+lazy val daemonDomain = (project in file("modules/daemon-domain"))
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore)
+  .settings(foundationSettings)
+  .settings(
+    name := "daemon-domain",
+    libraryDependencies ++= domainDeps,
+  )
+
+lazy val analysisDomain = (project in file("modules/analysis-domain"))
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore)
+  .settings(foundationSettings)
+  .settings(
+    name := "analysis-domain",
+    libraryDependencies ++= domainDeps,
+  )
+
+lazy val workspaceDomain = (project in file("modules/workspace-domain"))
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore)
+  .settings(foundationSettings)
+  .settings(
+    name := "workspace-domain",
+    libraryDependencies ++= domainDeps,
+  )
+
+lazy val gatewayDomain = (project in file("modules/gateway-domain"))
+  .dependsOn(sharedIds)
+  .settings(foundationSettings)
+  .settings(
+    name := "gateway-domain",
+    libraryDependencies ++= Seq(
+      "dev.zio" %% "zio" % zioVersion,
+      zioJsonDep,
+    ),
+  )
+
+lazy val orchestrationDomain = (project in file("modules/orchestration-domain"))
+  .dependsOn(sharedIds)
+  .settings(foundationSettings)
+  .settings(
+    name := "orchestration-domain",
+    libraryDependencies ++= domainDeps,
+  )
+
+lazy val evolutionDomain = (project in file("modules/evolution-domain"))
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore, daemonDomain, governanceDomain, configDomain)
+  .settings(foundationSettings)
+  .settings(
+    name := "evolution-domain",
+    libraryDependencies ++= domainDeps,
+  )
+
 // ── LLM library ──────────────────────────────────────────────────────────────
 
 lazy val llm4zio = (project in file("llm4zio"))
@@ -231,11 +338,17 @@ lazy val llm4zio = (project in file("llm4zio"))
     It / testFrameworks ++= (Test / testFrameworks).value,
   )
 
+lazy val allModules = Seq(
+  llm4zio, sharedJson, sharedIds, sharedErrors, sharedStoreCore,
+  activityDomain, memoryDomain, governanceDomain, agentDomain, decisionDomain, specificationDomain,
+  planDomain, taskrunDomain, boardDomain, knowledgeDomain, projectDomain, configDomain,
+  conversationDomain, daemonDomain, analysisDomain, workspaceDomain, gatewayDomain,
+  orchestrationDomain, evolutionDomain,
+)
+
 lazy val root = (project in file("."))
-  .aggregate(llm4zio, sharedJson, sharedIds, sharedErrors, sharedStoreCore,
-    activityDomain, memoryDomain, governanceDomain, agentDomain, decisionDomain, specificationDomain)
-  .dependsOn(llm4zio, sharedJson, sharedIds, sharedErrors, sharedStoreCore,
-    activityDomain, memoryDomain, governanceDomain, agentDomain, decisionDomain, specificationDomain)
+  .aggregate(allModules.map(_.project): _*)
+  .dependsOn(allModules.map(m => m: ClasspathDep[ProjectReference]): _*)
   .configs(It)
   .settings(inConfig(It)(Defaults.testSettings): _*)
   .settings(
