@@ -7,25 +7,24 @@ object LayoutSpec extends ZIOSpecDefault:
   def spec: Spec[Any, Nothing] =
     suite("Layout")(
       test(
-        "top nav bar contains core gateway and ADE sections with governance and daemons links"
+        "top nav bar contains core gateway links"
       ) {
         val html = Layout.page("Test", "/board")()
         assertTrue(
           html.contains("/sdlc"),
           html.contains("/board"),
-          html.contains("/governance"),
           html.contains("/projects"),
           html.contains("/knowledge"),
-          html.contains("/daemons"),
           html.contains("Command Center"),
-          html.contains("SDLC Dashboard"),
-          html.contains("Governance"),
+          html.contains("SDLC"),
           html.contains("Projects"),
           html.contains("Knowledge"),
-          html.contains("Daemons"),
           html.contains("Settings"),
           html.contains("Board"),
-          html.contains("data-nav-dropdown"),
+          !html.contains("/governance"),
+          !html.contains("/daemons"),
+          !html.contains("Governance"),
+          !html.contains("Daemons"),
           !html.contains("/checkpoints"),
           !html.contains("/evolution"),
           !html.contains("/plans"),
@@ -46,7 +45,7 @@ object LayoutSpec extends ZIOSpecDefault:
         val html = Layout.page("Test", "/issues")()
         assertTrue(html.contains("/board"))
       },
-      test("ADE items include live badge loader for board") {
+      test("board nav item includes live badge loader") {
         val html = Layout.page("Test", "/board")()
         assertTrue(
           html.contains("/nav/badges/board"),
@@ -59,7 +58,6 @@ object LayoutSpec extends ZIOSpecDefault:
         assertTrue(
           html.contains("id=\"app-main-shell\""),
           html.contains("pt-10"),
-          html.contains("data-nav-dropdown"),
           !html.contains("id=\"mobile-sidebar\""),
           !html.contains("id=\"desktop-sidebar\""),
           !html.contains("id=\"desktop-sidebar-restore\""),

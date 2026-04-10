@@ -47,11 +47,11 @@ object DaemonsControllerSpec extends ZIOSpecDefault:
 
   def spec: Spec[TestEnvironment & Scope, Any] =
     suite("DaemonsControllerSpec")(
-      test("GET /daemons renders the daemon page") {
+      test("GET /settings/daemons renders the daemon page") {
         for
           ref       <- Ref.make(List.empty[String])
           controller = DaemonsControllerLive(new StubScheduler(ref))
-          response  <- controller.routes.runZIO(Request.get(URL(Path.decode("/daemons"))))
+          response  <- controller.routes.runZIO(Request.get(URL(Path.decode("/settings/daemons"))))
           body      <- response.body.asString
         yield assertTrue(
           response.status == Status.Ok,
@@ -59,12 +59,12 @@ object DaemonsControllerSpec extends ZIOSpecDefault:
           body.contains("Test Guardian"),
         )
       },
-      test("POST /daemons/:id/start delegates to the scheduler") {
+      test("POST /settings/daemons/:id/start delegates to the scheduler") {
         for
           ref       <- Ref.make(List.empty[String])
           controller = DaemonsControllerLive(new StubScheduler(ref))
           response  <- controller.routes.runZIO(
-                         Request(method = Method.POST, url = URL(Path.decode("/daemons/project-1__test-guardian/start")))
+                         Request(method = Method.POST, url = URL(Path.decode("/settings/daemons/project-1__test-guardian/start")))
                        )
           calls     <- ref.get
         yield assertTrue(
