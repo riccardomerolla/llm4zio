@@ -60,7 +60,6 @@ object Layout:
     pageTitleText: String,
     currentPath: String = "/",
     chatWorkspaceNav: Option[ChatWorkspaceNav] = None,
-    pendingDecisions: Option[Int] = None,
   )(
     bodyContent: Frag*
   ): String =
@@ -74,7 +73,7 @@ object Layout:
         script(src   := "https://unpkg.com/htmx-ext-sse@2.0.0/sse.js"),
       ),
       body(cls := "h-full text-[12px] leading-5 text-gray-200")(
-        topNavBar(currentPath, chatWorkspaceNav, pendingDecisions),
+        topNavBar(currentPath, chatWorkspaceNav),
         div(id := "app-main-shell", cls := "pt-10")(
           tag("main")(cls := "py-4")(
             div(cls := "px-4 sm:px-6 lg:px-8")(bodyContent)
@@ -116,7 +115,6 @@ object Layout:
   private def topNavBar(
     currentPath: String,
     chatWorkspaceNav: Option[ChatWorkspaceNav],
-    pendingDecisions: Option[Int],
   ): Frag =
     frag(
       nav(
@@ -166,9 +164,6 @@ object Layout:
               )(
                 adeGroup.items.map { item =>
                   val active = item.activePredicate(currentPath)
-                  val badge  =
-                    if item.href == "/decisions" then pendingDecisions.filter(_ > 0)
-                    else None
                   a(
                     href         := item.href,
                     attr("role") := "menuitem",
@@ -178,9 +173,7 @@ object Layout:
                     if active then attr("aria-current") := "page" else frag(),
                   )(
                     item.label,
-                    item.liveBadgePath match
-                      case Some(path) => liveBadge(path, badge)
-                      case None       => badge.fold[Frag](frag())(count => staticBadge(count)),
+                    item.liveBadgePath.fold[Frag](frag())(path => liveBadge(path, None)),
                   )
                 }*
               ),
