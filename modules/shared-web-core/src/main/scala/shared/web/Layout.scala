@@ -256,8 +256,6 @@ object Layout:
         liveBadgePath = Some("/nav/badges/board"),
       ),
       NavItem("/projects", "Projects", Icons.workflow, _.startsWith("/projects")),
-      NavItem("/specifications", "Specifications", Icons.documentText, _.startsWith("/specifications")),
-      NavItem("/plans", "Plans", Icons.chart, _.startsWith("/plans")),
       NavItem("/knowledge", "Knowledge", Icons.documentText, _.startsWith("/knowledge")),
       NavItem("/agents", "Agents", Icons.cpuChip, _.startsWith("/agents")),
       NavItem(
@@ -283,22 +281,7 @@ object Layout:
         p => p.startsWith("/board") || p.startsWith("/issues/board"),
         liveBadgePath = Some("/nav/badges/board"),
       ),
-      NavItem(
-        "/checkpoints",
-        "Checkpoints",
-        Icons.documentText,
-        _.startsWith("/checkpoints"),
-        liveBadgePath = Some("/nav/badges/checkpoints"),
-      ),
-      NavItem(
-        "/decisions",
-        "Decisions",
-        Icons.activity,
-        _.startsWith("/decisions"),
-        liveBadgePath = Some("/nav/badges/decisions"),
-      ),
       NavItem("/governance", "Governance", Icons.documentText, _.startsWith("/governance")),
-      NavItem("/evolution", "Evolution", Icons.sparkles, _.startsWith("/evolution")),
       NavItem("/daemons", "Daemons", Icons.cpuChip, _.startsWith("/daemons")),
     ),
   )
