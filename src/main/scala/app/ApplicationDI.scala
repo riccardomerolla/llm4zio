@@ -3,7 +3,7 @@ package app
 import java.nio.charset.StandardCharsets
 import java.nio.file.{ Files, Paths }
 
-import scala.concurrent.{ ExecutionContext, Future }
+import scala.concurrent.ExecutionContext
 
 import zio.*
 import zio.http.netty.NettyConfig
@@ -30,7 +30,6 @@ import app.control.{ HealthMonitor, LogTailer }
 import board.boundary.BoardController as BoardBoundaryController
 import board.control.*
 import board.entity.BoardRepository
-import com.bot4s.telegram.clients.FutureSttpClient
 import conversation.boundary.{
   ChatController as ConversationChatController,
   WebSocketController as ConversationWebSocketController,
@@ -504,66 +503,6 @@ object ApplicationDI:
     raw
       .flatMap(gateway.entity.SessionScopeStrategy.fromString)
       .getOrElse(gateway.entity.SessionScopeStrategy.PerConversation)
-
-  final private case class ConfigAwareTelegramClient(
-    configRef: Ref[GatewayConfig],
-    clientsRef: Ref.Synchronized[Map[String, TelegramClient]],
-    backend: sttp.client4.WebSocketBackend[Future],
-  ) extends TelegramClient:
-
-    private given ExecutionContext = ExecutionContext.global
-
-    override def getUpdates(
-      offset: Option[Long],
-      limit: Int,
-      timeoutSeconds: Int,
-      timeout: Duration,
-    ): IO[TelegramClientError, List[TelegramUpdate]] =
-      currentClient.flatMap(_.getUpdates(offset, limit, timeoutSeconds, timeout))
-
-    override def sendMessage(
-      request: TelegramSendMessage,
-      timeout: Duration,
-    ): IO[TelegramClientError, TelegramMessage] =
-      currentClient.flatMap(_.sendMessage(request, timeout))
-
-    override def sendDocument(
-      request: TelegramSendDocument,
-      timeout: Duration,
-    ): IO[TelegramClientError, TelegramMessage] =
-      currentClient.flatMap(_.sendDocument(request, timeout))
-
-    private def currentClient: IO[TelegramClientError, TelegramClient] =
-      for
-        config <- configRef.get
-        token  <- ZIO
-                    .fromOption(config.telegram.botToken.map(_.trim).filter(_.nonEmpty))
-                    .orElseFail(
-                      TelegramClientError.InvalidConfig(
-                        "telegram bot token is not configured; set telegram.botToken in Settings"
-                      )
-                    )
-        client <- clientsRef.modifyZIO { current =>
-                    current.get(token) match
-                      case Some(existing) =>
-                        ZIO.succeed((existing, current))
-                      case None           =>
-                        ZIO
-                          .attempt {
-                            val handler = FutureSttpClient(
-                              token = token,
-                              telegramHost = "api.telegram.org",
-                            )(using backend, summon[ExecutionContext])
-                            TelegramClient.fromRequestHandler(handler)
-                          }
-                          .mapError(err =>
-                            TelegramClientError.InvalidConfig(
-                              s"failed to initialize telegram client: ${Option(err.getMessage).getOrElse(err.toString)}"
-                            )
-                          )
-                          .map(created => (created, current + (token -> created)))
-                  }
-      yield client
 
   final private case class ConfigAwareLlmService(
     configRef: Ref[GatewayConfig],
