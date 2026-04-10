@@ -13,8 +13,10 @@ import db.ChatRepository
 import decision.control.DecisionInbox
 import decision.entity.*
 import issues.entity.*
+import plan.entity.*
 import shared.errors.PersistenceError
 import shared.ids.Ids.*
+import specification.entity.*
 import workspace.entity.*
 
 object IssueTimelineServiceSpec extends ZIOSpecDefault:
@@ -124,48 +126,54 @@ object IssueTimelineServiceSpec extends ZIOSpecDefault:
           decisionInbox = StubDecisionInbox(List(decision)),
           chatRepository = StubChatRepository(Map(101L -> messages)),
           analysisRepository = EmptyAnalysisRepository,
+          planRepository = StubPlanRepository(Nil),
+          specificationRepository = StubSpecRepository(Nil),
         )
 
-        for entries <- service.buildTimeline(workspaceId, boardIssueId)
-        yield assertTrue(
-          entries.map(_.occurredAt) == entries.map(_.occurredAt).sorted,
-          entries.collectFirst { case entry: IssueCreated => entry }.exists(
-            _.priority == board.entity.IssuePriority.High
-          ),
-          entries.exists {
-            case AgentAssigned(_, "code-agent", _) => true
-            case _                                 => false
-          },
-          entries.exists {
-            case RunStarted("run-1", "agent/issue-1", "101", `runStartedAt`) => true
-            case _                                                           => false
-          },
-          entries.exists {
-            case DecisionRaised("decision-1", "Review implementation", "High", `decisionAt`) => true
-            case _                                                                           => false
-          },
-          entries.exists {
-            case ReviewAction("decision-1", "Approved", "reviewer", "Looks good", `resolvedAt`) => true
-            case _                                                                              => false
-          },
-          entries.exists {
-            case RunCompleted("run-1", "Agent completed work", 300L, `runFinishedAt`) => true
-            case _                                                                    => false
-          },
-          entries.exists {
-            case GitChanges("run-1", `workspaceId`, "agent/issue-1", `runFinishedAt`) => true
-            case _                                                                    => false
-          },
-          entries.exists {
-            case IssueDone("Merged successfully", `doneAt`) => true
-            case _                                          => false
-          },
-          entries.exists {
-            case ChatMessages("run-1", "101", chatMessages, `chatAt`) =>
-              chatMessages.map(_.role) == List("user", "assistant")
-            case _                                                    => false
-          },
-        )
+        for context <- service.buildTimeline(workspaceId, boardIssueId)
+        yield
+          val entries = context.timeline
+          assertTrue(
+            entries.map(_.occurredAt) == entries.map(_.occurredAt).sorted,
+            entries.collectFirst { case entry: IssueCreated => entry }.exists(
+              _.priority == board.entity.IssuePriority.High
+            ),
+            entries.exists {
+              case AgentAssigned(_, "code-agent", _) => true
+              case _                                 => false
+            },
+            entries.exists {
+              case RunStarted("run-1", "agent/issue-1", "101", `runStartedAt`) => true
+              case _                                                           => false
+            },
+            entries.exists {
+              case DecisionRaised("decision-1", "Review implementation", "High", `decisionAt`) => true
+              case _                                                                           => false
+            },
+            entries.exists {
+              case ReviewAction("decision-1", "Approved", "reviewer", "Looks good", `resolvedAt`) => true
+              case _                                                                              => false
+            },
+            entries.exists {
+              case RunCompleted("run-1", "Agent completed work", 300L, `runFinishedAt`) => true
+              case _                                                                    => false
+            },
+            entries.exists {
+              case GitChanges("run-1", `workspaceId`, "agent/issue-1", `runFinishedAt`) => true
+              case _                                                                    => false
+            },
+            entries.exists {
+              case IssueDone("Merged successfully", `doneAt`) => true
+              case _                                          => false
+            },
+            entries.exists {
+              case ChatMessages("run-1", "101", chatMessages, `chatAt`) =>
+                chatMessages.map(_.role) == List("user", "assistant")
+              case _                                                    => false
+            },
+            context.linkedPlans.isEmpty,
+            context.linkedSpecs.isEmpty,
+          )
       },
       test("ignores runs from other workspaces and non-numeric conversation ids") {
         val service = IssueTimelineServiceLive(
@@ -220,19 +228,23 @@ object IssueTimelineServiceSpec extends ZIOSpecDefault:
           decisionInbox = StubDecisionInbox(Nil),
           chatRepository = StubChatRepository(Map.empty),
           analysisRepository = EmptyAnalysisRepository,
+          planRepository = StubPlanRepository(Nil),
+          specificationRepository = StubSpecRepository(Nil),
         )
 
-        for entries <- service.buildTimeline(workspaceId, boardIssueId)
-        yield assertTrue(
-          entries.count {
-            case _: RunStarted => true
-            case _             => false
-          } == 1,
-          !entries.exists {
-            case ChatMessages(_, _, _, _) => true
-            case _                        => false
-          },
-        )
+        for context <- service.buildTimeline(workspaceId, boardIssueId)
+        yield
+          val entries = context.timeline
+          assertTrue(
+            entries.count {
+              case _: RunStarted => true
+              case _             => false
+            } == 1,
+            !entries.exists {
+              case ChatMessages(_, _, _, _) => true
+              case _                        => false
+            },
+          )
       },
     )
 
@@ -327,3 +339,19 @@ object IssueTimelineServiceSpec extends ZIOSpecDefault:
       ZIO.fail(PersistenceError.NotFound("analysis_doc", id.value))
     override def listByWorkspace(workspaceId: String): IO[PersistenceError, List[AnalysisDoc]]   = ZIO.succeed(Nil)
     override def listByType(analysisType: AnalysisType): IO[PersistenceError, List[AnalysisDoc]] = ZIO.succeed(Nil)
+
+  final private case class StubPlanRepository(plans: List[Plan]) extends PlanRepository:
+    override def append(event: PlanEvent): IO[PersistenceError, Unit]       = ZIO.unit
+    override def get(id: PlanId): IO[PersistenceError, Plan]               =
+      ZIO.fail(PersistenceError.NotFound("plan", id.value))
+    override def history(id: PlanId): IO[PersistenceError, List[PlanEvent]] = ZIO.succeed(Nil)
+    override def list: IO[PersistenceError, List[Plan]]                     = ZIO.succeed(plans)
+
+  final private case class StubSpecRepository(specs: List[Specification]) extends SpecificationRepository:
+    override def append(event: SpecificationEvent): IO[PersistenceError, Unit]                                  = ZIO.unit
+    override def get(id: SpecificationId): IO[PersistenceError, Specification]                                  =
+      ZIO.fail(PersistenceError.NotFound("specification", id.value))
+    override def history(id: SpecificationId): IO[PersistenceError, List[SpecificationEvent]]                   = ZIO.succeed(Nil)
+    override def list: IO[PersistenceError, List[Specification]]                                                = ZIO.succeed(specs)
+    override def diff(id: SpecificationId, fromVersion: Int, toVersion: Int): IO[PersistenceError, SpecificationDiff] =
+      ZIO.succeed(SpecificationDiff(fromVersion, toVersion, "", ""))

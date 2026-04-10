@@ -88,7 +88,7 @@ object IssueTimelineViewSpec extends ZIOSpecDefault:
   def spec: Spec[Any, Nothing] =
     suite("IssueTimelineViewSpec")(
       test("page renders sticky header, timeline entries, and review actions for review issues") {
-        val html = IssueTimelineView.page("ws-1", reviewIssue, timeline)
+        val html = IssueTimelineView.page("ws-1", reviewIssue, IssueContext(timeline, Nil, Nil))
         assertTrue(
           html.contains("sticky top-10"),
           html.contains("Polish timeline workflow"),
@@ -104,7 +104,7 @@ object IssueTimelineViewSpec extends ZIOSpecDefault:
         )
       },
       test("chat messages render as a collapsible details block") {
-        val html = IssueTimelineView.page("ws-1", reviewIssue, timeline)
+        val html = IssueTimelineView.page("ws-1", reviewIssue, IssueContext(timeline, Nil, Nil))
         assertTrue(
           html.contains("<details"),
           html.contains("Conversation 77"),
@@ -115,7 +115,7 @@ object IssueTimelineViewSpec extends ZIOSpecDefault:
         )
       },
       test("analysis doc renders as expandable details block with VSCode link") {
-        val html = IssueTimelineView.page("ws-1", reviewIssue, timeline)
+        val html = IssueTimelineView.page("ws-1", reviewIssue, IssueContext(timeline, Nil, Nil))
         assertTrue(
           html.contains("Code Review"),
           html.contains("<details"),
@@ -129,7 +129,7 @@ object IssueTimelineViewSpec extends ZIOSpecDefault:
         )
       },
       test("review action form is hidden when the issue is not in review") {
-        val html = IssueTimelineView.page("ws-1", doneIssue, timeline)
+        val html = IssueTimelineView.page("ws-1", doneIssue, IssueContext(timeline, Nil, Nil))
         assertTrue(
           !html.contains("""/board/ws-1/issues/issue-42/quick-approve"""),
           !html.contains("""/board/ws-1/issues/issue-42/rework"""),

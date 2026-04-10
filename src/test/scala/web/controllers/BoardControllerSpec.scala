@@ -133,8 +133,8 @@ object BoardControllerSpec extends ZIOSpecDefault:
     override def buildTimeline(
       workspaceId: String,
       issueId: BoardIssueId,
-    ): IO[shared.errors.PersistenceError, List[board.entity.TimelineEntry]] =
-      ZIO.succeed(entries)
+    ): IO[shared.errors.PersistenceError, board.entity.IssueContext] =
+      ZIO.succeed(board.entity.IssueContext(entries, Nil, Nil))
 
   private object StubProjectStorageService extends ProjectStorageService:
     override def initProjectStorage(projectId: shared.ids.Ids.ProjectId)
