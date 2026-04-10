@@ -146,38 +146,8 @@ object Layout:
               )
             }*
           ),
-          // Right: ADE dropdown + optional Chats + ⌘K
+          // Right: optional Chats + ⌘K
           div(cls := "flex items-center gap-2 flex-1 justify-end")(
-            // ADE dropdown — pure HTML, toggled by inline script
-            div(cls := "relative", attr("data-nav-dropdown") := "")(
-              button(
-                `type`                   := "button",
-                cls                      := "flex items-center gap-1 rounded px-2 py-1 text-xs text-gray-400 hover:bg-white/5 hover:text-white",
-                attr("data-nav-trigger") := "",
-                attr("aria-haspopup")    := "menu",
-                attr("aria-expanded")    := "false",
-              )("ADE ", span(cls := "text-[9px] opacity-60")("▼")),
-              div(
-                cls                    := "hidden absolute right-0 top-full mt-1 z-50 min-w-[10rem] rounded-lg border border-white/10 bg-slate-900 shadow-xl py-1",
-                attr("role")           := "menu",
-                attr("data-nav-panel") := "",
-              )(
-                adeGroup.items.map { item =>
-                  val active = item.activePredicate(currentPath)
-                  a(
-                    href         := item.href,
-                    attr("role") := "menuitem",
-                    cls          := s"flex items-center gap-2 px-3 py-1.5 text-xs ${
-                        if active then "bg-white/5 text-white" else "text-gray-300 hover:bg-white/5 hover:text-white"
-                      }",
-                    if active then attr("aria-current") := "page" else frag(),
-                  )(
-                    item.label,
-                    item.liveBadgePath.fold[Frag](frag())(path => liveBadge(path, None)),
-                  )
-                }*
-              ),
-            ),
             // Chats dropdown (only when chatWorkspaceNav is present)
             chatWorkspaceNav.fold[Frag](frag()) { chatNav =>
               div(cls := "relative", attr("data-nav-dropdown") := "")(
@@ -251,6 +221,7 @@ object Layout:
       NavItem("/projects", "Projects", Icons.workflow, _.startsWith("/projects")),
       NavItem("/knowledge", "Knowledge", Icons.documentText, _.startsWith("/knowledge")),
       NavItem("/agents", "Agents", Icons.cpuChip, _.startsWith("/agents")),
+      NavItem("/sdlc", "SDLC", Icons.activity, _.startsWith("/sdlc")),
       NavItem(
         "/settings",
         "Settings",
@@ -260,22 +231,6 @@ object Layout:
           p.startsWith("/models") || p.startsWith("/channels") ||
           p.startsWith("/health"),
       ),
-    ),
-  )
-
-  private lazy val adeGroup: NavGroup = NavGroup(
-    label = "ADE",
-    items = List(
-      NavItem("/sdlc", "SDLC Dashboard", Icons.activity, _.startsWith("/sdlc")),
-      NavItem(
-        "/board",
-        "Board",
-        Icons.tableColumns,
-        p => p.startsWith("/board") || p.startsWith("/issues/board"),
-        liveBadgePath = Some("/nav/badges/board"),
-      ),
-      NavItem("/governance", "Governance", Icons.documentText, _.startsWith("/governance")),
-      NavItem("/daemons", "Daemons", Icons.cpuChip, _.startsWith("/daemons")),
     ),
   )
 
