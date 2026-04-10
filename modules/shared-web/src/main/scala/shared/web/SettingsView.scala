@@ -7,7 +7,6 @@ import gateway.boundary.{ ChannelCardData, ChannelView }
 import issues.entity.api.IssueTemplate
 import llm4zio.tools.{ Tool, ToolSandbox }
 import scalatags.Text.all.*
-import scalatags.Text.tags2.nav
 
 object SettingsView:
 
@@ -21,38 +20,8 @@ object SettingsView:
 
   private val sectionCls = "bg-white/5 ring-1 ring-white/10 rounded-lg p-6 mb-6"
 
-  private val tabs = List(
-    ("ai", "AI Models"),
-    ("channels", "Channels"),
-    ("gateway", "Gateway"),
-    ("issues-templates", "Issue Templates"),
-    ("system", "System"),
-    ("advanced", "Advanced Config"),
-    ("demo", "Demo"),
-  )
-
   def settingsShell(activeTab: String, pageTitle: String)(bodyContent: Frag*): String =
-    Layout.page(pageTitle, s"/settings/$activeTab")(
-      Components.pageHeader(title = "Settings"),
-      div(cls := "border-b border-white/10 mb-6")(
-        nav(cls := "-mb-px flex space-x-6", attr("aria-label") := "Settings tabs")(
-          tabs.map {
-            case (tab, label) =>
-              val isActive = tab == activeTab
-              a(
-                href := s"/settings/$tab",
-                cls  :=
-                  (if isActive then
-                     "border-b-2 border-indigo-500 py-4 px-1 text-sm font-medium text-white whitespace-nowrap"
-                   else
-                     "border-b-2 border-transparent py-4 px-1 text-sm font-medium text-gray-400 hover:text-white hover:border-white/30 whitespace-nowrap"),
-                if isActive then attr("aria-current") := "page" else (),
-              )(label)
-          }
-        )
-      ),
-      div(bodyContent*),
-    )
+    SettingsShell.page(activeTab, pageTitle)(bodyContent*)
 
   def aiTab(
     settings: Map[String, String],
