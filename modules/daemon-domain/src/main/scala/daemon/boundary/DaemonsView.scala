@@ -2,18 +2,15 @@ package daemon.boundary
 
 import daemon.entity.*
 import scalatags.Text.all.*
-import shared.web.*
+import shared.web.SettingsShell
 
 object DaemonsView:
 
   def page(statuses: List[DaemonAgentStatus]): String =
-    Layout.page("Daemons", "/daemons")(
+    SettingsShell.page("daemons", "Settings — Daemons")(
       div(cls := "space-y-6")(
-        div(cls := "rounded-xl border border-white/10 bg-slate-900/80 px-5 py-4")(
-          h1(cls := "text-2xl font-bold text-white")("Daemon Agents"),
-          p(cls := "mt-1 text-sm text-slate-300")(
-            "Continuous maintenance agents derived per project and governed through settings or governance policy."
-          ),
+        p(cls := "text-sm text-slate-300 mb-4")(
+          "Continuous maintenance agents derived per project and governed through settings or governance policy."
         ),
         if statuses.isEmpty then
           div(cls := "rounded-xl border border-dashed border-white/10 bg-slate-900/60 p-10 text-center text-slate-300")(
@@ -82,7 +79,7 @@ object DaemonsView:
     )
 
   private def actionForm(id: String, routeAction: String, labelText: String, tone: String): Frag =
-    form(action := s"/daemons/$id/$routeAction", method := "post")(
+    form(action := s"/settings/daemons/$id/$routeAction", method := "post")(
       button(
         `type` := "submit",
         cls    := s"rounded border border-$tone-400/30 bg-$tone-500/10 px-3 py-2 text-xs font-semibold text-$tone-200 hover:bg-$tone-500/20",

@@ -23,32 +23,32 @@ final case class DaemonsControllerLive(
 ) extends DaemonsController:
 
   override val routes: Routes[Any, Response] = Routes(
-    Method.GET / "daemons"                             -> handler {
+    Method.GET / "settings" / "daemons"                             -> handler {
       scheduler.list
         .map(statuses => html(DaemonsView.page(statuses)))
         .catchAll(error => ZIO.succeed(persistErr(error)))
     },
-    Method.POST / "daemons" / string("id") / "start"   -> handler { (id: String, _: Request) =>
-      scheduler.start(DaemonAgentSpecId(id)).as(redirect("/daemons")).catchAll(error => ZIO.succeed(persistErr(error)))
+    Method.POST / "settings" / "daemons" / string("id") / "start"   -> handler { (id: String, _: Request) =>
+      scheduler.start(DaemonAgentSpecId(id)).as(redirect("/settings/daemons")).catchAll(error => ZIO.succeed(persistErr(error)))
     },
-    Method.POST / "daemons" / string("id") / "stop"    -> handler { (id: String, _: Request) =>
-      scheduler.stop(DaemonAgentSpecId(id)).as(redirect("/daemons")).catchAll(error => ZIO.succeed(persistErr(error)))
+    Method.POST / "settings" / "daemons" / string("id") / "stop"    -> handler { (id: String, _: Request) =>
+      scheduler.stop(DaemonAgentSpecId(id)).as(redirect("/settings/daemons")).catchAll(error => ZIO.succeed(persistErr(error)))
     },
-    Method.POST / "daemons" / string("id") / "restart" -> handler { (id: String, _: Request) =>
-      scheduler.restart(DaemonAgentSpecId(id)).as(redirect("/daemons")).catchAll(error =>
+    Method.POST / "settings" / "daemons" / string("id") / "restart" -> handler { (id: String, _: Request) =>
+      scheduler.restart(DaemonAgentSpecId(id)).as(redirect("/settings/daemons")).catchAll(error =>
         ZIO.succeed(persistErr(error))
       )
     },
-    Method.POST / "daemons" / string("id") / "enable"  -> handler { (id: String, _: Request) =>
+    Method.POST / "settings" / "daemons" / string("id") / "enable"  -> handler { (id: String, _: Request) =>
       scheduler
         .setEnabled(DaemonAgentSpecId(id), enabled = true)
-        .as(redirect("/daemons"))
+        .as(redirect("/settings/daemons"))
         .catchAll(error => ZIO.succeed(persistErr(error)))
     },
-    Method.POST / "daemons" / string("id") / "disable" -> handler { (id: String, _: Request) =>
+    Method.POST / "settings" / "daemons" / string("id") / "disable" -> handler { (id: String, _: Request) =>
       scheduler
         .setEnabled(DaemonAgentSpecId(id), enabled = false)
-        .as(redirect("/daemons"))
+        .as(redirect("/settings/daemons"))
         .catchAll(error => ZIO.succeed(persistErr(error)))
     },
   )
