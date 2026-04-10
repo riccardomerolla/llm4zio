@@ -1,9 +1,10 @@
-package shared.web
+package specification.boundary
 
 import java.time.Instant
 
 import issues.entity.AgentIssue
 import scalatags.Text.all.*
+import shared.web.Layout
 import specification.entity.{ Specification, SpecificationDiff, SpecificationStatus }
 
 final case class SpecificationListItem(

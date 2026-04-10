@@ -42,7 +42,7 @@ object GovernancePolicyEngine:
   val live: ULayer[GovernancePolicyEngine] =
     ZLayer.succeed(GovernancePolicyEngineLive())
 
-final private case class GovernancePolicyEngineLive() extends GovernancePolicyEngine:
+final private[governance] case class GovernancePolicyEngineLive() extends GovernancePolicyEngine:
 
   override def evaluateTransition(
     policy: GovernancePolicy,

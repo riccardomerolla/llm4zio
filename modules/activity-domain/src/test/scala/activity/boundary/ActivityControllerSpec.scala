@@ -1,4 +1,4 @@
-package web.controllers
+package activity.boundary
 
 import java.time.Instant
 
@@ -6,7 +6,6 @@ import zio.*
 import zio.http.*
 import zio.test.*
 
-import activity.boundary.ActivityController
 import activity.entity.{ ActivityEvent, ActivityEventType, ActivityRepository }
 import shared.errors.PersistenceError
 import shared.ids.Ids.EventId

@@ -6,7 +6,7 @@ import zio.*
 import zio.http.*
 
 import activity.entity.{ ActivityEventType, ActivityRepository }
-import shared.web.{ ActivityView, ErrorHandlingMiddleware }
+import shared.web.ErrorHandlingMiddleware
 
 trait ActivityController:
   def routes: Routes[Any, Response]

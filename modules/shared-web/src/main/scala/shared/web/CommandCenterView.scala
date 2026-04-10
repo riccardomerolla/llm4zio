@@ -1,5 +1,6 @@
 package shared.web
 
+import activity.boundary.ActivityView
 import activity.entity.ActivityEvent
 import scalatags.Text.all.*
 import taskrun.entity.TaskRunRow

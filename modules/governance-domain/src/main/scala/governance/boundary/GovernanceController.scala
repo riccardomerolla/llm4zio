@@ -5,7 +5,6 @@ import zio.http.*
 
 import governance.entity.GovernancePolicyRepository
 import shared.errors.PersistenceError
-import shared.web.GovernanceView
 
 object GovernanceController:
 

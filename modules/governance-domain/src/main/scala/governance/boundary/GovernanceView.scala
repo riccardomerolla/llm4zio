@@ -1,7 +1,8 @@
-package shared.web
+package governance.boundary
 
 import governance.entity.*
 import scalatags.Text.all.*
+import shared.web.Layout
 
 object GovernanceView:
 

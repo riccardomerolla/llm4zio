@@ -1,8 +1,9 @@
-package shared.web
+package activity.boundary
 
 import activity.entity.{ ActivityEvent, ActivityEventType }
 import scalatags.Text.all.*
 import shared.ids.Ids.TaskRunId
+import shared.web.{ JsResources, Layout }
 
 object ActivityView:
 

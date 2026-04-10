@@ -1,11 +1,10 @@
-package web
+package activity.control
 
 import java.time.Instant
 
 import zio.*
 import zio.test.*
 
-import activity.control.ActivityHubLive
 import activity.entity.{ ActivityEvent, ActivityEventType, ActivityRepository }
 import shared.errors.PersistenceError
 import shared.ids.Ids.EventId

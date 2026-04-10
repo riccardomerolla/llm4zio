@@ -1,4 +1,4 @@
-package shared.web
+package activity.boundary
 
 import java.time.Instant
 

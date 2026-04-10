@@ -9,7 +9,6 @@ import zio.http.*
 import issues.entity.{ AgentIssue, IssueFilter, IssueRepository }
 import shared.errors.PersistenceError
 import shared.ids.Ids.SpecificationId
-import shared.web.{ SpecificationListItem, SpecificationsView }
 import specification.entity.*
 
 trait SpecificationsController:

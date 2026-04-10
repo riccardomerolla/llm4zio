@@ -190,13 +190,18 @@ lazy val sharedWebCore = (project in file("modules/shared-web-core"))
 
 // ── Domain modules (entity + control layers, no boundary/web dependencies) ──
 
+val domainTestDeps = Seq(
+  "dev.zio" %% "zio-test"     % zioVersion % Test,
+  "dev.zio" %% "zio-test-sbt" % zioVersion % Test,
+)
+
 val domainDeps = Seq(
   "dev.zio" %% "zio" % zioVersion,
   zioJsonDep,
   "dev.zio" %% "zio-schema"            % zioSchemaVersion,
   "dev.zio" %% "zio-schema-derivation" % zioSchemaVersion,
   "io.github.riccardomerolla" %% "zio-eclipsestore" % zioEclipseStoreVersion,
-)
+) ++ domainTestDeps
 
 val domainBceDeps = domainDeps ++ Seq(
   zioHttpDep,
@@ -204,11 +209,11 @@ val domainBceDeps = domainDeps ++ Seq(
 )
 
 lazy val activityDomain = (project in file("modules/activity-domain"))
-  .dependsOn(sharedIds, sharedErrors, sharedStoreCore)
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore, sharedWebCore)
   .settings(foundationSettings)
   .settings(
     name := "activity-domain",
-    libraryDependencies ++= domainDeps,
+    libraryDependencies ++= domainBceDeps,
   )
 
 lazy val memoryDomain = (project in file("modules/memory-domain"))
@@ -220,11 +225,11 @@ lazy val memoryDomain = (project in file("modules/memory-domain"))
   )
 
 lazy val governanceDomain = (project in file("modules/governance-domain"))
-  .dependsOn(sharedIds, sharedErrors, sharedStoreCore)
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore, sharedWebCore, workspaceDomain)
   .settings(foundationSettings)
   .settings(
     name := "governance-domain",
-    libraryDependencies ++= domainDeps,
+    libraryDependencies ++= domainBceDeps,
   )
 
 lazy val agentDomain = (project in file("modules/agent-domain"))
@@ -244,11 +249,11 @@ lazy val decisionDomain = (project in file("modules/decision-domain"))
   )
 
 lazy val specificationDomain = (project in file("modules/specification-domain"))
-  .dependsOn(sharedIds, sharedErrors, sharedStoreCore)
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore, sharedWebCore, issuesDomain)
   .settings(foundationSettings)
   .settings(
     name := "specification-domain",
-    libraryDependencies ++= domainDeps,
+    libraryDependencies ++= domainBceDeps,
   )
 
 lazy val planDomain = (project in file("modules/plan-domain"))
