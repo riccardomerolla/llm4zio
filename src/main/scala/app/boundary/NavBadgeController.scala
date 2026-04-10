@@ -3,34 +3,21 @@ package app.boundary
 import zio.*
 import zio.http.*
 
-import decision.control.DecisionInbox
-import decision.entity.{ DecisionFilter, DecisionStatus }
 import issues.entity.{ IssueFilter, IssueRepository, IssueStateTag }
 import shared.errors.PersistenceError
 
 object NavBadgeController:
 
   def routes(
-    decisionInbox: DecisionInbox,
     issueRepository: IssueRepository,
   ): Routes[Any, Response] =
     Routes(
-      Method.GET / "nav" / "badges" / "decisions" -> handler { (_: Request) =>
-        pendingDecisionCount(decisionInbox)
-          .map(count => badgeResponse(count))
-          .catchAll(error => ZIO.succeed(errorResponse(error.toString)))
-      },
-      Method.GET / "nav" / "badges" / "board"     -> handler { (_: Request) =>
+      Method.GET / "nav" / "badges" / "board" -> handler { (_: Request) =>
         inProgressBoardCount(issueRepository)
           .map(count => badgeResponse(count))
           .catchAll(error => ZIO.succeed(errorResponse(error.toString)))
       },
     )
-
-  private def pendingDecisionCount(decisionInbox: DecisionInbox): IO[PersistenceError, Int] =
-    decisionInbox
-      .list(DecisionFilter(limit = Int.MaxValue))
-      .map(_.count(_.status == DecisionStatus.Pending))
 
   private def inProgressBoardCount(issueRepository: IssueRepository): IO[PersistenceError, Int] =
     issueRepository
