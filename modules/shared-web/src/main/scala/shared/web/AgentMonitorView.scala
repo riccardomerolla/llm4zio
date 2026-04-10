@@ -63,7 +63,7 @@ object AgentMonitorView:
       tokensTotal = info.tokensUsed,
       sessionId = info.conversationId,
       lastEvent = info.message.getOrElse("—"),
-      reviewHref = info.runId.filter(_.trim.nonEmpty).map(runId => s"/checkpoints/$runId"),
+      reviewHref = None,
     )
 
   private def stageName(state: AgentExecutionState): String = state match

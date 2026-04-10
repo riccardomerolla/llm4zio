@@ -105,14 +105,14 @@ object AgentMonitorViewSpec extends ZIOSpecDefault:
           rows.head.tokensTotal == 12345L,
           rows.head.lastEvent == "Processing files",
           rows.head.sessionId.contains("sess-xyz-99"),
-          rows.head.reviewHref.contains("/checkpoints/issue-abc-12345"),
+          rows.head.reviewHref.isEmpty,
         )
       },
-      test("table rows navigate to checkpoint review when runId is present") {
+      test("table rows do not navigate to checkpoint review") {
         val html = AgentMonitorView.table(AgentMonitorView.fromSnapshot(snapshot))
         assertTrue(
-          html.contains("window.location='/checkpoints/issue-abc-12345'"),
-          html.contains("cursor-pointer"),
+          !html.contains("window.location="),
+          !html.contains("cursor-pointer"),
         )
       },
       test("table with rows renders issue ID (truncated to 12 chars)") {
