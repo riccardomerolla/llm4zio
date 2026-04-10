@@ -9,7 +9,7 @@ import zio.test.*
 import _root_.config.entity.{ CustomAgentRow, SettingRow, WorkflowRow }
 import agent.entity.{ Agent, AgentEvent, AgentRepository }
 import analysis.entity.{ AnalysisDoc, AnalysisEvent, AnalysisRepository, AnalysisType }
-import app.control.FileService
+import shared.services.FileService
 import db.*
 import project.control.ProjectStorageService
 import shared.errors.PersistenceError

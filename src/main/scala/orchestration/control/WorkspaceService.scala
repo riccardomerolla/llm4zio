@@ -7,7 +7,7 @@ import zio.*
 import zio.json.*
 
 import _root_.config.entity.MigrationConfig
-import app.control.FileService
+import shared.services.FileService
 import shared.errors.{ FileError, WorkspaceError }
 import shared.json.JsonCodecs.given
 

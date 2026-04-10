@@ -26,7 +26,8 @@ import agent.entity.{ AgentEventStoreES, AgentRepositoryES }
 import analysis.control.{ AnalysisAgentRunner, WorkspaceAnalysisScheduler }
 import analysis.entity.{ AnalysisEventStoreES, AnalysisRepositoryES }
 import app.boundary.{ AgentMonitorController as AppAgentMonitorController, HealthController as AppHealthController, * }
-import app.control.{ FileService, HealthMonitor, HttpAIClient, LogTailer, StateService }
+import app.control.{ HealthMonitor, LogTailer }
+import shared.services.{ FileService, HttpAIClient, StateService }
 import board.boundary.BoardController as BoardBoundaryController
 import board.control.*
 import board.entity.BoardRepository

@@ -6,7 +6,7 @@ import zio.*
 import zio.json.*
 
 import _root_.config.entity.GatewayConfig
-import app.control.{ RateLimiter, RateLimiterConfig }
+import shared.services.{ RateLimiter, RateLimiterConfig }
 import shared.errors.ControlPlaneError
 
 enum RunPriority derives JsonCodec:

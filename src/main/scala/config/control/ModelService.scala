@@ -6,7 +6,7 @@ import java.nio.charset.StandardCharsets
 import zio.*
 
 import _root_.config.entity.*
-import app.control.HttpAIClient
+import shared.services.HttpAIClient
 import shared.errors.AIError
 
 trait ModelService:

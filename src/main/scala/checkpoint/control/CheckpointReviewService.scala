@@ -6,7 +6,7 @@ import scala.util.Try
 
 import zio.*
 
-import app.control.StateService
+import shared.services.StateService
 import checkpoint.entity.*
 import conversation.entity.api.{ ConversationEntry, SenderType }
 import db.ChatRepository

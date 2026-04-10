@@ -5,6 +5,7 @@ import zio.http.*
 import zio.test.*
 
 import shared.errors.AIError
+import shared.services.HttpAIClient
 
 object HttpAIClientSpec extends ZIOSpecDefault:
 

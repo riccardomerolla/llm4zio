@@ -11,7 +11,7 @@ import zio.test.*
 
 import activity.control.ActivityHub
 import activity.entity.ActivityEvent
-import app.control.FileService
+import shared.services.FileService
 import board.control.*
 import board.entity.*
 import llm4zio.core.{ LlmChunk, LlmError, LlmService, Message, ToolCallResponse }

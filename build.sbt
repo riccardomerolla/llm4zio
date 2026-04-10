@@ -158,6 +158,21 @@ lazy val sharedStoreCore = (project in file("modules/shared-store-core"))
     ),
   )
 
+// ── Shared services (infrastructure extracted from app.control) ──────────────
+
+lazy val sharedServices = (project in file("modules/shared-services"))
+  .dependsOn(sharedErrors, taskrunDomain, configDomain)
+  .settings(foundationSettings)
+  .settings(
+    name := "shared-services",
+    libraryDependencies ++= Seq(
+      "dev.zio" %% "zio" % zioVersion,
+      "dev.zio" %% "zio-streams" % zioVersion,
+      zioJsonDep,
+      zioHttpDep,
+    ),
+  )
+
 // ── Domain modules (entity + control layers, no boundary/web dependencies) ──
 
 val domainDeps = Seq(
@@ -225,7 +240,7 @@ lazy val planDomain = (project in file("modules/plan-domain"))
   )
 
 lazy val taskrunDomain = (project in file("modules/taskrun-domain"))
-  .dependsOn(sharedIds, sharedErrors, sharedStoreCore)
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore, sharedJson, configDomain)
   .settings(foundationSettings)
   .settings(
     name := "taskrun-domain",
@@ -400,7 +415,7 @@ lazy val sdlcDomain = (project in file("modules/sdlc-domain"))
   )
 
 lazy val allModules = Seq(
-  llm4zio, sharedJson, sharedIds, sharedErrors, sharedStoreCore,
+  llm4zio, sharedJson, sharedIds, sharedErrors, sharedStoreCore, sharedServices,
   activityDomain, memoryDomain, governanceDomain, agentDomain, decisionDomain, specificationDomain,
   planDomain, taskrunDomain, boardDomain, knowledgeDomain, projectDomain, configDomain,
   conversationDomain, daemonDomain, analysisDomain, workspaceDomain, gatewayDomain,
