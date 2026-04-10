@@ -584,20 +584,15 @@ final case class WorkspaceRunServiceLive(
     value.trim.toLowerCase.replaceAll("[^a-z0-9._-]+", "-").replaceAll("-{2,}", "-").stripPrefix("-").stripSuffix("-")
 
   private def reserveAgentSlot(agentName: String): IO[WorkspaceError, SlotHandle] =
-    for
-      available <- availableAgentSlots(agentName)
-      _         <-
-        if available <= 0 then
-          ZIO.fail(
-            WorkspaceError.InvalidRunState(
-              runId = agentName.trim,
-              expected = "available_slots > 0",
-              actual = s"available_slots = $available",
-            )
-          )
-        else ZIO.unit
-      handle    <- acquireAgentSlot(agentName)
-    yield handle
+    acquireAgentSlot(agentName)
+      .disconnect
+      .timeoutFail(
+        WorkspaceError.InvalidRunState(
+          runId = agentName.trim,
+          expected = "available_slots > 0",
+          actual = "slot acquisition timed out (no slots available)",
+        )
+      )(5.seconds)
 
   private def resolvedPermissions(
     profile: Option[_root_.agent.entity.Agent],

@@ -457,10 +457,21 @@ object IssueTimelineView:
             },
             body: body,
           });
+          if(!resp.ok){
+            var errText = await resp.text();
+            modal.confirm({
+              heading: 'Error',
+              message: errText || 'Action failed. Please try again.',
+              confirmText: 'OK',
+              cancelText: 'Dismiss',
+              variant: 'danger',
+            });
+            return;
+          }
           var redirect = resp.headers.get('HX-Redirect');
           if(redirect){
             window.location.href = redirect;
-          } else if(resp.ok){
+          } else {
             window.location.href = '/board';
           }
         });

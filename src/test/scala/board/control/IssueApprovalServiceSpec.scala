@@ -52,7 +52,7 @@ object IssueApprovalServiceSpec extends ZIOSpecDefault:
             approved == List(("/tmp/projects/project-1", issueId)),
           )
         },
-        test("fails before resolving the decision when no run exists for the issue in the workspace") {
+        test("quickApprove proceeds even when no run exists for the issue in the workspace") {
           for
             resolvedRef <- Ref.make(0)
             approvedRef <- Ref.make(0)
@@ -69,9 +69,9 @@ object IssueApprovalServiceSpec extends ZIOSpecDefault:
             resolved    <- resolvedRef.get
             approved    <- approvedRef.get
           yield assertTrue(
-            result == Left(BoardError.ParseError(s"latest run not found for issue '${issueId.value}'")),
-            resolved == 0,
-            approved == 0,
+            result == Right(()),
+            resolved == 1,
+            approved == 1,
           )
         },
       ),

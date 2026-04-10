@@ -60,7 +60,9 @@ final case class IssueApprovalServiceLive(
   ): IO[BoardError, Unit] =
     for
       workspace   <- loadWorkspace(workspaceId)
-      _           <- loadLatestRun(workspace.id, issueId)
+      _           <- loadLatestRun(workspace.id, issueId).catchAll(err =>
+                       ZIO.logWarning(s"No run found for issue ${issueId.value} during quick-approve: $err")
+                     )
       reviewNotes  = normalizedReviewerNotes(reviewerNotes)
       _           <- decisionInbox
                        .resolveOpenIssueReviewDecision(

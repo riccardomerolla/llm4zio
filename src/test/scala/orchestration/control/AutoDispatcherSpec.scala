@@ -171,40 +171,6 @@ object AutoDispatcherSpec extends ZIOSpecDefault:
     override def registerSlot(runId: String, handle: SlotHandle): UIO[Unit]                           =
       noOpSlotRegistration
 
-  final private case class RecordingWorkspaceRunService(
-    assignments: Ref[List[AssignRunRequest]],
-    registeredSlots: Ref[Map[String, SlotHandle]],
-  ) extends WorkspaceRunService:
-    override def assign(workspaceId: String, req: AssignRunRequest): IO[WorkspaceError, WorkspaceRun] =
-      assignments.update(_ :+ req).as(
-        WorkspaceRun(
-          id = s"run-${req.issueRef.stripPrefix("#")}",
-          workspaceId = workspaceId,
-          parentRunId = None,
-          issueRef = req.issueRef,
-          agentName = req.agentName,
-          prompt = req.prompt,
-          conversationId = s"conv-${req.issueRef.stripPrefix("#")}",
-          worktreePath = "/tmp/worktree",
-          branchName = s"agent/${req.agentName}",
-          status = RunStatus.Pending,
-          attachedUsers = Set.empty,
-          controllerUserId = None,
-          createdAt = now,
-          updatedAt = now,
-        )
-      )
-    override def continueRun(
-      runId: String,
-      followUpPrompt: String,
-      agentNameOverride: Option[String],
-    ): IO[WorkspaceError, WorkspaceRun] =
-      ZIO.dieMessage("unused")
-    override def cancelRun(runId: String): IO[WorkspaceError, Unit]                                   =
-      ZIO.dieMessage("unused")
-    override def registerSlot(runId: String, handle: SlotHandle): UIO[Unit]                           =
-      registeredSlots.update(_ + (runId -> handle))
-
   final private case class StubAgentPoolManager(
     available: Map[String, Int] = Map.empty,
     acquired: Ref[List[String]],
@@ -313,14 +279,13 @@ object AutoDispatcherSpec extends ZIOSpecDefault:
           assignments <- Ref.make(List.empty[AssignRunRequest])
           activities  <- Ref.make(List.empty[ActivityEvent])
           acquired    <- Ref.make(List.empty[String])
-          registered  <- Ref.make(Map.empty[String, SlotHandle])
           service      = AutoDispatcherLive(
                            configRepository = StubConfigRepository(Map(AutoDispatcher.enabledSettingKey -> "true")),
                            issueRepository = StubIssueRepository(appended, histories),
                            dependencyResolver = StubDependencyResolver(List(normal, boosted)),
                            agentRepository = StubAgentRepository(List(agent("coder", maxConcurrentRuns = 1))),
                            workspaceRepository = StubWorkspaceRepository(Nil),
-                           workspaceRunService = RecordingWorkspaceRunService(assignments, registered),
+                           workspaceRunService = StubWorkspaceRunService(assignments),
                            activityHub = StubActivityHub(activities),
                            agentPoolManager = StubAgentPoolManager(Map("coder" -> 1), acquired),
                            governancePolicyService = StubGovernancePolicyService(allowDecision),
@@ -329,16 +294,12 @@ object AutoDispatcherSpec extends ZIOSpecDefault:
           gotRuns     <- assignments.get
           gotEvents   <- appended.get
           activityLog <- activities.get
-          gotAcquired <- acquired.get
-          gotSlots    <- registered.get
         yield assertTrue(
           count == 1,
           gotRuns.map(_.issueRef) == List("#1"),
-          gotAcquired == List("coder"),
           gotEvents.isEmpty,
           activityLog.size == 1,
           activityLog.head.summary.contains("issue #1"),
-          gotSlots.keySet == Set("run-1"),
         )
       },
       test("dispatchOnce skips dispatch when the pool has no available slots") {
@@ -412,14 +373,13 @@ object AutoDispatcherSpec extends ZIOSpecDefault:
           assignments <- Ref.make(List.empty[AssignRunRequest])
           activities  <- Ref.make(List.empty[ActivityEvent])
           acquired    <- Ref.make(List.empty[String])
-          registered  <- Ref.make(Map.empty[String, SlotHandle])
           service      = AutoDispatcherLive(
                            configRepository = StubConfigRepository(Map(AutoDispatcher.enabledSettingKey -> "true")),
                            issueRepository = StubIssueRepository(appended, histories),
                            dependencyResolver = StubDependencyResolver(List(reworked, urgent)),
                            agentRepository = StubAgentRepository(List(agent("coder", maxConcurrentRuns = 2))),
                            workspaceRepository = StubWorkspaceRepository(Nil),
-                           workspaceRunService = RecordingWorkspaceRunService(assignments, registered),
+                           workspaceRunService = StubWorkspaceRunService(assignments),
                            activityHub = StubActivityHub(activities),
                            agentPoolManager = StubAgentPoolManager(Map("coder" -> 1), acquired),
                            governancePolicyService = StubGovernancePolicyService(allowDecision),

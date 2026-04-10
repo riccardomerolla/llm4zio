@@ -10,7 +10,7 @@ import agent.entity.{ Agent, AgentRepository }
 import governance.control.{ GovernanceEvaluationContext, GovernancePolicyService }
 import governance.entity.{ GovernanceLifecycleAction, GovernanceLifecycleStage, GovernanceTransition }
 import issues.entity.{ AgentIssue, IssueEvent, IssueRepository, IssueState }
-import orchestration.entity.{ AgentPoolManager, PoolError }
+import orchestration.entity.AgentPoolManager
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ AgentId, EventId, TaskRunId }
 import workspace.control.WorkspaceRunService
@@ -190,21 +190,18 @@ final case class AutoDispatcherLive(
   ): IO[PersistenceError, Option[String]] =
     val prompt = buildPrompt(issue)
     for
-      slot <- agentPoolManager.acquireSlot(agentName).mapError(poolErrorToPersistence)
-      run  <- workspaceRunService
-                .assign(
-                  workspaceId,
-                  AssignRunRequest(
-                    issueRef = s"#${issue.id.value}",
-                    prompt = prompt,
-                    agentName = agentName,
-                  ),
-                )
-                .tapError(_ => agentPoolManager.releaseSlot(slot))
-                .mapError(err => PersistenceError.QueryFailed("auto_dispatch_assign", err.toString))
-      _    <- workspaceRunService.registerSlot(run.id, slot)
-      _    <- markIssueStarted(issue, agentName)
-      _    <- publishDispatchActivity(issue, agentName, run.id)
+      run <- workspaceRunService
+               .assign(
+                 workspaceId,
+                 AssignRunRequest(
+                   issueRef = s"#${issue.id.value}",
+                   prompt = prompt,
+                   agentName = agentName,
+                 ),
+               )
+               .mapError(err => PersistenceError.QueryFailed("auto_dispatch_assign", err.toString))
+      _   <- markIssueStarted(issue, agentName)
+      _   <- publishDispatchActivity(issue, agentName, run.id)
     yield Some(agentName)
 
   private def buildPrompt(issue: AgentIssue): String =
@@ -335,15 +332,3 @@ final case class AutoDispatcherLive(
           .getOrElse(AutoDispatcher.defaultInterval)
       }
 
-  private def poolErrorToPersistence(error: PoolError): PersistenceError =
-    error match
-      case PoolError.AgentNotFound(agentName)            =>
-        PersistenceError.NotFound("agent_pool_agent", agentName)
-      case PoolError.AgentPaused(agentName, reason)      =>
-        PersistenceError.QueryFailed("agent_pool_paused", s"$agentName -> $reason")
-      case PoolError.CostLimitExceeded(agentName, limit) =>
-        PersistenceError.QueryFailed("agent_pool_cost_limit", s"$agentName -> $limit")
-      case PoolError.InvalidCapacity(agentName, raw)     =>
-        PersistenceError.QueryFailed("agent_pool_capacity", s"$agentName -> $raw")
-      case PoolError.PersistenceFailure(operation, e)    =>
-        PersistenceError.QueryFailed(operation, e.toString)

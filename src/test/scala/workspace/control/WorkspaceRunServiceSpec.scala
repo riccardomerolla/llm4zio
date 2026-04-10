@@ -470,16 +470,16 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
     test("assign fails with InvalidRunState when the shared agent pool has no available slots") {
       for
         (svc, _, _) <- makeService(
-                         availableAgentSlots = _ => ZIO.succeed(0)
+                         acquireAgentSlot = _ => ZIO.never,
                        )
         result      <- svc.assign(
                          "ws-1",
                          AssignRunRequest(issueRef = "#pool-full", prompt = "echo hello", agentName = "echo"),
                        ).either
       yield assertTrue(result match
-        case Left(WorkspaceError.InvalidRunState("echo", "available_slots > 0", "available_slots = 0")) => true
-        case _                                                                                          => false)
-    },
+        case Left(WorkspaceError.InvalidRunState("echo", "available_slots > 0", _)) => true
+        case _                                                                      => false)
+    } @@ TestAspect.withLiveClock @@ TestAspect.timeout(10.seconds),
     test("assign rejects agent profiles without worktree write permission") {
       val lockedProfile = Agent(
         id = AgentId("locked"),
