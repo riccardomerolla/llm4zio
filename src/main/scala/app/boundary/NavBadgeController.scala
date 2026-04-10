@@ -3,8 +3,6 @@ package app.boundary
 import zio.*
 import zio.http.*
 
-import checkpoint.control.CheckpointReviewService
-import checkpoint.entity.CheckpointReviewError
 import decision.control.DecisionInbox
 import decision.entity.{ DecisionFilter, DecisionStatus }
 import issues.entity.{ IssueFilter, IssueRepository, IssueStateTag }
@@ -14,21 +12,15 @@ object NavBadgeController:
 
   def routes(
     decisionInbox: DecisionInbox,
-    checkpointReviewService: CheckpointReviewService,
     issueRepository: IssueRepository,
-  ): Routes[Any, Response]   =
+  ): Routes[Any, Response] =
     Routes(
-      Method.GET / "nav" / "badges" / "decisions"   -> handler { (_: Request) =>
+      Method.GET / "nav" / "badges" / "decisions" -> handler { (_: Request) =>
         pendingDecisionCount(decisionInbox)
           .map(count => badgeResponse(count))
           .catchAll(error => ZIO.succeed(errorResponse(error.toString)))
       },
-      Method.GET / "nav" / "badges" / "checkpoints" -> handler { (_: Request) =>
-        pendingCheckpointCount(checkpointReviewService)
-          .map(count => badgeResponse(count))
-          .catchAll(error => ZIO.succeed(errorResponse(error.toString)))
-      },
-      Method.GET / "nav" / "badges" / "board"       -> handler { (_: Request) =>
+      Method.GET / "nav" / "badges" / "board"     -> handler { (_: Request) =>
         inProgressBoardCount(issueRepository)
           .map(count => badgeResponse(count))
           .catchAll(error => ZIO.succeed(errorResponse(error.toString)))
@@ -39,9 +31,6 @@ object NavBadgeController:
     decisionInbox
       .list(DecisionFilter(limit = Int.MaxValue))
       .map(_.count(_.status == DecisionStatus.Pending))
-
-  private def pendingCheckpointCount(checkpointReviewService: CheckpointReviewService): IO[CheckpointReviewError, Int] =
-    checkpointReviewService.listActiveRuns.map(_.size)
 
   private def inProgressBoardCount(issueRepository: IssueRepository): IO[PersistenceError, Int] =
     issueRepository
