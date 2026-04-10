@@ -39,8 +39,7 @@ import db.*
 import decision.control.DecisionInbox
 import decision.entity.{ DecisionEventStoreES, DecisionRepositoryES }
 import demo.boundary.DemoController
-import demo.control.{ DemoOrchestrator, MockAgentRunner }
-import demo.entity.DemoConfig
+import demo.control.DemoOrchestrator
 import evolution.control.EvolutionEngine
 import evolution.entity.{ EvolutionProposalEventStoreES, EvolutionProposalRepositoryES }
 import gateway.boundary.telegram.TaskProgressNotifier
@@ -52,7 +51,6 @@ import gateway.control.{ ChannelRegistryFactory, MessageRouter, * }
 import governance.control.{ GovernancePolicyEngine, GovernancePolicyService }
 import governance.entity.{ GovernancePolicyEventStoreES, GovernancePolicyRepositoryES }
 import issues.boundary.IssueController as IssuesIssueController
-import issues.control.{ IssueWorkReportHydrator, IssueWorkReportSubscriber }
 import issues.entity.IssueRepositoryBoard
 import knowledge.boundary.KnowledgeController
 import knowledge.control.{ KnowledgeExtractionService, KnowledgeGraphService }
@@ -350,7 +348,7 @@ object ApplicationDI:
       IssueDispatchStatusService.live,
       DecisionInbox.live,
       EvolutionEngine.live,
-      workspaceRunServiceLayer,
+      WorkspaceRunServiceFactory.live,
       BoardOrchestrator.live,
       IssueTimelineService.live,
       IssueApprovalService.live,
@@ -359,7 +357,7 @@ object ApplicationDI:
       DemoOrchestrator.live,
       DemoController.live,
       WorkReportEventBus.layer,
-      issueWorkReportProjectionLayer,
+      IssueWorkReportProjectionFactory.live,
       MergeAgentService.live,
       ConversationChatController.live,
       IssuesIssueController.live,
@@ -378,36 +376,5 @@ object ApplicationDI:
       WorkspaceRouteModule.live,
       WebServer.live,
     ) >>> ZLayer.service[WebServer]
-
-  private val workspaceRunServiceLayer
-    : ZLayer[ConfigRepository & WorkspaceRunService.LiveDeps, Nothing, WorkspaceRunService] =
-    ZLayer.scoped {
-      for
-        configRepo                               <- ZIO.service[ConfigRepository]
-        rows                                     <- configRepo.getAllSettings.orElseSucceed(Nil)
-        demoConfig                                = DemoConfig.fromSettings(rows.map(r => r.key -> r.value).toMap)
-        mockFn                                    = MockAgentRunner.runner(demoConfig)
-        // Route at invocation time: use MockAgentRunner when cliTool=="mock", real CLI otherwise.
-        // This allows demo mode to work regardless of whether it was enabled at startup.
-        runner: WorkspaceRunService.RunCliAgentFn =
-          (argv, cwd, onLine, envVars) =>
-            if argv.headOption.contains("mock") then mockFn(argv, cwd, onLine, envVars)
-            else CliAgentRunner.runProcessStreaming(argv, cwd, onLine, envVars)
-        wsService                                <- WorkspaceRunService.liveWithAgent(runner).build.map(_.get[WorkspaceRunService])
-      yield wsService
-    }
-
-  private val issueWorkReportProjectionLayer
-    : ZLayer[WorkReportEventBus & issues.entity.IssueRepository & taskrun.entity.TaskRunRepository, Nothing, issues.entity.IssueWorkReportProjection] =
-    ZLayer.scoped {
-      for
-        bus         <- ZIO.service[WorkReportEventBus]
-        issueRepo   <- ZIO.service[issues.entity.IssueRepository]
-        taskRunRepo <- ZIO.service[taskrun.entity.TaskRunRepository]
-        projection  <- issues.entity.IssueWorkReportProjection.make
-        _           <- IssueWorkReportHydrator.runStartup(projection, issueRepo, taskRunRepo)
-        _           <- IssueWorkReportSubscriber(bus, projection, issueRepo).start
-      yield projection
-    }
 
 
