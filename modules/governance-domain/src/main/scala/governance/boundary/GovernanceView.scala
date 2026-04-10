@@ -2,18 +2,15 @@ package governance.boundary
 
 import governance.entity.*
 import scalatags.Text.all.*
-import shared.web.Layout
+import shared.web.SettingsShell
 
 object GovernanceView:
 
   def page(activePolicies: List[GovernancePolicy], archivedPolicies: List[GovernancePolicy]): String =
-    Layout.page("Governance", "/governance")(
+    SettingsShell.page("governance", "Settings — Governance")(
       div(cls := "space-y-6")(
-        div(cls := "rounded-xl border border-white/10 bg-slate-900/80 px-5 py-4")(
-          h1(cls := "text-2xl font-bold text-white")("Governance"),
-          p(cls := "mt-1 text-sm text-slate-300")(
-            "Active policies, lifecycle transition rules, gate requirements, and archive."
-          ),
+        p(cls := "text-sm text-slate-300 mb-4")(
+          "Active policies, lifecycle transition rules, gate requirements, and archive."
         ),
         if activePolicies.isEmpty then
           div(cls := "rounded-xl border border-dashed border-white/10 bg-slate-900/60 p-10 text-center")(

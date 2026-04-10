@@ -10,7 +10,7 @@ object GovernanceController:
 
   def routes(policyRepository: GovernancePolicyRepository): Routes[Any, Response] =
     Routes(
-      Method.GET / "governance" -> handler { (_: Request) =>
+      Method.GET / "settings" / "governance" -> handler { (_: Request) =>
         listPage(policyRepository).catchAll(error => ZIO.succeed(persistErr(error)))
       }
     )
