@@ -380,7 +380,7 @@ lazy val sharedWeb = (project in file("modules/shared-web"))
     daemonDomain, decisionDomain, demoDomain, evolutionDomain, gatewayDomain,
     governanceDomain, issuesDomain, knowledgeDomain, memoryDomain,
     planDomain, projectDomain, specificationDomain, taskrunDomain, workspaceDomain,
-    orchestrationDomain, checkpointDomain, sdlcDomain, llm4zio)
+    orchestrationDomain, sdlcDomain, llm4zio)
   .settings(foundationSettings)
   .settings(
     name := "shared-web",
@@ -425,14 +425,6 @@ lazy val llm4zio = (project in file("llm4zio"))
     libraryDependencies ++= llm4zioDeps,
     testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
     It / testFrameworks ++= (Test / testFrameworks).value,
-  )
-
-lazy val checkpointDomain = (project in file("modules/checkpoint-domain"))
-  .dependsOn(sharedIds, sharedErrors, taskrunDomain, issuesDomain, workspaceDomain)
-  .settings(foundationSettings)
-  .settings(
-    name := "checkpoint-domain",
-    libraryDependencies ++= domainDeps,
   )
 
 lazy val sdlcDomain = (project in file("modules/sdlc-domain"))
@@ -484,7 +476,7 @@ lazy val allModules = Seq(
   planDomain, taskrunDomain, boardDomain, knowledgeDomain, projectDomain, configDomain,
   conversationDomain, daemonDomain, analysisDomain, workspaceDomain, gatewayDomain,
   orchestrationDomain, evolutionDomain, issuesDomain, demoDomain, sharedWeb,
-  checkpointDomain, sdlcDomain,
+  sdlcDomain,
 )
 
 lazy val root = (project in file("."))
