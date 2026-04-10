@@ -173,6 +173,21 @@ lazy val sharedServices = (project in file("modules/shared-services"))
     ),
   )
 
+// ── Shared web core (domain-independent view infrastructure) ─────────────────
+
+lazy val sharedWebCore = (project in file("modules/shared-web-core"))
+  .dependsOn(sharedIds, sharedErrors)
+  .settings(foundationSettings)
+  .settings(
+    name := "shared-web-core",
+    libraryDependencies ++= Seq(
+      "dev.zio" %% "zio" % zioVersion,
+      zioJsonDep,
+      zioHttpDep,
+      "com.lihaoyi" %% "scalatags" % scalatagsVersion,
+    ),
+  )
+
 // ── Domain modules (entity + control layers, no boundary/web dependencies) ──
 
 val domainDeps = Seq(
@@ -181,6 +196,11 @@ val domainDeps = Seq(
   "dev.zio" %% "zio-schema"            % zioSchemaVersion,
   "dev.zio" %% "zio-schema-derivation" % zioSchemaVersion,
   "io.github.riccardomerolla" %% "zio-eclipsestore" % zioEclipseStoreVersion,
+)
+
+val domainBceDeps = domainDeps ++ Seq(
+  zioHttpDep,
+  "com.lihaoyi" %% "scalatags" % scalatagsVersion,
 )
 
 lazy val activityDomain = (project in file("modules/activity-domain"))
@@ -344,7 +364,7 @@ lazy val evolutionDomain = (project in file("modules/evolution-domain"))
   )
 
 lazy val sharedWeb = (project in file("modules/shared-web"))
-  .dependsOn(sharedIds, sharedErrors,
+  .dependsOn(sharedIds, sharedErrors, sharedWebCore,
     activityDomain, agentDomain, boardDomain, configDomain, conversationDomain,
     daemonDomain, decisionDomain, demoDomain, evolutionDomain, gatewayDomain,
     governanceDomain, issuesDomain, knowledgeDomain, memoryDomain,
@@ -415,7 +435,7 @@ lazy val sdlcDomain = (project in file("modules/sdlc-domain"))
   )
 
 lazy val allModules = Seq(
-  llm4zio, sharedJson, sharedIds, sharedErrors, sharedStoreCore, sharedServices,
+  llm4zio, sharedJson, sharedIds, sharedErrors, sharedStoreCore, sharedServices, sharedWebCore,
   activityDomain, memoryDomain, governanceDomain, agentDomain, decisionDomain, specificationDomain,
   planDomain, taskrunDomain, boardDomain, knowledgeDomain, projectDomain, configDomain,
   conversationDomain, daemonDomain, analysisDomain, workspaceDomain, gatewayDomain,
