@@ -162,21 +162,21 @@ final case class SdlcDashboardServiceLive(
         count = specifications.count(spec =>
           spec.status != SpecificationStatus.Approved && spec.status != SpecificationStatus.Superseded
         ),
-        href = "/specifications",
+        href = "",
         description = "Draft and refinement specs before approval.",
       ),
       LifecycleStage(
         key = "spec",
         label = "Spec",
         count = specifications.count(_.status == SpecificationStatus.Approved),
-        href = "/specifications",
+        href = "",
         description = "Approved specifications ready for planning.",
       ),
       LifecycleStage(
         key = "plan",
         label = "Plan",
         count = plans.count(plan => plan.status == PlanStatus.Draft || plan.status == PlanStatus.Validated),
-        href = "/plans",
+        href = "",
         description = "Plans waiting for or passing validation.",
       ),
       LifecycleStage(
