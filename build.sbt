@@ -444,6 +444,40 @@ lazy val sdlcDomain = (project in file("modules/sdlc-domain"))
     libraryDependencies ++= domainDeps,
   )
 
+lazy val cli = (project in file("modules/cli"))
+  .dependsOn(
+    sharedJson, sharedIds, sharedErrors, sharedStoreCore, sharedServices,
+    configDomain,
+    boardDomain,
+    workspaceDomain,
+    projectDomain,
+    activityDomain,
+    conversationDomain,
+    taskrunDomain,
+  )
+  .settings(foundationSettings)
+  .settings(
+    name := "llm4zio-cli",
+    libraryDependencies ++= zioCoreDeps ++ Seq(
+      zioCliDep,
+      zioHttpDep,
+      zioJsonDep,
+      "dev.zio" %% "zio-logging-slf4j2" % zioLoggingVersion,
+      "ch.qos.logback" % "logback-classic" % logbackVersion,
+      "io.github.riccardomerolla" %% "zio-eclipsestore" % zioEclipseStoreVersion,
+      "dev.zio" %% "zio-schema"            % zioSchemaVersion,
+      "dev.zio" %% "zio-schema-derivation" % zioSchemaVersion,
+    ) ++ zioLoggingDeps ++ zioTestDeps,
+    testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
+    run / fork := true,
+    run / javaOptions ++= Seq(
+      "--enable-native-access=ALL-UNNAMED",
+      "--add-opens", "java.base/java.lang=ALL-UNNAMED",
+      "--add-opens", "java.base/java.util=ALL-UNNAMED",
+      "--add-opens", "java.base/java.nio=ALL-UNNAMED",
+    ),
+  )
+
 lazy val allModules = Seq(
   llm4zio, sharedJson, sharedIds, sharedErrors, sharedStoreCore, sharedServices, sharedWebCore,
   activityDomain, memoryDomain, governanceDomain, agentDomain, decisionDomain, specificationDomain,
