@@ -354,7 +354,8 @@ lazy val gatewayDomain = (project in file("modules/gateway-domain"))
   )
 
 lazy val orchestrationDomain = (project in file("modules/orchestration-domain"))
-  .dependsOn(sharedIds, sharedErrors, gatewayDomain, configDomain, planDomain)
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore, gatewayDomain, configDomain, planDomain,
+    activityDomain, issuesDomain, taskrunDomain, workspaceDomain, sharedServices)
   .settings(foundationSettings)
   .settings(
     name := "orchestration-domain",
