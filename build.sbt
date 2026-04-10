@@ -241,11 +241,11 @@ lazy val agentDomain = (project in file("modules/agent-domain"))
   )
 
 lazy val decisionDomain = (project in file("modules/decision-domain"))
-  .dependsOn(sharedIds, sharedErrors, sharedStoreCore, issuesDomain)
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore, sharedWebCore, issuesDomain, activityDomain, configDomain)
   .settings(foundationSettings)
   .settings(
     name := "decision-domain",
-    libraryDependencies ++= domainDeps,
+    libraryDependencies ++= domainBceDeps,
   )
 
 lazy val specificationDomain = (project in file("modules/specification-domain"))
@@ -265,11 +265,11 @@ lazy val planDomain = (project in file("modules/plan-domain"))
   )
 
 lazy val taskrunDomain = (project in file("modules/taskrun-domain"))
-  .dependsOn(sharedIds, sharedErrors, sharedStoreCore, sharedJson, configDomain)
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore, sharedJson, sharedWebCore, configDomain)
   .settings(foundationSettings)
   .settings(
     name := "taskrun-domain",
-    libraryDependencies ++= domainDeps,
+    libraryDependencies ++= domainBceDeps,
   )
 
 lazy val boardDomain = (project in file("modules/board-domain"))
@@ -289,7 +289,7 @@ lazy val knowledgeDomain = (project in file("modules/knowledge-domain"))
   )
 
 lazy val projectDomain = (project in file("modules/project-domain"))
-  .dependsOn(sharedIds, sharedErrors, sharedStoreCore)
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore, workspaceDomain)
   .settings(foundationSettings)
   .settings(
     name := "project-domain",

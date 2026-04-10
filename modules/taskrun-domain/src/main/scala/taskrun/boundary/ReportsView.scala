@@ -1,6 +1,7 @@
-package shared.web
+package taskrun.boundary
 
 import scalatags.Text.all.*
+import shared.web.{ Components, JsResources, Layout }
 import taskrun.entity.TaskReportRow
 
 object ReportsView:
@@ -105,59 +106,56 @@ object ReportsView:
       case "markdown" =>
         frag(
           JsResources.markedScript,
-          script(
-            raw(
-              """document.addEventListener('DOMContentLoaded', function () {
-                |  var source = document.getElementById('report-source');
-                |  var target = document.getElementById('report-render-target');
-                |  if (!source || !target) return;
-                |  if (window.marked && window.marked.parse) {
-                |    target.innerHTML = window.marked.parse(source.textContent || '');
-                |  } else {
-                |    target.textContent = source.textContent || '';
-                |  }
-                |});
-                |""".stripMargin
-            )
-          ),
+          script(raw(reportMarkdownScript)),
         )
       case "graph"    =>
         frag(
           JsResources.mermaidScript,
-          script(
-            raw(
-              """document.addEventListener('DOMContentLoaded', function () {
-                |  var source = document.getElementById('report-source');
-                |  var target = document.getElementById('report-render-target');
-                |  if (!source || !target) return;
-                |  var graph = source.textContent || '';
-                |  if (!window.mermaid) {
-                |    target.textContent = graph;
-                |    return;
-                |  }
-                |  window.mermaid.initialize({ startOnLoad: false, securityLevel: 'loose' });
-                |  var container = document.createElement('div');
-                |  container.className = 'mermaid text-slate-200';
-                |  container.textContent = graph;
-                |  target.innerHTML = '';
-                |  target.appendChild(container);
-                |  window.mermaid.run({ nodes: [container] }).catch(function () {
-                |    target.textContent = graph;
-                |  });
-                |});
-                |""".stripMargin
-            )
-          ),
+          script(raw(reportGraphScript)),
         )
       case _          =>
-        script(
-          raw(
-            """document.addEventListener('DOMContentLoaded', function () {
-              |  var source = document.getElementById('report-source');
-              |  var target = document.getElementById('report-render-target');
-              |  if (!source || !target) return;
-              |  target.textContent = source.textContent || '';
-              |});
-              |""".stripMargin
-          )
-        )
+        script(raw(reportPlainScript))
+
+  private val reportMarkdownScript: String =
+    """document.addEventListener('DOMContentLoaded', function () {
+      |  var source = document.getElementById('report-source');
+      |  var target = document.getElementById('report-render-target');
+      |  if (!source || !target) return;
+      |  if (window.marked && window.marked.parse) {
+      |    target.innerHTML = window.marked.parse(source.textContent || '');
+      |  } else {
+      |    target.textContent = source.textContent || '';
+      |  }
+      |});
+      |""".stripMargin
+
+  private val reportGraphScript: String =
+    """document.addEventListener('DOMContentLoaded', function () {
+      |  var source = document.getElementById('report-source');
+      |  var target = document.getElementById('report-render-target');
+      |  if (!source || !target) return;
+      |  var graph = source.textContent || '';
+      |  if (!window.mermaid) {
+      |    target.textContent = graph;
+      |    return;
+      |  }
+      |  window.mermaid.initialize({ startOnLoad: false, securityLevel: 'loose' });
+      |  var container = document.createElement('div');
+      |  container.className = 'mermaid text-slate-200';
+      |  container.textContent = graph;
+      |  target.innerHTML = '';
+      |  target.appendChild(container);
+      |  window.mermaid.run({ nodes: [container] }).catch(function () {
+      |    target.textContent = graph;
+      |  });
+      |});
+      |""".stripMargin
+
+  private val reportPlainScript: String =
+    """document.addEventListener('DOMContentLoaded', function () {
+      |  var source = document.getElementById('report-source');
+      |  var target = document.getElementById('report-render-target');
+      |  if (!source || !target) return;
+      |  target.textContent = source.textContent || '';
+      |});
+      |""".stripMargin

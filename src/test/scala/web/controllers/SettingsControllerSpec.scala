@@ -141,7 +141,7 @@ object SettingsControllerSpec extends ZIOSpecDefault:
       ConfigStoreModule.live.mapError(err => new RuntimeException(err.toString)).orDie,
       DataStoreModule.live.mapError(err => new RuntimeException(err.toString)).orDie,
       MemoryStoreModule.live.mapError(err => new RuntimeException(err.toString)).orDie,
-      ConfigRepository.live,
+      ConfigRepositoryES.live,
       ActivityRepository.live,
       ActivityHub.live,
       ZLayer.fromZIO(Ref.make(MigrationConfig())),

@@ -18,7 +18,7 @@ import _root_.config.boundary.{
   WorkflowsController as ConfigWorkflowsController,
 }
 import _root_.config.control.{ ConfigValidator, ModelService }
-import _root_.config.entity.{ AIProvider, AIProviderConfig, ConfigRepository, GatewayConfig }
+import _root_.config.entity.{ AIProvider, AIProviderConfig, ConfigRepository, ConfigRepositoryES, GatewayConfig }
 import activity.boundary.ActivityController
 import activity.control.ActivityHub
 import activity.entity.ActivityRepository
@@ -193,7 +193,7 @@ object ApplicationDI:
       fatalStartupLayer("config store module", ConfigStoreModule.live)(_.toString),
       fatalStartupLayer("data store module", DataStoreModule.live)(_.toString),
       fatalStartupLayer("memory store module", MemoryStoreModule.live)(_.toString),
-      ConfigRepository.live,
+      ConfigRepositoryES.live,
       TaskRepository.live,
       ZLayer.succeed(config.resolvedProviderConfig),
       AgentConfigResolver.live,

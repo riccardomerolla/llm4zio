@@ -4,7 +4,6 @@ import zio.*
 
 import shared.errors.PersistenceError
 import shared.ids.Ids.AgentId
-import shared.store.ConfigStoreModule
 
 trait ConfigRepository:
   def getAllSettings: IO[PersistenceError, List[SettingRow]]
@@ -125,6 +124,3 @@ object ConfigRepository:
 
   def deleteCustomAgent(id: Long): ZIO[ConfigRepository, PersistenceError, Unit] =
     ZIO.serviceWithZIO[ConfigRepository](_.deleteCustomAgent(id))
-
-  val live: ZLayer[ConfigStoreModule.ConfigStoreService, Nothing, ConfigRepository] =
-    ConfigRepositoryES.live

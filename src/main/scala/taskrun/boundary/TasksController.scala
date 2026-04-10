@@ -17,7 +17,6 @@ import orchestration.control.{
 }
 import orchestration.entity.{ EventPublisher, WorkflowOrchestrator, WorkflowRunState }
 import shared.errors.PersistenceError
-import shared.web.{ TaskListItem, TasksView }
 import taskrun.entity.{ RunStatus, TaskArtifactRow, TaskRunRow }
 
 trait TasksController:

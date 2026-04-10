@@ -1,7 +1,8 @@
-package shared.web
+package taskrun.boundary
 
 import _root_.config.entity.WorkflowDefinition
 import scalatags.Text.all.*
+import shared.web.{ Components, Layout }
 import taskrun.entity.{ RunStatus, TaskRunRow, TaskStep }
 
 final case class TaskListItem(

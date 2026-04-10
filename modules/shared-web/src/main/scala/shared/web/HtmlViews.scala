@@ -17,6 +17,7 @@ import issues.entity.api.{
 }
 import sdlc.entity.SdlcSnapshot
 import shared.ids.Ids.IssueId
+import taskrun.boundary.{ GraphView, ReportsView }
 import taskrun.entity.{ TaskReportRow, TaskRunRow }
 import workspace.entity.WorkspaceRun
 

@@ -11,7 +11,6 @@ import decision.control.DecisionInbox
 import decision.entity.*
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ BoardIssueId, DecisionId }
-import shared.web.DecisionsView
 
 trait DecisionsController:
   def routes: Routes[Any, Response]

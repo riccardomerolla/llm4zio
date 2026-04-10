@@ -1,6 +1,7 @@
-package shared.web
+package taskrun.boundary
 
 import scalatags.Text.all.*
+import shared.web.{ Components, JsResources, Layout }
 import taskrun.entity.TaskReportRow
 
 object GraphView:
@@ -93,7 +94,7 @@ object GraphView:
       |      meta.textContent = '';
       |      return;
       |    }
-      |    meta.textContent = payload.stepName + ' • ' + payload.createdAt.replace('T', ' ').slice(0, 19);
+      |    meta.textContent = payload.stepName + ' \u2022 ' + payload.createdAt.replace('T', ' ').slice(0, 19);
       |    if (!window.mermaid) {
       |      target.textContent = payload.source;
       |      return;

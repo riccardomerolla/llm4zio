@@ -1,6 +1,7 @@
-package shared.web
+package taskrun.boundary
 
 import scalatags.Text.all.*
+import shared.web.{ JsResources, Layout }
 
 object LogsView:
 

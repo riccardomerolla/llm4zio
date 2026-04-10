@@ -1,7 +1,8 @@
-package shared.web
+package decision.boundary
 
 import decision.entity.*
 import scalatags.Text.all.*
+import shared.web.Layout
 
 object DecisionsView:
 
