@@ -37,6 +37,8 @@ val zioJsonDep = "dev.zio" %% "zio-json" % zioJsonVersion
 
 val zioHttpDep = "dev.zio" %% "zio-http" % zioHttpVersion
 
+val zioCliDep = "dev.zio" %% "zio-cli" % zioCliVersion
+
 val zioLoggingDeps = Seq(
   "dev.zio" %% "zio-logging" % zioLoggingVersion,
 )
@@ -55,7 +57,6 @@ val llm4zioDeps = zioCoreDeps ++ Seq(
 
 val rootDeps = zioCoreDeps ++ Seq(
   zioJsonDep,
-  "dev.zio" %% "zio-cli" % zioCliVersion,
   "dev.zio" %% "zio-config" % zioConfigVersion,
   "dev.zio" %% "zio-config-typesafe" % zioConfigVersion,
   "dev.zio" %% "zio-config-magnolia" % zioConfigVersion,
