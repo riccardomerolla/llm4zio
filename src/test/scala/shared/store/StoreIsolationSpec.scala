@@ -9,11 +9,12 @@ import zio.test.*
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.error.GigaMapError
 import io.github.riccardomerolla.zio.eclipsestore.service.LifecycleCommand
+import issues.entity.AgentIssueRow
 import issues.entity.api.{ IssuePriority, IssueStatus }
 
 object StoreIsolationSpec extends ZIOSpecDefault:
 
-  private type Env = DataStoreModule.DataStoreService & ConfigStoreModule.ConfigStoreService
+  private type Env = DataStoreService & ConfigStoreModule.ConfigStoreService
 
   private def withTempDir[R, E, A](use: Path => ZIO[R, E, A]): ZIO[R, E, A] =
     ZIO.acquireReleaseWith(
@@ -50,7 +51,7 @@ object StoreIsolationSpec extends ZIOSpecDefault:
 
           (for
             config <- ZIO.service[ConfigStoreModule.ConfigStoreService]
-            data   <- ZIO.service[DataStoreModule.DataStoreService]
+            data   <- ZIO.service[DataStoreService]
             _      <- config.store("setting:isolation", "ok")
             _      <- data.store(
                         "issue:1",

@@ -2,7 +2,7 @@ package config.entity
 
 import zio.*
 
-import db.{ ConfigRepositoryES as DbConfigRepositoryES, CustomAgentRow, SettingRow, WorkflowRow }
+import db.ConfigRepositoryES as DbConfigRepositoryES
 import shared.errors.PersistenceError
 import shared.store.ConfigStoreModule
 

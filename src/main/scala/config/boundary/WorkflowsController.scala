@@ -8,7 +8,7 @@ import zio.http.*
 import zio.json.*
 
 import _root_.config.entity.{ AgentInfo, ConfigRepository, WorkflowDefinition, WorkflowStepAgent, WorkflowValidator }
-import orchestration.control.{ AgentRegistry, WorkflowService, WorkflowServiceError }
+import orchestration.entity.{ AgentRegistry, WorkflowService, WorkflowServiceError }
 import shared.errors.PersistenceError
 import shared.web.HtmlViews
 import taskrun.entity.TaskStep

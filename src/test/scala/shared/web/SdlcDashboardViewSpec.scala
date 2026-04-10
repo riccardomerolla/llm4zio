@@ -5,26 +5,26 @@ import java.time.Instant
 import zio.test.*
 
 import activity.entity.{ ActivityEvent, ActivityEventType }
-import sdlc.control.SdlcDashboardService
+import sdlc.entity.*
 
 object SdlcDashboardViewSpec extends ZIOSpecDefault:
 
-  private val flatTrend = SdlcDashboardService.TrendIndicator(
-    direction = SdlcDashboardService.TrendDirection.Flat,
+  private val flatTrend = TrendIndicator(
+    direction = TrendDirection.Flat,
     currentPeriodCount = 1,
     previousPeriodCount = 1,
     periodLabel = "7d",
   )
 
-  private val snapshot = SdlcDashboardService.Snapshot(
+  private val snapshot = SdlcSnapshot(
     generatedAt = Instant.parse("2026-03-26T12:00:00Z"),
-    thresholds = SdlcDashboardService.Thresholds(6, 2, 24, 12, 8, 4),
+    thresholds = Thresholds(6, 2, 24, 12, 8, 4),
     lifecycle = List(
-      SdlcDashboardService.LifecycleStage("idea", "Idea", 1, "/specifications", "Draft specs"),
-      SdlcDashboardService.LifecycleStage("done", "Done", 3, "/issues/board?status=done", "Closed items"),
+      LifecycleStage("idea", "Idea", 1, "/specifications", "Draft specs"),
+      LifecycleStage("done", "Done", 3, "/issues/board?status=done", "Closed items"),
     ),
     churnAlerts = List(
-      SdlcDashboardService.ChurnAlert(
+      ChurnAlert(
         "issue-1",
         "Flaky work item",
         8,
@@ -34,20 +34,20 @@ object SdlcDashboardViewSpec extends ZIOSpecDefault:
       )
     ),
     stoppages = List(
-      SdlcDashboardService.StoppageAlert("Blocked", "issue-2", "Blocked task", "Todo", 14, List("issue-1"))
+      StoppageAlert("Blocked", "issue-2", "Blocked task", "Todo", 14, List("issue-1"))
     ),
     escalations = List(
-      SdlcDashboardService.EscalationIndicator("Decision", "decision-1", "Review issue", "High", 9, "Pending approval")
+      EscalationIndicator("Decision", "decision-1", "Review issue", "High", 9, "Pending approval")
     ),
     agentPerformance = List(
-      SdlcDashboardService.AgentPerformance("agent-a", 2, 0.75, 3.5, 1, 0.0123)
+      AgentPerformance("agent-a", 2, 0.75, 3.5, 1, 0.0123)
     ),
-    governance = SdlcDashboardService.GovernanceOverview(3, 1, 0.75, 2),
-    daemonHealth = SdlcDashboardService.DaemonHealthOverview(4, 1, 1),
-    evolution = SdlcDashboardService.EvolutionOverview(
+    governance = GovernanceOverview(3, 1, 0.75, 2),
+    daemonHealth = DaemonHealthOverview(4, 1, 1),
+    evolution = EvolutionOverview(
       pendingProposalCount = 2,
       recentlyApplied = List(
-        SdlcDashboardService.RecentEvolution(
+        RecentEvolution(
           proposalId = "proposal-1",
           title = "Roll out daemon policy",
           status = "Applied",
@@ -73,8 +73,8 @@ object SdlcDashboardViewSpec extends ZIOSpecDefault:
     issueCount = 5,
     pendingDecisionCount = 1,
     specificationTrend = flatTrend,
-    planTrend = flatTrend.copy(direction = SdlcDashboardService.TrendDirection.Up, currentPeriodCount = 2),
-    issueTrend = flatTrend.copy(direction = SdlcDashboardService.TrendDirection.Down, currentPeriodCount = 0),
+    planTrend = flatTrend.copy(direction = TrendDirection.Up, currentPeriodCount = 2),
+    issueTrend = flatTrend.copy(direction = TrendDirection.Down, currentPeriodCount = 0),
     pendingDecisionTrend = flatTrend,
   )
 

@@ -7,6 +7,7 @@ import zio.test.*
 
 import _root_.config.entity.ConfigRepository
 import agent.entity.{ Agent, AgentPermissions, AgentRepository, TrustLevel }
+import orchestration.entity.{ AgentPoolManager, PoolError, SlotHandle }
 import shared.errors.PersistenceError
 import shared.ids.Ids.AgentId
 import shared.testfixtures.*
@@ -63,7 +64,7 @@ object AgentPoolManagerSpec extends ZIOSpecDefault:
         (
           ZLayer.succeed[ConfigRepository](new MutableConfigRepository(settingsRef)) ++
             ZLayer.succeed[AgentRepository](StubAgentRepository(agents))
-        ) >>> AgentPoolManager.live
+        ) >>> AgentPoolManagerLive.live
       manager     <- ZIO.service[AgentPoolManager].provideLayer(layer)
     yield (manager, settingsRef)
 

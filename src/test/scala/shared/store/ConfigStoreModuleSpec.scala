@@ -6,6 +6,7 @@ import java.time.Instant
 import zio.*
 import zio.test.*
 
+import _root_.config.entity.StoredCustomAgentRow
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 
 object ConfigStoreModuleSpec extends ZIOSpecDefault:
@@ -61,7 +62,7 @@ object ConfigStoreModuleSpec extends ZIOSpecDefault:
       },
       test("customAgents map supports put/get round-trip") {
         withTempDir { dir =>
-          val row = CustomAgentRow(
+          val row = StoredCustomAgentRow(
             id = "agent-1",
             name = "reviewer",
             displayName = "Code Reviewer",
@@ -75,7 +76,7 @@ object ConfigStoreModuleSpec extends ZIOSpecDefault:
           (for
             config <- ZIO.service[ConfigStoreModule.ConfigStoreService]
             _      <- config.store("agent:agent-1", row)
-            loaded <- config.fetch[String, CustomAgentRow]("agent:agent-1")
+            loaded <- config.fetch[String, StoredCustomAgentRow]("agent:agent-1")
           yield assertTrue(loaded.contains(row))).provideLayer(layerFor(dir))
         }
       },

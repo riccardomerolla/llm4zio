@@ -6,7 +6,7 @@ import zio.json.*
 import zio.stream.ZStream
 import zio.test.*
 
-import _root_.config.entity.{ AIProviderConfig, ConfigRepository }
+import _root_.config.entity.{ AIProviderConfig, ConfigRepository, CustomAgentRow, SettingRow, WorkflowRow }
 import activity.control.ActivityHubLive
 import activity.entity.{ ActivityEvent, ActivityEventType, ActivityRepository }
 import conversation.boundary.ChatControllerLive
@@ -20,9 +20,11 @@ import llm4zio.providers.{ GeminiCliExecutor, HttpClient }
 import llm4zio.tools.{ AnyTool, JsonSchema }
 import memory.entity.*
 import orchestration.control.{ IssueAssignmentOrchestrator, * }
+import orchestration.entity.{ PlannerPlanPreview, PlannerPreviewState }
 import prompts.PromptLoader
 import shared.errors.PersistenceError
 import shared.web.StreamAbortRegistryLive
+import taskrun.entity.{ TaskArtifactRow, TaskReportRow, TaskRunRow }
 
 object ChatControllerGatewaySpec extends ZIOSpecDefault:
 
@@ -79,7 +81,7 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
           _        <- registry.register(channel)
         yield ()
       },
-      AgentRegistry.live,
+      AgentRegistryLive.live,
       MessageRouter.live,
       EmptyMemoryRepo.layer,
       PromptLoader.reloading,

@@ -6,6 +6,7 @@ import zio.test.TestAspect.*
 
 import _root_.config.entity.{ AIProvider, AIProviderConfig, MigrationConfig }
 import shared.errors.RateLimitError
+import shared.services.{ RateLimiter, RateLimiterConfig }
 
 /** Property-based tests for RateLimiter and RateLimiterConfig. */
 object RateLimiterPropertySpec extends ZIOSpecDefault:

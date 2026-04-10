@@ -5,6 +5,7 @@ import zio.*
 import agent.entity.{ Agent, AgentRepository }
 import issues.entity.api.DispatchStatusResponse
 import issues.entity.{ AgentIssue, IssueEvent, IssueFilter, IssueRepository, IssueState }
+import orchestration.entity.AgentPoolManager
 import shared.errors.PersistenceError
 import shared.ids.Ids.IssueId
 

@@ -2,7 +2,9 @@ package db
 
 import zio.*
 
+import _root_.config.entity.{ CustomAgentRow, SettingRow, WorkflowRow }
 import shared.errors.PersistenceError
+import taskrun.entity.{ TaskArtifactRow, TaskReportRow, TaskRunRow }
 
 trait TaskRepository:
   // Runs
@@ -56,7 +58,7 @@ trait TaskRepository:
   def deleteCustomAgent(id: Long): IO[PersistenceError, Unit]                          =
     ZIO.fail(PersistenceError.QueryFailed("deleteCustomAgent", "Not implemented"))
 
-import shared.store.{ ConfigStoreModule, DataStoreModule }
+import shared.store.{ ConfigStoreModule, DataStoreService }
 
 object TaskRepository:
   def createRun(run: TaskRunRow): ZIO[TaskRepository, PersistenceError, Long] =
@@ -142,7 +144,7 @@ object TaskRepository:
 
   val live
     : ZLayer[
-      DataStoreModule.DataStoreService & ConfigStoreModule.ConfigStoreService,
+      DataStoreService & ConfigStoreModule.ConfigStoreService,
       Nothing,
       TaskRepository,
     ] =

@@ -15,6 +15,7 @@ import llm4zio.core.{ LlmError, LlmService, Streaming }
 import project.control.ProjectStorageService
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ AgentId, BoardIssueId, EventId, IssueId, TaskRunId }
+import taskrun.entity.TaskRunRow
 import workspace.entity.WorkspaceRepository
 
 trait IssueAssignmentOrchestrator:
@@ -259,7 +260,7 @@ final private case class IssueAssignmentOrchestratorLive(
   private def buildIssueAssignmentPrompt(
     issue: issues.entity.AgentIssue,
     agentName: String,
-    run: Option[db.TaskRunRow],
+    run: Option[TaskRunRow],
     customSystemPrompt: Option[String],
   ): String =
     val runContext    = run match

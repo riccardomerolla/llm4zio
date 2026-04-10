@@ -4,6 +4,7 @@ import java.time.Instant
 
 import zio.test.*
 
+import board.boundary.BoardView
 import board.entity.*
 import shared.ids.Ids.BoardIssueId
 

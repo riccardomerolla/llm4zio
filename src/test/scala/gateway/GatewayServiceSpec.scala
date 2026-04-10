@@ -6,7 +6,7 @@ import zio.*
 import zio.stream.ZStream
 import zio.test.*
 
-import _root_.config.entity.ConfigRepository
+import _root_.config.entity.{ ConfigRepository, CustomAgentRow, SettingRow, WorkflowRow }
 import conversation.entity.api.{ ChatConversation, ConversationEntry, SessionContextLink }
 import db.*
 import gateway.control.*
@@ -14,7 +14,8 @@ import gateway.entity.*
 import llm4zio.core.*
 import llm4zio.tools.{ AnyTool, JsonSchema }
 import memory.entity.*
-import orchestration.control.AgentRegistry
+import orchestration.control.AgentRegistryLive
+import orchestration.entity.AgentRegistry
 import prompts.PromptLoader
 import shared.errors.PersistenceError
 
@@ -34,7 +35,7 @@ object GatewayServiceSpec extends ZIOSpecDefault:
           _        <- registry.register(telegram)
         yield ()
       },
-      AgentRegistry.live,
+      AgentRegistryLive.live,
       TestLlm.layer,
       EmptyMemoryRepo.layer,
       PromptLoader.reloading,
@@ -55,7 +56,7 @@ object GatewayServiceSpec extends ZIOSpecDefault:
           _        <- registry.register(web)
         yield ()
       },
-      AgentRegistry.live,
+      AgentRegistryLive.live,
       TestLlm.layer,
       EmptyMemoryRepo.layer,
       PromptLoader.reloading,
@@ -198,7 +199,7 @@ object GatewayServiceSpec extends ZIOSpecDefault:
           _        <- registry.register(telegram)
         yield ()
       },
-      AgentRegistry.live,
+      AgentRegistryLive.live,
       llmLayer,
       seededMemoryLayer,
       PromptLoader.reloading,

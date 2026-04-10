@@ -7,9 +7,8 @@ import zio.*
 import zio.test.*
 import zio.test.TestAspect.*
 
-import _root_.config.entity.WorkflowDefinition
+import _root_.config.entity.{ ConfigRepository, CustomAgentRow, SettingRow, WorkflowDefinition, WorkflowRow }
 import daemon.entity.*
-import db.{ ConfigRepository, CustomAgentRow, PersistenceError as DbPersistenceError, SettingRow, WorkflowRow }
 import decision.control.DecisionInbox
 import decision.entity.*
 import evolution.control.*
@@ -17,10 +16,10 @@ import evolution.entity.*
 import governance.entity.*
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.error.GigaMapError
-import orchestration.control.{ WorkflowService, WorkflowServiceError }
+import orchestration.entity.{ WorkflowService, WorkflowServiceError }
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ DecisionId, DaemonAgentSpecId, EvolutionProposalId, GovernancePolicyId, ProjectId }
-import shared.store.{ DataStoreModule, EventStore, StoreConfig }
+import shared.store.{ DataStoreModule, DataStoreService, EventStore, StoreConfig }
 
 /** Integration test: Evolution lifecycle with real EclipseStore repos.
   *
@@ -106,23 +105,23 @@ object EvolutionPersistenceIntegrationSpec extends ZIOSpecDefault:
     override def deleteWorkflow(id: Long): IO[WorkflowServiceError, Unit]                              = ZIO.unit
 
   final private class StubDbConfigRepository extends ConfigRepository:
-    override def getAllSettings: IO[DbPersistenceError, List[SettingRow]]                           = ZIO.succeed(Nil)
-    override def getSetting(key: String): IO[DbPersistenceError, Option[SettingRow]]                = ZIO.none
-    override def upsertSetting(key: String, value: String): IO[DbPersistenceError, Unit]            = ZIO.unit
-    override def deleteSetting(key: String): IO[DbPersistenceError, Unit]                           = ZIO.unit
-    override def deleteSettingsByPrefix(prefix: String): IO[DbPersistenceError, Unit]               = ZIO.unit
-    override def createWorkflow(workflow: WorkflowRow): IO[DbPersistenceError, Long]                = ZIO.succeed(1L)
-    override def getWorkflow(id: Long): IO[DbPersistenceError, Option[WorkflowRow]]                 = ZIO.none
-    override def getWorkflowByName(name: String): IO[DbPersistenceError, Option[WorkflowRow]]       = ZIO.none
-    override def listWorkflows: IO[DbPersistenceError, List[WorkflowRow]]                           = ZIO.succeed(Nil)
-    override def updateWorkflow(workflow: WorkflowRow): IO[DbPersistenceError, Unit]                = ZIO.unit
-    override def deleteWorkflow(id: Long): IO[DbPersistenceError, Unit]                             = ZIO.unit
-    override def createCustomAgent(agent: CustomAgentRow): IO[DbPersistenceError, Long]             = ZIO.succeed(1L)
-    override def getCustomAgent(id: Long): IO[DbPersistenceError, Option[CustomAgentRow]]           = ZIO.none
-    override def getCustomAgentByName(name: String): IO[DbPersistenceError, Option[CustomAgentRow]] = ZIO.none
-    override def listCustomAgents: IO[DbPersistenceError, List[CustomAgentRow]]                     = ZIO.succeed(Nil)
-    override def updateCustomAgent(agent: CustomAgentRow): IO[DbPersistenceError, Unit]             = ZIO.unit
-    override def deleteCustomAgent(id: Long): IO[DbPersistenceError, Unit]                          = ZIO.unit
+    override def getAllSettings: IO[PersistenceError, List[SettingRow]]                           = ZIO.succeed(Nil)
+    override def getSetting(key: String): IO[PersistenceError, Option[SettingRow]]                = ZIO.none
+    override def upsertSetting(key: String, value: String): IO[PersistenceError, Unit]            = ZIO.unit
+    override def deleteSetting(key: String): IO[PersistenceError, Unit]                           = ZIO.unit
+    override def deleteSettingsByPrefix(prefix: String): IO[PersistenceError, Unit]               = ZIO.unit
+    override def createWorkflow(workflow: WorkflowRow): IO[PersistenceError, Long]                = ZIO.succeed(1L)
+    override def getWorkflow(id: Long): IO[PersistenceError, Option[WorkflowRow]]                 = ZIO.none
+    override def getWorkflowByName(name: String): IO[PersistenceError, Option[WorkflowRow]]       = ZIO.none
+    override def listWorkflows: IO[PersistenceError, List[WorkflowRow]]                           = ZIO.succeed(Nil)
+    override def updateWorkflow(workflow: WorkflowRow): IO[PersistenceError, Unit]                = ZIO.unit
+    override def deleteWorkflow(id: Long): IO[PersistenceError, Unit]                             = ZIO.unit
+    override def createCustomAgent(agent: CustomAgentRow): IO[PersistenceError, Long]             = ZIO.succeed(1L)
+    override def getCustomAgent(id: Long): IO[PersistenceError, Option[CustomAgentRow]]           = ZIO.none
+    override def getCustomAgentByName(name: String): IO[PersistenceError, Option[CustomAgentRow]] = ZIO.none
+    override def listCustomAgents: IO[PersistenceError, List[CustomAgentRow]]                     = ZIO.succeed(Nil)
+    override def updateCustomAgent(agent: CustomAgentRow): IO[PersistenceError, Unit]             = ZIO.unit
+    override def deleteCustomAgent(id: Long): IO[PersistenceError, Unit]                          = ZIO.unit
 
   final private class StubDaemonRepo extends DaemonAgentSpecRepository:
     override def get(id: DaemonAgentSpecId): IO[PersistenceError, DaemonAgentSpec]          =
@@ -147,7 +146,7 @@ object EvolutionPersistenceIntegrationSpec extends ZIOSpecDefault:
     )(use)
 
   private type EsEnv =
-    DataStoreModule.DataStoreService &
+    DataStoreService &
       EventStore[EvolutionProposalId, EvolutionProposalEvent] &
       EvolutionProposalRepository &
       EventStore[GovernancePolicyId, GovernancePolicyEvent] &

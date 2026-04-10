@@ -5,6 +5,7 @@ import java.time.Instant
 import zio.*
 import zio.test.*
 
+import daemon.boundary.DaemonsView
 import daemon.entity.*
 import shared.ids.Ids.{ DaemonAgentSpecId, ProjectId }
 

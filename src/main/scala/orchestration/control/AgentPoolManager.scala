@@ -1,56 +1,12 @@
 package orchestration.control
 
-import java.time.Instant
-
 import zio.*
 
 import _root_.config.entity.ConfigRepository
 import agent.entity.AgentRepository
+import orchestration.entity.{ AgentPoolManager, PoolError, SlotHandle }
 
-sealed trait PoolError derives CanEqual
-
-object PoolError:
-  final case class AgentNotFound(agentName: String)                     extends PoolError
-  final case class AgentPaused(agentName: String, reason: String)       extends PoolError
-  final case class CostLimitExceeded(agentName: String, limit: Long)    extends PoolError
-  final case class InvalidCapacity(agentName: String, value: String)    extends PoolError
-  final case class PersistenceFailure(operation: String, cause: String) extends PoolError
-
-final case class SlotHandle(
-  id: String,
-  agentName: String,
-  acquiredAt: Instant,
-) derives CanEqual
-
-trait AgentPoolManager:
-  def acquireSlot(agentName: String): IO[PoolError, SlotHandle]
-  def releaseSlot(handle: SlotHandle): UIO[Unit]
-  def availableSlots(agentName: String): UIO[Int]
-  def resize(agentName: String, newMax: Int): UIO[Unit]
-  def recordTokenUsage(agentName: String, deltaTokens: Long): IO[PoolError, Unit] = ZIO.unit
-  def isPaused(agentName: String): UIO[Boolean]                                   = ZIO.succeed(false)
-
-object AgentPoolManager:
-  def configKey(agentName: String): String =
-    s"agents.${normalize(agentName)}.maxInstances"
-
-  def acquireSlot(agentName: String): ZIO[AgentPoolManager, PoolError, SlotHandle] =
-    ZIO.serviceWithZIO[AgentPoolManager](_.acquireSlot(agentName))
-
-  def releaseSlot(handle: SlotHandle): ZIO[AgentPoolManager, Nothing, Unit] =
-    ZIO.serviceWithZIO[AgentPoolManager](_.releaseSlot(handle))
-
-  def availableSlots(agentName: String): ZIO[AgentPoolManager, Nothing, Int] =
-    ZIO.serviceWithZIO[AgentPoolManager](_.availableSlots(agentName))
-
-  def resize(agentName: String, newMax: Int): ZIO[AgentPoolManager, Nothing, Unit] =
-    ZIO.serviceWithZIO[AgentPoolManager](_.resize(agentName, newMax))
-
-  def recordTokenUsage(agentName: String, deltaTokens: Long): ZIO[AgentPoolManager, PoolError, Unit] =
-    ZIO.serviceWithZIO[AgentPoolManager](_.recordTokenUsage(agentName, deltaTokens))
-
-  def isPaused(agentName: String): ZIO[AgentPoolManager, Nothing, Boolean] =
-    ZIO.serviceWithZIO[AgentPoolManager](_.isPaused(agentName))
+object AgentPoolManagerLive:
 
   val live: ZLayer[ConfigRepository & AgentRepository, Nothing, AgentPoolManager] =
     ZLayer.fromZIO {
@@ -61,20 +17,17 @@ object AgentPoolManager:
         acquired         <- Ref.Synchronized.make(Map.empty[String, String])
         tokenUsage       <- Ref.Synchronized.make(Map.empty[String, Long])
         paused           <- Ref.Synchronized.make(Map.empty[String, String])
-      yield AgentPoolManagerLive(configRepository, agentRepository, pools, acquired, tokenUsage, paused)
+      yield AgentPoolManagerLiveImpl(configRepository, agentRepository, pools, acquired, tokenUsage, paused)
     }
 
-  private[orchestration] def normalize(agentName: String): String =
-    agentName.trim.toLowerCase
-
-final private case class AgentPoolState(
+private case class AgentPoolState(
   gate: Semaphore,
   maxInstances: Ref[Int],
   inUse: Ref[Int],
   waiters: Ref[scala.collection.immutable.Queue[Promise[Nothing, Unit]]],
 )
 
-final private case class AgentPoolManagerLive(
+private case class AgentPoolManagerLiveImpl(
   configRepository: ConfigRepository,
   agentRepository: AgentRepository,
   pools: Ref.Synchronized[Map[String, AgentPoolState]],

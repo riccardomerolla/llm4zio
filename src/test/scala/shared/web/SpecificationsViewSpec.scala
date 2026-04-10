@@ -6,6 +6,7 @@ import zio.test.*
 
 import issues.entity.{ AgentIssue, IssueState }
 import shared.ids.Ids.{ IssueId, SpecificationId }
+import specification.boundary.{ SpecificationListItem, SpecificationsView }
 import specification.entity.*
 
 object SpecificationsViewSpec extends ZIOSpecDefault:

@@ -18,11 +18,7 @@ import taskrun.entity.{ CiStatus, PrStatus, TaskRunEvent }
   */
 object ProofOfWorkExtractor:
 
-  final case class RequirementCheck(
-    requirement: String,
-    passed: Boolean,
-    details: String,
-  )
+  export workspace.entity.RequirementCheck
 
   private val prUrlPattern =
     """https://github\.com/[^\s/]+/[^\s/]+/pull/\d+""".r

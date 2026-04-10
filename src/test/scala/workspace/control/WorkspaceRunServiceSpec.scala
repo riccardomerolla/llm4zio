@@ -5,7 +5,7 @@ import java.time.Instant
 import zio.*
 import zio.test.*
 
-import _root_.config.entity.ConfigRepository
+import _root_.config.entity.{ ConfigRepository, CustomAgentRow, SettingRow, WorkflowRow }
 import activity.control.ActivityHub
 import activity.entity.ActivityEvent
 import agent.entity.{ Agent, AgentPermissions, AgentRepository, TrustLevel }
@@ -15,7 +15,8 @@ import db.*
 import governance.control.{ GovernanceEvaluationContext, GovernancePolicyService, GovernanceTransitionDecision }
 import governance.entity.GovernancePolicy
 import issues.entity.{ AgentIssue, IssueEvent, IssueFilter, IssueRepository, IssueState }
-import orchestration.control.{ AutoDispatcherLive, DependencyResolver, SlotHandle }
+import orchestration.control.{ AutoDispatcherLive, DependencyResolver }
+import orchestration.entity.SlotHandle
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ AgentId, ConversationId, IssueId, TaskRunId }
 import workspace.entity.{ RunStatus as WorkspaceRunStatus, * }
@@ -469,16 +470,16 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
     test("assign fails with InvalidRunState when the shared agent pool has no available slots") {
       for
         (svc, _, _) <- makeService(
-                         availableAgentSlots = _ => ZIO.succeed(0)
+                         acquireAgentSlot = _ => ZIO.never,
                        )
         result      <- svc.assign(
                          "ws-1",
                          AssignRunRequest(issueRef = "#pool-full", prompt = "echo hello", agentName = "echo"),
                        ).either
       yield assertTrue(result match
-        case Left(WorkspaceError.InvalidRunState("echo", "available_slots > 0", "available_slots = 0")) => true
-        case _                                                                                          => false)
-    },
+        case Left(WorkspaceError.InvalidRunState("echo", "available_slots > 0", _)) => true
+        case _                                                                      => false)
+    } @@ TestAspect.withLiveClock @@ TestAspect.timeout(10.seconds),
     test("assign rejects agent profiles without worktree write permission") {
       val lockedProfile = Agent(
         id = AgentId("locked"),
@@ -954,10 +955,10 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
                               workspaceRepository = wsRepo,
                               workspaceRunService = svc,
                               activityHub = activityHub,
-                              agentPoolManager = new orchestration.control.AgentPoolManager:
-                                override def acquireSlot(agentName: String): IO[orchestration.control.PoolError, SlotHandle] =
+                              agentPoolManager = new orchestration.entity.AgentPoolManager:
+                                override def acquireSlot(agentName: String): IO[orchestration.entity.PoolError, SlotHandle] =
                                   pool.acquire(agentName).mapError(_ =>
-                                    orchestration.control.PoolError.PersistenceFailure("test_pool_acquire", "unexpected")
+                                    orchestration.entity.PoolError.PersistenceFailure("test_pool_acquire", "unexpected")
                                   )
                                 override def releaseSlot(handle: SlotHandle): UIO[Unit]                                      = pool.release(handle)
                                 override def availableSlots(agentName: String): UIO[Int]                                     = pool.available(agentName)

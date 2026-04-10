@@ -9,7 +9,8 @@ import conversation.entity.api.{ ChatConversation, ConversationEntry, SessionCon
 import db.*
 import llm4zio.agents.*
 import llm4zio.core.{ Message, MessageRole }
-import orchestration.control.{ AgentRegistry, ChatRepositoryMemoryStore, Llm4zioAgentAdapters }
+import orchestration.control.{ ChatRepositoryMemoryStore, Llm4zioAgentAdapters }
+import orchestration.entity.AgentRegistry
 import shared.errors.PersistenceError
 
 object Llm4zioAdaptersSpec extends ZIOSpecDefault:

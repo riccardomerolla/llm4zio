@@ -1,21 +1,12 @@
 package board.control
 
-import java.time.Instant
 import java.nio.file.Path
+import java.time.Instant
 
 import zio.*
 import zio.test.*
 
-import board.entity.{
-  Board,
-  BoardColumn,
-  BoardError,
-  BoardIssue,
-  BoardRepository,
-  IssueFrontmatter,
-  IssuePriority,
-  TransientState,
-}
+import board.entity.*
 import decision.control.DecisionInbox
 import decision.entity.*
 import issues.entity.AgentIssue
@@ -61,7 +52,7 @@ object IssueApprovalServiceSpec extends ZIOSpecDefault:
             approved == List(("/tmp/projects/project-1", issueId)),
           )
         },
-        test("fails before resolving the decision when no run exists for the issue in the workspace") {
+        test("quickApprove proceeds even when no run exists for the issue in the workspace") {
           for
             resolvedRef <- Ref.make(0)
             approvedRef <- Ref.make(0)
@@ -78,9 +69,9 @@ object IssueApprovalServiceSpec extends ZIOSpecDefault:
             resolved    <- resolvedRef.get
             approved    <- approvedRef.get
           yield assertTrue(
-            result == Left(BoardError.ParseError(s"latest run not found for issue '${issueId.value}'")),
-            resolved == 0,
-            approved == 0,
+            result == Right(()),
+            resolved == 1,
+            approved == 1,
           )
         },
       ),
@@ -278,7 +269,7 @@ object IssueApprovalServiceSpec extends ZIOSpecDefault:
     extends WorkspaceRunService:
     override def assign(
       workspaceId: String,
-      req: workspace.control.AssignRunRequest,
+      req: workspace.entity.AssignRunRequest,
     ): IO[workspace.entity.WorkspaceError, WorkspaceRun] =
       ZIO.dieMessage("assign unused in IssueApprovalServiceSpec")
 

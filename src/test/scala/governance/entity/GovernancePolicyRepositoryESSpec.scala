@@ -9,12 +9,12 @@ import zio.test.*
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.error.GigaMapError
 import shared.ids.Ids.{ GovernancePolicyId, ProjectId }
-import shared.store.{ DataStoreModule, EventStore, StoreConfig }
+import shared.store.{ DataStoreModule, DataStoreService, EventStore, StoreConfig }
 
 object GovernancePolicyRepositoryESSpec extends ZIOSpecDefault:
 
   private type Env =
-    DataStoreModule.DataStoreService & EventStore[
+    DataStoreService & EventStore[
       GovernancePolicyId,
       GovernancePolicyEvent,
     ] & GovernancePolicyRepository

@@ -33,7 +33,7 @@ object FoundationSerializationSpec extends ZIOSpecDefault:
 
   private def layerFor(
     dataDir: Path
-  ): ZLayer[Any, EclipseStoreError | GigaMapError, DataStoreModule.DataStoreService] =
+  ): ZLayer[Any, EclipseStoreError | GigaMapError, DataStoreService] =
     ZLayer.succeed(
       StoreConfig(
         configStorePath = dataDir.resolve("config-store").toString,
@@ -76,7 +76,7 @@ object FoundationSerializationSpec extends ZIOSpecDefault:
           )
 
           (for
-            data        <- ZIO.service[DataStoreModule.DataStoreService]
+            data        <- ZIO.service[DataStoreService]
             _           <- data.store("foundation:taskrun", run)
             loadedRun   <- data.fetch[String, TaskRun]("foundation:taskrun")
             _           <- data.store("foundation:taskrun:event", event)
@@ -117,7 +117,7 @@ object FoundationSerializationSpec extends ZIOSpecDefault:
           )
 
           (for
-            data        <- ZIO.service[DataStoreModule.DataStoreService]
+            data        <- ZIO.service[DataStoreService]
             _           <- data.store("foundation:issue", issue)
             loadedIssue <- data.fetch[String, AgentIssue]("foundation:issue")
             _           <- data.store("foundation:issue:event", event)
@@ -154,7 +154,7 @@ object FoundationSerializationSpec extends ZIOSpecDefault:
           )
 
           (for
-            data        <- ZIO.service[DataStoreModule.DataStoreService]
+            data        <- ZIO.service[DataStoreService]
             _           <- data.store("foundation:conversation", conversation)
             loaded      <- data.fetch[String, Conversation]("foundation:conversation")
             _           <- data.store("foundation:conversation:event", event)
@@ -186,7 +186,7 @@ object FoundationSerializationSpec extends ZIOSpecDefault:
           )
 
           (for
-            data        <- ZIO.service[DataStoreModule.DataStoreService]
+            data        <- ZIO.service[DataStoreService]
             _           <- data.store("foundation:analysis", doc)
             loadedDoc   <- data.fetch[String, AnalysisDoc]("foundation:analysis")
             _           <- data.store("foundation:analysis:event", event)

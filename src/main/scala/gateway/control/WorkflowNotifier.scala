@@ -3,10 +3,13 @@ package gateway.control
 import zio.*
 import zio.json.*
 
+import _root_.config.entity.WorkflowRow
 import db.*
 import gateway.entity.*
-import orchestration.control.{ AgentRegistry, TaskExecutor }
+import orchestration.entity.TaskExecutor
+import orchestration.entity.AgentRegistry
 import shared.errors.PersistenceError
+import taskrun.entity.{ RunStatus, TaskRunRow }
 
 enum WorkflowNotifierError:
   case Telegram(error: TelegramClientError)

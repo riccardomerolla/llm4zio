@@ -2,7 +2,7 @@ package config.control
 
 import zio.test.*
 
-import config.entity.ConfigFormat
+import _root_.config.entity.ConfigFormat
 
 object ConfigValidatorSpec extends ZIOSpecDefault:
 

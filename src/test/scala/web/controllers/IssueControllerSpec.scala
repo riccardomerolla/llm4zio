@@ -8,7 +8,7 @@ import zio.json.*
 import zio.stream.ZStream
 import zio.test.*
 
-import _root_.config.entity.AIProviderConfig
+import _root_.config.entity.{ AIProviderConfig, SettingRow }
 import agent.entity.{ Agent, AgentEvent, AgentRepository }
 import analysis.entity.{ AnalysisDoc, AnalysisEvent, AnalysisRepository, AnalysisType }
 import board.control.BoardOrchestrator
@@ -27,7 +27,8 @@ import project.control.ProjectStorageService
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ AgentId, AnalysisDocId, BoardIssueId, IssueId }
 import shared.testfixtures.*
-import workspace.control.{ AssignRunRequest, WorkspaceRunService }
+import taskrun.entity.{ TaskArtifactRow, TaskReportRow, TaskRunRow }
+import workspace.control.WorkspaceRunService
 import workspace.entity.*
 
 object IssueControllerSpec extends ZIOSpecDefault:
@@ -213,8 +214,8 @@ object IssueControllerSpec extends ZIOSpecDefault:
     override def saveArtifact(artifact: TaskArtifactRow): IO[PersistenceError, Long]              = ZIO.dieMessage("unused")
     override def getArtifactsByTask(taskRunId: Long): IO[PersistenceError, List[TaskArtifactRow]] =
       ZIO.dieMessage("unused")
-    override def getAllSettings: IO[PersistenceError, List[db.SettingRow]]                        = ZIO.succeed(Nil)
-    override def getSetting(key: String): IO[PersistenceError, Option[db.SettingRow]]             = ZIO.succeed(None)
+    override def getAllSettings: IO[PersistenceError, List[SettingRow]]                           = ZIO.succeed(Nil)
+    override def getSetting(key: String): IO[PersistenceError, Option[SettingRow]]                = ZIO.succeed(None)
     override def upsertSetting(key: String, value: String): IO[PersistenceError, Unit]            = ZIO.dieMessage("unused")
 
   private object StubAgentRepository extends AgentRepository:
@@ -262,8 +263,8 @@ object IssueControllerSpec extends ZIOSpecDefault:
     override def runMaintenance(now: Instant): IO[PersistenceError, List[Decision]]                      = ZIO.succeed(Nil)
 
   private object StubBoardOrchestrator extends BoardOrchestrator:
-    override def dispatchCycle(workspacePath: String): IO[BoardError, board.control.DispatchResult]                 =
-      ZIO.succeed(board.control.DispatchResult(Nil, Nil))
+    override def dispatchCycle(workspacePath: String): IO[BoardError, board.entity.DispatchResult]                  =
+      ZIO.succeed(board.entity.DispatchResult(Nil, Nil))
     override def assignIssue(workspacePath: String, issueId: BoardIssueId, agentName: String): IO[BoardError, Unit] =
       ZIO.unit
     override def markIssueStarted(

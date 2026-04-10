@@ -1,0 +1,160 @@
+package orchestration.control
+
+import java.time.Instant
+
+import zio.*
+import zio.json.*
+
+import _root_.config.entity.*
+import orchestration.entity.{ WorkflowService, WorkflowServiceError }
+import shared.errors.PersistenceError
+import taskrun.entity.TaskStep
+
+private case class WorkflowStoragePayload(
+  steps: List[TaskStep],
+  stepAgents: Map[String, String] = Map.empty,
+  autoDispatchEnabled: Boolean = false,
+  dynamicGraph: Option[WorkflowGraph] = None,
+) derives JsonCodec
+
+object WorkflowServiceLive:
+  val live: ZLayer[ConfigRepository, Nothing, WorkflowService] =
+    ZLayer.fromFunction(WorkflowServiceLiveImpl.apply)
+
+final case class WorkflowServiceLiveImpl(
+  repository: ConfigRepository
+) extends WorkflowService:
+  override def createWorkflow(workflow: WorkflowDefinition): IO[WorkflowServiceError, Long] =
+    for
+      validated <- validateWorkflow(workflow)
+      now       <- Clock.instant
+      id        <- repository
+                     .createWorkflow(toRow(validated, now, now))
+                     .mapError(WorkflowServiceError.PersistenceFailed.apply)
+    yield id
+
+  override def getWorkflow(id: Long): IO[WorkflowServiceError, Option[WorkflowDefinition]] =
+    repository
+      .getWorkflow(id)
+      .mapError(WorkflowServiceError.PersistenceFailed.apply)
+      .flatMap(ZIO.foreach(_)(fromRow))
+
+  override def getWorkflowByName(name: String): IO[WorkflowServiceError, Option[WorkflowDefinition]] =
+    repository
+      .getWorkflowByName(name)
+      .mapError(WorkflowServiceError.PersistenceFailed.apply)
+      .flatMap(ZIO.foreach(_)(fromRow))
+
+  override def listWorkflows: IO[WorkflowServiceError, List[WorkflowDefinition]] =
+    repository
+      .listWorkflows
+      .mapError(WorkflowServiceError.PersistenceFailed.apply)
+      .flatMap(rows => ZIO.foreach(rows)(fromRow))
+
+  override def updateWorkflow(workflow: WorkflowDefinition): IO[WorkflowServiceError, Unit] =
+    for
+      validated <- validateWorkflow(workflow)
+      id        <- ZIO
+                     .fromOption(validated.id)
+                     .orElseFail(WorkflowServiceError.ValidationFailed(List("Workflow id is required for update")))
+                     .flatMap(rawId =>
+                       ZIO
+                         .fromOption(rawId.toLongOption)
+                         .orElseFail(WorkflowServiceError.ValidationFailed(List(s"Invalid workflow id: $rawId")))
+                     )
+      existing  <- repository
+                     .getWorkflow(id)
+                     .mapError(WorkflowServiceError.PersistenceFailed.apply)
+      previous  <-
+        ZIO
+          .fromOption(existing)
+          .orElseFail(WorkflowServiceError.PersistenceFailed(PersistenceError.NotFound("workflows", id.toString)))
+      now       <- Clock.instant
+      _         <- repository
+                     .updateWorkflow(
+                       toRow(
+                         validated,
+                         previous.createdAt,
+                         now,
+                       )
+                     )
+                     .mapError(WorkflowServiceError.PersistenceFailed.apply)
+    yield ()
+
+  override def deleteWorkflow(id: Long): IO[WorkflowServiceError, Unit] =
+    repository.deleteWorkflow(id).mapError(WorkflowServiceError.PersistenceFailed.apply)
+
+  private def validateWorkflow(workflow: WorkflowDefinition): IO[WorkflowServiceError, WorkflowDefinition] =
+    WorkflowValidator
+      .validate(workflow)
+      .fold(
+        errors => ZIO.fail(WorkflowServiceError.ValidationFailed(errors)),
+        valid => ZIO.succeed(valid),
+      )
+
+  private def fromRow(row: WorkflowRow): IO[WorkflowServiceError, WorkflowDefinition] =
+    decodeStorage(row.name, row.steps).map {
+      case (parsedSteps, parsedAgents, parsedGraph) =>
+        WorkflowDefinition(
+          id = row.id.map(_.toString),
+          name = row.name,
+          description = row.description,
+          steps = parsedSteps,
+          stepAgents = parsedAgents.toList.map {
+            case (step, agentName) =>
+              WorkflowStepAgent(step, agentName)
+          },
+          autoDispatchEnabled = payloadAutoDispatch(row.steps).getOrElse(false),
+          isBuiltin = row.isBuiltin,
+          dynamicGraph = parsedGraph,
+        )
+    }
+
+  private def toRow(workflow: WorkflowDefinition, createdAt: Instant, updatedAt: Instant): WorkflowRow =
+    val payload = WorkflowStoragePayload(
+      steps = workflow.steps,
+      stepAgents = workflow.stepAgents
+        .collect {
+          case WorkflowStepAgent(step, agent) if workflow.steps.contains(step) && agent.trim.nonEmpty =>
+            step.toString -> agent.trim
+        }
+        .toMap,
+      autoDispatchEnabled = workflow.autoDispatchEnabled,
+      dynamicGraph = workflow.dynamicGraph,
+    )
+    WorkflowRow(
+      id = workflow.id.flatMap(_.toLongOption),
+      name = workflow.name,
+      description = workflow.description.filter(_.trim.nonEmpty),
+      steps = payload.toJson,
+      isBuiltin = workflow.isBuiltin,
+      createdAt = createdAt,
+      updatedAt = updatedAt,
+    )
+
+  private def payloadAutoDispatch(raw: String): Option[Boolean] =
+    raw.fromJson[WorkflowStoragePayload].toOption.map(_.autoDispatchEnabled)
+
+  private def decodeStorage(
+    workflowName: String,
+    raw: String,
+  ): IO[WorkflowServiceError, (List[TaskStep], Map[TaskStep, String], Option[WorkflowGraph])] =
+    raw.fromJson[WorkflowStoragePayload] match
+      case Right(payload) =>
+        for
+          mapped <- decodeStepAgentMap(payload.stepAgents)
+        yield (payload.steps, mapped, payload.dynamicGraph)
+      case Left(_)        =>
+        // Backward compatibility with rows stored as raw JSON array of steps.
+        ZIO
+          .fromEither(
+            raw.fromJson[List[TaskStep]].left.map(error =>
+              WorkflowServiceError.StepsDecodingFailed(workflowName, error)
+            )
+          )
+          .map(steps => (steps, Map.empty[TaskStep, String], Option.empty[WorkflowGraph]))
+
+  private def decodeStepAgentMap(
+    raw: Map[String, String]
+  ): IO[WorkflowServiceError, Map[TaskStep, String]] =
+    ZIO.succeed(raw.map { case (stepRaw, agentRaw) => stepRaw.trim -> agentRaw })

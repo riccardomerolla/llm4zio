@@ -4,20 +4,15 @@ import java.time.Instant
 
 import zio.*
 
-import _root_.config.entity.ConfigRepository
+import _root_.config.entity.{ ConfigRepository, CustomAgentRow, SettingRow, WorkflowDefinition, WorkflowRow }
 import activity.control.ActivityHub
 import activity.entity.ActivityEvent
-import db.{ CustomAgentRow, SettingRow, WorkflowRow }
 import issues.entity.*
-import _root_.config.entity.WorkflowDefinition
-import orchestration.control.{
-  ActiveRun, AgentCapability, AgentExecutionEvent, AgentExecutionState, AgentMonitorSnapshot,
-  ControlCommand, ControlPlaneEvent, OrchestratorControlPlane, ResourceAllocationState,
-  WorkflowRunState,
-}
+import orchestration.control.{ Workspace as _, * }
+import orchestration.entity.*
 import shared.errors.{ ControlPlaneError, PersistenceError }
-import taskrun.entity.TaskStep
 import shared.ids.Ids.{ IssueId, ProjectId }
+import taskrun.entity.TaskStep
 import workspace.entity.*
 
 // ── ActivityHub stubs ──────────────────────────────────────────────────────
@@ -211,29 +206,29 @@ object MutableConfigRepository:
 
 /** No-op OrchestratorControlPlane: silently drops all notifications.
   *
-  * Use when the control plane is a transitive dependency but not under test.
-  * Only `notifyWorkspaceAgent` is safe to call; all other methods throw.
+  * Use when the control plane is a transitive dependency but not under test. Only `notifyWorkspaceAgent` is safe to
+  * call; all other methods throw.
   */
 object NoOpOrchestratorControlPlane extends OrchestratorControlPlane:
   override def startWorkflow(runId: String, workflowId: Long, definition: WorkflowDefinition)
-    : ZIO[Any, ControlPlaneError, String]                                                                     = ???
+    : ZIO[Any, ControlPlaneError, String] = ???
   override def routeStep(runId: String, step: TaskStep, capabilities: List[AgentCapability])
-    : ZIO[Any, ControlPlaneError, String]                                                                     = ???
-  override def allocateResource(runId: String): ZIO[Any, ControlPlaneError, Int]                               = ???
-  override def releaseResource(runId: String, slot: Int): ZIO[Any, ControlPlaneError, Unit]                    = ???
-  override def publishEvent(event: ControlPlaneEvent): ZIO[Any, ControlPlaneError, Unit]                       = ???
-  override def subscribeToEvents(runId: String): ZIO[Scope, Nothing, Dequeue[ControlPlaneEvent]]               = ???
-  override def subscribeAllEvents: ZIO[Scope, Nothing, Dequeue[ControlPlaneEvent]]                             = ???
-  override def getActiveRuns: ZIO[Any, ControlPlaneError, List[ActiveRun]]                                     = ???
-  override def getRunState(runId: String): ZIO[Any, ControlPlaneError, Option[ActiveRun]]                      = ???
-  override def updateRunState(runId: String, newState: WorkflowRunState): ZIO[Any, ControlPlaneError, Unit]    = ???
-  override def executeCommand(command: ControlCommand): ZIO[Any, ControlPlaneError, Unit]                      = ???
-  override def getResourceState: ZIO[Any, ControlPlaneError, ResourceAllocationState]                          = ???
-  override def getAgentMonitorSnapshot: ZIO[Any, ControlPlaneError, AgentMonitorSnapshot]                      = ???
-  override def getAgentExecutionHistory(limit: Int): ZIO[Any, ControlPlaneError, List[AgentExecutionEvent]]    = ???
-  override def pauseAgentExecution(agentName: String): ZIO[Any, ControlPlaneError, Unit]                       = ???
-  override def resumeAgentExecution(agentName: String): ZIO[Any, ControlPlaneError, Unit]                      = ???
-  override def abortAgentExecution(agentName: String): ZIO[Any, ControlPlaneError, Unit]                       = ???
+    : ZIO[Any, ControlPlaneError, String] = ???
+  override def allocateResource(runId: String): ZIO[Any, ControlPlaneError, Int]                            = ???
+  override def releaseResource(runId: String, slot: Int): ZIO[Any, ControlPlaneError, Unit]                 = ???
+  override def publishEvent(event: ControlPlaneEvent): ZIO[Any, ControlPlaneError, Unit]                    = ???
+  override def subscribeToEvents(runId: String): ZIO[Scope, Nothing, Dequeue[ControlPlaneEvent]]            = ???
+  override def subscribeAllEvents: ZIO[Scope, Nothing, Dequeue[ControlPlaneEvent]]                          = ???
+  override def getActiveRuns: ZIO[Any, ControlPlaneError, List[ActiveRun]]                                  = ???
+  override def getRunState(runId: String): ZIO[Any, ControlPlaneError, Option[ActiveRun]]                   = ???
+  override def updateRunState(runId: String, newState: WorkflowRunState): ZIO[Any, ControlPlaneError, Unit] = ???
+  override def executeCommand(command: ControlCommand): ZIO[Any, ControlPlaneError, Unit]                   = ???
+  override def getResourceState: ZIO[Any, ControlPlaneError, ResourceAllocationState]                       = ???
+  override def getAgentMonitorSnapshot: ZIO[Any, ControlPlaneError, AgentMonitorSnapshot]                   = ???
+  override def getAgentExecutionHistory(limit: Int): ZIO[Any, ControlPlaneError, List[AgentExecutionEvent]] = ???
+  override def pauseAgentExecution(agentName: String): ZIO[Any, ControlPlaneError, Unit]                    = ???
+  override def resumeAgentExecution(agentName: String): ZIO[Any, ControlPlaneError, Unit]                   = ???
+  override def abortAgentExecution(agentName: String): ZIO[Any, ControlPlaneError, Unit]                    = ???
   override def notifyWorkspaceAgent(
     agentName: String,
     state: AgentExecutionState,

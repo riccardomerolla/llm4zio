@@ -7,6 +7,7 @@ import zio.*
 import zio.http.*
 
 import checkpoint.control.*
+import checkpoint.entity.*
 import shared.web.CheckpointsView
 
 trait CheckpointsController:

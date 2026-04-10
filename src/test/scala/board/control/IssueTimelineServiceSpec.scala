@@ -15,7 +15,7 @@ import decision.entity.*
 import issues.entity.*
 import shared.errors.PersistenceError
 import shared.ids.Ids.*
-import workspace.entity.{ RunStatus, Workspace, WorkspaceEvent, WorkspaceRepository, WorkspaceRun, WorkspaceRunEvent }
+import workspace.entity.*
 
 object IssueTimelineServiceSpec extends ZIOSpecDefault:
 

@@ -6,7 +6,7 @@ import java.time.Instant
 import zio.*
 import zio.test.*
 
-import _root_.config.entity.ConfigRepository
+import _root_.config.entity.{ ConfigRepository, ConfigRepositoryES, WorkflowRow }
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.error.GigaMapError
 import shared.errors.PersistenceError
@@ -35,7 +35,7 @@ object ConfigRepositoryESSpec extends ZIOSpecDefault:
         configStorePath = path.resolve("config-store").toString,
         dataStorePath = path.resolve("data-store").toString,
       )
-    ) >>> ConfigStoreModule.live) >>> ConfigRepository.live
+    ) >>> ConfigStoreModule.live) >>> ConfigRepositoryES.live
 
   def spec: Spec[TestEnvironment & Scope, Any] =
     suite("ConfigRepositoryESSpec")(

@@ -5,8 +5,8 @@ import zio.http.*
 import zio.stream.ZStream
 import zio.test.*
 
-import _root_.config.control.{ ModelRegistryResponse, ModelService, ProviderProbeStatus }
-import _root_.config.entity.AIProviderConfig
+import _root_.config.control.ModelService
+import _root_.config.entity.{ AIProviderConfig, ModelRegistryResponse, ProviderProbeStatus }
 import app.boundary.HealthControllerLive
 import app.control.*
 

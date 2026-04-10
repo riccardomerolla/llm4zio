@@ -9,7 +9,7 @@ import zio.*
 import zio.json.*
 import zio.json.ast.Json
 
-import app.control.FileService
+import shared.services.FileService
 import board.entity.*
 import llm4zio.core.{ LlmError, LlmService }
 import llm4zio.tools.JsonSchema

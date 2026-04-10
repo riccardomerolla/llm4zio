@@ -6,6 +6,7 @@ import zio.test.Assertion.*
 
 import _root_.config.entity.{ MigrationConfig, WorkflowDefinition }
 import orchestration.control.*
+import orchestration.entity.*
 import shared.errors.ControlPlaneError
 import taskrun.entity.TaskStep
 

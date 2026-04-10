@@ -7,7 +7,7 @@ import zio.json.*
 import zio.stream.Stream
 import zio.test.*
 
-import app.control.FileService
+import shared.services.FileService
 import board.entity.*
 import llm4zio.core.{ LlmChunk, LlmError, LlmService, ToolCallResponse }
 import llm4zio.tools.{ AnyTool, JsonSchema }

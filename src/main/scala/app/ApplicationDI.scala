@@ -18,7 +18,7 @@ import _root_.config.boundary.{
   WorkflowsController as ConfigWorkflowsController,
 }
 import _root_.config.control.{ ConfigValidator, ModelService }
-import _root_.config.entity.{ AIProvider, AIProviderConfig, ConfigRepository, GatewayConfig }
+import _root_.config.entity.{ AIProvider, AIProviderConfig, ConfigRepository, ConfigRepositoryES, GatewayConfig }
 import activity.boundary.ActivityController
 import activity.control.ActivityHub
 import activity.entity.ActivityRepository
@@ -26,7 +26,8 @@ import agent.entity.{ AgentEventStoreES, AgentRepositoryES }
 import analysis.control.{ AnalysisAgentRunner, WorkspaceAnalysisScheduler }
 import analysis.entity.{ AnalysisEventStoreES, AnalysisRepositoryES }
 import app.boundary.{ AgentMonitorController as AppAgentMonitorController, HealthController as AppHealthController, * }
-import app.control.{ FileService, HealthMonitor, HttpAIClient, LogTailer, StateService }
+import app.control.{ HealthMonitor, LogTailer }
+import shared.services.{ FileService, HttpAIClient, StateService }
 import board.boundary.BoardController as BoardBoundaryController
 import board.control.*
 import board.entity.BoardRepository
@@ -76,6 +77,7 @@ import orchestration.control.{
   IssueAssignmentOrchestrator as OrchestrationIssueAssignmentOrchestrator,
   ProgressTracker as OrchestrationProgressTracker,
 }
+import orchestration.entity.{ AgentPoolManager, AgentRegistry, TaskExecutor, WorkflowService }
 import plan.boundary.PlansController
 import plan.entity.{ PlanEventStoreES, PlanRepositoryES }
 import project.boundary.ProjectsController
@@ -84,7 +86,7 @@ import project.entity.ProjectRepository
 import prompts.PromptLoader
 import sdlc.boundary.SdlcDashboardController
 import sdlc.control.SdlcDashboardService
-import shared.store.{ ConfigStoreModule, DataStoreModule, MemoryStoreModule, StoreConfig }
+import shared.store.{ ConfigStoreModule, DataStoreModule, DataStoreService, MemoryStoreModule, StoreConfig }
 import shared.web.StreamAbortRegistry
 import specification.boundary.SpecificationsController
 import specification.entity.{ SpecificationEventStoreES, SpecificationRepositoryES }
@@ -110,7 +112,7 @@ object ApplicationDI:
     FileService &
       StoreConfig &
       ConfigStoreModule.ConfigStoreService &
-      DataStoreModule.DataStoreService &
+      DataStoreService &
       MemoryStoreModule.MemoryEntriesStore &
       GatewayConfig &
       AIProviderConfig &
@@ -192,7 +194,7 @@ object ApplicationDI:
       fatalStartupLayer("config store module", ConfigStoreModule.live)(_.toString),
       fatalStartupLayer("data store module", DataStoreModule.live)(_.toString),
       fatalStartupLayer("memory store module", MemoryStoreModule.live)(_.toString),
-      ConfigRepository.live,
+      ConfigRepositoryES.live,
       TaskRepository.live,
       ZLayer.succeed(config.resolvedProviderConfig),
       AgentConfigResolver.live,
@@ -208,16 +210,16 @@ object ApplicationDI:
       MemoryRepositoryES.live,
       DecisionEventStoreES.live,
       DecisionRepositoryES.live,
-      WorkflowService.live,
+      WorkflowServiceLive.live,
       ActivityRepository.live,
       ActivityHub.live,
       OrchestrationProgressTracker.live,
       ChatRepository.live,
-      AgentRegistry.live,
+      AgentRegistryLive.live,
       WorkflowEngine.live,
       AgentDispatcher.live,
       OrchestratorControlPlane.live,
-      TaskExecutor.live,
+      TaskExecutorLive.live,
       LogTailer.live,
       HealthMonitor.live,
       ConfigValidator.live,
@@ -357,7 +359,7 @@ object ApplicationDI:
       KnowledgeController.live,
       WorkspacesController.live,
       DependencyResolver.live,
-      AgentPoolManager.live,
+      AgentPoolManagerLive.live,
       DaemonAgentSpecRepositoryES.live,
       DaemonAgentScheduler.live,
       IssueDispatchStatusService.live,

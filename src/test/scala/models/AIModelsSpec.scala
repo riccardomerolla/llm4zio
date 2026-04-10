@@ -4,7 +4,7 @@ import zio.json.*
 import zio.json.ast.Json
 import zio.test.*
 
-import config.entity.*
+import _root_.config.entity.*
 
 object AIModelsSpec extends ZIOSpecDefault:
 

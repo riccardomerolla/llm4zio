@@ -12,7 +12,7 @@ import activity.control.ActivityHub
 import app.control.HealthMonitor
 import gateway.control.{ ChannelRegistry, MessageChannelError }
 import gateway.entity.SessionScopeStrategy
-import orchestration.control.OrchestratorControlPlane
+import orchestration.entity.AgentMonitorService
 import shared.web.StreamAbortRegistry
 import shared.web.ws.{ ClientMessage, ServerMessage, SubscriptionTopic }
 import workspace.control.{ GitWatcher, GitWatcherEvent, RunSessionManager }
@@ -28,7 +28,7 @@ object WebSocketController:
 
   val live
     : ZLayer[
-      ChannelRegistry & StreamAbortRegistry & HealthMonitor & OrchestratorControlPlane & ActivityHub & RunSessionManager & GitWatcher & WorkspaceRepository,
+      ChannelRegistry & StreamAbortRegistry & HealthMonitor & AgentMonitorService & ActivityHub & RunSessionManager & GitWatcher & WorkspaceRepository,
       Nothing,
       WebSocketController,
     ] =
@@ -38,7 +38,7 @@ final case class WebSocketControllerLive(
   channelRegistry: ChannelRegistry,
   streamAbortRegistry: StreamAbortRegistry,
   healthMonitor: HealthMonitor,
-  controlPlane: OrchestratorControlPlane,
+  controlPlane: AgentMonitorService,
   activityHub: ActivityHub,
   runSessionManager: RunSessionManager,
   gitWatcher: GitWatcher,

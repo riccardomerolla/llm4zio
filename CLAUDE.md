@@ -8,25 +8,30 @@ This file documents the conventions, patterns, and structure of the llm4zio code
 
 ```bash
 sbt compile           # compile all sources
-sbt test              # run unit tests (1126+)
+sbt test              # run unit tests (1121+)
 sbt it:test           # run integration tests (18+, no external services required)
 sbt run               # start the gateway (http://localhost:8080)
 sbt fmt               # format: scalafmt + scalafix
 sbt check             # check formatting without modifying
 sbt assembly          # build fat JAR
 sbt --client test     # faster: connect to running sbt server
+
+# Per-module commands (faster feedback loops):
+sbt boardDomain/compile       # compile only board-domain + its deps
+sbt boardDomain/test          # run only board-domain tests
+sbt 'testOnly board.control.BoardCacheSpec'  # run a single test class
 ```
 
 ---
 
 ## Architecture: BCE Pattern
 
-All domain packages follow **Boundary / Control / Entity**:
+All domain packages follow **Boundary / Control / Entity** ([bce.design](https://bce.design/)):
 
 ```
 domain/
-  boundary/   HTTP controllers, SSE endpoints, WebSocket handlers
-              — only routing and HTTP concern live here
+  boundary/   HTTP controllers, views, SSE endpoints, WebSocket handlers
+              — only routing, rendering, and HTTP concern live here
   control/    Services, repositories, orchestrators, use-case logic
               — business logic, state machines, event sourcing
   entity/     Domain types: case classes, enums, event ADTs, errors
@@ -38,6 +43,88 @@ domain/
 - `control` may depend on `entity` only (never `boundary`)
 - `entity` has zero dependencies on other layers
 - Service logic must NOT live in `boundary/` — BCE violation
+- Views (Scalatags) belong in `boundary/`, not in a separate view package
+
+---
+
+## Multi-Module Structure
+
+The codebase uses **sbt multi-module builds** to enforce BCE cohesion. Each domain is a self-contained module combining all three layers together, named after its domain.
+
+### Module Layout
+
+```
+modules/
+  shared-json/          # JSON codec support
+  shared-ids/           # Typed ID wrappers (GovernancePolicyId, ProjectId, etc.)
+  shared-errors/        # PersistenceError and shared error ADTs
+  shared-store-core/    # EventStore trait, EclipseStore integration
+  shared-web-core/      # Domain-independent view infra: Layout, Components, JsResources
+  shared-services/      # Cross-cutting services: FileService, RateLimiter, HttpAIClient, StateService
+
+  # Domain modules — each is a BCE unit:
+  activity-domain/      agent-domain/        analysis-domain/
+  board-domain/         checkpoint-domain/   config-domain/
+  conversation-domain/  daemon-domain/       decision-domain/
+  demo-domain/          evolution-domain/    gateway-domain/
+  governance-domain/    issues-domain/       knowledge-domain/
+  memory-domain/        orchestration-domain/ plan-domain/
+  project-domain/       sdlc-domain/         specification-domain/
+  taskrun-domain/       workspace-domain/
+
+  shared-web/           # Views with multi-domain deps (being distributed to domain modules)
+```
+
+### What Lives Where
+
+**Domain modules** (`modules/*-domain/`) contain:
+- `entity/` — all domain modules have this (models, events, repository traits)
+- `control/` — most modules now have services colocated (e.g., `AgentMatching`, `BoardCache`, `DaemonAgentScheduler`, `WorkflowEngine`)
+- `boundary/` — views that only depend on their own domain (e.g., `BoardView`, `IssueTimelineView`, `DaemonsView`, `AgentsView`, `ChannelView`)
+
+**Root `src/main/scala/`** retains files that depend on multiple domains or have circular dependency constraints:
+- `app/` — `ApplicationDI`, `WebServer`, DI wiring (depends on everything)
+- `mcp/` — cross-cutting MCP tool support
+- `db/` — legacy database layer
+- Domain `boundary/` controllers (HTTP routing that cross-cuts multiple domains)
+- Domain `control/` services with unresolved cross-domain dependencies (e.g., `BoardOrchestrator`, `OrchestratorControlPlane`)
+
+**`shared-web`** contains ~20 view files with multi-domain dependencies that cannot yet move to a single domain module (e.g., `SettingsView` depends on config + gateway + agent). These are being distributed to domain `boundary/` packages as dependencies are untangled.
+
+### Module Dependency Rules
+
+```scala
+// In build.sbt:
+val domainDeps    = Seq(zioCoreDep, zioStreamsDep, zioJsonDep)       // entity-only modules
+val domainBceDeps = domainDeps ++ Seq(zioHttpDep, scalatags)          // modules with boundary layer
+
+// Domain modules depend on foundation + other domain modules:
+lazy val boardDomain = project.in(file("modules/board-domain"))
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore, sharedWebCore, workspaceDomain)
+  .settings(libraryDependencies ++= domainBceDeps)
+```
+
+**Key constraints:**
+- Domain modules MUST NOT depend on root `src/main/scala/`
+- Circular `dependsOn` is illegal in sbt — break cycles by extracting trait interfaces to entity packages
+- `orchestration-domain` holds trait interfaces (e.g., `AgentPoolManager`, `TaskExecutor`) that other modules depend on; `*Live` implementations live in root or in the module itself
+- Use `_root_.config.entity.ConfigRepository` when `zio.config` shadows the `config` package
+
+### Import Conventions for Modules
+
+When a domain module and the root project share the same package (e.g., `board.boundary`), Scala allows same-package access across sbt module boundaries — **do NOT add explicit imports** for same-package types (causes unused import errors with `-Werror`).
+
+When `config` package is shadowed by `zio.config`:
+```scala
+import _root_.config.entity.ConfigRepository  // use _root_ prefix
+```
+
+When a local variable name shadows a package:
+```scala
+// In AgentsController, `agent` is a local val of type Agent
+// agent.boundary.AgentsView would be parsed as accessing .boundary on the val
+import _root_.agent.boundary.AgentsView  // use _root_ prefix, then unqualified name
+```
 
 ---
 
@@ -54,7 +141,7 @@ project/      sdlc/         specification/ taskrun/
 workspace/    activity/
 ```
 
-**Cross-cutting packages** (used by multiple domains):
+**Foundation packages** (shared infrastructure):
 
 ```
 shared/
@@ -62,6 +149,7 @@ shared/
   ids/        Typed ID wrappers (GovernancePolicyId, ProjectId, etc.)
   store/      EventStore trait, StoreConfig, DataStoreModule
   web/        Scalatags view helpers, layout, HTML components
+  services/   Cross-cutting services (FileService, RateLimiter, etc.)
 
 db/           Legacy database layer — avoid adding new code here
 app/          Application entry point, WebServer, DI wiring
@@ -174,7 +262,9 @@ final case class MyServiceLive(dep1: Dependency1, dep2: Dependency2) extends MyS
 
 ## Testing Patterns
 
-**Unit tests** live in `src/test/scala/` matching the main package structure:
+**Unit tests** live alongside their module in `src/test/scala/`:
+- Module-specific tests: `modules/*-domain/src/test/scala/` (when the module has tests)
+- Root tests: `src/test/scala/` (for code still in root, or cross-domain tests)
 
 ```scala
 object MyServiceSpec extends ZIOSpecDefault:
@@ -215,7 +305,9 @@ final class StubActivityHub extends ActivityHub:         // configurable stub
 object NoOpGovernancePolicyService extends GovernancePolicyService:  // always passes
 ```
 
-Common stubs are shared from `src/test/scala/integration/IntegrationFixtures.scala` for IT tests.
+Common stubs are shared from:
+- `src/test/scala/shared/testfixtures/` — reusable stubs (StubConfigRepository, StubActivityHub, etc.)
+- `src/test/scala/integration/IntegrationFixtures.scala` — IT test helpers
 
 ---
 
@@ -223,17 +315,19 @@ Common stubs are shared from `src/test/scala/integration/IntegrationFixtures.sca
 
 ### Server-side rendering: Scalatags
 
-Views are generated in Scala via Scalatags in `shared/web/`:
+Views are generated in Scala via Scalatags. Domain-specific views live in their domain module's `boundary/` package; shared view infrastructure (Layout, Components) lives in `shared-web-core`:
 
 ```scala
-// src/main/scala/shared/web/MyView.scala
-object MyView:
-  def render(items: List[Item]): String =
-    html(
-      body(
-        div(cls := "container",
-          items.map(item => div(cls := "card", item.name))
-        )
+// modules/board-domain/src/main/scala/board/boundary/BoardView.scala
+package board.boundary
+
+import shared.web.*  // Layout, Components from shared-web-core
+
+object BoardView:
+  def page(workspaceId: String, issues: List[BoardIssue]): String =
+    Layout.page("Board", "/board")(
+      div(cls := "container",
+        issues.map(issue => Components.card(issue.title))
       )
     ).render
 ```
@@ -318,6 +412,41 @@ val workspaceId: String          = "ws-1"  // workspaces use String by conventio
 
 ---
 
+## Modularization Strategy
+
+The codebase is being modularized per [bce.design](https://bce.design/) principles. The plan lives at `.claude/plans/snoopy-tinkering-hejlsberg.md`.
+
+### Current State (Phases 0–3 complete, Phase 4 in progress)
+
+**Completed:**
+- Foundation modules extracted (`shared-json`, `shared-ids`, `shared-errors`, `shared-store-core`, `shared-web-core`, `shared-services`)
+- All 23 domain modules have `entity/` layers
+- Most domain modules have `control/` services colocated (agent, board, daemon, evolution, issues, knowledge, orchestration, sdlc)
+- Leaf domain views moved to `boundary/` (BoardView, IssueTimelineView, DaemonsView, AgentsView, ChannelView, ModelsView, BoardStats, RunSessionUiMeta)
+
+**Remaining:**
+- ~20 views in `shared-web` with multi-domain dependencies → distribute to domain `boundary/` packages
+- ~80 root files (controllers, services) blocked by circular or cross-domain dependencies
+- Cross-domain integration tests → stay in root or move to domain modules
+
+### How to Move Code to a Module
+
+1. **Check dependencies** — run `grep -r "import.*the.package" src/` to find all import sites
+2. **Move the file** — preserve the package declaration (same package across sbt modules is fine in Scala)
+3. **Update `build.sbt`** — add required `dependsOn` and `libraryDependencies`
+4. **Remove unused imports** — `-Werror` makes unused imports fatal
+5. **Compile** — `sbt compile` after every file move
+6. **Verify circular deps** — if `A dependsOn B` and `B dependsOn A`, extract trait interfaces to break the cycle
+
+### Circular Dependency Resolution
+
+The orchestration ↔ gateway ↔ workspace cluster has circular control-layer dependencies. The pattern used:
+- **Trait interfaces** live in `orchestration-domain` entity package (e.g., `AgentPoolManager`, `TaskExecutor`, `WorkReportEventBus`)
+- **`*Live` implementations** live in the module with the richest dependency set, or remain in root
+- Other modules `dependsOn(orchestrationDomain)` for the trait, not the implementation
+
+---
+
 ## Key Conventions Summary
 
 - **No `var`** — use `Ref`, `Queue`, `Hub` for mutable state
@@ -329,3 +458,7 @@ val workspaceId: String          = "ws-1"  // workspaces use String by conventio
 - **Event sourcing** — `*Event` sealed traits, `*.fromEvents` projections
 - **SSR + Lit 3** — Scalatags for HTML, `ab-` prefix for web components
 - **HTMX** — server-driven interactivity, no custom JS for CRUD
+- **`-Werror`** — unused imports are fatal; same-package access across sbt modules needs no import
+- **`_root_` prefix** — use when `zio.config` shadows the `config` package or local variables shadow package names
+- **One domain per commit** — when moving code to modules, commit after each domain for safe rollback
+- **Views in `boundary/`** — domain-specific views belong in their domain module's boundary package, not in `shared-web`

@@ -8,16 +8,16 @@ import zio.stream.ZStream
 import zio.test.*
 
 import _root_.config.boundary.SettingsController
-import _root_.config.control.{ ModelRegistryResponse, ModelService, ProviderProbeStatus }
-import _root_.config.entity.{ AIProviderConfig, ConfigRepository, MigrationConfig }
+import _root_.config.control.ModelService
+import _root_.config.entity.*
 import activity.control.ActivityHub
 import activity.entity.{ ActivityEvent, ActivityEventType, ActivityRepository }
-import db.*
+import conversation.entity.ConversationRow
 import io.github.riccardomerolla.zio.eclipsestore.service.LifecycleCommand
 import llm4zio.core.*
 import llm4zio.tools.{ AnyTool, JsonSchema, ToolRegistry }
 import shared.errors.PersistenceError
-import shared.store.{ ConfigStoreModule, ConversationRow, DataStoreModule, MemoryStoreModule, StoreConfig }
+import shared.store.{ ConfigStoreModule, DataStoreModule, DataStoreService, MemoryStoreModule, StoreConfig }
 
 object SettingsControllerSpec extends ZIOSpecDefault:
 
@@ -93,7 +93,7 @@ object SettingsControllerSpec extends ZIOSpecDefault:
 
   private def mkLayer
     : UIO[
-      ZLayer[Any, Nothing, SettingsController & ConfigRepository & StoreConfig & DataStoreModule.DataStoreService]
+      ZLayer[Any, Nothing, SettingsController & ConfigRepository & StoreConfig & DataStoreService]
     ] =
     for
       tempDir   <- ZIO.attemptBlocking(Files.createTempDirectory("settings-controller-spec")).orDie
@@ -106,7 +106,7 @@ object SettingsControllerSpec extends ZIOSpecDefault:
       hub        = new ActivityHub:
                      override def publish(event: ActivityEvent): UIO[Unit] = ZIO.unit
                      override def subscribe: UIO[Dequeue[ActivityEvent]]   = Queue.unbounded[ActivityEvent].map(identity)
-    yield ZLayer.make[SettingsController & ConfigRepository & StoreConfig & DataStoreModule.DataStoreService](
+    yield ZLayer.make[SettingsController & ConfigRepository & StoreConfig & DataStoreService](
       ZLayer.succeed(storeCfg),
       ConfigStoreModule.live.mapError(err => new RuntimeException(err.toString)).orDie,
       DataStoreModule.live.mapError(err => new RuntimeException(err.toString)).orDie,
@@ -141,7 +141,7 @@ object SettingsControllerSpec extends ZIOSpecDefault:
       ConfigStoreModule.live.mapError(err => new RuntimeException(err.toString)).orDie,
       DataStoreModule.live.mapError(err => new RuntimeException(err.toString)).orDie,
       MemoryStoreModule.live.mapError(err => new RuntimeException(err.toString)).orDie,
-      ConfigRepository.live,
+      ConfigRepositoryES.live,
       ActivityRepository.live,
       ActivityHub.live,
       ZLayer.fromZIO(Ref.make(MigrationConfig())),
@@ -207,7 +207,7 @@ object SettingsControllerSpec extends ZIOSpecDefault:
                       for
                         env        <- layer.build
                         controller <- ZIO.service[SettingsController].provideEnvironment(env)
-                        dataStore  <- ZIO.service[DataStoreModule.DataStoreService].provideEnvironment(env)
+                        dataStore  <- ZIO.service[DataStoreService].provideEnvironment(env)
                         _          <- dataStore.store(
                                         "conv:9001",
                                         ConversationRow(

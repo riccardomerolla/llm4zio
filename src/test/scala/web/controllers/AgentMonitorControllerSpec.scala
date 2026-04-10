@@ -6,22 +6,17 @@ import zio.*
 import zio.http.*
 import zio.test.*
 
-import _root_.config.entity.WorkflowDefinition
 import app.boundary.AgentMonitorControllerLive
 import llm4zio.observability.LlmMetrics
-import orchestration.control.*
+import orchestration.entity.*
 import shared.errors.ControlPlaneError
-import taskrun.entity.TaskStep
 
 object AgentMonitorControllerSpec extends ZIOSpecDefault:
-  private object Steps:
-    val Analysis: TaskStep = "Analysis"
-
   private val sampleInfo = AgentExecutionInfo(
     agentName = "agent-1",
     state = AgentExecutionState.Executing,
     runId = Some("run-1"),
-    step = Some(Steps.Analysis),
+    step = Some("Analysis"),
     task = Some("Analysis for run run-1"),
     conversationId = None,
     tokensUsed = 42L,
@@ -32,30 +27,7 @@ object AgentMonitorControllerSpec extends ZIOSpecDefault:
     message = Some("working"),
   )
 
-  final private class StubControlPlane(actionRef: Ref[List[String]]) extends OrchestratorControlPlane:
-    override def startWorkflow(
-      runId: String,
-      workflowId: Long,
-      definition: WorkflowDefinition,
-    ): ZIO[Any, ControlPlaneError, String] = ZIO.succeed("corr")
-    override def routeStep(
-      runId: String,
-      step: TaskStep,
-      capabilities: List[AgentCapability],
-    ): ZIO[Any, ControlPlaneError, String] = ZIO.succeed("agent-1")
-    override def allocateResource(runId: String): ZIO[Any, ControlPlaneError, Int]                            = ZIO.succeed(0)
-    override def releaseResource(runId: String, slot: Int): ZIO[Any, ControlPlaneError, Unit]                 = ZIO.unit
-    override def publishEvent(event: ControlPlaneEvent): ZIO[Any, ControlPlaneError, Unit]                    = ZIO.unit
-    override def subscribeToEvents(runId: String): ZIO[Scope, Nothing, Dequeue[ControlPlaneEvent]]            =
-      Queue.unbounded[ControlPlaneEvent].map(identity)
-    override def subscribeAllEvents: ZIO[Scope, Nothing, Dequeue[ControlPlaneEvent]]                          =
-      Queue.unbounded[ControlPlaneEvent].map(identity)
-    override def getActiveRuns: ZIO[Any, ControlPlaneError, List[ActiveRun]]                                  = ZIO.succeed(Nil)
-    override def getRunState(runId: String): ZIO[Any, ControlPlaneError, Option[ActiveRun]]                   = ZIO.none
-    override def updateRunState(runId: String, newState: WorkflowRunState): ZIO[Any, ControlPlaneError, Unit] = ZIO.unit
-    override def executeCommand(command: ControlCommand): ZIO[Any, ControlPlaneError, Unit]                   = ZIO.unit
-    override def getResourceState: ZIO[Any, ControlPlaneError, ResourceAllocationState]                       =
-      ZIO.succeed(ResourceAllocationState(1, 0, Nil, None))
+  final private class StubAgentMonitor(actionRef: Ref[List[String]]) extends AgentMonitorService:
     override def getAgentMonitorSnapshot: ZIO[Any, ControlPlaneError, AgentMonitorSnapshot]                   =
       Clock.instant.map(ts => AgentMonitorSnapshot(ts, List(sampleInfo)))
     override def getAgentExecutionHistory(limit: Int): ZIO[Any, ControlPlaneError, List[AgentExecutionEvent]] =
@@ -66,7 +38,7 @@ object AgentMonitorControllerSpec extends ZIOSpecDefault:
             agentName = "agent-1",
             state = AgentExecutionState.Executing,
             runId = Some("run-1"),
-            step = Some(Steps.Analysis),
+            step = Some("Analysis"),
             detail = "Processing",
             timestamp = Instant.EPOCH,
           )
@@ -92,7 +64,7 @@ object AgentMonitorControllerSpec extends ZIOSpecDefault:
       for
         actions   <- Ref.make(List.empty[String])
         metrics   <- ZIO.service[LlmMetrics]
-        controller = AgentMonitorControllerLive(StubControlPlane(actions), metrics)
+        controller = AgentMonitorControllerLive(StubAgentMonitor(actions), metrics)
         response  <- controller.routes.runZIO(Request.get("/agent-monitor"))
         location   = response.headers.header(Header.Location).map(_.renderedValue)
       yield assertTrue(response.status == Status.MovedPermanently, location.contains("/"))
@@ -101,7 +73,7 @@ object AgentMonitorControllerSpec extends ZIOSpecDefault:
       for
         actions   <- Ref.make(List.empty[String])
         metrics   <- ZIO.service[LlmMetrics]
-        controller = AgentMonitorControllerLive(StubControlPlane(actions), metrics)
+        controller = AgentMonitorControllerLive(StubAgentMonitor(actions), metrics)
         response  <- controller.routes.runZIO(Request.get("/api/agent-monitor/snapshot"))
         body      <- response.body.asString
       yield assertTrue(
@@ -114,7 +86,7 @@ object AgentMonitorControllerSpec extends ZIOSpecDefault:
       for
         actions   <- Ref.make(List.empty[String])
         metrics   <- ZIO.service[LlmMetrics]
-        controller = AgentMonitorControllerLive(StubControlPlane(actions), metrics)
+        controller = AgentMonitorControllerLive(StubAgentMonitor(actions), metrics)
         response  <- controller.routes.runZIO(Request.post("/api/agent-monitor/agents/agent-1/pause", Body.empty))
         history   <- actions.get
       yield assertTrue(response.status == Status.Ok, history.contains("pause:agent-1"))

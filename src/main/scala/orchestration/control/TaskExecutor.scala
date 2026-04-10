@@ -5,23 +5,12 @@ import java.util.UUID
 import zio.*
 
 import _root_.config.entity.{ WorkflowContext, WorkflowDefinition }
-import db.{ RunStatus, TaskRepository }
+import db.TaskRepository
+import orchestration.entity.*
 import shared.errors.PersistenceError
+import taskrun.entity.RunStatus
 
-trait TaskExecutor:
-  def execute(taskRunId: Long, workflow: WorkflowDefinition): IO[PersistenceError, Unit]
-  def start(taskRunId: Long, workflow: WorkflowDefinition): UIO[Unit]
-  def cancel(taskRunId: Long): UIO[Unit]
-
-object TaskExecutor:
-  def execute(taskRunId: Long, workflow: WorkflowDefinition): ZIO[TaskExecutor, PersistenceError, Unit] =
-    ZIO.serviceWithZIO[TaskExecutor](_.execute(taskRunId, workflow))
-
-  def start(taskRunId: Long, workflow: WorkflowDefinition): ZIO[TaskExecutor, Nothing, Unit] =
-    ZIO.serviceWithZIO[TaskExecutor](_.start(taskRunId, workflow))
-
-  def cancel(taskRunId: Long): ZIO[TaskExecutor, Nothing, Unit] =
-    ZIO.serviceWithZIO[TaskExecutor](_.cancel(taskRunId))
+object TaskExecutorLive:
 
   val live
     : ZLayer[
@@ -37,7 +26,7 @@ object TaskExecutor:
         dispatcher     <- ZIO.service[AgentDispatcher]
         controlPlane   <- ZIO.service[OrchestratorControlPlane]
         runningFibers  <- Ref.Synchronized.make(Map.empty[Long, Fiber.Runtime[PersistenceError, Unit]])
-      yield TaskExecutorLive(
+      yield TaskExecutorLiveImpl(
         repository = repository,
         registry = registry,
         workflowEngine = workflowEngine,
@@ -47,7 +36,7 @@ object TaskExecutor:
       )
     }
 
-final case class TaskExecutorLive(
+final case class TaskExecutorLiveImpl(
   repository: TaskRepository,
   registry: AgentRegistry,
   workflowEngine: WorkflowEngine,

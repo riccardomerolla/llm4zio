@@ -8,13 +8,13 @@ import zio.json.*
 import zio.test.*
 
 import _root_.config.entity.*
-import analysis.control.{ WorkspaceAnalysisScheduler, WorkspaceAnalysisState, WorkspaceAnalysisStatus }
-import analysis.entity.AnalysisType
+import analysis.control.WorkspaceAnalysisScheduler
+import analysis.entity.{ AnalysisType, WorkspaceAnalysisState, WorkspaceAnalysisStatus }
 import issues.entity.{ AgentIssue, IssueEvent, IssueFilter, IssueRepository, IssueState }
-import orchestration.control.AgentRegistry
+import orchestration.entity.AgentRegistry
 import shared.ids.Ids.IssueId
 import taskrun.entity.TaskStep
-import workspace.control.{ AssignRunRequest, GitService, WorkspaceRunService }
+import workspace.control.{ GitService, WorkspaceRunService }
 import workspace.entity.*
 
 object WorkspacesControllerSpec extends ZIOSpecDefault:

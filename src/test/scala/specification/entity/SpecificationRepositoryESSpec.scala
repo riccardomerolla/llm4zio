@@ -9,12 +9,12 @@ import zio.test.*
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.error.GigaMapError
 import shared.ids.Ids.{ IssueId, SpecificationId }
-import shared.store.{ DataStoreModule, EventStore, StoreConfig }
+import shared.store.{ DataStoreModule, DataStoreService, EventStore, StoreConfig }
 
 object SpecificationRepositoryESSpec extends ZIOSpecDefault:
 
   private type Env =
-    DataStoreModule.DataStoreService & EventStore[SpecificationId, SpecificationEvent] & SpecificationRepository
+    DataStoreService & EventStore[SpecificationId, SpecificationEvent] & SpecificationRepository
 
   private val author = SpecificationAuthor(SpecificationAuthorKind.Agent, "planner", "Planner")
 

@@ -8,8 +8,6 @@ import zio.json.*
 import zio.process.Command
 import zio.stream.ZStream
 
-import activity.control.ActivityHub
-import activity.entity.ActivityEvent
 import board.control.{ BoardRepositoryFS, IssueMarkdownParserLive }
 import governance.control.{ GovernanceEvaluationContext, GovernanceTransitionDecision }
 import governance.control.GovernancePolicyService
@@ -18,7 +16,6 @@ import llm4zio.core.{ LlmChunk, LlmError, LlmService, Message, ToolCallResponse 
 import llm4zio.tools.{ AnyTool, JsonSchema }
 import shared.errors.PersistenceError
 import shared.ids.Ids.ProjectId
-import shared.testfixtures.{ NoOpActivityHub, StubWorkspaceRepository }
 import workspace.control.GitServiceLive
 import workspace.entity.*
 

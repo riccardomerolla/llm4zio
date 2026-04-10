@@ -10,7 +10,7 @@ import activity.entity.ActivityEvent
 import daemon.entity.*
 import governance.entity.*
 import issues.entity.*
-import orchestration.control.{ AgentPoolManager, PoolError, SlotHandle }
+import orchestration.entity.{ AgentPoolManager, PoolError, SlotHandle }
 import project.entity.*
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ IssueId, ProjectId }

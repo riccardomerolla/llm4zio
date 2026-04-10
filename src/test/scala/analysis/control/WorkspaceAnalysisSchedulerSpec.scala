@@ -3,17 +3,18 @@ package analysis.control
 import java.time.Instant
 
 import zio.*
-import zio.test.*
-import zio.test.Live
+import zio.test.{ Live, * }
 
+import _root_.config.entity.SettingRow
 import activity.entity.{ ActivityEvent, ActivityEventType }
-import analysis.entity.{ AnalysisDoc, AnalysisEvent, AnalysisRepository, AnalysisType }
+import analysis.entity.*
 import board.entity.*
 import db.*
 import project.control.ProjectStorageService
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ AgentId, AnalysisDocId, BoardIssueId, ProjectId }
 import shared.testfixtures.*
+import taskrun.entity.{ TaskArtifactRow, TaskReportRow, TaskRunRow }
 import workspace.entity.*
 
 object WorkspaceAnalysisSchedulerSpec extends ZIOSpecDefault:
@@ -253,40 +254,40 @@ object WorkspaceAnalysisSchedulerSpec extends ZIOSpecDefault:
 
   private def makeFailingHarness: ZIO[Scope, Nothing, Harness] =
     for
-      countsRef    <- Ref.make(Map.empty[AnalysisType, Int])
-      docsRef      <- Ref.make(List.empty[AnalysisDoc])
-      activityRef  <- Ref.make(List.empty[ActivityEvent])
-      boardRef     <- Ref.make(Map.empty[BoardIssueId, BoardIssue])
-      runEventsRef <- Ref.make(List.empty[WorkspaceRunEvent])
-      repository    = StubAnalysisRepository(docsRef)
-      activityHub   = new StubActivityHub(activityRef)
+      countsRef     <- Ref.make(Map.empty[AnalysisType, Int])
+      docsRef       <- Ref.make(List.empty[AnalysisDoc])
+      activityRef   <- Ref.make(List.empty[ActivityEvent])
+      boardRef      <- Ref.make(Map.empty[BoardIssueId, BoardIssue])
+      runEventsRef  <- Ref.make(List.empty[WorkspaceRunEvent])
+      repository     = StubAnalysisRepository(docsRef)
+      activityHub    = new StubActivityHub(activityRef)
       taskRepository = StubTaskRepository(Map.empty)
-      workspaceRepo = CapturingWorkspaceRepository(
-                        List(
-                          Workspace(
-                            id = "ws-1",
-                            projectId = ProjectId("test-project"),
-                            name = "workspace-1",
-                            localPath = "/tmp/ws-1",
-                            defaultAgent = None,
-                            description = None,
-                            enabled = true,
-                            runMode = RunMode.Host,
-                            cliTool = "codex",
-                            createdAt = Instant.EPOCH,
-                            updatedAt = Instant.EPOCH,
-                          )
-                        ),
-                        runEventsRef,
-                      )
-      boardRepo     = StubBoardRepository(boardRef)
-      failingRunner = new AnalysisAgentRunner:
-                        override def runCodeReview(workspaceId: String): IO[AnalysisAgentRunnerError, AnalysisDoc]   =
-                          ZIO.fail(AnalysisAgentRunnerError.ProcessFailed("code-review", "simulated failure"))
-                        override def runArchitecture(workspaceId: String): IO[AnalysisAgentRunnerError, AnalysisDoc] =
-                          ZIO.fail(AnalysisAgentRunnerError.ProcessFailed("architecture", "simulated failure"))
-                        override def runSecurity(workspaceId: String): IO[AnalysisAgentRunnerError, AnalysisDoc]     =
-                          ZIO.fail(AnalysisAgentRunnerError.ProcessFailed("security", "simulated failure"))
+      workspaceRepo  = CapturingWorkspaceRepository(
+                         List(
+                           Workspace(
+                             id = "ws-1",
+                             projectId = ProjectId("test-project"),
+                             name = "workspace-1",
+                             localPath = "/tmp/ws-1",
+                             defaultAgent = None,
+                             description = None,
+                             enabled = true,
+                             runMode = RunMode.Host,
+                             cliTool = "codex",
+                             createdAt = Instant.EPOCH,
+                             updatedAt = Instant.EPOCH,
+                           )
+                         ),
+                         runEventsRef,
+                       )
+      boardRepo      = StubBoardRepository(boardRef)
+      failingRunner  = new AnalysisAgentRunner:
+                         override def runCodeReview(workspaceId: String): IO[AnalysisAgentRunnerError, AnalysisDoc]   =
+                           ZIO.fail(AnalysisAgentRunnerError.ProcessFailed("code-review", "simulated failure"))
+                         override def runArchitecture(workspaceId: String): IO[AnalysisAgentRunnerError, AnalysisDoc] =
+                           ZIO.fail(AnalysisAgentRunnerError.ProcessFailed("architecture", "simulated failure"))
+                         override def runSecurity(workspaceId: String): IO[AnalysisAgentRunnerError, AnalysisDoc]     =
+                           ZIO.fail(AnalysisAgentRunnerError.ProcessFailed("security", "simulated failure"))
       queue         <- Queue.unbounded[WorkspaceAnalysisJob]
       runtimeState  <- Ref.Synchronized.make(Map.empty[(String, AnalysisType), WorkspaceAnalysisStatus])
       service        = WorkspaceAnalysisSchedulerLive(
@@ -367,15 +368,19 @@ object WorkspaceAnalysisSchedulerSpec extends ZIOSpecDefault:
     },
     test("completed analyses create one board issue per analysis type") {
       for
-        harness <- makeHarness()
-        _       <- harness.service.triggerManual("ws-1")
-        _       <- processQueued(harness.service)
-        issues  <- harness.boardRef.get.map(_.values.toList)
+        harness   <- makeHarness()
+        _         <- harness.service.triggerManual("ws-1")
+        _         <- processQueued(harness.service)
+        issues    <- harness.boardRef.get.map(_.values.toList)
         reviewTags = issues.flatMap(_.frontmatter.tags).filter(_.startsWith("analysis-review-"))
       yield assertTrue(
         issues.size == 3,
         issues.forall(_.column == BoardColumn.Review),
-        reviewTags.toSet == Set("analysis-review-code-review", "analysis-review-architecture", "analysis-review-security"),
+        reviewTags.toSet == Set(
+          "analysis-review-code-review",
+          "analysis-review-architecture",
+          "analysis-review-security",
+        ),
       )
     },
     test("completed analyses do not create duplicate analysis review board issues") {
@@ -413,7 +418,8 @@ object WorkspaceAnalysisSchedulerSpec extends ZIOSpecDefault:
         _         <- processQueued(harness.service)
         runEvents <- harness.runEventsRef.get
         statuses   = runEvents.collect { case e: WorkspaceRunEvent.StatusChanged => e }
-        running    = statuses.filter(_.status == workspace.entity.RunStatus.Running(workspace.entity.RunSessionMode.Autonomous))
+        running    =
+          statuses.filter(_.status == workspace.entity.RunStatus.Running(workspace.entity.RunSessionMode.Autonomous))
         completed  = statuses.filter(_.status == workspace.entity.RunStatus.Completed)
       yield assertTrue(
         running.size == 3,
@@ -429,7 +435,7 @@ object WorkspaceAnalysisSchedulerSpec extends ZIOSpecDefault:
         statuses   = runEvents.collect { case e: WorkspaceRunEvent.StatusChanged => e }
         failed     = statuses.filter(_.status == workspace.entity.RunStatus.Failed)
       yield assertTrue(
-        failed.size == 3,
+        failed.size == 3
       )
     },
   )

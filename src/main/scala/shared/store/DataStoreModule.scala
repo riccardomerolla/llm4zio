@@ -8,7 +8,7 @@ import zio.schema.Schema
 import conversation.entity.{ Conversation, ConversationEvent }
 import io.github.riccardomerolla.zio.eclipsestore.config.{ EclipseStoreConfig, StorageTarget }
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
-import io.github.riccardomerolla.zio.eclipsestore.schema.{ SchemaBinaryCodec, TypedStore, TypedStoreLive }
+import io.github.riccardomerolla.zio.eclipsestore.schema.{ SchemaBinaryCodec, TypedStoreLive }
 import io.github.riccardomerolla.zio.eclipsestore.service.{ EclipseStoreService, LifecycleCommand }
 import taskrun.entity.{ TaskRun, TaskRunEvent }
 private val dataStoreHandlers =
@@ -22,12 +22,6 @@ private val dataStoreHandlers =
   // creating fresh case-object instances that break Scala pattern matching on restart.
 
 object DataStoreModule:
-
-  /** DataStoreService IS-A TypedStore for schema-validated CRUD and additionally exposes the raw EclipseStoreService
-    * for key-prefix scanning (streamKeys). Mirrors ConfigStoreModule.ConfigStoreService for consistency.
-    */
-  trait DataStoreService extends TypedStore:
-    def rawStore: EclipseStoreService
 
   /** Shutdown-checkpoint finalizer layered on top of the data-store service. */
   private val withShutdownCheckpoint: ZLayer[DataStoreRef, EclipseStoreError, DataStoreRef] =

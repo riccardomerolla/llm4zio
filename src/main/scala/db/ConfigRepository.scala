@@ -4,7 +4,7 @@ import java.time.Instant
 
 import zio.*
 
-import _root_.config.entity.AgentChannelBinding
+import _root_.config.entity.*
 import io.github.riccardomerolla.zio.eclipsestore.service.{ LifecycleCommand, LifecycleStatus }
 import shared.errors.PersistenceError
 import shared.ids.Ids.AgentId
@@ -90,16 +90,16 @@ final case class ConfigRepositoryES(
 
   def getWorkflow(id: Long): IO[PersistenceError, Option[WorkflowRow]] =
     configStore
-      .fetch[String, shared.store.WorkflowRow](workflowKey(id))
+      .fetch[String, StoredWorkflowRow](workflowKey(id))
       .map(_.flatMap(fromStoreWorkflowRow))
       .mapError(storeErr("getWorkflow"))
 
   def getWorkflowByName(name: String): IO[PersistenceError, Option[WorkflowRow]] =
-    fetchAllByPrefix[shared.store.WorkflowRow]("workflow:", "getWorkflowByName")
+    fetchAllByPrefix[StoredWorkflowRow]("workflow:", "getWorkflowByName")
       .map(_.flatMap(fromStoreWorkflowRow).find(_.name.equalsIgnoreCase(name.trim)))
 
   def listWorkflows: IO[PersistenceError, List[WorkflowRow]] =
-    fetchAllByPrefix[shared.store.WorkflowRow]("workflow:", "listWorkflows")
+    fetchAllByPrefix[StoredWorkflowRow]("workflow:", "listWorkflows")
       .map(_.flatMap(fromStoreWorkflowRow).sortBy(w => (!w.isBuiltin, w.name.toLowerCase)))
 
   def updateWorkflow(workflow: WorkflowRow): IO[PersistenceError, Unit] =
@@ -108,7 +108,7 @@ final case class ConfigRepositoryES(
                     .fromOption(workflow.id)
                     .orElseFail(PersistenceError.QueryFailed("updateWorkflow", "Missing id for workflow update"))
       existing <-
-        configStore.fetch[String, shared.store.WorkflowRow](workflowKey(id)).mapError(storeErr("updateWorkflow"))
+        configStore.fetch[String, StoredWorkflowRow](workflowKey(id)).mapError(storeErr("updateWorkflow"))
       _        <- ZIO
                     .fail(PersistenceError.NotFound("workflows", id.toString))
                     .when(existing.isEmpty)
@@ -120,7 +120,7 @@ final case class ConfigRepositoryES(
   def deleteWorkflow(id: Long): IO[PersistenceError, Unit] =
     for
       existing <-
-        configStore.fetch[String, shared.store.WorkflowRow](workflowKey(id)).mapError(storeErr("deleteWorkflow"))
+        configStore.fetch[String, StoredWorkflowRow](workflowKey(id)).mapError(storeErr("deleteWorkflow"))
       _        <- ZIO
                     .fail(PersistenceError.NotFound("workflows", id.toString))
                     .when(existing.isEmpty)
@@ -138,16 +138,16 @@ final case class ConfigRepositoryES(
 
   def getCustomAgent(id: Long): IO[PersistenceError, Option[CustomAgentRow]] =
     configStore
-      .fetch[String, shared.store.CustomAgentRow](agentKey(id))
+      .fetch[String, StoredCustomAgentRow](agentKey(id))
       .map(_.flatMap(fromStoreAgentRow))
       .mapError(storeErr("getCustomAgent"))
 
   def getCustomAgentByName(name: String): IO[PersistenceError, Option[CustomAgentRow]] =
-    fetchAllByPrefix[shared.store.CustomAgentRow]("agent:", "getCustomAgentByName")
+    fetchAllByPrefix[StoredCustomAgentRow]("agent:", "getCustomAgentByName")
       .map(_.flatMap(fromStoreAgentRow).find(_.name.equalsIgnoreCase(name.trim)))
 
   def listCustomAgents: IO[PersistenceError, List[CustomAgentRow]] =
-    fetchAllByPrefix[shared.store.CustomAgentRow]("agent:", "listCustomAgents")
+    fetchAllByPrefix[StoredCustomAgentRow]("agent:", "listCustomAgents")
       .map(_.flatMap(fromStoreAgentRow).sortBy(agent => (agent.displayName.toLowerCase, agent.name.toLowerCase)))
 
   def updateCustomAgent(agent: CustomAgentRow): IO[PersistenceError, Unit] =
@@ -157,7 +157,7 @@ final case class ConfigRepositoryES(
                     .orElseFail(PersistenceError.QueryFailed("updateCustomAgent", "Missing id for custom agent update"))
       _        <- validateCustomAgentName(agent.name, "updateCustomAgent")
       existing <-
-        configStore.fetch[String, shared.store.CustomAgentRow](agentKey(id)).mapError(storeErr("updateCustomAgent"))
+        configStore.fetch[String, StoredCustomAgentRow](agentKey(id)).mapError(storeErr("updateCustomAgent"))
       _        <- ZIO
                     .fail(PersistenceError.NotFound("custom_agents", id.toString))
                     .when(existing.isEmpty)
@@ -169,7 +169,7 @@ final case class ConfigRepositoryES(
   def deleteCustomAgent(id: Long): IO[PersistenceError, Unit] =
     for
       existing <-
-        configStore.fetch[String, shared.store.CustomAgentRow](agentKey(id)).mapError(storeErr("deleteCustomAgent"))
+        configStore.fetch[String, StoredCustomAgentRow](agentKey(id)).mapError(storeErr("deleteCustomAgent"))
       _        <- ZIO
                     .fail(PersistenceError.NotFound("custom_agents", id.toString))
                     .when(existing.isEmpty)
@@ -213,8 +213,8 @@ final case class ConfigRepositoryES(
         ZIO.foreach(keys.toList)(k => configStore.fetch[String, V](k).mapError(storeErr(op))).map(_.flatten)
       )
 
-  private def toStoreWorkflowRow(workflow: WorkflowRow, id: Long): shared.store.WorkflowRow =
-    shared.store.WorkflowRow(
+  private def toStoreWorkflowRow(workflow: WorkflowRow, id: Long): StoredWorkflowRow =
+    StoredWorkflowRow(
       id = id.toString,
       name = workflow.name,
       description = workflow.description,
@@ -224,7 +224,7 @@ final case class ConfigRepositoryES(
       updatedAt = workflow.updatedAt,
     )
 
-  private def fromStoreWorkflowRow(workflow: shared.store.WorkflowRow): Option[WorkflowRow] =
+  private def fromStoreWorkflowRow(workflow: StoredWorkflowRow): Option[WorkflowRow] =
     workflow.id.toLongOption.map { parsedId =>
       WorkflowRow(
         id = Some(parsedId),
@@ -237,8 +237,8 @@ final case class ConfigRepositoryES(
       )
     }
 
-  private def toStoreAgentRow(agent: CustomAgentRow, id: Long): shared.store.CustomAgentRow =
-    shared.store.CustomAgentRow(
+  private def toStoreAgentRow(agent: CustomAgentRow, id: Long): StoredCustomAgentRow =
+    StoredCustomAgentRow(
       id = id.toString,
       name = agent.name,
       displayName = agent.displayName,
@@ -250,7 +250,7 @@ final case class ConfigRepositoryES(
       updatedAt = agent.updatedAt,
     )
 
-  private def fromStoreAgentRow(agent: shared.store.CustomAgentRow): Option[CustomAgentRow] =
+  private def fromStoreAgentRow(agent: StoredCustomAgentRow): Option[CustomAgentRow] =
     agent.id.toLongOption.map { parsedId =>
       CustomAgentRow(
         id = Some(parsedId),

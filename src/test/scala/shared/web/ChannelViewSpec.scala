@@ -2,6 +2,8 @@ package shared.web
 
 import zio.test.*
 
+import gateway.boundary.ChannelView
+
 object ChannelViewSpec extends ZIOSpecDefault:
   def spec: Spec[TestEnvironment, Any] = suite("ChannelViewSpec")(
     test("discord config form renders enabled checkbox and setup guidance") {

@@ -20,11 +20,14 @@ import llm4zio.core.{ ConversationThread, LlmError, LlmService, Streaming, ToolC
 import llm4zio.providers.{ GeminiCliExecutor, HttpClient }
 import llm4zio.tools.ToolRegistry
 import orchestration.control.*
+import orchestration.entity.{ PlannerPlanPreview, PlannerPreviewState }
 import plan.entity.PlanTaskDraft
 import shared.errors.PersistenceError
 import shared.errors.PersistenceError as WorkspacePersistenceError
 import shared.ids.Ids.{ ConversationId, EventId, IssueId, ReportId }
 import shared.web.*
+import taskrun.entity.TaskReportRow
+import workspace.boundary.{ RunChainItem, RunSessionUiMeta }
 import workspace.entity.WorkspaceRepository
 
 trait ChatController:
@@ -922,7 +925,7 @@ final case class ChatControllerLive(
   private def toSyntheticProofOfWork(
     conversation: ChatConversation,
     runId: Long,
-    reports: List[db.TaskReportRow],
+    reports: List[TaskReportRow],
   ): Option[IssueWorkReport] =
     val issueId = issueIdFromConversation(conversation, runId)
     if reports.isEmpty then None

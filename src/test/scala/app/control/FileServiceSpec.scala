@@ -7,6 +7,7 @@ import zio.test.*
 import zio.test.Assertion.*
 
 import shared.errors.FileError
+import shared.services.FileService
 
 object FileServiceSpec extends ZIOSpecDefault:
 

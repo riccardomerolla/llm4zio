@@ -1,6 +1,7 @@
 package shared.web
 
 import checkpoint.control.*
+import checkpoint.entity.*
 import scalatags.Text.all.*
 
 object CheckpointsView:

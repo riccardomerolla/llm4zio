@@ -6,7 +6,7 @@ import zio.json.*
 import zio.stream.ZStream
 
 import llm4zio.observability.LlmMetrics
-import orchestration.control.OrchestratorControlPlane
+import orchestration.entity.AgentMonitorService
 import shared.errors.ControlPlaneError
 import shared.web.AgentMonitorView
 
@@ -18,11 +18,11 @@ object AgentMonitorController:
   def routes: ZIO[AgentMonitorController, Nothing, Routes[Any, Response]] =
     ZIO.serviceWith[AgentMonitorController](_.routes)
 
-  val live: ZLayer[OrchestratorControlPlane & LlmMetrics, Nothing, AgentMonitorController] =
+  val live: ZLayer[AgentMonitorService & LlmMetrics, Nothing, AgentMonitorController] =
     ZLayer.fromFunction(AgentMonitorControllerLive.apply)
 
 final case class AgentMonitorControllerLive(
-  controlPlane: OrchestratorControlPlane,
+  controlPlane: AgentMonitorService,
   metrics: LlmMetrics,
 ) extends AgentMonitorController:
 

@@ -5,10 +5,11 @@ import java.time.Instant
 import zio.*
 import zio.test.*
 
-import _root_.config.entity.{ AIProvider, AIProviderConfig }
+import _root_.config.entity.{ AIProvider, AIProviderConfig, SettingRow }
 import db.*
 import orchestration.control.AgentConfigResolverLive
 import shared.errors.PersistenceError
+import taskrun.entity.{ TaskArtifactRow, TaskReportRow, TaskRunRow }
 
 object AgentConfigResolverSpec extends ZIOSpecDefault:
 

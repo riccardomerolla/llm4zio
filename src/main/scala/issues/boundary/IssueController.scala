@@ -32,8 +32,8 @@ import project.control.ProjectStorageService
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ AgentId, BoardIssueId, EventId, IssueId, TaskRunId }
 import shared.web.{ ErrorHandlingMiddleware, HtmlViews }
-import workspace.control.{ AssignRunRequest, WorkspaceRunService }
-import workspace.entity.WorkspaceRepository
+import workspace.control.{ ProofOfWorkExtractor, WorkspaceRunService }
+import workspace.entity.{ AssignRunRequest, WorkspaceRepository }
 
 trait IssueController:
   def routes: Routes[Any, Response]
@@ -186,28 +186,32 @@ final case class IssueControllerLive(
                                ZIO.succeed(
                                  Response(
                                    status = Status.SeeOther,
-                                   headers = Headers(Header.Location(URL.decode(s"/board/${ws.id}/issues/$id").getOrElse(URL.root))),
+                                   headers =
+                                     Headers(Header.Location(URL.decode(s"/board/${ws.id}/issues/$id").getOrElse(URL.root))),
                                  )
                                )
                              case None          =>
                                for
-                                 flash           <- ZIO.succeed(req.queryParam("flash").map(_.trim).filter(_.nonEmpty))
-                                 issueRuns       <- workspaceRepository.listRunsByIssueRef(s"#$id").mapError(mapIssueRepoError)
-                                 workspaces      <- workspaceRepository.list.mapError(mapIssueRepoError)
-                                 allAgents       <- agentRepository.list().mapError(mapIssueRepoError)
-                                 availableAgents  = allAgents.filter(_.enabled).map(registryAgentToAgentInfo)
-                                 issue           <- issueRepository.get(IssueId(id)).mapError(mapIssueRepoError)
-                                 analysisDocs    <- loadIssueAnalysisContext(issue).mapError(mapIssueRepoError)
-                                 mergeHistory    <- loadMergeHistory(issue.id)
-                                 workReport      <- issueWorkReportProjection.get(issue.id)
-                                 decisions       <- decisionInbox
-                                                      .list(
-                                                        DecisionFilter(
-                                                          issueId = Some(IssueId(id)),
-                                                          limit = Int.MaxValue,
-                                                        )
-                                                      )
-                                                      .mapError(mapIssueRepoError)
+                                 flash          <- ZIO.succeed(req.queryParam("flash").map(_.trim).filter(_.nonEmpty))
+                                 issueRuns      <- workspaceRepository.listRunsByIssueRef(s"#$id").mapError(mapIssueRepoError)
+                                 workspaces     <- workspaceRepository.list.mapError(mapIssueRepoError)
+                                 allAgents      <- agentRepository.list().mapError(mapIssueRepoError)
+                                 availableAgents = allAgents.filter(_.enabled).map(registryAgentToAgentInfo)
+                                 issue          <- issueRepository.get(IssueId(id)).mapError(mapIssueRepoError)
+                                 analysisDocs   <- loadIssueAnalysisContext(issue).mapError(mapIssueRepoError)
+                                 mergeHistory   <- loadMergeHistory(issue.id)
+                                 workReport     <- issueWorkReportProjection.get(issue.id)
+                                 decisions      <- decisionInbox
+                                                     .list(
+                                                       DecisionFilter(
+                                                         issueId = Some(IssueId(id)),
+                                                         limit = Int.MaxValue,
+                                                       )
+                                                     )
+                                                     .mapError(mapIssueRepoError)
+                                 checks = workReport.toList.flatMap(r =>
+                                   ProofOfWorkExtractor.validateRequirements(issue.proofOfWorkRequirements, r)
+                                 )
                                yield html(
                                  HtmlViews.issueDetail(
                                    domainToView(issue),
@@ -219,6 +223,7 @@ final case class IssueControllerLive(
                                    workReport,
                                    decisions,
                                    flash,
+                                   checks,
                                  )
                                )
         yield response

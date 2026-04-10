@@ -9,6 +9,7 @@ import zio.test.Assertion.*
 
 import _root_.config.entity.MigrationConfig
 import shared.errors.StateError
+import shared.services.{ FileService, StateService }
 import taskrun.entity.{ TaskError, TaskState, TaskStatus, TaskStep }
 
 object StateServiceSpec extends ZIOSpecDefault:

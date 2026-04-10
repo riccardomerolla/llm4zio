@@ -3,7 +3,6 @@ package workspace.control
 import java.nio.file.{ Path, Paths }
 
 import zio.*
-import zio.json.*
 
 import activity.control.ActivityHub
 import activity.entity.ActivityEvent
@@ -14,14 +13,14 @@ import db.ChatRepository
 import decision.control.DecisionInbox
 import issues.entity.{ AgentIssue as DomainIssue, IssueRepository }
 import knowledge.control.KnowledgeExtractionService
-import orchestration.control.{ AgentExecutionState, AgentPoolManager, OrchestratorControlPlane, PoolError, SlotHandle }
+import orchestration.control.OrchestratorControlPlane
+import orchestration.entity.{ AgentPoolManager, PoolError, SlotHandle }
+import orchestration.entity.AgentExecutionState
 import shared.errors.PersistenceError
 import shared.ids.Ids.IssueId
 import workspace.control.WorkspaceErrorSupport.*
 import workspace.control.WorkspaceRunLifecycleSupport.*
 import workspace.entity.*
-
-case class AssignRunRequest(issueRef: String, prompt: String, agentName: String) derives JsonCodec
 
 trait WorkspaceRunService:
   def assign(workspaceId: String, req: AssignRunRequest): IO[WorkspaceError, WorkspaceRun]
@@ -585,20 +584,15 @@ final case class WorkspaceRunServiceLive(
     value.trim.toLowerCase.replaceAll("[^a-z0-9._-]+", "-").replaceAll("-{2,}", "-").stripPrefix("-").stripSuffix("-")
 
   private def reserveAgentSlot(agentName: String): IO[WorkspaceError, SlotHandle] =
-    for
-      available <- availableAgentSlots(agentName)
-      _         <-
-        if available <= 0 then
-          ZIO.fail(
-            WorkspaceError.InvalidRunState(
-              runId = agentName.trim,
-              expected = "available_slots > 0",
-              actual = s"available_slots = $available",
-            )
-          )
-        else ZIO.unit
-      handle    <- acquireAgentSlot(agentName)
-    yield handle
+    acquireAgentSlot(agentName)
+      .disconnect
+      .timeoutFail(
+        WorkspaceError.InvalidRunState(
+          runId = agentName.trim,
+          expected = "available_slots > 0",
+          actual = "slot acquisition timed out (no slots available)",
+        )
+      )(5.seconds)
 
   private def resolvedPermissions(
     profile: Option[_root_.agent.entity.Agent],

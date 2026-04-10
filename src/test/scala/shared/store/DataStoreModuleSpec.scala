@@ -6,8 +6,10 @@ import java.time.Instant
 import zio.*
 import zio.test.*
 
+import conversation.entity.ConversationRow
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.error.GigaMapError
+import taskrun.entity.StoredTaskRunRow
 
 object DataStoreModuleSpec extends ZIOSpecDefault:
 
@@ -31,7 +33,7 @@ object DataStoreModuleSpec extends ZIOSpecDefault:
   ): ZLayer[
     Any,
     EclipseStoreError | GigaMapError,
-    DataStoreModule.DataStoreService,
+    DataStoreService,
   ] =
     ZLayer.succeed(
       StoreConfig(
@@ -44,7 +46,7 @@ object DataStoreModuleSpec extends ZIOSpecDefault:
     suite("DataStoreModuleSpec")(
       test("taskRuns map supports put/get round-trip") {
         withTempDir { dir =>
-          val row = TaskRunRow(
+          val row = StoredTaskRunRow(
             id = "run-1",
             sourceDir = "./in",
             outputDir = "./out",
@@ -60,9 +62,9 @@ object DataStoreModuleSpec extends ZIOSpecDefault:
             failedConversions = 1,
           )
           (for
-            data   <- ZIO.service[DataStoreModule.DataStoreService]
+            data   <- ZIO.service[DataStoreService]
             _      <- data.store("run:run-1", row)
-            loaded <- data.fetch[String, TaskRunRow]("run:run-1")
+            loaded <- data.fetch[String, StoredTaskRunRow]("run:run-1")
           yield assertTrue(loaded.contains(row))).provideLayer(layerFor(dir))
         }
       },
@@ -80,7 +82,7 @@ object DataStoreModuleSpec extends ZIOSpecDefault:
             createdBy = Some("system"),
           )
           (for
-            data   <- ZIO.service[DataStoreModule.DataStoreService]
+            data   <- ZIO.service[DataStoreService]
             _      <- data.store("conv:1", row)
             loaded <- data.fetch[String, ConversationRow]("conv:1")
           yield assertTrue(loaded.contains(row))).provideLayer(layerFor(dir))

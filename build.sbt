@@ -111,6 +111,308 @@ lazy val It = config("it") extend Test
 
 resolvers += "jitpack" at "https://jitpack.io"
 
+// ── Foundation modules ────────────────────────────────────────────────────────
+
+val foundationSettings = Seq(
+  publish / skip := true,
+  libraryDependencySchemes += "dev.zio" %% "zio-json" % VersionScheme.Always,
+)
+
+lazy val sharedJson = (project in file("modules/shared-json"))
+  .settings(foundationSettings)
+  .settings(
+    name := "shared-json",
+    libraryDependencies ++= Seq(zioJsonDep),
+  )
+
+lazy val sharedIds = (project in file("modules/shared-ids"))
+  .settings(foundationSettings)
+  .settings(
+    name := "shared-ids",
+    libraryDependencies ++= Seq(
+      zioJsonDep,
+      "dev.zio" %% "zio-schema" % zioSchemaVersion,
+    ),
+  )
+
+lazy val sharedErrors = (project in file("modules/shared-errors"))
+  .dependsOn(sharedJson)
+  .settings(foundationSettings)
+  .settings(
+    name := "shared-errors",
+    libraryDependencies ++= Seq(
+      zioJsonDep,
+      "dev.zio" %% "zio-schema"            % zioSchemaVersion,
+      "dev.zio" %% "zio-schema-derivation" % zioSchemaVersion,
+    ),
+  )
+
+lazy val sharedStoreCore = (project in file("modules/shared-store-core"))
+  .dependsOn(sharedErrors)
+  .settings(foundationSettings)
+  .settings(
+    name := "shared-store-core",
+    libraryDependencies ++= Seq(
+      "dev.zio" %% "zio" % zioVersion,
+      "io.github.riccardomerolla" %% "zio-eclipsestore" % zioEclipseStoreVersion,
+    ),
+  )
+
+// ── Shared services (infrastructure extracted from app.control) ──────────────
+
+lazy val sharedServices = (project in file("modules/shared-services"))
+  .dependsOn(sharedErrors, taskrunDomain, configDomain)
+  .settings(foundationSettings)
+  .settings(
+    name := "shared-services",
+    libraryDependencies ++= Seq(
+      "dev.zio" %% "zio" % zioVersion,
+      "dev.zio" %% "zio-streams" % zioVersion,
+      zioJsonDep,
+      zioHttpDep,
+    ),
+  )
+
+// ── Shared web core (domain-independent view infrastructure) ─────────────────
+
+lazy val sharedWebCore = (project in file("modules/shared-web-core"))
+  .dependsOn(sharedIds, sharedErrors)
+  .settings(foundationSettings)
+  .settings(
+    name := "shared-web-core",
+    libraryDependencies ++= Seq(
+      "dev.zio" %% "zio" % zioVersion,
+      zioJsonDep,
+      zioHttpDep,
+      "com.lihaoyi" %% "scalatags" % scalatagsVersion,
+    ),
+  )
+
+// ── Domain modules (entity + control layers, no boundary/web dependencies) ──
+
+val domainTestDeps = Seq(
+  "dev.zio" %% "zio-test"     % zioVersion % Test,
+  "dev.zio" %% "zio-test-sbt" % zioVersion % Test,
+)
+
+val domainDeps = Seq(
+  "dev.zio" %% "zio" % zioVersion,
+  zioJsonDep,
+  "dev.zio" %% "zio-schema"            % zioSchemaVersion,
+  "dev.zio" %% "zio-schema-derivation" % zioSchemaVersion,
+  "io.github.riccardomerolla" %% "zio-eclipsestore" % zioEclipseStoreVersion,
+) ++ domainTestDeps
+
+val domainBceDeps = domainDeps ++ Seq(
+  zioHttpDep,
+  "com.lihaoyi" %% "scalatags" % scalatagsVersion,
+)
+
+lazy val activityDomain = (project in file("modules/activity-domain"))
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore, sharedWebCore)
+  .settings(foundationSettings)
+  .settings(
+    name := "activity-domain",
+    libraryDependencies ++= domainBceDeps,
+  )
+
+lazy val memoryDomain = (project in file("modules/memory-domain"))
+  .dependsOn(sharedIds, sharedStoreCore)
+  .settings(foundationSettings)
+  .settings(
+    name := "memory-domain",
+    libraryDependencies ++= domainDeps,
+  )
+
+lazy val governanceDomain = (project in file("modules/governance-domain"))
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore, sharedWebCore, workspaceDomain)
+  .settings(foundationSettings)
+  .settings(
+    name := "governance-domain",
+    libraryDependencies ++= domainBceDeps,
+  )
+
+lazy val agentDomain = (project in file("modules/agent-domain"))
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore, sharedWebCore, orchestrationDomain, workspaceDomain, configDomain)
+  .settings(foundationSettings)
+  .settings(
+    name := "agent-domain",
+    libraryDependencies ++= domainBceDeps,
+  )
+
+lazy val decisionDomain = (project in file("modules/decision-domain"))
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore, sharedWebCore, issuesDomain, activityDomain, configDomain)
+  .settings(foundationSettings)
+  .settings(
+    name := "decision-domain",
+    libraryDependencies ++= domainBceDeps,
+  )
+
+lazy val specificationDomain = (project in file("modules/specification-domain"))
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore, sharedWebCore, issuesDomain)
+  .settings(foundationSettings)
+  .settings(
+    name := "specification-domain",
+    libraryDependencies ++= domainBceDeps,
+  )
+
+lazy val planDomain = (project in file("modules/plan-domain"))
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore, governanceDomain)
+  .settings(foundationSettings)
+  .settings(
+    name := "plan-domain",
+    libraryDependencies ++= domainDeps,
+  )
+
+lazy val taskrunDomain = (project in file("modules/taskrun-domain"))
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore, sharedJson, sharedWebCore, configDomain)
+  .settings(foundationSettings)
+  .settings(
+    name := "taskrun-domain",
+    libraryDependencies ++= domainBceDeps,
+  )
+
+lazy val boardDomain = (project in file("modules/board-domain"))
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore, sharedWebCore, workspaceDomain)
+  .settings(foundationSettings)
+  .settings(
+    name := "board-domain",
+    libraryDependencies ++= domainBceDeps,
+  )
+
+lazy val knowledgeDomain = (project in file("modules/knowledge-domain"))
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore, analysisDomain, memoryDomain)
+  .settings(foundationSettings)
+  .settings(
+    name := "knowledge-domain",
+    libraryDependencies ++= domainDeps,
+  )
+
+lazy val projectDomain = (project in file("modules/project-domain"))
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore, workspaceDomain)
+  .settings(foundationSettings)
+  .settings(
+    name := "project-domain",
+    libraryDependencies ++= domainDeps,
+  )
+
+lazy val configDomain = (project in file("modules/config-domain"))
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore, sharedWebCore)
+  .settings(foundationSettings)
+  .settings(
+    name := "config-domain",
+    libraryDependencies ++= domainBceDeps,
+  )
+
+lazy val conversationDomain = (project in file("modules/conversation-domain"))
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore)
+  .settings(foundationSettings)
+  .settings(
+    name := "conversation-domain",
+    libraryDependencies ++= domainDeps,
+  )
+
+lazy val daemonDomain = (project in file("modules/daemon-domain"))
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore, sharedWebCore, orchestrationDomain,
+    activityDomain, governanceDomain, issuesDomain, projectDomain, workspaceDomain, configDomain)
+  .settings(foundationSettings)
+  .settings(
+    name := "daemon-domain",
+    libraryDependencies ++= domainBceDeps,
+  )
+
+lazy val analysisDomain = (project in file("modules/analysis-domain"))
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore)
+  .settings(foundationSettings)
+  .settings(
+    name := "analysis-domain",
+    libraryDependencies ++= domainDeps,
+  )
+
+lazy val workspaceDomain = (project in file("modules/workspace-domain"))
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore)
+  .settings(foundationSettings)
+  .settings(
+    name := "workspace-domain",
+    libraryDependencies ++= domainDeps ++ Seq(
+      "dev.zio" %% "zio-streams" % zioVersion,
+      "dev.zio" %% "zio-process" % zioProcessVersion,
+    ),
+  )
+
+lazy val gatewayDomain = (project in file("modules/gateway-domain"))
+  .dependsOn(sharedIds, sharedErrors, sharedWebCore)
+  .settings(foundationSettings)
+  .settings(
+    name := "gateway-domain",
+    libraryDependencies ++= Seq(
+      "dev.zio" %% "zio" % zioVersion,
+      "dev.zio" %% "zio-streams" % zioVersion,
+      zioJsonDep,
+      zioHttpDep,
+      "com.lihaoyi" %% "scalatags" % scalatagsVersion,
+      "com.bot4s" %% "telegram-core" % bot4sTelegramCoreVersion,
+    ),
+  )
+
+lazy val orchestrationDomain = (project in file("modules/orchestration-domain"))
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore, gatewayDomain, configDomain, planDomain,
+    activityDomain, issuesDomain, taskrunDomain, workspaceDomain, sharedServices)
+  .settings(foundationSettings)
+  .settings(
+    name := "orchestration-domain",
+    libraryDependencies ++= domainDeps,
+  )
+
+lazy val evolutionDomain = (project in file("modules/evolution-domain"))
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore, daemonDomain, governanceDomain, configDomain,
+    orchestrationDomain, decisionDomain)
+  .settings(foundationSettings)
+  .settings(
+    name := "evolution-domain",
+    libraryDependencies ++= domainDeps,
+  )
+
+lazy val sharedWeb = (project in file("modules/shared-web"))
+  .dependsOn(sharedIds, sharedErrors, sharedWebCore,
+    activityDomain, agentDomain, boardDomain, configDomain, conversationDomain,
+    daemonDomain, decisionDomain, demoDomain, evolutionDomain, gatewayDomain,
+    governanceDomain, issuesDomain, knowledgeDomain, memoryDomain,
+    planDomain, projectDomain, specificationDomain, taskrunDomain, workspaceDomain,
+    orchestrationDomain, checkpointDomain, sdlcDomain, llm4zio)
+  .settings(foundationSettings)
+  .settings(
+    name := "shared-web",
+    libraryDependencies ++= Seq(
+      "dev.zio" %% "zio" % zioVersion,
+      zioJsonDep,
+      zioHttpDep,
+      "com.lihaoyi" %% "scalatags" % scalatagsVersion,
+    ),
+  )
+
+lazy val issuesDomain = (project in file("modules/issues-domain"))
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore, boardDomain, workspaceDomain,
+    taskrunDomain, analysisDomain)
+  .settings(foundationSettings)
+  .settings(
+    name := "issues-domain",
+    libraryDependencies ++= domainBceDeps,
+  )
+
+lazy val demoDomain = (project in file("modules/demo-domain"))
+  .dependsOn(sharedIds, boardDomain)
+  .settings(foundationSettings)
+  .settings(
+    name := "demo-domain",
+    libraryDependencies ++= Seq(
+      "dev.zio" %% "zio" % zioVersion,
+      zioJsonDep,
+    ),
+  )
+
+// ── LLM library ──────────────────────────────────────────────────────────────
+
 lazy val llm4zio = (project in file("llm4zio"))
   .configs(It)
   .settings(inConfig(It)(Defaults.testSettings): _*)
@@ -124,9 +426,35 @@ lazy val llm4zio = (project in file("llm4zio"))
     It / testFrameworks ++= (Test / testFrameworks).value,
   )
 
+lazy val checkpointDomain = (project in file("modules/checkpoint-domain"))
+  .dependsOn(sharedIds, sharedErrors, taskrunDomain, issuesDomain, workspaceDomain)
+  .settings(foundationSettings)
+  .settings(
+    name := "checkpoint-domain",
+    libraryDependencies ++= domainDeps,
+  )
+
+lazy val sdlcDomain = (project in file("modules/sdlc-domain"))
+  .dependsOn(sharedIds, sharedErrors, activityDomain, configDomain, daemonDomain,
+    decisionDomain, evolutionDomain, governanceDomain, issuesDomain, planDomain, specificationDomain)
+  .settings(foundationSettings)
+  .settings(
+    name := "sdlc-domain",
+    libraryDependencies ++= domainDeps,
+  )
+
+lazy val allModules = Seq(
+  llm4zio, sharedJson, sharedIds, sharedErrors, sharedStoreCore, sharedServices, sharedWebCore,
+  activityDomain, memoryDomain, governanceDomain, agentDomain, decisionDomain, specificationDomain,
+  planDomain, taskrunDomain, boardDomain, knowledgeDomain, projectDomain, configDomain,
+  conversationDomain, daemonDomain, analysisDomain, workspaceDomain, gatewayDomain,
+  orchestrationDomain, evolutionDomain, issuesDomain, demoDomain, sharedWeb,
+  checkpointDomain, sdlcDomain,
+)
+
 lazy val root = (project in file("."))
-  .aggregate(llm4zio)
-  .dependsOn(llm4zio)
+  .aggregate(allModules.map(_.project): _*)
+  .dependsOn(allModules.map(m => m: ClasspathDep[ProjectReference]): _*)
   .configs(It)
   .settings(inConfig(It)(Defaults.testSettings): _*)
   .settings(

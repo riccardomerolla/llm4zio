@@ -9,10 +9,11 @@ import zio.*
 import zio.http.*
 
 import _root_.config.entity.AgentInfo
-import analysis.control.{ WorkspaceAnalysisScheduler, WorkspaceAnalysisState, WorkspaceAnalysisStatus }
+import analysis.control.WorkspaceAnalysisScheduler
+import analysis.entity.{ WorkspaceAnalysisState, WorkspaceAnalysisStatus }
 import issues.entity.api.{ AgentIssueView, IssuePriority, IssueStatus }
 import issues.entity.{ AgentIssue, IssueFilter, IssueRepository, IssueState }
-import orchestration.control.AgentRegistry
+import orchestration.entity.AgentRegistry
 import project.control.ProjectStorageService
 import project.entity.*
 import shared.errors.PersistenceError
@@ -235,9 +236,9 @@ object ProjectsController:
         defaultBranch = workspace.defaultBranch,
         cliTool = workspace.cliTool,
         runModeLabel = workspace.runMode match
-          case RunMode.Host                => "Host"
-          case d: RunMode.Docker           => s"Docker (${d.image})"
-          case c: RunMode.Cloud            => s"Cloud (${c.provider})",
+          case RunMode.Host      => "Host"
+          case d: RunMode.Docker => s"Docker (${d.image})"
+          case c: RunMode.Cloud  => s"Cloud (${c.provider})",
       )
     }
     val analysisRows       = assignedWorkspaces.map { workspace =>

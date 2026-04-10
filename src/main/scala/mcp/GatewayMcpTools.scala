@@ -108,7 +108,7 @@ final class GatewayMcpTools(
         prompt      <- fieldStr(args, "prompt")
         agentName   <- fieldStr(args, "agentName")
         run         <- runService
-                         .assign(workspaceId, workspace.control.AssignRunRequest(issueRef, prompt, agentName))
+                         .assign(workspaceId, workspace.entity.AssignRunRequest(issueRef, prompt, agentName))
                          .mapError(e => ToolExecutionError.ExecutionFailed(e.toString))
       yield Json.Obj("runId" -> Json.Str(run.id), "status" -> Json.Str(run.status.toString)),
   )

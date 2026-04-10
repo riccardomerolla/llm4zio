@@ -7,13 +7,15 @@ import zio.*
 import zio.test.*
 
 import _root_.config.entity.{ MigrationConfig, WorkflowDefinition }
-import app.control.StateService
+import shared.services.StateService
+import checkpoint.entity.*
 import conversation.entity.api.{ ChatConversation, ConversationEntry, MessageType, SenderType, SessionContextLink }
 import db.ChatRepository
 import decision.control.DecisionInbox
 import decision.entity.*
 import issues.entity.{ TokenUsage as IssueTokenUsage, * }
-import orchestration.control.{ ActiveRun, AgentExecutionEvent, ResourceAllocationState, * }
+import orchestration.control.*
+import orchestration.entity.*
 import shared.errors.{ ControlPlaneError, PersistenceError, StateError }
 import shared.ids.Ids.{ AgentId, DecisionId, IssueId, ReportId, TaskRunId }
 import shared.testfixtures.*
@@ -328,7 +330,7 @@ object CheckpointReviewServiceSpec extends ZIOSpecDefault:
     override def runMaintenance(now: Instant): IO[PersistenceError, List[Decision]]         = ZIO.succeed(Nil)
 
   final private class StubWorkspaceRunService(ref: Ref[List[String]]) extends WorkspaceRunService:
-    override def assign(workspaceId: String, req: workspace.control.AssignRunRequest)
+    override def assign(workspaceId: String, req: workspace.entity.AssignRunRequest)
       : IO[WorkspaceError, WorkspaceRun] = ZIO.dieMessage("unused")
     override def continueRun(runId: String, followUpPrompt: String, agentNameOverride: Option[String])
       : IO[WorkspaceError, WorkspaceRun] = ZIO.dieMessage("unused")

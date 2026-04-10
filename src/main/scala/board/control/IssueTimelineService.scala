@@ -44,18 +44,18 @@ final case class IssueTimelineServiceLive(
     val agentIssueId = IssueId(issueId.value)
 
     for
-      issueEvents    <- issueRepository.history(agentIssueId)
-      runs           <- workspaceRepository
-                          .listRunsByIssueRef(issueId.value)
-                          .map(_.filter(_.workspaceId == workspaceId))
-      decisions      <- decisionInbox.list(DecisionFilter(issueId = Some(agentIssueId), workspaceId = Some(workspaceId)))
-      chatEntries    <- ZIO.foreach(runs)(loadRunChatEntries)
+      issueEvents     <- issueRepository.history(agentIssueId)
+      runs            <- workspaceRepository
+                           .listRunsByIssueRef(issueId.value)
+                           .map(_.filter(_.workspaceId == workspaceId))
+      decisions       <- decisionInbox.list(DecisionFilter(issueId = Some(agentIssueId), workspaceId = Some(workspaceId)))
+      chatEntries     <- ZIO.foreach(runs)(loadRunChatEntries)
       analysisEntries <- loadAnalysisEntries(workspaceId, issueEvents, runs)
-      timeline        = issueEvents.flatMap(mapIssueEvent) ++
-                          runs.flatMap(mapRun) ++
-                          decisions.flatMap(mapDecision) ++
-                          chatEntries.flatten ++
-                          analysisEntries
+      timeline         = issueEvents.flatMap(mapIssueEvent) ++
+                           runs.flatMap(mapRun) ++
+                           decisions.flatMap(mapDecision) ++
+                           chatEntries.flatten ++
+                           analysisEntries
     yield timeline.sortBy(_.occurredAt)
 
   private def mapIssueEvent(event: IssueEvent): List[TimelineEntry] =
@@ -170,7 +170,8 @@ final case class IssueTimelineServiceLive(
   ): IO[PersistenceError, List[TimelineEntry]] =
     // Try event-linked doc IDs first; fall back to querying the workspace directly
     // because analysis runs (WorkspaceAnalysisScheduler) don't emit AnalysisAttached events.
-    val eventDocIds = issueEvents.collect { case e: IssueEvent.AnalysisAttached => e }.flatMap(_.analysisDocIds).distinct
+    val eventDocIds =
+      issueEvents.collect { case e: IssueEvent.AnalysisAttached => e }.flatMap(_.analysisDocIds).distinct
 
     // Derive which AnalysisTypes this issue's runs cover (agent names like "analysis-code-review")
     val runAnalysisTypes = runs.flatMap(r => agentNameToAnalysisType(r.agentName)).distinct
@@ -207,12 +208,12 @@ final case class IssueTimelineServiceLive(
 
   private def agentNameToAnalysisType(agentName: String): Option[AnalysisType] =
     agentName match
-      case "analysis-code-review"  => Some(AnalysisType.CodeReview)
-      case "analysis-architecture" => Some(AnalysisType.Architecture)
-      case "analysis-security"     => Some(AnalysisType.Security)
+      case "analysis-code-review"               => Some(AnalysisType.CodeReview)
+      case "analysis-architecture"              => Some(AnalysisType.Architecture)
+      case "analysis-security"                  => Some(AnalysisType.Security)
       case name if name.startsWith("analysis-") =>
         Some(AnalysisType.Custom(name.stripPrefix("analysis-")))
-      case _ => None
+      case _                                    => None
 
   private def parseIssuePriority(value: String): IssuePriority =
     value.trim.toLowerCase match

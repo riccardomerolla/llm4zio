@@ -4,6 +4,7 @@ import zio.*
 import zio.test.*
 
 import shared.errors.RateLimitError
+import shared.services.{ RateLimiter, RateLimiterConfig, RateLimiterMetrics }
 
 object RateLimiterSpec extends ZIOSpecDefault:
 
