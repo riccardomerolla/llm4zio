@@ -233,7 +233,7 @@ lazy val governanceDomain = (project in file("modules/governance-domain"))
   )
 
 lazy val agentDomain = (project in file("modules/agent-domain"))
-  .dependsOn(sharedIds, sharedErrors, sharedStoreCore)
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore, orchestrationDomain, workspaceDomain)
   .settings(foundationSettings)
   .settings(
     name := "agent-domain",
@@ -273,7 +273,7 @@ lazy val taskrunDomain = (project in file("modules/taskrun-domain"))
   )
 
 lazy val boardDomain = (project in file("modules/board-domain"))
-  .dependsOn(sharedIds, sharedErrors)
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore, workspaceDomain)
   .settings(foundationSettings)
   .settings(
     name := "board-domain",
@@ -313,7 +313,8 @@ lazy val conversationDomain = (project in file("modules/conversation-domain"))
   )
 
 lazy val daemonDomain = (project in file("modules/daemon-domain"))
-  .dependsOn(sharedIds, sharedErrors, sharedStoreCore)
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore, orchestrationDomain,
+    activityDomain, governanceDomain, issuesDomain, projectDomain, workspaceDomain, configDomain)
   .settings(foundationSettings)
   .settings(
     name := "daemon-domain",
@@ -361,7 +362,8 @@ lazy val orchestrationDomain = (project in file("modules/orchestration-domain"))
   )
 
 lazy val evolutionDomain = (project in file("modules/evolution-domain"))
-  .dependsOn(sharedIds, sharedErrors, sharedStoreCore, daemonDomain, governanceDomain, configDomain)
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore, daemonDomain, governanceDomain, configDomain,
+    orchestrationDomain, decisionDomain)
   .settings(foundationSettings)
   .settings(
     name := "evolution-domain",
@@ -432,7 +434,8 @@ lazy val checkpointDomain = (project in file("modules/checkpoint-domain"))
   )
 
 lazy val sdlcDomain = (project in file("modules/sdlc-domain"))
-  .dependsOn(sharedIds, sharedErrors, activityDomain)
+  .dependsOn(sharedIds, sharedErrors, activityDomain, configDomain, daemonDomain,
+    decisionDomain, evolutionDomain, governanceDomain, issuesDomain, planDomain, specificationDomain)
   .settings(foundationSettings)
   .settings(
     name := "sdlc-domain",
