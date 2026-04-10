@@ -7,6 +7,7 @@ import board.boundary.BoardController as BoardBoundaryController
 import daemon.boundary.DaemonsController
 import decision.control.DecisionInbox
 import demo.boundary.DemoController
+import governance.boundary.GovernanceController
 import governance.entity.GovernancePolicyRepository
 import issues.entity.IssueRepository
 import knowledge.boundary.KnowledgeController

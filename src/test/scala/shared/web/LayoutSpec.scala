@@ -7,33 +7,33 @@ object LayoutSpec extends ZIOSpecDefault:
   def spec: Spec[Any, Nothing] =
     suite("Layout")(
       test(
-        "top nav bar contains core gateway and ADE sections with governance and evolution links"
+        "top nav bar contains core gateway and ADE sections with governance and daemons links"
       ) {
         val html = Layout.page("Test", "/board")()
         assertTrue(
           html.contains("/sdlc"),
-          html.contains("/checkpoints"),
           html.contains("/board"),
           html.contains("/governance"),
-          html.contains("/evolution"),
           html.contains("/projects"),
-          html.contains("/plans"),
           html.contains("/knowledge"),
           html.contains("/daemons"),
-          html.contains("/specifications"),
           html.contains("Command Center"),
           html.contains("SDLC Dashboard"),
-          html.contains("Checkpoints"),
           html.contains("Governance"),
-          html.contains("Evolution"),
           html.contains("Projects"),
-          html.contains("Plans"),
           html.contains("Knowledge"),
           html.contains("Daemons"),
-          html.contains("Specifications"),
           html.contains("Settings"),
           html.contains("Board"),
           html.contains("data-nav-dropdown"),
+          !html.contains("/checkpoints"),
+          !html.contains("/evolution"),
+          !html.contains("/plans"),
+          !html.contains("/specifications"),
+          !html.contains("Checkpoints"),
+          !html.contains("Evolution"),
+          !html.contains("Plans"),
+          !html.contains("Specifications"),
         )
       },
       test("board nav item is active when currentPath starts with /board") {
@@ -46,13 +46,12 @@ object LayoutSpec extends ZIOSpecDefault:
         val html = Layout.page("Test", "/issues")()
         assertTrue(html.contains("/board"))
       },
-      test("ADE items include live badge loaders for board, checkpoints, and decisions") {
-        val html = Layout.page("Test", "/decisions", pendingDecisions = Some(3))()
+      test("ADE items include live badge loader for board") {
+        val html = Layout.page("Test", "/board")()
         assertTrue(
           html.contains("/nav/badges/board"),
-          html.contains("/nav/badges/checkpoints"),
-          html.contains("/nav/badges/decisions"),
-          html.contains(">3<"),
+          !html.contains("/nav/badges/checkpoints"),
+          !html.contains("/nav/badges/decisions"),
         )
       },
       test("top nav bar markup is present and sidebar markup is absent") {
