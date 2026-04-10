@@ -55,7 +55,7 @@ object DaemonsControllerSpec extends ZIOSpecDefault:
           body      <- response.body.asString
         yield assertTrue(
           response.status == Status.Ok,
-          body.contains("Daemon Agents"),
+          body.contains("Settings"),
           body.contains("Test Guardian"),
         )
       },

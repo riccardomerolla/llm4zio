@@ -43,9 +43,9 @@ object DaemonsViewSpec extends ZIOSpecDefault:
       test("page renders daemon cards and management actions") {
         val html = DaemonsView.page(statuses)
         assertTrue(
-          html.contains("Daemon Agents"),
+          html.contains("Settings"),
           html.contains("Test Guardian"),
-          html.contains("/daemons/project-1__test-guardian/start"),
+          html.contains("/settings/daemons/project-1__test-guardian/start"),
           html.contains("Issues Created"),
           html.contains("Governed"),
         )
