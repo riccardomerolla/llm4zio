@@ -10,7 +10,7 @@ import _root_.config.entity.{ AgentHealthStatus, AgentInfo, GatewayConfig }
 import com.sun.management.OperatingSystemMXBean
 import db.TaskRepository
 import gateway.control.{ ChannelRegistry, GatewayService }
-import orchestration.control.AgentRegistry
+import orchestration.entity.AgentRegistry
 import taskrun.entity.RunStatus
 
 final case class GatewayHealth(

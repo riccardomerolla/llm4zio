@@ -11,7 +11,7 @@ import decision.control.DecisionInbox
 import decision.entity.*
 import evolution.entity.*
 import governance.entity.*
-import orchestration.control.{ WorkflowService, WorkflowServiceError }
+import orchestration.entity.{ WorkflowService, WorkflowServiceError }
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ DecisionId, EvolutionProposalId, GovernancePolicyId, ProjectId }
 

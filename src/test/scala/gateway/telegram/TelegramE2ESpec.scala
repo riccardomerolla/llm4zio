@@ -12,7 +12,9 @@ import _root_.config.entity.{ CustomAgentRow, SettingRow, WorkflowDefinition, Wo
 import db.*
 import gateway.control.{ MessageChannelError, TelegramClient, WorkflowNotifier, WorkflowNotifierLive }
 import gateway.entity.*
-import orchestration.control.{ AgentRegistry, TaskExecutor }
+import orchestration.control.AgentRegistryLive
+import orchestration.entity.AgentRegistry
+import orchestration.entity.TaskExecutor
 import shared.errors.PersistenceError
 import taskrun.entity.{ TaskArtifactRow, TaskReportRow, TaskRunRow }
 
@@ -96,7 +98,7 @@ object TelegramE2ESpec extends ZIOSpecDefault:
                             failSendMessage = failSendMessage,
                             failSendDocument = failSendDocument,
                           )
-      agentRegistry    <- AgentRegistry.live.build.map(_.get[AgentRegistry])
+      agentRegistry    <- AgentRegistryLive.live.build.map(_.get[AgentRegistry])
       repository        = TestTaskRepository.empty
       taskExecutor      = TestTaskExecutor.noop
       channel          <- TelegramChannel.make(

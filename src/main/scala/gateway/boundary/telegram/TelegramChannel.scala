@@ -9,7 +9,7 @@ import db.*
 import decision.entity.{ DecisionEvent, DecisionFilter, DecisionRepository, DecisionStatus }
 import gateway.control.*
 import gateway.entity.*
-import orchestration.control.TaskExecutor
+import orchestration.entity.TaskExecutor
 import taskrun.entity.{ RunStatus, TaskRunRow, TaskStep }
 
 final case class TelegramChannel(

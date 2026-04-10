@@ -10,7 +10,7 @@ import _root_.config.entity.*
 import analysis.control.WorkspaceAnalysisScheduler
 import analysis.entity.{ AnalysisType, WorkspaceAnalysisState, WorkspaceAnalysisStatus }
 import issues.entity.{ AgentIssue, IssueState }
-import orchestration.control.AgentRegistry
+import orchestration.entity.AgentRegistry
 import project.control.ProjectStorageService
 import project.entity.{ Project, ProjectEvent, ProjectRepository, ProjectSettings }
 import shared.errors.PersistenceError

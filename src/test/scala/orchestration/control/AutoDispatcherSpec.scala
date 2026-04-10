@@ -10,6 +10,7 @@ import agent.entity.{ Agent, AgentRepository }
 import governance.control.{ GovernanceEvaluationContext, GovernancePolicyService, GovernanceTransitionDecision }
 import governance.entity.*
 import issues.entity.{ AgentIssue, IssueEvent, IssueFilter, IssueRepository, IssueState }
+import orchestration.entity.{ AgentPoolManager, PoolError, SlotHandle }
 import shared.errors.PersistenceError
 import shared.ids.Ids.*
 import shared.testfixtures.*

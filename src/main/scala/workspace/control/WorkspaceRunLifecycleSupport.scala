@@ -10,7 +10,7 @@ import conversation.entity.api.{ ConversationEntry, MessageType, SenderType }
 import db.ChatRepository
 import issues.control.IssueAnalysisAttachment
 import issues.entity.{ AgentIssue as DomainIssue, IssueEvent, IssueRepository }
-import orchestration.control.SlotHandle
+import orchestration.entity.SlotHandle
 import shared.ids.Ids.{ EventId, IssueId, TaskRunId }
 import workspace.control.WorkspaceErrorSupport.*
 import workspace.entity.*

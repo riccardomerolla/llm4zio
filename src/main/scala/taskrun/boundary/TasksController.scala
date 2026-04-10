@@ -10,8 +10,8 @@ import zio.stream.ZStream
 
 import _root_.config.entity.WorkflowDefinition
 import db.*
-import orchestration.control.{
-  TaskExecutor,
+import orchestration.entity.TaskExecutor
+import orchestration.entity.{
   WorkflowService,
   WorkflowServiceError,
 }

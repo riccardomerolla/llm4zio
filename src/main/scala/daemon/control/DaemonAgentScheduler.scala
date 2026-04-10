@@ -17,7 +17,7 @@ import activity.entity.{ ActivityEvent, ActivityEventType }
 import daemon.entity.*
 import governance.entity.{ GovernanceDaemonTrigger, GovernancePolicy, GovernancePolicyRepository }
 import issues.entity.*
-import orchestration.control.{ AgentPoolManager, PoolError }
+import orchestration.entity.{ AgentPoolManager, PoolError }
 import project.entity.{ Project, ProjectRepository }
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ DaemonAgentSpecId, EventId, IssueId, ProjectId }

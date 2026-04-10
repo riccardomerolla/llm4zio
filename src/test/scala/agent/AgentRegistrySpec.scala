@@ -6,13 +6,14 @@ import zio.*
 import zio.test.*
 
 import _root_.config.entity.{ AgentQuery, AgentSkill, AgentType, CustomAgentRow, RegisterAgentRequest }
-import orchestration.control.AgentRegistry
+import orchestration.control.AgentRegistryLive
+import orchestration.entity.AgentRegistry
 
 object AgentRegistrySpec extends ZIOSpecDefault:
 
   private val now: Instant = Instant.parse("2026-02-13T10:00:00Z")
 
-  private val testLayer: ZLayer[Any, Nothing, AgentRegistry] = AgentRegistry.live
+  private val testLayer: ZLayer[Any, Nothing, AgentRegistry] = AgentRegistryLive.live
 
   def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("AgentRegistry")(
     test("findByName should be case-insensitive and trim input") {

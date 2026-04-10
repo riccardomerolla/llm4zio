@@ -9,7 +9,7 @@ import decision.control.DecisionInbox
 import decision.entity.{ DecisionResolutionKind, DecisionStatus, DecisionUrgency }
 import evolution.entity.*
 import governance.entity.{ GovernancePolicy, GovernancePolicyEvent, GovernancePolicyRepository }
-import orchestration.control.{ WorkflowService, WorkflowServiceError }
+import orchestration.entity.{ WorkflowService, WorkflowServiceError }
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ DecisionId, EvolutionProposalId, GovernancePolicyId }
 

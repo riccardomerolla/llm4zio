@@ -8,6 +8,7 @@ import zio.test.*
 import agent.entity.{ Agent, AgentRepository }
 import issues.entity.api.DispatchStatusResponse
 import issues.entity.{ AgentIssue, IssueEvent, IssueFilter, IssueRepository, IssueState }
+import orchestration.entity.{ AgentPoolManager, PoolError, SlotHandle }
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ AgentId, ConversationId, IssueId, TaskRunId }
 

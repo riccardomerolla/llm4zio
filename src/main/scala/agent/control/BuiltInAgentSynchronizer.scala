@@ -5,7 +5,7 @@ import java.time.Duration
 import zio.*
 
 import agent.entity.{ Agent, AgentEvent, AgentRepository }
-import orchestration.control.AgentRegistry
+import orchestration.entity.AgentRegistry
 import shared.errors.PersistenceError
 import shared.ids.Ids.AgentId
 

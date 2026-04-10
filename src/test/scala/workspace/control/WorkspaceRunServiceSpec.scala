@@ -15,7 +15,8 @@ import db.*
 import governance.control.{ GovernanceEvaluationContext, GovernancePolicyService, GovernanceTransitionDecision }
 import governance.entity.GovernancePolicy
 import issues.entity.{ AgentIssue, IssueEvent, IssueFilter, IssueRepository, IssueState }
-import orchestration.control.{ AutoDispatcherLive, DependencyResolver, SlotHandle }
+import orchestration.control.{ AutoDispatcherLive, DependencyResolver }
+import orchestration.entity.SlotHandle
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ AgentId, ConversationId, IssueId, TaskRunId }
 import workspace.entity.{ RunStatus as WorkspaceRunStatus, * }
@@ -954,10 +955,10 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
                               workspaceRepository = wsRepo,
                               workspaceRunService = svc,
                               activityHub = activityHub,
-                              agentPoolManager = new orchestration.control.AgentPoolManager:
-                                override def acquireSlot(agentName: String): IO[orchestration.control.PoolError, SlotHandle] =
+                              agentPoolManager = new orchestration.entity.AgentPoolManager:
+                                override def acquireSlot(agentName: String): IO[orchestration.entity.PoolError, SlotHandle] =
                                   pool.acquire(agentName).mapError(_ =>
-                                    orchestration.control.PoolError.PersistenceFailure("test_pool_acquire", "unexpected")
+                                    orchestration.entity.PoolError.PersistenceFailure("test_pool_acquire", "unexpected")
                                   )
                                 override def releaseSlot(handle: SlotHandle): UIO[Unit]                                      = pool.release(handle)
                                 override def availableSlots(agentName: String): UIO[Int]                                     = pool.available(agentName)

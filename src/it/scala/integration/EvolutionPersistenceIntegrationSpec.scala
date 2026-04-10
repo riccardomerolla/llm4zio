@@ -16,7 +16,7 @@ import evolution.entity.*
 import governance.entity.*
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.error.GigaMapError
-import orchestration.control.{ WorkflowService, WorkflowServiceError }
+import orchestration.entity.{ WorkflowService, WorkflowServiceError }
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ DecisionId, DaemonAgentSpecId, EvolutionProposalId, GovernancePolicyId, ProjectId }
 import shared.store.{ DataStoreModule, DataStoreService, EventStore, StoreConfig }

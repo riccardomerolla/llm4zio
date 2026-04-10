@@ -13,7 +13,8 @@ import db.ChatRepository
 import decision.control.DecisionInbox
 import issues.entity.{ AgentIssue as DomainIssue, IssueRepository }
 import knowledge.control.KnowledgeExtractionService
-import orchestration.control.{ AgentPoolManager, OrchestratorControlPlane, PoolError, SlotHandle }
+import orchestration.control.OrchestratorControlPlane
+import orchestration.entity.{ AgentPoolManager, PoolError, SlotHandle }
 import orchestration.entity.AgentExecutionState
 import shared.errors.PersistenceError
 import shared.ids.Ids.IssueId

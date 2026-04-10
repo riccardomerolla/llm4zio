@@ -81,7 +81,7 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
           _        <- registry.register(channel)
         yield ()
       },
-      AgentRegistry.live,
+      AgentRegistryLive.live,
       MessageRouter.live,
       EmptyMemoryRepo.layer,
       PromptLoader.reloading,

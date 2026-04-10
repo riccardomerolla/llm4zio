@@ -77,6 +77,7 @@ import orchestration.control.{
   IssueAssignmentOrchestrator as OrchestrationIssueAssignmentOrchestrator,
   ProgressTracker as OrchestrationProgressTracker,
 }
+import orchestration.entity.{ AgentPoolManager, AgentRegistry, TaskExecutor, WorkflowService }
 import plan.boundary.PlansController
 import plan.entity.{ PlanEventStoreES, PlanRepositoryES }
 import project.boundary.ProjectsController
@@ -209,16 +210,16 @@ object ApplicationDI:
       MemoryRepositoryES.live,
       DecisionEventStoreES.live,
       DecisionRepositoryES.live,
-      WorkflowService.live,
+      WorkflowServiceLive.live,
       ActivityRepository.live,
       ActivityHub.live,
       OrchestrationProgressTracker.live,
       ChatRepository.live,
-      AgentRegistry.live,
+      AgentRegistryLive.live,
       WorkflowEngine.live,
       AgentDispatcher.live,
       OrchestratorControlPlane.live,
-      TaskExecutor.live,
+      TaskExecutorLive.live,
       LogTailer.live,
       HealthMonitor.live,
       ConfigValidator.live,
@@ -358,7 +359,7 @@ object ApplicationDI:
       KnowledgeController.live,
       WorkspacesController.live,
       DependencyResolver.live,
-      AgentPoolManager.live,
+      AgentPoolManagerLive.live,
       DaemonAgentSpecRepositoryES.live,
       DaemonAgentScheduler.live,
       IssueDispatchStatusService.live,

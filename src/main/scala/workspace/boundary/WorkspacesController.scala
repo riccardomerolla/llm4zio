@@ -8,7 +8,7 @@ import zio.http.*
 import zio.json.*
 
 import analysis.control.WorkspaceAnalysisScheduler
-import orchestration.control.AgentRegistry
+import orchestration.entity.AgentRegistry
 import shared.errors.PersistenceError
 import shared.ids.Ids.ProjectId
 import shared.web.{ WorkspaceTemplatesView, WorkspacesView }

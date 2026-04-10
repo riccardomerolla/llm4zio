@@ -9,7 +9,8 @@ import db.ChatRepository
 import gateway.entity.{ NormalizedMessage, * }
 import llm4zio.core.{ LlmService, Streaming }
 import memory.entity.{ MemoryEntry, MemoryId, MemoryKind, MemoryRepository }
-import orchestration.control.{ AgentRegistry, ConversationMemory }
+import orchestration.control.ConversationMemory
+import orchestration.entity.AgentRegistry
 import prompts.PromptLoader
 
 enum GatewayServiceError:

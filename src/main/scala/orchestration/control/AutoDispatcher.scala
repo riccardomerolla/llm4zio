@@ -10,6 +10,7 @@ import agent.entity.{ Agent, AgentRepository }
 import governance.control.{ GovernanceEvaluationContext, GovernancePolicyService }
 import governance.entity.{ GovernanceLifecycleAction, GovernanceLifecycleStage, GovernanceTransition }
 import issues.entity.{ AgentIssue, IssueEvent, IssueRepository, IssueState }
+import orchestration.entity.{ AgentPoolManager, PoolError }
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ AgentId, EventId, TaskRunId }
 import workspace.control.WorkspaceRunService
