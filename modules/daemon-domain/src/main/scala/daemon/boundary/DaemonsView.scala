@@ -1,4 +1,6 @@
-package shared.web
+package daemon.boundary
+
+import shared.web.*
 
 import daemon.entity.*
 import scalatags.Text.all.*

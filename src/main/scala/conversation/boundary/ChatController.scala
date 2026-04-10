@@ -27,6 +27,7 @@ import shared.errors.PersistenceError as WorkspacePersistenceError
 import shared.ids.Ids.{ ConversationId, EventId, IssueId, ReportId }
 import shared.web.*
 import taskrun.entity.TaskReportRow
+import workspace.boundary.{ RunChainItem, RunSessionUiMeta }
 import workspace.entity.WorkspaceRepository
 
 trait ChatController:

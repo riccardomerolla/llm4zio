@@ -2,6 +2,8 @@ package shared.web
 
 import zio.json.*
 
+import config.boundary.ModelsView
+import gateway.boundary.{ ChannelCardData, ChannelView }
 import issues.entity.api.IssueTemplate
 import llm4zio.tools.{ Tool, ToolSandbox }
 import scalatags.Text.all.*

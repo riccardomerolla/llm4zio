@@ -17,7 +17,6 @@ import board.control.{
 import board.entity.*
 import project.control.ProjectStorageService
 import shared.ids.Ids.BoardIssueId
-import shared.web.{ BoardView, IssueTimelineView }
 import workspace.entity.WorkspaceRepository
 
 trait BoardController:

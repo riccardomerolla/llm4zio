@@ -233,11 +233,11 @@ lazy val governanceDomain = (project in file("modules/governance-domain"))
   )
 
 lazy val agentDomain = (project in file("modules/agent-domain"))
-  .dependsOn(sharedIds, sharedErrors, sharedStoreCore, orchestrationDomain, workspaceDomain)
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore, sharedWebCore, orchestrationDomain, workspaceDomain, configDomain)
   .settings(foundationSettings)
   .settings(
     name := "agent-domain",
-    libraryDependencies ++= domainDeps,
+    libraryDependencies ++= domainBceDeps,
   )
 
 lazy val decisionDomain = (project in file("modules/decision-domain"))
@@ -273,11 +273,11 @@ lazy val taskrunDomain = (project in file("modules/taskrun-domain"))
   )
 
 lazy val boardDomain = (project in file("modules/board-domain"))
-  .dependsOn(sharedIds, sharedErrors, sharedStoreCore, workspaceDomain)
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore, sharedWebCore, workspaceDomain)
   .settings(foundationSettings)
   .settings(
     name := "board-domain",
-    libraryDependencies ++= domainDeps,
+    libraryDependencies ++= domainBceDeps,
   )
 
 lazy val knowledgeDomain = (project in file("modules/knowledge-domain"))
@@ -297,11 +297,11 @@ lazy val projectDomain = (project in file("modules/project-domain"))
   )
 
 lazy val configDomain = (project in file("modules/config-domain"))
-  .dependsOn(sharedIds, sharedErrors, sharedStoreCore)
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore, sharedWebCore)
   .settings(foundationSettings)
   .settings(
     name := "config-domain",
-    libraryDependencies ++= domainDeps,
+    libraryDependencies ++= domainBceDeps,
   )
 
 lazy val conversationDomain = (project in file("modules/conversation-domain"))
@@ -313,12 +313,12 @@ lazy val conversationDomain = (project in file("modules/conversation-domain"))
   )
 
 lazy val daemonDomain = (project in file("modules/daemon-domain"))
-  .dependsOn(sharedIds, sharedErrors, sharedStoreCore, orchestrationDomain,
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore, sharedWebCore, orchestrationDomain,
     activityDomain, governanceDomain, issuesDomain, projectDomain, workspaceDomain, configDomain)
   .settings(foundationSettings)
   .settings(
     name := "daemon-domain",
-    libraryDependencies ++= domainDeps,
+    libraryDependencies ++= domainBceDeps,
   )
 
 lazy val analysisDomain = (project in file("modules/analysis-domain"))
@@ -341,7 +341,7 @@ lazy val workspaceDomain = (project in file("modules/workspace-domain"))
   )
 
 lazy val gatewayDomain = (project in file("modules/gateway-domain"))
-  .dependsOn(sharedIds, sharedErrors)
+  .dependsOn(sharedIds, sharedErrors, sharedWebCore)
   .settings(foundationSettings)
   .settings(
     name := "gateway-domain",
@@ -349,6 +349,8 @@ lazy val gatewayDomain = (project in file("modules/gateway-domain"))
       "dev.zio" %% "zio" % zioVersion,
       "dev.zio" %% "zio-streams" % zioVersion,
       zioJsonDep,
+      zioHttpDep,
+      "com.lihaoyi" %% "scalatags" % scalatagsVersion,
       "com.bot4s" %% "telegram-core" % bot4sTelegramCoreVersion,
     ),
   )
@@ -395,9 +397,7 @@ lazy val issuesDomain = (project in file("modules/issues-domain"))
   .settings(foundationSettings)
   .settings(
     name := "issues-domain",
-    libraryDependencies ++= domainDeps ++ Seq(
-      zioHttpDep,
-    ),
+    libraryDependencies ++= domainBceDeps,
   )
 
 lazy val demoDomain = (project in file("modules/demo-domain"))

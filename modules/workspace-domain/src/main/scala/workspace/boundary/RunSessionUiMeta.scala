@@ -1,4 +1,4 @@
-package shared.web
+package workspace.boundary
 
 import workspace.entity.RunStatus
 

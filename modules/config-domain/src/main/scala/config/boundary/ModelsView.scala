@@ -1,4 +1,6 @@
-package shared.web
+package config.boundary
+
+import shared.web.*
 
 import config.entity.{ ModelRegistryResponse, ProviderAvailability, ProviderProbeStatus }
 import scalatags.Text.all.*

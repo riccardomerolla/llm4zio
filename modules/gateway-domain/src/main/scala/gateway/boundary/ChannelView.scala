@@ -1,4 +1,6 @@
-package shared.web
+package gateway.boundary
+
+import shared.web.*
 
 import java.time.{ Duration, Instant }
 

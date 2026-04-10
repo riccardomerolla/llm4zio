@@ -1,4 +1,4 @@
-package shared.web
+package issues.boundary
 
 import issues.entity.IssueWorkReport
 import issues.entity.api.{ AgentIssueView, IssueStatus }

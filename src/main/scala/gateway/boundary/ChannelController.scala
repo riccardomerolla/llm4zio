@@ -12,7 +12,7 @@ import _root_.config.entity.{ ConfigRepository, GatewayConfig }
 import gateway.control.*
 import gateway.entity.{ ChannelMetrics, SessionScopeStrategy }
 import shared.errors.PersistenceError
-import shared.web.{ ChannelCardData, ChannelView, HtmlViews }
+import shared.web.HtmlViews
 
 trait ChannelController:
   def routes: Routes[Any, Response]

@@ -3,6 +3,9 @@ package shared.web
 import java.time.Instant
 
 import activity.entity.ActivityEvent
+import agent.boundary.AgentsView
+import gateway.boundary.ChannelCardData
+import workspace.boundary.RunSessionUiMeta
 import config.entity.{ AgentInfo, ModelRegistryResponse, ProviderProbeStatus, WorkflowDefinition }
 import conversation.entity.api.{ ChatConversation, ConversationEntry, ConversationSessionMeta }
 import decision.entity.Decision

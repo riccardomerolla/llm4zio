@@ -1,4 +1,6 @@
-package shared.web
+package board.boundary
+
+import shared.web.*
 
 import java.time.Instant
 import java.time.format.DateTimeFormatter

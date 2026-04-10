@@ -4,6 +4,7 @@ import java.time.Instant
 
 import zio.test.*
 
+import board.boundary.IssueTimelineView
 import board.entity.*
 import board.entity.TimelineEntry.*
 import shared.ids.Ids.BoardIssueId

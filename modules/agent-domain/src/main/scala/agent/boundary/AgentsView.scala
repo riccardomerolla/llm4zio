@@ -1,4 +1,6 @@
-package shared.web
+package agent.boundary
+
+import shared.web.*
 
 import zio.json.*
 

@@ -4,6 +4,7 @@ import java.time.Instant
 
 import zio.test.*
 
+import issues.boundary.BoardStats
 import issues.entity.api.{ AgentIssueView, IssuePriority, IssueStatus }
 import issues.entity.{ IssueWorkReport, TokenUsage }
 import shared.ids.Ids.IssueId

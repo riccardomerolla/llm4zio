@@ -9,6 +9,7 @@ import zio.http.*
 import zio.json.*
 import zio.stream.ZStream
 
+import _root_.agent.boundary.AgentsView
 import _root_.config.entity.{ AgentChannelBinding, AgentInfo, ConfigRepository, CustomAgentRow, SettingRow }
 import agent.control.{ AgentMatching, BuiltInAgentSynchronizer }
 import agent.entity.api.*
@@ -343,14 +344,14 @@ final case class AgentsControllerLive(
           agent         <- ZIO
                              .fromOption(registryAgent)
                              .orElseFail(PersistenceError.NotFound("agent", name))
-          card           = shared.web.AgentsView.AgentCard(
+          card           = AgentsView.AgentCard(
                              info = toAgentInfo(agent),
                              registryAgent = Some(agent),
                              metrics = metrics.summary,
                              activeRuns = metrics.activeRuns,
                              bindings = agentBindings,
                            )
-        yield html(shared.web.AgentsView.panelFragment(card))
+        yield html(AgentsView.panelFragment(card))
       }
     },
     Method.GET / "agents" / string("slug") / "edit"                      -> handler { (slug: String, req: Request) =>
@@ -739,7 +740,7 @@ final case class AgentsControllerLive(
     bindings: List[AgentChannelBinding],
     runs: List[WorkspaceRun],
     now: Instant,
-  ): List[shared.web.AgentsView.AgentCard] =
+  ): List[AgentsView.AgentCard] =
     val infoByNameLower = (registryAgents.map(toAgentInfo) ++ AgentRegistry.allAgents(customAgents))
       .groupBy(_.name.trim.toLowerCase)
       .view
@@ -753,7 +754,7 @@ final case class AgentsControllerLive(
       val agentRuns        = runs.filter(_.agentName.equalsIgnoreCase(info.name))
       val metrics          = computeMetrics(agentRuns, now)
       val bindingsForAgent = bindings.filter(_.agentId.value.equalsIgnoreCase(info.name))
-      shared.web.AgentsView.AgentCard(
+      AgentsView.AgentCard(
         info = info,
         registryAgent = registryAgent,
         metrics = metrics.summary,

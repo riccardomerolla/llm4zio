@@ -6,7 +6,6 @@ import zio.http.*
 import daemon.control.DaemonAgentScheduler
 import shared.errors.PersistenceError
 import shared.ids.Ids.DaemonAgentSpecId
-import shared.web.DaemonsView
 
 trait DaemonsController:
   def routes: Routes[Any, Response]

@@ -6,6 +6,7 @@ import zio.test.*
 
 import conversation.entity.api.{ ChatConversation, ConversationEntry, MessageType, SenderType }
 import orchestration.entity.{ PlannerPlanPreview, PlannerPreviewState }
+import workspace.boundary.{ RunChainItem, RunSessionUiMeta }
 import workspace.entity.{ RunSessionMode, RunStatus }
 
 object ChatViewSpec extends ZIOSpecDefault:

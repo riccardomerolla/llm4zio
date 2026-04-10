@@ -1,4 +1,6 @@
-package shared.web
+package board.boundary
+
+import shared.web.*
 
 import board.entity.*
 import scalatags.Text.all.*
