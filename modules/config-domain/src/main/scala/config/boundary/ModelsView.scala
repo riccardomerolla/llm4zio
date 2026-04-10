@@ -1,9 +1,8 @@
 package config.boundary
 
-import shared.web.*
-
 import config.entity.{ ModelRegistryResponse, ProviderAvailability, ProviderProbeStatus }
 import scalatags.Text.all.*
+import shared.web.*
 
 object ModelsView:
 

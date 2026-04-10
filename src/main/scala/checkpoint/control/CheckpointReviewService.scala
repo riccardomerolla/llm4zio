@@ -6,7 +6,6 @@ import scala.util.Try
 
 import zio.*
 
-import shared.services.StateService
 import checkpoint.entity.*
 import conversation.entity.api.{ ConversationEntry, SenderType }
 import db.ChatRepository
@@ -17,6 +16,7 @@ import orchestration.control.OrchestratorControlPlane
 import orchestration.entity.{ AgentExecutionInfo, AgentExecutionState }
 import shared.errors.{ ControlPlaneError, PersistenceError, StateError }
 import shared.ids.Ids.{ IssueId, TaskRunId }
+import shared.services.StateService
 import taskrun.entity.CheckpointSnapshot
 import workspace.control.{ GitService, RunSessionManager, WorkspaceRunService }
 import workspace.entity.*

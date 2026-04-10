@@ -11,7 +11,6 @@ import _root_.config.entity.{ AIProvider, AIProviderConfig }
 import agent.control.BuiltInAgentSynchronizer
 import agent.entity.{ Agent, AgentRepository }
 import analysis.entity.{ AnalysisDoc, AnalysisEvent, AnalysisRepository, AnalysisType }
-import shared.services.FileService
 import db.TaskRepository
 import llm4zio.core.*
 import llm4zio.providers.{ GeminiCliExecutionContext, GeminiCliExecutor, HttpClient }
@@ -20,6 +19,7 @@ import project.control.ProjectStorageService
 import prompts.{ PromptError, PromptLoader }
 import shared.errors.FileError
 import shared.ids.Ids
+import shared.services.FileService
 import workspace.control.CliAgentRunner
 import workspace.entity.{ Workspace, WorkspaceRepository }
 

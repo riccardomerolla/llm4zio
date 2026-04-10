@@ -1,9 +1,8 @@
 package daemon.boundary
 
-import shared.web.*
-
 import daemon.entity.*
 import scalatags.Text.all.*
+import shared.web.*
 
 object DaemonsView:
 

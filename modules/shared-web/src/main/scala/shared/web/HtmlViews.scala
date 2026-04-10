@@ -4,11 +4,10 @@ import java.time.Instant
 
 import activity.entity.ActivityEvent
 import agent.boundary.AgentsView
-import gateway.boundary.ChannelCardData
-import workspace.boundary.RunSessionUiMeta
 import config.entity.{ AgentInfo, ModelRegistryResponse, ProviderProbeStatus, WorkflowDefinition }
 import conversation.entity.api.{ ChatConversation, ConversationEntry, ConversationSessionMeta }
 import decision.entity.Decision
+import gateway.boundary.ChannelCardData
 import gateway.entity.ChatSession
 import issues.entity.IssueWorkReport
 import issues.entity.api.{
@@ -22,6 +21,7 @@ import sdlc.entity.SdlcSnapshot
 import shared.ids.Ids.IssueId
 import taskrun.boundary.{ GraphView, ReportsView }
 import taskrun.entity.{ TaskReportRow, TaskRunRow }
+import workspace.boundary.RunSessionUiMeta
 import workspace.entity.WorkspaceRun
 
 object HtmlViews:

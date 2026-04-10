@@ -611,7 +611,18 @@ object IssuesView:
     flash: Option[String] = None,
     checks: List[RequirementCheck] = Nil,
   ): String =
-    detailPage(issue, issueRuns, availableAgents, analysisDocs, mergeHistory, workspaces, workReport, decisions, flash, checks)
+    detailPage(
+      issue,
+      issueRuns,
+      availableAgents,
+      analysisDocs,
+      mergeHistory,
+      workspaces,
+      workReport,
+      decisions,
+      flash,
+      checks,
+    )
 
   private def detailPage(
     issue: AgentIssueView,

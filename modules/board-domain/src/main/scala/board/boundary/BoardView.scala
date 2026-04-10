@@ -1,9 +1,8 @@
 package board.boundary
 
-import shared.web.*
-
 import board.entity.*
 import scalatags.Text.all.*
+import shared.web.*
 
 object BoardView:
 

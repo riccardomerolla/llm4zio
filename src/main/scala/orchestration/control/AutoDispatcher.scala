@@ -331,4 +331,3 @@ final case class AutoDispatcherLive(
           .map(_.seconds)
           .getOrElse(AutoDispatcher.defaultInterval)
       }
-

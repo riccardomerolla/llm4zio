@@ -1,13 +1,12 @@
 package agent.boundary
 
-import shared.web.*
-
 import zio.json.*
 
 import _root_.config.entity.{ AgentChannelBinding, AgentInfo, AgentType }
 import agent.entity.api.{ AgentActiveRun, AgentMetricsHistoryPoint, AgentMetricsSummary, AgentRunHistoryItem }
 import agent.entity.{ Agent, TrustLevel }
 import scalatags.Text.all.*
+import shared.web.*
 
 object AgentsView:
 

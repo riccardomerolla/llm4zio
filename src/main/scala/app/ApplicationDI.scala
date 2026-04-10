@@ -27,7 +27,6 @@ import analysis.control.{ AnalysisAgentRunner, WorkspaceAnalysisScheduler }
 import analysis.entity.{ AnalysisEventStoreES, AnalysisRepositoryES }
 import app.boundary.{ AgentMonitorController as AppAgentMonitorController, HealthController as AppHealthController, * }
 import app.control.{ HealthMonitor, LogTailer }
-import shared.services.{ FileService, HttpAIClient, StateService }
 import board.boundary.BoardController as BoardBoundaryController
 import board.control.*
 import board.entity.BoardRepository
@@ -86,6 +85,7 @@ import project.entity.ProjectRepository
 import prompts.PromptLoader
 import sdlc.boundary.SdlcDashboardController
 import sdlc.control.SdlcDashboardService
+import shared.services.{ FileService, HttpAIClient, StateService }
 import shared.store.{ ConfigStoreModule, DataStoreModule, DataStoreService, MemoryStoreModule, StoreConfig }
 import shared.web.StreamAbortRegistry
 import specification.boundary.SpecificationsController

@@ -1,13 +1,12 @@
 package gateway.boundary
 
-import shared.web.*
-
 import java.time.{ Duration, Instant }
 
 import zio.json.*
 
 import gateway.control.ChannelStatus
 import scalatags.Text.all.*
+import shared.web.*
 
 final case class ChannelCardData(
   name: String,

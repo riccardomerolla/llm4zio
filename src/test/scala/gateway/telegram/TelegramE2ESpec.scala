@@ -13,8 +13,7 @@ import db.*
 import gateway.control.{ MessageChannelError, TelegramClient, WorkflowNotifier, WorkflowNotifierLive }
 import gateway.entity.*
 import orchestration.control.AgentRegistryLive
-import orchestration.entity.AgentRegistry
-import orchestration.entity.TaskExecutor
+import orchestration.entity.{ AgentRegistry, TaskExecutor }
 import shared.errors.PersistenceError
 import taskrun.entity.{ TaskArtifactRow, TaskReportRow, TaskRunRow }
 

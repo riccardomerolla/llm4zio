@@ -17,13 +17,13 @@ import governance.entity.{ GovernanceGate, GovernancePolicy }
 import issues.entity.{ IssueEvent, IssueRepository }
 import llm4zio.core.*
 import llm4zio.providers.{ GeminiCliExecutor, HttpClient }
+import orchestration.entity.{ PlannerPlanPreview, PlannerPreviewState }
 import plan.entity.*
 import project.control.ProjectStorageService
 import prompts.PromptLoader
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ BoardIssueId, IssueId, PlanId, SpecificationId }
 import specification.entity.*
-import orchestration.entity.{ PlannerPlanPreview, PlannerPreviewState }
 import workspace.entity.*
 
 object PlannerAgentServiceSpec extends ZIOSpecDefault:

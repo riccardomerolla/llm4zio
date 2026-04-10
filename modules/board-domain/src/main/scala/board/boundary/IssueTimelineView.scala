@@ -1,13 +1,12 @@
 package board.boundary
 
-import shared.web.*
-
 import java.time.Instant
 import java.time.format.DateTimeFormatter
 
 import board.entity.*
 import board.entity.TimelineEntry.*
 import scalatags.Text.all.*
+import shared.web.*
 import shared.web.IssuesMarkdownSupport.markdownFragment
 
 object IssueTimelineView:

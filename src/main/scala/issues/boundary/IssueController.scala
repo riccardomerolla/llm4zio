@@ -209,9 +209,9 @@ final case class IssueControllerLive(
                                                        )
                                                      )
                                                      .mapError(mapIssueRepoError)
-                                 checks = workReport.toList.flatMap(r =>
-                                   ProofOfWorkExtractor.validateRequirements(issue.proofOfWorkRequirements, r)
-                                 )
+                                 checks          = workReport.toList.flatMap(r =>
+                                                     ProofOfWorkExtractor.validateRequirements(issue.proofOfWorkRequirements, r)
+                                                   )
                                yield html(
                                  HtmlViews.issueDetail(
                                    domainToView(issue),

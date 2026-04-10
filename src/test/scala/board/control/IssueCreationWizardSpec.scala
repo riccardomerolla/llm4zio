@@ -7,11 +7,11 @@ import zio.json.*
 import zio.stream.Stream
 import zio.test.*
 
-import shared.services.FileService
 import board.entity.*
 import llm4zio.core.{ LlmChunk, LlmError, LlmService, ToolCallResponse }
 import llm4zio.tools.{ AnyTool, JsonSchema }
 import shared.ids.Ids.BoardIssueId
+import shared.services.FileService
 
 object IssueCreationWizardSpec extends ZIOSpecDefault:
 

@@ -470,7 +470,7 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
     test("assign fails with InvalidRunState when the shared agent pool has no available slots") {
       for
         (svc, _, _) <- makeService(
-                         acquireAgentSlot = _ => ZIO.never,
+                         acquireAgentSlot = _ => ZIO.never
                        )
         result      <- svc.assign(
                          "ws-1",
@@ -960,9 +960,9 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
                                   pool.acquire(agentName).mapError(_ =>
                                     orchestration.entity.PoolError.PersistenceFailure("test_pool_acquire", "unexpected")
                                   )
-                                override def releaseSlot(handle: SlotHandle): UIO[Unit]                                      = pool.release(handle)
-                                override def availableSlots(agentName: String): UIO[Int]                                     = pool.available(agentName)
-                                override def resize(agentName: String, newMax: Int): UIO[Unit]                               = ZIO.unit
+                                override def releaseSlot(handle: SlotHandle): UIO[Unit]                                     = pool.release(handle)
+                                override def availableSlots(agentName: String): UIO[Int]                                    = pool.available(agentName)
+                                override def resize(agentName: String, newMax: Int): UIO[Unit]                              = ZIO.unit
                               ,
                               governancePolicyService = governancePolicyService,
                             )

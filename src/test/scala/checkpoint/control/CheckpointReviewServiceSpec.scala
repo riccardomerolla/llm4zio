@@ -7,7 +7,6 @@ import zio.*
 import zio.test.*
 
 import _root_.config.entity.{ MigrationConfig, WorkflowDefinition }
-import shared.services.StateService
 import checkpoint.entity.*
 import conversation.entity.api.{ ChatConversation, ConversationEntry, MessageType, SenderType, SessionContextLink }
 import db.ChatRepository
@@ -18,6 +17,7 @@ import orchestration.control.*
 import orchestration.entity.*
 import shared.errors.{ ControlPlaneError, PersistenceError, StateError }
 import shared.ids.Ids.{ AgentId, DecisionId, IssueId, ReportId, TaskRunId }
+import shared.services.StateService
 import shared.testfixtures.*
 import taskrun.entity.{ RunStatus as _, * }
 import workspace.control.{ GitService, RunSessionManager, WorkspaceRunService }

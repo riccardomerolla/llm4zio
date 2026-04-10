@@ -9,12 +9,12 @@ import zio.*
 import zio.json.*
 import zio.json.ast.Json
 
-import shared.services.FileService
 import board.entity.*
 import llm4zio.core.{ LlmError, LlmService }
 import llm4zio.tools.JsonSchema
 import shared.errors.FileError
 import shared.ids.Ids.BoardIssueId
+import shared.services.FileService
 
 enum IssueCreationError:
   case SessionNotFound(sessionId: String)

@@ -14,8 +14,7 @@ import decision.control.DecisionInbox
 import issues.entity.{ AgentIssue as DomainIssue, IssueRepository }
 import knowledge.control.KnowledgeExtractionService
 import orchestration.control.OrchestratorControlPlane
-import orchestration.entity.{ AgentPoolManager, PoolError, SlotHandle }
-import orchestration.entity.AgentExecutionState
+import orchestration.entity.{ AgentExecutionState, AgentPoolManager, PoolError, SlotHandle }
 import shared.errors.PersistenceError
 import shared.ids.Ids.IssueId
 import workspace.control.WorkspaceErrorSupport.*

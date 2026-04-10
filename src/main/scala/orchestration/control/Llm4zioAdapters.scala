@@ -5,13 +5,13 @@ import java.time.Instant
 import zio.*
 
 import _root_.config.entity.AgentInfo
-import orchestration.entity.AgentRegistry
 import conversation.entity.api.{ ChatConversation, ConversationEntry, MessageType, SenderType }
 import db.ChatRepository
 import gateway.entity.SessionKey
 import llm4zio.agents.*
 import llm4zio.core.{ Message, MessageRole }
 import memory.entity.{ MemoryFilter, ScoredMemory, SessionId as MemorySessionId, UserId as MemoryUserId }
+import orchestration.entity.AgentRegistry
 import shared.errors.PersistenceError
 
 object Llm4zioAgentAdapters:

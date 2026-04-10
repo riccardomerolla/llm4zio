@@ -3,7 +3,6 @@ package taskrun.boundary
 import zio.*
 import zio.http.*
 
-
 trait LogsController:
   def routes: Routes[Any, Response]
 

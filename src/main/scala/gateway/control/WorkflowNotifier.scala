@@ -6,8 +6,7 @@ import zio.json.*
 import _root_.config.entity.WorkflowRow
 import db.*
 import gateway.entity.*
-import orchestration.entity.TaskExecutor
-import orchestration.entity.AgentRegistry
+import orchestration.entity.{ AgentRegistry, TaskExecutor }
 import shared.errors.PersistenceError
 import taskrun.entity.{ RunStatus, TaskRunRow }
 

@@ -6,8 +6,8 @@ import java.nio.charset.StandardCharsets
 import zio.*
 
 import _root_.config.entity.*
-import shared.services.HttpAIClient
 import shared.errors.AIError
+import shared.services.HttpAIClient
 
 trait ModelService:
   def listAvailableModels: UIO[ModelRegistryResponse]

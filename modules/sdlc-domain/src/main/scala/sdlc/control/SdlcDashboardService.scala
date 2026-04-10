@@ -19,9 +19,9 @@ import evolution.entity.{
 import governance.entity.GovernancePolicyRepository
 import issues.entity.*
 import plan.entity.{ Plan, PlanRepository, PlanStatus, PlanValidationResult, PlanValidationStatus }
+import sdlc.entity.*
 import shared.errors.PersistenceError
 import specification.entity.{ Specification, SpecificationRepository, SpecificationStatus }
-import sdlc.entity.*
 
 trait SdlcDashboardService:
   def snapshot: IO[PersistenceError, SdlcSnapshot]
