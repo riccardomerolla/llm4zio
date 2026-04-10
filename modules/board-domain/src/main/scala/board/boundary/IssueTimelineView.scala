@@ -14,7 +14,7 @@ object IssueTimelineView:
   def page(
     workspaceId: String,
     issue: BoardIssue,
-    timeline: List[TimelineEntry],
+    context: IssueContext,
   ): String =
     Layout.page(
       s"Issue · ${issue.frontmatter.title}",
@@ -22,7 +22,9 @@ object IssueTimelineView:
     )(
       div(cls := "space-y-4")(
         header(workspaceId, issue),
-        timelineBody(workspaceId, timeline.sortBy(_.occurredAt)),
+        linkedPlanPanels(context.linkedPlans),
+        linkedSpecPanels(context.linkedSpecs),
+        timelineBody(workspaceId, context.timeline.sortBy(_.occurredAt)),
         if issue.column == BoardColumn.Review then reviewActionForm(workspaceId, issue) else frag(),
       ),
       JsResources.inlineModuleScript("/static/client/components/ab-git-summary.js"),
@@ -77,6 +79,78 @@ object IssueTimelineView:
         else frag(),
       ),
     )
+
+  // ── Linked Plan panels ─────────────────────────────────────────────────
+
+  private def linkedPlanPanels(plans: List[LinkedPlan]): Frag =
+    if plans.isEmpty then frag()
+    else frag(plans.map(planPanel)*)
+
+  private def planPanel(plan: LinkedPlan): Frag =
+    tag("details")(attr("open") := "open", cls := "rounded-xl border border-indigo-400/20 bg-indigo-500/5")(
+      tag("summary")(cls := "cursor-pointer px-5 py-3 flex items-center gap-3")(
+        span(cls := "text-sm font-semibold text-white")("Plan"),
+        statusBadge(plan.status, planStatusColor(plan.status)),
+        plan.validationStatus
+          .map(vs => span(cls := "text-[10px] text-slate-400")(s"Validation: $vs"))
+          .getOrElse(frag()),
+        span(cls := "ml-auto text-xs text-slate-500")(plan.id),
+      ),
+      div(cls := "px-5 pb-4 space-y-2")(
+        p(cls := "text-sm text-slate-300 line-clamp-3")(plan.summary),
+        div(cls := "flex flex-wrap gap-2 text-xs")(
+          chip(s"${plan.taskCount} task(s)"),
+          plan.specificationId.map(sid => chip(s"Spec: $sid")).getOrElse(frag()),
+        ),
+      ),
+    )
+
+  private def planStatusColor(status: String): String = status match
+    case "Completed" => "border-emerald-400/30 bg-emerald-500/10 text-emerald-200"
+    case "Executing" => "border-cyan-400/30 bg-cyan-500/10 text-cyan-200"
+    case "Validated" => "border-blue-400/30 bg-blue-500/10 text-blue-200"
+    case "Abandoned" => "border-rose-400/30 bg-rose-500/10 text-rose-200"
+    case _           => "border-slate-400/30 bg-slate-500/10 text-slate-200"
+
+  // ── Linked Spec panels ────────────────────────────────────────────────
+
+  private def linkedSpecPanels(specs: List[LinkedSpec]): Frag =
+    if specs.isEmpty then frag()
+    else frag(specs.map(specPanel)*)
+
+  private def specPanel(spec: LinkedSpec): Frag =
+    tag("details")(attr("open") := "open", cls := "rounded-xl border border-violet-400/20 bg-violet-500/5")(
+      tag("summary")(cls := "cursor-pointer px-5 py-3 flex items-center gap-3")(
+        span(cls := "text-sm font-semibold text-white")("Specification"),
+        statusBadge(spec.status, specStatusColor(spec.status)),
+        span(cls := "text-xs text-slate-400")(s"v${spec.version}"),
+        span(cls := "ml-auto text-xs text-slate-500")(spec.id),
+      ),
+      div(cls := "px-5 pb-4 space-y-2")(
+        h3(cls := "text-sm font-semibold text-white")(spec.title),
+        p(cls := "text-xs text-slate-400")(s"by ${spec.author}"),
+        p(cls := "text-sm text-slate-300 line-clamp-3")(spec.contentPreview),
+        if spec.reviewCommentCount > 0 then
+          span(cls := "text-xs text-slate-500")(s"${spec.reviewCommentCount} review comment(s)")
+        else frag(),
+      ),
+    )
+
+  private def specStatusColor(status: String): String = status match
+    case "Approved"     => "border-emerald-400/30 bg-emerald-500/10 text-emerald-200"
+    case "InRefinement" => "border-amber-400/30 bg-amber-500/10 text-amber-200"
+    case "Superseded"   => "border-slate-400/30 bg-slate-500/10 text-slate-200"
+    case _              => "border-slate-400/30 bg-slate-500/10 text-slate-200"
+
+  // ── Shared helpers ────────────────────────────────────────────────────
+
+  private def statusBadge(text: String, colorCls: String): Frag =
+    span(cls := s"rounded-full border px-2.5 py-0.5 text-[10px] font-semibold $colorCls")(text)
+
+  private def chip(value: String): Frag =
+    span(cls := "rounded-full border border-white/15 bg-slate-800/60 px-2.5 py-0.5 text-xs text-slate-300")(value)
+
+  // ── Timeline ──────────────────────────────────────────────────────────
 
   private def timelineBody(workspaceId: String, timeline: List[TimelineEntry]): Frag =
     div(cls := "rounded-xl border border-white/10 bg-slate-900/70 px-5 py-5 sm:px-6")(

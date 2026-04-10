@@ -11,22 +11,25 @@ import decision.control.DecisionInbox
 import decision.entity.*
 import issues.boundary.IssueControllerSupport
 import issues.entity.*
+import plan.entity.{ Plan, PlanRepository }
 import shared.errors.PersistenceError
 import shared.ids.Ids.*
+import specification.entity.{ Specification, SpecificationRepository }
 import workspace.entity.{ RunStatus, WorkspaceRepository, WorkspaceRun }
 
 trait IssueTimelineService:
-  def buildTimeline(workspaceId: String, issueId: BoardIssueId): IO[PersistenceError, List[TimelineEntry]]
+  def buildTimeline(workspaceId: String, issueId: BoardIssueId): IO[PersistenceError, IssueContext]
 
 object IssueTimelineService:
   def buildTimeline(
     workspaceId: String,
     issueId: BoardIssueId,
-  ): ZIO[IssueTimelineService, PersistenceError, List[TimelineEntry]] =
+  ): ZIO[IssueTimelineService, PersistenceError, IssueContext] =
     ZIO.serviceWithZIO[IssueTimelineService](_.buildTimeline(workspaceId, issueId))
 
   val live: ZLayer[
-    IssueRepository & WorkspaceRepository & DecisionInbox & ChatRepository & AnalysisRepository,
+    IssueRepository & WorkspaceRepository & DecisionInbox & ChatRepository & AnalysisRepository &
+      PlanRepository & SpecificationRepository,
     Nothing,
     IssueTimelineService,
   ] =
@@ -38,9 +41,11 @@ final case class IssueTimelineServiceLive(
   decisionInbox: DecisionInbox,
   chatRepository: ChatRepository,
   analysisRepository: AnalysisRepository,
+  planRepository: PlanRepository,
+  specificationRepository: SpecificationRepository,
 ) extends IssueTimelineService:
 
-  override def buildTimeline(workspaceId: String, issueId: BoardIssueId): IO[PersistenceError, List[TimelineEntry]] =
+  override def buildTimeline(workspaceId: String, issueId: BoardIssueId): IO[PersistenceError, IssueContext] =
     val agentIssueId = IssueId(issueId.value)
 
     for
@@ -56,7 +61,19 @@ final case class IssueTimelineServiceLive(
                            decisions.flatMap(mapDecision) ++
                            chatEntries.flatten ++
                            analysisEntries
-    yield timeline.sortBy(_.occurredAt)
+      plans           <- planRepository.list
+      specs           <- specificationRepository.list
+      linkedPlans      = plans
+                           .filter(_.linkedIssueIds.exists(_.value == agentIssueId.value))
+                           .map(toLinkedPlan)
+      linkedSpecs      = specs
+                           .filter(_.linkedIssueIds.exists(_.value == agentIssueId.value))
+                           .map(toLinkedSpec)
+    yield IssueContext(
+      timeline = timeline.sortBy(_.occurredAt),
+      linkedPlans = linkedPlans,
+      linkedSpecs = linkedSpecs,
+    )
 
   private def mapIssueEvent(event: IssueEvent): List[TimelineEntry] =
     event match
@@ -214,6 +231,29 @@ final case class IssueTimelineServiceLive(
       case name if name.startsWith("analysis-") =>
         Some(AnalysisType.Custom(name.stripPrefix("analysis-")))
       case _                                    => None
+
+  private def toLinkedPlan(plan: Plan): LinkedPlan =
+    LinkedPlan(
+      id = plan.id.value,
+      summary = plan.summary,
+      status = plan.status.toString,
+      taskCount = plan.drafts.size,
+      validationStatus = plan.validation.map(_.status.toString),
+      specificationId = plan.specificationId.map(_.value),
+      createdAt = plan.createdAt,
+    )
+
+  private def toLinkedSpec(spec: Specification): LinkedSpec =
+    LinkedSpec(
+      id = spec.id.value,
+      title = spec.title,
+      status = spec.status.toString,
+      version = spec.version,
+      author = spec.author.displayName,
+      contentPreview = spec.content.take(200),
+      reviewCommentCount = spec.reviewComments.size,
+      createdAt = spec.createdAt,
+    )
 
   private def parseIssuePriority(value: String): IssuePriority =
     value.trim.toLowerCase match

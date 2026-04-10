@@ -110,10 +110,10 @@ final case class BoardControllerLive(
     for
       (_, projectRoot) <- resolveBoardPath(workspaceId)
       issue            <- boardRepository.readIssue(projectRoot, issueId)
-      timeline         <- issueTimelineService
+      context          <- issueTimelineService
                             .buildTimeline(workspaceId, issueId)
                             .mapError(err => BoardError.ParseError(s"timeline lookup failed: $err"))
-    yield htmlResponse(IssueTimelineView.page(workspaceId, issue, timeline))
+    yield htmlResponse(IssueTimelineView.page(workspaceId, issue, context))
 
   private def createIssue(workspaceId: String, req: Request): IO[BoardError, Response] =
     for
