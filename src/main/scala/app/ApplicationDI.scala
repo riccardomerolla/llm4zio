@@ -30,8 +30,6 @@ import app.control.{ HealthMonitor, LogTailer }
 import board.boundary.BoardController as BoardBoundaryController
 import board.control.*
 import board.entity.BoardRepository
-import checkpoint.boundary.CheckpointsController
-import checkpoint.control.CheckpointReviewService
 import com.bot4s.telegram.clients.FutureSttpClient
 import conversation.boundary.{
   ChatController as ConversationChatController,
@@ -41,7 +39,6 @@ import daemon.boundary.DaemonsController
 import daemon.control.DaemonAgentScheduler
 import daemon.entity.DaemonAgentSpecRepositoryES
 import db.*
-import decision.boundary.DecisionsController
 import decision.control.DecisionInbox
 import decision.entity.{ DecisionEventStoreES, DecisionRepositoryES }
 import demo.boundary.DemoController
@@ -77,7 +74,6 @@ import orchestration.control.{
   ProgressTracker as OrchestrationProgressTracker,
 }
 import orchestration.entity.{ AgentPoolManager, AgentRegistry, TaskExecutor, WorkflowService }
-import plan.boundary.PlansController
 import plan.entity.{ PlanEventStoreES, PlanRepositoryES }
 import project.boundary.ProjectsController
 import project.control.ProjectStorageService
@@ -88,7 +84,6 @@ import sdlc.control.SdlcDashboardService
 import shared.services.{ FileService, HttpAIClient, StateService }
 import shared.store.{ ConfigStoreModule, DataStoreModule, DataStoreService, MemoryStoreModule, StoreConfig }
 import shared.web.StreamAbortRegistry
-import specification.boundary.SpecificationsController
 import specification.entity.{ SpecificationEventStoreES, SpecificationRepositoryES }
 import sttp.client4.DefaultFutureBackend
 import taskrun.boundary.{
@@ -329,7 +324,6 @@ object ApplicationDI:
       AgentRepositoryES.live,
       InteractiveAgentRunner.live,
       RunSessionManager.live,
-      CheckpointReviewService.live,
       ZLayer.fromZIO {
         for
           boardRepo      <- ZIO.service[BoardRepository]
@@ -352,10 +346,6 @@ object ApplicationDI:
       KnowledgeGraphService.live,
       KnowledgeExtractionService.live,
       ProjectsController.live,
-      SpecificationsController.live,
-      PlansController.live,
-      DecisionsController.live,
-      CheckpointsController.live,
       KnowledgeController.live,
       WorkspacesController.live,
       DependencyResolver.live,
