@@ -19,7 +19,7 @@ import issues.entity.{ IssueEvent, IssueRepository }
 import knowledge.control.KnowledgeGraphService
 import llm4zio.tools.{ Tool, ToolExecutionError }
 import mcp.GatewayMcpToolSupport.*
-import memory.entity.{ MemoryFilter, MemoryRepository, UserId }
+import memory.entity.{ MemoryFilter, MemoryRepository, Scope }
 import plan.entity.*
 import sdlc.control.SdlcDashboardService
 import shared.ids.Ids.*
@@ -219,7 +219,7 @@ final class GatewayMcpTools(
         query   <- fieldStr(args, "query")
         limit    = fieldIntOpt(args, "limit").getOrElse(10)
         results <- memoryRepo
-                     .searchRelevant(UserId("mcp"), query, limit, MemoryFilter())
+                     .searchRelevant(Scope("mcp"), query, limit, MemoryFilter())
                      .mapError(e => ToolExecutionError.ExecutionFailed(e.getMessage))
       yield Json.Arr(
         Chunk.fromIterable(

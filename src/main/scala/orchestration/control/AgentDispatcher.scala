@@ -10,6 +10,7 @@ import db.TaskRepository
 import llm4zio.core.*
 import llm4zio.providers.{ GeminiCliExecutor, HttpClient }
 import memory.entity.*
+import memory.entity.Scope
 import orchestration.entity.AgentRegistry
 import shared.errors.PersistenceError
 import taskrun.entity.{ TaskArtifactRow, TaskReportRow }
@@ -338,7 +339,7 @@ final case class AgentDispatcherLive(
       _   <- memoryRepository.save(
                MemoryEntry(
                  id = MemoryId.make,
-                 userId = UserId(s"task-run:$taskRunId"),
+                 scope = Scope(s"task-run:$taskRunId"),
                  sessionId = SessionId(nodeId),
                  text = artifact.value.trim,
                  embedding = Vector.empty,

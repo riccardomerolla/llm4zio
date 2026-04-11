@@ -4,7 +4,7 @@ import zio.*
 
 import analysis.entity.{ AnalysisDoc, AnalysisRepository, AnalysisType }
 import knowledge.entity.{ DecisionLog, DecisionLogFilter, DecisionLogRepository, * }
-import memory.entity.{ MemoryEntry, MemoryFilter, MemoryKind, MemoryRepository, UserId }
+import memory.entity.{ MemoryEntry, MemoryFilter, MemoryKind, MemoryRepository, Scope as MemoryScope }
 import shared.errors.PersistenceError
 
 trait KnowledgeGraphService:
@@ -21,7 +21,7 @@ trait KnowledgeGraphService:
   ): IO[PersistenceError, ArchitecturalContext]
 
 object KnowledgeGraphService:
-  private val knowledgeUserId = UserId("knowledge")
+  private val knowledgeScope: MemoryScope = MemoryScope("knowledge")
 
   val live: ZLayer[DecisionLogRepository & MemoryRepository & AnalysisRepository, Nothing, KnowledgeGraphService] =
     ZLayer.fromZIO {
@@ -108,7 +108,7 @@ object KnowledgeGraphService:
       if query.trim.isEmpty then ZIO.succeed(Nil)
       else
         memoryRepo
-          .searchRelevant(knowledgeUserId, query, limit, MemoryFilter(userId = Some(knowledgeUserId)))
+          .searchRelevant(knowledgeScope, query, limit, MemoryFilter(scope = Some(knowledgeScope)))
           .mapError(err =>
             PersistenceError.QueryFailed("knowledgeSemanticSearch", Option(err.getMessage).getOrElse(err.toString))
           )

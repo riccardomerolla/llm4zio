@@ -12,6 +12,7 @@ import issues.entity.AgentIssue
 import knowledge.entity.*
 import llm4zio.core.{ LlmService, Streaming }
 import memory.entity.*
+import memory.entity.Scope
 import shared.errors.PersistenceError
 import shared.ids.Ids.DecisionLogId
 import workspace.entity.WorkspaceRun
@@ -23,7 +24,7 @@ trait KnowledgeExtractionService:
   ): IO[PersistenceError, Option[DecisionLogId]]
 
 object KnowledgeExtractionService:
-  private val knowledgeUserId = UserId("knowledge")
+  private val knowledgeScope = Scope("knowledge")
 
   val live
     : ZLayer[
@@ -206,7 +207,7 @@ object KnowledgeExtractionService:
           Some(
             MemoryEntry(
               id = MemoryId.make,
-              userId = knowledgeUserId,
+              scope = knowledgeScope,
               sessionId = sessionId,
               text =
                 s"${payload.title.getOrElse(defaultTitle(run, issue))}\n\n${payload.decisionTaken.getOrElse("")}".trim,
@@ -220,7 +221,7 @@ object KnowledgeExtractionService:
           payload.rationale.filter(_.trim.nonEmpty).map(text =>
             MemoryEntry(
               id = MemoryId.make,
-              userId = knowledgeUserId,
+              scope = knowledgeScope,
               sessionId = sessionId,
               text = text,
               embedding = Vector.empty,
@@ -234,7 +235,7 @@ object KnowledgeExtractionService:
           payload.designConstraints.filter(_.trim.nonEmpty).map(text =>
             MemoryEntry(
               id = MemoryId.make,
-              userId = knowledgeUserId,
+              scope = knowledgeScope,
               sessionId = sessionId,
               text = text,
               embedding = Vector.empty,
@@ -247,7 +248,7 @@ object KnowledgeExtractionService:
           payload.lessonsLearned.filter(_.trim.nonEmpty).map(text =>
             MemoryEntry(
               id = MemoryId.make,
-              userId = knowledgeUserId,
+              scope = knowledgeScope,
               sessionId = sessionId,
               text = text,
               embedding = Vector.empty,
@@ -260,7 +261,7 @@ object KnowledgeExtractionService:
           payload.systemUnderstanding.filter(_.trim.nonEmpty).map(text =>
             MemoryEntry(
               id = MemoryId.make,
-              userId = knowledgeUserId,
+              scope = knowledgeScope,
               sessionId = sessionId,
               text = text,
               embedding = Vector.empty,
@@ -273,7 +274,7 @@ object KnowledgeExtractionService:
           payload.architecturalRationales.filter(_.trim.nonEmpty).map(text =>
             MemoryEntry(
               id = MemoryId.make,
-              userId = knowledgeUserId,
+              scope = knowledgeScope,
               sessionId = sessionId,
               text = text,
               embedding = Vector.empty,

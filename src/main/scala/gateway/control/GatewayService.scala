@@ -491,13 +491,13 @@ final case class GatewayServiceLive(
   ): IO[GatewayServiceError, String] =
     if !settings.enabled then ZIO.succeed(inbound.content)
     else
-      val userId = ConversationMemory.userIdFromSession(inbound.sessionKey)
+      val scope = ConversationMemory.scopeFromSession(inbound.sessionKey)
       memoryRepository
         .searchRelevant(
-          userId = userId,
+          scope = scope,
           query = inbound.content,
           limit = settings.maxContextMemories,
-          filter = ConversationMemory.memoryFilter(userId),
+          filter = ConversationMemory.memoryFilter(scope),
         )
         .orElseSucceed(Nil)
         .map { memories =>
@@ -550,7 +550,7 @@ final case class GatewayServiceLive(
                     .save(
                       MemoryEntry(
                         id = MemoryId.make,
-                        userId = ConversationMemory.userIdFromSession(sessionKey),
+                        scope = ConversationMemory.scopeFromSession(sessionKey),
                         sessionId = ConversationMemory.sessionIdFromSession(sessionKey),
                         text = summary.content,
                         embedding = Vector.empty,

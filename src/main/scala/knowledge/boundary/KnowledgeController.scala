@@ -5,7 +5,7 @@ import zio.http.*
 
 import knowledge.control.KnowledgeGraphService
 import knowledge.entity.{ DecisionLogFilter, DecisionLogRepository }
-import memory.entity.{ MemoryFilter, MemoryKind, MemoryRepository, UserId }
+import memory.entity.{ MemoryFilter, MemoryKind, MemoryRepository, Scope }
 import shared.errors.PersistenceError
 import shared.web.KnowledgeView
 import workspace.entity.WorkspaceRepository
@@ -14,7 +14,7 @@ trait KnowledgeController:
   def routes: Routes[Any, Response]
 
 object KnowledgeController:
-  private val knowledgeUserId = UserId("knowledge")
+  private val knowledgeScope = Scope("knowledge")
 
   def routes: ZIO[KnowledgeController, Nothing, Routes[Any, Response]] =
     ZIO.serviceWith[KnowledgeController](_.routes)
@@ -65,7 +65,7 @@ object KnowledgeController:
                     )
       context    <- graph.getArchitecturalContext(query.getOrElse(""), workspaceId, limit)
       browser    <- memoryRepo
-                      .listForUser(knowledgeUserId, MemoryFilter(userId = Some(knowledgeUserId)), 0, 200)
+                      .listByScope(knowledgeScope, MemoryFilter(scope = Some(knowledgeScope)), 0, 200)
                       .mapError(err => PersistenceError.QueryFailed("knowledgeListMemories", err.toString))
                       .map(
                         _.filter(entry =>

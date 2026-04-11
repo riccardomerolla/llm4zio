@@ -10,7 +10,7 @@ import db.ChatRepository
 import gateway.entity.SessionKey
 import llm4zio.agents.*
 import llm4zio.core.{ Message, MessageRole }
-import memory.entity.{ MemoryFilter, ScoredMemory, SessionId as MemorySessionId, UserId as MemoryUserId }
+import memory.entity.{ MemoryFilter, ScoredMemory, Scope as MemoryScope, SessionId as MemorySessionId }
 import orchestration.entity.AgentRegistry
 import shared.errors.PersistenceError
 
@@ -64,13 +64,11 @@ object ConversationMemory:
         .getOrElse(90),
     )
 
-  def memoryFilter(userId: MemoryUserId): MemoryFilter =
-    MemoryFilter(userId = Some(userId))
+  def memoryFilter(scope: MemoryScope): MemoryFilter =
+    MemoryFilter(scope = Some(scope))
 
-  def userIdFromSession(sessionKey: SessionKey): MemoryUserId =
-    val raw = sessionKey.value.trim
-    if raw.startsWith("user:") then MemoryUserId(raw.stripPrefix("user:"))
-    else MemoryUserId(sessionKey.asString)
+  def scopeFromSession(sessionKey: SessionKey): MemoryScope =
+    MemoryScope(sessionKey.asString)
 
   def sessionIdFromSession(sessionKey: SessionKey): MemorySessionId =
     MemorySessionId(sessionKey.asString)
