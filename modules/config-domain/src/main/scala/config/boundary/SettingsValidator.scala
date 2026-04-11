@@ -33,7 +33,7 @@ object SettingsValidator:
         // AI Provider — must be a valid provider enum
         case "ai.provider" =>
           if value.isEmpty then Right("")
-          else validateAIProvider(value)
+          else validateProvider(value)
 
         // Numeric fields — must be positive integers
         case k
@@ -80,7 +80,7 @@ object SettingsValidator:
       case v       => Left(s"Invalid checkbox value: $v")
 
   /** Validate AI provider string is a known provider */
-  private def validateAIProvider(value: String): Either[String, String] =
+  private def validateProvider(value: String): Either[String, String] =
     val providers = Seq("GeminiCli", "GeminiApi", "OpenAi", "OpenAI", "Anthropic", "LmStudio", "Ollama", "OpenCode", "Mock")
     if providers.contains(value) then Right(value)
     else Left(s"Invalid AI provider: $value (must be one of: ${providers.mkString(", ")})")
