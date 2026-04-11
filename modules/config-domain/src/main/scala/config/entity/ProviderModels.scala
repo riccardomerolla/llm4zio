@@ -52,11 +52,3 @@ case class GeminiResponse(
   output: String,
   exitCode: Int,
 ) derives JsonCodec
-
-// Migration aliases — allow existing code to compile while consumers are updated.
-// Remove these after all consumers migrate to ProviderConfig/LlmProvider directly.
-type AIProvider = LlmProvider
-val AIProvider = LlmProvider
-
-type AIProviderConfig = ProviderConfig
-val AIProviderConfig = ProviderConfig

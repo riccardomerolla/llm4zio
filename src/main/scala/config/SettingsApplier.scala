@@ -10,7 +10,7 @@ import shared.errors.PersistenceError
   *
   * This enables hot reload of settings without restart:
   *   1. Read settings from application_settings table
-  *   2. Parse them into AIProviderConfig, TelegramBotConfig, etc.
+  *   2. Parse them into ProviderConfig, TelegramBotConfig, etc.
   *   3. Rebuild GatewayConfig
   *   4. Update Ref[GatewayConfig] to apply changes immediately
   */
