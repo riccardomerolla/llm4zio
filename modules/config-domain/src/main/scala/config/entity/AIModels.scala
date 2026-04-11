@@ -3,11 +3,13 @@ package config.entity
 import zio.json.*
 import zio.json.ast.Json
 
+import llm4zio.core.LlmProvider
+
 enum ModelCapability derives JsonCodec:
   case Chat, Streaming, ToolCalling, StructuredOutput, Embeddings
 
 case class AIModel(
-  provider: AIProvider,
+  provider: LlmProvider,
   modelId: String,
   displayName: String,
   contextWindow: Int,
@@ -17,7 +19,7 @@ case class AIModel(
 ) derives JsonCodec
 
 case class ModelRef(
-  provider: Option[AIProvider],
+  provider: Option[LlmProvider],
   modelId: String,
 ) derives JsonCodec
 

@@ -2,6 +2,8 @@ package config.entity
 
 import zio.json.*
 
+import llm4zio.core.LlmProvider
+
 enum ProviderAvailability derives JsonCodec:
   case Healthy, Degraded, Unhealthy, Unknown
 
@@ -9,7 +11,7 @@ enum AuthStatus derives JsonCodec:
   case Valid, Missing, Invalid, Unknown
 
 final case class ProviderProbeStatus(
-  provider: AIProvider,
+  provider: LlmProvider,
   availability: ProviderAvailability,
   auth: AuthStatus,
   statusMessage: String,
@@ -18,7 +20,7 @@ final case class ProviderProbeStatus(
 ) derives JsonCodec
 
 final case class ProviderModelGroup(
-  provider: AIProvider,
+  provider: LlmProvider,
   models: List[AIModel],
 ) derives JsonCodec
 
@@ -27,4 +29,4 @@ final case class ModelRegistryResponse(
 ) derives JsonCodec
 
 enum ModelServiceError derives JsonCodec:
-  case ProbeFailed(provider: AIProvider, message: String)
+  case ProbeFailed(provider: LlmProvider, message: String)

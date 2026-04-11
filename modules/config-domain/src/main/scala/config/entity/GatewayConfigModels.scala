@@ -56,21 +56,21 @@ case class GatewayConfig(
   projectName: Option[String] = None,
   projectVersion: String = "0.0.1-SNAPSHOT",
   maxCompileRetries: Int = 3,
-  geminiModel: String = AIProviderConfig().model,
-  geminiTimeout: zio.Duration = AIProviderConfig().timeout,
-  geminiMaxRetries: Int = AIProviderConfig().maxRetries,
-  geminiRequestsPerMinute: Int = AIProviderConfig().requestsPerMinute,
-  geminiBurstSize: Int = AIProviderConfig().burstSize,
-  geminiAcquireTimeout: zio.Duration = AIProviderConfig().acquireTimeout,
-  aiProvider: Option[AIProviderConfig] = None,
+  geminiModel: String = ProviderConfig().model,
+  geminiTimeout: zio.Duration = ProviderConfig().timeout,
+  geminiMaxRetries: Int = ProviderConfig().maxRetries,
+  geminiRequestsPerMinute: Int = ProviderConfig().requestsPerMinute,
+  geminiBurstSize: Int = ProviderConfig().burstSize,
+  geminiAcquireTimeout: zio.Duration = ProviderConfig().acquireTimeout,
+  aiProvider: Option[ProviderConfig] = None,
   dryRun: Boolean = false,
   verbose: Boolean = false,
   telegram: TelegramBotConfig = TelegramBotConfig(),
 ) derives JsonCodec:
-  def resolvedProviderConfig: AIProviderConfig =
-    AIProviderConfig.withDefaults(
+  def resolvedProviderConfig: ProviderConfig =
+    ProviderConfig.withDefaults(
       aiProvider.getOrElse(
-        AIProviderConfig(
+        ProviderConfig(
           model = geminiModel,
           timeout = geminiTimeout,
           maxRetries = geminiMaxRetries,
@@ -112,13 +112,13 @@ object MigrationConfig:
     projectName: Option[String] = None,
     projectVersion: String = "0.0.1-SNAPSHOT",
     maxCompileRetries: Int = 3,
-    geminiModel: String = AIProviderConfig().model,
-    geminiTimeout: zio.Duration = AIProviderConfig().timeout,
-    geminiMaxRetries: Int = AIProviderConfig().maxRetries,
-    geminiRequestsPerMinute: Int = AIProviderConfig().requestsPerMinute,
-    geminiBurstSize: Int = AIProviderConfig().burstSize,
-    geminiAcquireTimeout: zio.Duration = AIProviderConfig().acquireTimeout,
-    aiProvider: Option[AIProviderConfig] = None,
+    geminiModel: String = ProviderConfig().model,
+    geminiTimeout: zio.Duration = ProviderConfig().timeout,
+    geminiMaxRetries: Int = ProviderConfig().maxRetries,
+    geminiRequestsPerMinute: Int = ProviderConfig().requestsPerMinute,
+    geminiBurstSize: Int = ProviderConfig().burstSize,
+    geminiAcquireTimeout: zio.Duration = ProviderConfig().acquireTimeout,
+    aiProvider: Option[ProviderConfig] = None,
     dryRun: Boolean = false,
     verbose: Boolean = false,
     telegram: TelegramBotConfig = TelegramBotConfig(),
