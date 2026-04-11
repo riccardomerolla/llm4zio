@@ -30,7 +30,7 @@ object MemoryStoreModule:
   private val memoryEntriesDefinition = GigaMapDefinition[MemoryId, MemoryEntry](
     name = "memoryEntries",
     indexes = Chunk(
-      GigaMapIndex.single("userId", _.userId.value),
+      GigaMapIndex.single("scope", _.scope.value),
       GigaMapIndex.single("kind", _.kind.value),
     ),
   )

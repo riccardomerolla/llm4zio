@@ -34,7 +34,7 @@ final case class MemoryRepositoryES(
     yield ()
 
   override def searchRelevant(
-    userId: UserId,
+    scope: Scope,
     query: String,
     limit: Int,
     filter: MemoryFilter,
@@ -46,7 +46,7 @@ final case class MemoryRepositoryES(
                     .search(vectorChunk(queryVec), limit * 3, Some(0.5f))
                     .mapError(toThrowable)
       filtered  = results
-                    .filter(r => r.entity.userId == userId)
+                    .filter(r => r.entity.scope == scope)
                     .filter(r => filter.kind.forall(_ == r.entity.kind))
                     .filter(r => filter.sessionId.forall(_ == r.entity.sessionId))
                     .filter(r => filter.tags.forall(tag => r.entity.tags.contains(tag)))
@@ -54,13 +54,13 @@ final case class MemoryRepositoryES(
                     .map(r => ScoredMemory(r.entity, r.score))
     yield filtered
 
-  override def listForUser(
-    userId: UserId,
+  override def listByScope(
+    scope: Scope,
     filter: MemoryFilter,
     page: Int,
     pageSize: Int,
   ): IO[Throwable, List[MemoryEntry]] =
-    queryEntriesForUser(userId)
+    queryEntriesByScope(scope)
       .map(
         _.toList
           .filter(entry => filter.sessionId.forall(_ == entry.sessionId))
@@ -80,7 +80,7 @@ final case class MemoryRepositoryES(
       .mapError(toThrowable)
       .map(
         _.toList
-          .filter(entry => filter.userId.forall(_ == entry.userId))
+          .filter(entry => filter.scope.forall(_ == entry.scope))
           .filter(entry => filter.sessionId.forall(_ == entry.sessionId))
           .filter(entry => filter.kind.forall(_ == entry.kind))
           .filter(entry => filter.tags.forall(tag => entry.tags.contains(tag)))
@@ -88,15 +88,15 @@ final case class MemoryRepositoryES(
           .slice(math.max(0, page) * math.max(1, pageSize), math.max(0, page + 1) * math.max(1, pageSize))
       )
 
-  override def deleteById(userId: UserId, id: MemoryId): IO[Throwable, Unit] =
+  override def deleteById(scope: Scope, id: MemoryId): IO[Throwable, Unit] =
     for
       existing <- memoryMap.get(StoreMemoryId(id.value)).mapError(toThrowable)
       _        <- existing match
-                    case Some(entry) if entry.userId == userId =>
+                    case Some(entry) if entry.scope == scope =>
                       memoryMap.remove(StoreMemoryId(id.value)).unit.mapError(toThrowable)
-                    case Some(_)                               =>
-                      ZIO.fail(new RuntimeException(s"Memory $id does not belong to user ${userId.value}"))
-                    case None                                  => ZIO.unit
+                    case Some(_)                             =>
+                      ZIO.fail(new RuntimeException(s"Memory $id does not belong to scope ${scope.value}"))
+                    case None                                => ZIO.unit
       idx      <- ensureIndex
       _        <- idx.remove(id.value.hashCode.toLong).mapError(toThrowable).ignore
     yield ()
@@ -128,13 +128,13 @@ final case class MemoryRepositoryES(
       )
       .mapError(toThrowable)
 
-  private def queryEntriesForUser(userId: UserId): IO[Throwable, Chunk[MemoryEntry]] =
+  private def queryEntriesByScope(scope: Scope): IO[Throwable, Chunk[MemoryEntry]] =
     memoryMap
-      .query(GigaMapQuery.ByIndex("userId", userId.value))
+      .query(GigaMapQuery.ByIndex("scope", scope.value))
       .catchSome {
-        case GigaMapError.IndexNotDefined("userId") =>
-          ZIO.logWarning("memoryEntries 'userId' index missing; falling back to full scan") *>
-            memoryMap.query(GigaMapQuery.All[MemoryEntry]()).map(_.filter(_.userId == userId))
+        case GigaMapError.IndexNotDefined("scope") =>
+          ZIO.logWarning("memoryEntries 'scope' index missing; falling back to full scan") *>
+            memoryMap.query(GigaMapQuery.All[MemoryEntry]()).map(_.filter(_.scope == scope))
       }
       .mapError(toThrowable)
 
