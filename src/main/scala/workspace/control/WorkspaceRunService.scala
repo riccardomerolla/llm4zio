@@ -359,7 +359,14 @@ final case class WorkspaceRunServiceLive(
                                          appendToConversation(run.conversationId, "Run cancelled by user.").ignore).ignore
                                      case _                                      => ZIO.unit
                                    }
-                                   .ensuring(fiberRegistry.update(_ - run.id))
+                                   .ensuring(
+                                     slotRegistry
+                                       .modify(slots => (slots.get(run.id), slots - run.id))
+                                       .flatMap {
+                                         case Some(handle) => releaseAgentSlot(handle)
+                                         case None         => ZIO.unit
+                                       } *> fiberRegistry.update(_ - run.id)
+                                   )
                                    .forkDaemon
                    _          <- fiberRegistry.update(_ + (run.id -> fiber))
                  yield run).tapError(_ => releaseAgentSlot(slot))
@@ -504,7 +511,16 @@ final case class WorkspaceRunServiceLive(
                                                   ).ignore).ignore
                                               case _                                      => ZIO.unit
                                             }
-                                            .ensuring(fiberRegistry.update(_ - continuedRun.id))
+                                            .ensuring(
+                                              slotRegistry
+                                                .modify(slots =>
+                                                  (slots.get(continuedRun.id), slots - continuedRun.id)
+                                                )
+                                                .flatMap {
+                                                  case Some(handle) => releaseAgentSlot(handle)
+                                                  case None         => ZIO.unit
+                                                } *> fiberRegistry.update(_ - continuedRun.id)
+                                            )
                                             .forkDaemon
                          _             <- fiberRegistry.update(_ + (continuedRun.id -> fiber))
                          _             <- appendToConversation(
@@ -584,7 +600,6 @@ final case class WorkspaceRunServiceLive(
 
   private def reserveAgentSlot(agentName: String): IO[WorkspaceError, SlotHandle] =
     acquireAgentSlot(agentName)
-      .disconnect
       .timeoutFail(
         WorkspaceError.InvalidRunState(
           runId = agentName.trim,
