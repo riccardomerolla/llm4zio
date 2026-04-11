@@ -3,7 +3,7 @@ package app
 import zio.*
 import zio.stream
 
-import _root_.config.entity.{ AIProviderConfig, GatewayConfig }
+import _root_.config.entity.{ GatewayConfig, ProviderConfig }
 import llm4zio.core.*
 import llm4zio.providers.{ GeminiCliExecutor, HttpClient }
 import llm4zio.tools.{ AnyTool, JsonSchema }
@@ -52,17 +52,15 @@ final private[app] case class ConfigAwareLlmService(
             .map(created => (created, current + (cfg -> created)))
     }
 
-  private def fallbackConfigs(primary: AIProviderConfig): List[LlmConfig] =
-    val primaryLlm = ApplicationDI.aiConfigToLlmConfig(primary)
+  private def fallbackConfigs(primary: ProviderConfig): List[LlmConfig] =
+    val primaryLlm = primary.toLlmConfig
     val fallback   = primary.fallbackChain.models.map { ref =>
-      ApplicationDI.aiConfigToLlmConfig(
-        AIProviderConfig.withDefaults(
-          primary.copy(
-            provider = ref.provider.getOrElse(primary.provider),
-            model = ref.modelId,
-          )
+      ProviderConfig.withDefaults(
+        primary.copy(
+          provider = ref.provider.getOrElse(primary.provider),
+          model = ref.modelId,
         )
-      )
+      ).toLlmConfig
     }
     (primaryLlm :: fallback).distinct
 

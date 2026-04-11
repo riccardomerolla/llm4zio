@@ -46,7 +46,7 @@ object SettingsControllerSpec extends ZIOSpecDefault:
   private val stubModelService: ModelService = new ModelService:
     override def listAvailableModels: UIO[ModelRegistryResponse]                              = ZIO.succeed(ModelRegistryResponse(Nil))
     override def probeProviders: UIO[List[ProviderProbeStatus]]                               = ZIO.succeed(Nil)
-    override def resolveFallbackChain(primary: AIProviderConfig): UIO[List[AIProviderConfig]] =
+    override def resolveFallbackChain(primary: ProviderConfig): UIO[List[ProviderConfig]] =
       ZIO.succeed(List(primary))
 
   final private case class InMemoryConfigRepository(ref: Ref[Map[String, SettingRow]]) extends ConfigRepository:

@@ -6,13 +6,14 @@ import java.nio.charset.StandardCharsets
 import zio.*
 
 import _root_.config.entity.*
+import llm4zio.core.LlmProvider
 import shared.errors.AIError
 import shared.services.HttpAIClient
 
 trait ModelService:
   def listAvailableModels: UIO[ModelRegistryResponse]
   def probeProviders: UIO[List[ProviderProbeStatus]]
-  def resolveFallbackChain(primary: AIProviderConfig): UIO[List[AIProviderConfig]]
+  def resolveFallbackChain(primary: ProviderConfig): UIO[List[ProviderConfig]]
 
 object ModelService:
 
@@ -22,7 +23,7 @@ object ModelService:
   def probeProviders: ZIO[ModelService, Nothing, List[ProviderProbeStatus]] =
     ZIO.serviceWithZIO[ModelService](_.probeProviders)
 
-  def resolveFallbackChain(primary: AIProviderConfig): ZIO[ModelService, Nothing, List[AIProviderConfig]] =
+  def resolveFallbackChain(primary: ProviderConfig): ZIO[ModelService, Nothing, List[ProviderConfig]] =
     ZIO.serviceWithZIO[ModelService](_.resolveFallbackChain(primary))
 
   val live: ZLayer[Ref[GatewayConfig] & HttpAIClient, Nothing, ModelService] =
@@ -52,11 +53,11 @@ final case class ModelServiceLive(
       statuses <- ZIO.foreach(distinct)(probeProvider(cfg, _, now))
     yield statuses
 
-  override def resolveFallbackChain(primary: AIProviderConfig): UIO[List[AIProviderConfig]] =
+  override def resolveFallbackChain(primary: ProviderConfig): UIO[List[ProviderConfig]] =
     ZIO.succeed {
       val fallbacks = primary.fallbackChain.models
         .map(ref =>
-          AIProviderConfig.withDefaults(
+          ProviderConfig.withDefaults(
             primary.copy(
               provider = ref.provider.getOrElse(primary.provider),
               model = ref.modelId,
@@ -67,8 +68,8 @@ final case class ModelServiceLive(
     }
 
   private def probeProvider(
-    primary: AIProviderConfig,
-    provider: AIProvider,
+    primary: ProviderConfig,
+    provider: LlmProvider,
     now: java.time.Instant,
   ): UIO[ProviderProbeStatus] =
     providerCheckConfig(primary, provider) match
@@ -96,10 +97,10 @@ final case class ModelServiceLive(
         )
 
   private def providerCheckConfig(
-    primary: AIProviderConfig,
-    provider: AIProvider,
-  ): Either[ProviderProbeStatus, AIProviderConfig] =
-    val cfg = AIProviderConfig.withDefaults(
+    primary: ProviderConfig,
+    provider: LlmProvider,
+  ): Either[ProviderProbeStatus, ProviderConfig] =
+    val cfg = ProviderConfig.withDefaults(
       primary.copy(
         provider = provider,
         model = defaultModelFor(provider),
@@ -116,7 +117,7 @@ final case class ModelServiceLive(
           rateLimitHeadroom = None,
         )
       )
-    else if cfg.baseUrl.forall(_.trim.isEmpty) && provider != AIProvider.GeminiCli && provider != AIProvider.Mock then
+    else if cfg.baseUrl.forall(_.trim.isEmpty) && provider != LlmProvider.GeminiCli && provider != LlmProvider.Mock then
       Left(
         ProviderProbeStatus(
           provider = provider,
@@ -129,28 +130,28 @@ final case class ModelServiceLive(
       )
     else Right(cfg)
 
-  private def probeRemote(config: AIProviderConfig): IO[AIError, String] =
+  private def probeRemote(config: ProviderConfig): IO[AIError, String] =
     config.provider match
-      case AIProvider.GeminiCli                                          =>
+      case LlmProvider.GeminiCli                                          =>
         ZIO.succeed("CLI provider; remote health probe is not required")
-      case AIProvider.GeminiApi                                          =>
+      case LlmProvider.GeminiApi                                          =>
         val key = config.apiKey.getOrElse("")
         val url = s"${config.baseUrl.getOrElse("").stripSuffix("/")}/v1beta/models?key=${urlEncode(key)}"
         http.get(url = url, timeout = 10.seconds)
-      case AIProvider.Ollama                                             =>
+      case LlmProvider.Ollama                                             =>
         val url = s"${config.baseUrl.getOrElse("").stripSuffix("/")}/api/tags"
         http.get(url = url, timeout = 10.seconds)
-      case AIProvider.OpenAi | AIProvider.LmStudio | AIProvider.OpenCode =>
+      case LlmProvider.OpenAI | LlmProvider.LmStudio | LlmProvider.OpenCode =>
         val authHeaders = authHeader(config.apiKey)
         val url         = s"${config.baseUrl.getOrElse("").stripSuffix("/")}/models"
         http.get(url = url, headers = authHeaders, timeout = 10.seconds)
-      case AIProvider.Anthropic                                          =>
+      case LlmProvider.Anthropic                                          =>
         val headers = authHeader(config.apiKey) ++ Map(
           "anthropic-version" -> "2023-06-01"
         )
         val url     = s"${config.baseUrl.getOrElse("").stripSuffix("/")}/v1/models"
         http.get(url = url, headers = headers, timeout = 10.seconds)
-      case AIProvider.Mock                                               =>
+      case LlmProvider.Mock                                               =>
         ZIO.succeed("Mock provider; always available")
 
   private def authHeader(apiKey: Option[String]): Map[String, String] =
@@ -177,54 +178,54 @@ final case class ModelServiceLive(
       case AIError.AuthenticationFailed(_) => AuthStatus.Invalid
       case _                               => AuthStatus.Unknown
 
-  private def needsApiKey(provider: AIProvider): Boolean =
+  private def needsApiKey(provider: LlmProvider): Boolean =
     provider match
-      case AIProvider.GeminiApi | AIProvider.OpenAi | AIProvider.Anthropic => true
+      case LlmProvider.GeminiApi | LlmProvider.OpenAI | LlmProvider.Anthropic => true
       case _                                                               => false
 
   private def urlEncode(value: String): String =
     URLEncoder.encode(value, StandardCharsets.UTF_8)
 
-  private def defaultModelFor(provider: AIProvider): String =
+  private def defaultModelFor(provider: LlmProvider): String =
     catalog.get(provider).flatMap(_.headOption.map(_.modelId)).getOrElse("unknown-model")
 
-  private val catalog: Map[AIProvider, List[AIModel]] = Map(
-    AIProvider.GeminiCli -> List(
+  private val catalog: Map[LlmProvider, List[AIModel]] = Map(
+    LlmProvider.GeminiCli -> List(
       AIModel(
-        AIProvider.GeminiCli,
+        LlmProvider.GeminiCli,
         "gemini-2.5-flash",
         "Gemini 2.5 Flash",
         1_000_000,
         Set(ModelCapability.Chat, ModelCapability.Streaming, ModelCapability.StructuredOutput),
       ),
       AIModel(
-        AIProvider.GeminiCli,
+        LlmProvider.GeminiCli,
         "gemini-2.5-pro",
         "Gemini 2.5 Pro",
         2_000_000,
         Set(ModelCapability.Chat, ModelCapability.Streaming, ModelCapability.StructuredOutput),
       ),
     ),
-    AIProvider.GeminiApi -> List(
+    LlmProvider.GeminiApi -> List(
       AIModel(
-        AIProvider.GeminiApi,
+        LlmProvider.GeminiApi,
         "gemini-2.5-flash",
         "Gemini 2.5 Flash",
         1_000_000,
         Set(ModelCapability.Chat, ModelCapability.Streaming, ModelCapability.StructuredOutput),
       ),
       AIModel(
-        AIProvider.GeminiApi,
+        LlmProvider.GeminiApi,
         "gemini-2.5-pro",
         "Gemini 2.5 Pro",
         2_000_000,
         Set(ModelCapability.Chat, ModelCapability.Streaming, ModelCapability.StructuredOutput),
       ),
-      AIModel(AIProvider.GeminiApi, "text-embedding-004", "Text Embedding 004", 8_192, Set(ModelCapability.Embeddings)),
+      AIModel(LlmProvider.GeminiApi, "text-embedding-004", "Text Embedding 004", 8_192, Set(ModelCapability.Embeddings)),
     ),
-    AIProvider.OpenAi    -> List(
+    LlmProvider.OpenAI    -> List(
       AIModel(
-        AIProvider.OpenAi,
+        LlmProvider.OpenAI,
         "gpt-4o",
         "GPT-4o",
         128_000,
@@ -236,7 +237,7 @@ final case class ModelServiceLive(
         ),
       ),
       AIModel(
-        AIProvider.OpenAi,
+        LlmProvider.OpenAI,
         "gpt-4o-mini",
         "GPT-4o mini",
         128_000,
@@ -248,32 +249,32 @@ final case class ModelServiceLive(
         ),
       ),
       AIModel(
-        AIProvider.OpenAi,
+        LlmProvider.OpenAI,
         "text-embedding-3-large",
         "Text Embedding 3 Large",
         8_192,
         Set(ModelCapability.Embeddings),
       ),
     ),
-    AIProvider.Anthropic -> List(
+    LlmProvider.Anthropic -> List(
       AIModel(
-        AIProvider.Anthropic,
+        LlmProvider.Anthropic,
         "claude-3-5-sonnet-latest",
         "Claude 3.5 Sonnet",
         200_000,
         Set(ModelCapability.Chat, ModelCapability.Streaming, ModelCapability.ToolCalling),
       ),
       AIModel(
-        AIProvider.Anthropic,
+        LlmProvider.Anthropic,
         "claude-3-5-haiku-latest",
         "Claude 3.5 Haiku",
         200_000,
         Set(ModelCapability.Chat, ModelCapability.Streaming, ModelCapability.ToolCalling),
       ),
     ),
-    AIProvider.LmStudio  -> List(
+    LlmProvider.LmStudio  -> List(
       AIModel(
-        AIProvider.LmStudio,
+        LlmProvider.LmStudio,
         "local-model",
         "Local Model (LM Studio)",
         32_768,
@@ -285,13 +286,13 @@ final case class ModelServiceLive(
         ),
       )
     ),
-    AIProvider.Ollama    -> List(
-      AIModel(AIProvider.Ollama, "llama3.1", "Llama 3.1", 8_192, Set(ModelCapability.Chat, ModelCapability.Streaming)),
-      AIModel(AIProvider.Ollama, "mistral", "Mistral", 8_192, Set(ModelCapability.Chat, ModelCapability.Streaming)),
+    LlmProvider.Ollama    -> List(
+      AIModel(LlmProvider.Ollama, "llama3.1", "Llama 3.1", 8_192, Set(ModelCapability.Chat, ModelCapability.Streaming)),
+      AIModel(LlmProvider.Ollama, "mistral", "Mistral", 8_192, Set(ModelCapability.Chat, ModelCapability.Streaming)),
     ),
-    AIProvider.OpenCode  -> List(
+    LlmProvider.OpenCode  -> List(
       AIModel(
-        AIProvider.OpenCode,
+        LlmProvider.OpenCode,
         "openai/gpt-4o-mini",
         "OpenCode GPT-4o mini",
         128_000,
@@ -303,9 +304,9 @@ final case class ModelServiceLive(
         ),
       )
     ),
-    AIProvider.Mock      -> List(
+    LlmProvider.Mock      -> List(
       AIModel(
-        AIProvider.Mock,
+        LlmProvider.Mock,
         "mock-model",
         "Mock Model (Demo)",
         128_000,

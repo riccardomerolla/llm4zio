@@ -6,7 +6,7 @@ import zio.*
 import zio.test.*
 import zio.test.Assertion.*
 
-import _root_.config.entity.{ AIProviderConfig, ConfigRepository, CustomAgentRow, SettingRow, WorkflowRow }
+import _root_.config.entity.{ ConfigRepository, CustomAgentRow, ProviderConfig, SettingRow, WorkflowRow }
 import activity.control.ActivityHub
 import activity.entity.ActivityEvent
 import board.entity.*
@@ -343,12 +343,12 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
 
   private val testConfigResolver: ULayer[AgentConfigResolver] =
     ZLayer.succeed(new AgentConfigResolver:
-      override def resolveConfig(agentName: String): IO[PersistenceError, AIProviderConfig] =
-        ZIO.succeed(AIProviderConfig.withDefaults(AIProviderConfig())))
+      override def resolveConfig(agentName: String): IO[PersistenceError, ProviderConfig] =
+        ZIO.succeed(ProviderConfig.withDefaults(ProviderConfig())))
 
   private val failingConfigResolver: ULayer[AgentConfigResolver] =
     ZLayer.succeed(new AgentConfigResolver:
-      override def resolveConfig(agentName: String): IO[PersistenceError, AIProviderConfig] =
+      override def resolveConfig(agentName: String): IO[PersistenceError, ProviderConfig] =
         ZIO.fail(PersistenceError.StoreUnavailable("resolver unavailable")))
 
   private val testConfigRepository: ULayer[ConfigRepository] =
@@ -394,8 +394,8 @@ object PlannerAgentServiceSpec extends ZIOSpecDefault:
   private val cliContextRefLayer: ULayer[Ref[Vector[llm4zio.providers.GeminiCliExecutionContext]]] =
     ZLayer.fromZIO(Ref.make(Vector.empty[llm4zio.providers.GeminiCliExecutionContext]))
 
-  private val startupAiConfigLayer: ULayer[AIProviderConfig] =
-    ZLayer.succeed(AIProviderConfig.withDefaults(AIProviderConfig()))
+  private val startupAiConfigLayer: ULayer[ProviderConfig] =
+    ZLayer.succeed(ProviderConfig.withDefaults(ProviderConfig()))
 
   private val stubCliExecutorLayer
     : ZLayer[Ref[Vector[llm4zio.providers.GeminiCliExecutionContext]], Nothing, GeminiCliExecutor] =

@@ -2,27 +2,28 @@ package orchestration.control
 
 import zio.*
 
-import _root_.config.entity.{ AIProvider, AIProviderConfig, ModelFallbackChain, ModelRef }
+import _root_.config.entity.{ ModelFallbackChain, ModelRef, ProviderConfig }
+import llm4zio.core.LlmProvider
 import db.TaskRepository
 import shared.errors.PersistenceError
 
 trait AgentConfigResolver:
-  def resolveConfig(agentName: String): IO[PersistenceError, AIProviderConfig]
+  def resolveConfig(agentName: String): IO[PersistenceError, ProviderConfig]
 
 object AgentConfigResolver:
 
-  def resolveConfig(agentName: String): ZIO[AgentConfigResolver, PersistenceError, AIProviderConfig] =
+  def resolveConfig(agentName: String): ZIO[AgentConfigResolver, PersistenceError, ProviderConfig] =
     ZIO.serviceWithZIO[AgentConfigResolver](_.resolveConfig(agentName))
 
-  val live: ZLayer[TaskRepository & AIProviderConfig, Nothing, AgentConfigResolver] =
+  val live: ZLayer[TaskRepository & ProviderConfig, Nothing, AgentConfigResolver] =
     ZLayer.fromFunction(AgentConfigResolverLive.apply)
 
 final case class AgentConfigResolverLive(
   repository: TaskRepository,
-  startupConfig: AIProviderConfig,
+  startupConfig: ProviderConfig,
 ) extends AgentConfigResolver:
 
-  override def resolveConfig(agentName: String): IO[PersistenceError, AIProviderConfig] =
+  override def resolveConfig(agentName: String): IO[PersistenceError, ProviderConfig] =
     val agentPrefix = s"agent.$agentName.ai."
     for
       agentRows            <- repository.getSettingsByPrefix(agentPrefix).catchAll(_ => ZIO.succeed(Nil))
@@ -44,11 +45,11 @@ final case class AgentConfigResolverLive(
       baseUrl               =
         if sameProviderAsGlobal then
           firstNonBlank(agentMap.get("ai.baseUrl"), globalMap.get("ai.baseUrl"))
-            .orElse(AIProvider.defaultBaseUrl(provider))
+            .orElse(LlmProvider.defaultBaseUrl(provider))
             .orElse(if sameProviderAsStartup then startupConfig.baseUrl else None)
         else
           firstNonBlank(agentMap.get("ai.baseUrl"), None)
-            .orElse(AIProvider.defaultBaseUrl(provider))
+            .orElse(LlmProvider.defaultBaseUrl(provider))
             .orElse(if sameProviderAsStartup then startupConfig.baseUrl else None)
       apiKey                =
         if sameProviderAsGlobal then
@@ -57,7 +58,7 @@ final case class AgentConfigResolverLive(
         else
           firstNonBlank(agentMap.get("ai.apiKey"), None)
             .orElse(if sameProviderAsStartup then startupConfig.apiKey else None)
-      resolved              = AIProviderConfig.withDefaults(
+      resolved              = ProviderConfig.withDefaults(
                                 startupConfig.copy(
                                   provider = provider,
                                   model = model,
@@ -105,29 +106,29 @@ final case class AgentConfigResolverLive(
   private def firstNonBlank(first: Option[String], second: Option[String]): Option[String] =
     first.map(_.trim).filter(_.nonEmpty).orElse(second.map(_.trim).filter(_.nonEmpty))
 
-  private def parseProvider(value: String): Option[AIProvider] =
+  private def parseProvider(value: String): Option[LlmProvider] =
     value.trim.toLowerCase.replaceAll("[\\s_-]+", "") match
-      case "geminicli" => Some(AIProvider.GeminiCli)
-      case "geminiapi" => Some(AIProvider.GeminiApi)
-      case "openai"    => Some(AIProvider.OpenAi)
-      case "anthropic" => Some(AIProvider.Anthropic)
-      case "lmstudio"  => Some(AIProvider.LmStudio)
-      case "ollama"    => Some(AIProvider.Ollama)
-      case "opencode"  => Some(AIProvider.OpenCode)
+      case "geminicli" => Some(LlmProvider.GeminiCli)
+      case "geminiapi" => Some(LlmProvider.GeminiApi)
+      case "openai"    => Some(LlmProvider.OpenAI)
+      case "anthropic" => Some(LlmProvider.Anthropic)
+      case "lmstudio"  => Some(LlmProvider.LmStudio)
+      case "ollama"    => Some(LlmProvider.Ollama)
+      case "opencode"  => Some(LlmProvider.OpenCode)
       case _           => None
 
-  private def defaultModelFor(provider: AIProvider): String =
+  private def defaultModelFor(provider: LlmProvider): String =
     provider match
-      case AIProvider.GeminiCli => "gemini-2.5-flash"
-      case AIProvider.GeminiApi => "gemini-2.5-flash"
-      case AIProvider.OpenAi    => "gpt-4o-mini"
-      case AIProvider.Anthropic => "claude-3-5-haiku-latest"
-      case AIProvider.LmStudio  => "openai/gpt-oss-20b"
-      case AIProvider.Ollama    => "llama3.2:3b"
-      case AIProvider.OpenCode  => "gpt-4o-mini"
-      case AIProvider.Mock      => "mock-model"
+      case LlmProvider.GeminiCli => "gemini-2.5-flash"
+      case LlmProvider.GeminiApi => "gemini-2.5-flash"
+      case LlmProvider.OpenAI    => "gpt-4o-mini"
+      case LlmProvider.Anthropic => "claude-3-5-haiku-latest"
+      case LlmProvider.LmStudio  => "openai/gpt-oss-20b"
+      case LlmProvider.Ollama    => "llama3.2:3b"
+      case LlmProvider.OpenCode  => "gpt-4o-mini"
+      case LlmProvider.Mock      => "mock-model"
 
-  private def parseFallbackChain(raw: Option[String], defaultProvider: AIProvider): ModelFallbackChain =
+  private def parseFallbackChain(raw: Option[String], defaultProvider: LlmProvider): ModelFallbackChain =
     val refs = raw
       .toList
       .flatMap(_.split(",").toList)
@@ -136,7 +137,7 @@ final case class AgentConfigResolverLive(
       .flatMap(parseModelRef(_, defaultProvider))
     ModelFallbackChain(refs)
 
-  private def parseModelRef(raw: String, defaultProvider: AIProvider): Option[ModelRef] =
+  private def parseModelRef(raw: String, defaultProvider: LlmProvider): Option[ModelRef] =
     raw.split(":", 2).toList match
       case providerRaw :: modelRaw :: Nil =>
         val modelId = modelRaw.trim

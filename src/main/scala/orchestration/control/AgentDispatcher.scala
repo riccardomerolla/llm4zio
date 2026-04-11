@@ -5,7 +5,7 @@ import java.time.Instant
 
 import zio.*
 
-import _root_.config.entity.{ AIProvider, AIProviderConfig, ConfigRepository }
+import _root_.config.entity.{ ConfigRepository, ProviderConfig }
 import db.TaskRepository
 import llm4zio.core.*
 import llm4zio.providers.{ GeminiCliExecutor, HttpClient }
@@ -233,7 +233,7 @@ final case class AgentDispatcherLive(
         case Left(_)       => llm4zio.core.Streaming.collect(llmService.executeStream(prompt))
       }
 
-  private def withFailover(config: AIProviderConfig, prompt: String): IO[LlmError, LlmResponse] =
+  private def withFailover(config: ProviderConfig, prompt: String): IO[LlmError, LlmResponse] =
     fallbackConfigs(config)
       .foldLeft[IO[LlmError, LlmResponse]](ZIO.fail(LlmError.ConfigError("No LLM provider configured"))) {
         (acc, cfg) =>
@@ -242,17 +242,15 @@ final case class AgentDispatcherLive(
           )
       }
 
-  private def fallbackConfigs(primary: AIProviderConfig): List[LlmConfig] =
-    val primaryLlm = aiConfigToLlmConfig(primary)
+  private def fallbackConfigs(primary: ProviderConfig): List[LlmConfig] =
+    val primaryLlm = primary.toLlmConfig
     val fallback   = primary.fallbackChain.models.map { ref =>
-      aiConfigToLlmConfig(
-        AIProviderConfig.withDefaults(
-          primary.copy(
-            provider = ref.provider.getOrElse(primary.provider),
-            model = ref.modelId,
-          )
+      ProviderConfig.withDefaults(
+        primary.copy(
+          provider = ref.provider.getOrElse(primary.provider),
+          model = ref.modelId,
         )
-      )
+      ).toLlmConfig
     }
     (primaryLlm :: fallback).distinct
 
@@ -277,32 +275,6 @@ final case class AgentDispatcherLive(
       case LlmProvider.Ollama    => llm4zio.providers.OllamaProvider.make(cfg, httpClient)
       case LlmProvider.OpenCode  => llm4zio.providers.OpenCodeProvider.make(cfg, httpClient)
       case LlmProvider.Mock      => llm4zio.providers.MockProvider.make(cfg)
-
-  private def aiConfigToLlmConfig(aiConfig: AIProviderConfig): LlmConfig =
-    LlmConfig(
-      provider = aiProviderToLlmProvider(aiConfig.provider),
-      model = aiConfig.model,
-      baseUrl = aiConfig.baseUrl,
-      apiKey = aiConfig.apiKey,
-      timeout = aiConfig.timeout,
-      maxRetries = aiConfig.maxRetries,
-      requestsPerMinute = aiConfig.requestsPerMinute,
-      burstSize = aiConfig.burstSize,
-      acquireTimeout = aiConfig.acquireTimeout,
-      temperature = aiConfig.temperature,
-      maxTokens = aiConfig.maxTokens,
-    )
-
-  private def aiProviderToLlmProvider(aiProvider: AIProvider): LlmProvider =
-    aiProvider match
-      case AIProvider.GeminiCli => LlmProvider.GeminiCli
-      case AIProvider.GeminiApi => LlmProvider.GeminiApi
-      case AIProvider.OpenAi    => LlmProvider.OpenAI
-      case AIProvider.Anthropic => LlmProvider.Anthropic
-      case AIProvider.LmStudio  => LlmProvider.LmStudio
-      case AIProvider.Ollama    => LlmProvider.Ollama
-      case AIProvider.OpenCode  => LlmProvider.OpenCode
-      case AIProvider.Mock      => LlmProvider.Mock
 
   private def ensureAgentWorkspace(
     taskRunId: Long,

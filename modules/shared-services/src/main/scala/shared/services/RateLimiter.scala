@@ -2,7 +2,7 @@ package shared.services
 
 import zio.*
 
-import _root_.config.entity.{ AIProviderConfig, MigrationConfig }
+import _root_.config.entity.{ MigrationConfig, ProviderConfig }
 import shared.errors.RateLimitError
 
 /** Token bucket rate limiter for Gemini requests */
@@ -21,7 +21,7 @@ final case class RateLimiterConfig(
 )
 
 object RateLimiterConfig:
-  def fromAIProviderConfig(config: AIProviderConfig): RateLimiterConfig =
+  def fromProviderConfig(config: ProviderConfig): RateLimiterConfig =
     RateLimiterConfig(
       requestsPerMinute = config.requestsPerMinute,
       burstSize = config.burstSize,
@@ -29,7 +29,7 @@ object RateLimiterConfig:
     )
 
   def fromMigrationConfig(config: MigrationConfig): RateLimiterConfig =
-    fromAIProviderConfig(config.resolvedProviderConfig)
+    fromProviderConfig(config.resolvedProviderConfig)
 
 final case class RateLimiterMetrics(
   totalRequests: Long,

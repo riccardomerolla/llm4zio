@@ -6,7 +6,7 @@ import zio.stream.ZStream
 import zio.test.*
 
 import _root_.config.control.ModelService
-import _root_.config.entity.{ AIProviderConfig, ModelRegistryResponse, ProviderProbeStatus }
+import _root_.config.entity.{ ModelRegistryResponse, ProviderConfig, ProviderProbeStatus }
 import app.boundary.HealthControllerLive
 import app.control.*
 
@@ -29,7 +29,7 @@ object HealthControllerSpec extends ZIOSpecDefault:
   private val modelService: ModelService = new ModelService:
     override def listAvailableModels: UIO[ModelRegistryResponse]                              = ZIO.succeed(ModelRegistryResponse(Nil))
     override def probeProviders: UIO[List[ProviderProbeStatus]]                               = ZIO.succeed(Nil)
-    override def resolveFallbackChain(primary: AIProviderConfig): UIO[List[AIProviderConfig]] =
+    override def resolveFallbackChain(primary: ProviderConfig): UIO[List[ProviderConfig]] =
       ZIO.succeed(List(primary))
 
   def spec: Spec[TestEnvironment & Scope, Any] = suite("HealthControllerSpec")(

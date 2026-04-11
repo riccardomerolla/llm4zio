@@ -6,7 +6,7 @@ import zio.json.*
 import zio.stream.ZStream
 import zio.test.*
 
-import _root_.config.entity.{ AIProviderConfig, ConfigRepository, CustomAgentRow, SettingRow, WorkflowRow }
+import _root_.config.entity.{ ConfigRepository, CustomAgentRow, ProviderConfig, SettingRow, WorkflowRow }
 import activity.control.ActivityHubLive
 import activity.entity.{ ActivityEvent, ActivityEventType, ActivityRepository }
 import conversation.boundary.ChatControllerLive
@@ -154,8 +154,8 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
 
   private val testConfigResolver: AgentConfigResolver =
     new AgentConfigResolver:
-      override def resolveConfig(agentName: String): IO[PersistenceError, AIProviderConfig] =
-        ZIO.succeed(AIProviderConfig.withDefaults(AIProviderConfig()))
+      override def resolveConfig(agentName: String): IO[PersistenceError, ProviderConfig] =
+        ZIO.succeed(ProviderConfig.withDefaults(ProviderConfig()))
 
   private val stubHttpClient: HttpClient = new HttpClient:
     override def postJson(
@@ -518,9 +518,9 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
                           )
         resolvedAgents <- Ref.make(List.empty[String])
         resolver        = new AgentConfigResolver:
-                            override def resolveConfig(agentName: String): IO[PersistenceError, AIProviderConfig] =
+                            override def resolveConfig(agentName: String): IO[PersistenceError, ProviderConfig] =
                               resolvedAgents.update(_ :+ agentName) *>
-                                ZIO.succeed(AIProviderConfig.withDefaults(AIProviderConfig()))
+                                ZIO.succeed(ProviderConfig.withDefaults(ProviderConfig()))
         abortReg       <- Ref.make(Map.empty[Long, UIO[Unit]]).map(StreamAbortRegistryLive.apply)
         actHub         <- Ref.make(Set.empty[Queue[ActivityEvent]]).map(subs => ActivityHubLive(stubActivityRepo, subs))
         toolReg        <- llm4zio.tools.ToolRegistry.make

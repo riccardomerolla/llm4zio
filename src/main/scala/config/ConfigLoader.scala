@@ -8,7 +8,8 @@ import zio.config.*
 import zio.config.magnolia.*
 import zio.config.typesafe.*
 
-import _root_.config.entity.{ AIProvider, AIProviderConfig, GatewayConfig, TelegramMode }
+import _root_.config.entity.{ GatewayConfig, ProviderConfig, TelegramMode }
+import llm4zio.core.LlmProvider
 import com.typesafe.config.{ Config as TypesafeConfig, ConfigFactory }
 
 /** Configuration loader using ZIO Config with HOCON support
@@ -70,13 +71,13 @@ object ConfigLoader:
 
   /** Load AI provider config section from default application config.
     */
-  def loadAIProviderFromDefaultConfig: IO[String, Option[AIProviderConfig]] =
-    ZIO.fromEither(parseAIProviderSection(ConfigFactory.load().resolve()))
+  def loadProviderFromDefaultConfig: IO[String, Option[ProviderConfig]] =
+    ZIO.fromEither(parseProviderSection(ConfigFactory.load().resolve()))
 
   /** Load AI provider config section from specific file.
     */
-  def loadAIProviderFromFile(configPath: Path): IO[String, Option[AIProviderConfig]] =
-    ZIO.fromEither(parseAIProviderSection(ConfigFactory.parseFile(configPath.toFile).resolve()))
+  def loadProviderFromFile(configPath: Path): IO[String, Option[ProviderConfig]] =
+    ZIO.fromEither(parseProviderSection(ConfigFactory.parseFile(configPath.toFile).resolve()))
 
   /** Apply environment variable overrides for AI provider settings.
     *
@@ -110,7 +111,7 @@ object ConfigLoader:
     val base = config.resolvedProviderConfig
 
     val provider = env.get("MIGRATION_AI_PROVIDER") match
-      case Some(value) => parseAIProvider(value)
+      case Some(value) => parseLlmProvider(value)
       case None        => Right(base.provider)
 
     val timeout = env.get("MIGRATION_AI_TIMEOUT") match
@@ -142,7 +143,7 @@ object ConfigLoader:
       case Some(value) => parseInt("MIGRATION_AI_MAX_TOKENS", value).map(Some(_))
       case None        => Right(base.maxTokens)
 
-    val providerConfigEither: Either[String, AIProviderConfig] =
+    val providerConfigEither: Either[String, ProviderConfig] =
       for
         p  <- provider
         t  <- timeout
@@ -152,7 +153,7 @@ object ConfigLoader:
         at <- acquireTimeout
         tp <- temperature
         mt <- maxTokens
-      yield AIProviderConfig.withDefaults(
+      yield ProviderConfig.withDefaults(
         base.copy(
           provider = p,
           model = env.getOrElse("MIGRATION_AI_MODEL", base.model),
@@ -190,7 +191,7 @@ object ConfigLoader:
              providerConfig.burstSize,
              providerConfig.acquireTimeout,
            )
-      _ <- validateAIProvider(providerConfig)
+      _ <- validateProvider(providerConfig)
       _ <- validateTelegram(config)
     yield config
 
@@ -245,7 +246,7 @@ object ConfigLoader:
              .when(acquireTimeout.toSeconds < 1 || acquireTimeout.toSeconds > 300)
     yield ()
 
-  private def validateAIProvider(config: AIProviderConfig): IO[String, Unit] =
+  private def validateProvider(config: ProviderConfig): IO[String, Unit] =
     for
       _ <- config.baseUrl match
              case Some(url) => validateBaseUrl(url)
@@ -277,9 +278,9 @@ object ConfigLoader:
         }
     )
 
-  private def validateApiKeyRequirement(config: AIProviderConfig): IO[String, Unit] =
+  private def validateApiKeyRequirement(config: ProviderConfig): IO[String, Unit] =
     config.provider match
-      case AIProvider.OpenAi | AIProvider.Anthropic =>
+      case LlmProvider.OpenAI | LlmProvider.Anthropic =>
         val cloudTarget = config.baseUrl match
           case Some(url) => !isLocalEndpoint(url)
           case None      => true
@@ -330,38 +331,38 @@ object ConfigLoader:
                  yield ()
       yield ()
 
-  private def parseAIProviderSection(config: TypesafeConfig): Either[String, Option[AIProviderConfig]] =
+  private def parseProviderSection(config: TypesafeConfig): Either[String, Option[ProviderConfig]] =
     ConfigAiPaths.find(config.hasPath) match
       case None         => Right(None)
       case Some(aiPath) =>
         val ai = config.getConfig(aiPath)
 
         val providerEither =
-          if ai.hasPath("provider") then parseAIProvider(ai.getString("provider"))
-          else Right(AIProvider.GeminiCli)
+          if ai.hasPath("provider") then parseLlmProvider(ai.getString("provider"))
+          else Right(LlmProvider.GeminiCli)
 
         providerEither.map { provider =>
-          val providerConfig = AIProviderConfig(
+          val providerConfig = ProviderConfig(
             provider = provider,
-            model = if ai.hasPath("model") then ai.getString("model") else AIProviderConfig().model,
+            model = if ai.hasPath("model") then ai.getString("model") else ProviderConfig().model,
             baseUrl = if ai.hasPath("base-url") then Some(ai.getString("base-url")) else None,
             apiKey = if ai.hasPath("api-key") then Some(ai.getString("api-key")) else None,
             timeout =
               if ai.hasPath("timeout") then Duration.fromJava(ai.getDuration("timeout"))
-              else AIProviderConfig().timeout,
-            maxRetries = if ai.hasPath("max-retries") then ai.getInt("max-retries") else AIProviderConfig().maxRetries,
+              else ProviderConfig().timeout,
+            maxRetries = if ai.hasPath("max-retries") then ai.getInt("max-retries") else ProviderConfig().maxRetries,
             requestsPerMinute =
               if ai.hasPath("requests-per-minute") then ai.getInt("requests-per-minute")
-              else AIProviderConfig().requestsPerMinute,
-            burstSize = if ai.hasPath("burst-size") then ai.getInt("burst-size") else AIProviderConfig().burstSize,
+              else ProviderConfig().requestsPerMinute,
+            burstSize = if ai.hasPath("burst-size") then ai.getInt("burst-size") else ProviderConfig().burstSize,
             acquireTimeout =
               if ai.hasPath("acquire-timeout") then Duration.fromJava(ai.getDuration("acquire-timeout"))
-              else AIProviderConfig().acquireTimeout,
+              else ProviderConfig().acquireTimeout,
             temperature = if ai.hasPath("temperature") then Some(ai.getDouble("temperature")) else None,
             maxTokens = if ai.hasPath("max-tokens") then Some(ai.getInt("max-tokens")) else None,
           )
 
-          Some(AIProviderConfig.withDefaults(providerConfig))
+          Some(ProviderConfig.withDefaults(providerConfig))
         }
 
   private def loadFromProvider(provider: ConfigProvider): IO[Config.Error, GatewayConfig] =
@@ -386,13 +387,13 @@ object ConfigLoader:
   private def missingRequiredPathConfig: IO[Config.Error, GatewayConfig] =
     ZIO.config(Config.string.nested("gateway").nested("source-dir")).asInstanceOf[IO[Config.Error, GatewayConfig]]
 
-  private def parseAIProvider(raw: String): Either[String, AIProvider] =
+  private def parseLlmProvider(raw: String): Either[String, LlmProvider] =
     raw.trim.toLowerCase match
-      case "gemini-cli" => Right(AIProvider.GeminiCli)
-      case "gemini-api" => Right(AIProvider.GeminiApi)
-      case "openai"     => Right(AIProvider.OpenAi)
-      case "anthropic"  => Right(AIProvider.Anthropic)
-      case "mock"       => Right(AIProvider.Mock)
+      case "gemini-cli" => Right(LlmProvider.GeminiCli)
+      case "gemini-api" => Right(LlmProvider.GeminiApi)
+      case "openai"     => Right(LlmProvider.OpenAI)
+      case "anthropic"  => Right(LlmProvider.Anthropic)
+      case "mock"       => Right(LlmProvider.Mock)
       case other        => Left(s"Invalid AI provider '$other'. Expected one of: gemini-cli|gemini-api|openai|anthropic|mock")
 
   private def parseInt(name: String, raw: String): Either[String, Int] =

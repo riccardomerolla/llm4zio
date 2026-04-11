@@ -16,7 +16,7 @@ import _root_.config.boundary.{
   WorkflowsController as ConfigWorkflowsController,
 }
 import _root_.config.control.{ ConfigValidator, ModelService }
-import _root_.config.entity.{ AIProvider, AIProviderConfig, ConfigRepository, ConfigRepositoryES, GatewayConfig }
+import _root_.config.entity.{ ConfigRepository, ConfigRepositoryES, GatewayConfig, ProviderConfig }
 import activity.boundary.ActivityController
 import activity.control.ActivityHub
 import activity.entity.ActivityRepository
@@ -103,7 +103,7 @@ object ApplicationDI:
       DataStoreService &
       MemoryStoreModule.MemoryEntriesStore &
       GatewayConfig &
-      AIProviderConfig &
+      ProviderConfig &
       Ref[GatewayConfig] &
       ModelService &
       HttpClient &
@@ -139,32 +139,6 @@ object ApplicationDI:
       EmbeddingService &
       GitService &
       LlmMetrics
-
-  def aiProviderToLlmProvider(aiProvider: AIProvider): LlmProvider =
-    aiProvider match
-      case AIProvider.GeminiCli => LlmProvider.GeminiCli
-      case AIProvider.GeminiApi => LlmProvider.GeminiApi
-      case AIProvider.OpenAi    => LlmProvider.OpenAI
-      case AIProvider.Anthropic => LlmProvider.Anthropic
-      case AIProvider.LmStudio  => LlmProvider.LmStudio
-      case AIProvider.Ollama    => LlmProvider.Ollama
-      case AIProvider.OpenCode  => LlmProvider.OpenCode
-      case AIProvider.Mock      => LlmProvider.Mock
-
-  def aiConfigToLlmConfig(aiConfig: AIProviderConfig): LlmConfig =
-    LlmConfig(
-      provider = aiProviderToLlmProvider(aiConfig.provider),
-      model = aiConfig.model,
-      baseUrl = aiConfig.baseUrl,
-      apiKey = aiConfig.apiKey,
-      timeout = aiConfig.timeout,
-      maxRetries = aiConfig.maxRetries,
-      requestsPerMinute = aiConfig.requestsPerMinute,
-      burstSize = aiConfig.burstSize,
-      acquireTimeout = aiConfig.acquireTimeout,
-      temperature = aiConfig.temperature,
-      maxTokens = aiConfig.maxTokens,
-    )
 
   def commonLayers(config: GatewayConfig, storeConfig: StoreConfig): ZLayer[Any, Nothing, CommonServices] =
     ZLayer.make[CommonServices](

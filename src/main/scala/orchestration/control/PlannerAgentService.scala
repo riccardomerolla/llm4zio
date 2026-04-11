@@ -7,10 +7,9 @@ import zio.json.*
 import zio.json.ast.Json
 
 import _root_.config.SettingsApplier
-import _root_.config.entity.{ AIProviderConfig, ConfigRepository }
+import _root_.config.entity.{ ConfigRepository, ProviderConfig }
 import activity.control.ActivityHub
 import activity.entity.{ ActivityEvent, ActivityEventType }
-import app.ApplicationDI
 import board.entity.{ IssueEstimate as BoardIssueEstimate, IssuePriority as BoardIssuePriority, * }
 import conversation.entity.api.{ ChatConversation, ConversationEntry, MessageType, SenderType }
 import db.ChatRepository
@@ -117,7 +116,7 @@ object PlannerAgentService:
   val live
     : ZLayer[
       ChatRepository & IssueRepository & BoardRepository & ConfigRepository & ActivityHub & AgentConfigResolver &
-        HttpClient & GeminiCliExecutor & WorkspaceRepository & AIProviderConfig & PromptLoader & SpecificationRepository &
+        HttpClient & GeminiCliExecutor & WorkspaceRepository & ProviderConfig & PromptLoader & SpecificationRepository &
         PlanRepository & GovernancePolicyService & ProjectStorageService,
       Nothing,
       PlannerAgentService,
@@ -133,7 +132,7 @@ object PlannerAgentService:
         httpClient        <- ZIO.service[HttpClient]
         cliExecutor       <- ZIO.service[GeminiCliExecutor]
         workspaceRepo     <- ZIO.service[WorkspaceRepository]
-        startupAiConfig   <- ZIO.service[AIProviderConfig]
+        startupAiConfig   <- ZIO.service[ProviderConfig]
         promptLoader      <- ZIO.service[PromptLoader]
         specificationRepo <- ZIO.service[SpecificationRepository]
         planRepository    <- ZIO.service[PlanRepository]
@@ -182,7 +181,7 @@ final case class PlannerAgentServiceLive(
   httpClient: HttpClient,
   cliExecutor: GeminiCliExecutor,
   workspaceRepository: WorkspaceRepository,
-  startupAiConfig: AIProviderConfig,
+  startupAiConfig: ProviderConfig,
   promptLoader: PromptLoader,
   specificationRepository: SpecificationRepository,
   planRepository: PlanRepository,
@@ -1221,7 +1220,7 @@ final case class PlannerAgentServiceLive(
       }
 
   private def executeStructuredWithConfig[A: JsonCodec](
-    config: AIProviderConfig,
+    config: ProviderConfig,
     prompt: String,
     schema: JsonSchema,
     workspaceContext: Option[PlannerWorkspaceContext],
@@ -1235,7 +1234,7 @@ final case class PlannerAgentServiceLive(
       }
 
   private def executeTextWithConfig(
-    config: AIProviderConfig,
+    config: ProviderConfig,
     prompt: String,
     workspaceContext: Option[PlannerWorkspaceContext],
   ): IO[PlannerAgentError, String] =
@@ -1267,13 +1266,13 @@ final case class PlannerAgentServiceLive(
       executeTextWithConfig(config, prompt, workspaceContext)
     )
 
-  private def resolveGlobalAiConfig: IO[PlannerAgentError, AIProviderConfig] =
+  private def resolveGlobalAiConfig: IO[PlannerAgentError, ProviderConfig] =
     configRepository
       .getAllSettings
       .mapError(mapPersistence("planner_global_ai_settings"))
       .map(rows => rows.map(row => row.key -> row.value).toMap)
       .map(settings =>
-        SettingsApplier.toAIProviderConfig(settings).map(AIProviderConfig.withDefaults).getOrElse(startupAiConfig)
+        SettingsApplier.toProviderConfig(settings).map(ProviderConfig.withDefaults).getOrElse(startupAiConfig)
       )
 
   private def providerFor(
@@ -1326,17 +1325,15 @@ final case class PlannerAgentServiceLive(
           GeminiCliExecutionContext.default
     )
 
-  private def fallbackConfigs(primary: AIProviderConfig): List[LlmConfig] =
-    val primaryLlm = ApplicationDI.aiConfigToLlmConfig(primary)
+  private def fallbackConfigs(primary: ProviderConfig): List[LlmConfig] =
+    val primaryLlm = primary.toLlmConfig
     val fallback   = primary.fallbackChain.models.map { ref =>
-      ApplicationDI.aiConfigToLlmConfig(
-        AIProviderConfig.withDefaults(
-          primary.copy(
-            provider = ref.provider.getOrElse(primary.provider),
-            model = ref.modelId,
-          )
+      ProviderConfig.withDefaults(
+        primary.copy(
+          provider = ref.provider.getOrElse(primary.provider),
+          model = ref.modelId,
         )
-      )
+      ).toLlmConfig
     }
     (primaryLlm :: fallback).distinct
 

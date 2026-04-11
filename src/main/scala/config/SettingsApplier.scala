@@ -3,6 +3,7 @@ package config
 import zio.*
 
 import _root_.config.entity.*
+import llm4zio.core.LlmProvider
 import shared.errors.PersistenceError
 
 /** Converts flat Map[String, String] (from DB settings) to nested config objects.
@@ -29,17 +30,17 @@ object SettingsApplier:
     */
   def toGatewayConfig(settings: Map[String, String]): GatewayConfig =
     GatewayConfig(
-      aiProvider = toAIProviderConfig(settings),
+      aiProvider = toProviderConfig(settings),
       dryRun = settings.get("gateway.dryRun").map(_ == "true").getOrElse(false),
       verbose = settings.get("gateway.verbose").map(_ == "true").getOrElse(false),
       telegram = toTelegramConfig(settings),
     )
 
-  /** Convert DB settings map to AIProviderConfig */
-  def toAIProviderConfig(settings: Map[String, String]): Option[AIProviderConfig] =
+  /** Convert DB settings map to ProviderConfig */
+  def toProviderConfig(settings: Map[String, String]): Option[ProviderConfig] =
     settings.get("ai.provider").map { providerStr =>
-      val provider = parseAIProvider(providerStr).getOrElse(AIProvider.GeminiCli)
-      AIProviderConfig(
+      val provider = parseLlmProvider(providerStr).getOrElse(LlmProvider.GeminiCli)
+      ProviderConfig(
         provider = provider,
         model = settings.getOrElse("ai.model", "gemini-2.5-flash"),
         baseUrl = settings.get("ai.baseUrl").filter(_.nonEmpty),
@@ -76,19 +77,19 @@ object SettingsApplier:
     )
 
   /** Parse AI provider string to enum */
-  private def parseAIProvider(str: String): Option[AIProvider] =
+  private def parseLlmProvider(str: String): Option[LlmProvider] =
     str match
-      case "GeminiCli" => Some(AIProvider.GeminiCli)
-      case "GeminiApi" => Some(AIProvider.GeminiApi)
-      case "OpenAi"    => Some(AIProvider.OpenAi)
-      case "Anthropic" => Some(AIProvider.Anthropic)
-      case "LmStudio"  => Some(AIProvider.LmStudio)
-      case "Ollama"    => Some(AIProvider.Ollama)
-      case "OpenCode"  => Some(AIProvider.OpenCode)
-      case "Mock"      => Some(AIProvider.Mock)
+      case "GeminiCli" => Some(LlmProvider.GeminiCli)
+      case "GeminiApi" => Some(LlmProvider.GeminiApi)
+      case "OpenAi" | "OpenAI" => Some(LlmProvider.OpenAI)
+      case "Anthropic" => Some(LlmProvider.Anthropic)
+      case "LmStudio"  => Some(LlmProvider.LmStudio)
+      case "Ollama"    => Some(LlmProvider.Ollama)
+      case "OpenCode"  => Some(LlmProvider.OpenCode)
+      case "Mock"      => Some(LlmProvider.Mock)
       case _           => None
 
-  private def parseFallbackChain(valueOpt: Option[String], defaultProvider: AIProvider): ModelFallbackChain =
+  private def parseFallbackChain(valueOpt: Option[String], defaultProvider: LlmProvider): ModelFallbackChain =
     val refs = valueOpt
       .map(_.trim)
       .filter(_.nonEmpty)
@@ -100,11 +101,11 @@ object SettingsApplier:
 
     ModelFallbackChain(refs)
 
-  private def parseModelRef(raw: String, defaultProvider: AIProvider): Option[ModelRef] =
+  private def parseModelRef(raw: String, defaultProvider: LlmProvider): Option[ModelRef] =
     raw.split(":", 2).toList match
       case providerRaw :: modelRaw :: Nil =>
         val modelId = modelRaw.trim
-        parseAIProvider(providerRaw.trim).filter(_ => modelId.nonEmpty).map { provider =>
+        parseLlmProvider(providerRaw.trim).filter(_ => modelId.nonEmpty).map { provider =>
           ModelRef(provider = Some(provider), modelId = modelId)
         }
       case modelOnly :: Nil               =>

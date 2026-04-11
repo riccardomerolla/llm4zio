@@ -7,7 +7,7 @@ import zio.*
 import zio.json.JsonCodec
 import zio.schema.{ Schema, derived }
 
-import _root_.config.entity.{ AIProvider, AIProviderConfig }
+import _root_.config.entity.ProviderConfig
 import agent.control.BuiltInAgentSynchronizer
 import agent.entity.{ Agent, AgentRepository }
 import analysis.entity.{ AnalysisDoc, AnalysisEvent, AnalysisRepository, AnalysisType }
@@ -169,7 +169,7 @@ object AnalysisAgentRunner:
       }
 
   private def withFailover(
-    config: AIProviderConfig,
+    config: ProviderConfig,
     prompt: String,
     workspacePath: String,
     httpClient: HttpClient,
@@ -256,17 +256,15 @@ object AnalysisAgentRunner:
           llm4zio.core.Streaming.collect(svc.executeStream(prompt))
         )
 
-  private def fallbackConfigs(primary: AIProviderConfig): List[LlmConfig] =
-    val primaryLlm = aiConfigToLlmConfig(primary)
+  private def fallbackConfigs(primary: ProviderConfig): List[LlmConfig] =
+    val primaryLlm = primary.toLlmConfig
     val fallback   = primary.fallbackChain.models.map { ref =>
-      aiConfigToLlmConfig(
-        AIProviderConfig.withDefaults(
-          primary.copy(
-            provider = ref.provider.getOrElse(primary.provider),
-            model = ref.modelId,
-          )
+      ProviderConfig.withDefaults(
+        primary.copy(
+          provider = ref.provider.getOrElse(primary.provider),
+          model = ref.modelId,
         )
-      )
+      ).toLlmConfig
     }
     (primaryLlm :: fallback).distinct
 
@@ -301,32 +299,6 @@ object AnalysisAgentRunner:
       case LlmProvider.OpenCode  => llm4zio.providers.OpenCodeProvider.make(cfg, httpClient)
       case LlmProvider.Mock      => llm4zio.providers.MockProvider.make(cfg)
 
-  private def aiConfigToLlmConfig(aiConfig: AIProviderConfig): LlmConfig =
-    LlmConfig(
-      provider = aiProviderToLlmProvider(aiConfig.provider),
-      model = aiConfig.model,
-      baseUrl = aiConfig.baseUrl,
-      apiKey = aiConfig.apiKey,
-      timeout = aiConfig.timeout,
-      maxRetries = aiConfig.maxRetries,
-      requestsPerMinute = aiConfig.requestsPerMinute,
-      burstSize = aiConfig.burstSize,
-      acquireTimeout = aiConfig.acquireTimeout,
-      temperature = aiConfig.temperature,
-      maxTokens = aiConfig.maxTokens,
-    )
-
-  private def aiProviderToLlmProvider(aiProvider: AIProvider): LlmProvider =
-    aiProvider match
-      case AIProvider.GeminiCli => LlmProvider.GeminiCli
-      case AIProvider.GeminiApi => LlmProvider.GeminiApi
-      case AIProvider.OpenAi    => LlmProvider.OpenAI
-      case AIProvider.Anthropic => LlmProvider.Anthropic
-      case AIProvider.LmStudio  => LlmProvider.LmStudio
-      case AIProvider.Ollama    => LlmProvider.Ollama
-      case AIProvider.OpenCode  => LlmProvider.OpenCode
-      case AIProvider.Mock      => LlmProvider.Mock
-
   private def renderLlmError(err: LlmError): String =
     err match
       case LlmError.ParseError(message, raw)     =>
@@ -342,7 +314,7 @@ object AnalysisAgentRunner:
         retryAfter.fold("RateLimitError")(duration => s"RateLimitError(retryAfter=${duration.render})")
       case LlmError.TurnLimitError(limit)        => s"TurnLimitError(limit=${limit.getOrElse(-1)})"
 
-  private def renderFallbackChain(config: AIProviderConfig): String =
+  private def renderFallbackChain(config: ProviderConfig): String =
     val fallbacks = config.fallbackChain.models.map { ref =>
       val provider = ref.provider.getOrElse(config.provider)
       s"$provider:${ref.modelId}"

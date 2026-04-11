@@ -8,7 +8,7 @@ import zio.*
 import zio.http.*
 import zio.json.*
 
-import _root_.config.entity.{ AIProvider, AIProviderConfig }
+import _root_.config.entity.ProviderConfig
 import activity.control.ActivityHub
 import activity.entity.{ ActivityEvent, ActivityEventType }
 import conversation.entity.api.*
@@ -1226,14 +1226,14 @@ final case class ChatControllerLive(
           ZIO.succeed(llmService.executeStream(prompt))
     }
 
-  private def executeWithConfig(config: AIProviderConfig, prompt: String): IO[LlmError, llm4zio.core.LlmResponse] =
+  private def executeWithConfig(config: ProviderConfig, prompt: String): IO[LlmError, llm4zio.core.LlmResponse] =
     fallbackConfigs(config)
       .foldLeft[IO[LlmError, llm4zio.core.LlmResponse]](ZIO.fail(LlmError.ConfigError("No LLM provider configured"))) {
         (acc, cfg) => acc.orElse(providerFor(cfg).flatMap(svc => Streaming.collect(svc.executeStream(prompt))))
       }
 
   private def executeStreamWithConfig(
-    config: AIProviderConfig,
+    config: ProviderConfig,
     prompt: String,
   ): zio.stream.Stream[LlmError, llm4zio.core.LlmChunk] =
     failoverStreamByConfig(fallbackConfigs(config))(service => service.executeStream(prompt))
@@ -1258,17 +1258,15 @@ final case class ChatControllerLive(
       case Nil          =>
         zio.stream.ZStream.fail(LlmError.ConfigError("No LLM provider configured"))
 
-  private def fallbackConfigs(primary: AIProviderConfig): List[llm4zio.core.LlmConfig] =
-    val primaryLlm = aiConfigToLlmConfig(primary)
+  private def fallbackConfigs(primary: ProviderConfig): List[llm4zio.core.LlmConfig] =
+    val primaryLlm = primary.toLlmConfig
     val fallback   = primary.fallbackChain.models.map { ref =>
-      aiConfigToLlmConfig(
-        AIProviderConfig.withDefaults(
-          primary.copy(
-            provider = ref.provider.getOrElse(primary.provider),
-            model = ref.modelId,
-          )
+      ProviderConfig.withDefaults(
+        primary.copy(
+          provider = ref.provider.getOrElse(primary.provider),
+          model = ref.modelId,
         )
-      )
+      ).toLlmConfig
     }
     (primaryLlm :: fallback).distinct
 
@@ -1310,32 +1308,6 @@ final case class ChatControllerLive(
       case llm4zio.core.LlmProvider.Ollama    => llm4zio.providers.OllamaProvider.make(cfg, httpClient)
       case llm4zio.core.LlmProvider.OpenCode  => llm4zio.providers.OpenCodeProvider.make(cfg, httpClient)
       case llm4zio.core.LlmProvider.Mock      => llm4zio.providers.MockProvider.make(cfg)
-
-  private def aiConfigToLlmConfig(aiConfig: AIProviderConfig): llm4zio.core.LlmConfig =
-    llm4zio.core.LlmConfig(
-      provider = aiProviderToLlmProvider(aiConfig.provider),
-      model = aiConfig.model,
-      baseUrl = aiConfig.baseUrl,
-      apiKey = aiConfig.apiKey,
-      timeout = aiConfig.timeout,
-      maxRetries = aiConfig.maxRetries,
-      requestsPerMinute = aiConfig.requestsPerMinute,
-      burstSize = aiConfig.burstSize,
-      acquireTimeout = aiConfig.acquireTimeout,
-      temperature = aiConfig.temperature,
-      maxTokens = aiConfig.maxTokens,
-    )
-
-  private def aiProviderToLlmProvider(aiProvider: AIProvider): llm4zio.core.LlmProvider =
-    aiProvider match
-      case AIProvider.GeminiCli => llm4zio.core.LlmProvider.GeminiCli
-      case AIProvider.GeminiApi => llm4zio.core.LlmProvider.GeminiApi
-      case AIProvider.OpenAi    => llm4zio.core.LlmProvider.OpenAI
-      case AIProvider.Anthropic => llm4zio.core.LlmProvider.Anthropic
-      case AIProvider.LmStudio  => llm4zio.core.LlmProvider.LmStudio
-      case AIProvider.Ollama    => llm4zio.core.LlmProvider.Ollama
-      case AIProvider.OpenCode  => llm4zio.core.LlmProvider.OpenCode
-      case AIProvider.Mock      => llm4zio.core.LlmProvider.Mock
 
   private def sanitizeOptional[A](value: Option[A]): Option[A] =
     try

@@ -7,7 +7,8 @@ import zio.*
 import zio.json.*
 import zio.json.ast.Json
 
-import _root_.config.entity.{ AIProvider, AIProviderConfig, GatewayConfig }
+import _root_.config.entity.{ GatewayConfig, ProviderConfig }
+import llm4zio.core.LlmProvider
 import llm4zio.providers.HttpClient
 
 trait EmbeddingService:
@@ -30,25 +31,25 @@ final case class EmbeddingServiceLive(
       normalizedText <- normalizeText(text)
       config         <- configRef.get.map(_.resolvedProviderConfig)
       result         <- config.provider match
-                          case AIProvider.OpenAi | AIProvider.LmStudio | AIProvider.OpenCode =>
+                          case LlmProvider.OpenAI | LlmProvider.LmStudio | LlmProvider.OpenCode =>
                             embedOpenAiCompatible(normalizedText, config)
-                          case AIProvider.GeminiApi                                          =>
+                          case LlmProvider.GeminiApi                                          =>
                             embedGemini(normalizedText, config)
-                          case AIProvider.Ollama                                             =>
+                          case LlmProvider.Ollama                                             =>
                             embedOllama(normalizedText, config)
-                          case AIProvider.Anthropic                                          =>
+                          case LlmProvider.Anthropic                                          =>
                             ZIO.fail(
                               new RuntimeException(
                                 "Embedding endpoint is not supported for Anthropic provider in this project"
                               )
                             )
-                          case AIProvider.GeminiCli                                          =>
+                          case LlmProvider.GeminiCli                                          =>
                             ZIO.fail(
                               new RuntimeException(
                                 "Embedding endpoint is not supported for Gemini CLI provider; use GeminiApi/OpenAi/Ollama"
                               )
                             )
-                          case AIProvider.Mock                                               =>
+                          case LlmProvider.Mock                                               =>
                             ZIO.fail(
                               new RuntimeException(
                                 "Embedding endpoint is not supported for Mock provider; use GeminiApi/OpenAi/Ollama"
@@ -61,7 +62,7 @@ final case class EmbeddingServiceLive(
 
   private def embedOpenAiCompatible(
     text: String,
-    config: AIProviderConfig,
+    config: ProviderConfig,
   ): IO[Throwable, Vector[Float]] =
     for
       baseUrl <- baseUrl(config)
@@ -89,7 +90,7 @@ final case class EmbeddingServiceLive(
 
   private def embedGemini(
     text: String,
-    config: AIProviderConfig,
+    config: ProviderConfig,
   ): IO[Throwable, Vector[Float]] =
     for
       baseUrl   <- baseUrl(config)
@@ -120,7 +121,7 @@ final case class EmbeddingServiceLive(
 
   private def embedOllama(
     text: String,
-    config: AIProviderConfig,
+    config: ProviderConfig,
   ): IO[Throwable, Vector[Float]] =
     for
       baseUrl <- baseUrl(config)
@@ -147,31 +148,31 @@ final case class EmbeddingServiceLive(
       .succeed(text.trim)
       .filterOrFail(_.nonEmpty)(new RuntimeException("Embedding text must be non-empty"))
 
-  private def baseUrl(config: AIProviderConfig): IO[Throwable, String] =
+  private def baseUrl(config: ProviderConfig): IO[Throwable, String] =
     ZIO
       .fromOption(config.baseUrl.map(_.trim).filter(_.nonEmpty))
       .orElseFail(new RuntimeException(s"Base URL is required for provider ${config.provider.toString}"))
 
-  private def embeddingModel(provider: AIProvider): String =
+  private def embeddingModel(provider: LlmProvider): String =
     sys.env
       .get("AI_EMBEDDING_MODEL")
       .map(_.trim)
       .filter(_.nonEmpty)
       .getOrElse(
         provider match
-          case AIProvider.OpenAi | AIProvider.LmStudio | AIProvider.OpenCode => "text-embedding-3-small"
-          case AIProvider.GeminiApi                                          => "text-embedding-004"
-          case AIProvider.Ollama                                             => "nomic-embed-text"
-          case AIProvider.Anthropic | AIProvider.GeminiCli | AIProvider.Mock => "text-embedding-3-small"
+          case LlmProvider.OpenAI | LlmProvider.LmStudio | LlmProvider.OpenCode => "text-embedding-3-small"
+          case LlmProvider.GeminiApi                                          => "text-embedding-004"
+          case LlmProvider.Ollama                                             => "nomic-embed-text"
+          case LlmProvider.Anthropic | LlmProvider.GeminiCli | LlmProvider.Mock => "text-embedding-3-small"
       )
 
   private def authorizationHeaders(apiKey: Option[String]): Map[String, String] =
     apiKey.map(_.trim).filter(_.nonEmpty).map(value => Map("Authorization" -> s"Bearer $value")).getOrElse(Map.empty)
 
-  private def openAiCompatibleEmbeddingsUrl(provider: AIProvider, baseUrl: String): String =
+  private def openAiCompatibleEmbeddingsUrl(provider: LlmProvider, baseUrl: String): String =
     val normalized = baseUrl.stripSuffix("/")
     provider match
-      case AIProvider.LmStudio => s"$normalized/v1/embeddings"
+      case LlmProvider.LmStudio => s"$normalized/v1/embeddings"
       case _                   => s"$normalized/embeddings"
 
   private def dimensionFromEnvironment: Int =

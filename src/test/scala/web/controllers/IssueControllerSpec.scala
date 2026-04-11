@@ -8,7 +8,7 @@ import zio.json.*
 import zio.stream.ZStream
 import zio.test.*
 
-import _root_.config.entity.{ AIProviderConfig, SettingRow }
+import _root_.config.entity.{ ProviderConfig, SettingRow }
 import agent.entity.{ Agent, AgentEvent, AgentRepository }
 import analysis.entity.{ AnalysisDoc, AnalysisEvent, AnalysisRepository, AnalysisType }
 import board.control.BoardOrchestrator
@@ -333,8 +333,8 @@ object IssueControllerSpec extends ZIOSpecDefault:
       ZIO.unit
 
   private object StubAgentConfigResolver extends AgentConfigResolver:
-    override def resolveConfig(agentName: String): IO[PersistenceError, AIProviderConfig] =
-      ZIO.succeed(AIProviderConfig())
+    override def resolveConfig(agentName: String): IO[PersistenceError, ProviderConfig] =
+      ZIO.succeed(ProviderConfig())
 
   private object StubLlmService extends LlmService:
     def execute(prompt: String): IO[LlmError, LlmResponse]                                              = ZIO.dieMessage("unused")

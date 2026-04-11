@@ -521,7 +521,7 @@ final case class SettingsControllerLive(
     val test =
       for
         form     <- parseForm(req)
-        aiConfig <- ZIO.fromOption(SettingsApplier.toAIProviderConfig(form)).orElseFail("No AI provider configured")
+        aiConfig <- ZIO.fromOption(SettingsApplier.toProviderConfig(form)).orElseFail("No AI provider configured")
         start    <- Clock.nanoTime
         _        <- Streaming.collect(llmService.executeStream("Say 'pong'")).unit
         end      <- Clock.nanoTime

@@ -3,7 +3,8 @@ package memory
 import zio.*
 import zio.test.*
 
-import _root_.config.entity.{ AIProvider, AIProviderConfig, GatewayConfig }
+import _root_.config.entity.{ GatewayConfig, ProviderConfig }
+import llm4zio.core.LlmProvider
 import llm4zio.providers.HttpClient
 import memory.control.EmbeddingService
 
@@ -29,8 +30,8 @@ object EmbeddingServiceSpec extends ZIOSpecDefault:
       Ref.make(
         GatewayConfig(
           aiProvider = Some(
-            AIProviderConfig(
-              provider = AIProvider.OpenAi,
+            ProviderConfig(
+              provider = LlmProvider.OpenAI,
               baseUrl = Some("https://api.openai.com/v1"),
               apiKey = Some("test-key"),
             )

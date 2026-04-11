@@ -81,7 +81,7 @@ object SettingsValidator:
 
   /** Validate AI provider string is a known provider */
   private def validateAIProvider(value: String): Either[String, String] =
-    val providers = Seq("GeminiCli", "GeminiApi", "OpenAi", "Anthropic", "LmStudio", "Ollama", "OpenCode", "Mock")
+    val providers = Seq("GeminiCli", "GeminiApi", "OpenAi", "OpenAI", "Anthropic", "LmStudio", "Ollama", "OpenCode", "Mock")
     if providers.contains(value) then Right(value)
     else Left(s"Invalid AI provider: $value (must be one of: ${providers.mkString(", ")})")
 

@@ -5,7 +5,8 @@ import java.time.Instant
 import zio.*
 import zio.test.*
 
-import _root_.config.entity.{ AIProvider, AIProviderConfig, SettingRow }
+import _root_.config.entity.{ ProviderConfig, SettingRow }
+import llm4zio.core.LlmProvider
 import db.*
 import orchestration.control.AgentConfigResolverLive
 import shared.errors.PersistenceError
@@ -54,13 +55,13 @@ object AgentConfigResolverSpec extends ZIOSpecDefault:
             row("agent.task-planner.ai.apiKey", "g-key"),
           )
         ),
-        startupConfig = AIProviderConfig(provider = AIProvider.LmStudio, model = "openai/gpt-oss-20b"),
+        startupConfig = ProviderConfig(provider = LlmProvider.LmStudio, model = "openai/gpt-oss-20b"),
       )
 
       for
         resolved <- resolver.resolveConfig("task-planner")
       yield assertTrue(
-        resolved.provider == AIProvider.GeminiApi,
+        resolved.provider == LlmProvider.GeminiApi,
         resolved.apiKey.contains("g-key"),
       )
     },
@@ -75,8 +76,8 @@ object AgentConfigResolverSpec extends ZIOSpecDefault:
             row("agent.task-planner.ai.apiKey", "g-key"),
           )
         ),
-        startupConfig = AIProviderConfig(
-          provider = AIProvider.LmStudio,
+        startupConfig = ProviderConfig(
+          provider = LlmProvider.LmStudio,
           model = "openai/gpt-oss-20b",
           baseUrl = Some("http://localhost:1234"),
         ),
@@ -85,7 +86,7 @@ object AgentConfigResolverSpec extends ZIOSpecDefault:
       for
         resolved <- resolver.resolveConfig("task-planner")
       yield assertTrue(
-        resolved.provider == AIProvider.GeminiApi,
+        resolved.provider == LlmProvider.GeminiApi,
         resolved.model == "gemini-2.5-flash",
         resolved.baseUrl.contains("https://generativelanguage.googleapis.com"),
         resolved.apiKey.contains("g-key"),

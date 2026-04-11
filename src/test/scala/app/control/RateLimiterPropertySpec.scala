@@ -4,7 +4,8 @@ import zio.*
 import zio.test.*
 import zio.test.TestAspect.*
 
-import _root_.config.entity.{ AIProvider, AIProviderConfig, MigrationConfig }
+import _root_.config.entity.{ MigrationConfig, ProviderConfig }
+import llm4zio.core.LlmProvider
 import shared.errors.RateLimitError
 import shared.services.{ RateLimiter, RateLimiterConfig }
 
@@ -16,16 +17,16 @@ object RateLimiterPropertySpec extends ZIOSpecDefault:
 
   def spec: Spec[Any, Any] = suite("RateLimiterPropertySpec")(
     suite("RateLimiterConfig")(
-      test("fromAIProviderConfig maps all fields correctly") {
+      test("fromProviderConfig maps all fields correctly") {
         check(Gen.int(1, 600), Gen.int(1, 100), Gen.long(1000L, 300000L)) { (rpm, burst, timeoutMs) =>
-          val providerConfig    = AIProviderConfig(
-            provider = AIProvider.OpenAi,
+          val providerConfig    = ProviderConfig(
+            provider = LlmProvider.OpenAI,
             model = "gpt-4.1",
             requestsPerMinute = rpm,
             burstSize = burst,
             acquireTimeout = Duration.fromMillis(timeoutMs),
           )
-          val rateLimiterConfig = RateLimiterConfig.fromAIProviderConfig(providerConfig)
+          val rateLimiterConfig = RateLimiterConfig.fromProviderConfig(providerConfig)
           assertTrue(
             rateLimiterConfig.requestsPerMinute == rpm,
             rateLimiterConfig.burstSize == burst,
@@ -55,8 +56,8 @@ object RateLimiterPropertySpec extends ZIOSpecDefault:
           sourceDir = java.nio.file.Paths.get("/tmp/src"),
           outputDir = java.nio.file.Paths.get("/tmp/out"),
           aiProvider = Some(
-            AIProviderConfig(
-              provider = AIProvider.Anthropic,
+            ProviderConfig(
+              provider = LlmProvider.Anthropic,
               model = "claude-3-5-sonnet",
               requestsPerMinute = 42,
               burstSize = 7,
