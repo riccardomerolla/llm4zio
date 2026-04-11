@@ -47,7 +47,7 @@ import gateway.boundary.{
   ChannelController as GatewayChannelController,
   TelegramController as GatewayTelegramController,
 }
-import gateway.control.{ ChannelRegistryFactory, MessageRouter, * }
+import gateway.control.{ MessageRouter, * }
 import governance.control.{ GovernancePolicyEngine, GovernancePolicyService }
 import governance.entity.{ GovernancePolicyEventStoreES, GovernancePolicyRepositoryES }
 import issues.boundary.IssueController as IssuesIssueController

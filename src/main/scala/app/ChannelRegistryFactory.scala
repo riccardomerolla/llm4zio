@@ -1,4 +1,4 @@
-package gateway.control
+package app
 
 import scala.concurrent.ExecutionContext
 
@@ -7,6 +7,7 @@ import zio.*
 import _root_.config.entity.{ ConfigRepository, GatewayConfig }
 import db.TaskRepository
 import gateway.boundary.telegram.{ ConfigAwareTelegramClient, TelegramChannel }
+import gateway.control.*
 import gateway.entity.SessionScopeStrategy
 import orchestration.entity.{ AgentRegistry, TaskExecutor }
 import sttp.client4.DefaultFutureBackend
