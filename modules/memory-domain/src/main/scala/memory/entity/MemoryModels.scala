@@ -14,14 +14,14 @@ object MemoryId:
 
   given JsonCodec[MemoryId] = JsonCodec.string.transform(MemoryId.apply, _.value)
 
-opaque type UserId = String
-object UserId:
-  def apply(value: String): UserId = value
+opaque type Scope = String
+object Scope:
+  def apply(value: String): Scope = value
 
-  extension (id: UserId)
+  extension (id: Scope)
     def value: String = id
 
-  given JsonCodec[UserId] = JsonCodec.string.transform(UserId.apply, _.value)
+  given JsonCodec[Scope] = JsonCodec.string.transform(Scope.apply, _.value)
 
 opaque type SessionId = String
 object SessionId:
@@ -65,7 +65,7 @@ object MemoryKind:
 
 final case class MemoryEntry(
   id: MemoryId,
-  userId: UserId,
+  scope: Scope,
   sessionId: SessionId,
   text: String,
   embedding: Vector[Float],
@@ -81,7 +81,7 @@ final case class ScoredMemory(
 )
 
 final case class MemoryFilter(
-  userId: Option[UserId] = None,
+  scope: Option[Scope] = None,
   sessionId: Option[SessionId] = None,
   tags: List[String] = Nil,
   kind: Option[MemoryKind] = None,
