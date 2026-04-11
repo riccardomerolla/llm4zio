@@ -35,15 +35,7 @@ final case class ModelServiceLive(
 ) extends ModelService:
 
   override def listAvailableModels: UIO[ModelRegistryResponse] =
-    ZIO.succeed {
-      val groups = catalog.toList
-        .sortBy(_._1.toString)
-        .map {
-          case (provider, models) =>
-            ProviderModelGroup(provider = provider, models = models)
-        }
-      ModelRegistryResponse(groups)
-    }
+    ZIO.succeed(ModelRegistryResponse(Nil))
 
   override def probeProviders: UIO[List[ProviderProbeStatus]] =
     for
@@ -187,134 +179,12 @@ final case class ModelServiceLive(
     URLEncoder.encode(value, StandardCharsets.UTF_8)
 
   private def defaultModelFor(provider: LlmProvider): String =
-    catalog.get(provider).flatMap(_.headOption.map(_.modelId)).getOrElse("unknown-model")
-
-  private val catalog: Map[LlmProvider, List[AIModel]] = Map(
-    LlmProvider.GeminiCli -> List(
-      AIModel(
-        LlmProvider.GeminiCli,
-        "gemini-2.5-flash",
-        "Gemini 2.5 Flash",
-        1_000_000,
-        Set(ModelCapability.Chat, ModelCapability.Streaming, ModelCapability.StructuredOutput),
-      ),
-      AIModel(
-        LlmProvider.GeminiCli,
-        "gemini-2.5-pro",
-        "Gemini 2.5 Pro",
-        2_000_000,
-        Set(ModelCapability.Chat, ModelCapability.Streaming, ModelCapability.StructuredOutput),
-      ),
-    ),
-    LlmProvider.GeminiApi -> List(
-      AIModel(
-        LlmProvider.GeminiApi,
-        "gemini-2.5-flash",
-        "Gemini 2.5 Flash",
-        1_000_000,
-        Set(ModelCapability.Chat, ModelCapability.Streaming, ModelCapability.StructuredOutput),
-      ),
-      AIModel(
-        LlmProvider.GeminiApi,
-        "gemini-2.5-pro",
-        "Gemini 2.5 Pro",
-        2_000_000,
-        Set(ModelCapability.Chat, ModelCapability.Streaming, ModelCapability.StructuredOutput),
-      ),
-      AIModel(LlmProvider.GeminiApi, "text-embedding-004", "Text Embedding 004", 8_192, Set(ModelCapability.Embeddings)),
-    ),
-    LlmProvider.OpenAI    -> List(
-      AIModel(
-        LlmProvider.OpenAI,
-        "gpt-4o",
-        "GPT-4o",
-        128_000,
-        Set(
-          ModelCapability.Chat,
-          ModelCapability.Streaming,
-          ModelCapability.ToolCalling,
-          ModelCapability.StructuredOutput,
-        ),
-      ),
-      AIModel(
-        LlmProvider.OpenAI,
-        "gpt-4o-mini",
-        "GPT-4o mini",
-        128_000,
-        Set(
-          ModelCapability.Chat,
-          ModelCapability.Streaming,
-          ModelCapability.ToolCalling,
-          ModelCapability.StructuredOutput,
-        ),
-      ),
-      AIModel(
-        LlmProvider.OpenAI,
-        "text-embedding-3-large",
-        "Text Embedding 3 Large",
-        8_192,
-        Set(ModelCapability.Embeddings),
-      ),
-    ),
-    LlmProvider.Anthropic -> List(
-      AIModel(
-        LlmProvider.Anthropic,
-        "claude-3-5-sonnet-latest",
-        "Claude 3.5 Sonnet",
-        200_000,
-        Set(ModelCapability.Chat, ModelCapability.Streaming, ModelCapability.ToolCalling),
-      ),
-      AIModel(
-        LlmProvider.Anthropic,
-        "claude-3-5-haiku-latest",
-        "Claude 3.5 Haiku",
-        200_000,
-        Set(ModelCapability.Chat, ModelCapability.Streaming, ModelCapability.ToolCalling),
-      ),
-    ),
-    LlmProvider.LmStudio  -> List(
-      AIModel(
-        LlmProvider.LmStudio,
-        "local-model",
-        "Local Model (LM Studio)",
-        32_768,
-        Set(
-          ModelCapability.Chat,
-          ModelCapability.Streaming,
-          ModelCapability.ToolCalling,
-          ModelCapability.StructuredOutput,
-        ),
-      )
-    ),
-    LlmProvider.Ollama    -> List(
-      AIModel(LlmProvider.Ollama, "llama3.1", "Llama 3.1", 8_192, Set(ModelCapability.Chat, ModelCapability.Streaming)),
-      AIModel(LlmProvider.Ollama, "mistral", "Mistral", 8_192, Set(ModelCapability.Chat, ModelCapability.Streaming)),
-    ),
-    LlmProvider.OpenCode  -> List(
-      AIModel(
-        LlmProvider.OpenCode,
-        "openai/gpt-4o-mini",
-        "OpenCode GPT-4o mini",
-        128_000,
-        Set(
-          ModelCapability.Chat,
-          ModelCapability.Streaming,
-          ModelCapability.ToolCalling,
-          ModelCapability.StructuredOutput,
-        ),
-      )
-    ),
-    LlmProvider.Mock      -> List(
-      AIModel(
-        LlmProvider.Mock,
-        "mock-model",
-        "Mock Model (Demo)",
-        128_000,
-        Set(
-          ModelCapability.Chat,
-          ModelCapability.Streaming,
-          ModelCapability.StructuredOutput,
-        ),
-      )
-    ),
-  )
+    provider match
+      case LlmProvider.GeminiCli => "gemini-2.5-flash"
+      case LlmProvider.GeminiApi => "gemini-2.5-flash"
+      case LlmProvider.OpenAI    => "gpt-4o-mini"
+      case LlmProvider.Anthropic => "claude-3-5-haiku-latest"
+      case LlmProvider.LmStudio  => "local-model"
+      case LlmProvider.Ollama    => "llama3.1"
+      case LlmProvider.OpenCode  => "openai/gpt-4o-mini"
+      case LlmProvider.Mock      => "mock-model"
