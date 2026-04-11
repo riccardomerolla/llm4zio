@@ -5,6 +5,7 @@ import zio.http.*
 import zio.json.*
 
 import memory.entity.*
+import memory.entity.Scope
 import shared.web.MemoryView
 
 trait MemoryController:
@@ -29,22 +30,22 @@ final case class MemoryControllerLive(
   override val routes: Routes[Any, Response] = Routes(
     Method.GET / "memory"                           -> handler { (req: Request) =>
       execute {
-        val userId = readUserIdOpt(req)
-        val filter = baseFilter(req, userId)
+        val scope  = readScopeOpt(req)
+        val filter = baseFilter(req, scope)
         for
           entries <- listEntries(filter, page = 0, pageSize = defaultPageSize)
           total   <- listEntries(filter, page = 0, pageSize = 10000).map(_.size)
           oldest   = entries.lastOption.map(_.createdAt.toString)
           newest   = entries.headOption.map(_.createdAt.toString)
-        yield html(MemoryView.page(userId, entries, total, oldest, newest, defaultRetentionDs))
+        yield html(MemoryView.page(scope, entries, total, oldest, newest, defaultRetentionDs))
       }
     },
     Method.GET / "api" / "memory" / "search"        -> handler { (req: Request) =>
       execute {
-        val userId = readUserIdOpt(req)
+        val scope  = readScopeOpt(req)
         val q      = req.queryParam("q").map(_.trim).getOrElse("")
         val limit  = req.queryParam("limit").flatMap(_.toIntOption).map(v => Math.max(1, v)).getOrElse(defaultLimit)
-        val filter = baseFilter(req, userId)
+        val filter = baseFilter(req, scope)
 
         val effect =
           if q.isEmpty then
@@ -52,9 +53,9 @@ final case class MemoryControllerLive(
               ScoredMemory(entry, 0.0f)
             ))
           else
-            userId match
-              case Some(uid) => repository.searchRelevant(uid, q, limit, filter)
-              case None      =>
+            scope match
+              case Some(s) => repository.searchRelevant(s, q, limit, filter)
+              case None    =>
                 listEntries(filter, page = 0, pageSize = 10000).map { entries =>
                   val needle = q.toLowerCase
                   entries
@@ -65,7 +66,7 @@ final case class MemoryControllerLive(
 
         effect.map { results =>
           req.queryParam("format").map(_.trim.toLowerCase) match
-            case Some("html") => html(MemoryView.searchFragment(results, userId))
+            case Some("html") => html(MemoryView.searchFragment(results, scope))
             case _            =>
               Response.json(SearchResponse(results.map(SearchItem.fromScored)).toJson)
         }
@@ -73,23 +74,23 @@ final case class MemoryControllerLive(
     },
     Method.GET / "api" / "memory" / "list"          -> handler { (req: Request) =>
       execute {
-        val userId   = readUserIdOpt(req)
+        val scope    = readScopeOpt(req)
         val page     = req.queryParam("page").flatMap(_.toIntOption).map(v => Math.max(0, v)).getOrElse(0)
         val pageSize =
           req.queryParam("pageSize").flatMap(_.toIntOption).map(v => Math.max(1, v)).getOrElse(defaultPageSize)
-        val filter   = baseFilter(req, userId)
+        val filter   = baseFilter(req, scope)
         listEntries(filter, page, pageSize).map { entries =>
           req.queryParam("format").map(_.trim.toLowerCase) match
-            case Some("html") => html(MemoryView.entriesFragment(entries, userId))
+            case Some("html") => html(MemoryView.entriesFragment(entries, scope))
             case _            => Response.json(ListResponse(entries.map(ListItem.fromEntry), page, pageSize).toJson)
         }
       }
     },
     Method.DELETE / "api" / "memory" / string("id") -> handler { (id: String, req: Request) =>
       execute {
-        readUserIdOpt(req) match
-          case Some(userId) =>
-            repository.deleteById(userId, MemoryId(id)).as(
+        readScopeOpt(req) match
+          case Some(scope) =>
+            repository.deleteById(scope, MemoryId(id)).as(
               Response(
                 status = Status.NoContent,
                 headers = Headers(
@@ -97,9 +98,9 @@ final case class MemoryControllerLive(
                 ),
               )
             )
-          case None         =>
+          case None        =>
             ZIO.succeed(
-              Response.json(Map("error" -> "userId query parameter is required").toJson).status(Status.BadRequest)
+              Response.json(Map("error" -> "scope query parameter is required").toJson).status(Status.BadRequest)
             )
       }
     },
@@ -108,15 +109,15 @@ final case class MemoryControllerLive(
   private def parseKind(raw: Option[String]): Option[MemoryKind] =
     raw.map(_.trim).filter(v => v.nonEmpty && !v.equalsIgnoreCase("all")).map(MemoryKind.apply)
 
-  private def readUserIdOpt(req: Request): Option[UserId] =
-    req.queryParam("userId").map(_.trim).filter(_.nonEmpty).map(UserId.apply)
+  private def readScopeOpt(req: Request): Option[Scope] =
+    req.queryParam("scope").map(_.trim).filter(_.nonEmpty).map(Scope.apply)
 
   private def readSessionIdOpt(req: Request): Option[SessionId] =
     req.queryParam("sessionId").map(_.trim).filter(_.nonEmpty).map(SessionId.apply)
 
-  private def baseFilter(req: Request, userId: Option[UserId]): MemoryFilter =
+  private def baseFilter(req: Request, scope: Option[Scope]): MemoryFilter =
     MemoryFilter(
-      userId = userId,
+      scope = scope,
       sessionId = readSessionIdOpt(req),
       kind = parseKind(req.queryParam("kind")),
     )
@@ -126,10 +127,10 @@ final case class MemoryControllerLive(
     page: Int,
     pageSize: Int,
   ): IO[Throwable, List[MemoryEntry]] =
-    filter.userId match
-      case Some(userId) =>
-        repository.listForUser(userId, filter, page, pageSize)
-      case None         =>
+    filter.scope match
+      case Some(scope) =>
+        repository.listByScope(scope, filter, page, pageSize)
+      case None        =>
         repository.listAll(filter, page, pageSize)
 
   private def html(content: String): Response =
@@ -148,7 +149,7 @@ final case class MemoryControllerLive(
 
   final private case class SearchItem(
     id: String,
-    userId: String,
+    scope: String,
     sessionId: String,
     text: String,
     tags: List[String],
@@ -162,7 +163,7 @@ final case class MemoryControllerLive(
     def fromScored(value: ScoredMemory): SearchItem =
       SearchItem(
         id = value.entry.id.value,
-        userId = value.entry.userId.value,
+        scope = value.entry.scope.value,
         sessionId = value.entry.sessionId.value,
         text = value.entry.text,
         tags = value.entry.tags,
@@ -180,7 +181,7 @@ final case class MemoryControllerLive(
 
   final private case class ListItem(
     id: String,
-    userId: String,
+    scope: String,
     sessionId: String,
     text: String,
     tags: List[String],
@@ -193,7 +194,7 @@ final case class MemoryControllerLive(
     def fromEntry(entry: MemoryEntry): ListItem =
       ListItem(
         id = entry.id.value,
-        userId = entry.userId.value,
+        scope = entry.scope.value,
         sessionId = entry.sessionId.value,
         text = entry.text,
         tags = entry.tags,

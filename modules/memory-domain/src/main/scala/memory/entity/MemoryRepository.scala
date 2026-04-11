@@ -1,6 +1,6 @@
 package memory.entity
 
-import zio.*
+import zio.{ IO, ZIO }
 
 trait MemoryRepository:
   def save(entry: MemoryEntry): IO[Throwable, Unit]

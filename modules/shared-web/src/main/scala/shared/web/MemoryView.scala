@@ -1,12 +1,12 @@
 package shared.web
 
-import memory.entity.{ MemoryEntry, MemoryKind, ScoredMemory, UserId }
+import memory.entity.{ MemoryEntry, MemoryKind, ScoredMemory, Scope }
 import scalatags.Text.all.*
 
 object MemoryView:
 
   def page(
-    userId: Option[UserId],
+    scope: Option[Scope],
     entries: List[MemoryEntry],
     totalEntries: Int,
     oldest: Option[String],
@@ -19,13 +19,13 @@ object MemoryView:
           h1(cls := "text-2xl font-bold text-white")("Memory"),
           p(cls := "mt-2 text-sm text-gray-400")("Browse, search, and delete long-term memory entries."),
         ),
-        searchPanel(userId),
+        searchPanel(scope),
         statsBar(totalEntries, oldest, newest, retentionDays),
-        div(id := "memory-results", cls := "space-y-3")(raw(entriesFragment(entries, userId))),
+        div(id := "memory-results", cls := "space-y-3")(raw(entriesFragment(entries, scope))),
       )
     )
 
-  def entriesFragment(entries: List[MemoryEntry], userId: Option[UserId]): String =
+  def entriesFragment(entries: List[MemoryEntry], scope: Option[Scope]): String =
     if entries.isEmpty then
       div(cls := "rounded-lg border border-white/10 bg-white/5 p-6 text-sm text-gray-300")("No memories found.").render
     else
@@ -37,13 +37,13 @@ object MemoryView:
             entry.kind.value,
             entry.createdAt.toString,
             None,
-            entry.userId,
-            showUserId = userId.isEmpty,
+            entry.scope,
+            showScope = scope.isEmpty,
           )
         ).toSeq*
       ).render
 
-  def searchFragment(results: List[ScoredMemory], userId: Option[UserId]): String =
+  def searchFragment(results: List[ScoredMemory], scope: Option[Scope]): String =
     if results.isEmpty then
       div(
         cls := "rounded-lg border border-white/10 bg-white/5 p-6 text-sm text-gray-300"
@@ -57,13 +57,13 @@ object MemoryView:
             result.entry.kind.value,
             result.entry.createdAt.toString,
             Some(f"${result.score}%.3f"),
-            result.entry.userId,
-            showUserId = userId.isEmpty,
+            result.entry.scope,
+            showScope = scope.isEmpty,
           )
         }.toSeq*
       ).render
 
-  private def searchPanel(userId: Option[UserId]): Frag =
+  private def searchPanel(scope: Option[Scope]): Frag =
     div(cls := "rounded-lg border border-white/10 bg-white/5 p-4")(
       div(cls := "grid gap-4 md:grid-cols-4", id := "memory-filters")(
         div(cls := "md:col-span-2")(
@@ -83,13 +83,13 @@ object MemoryView:
           ),
         ),
         div(
-          label(cls := "mb-2 block text-sm font-medium text-gray-200", `for` := "memory-userId")("User"),
+          label(cls := "mb-2 block text-sm font-medium text-gray-200", `for` := "memory-scope")("Scope"),
           input(
-            id                 := "memory-userId",
-            name               := "userId",
+            id                 := "memory-scope",
+            name               := "scope",
             cls                := "block w-full rounded-md border-0 bg-white/5 px-3 py-2 text-sm text-white ring-1 ring-inset ring-white/10 placeholder:text-gray-500 focus:ring-2 focus:ring-inset focus:ring-indigo-500",
-            placeholder        := "All users",
-            value              := userId.map(_.value).getOrElse(""),
+            placeholder        := "All scopes",
+            value              := scope.map(_.value).getOrElse(""),
             attr("hx-get")     := "/api/memory/search",
             attr("hx-trigger") := "input changed delay:300ms, search",
             attr("hx-target")  := "#memory-results",
@@ -169,19 +169,19 @@ object MemoryView:
     kind: String,
     createdAt: String,
     score: Option[String],
-    userId: UserId,
-    showUserId: Boolean,
+    scope: Scope,
+    showScope: Boolean,
   ): Frag =
     div(scalatags.Text.all.id := s"memory-card-$memoryId", cls := "rounded-lg border border-white/10 bg-black/20 p-4")(
       div(cls := "mb-2 flex items-center justify-between gap-3")(
         div(cls := "flex items-center gap-2")(
           span(cls := "rounded-full bg-indigo-500/20 px-2 py-1 text-xs font-semibold text-indigo-300")(kind),
           score.map(value => span(cls := "text-xs text-gray-400")(s"score $value")),
-          Option.when(showUserId)(span(cls := "rounded-full bg-white/10 px-2 py-1 text-xs text-gray-300")(userId.value)),
+          Option.when(showScope)(span(cls := "rounded-full bg-white/10 px-2 py-1 text-xs text-gray-300")(scope.value)),
         ),
         button(
           cls               := "rounded-md bg-red-600/80 px-2 py-1 text-xs font-medium text-white hover:bg-red-500",
-          attr("hx-delete") := s"/api/memory/$memoryId?userId=${userId.value}",
+          attr("hx-delete") := s"/api/memory/$memoryId?scope=${scope.value}",
           attr("hx-target") := s"#memory-card-$memoryId",
           attr("hx-swap")   := "outerHTML",
         )("Delete"),

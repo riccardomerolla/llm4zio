@@ -13,6 +13,7 @@ import io.github.riccardomerolla.zio.eclipsestore.gigamap.vector.{
   Vectorizer,
 }
 import memory.entity.*
+import memory.entity.Scope
 import shared.store.{ MemoryId as StoreMemoryId, MemoryStoreModule }
 
 final case class MemoryRepositoryES(
