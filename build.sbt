@@ -298,7 +298,7 @@ lazy val projectDomain = (project in file("modules/project-domain"))
   )
 
 lazy val configDomain = (project in file("modules/config-domain"))
-  .dependsOn(sharedIds, sharedErrors, sharedStoreCore, sharedWebCore)
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore, sharedWebCore, llm4zio)
   .settings(foundationSettings)
   .settings(
     name := "config-domain",
