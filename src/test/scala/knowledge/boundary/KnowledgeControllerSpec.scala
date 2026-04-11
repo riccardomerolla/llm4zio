@@ -9,7 +9,7 @@ import zio.test.*
 import analysis.entity.{ AnalysisDoc, AnalysisType }
 import knowledge.control.KnowledgeGraphService
 import knowledge.entity.*
-import memory.entity.*
+import memory.entity.{ Scope as MemoryScope, * }
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ AgentId, DecisionLogId }
 import workspace.entity.{ Workspace, WorkspaceRepository }
@@ -34,7 +34,7 @@ object KnowledgeControllerSpec extends ZIOSpecDefault:
 
   private val memory = MemoryEntry(
     id = MemoryId("mem-1"),
-    userId = UserId("knowledge"),
+    scope = MemoryScope("knowledge"),
     sessionId = SessionId("run:1"),
     text = "Start with issue-linked knowledge extraction.",
     embedding = Vector.empty,
@@ -86,11 +86,11 @@ object KnowledgeControllerSpec extends ZIOSpecDefault:
 
   private val stubMemoryRepo: MemoryRepository = new MemoryRepository:
     override def save(entry: MemoryEntry): IO[Throwable, Unit]                 = ZIO.unit
-    override def searchRelevant(userId: UserId, query: String, limit: Int, filter: MemoryFilter)
+    override def searchRelevant(scope: MemoryScope, query: String, limit: Int, filter: MemoryFilter)
       : IO[Throwable, List[ScoredMemory]] = ZIO.succeed(Nil)
-    override def listForUser(userId: UserId, filter: MemoryFilter, page: Int, pageSize: Int)
+    override def listByScope(scope: MemoryScope, filter: MemoryFilter, page: Int, pageSize: Int)
       : IO[Throwable, List[MemoryEntry]] = ZIO.succeed(List(memory))
-    override def deleteById(userId: UserId, id: MemoryId): IO[Throwable, Unit] = ZIO.unit
+    override def deleteById(scope: MemoryScope, id: MemoryId): IO[Throwable, Unit] = ZIO.unit
     override def deleteBySession(sessionId: SessionId): IO[Throwable, Unit]    = ZIO.unit
 
   private val stubWorkspaceRepo: WorkspaceRepository = new WorkspaceRepository:

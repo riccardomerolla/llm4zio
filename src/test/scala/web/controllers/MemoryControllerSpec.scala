@@ -7,14 +7,14 @@ import zio.http.*
 import zio.test.*
 
 import memory.boundary.MemoryControllerLive
-import memory.entity.*
+import memory.entity.{ Scope as MemoryScope, * }
 
 object MemoryControllerSpec extends ZIOSpecDefault:
 
   private val seeded =
     MemoryEntry(
       id = MemoryId("mem-1"),
-      userId = UserId("web:default"),
+      scope = MemoryScope("web:default"),
       sessionId = SessionId("conversation:1"),
       text = "Scala 3 and ZIO project preference",
       embedding = Vector(0.1f, 0.2f),
@@ -29,15 +29,15 @@ object MemoryControllerSpec extends ZIOSpecDefault:
       ZIO.unit
 
     override def searchRelevant(
-      userId: UserId,
+      scope: MemoryScope,
       query: String,
       limit: Int,
       filter: MemoryFilter,
     ): IO[Throwable, List[ScoredMemory]] =
       ZIO.succeed(List(ScoredMemory(seeded, 0.91f)).take(limit))
 
-    override def listForUser(
-      userId: UserId,
+    override def listByScope(
+      scope: MemoryScope,
       filter: MemoryFilter,
       page: Int,
       pageSize: Int,
@@ -51,7 +51,7 @@ object MemoryControllerSpec extends ZIOSpecDefault:
     ): IO[Throwable, List[MemoryEntry]] =
       ZIO.succeed(List(seeded).slice(page * pageSize, (page + 1) * pageSize))
 
-    override def deleteById(userId: UserId, id: MemoryId): IO[Throwable, Unit] =
+    override def deleteById(scope: MemoryScope, id: MemoryId): IO[Throwable, Unit] =
       ZIO.unit
 
     override def deleteBySession(sessionId: SessionId): IO[Throwable, Unit] =

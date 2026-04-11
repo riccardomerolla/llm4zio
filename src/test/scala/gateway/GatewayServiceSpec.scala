@@ -13,7 +13,7 @@ import gateway.control.*
 import gateway.entity.*
 import llm4zio.core.*
 import llm4zio.tools.{ AnyTool, JsonSchema }
-import memory.entity.*
+import memory.entity.{ Scope as MemoryScope, * }
 import orchestration.control.AgentRegistryLive
 import orchestration.entity.AgentRegistry
 import prompts.PromptLoader
@@ -93,20 +93,20 @@ object GatewayServiceSpec extends ZIOSpecDefault:
         override def save(entry: MemoryEntry): IO[Throwable, Unit] = ZIO.unit
 
         override def searchRelevant(
-          userId: UserId,
+          scope: MemoryScope,
           query: String,
           limit: Int,
           filter: MemoryFilter,
         ): IO[Throwable, List[ScoredMemory]] = ZIO.succeed(Nil)
 
-        override def listForUser(
-          userId: UserId,
+        override def listByScope(
+          scope: MemoryScope,
           filter: MemoryFilter,
           page: Int,
           pageSize: Int,
         ): IO[Throwable, List[MemoryEntry]] = ZIO.succeed(Nil)
 
-        override def deleteById(userId: UserId, id: MemoryId): IO[Throwable, Unit] = ZIO.unit
+        override def deleteById(scope: MemoryScope, id: MemoryId): IO[Throwable, Unit] = ZIO.unit
 
         override def deleteBySession(sessionId: SessionId): IO[Throwable, Unit] = ZIO.unit
     )
@@ -147,7 +147,7 @@ object GatewayServiceSpec extends ZIOSpecDefault:
         private val seed =
           MemoryEntry(
             id = MemoryId("seed-1"),
-            userId = UserId("telegram:conversation:chat-memory-1"),
+            scope = MemoryScope("telegram:conversation:chat-memory-1"),
             sessionId = SessionId("telegram:conversation:chat-memory-1"),
             text = "User prefers concise answers",
             embedding = Vector(0.1f),
@@ -160,22 +160,22 @@ object GatewayServiceSpec extends ZIOSpecDefault:
         override def save(entry: MemoryEntry): IO[Throwable, Unit] = ZIO.unit
 
         override def searchRelevant(
-          userId: UserId,
+          scope: MemoryScope,
           query: String,
           limit: Int,
           filter: MemoryFilter,
         ): IO[Throwable, List[ScoredMemory]] =
-          if userId == seed.userId then ZIO.succeed(List(ScoredMemory(seed, 0.99f)).take(limit))
+          if scope == seed.scope then ZIO.succeed(List(ScoredMemory(seed, 0.99f)).take(limit))
           else ZIO.succeed(Nil)
 
-        override def listForUser(
-          userId: UserId,
+        override def listByScope(
+          scope: MemoryScope,
           filter: MemoryFilter,
           page: Int,
           pageSize: Int,
         ): IO[Throwable, List[MemoryEntry]] = ZIO.succeed(Nil)
 
-        override def deleteById(userId: UserId, id: MemoryId): IO[Throwable, Unit] = ZIO.unit
+        override def deleteById(scope: MemoryScope, id: MemoryId): IO[Throwable, Unit] = ZIO.unit
 
         override def deleteBySession(sessionId: SessionId): IO[Throwable, Unit] = ZIO.unit
     )

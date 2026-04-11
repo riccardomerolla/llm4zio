@@ -9,12 +9,12 @@ import zio.test.*
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.error.GigaMapError
 import memory.control.{ EmbeddingService, MemoryRepositoryES }
-import memory.entity.*
+import memory.entity.{ Scope as MemoryScope, * }
 import shared.store.{ MemoryStoreModule, StoreConfig }
 
 object MemoryRepositoryESSpec extends ZIOSpecDefault:
 
-  private val userId: UserId       = UserId("web:42")
+  private val scope: MemoryScope   = MemoryScope("web:42")
   private val sessionId: SessionId = SessionId("conv-1")
 
   private val mockEmbedding: ULayer[EmbeddingService] =
@@ -65,7 +65,7 @@ object MemoryRepositoryESSpec extends ZIOSpecDefault:
 
           val entry = MemoryEntry(
             id = MemoryId.make,
-            userId = userId,
+            scope = scope,
             sessionId = sessionId,
             text = "critical user preference",
             embedding = Vector(1.0f, 0.0f, 0.0f),
@@ -80,7 +80,7 @@ object MemoryRepositoryESSpec extends ZIOSpecDefault:
               repository <- ZIO.service[MemoryRepository]
               _          <- repository.save(entry)
               hits       <- repository.searchRelevant(
-                              userId = userId,
+                              scope = scope,
                               query = "relevant preference",
                               limit = 5,
                               filter = MemoryFilter(kind = Some(MemoryKind.Preference)),
@@ -88,7 +88,7 @@ object MemoryRepositoryESSpec extends ZIOSpecDefault:
             yield assertTrue(
               hits.nonEmpty,
               hits.head.entry.id == entry.id,
-              hits.head.entry.userId == userId,
+              hits.head.entry.scope == scope,
               hits.head.entry.kind == MemoryKind.Preference,
             )
 

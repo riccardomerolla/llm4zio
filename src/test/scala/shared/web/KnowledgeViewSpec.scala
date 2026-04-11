@@ -6,7 +6,7 @@ import zio.test.*
 
 import analysis.entity.{ AnalysisDoc, AnalysisType }
 import knowledge.entity.*
-import memory.entity.{ MemoryEntry, MemoryId, MemoryKind, SessionId, UserId }
+import memory.entity.{ MemoryEntry, MemoryId, MemoryKind, Scope as MemoryScope, SessionId }
 import shared.ids.Ids.{ AgentId, DecisionLogId, IssueId }
 
 object KnowledgeViewSpec extends ZIOSpecDefault:
@@ -40,7 +40,7 @@ object KnowledgeViewSpec extends ZIOSpecDefault:
 
   private val memory = MemoryEntry(
     id = MemoryId("mem-1"),
-    userId = UserId("knowledge"),
+    scope = MemoryScope("knowledge"),
     sessionId = SessionId("run:1"),
     text = "Keep the graph derived from explicit ids and semantic memory links.",
     embedding = Vector.empty,
