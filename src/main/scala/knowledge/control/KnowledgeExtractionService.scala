@@ -11,8 +11,7 @@ import db.ChatRepository
 import issues.entity.AgentIssue
 import knowledge.entity.*
 import llm4zio.core.{ LlmService, Streaming }
-import memory.entity.*
-import memory.entity.Scope
+import memory.entity.{ Scope, * }
 import shared.errors.PersistenceError
 import shared.ids.Ids.DecisionLogId
 import workspace.entity.WorkspaceRun

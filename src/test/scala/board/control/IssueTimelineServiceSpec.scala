@@ -342,16 +342,16 @@ object IssueTimelineServiceSpec extends ZIOSpecDefault:
 
   final private case class StubPlanRepository(plans: List[Plan]) extends PlanRepository:
     override def append(event: PlanEvent): IO[PersistenceError, Unit]       = ZIO.unit
-    override def get(id: PlanId): IO[PersistenceError, Plan]               =
+    override def get(id: PlanId): IO[PersistenceError, Plan]                =
       ZIO.fail(PersistenceError.NotFound("plan", id.value))
     override def history(id: PlanId): IO[PersistenceError, List[PlanEvent]] = ZIO.succeed(Nil)
     override def list: IO[PersistenceError, List[Plan]]                     = ZIO.succeed(plans)
 
   final private case class StubSpecRepository(specs: List[Specification]) extends SpecificationRepository:
-    override def append(event: SpecificationEvent): IO[PersistenceError, Unit]                                  = ZIO.unit
-    override def get(id: SpecificationId): IO[PersistenceError, Specification]                                  =
+    override def append(event: SpecificationEvent): IO[PersistenceError, Unit]                                        = ZIO.unit
+    override def get(id: SpecificationId): IO[PersistenceError, Specification]                                        =
       ZIO.fail(PersistenceError.NotFound("specification", id.value))
-    override def history(id: SpecificationId): IO[PersistenceError, List[SpecificationEvent]]                   = ZIO.succeed(Nil)
-    override def list: IO[PersistenceError, List[Specification]]                                                = ZIO.succeed(specs)
+    override def history(id: SpecificationId): IO[PersistenceError, List[SpecificationEvent]]                         = ZIO.succeed(Nil)
+    override def list: IO[PersistenceError, List[Specification]]                                                      = ZIO.succeed(specs)
     override def diff(id: SpecificationId, fromVersion: Int, toVersion: Int): IO[PersistenceError, SpecificationDiff] =
       ZIO.succeed(SpecificationDiff(fromVersion, toVersion, "", ""))

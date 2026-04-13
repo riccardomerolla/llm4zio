@@ -326,7 +326,7 @@ object ProjectsView:
             p(cls := "mt-1 text-xs text-slate-500")("Create a new workspace directly linked to this project."),
           ),
           a(
-            href := "/workspace-templates",
+            href := s"/workspace-templates?projectId=$projectId",
             cls  := "rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-slate-300 hover:bg-white/10",
           )("From Template"),
         ),

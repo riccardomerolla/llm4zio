@@ -350,5 +350,3 @@ object ApplicationDI:
       WorkspaceRouteModule.live,
       WebServer.live,
     ) >>> ZLayer.service[WebServer]
-
-

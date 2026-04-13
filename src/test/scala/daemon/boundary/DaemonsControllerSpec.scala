@@ -63,9 +63,10 @@ object DaemonsControllerSpec extends ZIOSpecDefault:
         for
           ref       <- Ref.make(List.empty[String])
           controller = DaemonsControllerLive(new StubScheduler(ref))
-          response  <- controller.routes.runZIO(
-                         Request(method = Method.POST, url = URL(Path.decode("/settings/daemons/project-1__test-guardian/start")))
-                       )
+          response  <-
+            controller.routes.runZIO(
+              Request(method = Method.POST, url = URL(Path.decode("/settings/daemons/project-1__test-guardian/start")))
+            )
           calls     <- ref.get
         yield assertTrue(
           response.status == Status.SeeOther,

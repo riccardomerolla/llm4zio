@@ -368,24 +368,64 @@ object WorkspaceTemplatesView:
     ),
   )
 
+  /** Seed issues for a given template: List of (title, summary, meta). */
+  def seedIssues(templateId: String): List[(String, String, String)] =
+    templates.find(_.id == templateId).toList.flatMap(_.issuePreviews.map(ip => (ip.title, ip.summary, ip.meta)))
+
   private val defaultTemplateId = templates.headOption.map(_.id).getOrElse("scala3-zio")
 
-  def page(): String =
+  def page(projectId: Option[String] = None, projects: List[(String, String)] = Nil): String =
     Layout.page("Workspace Templates", "/workspace-templates")(
       div(cls := "space-y-8")(
         Components.pageHeader(
           title = "Workspace Templates",
           subtitle =
             "Pick a stack, refine the prompt, and walk through the seven template questions before the workspace is scaffolded and the first issue cards are generated.",
-          backHref = "/projects",
-          backText = "Projects",
+          backHref = projectId.fold("/projects")(pid => s"/projects/$pid"),
+          backText = projectId.flatMap(pid => projects.find(_._1 == pid).map(_._2)).getOrElse("Projects"),
         ),
+        projectContextBar(projectId, projects),
         templateSelector,
-        div(cls := "space-y-5")(templates.map(templatePanel)*),
+        div(cls := "space-y-5")(templates.map(tp => templatePanel(tp, projectId))*),
         flowOverview,
         selectorScript,
       )
     )
+
+  private def projectContextBar(projectId: Option[String], projects: List[(String, String)]): Frag =
+    projectId match
+      case Some(pid) =>
+        val projectName = projects.find(_._1 == pid).map(_._2).getOrElse(pid)
+        div(cls := "rounded-lg border border-indigo-500/20 bg-indigo-500/[0.06] px-4 py-3")(
+          div(cls := "flex items-center gap-3")(
+            span(cls := "text-xs font-semibold uppercase tracking-[0.18em] text-indigo-300")("Target project"),
+            span(cls := "text-sm font-semibold text-white")(projectName),
+          )
+        )
+      case None      =>
+        if projects.isEmpty then
+          div(cls := "rounded-lg border border-amber-400/20 bg-amber-500/[0.06] px-4 py-3")(
+            p(cls := "text-sm text-amber-200")(
+              "No project selected. ",
+              a(href := "/projects", cls := "underline hover:text-white")("Create a project"),
+              " first, then use the \"From Template\" link.",
+            )
+          )
+        else
+          div(cls := "rounded-lg border border-white/10 bg-slate-900/70 px-4 py-3")(
+            div(cls := "flex items-center gap-3")(
+              label(cls := "text-xs font-semibold uppercase tracking-[0.18em] text-slate-400")("Target project"),
+              select(
+                id  := "project-selector",
+                cls := "rounded-md border border-white/10 bg-black/20 px-3 py-1.5 text-sm text-slate-100",
+              )(
+                projects.map {
+                  case (pid, pname) =>
+                    option(value := pid)(pname)
+                }*
+              ),
+            )
+          )
 
   private def templateSelector: Frag =
     div(cls := "grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3")(
@@ -435,16 +475,25 @@ object WorkspaceTemplatesView:
     if selected then s"$base border-indigo-500/35 bg-indigo-500/[0.05] shadow-[0_0_0_1px_rgba(99,102,241,0.14)]"
     else s"$base hover:border-white/20 hover:bg-white/[0.05]"
 
-  private def templatePanel(template: TemplateInfo): Frag =
+  private def templatePanel(template: TemplateInfo, projectId: Option[String] = None): Frag =
     div(
       id                          := s"workspace-template-panel-${template.id}",
       attr("data-template-panel") := template.id,
       attr("data-template-name")  := template.name,
       cls                         := (if template.id == defaultTemplateId then "block" else "hidden"),
     )(
-      div(
-        cls := "rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(15,23,42,0.14))] p-5 shadow-[0_18px_50px_rgba(15,23,42,0.18)]"
+      form(
+        action := "/workspace-templates",
+        method := "post",
+        cls    := "rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(15,23,42,0.14))] p-5 shadow-[0_18px_50px_rgba(15,23,42,0.18)]",
       )(
+        input(`type`                    := "hidden", name := "templateId", value := template.id),
+        input(
+          `type`                        := "hidden",
+          name                          := "projectId",
+          value                         := projectId.getOrElse(""),
+          attr("data-project-id-field") := "true",
+        ),
         div(cls := "flex flex-col gap-4 border-b border-white/10 pb-5 lg:flex-row lg:items-start lg:justify-between")(
           div(
             p(cls := "text-[11px] font-semibold uppercase tracking-[0.26em] text-slate-500")("Selected template"),
@@ -484,6 +533,7 @@ object WorkspaceTemplatesView:
           "Start from the user request. The wizard keeps this prompt visible while you move through the seven standard questions."
         ),
         textarea(
+          name                               := "prompt",
           cls                                := textAreaClasses,
           rows                               := 6,
           attr("data-sync-field")            := "prompt",
@@ -581,6 +631,7 @@ object WorkspaceTemplatesView:
   private def nameInput(template: TemplateInfo): Frag =
     input(
       `type`                           := "text",
+      name                             := "name",
       value                            := singleAnswer(template, "name"),
       cls                              := textInputClasses,
       attr("data-sync-field")          := "name",
@@ -589,16 +640,33 @@ object WorkspaceTemplatesView:
     )
 
   private def pathInput(template: TemplateInfo): Frag =
-    input(
-      `type`                  := "text",
-      value                   := singleAnswer(template, "path"),
-      cls                     := textInputClasses,
-      attr("data-sync-field") := "path",
-      placeholder             := "~/workspaces/my-workspace",
+    div(cls := "space-y-4")(
+      input(
+        `type`                  := "text",
+        name                    := "localPath",
+        value                   := singleAnswer(template, "path"),
+        cls                     := textInputClasses,
+        attr("data-sync-field") := "path",
+        placeholder             := "~/workspaces/my-workspace",
+      ),
+      div(cls := "rounded-lg border border-white/10 bg-black/20 p-4")(
+        p(cls := "text-xs font-semibold uppercase tracking-[0.18em] text-slate-500")("Clone from GitHub (optional)"),
+        p(cls := "mt-1 text-sm text-slate-400")(
+          "Provide a repository URL to clone instead of creating an empty directory."
+        ),
+        input(
+          `type`                  := "text",
+          name                    := "gitRepoUrl",
+          cls                     := textInputClasses + " mt-3",
+          attr("data-sync-field") := "gitRepoUrl",
+          placeholder             := "https://github.com/org/repo.git",
+        ),
+      ),
     )
 
   private def descriptionInput(template: TemplateInfo): Frag =
     textarea(
+      name                    := "description",
       cls                     := textAreaClasses,
       rows                    := 4,
       attr("data-sync-field") := "description",
@@ -622,6 +690,7 @@ object WorkspaceTemplatesView:
 
   private def featuresInput(template: TemplateInfo): Frag =
     textarea(
+      name                    := "features",
       cls                     := textAreaClasses,
       rows                    := 7,
       attr("data-sync-field") := "features",
@@ -629,6 +698,7 @@ object WorkspaceTemplatesView:
 
   private def cliToolInput(template: TemplateInfo): Frag =
     select(
+      name                    := "cliTool",
       cls                     := selectClasses,
       attr("data-sync-field") := "cliTool",
     )(
@@ -655,6 +725,7 @@ object WorkspaceTemplatesView:
 
     div(cls := "space-y-4")(
       select(
+        name                    := "runModeType",
         cls                     := selectClasses,
         attr("data-sync-field") := "runMode",
       )(
@@ -675,6 +746,7 @@ object WorkspaceTemplatesView:
         div(cls := "mt-3 space-y-3")(
           input(
             `type`                  := "text",
+            name                    := "dockerImage",
             value                   := dockerImageFor(template),
             cls                     := textInputClasses,
             attr("data-sync-field") := "dockerImage",
@@ -682,6 +754,7 @@ object WorkspaceTemplatesView:
           ),
           input(
             `type`                  := "text",
+            name                    := "dockerNetwork",
             value                   := "workspace-network",
             cls                     := textInputClasses,
             attr("data-sync-field") := "dockerNetwork",
@@ -697,6 +770,7 @@ object WorkspaceTemplatesView:
         div(cls := "mt-3 space-y-3")(
           input(
             `type`                  := "text",
+            name                    := "cloudProvider",
             value                   := "aws-fargate",
             cls                     := textInputClasses,
             attr("data-sync-field") := "cloudProvider",
@@ -704,6 +778,7 @@ object WorkspaceTemplatesView:
           ),
           input(
             `type`                  := "text",
+            name                    := "cloudImage",
             value                   := cloudImageFor(template),
             cls                     := textInputClasses,
             attr("data-sync-field") := "cloudImage",
@@ -711,6 +786,7 @@ object WorkspaceTemplatesView:
           ),
           input(
             `type`                  := "text",
+            name                    := "cloudRegion",
             value                   := "eu-west-1",
             cls                     := textInputClasses,
             attr("data-sync-field") := "cloudRegion",
@@ -755,6 +831,7 @@ object WorkspaceTemplatesView:
             div(cls := "grid grid-cols-1 gap-3 sm:grid-cols-2")(
               summaryField("Name", "name", singleAnswer(template, "name")),
               summaryField("Path", "path", singleAnswer(template, "path")),
+              summaryField("Git repo", "gitRepoUrl", ""),
               summaryField("Stack", "template-name", template.name),
               summaryField("CLI tool", "cliTool", singleAnswer(template, "cliTool")),
               summaryField("Run mode", "runMode", singleAnswer(template, "runMode")),
@@ -842,6 +919,20 @@ object WorkspaceTemplatesView:
               )
           }*
         ),
+      ),
+      div(cls := "rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.06] p-5")(
+        div(cls := "flex items-center justify-between gap-3")(
+          div(
+            p(cls := "text-sm font-semibold text-white")("Ready to create"),
+            p(cls := "mt-1 text-sm text-slate-400")(
+              "Review the brief above, then create the workspace. A scaffolding task will be dispatched automatically."
+            ),
+          ),
+          button(
+            `type` := "submit",
+            cls    := "rounded-md bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-400/70",
+          )("Create Workspace"),
+        )
       ),
     )
 
@@ -1069,6 +1160,19 @@ object WorkspaceTemplatesView:
         |
         |    var activeButton = document.querySelector('[data-template-button][aria-selected="true"]');
         |    selectTemplate(activeButton ? activeButton.getAttribute('data-template-button') : '$defaultTemplateId');
+        |  }
+        |
+        |  var projectSelector = document.getElementById('project-selector');
+        |  if (projectSelector) {
+        |    projectSelector.addEventListener('change', function () {
+        |      document.querySelectorAll('[data-project-id-field]').forEach(function (field) {
+        |        field.value = projectSelector.value;
+        |      });
+        |    });
+        |    // Initialize hidden fields with first project value
+        |    document.querySelectorAll('[data-project-id-field]').forEach(function (field) {
+        |      if (!field.value) field.value = projectSelector.value;
+        |    });
         |  }
         |
         |  if (document.readyState === 'loading') {

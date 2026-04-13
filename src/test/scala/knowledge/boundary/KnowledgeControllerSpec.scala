@@ -85,13 +85,13 @@ object KnowledgeControllerSpec extends ZIOSpecDefault:
       )
 
   private val stubMemoryRepo: MemoryRepository = new MemoryRepository:
-    override def save(entry: MemoryEntry): IO[Throwable, Unit]                 = ZIO.unit
+    override def save(entry: MemoryEntry): IO[Throwable, Unit]                     = ZIO.unit
     override def searchRelevant(scope: MemoryScope, query: String, limit: Int, filter: MemoryFilter)
       : IO[Throwable, List[ScoredMemory]] = ZIO.succeed(Nil)
     override def listByScope(scope: MemoryScope, filter: MemoryFilter, page: Int, pageSize: Int)
       : IO[Throwable, List[MemoryEntry]] = ZIO.succeed(List(memory))
     override def deleteById(scope: MemoryScope, id: MemoryId): IO[Throwable, Unit] = ZIO.unit
-    override def deleteBySession(sessionId: SessionId): IO[Throwable, Unit]    = ZIO.unit
+    override def deleteBySession(sessionId: SessionId): IO[Throwable, Unit]        = ZIO.unit
 
   private val stubWorkspaceRepo: WorkspaceRepository = new WorkspaceRepository:
     override def append(event: workspace.entity.WorkspaceEvent): IO[PersistenceError, Unit]                      = ZIO.unit

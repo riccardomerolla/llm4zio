@@ -1,6 +1,6 @@
 package shared.web
 
-import memory.entity.{ MemoryEntry, MemoryKind, ScoredMemory, Scope }
+import memory.entity.{ MemoryEntry, MemoryKind, Scope, ScoredMemory }
 import scalatags.Text.all.*
 
 object MemoryView:

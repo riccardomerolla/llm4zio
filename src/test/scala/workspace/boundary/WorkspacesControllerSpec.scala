@@ -10,10 +10,13 @@ import zio.test.*
 import _root_.config.entity.*
 import analysis.control.WorkspaceAnalysisScheduler
 import analysis.entity.{ AnalysisType, WorkspaceAnalysisState, WorkspaceAnalysisStatus }
+import db.TaskRepository
 import issues.entity.{ AgentIssue, IssueEvent, IssueFilter, IssueRepository, IssueState }
-import orchestration.entity.AgentRegistry
-import shared.ids.Ids.IssueId
-import taskrun.entity.TaskStep
+import orchestration.entity.{ AgentRegistry, TaskExecutor, WorkflowService, WorkflowServiceError }
+import project.entity.{ Project, ProjectEvent, ProjectRepository, ProjectSettings }
+import shared.errors.PersistenceError
+import shared.ids.Ids.{ IssueId, ProjectId }
+import taskrun.entity.{ TaskArtifactRow, TaskReportRow, TaskRunRow, TaskStep }
 import workspace.control.{ GitService, WorkspaceRunService }
 import workspace.entity.*
 
@@ -204,6 +207,54 @@ object WorkspacesControllerSpec extends ZIOSpecDefault:
         )
       )
 
+  private object StubProjectRepo extends ProjectRepository:
+    def append(event: ProjectEvent): IO[PersistenceError, Unit]   = ZIO.unit
+    def list: IO[PersistenceError, List[Project]]                 =
+      ZIO.succeed(List(Project(
+        ProjectId("test-project"),
+        "Test Project",
+        None,
+        ProjectSettings(),
+        Instant.EPOCH,
+        Instant.EPOCH,
+      )))
+    def get(id: ProjectId): IO[PersistenceError, Option[Project]] =
+      ZIO.succeed(Some(Project(id, "Test Project", None, ProjectSettings(), Instant.EPOCH, Instant.EPOCH)))
+    def delete(id: ProjectId): IO[PersistenceError, Unit]         = ZIO.unit
+
+  private object StubTaskRepo extends TaskRepository:
+    def createRun(run: TaskRunRow): IO[PersistenceError, Long]                                             = ZIO.succeed(1L)
+    def updateRun(run: TaskRunRow): IO[PersistenceError, Unit]                                             = ZIO.unit
+    def getRun(id: Long): IO[PersistenceError, Option[TaskRunRow]]                                         = ZIO.none
+    def listRuns(offset: Int, limit: Int): IO[PersistenceError, List[TaskRunRow]]                          = ZIO.succeed(Nil)
+    def deleteRun(id: Long): IO[PersistenceError, Unit]                                                    = ZIO.unit
+    def saveReport(report: TaskReportRow): IO[PersistenceError, Long]                                      = ZIO.succeed(1L)
+    def getReport(reportId: Long): IO[PersistenceError, Option[TaskReportRow]]                             = ZIO.none
+    def getReports(taskRunId: Long): IO[PersistenceError, List[TaskReportRow]]                             = ZIO.succeed(Nil)
+    def getReportsByTask(taskRunId: Long): IO[PersistenceError, List[TaskReportRow]]                       = ZIO.succeed(Nil)
+    def saveArtifact(artifact: TaskArtifactRow): IO[PersistenceError, Long]                                = ZIO.succeed(1L)
+    def getArtifacts(taskRunId: Long): IO[PersistenceError, List[TaskArtifactRow]]                         = ZIO.succeed(Nil)
+    def getArtifactsByStep(taskRunId: Long, stepName: String): IO[PersistenceError, List[TaskArtifactRow]] =
+      ZIO.succeed(Nil)
+    def getArtifactsByTask(taskRunId: Long): IO[PersistenceError, List[TaskArtifactRow]]                   = ZIO.succeed(Nil)
+    def getSetting(key: String): IO[PersistenceError, Option[_root_.config.entity.SettingRow]]             = ZIO.none
+    def upsertSetting(key: String, value: String): IO[PersistenceError, Unit]                              = ZIO.unit
+    def getAllSettings: IO[PersistenceError, List[_root_.config.entity.SettingRow]]                        = ZIO.succeed(Nil)
+
+  private object StubTaskExecutor extends TaskExecutor:
+    def execute(taskRunId: Long, workflow: WorkflowDefinition): IO[PersistenceError, Unit] = ZIO.unit
+    def start(taskRunId: Long, workflow: WorkflowDefinition): UIO[Unit]                    = ZIO.unit
+    def cancel(taskRunId: Long): UIO[Unit]                                                 = ZIO.unit
+
+  private object StubWorkflowService extends WorkflowService:
+    def createWorkflow(workflow: WorkflowDefinition): IO[WorkflowServiceError, Long]          = ZIO.succeed(1L)
+    def getWorkflow(id: Long): IO[WorkflowServiceError, Option[WorkflowDefinition]]           = ZIO.none
+    def getWorkflowByName(name: String): IO[WorkflowServiceError, Option[WorkflowDefinition]] =
+      ZIO.succeed(Some(WorkflowDefinition(id = Some("1"), name = name, steps = List("scaffold"), isBuiltin = true)))
+    def listWorkflows: IO[WorkflowServiceError, List[WorkflowDefinition]]                     = ZIO.succeed(Nil)
+    def updateWorkflow(workflow: WorkflowDefinition): IO[WorkflowServiceError, Unit]          = ZIO.unit
+    def deleteWorkflow(id: Long): IO[WorkflowServiceError, Unit]                              = ZIO.unit
+
   private def makeRoutes(
     wsRef: Ref[Map[String, Workspace]],
     runRef: Ref[Map[String, WorkspaceRun]],
@@ -217,6 +268,10 @@ object WorkspacesControllerSpec extends ZIOSpecDefault:
       issueRepository,
       StubGitService,
       StubAnalysisScheduler(triggerRef),
+      StubProjectRepo,
+      StubTaskRepo,
+      StubTaskExecutor,
+      StubWorkflowService,
     ).routes
 
   def spec: Spec[TestEnvironment & Scope, Any] = suite("WorkspacesControllerSpec")(

@@ -4,8 +4,7 @@ import zio.*
 import zio.http.*
 import zio.json.*
 
-import memory.entity.*
-import memory.entity.Scope
+import memory.entity.{ Scope, * }
 import shared.web.MemoryView
 
 trait MemoryController:

@@ -27,8 +27,8 @@ object HealthControllerSpec extends ZIOSpecDefault:
     override def stream(interval: Duration): ZStream[Any, Nothing, HealthSnapshot] = zio.stream.ZStream.empty
 
   private val modelService: ModelService = new ModelService:
-    override def listAvailableModels: UIO[ModelRegistryResponse]                              = ZIO.succeed(ModelRegistryResponse(Nil))
-    override def probeProviders: UIO[List[ProviderProbeStatus]]                               = ZIO.succeed(Nil)
+    override def listAvailableModels: UIO[ModelRegistryResponse]                          = ZIO.succeed(ModelRegistryResponse(Nil))
+    override def probeProviders: UIO[List[ProviderProbeStatus]]                           = ZIO.succeed(Nil)
     override def resolveFallbackChain(primary: ProviderConfig): UIO[List[ProviderConfig]] =
       ZIO.succeed(List(primary))
 

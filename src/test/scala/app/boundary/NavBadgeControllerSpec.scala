@@ -47,5 +47,5 @@ object NavBadgeControllerSpec extends ZIOSpecDefault:
           response <- routes.runZIO(Request.get(URL(Path.decode("/nav/badges/board"))))
           body     <- response.body.asString
         yield assertTrue(response.status == Status.Ok, body.contains(">1<"))
-      },
+      }
     )

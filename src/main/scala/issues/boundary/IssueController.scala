@@ -906,10 +906,11 @@ final case class IssueControllerLive(
     val agentFilter     = req.queryParam("agent").map(_.trim).filter(_.nonEmpty)
     val priorityFilter  = req.queryParam("priority").map(_.trim.toLowerCase).filter(_.nonEmpty)
     val statusFilter    = req.queryParam("status").map(_.trim.toLowerCase).filter(_.nonEmpty)
+    val projectFilter   = parseProjectFilter(req)
     ErrorHandlingMiddleware.fromPersistence {
       for
         startedAt         <- Clock.nanoTime
-        workspacesFiber   <- timed("board.workspaces")(workspaceRepository.list.mapError(mapIssueRepoError)).fork
+        workspacesFiber   <- timed("board.workspaces")(loadWorkspaces(projectFilter).mapError(mapIssueRepoError)).fork
         issuesFiber       <- timed("board.issues")(
                                loadBoardIssues(
                                  query,
@@ -928,15 +929,23 @@ final case class IssueControllerLive(
         issuesTimed       <- issuesFiber.join
         workReportsTimed  <- workReportsFiber.join
         autoDispatchTimed <- autoDispatchFiber.join
-        dispatchTimed     <- timed("board.dispatchStatuses")(loadDispatchStatuses(issuesTimed.value))
+        projectWsIds       = projectFilter match
+                               case project.entity.ProjectFilter.All         => None
+                               case project.entity.ProjectFilter.Selected(_) =>
+                                 Some(workspacesTimed.value.map(_.id).toSet)
+        scopedIssues       = projectWsIds match
+                               case None      => issuesTimed.value
+                               case Some(ids) =>
+                                 issuesTimed.value.filter(i => i.workspaceId.exists(ids.contains))
+        dispatchTimed     <- timed("board.dispatchStatuses")(loadDispatchStatuses(scopedIssues))
         completedAt       <- Clock.nanoTime
         totalDurationMs    = nanosToMillis(completedAt - startedAt)
-        workReports        = selectWorkReports(workReportsTimed.value, issuesTimed.value)
+        workReports        = selectWorkReports(workReportsTimed.value, scopedIssues)
         rendered          <- mode match
                                case "list" =>
                                  ZIO.succeed(
                                    HtmlViews.issuesBoardList(
-                                     issues = issuesTimed.value,
+                                     issues = scopedIssues,
                                      statusFilter = statusFilter,
                                      query = query,
                                      tagFilter = tagFilter,
@@ -948,7 +957,7 @@ final case class IssueControllerLive(
                                case _      =>
                                  ZIO.succeed(
                                    HtmlViews.issuesBoard(
-                                     issues = issuesTimed.value,
+                                     issues = scopedIssues,
                                      workspaces = workspacesTimed.value.map(ws => ws.id -> ws.name),
                                      workReports = workReports,
                                      workspaceFilter = workspaceFilter,
@@ -968,7 +977,7 @@ final case class IssueControllerLive(
                                issuesDurationMs = issuesTimed.durationMs,
                                workReportsDurationMs = workReportsTimed.durationMs,
                                dispatchDurationMs = dispatchTimed.durationMs,
-                               issueCount = issuesTimed.value.size,
+                               issueCount = scopedIssues.size,
                              )
       yield html(rendered).addHeaders(boardTimingHeaders(
         route = "page",
@@ -977,7 +986,7 @@ final case class IssueControllerLive(
         issuesDurationMs = issuesTimed.durationMs,
         workReportsDurationMs = workReportsTimed.durationMs,
         dispatchDurationMs = dispatchTimed.durationMs,
-        issueCount = issuesTimed.value.size,
+        issueCount = scopedIssues.size,
       ))
     }
 
@@ -988,12 +997,13 @@ final case class IssueControllerLive(
     val agentFilter     = req.queryParam("agent").map(_.trim).filter(_.nonEmpty)
     val priorityFilter  = req.queryParam("priority").map(_.trim.toLowerCase).filter(_.nonEmpty)
     val statusFilter    = req.queryParam("status").map(_.trim.toLowerCase).filter(_.nonEmpty)
+    val projectFilter   = parseProjectFilter(req)
     ErrorHandlingMiddleware.fromPersistence {
       val fragmentEffect =
         for
           startedAt        <- Clock.nanoTime
           workspacesFiber  <-
-            timed("boardFragment.workspaces")(workspaceRepository.list.mapError(mapIssueRepoError)).fork
+            timed("boardFragment.workspaces")(loadWorkspaces(projectFilter).mapError(mapIssueRepoError)).fork
           issuesFiber      <- timed("boardFragment.issues")(
                                 loadBoardIssues(
                                   query,
@@ -1008,10 +1018,18 @@ final case class IssueControllerLive(
           workspacesTimed  <- workspacesFiber.join
           issuesTimed      <- issuesFiber.join
           workReportsTimed <- workReportsFiber.join
-          dispatchTimed    <- timed("boardFragment.dispatchStatuses")(loadDispatchStatuses(issuesTimed.value))
+          projectWsIds      = projectFilter match
+                                case project.entity.ProjectFilter.All         => None
+                                case project.entity.ProjectFilter.Selected(_) =>
+                                  Some(workspacesTimed.value.map(_.id).toSet)
+          scopedIssues      = projectWsIds match
+                                case None      => issuesTimed.value
+                                case Some(ids) =>
+                                  issuesTimed.value.filter(i => i.workspaceId.exists(ids.contains))
+          dispatchTimed    <- timed("boardFragment.dispatchStatuses")(loadDispatchStatuses(scopedIssues))
           completedAt      <- Clock.nanoTime
           totalDurationMs   = nanosToMillis(completedAt - startedAt)
-          workReports       = selectWorkReports(workReportsTimed.value, issuesTimed.value)
+          workReports       = selectWorkReports(workReportsTimed.value, scopedIssues)
           _                <- logBoardTiming(
                                 route = "fragment",
                                 totalDurationMs = totalDurationMs,
@@ -1019,11 +1037,11 @@ final case class IssueControllerLive(
                                 issuesDurationMs = issuesTimed.durationMs,
                                 workReportsDurationMs = workReportsTimed.durationMs,
                                 dispatchDurationMs = dispatchTimed.durationMs,
-                                issueCount = issuesTimed.value.size,
+                                issueCount = scopedIssues.size,
                               )
         yield html(
           HtmlViews.issuesBoardColumns(
-            issues = issuesTimed.value,
+            issues = scopedIssues,
             workspaces = workspacesTimed.value.map(ws => ws.id -> ws.name),
             workReports = workReports,
             dispatchStatuses = dispatchTimed.value,
@@ -1035,11 +1053,24 @@ final case class IssueControllerLive(
           issuesDurationMs = issuesTimed.durationMs,
           workReportsDurationMs = workReportsTimed.durationMs,
           dispatchDurationMs = dispatchTimed.durationMs,
-          issueCount = issuesTimed.value.size,
+          issueCount = scopedIssues.size,
         ))
       fragmentEffect
         .timeoutFail(PersistenceError.QueryFailed("boardFragment", "timed out after 10s"))(10.seconds)
     }
+
+  private def parseProjectFilter(req: Request): project.entity.ProjectFilter =
+    val headerVal = req.headers.get("X-Project-Filter").map(_.trim).filter(_.nonEmpty)
+    val cookieVal =
+      req.cookies.find(_.name == "project-filter").map(_.content.trim).filter(_.nonEmpty)
+    project.entity.ProjectFilter.parse(headerVal.orElse(cookieVal))
+
+  private def loadWorkspaces(
+    filter: project.entity.ProjectFilter
+  ): IO[shared.errors.PersistenceError, List[workspace.entity.Workspace]] =
+    filter match
+      case project.entity.ProjectFilter.All                 => workspaceRepository.list
+      case project.entity.ProjectFilter.Selected(projectId) => workspaceRepository.listByProject(projectId)
 
   private def html(content: String): Response =
     Response.text(content).contentType(MediaType.text.html)

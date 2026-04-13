@@ -33,23 +33,23 @@ final case class EmbeddingServiceLive(
       result         <- config.provider match
                           case LlmProvider.OpenAI | LlmProvider.LmStudio | LlmProvider.OpenCode =>
                             embedOpenAiCompatible(normalizedText, config)
-                          case LlmProvider.GeminiApi                                          =>
+                          case LlmProvider.GeminiApi                                            =>
                             embedGemini(normalizedText, config)
-                          case LlmProvider.Ollama                                             =>
+                          case LlmProvider.Ollama                                               =>
                             embedOllama(normalizedText, config)
-                          case LlmProvider.Anthropic                                          =>
+                          case LlmProvider.Anthropic                                            =>
                             ZIO.fail(
                               new RuntimeException(
                                 "Embedding endpoint is not supported for Anthropic provider in this project"
                               )
                             )
-                          case LlmProvider.GeminiCli                                          =>
+                          case LlmProvider.GeminiCli                                            =>
                             ZIO.fail(
                               new RuntimeException(
                                 "Embedding endpoint is not supported for Gemini CLI provider; use GeminiApi/OpenAi/Ollama"
                               )
                             )
-                          case LlmProvider.Mock                                               =>
+                          case LlmProvider.Mock                                                 =>
                             ZIO.fail(
                               new RuntimeException(
                                 "Embedding endpoint is not supported for Mock provider; use GeminiApi/OpenAi/Ollama"
@@ -161,8 +161,8 @@ final case class EmbeddingServiceLive(
       .getOrElse(
         provider match
           case LlmProvider.OpenAI | LlmProvider.LmStudio | LlmProvider.OpenCode => "text-embedding-3-small"
-          case LlmProvider.GeminiApi                                          => "text-embedding-004"
-          case LlmProvider.Ollama                                             => "nomic-embed-text"
+          case LlmProvider.GeminiApi                                            => "text-embedding-004"
+          case LlmProvider.Ollama                                               => "nomic-embed-text"
           case LlmProvider.Anthropic | LlmProvider.GeminiCli | LlmProvider.Mock => "text-embedding-3-small"
       )
 
@@ -173,7 +173,7 @@ final case class EmbeddingServiceLive(
     val normalized = baseUrl.stripSuffix("/")
     provider match
       case LlmProvider.LmStudio => s"$normalized/v1/embeddings"
-      case _                   => s"$normalized/embeddings"
+      case _                    => s"$normalized/embeddings"
 
   private def dimensionFromEnvironment: Int =
     sys.env

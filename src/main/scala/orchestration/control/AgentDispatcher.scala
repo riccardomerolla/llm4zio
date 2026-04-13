@@ -9,8 +9,7 @@ import _root_.config.entity.{ ConfigRepository, ProviderConfig }
 import db.TaskRepository
 import llm4zio.core.*
 import llm4zio.providers.{ GeminiCliExecutor, HttpClient }
-import memory.entity.*
-import memory.entity.Scope
+import memory.entity.{ Scope, * }
 import orchestration.entity.AgentRegistry
 import shared.errors.PersistenceError
 import taskrun.entity.{ TaskArtifactRow, TaskReportRow }

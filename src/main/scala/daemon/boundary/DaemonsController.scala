@@ -29,10 +29,14 @@ final case class DaemonsControllerLive(
         .catchAll(error => ZIO.succeed(persistErr(error)))
     },
     Method.POST / "settings" / "daemons" / string("id") / "start"   -> handler { (id: String, _: Request) =>
-      scheduler.start(DaemonAgentSpecId(id)).as(redirect("/settings/daemons")).catchAll(error => ZIO.succeed(persistErr(error)))
+      scheduler.start(DaemonAgentSpecId(id)).as(redirect("/settings/daemons")).catchAll(error =>
+        ZIO.succeed(persistErr(error))
+      )
     },
     Method.POST / "settings" / "daemons" / string("id") / "stop"    -> handler { (id: String, _: Request) =>
-      scheduler.stop(DaemonAgentSpecId(id)).as(redirect("/settings/daemons")).catchAll(error => ZIO.succeed(persistErr(error)))
+      scheduler.stop(DaemonAgentSpecId(id)).as(redirect("/settings/daemons")).catchAll(error =>
+        ZIO.succeed(persistErr(error))
+      )
     },
     Method.POST / "settings" / "daemons" / string("id") / "restart" -> handler { (id: String, _: Request) =>
       scheduler.restart(DaemonAgentSpecId(id)).as(redirect("/settings/daemons")).catchAll(error =>

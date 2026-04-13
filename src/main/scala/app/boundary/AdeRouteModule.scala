@@ -37,6 +37,6 @@ object AdeRouteModule:
             knowledge.routes ++
             demoController.routes ++
             NavBadgeController.routes(
-              issueRepository,
+              issueRepository
             )
     }

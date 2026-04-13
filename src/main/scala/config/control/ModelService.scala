@@ -124,26 +124,26 @@ final case class ModelServiceLive(
 
   private def probeRemote(config: ProviderConfig): IO[AIError, String] =
     config.provider match
-      case LlmProvider.GeminiCli                                          =>
+      case LlmProvider.GeminiCli                                            =>
         ZIO.succeed("CLI provider; remote health probe is not required")
-      case LlmProvider.GeminiApi                                          =>
+      case LlmProvider.GeminiApi                                            =>
         val key = config.apiKey.getOrElse("")
         val url = s"${config.baseUrl.getOrElse("").stripSuffix("/")}/v1beta/models?key=${urlEncode(key)}"
         http.get(url = url, timeout = 10.seconds)
-      case LlmProvider.Ollama                                             =>
+      case LlmProvider.Ollama                                               =>
         val url = s"${config.baseUrl.getOrElse("").stripSuffix("/")}/api/tags"
         http.get(url = url, timeout = 10.seconds)
       case LlmProvider.OpenAI | LlmProvider.LmStudio | LlmProvider.OpenCode =>
         val authHeaders = authHeader(config.apiKey)
         val url         = s"${config.baseUrl.getOrElse("").stripSuffix("/")}/models"
         http.get(url = url, headers = authHeaders, timeout = 10.seconds)
-      case LlmProvider.Anthropic                                          =>
+      case LlmProvider.Anthropic                                            =>
         val headers = authHeader(config.apiKey) ++ Map(
           "anthropic-version" -> "2023-06-01"
         )
         val url     = s"${config.baseUrl.getOrElse("").stripSuffix("/")}/v1/models"
         http.get(url = url, headers = headers, timeout = 10.seconds)
-      case LlmProvider.Mock                                               =>
+      case LlmProvider.Mock                                                 =>
         ZIO.succeed("Mock provider; always available")
 
   private def authHeader(apiKey: Option[String]): Map[String, String] =
@@ -173,7 +173,7 @@ final case class ModelServiceLive(
   private def needsApiKey(provider: LlmProvider): Boolean =
     provider match
       case LlmProvider.GeminiApi | LlmProvider.OpenAI | LlmProvider.Anthropic => true
-      case _                                                               => false
+      case _                                                                  => false
 
   private def urlEncode(value: String): String =
     URLEncoder.encode(value, StandardCharsets.UTF_8)

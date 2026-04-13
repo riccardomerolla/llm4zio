@@ -19,10 +19,10 @@ import issues.entity.{ AgentIssue as DomainIssue, IssueRepository }
 import llm4zio.core.{ LlmConfig, LlmError, LlmProvider, LlmService }
 import llm4zio.providers.{ GeminiCliExecutionContext, GeminiCliExecutor, HttpClient }
 import llm4zio.tools.JsonSchema
+import orchestration.entity.{ PlannerPlanPreview, PlannerPreviewState }
 import plan.entity.*
 import project.control.ProjectStorageService
 import prompts.{ PromptError, PromptLoader }
-import orchestration.entity.{ PlannerPlanPreview, PlannerPreviewState }
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ BoardIssueId, EventId, IssueId, PlanId, SpecificationId }
 import specification.entity.*

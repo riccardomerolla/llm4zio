@@ -71,14 +71,14 @@ object KnowledgeServicesSpec extends ZIOSpecDefault:
       Ref.make(initial).map(StubDecisionLogRepository(_))
 
   final class StubMemoryRepository extends MemoryRepository:
-    override def save(entry: MemoryEntry): IO[Throwable, Unit]                                                     = ZIO.unit
+    override def save(entry: MemoryEntry): IO[Throwable, Unit]                                                        = ZIO.unit
     override def searchRelevant(s: MemoryScope, q: String, limit: Int, f: MemoryFilter)
       : IO[Throwable, List[ScoredMemory]] =
       ZIO.succeed(Nil)
     override def listByScope(s: MemoryScope, f: MemoryFilter, page: Int, size: Int): IO[Throwable, List[MemoryEntry]] =
       ZIO.succeed(Nil)
     override def deleteById(s: MemoryScope, id: MemoryId): IO[Throwable, Unit]                                        = ZIO.unit
-    override def deleteBySession(sid: SessionId): IO[Throwable, Unit]                                              = ZIO.unit
+    override def deleteBySession(sid: SessionId): IO[Throwable, Unit]                                                 = ZIO.unit
 
   final class StubAnalysisRepository extends AnalysisRepository:
     override def append(event: AnalysisEvent): IO[PersistenceError, Unit]                        = ZIO.unit

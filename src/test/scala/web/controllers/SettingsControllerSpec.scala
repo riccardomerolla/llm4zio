@@ -44,8 +44,8 @@ object SettingsControllerSpec extends ZIOSpecDefault:
       ZIO.succeed(true)
 
   private val stubModelService: ModelService = new ModelService:
-    override def listAvailableModels: UIO[ModelRegistryResponse]                              = ZIO.succeed(ModelRegistryResponse(Nil))
-    override def probeProviders: UIO[List[ProviderProbeStatus]]                               = ZIO.succeed(Nil)
+    override def listAvailableModels: UIO[ModelRegistryResponse]                          = ZIO.succeed(ModelRegistryResponse(Nil))
+    override def probeProviders: UIO[List[ProviderProbeStatus]]                           = ZIO.succeed(Nil)
     override def resolveFallbackChain(primary: ProviderConfig): UIO[List[ProviderConfig]] =
       ZIO.succeed(List(primary))
 

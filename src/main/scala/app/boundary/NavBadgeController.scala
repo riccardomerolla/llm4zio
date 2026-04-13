@@ -9,14 +9,14 @@ import shared.errors.PersistenceError
 object NavBadgeController:
 
   def routes(
-    issueRepository: IssueRepository,
+    issueRepository: IssueRepository
   ): Routes[Any, Response] =
     Routes(
       Method.GET / "nav" / "badges" / "board" -> handler { (_: Request) =>
         inProgressBoardCount(issueRepository)
           .map(count => badgeResponse(count))
           .catchAll(error => ZIO.succeed(errorResponse(error.toString)))
-      },
+      }
     )
 
   private def inProgressBoardCount(issueRepository: IssueRepository): IO[PersistenceError, Int] =

@@ -79,15 +79,15 @@ object SettingsApplier:
   /** Parse AI provider string to enum */
   private def parseLlmProvider(str: String): Option[LlmProvider] =
     str match
-      case "GeminiCli" => Some(LlmProvider.GeminiCli)
-      case "GeminiApi" => Some(LlmProvider.GeminiApi)
+      case "GeminiCli"         => Some(LlmProvider.GeminiCli)
+      case "GeminiApi"         => Some(LlmProvider.GeminiApi)
       case "OpenAi" | "OpenAI" => Some(LlmProvider.OpenAI)
-      case "Anthropic" => Some(LlmProvider.Anthropic)
-      case "LmStudio"  => Some(LlmProvider.LmStudio)
-      case "Ollama"    => Some(LlmProvider.Ollama)
-      case "OpenCode"  => Some(LlmProvider.OpenCode)
-      case "Mock"      => Some(LlmProvider.Mock)
-      case _           => None
+      case "Anthropic"         => Some(LlmProvider.Anthropic)
+      case "LmStudio"          => Some(LlmProvider.LmStudio)
+      case "Ollama"            => Some(LlmProvider.Ollama)
+      case "OpenCode"          => Some(LlmProvider.OpenCode)
+      case "Mock"              => Some(LlmProvider.Mock)
+      case _                   => None
 
   private def parseFallbackChain(valueOpt: Option[String], defaultProvider: LlmProvider): ModelFallbackChain =
     val refs = valueOpt

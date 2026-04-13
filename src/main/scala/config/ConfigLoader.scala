@@ -9,8 +9,8 @@ import zio.config.magnolia.*
 import zio.config.typesafe.*
 
 import _root_.config.entity.{ GatewayConfig, ProviderConfig, TelegramMode }
-import llm4zio.core.LlmProvider
 import com.typesafe.config.{ Config as TypesafeConfig, ConfigFactory }
+import llm4zio.core.LlmProvider
 
 /** Configuration loader using ZIO Config with HOCON support
   *
@@ -288,7 +288,7 @@ object ConfigLoader:
         if cloudTarget && config.apiKey.forall(_.trim.isEmpty) then
           ZIO.fail(s"AI apiKey is required for ${config.provider} cloud endpoints")
         else ZIO.unit
-      case _                                        =>
+      case _                                          =>
         ZIO.unit
 
   private def validateTelegram(config: GatewayConfig): IO[String, Unit] =

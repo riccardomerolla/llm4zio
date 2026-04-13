@@ -110,7 +110,7 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
 
   private val stubMemoryRepo: MemoryRepository = new MemoryRepository:
     import memory.entity.*
-    override def save(entry: MemoryEntry): IO[Throwable, Unit]                               = ZIO.unit
+    override def save(entry: MemoryEntry): IO[Throwable, Unit]                             = ZIO.unit
     override def searchRelevant(scope: Scope, query: String, limit: Int, filter: MemoryFilter)
       : IO[Throwable, List[ScoredMemory]] =
       ZIO.succeed(Nil)
@@ -118,7 +118,7 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
       : IO[Throwable, List[MemoryEntry]] =
       ZIO.succeed(Nil)
     override def deleteById(scope: Scope, id: memory.entity.MemoryId): IO[Throwable, Unit] = ZIO.unit
-    override def deleteBySession(sessionId: memory.entity.SessionId): IO[Throwable, Unit]    = ZIO.unit
+    override def deleteBySession(sessionId: memory.entity.SessionId): IO[Throwable, Unit]  = ZIO.unit
 
   private val stubDecisionInbox: DecisionInbox = new DecisionInbox:
     override def openIssueReviewDecision(issue: AgentIssue): IO[PersistenceError, Decision]              = ZIO.fail(

@@ -119,7 +119,7 @@ object WorkspacesView:
         attr("hx-" + method) := submitUrl,
         attr("hx-target")    := "body",
         attr("hx-swap")      := "outerHTML",
-        attr("hx-push-url")  := closeUrl,
+        attr("hx-push-url")  := "true",
         cls                  := "space-y-4",
       )(
         formField("name", "Name", ws.map(_.name).getOrElse(""), required = true),

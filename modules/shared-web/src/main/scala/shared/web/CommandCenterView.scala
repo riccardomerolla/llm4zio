@@ -57,7 +57,13 @@ object CommandCenterView:
     div(cls := "grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4")(
       moduleCard("/sdlc", "SDLC Dashboard", IconPulse, "text-cyan-400", "Metrics, lifecycle & delivery health"),
       moduleCard("/board", "Board", IconTableColumns, "text-blue-400", "Git-backed issue kanban"),
-      moduleCard("/settings/governance", "Governance", IconDocument, "text-amber-400", "Policy engine & transition rules"),
+      moduleCard(
+        "/settings/governance",
+        "Governance",
+        IconDocument,
+        "text-amber-400",
+        "Policy engine & transition rules",
+      ),
       moduleCard("/settings/daemons", "Daemons", IconCpuChip, "text-sky-400", "Background agents & scheduled jobs"),
     )
 
