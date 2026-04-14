@@ -44,7 +44,7 @@ final case class AgentDialogueRunnerLive(
                 case ConversationState.Closed(_, _) => DialogueOutcome.Completed("Concluded by peer")
                 case _                              => DialogueOutcome.Completed("Concluded")
             }
-          case other => ZIO.fail(other)
+          case other                                    => ZIO.fail(other)
         },
         _ =>
           for
@@ -82,7 +82,7 @@ final case class AgentDialogueRunnerLive(
     conv.channel match
       case ChannelInfo.AgentToAgent(_, participants) =>
         participants.find(_.role == role).map(_.agentName).getOrElse(s"${role.toString.toLowerCase}-agent")
-      case _ => s"${role.toString.toLowerCase}-agent"
+      case _                                         => s"${role.toString.toLowerCase}-agent"
 
   private def buildPrompt(conv: Conversation, role: AgentRole, agentName: String): String =
     val history = conv.messages

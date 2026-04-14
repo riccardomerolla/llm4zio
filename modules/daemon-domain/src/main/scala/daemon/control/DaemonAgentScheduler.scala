@@ -337,7 +337,7 @@ final case class DaemonAgentSchedulerLive(
 
   private def runRefactorAgent(spec: DaemonAgentSpec): IO[PersistenceError, DaemonRunOutcome] =
     for
-      _       <- ZIO.logInfo(s"[RefactorAgent] Scanning for refactoring opportunities")
+      _       <- ZIO.logInfo("[RefactorAgent] Scanning for refactoring opportunities")
       outcome <- runCustomDaemon(spec)
     yield outcome
 

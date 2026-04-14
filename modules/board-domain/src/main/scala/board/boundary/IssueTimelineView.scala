@@ -177,7 +177,7 @@ object IssueTimelineView:
 
   private def timelineEntry(workspaceId: String, entry: TimelineEntry): Frag =
     val (eyebrow, titleText, bodyContent, dotColor) = entry match
-      case e: IssueCreated        =>
+      case e: IssueCreated           =>
         (
           "Opened",
           e.title,
@@ -193,21 +193,21 @@ object IssueTimelineView:
           ),
           "bg-cyan-400",
         )
-      case e: MovedToTodo         =>
+      case e: MovedToTodo            =>
         (
           "Workflow",
           "Moved back to Todo",
           mutedText(s"Issue ${e.issueId.value} is queued for another pass."),
           "bg-slate-400",
         )
-      case e: AgentAssigned       =>
+      case e: AgentAssigned          =>
         (
           "Dispatch",
           s"Assigned to ${e.agentName}",
           mutedText("The issue is ready for the selected agent."),
           "bg-indigo-400",
         )
-      case e: RunStarted          =>
+      case e: RunStarted             =>
         (
           "Run",
           "Agent run started",
@@ -225,14 +225,14 @@ object IssueTimelineView:
           ),
           "bg-cyan-400",
         )
-      case e: ChatMessages        =>
+      case e: ChatMessages           =>
         (
           "Conversation",
           s"${e.messages.size} chat message${if e.messages.size == 1 then "" else "s"}",
           chatBlock(e),
           "bg-purple-400",
         )
-      case e: RunCompleted        =>
+      case e: RunCompleted           =>
         (
           "Run",
           "Run completed",
@@ -242,14 +242,14 @@ object IssueTimelineView:
           ),
           "bg-emerald-400",
         )
-      case e: GitChanges          =>
+      case e: GitChanges             =>
         (
           "Diff",
           "Git changes",
           gitChangesBlock(workspaceId, e),
           "bg-violet-400",
         )
-      case e: DecisionRaised      =>
+      case e: DecisionRaised         =>
         (
           "Review",
           e.title,
@@ -259,7 +259,7 @@ object IssueTimelineView:
           ),
           "bg-amber-400",
         )
-      case e: ReviewAction        =>
+      case e: ReviewAction           =>
         (
           "Review",
           e.action,
@@ -269,7 +269,7 @@ object IssueTimelineView:
           ),
           "bg-emerald-400",
         )
-      case e: ReworkRequested     =>
+      case e: ReworkRequested        =>
         (
           "Rework",
           "Changes requested",
@@ -281,18 +281,18 @@ object IssueTimelineView:
           ),
           "bg-amber-400",
         )
-      case e: Merged              =>
+      case e: Merged                 =>
         (
           "Merge",
           s"Merged ${e.branchName}",
           mutedText("Branch merged into the workspace default branch."),
           "bg-emerald-400",
         )
-      case e: IssueDone           =>
+      case e: IssueDone              =>
         ("Done", "Issue completed", mutedText(e.result), "bg-emerald-400")
-      case e: IssueFailed         =>
+      case e: IssueFailed            =>
         ("Failure", "Issue failed", mutedText(e.reason), "bg-red-400")
-      case e: AnalysisDocAttached =>
+      case e: AnalysisDocAttached    =>
         ("Analysis", e.title, analysisDocBlock(e), "bg-teal-400")
       case e: A2ADialogueStarted     =>
         (
@@ -343,7 +343,7 @@ object IssueTimelineView:
           "AI triage completed",
           div(cls := "space-y-2")(
             div(cls := "flex flex-wrap gap-2")(
-              e.suggestedLabels.map(l => tag("ab-badge")(attr("text") := s"[AI] $l", attr("variant") := "gray")),
+              e.suggestedLabels.map(l => tag("ab-badge")(attr("text") := s"[AI] $l", attr("variant") := "gray"))
             ),
             div(cls := "flex flex-wrap gap-2 text-xs")(
               chip(s"Priority: ${e.suggestedPriority}"),
@@ -481,7 +481,7 @@ object IssueTimelineView:
   private def aiReviewPanel(workspaceId: String, issue: BoardIssue): Frag =
     val issueUrl = s"/board/$workspaceId/issues/${issue.frontmatter.id.value}"
     div(
-      cls := "rounded-xl border border-indigo-400/20 bg-indigo-500/5 p-5",
+      cls := "rounded-xl border border-indigo-400/20 bg-indigo-500/5 p-5"
     )(
       div(cls := "flex items-center justify-between")(
         div(cls := "space-y-1")(
@@ -489,11 +489,11 @@ object IssueTimelineView:
           p(cls := "text-xs text-slate-400")("Start an A2A dialogue between the review agent and the coding agent"),
         ),
         button(
-          `type` := "button",
-          cls    := "rounded-md bg-indigo-600 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500 transition-colors",
-          attr("hx-post")    := s"$issueUrl/start-ai-review",
-          attr("hx-swap")    := "outerHTML",
-          attr("hx-target")  := "closest div",
+          `type`            := "button",
+          cls               := "rounded-md bg-indigo-600 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500 transition-colors",
+          attr("hx-post")   := s"$issueUrl/start-ai-review",
+          attr("hx-swap")   := "outerHTML",
+          attr("hx-target") := "closest div",
         )("Start AI Review"),
       ),
       div(

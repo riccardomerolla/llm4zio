@@ -47,14 +47,14 @@ object ProactiveAgentWorkflowSpec extends ZIOSpecDefault:
       ZIO.succeed(Nil)
 
   final private class StubDaemonAgentSpecRepository(specs: List[DaemonAgentSpec]) extends DaemonAgentSpecRepository:
-    override def get(id: DaemonAgentSpecId): IO[PersistenceError, DaemonAgentSpec]       =
+    override def get(id: DaemonAgentSpecId): IO[PersistenceError, DaemonAgentSpec]                =
       ZIO.fromOption(specs.find(_.id == id)).orElseFail(PersistenceError.NotFound("daemon_spec", id.value))
     override def listByProject(projectId: ProjectId): IO[PersistenceError, List[DaemonAgentSpec]] =
       ZIO.succeed(specs.filter(_.projectId == projectId))
-    override def listAll: IO[PersistenceError, List[DaemonAgentSpec]]                    =
+    override def listAll: IO[PersistenceError, List[DaemonAgentSpec]]                             =
       ZIO.succeed(specs)
-    override def save(spec: DaemonAgentSpec): IO[PersistenceError, Unit]                 = ZIO.unit
-    override def delete(id: DaemonAgentSpecId): IO[PersistenceError, Unit]               = ZIO.unit
+    override def save(spec: DaemonAgentSpec): IO[PersistenceError, Unit]                          = ZIO.unit
+    override def delete(id: DaemonAgentSpecId): IO[PersistenceError, Unit]                        = ZIO.unit
 
   private def makeScheduler(
     workspacePath: String,

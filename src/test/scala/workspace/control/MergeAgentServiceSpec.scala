@@ -218,12 +218,14 @@ object MergeAgentServiceSpec extends ZIOSpecDefault:
       taskRunHub     <- Hub.unbounded[TaskRunEvent]
       issueHub       <- Hub.unbounded[IssueEvent]
       sessionHub     <- Hub.unbounded[orchestration.control.ParallelSessionEvent]
+      dialogueHub    <- Hub.unbounded[conversation.entity.DialogueEvent]
       workQueue      <- Queue.unbounded[IssueId]
       pendingRef     <- Ref.Synchronized.make(Set.empty[IssueId])
       workReportBus   = WorkReportEventBus(
                           taskRunHub = taskRunHub,
                           issueHub = issueHub,
                           parallelSessionHub = sessionHub,
+                          dialogueHub = dialogueHub,
                         )
       workspace       = Workspace(
                           id = "ws-1",

@@ -19,11 +19,11 @@ enum ChannelInfo derives JsonCodec, Schema:
 
 sealed trait SenderType derives JsonCodec, Schema
 object SenderType:
-  final case class User()               extends SenderType
-  final case class Assistant()          extends SenderType
-  final case class System()             extends SenderType
+  final case class User()                 extends SenderType
+  final case class Assistant()            extends SenderType
+  final case class System()               extends SenderType
   final case class Agent(role: AgentRole) extends SenderType
-  final case class Unknown(raw: String) extends SenderType
+  final case class Unknown(raw: String)   extends SenderType
 
 sealed trait MessageType derives JsonCodec, Schema
 object MessageType:

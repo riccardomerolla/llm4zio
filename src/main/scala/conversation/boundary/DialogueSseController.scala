@@ -41,5 +41,5 @@ object DialogueSseController:
               )
             }
           }
-      },
+      }
     )
