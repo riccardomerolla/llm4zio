@@ -281,9 +281,13 @@ final case class DaemonAgentSchedulerLive(
 
   private def execute(spec: DaemonAgentSpec): IO[PersistenceError, DaemonRunOutcome] =
     spec.daemonKey match
-      case DaemonAgentSpec.TestGuardianKey => runTestGuardian(spec)
-      case DaemonAgentSpec.DebtDetectorKey => runDebtDetector(spec)
-      case _                               => runCustomDaemon(spec)
+      case DaemonAgentSpec.TestGuardianKey  => runTestGuardian(spec)
+      case DaemonAgentSpec.DebtDetectorKey  => runDebtDetector(spec)
+      case DaemonAgentSpec.PlanningAgentKey => runPlanningAgent(spec)
+      case DaemonAgentSpec.ReviewAgentKey   => runReviewAgent(spec)
+      case DaemonAgentSpec.TriageAgentKey   => runTriageAgent(spec)
+      case DaemonAgentSpec.RefactorAgentKey => runRefactorAgent(spec)
+      case _                                => runCustomDaemon(spec)
 
   private def runTestGuardian(spec: DaemonAgentSpec): IO[PersistenceError, DaemonRunOutcome] =
     for
@@ -311,6 +315,31 @@ final case class DaemonAgentSchedulerLive(
       lastIssueCreatedAt = Option.when(created > 0)(now),
       summary = s"${spec.name} scanned ${workspaces.size} workspace(s) and created $created maintenance issue(s)",
     )
+
+  private def runPlanningAgent(spec: DaemonAgentSpec): IO[PersistenceError, DaemonRunOutcome] =
+    for
+      workspaces <- loadWorkspacesById(spec.workspaceIds)
+      _          <- ZIO.logInfo(s"[PlanningAgent] Analyzing ${workspaces.size} workspace(s) for iteration planning")
+      outcome    <- runCustomDaemon(spec)
+    yield outcome
+
+  private def runReviewAgent(spec: DaemonAgentSpec): IO[PersistenceError, DaemonRunOutcome] =
+    for
+      _       <- ZIO.logInfo(s"[ReviewAgent] Triggered for workspace(s): ${spec.workspaceIds.mkString(", ")}")
+      outcome <- runCustomDaemon(spec)
+    yield outcome
+
+  private def runTriageAgent(spec: DaemonAgentSpec): IO[PersistenceError, DaemonRunOutcome] =
+    for
+      _       <- ZIO.logInfo(s"[TriageAgent] Triaging new issues in workspace(s): ${spec.workspaceIds.mkString(", ")}")
+      outcome <- runCustomDaemon(spec)
+    yield outcome
+
+  private def runRefactorAgent(spec: DaemonAgentSpec): IO[PersistenceError, DaemonRunOutcome] =
+    for
+      _       <- ZIO.logInfo(s"[RefactorAgent] Scanning for refactoring opportunities")
+      outcome <- runCustomDaemon(spec)
+    yield outcome
 
   private def runCustomDaemon(spec: DaemonAgentSpec): IO[PersistenceError, DaemonRunOutcome] =
     for
