@@ -73,8 +73,12 @@ final case class DaemonAgentStatus(
     Schema
 
 object DaemonAgentSpec:
-  val TestGuardianKey: String = "test-guardian"
-  val DebtDetectorKey: String = "debt-detector"
+  val TestGuardianKey: String  = "test-guardian"
+  val DebtDetectorKey: String  = "debt-detector"
+  val PlanningAgentKey: String = "planning-agent"
+  val ReviewAgentKey: String   = "review-agent"
+  val TriageAgentKey: String   = "triage-agent"
+  val RefactorAgentKey: String = "refactor-agent"
 
   def idFor(projectId: ProjectId, daemonKey: String): DaemonAgentSpecId =
     DaemonAgentSpecId(s"${projectId.value}__${normalizeKey(daemonKey)}")
