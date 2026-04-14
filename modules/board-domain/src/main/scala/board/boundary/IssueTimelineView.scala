@@ -25,7 +25,12 @@ object IssueTimelineView:
         linkedPlanPanels(context.linkedPlans),
         linkedSpecPanels(context.linkedSpecs),
         timelineBody(workspaceId, context.timeline.sortBy(_.occurredAt)),
-        if issue.column == BoardColumn.Review then reviewActionForm(workspaceId, issue) else frag(),
+        if issue.column == BoardColumn.Review then
+          frag(
+            aiReviewPanel(workspaceId, issue),
+            reviewActionForm(workspaceId, issue),
+          )
+        else frag(),
       ),
       JsResources.inlineModuleScript("/static/client/components/ab-git-summary.js"),
       JsResources.inlineModuleScript("/static/client/components/ab-confirm-modal.js"),
@@ -289,44 +294,62 @@ object IssueTimelineView:
         ("Failure", "Issue failed", mutedText(e.reason), "bg-red-400")
       case e: AnalysisDocAttached =>
         ("Analysis", e.title, analysisDocBlock(e), "bg-teal-400")
-      case e: A2ADialogueStarted =>
+      case e: A2ADialogueStarted     =>
         (
           "A2A",
           s"Dialogue started: ${e.topic}",
-          mutedText(s"Participants: ${e.participantNames.mkString(", ")}"),
-          "bg-sky-400",
+          div(cls := "space-y-2")(
+            p(cls := "text-sm text-slate-300")(s"Participants: ${e.participantNames.mkString(", ")}"),
+            a(
+              href := s"#a2a-${e.conversationId}",
+              cls  := "inline-flex text-xs font-medium text-indigo-300 hover:text-indigo-200",
+            )("View conversation"),
+          ),
+          "bg-purple-400",
         )
-      case e: A2ADialogueConcluded =>
+      case e: A2ADialogueConcluded   =>
+        val (label, color) = e.outcomeType match
+          case "Approved"         => ("Approved", "bg-emerald-400")
+          case "ChangesRequested" => ("Changes Requested", "bg-amber-400")
+          case "Escalated"        => ("Escalated", "bg-red-400")
+          case _                  => ("Completed", "bg-blue-400")
         (
           "A2A",
-          s"Dialogue concluded: ${e.outcomeType}",
+          s"Dialogue concluded: $label",
           mutedText(e.outcomeSummary),
-          "bg-sky-400",
+          color,
         )
       case e: PlanningRecommendation =>
         (
           "Planning",
-          s"${e.recommendations.size} recommendation${if e.recommendations.size == 1 then "" else "s"}",
-          div(cls := "space-y-1 text-sm text-slate-300")(
-            e.recommendations.map(r =>
-              p(s"#${r.rank} ${r.title} (score: ${r.score})")
-            )
+          s"${e.recommendations.size} issue${if e.recommendations.size == 1 then "" else "s"} recommended for Todo",
+          div(cls := "space-y-2")(
+            e.recommendations.sortBy(_.rank).map { rec =>
+              div(cls := "flex items-center gap-3 rounded-lg border border-white/5 bg-white/[0.03] px-3 py-2")(
+                span(cls := "text-xs font-bold text-indigo-300")(s"#${rec.rank}"),
+                div(cls := "flex-1")(
+                  span(cls := "text-sm text-white")(rec.title),
+                  p(cls := "text-xs text-slate-400 line-clamp-1")(rec.reasoning),
+                ),
+                span(cls := "text-xs font-mono text-slate-500")(f"${rec.score}%.0f%%"),
+              )
+            }
           ),
-          "bg-indigo-400",
+          "bg-cyan-400",
         )
-      case e: TriageCompleted =>
+      case e: TriageCompleted        =>
         (
           "Triage",
-          "Issue triaged",
-          div(cls := "space-y-2 text-sm text-slate-300")(
-            p(e.reasoning),
-            if e.suggestedLabels.nonEmpty then
-              div(cls := "mt-2 flex flex-wrap gap-2")(
-                e.suggestedLabels.map(l =>
-                  tag("ab-badge")(attr("text") := l, attr("variant") := "gray")
-                )
-              )
-            else frag(),
+          "AI triage completed",
+          div(cls := "space-y-2")(
+            div(cls := "flex flex-wrap gap-2")(
+              e.suggestedLabels.map(l => tag("ab-badge")(attr("text") := s"[AI] $l", attr("variant") := "gray")),
+            ),
+            div(cls := "flex flex-wrap gap-2 text-xs")(
+              chip(s"Priority: ${e.suggestedPriority}"),
+              e.suggestedCapabilities.map(c => chip(c)),
+            ),
+            p(cls := "text-xs text-slate-400")(e.reasoning),
           ),
           "bg-teal-400",
         )
@@ -453,6 +476,30 @@ object IssueTimelineView:
           attr("data-include")        := "#review-comment",
         )("Request Rework"),
       ),
+    )
+
+  private def aiReviewPanel(workspaceId: String, issue: BoardIssue): Frag =
+    val issueUrl = s"/board/$workspaceId/issues/${issue.frontmatter.id.value}"
+    div(
+      cls := "rounded-xl border border-indigo-400/20 bg-indigo-500/5 p-5",
+    )(
+      div(cls := "flex items-center justify-between")(
+        div(cls := "space-y-1")(
+          h3(cls := "text-sm font-semibold text-white")("AI Code Review"),
+          p(cls := "text-xs text-slate-400")("Start an A2A dialogue between the review agent and the coding agent"),
+        ),
+        button(
+          `type` := "button",
+          cls    := "rounded-md bg-indigo-600 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500 transition-colors",
+          attr("hx-post")    := s"$issueUrl/start-ai-review",
+          attr("hx-swap")    := "outerHTML",
+          attr("hx-target")  := "closest div",
+        )("Start AI Review"),
+      ),
+      div(
+        id  := s"a2a-panel-${issue.frontmatter.id.value}",
+        cls := "mt-4",
+      )(),
     )
 
   // ── Badge variant mappings ────────────────────────────────────────────────
