@@ -5,7 +5,7 @@ import java.time.Instant
 import zio.json.JsonCodec
 import zio.schema.{ Schema, derived }
 
-import shared.ids.Ids.{ ConversationId, MessageId, ProjectId, TaskRunId }
+import shared.ids.Ids.{ BoardIssueId, ConversationId, MessageId, ProjectId, TaskRunId }
 
 enum ConversationState derives JsonCodec, Schema:
   case Active(startedAt: Instant)
@@ -15,12 +15,14 @@ enum ChannelInfo derives JsonCodec, Schema:
   case Telegram(channelName: String)
   case Web(sessionId: String)
   case Internal
+  case AgentToAgent(issueId: BoardIssueId, participants: List[AgentParticipant])
 
 sealed trait SenderType derives JsonCodec, Schema
 object SenderType:
   final case class User()               extends SenderType
   final case class Assistant()          extends SenderType
   final case class System()             extends SenderType
+  final case class Agent(role: AgentRole) extends SenderType
   final case class Unknown(raw: String) extends SenderType
 
 sealed trait MessageType derives JsonCodec, Schema
