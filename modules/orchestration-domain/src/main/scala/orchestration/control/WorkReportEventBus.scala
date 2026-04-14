@@ -1,7 +1,7 @@
 package orchestration.control
 
 import zio.*
-
+import conversation.entity.DialogueEvent
 import issues.entity.IssueEvent
 import taskrun.entity.TaskRunEvent
 
@@ -14,15 +14,18 @@ final class WorkReportEventBus(
   taskRunHub: Hub[TaskRunEvent],
   issueHub: Hub[IssueEvent],
   parallelSessionHub: Hub[ParallelSessionEvent],
+  dialogueHub: Hub[DialogueEvent],
 ):
   def publishTaskRun(event: TaskRunEvent): UIO[Unit]                 = taskRunHub.publish(event).unit
   def publishIssue(event: IssueEvent): UIO[Unit]                     = issueHub.publish(event).unit
   def publishParallelSession(event: ParallelSessionEvent): UIO[Unit] =
     parallelSessionHub.publish(event).unit
+  def publishDialogue(event: DialogueEvent): UIO[Unit]               = dialogueHub.publish(event).unit
 
   def subscribeTaskRun: URIO[Scope, Dequeue[TaskRunEvent]]                 = taskRunHub.subscribe
   def subscribeIssue: URIO[Scope, Dequeue[IssueEvent]]                     = issueHub.subscribe
   def subscribeParallelSession: URIO[Scope, Dequeue[ParallelSessionEvent]] = parallelSessionHub.subscribe
+  def subscribeDialogue: URIO[Scope, Dequeue[DialogueEvent]]               = dialogueHub.subscribe
 
 object WorkReportEventBus:
 
@@ -31,6 +34,7 @@ object WorkReportEventBus:
       taskRunHub         <- Hub.unbounded[TaskRunEvent]
       issueHub           <- Hub.unbounded[IssueEvent]
       parallelSessionHub <- Hub.unbounded[ParallelSessionEvent]
-    yield WorkReportEventBus(taskRunHub, issueHub, parallelSessionHub)
+      dialogueHub        <- Hub.unbounded[DialogueEvent]
+    yield WorkReportEventBus(taskRunHub, issueHub, parallelSessionHub, dialogueHub)
 
   val layer: ULayer[WorkReportEventBus] = ZLayer.fromZIO(make)
