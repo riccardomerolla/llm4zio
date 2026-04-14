@@ -26,6 +26,7 @@ enum DialogueOutcome derives JsonCodec, Schema:
   case ChangesRequested(comments: List[String])
   case Escalated(reason: String)
   case Completed(summary: String)
+  case MaxTurnsReached(turnsUsed: Int)
 
 final case class TurnState(
   conversationId: ConversationId,
