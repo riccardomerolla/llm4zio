@@ -107,3 +107,39 @@ object TimelineEntry:
     vscodeUrl: Option[String],
     occurredAt: Instant,
   ) extends TimelineEntry
+
+  final case class A2ADialogueStarted(
+    conversationId: String,
+    participantNames: List[String],
+    topic: String,
+    occurredAt: Instant,
+  ) extends TimelineEntry
+
+  final case class A2ADialogueConcluded(
+    conversationId: String,
+    outcomeType: String,
+    outcomeSummary: String,
+    occurredAt: Instant,
+  ) extends TimelineEntry
+
+  final case class PlanningRecommendation(
+    recommendations: List[IssueRecommendationSummary],
+    occurredAt: Instant,
+  ) extends TimelineEntry
+
+  final case class IssueRecommendationSummary(
+    issueId: BoardIssueId,
+    title: String,
+    rank: Int,
+    score: Double,
+    reasoning: String,
+  )
+
+  final case class TriageCompleted(
+    issueId: BoardIssueId,
+    suggestedLabels: List[String],
+    suggestedPriority: String,
+    suggestedCapabilities: List[String],
+    reasoning: String,
+    occurredAt: Instant,
+  ) extends TimelineEntry

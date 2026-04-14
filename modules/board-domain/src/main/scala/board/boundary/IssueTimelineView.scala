@@ -289,6 +289,47 @@ object IssueTimelineView:
         ("Failure", "Issue failed", mutedText(e.reason), "bg-red-400")
       case e: AnalysisDocAttached =>
         ("Analysis", e.title, analysisDocBlock(e), "bg-teal-400")
+      case e: A2ADialogueStarted =>
+        (
+          "A2A",
+          s"Dialogue started: ${e.topic}",
+          mutedText(s"Participants: ${e.participantNames.mkString(", ")}"),
+          "bg-sky-400",
+        )
+      case e: A2ADialogueConcluded =>
+        (
+          "A2A",
+          s"Dialogue concluded: ${e.outcomeType}",
+          mutedText(e.outcomeSummary),
+          "bg-sky-400",
+        )
+      case e: PlanningRecommendation =>
+        (
+          "Planning",
+          s"${e.recommendations.size} recommendation${if e.recommendations.size == 1 then "" else "s"}",
+          div(cls := "space-y-1 text-sm text-slate-300")(
+            e.recommendations.map(r =>
+              p(s"#${r.rank} ${r.title} (score: ${r.score})")
+            )
+          ),
+          "bg-indigo-400",
+        )
+      case e: TriageCompleted =>
+        (
+          "Triage",
+          "Issue triaged",
+          div(cls := "space-y-2 text-sm text-slate-300")(
+            p(e.reasoning),
+            if e.suggestedLabels.nonEmpty then
+              div(cls := "mt-2 flex flex-wrap gap-2")(
+                e.suggestedLabels.map(l =>
+                  tag("ab-badge")(attr("text") := l, attr("variant") := "gray")
+                )
+              )
+            else frag(),
+          ),
+          "bg-teal-400",
+        )
 
     div(cls := "relative mb-4")(
       // Timeline dot — centered on the spine line (left-5 = 20px from container)
