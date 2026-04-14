@@ -63,9 +63,11 @@ Lives in root because it depends on `LlmService` (from the `llm4zio` module), wh
 3. Build prompt from conversation history (role-aware: reviewer sees code context, author sees review comments)
 4. `llmService.executeStructured[AgentResponse](prompt, schema)` — get structured response from LLM
 5. `coordinator.respondInDialogue(conversationId, response.content, agentName)` — post message and advance turn
-6. If `response.concluded`, call `coordinator.concludeDialogue(conversationId, response.outcome.get)` and return the outcome
+6. If `response.concluded`, call `coordinator.concludeDialogue(conversationId, response.outcome.getOrElse(DialogueOutcome.Approved))` and return the outcome
 7. If turn count reaches `maxTurns`, conclude with `DialogueOutcome.MaxTurnsReached` and return
 8. Otherwise loop back to step 1
+
+**Concluded-state detection:** When a dialogue is concluded by one agent, the other agent's `awaitTurn` call should detect this. The runner wraps `awaitTurn` in a check: if the dialogue is already concluded (no active turn state), return the final outcome instead of blocking forever. This is implemented by catching the coordinator's error or checking turn state before awaiting.
 
 **ZLayer:**
 
@@ -115,7 +117,7 @@ Subscribes to the hub, forks a fiber that appends incoming events to a `Ref[List
 
 **Assertions:**
 - Reviewer fiber returns `DialogueOutcome.Approved`
-- Author fiber returns `DialogueOutcome.Approved` (it observes the conclusion)
+- Author fiber either returns `DialogueOutcome.Approved` (if `awaitTurn` detects concluded state) or is interrupted when Reviewer concludes. The `awaitTurn` implementation should fail with a recognizable error (e.g., `PersistenceError.NotFound`) when the dialogue is already concluded, so the runner catches it and returns the outcome.
 - Conversation has 3 messages in order: reviewer critique → author fix → reviewer approval
 - Each message has correct `SenderType.Agent(role)`
 - Collected events include: `DialogueStarted`, 3× `MessagePosted`, 2× `TurnChanged`, `DialogueConcluded(Approved)`
