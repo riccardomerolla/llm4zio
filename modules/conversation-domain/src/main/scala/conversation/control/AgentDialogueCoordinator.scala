@@ -68,40 +68,41 @@ final case class AgentDialogueCoordinatorLive(
     val now    = Instant.now
     val msgId  = MessageId(UUID.randomUUID().toString)
     for
-      _ <- repo.append(
-        ConversationEvent.Created(
-          conversationId = convId,
-          channel = ChannelInfo.AgentToAgent(issueId, List(initiator, respondent)),
-          title = topic,
-          description = s"A2A dialogue: ${initiator.agentName} (${initiator.role}) ↔ ${respondent.agentName} (${respondent.role})",
-          runId = None,
-          createdBy = Some(initiator.agentName),
-          occurredAt = now,
-        )
-      )
-      msg = Message(
-        id = msgId,
-        sender = initiator.agentName,
-        senderType = SenderType.Agent(initiator.role),
-        content = openingMessage,
-        messageType = MessageType.Text(),
-        createdAt = now,
-      )
-      _ <- repo.append(ConversationEvent.MessageSent(convId, msg, now))
+      _        <- repo.append(
+                    ConversationEvent.Created(
+                      conversationId = convId,
+                      channel = ChannelInfo.AgentToAgent(issueId, List(initiator, respondent)),
+                      title = topic,
+                      description =
+                        s"A2A dialogue: ${initiator.agentName} (${initiator.role}) ↔ ${respondent.agentName} (${respondent.role})",
+                      runId = None,
+                      createdBy = Some(initiator.agentName),
+                      occurredAt = now,
+                    )
+                  )
+      msg       = Message(
+                    id = msgId,
+                    sender = initiator.agentName,
+                    senderType = SenderType.Agent(initiator.role),
+                    content = openingMessage,
+                    messageType = MessageType.Text(),
+                    createdAt = now,
+                  )
+      _        <- repo.append(ConversationEvent.MessageSent(convId, msg, now))
       turnState = TurnState(
-        conversationId = convId,
-        currentParticipant = respondent.agentName,
-        turnNumber = 1,
-        awaitingResponse = true,
-        pausedByHuman = false,
-      )
-      _ <- turns.update(_.updated(convId, turnState))
-      _ <- dialogueHub.publish(
-        DialogueEvent.DialogueStarted(convId, issueId, List(initiator, respondent), topic, now)
-      ).ignore
-      _ <- dialogueHub.publish(
-        DialogueEvent.MessagePosted(convId, initiator.agentName, initiator.role, openingMessage, 0, now)
-      ).ignore
+                    conversationId = convId,
+                    currentParticipant = respondent.agentName,
+                    turnNumber = 1,
+                    awaitingResponse = true,
+                    pausedByHuman = false,
+                  )
+      _        <- turns.update(_.updated(convId, turnState))
+      _        <- dialogueHub.publish(
+                    DialogueEvent.DialogueStarted(convId, issueId, List(initiator, respondent), topic, now)
+                  ).ignore
+      _        <- dialogueHub.publish(
+                    DialogueEvent.MessagePosted(convId, initiator.agentName, initiator.role, openingMessage, 0, now)
+                  ).ignore
     yield convId
 
   def respondInDialogue(
@@ -112,33 +113,33 @@ final case class AgentDialogueCoordinatorLive(
     val now   = Instant.now
     val msgId = MessageId(UUID.randomUUID().toString)
     for
-      state <- getTurnOrFail(conversationId)
-      conv  <- repo.get(conversationId)
-      role   = resolveRole(conv, agentName)
-      msg = Message(
-        id = msgId,
-        sender = agentName,
-        senderType = SenderType.Agent(role),
-        content = message,
-        messageType = MessageType.Text(),
-        createdAt = now,
-      )
+      state   <- getTurnOrFail(conversationId)
+      conv    <- repo.get(conversationId)
+      role     = resolveRole(conv, agentName)
+      msg      = Message(
+                   id = msgId,
+                   sender = agentName,
+                   senderType = SenderType.Agent(role),
+                   content = message,
+                   messageType = MessageType.Text(),
+                   createdAt = now,
+                 )
       _       <- repo.append(ConversationEvent.MessageSent(conversationId, msg, now))
       nextName = resolveOtherParticipant(conv, agentName)
       nextTurn = state.copy(
-        currentParticipant = nextName,
-        turnNumber = state.turnNumber + 1,
-        awaitingResponse = true,
-        pausedByHuman = false,
-      )
-      _ <- turns.update(_.updated(conversationId, nextTurn))
-      _ <- dialogueHub.publish(
-        DialogueEvent.MessagePosted(conversationId, agentName, role, message, state.turnNumber, now)
-      ).ignore
-      _ <- dialogueHub.publish(
-        DialogueEvent.TurnChanged(conversationId, nextName, now)
-      ).ignore
-      _ <- fulfillPromise(conversationId, agentName, msg)
+                   currentParticipant = nextName,
+                   turnNumber = state.turnNumber + 1,
+                   awaitingResponse = true,
+                   pausedByHuman = false,
+                 )
+      _       <- turns.update(_.updated(conversationId, nextTurn))
+      _       <- dialogueHub.publish(
+                   DialogueEvent.MessagePosted(conversationId, agentName, role, message, state.turnNumber, now)
+                 ).ignore
+      _       <- dialogueHub.publish(
+                   DialogueEvent.TurnChanged(conversationId, nextName, now)
+                 ).ignore
+      _       <- fulfillPromise(conversationId, agentName, msg)
     yield ()
 
   def humanIntervene(
@@ -148,7 +149,7 @@ final case class AgentDialogueCoordinatorLive(
   ): IO[PersistenceError, Unit] =
     val now   = Instant.now
     val msgId = MessageId(UUID.randomUUID().toString)
-    val msg = Message(
+    val msg   = Message(
       id = msgId,
       sender = userId,
       senderType = SenderType.User(),
@@ -170,6 +171,7 @@ final case class AgentDialogueCoordinatorLive(
     for
       _ <- repo.append(ConversationEvent.Closed(conversationId, now, now))
       _ <- turns.update(_ - conversationId)
+      _ <- failPendingPromises(conversationId)
       _ <- dialogueHub.publish(DialogueEvent.DialogueConcluded(conversationId, outcome, now)).ignore
     yield ()
 
@@ -196,20 +198,29 @@ final case class AgentDialogueCoordinatorLive(
     conv.channel match
       case ChannelInfo.AgentToAgent(_, participants) =>
         participants.find(_.agentName != currentAgent).map(_.agentName).getOrElse(currentAgent)
-      case _ => currentAgent
+      case _                                         => currentAgent
 
   private def resolveRole(conv: Conversation, agentName: String): AgentRole =
     conv.channel match
       case ChannelInfo.AgentToAgent(_, participants) =>
         participants.find(_.agentName == agentName).map(_.role).getOrElse(AgentRole.Author)
-      case _ => AgentRole.Author
+      case _                                         => AgentRole.Author
+
+  private def failPendingPromises(conversationId: ConversationId): UIO[Unit] =
+    promises.modify { m =>
+      val (toFail, toKeep) = m.partition { case ((cid, _), _) => cid == conversationId }
+      (toFail.values.toList, toKeep)
+    }.flatMap { pending =>
+      ZIO.foreachDiscard(pending)(_.fail(PersistenceError.NotFound("Dialogue", conversationId.value)).ignore)
+    }
 
   private def fulfillPromise(conversationId: ConversationId, senderName: String, msg: Message): UIO[Unit] =
     promises.get.flatMap { m =>
       val waiting = m.collect {
         case ((cid, waiter), p) if cid == conversationId && waiter != senderName => (cid, waiter, p)
       }
-      ZIO.foreachDiscard(waiting) { case (cid, waiter, p) =>
-        p.succeed(msg) *> promises.update(_ - ((cid, waiter)))
+      ZIO.foreachDiscard(waiting) {
+        case (cid, waiter, p) =>
+          p.succeed(msg) *> promises.update(_ - ((cid, waiter)))
       }
     }

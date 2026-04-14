@@ -16,7 +16,7 @@ object AgentDialogueCoordinatorSpec extends ZIOSpecDefault:
   private val author   = AgentParticipant("code-agent", AgentRole.Author, Instant.now)
   private val issueId  = BoardIssueId("issue-1")
 
-  def spec = suite("AgentDialogueCoordinator")(
+  def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("AgentDialogueCoordinator")(
     test("startDialogue creates a conversation and returns its id") {
       for
         coordinator <- ZIO.service[AgentDialogueCoordinator]
@@ -48,7 +48,7 @@ object AgentDialogueCoordinatorSpec extends ZIOSpecDefault:
         _           <- coordinator.humanIntervene(convId, "riccardo", "Hold on, let me look at this first")
         turn        <- coordinator.currentTurn(convId)
       yield assertTrue(
-        turn.pausedByHuman,
+        turn.pausedByHuman
       )
     },
     test("concludeDialogue closes the conversation with outcome") {
@@ -59,7 +59,7 @@ object AgentDialogueCoordinatorSpec extends ZIOSpecDefault:
         repo        <- ZIO.service[ConversationRepository]
         conv        <- repo.get(convId)
       yield assertTrue(
-        conv.state.isInstanceOf[ConversationState.Closed],
+        conv.state.isInstanceOf[ConversationState.Closed]
       )
     },
     test("awaitTurn resolves when the other agent responds") {
@@ -74,6 +74,16 @@ object AgentDialogueCoordinatorSpec extends ZIOSpecDefault:
         message.content == "Line 42 handles the edge case",
         message.sender == "code-agent",
       )
+    },
+    test("awaitTurn fails with NotFound when dialogue is concluded by other agent") {
+      for
+        coordinator <- ZIO.service[AgentDialogueCoordinator]
+        convId      <- coordinator.startDialogue(issueId, reviewer, author, "Review", "Checking code")
+        fiber       <- coordinator.awaitTurn(convId, "review-agent").fork
+        _           <- ZIO.yieldNow
+        _           <- coordinator.concludeDialogue(convId, DialogueOutcome.Approved("All good"))
+        result      <- fiber.await
+      yield assert(result)(fails(isSubtype[PersistenceError.NotFound](anything)))
     },
   ).provide(
     AgentDialogueCoordinator.live,
