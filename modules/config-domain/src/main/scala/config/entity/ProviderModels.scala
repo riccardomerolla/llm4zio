@@ -3,7 +3,7 @@ package config.entity
 import zio.*
 import zio.json.*
 
-import llm4zio.core.{ LlmConfig, LlmProvider }
+import llm4zio.core.*
 
 case class AIResponse(
   output: String,
@@ -41,6 +41,30 @@ case class ProviderConfig(
       temperature = temperature,
       maxTokens = maxTokens,
     )
+
+  def toConnectorConfig: ConnectorConfig =
+    val cid = provider.toConnectorId
+    if ConnectorId.allCli.contains(cid) then
+      CliConnectorConfig(
+        connectorId = cid,
+        model = Some(model),
+        timeout = timeout,
+        maxRetries = maxRetries,
+      )
+    else
+      ApiConnectorConfig(
+        connectorId = cid,
+        model = Some(model),
+        baseUrl = baseUrl,
+        apiKey = apiKey,
+        timeout = timeout,
+        maxRetries = maxRetries,
+        requestsPerMinute = requestsPerMinute,
+        burstSize = burstSize,
+        acquireTimeout = acquireTimeout,
+        temperature = temperature,
+        maxTokens = maxTokens,
+      )
 
 object ProviderConfig:
   def withDefaults(config: ProviderConfig): ProviderConfig =

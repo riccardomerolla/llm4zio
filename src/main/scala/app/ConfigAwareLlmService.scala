@@ -4,14 +4,12 @@ import zio.{ stream, * }
 
 import _root_.config.entity.{ GatewayConfig, ProviderConfig }
 import llm4zio.core.*
-import llm4zio.providers.{ GeminiCliExecutor, HttpClient }
 import llm4zio.tools.{ AnyTool, JsonSchema }
 
 final private[app] case class ConfigAwareLlmService(
   configRef: Ref[GatewayConfig],
-  http: HttpClient,
-  cliExec: GeminiCliExecutor,
-  cacheRef: Ref.Synchronized[Map[LlmConfig, LlmService]],
+  registry: ConnectorRegistry,
+  cacheRef: Ref.Synchronized[Map[ConnectorConfig, LlmService]],
 ) extends LlmService:
 
   override def executeStream(prompt: String): stream.Stream[LlmError, LlmChunk] =
@@ -40,28 +38,31 @@ final private[app] case class ConfigAwareLlmService(
       svcs  <- ZIO.foreach(cfgs)(providerFor)
     yield svcs
 
-  private def providerFor(cfg: LlmConfig): IO[LlmError, LlmService] =
+  private def providerFor(cfg: ConnectorConfig): IO[LlmError, LlmService] =
     cacheRef.modifyZIO { current =>
       current.get(cfg) match
         case Some(existing) => ZIO.succeed((existing, current))
         case None           =>
-          ZIO
-            .attempt(buildProvider(cfg))
-            .mapError(th => LlmError.ConfigError(Option(th.getMessage).getOrElse(th.toString)))
-            .map(created => (created, current + (cfg -> created)))
+          registry.resolve(cfg).flatMap {
+            case api: ApiConnector => ZIO.succeed(api: LlmService)
+            case cli: CliConnector =>
+              cli match
+                case svc: LlmService => ZIO.succeed(svc)
+                case _               => ZIO.fail(LlmError.ConfigError(s"CLI connector ${cli.id.value} does not support LlmService"))
+          }.map(created => (created, current + (cfg -> created)))
     }
 
-  private def fallbackConfigs(primary: ProviderConfig): List[LlmConfig] =
-    val primaryLlm = primary.toLlmConfig
+  private def fallbackConfigs(primary: ProviderConfig): List[ConnectorConfig] =
+    val primaryCfg = primary.toConnectorConfig
     val fallback   = primary.fallbackChain.models.map { ref =>
       ProviderConfig.withDefaults(
         primary.copy(
           provider = ref.provider.getOrElse(primary.provider),
           model = ref.modelId,
         )
-      ).toLlmConfig
+      ).toConnectorConfig
     }
-    (primaryLlm :: fallback).distinct
+    (primaryCfg :: fallback).distinct
 
   private def withFailover[A](run: LlmService => IO[LlmError, A]): IO[LlmError, A] =
     serviceChain.flatMap { chain =>
@@ -93,15 +94,3 @@ final private[app] case class ConfigAwareLlmService(
         }
       case Nil          =>
         stream.ZStream.fail(LlmError.ConfigError("No LLM provider configured"))
-
-  private def buildProvider(cfg: LlmConfig): LlmService =
-    import llm4zio.providers.*
-    cfg.provider match
-      case LlmProvider.GeminiCli => GeminiCliProvider.make(cfg, cliExec)
-      case LlmProvider.GeminiApi => GeminiApiProvider.make(cfg, http)
-      case LlmProvider.OpenAI    => OpenAIProvider.make(cfg, http)
-      case LlmProvider.Anthropic => AnthropicProvider.make(cfg, http)
-      case LlmProvider.LmStudio  => LmStudioProvider.make(cfg, http)
-      case LlmProvider.Ollama    => OllamaProvider.make(cfg, http)
-      case LlmProvider.OpenCode  => OpenCodeProvider.make(cfg, http)
-      case LlmProvider.Mock      => MockProvider.make(cfg)

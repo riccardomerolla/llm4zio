@@ -81,6 +81,9 @@ case class GatewayConfig(
       )
     )
 
+  def resolvedConnectorConfig: llm4zio.core.ConnectorConfig =
+    resolvedProviderConfig.toConnectorConfig
+
 type MigrationConfig = GatewayConfig
 
 object MigrationConfig:

@@ -57,7 +57,7 @@ import knowledge.control.{ KnowledgeExtractionService, KnowledgeGraphService }
 import knowledge.entity.{ DecisionLogEventStoreES, DecisionLogRepositoryES }
 import llm4zio.core.*
 import llm4zio.observability.{ LlmMetrics, MeteredLlmService }
-import llm4zio.providers.{ GeminiCliExecutor, HttpClient }
+import llm4zio.providers.{ ConnectorFactories, GeminiCliExecutor, HttpClient }
 import llm4zio.tools.ToolRegistry
 import memory.boundary.MemoryController as MemoryBoundaryController
 import memory.control.{ EmbeddingService, MemoryRepositoryES }
@@ -91,6 +91,45 @@ import workspace.boundary.WorkspacesController
 import workspace.control.*
 import workspace.entity.WorkspaceRepository
 
+private object DefaultCliProcessExecutor:
+  val live: ULayer[CliProcessExecutor] = ZLayer.succeed {
+    new CliProcessExecutor:
+      override def run(
+        argv: List[String],
+        cwd: String,
+        envVars: Map[String, String],
+      ): IO[LlmError, ProcessResult] =
+        ZIO.attemptBlocking {
+          val pb = new ProcessBuilder(argv*)
+          pb.directory(new java.io.File(cwd))
+          envVars.foreach((k, v) => pb.environment().put(k, v))
+          pb.redirectErrorStream(true)
+          val proc   = pb.start()
+          val reader = new java.io.BufferedReader(new java.io.InputStreamReader(proc.getInputStream))
+          val lines  = Iterator.continually(reader.readLine()).takeWhile(_ != null).toList
+          val exit   = proc.waitFor()
+          ProcessResult(lines, exit)
+        }.mapError(th => LlmError.ProviderError(s"CLI process failed: ${Option(th.getMessage).getOrElse(th.toString)}", Some(th)))
+
+      override def runStreaming(
+        argv: List[String],
+        cwd: String,
+        envVars: Map[String, String],
+      ): zio.stream.ZStream[Any, LlmError, String] =
+        zio.stream.ZStream.unwrap {
+          ZIO.attemptBlocking {
+            val pb = new ProcessBuilder(argv*)
+            pb.directory(new java.io.File(cwd))
+            envVars.foreach((k, v) => pb.environment().put(k, v))
+            pb.redirectErrorStream(true)
+            val proc   = pb.start()
+            val reader = new java.io.BufferedReader(new java.io.InputStreamReader(proc.getInputStream))
+            zio.stream.ZStream.fromIterator(Iterator.continually(reader.readLine()).takeWhile(_ != null))
+              .mapError(th => LlmError.ProviderError(s"CLI stream failed: ${Option(th.getMessage).getOrElse(th.toString)}", Some(th)))
+          }.mapError(th => LlmError.ProviderError(s"CLI process start failed: ${Option(th.getMessage).getOrElse(th.toString)}", Some(th)))
+        }
+  }
+
 object ApplicationDI:
 
   final private case class StartupLayerFailure(component: String, detail: String)
@@ -108,6 +147,7 @@ object ApplicationDI:
       ModelService &
       HttpClient &
       GeminiCliExecutor &
+      ConnectorRegistry &
       HttpAIClient &
       LlmService &
       StateService &
@@ -151,6 +191,8 @@ object ApplicationDI:
       HttpAIClient.live,
       HttpClient.live,
       GeminiCliExecutor.live,
+      DefaultCliProcessExecutor.live,
+      ConnectorFactories.live,
       StateService.live(config.stateDir),
       ZLayer.succeed(storeConfig),
       fatalStartupLayer("config store module", ConfigStoreModule.live)(_.toString),
@@ -240,14 +282,13 @@ object ApplicationDI:
       DnsResolver.default) >>> Client.live
 
   private val configAwareLlmServiceLayer
-    : ZLayer[Ref[GatewayConfig] & HttpClient & GeminiCliExecutor, Nothing, LlmService] =
+    : ZLayer[Ref[GatewayConfig] & ConnectorRegistry, Nothing, LlmService] =
     ZLayer.fromZIO {
       for
         configRef <- ZIO.service[Ref[GatewayConfig]]
-        http      <- ZIO.service[HttpClient]
-        cliExec   <- ZIO.service[GeminiCliExecutor]
-        cache     <- Ref.Synchronized.make(Map.empty[LlmConfig, LlmService])
-      yield ConfigAwareLlmService(configRef, http, cliExec, cache)
+        registry  <- ZIO.service[ConnectorRegistry]
+        cache     <- Ref.Synchronized.make(Map.empty[ConnectorConfig, LlmService])
+      yield ConfigAwareLlmService(configRef, registry, cache)
     }
 
   def webServerLayer(config: GatewayConfig, storeConfig: StoreConfig): ZLayer[Any, Nothing, WebServer] =
