@@ -15,12 +15,12 @@ import analysis.entity.{
 }
 import board.entity.*
 import db.TaskRepository
+import issues.entity.{ IssueEvent, IssueFilter, IssueRepository, IssueState }
 import orchestration.control.OrchestratorControlPlane
-import orchestration.entity.AgentExecutionState
 import project.control.ProjectStorageService
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ BoardIssueId, EventId, IssueId }
-import workspace.entity.{ RunSessionMode, RunStatus, WorkspaceRepository, WorkspaceRunEvent }
+import workspace.entity.WorkspaceRepository
 
 final private[analysis] case class WorkspaceAnalysisJob(
   workspaceId: String,
@@ -53,7 +53,7 @@ object WorkspaceAnalysisScheduler:
   val live
     : ZLayer[
       AnalysisAgentRunner & AnalysisRepository & ActivityHub & TaskRepository & BoardRepository & WorkspaceRepository &
-        ProjectStorageService & OrchestratorControlPlane,
+        ProjectStorageService & OrchestratorControlPlane & IssueRepository,
       Nothing,
       WorkspaceAnalysisScheduler,
     ] =
@@ -67,6 +67,7 @@ object WorkspaceAnalysisScheduler:
         workspaceRepo  <- ZIO.service[WorkspaceRepository]
         projectStorage <- ZIO.service[ProjectStorageService]
         controlPlane   <- ZIO.service[OrchestratorControlPlane]
+        issueRepo      <- ZIO.service[IssueRepository]
         queue          <- Queue.unbounded[WorkspaceAnalysisJob]
         runtimeState   <- Ref.Synchronized.make(Map.empty[(String, AnalysisType), WorkspaceAnalysisStatus])
         service         = WorkspaceAnalysisSchedulerLive(
@@ -78,6 +79,7 @@ object WorkspaceAnalysisScheduler:
                             workspaceRepository = workspaceRepo,
                             projectStorageService = projectStorage,
                             controlPlane = controlPlane,
+                            issueRepository = issueRepo,
                             queue = queue,
                             runtimeState = runtimeState,
                           )
@@ -94,6 +96,7 @@ final case class WorkspaceAnalysisSchedulerLive(
   workspaceRepository: WorkspaceRepository,
   projectStorageService: ProjectStorageService,
   controlPlane: OrchestratorControlPlane,
+  issueRepository: IssueRepository,
   queue: Queue[WorkspaceAnalysisJob],
   runtimeState: Ref.Synchronized[Map[(String, AnalysisType), WorkspaceAnalysisStatus]],
 ) extends WorkspaceAnalysisScheduler:
@@ -158,103 +161,99 @@ final case class WorkspaceAnalysisSchedulerLive(
     }
 
   private def runJob(job: WorkspaceAnalysisJob): UIO[Unit] =
-    Ref.make(Option.empty[String]).flatMap { runIdRef =>
+    val typeName       = renderAnalysisType(job.analysisType)
+    val fingerprintTag = s"analysis-fingerprint:${job.workspaceId}:${typeName.toLowerCase.replace(" ", "-")}"
+
+    Ref.make(Option.empty[IssueId]).flatMap { issueIdRef =>
       val effect =
         for
-          startedAt <- Clock.instant
-          issueId   <- ensureHumanReviewIssueWithAnalysis(job.workspaceId, job.analysisType, startedAt)
-          runId      = java.util.UUID.randomUUID().toString
-          _         <- runIdRef.set(Some(runId))
-          workspace <- workspaceRepository.get(job.workspaceId)
-          localPath  = workspace.map(_.localPath).getOrElse("")
-          _         <- workspaceRepository
-                         .appendRun(
-                           WorkspaceRunEvent.Assigned(
-                             runId = runId,
-                             workspaceId = job.workspaceId,
-                             issueRef = issueId.value,
-                             agentName = analysisAgentName(job.analysisType),
-                             prompt =
-                               s"${renderAnalysisType(job.analysisType)} analysis for workspace ${job.workspaceId}",
-                             conversationId = "",
-                             worktreePath = localPath,
-                             branchName = "",
-                             occurredAt = startedAt,
-                           )
-                         )
-          _         <- updateStatus(job.workspaceId, job.analysisType) { current =>
-                         current.copy(
-                           state = WorkspaceAnalysisState.Running,
-                           startedAt = Some(startedAt),
-                           lastUpdatedAt = startedAt,
-                         )
-                       }
-          _         <- workspaceRepository
-                         .appendRun(
-                           WorkspaceRunEvent.StatusChanged(runId, RunStatus.Running(RunSessionMode.Autonomous), startedAt)
-                         )
-          agentName  = analysisAgentName(job.analysisType)
-          _         <- controlPlane.notifyWorkspaceAgent(
-                         agentName,
-                         AgentExecutionState.Executing,
-                         Some(runId),
-                         None,
-                         Some(s"Running ${renderAnalysisType(job.analysisType)} analysis"),
-                         0L,
-                       )
-          _         <- publishActivity(
-                         job.workspaceId,
-                         job.analysisType,
-                         ActivityEventType.AnalysisStarted,
-                         startedAt,
-                         None,
-                       )
-          doc       <- runAnalysis(job.workspaceId, job.analysisType)
-          completed <- Clock.instant
-          _         <- workspaceRepository
-                         .appendRun(WorkspaceRunEvent.StatusChanged(runId, RunStatus.Completed, completed))
-          _         <- controlPlane.notifyWorkspaceAgent(
-                         agentName,
-                         AgentExecutionState.Idle,
-                         Some(runId),
-                         None,
-                         Some(s"Completed ${renderAnalysisType(job.analysisType)} analysis"),
-                         0L,
-                       )
-          _         <- updateStatus(job.workspaceId, job.analysisType) { current =>
-                         current.copy(
-                           state = WorkspaceAnalysisState.Completed,
-                           completedAt = Some(doc.updatedAt),
-                           lastUpdatedAt = completed,
-                         )
-                       }
-          _         <- publishActivity(
-                         job.workspaceId,
-                         job.analysisType,
-                         ActivityEventType.AnalysisCompleted,
-                         completed,
-                         Some(doc.generatedBy.value),
-                       )
+          startedAt    <- Clock.instant
+          // Check for existing in-flight issue with this fingerprint to prevent duplicates
+          allIssues    <- issueRepository.list(IssueFilter(limit = Int.MaxValue))
+          existingIssue = allIssues.find(_.tags.contains(fingerprintTag)).filter { issue =>
+                            issue.state match
+                              case _: IssueState.Done      => false
+                              case _: IssueState.Completed => false
+                              case _: IssueState.Archived  => false
+                              case _                       => true
+                          }
+          // Create a board issue for this analysis (or reuse existing)
+          issueId      <- existingIssue match
+                            case Some(issue) => ZIO.succeed(issue.id)
+                            case None        =>
+                              val newIssueId = IssueId.generate
+                              for
+                                _ <- issueRepository.append(IssueEvent.Created(
+                                       newIssueId,
+                                       s"$typeName analysis",
+                                       s"Automated $typeName analysis for workspace ${job.workspaceId}.",
+                                       "analysis",
+                                       "medium",
+                                       startedAt,
+                                     ))
+                                _ <-
+                                  issueRepository.append(IssueEvent.WorkspaceLinked(newIssueId, job.workspaceId, startedAt))
+                                _ <- issueRepository.append(IssueEvent.TagsUpdated(
+                                       newIssueId,
+                                       List("analysis", s"analysis:$typeName", "auto:analysis", fingerprintTag),
+                                       startedAt,
+                                     ))
+                                _ <- issueRepository.append(IssueEvent.MovedToTodo(newIssueId, startedAt, startedAt))
+                              yield newIssueId
+          _            <- issueIdRef.set(Some(issueId))
+          // Transition issue to InProgress
+          agentId       = shared.ids.Ids.AgentId(analysisAgentName(job.analysisType))
+          _            <- issueRepository
+                            .append(IssueEvent.Started(issueId, agentId, startedAt, startedAt))
+                            .catchAll(err => ZIO.logWarning(s"Failed to mark analysis issue as started: $err"))
+          // Also create the human-review board issue for the analysis docs
+          _            <- ensureHumanReviewIssueWithAnalysis(job.workspaceId, job.analysisType, startedAt).ignore
+          _            <- updateStatus(job.workspaceId, job.analysisType) { current =>
+                            current.copy(
+                              state = WorkspaceAnalysisState.Running,
+                              startedAt = Some(startedAt),
+                              lastUpdatedAt = startedAt,
+                            )
+                          }
+          _            <- publishActivity(
+                            job.workspaceId,
+                            job.analysisType,
+                            ActivityEventType.AnalysisStarted,
+                            startedAt,
+                            None,
+                          )
+          doc          <- runAnalysis(job.workspaceId, job.analysisType)
+          completed    <- Clock.instant
+          // Move issue to HumanReview on completion
+          _            <- issueRepository
+                            .append(IssueEvent.MovedToHumanReview(issueId, completed, completed))
+                            .catchAll(err => ZIO.logWarning(s"Failed to move analysis issue to review: $err"))
+          _            <- updateStatus(job.workspaceId, job.analysisType) { current =>
+                            current.copy(
+                              state = WorkspaceAnalysisState.Completed,
+                              completedAt = Some(doc.updatedAt),
+                              lastUpdatedAt = completed,
+                            )
+                          }
+          _            <- publishActivity(
+                            job.workspaceId,
+                            job.analysisType,
+                            ActivityEventType.AnalysisCompleted,
+                            completed,
+                            Some(doc.generatedBy.value),
+                          )
         yield ()
 
       effect.catchAll { err =>
         Clock.instant.flatMap { failedAt =>
-          runIdRef.get.flatMap { maybeRunId =>
-            val markRunFailed = maybeRunId match
+          issueIdRef.get.flatMap { maybeIssueId =>
+            val markIssueFailed = maybeIssueId match
               case Some(id) =>
-                workspaceRepository
-                  .appendRun(WorkspaceRunEvent.StatusChanged(id, RunStatus.Failed, failedAt))
+                issueRepository
+                  .append(IssueEvent.MovedToBacklog(id, failedAt, failedAt))
                   .ignore
               case None     => ZIO.unit
-            markRunFailed *>
-              controlPlane.notifyWorkspaceAgent(
-                analysisAgentName(job.analysisType),
-                AgentExecutionState.Failed,
-                maybeRunId,
-                None,
-                Some(s"Failed ${renderAnalysisType(job.analysisType)} analysis: ${renderJobError(err)}"),
-                0L,
-              ) *>
+            markIssueFailed *>
               updateStatus(job.workspaceId, job.analysisType) { current =>
                 current.copy(state = WorkspaceAnalysisState.Failed, lastUpdatedAt = failedAt)
               } *>

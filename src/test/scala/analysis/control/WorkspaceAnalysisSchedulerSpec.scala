@@ -243,6 +243,7 @@ object WorkspaceAnalysisSchedulerSpec extends ZIOSpecDefault:
                          workspaceRepository = workspaceRepo,
                          projectStorageService = StubProjectStorageService,
                          controlPlane = NoOpControlPlane,
+                         issueRepository = StubIssueRepository.empty,
                          queue = queue,
                          runtimeState = runtimeState,
                        )
@@ -299,6 +300,7 @@ object WorkspaceAnalysisSchedulerSpec extends ZIOSpecDefault:
                          workspaceRepository = workspaceRepo,
                          projectStorageService = StubProjectStorageService,
                          controlPlane = NoOpControlPlane,
+                         issueRepository = StubIssueRepository.empty,
                          queue = queue,
                          runtimeState = runtimeState,
                        )
@@ -395,47 +397,31 @@ object WorkspaceAnalysisSchedulerSpec extends ZIOSpecDefault:
         issues.count(_.frontmatter.tags.exists(_.startsWith("analysis-review-"))) == 3
       )
     },
-    test("analysis jobs create WorkspaceRun records linked to the board issue") {
+    test("analysis jobs create board review issues and track status through Running to Completed") {
       for
-        harness   <- makeHarness()
-        _         <- harness.service.triggerManual("ws-1")
-        _         <- processQueued(harness.service)
-        runEvents <- harness.runEventsRef.get
-        assigned   = runEvents.collect { case e: WorkspaceRunEvent.Assigned => e }
-        issues    <- harness.boardRef.get.map(_.values.toList)
-        issueIds   = issues.map(_.frontmatter.id.value).toSet
+        harness  <- makeHarness()
+        _        <- harness.service.triggerManual("ws-1")
+        _        <- processQueued(harness.service)
+        issues   <- harness.boardRef.get.map(_.values.toList)
+        statuses <- harness.service.statusForWorkspace("ws-1")
       yield assertTrue(
-        assigned.size == 3,
-        assigned.map(_.agentName).toSet == Set("analysis-code-review", "analysis-architecture", "analysis-security"),
-        assigned.forall(_.workspaceId == "ws-1"),
-        assigned.forall(a => issueIds.contains(a.issueRef)),
+        issues.size == 3,
+        issues.forall(_.column == BoardColumn.Review),
+        statuses.count(_.state == WorkspaceAnalysisState.Completed) == 3,
+        statuses.forall(_.completedAt.nonEmpty),
       )
     },
-    test("analysis run status transitions through Running to Completed") {
+    test("failed analysis transitions status to Failed") {
       for
-        harness   <- makeHarness()
-        _         <- harness.service.triggerManual("ws-1")
-        _         <- processQueued(harness.service)
-        runEvents <- harness.runEventsRef.get
-        statuses   = runEvents.collect { case e: WorkspaceRunEvent.StatusChanged => e }
-        running    =
-          statuses.filter(_.status == workspace.entity.RunStatus.Running(workspace.entity.RunSessionMode.Autonomous))
-        completed  = statuses.filter(_.status == workspace.entity.RunStatus.Completed)
+        harness  <- makeFailingHarness
+        _        <- harness.service.triggerManual("ws-1")
+        _        <- processQueued(harness.service)
+        statuses <- harness.service.statusForWorkspace("ws-1")
+        events   <- harness.activityRef.get
+        failed    = events.filter(_.eventType == ActivityEventType.AnalysisFailed)
       yield assertTrue(
-        running.size == 3,
-        completed.size == 3,
-      )
-    },
-    test("failed analysis sets run status to Failed") {
-      for
-        harness   <- makeFailingHarness
-        _         <- harness.service.triggerManual("ws-1")
-        _         <- processQueued(harness.service)
-        runEvents <- harness.runEventsRef.get
-        statuses   = runEvents.collect { case e: WorkspaceRunEvent.StatusChanged => e }
-        failed     = statuses.filter(_.status == workspace.entity.RunStatus.Failed)
-      yield assertTrue(
-        failed.size == 3
+        statuses.count(_.state == WorkspaceAnalysisState.Failed) == 3,
+        failed.size == 3,
       )
     },
   )

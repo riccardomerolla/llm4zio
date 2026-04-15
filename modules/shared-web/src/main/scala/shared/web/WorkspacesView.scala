@@ -554,7 +554,11 @@ object WorkspacesView:
       ),
     )
 
-  def runsDashboardRowsFragment(runs: List[WorkspaceRun], workspaceNameById: Map[String, String]): String =
+  def runsDashboardRowsFragment(
+    runs: List[WorkspaceRun],
+    workspaceNameById: Map[String, String],
+    issueTitleById: Map[String, String] = Map.empty,
+  ): String =
     if runs.isEmpty then
       div(cls := "rounded-xl border border-white/10 bg-slate-900/60 p-10 text-center text-slate-400")("No runs found.")
         .render
@@ -576,11 +580,17 @@ object WorkspacesView:
               th(cls := "px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-400")("Actions"),
             )
           ),
-          tbody(cls := "divide-y divide-white/5")(runs.map(run => runsDashboardRow(run, workspaceNameById))*),
+          tbody(cls := "divide-y divide-white/5")(
+            runs.map(run => runsDashboardRow(run, workspaceNameById, issueTitleById))*
+          ),
         )
       ).render
 
-  private def runsDashboardRow(run: WorkspaceRun, workspaceNameById: Map[String, String]): Frag =
+  private def runsDashboardRow(
+    run: WorkspaceRun,
+    workspaceNameById: Map[String, String],
+    issueTitleById: Map[String, String],
+  ): Frag =
     val workspaceName = workspaceNameById.getOrElse(run.workspaceId, run.workspaceId)
     val running       = run.status match
       case RunStatus.Pending | RunStatus.Running(_) => true
@@ -591,7 +601,13 @@ object WorkspacesView:
       cls := "hover:bg-white/5",
     )(
       td(cls := "py-2 pl-4 pr-3 text-sm text-slate-200")(workspaceName),
-      td(cls := "px-3 py-2 text-sm text-white")(run.issueRef),
+      td(cls := "px-3 py-2 text-sm text-white")(
+        a(
+          href  := s"/board?issue=${run.issueRef.stripPrefix("#")}",
+          cls   := "text-indigo-300 hover:text-indigo-200 hover:underline",
+          title := s"View issue ${run.issueRef} on board",
+        )(issueTitleById.getOrElse(run.issueRef.stripPrefix("#"), run.issueRef))
+      ),
       td(cls := "px-3 py-2 text-sm text-slate-300")(run.agentName),
       td(cls := "px-3 py-2 text-sm")(statusBadge(run.status)),
       td(

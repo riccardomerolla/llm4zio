@@ -7,15 +7,13 @@ import zio.*
 import zio.http.*
 import zio.json.*
 
-import _root_.config.entity.WorkflowDefinition
+import _root_.config.entity.ConfigRepository
 import analysis.control.WorkspaceAnalysisScheduler
-import db.TaskRepository
-import orchestration.entity.{ AgentRegistry, TaskExecutor, WorkflowService }
+import orchestration.entity.AgentRegistry
 import project.entity.ProjectRepository
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ IssueId, ProjectId }
 import shared.web.{ WorkspaceTemplatesView, WorkspacesView }
-import taskrun.entity.{ TaskArtifactRow, TaskRunRow }
 import workspace.control.{ GitService, WorkspaceRunService }
 import workspace.entity.*
 
@@ -29,7 +27,7 @@ object WorkspacesController:
 
   val live
     : ZLayer[
-      WorkspaceRepository & WorkspaceRunService & AgentRegistry & issues.entity.IssueRepository & GitService & WorkspaceAnalysisScheduler & ProjectRepository & TaskRepository & TaskExecutor & WorkflowService,
+      WorkspaceRepository & WorkspaceRunService & AgentRegistry & issues.entity.IssueRepository & GitService & WorkspaceAnalysisScheduler & ProjectRepository & ConfigRepository,
       Nothing,
       WorkspacesController,
     ] =
@@ -42,9 +40,7 @@ object WorkspacesController:
         gitService        <- ZIO.service[GitService]
         analysisScheduler <- ZIO.service[WorkspaceAnalysisScheduler]
         projectRepo       <- ZIO.service[ProjectRepository]
-        taskRepo          <- ZIO.service[TaskRepository]
-        taskExecutor      <- ZIO.service[TaskExecutor]
-        workflowService   <- ZIO.service[WorkflowService]
+        configRepo        <- ZIO.service[ConfigRepository]
       yield make(
         repo,
         runSvc,
@@ -53,11 +49,11 @@ object WorkspacesController:
         gitService,
         analysisScheduler,
         projectRepo,
-        taskRepo,
-        taskExecutor,
-        workflowService,
+        configRepo,
       )
     }
+
+  val scaffoldAutoPromoteSettingKey: String = "workspace.scaffold.autoPromoteToTodo"
 
   def make(
     repo: WorkspaceRepository,
@@ -67,9 +63,7 @@ object WorkspacesController:
     gitService: GitService,
     analysisScheduler: WorkspaceAnalysisScheduler,
     projectRepo: ProjectRepository,
-    taskRepo: TaskRepository,
-    taskExecutor: TaskExecutor,
-    workflowService: WorkflowService,
+    configRepo: ConfigRepository,
   ): WorkspacesController =
     new WorkspacesController:
       override val routes: Routes[Any, Response] = Routes(
@@ -85,125 +79,148 @@ object WorkspacesController:
         // Create workspace from template
         Method.POST / "workspace-templates" -> handler { (req: Request) =>
           (for
-            body         <- req.body.asString.mapError(_ => Response.internalServerError("body read failed"))
-            fields        = body
-                              .split("&")
-                              .collect {
-                                case s if s.contains("=") =>
-                                  val idx = s.indexOf('=')
-                                  urlDecode(s.substring(0, idx)) -> urlDecode(s.substring(idx + 1))
-                              }
-                              .toMap
-            projectIdStr <- ZIO
-                              .fromOption(fields.get("projectId").map(_.trim).filter(_.nonEmpty))
-                              .orElseFail(Response.badRequest("projectId is required"))
-            name         <- ZIO
-                              .fromOption(fields.get("name").map(_.trim).filter(_.nonEmpty))
-                              .orElseFail(Response.badRequest("name is required"))
-            localPath    <- ZIO
-                              .fromOption(fields.get("localPath").map(_.trim).filter(_.nonEmpty))
-                              .orElseFail(Response.badRequest("localPath is required"))
-            templateId    = fields.getOrElse("templateId", "scala3-zio")
-            cliTool       = fields.get("cliTool").map(_.trim).filter(_.nonEmpty).getOrElse("claude")
-            description   = fields.get("description").map(_.trim).filter(_.nonEmpty)
-            features      = fields.get("features").map(_.trim).filter(_.nonEmpty)
-            prompt        = fields.get("prompt").map(_.trim).filter(_.nonEmpty)
-            runModeType   = fields.getOrElse("runModeType", "host")
-            runMode       = runModeType match
-                              case "docker" =>
-                                RunMode.Docker(
-                                  image = fields.getOrElse("dockerImage", ""),
-                                  mountWorktree = fields.get("dockerMount").contains("on"),
-                                  network = fields.get("dockerNetwork").map(_.trim).filter(_.nonEmpty),
+            body           <- req.body.asString.mapError(_ => Response.internalServerError("body read failed"))
+            fields          = body
+                                .split("&")
+                                .collect {
+                                  case s if s.contains("=") =>
+                                    val idx = s.indexOf('=')
+                                    urlDecode(s.substring(0, idx)) -> urlDecode(s.substring(idx + 1))
+                                }
+                                .toMap
+            projectIdStr   <- ZIO
+                                .fromOption(fields.get("projectId").map(_.trim).filter(_.nonEmpty))
+                                .orElseFail(Response.badRequest("projectId is required"))
+            name           <- ZIO
+                                .fromOption(fields.get("name").map(_.trim).filter(_.nonEmpty))
+                                .orElseFail(Response.badRequest("name is required"))
+            localPath      <- ZIO
+                                .fromOption(fields.get("localPath").map(_.trim).filter(_.nonEmpty))
+                                .orElseFail(Response.badRequest("localPath is required"))
+            templateId      = fields.getOrElse("templateId", "scala3-zio")
+            cliTool         = fields.get("cliTool").map(_.trim).filter(_.nonEmpty).getOrElse("claude")
+            description     = fields.get("description").map(_.trim).filter(_.nonEmpty)
+            features        = fields.get("features").map(_.trim).filter(_.nonEmpty)
+            prompt          = fields.get("prompt").map(_.trim).filter(_.nonEmpty)
+            runModeType     = fields.getOrElse("runModeType", "host")
+            runMode         = runModeType match
+                                case "docker" =>
+                                  RunMode.Docker(
+                                    image = fields.getOrElse("dockerImage", ""),
+                                    mountWorktree = fields.get("dockerMount").contains("on"),
+                                    network = fields.get("dockerNetwork").map(_.trim).filter(_.nonEmpty),
+                                  )
+                                case "cloud"  =>
+                                  RunMode.Cloud(
+                                    provider = fields.getOrElse("cloudProvider", ""),
+                                    image = fields.getOrElse("cloudImage", ""),
+                                    region = fields.get("cloudRegion").map(_.trim).filter(_.nonEmpty),
+                                    network = fields.get("cloudNetwork").map(_.trim).filter(_.nonEmpty),
+                                  )
+                                case _        => RunMode.Host
+            now            <- Clock.instant
+            id              = java.util.UUID.randomUUID().toString
+            _              <- repo
+                                .append(
+                                  WorkspaceEvent.Created(
+                                    workspaceId = id,
+                                    projectId = ProjectId(projectIdStr),
+                                    name = name,
+                                    localPath = localPath,
+                                    defaultAgent = None,
+                                    description = description,
+                                    cliTool = cliTool,
+                                    runMode = runMode,
+                                    occurredAt = now,
+                                  )
                                 )
-                              case "cloud"  =>
-                                RunMode.Cloud(
-                                  provider = fields.getOrElse("cloudProvider", ""),
-                                  image = fields.getOrElse("cloudImage", ""),
-                                  region = fields.get("cloudRegion").map(_.trim).filter(_.nonEmpty),
-                                  network = fields.get("cloudNetwork").map(_.trim).filter(_.nonEmpty),
+                                .mapError(persistErr)
+            _              <- repo
+                                .append(
+                                  WorkspaceEvent.DefaultBranchChanged(
+                                    workspaceId = id,
+                                    defaultBranch = Workspace.DefaultBranch,
+                                    occurredAt = now,
+                                  )
                                 )
-                              case _        => RunMode.Host
-            now          <- Clock.instant
-            id            = java.util.UUID.randomUUID().toString
-            _            <- repo
-                              .append(
-                                WorkspaceEvent.Created(
-                                  workspaceId = id,
-                                  projectId = ProjectId(projectIdStr),
-                                  name = name,
-                                  localPath = localPath,
-                                  defaultAgent = None,
-                                  description = description,
-                                  cliTool = cliTool,
-                                  runMode = runMode,
-                                  occurredAt = now,
-                                )
-                              )
-                              .mapError(persistErr)
-            _            <- repo
-                              .append(
-                                WorkspaceEvent.DefaultBranchChanged(
-                                  workspaceId = id,
-                                  defaultBranch = Workspace.DefaultBranch,
-                                  occurredAt = now,
-                                )
-                              )
-                              .mapError(persistErr)
-            gitRepoUrl    = fields.get("gitRepoUrl").map(_.trim).filter(_.nonEmpty)
-            _            <- ZIO.attemptBlocking {
-                              val resolvedPath = localPath.replaceFirst("^~", java.lang.System.getProperty("user.home"))
-                              val dir          = Paths.get(resolvedPath)
-                              gitRepoUrl match
-                                case Some(repoUrl) =>
-                                  if !Files.exists(dir) then
-                                    val _ = new ProcessBuilder("git", "clone", repoUrl, resolvedPath).start().waitFor()
-                                  else
+                                .mapError(persistErr)
+            gitRepoUrl      = fields.get("gitRepoUrl").map(_.trim).filter(_.nonEmpty)
+            _              <- ZIO.attemptBlocking {
+                                val resolvedPath = localPath.replaceFirst("^~", java.lang.System.getProperty("user.home"))
+                                val dir          = Paths.get(resolvedPath)
+                                gitRepoUrl match
+                                  case Some(repoUrl) =>
+                                    if !Files.exists(dir) then
+                                      val _ = new ProcessBuilder("git", "clone", repoUrl, resolvedPath).start().waitFor()
+                                    else
+                                      Files.createDirectories(dir)
+                                      val _ =
+                                        new ProcessBuilder("git", "clone", repoUrl, ".").directory(dir.toFile).start().waitFor()
+                                  case None          =>
                                     Files.createDirectories(dir)
-                                    val _ =
-                                      new ProcessBuilder("git", "clone", repoUrl, ".").directory(dir.toFile).start().waitFor()
-                                case None          =>
-                                  Files.createDirectories(dir)
-                                  val gitDir = dir.resolve(".git")
-                                  if !Files.exists(gitDir) then
-                                    val _ = new ProcessBuilder("git", "init").directory(dir.toFile).start().waitFor()
-                            }.mapError(e => Response.internalServerError(s"Failed to create workspace directory: ${e.getMessage}"))
-            seedIssues    = WorkspaceTemplatesView.seedIssues(templateId)
-            _            <- ZIO.foreachDiscard(seedIssues) {
-                              case (issueTitle, issueSummary, issueMeta) =>
-                                val issueId   = IssueId.generate
-                                val priority  = if issueMeta.contains("high") then "high" else "medium"
-                                val issueType =
-                                  if issueMeta.contains("setup") then "setup"
-                                  else if issueMeta.contains("testing") then "testing"
-                                  else "feature"
-                                issueRepo
-                                  .append(issues.entity.IssueEvent.Created(
-                                    issueId,
-                                    issueTitle,
-                                    issueSummary,
-                                    issueType,
-                                    priority,
+                                    val gitDir = dir.resolve(".git")
+                                    if !Files.exists(gitDir) then
+                                      val _ = new ProcessBuilder("git", "init").directory(dir.toFile).start().waitFor()
+                              }.mapError(e => Response.internalServerError(s"Failed to create workspace directory: ${e.getMessage}"))
+            seedIssues      = WorkspaceTemplatesView.seedIssues(templateId)
+            _              <- ZIO.foreachDiscard(seedIssues) {
+                                case (issueTitle, issueSummary, issueMeta) =>
+                                  val issueId   = IssueId.generate
+                                  val priority  = if issueMeta.contains("high") then "high" else "medium"
+                                  val issueType =
+                                    if issueMeta.contains("setup") then "setup"
+                                    else if issueMeta.contains("testing") then "testing"
+                                    else "feature"
+                                  issueRepo
+                                    .append(issues.entity.IssueEvent.Created(
+                                      issueId,
+                                      issueTitle,
+                                      issueSummary,
+                                      issueType,
+                                      priority,
+                                      now,
+                                    ))
+                                    .flatMap(_ => issueRepo.append(issues.entity.IssueEvent.WorkspaceLinked(issueId, id, now)))
+                                    .mapError(persistErr)
+                              }
+            // Create scaffold issue on the board instead of dispatching a direct task run
+            scaffoldIssueId = IssueId.generate
+            scaffoldDesc    = List(
+                                Some(s"Scaffold workspace from template '$templateId' using $cliTool."),
+                                description.map(d => s"Description: $d"),
+                                features.map(f => s"Features: $f"),
+                                prompt.map(p => s"Prompt: $p"),
+                              ).flatten.mkString("\n")
+            _              <- issueRepo
+                                .append(issues.entity.IssueEvent.Created(
+                                  scaffoldIssueId,
+                                  s"Scaffold workspace: $name",
+                                  scaffoldDesc,
+                                  "scaffold",
+                                  "high",
+                                  now,
+                                ))
+                                .flatMap(_ => issueRepo.append(issues.entity.IssueEvent.WorkspaceLinked(scaffoldIssueId, id, now)))
+                                .flatMap(_ =>
+                                  issueRepo.append(issues.entity.IssueEvent.TagsUpdated(
+                                    scaffoldIssueId,
+                                    List("scaffold", s"template:$templateId", "auto:scaffold"),
                                     now,
                                   ))
-                                  .flatMap(_ => issueRepo.append(issues.entity.IssueEvent.WorkspaceLinked(issueId, id, now)))
-                                  .mapError(persistErr)
-                            }
-            _            <- dispatchScaffoldingTask(
-                              workflowService,
-                              taskRepo,
-                              taskExecutor,
-                              id,
-                              name,
-                              localPath,
-                              templateId,
-                              cliTool,
-                              description,
-                              features,
-                              prompt,
-                              now,
-                            )
-                              .catchAll(_ => ZIO.unit)
+                                )
+                                .mapError(persistErr)
+            // Auto-promote scaffold issue to Todo if opt-in setting is enabled
+            autoPromote    <- configRepo
+                                .getSetting(WorkspacesController.scaffoldAutoPromoteSettingKey)
+                                .map(_.exists(_.value.equalsIgnoreCase("true")))
+                                .catchAll(_ => ZIO.succeed(false))
+            _              <- ZIO
+                                .when(autoPromote)(
+                                  issueRepo
+                                    .append(issues.entity.IssueEvent.MovedToTodo(scaffoldIssueId, now, now))
+                                    .mapError(persistErr)
+                                )
+                                .unit
           yield redirect(s"/projects/$projectIdStr?tab=workspaces")).catchAll(ZIO.succeed)
         },
 
@@ -221,14 +238,24 @@ object WorkspacesController:
         Method.GET / "runs" / "fragment" -> handler { (req: Request) =>
           val query = parseRunsDashboardQuery(req)
           (for
-            workspaces <- repo.list.mapError(persistErr)
-            allRuns    <- listAllRuns(repo, workspaces).mapError(persistErr)
-            filtered    = filterRuns(allRuns, query)
-            sorted      = sortRuns(filtered, query.sortBy)
-            scoped      = applyScope(sorted, query.scope)
-            limited     = scoped.take(query.limit)
-            byId        = workspaces.map(ws => ws.id -> ws.name).toMap
-          yield html(WorkspacesView.runsDashboardRowsFragment(limited, byId))).catchAll(ZIO.succeed)
+            workspaces    <- repo.list.mapError(persistErr)
+            allRuns       <- listAllRuns(repo, workspaces).mapError(persistErr)
+            filtered       = filterRuns(allRuns, query)
+            sorted         = sortRuns(filtered, query.sortBy)
+            scoped         = applyScope(sorted, query.scope)
+            limited        = scoped.take(query.limit)
+            byId           = workspaces.map(ws => ws.id -> ws.name).toMap
+            // Enrich runs with issue titles for better UX
+            issueRefs      = limited.map(_.issueRef).filter(_.startsWith("#")).map(_.stripPrefix("#")).distinct
+            issueTitleMap <- ZIO
+                               .foreach(issueRefs)(ref =>
+                                 issueRepo
+                                   .get(IssueId(ref))
+                                   .map(issue => ref -> issue.title)
+                                   .catchAll(_ => ZIO.succeed(ref -> ref))
+                               )
+                               .map(_.toMap)
+          yield html(WorkspacesView.runsDashboardRowsFragment(limited, byId, issueTitleMap))).catchAll(ZIO.succeed)
         },
 
         // Runs JSON API (across all workspaces)
@@ -1017,80 +1044,6 @@ object WorkspacesController:
 
   private def redirect(location: String): Response =
     Response(status = Status.SeeOther, headers = Headers(Header.Location(URL.decode(location).getOrElse(URL.root))))
-
-  private def dispatchScaffoldingTask(
-    wfService: WorkflowService,
-    tRepo: TaskRepository,
-    tExecutor: TaskExecutor,
-    workspaceId: String,
-    name: String,
-    localPath: String,
-    templateId: String,
-    cliTool: String,
-    description: Option[String],
-    features: Option[String],
-    prompt: Option[String],
-    now: Instant,
-  ): IO[Response, Unit] =
-    val scaffoldWorkflow = WorkflowDefinition(
-      name = "workspace-scaffold",
-      steps = List("scaffold"),
-      isBuiltin = true,
-    )
-    (for
-      workflowOpt <- wfService.getWorkflowByName("workspace-scaffold")
-      workflow    <- workflowOpt match
-                       case Some(w) => ZIO.succeed(w)
-                       case None    =>
-                         wfService.createWorkflow(scaffoldWorkflow).map(id =>
-                           scaffoldWorkflow.copy(id = Some(id.toString))
-                         )
-      workflowId  <-
-        ZIO.fromOption(workflow.id.flatMap(_.toLongOption))
-          .orElseFail(
-            orchestration.entity.WorkflowServiceError.ValidationFailed(List("workspace-scaffold workflow has no id"))
-          )
-      runId       <- tRepo.createRun(
-                       TaskRunRow(
-                         id = 0L,
-                         sourceDir = localPath,
-                         outputDir = localPath,
-                         status = taskrun.entity.RunStatus.Pending,
-                         startedAt = now,
-                         completedAt = None,
-                         totalFiles = 0,
-                         processedFiles = 0,
-                         successfulConversions = 0,
-                         failedConversions = 0,
-                         currentPhase = workflow.steps.headOption,
-                         errorMessage = None,
-                         workflowId = Some(workflowId),
-                       )
-                     )
-      artifacts    = List(
-                       "workspace.id"   -> workspaceId,
-                       "workspace.name" -> name,
-                       "workspace.path" -> localPath,
-                       "template.id"    -> templateId,
-                       "workspace.cli"  -> cliTool,
-                     ) ++ description.map("workspace.description" -> _).toList
-                       ++ features.map("workspace.features" -> _).toList
-                       ++ prompt.map("workspace.prompt" -> _).toList
-      _           <- ZIO.foreachDiscard(artifacts) {
-                       case (key, value) =>
-                         tRepo.saveArtifact(
-                           TaskArtifactRow(
-                             id = 0L,
-                             taskRunId = runId,
-                             stepName = "scaffold",
-                             key = key,
-                             value = value,
-                             createdAt = now,
-                           )
-                         )
-                     }
-      _           <- tExecutor.start(runId, workflow)
-    yield ()).mapError(_ => Response.internalServerError("Failed to dispatch scaffolding task"))
 
   private def html(bodyContent: String): Response =
     Response.text(bodyContent).contentType(MediaType.text.html)
