@@ -230,6 +230,9 @@ object IssueApprovalServiceSpec extends ZIOSpecDefault:
     override def approveIssue(workspacePath: String, issueId: BoardIssueId): IO[BoardError, Unit] =
       onApprove(workspacePath, issueId)
 
+    override def abortIssueRuns(workspaceId: String, issueId: BoardIssueId): IO[BoardError, Int] =
+      ZIO.succeed(0)
+
   final private case class StubBoardRepository(onMoveToTodo: (String, BoardIssueId, BoardColumn) => UIO[Unit])
     extends BoardRepository:
     override def initBoard(workspacePath: String): IO[BoardError, Unit] =

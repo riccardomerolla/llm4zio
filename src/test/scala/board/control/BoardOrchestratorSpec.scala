@@ -108,6 +108,7 @@ object BoardOrchestratorSpec extends ZIOSpecDefault:
   final private case class StubWorkspaceRunService(
     assignedRef: Ref[List[(String, AssignRunRequest)]],
     cleanupRef: Ref[List[String]],
+    cancelledRef: Ref[List[String]] = zio.Unsafe.unsafe(implicit u => Ref.unsafe.make(List.empty[String])),
   ) extends WorkspaceRunService:
     override def assign(workspaceId: String, req: AssignRunRequest): IO[WorkspaceError, WorkspaceRun] =
       assignedRef.update(_ :+ (workspaceId -> req)) *>
@@ -138,7 +139,7 @@ object BoardOrchestratorSpec extends ZIOSpecDefault:
       ZIO.dieMessage("continueRun unused in BoardOrchestratorSpec")
 
     override def cancelRun(runId: String): IO[WorkspaceError, Unit] =
-      ZIO.dieMessage("cancelRun unused in BoardOrchestratorSpec")
+      cancelledRef.update(_ :+ runId)
 
     override def cleanupAfterSuccessfulMerge(runId: String): UIO[Unit] =
       cleanupRef.update(_ :+ runId)
@@ -246,15 +247,17 @@ object BoardOrchestratorSpec extends ZIOSpecDefault:
     Ref[List[(String, AssignRunRequest)]],
     Ref[List[String]],
     Ref[List[(String, String, String)]],
+    Ref[List[String]],
   )] =
     for
       boardRef       <- Ref.make(issues.map(issue => issue.frontmatter.id -> issue).toMap)
       assignedRef    <- Ref.make(List.empty[(String, AssignRunRequest)])
       cleanupRef     <- Ref.make(List.empty[String])
+      cancelledRef   <- Ref.make(List.empty[String])
       mergesRef      <- Ref.make(List.empty[(String, String, String)])
       runsByIssueRef <- Ref.make(runsByIssueRefSeed)
       repo            = InMemoryBoardRepo(boardRef)
-      runService      = StubWorkspaceRunService(assignedRef, cleanupRef)
+      runService      = StubWorkspaceRunService(assignedRef, cleanupRef, cancelledRef)
       workspace       = Workspace(
                           id = "ws-1",
                           projectId = ProjectId("test-project"),
@@ -294,7 +297,7 @@ object BoardOrchestratorSpec extends ZIOSpecDefault:
                           governancePolicyService = StubGovernancePolicyService(governanceDecision),
                           projectStorageService = projectStorage,
                         )
-    yield (orchestrator, boardRef, assignedRef, cleanupRef, mergesRef)
+    yield (orchestrator, boardRef, assignedRef, cleanupRef, mergesRef, cancelledRef)
 
   def spec: Spec[TestEnvironment & Scope, Any] =
     suite("BoardOrchestratorSpec")(
@@ -303,11 +306,11 @@ object BoardOrchestratorSpec extends ZIOSpecDefault:
         val depDone   = issue("dep-1", BoardColumn.Done)
 
         for
-          (orchestrator, boardRef, assignedRef, _, _) <- makeOrchestrator(List(readyTask, depDone))
-          result                                      <- orchestrator.dispatchCycle(projectPath)
-          state                                       <- boardRef.get
-          assigned                                    <- assignedRef.get
-          task                                         = state(BoardIssueId("task-1"))
+          (orchestrator, boardRef, assignedRef, _, _, _) <- makeOrchestrator(List(readyTask, depDone))
+          result                                         <- orchestrator.dispatchCycle(projectPath)
+          state                                          <- boardRef.get
+          assigned                                       <- assignedRef.get
+          task                                            = state(BoardIssueId("task-1"))
         yield assertTrue(
           result.dispatchedIssueIds == List(BoardIssueId("task-1")),
           result.skippedIssueIds.isEmpty,
@@ -344,18 +347,18 @@ object BoardOrchestratorSpec extends ZIOSpecDefault:
         )
 
         for
-          (orchestrator, boardRef, _, cleanupRef, mergesRef) <-
+          (orchestrator, boardRef, _, cleanupRef, mergesRef, _) <-
             makeOrchestrator(List(inProgress), runsByIssueRefSeed = Map("task-2" -> List(run)))
-          _                                                  <- orchestrator.completeIssue(
-                                                                  projectPath,
-                                                                  BoardIssueId("task-2"),
-                                                                  success = true,
-                                                                  details = "linked PR #22",
-                                                                )
-          state                                              <- boardRef.get
-          reviewIssue                                         = state(BoardIssueId("task-2"))
-          cleanup                                            <- cleanupRef.get
-          merges                                             <- mergesRef.get
+          _                                                     <- orchestrator.completeIssue(
+                                                                     projectPath,
+                                                                     BoardIssueId("task-2"),
+                                                                     success = true,
+                                                                     details = "linked PR #22",
+                                                                   )
+          state                                                 <- boardRef.get
+          reviewIssue                                            = state(BoardIssueId("task-2"))
+          cleanup                                               <- cleanupRef.get
+          merges                                                <- mergesRef.get
         yield assertTrue(
           reviewIssue.column == BoardColumn.Review,
           reviewIssue.frontmatter.completedAt.isEmpty,
@@ -369,15 +372,15 @@ object BoardOrchestratorSpec extends ZIOSpecDefault:
         val inProgress = issue("task-3", BoardColumn.InProgress, branchName = Some("agent/agent-default-task-3"))
 
         for
-          (orchestrator, boardRef, _, _, _) <- makeOrchestrator(List(inProgress))
-          _                                 <- orchestrator.completeIssue(
-                                                 projectPath,
-                                                 BoardIssueId("task-3"),
-                                                 success = false,
-                                                 details = "tests are failing",
-                                               )
-          state                             <- boardRef.get
-          failed                             = state(BoardIssueId("task-3"))
+          (orchestrator, boardRef, _, _, _, _) <- makeOrchestrator(List(inProgress))
+          _                                    <- orchestrator.completeIssue(
+                                                    projectPath,
+                                                    BoardIssueId("task-3"),
+                                                    success = false,
+                                                    details = "tests are failing",
+                                                  )
+          state                                <- boardRef.get
+          failed                                = state(BoardIssueId("task-3"))
         yield assertTrue(
           failed.column == BoardColumn.InProgress,
           failed.frontmatter.failureReason.contains("tests are failing"),
@@ -406,13 +409,13 @@ object BoardOrchestratorSpec extends ZIOSpecDefault:
         )
 
         for
-          (orchestrator, boardRef, _, cleanupRef, mergesRef) <-
+          (orchestrator, boardRef, _, cleanupRef, mergesRef, _) <-
             makeOrchestrator(List(reviewIssue), runsByIssueRefSeed = Map("task-4" -> List(run)))
-          _                                                  <- orchestrator.approveIssue(projectPath, BoardIssueId("task-4"))
-          state                                              <- boardRef.get
-          doneIssue                                           = state(BoardIssueId("task-4"))
-          cleanup                                            <- cleanupRef.get
-          merges                                             <- mergesRef.get
+          _                                                     <- orchestrator.approveIssue(projectPath, BoardIssueId("task-4"))
+          state                                                 <- boardRef.get
+          doneIssue                                              = state(BoardIssueId("task-4"))
+          cleanup                                               <- cleanupRef.get
+          merges                                                <- mergesRef.get
         yield assertTrue(
           doneIssue.column == BoardColumn.Done,
           doneIssue.frontmatter.completedAt.nonEmpty,
@@ -425,18 +428,18 @@ object BoardOrchestratorSpec extends ZIOSpecDefault:
         val blockedIssue = issue("task-5", BoardColumn.Todo)
 
         for
-          (orchestrator, boardRef, assignedRef, _, _) <- makeOrchestrator(
-                                                           List(blockedIssue),
-                                                           governanceDecision = allowDecision.copy(
-                                                             allowed = false,
-                                                             requiredGates = Set(GovernanceGate.SpecReview),
-                                                             missingGates = Set(GovernanceGate.SpecReview),
-                                                             reason = Some("Missing required gates: SpecReview"),
-                                                           ),
-                                                         )
-          result                                      <- orchestrator.dispatchCycle(projectPath)
-          state                                       <- boardRef.get
-          assigned                                    <- assignedRef.get
+          (orchestrator, boardRef, assignedRef, _, _, _) <- makeOrchestrator(
+                                                              List(blockedIssue),
+                                                              governanceDecision = allowDecision.copy(
+                                                                allowed = false,
+                                                                requiredGates = Set(GovernanceGate.SpecReview),
+                                                                missingGates = Set(GovernanceGate.SpecReview),
+                                                                reason = Some("Missing required gates: SpecReview"),
+                                                              ),
+                                                            )
+          result                                         <- orchestrator.dispatchCycle(projectPath)
+          state                                          <- boardRef.get
+          assigned                                       <- assignedRef.get
         yield assertTrue(
           result.dispatchedIssueIds.isEmpty,
           result.skippedIssueIds == List(BoardIssueId("task-5")),
@@ -448,14 +451,14 @@ object BoardOrchestratorSpec extends ZIOSpecDefault:
         val readyTask = issue("task-6", BoardColumn.Todo)
 
         for
-          (orchestrator, boardRef, assignedRef, _, _) <- makeOrchestrator(
-                                                           List(readyTask),
-                                                           workspaceDefaultBranch = "develop",
-                                                           currentBranch = "develop",
-                                                         )
-          result                                      <- orchestrator.dispatchCycle(projectPath)
-          state                                       <- boardRef.get
-          assigned                                    <- assignedRef.get
+          (orchestrator, boardRef, assignedRef, _, _, _) <- makeOrchestrator(
+                                                              List(readyTask),
+                                                              workspaceDefaultBranch = "develop",
+                                                              currentBranch = "develop",
+                                                            )
+          result                                         <- orchestrator.dispatchCycle(projectPath)
+          state                                          <- boardRef.get
+          assigned                                       <- assignedRef.get
         yield assertTrue(
           result.dispatchedIssueIds == List(BoardIssueId("task-6")),
           result.skippedIssueIds.isEmpty,
@@ -487,14 +490,14 @@ object BoardOrchestratorSpec extends ZIOSpecDefault:
         )
 
         for
-          (orchestrator, boardRef, assignedRef, _, _) <- makeOrchestrator(
-                                                           List(reworkTask),
-                                                           runsByIssueRefSeed = Map("#task-8" -> List(existingRun)),
-                                                         )
-          result                                      <- orchestrator.dispatchCycle(projectPath)
-          state                                       <- boardRef.get
-          assigned                                    <- assignedRef.get
-          task                                         = state(BoardIssueId("task-8"))
+          (orchestrator, boardRef, assignedRef, _, _, _) <- makeOrchestrator(
+                                                              List(reworkTask),
+                                                              runsByIssueRefSeed = Map("#task-8" -> List(existingRun)),
+                                                            )
+          result                                         <- orchestrator.dispatchCycle(projectPath)
+          state                                          <- boardRef.get
+          assigned                                       <- assignedRef.get
+          task                                            = state(BoardIssueId("task-8"))
         yield assertTrue(
           result.dispatchedIssueIds == List(BoardIssueId("task-8")),
           result.skippedIssueIds.isEmpty,
@@ -508,18 +511,69 @@ object BoardOrchestratorSpec extends ZIOSpecDefault:
         val readyTask = issue("task-7", BoardColumn.Todo)
 
         for
-          (orchestrator, _, _, _, _) <- makeOrchestrator(
-                                          List(readyTask),
-                                          workspaceDefaultBranch = "develop",
-                                          currentBranch = "main",
-                                        )
-          result                     <- orchestrator.dispatchCycle(projectPath).either
+          (orchestrator, _, _, _, _, _) <- makeOrchestrator(
+                                             List(readyTask),
+                                             workspaceDefaultBranch = "develop",
+                                             currentBranch = "main",
+                                           )
+          result                        <- orchestrator.dispatchCycle(projectPath).either
         yield assertTrue(
           result == Left(
             BoardError.ConcurrencyConflict(
               "Board mutations are allowed only on 'develop' (current='main', detached=false)"
             )
           )
+        )
+      },
+      test("abortIssueRuns cancels active runs linked to the issue") {
+        val inProgress = issue("task-9", BoardColumn.InProgress, branchName = Some("agent/code-agent-task-9"))
+
+        val runningRun = WorkspaceRun(
+          id = "run-9a",
+          workspaceId = "ws-1",
+          parentRunId = None,
+          issueRef = "task-9",
+          agentName = "code-agent",
+          prompt = "Body for task-9",
+          conversationId = "9a",
+          worktreePath = s"$workspacePath/.worktree/run-9a",
+          branchName = "agent/code-agent-task-9",
+          status = RunStatus.Running(RunSessionMode.Autonomous),
+          attachedUsers = Set.empty,
+          controllerUserId = None,
+          createdAt = Instant.parse("2026-03-20T10:00:00Z"),
+          updatedAt = Instant.parse("2026-03-20T10:05:00Z"),
+        )
+
+        val completedRun = runningRun.copy(
+          id = "run-9b",
+          conversationId = "9b",
+          status = RunStatus.Completed,
+        )
+
+        for
+          (orchestrator, _, _, _, _, cancelledRef) <- makeOrchestrator(
+                                                        List(inProgress),
+                                                        runsByIssueRefSeed =
+                                                          Map("task-9" -> List(runningRun, completedRun)),
+                                                      )
+          count                                    <- orchestrator.abortIssueRuns("ws-1", BoardIssueId("task-9"))
+          cancelled                                <- cancelledRef.get
+        yield assertTrue(
+          count == 1,
+          cancelled == List("run-9a"),
+        )
+      },
+      test("abortIssueRuns returns 0 when no active runs exist") {
+        val backlogIssue = issue("task-10", BoardColumn.Backlog)
+
+        for
+          (orchestrator, _, _, _, _, cancelledRef) <- makeOrchestrator(List(backlogIssue))
+          count                                    <- orchestrator.abortIssueRuns("ws-1", BoardIssueId("task-10"))
+          cancelled                                <- cancelledRef.get
+        yield assertTrue(
+          count == 0,
+          cancelled.isEmpty,
         )
       },
     )

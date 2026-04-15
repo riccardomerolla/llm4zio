@@ -297,7 +297,7 @@ object AutoDispatcherSpec extends ZIOSpecDefault:
         yield assertTrue(
           count == 1,
           gotRuns.map(_.issueRef) == List("#1"),
-          gotEvents.isEmpty,
+          gotEvents.size == 2,
           activityLog.size == 1,
           activityLog.head.summary.contains("issue #1"),
         )

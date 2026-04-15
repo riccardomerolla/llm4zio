@@ -17,7 +17,8 @@ import workspace.entity.{ AssignRunRequest, GitError, WorkspaceRepository }
   * Extends focused sub-traits from board.entity so that consumers can depend on the narrower interface they actually
   * need (e.g. IssueDispatcher for dispatch-only consumers, IssueApprover for approval controllers).
   */
-trait BoardOrchestrator extends IssueDispatcher with IssueApprover
+trait BoardOrchestrator extends IssueDispatcher with IssueApprover:
+  def abortIssueRuns(workspaceId: String, issueId: BoardIssueId): IO[BoardError, Int]
 
 object BoardOrchestrator:
   def dispatchCycle(workspacePath: String): ZIO[BoardOrchestrator, BoardError, DispatchResult] =
@@ -51,6 +52,12 @@ object BoardOrchestrator:
     issueId: BoardIssueId,
   ): ZIO[BoardOrchestrator, BoardError, Unit] =
     ZIO.serviceWithZIO[BoardOrchestrator](_.approveIssue(workspacePath, issueId))
+
+  def abortIssueRuns(
+    workspaceId: String,
+    issueId: BoardIssueId,
+  ): ZIO[BoardOrchestrator, BoardError, Int] =
+    ZIO.serviceWithZIO[BoardOrchestrator](_.abortIssueRuns(workspaceId, issueId))
 
   val live
     : ZLayer[
@@ -219,6 +226,45 @@ final case class BoardOrchestratorLive(
                ),
              )
     yield ()
+
+  override def abortIssueRuns(workspaceId: String, issueId: BoardIssueId): IO[BoardError, Int] =
+    for
+      direct    <- workspaceRepository
+                     .listRunsByIssueRef(issueId.value)
+                     .mapError(err => BoardError.ParseError(s"list runs by issue failed: $err"))
+      hash      <- workspaceRepository
+                     .listRunsByIssueRef(s"#${issueId.value}")
+                     .mapError(err => BoardError.ParseError(s"list runs by issue failed: $err"))
+      all        = (direct ++ hash).groupBy(_.id).values.map(_.head).toList
+      active     = all.filter(r =>
+                     r.status match
+                       case workspace.entity.RunStatus.Pending | _: workspace.entity.RunStatus.Running => true
+                       case _                                                                          => false
+                   )
+      cancelled <- ZIO.foldLeft(active)(0) { (count, run) =>
+                     workspaceRunService
+                       .cancelRun(run.id)
+                       .as(count + 1)
+                       .catchAll { err =>
+                         ZIO.logWarning(s"[board] abort run ${run.id} failed: $err").as(count)
+                       }
+                   }
+      now       <- Clock.instant
+      _         <- ZIO
+                     .when(cancelled > 0)(
+                       activityHub.publish(
+                         activity.entity.ActivityEvent(
+                           id = shared.ids.Ids.EventId(java.util.UUID.randomUUID().toString),
+                           eventType = ActivityEventType.RunStateChanged,
+                           source = "board-orchestrator",
+                           summary = s"Aborted $cancelled active run(s) for issue #${issueId.value} (moved to Backlog)",
+                           payload = Some(active.map(r => s"run:${r.id} agent:${r.agentName}").mkString(", ")),
+                           createdAt = now,
+                         )
+                       )
+                     )
+                     .ignore
+    yield cancelled
 
   private[board] def listenForRunCompletion: UIO[Unit] =
     activityHub.subscribe.flatMap(queue =>

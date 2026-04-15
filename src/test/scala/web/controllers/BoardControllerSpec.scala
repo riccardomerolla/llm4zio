@@ -116,6 +116,9 @@ object BoardControllerSpec extends ZIOSpecDefault:
 
     override def approveIssue(workspacePath: String, issueId: BoardIssueId): IO[BoardError, Unit] = ZIO.unit
 
+    override def abortIssueRuns(workspaceId: String, issueId: BoardIssueId): IO[BoardError, Int] =
+      ZIO.succeed(0)
+
   final private case class StubIssueApprovalService(
     quickApproveRef: Ref[List[(String, BoardIssueId, String)]],
     reworkRef: Ref[List[(String, BoardIssueId, String, String)]],

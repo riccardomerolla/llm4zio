@@ -169,6 +169,11 @@ final case class BoardControllerLive(
       issueId          <- readBoardIssueId(issueIdRaw)
       request          <- parseMoveRequest(req)
       toColumn         <- parseColumn(request.toColumn)
+      _                <- ZIO.when(toColumn == BoardColumn.Backlog)(
+                            boardOrchestrator
+                              .abortIssueRuns(workspaceId, issueId)
+                              .flatMap(n => ZIO.logInfo(s"[board] aborted $n run(s) for issue ${issueId.value}"))
+                          )
       moved            <- boardRepository.moveIssue(projectRoot, issueId, toColumn)
       response         <- if isHtmx(req) then renderBoardFragment(workspaceId) else ZIO.succeed(Response.json(moved.toJson))
     yield response

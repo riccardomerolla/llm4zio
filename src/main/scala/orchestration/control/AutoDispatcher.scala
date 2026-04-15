@@ -233,7 +233,7 @@ final case class AutoDispatcherLive(
       .replace("${sourceFolder}", issue.sourceFolder)
 
   private def markIssueStarted(issue: AgentIssue, agentName: String): IO[PersistenceError, Unit] =
-    if issue.workspaceId.isDefined then ZIO.unit
+    if issue.workspaceId.isEmpty then ZIO.unit
     else
       for
         now <- Clock.instant

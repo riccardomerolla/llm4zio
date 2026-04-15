@@ -284,6 +284,9 @@ object IssueControllerSpec extends ZIOSpecDefault:
 
     override def approveIssue(workspacePath: String, issueId: BoardIssueId): IO[BoardError, Unit] = ZIO.unit
 
+    override def abortIssueRuns(workspaceId: String, issueId: BoardIssueId): IO[BoardError, Int] =
+      ZIO.succeed(0)
+
   private object StubBoardRepository extends BoardRepository:
     override def initBoard(workspacePath: String): IO[BoardError, Unit]                                   = ZIO.unit
     override def readBoard(workspacePath: String): IO[BoardError, Board]                                  =
