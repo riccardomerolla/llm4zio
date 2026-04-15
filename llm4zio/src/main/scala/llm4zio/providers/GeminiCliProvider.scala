@@ -496,8 +496,41 @@ object GeminiCliProvider:
     config: LlmConfig,
     executor: GeminiCliExecutor,
     executionContext: GeminiCliExecutionContext = GeminiCliExecutionContext.default,
-  ): LlmService =
-    new LlmService:
+  ): CliConnector & LlmService =
+    new CliConnector with LlmService:
+
+      // CliConnector methods
+      override def id: ConnectorId = ConnectorId.GeminiCli
+
+      override def interactionSupport: InteractionSupport = InteractionSupport.InteractiveStdin
+
+      override def healthCheck: IO[LlmError, HealthStatus] =
+        executor.checkGeminiInstalled.as(
+          HealthStatus(Availability.Healthy, AuthStatus.Valid, None)
+        ).catchAll(_ =>
+          ZIO.succeed(HealthStatus(Availability.Unhealthy, AuthStatus.Unknown, None))
+        )
+
+      override def buildArgv(prompt: String, ctx: CliContext): List[String] =
+        val base = List("gemini", "--yolo")
+        val dirs = if ctx.repoPath.nonEmpty then List("--include-directories", ctx.repoPath) else Nil
+        val turn = ctx.turnLimit.map(l => List("--turn-limit", l.toString)).getOrElse(Nil)
+        base ++ dirs ++ turn ++ List("-p", prompt)
+
+      override def buildInteractiveArgv(ctx: CliContext): List[String] =
+        val base = List("gemini", "--yolo")
+        val dirs = if ctx.repoPath.nonEmpty then List("--include-directories", ctx.repoPath) else Nil
+        base ++ dirs
+
+      override def complete(prompt: String): IO[LlmError, String] =
+        executor.runGeminiProcess(prompt, config, executionContext)
+          .flatMap(output => ZIO.fromEither(extractResponse(output))
+            .mapError(msg => LlmError.ParseError(msg, output)))
+
+      override def completeStream(prompt: String): ZStream[Any, LlmError, LlmChunk] =
+        executeStream(prompt)
+
+      // LlmService methods
       override def executeStream(prompt: String): ZStream[Any, LlmError, LlmChunk] =
         val baseMetadata = Map("provider" -> "gemini-cli", "model" -> config.model)
         ZStream.fromZIO(ZIO.logInfo(s"Executing Gemini CLI stream with model: ${config.model}")).drain ++
@@ -668,7 +701,7 @@ object GeminiCliProvider:
       override def isAvailable: UIO[Boolean] =
         executor.checkGeminiInstalled.fold(_ => false, _ => true)
 
-  val layer: ZLayer[LlmConfig & GeminiCliExecutor, Nothing, LlmService] =
+  val layer: ZLayer[LlmConfig & GeminiCliExecutor, Nothing, CliConnector] =
     ZLayer.fromFunction { (config: LlmConfig, executor: GeminiCliExecutor) =>
-      make(config, executor)
+      make(config, executor): CliConnector
     }

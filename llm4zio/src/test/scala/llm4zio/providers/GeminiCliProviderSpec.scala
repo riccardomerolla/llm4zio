@@ -1012,6 +1012,106 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
         )
       },
     ),
+    suite("CliConnector")(
+      test("implements CliConnector with correct id") {
+        val executor  = new MockGeminiCliExecutor()
+        val config    = LlmConfig(LlmProvider.GeminiCli, "gemini-2.5-flash")
+        val connector = GeminiCliProvider.make(config, executor)
+        assertTrue(
+          connector.id == ConnectorId.GeminiCli,
+          connector.kind == ConnectorKind.Cli,
+        )
+      },
+      test("buildArgv produces gemini CLI flags") {
+        val executor  = new MockGeminiCliExecutor()
+        val config    = LlmConfig(LlmProvider.GeminiCli, "gemini-2.5-flash")
+        val connector = GeminiCliProvider.make(config, executor)
+        val ctx       = CliContext(worktreePath = "/workspace", repoPath = "/repo")
+        val argv      = connector.buildArgv("fix the bug", ctx)
+        assertTrue(
+          argv.contains("gemini"),
+          argv.contains("--yolo"),
+          argv.contains("-p"),
+          argv.contains("fix the bug"),
+          argv.contains("--include-directories"),
+          argv.contains("/repo"),
+        )
+      },
+      test("buildArgv omits --include-directories when repoPath is empty") {
+        val executor  = new MockGeminiCliExecutor()
+        val config    = LlmConfig(LlmProvider.GeminiCli, "gemini-2.5-flash")
+        val connector = GeminiCliProvider.make(config, executor)
+        val ctx       = CliContext(worktreePath = "/workspace", repoPath = "")
+        val argv      = connector.buildArgv("fix the bug", ctx)
+        assertTrue(
+          !argv.contains("--include-directories"),
+        )
+      },
+      test("buildArgv includes --turn-limit when set") {
+        val executor  = new MockGeminiCliExecutor()
+        val config    = LlmConfig(LlmProvider.GeminiCli, "gemini-2.5-flash")
+        val connector = GeminiCliProvider.make(config, executor)
+        val ctx       = CliContext(worktreePath = "/workspace", repoPath = "/repo", turnLimit = Some(10))
+        val argv      = connector.buildArgv("fix the bug", ctx)
+        assertTrue(
+          argv.contains("--turn-limit"),
+          argv.contains("10"),
+        )
+      },
+      test("buildInteractiveArgv does not include -p or prompt") {
+        val executor  = new MockGeminiCliExecutor()
+        val config    = LlmConfig(LlmProvider.GeminiCli, "gemini-2.5-flash")
+        val connector = GeminiCliProvider.make(config, executor)
+        val ctx       = CliContext(worktreePath = "/workspace", repoPath = "/repo")
+        val argv      = connector.buildInteractiveArgv(ctx)
+        assertTrue(
+          argv.contains("gemini"),
+          argv.contains("--yolo"),
+          argv.contains("--include-directories"),
+          !argv.contains("-p"),
+        )
+      },
+      test("interactionSupport is InteractiveStdin") {
+        val executor  = new MockGeminiCliExecutor()
+        val config    = LlmConfig(LlmProvider.GeminiCli, "gemini-2.5-flash")
+        val connector = GeminiCliProvider.make(config, executor)
+        assertTrue(connector.interactionSupport == InteractionSupport.InteractiveStdin)
+      },
+      test("healthCheck returns Healthy when gemini is installed") {
+        val executor  = new MockGeminiCliExecutor(shouldSucceed = true)
+        val config    = LlmConfig(LlmProvider.GeminiCli, "gemini-2.5-flash")
+        val connector = GeminiCliProvider.make(config, executor)
+        for
+          status <- connector.healthCheck
+        yield assertTrue(
+          status.availability == Availability.Healthy,
+          status.authStatus == AuthStatus.Valid,
+        )
+      },
+      test("healthCheck returns Unhealthy when gemini is not installed") {
+        val executor  = new MockGeminiCliExecutor(shouldSucceed = false)
+        val config    = LlmConfig(LlmProvider.GeminiCli, "gemini-2.5-flash")
+        val connector = GeminiCliProvider.make(config, executor)
+        for
+          status <- connector.healthCheck
+        yield assertTrue(
+          status.availability == Availability.Unhealthy,
+        )
+      },
+      test("completeStream delegates to executeStream") {
+        val config    = LlmConfig(LlmProvider.GeminiCli, "gemini-2.5-flash")
+        val executor  = new MockGeminiCliExecutor(
+          streamEvents = List(
+            GeminiCliStreamEvent.Message(role = Some("assistant"), content = Some("hello"), delta = true),
+            GeminiCliStreamEvent.Result(status = Some("success"), errorMessage = None, stats = None),
+          )
+        )
+        val connector = GeminiCliProvider.make(config, executor)
+        for
+          chunks <- connector.completeStream("hi").runCollect
+        yield assertTrue(chunks.map(_.delta).mkString.contains("hello"))
+      },
+    ),
     suite("executeStream event handling")(
       test("Init event populates metadata for subsequent chunks") {
         val config   = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
