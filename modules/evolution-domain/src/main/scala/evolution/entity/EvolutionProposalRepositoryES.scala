@@ -69,8 +69,7 @@ final case class EvolutionProposalRepositoryES(
     }
 
   private def listAll: IO[PersistenceError, List[EvolutionProposal]] =
-    dataStore.rawStore
-      .streamKeys[String]
+    dataStore.streamKeys[String]
       .filter(_.startsWith(snapshotPrefix))
       .runCollect
       .mapError(storeErr("listEvolutionProposals"))

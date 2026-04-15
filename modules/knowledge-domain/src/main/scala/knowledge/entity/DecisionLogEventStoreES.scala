@@ -30,8 +30,7 @@ final case class DecisionLogEventStoreES(dataStore: DataStoreService)
     loadEvents(id, Some(sequence + 1L))
 
   private def nextSequence(id: DecisionLogId, op: String): IO[PersistenceError, Long] =
-    dataStore.rawStore
-      .streamKeys[String]
+    dataStore.streamKeys[String]
       .filter(_.startsWith(prefix(id)))
       .runCollect
       .mapError(storeErr(op))
@@ -41,8 +40,7 @@ final case class DecisionLogEventStoreES(dataStore: DataStoreService)
     id: DecisionLogId,
     minSequence: Option[Long],
   ): IO[PersistenceError, List[DecisionLogEvent]] =
-    dataStore.rawStore
-      .streamKeys[String]
+    dataStore.streamKeys[String]
       .filter(_.startsWith(prefix(id)))
       .runCollect
       .mapError(storeErr("loadDecisionLogEvents"))

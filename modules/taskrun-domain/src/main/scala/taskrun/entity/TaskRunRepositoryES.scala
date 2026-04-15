@@ -55,8 +55,7 @@ final case class TaskRunRepositoryES(
       }
 
   override def list(filter: TaskRunFilter): IO[PersistenceError, List[TaskRun]] =
-    dataStore.rawStore
-      .streamKeys[String]
+    dataStore.streamKeys[String]
       .filter(_.startsWith(snapshotPrefix))
       .runCollect
       .mapError(storeErr("listTaskRuns"))

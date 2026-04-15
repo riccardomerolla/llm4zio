@@ -79,8 +79,7 @@ final case class AnalysisRepositoryES(
       }
 
   private def listAll: IO[PersistenceError, List[AnalysisDoc]] =
-    dataStore.rawStore
-      .streamKeys[String]
+    dataStore.streamKeys[String]
       .filter(_.startsWith(snapshotPrefix))
       .runCollect
       .mapError(storeErr("listAnalysisDocs"))

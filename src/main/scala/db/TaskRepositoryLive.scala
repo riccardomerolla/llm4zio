@@ -3,11 +3,10 @@ package db
 import java.time.Instant
 
 import zio.*
-import zio.schema.Schema
+import zio.json.*
 
 import _root_.config.entity.{ CustomAgentRow, SettingRow, StoredCustomAgentRow, StoredWorkflowRow, WorkflowRow }
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
-import io.github.riccardomerolla.zio.eclipsestore.service.{ LifecycleCommand, LifecycleStatus }
 import shared.errors.PersistenceError
 import shared.store.*
 import taskrun.entity.*
@@ -105,8 +104,7 @@ final case class TaskRepositoryLive(
 
   override def getAllSettings: IO[PersistenceError, List[SettingRow]] =
     for
-      keys <- configStore.rawStore
-                .streamKeys[String]
+      keys <- configStore.streamKeys[String]
                 .filter(_.startsWith("setting:"))
                 .runCollect
                 .mapError(storeErr("getAllSettings"))
@@ -134,8 +132,7 @@ final case class TaskRepositoryLive(
 
   override def deleteSettingsByPrefix(prefix: String): IO[PersistenceError, Unit] =
     for
-      keys <- configStore.rawStore
-                .streamKeys[String]
+      keys <- configStore.streamKeys[String]
                 .filter(k => k.startsWith(s"setting:$prefix"))
                 .runCollect
                 .mapError(storeErr("deleteSettingsByPrefix"))
@@ -245,9 +242,8 @@ final case class TaskRepositoryLive(
   // Internals
   // ---------------------------------------------------------------------------
 
-  private def fetchAllDataByPrefix[V](prefix: String, op: String)(using Schema[V]): IO[PersistenceError, List[V]] =
-    dataStore.rawStore
-      .streamKeys[String]
+  private def fetchAllDataByPrefix[V](prefix: String, op: String)(using JsonDecoder[V]): IO[PersistenceError, List[V]] =
+    dataStore.streamKeys[String]
       .filter(_.startsWith(prefix))
       .runCollect
       .mapError(storeErr(op))
@@ -255,9 +251,9 @@ final case class TaskRepositoryLive(
         ZIO.foreach(keys.toList)(k => dataStore.fetch[String, V](k).mapError(storeErr(op))).map(_.flatten)
       )
 
-  private def fetchAllConfigByPrefix[V](prefix: String, op: String)(using Schema[V]): IO[PersistenceError, List[V]] =
-    configStore.rawStore
-      .streamKeys[String]
+  private def fetchAllConfigByPrefix[V](prefix: String, op: String)(using JsonDecoder[V])
+    : IO[PersistenceError, List[V]] =
+    configStore.streamKeys[String]
       .filter(_.startsWith(prefix))
       .runCollect
       .mapError(storeErr(op))
@@ -288,15 +284,7 @@ final case class TaskRepositoryLive(
     SettingRow(key = key, value = raw, updatedAt = Instant.EPOCH)
 
   private def checkpointConfigStore(op: String): IO[PersistenceError, Unit] =
-    for
-      status <- configStore.rawStore
-                  .maintenance(LifecycleCommand.Checkpoint)
-                  .mapError(err => PersistenceError.QueryFailed(op, err.toString))
-      _      <- status match
-                  case LifecycleStatus.Failed(message) =>
-                    ZIO.fail(PersistenceError.QueryFailed(op, s"Config store checkpoint failed: $message"))
-                  case _                               => ZIO.unit
-    yield ()
+    configStore.checkpoint.mapError(err => PersistenceError.QueryFailed(op, err.toString))
 
   private def toStoreRunRow(run: TaskRunRow): StoredTaskRunRow =
     StoredTaskRunRow(

@@ -29,16 +29,14 @@ final case class PlanEventStoreES(dataStore: DataStoreService) extends EventStor
     loadEvents(id, Some(sequence + 1L))
 
   private def nextSequence(id: PlanId, op: String): IO[PersistenceError, Long] =
-    dataStore.rawStore
-      .streamKeys[String]
+    dataStore.streamKeys[String]
       .filter(_.startsWith(prefix(id)))
       .runCollect
       .mapError(storeErr(op))
       .map(keys => keys.flatMap(_.stripPrefix(prefix(id)).toLongOption).maxOption.map(_ + 1L).getOrElse(1L))
 
   private def loadEvents(id: PlanId, minSequence: Option[Long]): IO[PersistenceError, List[PlanEvent]] =
-    dataStore.rawStore
-      .streamKeys[String]
+    dataStore.streamKeys[String]
       .filter(_.startsWith(prefix(id)))
       .runCollect
       .mapError(storeErr("loadPlanEvents"))

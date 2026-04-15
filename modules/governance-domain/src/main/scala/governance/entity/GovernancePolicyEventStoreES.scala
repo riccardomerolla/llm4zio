@@ -33,8 +33,7 @@ final case class GovernancePolicyEventStoreES(
     loadEvents(id, minSequence = Some(sequence + 1L))
 
   private def nextSequence(id: GovernancePolicyId, op: String): IO[PersistenceError, Long] =
-    dataStore.rawStore
-      .streamKeys[String]
+    dataStore.streamKeys[String]
       .filter(_.startsWith(prefix(id)))
       .runCollect
       .mapError(storeErr(op))
@@ -44,8 +43,7 @@ final case class GovernancePolicyEventStoreES(
     id: GovernancePolicyId,
     minSequence: Option[Long],
   ): IO[PersistenceError, List[GovernancePolicyEvent]] =
-    dataStore.rawStore
-      .streamKeys[String]
+    dataStore.streamKeys[String]
       .filter(_.startsWith(prefix(id)))
       .runCollect
       .mapError(storeErr("loadGovernancePolicyEvents"))

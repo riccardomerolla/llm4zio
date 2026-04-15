@@ -48,8 +48,7 @@ final case class SpecificationRepositoryES(
     eventStore.events(id)
 
   override def list: IO[PersistenceError, List[Specification]] =
-    dataStore.rawStore
-      .streamKeys[String]
+    dataStore.streamKeys[String]
       .filter(_.startsWith(snapshotPrefix))
       .runCollect
       .mapError(storeErr("listSpecifications"))

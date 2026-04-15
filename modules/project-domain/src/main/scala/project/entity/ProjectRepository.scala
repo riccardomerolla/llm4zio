@@ -54,8 +54,7 @@ final case class ProjectRepositoryES(
     yield ()
 
   private def allProjectIds(op: String): IO[PersistenceError, List[ProjectId]] =
-    dataStore.rawStore
-      .streamKeys[String]
+    dataStore.streamKeys[String]
       .filter(_.startsWith(allEventsPrefix))
       .runCollect
       .mapError(storeErr(op))
@@ -74,8 +73,7 @@ final case class ProjectRepositoryES(
     loadEvents(eventPrefix(id), op).map(Project.fromEvents(_).toOption)
 
   private def nextSeq(prefix: String, op: String): IO[PersistenceError, Long] =
-    dataStore.rawStore
-      .streamKeys[String]
+    dataStore.streamKeys[String]
       .filter(_.startsWith(prefix))
       .runCollect
       .mapError(storeErr(op))
@@ -85,8 +83,7 @@ final case class ProjectRepositoryES(
     prefix: String,
     op: String,
   ): IO[PersistenceError, List[ProjectEvent]] =
-    dataStore.rawStore
-      .streamKeys[String]
+    dataStore.streamKeys[String]
       .filter(_.startsWith(prefix))
       .runCollect
       .mapError(storeErr(op))
@@ -113,8 +110,7 @@ final case class ProjectRepositoryES(
       )
 
   private def removeByPrefix(prefix: String, op: String): IO[PersistenceError, Unit] =
-    dataStore.rawStore
-      .streamKeys[String]
+    dataStore.streamKeys[String]
       .filter(_.startsWith(prefix))
       .runCollect
       .mapError(storeErr(op))

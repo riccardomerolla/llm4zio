@@ -9,24 +9,19 @@ import scala.jdk.CollectionConverters.*
 import zio.*
 import zio.http.*
 import zio.json.*
-import zio.schema.Schema
 
 import _root_.config.SettingsApplier
 import _root_.config.control.ModelService
 import _root_.config.entity.{ ConfigRepository, GatewayConfig }
 import activity.control.ActivityHub
 import activity.entity.{ ActivityEvent, ActivityEventType }
-import conversation.entity.{ ChatMessageRow, ConversationRow, SessionContextRow }
-import io.github.riccardomerolla.zio.eclipsestore.schema.TypedStore
-import io.github.riccardomerolla.zio.eclipsestore.service.{ LifecycleCommand, LifecycleStatus }
-import issues.entity.{ AgentAssignmentRow, AgentIssueRow }
+import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import llm4zio.core.{ LlmError, LlmService, Streaming }
 import llm4zio.tools.ToolRegistry
 import shared.errors.PersistenceError
 import shared.ids.Ids.EventId
 import shared.store.{ MemoryStoreModule, * }
 import shared.web.{ ErrorHandlingMiddleware, HtmlViews, SettingsView }
-import taskrun.entity.{ StoredTaskArtifactRow, StoredTaskReportRow, StoredTaskRunRow }
 
 trait SettingsController:
   def routes: Routes[Any, Response]
@@ -346,8 +341,7 @@ final case class SettingsControllerLive(
 
   private def debugDataStore(includeConfig: Boolean, prefixFilter: Option[String]): IO[PersistenceError, Response] =
     for
-      allDataKeys   <- dataStoreService.rawStore
-                         .streamKeys[String]
+      allDataKeys   <- dataStoreService.streamKeys[String]
                          .runCollect
                          .map(_.toList.sorted)
                          .mapError(err => PersistenceError.QueryFailed("debug_data_store", err.toString))
@@ -360,8 +354,7 @@ final case class SettingsControllerLive(
       configBlock   <-
         if includeConfig then
           for
-            allConfigKeys <- configStoreService.rawStore
-                               .streamKeys[String]
+            allConfigKeys <- configStoreService.streamKeys[String]
                                .runCollect
                                .map(_.toList.sorted)
                                .mapError(err => PersistenceError.QueryFailed("debug_config_store", err.toString))
@@ -376,14 +369,14 @@ final case class SettingsControllerLive(
     yield Response.json(
       StoreDebugResponse(
         dataStorePath = storeConfig.dataStorePath,
-        dataStoreInstanceId = Integer.toHexString(java.lang.System.identityHashCode(dataStoreService.rawStore)),
+        dataStoreInstanceId = Integer.toHexString(java.lang.System.identityHashCode(dataStoreService)),
         dataStoreBytes = dataStoreSize,
         dataStoreKeyCount = dataKeys.size,
         dataStorePrefixCounts = dataPrefixes,
         dataEntries = dataEntries,
         configStorePath = configBlock.map(_ => storeConfig.configStorePath),
         configStoreInstanceId = configBlock.map(_ =>
-          Integer.toHexString(java.lang.System.identityHashCode(configStoreService.rawStore))
+          Integer.toHexString(java.lang.System.identityHashCode(configStoreService))
         ),
         configStoreBytes = configBlock.map(_._4),
         configStoreKeyCount = configBlock.map(_._1),
@@ -394,17 +387,19 @@ final case class SettingsControllerLive(
     )
 
   private def debugDataEntryForKey(key: String): UIO[StoreDebugEntry] =
-    debugRawEntry(key = key, typedStore = dataStoreService, decoder = decodeDataRaw)
+    debugRawEntry(key = key, fetchFn = dataStoreService.fetchRawJson, decoder = decodeDataRaw)
 
   private def debugConfigEntryForKey(key: String): UIO[StoreDebugEntry] =
-    debugRawEntry(key = key, typedStore = configStoreService, decoder = decodeConfigRaw)
+    debugRawEntry(key = key, fetchFn = configStoreService.fetchRawJson, decoder = decodeConfigRaw)
+
+  private type FetchFn = String => IO[EclipseStoreError, Option[String]]
 
   private def debugRawEntry(
     key: String,
-    typedStore: TypedStore,
-    decoder: (TypedStore, String) => UIO[(Option[String], Option[String])],
+    fetchFn: FetchFn,
+    decoder: (FetchFn, String) => UIO[(Option[String], Option[String])],
   ): UIO[StoreDebugEntry] =
-    decoder(typedStore, key).map {
+    decoder(fetchFn, key).map {
       case (value, error) =>
         StoreDebugEntry(
           key = key,
@@ -414,31 +409,31 @@ final case class SettingsControllerLive(
         )
     }
 
-  private def decodeDataRaw(typedStore: TypedStore, key: String): UIO[(Option[String], Option[String])] =
+  private def decodeDataRaw(fetchFn: FetchFn, key: String): UIO[(Option[String], Option[String])] =
     keyPrefix(key) match
-      case "conv"       => fetchAs[ConversationRow](typedStore, key)
-      case "msg"        => fetchAs[ChatMessageRow](typedStore, key)
-      case "issue"      => fetchAs[AgentIssueRow](typedStore, key)
-      case "assignment" => fetchAs[AgentAssignmentRow](typedStore, key)
-      case "session"    => fetchAs[SessionContextRow](typedStore, key)
-      case "activity"   => fetchAs[ActivityEvent](typedStore, key)
-      case "run"        => fetchAs[StoredTaskRunRow](typedStore, key)
-      case "report"     => fetchAs[StoredTaskReportRow](typedStore, key)
-      case "artifact"   => fetchAs[StoredTaskArtifactRow](typedStore, key)
-      case "setting"    => fetchAs[String](typedStore, key)
+      case "conv"       => fetchRaw(fetchFn, key)
+      case "msg"        => fetchRaw(fetchFn, key)
+      case "issue"      => fetchRaw(fetchFn, key)
+      case "assignment" => fetchRaw(fetchFn, key)
+      case "session"    => fetchRaw(fetchFn, key)
+      case "activity"   => fetchRaw(fetchFn, key)
+      case "run"        => fetchRaw(fetchFn, key)
+      case "report"     => fetchRaw(fetchFn, key)
+      case "artifact"   => fetchRaw(fetchFn, key)
+      case "setting"    => fetchRaw(fetchFn, key)
       case other        => ZIO.succeed((None, Some(s"unknown data-store prefix: $other")))
 
-  private def decodeConfigRaw(typedStore: TypedStore, key: String): UIO[(Option[String], Option[String])] =
+  private def decodeConfigRaw(fetchFn: FetchFn, key: String): UIO[(Option[String], Option[String])] =
     keyPrefix(key) match
-      case "setting"  => fetchAs[String](typedStore, key)
-      case "workflow" => fetchAs[_root_.config.entity.StoredWorkflowRow](typedStore, key)
-      case "agent"    => fetchAs[_root_.config.entity.StoredCustomAgentRow](typedStore, key)
+      case "setting"  => fetchRaw(fetchFn, key)
+      case "workflow" => fetchRaw(fetchFn, key)
+      case "agent"    => fetchRaw(fetchFn, key)
       case other      => ZIO.succeed((None, Some(s"unknown config-store prefix: $other")))
 
-  private def fetchAs[V: Schema](typedStore: TypedStore, key: String): UIO[(Option[String], Option[String])] =
-    typedStore.fetch[String, V](key).map {
-      case Some(value) => (Some(value.toString), None)
-      case None        => (None, Some("key present but no value returned by typed fetch"))
+  private def fetchRaw(fetchFn: FetchFn, key: String): UIO[(Option[String], Option[String])] =
+    fetchFn(key).map {
+      case Some(value) => (Some(value), None)
+      case None        => (None, Some("key present but no value returned by fetch"))
     }.catchAll(err =>
       ZIO.succeed(
         (
@@ -480,22 +475,15 @@ final case class SettingsControllerLive(
                PersistenceError.QueryFailed("resetDataStore", Option(err.getMessage).getOrElse(err.toString))
              )
       _ <- safeReset("memoryEntries")(memoryEntriesStore.map.clear)
-      _ <- safeReset("reloadRoots")(dataStoreService.rawStore.reloadRoots)
+      _ <- safeReset("reloadRoots")(dataStoreService.checkpoint)
     yield ()
 
   private def safeReset(name: String)(effect: ZIO[Any, Any, Unit]): UIO[Unit] =
     effect.catchAll(err => ZIO.logWarning(s"data reset step '$name' failed: $err"))
 
   private def checkpointConfigStore: IO[PersistenceError, Unit] =
-    for
-      status <- configStoreService.rawStore
-                  .maintenance(LifecycleCommand.Checkpoint)
-                  .mapError(err => PersistenceError.QueryFailed("config_checkpoint", err.toString))
-      _      <- status match
-                  case LifecycleStatus.Failed(message) =>
-                    ZIO.fail(PersistenceError.QueryFailed("config_checkpoint", s"checkpoint failed: $message"))
-                  case _                               => ZIO.unit
-    yield ()
+    configStoreService.checkpoint
+      .mapError(err => PersistenceError.QueryFailed("config_checkpoint", err.toString))
 
   private def writeSettingsSnapshot(settings: Map[String, String]): IO[PersistenceError, Unit] =
     ZIO

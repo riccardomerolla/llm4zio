@@ -60,8 +60,7 @@ final case class ConversationRepositoryES(
     }
 
   override def list(filter: ConversationFilter): IO[PersistenceError, List[Conversation]] =
-    dataStore.rawStore
-      .streamKeys[String]
+    dataStore.streamKeys[String]
       .filter(_.startsWith(snapshotPrefix))
       .runCollect
       .mapError(storeErr("listConversations"))

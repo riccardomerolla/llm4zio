@@ -56,7 +56,7 @@ final case class StoredTaskRunRow(
   processedFiles: Int,
   successfulConversions: Int,
   failedConversions: Int,
-) derives Schema
+) derives JsonCodec, Schema
 
 final case class StoredTaskReportRow(
   id: String,
@@ -65,7 +65,7 @@ final case class StoredTaskReportRow(
   reportType: String,
   content: String,
   createdAt: Instant,
-) derives Schema
+) derives JsonCodec, Schema
 
 final case class StoredTaskArtifactRow(
   id: String,
@@ -74,4 +74,4 @@ final case class StoredTaskArtifactRow(
   key: String,
   value: String,
   createdAt: Instant,
-) derives Schema
+) derives JsonCodec, Schema

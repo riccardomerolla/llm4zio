@@ -3,123 +3,68 @@ package cli
 import java.nio.file.Paths
 
 import zio.*
-import zio.schema.Schema
+import zio.json.*
+import zio.stream.ZStream
 
-import _root_.config.entity.{ CustomAgent, Setting, SettingValue, Workflow }
-import conversation.entity.{ Conversation, ConversationEvent }
-import io.github.riccardomerolla.zio.eclipsestore.config.{ EclipseStoreConfig, StorageTarget }
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
-import io.github.riccardomerolla.zio.eclipsestore.schema.{ SchemaBinaryCodec, TypedStoreLive }
-import io.github.riccardomerolla.zio.eclipsestore.service.{ EclipseStoreService, LifecycleCommand }
-import io.github.riccardomerolla.zio.eclipsestore.schema.TypedStore
-import shared.store.{ ConfigStoreRef, DataStoreRef, DataStoreService, StoreConfig }
-import taskrun.entity.{ TaskRun, TaskRunEvent }
-
-private val cliDataStoreHandlers =
-  SchemaBinaryCodec.handlers(Schema[String])
-    ++ SchemaBinaryCodec.handlers(Schema[TaskRun])
-    ++ SchemaBinaryCodec.handlers(Schema[TaskRunEvent])
-    ++ SchemaBinaryCodec.handlers(Schema[Conversation])
-    ++ SchemaBinaryCodec.handlers(Schema[ConversationEvent])
-
-private val cliConfigStoreHandlers =
-  SchemaBinaryCodec.handlers(Schema[String])
-    ++ SchemaBinaryCodec.handlers(Schema[SettingValue])
-    ++ SchemaBinaryCodec.handlers(Schema[Setting])
-    ++ SchemaBinaryCodec.handlers(Schema[Workflow])
-    ++ SchemaBinaryCodec.handlers(Schema[CustomAgent])
+import io.github.riccardomerolla.zio.eclipsestore.service.{ NativeLocal, ObjectStore, StorageOps }
+import shared.store.{ DataStoreService, KVRoot, NativeLocalKVStore, StoreConfig }
 
 object CliStoreModule:
 
   /** CLI-local ConfigStoreService — mirrors ConfigStoreModule.ConfigStoreService from root. */
-  trait ConfigStoreService extends TypedStore:
-    def rawStore: EclipseStoreService
-
+  trait ConfigStoreService:
+    def store[K, V](key: K, value: V)(using JsonEncoder[V]): IO[EclipseStoreError, Unit]
+    def fetch[K, V](key: K)(using JsonDecoder[V]): IO[EclipseStoreError, Option[V]]
+    def remove[K](key: K): IO[EclipseStoreError, Unit]
+    def fetchAll[V](using JsonDecoder[V]): IO[EclipseStoreError, List[V]]
+    def streamAll[V](using JsonDecoder[V]): ZStream[Any, EclipseStoreError, V]
+    def streamKeys[K]: ZStream[Any, EclipseStoreError, K]
+    def checkpoint: IO[EclipseStoreError, Unit]
+    def fetchRawJson(key: String): IO[EclipseStoreError, Option[String]]
 
   // ── Data store ─────────────────────────────────────────────────────────────
 
-  private val withDataShutdownCheckpoint: ZLayer[DataStoreRef, EclipseStoreError, DataStoreRef] =
+  val dataStoreLive: ZLayer[StoreConfig, EclipseStoreError, DataStoreService] =
     ZLayer.scoped {
       for
-        ref <- ZIO.service[DataStoreRef]
-        svc  = ref.raw
-        _   <- ZIO.logInfo("CLI data store: loading persisted roots...") *>
-                 svc.reloadRoots *>
-                 ZIO.logInfo("CLI data store: roots loaded.")
-        _   <- ZIO.addFinalizer(
-                 ZIO.logInfo("CLI data store: performing shutdown checkpoint...") *>
-                   svc.maintenance(LifecycleCommand.Checkpoint).ignoreLogged *>
-                   ZIO.logInfo("CLI data store: shutdown checkpoint complete.")
-               )
-      yield ref
+        cfg          <- ZIO.service[StoreConfig]
+        snapshotPath  = Paths.get(cfg.dataStorePath).resolve("data-store.snapshot.json")
+        _            <- ZIO.attemptBlocking(java.nio.file.Files.createDirectories(snapshotPath.getParent))
+                          .mapError(e => EclipseStoreError.StorageError(s"mkdir ${snapshotPath.getParent}", Some(e)))
+        _            <- ZIO.logInfo(s"CLI data store: initializing NativeLocal at $snapshotPath")
+        env          <- NativeLocal.live[KVRoot](snapshotPath, KVRoot.dataDescriptor).build
+        objectStore   = env.get[ObjectStore[KVRoot]]
+        ops           = env.get[StorageOps[KVRoot]]
+        _            <- ops.scheduleCheckpoints(Schedule.fixed(5.seconds))
+        _            <- ZIO.addFinalizer(
+                          ZIO.logInfo("CLI data store: performing shutdown checkpoint...") *>
+                            objectStore.checkpoint.ignoreLogged *>
+                            ZIO.logInfo("CLI data store: shutdown checkpoint complete.")
+                        )
+      yield NativeLocalKVStore(objectStore)
     }
-
-  private val toDataStoreRef: ZLayer[EclipseStoreService, Nothing, DataStoreRef] =
-    ZLayer.fromFunction(DataStoreRef.apply)
-
-  private val baseDataStore: ZLayer[StoreConfig, EclipseStoreError, DataStoreRef] =
-    ZLayer.fromZIO(
-      ZIO.serviceWith[StoreConfig] { cfg =>
-        EclipseStoreConfig(
-          storageTarget = StorageTarget.FileSystem(Paths.get(cfg.dataStorePath)),
-          autoCheckpointInterval = Some(java.time.Duration.ofSeconds(5L)),
-          customTypeHandlers = cliDataStoreHandlers,
-        )
-      }
-    ) >>> EclipseStoreService.live.fresh >>> toDataStoreRef >>> withDataShutdownCheckpoint
-
-  private val toDataStoreService: ZLayer[DataStoreRef, Nothing, DataStoreService] =
-    ZLayer.fromFunction { (ref: DataStoreRef) =>
-      val esc = ref.raw
-      val ts  = TypedStoreLive(esc)
-      new DataStoreService:
-        export ts.{ store, fetch, remove, fetchAll, streamAll, typedRoot, storePersist }
-        override val rawStore: EclipseStoreService = esc
-    }
-
-  val dataStoreLive: ZLayer[StoreConfig, EclipseStoreError, DataStoreService] =
-    baseDataStore >>> toDataStoreService
 
   // ── Config store ───────────────────────────────────────────────────────────
 
-  private val withConfigShutdownCheckpoint: ZLayer[ConfigStoreRef, EclipseStoreError, ConfigStoreRef] =
+  val configStoreLive: ZLayer[StoreConfig, EclipseStoreError, ConfigStoreService] =
     ZLayer.scoped {
       for
-        ref <- ZIO.service[ConfigStoreRef]
-        svc  = ref.raw
-        _   <- ZIO.logInfo("CLI config store: loading persisted roots...") *>
-                 svc.reloadRoots *>
-                 ZIO.logInfo("CLI config store: roots loaded.")
-        _   <- ZIO.addFinalizer(
-                 ZIO.logInfo("CLI config store: performing shutdown checkpoint...") *>
-                   svc.maintenance(LifecycleCommand.Checkpoint).ignoreLogged *>
-                   ZIO.logInfo("CLI config store: shutdown checkpoint complete.")
-               )
-      yield ref
+        cfg          <- ZIO.service[StoreConfig]
+        snapshotPath  = Paths.get(cfg.configStorePath).resolve("config-store.snapshot.json")
+        _            <- ZIO.attemptBlocking(java.nio.file.Files.createDirectories(snapshotPath.getParent))
+                          .mapError(e => EclipseStoreError.StorageError(s"mkdir ${snapshotPath.getParent}", Some(e)))
+        _            <- ZIO.logInfo(s"CLI config store: initializing NativeLocal at $snapshotPath")
+        env          <- NativeLocal.live[KVRoot](snapshotPath, KVRoot.configDescriptor).build
+        objectStore   = env.get[ObjectStore[KVRoot]]
+        ops           = env.get[StorageOps[KVRoot]]
+        _            <- ops.scheduleCheckpoints(Schedule.fixed(5.seconds))
+        _            <- ZIO.addFinalizer(
+                          ZIO.logInfo("CLI config store: performing shutdown checkpoint...") *>
+                            objectStore.checkpoint.ignoreLogged *>
+                            ZIO.logInfo("CLI config store: shutdown checkpoint complete.")
+                        )
+      yield new ConfigStoreService:
+        private val delegate = NativeLocalKVStore(objectStore)
+        export delegate.{ store, fetch, remove, fetchAll, streamAll, streamKeys, checkpoint, fetchRawJson }
     }
-
-  private val toConfigStoreRef: ZLayer[EclipseStoreService, Nothing, ConfigStoreRef] =
-    ZLayer.fromFunction(ConfigStoreRef.apply)
-
-  private val baseConfigStore: ZLayer[StoreConfig, EclipseStoreError, ConfigStoreRef] =
-    ZLayer.fromZIO(
-      ZIO.serviceWith[StoreConfig] { cfg =>
-        EclipseStoreConfig(
-          storageTarget = StorageTarget.FileSystem(Paths.get(cfg.configStorePath)),
-          autoCheckpointInterval = Some(java.time.Duration.ofSeconds(5L)),
-          customTypeHandlers = cliConfigStoreHandlers,
-        )
-      }
-    ) >>> EclipseStoreService.live.fresh >>> toConfigStoreRef >>> withConfigShutdownCheckpoint
-
-  private val toConfigStoreService: ZLayer[ConfigStoreRef, Nothing, ConfigStoreService] =
-    ZLayer.fromFunction { (ref: ConfigStoreRef) =>
-      val esc = ref.raw
-      val ts  = TypedStoreLive(esc)
-      new ConfigStoreService:
-        export ts.{ store, fetch, remove, fetchAll, streamAll, typedRoot, storePersist }
-        override val rawStore: EclipseStoreService = esc
-    }
-
-  val configStoreLive: ZLayer[StoreConfig, EclipseStoreError, ConfigStoreService] =
-    baseConfigStore >>> toConfigStoreService

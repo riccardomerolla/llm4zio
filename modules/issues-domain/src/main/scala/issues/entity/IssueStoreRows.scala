@@ -2,6 +2,7 @@ package issues.entity
 
 import java.time.Instant
 
+import zio.json.*
 import zio.schema.{ Schema, derived }
 
 final case class AgentIssueRow(
@@ -24,7 +25,7 @@ final case class AgentIssueRow(
   resultData: Option[String],
   createdAt: Instant,
   updatedAt: Instant,
-) derives Schema
+) derives JsonCodec, Schema
 
 final case class AgentAssignmentRow(
   id: String,
@@ -36,4 +37,4 @@ final case class AgentAssignmentRow(
   completedAt: Option[Instant],
   executionLog: Option[String],
   result: Option[String],
-) derives Schema
+) derives JsonCodec, Schema

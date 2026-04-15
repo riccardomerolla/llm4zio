@@ -4,12 +4,10 @@ import java.time.Instant
 
 import zio.*
 import zio.json.*
-import zio.schema.Schema
 
 import conversation.entity.api.*
 import conversation.entity.{ ChatMessageRow, ConversationRow, SessionContextRow }
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
-import io.github.riccardomerolla.zio.eclipsestore.service.{ LifecycleCommand, LifecycleStatus }
 import shared.errors.PersistenceError
 import shared.store.*
 
@@ -151,10 +149,9 @@ final case class ChatRepositoryLive(
   /** Scan all keys with the given prefix using streamKeys and fetch each value. This is the same approach
     * ConfigRepositoryES uses — no secondary index needed.
     */
-  private def fetchAllByPrefix[V](prefix: String, op: String)(using Schema[V]): IO[PersistenceError, List[V]] =
+  private def fetchAllByPrefix[V](prefix: String, op: String)(using JsonDecoder[V]): IO[PersistenceError, List[V]] =
     for
-      keys <- dataStore.rawStore
-                .streamKeys[String]
+      keys <- dataStore.streamKeys[String]
                 .filter(_.startsWith(prefix))
                 .runCollect
                 .map(_.toList)
@@ -173,7 +170,8 @@ final case class ChatRepositoryLive(
               }
     yield vals.flatten
 
-  private def requireExists[V](key: String, table: String, op: String)(using Schema[V]): IO[PersistenceError, Unit] =
+  private def requireExists[V](key: String, table: String, op: String)(using JsonDecoder[V])
+    : IO[PersistenceError, Unit] =
     dataStore.fetch[String, V](key).mapError(storeErr(op)).flatMap {
       case None    =>
         ZIO
@@ -195,13 +193,7 @@ final case class ChatRepositoryLive(
       .flatMap(id => if id == 0L then nextId else ZIO.succeed(id))
 
   private def checkpoint(op: String): IO[PersistenceError, Unit] =
-    for
-      status <- dataStore.rawStore.maintenance(LifecycleCommand.Checkpoint).mapError(storeErr(op))
-      _      <- status match
-                  case LifecycleStatus.Failed(msg) =>
-                    ZIO.fail(PersistenceError.QueryFailed(op, s"checkpoint failed: $msg"))
-                  case _                           => ZIO.unit
-    yield ()
+    dataStore.checkpoint.mapError(storeErr(op))
 
   private def storeErr(op: String)(e: EclipseStoreError): PersistenceError =
     PersistenceError.QueryFailed(op, e.toString)

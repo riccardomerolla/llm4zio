@@ -14,7 +14,6 @@ sbt run               # start the gateway (http://localhost:8080)
 sbt fmt               # format: scalafmt + scalafix
 sbt check             # check formatting without modifying
 sbt assembly          # build fat JAR
-sbt --client test     # faster: connect to running sbt server
 
 # Per-module commands (faster feedback loops):
 sbt boardDomain/compile       # compile only board-domain + its deps

@@ -17,8 +17,7 @@ final case class AgentEventStoreES(dataStore: DataStoreService) extends EventSto
 
   private def listEventKeys(id: AgentId, op: String): IO[PersistenceError, List[(Long, String)]] =
     val prefix = eventPrefix(id)
-    dataStore.rawStore
-      .streamKeys[String]
+    dataStore.streamKeys[String]
       .filter(_.startsWith(prefix))
       .runCollect
       .mapError(storeErr(op))

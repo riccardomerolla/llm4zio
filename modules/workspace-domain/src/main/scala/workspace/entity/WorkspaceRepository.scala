@@ -112,8 +112,7 @@ final case class WorkspaceRepositoryES(
 
   /** Collect all distinct workspace IDs that have at least one event. */
   private def allWorkspaceIds(op: String): IO[PersistenceError, List[String]] =
-    dataStore.rawStore
-      .streamKeys[String]
+    dataStore.streamKeys[String]
       .filter(_.startsWith(wsAllEventsPrefix))
       .runCollect
       .mapError(storeErr(op))
@@ -131,8 +130,7 @@ final case class WorkspaceRepositoryES(
 
   /** Collect all distinct run IDs that have at least one event. */
   private def allRunIds(op: String): IO[PersistenceError, List[String]] =
-    dataStore.rawStore
-      .streamKeys[String]
+    dataStore.streamKeys[String]
       .filter(_.startsWith(runAllEventsPrefix))
       .runCollect
       .mapError(storeErr(op))
@@ -159,8 +157,7 @@ final case class WorkspaceRepositoryES(
   // ── helpers ───────────────────────────────────────────────────────────────
 
   private def nextSeq(prefix: String, op: String): IO[PersistenceError, Long] =
-    dataStore.rawStore
-      .streamKeys[String]
+    dataStore.streamKeys[String]
       .filter(_.startsWith(prefix))
       .runCollect
       .mapError(storeErr(op))
@@ -176,8 +173,7 @@ final case class WorkspaceRepositoryES(
     prefix: String,
     op: String,
   ): IO[PersistenceError, List[E]] =
-    dataStore.rawStore
-      .streamKeys[String]
+    dataStore.streamKeys[String]
       .filter(_.startsWith(prefix))
       .runCollect
       .mapError(storeErr(op))
@@ -209,8 +205,7 @@ final case class WorkspaceRepositoryES(
       )
 
   private def removeByPrefix(prefix: String, op: String): IO[PersistenceError, Unit] =
-    dataStore.rawStore
-      .streamKeys[String]
+    dataStore.streamKeys[String]
       .filter(_.startsWith(prefix))
       .runCollect
       .mapError(storeErr(op))

@@ -46,8 +46,7 @@ final case class PlanRepositoryES(
     eventStore.events(id)
 
   override def list: IO[PersistenceError, List[Plan]] =
-    dataStore.rawStore
-      .streamKeys[String]
+    dataStore.streamKeys[String]
       .filter(_.startsWith(snapshotPrefix))
       .runCollect
       .mapError(storeErr("listPlans"))

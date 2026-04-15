@@ -5,7 +5,6 @@ import java.time.Instant
 import zio.*
 
 import _root_.config.entity.*
-import io.github.riccardomerolla.zio.eclipsestore.service.{ LifecycleCommand, LifecycleStatus }
 import shared.errors.PersistenceError
 import CliStoreModule.ConfigStoreService
 
@@ -22,19 +21,11 @@ final case class CliConfigRepository(configStore: ConfigStoreService) extends Co
     PersistenceError.QueryFailed(op, e.toString)
 
   private def checkpointConfigStore(op: String): IO[PersistenceError, Unit] =
-    configStore.rawStore
-      .maintenance(LifecycleCommand.Checkpoint)
-      .mapError(err => PersistenceError.QueryFailed(op, err.toString))
-      .flatMap {
-        case LifecycleStatus.Failed(message) =>
-          ZIO.fail(PersistenceError.QueryFailed(op, s"Config store checkpoint failed: $message"))
-        case _                               => ZIO.unit
-      }
+    configStore.checkpoint.mapError(err => PersistenceError.QueryFailed(op, err.toString))
 
   override def getAllSettings: IO[PersistenceError, List[SettingRow]] =
     for
-      keys <- configStore.rawStore
-                .streamKeys[String]
+      keys <- configStore.streamKeys[String]
                 .filter(_.startsWith("setting:"))
                 .runCollect
                 .mapError(storeErr("getAllSettings"))
@@ -63,8 +54,7 @@ final case class CliConfigRepository(configStore: ConfigStoreService) extends Co
 
   override def deleteSettingsByPrefix(prefix: String): IO[PersistenceError, Unit] =
     for
-      keys <- configStore.rawStore
-                .streamKeys[String]
+      keys <- configStore.streamKeys[String]
                 .filter(k => k.startsWith(s"setting:$prefix"))
                 .runCollect
                 .mapError(storeErr("deleteSettingsByPrefix"))

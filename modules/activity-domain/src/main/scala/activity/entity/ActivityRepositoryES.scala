@@ -34,8 +34,7 @@ final case class ActivityRepositoryES(
       )
 
   private def fetchAllEvents(op: String): IO[PersistenceError, List[ActivityEvent]] =
-    dataStore.rawStore
-      .streamKeys[String]
+    dataStore.streamKeys[String]
       .filter(_.startsWith("event:"))
       .runCollect
       .mapError(storeErr(op))

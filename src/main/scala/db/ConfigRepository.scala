@@ -5,7 +5,6 @@ import java.time.Instant
 import zio.*
 
 import _root_.config.entity.*
-import io.github.riccardomerolla.zio.eclipsestore.service.{ LifecycleCommand, LifecycleStatus }
 import shared.errors.PersistenceError
 import shared.ids.Ids.AgentId
 import shared.store.ConfigStoreModule
@@ -30,8 +29,7 @@ final case class ConfigRepositoryES(
 
   def getAllSettings: IO[PersistenceError, List[SettingRow]] =
     for
-      keys <- configStore.rawStore
-                .streamKeys[String]
+      keys <- configStore.streamKeys[String]
                 .filter(_.startsWith("setting:"))
                 .runCollect
                 .mapError(storeErr("getAllSettings"))
@@ -60,8 +58,7 @@ final case class ConfigRepositoryES(
 
   def deleteSettingsByPrefix(prefix: String): IO[PersistenceError, Unit] =
     for
-      keys <- configStore.rawStore
-                .streamKeys[String]
+      keys <- configStore.streamKeys[String]
                 .filter(k => k.startsWith(s"setting:$prefix"))
                 .runCollect
                 .mapError(storeErr("deleteSettingsByPrefix"))
@@ -202,10 +199,9 @@ final case class ConfigRepositoryES(
       ZIO.fail(PersistenceError.QueryFailed(context, s"Custom agent name '$name' conflicts with built-in agent name"))
     else ZIO.unit
 
-  private def fetchAllByPrefix[V](prefix: String, op: String)(using zio.schema.Schema[V])
+  private def fetchAllByPrefix[V](prefix: String, op: String)(using zio.json.JsonDecoder[V])
     : IO[PersistenceError, List[V]] =
-    configStore.rawStore
-      .streamKeys[String]
+    configStore.streamKeys[String]
       .filter(_.startsWith(prefix))
       .runCollect
       .mapError(storeErr(op))
@@ -282,12 +278,4 @@ final case class ConfigRepositoryES(
     SettingRow(key = key, value = raw, updatedAt = Instant.EPOCH)
 
   private def checkpointConfigStore(op: String): IO[PersistenceError, Unit] =
-    for
-      status <- configStore.rawStore
-                  .maintenance(LifecycleCommand.Checkpoint)
-                  .mapError(err => PersistenceError.QueryFailed(op, err.toString))
-      _      <- status match
-                  case LifecycleStatus.Failed(message) =>
-                    ZIO.fail(PersistenceError.QueryFailed(op, s"Config store checkpoint failed: $message"))
-                  case _                               => ZIO.unit
-    yield ()
+    configStore.checkpoint.mapError(err => PersistenceError.QueryFailed(op, err.toString))

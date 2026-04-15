@@ -10,7 +10,6 @@ import conversation.entity.ConversationRow
 import conversation.entity.api.{ ChatConversation, ConversationEntry, MessageType, SenderType }
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.error.GigaMapError
-import io.github.riccardomerolla.zio.eclipsestore.service.LifecycleCommand
 import shared.store.*
 
 object ChatRepositoryESSpec extends ZIOSpecDefault:
@@ -249,18 +248,18 @@ object ChatRepositoryESSpec extends ZIOSpecDefault:
               _ <- TestClock.adjust(6.seconds)
               _ <- ZIO.logInfo("Checkpoint interval passed, checking disk persistence")
 
-              // Verify data exists on disk by checking directory structure
-              dataStoreExists  <- ZIO.attemptBlocking(Files.exists(dataStorePath))
-              channelDirExists <- ZIO.attemptBlocking {
-                                    val channelDir = dataStorePath.resolve("channel_0")
-                                    Files.exists(channelDir)
-                                  }
+              // Verify data exists on disk — NativeLocal writes a single JSON snapshot file
+              dataStoreExists <- ZIO.attemptBlocking(Files.exists(dataStorePath))
+              snapshotExists  <- ZIO.attemptBlocking {
+                                   val snapshotFile = dataStorePath.resolve("data-store.snapshot.json")
+                                   Files.exists(snapshotFile)
+                                 }
 
               // Reload repository and verify data persists
               reloadedConv <- repo.getConversation(conversationId)
             yield assertTrue(
               dataStoreExists,
-              channelDirExists,
+              snapshotExists,
               reloadedConv.isDefined,
               reloadedConv.exists(_.title == "checkpoint test"),
             )
@@ -290,8 +289,7 @@ object ChatRepositoryESSpec extends ZIOSpecDefault:
                                   createdBy = Some("spec"),
                                 )
                               )
-                    _      <- dataStore.rawStore.maintenance(LifecycleCommand.Checkpoint)
-                    _      <- dataStore.rawStore.reloadRoots
+                    _      <- dataStore.checkpoint
                   yield convId
               }
               .provideLayer(layerForWithConversations(dir))
@@ -302,7 +300,7 @@ object ChatRepositoryESSpec extends ZIOSpecDefault:
               .service[ChatRepository]
               .zipWith(ZIO.service[DataStoreService])((repo, dataStore) => (repo, dataStore))
               .flatMap((repo, dataStore) =>
-                dataStore.rawStore.reloadRoots *> repo
+                dataStore.checkpoint *> repo
                   .getConversation(convId)
                   .someOrFail(())
                   .retry(Schedule.spaced(100.millis) && Schedule.recurs(50))

@@ -31,8 +31,7 @@ final case class SpecificationEventStoreES(
     loadEvents(id, Some(sequence + 1L))
 
   private def nextSequence(id: SpecificationId, op: String): IO[PersistenceError, Long] =
-    dataStore.rawStore
-      .streamKeys[String]
+    dataStore.streamKeys[String]
       .filter(_.startsWith(prefix(id)))
       .runCollect
       .mapError(storeErr(op))
@@ -42,8 +41,7 @@ final case class SpecificationEventStoreES(
     id: SpecificationId,
     minSequence: Option[Long],
   ): IO[PersistenceError, List[SpecificationEvent]] =
-    dataStore.rawStore
-      .streamKeys[String]
+    dataStore.streamKeys[String]
       .filter(_.startsWith(prefix(id)))
       .runCollect
       .mapError(storeErr("loadSpecificationEvents"))

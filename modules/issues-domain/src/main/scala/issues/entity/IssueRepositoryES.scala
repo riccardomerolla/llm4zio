@@ -87,8 +87,7 @@ final case class IssueRepositoryES(
     eventStore.events(id)
 
   override def list(filter: IssueFilter): IO[PersistenceError, List[AgentIssue]] =
-    dataStore.rawStore
-      .streamKeys[String]
+    dataStore.streamKeys[String]
       .filter(_.startsWith(snapshotPrefix))
       .runCollect
       .mapError(storeErr("listIssues"))
@@ -128,8 +127,7 @@ final case class IssueRepositoryES(
     for
       _         <- ZIO.logDebug(s"Deleting issue ${id.value}: removing snapshot and events")
       _         <- dataStore.remove[String](snapshotKey(id)).mapError(storeErr("deleteIssueSnapshot"))
-      eventKeys <- dataStore.rawStore
-                     .streamKeys[String]
+      eventKeys <- dataStore.streamKeys[String]
                      .filter(_.startsWith(eventPrefix))
                      .runCollect
                      .mapError(storeErr("deleteIssueEvents"))

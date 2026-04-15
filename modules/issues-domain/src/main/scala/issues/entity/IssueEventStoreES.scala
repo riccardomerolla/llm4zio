@@ -21,8 +21,7 @@ final case class IssueEventStoreES(dataStore: DataStoreService) extends EventSto
 
   private def listEventKeys(id: IssueId, op: String): IO[PersistenceError, List[(Long, String)]] =
     val prefix = eventPrefix(id)
-    dataStore.rawStore
-      .streamKeys[String]
+    dataStore.streamKeys[String]
       .filter(_.startsWith(prefix))
       .runCollect
       .mapError(storeErr(op))

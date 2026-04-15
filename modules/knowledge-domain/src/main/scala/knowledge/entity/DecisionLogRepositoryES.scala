@@ -78,8 +78,7 @@ final case class DecisionLogRepositoryES(
     }
 
   private def listAll: IO[PersistenceError, List[DecisionLog]] =
-    dataStore.rawStore
-      .streamKeys[String]
+    dataStore.streamKeys[String]
       .filter(_.startsWith(snapshotPrefix))
       .runCollect
       .mapError(storeErr("listDecisionLogs"))

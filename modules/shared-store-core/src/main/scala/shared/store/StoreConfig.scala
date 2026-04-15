@@ -1,17 +1,5 @@
 package shared.store
 
-import io.github.riccardomerolla.zio.eclipsestore.service.EclipseStoreService
-
-object StoreTag:
-  trait Config
-  trait Data
-
-type ConfigStore = EclipseStoreService & StoreTag.Config
-type DataStore   = EclipseStoreService & StoreTag.Data
-
-final case class ConfigStoreRef(raw: EclipseStoreService)
-final case class DataStoreRef(raw: EclipseStoreService)
-
 final case class StoreConfig(
   configStorePath: String,
   dataStorePath: String,

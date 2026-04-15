@@ -13,7 +13,6 @@ import _root_.config.entity.*
 import activity.control.ActivityHub
 import activity.entity.{ ActivityEvent, ActivityEventType, ActivityRepository }
 import conversation.entity.ConversationRow
-import io.github.riccardomerolla.zio.eclipsestore.service.LifecycleCommand
 import llm4zio.core.*
 import llm4zio.tools.{ AnyTool, JsonSchema, ToolRegistry }
 import shared.errors.PersistenceError
@@ -222,7 +221,7 @@ object SettingsControllerSpec extends ZIOSpecDefault:
                                           createdBy = Some("spec"),
                                         ),
                                       )
-                        _          <- dataStore.rawStore.maintenance(LifecycleCommand.Checkpoint)
+                        _          <- dataStore.checkpoint
                         response   <- controller.routes.runZIO(Request.get("/api/store/debug-data"))
                         body       <- response.body.asString
                       yield assertTrue(

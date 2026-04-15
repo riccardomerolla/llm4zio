@@ -41,7 +41,7 @@ final case class StoredWorkflowRow(
   isBuiltin: Boolean,
   createdAt: Instant,
   updatedAt: Instant,
-) derives Schema
+) derives JsonCodec, Schema
 
 final case class StoredCustomAgentRow(
   id: String,
@@ -53,4 +53,4 @@ final case class StoredCustomAgentRow(
   enabled: Boolean,
   createdAt: Instant,
   updatedAt: Instant,
-) derives Schema
+) derives JsonCodec, Schema

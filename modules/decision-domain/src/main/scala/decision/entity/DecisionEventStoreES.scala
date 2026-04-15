@@ -30,16 +30,14 @@ final case class DecisionEventStoreES(dataStore: DataStoreService)
     loadEvents(id, Some(sequence + 1L))
 
   private def nextSequence(id: DecisionId, op: String): IO[PersistenceError, Long] =
-    dataStore.rawStore
-      .streamKeys[String]
+    dataStore.streamKeys[String]
       .filter(_.startsWith(prefix(id)))
       .runCollect
       .mapError(storeErr(op))
       .map(keys => keys.flatMap(_.stripPrefix(prefix(id)).toLongOption).maxOption.map(_ + 1L).getOrElse(1L))
 
   private def loadEvents(id: DecisionId, minSequence: Option[Long]): IO[PersistenceError, List[DecisionEvent]] =
-    dataStore.rawStore
-      .streamKeys[String]
+    dataStore.streamKeys[String]
       .filter(_.startsWith(prefix(id)))
       .runCollect
       .mapError(storeErr("loadDecisionEvents"))

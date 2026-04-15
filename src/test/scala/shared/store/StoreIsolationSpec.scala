@@ -8,7 +8,6 @@ import zio.test.*
 
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.error.GigaMapError
-import io.github.riccardomerolla.zio.eclipsestore.service.LifecycleCommand
 import issues.entity.AgentIssueRow
 import issues.entity.api.{ IssuePriority, IssueStatus }
 
@@ -77,10 +76,10 @@ object StoreIsolationSpec extends ZIOSpecDefault:
                           updatedAt = now,
                         ),
                       )
-            _      <- config.rawStore.maintenance(LifecycleCommand.Checkpoint)
-            _      <- data.rawStore.maintenance(LifecycleCommand.Checkpoint)
-            cKeys  <- config.rawStore.streamKeys[String].runCollect.map(_.toSet)
-            dKeys  <- data.rawStore.streamKeys[String].runCollect.map(_.toSet)
+            _      <- config.checkpoint
+            _      <- data.checkpoint
+            cKeys  <- config.streamKeys[String].runCollect.map(_.toSet)
+            dKeys  <- data.streamKeys[String].runCollect.map(_.toSet)
           yield assertTrue(
             cKeys.contains("setting:isolation"),
             !cKeys.contains("issue:1"),

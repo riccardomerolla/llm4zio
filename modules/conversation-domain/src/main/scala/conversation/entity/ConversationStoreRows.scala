@@ -2,6 +2,7 @@ package conversation.entity
 
 import java.time.Instant
 
+import zio.json.*
 import zio.schema.{ Schema, derived }
 
 final case class ConversationRow(
@@ -16,7 +17,7 @@ final case class ConversationRow(
   createdBy: Option[String],
   projectId: Option[String] = None,
   workspaceId: Option[String] = None,
-) derives Schema
+) derives JsonCodec, Schema
 
 final case class ChatMessageRow(
   id: String,
@@ -28,11 +29,11 @@ final case class ChatMessageRow(
   metadata: Option[String],
   createdAt: Instant,
   updatedAt: Instant,
-) derives Schema
+) derives JsonCodec, Schema
 
 final case class SessionContextRow(
   channelName: String,
   sessionKey: String,
   contextJson: String,
   updatedAt: Instant,
-) derives Schema
+) derives JsonCodec, Schema

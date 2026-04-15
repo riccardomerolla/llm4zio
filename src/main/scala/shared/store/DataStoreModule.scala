@@ -3,68 +3,29 @@ package shared.store
 import java.nio.file.Paths
 
 import zio.*
-import zio.schema.Schema
 
-import conversation.entity.{ Conversation, ConversationEvent }
-import io.github.riccardomerolla.zio.eclipsestore.config.{ EclipseStoreConfig, StorageTarget }
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
-import io.github.riccardomerolla.zio.eclipsestore.schema.{ SchemaBinaryCodec, TypedStoreLive }
-import io.github.riccardomerolla.zio.eclipsestore.service.{ EclipseStoreService, LifecycleCommand }
-import taskrun.entity.{ TaskRun, TaskRunEvent }
-private val dataStoreHandlers =
-  SchemaBinaryCodec.handlers(Schema[String])
-    ++ SchemaBinaryCodec.handlers(Schema[TaskRun])
-    ++ SchemaBinaryCodec.handlers(Schema[TaskRunEvent])
-    ++ SchemaBinaryCodec.handlers(Schema[Conversation])
-    ++ SchemaBinaryCodec.handlers(Schema[ConversationEvent])
-  // WorkspaceEvent and WorkspaceRunEvent are stored as JSON strings (via zio-json),
-  // not as typed EclipseStore objects, to avoid the default binary serializer
-  // creating fresh case-object instances that break Scala pattern matching on restart.
+import io.github.riccardomerolla.zio.eclipsestore.service.{ NativeLocal, ObjectStore, StorageOps }
 
 object DataStoreModule:
 
-  /** Shutdown-checkpoint finalizer layered on top of the data-store service. */
-  private val withShutdownCheckpoint: ZLayer[DataStoreRef, EclipseStoreError, DataStoreRef] =
+  val live: ZLayer[StoreConfig, EclipseStoreError, DataStoreService] =
     ZLayer.scoped {
       for
-        ref <- ZIO.service[DataStoreRef]
-        svc  = ref.raw
-        _   <- ZIO.logInfo("Data store: loading persisted roots...") *>
-                 svc.reloadRoots *>
-                 ZIO.logInfo("Data store: roots loaded.")
-        _   <- ZIO.addFinalizer(
-                 ZIO.logInfo("Data store: performing shutdown checkpoint...") *>
-                   svc.maintenance(LifecycleCommand.Checkpoint).ignoreLogged *>
-                   ZIO.logInfo("Data store: shutdown checkpoint complete.")
-               )
-      yield ref
+        cfg         <- ZIO.service[StoreConfig]
+        snapshotPath = Paths.get(cfg.dataStorePath).resolve("data-store.snapshot.json")
+        _           <- ZIO.attemptBlocking(java.nio.file.Files.createDirectories(snapshotPath.getParent))
+                         .mapError(e => EclipseStoreError.StorageError(s"mkdir ${snapshotPath.getParent}", Some(e)))
+        _           <- ZIO.logInfo(s"Data store: initializing NativeLocal at $snapshotPath")
+        env         <- NativeLocal.live[KVRoot](snapshotPath, KVRoot.dataDescriptor).build
+        objectStore  = env.get[ObjectStore[KVRoot]]
+        ops          = env.get[StorageOps[KVRoot]]
+        _           <- ops.scheduleCheckpoints(Schedule.fixed(5.seconds))
+        _           <- ZIO.addFinalizer(
+                         ZIO.logInfo("Data store: performing shutdown checkpoint...") *>
+                           objectStore.checkpoint.ignoreLogged *>
+                           ZIO.logInfo("Data store: shutdown checkpoint complete.")
+                       )
+        _           <- ZIO.logInfo("Data store: NativeLocal ready.")
+      yield NativeLocalKVStore(objectStore)
     }
-
-  private val toDataStoreRef: ZLayer[EclipseStoreService, Nothing, DataStoreRef] =
-    ZLayer.fromFunction(DataStoreRef.apply)
-
-  val baseStore: ZLayer[StoreConfig, EclipseStoreError, DataStoreRef] =
-    ZLayer.fromZIO(
-      ZIO.serviceWith[StoreConfig] { cfg =>
-        EclipseStoreConfig(
-          storageTarget = StorageTarget.FileSystem(Paths.get(cfg.dataStorePath)),
-          autoCheckpointInterval = Some(java.time.Duration.ofSeconds(5L)),
-          customTypeHandlers = dataStoreHandlers,
-        )
-      }
-    ) >>> EclipseStoreService.live.fresh >>> toDataStoreRef >>> withShutdownCheckpoint
-
-  val dataStore: ZLayer[DataStoreRef, Nothing, DataStoreService] =
-    ZLayer.fromFunction { (ref: DataStoreRef) =>
-      val esc = ref.raw
-      val ts  = TypedStoreLive(esc)
-      new DataStoreService:
-        export ts.{ store, fetch, remove, fetchAll, streamAll, typedRoot, storePersist }
-        override val rawStore: EclipseStoreService = esc
-    }
-
-  /** Simplified live layer — produces only DataStoreService (no memory/vector infrastructure). Memory/vector
-    * infrastructure is now provided separately by MemoryStoreModule.
-    */
-  val live: ZLayer[StoreConfig, EclipseStoreError, DataStoreService] =
-    baseStore >>> dataStore

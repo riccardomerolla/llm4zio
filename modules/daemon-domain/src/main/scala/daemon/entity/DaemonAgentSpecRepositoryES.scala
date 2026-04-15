@@ -29,8 +29,7 @@ final case class DaemonAgentSpecRepositoryES(
     listAll.map(_.filter(_.projectId == projectId))
 
   override def listAll: IO[PersistenceError, List[DaemonAgentSpec]] =
-    dataStore.rawStore
-      .streamKeys[String]
+    dataStore.streamKeys[String]
       .filter(_.startsWith("daemon-spec:"))
       .runCollect
       .mapError(storeErr("listDaemonSpecs"))

@@ -52,7 +52,7 @@ object ConfigStoreModuleSpec extends ZIOSpecDefault:
           (for
             config <- ZIO.service[ConfigStoreModule.ConfigStoreService]
             _      <- config.store("setting:restart-check", "ok")
-            keys   <- config.rawStore.streamKeys[String].filter(_.startsWith("setting:")).runCollect
+            keys   <- config.streamKeys[String].filter(_.startsWith("setting:")).runCollect
             loaded <- config.fetch[String, String]("setting:restart-check")
           yield assertTrue(
             keys.contains("setting:restart-check"),

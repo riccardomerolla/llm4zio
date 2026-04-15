@@ -32,8 +32,7 @@ final case class EvolutionProposalEventStoreES(
     loadEvents(id, Some(sequence + 1L))
 
   private def nextSequence(id: EvolutionProposalId, op: String): IO[PersistenceError, Long] =
-    dataStore.rawStore
-      .streamKeys[String]
+    dataStore.streamKeys[String]
       .filter(_.startsWith(prefix(id)))
       .runCollect
       .mapError(storeErr(op))
@@ -43,8 +42,7 @@ final case class EvolutionProposalEventStoreES(
     id: EvolutionProposalId,
     minSequence: Option[Long],
   ): IO[PersistenceError, List[EvolutionProposalEvent]] =
-    dataStore.rawStore
-      .streamKeys[String]
+    dataStore.streamKeys[String]
       .filter(_.startsWith(prefix(id)))
       .runCollect
       .mapError(storeErr("loadEvolutionProposalEvents"))

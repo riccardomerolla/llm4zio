@@ -24,8 +24,7 @@ final case class AnalysisEventStoreES(dataStore: DataStoreService)
 
   private def listEventKeys(id: AnalysisDocId, op: String): IO[PersistenceError, List[(Long, String)]] =
     val prefix = eventPrefix(id)
-    dataStore.rawStore
-      .streamKeys[String]
+    dataStore.streamKeys[String]
       .filter(_.startsWith(prefix))
       .runCollect
       .mapError(storeErr(op))

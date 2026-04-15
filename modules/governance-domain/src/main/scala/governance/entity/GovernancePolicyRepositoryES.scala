@@ -98,8 +98,7 @@ final case class GovernancePolicyRepositoryES(
       }
 
   private def listAll: IO[PersistenceError, List[GovernancePolicy]] =
-    dataStore.rawStore
-      .streamKeys[String]
+    dataStore.streamKeys[String]
       .filter(_.startsWith(snapshotPrefix))
       .runCollect
       .mapError(storeErr("listGovernancePolicies"))

@@ -65,8 +65,7 @@ final case class AgentRepositoryES(
       }
 
   override def list(includeDeleted: Boolean = false): IO[PersistenceError, List[Agent]] =
-    dataStore.rawStore
-      .streamKeys[String]
+    dataStore.streamKeys[String]
       .filter(_.startsWith(snapshotPrefix))
       .runCollect
       .mapError(err => PersistenceError.QueryFailed("listAgents", err.toString))
