@@ -24,7 +24,28 @@ final case class ApiConnectorConfig(
   acquireTimeout: Duration = 30.seconds,
   temperature: Option[Double] = None,
   maxTokens: Option[Int] = None,
-) extends ConnectorConfig derives JsonCodec
+) extends ConnectorConfig derives JsonCodec:
+
+  def toLlmConfig: LlmConfig = LlmConfig(
+    provider = connectorId match
+      case ConnectorId.OpenAI    => LlmProvider.OpenAI
+      case ConnectorId.Anthropic => LlmProvider.Anthropic
+      case ConnectorId.GeminiApi => LlmProvider.GeminiApi
+      case ConnectorId.LmStudio  => LlmProvider.LmStudio
+      case ConnectorId.Ollama    => LlmProvider.Ollama
+      case ConnectorId.Mock      => LlmProvider.Mock
+      case _                     => LlmProvider.OpenAI,
+    model = model.getOrElse(""),
+    baseUrl = baseUrl,
+    apiKey = apiKey,
+    timeout = timeout,
+    maxRetries = maxRetries,
+    requestsPerMinute = requestsPerMinute,
+    burstSize = burstSize,
+    acquireTimeout = acquireTimeout,
+    temperature = temperature,
+    maxTokens = maxTokens,
+  )
 
 final case class CliConnectorConfig(
   connectorId: ConnectorId,
