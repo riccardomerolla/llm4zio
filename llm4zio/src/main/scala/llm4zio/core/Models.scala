@@ -17,6 +17,42 @@ object LlmProvider:
     case LlmProvider.OpenCode  => Some("http://localhost:4096")
     case LlmProvider.Mock      => None
 
+  extension (p: LlmProvider)
+    def toConnectorId: ConnectorId = p match
+      case LlmProvider.GeminiCli => ConnectorId.GeminiCli
+      case LlmProvider.GeminiApi => ConnectorId.GeminiApi
+      case LlmProvider.OpenAI    => ConnectorId.OpenAI
+      case LlmProvider.Anthropic => ConnectorId.Anthropic
+      case LlmProvider.LmStudio  => ConnectorId.LmStudio
+      case LlmProvider.Ollama    => ConnectorId.Ollama
+      case LlmProvider.OpenCode  => ConnectorId.OpenCode
+      case LlmProvider.Mock      => ConnectorId.Mock
+
+case class ConnectorId(value: String) derives JsonCodec
+
+object ConnectorId:
+  // API
+  val OpenAI: ConnectorId    = ConnectorId("openai")
+  val Anthropic: ConnectorId = ConnectorId("anthropic")
+  val GeminiApi: ConnectorId = ConnectorId("gemini-api")
+  val LmStudio: ConnectorId  = ConnectorId("lm-studio")
+  val Ollama: ConnectorId    = ConnectorId("ollama")
+  // CLI
+  val ClaudeCli: ConnectorId = ConnectorId("claude-cli")
+  val GeminiCli: ConnectorId = ConnectorId("gemini-cli")
+  val OpenCode: ConnectorId  = ConnectorId("opencode")
+  val Codex: ConnectorId     = ConnectorId("codex")
+  val Copilot: ConnectorId   = ConnectorId("copilot")
+  // Test
+  val Mock: ConnectorId      = ConnectorId("mock")
+
+  val allApi: List[ConnectorId] = List(OpenAI, Anthropic, GeminiApi, LmStudio, Ollama)
+  val allCli: List[ConnectorId] = List(ClaudeCli, GeminiCli, OpenCode, Codex, Copilot)
+  val all: List[ConnectorId]    = allApi ++ allCli :+ Mock
+
+enum ConnectorKind derives JsonCodec:
+  case Api, Cli
+
 enum MessageRole derives JsonCodec:
   case System, User, Assistant, Tool
 
