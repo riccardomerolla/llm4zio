@@ -33,46 +33,42 @@ object AgentDialogueRunnerSpec extends ZIOSpecDefault:
         ),
       )
 
-      for
-        repo       <- makeStubRepo
-        hub        <- Hub.unbounded[DialogueEvent]
-        events     <- Ref.make(List.empty[DialogueEvent])
-        sub        <- hub.subscribe
-        _          <- ZStream.fromQueue(sub).tap(e => events.update(_ :+ e)).runDrain.fork
-        turns      <- Ref.make(Map.empty[ConversationId, TurnState])
-        promises   <-
-          Ref.make(Map.empty[(ConversationId, String), Promise[PersistenceError, conversation.entity.Message]])
-        coordinator = AgentDialogueCoordinatorLive(repo, hub, turns, promises)
-        reviewerLlm = makeMockLlm(reviewerResponses)
-        runner      = AgentDialogueRunnerLive(coordinator, repo, reviewerLlm)
-        convId     <- coordinator.startDialogue(
-                        issueId,
-                        reviewerParticipant,
-                        authorParticipant,
-                        "Code review",
-                        "Please review changes in PR #42",
-                      )
-        // Fork reviewer runner — it blocks on awaitTurn("reviewer-agent")
-        revFiber   <- runner.runDialogue(convId, AgentRole.Reviewer, maxTurns = 10).fork
-        _          <- ZIO.yieldNow
-        // Simulate author's first response (turn is author's after startDialogue)
-        _          <- coordinator.respondInDialogue(convId, "author-agent", "Thanks for the feedback, working on it")
-        // Reviewer wakes, calls LLM (critique), respondInDialogue → turn goes to author
-        // Wait for reviewer to finish responding by polling turn
-        _          <- waitForTurn(turns, convId, "author-agent")
-        // Simulate author's second response (fix)
-        _          <- coordinator.respondInDialogue(convId, "author-agent", "Fixed the null check in commit abc123")
-        // Reviewer wakes, calls LLM (approval, concluded=true), concludes dialogue
-        revOutcome <- revFiber.join
-        _          <- ZIO.sleep(50.millis)
-        conv       <- repo.get(convId)
-        collected  <- events.get
-      yield assertTrue(
-        revOutcome == DialogueOutcome.Approved("No issues found"),
-        conv.messages.size == 5,
-        collected.exists(_.isInstanceOf[DialogueEvent.DialogueStarted]),
-        collected.exists(_.isInstanceOf[DialogueEvent.DialogueConcluded]),
-      )
+      ZIO.scoped {
+        for
+          repo       <- makeStubRepo
+          hub        <- Hub.unbounded[DialogueEvent]
+          events     <- Ref.make(List.empty[DialogueEvent])
+          sub        <- hub.subscribe
+          _          <- ZStream.fromQueue(sub).tap(e => events.update(_ :+ e)).runDrain.forkScoped
+          turns      <- Ref.make(Map.empty[ConversationId, TurnState])
+          promises   <-
+            Ref.make(Map.empty[(ConversationId, String), Promise[PersistenceError, conversation.entity.Message]])
+          coordinator = AgentDialogueCoordinatorLive(repo, hub, turns, promises)
+          reviewerLlm = makeMockLlm(reviewerResponses)
+          runner      = AgentDialogueRunnerLive(coordinator, repo, reviewerLlm)
+          convId     <- coordinator.startDialogue(
+                          issueId,
+                          reviewerParticipant,
+                          authorParticipant,
+                          "Code review",
+                          "Please review changes in PR #42",
+                        )
+          revFiber   <- runner.runDialogue(convId, AgentRole.Reviewer, maxTurns = 10).fork
+          _          <- ZIO.yieldNow
+          _          <- coordinator.respondInDialogue(convId, "author-agent", "Thanks for the feedback, working on it")
+          _          <- waitForTurn(turns, convId, "author-agent")
+          _          <- coordinator.respondInDialogue(convId, "author-agent", "Fixed the null check in commit abc123")
+          revOutcome <- revFiber.join
+          _          <- ZIO.sleep(50.millis)
+          conv       <- repo.get(convId)
+          collected  <- events.get
+        yield assertTrue(
+          revOutcome == DialogueOutcome.Approved("No issues found"),
+          conv.messages.size == 5,
+          collected.exists(_.isInstanceOf[DialogueEvent.DialogueStarted]),
+          collected.exists(_.isInstanceOf[DialogueEvent.DialogueConcluded]),
+        )
+      }
     },
     test("review requests rework") {
       val reviewerResponses = List(
@@ -84,42 +80,44 @@ object AgentDialogueRunnerSpec extends ZIOSpecDefault:
         ),
       )
 
-      for
-        repo       <- makeStubRepo
-        hub        <- Hub.unbounded[DialogueEvent]
-        events     <- Ref.make(List.empty[DialogueEvent])
-        sub        <- hub.subscribe
-        _          <- ZStream.fromQueue(sub).tap(e => events.update(_ :+ e)).runDrain.fork
-        turns      <- Ref.make(Map.empty[ConversationId, TurnState])
-        promises   <-
-          Ref.make(Map.empty[(ConversationId, String), Promise[PersistenceError, conversation.entity.Message]])
-        coordinator = AgentDialogueCoordinatorLive(repo, hub, turns, promises)
-        reviewerLlm = makeMockLlm(reviewerResponses)
-        runner      = AgentDialogueRunnerLive(coordinator, repo, reviewerLlm)
-        convId     <- coordinator.startDialogue(
-                        issueId,
-                        reviewerParticipant,
-                        authorParticipant,
-                        "Code review",
-                        "Reviewing error handling changes",
-                      )
-        revFiber   <- runner.runDialogue(convId, AgentRole.Reviewer, maxTurns = 10).fork
-        _          <- ZIO.yieldNow
-        _          <- coordinator.respondInDialogue(convId, "author-agent", "I see, let me address that")
-        _          <- waitForTurn(turns, convId, "author-agent")
-        _          <- coordinator.respondInDialogue(convId, "author-agent", "Updated the error handling")
-        revOutcome <- revFiber.join
-        _          <- ZIO.sleep(50.millis)
-        conv       <- repo.get(convId)
-        collected  <- events.get
-      yield assertTrue(
-        revOutcome == DialogueOutcome.ChangesRequested(List("Fix error handling", "Add tests")),
-        conv.messages.size == 5,
-        collected.exists {
-          case DialogueEvent.DialogueConcluded(_, DialogueOutcome.ChangesRequested(_), _) => true
-          case _                                                                          => false
-        },
-      )
+      ZIO.scoped {
+        for
+          repo       <- makeStubRepo
+          hub        <- Hub.unbounded[DialogueEvent]
+          events     <- Ref.make(List.empty[DialogueEvent])
+          sub        <- hub.subscribe
+          _          <- ZStream.fromQueue(sub).tap(e => events.update(_ :+ e)).runDrain.forkScoped
+          turns      <- Ref.make(Map.empty[ConversationId, TurnState])
+          promises   <-
+            Ref.make(Map.empty[(ConversationId, String), Promise[PersistenceError, conversation.entity.Message]])
+          coordinator = AgentDialogueCoordinatorLive(repo, hub, turns, promises)
+          reviewerLlm = makeMockLlm(reviewerResponses)
+          runner      = AgentDialogueRunnerLive(coordinator, repo, reviewerLlm)
+          convId     <- coordinator.startDialogue(
+                          issueId,
+                          reviewerParticipant,
+                          authorParticipant,
+                          "Code review",
+                          "Reviewing error handling changes",
+                        )
+          revFiber   <- runner.runDialogue(convId, AgentRole.Reviewer, maxTurns = 10).fork
+          _          <- ZIO.yieldNow
+          _          <- coordinator.respondInDialogue(convId, "author-agent", "I see, let me address that")
+          _          <- waitForTurn(turns, convId, "author-agent")
+          _          <- coordinator.respondInDialogue(convId, "author-agent", "Updated the error handling")
+          revOutcome <- revFiber.join
+          _          <- ZIO.sleep(50.millis)
+          conv       <- repo.get(convId)
+          collected  <- events.get
+        yield assertTrue(
+          revOutcome == DialogueOutcome.ChangesRequested(List("Fix error handling", "Add tests")),
+          conv.messages.size == 5,
+          collected.exists {
+            case DialogueEvent.DialogueConcluded(_, DialogueOutcome.ChangesRequested(_), _) => true
+            case _                                                                          => false
+          },
+        )
+      }
     },
     test("max turns reached concludes dialogue") {
       // With maxTurns=2, reviewer takes 2 turns then concludes with MaxTurnsReached
@@ -128,44 +126,44 @@ object AgentDialogueRunnerSpec extends ZIOSpecDefault:
         AgentResponse("Still not right", concluded = false, outcome = None),
       )
 
-      for
-        repo       <- makeStubRepo
-        hub        <- Hub.unbounded[DialogueEvent]
-        events     <- Ref.make(List.empty[DialogueEvent])
-        sub        <- hub.subscribe
-        _          <- ZStream.fromQueue(sub).tap(e => events.update(_ :+ e)).runDrain.fork
-        turns      <- Ref.make(Map.empty[ConversationId, TurnState])
-        promises   <-
-          Ref.make(Map.empty[(ConversationId, String), Promise[PersistenceError, conversation.entity.Message]])
-        coordinator = AgentDialogueCoordinatorLive(repo, hub, turns, promises)
-        reviewerLlm = makeMockLlm(reviewerResponses)
-        runner      = AgentDialogueRunnerLive(coordinator, repo, reviewerLlm)
-        convId     <- coordinator.startDialogue(
-                        issueId,
-                        reviewerParticipant,
-                        authorParticipant,
-                        "Code review",
-                        "Reviewing complex changes",
-                      )
-        revFiber   <- runner.runDialogue(convId, AgentRole.Reviewer, maxTurns = 2).fork
-        _          <- ZIO.yieldNow
-        // Author responds — triggers reviewer turn 1 (critique)
-        _          <- coordinator.respondInDialogue(convId, "author-agent", "Working on it")
-        _          <- waitForTurn(turns, convId, "author-agent")
-        // Author responds — triggers reviewer turn 2 (max turns reached)
-        _          <- coordinator.respondInDialogue(convId, "author-agent", "Updated again")
-        revOutcome <- revFiber.join
-        _          <- ZIO.sleep(50.millis)
-        conv       <- repo.get(convId)
-        collected  <- events.get
-      yield assertTrue(
-        revOutcome == DialogueOutcome.MaxTurnsReached(2),
-        conv.messages.size == 5,
-        collected.exists {
-          case DialogueEvent.DialogueConcluded(_, DialogueOutcome.MaxTurnsReached(_), _) => true
-          case _                                                                         => false
-        },
-      )
+      ZIO.scoped {
+        for
+          repo       <- makeStubRepo
+          hub        <- Hub.unbounded[DialogueEvent]
+          events     <- Ref.make(List.empty[DialogueEvent])
+          sub        <- hub.subscribe
+          _          <- ZStream.fromQueue(sub).tap(e => events.update(_ :+ e)).runDrain.forkScoped
+          turns      <- Ref.make(Map.empty[ConversationId, TurnState])
+          promises   <-
+            Ref.make(Map.empty[(ConversationId, String), Promise[PersistenceError, conversation.entity.Message]])
+          coordinator = AgentDialogueCoordinatorLive(repo, hub, turns, promises)
+          reviewerLlm = makeMockLlm(reviewerResponses)
+          runner      = AgentDialogueRunnerLive(coordinator, repo, reviewerLlm)
+          convId     <- coordinator.startDialogue(
+                          issueId,
+                          reviewerParticipant,
+                          authorParticipant,
+                          "Code review",
+                          "Reviewing complex changes",
+                        )
+          revFiber   <- runner.runDialogue(convId, AgentRole.Reviewer, maxTurns = 2).fork
+          _          <- ZIO.yieldNow
+          _          <- coordinator.respondInDialogue(convId, "author-agent", "Working on it")
+          _          <- waitForTurn(turns, convId, "author-agent")
+          _          <- coordinator.respondInDialogue(convId, "author-agent", "Updated again")
+          revOutcome <- revFiber.join
+          _          <- ZIO.sleep(50.millis)
+          conv       <- repo.get(convId)
+          collected  <- events.get
+        yield assertTrue(
+          revOutcome == DialogueOutcome.MaxTurnsReached(2),
+          conv.messages.size == 5,
+          collected.exists {
+            case DialogueEvent.DialogueConcluded(_, DialogueOutcome.MaxTurnsReached(_), _) => true
+            case _                                                                         => false
+          },
+        )
+      }
     },
   ) @@ TestAspect.withLiveClock @@ TestAspect.timeout(30.seconds)
 
