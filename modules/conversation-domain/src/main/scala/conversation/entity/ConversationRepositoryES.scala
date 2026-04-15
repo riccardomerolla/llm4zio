@@ -1,6 +1,7 @@
 package conversation.entity
 
 import zio.*
+import zio.json.*
 
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import shared.errors.PersistenceError
@@ -26,7 +27,7 @@ final case class ConversationRepositoryES(
       conversation <- ZIO
                         .fromEither(Conversation.fromEvents(events))
                         .mapError(msg => PersistenceError.SerializationFailed(s"conversation:${id.value}", msg))
-      _            <- dataStore.store(snapshotKey(id), conversation).mapError(storeErr("storeConversationSnapshot"))
+      _            <- dataStore.store(snapshotKey(id), conversation.toJson).mapError(storeErr("storeConversationSnapshot"))
       _            <- ZIO.logDebug(
                         s"Stored conversation snapshot: ${snapshotKey(id)} [state=${conversation.state.getClass.getSimpleName}]"
                       )
@@ -39,13 +40,18 @@ final case class ConversationRepositoryES(
     yield ()
 
   override def get(id: ConversationId): IO[PersistenceError, Conversation] =
-    dataStore.fetch[String, Conversation](snapshotKey(id)).mapError(storeErr("getConversationSnapshot")).flatMap {
-      case Some(conversation) =>
-        ZIO.logDebug(
-          s"Fetched conversation snapshot from store: ${snapshotKey(id)} [state=${conversation.state.getClass.getSimpleName}]"
-        ) *>
-          ZIO.succeed(conversation)
-      case None               =>
+    dataStore.fetch[String, String](snapshotKey(id)).mapError(storeErr("getConversationSnapshot")).flatMap {
+      case Some(json) =>
+        json.fromJson[Conversation] match
+          case Right(conversation) =>
+            ZIO.logDebug(
+              s"Fetched conversation snapshot from store: ${snapshotKey(id)} [state=${conversation.state.getClass.getSimpleName}]"
+            ) *>
+              ZIO.succeed(conversation)
+          case Left(decodeErr)     =>
+            ZIO.logWarning(s"Corrupt snapshot for conversation:${id.value}, rebuilding: $decodeErr") *>
+              rebuildSnapshot(id)
+      case None       =>
         ZIO.logDebug(s"No snapshot found for conversation:${id.value} — rebuilding from events") *>
           eventStore.events(id).flatMap {
             case Nil => ZIO.fail(PersistenceError.NotFound("conversation", id.value))
@@ -62,7 +68,10 @@ final case class ConversationRepositoryES(
       .flatMap { keys =>
         ZIO.logDebug(s"Scanning ${keys.size} conversation snapshot key(s) from store") *>
           ZIO.foreach(keys.toList)(key =>
-            dataStore.fetch[String, Conversation](key).mapError(storeErr("listConversations"))
+            dataStore
+              .fetch[String, String](key)
+              .mapError(storeErr("listConversations"))
+              .map(_.flatMap(_.fromJson[Conversation].toOption))
           )
       }
       .map(_.flatten)

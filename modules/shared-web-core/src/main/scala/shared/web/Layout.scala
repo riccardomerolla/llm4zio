@@ -85,6 +85,18 @@ object Layout:
         JsResources.inlineModuleScript("/static/client/components/ab-keyboard-shortcuts.js"),
         frag(Components.dsScripts*),
         script(raw("""
+          |document.body.addEventListener('htmx:responseError', function(evt) {
+          |  var xhr = evt.detail.xhr;
+          |  var status = xhr ? xhr.status : 0;
+          |  var path = (evt.detail.pathInfo && evt.detail.pathInfo.requestPath) || 'unknown';
+          |  var body = (xhr && xhr.responseText) ? xhr.responseText.substring(0, 200) : '';
+          |  if (typeof AbToast !== 'undefined') {
+          |    AbToast.show({ type: 'error', message: 'Request failed (' + status + '): ' + body, duration: 8000 });
+          |  }
+          |  console.error('[htmx] HTTP ' + status + ' ' + path + ': ' + body);
+          |});
+          |""".stripMargin)),
+        script(raw("""
           |function setProjectFilter(projectId) {
           |  localStorage.setItem('project-filter', projectId);
           |  var maxAge = projectId === 'all' ? 0 : 86400;

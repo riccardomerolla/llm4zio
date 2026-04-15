@@ -29,13 +29,13 @@ object WebServer:
                          )
     yield new WebServer {
       override val routes: Routes[Any, Response] =
-        coreRoutes.routes ++
+        (coreRoutes.routes ++
           configRoutes.routes ++
           gatewayRoutes.routes ++
           workspaceRoutes.routes ++
           adeRoutes.routes ++
           devCatalogRoutes ++
-          staticRoutes
+          staticRoutes) @@ shared.web.RequestLoggingMiddleware.live
     }
   }
   private val defaultShutdownTimeout = java.time.Duration.ofSeconds(3L)
