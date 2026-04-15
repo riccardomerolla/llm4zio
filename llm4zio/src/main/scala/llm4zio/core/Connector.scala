@@ -36,16 +36,14 @@ final case class HealthStatus(
 enum InteractionSupport derives JsonCodec:
   case InteractiveStdin, ContinuationOnly
 
-sealed trait CliSandbox derives JsonCodec
-
-object CliSandbox:
-  case object None                             extends CliSandbox
-  final case class NetworkAllowList(hosts: List[String]) extends CliSandbox
+enum CliSandbox derives JsonCodec:
+  case Docker(image: String, mount: Boolean = true, network: Option[String] = None)
+  case Podman, SeatbeltMacOS, Runsc, Lxc
 
 final case class CliContext(
   worktreePath: String,
   repoPath: String,
   envVars: Map[String, String] = Map.empty,
-  sandbox: Option[CliSandbox] = scala.None,
-  turnLimit: Option[Int] = scala.None,
+  sandbox: Option[CliSandbox] = None,
+  turnLimit: Option[Int] = None,
 )
