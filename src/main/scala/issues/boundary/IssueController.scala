@@ -1018,6 +1018,12 @@ final case class IssueControllerLive(
           workspacesTimed  <- workspacesFiber.join
           issuesTimed      <- issuesFiber.join
           workReportsTimed <- workReportsFiber.join
+          _                <- ZIO.logInfo(
+                                s"[boardFragment] workspaces=${workspacesTimed.value.size} " +
+                                  s"rawIssues=${issuesTimed.value.size} " +
+                                  s"projectFilter=$projectFilter " +
+                                  s"wsIds=${workspacesTimed.value.map(_.id)}"
+                              )
           projectWsIds      = projectFilter match
                                 case project.entity.ProjectFilter.All         => None
                                 case project.entity.ProjectFilter.Selected(_) =>
@@ -1026,6 +1032,10 @@ final case class IssueControllerLive(
                                 case None      => issuesTimed.value
                                 case Some(ids) =>
                                   issuesTimed.value.filter(i => i.workspaceId.exists(ids.contains))
+          _                <- ZIO.logInfo(
+                                s"[boardFragment] scopedIssues=${scopedIssues.size} " +
+                                  s"statuses=${scopedIssues.groupBy(_.status).map((k, v) => s"$k=${v.size}")}"
+                              )
           dispatchTimed    <- timed("boardFragment.dispatchStatuses")(loadDispatchStatuses(scopedIssues))
           completedAt      <- Clock.nanoTime
           totalDurationMs   = nanosToMillis(completedAt - startedAt)
@@ -1320,18 +1330,27 @@ final case class IssueControllerLive(
     workspaceRepository
       .list
       .mapError(mapIssueRepoError)
+      .tap(all =>
+        ZIO.logInfo(
+          s"[loadWorkspaceBoardIssues] all workspaces=${all.size} ids=${all.map(_.id)} filter=$workspaceFilter"
+        )
+      )
       .map(_.filter(ws => workspaceFilter.forall(_.equalsIgnoreCase(ws.id))))
+      .tap(filtered => ZIO.logInfo(s"[loadWorkspaceBoardIssues] filtered workspaces=${filtered.size}"))
       .flatMap { workspaces =>
         ZIO.foreachPar(workspaces) { ws =>
           projectStorageService.projectRoot(ws.projectId).flatMap { root =>
-            ZIO
-              .foreachPar(boardColumns)(column => boardRepository.listIssues(root.toString, column))
-              .withParallelism(boardColumns.size)
-              .map(_.flatten.map(issue => boardToView(issue, ws.id)))
-              .catchAll {
-                case _: BoardError.BoardNotFound => ZIO.succeed(Nil)
-                case other                       => ZIO.fail(mapBoardError(other))
-              }
+            ZIO.logInfo(s"[loadWorkspaceBoardIssues] ws=${ws.id} projectRoot=$root") *>
+              ZIO
+                .foreachPar(boardColumns)(column => boardRepository.listIssues(root.toString, column))
+                .withParallelism(boardColumns.size)
+                .map(_.flatten.map(issue => boardToView(issue, ws.id)))
+                .tap(issues => ZIO.logInfo(s"[loadWorkspaceBoardIssues] ws=${ws.id} boardIssues=${issues.size}"))
+                .catchAll {
+                  case _: BoardError.BoardNotFound =>
+                    ZIO.logInfo(s"[loadWorkspaceBoardIssues] ws=${ws.id} BoardNotFound").as(Nil)
+                  case other                       => ZIO.fail(mapBoardError(other))
+                }
           }
         }.withParallelism(math.max(1, math.min(workspaces.size, 4))).map(_.flatten)
       }

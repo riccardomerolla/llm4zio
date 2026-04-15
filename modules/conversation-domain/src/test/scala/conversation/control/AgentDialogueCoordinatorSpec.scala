@@ -5,6 +5,7 @@ import java.time.Instant
 import zio.*
 import zio.test.*
 import zio.test.Assertion.*
+import zio.test.TestAspect.*
 
 import conversation.entity.*
 import shared.errors.PersistenceError
@@ -67,7 +68,7 @@ object AgentDialogueCoordinatorSpec extends ZIOSpecDefault:
         coordinator <- ZIO.service[AgentDialogueCoordinator]
         convId      <- coordinator.startDialogue(issueId, reviewer, author, "Review", "Please explain line 42")
         fiber       <- coordinator.awaitTurn(convId, "review-agent").fork
-        _           <- ZIO.yieldNow
+        _           <- awaitPromiseRegistered(convId, "review-agent")
         _           <- coordinator.respondInDialogue(convId, "code-agent", "Line 42 handles the edge case")
         message     <- fiber.join
       yield assertTrue(
@@ -80,7 +81,7 @@ object AgentDialogueCoordinatorSpec extends ZIOSpecDefault:
         coordinator <- ZIO.service[AgentDialogueCoordinator]
         convId      <- coordinator.startDialogue(issueId, reviewer, author, "Review", "Checking code")
         fiber       <- coordinator.awaitTurn(convId, "review-agent").fork
-        _           <- ZIO.yieldNow
+        _           <- awaitPromiseRegistered(convId, "review-agent")
         _           <- coordinator.concludeDialogue(convId, DialogueOutcome.Approved("All good"))
         result      <- fiber.await
       yield assert(result)(fails(isSubtype[PersistenceError.NotFound](anything)))
@@ -89,7 +90,7 @@ object AgentDialogueCoordinatorSpec extends ZIOSpecDefault:
     AgentDialogueCoordinator.live,
     stubConversationRepositoryLayer,
     stubDialogueEventBusLayer,
-  )
+  ) @@ timeout(30.seconds)
 
   // ── Stubs ──────────────────────────────────────────────────────────
 
@@ -123,3 +124,10 @@ object AgentDialogueCoordinatorSpec extends ZIOSpecDefault:
 
   private val stubDialogueEventBusLayer: ULayer[Hub[DialogueEvent]] =
     ZLayer.fromZIO(Hub.unbounded[DialogueEvent])
+
+  /** Yield until the forked `awaitTurn` fiber has registered its promise. */
+  private def awaitPromiseRegistered(convId: ConversationId, agentName: String): URIO[AgentDialogueCoordinator, Unit] =
+    ZIO.serviceWithZIO[AgentDialogueCoordinator] { coordinator =>
+      val live = coordinator.asInstanceOf[AgentDialogueCoordinatorLive]
+      live.promises.get.map(_.contains((convId, agentName))).repeatUntil(b => b).unit
+    }
