@@ -164,4 +164,16 @@ object GeminiApiProviderSpec extends ZIOSpecDefault:
         chunks.lastOption.flatMap(_.finishReason).contains("stop"),
       )
     },
+    test("healthCheck returns Healthy on success") {
+      val config     = LlmConfig(
+        provider = LlmProvider.GeminiApi,
+        model = "gemini-2.0-flash-exp",
+        baseUrl = Some("https://generativelanguage.googleapis.com"),
+        apiKey = Some("test-api-key"),
+      )
+      val httpClient = new MockHttpClient(shouldSucceed = true)
+      val provider   = GeminiApiProvider.make(config, httpClient)
+      for status <- provider.healthCheck
+      yield assertTrue(status.availability == Availability.Healthy)
+    },
   )

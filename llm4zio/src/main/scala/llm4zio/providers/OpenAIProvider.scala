@@ -8,8 +8,17 @@ import llm4zio.core.*
 import llm4zio.tools.{ AnyTool, JsonSchema }
 
 object OpenAIProvider:
-  def make(config: LlmConfig, httpClient: HttpClient): LlmService =
-    new LlmService:
+  def make(config: LlmConfig, httpClient: HttpClient): ApiConnector =
+    new ApiConnector:
+      override def id: ConnectorId = ConnectorId.OpenAI
+
+      override def healthCheck: IO[LlmError, HealthStatus] =
+        val start = java.lang.System.nanoTime()
+        isAvailable.map { available =>
+          val latency = Duration.fromNanos(java.lang.System.nanoTime() - start)
+          if available then HealthStatus(Availability.Healthy, AuthStatus.Valid, Some(latency))
+          else HealthStatus(Availability.Unhealthy, AuthStatus.Invalid, Some(latency))
+        }
       override def executeStream(prompt: String): ZStream[Any, LlmError, LlmChunk] =
         executeStreamRequest(List(ChatMessage(role = "user", content = prompt)))
 

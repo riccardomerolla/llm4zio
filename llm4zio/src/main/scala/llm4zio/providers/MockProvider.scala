@@ -15,8 +15,12 @@ import llm4zio.tools.{ AnyTool, JsonSchema }
   */
 object MockProvider:
 
-  def make(config: LlmConfig): LlmService =
-    new LlmService:
+  def make(config: LlmConfig): ApiConnector =
+    new ApiConnector:
+      override def id: ConnectorId = ConnectorId.Mock
+
+      override def healthCheck: IO[LlmError, HealthStatus] =
+        ZIO.succeed(HealthStatus(Availability.Healthy, AuthStatus.Valid, Some(0.millis)))
 
       override def executeStream(prompt: String): ZStream[Any, LlmError, LlmChunk] =
         val response = mockResponse(prompt)

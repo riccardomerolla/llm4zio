@@ -110,4 +110,16 @@ object OpenAIProviderSpec extends ZIOSpecDefault:
         response <- Streaming.collect(provider.executeStreamWithHistory(messages))
       } yield assertTrue(response.content == "Test response")
     },
+    test("healthCheck returns Healthy on success") {
+      val config     = LlmConfig(
+        provider = LlmProvider.OpenAI,
+        model = "gpt-4",
+        baseUrl = Some("https://api.openai.com/v1"),
+        apiKey = Some("test-api-key"),
+      )
+      val httpClient = new MockHttpClient(shouldSucceed = true)
+      val provider   = OpenAIProvider.make(config, httpClient)
+      for status <- provider.healthCheck
+      yield assertTrue(status.availability == Availability.Healthy)
+    },
   )

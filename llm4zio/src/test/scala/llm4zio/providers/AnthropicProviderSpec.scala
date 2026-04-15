@@ -91,4 +91,16 @@ object AnthropicProviderSpec extends ZIOSpecDefault:
         response <- Streaming.collect(provider.executeStreamWithHistory(messages))
       } yield assertTrue(response.content == "Test response")
     },
+    test("healthCheck returns Healthy on success") {
+      val config     = LlmConfig(
+        provider = LlmProvider.Anthropic,
+        model = "claude-3-5-sonnet-20241022",
+        baseUrl = Some("https://api.anthropic.com/v1"),
+        apiKey = Some("test-api-key"),
+      )
+      val httpClient = new MockHttpClient(shouldSucceed = true)
+      val provider   = AnthropicProvider.make(config, httpClient)
+      for status <- provider.healthCheck
+      yield assertTrue(status.availability == Availability.Healthy)
+    },
   )

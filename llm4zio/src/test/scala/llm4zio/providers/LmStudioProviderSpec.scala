@@ -187,6 +187,17 @@ object LmStudioProviderSpec extends ZIOSpecDefault:
         result <- provider.executeWithTools("test", List()).exit
       } yield assertTrue(result.isFailure)
     },
+    test("healthCheck returns Healthy on success") {
+      val config     = LlmConfig(
+        provider = LlmProvider.LmStudio,
+        model = "llama-2-7b",
+        baseUrl = Some("http://localhost:1234"),
+      )
+      val httpClient = new MockHttpClient(shouldSucceed = true)
+      val provider   = LmStudioProvider.make(config, httpClient)
+      for status <- provider.healthCheck
+      yield assertTrue(status.availability == Availability.Healthy)
+    },
     test("should include API key in headers if provided") {
       val config = LlmConfig(
         provider = LlmProvider.LmStudio,

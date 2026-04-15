@@ -199,4 +199,15 @@ object OllamaProviderSpec extends ZIOSpecDefault:
         result <- provider.executeWithTools("test", List()).exit
       } yield assertTrue(result.isFailure)
     },
+    test("healthCheck returns Healthy on success") {
+      val config     = LlmConfig(
+        provider = LlmProvider.Ollama,
+        model = "llama2",
+        baseUrl = Some("http://localhost:11434"),
+      )
+      val httpClient = new MockHttpClient(shouldSucceed = true)
+      val provider   = OllamaProvider.make(config, httpClient)
+      for status <- provider.healthCheck
+      yield assertTrue(status.availability == Availability.Healthy)
+    },
   )

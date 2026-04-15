@@ -21,8 +21,17 @@ import llm4zio.tools.{ AnyTool, JsonSchema }
   * OpenAI provider with LM Studio's /v1 endpoint.
   */
 object LmStudioProvider:
-  def make(config: LlmConfig, httpClient: HttpClient): LlmService =
-    new LlmService:
+  def make(config: LlmConfig, httpClient: HttpClient): ApiConnector =
+    new ApiConnector:
+      override def id: ConnectorId = ConnectorId.LmStudio
+
+      override def healthCheck: IO[LlmError, HealthStatus] =
+        val start = java.lang.System.nanoTime()
+        isAvailable.map { available =>
+          val latency = Duration.fromNanos(java.lang.System.nanoTime() - start)
+          if available then HealthStatus(Availability.Healthy, AuthStatus.Valid, Some(latency))
+          else HealthStatus(Availability.Unhealthy, AuthStatus.Invalid, Some(latency))
+        }
       override def executeStream(prompt: String): ZStream[Any, LlmError, LlmChunk] =
         executeStreamRequest(List(LmStudioMessage(role = "user", content = prompt)))
 
