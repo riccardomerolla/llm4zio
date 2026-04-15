@@ -9,8 +9,11 @@ import zio.test.*
 import board.boundary.*
 import board.control.*
 import board.entity.*
+import conversation.control.AgentDialogueCoordinator
+import conversation.entity.*
 import project.control.ProjectStorageService
-import shared.ids.Ids.BoardIssueId
+import shared.errors.PersistenceError
+import shared.ids.Ids.{ BoardIssueId, ConversationId }
 import shared.testfixtures.*
 import workspace.entity.*
 
@@ -148,6 +151,25 @@ object BoardControllerSpec extends ZIOSpecDefault:
       : UIO[java.nio.file.Path] =
       ZIO.succeed(java.nio.file.Paths.get(s"/tmp/test-project/workspaces/$workspaceId/.llm4zio/analysis"))
 
+  private object NoOpAgentDialogueCoordinator extends AgentDialogueCoordinator:
+    def startDialogue(
+      issueId: BoardIssueId,
+      initiator: AgentParticipant,
+      respondent: AgentParticipant,
+      topic: String,
+      openingMessage: String,
+    ): IO[PersistenceError, ConversationId] = ZIO.succeed(ConversationId("conv-stub"))
+    def respondInDialogue(conversationId: ConversationId, agentName: String, message: String)
+      : IO[PersistenceError, Unit] = ZIO.unit
+    def humanIntervene(conversationId: ConversationId, userId: String, message: String)
+      : IO[PersistenceError, Unit] = ZIO.unit
+    def concludeDialogue(conversationId: ConversationId, outcome: DialogueOutcome)
+      : IO[PersistenceError, Unit] = ZIO.unit
+    def currentTurn(conversationId: ConversationId): IO[PersistenceError, TurnState]                =
+      ZIO.fail(PersistenceError.NotFound("TurnState", conversationId.value))
+    def awaitTurn(conversationId: ConversationId, agentName: String): IO[PersistenceError, Message] =
+      ZIO.fail(PersistenceError.NotFound("TurnState", conversationId.value))
+
   private def controller(
     repo: BoardRepository,
     issueApprovalService: IssueApprovalService,
@@ -161,6 +183,7 @@ object BoardControllerSpec extends ZIOSpecDefault:
       StubProjectStorageService,
       issueApprovalService,
       issueTimelineService,
+      NoOpAgentDialogueCoordinator,
     )
 
   def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("BoardControllerSpec")(

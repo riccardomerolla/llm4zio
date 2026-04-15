@@ -27,6 +27,7 @@ final class WorkReportEventBus(
   def subscribeIssue: URIO[Scope, Dequeue[IssueEvent]]                     = issueHub.subscribe
   def subscribeParallelSession: URIO[Scope, Dequeue[ParallelSessionEvent]] = parallelSessionHub.subscribe
   def subscribeDialogue: URIO[Scope, Dequeue[DialogueEvent]]               = dialogueHub.subscribe
+  def getDialogueHub: Hub[DialogueEvent]                                   = dialogueHub
 
 object WorkReportEventBus:
 

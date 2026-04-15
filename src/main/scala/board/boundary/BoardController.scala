@@ -15,6 +15,8 @@ import board.control.{
   IssueTimelineService,
 }
 import board.entity.*
+import conversation.control.AgentDialogueCoordinator
+import conversation.entity.{ AgentParticipant, AgentRole }
 import project.control.ProjectStorageService
 import shared.ids.Ids.BoardIssueId
 import workspace.entity.WorkspaceRepository
@@ -26,7 +28,7 @@ object BoardController:
   val live
     : ZLayer[
       BoardRepository & BoardOrchestrator & WorkspaceRepository & IssueMarkdownParser & ProjectStorageService &
-        IssueApprovalService & IssueTimelineService,
+        IssueApprovalService & IssueTimelineService & AgentDialogueCoordinator,
       Nothing,
       BoardController,
     ] =
@@ -43,50 +45,55 @@ final case class BoardControllerLive(
   projectStorageService: ProjectStorageService,
   issueApprovalService: IssueApprovalService,
   issueTimelineService: IssueTimelineService,
+  agentDialogueCoordinator: AgentDialogueCoordinator,
 ) extends BoardController:
 
   override val routes: Routes[Any, Response] = Routes(
-    Method.GET / "board" / string("workspaceId")                                                   -> handler { (workspaceId: String, _: Request) =>
+    Method.GET / "board" / string("workspaceId")                                                     -> handler { (workspaceId: String, _: Request) =>
       renderBoardPage(workspaceId)
     },
-    Method.GET / "board" / string("workspaceId") / "fragment"                                      -> handler {
+    Method.GET / "board" / string("workspaceId") / "fragment"                                        -> handler {
       (workspaceId: String, _: Request) =>
         renderBoardFragment(workspaceId)
     },
-    Method.GET / "board" / string("workspaceId") / "issues" / string("issueId")                    -> handler {
+    Method.GET / "board" / string("workspaceId") / "issues" / string("issueId")                      -> handler {
       (workspaceId: String, issueId: String, _: Request) =>
         readBoardIssueId(issueId).flatMap(id => renderIssueDetail(workspaceId, id)).catchAll(boardErrorResponse)
     },
-    Method.POST / "board" / string("workspaceId") / "issues"                                       -> handler { (workspaceId: String, req: Request) =>
+    Method.POST / "board" / string("workspaceId") / "issues"                                         -> handler { (workspaceId: String, req: Request) =>
       createIssue(workspaceId, req).catchAll(boardErrorResponse)
     },
-    Method.PUT / "board" / string("workspaceId") / "issues" / string("issueId") / "move"           -> handler {
+    Method.PUT / "board" / string("workspaceId") / "issues" / string("issueId") / "move"             -> handler {
       (workspaceId: String, issueId: String, req: Request) =>
         moveIssue(workspaceId, issueId, req).catchAll(boardErrorResponse)
     },
-    Method.PUT / "board" / string("workspaceId") / "issues" / string("issueId")                    -> handler {
+    Method.PUT / "board" / string("workspaceId") / "issues" / string("issueId")                      -> handler {
       (workspaceId: String, issueId: String, req: Request) =>
         updateIssue(workspaceId, issueId, req).catchAll(boardErrorResponse)
     },
-    Method.DELETE / "board" / string("workspaceId") / "issues" / string("issueId")                 -> handler {
+    Method.DELETE / "board" / string("workspaceId") / "issues" / string("issueId")                   -> handler {
       (workspaceId: String, issueId: String, req: Request) =>
         deleteIssue(workspaceId, issueId, req).catchAll(boardErrorResponse)
     },
-    Method.POST / "board" / string("workspaceId") / "dispatch"                                     -> handler {
+    Method.POST / "board" / string("workspaceId") / "dispatch"                                       -> handler {
       (workspaceId: String, req: Request) =>
         dispatch(workspaceId, req).catchAll(boardErrorResponse)
     },
-    Method.POST / "board" / string("workspaceId") / "issues" / string("issueId") / "approve"       -> handler {
+    Method.POST / "board" / string("workspaceId") / "issues" / string("issueId") / "approve"         -> handler {
       (workspaceId: String, issueId: String, req: Request) =>
         approveIssue(workspaceId, issueId, req).catchAll(boardErrorResponse)
     },
-    Method.POST / "board" / string("workspaceId") / "issues" / string("issueId") / "quick-approve" -> handler {
+    Method.POST / "board" / string("workspaceId") / "issues" / string("issueId") / "quick-approve"   -> handler {
       (workspaceId: String, issueId: String, req: Request) =>
         quickApproveIssue(workspaceId, issueId, req).catchAll(boardErrorResponse)
     },
-    Method.POST / "board" / string("workspaceId") / "issues" / string("issueId") / "rework"        -> handler {
+    Method.POST / "board" / string("workspaceId") / "issues" / string("issueId") / "rework"          -> handler {
       (workspaceId: String, issueId: String, req: Request) =>
         reworkIssue(workspaceId, issueId, req).catchAll(boardErrorResponse)
+    },
+    Method.POST / "board" / string("workspaceId") / "issues" / string("issueId") / "start-ai-review" -> handler {
+      (workspaceId: String, issueId: String, _: Request) =>
+        startAiReview(workspaceId, issueId).catchAll(boardErrorResponse)
     },
   )
 
@@ -257,6 +264,34 @@ final case class BoardControllerLive(
       _        <- issueApprovalService.reworkIssue(workspaceId, issueId, comment, actor = "web")
       response <- ZIO.succeed(htmxRedirect(req, "/board"))
     yield response
+
+  private def startAiReview(workspaceId: String, issueIdRaw: String): IO[BoardError, Response] =
+    for
+      issueId        <- readBoardIssueId(issueIdRaw)
+      now            <- Clock.instant
+      reviewAgent     = AgentParticipant("review-agent", AgentRole.Reviewer, now)
+      authorAgent     = AgentParticipant("code-agent", AgentRole.Author, now)
+      conversationId <- agentDialogueCoordinator
+                          .startDialogue(
+                            issueId,
+                            reviewAgent,
+                            authorAgent,
+                            s"AI Code Review for $workspaceId/${issueId.value}",
+                            s"Starting automated code review for issue ${issueId.value}",
+                          )
+                          .mapError(err => BoardError.ParseError(s"Failed to start AI review: $err"))
+    yield htmlResponse(
+      s"""<div class="rounded-xl border border-green-400/20 bg-green-500/5 p-5">
+         |  <div class="flex items-center gap-3">
+         |    <div class="h-2 w-2 rounded-full bg-green-400 animate-pulse"></div>
+         |    <div class="space-y-1">
+         |      <h3 class="text-sm font-semibold text-white">AI Review In Progress</h3>
+         |      <p class="text-xs text-slate-400">A2A dialogue started between review-agent and code-agent</p>
+         |    </div>
+         |  </div>
+         |  <ab-a2a-panel class="mt-4" conversation-id="${conversationId.value}" issue-id="${issueId.value}"></ab-a2a-panel>
+         |</div>""".stripMargin
+    )
 
   private def resolveBoardPath(workspaceId: String): IO[BoardError, (workspace.entity.Workspace, String)] =
     for
