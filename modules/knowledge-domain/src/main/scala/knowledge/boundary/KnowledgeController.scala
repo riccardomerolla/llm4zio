@@ -7,7 +7,6 @@ import knowledge.control.KnowledgeGraphService
 import knowledge.entity.{ DecisionLogFilter, DecisionLogRepository }
 import memory.entity.{ MemoryFilter, MemoryKind, MemoryRepository, Scope }
 import shared.errors.PersistenceError
-import shared.web.KnowledgeView
 import workspace.entity.WorkspaceRepository
 
 trait KnowledgeController:

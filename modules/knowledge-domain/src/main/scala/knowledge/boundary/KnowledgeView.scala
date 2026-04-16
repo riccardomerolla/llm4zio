@@ -1,8 +1,9 @@
-package shared.web
+package knowledge.boundary
 
 import knowledge.entity.{ ArchitecturalContext, DecisionLog }
 import memory.entity.MemoryEntry
 import scalatags.Text.all.*
+import shared.web.Layout
 
 object KnowledgeView:
 
