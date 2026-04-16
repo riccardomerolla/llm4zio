@@ -156,4 +156,52 @@ object ConnectorConfigResolverSpec extends ZIOSpecDefault:
         config.model == Some("gemini-2.5-pro"),
       )
     },
+    test("mode toggle selects between coexisting api and cli agent overrides") {
+      val settings = Map(
+        "agent.dual.connector.api.id"    -> "anthropic",
+        "agent.dual.connector.api.model" -> "claude-opus-4",
+        "agent.dual.connector.cli.id"    -> "gemini-cli",
+        "agent.dual.connector.cli.model" -> "gemini-2.5-pro",
+      )
+      val apiRepo  = new StubConfigRepository(settings + ("agent.dual.connector.mode" -> "api"))
+      val cliRepo  = new StubConfigRepository(settings + ("agent.dual.connector.mode" -> "cli"))
+      for
+        apiConfig <- ConnectorConfigResolverLive(apiRepo).resolve(Some("dual"))
+        cliConfig <- ConnectorConfigResolverLive(cliRepo).resolve(Some("dual"))
+      yield assertTrue(
+        apiConfig.connectorId == ConnectorId.Anthropic,
+        apiConfig.model == Some("claude-opus-4"),
+        apiConfig.isInstanceOf[ApiConnectorConfig],
+        cliConfig.connectorId == ConnectorId.GeminiCli,
+        cliConfig.model == Some("gemini-2.5-pro"),
+        cliConfig.isInstanceOf[CliConnectorConfig],
+      )
+    },
+    test("flat agent keys beat global flat when no mode-scoped keys exist") {
+      val repo     = new StubConfigRepository(
+        Map(
+          // No mode-scoped keys at any layer
+          "connector.default.id"        -> "openai",
+          "connector.default.model"     -> "gpt-4o",
+          "agent.coder.connector.model" -> "custom-model",
+        )
+      )
+      val resolver = ConnectorConfigResolverLive(repo)
+      for config <- resolver.resolve(agentName = Some("coder"))
+      yield assertTrue(
+        config.connectorId == ConnectorId.OpenAI,
+        config.model == Some("custom-model"),
+      )
+    },
+    test("unrecognized connector id falls back to default (api mode → gemini-api)") {
+      val repo     = new StubConfigRepository(
+        Map("connector.default.id" -> "not-a-real-connector")
+      )
+      val resolver = ConnectorConfigResolverLive(repo)
+      for config <- resolver.resolve(agentName = None)
+      yield assertTrue(
+        config.connectorId == ConnectorId.GeminiCli,
+        config.isInstanceOf[CliConnectorConfig],
+      )
+    },
   )

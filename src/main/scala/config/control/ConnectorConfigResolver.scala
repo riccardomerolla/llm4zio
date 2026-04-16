@@ -27,17 +27,24 @@ final case class ConnectorConfigResolverLive(repo: ConfigRepository) extends Con
       globalSettings <- repo
                           .getSettingsByPrefix("connector.default.")
                           .map(_.map(row => row.key -> row.value).toMap)
-      legacySettings <- repo
-                          .getSettingsByPrefix("ai.")
-                          .map(_.map(row => row.key -> row.value).toMap)
-    yield buildConfig(agentSettings, globalSettings, legacySettings, agentName)
+      legacySettings     <- repo
+                              .getSettingsByPrefix("ai.")
+                              .map(_.map(row => row.key -> row.value).toMap)
+      (config, unparsed)  = buildConfig(agentSettings, globalSettings, legacySettings, agentName)
+      _                  <- ZIO.foreachDiscard(unparsed) { case (key, value) =>
+                              ZIO.logDebug(
+                                s"ConnectorConfigResolver: could not parse connector identifier '$value' " +
+                                  s"(from key '$key', agent=${agentName.getOrElse("<global>")}) — falling back"
+                              )
+                            }
+    yield config
 
   private def buildConfig(
     agentSettings: Map[String, String],
     globalSettings: Map[String, String],
     legacySettings: Map[String, String],
     agentName: Option[String],
-  ): ConnectorConfig =
+  ): (ConnectorConfig, List[(String, String)]) =
     // Strip prefixes for uniform key access
     val agent  = agentName.fold(Map.empty[String, String])(name =>
       agentSettings.map { case (k, v) => k.stripPrefix(s"agent.$name.connector.") -> v }
@@ -81,10 +88,19 @@ final case class ConnectorConfigResolverLive(repo: ConfigRepository) extends Con
 
     val defaultConnector = if mode == "cli" then ConnectorId.ClaudeCli else ConnectorId.GeminiCli
 
-    val connectorId = get("id")
-      .flatMap(parseConnectorId)
-      .orElse(get("provider").flatMap(parseConnectorId))
-      .orElse(get("connector").flatMap(parseConnectorId))
+    // Collect parse failures so the caller can log them at debug level.
+    val unparsed = List.newBuilder[(String, String)]
+    def tryParse(key: String, parser: String => Option[ConnectorId]): Option[ConnectorId] =
+      get(key) match
+        case None        => None
+        case Some(value) =>
+          val parsed = parser(value)
+          if parsed.isEmpty then unparsed += ((key, value))
+          parsed
+
+    val connectorId = tryParse("id", parseConnectorId)
+      .orElse(tryParse("provider", parseConnectorId))
+      .orElse(tryParse("connector", parseConnectorId))
       .orElse(get("provider").flatMap(parseLegacyProvider))
       .getOrElse(defaultConnector)
 
@@ -92,33 +108,35 @@ final case class ConnectorConfigResolverLive(repo: ConfigRepository) extends Con
     val timeout = get("timeout").flatMap(s => scala.util.Try(s.toLong).toOption).map(_.seconds).getOrElse(300.seconds)
     val retries = get("maxRetries").flatMap(s => scala.util.Try(s.toInt).toOption).getOrElse(3)
 
-    if ConnectorId.allCli.contains(connectorId) then
-      CliConnectorConfig(
-        connectorId = connectorId,
-        model = model,
-        timeout = timeout,
-        maxRetries = retries,
-        flags = extractFlags(agentModed, globalModed, agentFlat, globalFlat),
-        envVars = extractEnvVars(agentModed, globalModed, agentFlat, globalFlat),
-        sandbox = get("sandbox").flatMap(parseSandbox),
-        turnLimit = get("turnLimit").flatMap(s => scala.util.Try(s.toInt).toOption),
-      )
-    else
-      ApiConnectorConfig(
-        connectorId = connectorId,
-        model = model,
-        baseUrl = get("baseUrl"),
-        apiKey = get("apiKey"),
-        timeout = timeout,
-        maxRetries = retries,
-        requestsPerMinute =
-          get("requestsPerMinute").flatMap(s => scala.util.Try(s.toInt).toOption).getOrElse(60),
-        burstSize = get("burstSize").flatMap(s => scala.util.Try(s.toInt).toOption).getOrElse(10),
-        acquireTimeout =
-          get("acquireTimeout").flatMap(s => scala.util.Try(s.toLong).toOption).map(_.seconds).getOrElse(30.seconds),
-        temperature = get("temperature").flatMap(s => scala.util.Try(s.toDouble).toOption),
-        maxTokens = get("maxTokens").flatMap(s => scala.util.Try(s.toInt).toOption),
-      )
+    val config: ConnectorConfig =
+      if ConnectorId.allCli.contains(connectorId) then
+        CliConnectorConfig(
+          connectorId = connectorId,
+          model = model,
+          timeout = timeout,
+          maxRetries = retries,
+          flags = extractFlags(agentModed, globalModed, agentFlat, globalFlat),
+          envVars = extractEnvVars(agentModed, globalModed, agentFlat, globalFlat),
+          sandbox = get("sandbox").flatMap(parseSandbox),
+          turnLimit = get("turnLimit").flatMap(s => scala.util.Try(s.toInt).toOption),
+        )
+      else
+        ApiConnectorConfig(
+          connectorId = connectorId,
+          model = model,
+          baseUrl = get("baseUrl"),
+          apiKey = get("apiKey"),
+          timeout = timeout,
+          maxRetries = retries,
+          requestsPerMinute =
+            get("requestsPerMinute").flatMap(s => scala.util.Try(s.toInt).toOption).getOrElse(60),
+          burstSize = get("burstSize").flatMap(s => scala.util.Try(s.toInt).toOption).getOrElse(10),
+          acquireTimeout =
+            get("acquireTimeout").flatMap(s => scala.util.Try(s.toLong).toOption).map(_.seconds).getOrElse(30.seconds),
+          temperature = get("temperature").flatMap(s => scala.util.Try(s.toDouble).toOption),
+          maxTokens = get("maxTokens").flatMap(s => scala.util.Try(s.toInt).toOption),
+        )
+    (config, unparsed.result())
 
   private def parseConnectorId(value: String): Option[ConnectorId] =
     ConnectorId.all.find(_.value == value.toLowerCase.trim)

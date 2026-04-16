@@ -3,7 +3,6 @@ package shared.web
 import zio.json.*
 
 import config.boundary.ModelsView
-import config.entity.AgentInfo
 import gateway.boundary.{ ChannelCardData, ChannelView }
 import issues.entity.api.IssueTemplate
 import llm4zio.tools.{ Tool, ToolSandbox }
@@ -28,8 +27,6 @@ object SettingsView:
     settings: Map[String, String],
     registry: config.entity.ModelRegistryResponse,
     statuses: List[config.entity.ProviderProbeStatus],
-    agents: List[AgentInfo] = Nil,                           // kept for backward compat, unused
-    agentOverrides: Map[String, Map[String, String]] = Map.empty, // kept for backward compat, unused
     flash: Option[String] = None,
     errors: Map[String, String] = Map.empty,
   ): String =
@@ -61,7 +58,7 @@ object SettingsView:
     statuses: List[config.entity.ProviderProbeStatus],
     flash: Option[String] = None,
     errors: Map[String, String] = Map.empty,
-  ): String = connectorsTab(settings, registry, statuses, Nil, Map.empty, flash, errors)
+  ): String = connectorsTab(settings, registry, statuses, flash, errors)
 
   // ---------------------------------------------------------------------------
   // Default connectors section — two side-by-side cards
@@ -378,178 +375,6 @@ object SettingsView:
         cls             := "text-red-400 hover:text-red-300 text-sm px-2",
         attr("onclick") := "this.parentElement.remove()",
       )("x"),
-    )
-
-  def agentRow(
-    agent: AgentInfo,
-    mode: String,
-    hasOverride: Boolean,
-    connectorId: String,
-    model: String,
-  ): Frag =
-    tr(cls := "border-t border-white/5")(
-      td(cls := "py-2 pr-4")(
-        div(
-          span(cls := "font-medium text-white")(agent.displayName),
-          if hasOverride then
-            span(cls := "ml-2 inline-flex items-center rounded-md bg-indigo-500/10 px-1.5 py-0.5 text-[10px] font-medium text-indigo-300 ring-1 ring-indigo-400/30")(
-              "override"
-            )
-          else (),
-        )
-      ),
-      td(cls := "py-2 pr-4")(
-        div(cls := "inline-flex rounded-md ring-1 ring-white/10")(
-          button(
-            `type`             := "button",
-            cls                := (if mode == "api" then "rounded-l-md bg-indigo-500/30 px-2.5 py-1 text-xs font-semibold text-indigo-200"
-                                   else "rounded-l-md bg-white/5 px-2.5 py-1 text-xs text-gray-400 hover:bg-white/10"),
-            attr("hx-get")     := s"/settings/connectors/agent/${agent.name}/override-form?mode=api",
-            attr("hx-target")  := s"#override-panel-${agent.name}",
-            attr("hx-swap")    := "innerHTML",
-          )("API"),
-          button(
-            `type`             := "button",
-            cls                := (if mode == "cli" then "rounded-r-md bg-indigo-500/30 px-2.5 py-1 text-xs font-semibold text-indigo-200"
-                                   else "rounded-r-md bg-white/5 px-2.5 py-1 text-xs text-gray-400 hover:bg-white/10"),
-            attr("hx-get")     := s"/settings/connectors/agent/${agent.name}/override-form?mode=cli",
-            attr("hx-target")  := s"#override-panel-${agent.name}",
-            attr("hx-swap")    := "innerHTML",
-          )("CLI"),
-        )
-      ),
-      td(cls := "py-2 pr-4 font-mono text-xs")(if connectorId.nonEmpty then connectorId else "default"),
-      td(cls := "py-2 pr-4 font-mono text-xs")(if model.nonEmpty then model else "default"),
-      td(cls := "py-2")(
-        div(cls := "flex gap-2")(
-          button(
-            `type`             := "button",
-            cls                := "rounded-md bg-white/10 px-2.5 py-1 text-xs font-semibold text-gray-300 ring-1 ring-white/10 hover:bg-white/20",
-            attr("hx-get")     := s"/settings/connectors/agent/${agent.name}/override-form?mode=$mode",
-            attr("hx-target")  := s"#override-panel-${agent.name}",
-            attr("hx-swap")    := "innerHTML",
-          )("Override"),
-          if hasOverride then
-            button(
-              `type`             := "button",
-              cls                := "rounded-md bg-red-500/10 px-2.5 py-1 text-xs font-semibold text-red-300 ring-1 ring-red-400/30 hover:bg-red-500/20",
-              attr("hx-delete")  := s"/settings/connectors/agent/${agent.name}/override",
-              attr("hx-target")  := s"#override-panel-${agent.name}",
-              attr("hx-swap")    := "innerHTML",
-              attr("hx-confirm") := s"Reset ${agent.displayName} to defaults?",
-            )("Reset")
-          else (),
-        )
-      ),
-    )
-
-  def agentOverrideForm(agentName: String, mode: String, defaults: Map[String, String]): String =
-    val prefix = s"agent.$agentName"
-    div(cls := "p-4 bg-slate-800/60 rounded-b-lg border border-white/5")(
-      tag("form")(
-        attr("hx-post")  := s"/settings/connectors/agent/$agentName/override",
-        attr("hx-target") := s"#override-panel-$agentName",
-        attr("hx-swap")   := "innerHTML",
-        cls               := "space-y-4",
-      )(
-        input(`type` := "hidden", name := s"$prefix.mode", value := mode),
-        h3(cls := "text-sm font-semibold text-white mb-3")(
-          s"Override for $agentName",
-          span(cls := "ml-2 text-xs font-normal text-gray-400")(s"(${mode.toUpperCase})")
-        ),
-        if mode == "api" then apiOverrideFields(prefix, defaults)
-        else cliOverrideFields(prefix, defaults),
-        div(cls := "flex gap-3 pt-3 border-t border-white/10")(
-          button(
-            `type` := "submit",
-            cls    := "rounded-md bg-indigo-500 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-indigo-400",
-          )("Save Override"),
-          button(
-            `type`             := "button",
-            cls                := "rounded-md border border-white/20 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-white/10",
-            attr("hx-get")     := s"/settings/connectors/agent/$agentName/override-panel-empty",
-            attr("hx-target")  := s"#override-panel-$agentName",
-            attr("hx-swap")    := "innerHTML",
-          )("Cancel"),
-        ),
-      ),
-    ).render
-
-  private def apiOverrideFields(prefix: String, s: Map[String, String]): Frag =
-    frag(
-      div(
-        label(cls := labelCls, `for` := s"$prefix.provider")("Provider"),
-        tag("select")(name := s"$prefix.provider", id := s"$prefix.provider", cls := selectCls)(
-          connectorOption("gemini-api", "Gemini API", s.get(s"$prefix.provider")),
-          connectorOption("openai", "OpenAI", s.get(s"$prefix.provider")),
-          connectorOption("anthropic", "Anthropic", s.get(s"$prefix.provider")),
-          connectorOption("lm-studio", "LM Studio", s.get(s"$prefix.provider")),
-          connectorOption("ollama", "Ollama", s.get(s"$prefix.provider")),
-        ),
-      ),
-      textField(s"$prefix.model", "Model", s, placeholder = "Override model"),
-      textField(s"$prefix.baseUrl", "Base URL", s, placeholder = "Optional"),
-      div(
-        label(cls := labelCls, `for` := s"$prefix.apiKey")("API Key"),
-        input(
-          `type`      := "password",
-          name        := s"$prefix.apiKey",
-          id          := s"$prefix.apiKey",
-          value       := s.getOrElse(s"$prefix.apiKey", ""),
-          placeholder := "Optional override",
-          cls         := inputCls,
-        ),
-      ),
-      div(cls := "grid grid-cols-2 gap-4")(
-        numberField(s"$prefix.timeout", "Timeout (s)", s, default = "300", min = "10", max = "900"),
-        numberField(s"$prefix.maxRetries", "Max Retries", s, default = "3", min = "0", max = "10"),
-      ),
-      div(cls := "grid grid-cols-2 gap-4")(
-        numberField(s"$prefix.temperature", "Temperature", s, default = "", min = "0", max = "2", step = "0.1", placeholder = "Optional"),
-        numberField(s"$prefix.maxTokens", "Max Tokens", s, default = "", min = "1", max = "1048576", placeholder = "Optional"),
-      ),
-    )
-
-  private def cliOverrideFields(prefix: String, s: Map[String, String]): Frag =
-    frag(
-      div(
-        label(cls := labelCls, `for` := s"$prefix.connector")("Connector"),
-        tag("select")(name := s"$prefix.connector", id := s"$prefix.connector", cls := selectCls)(
-          connectorOption("claude-cli", "Claude CLI", s.get(s"$prefix.connector")),
-          connectorOption("gemini-cli", "Gemini CLI", s.get(s"$prefix.connector")),
-          connectorOption("opencode", "OpenCode", s.get(s"$prefix.connector")),
-          connectorOption("codex", "Codex", s.get(s"$prefix.connector")),
-          connectorOption("copilot", "Copilot", s.get(s"$prefix.connector")),
-        ),
-      ),
-      textField(s"$prefix.model", "Model", s, placeholder = "Optional model override"),
-      div(cls := "grid grid-cols-2 gap-4")(
-        numberField(s"$prefix.timeout", "Timeout (s)", s, default = "300", min = "10", max = "900"),
-        numberField(s"$prefix.maxRetries", "Max Retries", s, default = "3", min = "0", max = "10"),
-      ),
-      numberField(s"$prefix.turnLimit", "Turn Limit", s, default = "25", min = "1", max = "200"),
-      div(
-        label(cls := labelCls, `for` := s"$prefix.sandbox")("Sandbox"),
-        tag("select")(name := s"$prefix.sandbox", id := s"$prefix.sandbox", cls := selectCls)(
-          connectorOption("none", "None", s.get(s"$prefix.sandbox")),
-          connectorOption("docker", "Docker", s.get(s"$prefix.sandbox")),
-          connectorOption("podman", "Podman", s.get(s"$prefix.sandbox")),
-          connectorOption("seatbeltmacos", "Seatbelt (macOS)", s.get(s"$prefix.sandbox")),
-          connectorOption("runsc", "gVisor (runsc)", s.get(s"$prefix.sandbox")),
-          connectorOption("lxc", "LXC", s.get(s"$prefix.sandbox")),
-        ),
-      ),
-      div(
-        label(cls := labelCls, `for` := s"$prefix.flags")("Flags"),
-        textarea(
-          name := s"$prefix.flags",
-          id   := s"$prefix.flags",
-          rows := 2,
-          cls  := "block w-full rounded-md bg-white/5 border-0 py-2 text-white shadow-sm ring-1 ring-inset ring-white/10 focus:ring-2 focus:ring-inset focus:ring-indigo-500 sm:text-sm/6 px-3",
-          attr("placeholder") := "Additional flags",
-        )(s.getOrElse(s"$prefix.flags", "")),
-      ),
-      envVarsEditor(s"$prefix.envVars", s.getOrElse(s"$prefix.envVars", "")),
     )
 
   // ---------------------------------------------------------------------------
