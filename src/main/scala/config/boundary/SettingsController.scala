@@ -116,7 +116,7 @@ final case class SettingsControllerLive(
     Method.GET / "settings"                           -> handler {
       ZIO.succeed(Response(
         status = Status.Found,
-        headers = Headers(Header.Location(URL.decode("/settings/ai").getOrElse(URL.root))),
+        headers = Headers(Header.Location(URL.decode("/settings/connectors").getOrElse(URL.root))),
       ))
     },
     Method.POST / "settings"                          -> handler { (req: Request) =>
@@ -192,28 +192,77 @@ final case class SettingsControllerLive(
     Method.GET / "api" / "models" / "status"          -> handler {
       modelService.probeProviders.map(status => Response.json(status.toJson))
     },
-    Method.GET / "models"                             -> handler {
+    Method.GET / "models"                                      -> handler {
       ZIO.succeed(Response(
         status = Status.Found,
-        headers = Headers(Header.Location(URL.decode("/settings/ai").getOrElse(URL.root))),
+        headers = Headers(Header.Location(URL.decode("/settings/connectors").getOrElse(URL.root))),
       ))
     },
-    Method.GET / "settings" / "ai"                    -> handler {
+    Method.GET / "settings" / "connectors"                     -> handler {
       ErrorHandlingMiddleware.fromPersistence {
         for
           rows    <- repository.getAllSettings
           settings = rows.map(r => r.key -> r.value).toMap
           models  <- modelService.listAvailableModels
           status  <- modelService.probeProviders
-        yield html(HtmlViews.settingsAiTab(settings, models, status))
+        yield html(HtmlViews.settingsConnectorsTab(settings, models, status))
       }
     },
-    Method.GET / "settings" / "ai" / "tools-fragment" -> handler { (_: Request) =>
+    Method.GET / "settings" / "ai"                             -> handler {
+      // Backward-compatible redirect: /settings/ai -> /settings/connectors
+      ZIO.succeed(Response(
+        status = Status.Found,
+        headers = Headers(Header.Location(URL.decode("/settings/connectors").getOrElse(URL.root))),
+      ))
+    },
+    Method.GET / "settings" / "connectors" / "tools-fragment"  -> handler { (_: Request) =>
       toolRegistry.list.map { tools =>
         htmlFragment(SettingsView.toolsFragment(tools))
       }
     },
-    Method.POST / "settings" / "ai"                   -> handler { (req: Request) =>
+    Method.GET / "settings" / "ai" / "tools-fragment"          -> handler { (_: Request) =>
+      // Backward-compatible: keep old tools-fragment URL working
+      toolRegistry.list.map { tools =>
+        htmlFragment(SettingsView.toolsFragment(tools))
+      }
+    },
+    Method.POST / "settings" / "connectors"                    -> handler { (req: Request) =>
+      ErrorHandlingMiddleware.fromPersistence {
+        for
+          form     <- parseForm(req)
+          _        <- ZIO.foreachDiscard(settingsKeys.filter(_.startsWith("ai."))) { key =>
+                        val value = form.getOrElse(key, "")
+                        repository.upsertSetting(key, value)
+                      }
+          // Dual-write connector.default.* keys alongside ai.* keys
+          _        <- ZIO.foreachDiscard(settingsKeys.filter(_.startsWith("ai."))) { key =>
+                        val connectorKey = key.replaceFirst("^ai\\.", "connector.default.")
+                        val value        = form.getOrElse(key, "")
+                        repository.upsertSetting(connectorKey, value)
+                      }
+          _        <- checkpointConfigStore
+          rows     <- repository.getAllSettings
+          saved     = rows.map(r => r.key -> r.value).toMap
+          newConfig = SettingsApplier.toGatewayConfig(saved)
+          _        <- configRef.set(newConfig)
+          _        <- writeSettingsSnapshot(saved)
+          now      <- Clock.instant
+          _        <- activityHub.publish(
+                        ActivityEvent(
+                          id = EventId.generate,
+                          eventType = ActivityEventType.ConfigChanged,
+                          source = "settings.connectors",
+                          summary = "Connector settings updated",
+                          createdAt = now,
+                        )
+                      )
+          models   <- modelService.listAvailableModels
+          status   <- modelService.probeProviders
+        yield html(HtmlViews.settingsConnectorsTab(saved, models, status, Some("Connector settings saved.")))
+      }
+    },
+    Method.POST / "settings" / "ai"                            -> handler { (req: Request) =>
+      // Backward-compatible: POST /settings/ai still works, saves ai.* keys
       ErrorHandlingMiddleware.fromPersistence {
         for
           form     <- parseForm(req)
@@ -239,7 +288,7 @@ final case class SettingsControllerLive(
                       )
           models   <- modelService.listAvailableModels
           status   <- modelService.probeProviders
-        yield html(HtmlViews.settingsAiTab(saved, models, status, Some("AI settings saved.")))
+        yield html(HtmlViews.settingsConnectorsTab(saved, models, status, Some("AI settings saved.")))
       }
     },
     Method.GET / "settings" / "gateway"               -> handler {

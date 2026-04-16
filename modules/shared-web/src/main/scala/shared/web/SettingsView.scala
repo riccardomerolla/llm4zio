@@ -23,7 +23,7 @@ object SettingsView:
   def settingsShell(activeTab: String, pageTitle: String)(bodyContent: Frag*): String =
     SettingsShell.page(activeTab, pageTitle)(bodyContent*)
 
-  def aiTab(
+  def connectorsTab(
     settings: Map[String, String],
     registry: config.entity.ModelRegistryResponse,
     statuses: List[config.entity.ProviderProbeStatus],
@@ -31,7 +31,7 @@ object SettingsView:
     errors: Map[String, String] = Map.empty,
   ): String =
     val statusMap = statuses.map(ps => ps.provider -> ps).toMap
-    settingsShell("ai", "Settings — AI Models")(
+    settingsShell("connectors", "Settings — Connectors")(
       flash.map { msg =>
         div(cls := "mb-6 rounded-md bg-green-500/10 border border-green-500/30 p-4")(
           p(cls := "text-sm text-green-400")(msg)
@@ -45,13 +45,13 @@ object SettingsView:
           ),
         )
       else (),
-      tag("form")(method := "post", action := "/settings/ai", cls := "space-y-6 max-w-2xl mb-10")(
+      tag("form")(method := "post", action := "/settings/connectors", cls := "space-y-6 max-w-2xl mb-10")(
         aiProviderSection(settings, errors),
         div(cls := "flex gap-4 pt-2")(
           button(
             `type` := "submit",
             cls    := "rounded-md bg-indigo-500 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-400",
-          )("Save AI Settings")
+          )("Save Connector Settings")
         ),
       ),
       h2(cls := "text-lg font-semibold text-white mb-4")("Available Models"),
@@ -93,7 +93,7 @@ object SettingsView:
         p(cls := "text-sm text-slate-300 mb-4")("Built-in tools registered in the tool registry."),
         div(
           id                 := "tools-list",
-          attr("hx-get")     := "/settings/ai/tools-fragment",
+          attr("hx-get")     := "/settings/connectors/tools-fragment",
           attr("hx-trigger") := "load",
           attr("hx-swap")    := "innerHTML",
         )(
@@ -101,6 +101,15 @@ object SettingsView:
         ),
       ),
     )
+
+  /** @deprecated Use connectorsTab instead. Kept for backward compatibility. */
+  def aiTab(
+    settings: Map[String, String],
+    registry: config.entity.ModelRegistryResponse,
+    statuses: List[config.entity.ProviderProbeStatus],
+    flash: Option[String] = None,
+    errors: Map[String, String] = Map.empty,
+  ): String = connectorsTab(settings, registry, statuses, flash, errors)
 
   def channelsTab(
     cards: List[ChannelCardData],
@@ -371,6 +380,7 @@ object SettingsView:
       JsResources.inlineModuleScript("/static/client/components/ab-health-dashboard.js"),
     )
 
+  /** @deprecated Advanced Config tab removed from UI. Kept for backward compatibility. */
   def advancedTab: String =
     settingsShell("advanced", "Settings — Advanced Config")(
       div(cls := "mb-4 rounded-md bg-amber-500/10 border border-amber-500/20 p-3")(

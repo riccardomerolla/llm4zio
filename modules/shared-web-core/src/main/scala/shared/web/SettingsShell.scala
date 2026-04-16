@@ -6,14 +6,13 @@ import scalatags.Text.tags2.nav as navTag
 object SettingsShell:
 
   val tabs: List[(String, String)] = List(
-    ("ai", "AI Models"),
+    ("connectors", "Connectors"),
     ("channels", "Channels"),
     ("gateway", "Gateway"),
     ("issues-templates", "Issue Templates"),
     ("governance", "Governance"),
     ("daemons", "Daemons"),
     ("system", "System"),
-    ("advanced", "Advanced Config"),
     ("demo", "Demo"),
   )
 

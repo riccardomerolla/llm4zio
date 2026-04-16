@@ -13,7 +13,6 @@ import _root_.config.entity.*
 import activity.control.ActivityHub
 import activity.entity.{ ActivityEvent, ActivityEventType }
 import shared.ids.Ids.EventId
-import shared.web.HtmlViews
 
 trait ConfigController:
   def routes: Routes[Any, Response]
@@ -112,12 +111,16 @@ final case class ConfigControllerLive(
 
   override val routes: Routes[Any, Response] = Routes(
     Method.GET / "settings" / "advanced"                                   -> handler {
-      ZIO.succeed(html(HtmlViews.settingsAdvancedTab))
+      // Deprecated: redirect to connectors tab
+      ZIO.succeed(Response(
+        status = Status.Found,
+        headers = Headers(Header.Location(URL.decode("/settings/connectors").getOrElse(URL.root))),
+      ))
     },
     Method.GET / "config"                                                  -> handler {
       ZIO.succeed(Response(
         status = Status.Found,
-        headers = Headers(Header.Location(URL.decode("/settings/advanced").getOrElse(URL.root))),
+        headers = Headers(Header.Location(URL.decode("/settings/connectors").getOrElse(URL.root))),
       ))
     },
     Method.GET / "api" / "config" / "current"                              -> handler {
@@ -322,9 +325,6 @@ final case class ConfigControllerLive(
 
   private def toBadRequest(error: String): UIO[Response] =
     ZIO.succeed(Response.text(error).status(Status.BadRequest))
-
-  private def html(content: String): Response =
-    Response.text(content).contentType(MediaType.text.html)
 
 object ConfigControllerLive:
 

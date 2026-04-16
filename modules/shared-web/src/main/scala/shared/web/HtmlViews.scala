@@ -56,6 +56,16 @@ object HtmlViews:
   def settingsPage(settings: Map[String, String], flash: Option[String] = None): String =
     SettingsView.page(settings, flash)
 
+  def settingsConnectorsTab(
+    settings: Map[String, String],
+    registry: ModelRegistryResponse,
+    statuses: List[ProviderProbeStatus],
+    flash: Option[String] = None,
+    errors: Map[String, String] = Map.empty,
+  ): String =
+    SettingsView.connectorsTab(settings, registry, statuses, flash, errors)
+
+  /** @deprecated Use settingsConnectorsTab instead. */
   def settingsAiTab(
     settings: Map[String, String],
     registry: ModelRegistryResponse,
@@ -63,7 +73,7 @@ object HtmlViews:
     flash: Option[String] = None,
     errors: Map[String, String] = Map.empty,
   ): String =
-    SettingsView.aiTab(settings, registry, statuses, flash, errors)
+    settingsConnectorsTab(settings, registry, statuses, flash, errors)
 
   def settingsChannelsTab(
     cards: List[ChannelCardData],
