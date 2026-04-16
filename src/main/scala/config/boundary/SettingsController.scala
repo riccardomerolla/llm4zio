@@ -12,9 +12,10 @@ import zio.json.*
 
 import _root_.config.SettingsApplier
 import _root_.config.control.ModelService
-import _root_.config.entity.{ ConfigRepository, GatewayConfig }
+import _root_.config.entity.{ AgentInfo, ConfigRepository, GatewayConfig }
 import activity.control.ActivityHub
 import activity.entity.{ ActivityEvent, ActivityEventType }
+import orchestration.entity.AgentRegistry
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import llm4zio.core.{ LlmError, LlmService, Streaming }
 import llm4zio.tools.ToolRegistry
@@ -35,7 +36,7 @@ object SettingsController:
     : ZLayer[
       ConfigRepository & ActivityHub & Ref[GatewayConfig] & LlmService & ModelService & ConfigStoreModule.ConfigStoreService &
         DataStoreService & StoreConfig &
-        MemoryStoreModule.MemoryEntriesStore & ToolRegistry,
+        MemoryStoreModule.MemoryEntriesStore & ToolRegistry & AgentRegistry,
       Nothing,
       SettingsController,
     ] =
@@ -52,6 +53,7 @@ final case class SettingsControllerLive(
   storeConfig: StoreConfig,
   memoryEntriesStore: MemoryStoreModule.MemoryEntriesStore,
   toolRegistry: ToolRegistry,
+  agentRegistry: AgentRegistry,
 ) extends SettingsController:
 
   private val settingsKeys: List[String] = List(
@@ -88,6 +90,62 @@ final case class SettingsControllerLive(
     "demo.agentDelaySeconds",
     "demo.previousProvider",
   )
+
+  private val apiConnectorKeys: List[String] = List(
+    "connector.default.api.id",
+    "connector.default.api.model",
+    "connector.default.api.baseUrl",
+    "connector.default.api.apiKey",
+    "connector.default.api.timeout",
+    "connector.default.api.maxRetries",
+    "connector.default.api.requestsPerMinute",
+    "connector.default.api.burstSize",
+    "connector.default.api.acquireTimeout",
+    "connector.default.api.temperature",
+    "connector.default.api.maxTokens",
+    "connector.default.api.fallbackChain",
+  )
+
+  private val cliConnectorKeys: List[String] = List(
+    "connector.default.cli.id",
+    "connector.default.cli.model",
+    "connector.default.cli.timeout",
+    "connector.default.cli.maxRetries",
+    "connector.default.cli.turnLimit",
+    "connector.default.cli.sandbox",
+    "connector.default.cli.flags",
+    "connector.default.cli.envVars",
+  )
+
+  private def loadConnectorsPage(flash: Option[String] = None): IO[PersistenceError, Response] =
+    for
+      rows          <- repository.getAllSettings
+      settings       = rows.map(r => r.key -> r.value).toMap
+      models        <- modelService.listAvailableModels
+      status        <- modelService.probeProviders
+      agents        <- agentRegistry.getAllAgents
+      agentNames     = agents.filter(_.usesAI).map(_.name)
+      agentOverrides <- ZIO.foreach(agentNames) { name =>
+                          repository
+                            .getSettingsByPrefix(s"agent.$name.connector.")
+                            .map(rows => name -> rows.map(r => r.key.stripPrefix(s"agent.$name.connector.") -> r.value).toMap)
+                        }
+    yield html(HtmlViews.settingsConnectorsTab(
+      settings,
+      models,
+      status,
+      agents = agents,
+      agentOverrides = agentOverrides.toMap,
+      flash = flash,
+    ))
+
+  private def parseEnvVars(form: Map[String, String], prefix: String): String =
+    val keys = form.toList.filter(_._1.startsWith(s"$prefix.key.")).sortBy(_._1)
+    keys.flatMap { case (keyField, keyValue) =>
+      val index    = keyField.stripPrefix(s"$prefix.key.")
+      val valField = s"$prefix.value.$index"
+      form.get(valField).filter(_.nonEmpty).map(v => s"${keyValue.trim}=$v")
+    }.mkString(",")
 
   final private case class StoreDebugEntry(
     key: String,
@@ -199,14 +257,7 @@ final case class SettingsControllerLive(
       ))
     },
     Method.GET / "settings" / "connectors"                    -> handler {
-      ErrorHandlingMiddleware.fromPersistence {
-        for
-          rows    <- repository.getAllSettings
-          settings = rows.map(r => r.key -> r.value).toMap
-          models  <- modelService.listAvailableModels
-          status  <- modelService.probeProviders
-        yield html(HtmlViews.settingsConnectorsTab(settings, models, status))
-      }
+      ErrorHandlingMiddleware.fromPersistence(loadConnectorsPage())
     },
     Method.GET / "settings" / "ai"                            -> handler {
       // Backward-compatible redirect: /settings/ai -> /settings/connectors
@@ -226,19 +277,19 @@ final case class SettingsControllerLive(
         htmlFragment(SettingsView.toolsFragment(tools))
       }
     },
-    Method.POST / "settings" / "connectors"                   -> handler { (req: Request) =>
+    Method.POST / "settings" / "connectors" / "api"           -> handler { (req: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
           form     <- parseForm(req)
-          _        <- ZIO.foreachDiscard(settingsKeys.filter(_.startsWith("ai."))) { key =>
+          _        <- ZIO.foreachDiscard(apiConnectorKeys) { key =>
                         val value = form.getOrElse(key, "")
                         repository.upsertSetting(key, value)
                       }
-          // Dual-write connector.default.* keys alongside ai.* keys
-          _        <- ZIO.foreachDiscard(settingsKeys.filter(_.startsWith("ai."))) { key =>
-                        val connectorKey = key.replaceFirst("^ai\\.", "connector.default.")
-                        val value        = form.getOrElse(key, "")
-                        repository.upsertSetting(connectorKey, value)
+          // Dual-write ai.* keys for backward compat
+          _        <- ZIO.foreachDiscard(apiConnectorKeys) { key =>
+                        val legacyKey = key.replace("connector.default.api.", "ai.")
+                        val value     = form.getOrElse(key, "")
+                        repository.upsertSetting(legacyKey, value)
                       }
           _        <- checkpointConfigStore
           rows     <- repository.getAllSettings
@@ -251,15 +302,152 @@ final case class SettingsControllerLive(
                         ActivityEvent(
                           id = EventId.generate,
                           eventType = ActivityEventType.ConfigChanged,
-                          source = "settings.connectors",
-                          summary = "Connector settings updated",
+                          source = "settings.connectors.api",
+                          summary = "API connector defaults updated",
                           createdAt = now,
                         )
                       )
-          models   <- modelService.listAvailableModels
-          status   <- modelService.probeProviders
-        yield html(HtmlViews.settingsConnectorsTab(saved, models, status, flash = Some("Connector settings saved.")))
+        yield htmlFragment(SettingsView.apiDefaultCard(saved, Map.empty).render)
       }
+    },
+    Method.POST / "settings" / "connectors" / "cli"           -> handler { (req: Request) =>
+      ErrorHandlingMiddleware.fromPersistence {
+        for
+          form    <- parseForm(req)
+          envVars  = parseEnvVars(form, "connector.default.cli.envVars")
+          _       <- ZIO.foreachDiscard(cliConnectorKeys) { key =>
+                       val value =
+                         if key == "connector.default.cli.envVars" then envVars
+                         else form.getOrElse(key, "")
+                       repository.upsertSetting(key, value)
+                     }
+          _       <- checkpointConfigStore
+          rows    <- repository.getAllSettings
+          saved    = rows.map(r => r.key -> r.value).toMap
+          _       <- writeSettingsSnapshot(saved)
+          now     <- Clock.instant
+          _       <- activityHub.publish(
+                       ActivityEvent(
+                         id = EventId.generate,
+                         eventType = ActivityEventType.ConfigChanged,
+                         source = "settings.connectors.cli",
+                         summary = "CLI connector defaults updated",
+                         createdAt = now,
+                       )
+                     )
+        yield htmlFragment(SettingsView.cliDefaultCard(saved, Map.empty).render)
+      }
+    },
+    Method.PUT / "agents" / string("name") / "connector" / "mode" -> handler {
+      (name: String, req: Request) =>
+        ErrorHandlingMiddleware.fromPersistence {
+          for
+            form        <- parseForm(req)
+            mode         = form.getOrElse("mode", "api")
+            _           <- repository.upsertSetting(s"agent.$name.connector.mode", mode)
+            _           <- checkpointConfigStore
+            rows        <- repository.getAllSettings
+            settings     = rows.map(r => r.key -> r.value).toMap
+            agents      <- agentRegistry.getAllAgents
+            agent        = agents.find(_.name == name)
+            agentOvr    <- repository
+                             .getSettingsByPrefix(s"agent.$name.connector.")
+                             .map(_.map(r => r.key.stripPrefix(s"agent.$name.connector.") -> r.value).toMap)
+            hasOverride  = agentOvr.exists { case (k, _) => k.startsWith("api.") || k.startsWith("cli.") }
+            effectiveId  = agentOvr
+                             .get(s"$mode.id")
+                             .orElse(settings.get(s"connector.default.$mode.id"))
+                             .getOrElse(if mode == "cli" then "claude-cli" else "gemini-api")
+            effectiveModel = agentOvr
+                               .get(s"$mode.model")
+                               .orElse(settings.get(s"connector.default.$mode.model"))
+                               .getOrElse("")
+          yield agent match
+            case Some(a) => htmlFragment(SettingsView.agentRow(a, mode, hasOverride, effectiveId, effectiveModel).render)
+            case None    => Response.notFound
+        }
+    },
+    Method.GET / "agents" / string("name") / "connector" / "edit" -> handler {
+      (name: String, _: Request) =>
+        ErrorHandlingMiddleware.fromPersistence {
+          for
+            agentOvr <- repository
+                          .getSettingsByPrefix(s"agent.$name.connector.")
+                          .map(_.map(r => r.key.stripPrefix(s"agent.$name.connector.") -> r.value).toMap)
+            mode      = agentOvr.getOrElse("mode", "api")
+            rows     <- repository.getAllSettings
+            defaults  = rows.map(r => r.key -> r.value).toMap
+            // Merge agent overrides into defaults for pre-filling
+            merged    = defaults ++ agentOvr.map { case (k, v) => s"agent.$name.connector.$k" -> v }
+          yield htmlFragment(SettingsView.agentOverrideForm(name, mode, merged))
+        }
+    },
+    Method.POST / "agents" / string("name") / "connector"     -> handler {
+      (name: String, req: Request) =>
+        ErrorHandlingMiddleware.fromPersistence {
+          for
+            form        <- parseForm(req)
+            agentOvr    <- repository
+                             .getSettingsByPrefix(s"agent.$name.connector.")
+                             .map(_.map(r => r.key.stripPrefix(s"agent.$name.connector.") -> r.value).toMap)
+            mode         = agentOvr.getOrElse("mode", "api")
+            prefix       = s"agent.$name.connector.$mode"
+            _           <- ZIO.foreachDiscard(form.toList.filter(_._1.startsWith(prefix))) { case (key, value) =>
+                             repository.upsertSetting(key, value)
+                           }
+            // Handle envVars specially for CLI mode
+            _           <- if mode == "cli" then {
+                              val envVars = parseEnvVars(form, s"$prefix.envVars")
+                              repository.upsertSetting(s"$prefix.envVars", envVars)
+                            } else ZIO.unit
+            _           <- checkpointConfigStore
+            rows        <- repository.getAllSettings
+            settings     = rows.map(r => r.key -> r.value).toMap
+            agents      <- agentRegistry.getAllAgents
+            agent        = agents.find(_.name == name)
+            updOvr      <- repository
+                             .getSettingsByPrefix(s"agent.$name.connector.")
+                             .map(_.map(r => r.key.stripPrefix(s"agent.$name.connector.") -> r.value).toMap)
+            hasOverride  = updOvr.exists { case (k, _) => k.startsWith("api.") || k.startsWith("cli.") }
+            effectiveId  = updOvr
+                             .get(s"$mode.id")
+                             .orElse(settings.get(s"connector.default.$mode.id"))
+                             .getOrElse(if mode == "cli" then "claude-cli" else "gemini-api")
+            effectiveModel = updOvr
+                               .get(s"$mode.model")
+                               .orElse(settings.get(s"connector.default.$mode.model"))
+                               .getOrElse("")
+          yield agent match
+            case Some(a) => htmlFragment(SettingsView.agentRow(a, mode, hasOverride, effectiveId, effectiveModel).render)
+            case None    => Response.notFound
+        }
+    },
+    Method.DELETE / "agents" / string("name") / "connector"    -> handler {
+      (name: String, _: Request) =>
+        ErrorHandlingMiddleware.fromPersistence {
+          for
+            agentRows     <- repository.getSettingsByPrefix(s"agent.$name.connector.")
+            _             <- ZIO.foreachDiscard(agentRows) { row =>
+                               repository.upsertSetting(row.key, "") // Soft-delete by clearing value
+                             }
+            _             <- checkpointConfigStore
+            rows          <- repository.getAllSettings
+            settings       = rows.map(r => r.key -> r.value).toMap
+            agents        <- agentRegistry.getAllAgents
+            agent          = agents.find(_.name == name)
+            effectiveId    = settings.get("connector.default.api.id").getOrElse("gemini-api")
+            effectiveModel = settings.get("connector.default.api.model").getOrElse("")
+          yield agent match
+            case Some(a) => htmlFragment(SettingsView.agentRow(a, "api", false, effectiveId, effectiveModel).render)
+            case None    => Response.notFound
+        }
+    },
+    Method.POST / "settings" / "connectors"                    -> handler { (_: Request) =>
+      // Backward compat: redirect old form POST
+      ZIO.succeed(Response(
+        status = Status.Found,
+        headers = Headers(Header.Location(URL.decode("/settings/connectors").getOrElse(URL.root))),
+      ))
     },
     Method.POST / "settings" / "ai"                           -> handler { (req: Request) =>
       // Backward-compatible: POST /settings/ai still works, saves ai.* keys
