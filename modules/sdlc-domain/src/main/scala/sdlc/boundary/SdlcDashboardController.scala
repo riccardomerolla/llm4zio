@@ -5,7 +5,6 @@ import zio.http.*
 
 import sdlc.control.SdlcDashboardService
 import shared.errors.PersistenceError
-import shared.web.HtmlViews
 
 trait SdlcDashboardController:
   def routes: Routes[Any, Response]
@@ -25,12 +24,12 @@ final case class SdlcDashboardControllerLive(
   override val routes: Routes[Any, Response] = Routes(
     Method.GET / "sdlc"              -> handler {
       dashboardService.snapshot
-        .map(snapshot => html(HtmlViews.sdlcDashboard(snapshot)))
+        .map(snapshot => html(SdlcDashboardView.page(snapshot)))
         .catchAll(error => ZIO.succeed(persistErr(error)))
     },
     Method.GET / "sdlc" / "fragment" -> handler {
       dashboardService.snapshot
-        .map(snapshot => html(HtmlViews.sdlcDashboardFragment(snapshot)))
+        .map(snapshot => html(SdlcDashboardView.fragment(snapshot)))
         .catchAll(error => ZIO.succeed(persistErr(error)))
     },
   )

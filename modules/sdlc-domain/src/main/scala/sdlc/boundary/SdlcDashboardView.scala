@@ -1,4 +1,4 @@
-package shared.web
+package sdlc.boundary
 
 import java.time.Instant
 import java.time.temporal.ChronoUnit
@@ -7,6 +7,7 @@ import activity.boundary.ActivityView
 import activity.entity.ActivityEvent
 import scalatags.Text.all.*
 import sdlc.entity.*
+import shared.web.{ Components, Layout }
 
 object SdlcDashboardView:
 
