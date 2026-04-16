@@ -1,6 +1,7 @@
 package llm4zio.providers
 
 import zio.*
+
 import llm4zio.core.*
 
 object ConnectorFactories:
@@ -25,26 +26,26 @@ object ConnectorFactories:
 
   private def apiFactory(id: ConnectorId, build: LlmConfig => ApiConnector): ConnectorFactory =
     new ConnectorFactory:
-      def connectorId: ConnectorId = id
-      def kind: ConnectorKind = ConnectorKind.Api
+      def connectorId: ConnectorId                                 = id
+      def kind: ConnectorKind                                      = ConnectorKind.Api
       def create(config: ConnectorConfig): IO[LlmError, Connector] = config match
         case api: ApiConnectorConfig => ZIO.succeed(build(api.toLlmConfig))
         case _                       => ZIO.fail(LlmError.ConfigError(s"Expected ApiConnectorConfig for $id"))
 
   private def cliFactory(id: ConnectorId, build: CliConnectorConfig => CliConnector): ConnectorFactory =
     new ConnectorFactory:
-      def connectorId: ConnectorId = id
-      def kind: ConnectorKind = ConnectorKind.Cli
+      def connectorId: ConnectorId                                 = id
+      def kind: ConnectorKind                                      = ConnectorKind.Cli
       def create(config: ConnectorConfig): IO[LlmError, Connector] = config match
         case cli: CliConnectorConfig => ZIO.succeed(build(cli))
         case _                       => ZIO.fail(LlmError.ConfigError(s"Expected CliConnectorConfig for $id"))
 
   private def geminiCliFactory(): ConnectorFactory =
     new ConnectorFactory:
-      def connectorId: ConnectorId = ConnectorId.GeminiCli
-      def kind: ConnectorKind = ConnectorKind.Cli
+      def connectorId: ConnectorId                                 = ConnectorId.GeminiCli
+      def kind: ConnectorKind                                      = ConnectorKind.Cli
       def create(config: ConnectorConfig): IO[LlmError, Connector] = config match
         case cfg: CliConnectorConfig =>
           val llmConfig = LlmConfig(LlmProvider.GeminiCli, cfg.model.getOrElse("gemini-2.5-flash"))
           ZIO.succeed(GeminiCliProvider.make(llmConfig, GeminiCliExecutor.default))
-        case _ => ZIO.fail(LlmError.ConfigError("Expected CliConnectorConfig for gemini-cli"))
+        case _                       => ZIO.fail(LlmError.ConfigError("Expected CliConnectorConfig for gemini-cli"))

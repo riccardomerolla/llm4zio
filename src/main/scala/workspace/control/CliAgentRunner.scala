@@ -184,9 +184,8 @@ object CliAgentRunner:
 
   /** Wrap an already-built inner argv list for the active [[RunMode]].
     *
-    * When `runMode` is `Docker`, the inner argv is prefixed with `docker run`
-    * and the appropriate mount / network / env / resource flags.  For `Host`
-    * and `Cloud` the inner argv is returned unchanged.
+    * When `runMode` is `Docker`, the inner argv is prefixed with `docker run` and the appropriate mount / network / env
+    * / resource flags. For `Host` and `Cloud` the inner argv is returned unchanged.
     */
   private[workspace] def wrapForRunMode(
     innerArgv: List[String],
@@ -206,17 +205,20 @@ object CliAgentRunner:
         val resourceFlags =
           dockerMemoryLimit.map(v => List("--memory", v)).getOrElse(Nil) ++
             dockerCpuLimit.map(v => List("--cpus", v)).getOrElse(Nil)
-        List("docker", "run", "--rm", "-i") ++ mountFlags ++ networkFlags ++ resourceFlags ++ envFlags ++ extraArgs ++ List(
+        List(
+          "docker",
+          "run",
+          "--rm",
+          "-i",
+        ) ++ mountFlags ++ networkFlags ++ resourceFlags ++ envFlags ++ extraArgs ++ List(
           image
         ) ++ innerArgv
       case RunMode.Cloud(_, _, _, _, _)                             => innerArgv
 
   /** Build argv using a [[llm4zio.core.CliConnector]] instead of a string `cliTool` name.
     *
-    * The connector handles tool-specific argv construction; this method adds
-    * run-mode wrapping (Docker / Cloud) on top.  All existing `buildArgv`
-    * callers are unaffected — this is a parallel code-path for the new
-    * connector architecture.
+    * The connector handles tool-specific argv construction; this method adds run-mode wrapping (Docker / Cloud) on top.
+    * All existing `buildArgv` callers are unaffected — this is a parallel code-path for the new connector architecture.
     */
   def buildArgvFromConnector(
     connector: llm4zio.core.CliConnector,
@@ -229,7 +231,7 @@ object CliAgentRunner:
     dockerCpuLimit: Option[String] = None,
     permissions: Option[AgentPermissions] = None,
   ): List[String] =
-    val ctx = llm4zio.core.CliContext(
+    val ctx       = llm4zio.core.CliContext(
       worktreePath = worktreePath,
       repoPath = if repoPath.nonEmpty then repoPath else worktreePath,
       envVars = envVars,
@@ -252,7 +254,7 @@ object CliAgentRunner:
     repoPath: String = "",
     permissions: Option[AgentPermissions] = None,
   ): List[String] =
-    val ctx = llm4zio.core.CliContext(
+    val ctx       = llm4zio.core.CliContext(
       worktreePath = worktreePath,
       repoPath = if repoPath.nonEmpty then repoPath else worktreePath,
     )

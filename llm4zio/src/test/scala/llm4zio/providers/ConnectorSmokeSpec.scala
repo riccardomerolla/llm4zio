@@ -14,12 +14,12 @@ object ConnectorSmokeSpec extends ZIOSpecDefault:
       ZIO.succeed("{}")
 
   private val mockCli: CliProcessExecutor = new CliProcessExecutor:
-    def run(argv: List[String], cwd: String, envVars: Map[String, String]): IO[LlmError, ProcessResult] =
+    def run(argv: List[String], cwd: String, envVars: Map[String, String]): IO[LlmError, ProcessResult]             =
       ZIO.succeed(ProcessResult(List("ok"), 0))
     def runStreaming(argv: List[String], cwd: String, envVars: Map[String, String]): ZStream[Any, LlmError, String] =
       ZStream.succeed("ok")
 
-  def spec = suite("Connector Smoke Tests")(
+  def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("Connector Smoke Tests")(
     suite("Registry wiring")(
       test("all 11 connectors registered") {
         val registry = ConnectorFactories.createRegistry(mockHttp, mockCli)
@@ -65,10 +65,10 @@ object ConnectorSmokeSpec extends ZIOSpecDefault:
         yield assertTrue(status.availability == Availability.Healthy)
       } @@ TestAspect.ifEnvSet("GEMINI_CLI_AVAILABLE"),
       test("Claude CLI health check") {
-        val executor = new CliProcessExecutor:
+        val executor  = new CliProcessExecutor:
           def run(argv: List[String], cwd: String, envVars: Map[String, String]): IO[LlmError, ProcessResult] =
             ZIO.attemptBlocking {
-              val pb = new ProcessBuilder(argv*)
+              val pb    = new ProcessBuilder(argv*)
               pb.directory(new java.io.File(cwd))
               pb.redirectErrorStream(true)
               val proc  = pb.start()
@@ -76,7 +76,8 @@ object ConnectorSmokeSpec extends ZIOSpecDefault:
               val exit  = proc.waitFor()
               ProcessResult(lines, exit)
             }.mapError(e => LlmError.ProviderError(e.getMessage, Some(e)))
-          def runStreaming(argv: List[String], cwd: String, envVars: Map[String, String]): ZStream[Any, LlmError, String] =
+          def runStreaming(argv: List[String], cwd: String, envVars: Map[String, String])
+            : ZStream[Any, LlmError, String] =
             ZStream.fromZIO(run(argv, cwd, envVars)).flatMap(r => ZStream.fromIterable(r.stdout))
         val config    = CliConnectorConfig(ConnectorId.ClaudeCli)
         val connector = ClaudeCliConnector.make(config, executor)

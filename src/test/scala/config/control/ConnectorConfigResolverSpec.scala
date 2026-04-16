@@ -8,7 +8,7 @@ import shared.testfixtures.StubConfigRepository
 
 object ConnectorConfigResolverSpec extends ZIOSpecDefault:
 
-  def spec = suite("ConnectorConfigResolver")(
+  def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("ConnectorConfigResolver")(
     test("resolves global API connector config") {
       val repo     = new StubConfigRepository(
         Map(
@@ -16,7 +16,8 @@ object ConnectorConfigResolverSpec extends ZIOSpecDefault:
           "connector.default.model"   -> "gpt-4o",
           "connector.default.apiKey"  -> "sk-test",
           "connector.default.timeout" -> "600",
-        ))
+        )
+      )
       val resolver = ConnectorConfigResolverLive(repo)
       for config <- resolver.resolve(agentName = None)
       yield assertTrue(
@@ -35,7 +36,8 @@ object ConnectorConfigResolverSpec extends ZIOSpecDefault:
           "connector.default.apiKey"    -> "sk-test",
           "agent.coder.connector.id"    -> "claude-cli",
           "agent.coder.connector.model" -> "claude-sonnet-4",
-        ))
+        )
+      )
       val resolver = ConnectorConfigResolverLive(repo)
       for config <- resolver.resolve(agentName = Some("coder"))
       yield assertTrue(
@@ -59,7 +61,8 @@ object ConnectorConfigResolverSpec extends ZIOSpecDefault:
           "ai.provider" -> "Anthropic",
           "ai.model"    -> "claude-sonnet-4",
           "ai.apiKey"   -> "sk-legacy",
-        ))
+        )
+      )
       val resolver = ConnectorConfigResolverLive(repo)
       for config <- resolver.resolve(agentName = None)
       yield assertTrue(

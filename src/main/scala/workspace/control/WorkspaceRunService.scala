@@ -853,11 +853,16 @@ final case class WorkspaceRunServiceLive(
                              ).ignore
                            )
             _           <- runResult match
-                             case Left(error)    =>
+                             case Left(error)                                 =>
                                appendToConversation(run.conversationId, s"Run failed: $error").ignore
-                             case Right(None)    =>
+                             case Right(None)                                 =>
                                appendToConversation(run.conversationId, s"Run timed out after ${timeout.toSeconds}s")
-                             case Right(Some(_)) =>
+                             case Right(Some(result)) if result.exitCode != 0 =>
+                               appendToConversation(
+                                 run.conversationId,
+                                 s"Agent exited with code ${result.exitCode} via ${runtimeResolution.runtime.name} runtime",
+                               ).ignore
+                             case Right(Some(_))                              =>
                                ZIO.unit
             _           <- ZIO.logWarning(s"[run:${run.id}] timed out after ${timeout.toSeconds}s")
                              .when(runResult == Right(None))
@@ -886,7 +891,11 @@ final case class WorkspaceRunServiceLive(
                              Some(finalMessage),
                              accTokens,
                            )
-            _           <- lifecycle.updateRunStatus(run.id, status)
+            _           <- lifecycle.updateRunStatus(
+                             run.id,
+                             status,
+                             detail = Option.when(status == RunStatus.Failed)(finalMessage),
+                           )
             _           <- ZIO.logInfo(s"[run:${run.id}] status=$status")
           yield ()
         }

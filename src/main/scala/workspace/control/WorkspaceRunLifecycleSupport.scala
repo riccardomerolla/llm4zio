@@ -145,14 +145,14 @@ final private[control] case class WorkspaceRunLifecycleSupport(
               ).ignore
             }
 
-  def updateRunStatus(runId: String, status: RunStatus): IO[WorkspaceError, Unit] =
+  def updateRunStatus(runId: String, status: RunStatus, detail: Option[String] = None): IO[WorkspaceError, Unit] =
     for
       now <- Clock.instant
       _   <- wsRepo
                .appendRun(WorkspaceRunEvent.StatusChanged(runId, status, now))
                .mapWorkspacePersistence("append_run_status_change")
       _   <- releaseRegisteredSlot(runId, status)
-      _   <- publishRunLifecycle(runId, status)
+      _   <- publishRunLifecycle(runId, status, detail)
       _   <- syncIssueLifecycle(runId, status).catchAll(err =>
                ZIO.logWarning(s"[run:$runId] failed to sync issue lifecycle for status $status: $err")
              )
@@ -226,20 +226,21 @@ final private[control] case class WorkspaceRunLifecycleSupport(
       _    <- chatRepo.addMessage(entry).mapWorkspacePersistence("append_run_conversation_message")
     yield ()
 
-  private def publishRunLifecycle(runId: String, status: RunStatus): UIO[Unit] =
+  private def publishRunLifecycle(runId: String, status: RunStatus, detail: Option[String] = None): UIO[Unit] =
     Clock.instant.flatMap { now =>
       val eventType = status match
         case RunStatus.Running(_) => ActivityEventType.RunStarted
         case RunStatus.Completed  => ActivityEventType.RunCompleted
         case RunStatus.Failed     => ActivityEventType.RunFailed
         case _                    => ActivityEventType.MessageSent
+      val suffix    = detail.map(d => s": $d").getOrElse("")
       activityPublish(
         ActivityEvent(
           id = EventId.generate,
           eventType = eventType,
           source = "workspace-run-service",
           runId = Some(TaskRunId(runId)),
-          summary = s"Run $runId status changed to $status",
+          summary = s"Run $runId status changed to $status$suffix",
           payload = Some(status.toJson),
           createdAt = now,
         )

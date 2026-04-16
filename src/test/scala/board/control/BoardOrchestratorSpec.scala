@@ -507,22 +507,24 @@ object BoardOrchestratorSpec extends ZIOSpecDefault:
           task.frontmatter.assignedAgent.contains("agent-default"),
         )
       },
-      test("dispatchCycle fails when current branch does not match configured default branch") {
+      test(
+        "dispatchCycle proceeds even when current branch differs from configured default (board ops are file-only)"
+      ) {
         val readyTask = issue("task-7", BoardColumn.Todo)
 
         for
-          (orchestrator, _, _, _, _, _) <- makeOrchestrator(
-                                             List(readyTask),
-                                             workspaceDefaultBranch = "develop",
-                                             currentBranch = "main",
-                                           )
-          result                        <- orchestrator.dispatchCycle(projectPath).either
+          (orchestrator, boardRef, assignedRef, _, _, _) <- makeOrchestrator(
+                                                              List(readyTask),
+                                                              workspaceDefaultBranch = "develop",
+                                                              currentBranch = "main",
+                                                            )
+          result                                         <- orchestrator.dispatchCycle(projectPath)
+          state                                          <- boardRef.get
+          assigned                                       <- assignedRef.get
         yield assertTrue(
-          result == Left(
-            BoardError.ConcurrencyConflict(
-              "Board mutations are allowed only on 'develop' (current='main', detached=false)"
-            )
-          )
+          result.dispatchedIssueIds == List(BoardIssueId("task-7")),
+          state(BoardIssueId("task-7")).column == BoardColumn.InProgress,
+          assigned.nonEmpty,
         )
       },
       test("abortIssueRuns cancels active runs linked to the issue") {

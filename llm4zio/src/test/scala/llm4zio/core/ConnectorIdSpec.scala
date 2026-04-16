@@ -5,7 +5,7 @@ import zio.json.*
 import zio.test.*
 
 object ConnectorIdSpec extends ZIOSpecDefault:
-  def spec = suite("ConnectorId")(
+  def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("ConnectorId")(
     test("known API connector ids") {
       assertTrue(
         ConnectorId.OpenAI.value == "openai",
@@ -26,12 +26,12 @@ object ConnectorIdSpec extends ZIOSpecDefault:
     },
     test("ConnectorKind enum values") {
       assertTrue(
-        ConnectorKind.Api != ConnectorKind.Cli,
+        ConnectorKind.Api != ConnectorKind.Cli
       )
     },
     test("JSON round-trip") {
-      val id = ConnectorId.OpenAI
-      val json = id.toJson
+      val id     = ConnectorId.OpenAI
+      val json   = id.toJson
       val parsed = json.fromJson[ConnectorId]
       assertTrue(parsed == Right(id))
     },

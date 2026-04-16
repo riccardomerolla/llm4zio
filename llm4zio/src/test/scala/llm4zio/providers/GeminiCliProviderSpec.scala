@@ -1044,7 +1044,7 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
         val ctx       = CliContext(worktreePath = "/workspace", repoPath = "")
         val argv      = connector.buildArgv("fix the bug", ctx)
         assertTrue(
-          !argv.contains("--include-directories"),
+          !argv.contains("--include-directories")
         )
       },
       test("buildArgv includes --turn-limit when set") {
@@ -1095,7 +1095,7 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
         for
           status <- connector.healthCheck
         yield assertTrue(
-          status.availability == Availability.Unhealthy,
+          status.availability == Availability.Unhealthy
         )
       },
       test("completeStream delegates to executeStream") {

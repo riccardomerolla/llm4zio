@@ -198,14 +198,14 @@ object OpenCodeProviderSpec extends ZIOSpecDefault:
     },
     test("healthCheck returns Healthy on success") {
       for
-        http     <- mockHttpClient(
-                      _ => ZIO.succeed(standardResponse()),
-                      getHandler = (url, _) =>
-                        if url.endsWith("/models") then ZIO.succeed("{}")
-                        else ZIO.fail(LlmError.ProviderError("bad", None)),
-                    )
-        provider  = OpenCodeProvider.make(config(), http)
-        status   <- provider.healthCheck
+        http    <- mockHttpClient(
+                     _ => ZIO.succeed(standardResponse()),
+                     getHandler = (url, _) =>
+                       if url.endsWith("/models") then ZIO.succeed("{}")
+                       else ZIO.fail(LlmError.ProviderError("bad", None)),
+                   )
+        provider = OpenCodeProvider.make(config(), http)
+        status  <- provider.healthCheck
       yield assertTrue(status.availability == Availability.Healthy)
     },
     test("propagates auth, rate limit, timeout and provider errors") {

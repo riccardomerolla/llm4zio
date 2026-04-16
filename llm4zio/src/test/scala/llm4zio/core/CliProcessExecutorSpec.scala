@@ -13,10 +13,11 @@ object CliProcessExecutorSpec extends ZIOSpecDefault:
     override def run(argv: List[String], cwd: String, envVars: Map[String, String]): IO[LlmError, ProcessResult] =
       ZIO.fromOption(responses.get(argv))
         .orElseFail(LlmError.ProviderError(s"No mock response for argv: ${argv.mkString(" ")}"))
-    override def runStreaming(argv: List[String], cwd: String, envVars: Map[String, String]): ZStream[Any, LlmError, String] =
+    override def runStreaming(argv: List[String], cwd: String, envVars: Map[String, String])
+      : ZStream[Any, LlmError, String] =
       ZStream.fromIterable(streamResponses.getOrElse(argv, Nil))
 
-  def spec = suite("CliProcessExecutor")(
+  def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("CliProcessExecutor")(
     test("MockCliProcessExecutor returns canned response") {
       val mock = MockCliProcessExecutor(
         responses = Map(List("echo", "hello") -> ProcessResult(List("hello"), 0))

@@ -104,7 +104,6 @@ final case class BoardOrchestratorLive(
   override def dispatchCycle(workspacePath: String): IO[BoardError, DispatchResult] =
     for
       workspace <- resolveWorkspaceByPath(workspacePath)
-      _         <- ensureDefaultBranch(workspace)
       board     <- boardRepository.readBoard(workspacePath)
       ready     <- dependencyResolver.readyToDispatch(board)
       result    <- ZIO.foldLeft(ready)(DispatchResult(Nil, Nil)) { (acc, issue) =>
@@ -192,7 +191,6 @@ final case class BoardOrchestratorLive(
 
   override def assignIssue(workspacePath: String, issueId: BoardIssueId, agentName: String): IO[BoardError, Unit] =
     for
-      _   <- ensureDefaultBranch(workspacePath)
       now <- Clock.instant
       _   <- boardRepository.updateIssue(
                workspacePath,
@@ -212,7 +210,6 @@ final case class BoardOrchestratorLive(
     branchName: String,
   ): IO[BoardError, Unit] =
     for
-      _   <- ensureDefaultBranch(workspacePath)
       now <- Clock.instant
       _   <- boardRepository.moveIssue(workspacePath, issueId, BoardColumn.InProgress)
       _   <- boardRepository.updateIssue(
@@ -399,7 +396,6 @@ final case class BoardOrchestratorLive(
 
   private def completeFailure(workspacePath: String, issueId: BoardIssueId, details: String): IO[BoardError, Unit] =
     for
-      _     <- ensureDefaultBranch(workspacePath)
       now   <- Clock.instant
       reason = Option(details).map(_.trim).filter(_.nonEmpty).getOrElse("Run failed")
       _     <- boardRepository.updateIssue(
@@ -451,9 +447,6 @@ final case class BoardOrchestratorLive(
               .orElseFail(BoardError.BoardNotFound(workspacePath))
           }
       }
-
-  private def ensureDefaultBranch(workspacePath: String): IO[BoardError, Unit] =
-    resolveWorkspaceByPath(workspacePath).flatMap(ensureDefaultBranch)
 
   private def ensureDefaultBranch(ws: workspace.entity.Workspace): IO[BoardError, Unit] =
     val targetBranch = workspace.entity.Workspace.normalizeDefaultBranch(ws.defaultBranch)

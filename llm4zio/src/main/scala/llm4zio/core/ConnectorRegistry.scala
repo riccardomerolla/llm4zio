@@ -37,22 +37,23 @@ final case class ConnectorRegistryLive(factories: Map[ConnectorId, ConnectorFact
     ZIO.succeed(factories.keys.toList)
 
   override def healthCheckAll: IO[LlmError, Map[ConnectorId, HealthStatus]] =
-    ZIO.foreach(factories.toList) { case (id, factory) =>
-      val defaultConfig: ConnectorConfig =
-        if factory.kind == ConnectorKind.Api then ApiConnectorConfig(id)
-        else CliConnectorConfig(id)
-      factory.create(defaultConfig)
-        .flatMap(_.healthCheck)
-        .map(status => id -> status)
-        .catchAll(_ => ZIO.succeed(id -> HealthStatus(Availability.Unknown, AuthStatus.Unknown, None)))
+    ZIO.foreach(factories.toList) {
+      case (id, factory) =>
+        val defaultConfig: ConnectorConfig =
+          if factory.kind == ConnectorKind.Api then ApiConnectorConfig(id)
+          else CliConnectorConfig(id)
+        factory.create(defaultConfig)
+          .flatMap(_.healthCheck)
+          .map(status => id -> status)
+          .catchAll(_ => ZIO.succeed(id -> HealthStatus(Availability.Unknown, AuthStatus.Unknown, None)))
     }.map(_.toMap)
 
 object ConnectorRegistry:
-  def resolve(config: ConnectorConfig): ZIO[ConnectorRegistry, LlmError, Connector] =
+  def resolve(config: ConnectorConfig): ZIO[ConnectorRegistry, LlmError, Connector]          =
     ZIO.serviceWithZIO[ConnectorRegistry](_.resolve(config))
   def resolveApi(config: ApiConnectorConfig): ZIO[ConnectorRegistry, LlmError, ApiConnector] =
     ZIO.serviceWithZIO[ConnectorRegistry](_.resolveApi(config))
   def resolveCli(config: CliConnectorConfig): ZIO[ConnectorRegistry, LlmError, CliConnector] =
     ZIO.serviceWithZIO[ConnectorRegistry](_.resolveCli(config))
-  def available: ZIO[ConnectorRegistry, Nothing, List[ConnectorId]] =
+  def available: ZIO[ConnectorRegistry, Nothing, List[ConnectorId]]                          =
     ZIO.serviceWithZIO[ConnectorRegistry](_.available)

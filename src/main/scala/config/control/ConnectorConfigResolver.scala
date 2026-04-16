@@ -12,7 +12,7 @@ trait ConnectorConfigResolver:
 object ConnectorConfigResolver:
   def resolve(agentName: Option[String]): ZIO[ConnectorConfigResolver, PersistenceError, ConnectorConfig] =
     ZIO.serviceWithZIO[ConnectorConfigResolver](_.resolve(agentName))
-  val live: ZLayer[ConfigRepository, Nothing, ConnectorConfigResolver] =
+  val live: ZLayer[ConfigRepository, Nothing, ConnectorConfigResolver]                                    =
     ZLayer.fromFunction(ConnectorConfigResolverLive.apply)
 
 final case class ConnectorConfigResolverLive(repo: ConfigRepository) extends ConnectorConfigResolver:
@@ -22,7 +22,8 @@ final case class ConnectorConfigResolverLive(repo: ConfigRepository) extends Con
       agentSettings  <- agentName.fold(ZIO.succeed(Map.empty[String, String]))(name =>
                           repo
                             .getSettingsByPrefix(s"agent.$name.connector.")
-                            .map(_.map(row => row.key -> row.value).toMap))
+                            .map(_.map(row => row.key -> row.value).toMap)
+                        )
       globalSettings <- repo
                           .getSettingsByPrefix("connector.default.")
                           .map(_.map(row => row.key -> row.value).toMap)
@@ -38,8 +39,9 @@ final case class ConnectorConfigResolverLive(repo: ConfigRepository) extends Con
     agentName: Option[String],
   ): ConnectorConfig =
     // Strip prefixes for uniform key access
-    val agent = agentName.fold(Map.empty[String, String])(name =>
-      agentSettings.map { case (k, v) => k.stripPrefix(s"agent.$name.connector.") -> v })
+    val agent  = agentName.fold(Map.empty[String, String])(name =>
+      agentSettings.map { case (k, v) => k.stripPrefix(s"agent.$name.connector.") -> v }
+    )
     val global = globalSettings.map { case (k, v) => k.stripPrefix("connector.default.") -> v }
     val legacy = legacySettings.map { case (k, v) => k.stripPrefix("ai.") -> v }
 
@@ -90,15 +92,15 @@ final case class ConnectorConfigResolverLive(repo: ConfigRepository) extends Con
 
   private def parseLegacyProvider(value: String): Option[ConnectorId] =
     value.trim.toLowerCase match
-      case "geminicli"  => Some(ConnectorId.GeminiCli)
-      case "geminiapi"  => Some(ConnectorId.GeminiApi)
-      case "openai"     => Some(ConnectorId.OpenAI)
-      case "anthropic"  => Some(ConnectorId.Anthropic)
-      case "lmstudio"   => Some(ConnectorId.LmStudio)
-      case "ollama"     => Some(ConnectorId.Ollama)
-      case "opencode"   => Some(ConnectorId.OpenCode)
-      case "mock"       => Some(ConnectorId.Mock)
-      case _            => None
+      case "geminicli" => Some(ConnectorId.GeminiCli)
+      case "geminiapi" => Some(ConnectorId.GeminiApi)
+      case "openai"    => Some(ConnectorId.OpenAI)
+      case "anthropic" => Some(ConnectorId.Anthropic)
+      case "lmstudio"  => Some(ConnectorId.LmStudio)
+      case "ollama"    => Some(ConnectorId.Ollama)
+      case "opencode"  => Some(ConnectorId.OpenCode)
+      case "mock"      => Some(ConnectorId.Mock)
+      case _           => None
 
   private def extractFlags(agent: Map[String, String], global: Map[String, String]): Map[String, String] =
     val prefix      = "flags."

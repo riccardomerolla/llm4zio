@@ -5,7 +5,7 @@ import zio.json.*
 import zio.test.*
 
 object ConnectorConfigSpec extends ZIOSpecDefault:
-  def spec = suite("ConnectorConfig")(
+  def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("ConnectorConfig")(
     test("ApiConnectorConfig has correct defaults") {
       val cfg = ApiConnectorConfig(connectorId = ConnectorId.OpenAI, model = Some("gpt-4o"))
       assertTrue(
@@ -40,7 +40,7 @@ object ConnectorConfigSpec extends ZIOSpecDefault:
       )
     },
     test("ApiConnectorConfig JSON round-trip") {
-      val cfg = ApiConnectorConfig(
+      val cfg    = ApiConnectorConfig(
         connectorId = ConnectorId.Anthropic,
         model = Some("claude-sonnet-4"),
         apiKey = Some("sk-test"),
@@ -50,7 +50,7 @@ object ConnectorConfigSpec extends ZIOSpecDefault:
       assertTrue(parsed == Right(cfg))
     },
     test("CliConnectorConfig JSON round-trip") {
-      val cfg = CliConnectorConfig(
+      val cfg    = CliConnectorConfig(
         connectorId = ConnectorId.ClaudeCli,
         model = Some("claude-sonnet-4"),
         flags = Map("print" -> "true"),

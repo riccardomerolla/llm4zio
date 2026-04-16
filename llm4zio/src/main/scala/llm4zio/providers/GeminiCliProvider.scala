@@ -524,8 +524,10 @@ object GeminiCliProvider:
 
       override def complete(prompt: String): IO[LlmError, String] =
         executor.runGeminiProcess(prompt, config, executionContext)
-          .flatMap(output => ZIO.fromEither(extractResponse(output))
-            .mapError(msg => LlmError.ParseError(msg, output)))
+          .flatMap(output =>
+            ZIO.fromEither(extractResponse(output))
+              .mapError(msg => LlmError.ParseError(msg, output))
+          )
 
       override def completeStream(prompt: String): ZStream[Any, LlmError, LlmChunk] =
         executeStream(prompt)
