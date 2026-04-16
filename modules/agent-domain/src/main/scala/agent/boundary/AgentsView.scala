@@ -16,6 +16,9 @@ object AgentsView:
     metrics: AgentMetricsSummary,
     activeRuns: List[AgentActiveRun],
     bindings: List[AgentChannelBinding],
+    connectorMode: String = "api",
+    connectorId: String = "",
+    hasConnectorOverride: Boolean = false,
   )
 
   def list(cards: List[AgentCard], flash: Option[String] = None): String =
@@ -54,6 +57,9 @@ object AgentsView:
                     tag("th")(
                       cls := "hidden px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-400 sm:table-cell"
                     )("Skills"),
+                    tag("th")(cls := "px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-400")(
+                      "Mode"
+                    ),
                     tag("th")(cls := "px-4 py-2 text-right text-xs font-medium uppercase tracking-wide text-gray-400")(
                       "Runs"
                     ),
@@ -78,22 +84,32 @@ object AgentsView:
       JsResources.inlineModuleScript("/static/client/components/ab-side-panel.js"),
     )
 
+  /** Returns the HTML string for a single agent table row (used by HTMX swaps). */
+  def agentRowFragment(card: AgentCard): String =
+    agentRow(card).render
+
   private def agentRow(card: AgentCard): Frag =
     val agent       = card.info
     val metrics     = card.metrics
     val handle      = effectiveHandle(agent)
+    val mode        = card.connectorMode
     val safeName    = agent.displayName.replace("'", "\\'")
     val panelUrl    = s"/agents/$handle/panel"
     val openPanelJs =
       s"window.dispatchEvent(new CustomEvent('ab-panel-open',{detail:{panelId:'agents',title:'$safeName',contentUrl:'$panelUrl'}}))"
     tag("tr")(
-      cls     := "hover:bg-white/5 cursor-pointer transition-colors",
-      onclick := openPanelJs,
+      id  := s"agent-row-${agent.name}",
+      cls := "hover:bg-white/5 transition-colors",
     )(
       tag("td")(cls := "px-4 py-3")(
         div(cls := "flex items-center gap-2")(
           statusBadge(card.registryAgent),
           span(cls := "font-medium text-white")(agent.displayName),
+          if card.hasConnectorOverride then
+            span(cls := "inline-flex items-center rounded-md bg-indigo-500/10 px-1.5 py-0.5 text-[10px] font-medium text-indigo-300 ring-1 ring-indigo-400/30")(
+              "override"
+            )
+          else (),
         ),
         p(cls := "mt-0.5 truncate text-xs text-gray-500 max-w-xs")(agent.description),
       ),
@@ -102,6 +118,12 @@ object AgentsView:
           agent.tags.take(3).map(tagBadge),
           if agent.tags.size > 3 then Components.badge(s"+${agent.tags.size - 3}", "gray") else (),
         )
+      ),
+      tag("td")(cls := "px-4 py-3")(
+        if agent.usesAI then
+          modeToggle(agent.name, mode)
+        else
+          span(cls := "text-xs text-gray-500")("—")
       ),
       tag("td")(cls := "px-4 py-3 text-right tabular-nums text-sm text-gray-300")(
         metrics.totalRuns.toString
@@ -117,9 +139,32 @@ object AgentsView:
           `type`  := "button",
           cls     := "rounded p-1 text-gray-400 hover:text-white hover:bg-white/10 transition-colors",
           title   := "View details",
-          onclick := s"event.stopPropagation();$openPanelJs",
+          onclick := openPanelJs,
         )("⋯")
       ),
+    )
+
+  /** Inline API/CLI toggle rendered via HTMX. Swaps the entire agent row. */
+  private def modeToggle(agentName: String, currentMode: String): Frag =
+    val apiCls = if currentMode == "api" then "rounded-l-md bg-indigo-500/30 px-2 py-1 text-xs font-semibold text-indigo-200"
+                 else "rounded-l-md bg-white/5 px-2 py-1 text-xs text-gray-400 hover:bg-white/10"
+    val cliCls = if currentMode == "cli" then "rounded-r-md bg-indigo-500/30 px-2 py-1 text-xs font-semibold text-indigo-200"
+                 else "rounded-r-md bg-white/5 px-2 py-1 text-xs text-gray-400 hover:bg-white/10"
+    div(cls := "inline-flex rounded-md ring-1 ring-white/10")(
+      button(
+        `type`             := "button",
+        cls                := apiCls,
+        attr("hx-post")    := s"/agents/$agentName/connector/mode?mode=api",
+        attr("hx-target")  := s"#agent-row-$agentName",
+        attr("hx-swap")    := "outerHTML",
+      )("API"),
+      button(
+        `type`             := "button",
+        cls                := cliCls,
+        attr("hx-post")    := s"/agents/$agentName/connector/mode?mode=cli",
+        attr("hx-target")  := s"#agent-row-$agentName",
+        attr("hx-swap")    := "outerHTML",
+      )("CLI"),
     )
 
   /** HTML fragment for the agent side-panel content (no full-page layout). */
@@ -152,14 +197,41 @@ object AgentsView:
           div(cls := "flex flex-wrap gap-1")(agent.tags.map(tagBadge)),
         )
       else (),
+      // connector
+      if agent.usesAI then
+        div(
+          h3(cls := "mb-2 text-xs font-medium uppercase tracking-wide text-gray-400")("Connector"),
+          div(cls := "rounded border border-white/10 bg-slate-800/70 p-3 space-y-2")(
+            div(cls := "flex items-center justify-between")(
+              div(cls := "flex items-center gap-2")(
+                span(cls := "text-xs text-gray-400")("Mode:"),
+                span(cls := "text-xs font-semibold text-white")(card.connectorMode.toUpperCase),
+              ),
+              if card.connectorId.nonEmpty then
+                span(cls := "font-mono text-xs text-indigo-300")(card.connectorId)
+              else
+                span(cls := "text-xs text-gray-500")("default"),
+            ),
+            if card.hasConnectorOverride then
+              div(cls := "flex items-center gap-2")(
+                span(cls := "inline-flex items-center rounded-md bg-indigo-500/10 px-1.5 py-0.5 text-[10px] font-medium text-indigo-300 ring-1 ring-indigo-400/30")(
+                  "has override"
+                ),
+                a(
+                  href := "/settings/connectors",
+                  cls  := "text-[10px] text-indigo-400 hover:text-indigo-300 underline",
+                )("edit defaults"),
+              )
+            else
+              a(
+                href := "/settings/connectors",
+                cls  := "text-[10px] text-gray-400 hover:text-gray-300 underline",
+              )("edit defaults"),
+          ),
+        )
+      else (),
       // actions
       div(cls := "flex flex-wrap gap-2")(
-        if agent.usesAI then
-          a(
-            href := "/settings/connectors",
-            cls  := "rounded-md border border-indigo-400/30 bg-indigo-500/20 px-3 py-1.5 text-xs font-semibold text-indigo-200 hover:bg-indigo-500/30",
-          )("Connector Settings")
-        else (),
         card.registryAgent.map { reg =>
           a(
             href := s"/agents/${reg.id.value}",

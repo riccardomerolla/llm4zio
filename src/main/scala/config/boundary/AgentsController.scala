@@ -240,14 +240,22 @@ final case class AgentsControllerLive(
           customAgents   <- repository.listCustomAgents
           bindings       <- repository.listAgentChannelBindings
           workspaceRuns  <- loadAllWorkspaceRuns
+          connectorRows  <- repository.getSettingsByPrefix("agent.").map(_.filter(_.key.contains(".connector.")))
+          globalRows     <- repository.getSettingsByPrefix("connector.default.")
           now            <- Clock.instant
           flash           = req.queryParam("flash").map(urlDecode).filter(_.nonEmpty)
+          globalSettings  = globalRows.map(r => r.key -> r.value).toMap
+          connectorMap    = connectorRows.groupBy { r =>
+                              val k = r.key; k.substring("agent.".length, k.indexOf(".connector."))
+                            }.view.mapValues(_.map(r => r.key.substring(r.key.indexOf(".connector.") + ".connector.".length) -> r.value).toMap).toMap
           cards           = buildAgentCards(
                               registryAgents = registryAgents,
                               customAgents = customAgents,
                               bindings = bindings,
                               runs = workspaceRuns,
                               now = now,
+                              connectorOverrides = connectorMap,
+                              globalSettings = globalSettings,
                             )
         yield html(HtmlViews.agentsPage(cards, flash))
       }
@@ -336,10 +344,19 @@ final case class AgentsControllerLive(
           registryAgent <- agentRepository.findByName(name).mapError(mapAgentRepoError)
           allRuns       <- loadAllWorkspaceRuns
           bindings      <- repository.listAgentChannelBindings
+          connectorRows <- repository.getSettingsByPrefix(s"agent.$name.connector.")
+          globalRows    <- repository.getSettingsByPrefix("connector.default.")
           now           <- Clock.instant
           agentRuns      = allRuns.filter(_.agentName.equalsIgnoreCase(name))
           metrics        = computeMetrics(agentRuns, now)
           agentBindings  = bindings.filter(_.agentId.value.equalsIgnoreCase(name))
+          ov             = connectorRows.map(r => r.key.stripPrefix(s"agent.$name.connector.") -> r.value).toMap
+          gs             = globalRows.map(r => r.key -> r.value).toMap
+          mode           = ov.getOrElse("mode", "api")
+          hasOvr         = ov.exists { case (k, _) => k.startsWith("api.") || k.startsWith("cli.") }
+          connId         = ov.get(s"$mode.provider").orElse(ov.get(s"$mode.connector"))
+                             .getOrElse(gs.getOrElse(s"connector.default.$mode.provider",
+                               gs.getOrElse(s"connector.default.$mode.connector", "")))
           agent         <- ZIO
                              .fromOption(registryAgent)
                              .orElseFail(PersistenceError.NotFound("agent", name))
@@ -349,8 +366,53 @@ final case class AgentsControllerLive(
                              metrics = metrics.summary,
                              activeRuns = metrics.activeRuns,
                              bindings = agentBindings,
+                             connectorMode = mode,
+                             connectorId = connId,
+                             hasConnectorOverride = hasOvr,
                            )
         yield html(AgentsView.panelFragment(card))
+      }
+    },
+    // HTMX: toggle agent connector mode (API/CLI) — returns updated table row
+    Method.POST / "agents" / string("name") / "connector" / "mode"      -> handler { (name: String, req: Request) =>
+      ErrorHandlingMiddleware.fromPersistence {
+        val mode = req.queryParam("mode").getOrElse("api")
+        for
+          _              <- repository.upsertSetting(s"agent.$name.connector.mode", mode)
+          _              <- checkpointConfigStore
+          registryAgents <- agentRepository.list().mapError(mapAgentRepoError)
+          customAgents   <- repository.listCustomAgents
+          connRows       <- repository.getSettingsByPrefix(s"agent.$name.connector.")
+          globalRows     <- repository.getSettingsByPrefix("connector.default.")
+          now            <- Clock.instant
+          ov              = connRows.map(r => r.key.stripPrefix(s"agent.$name.connector.") -> r.value).toMap
+          gs              = globalRows.map(r => r.key -> r.value).toMap
+          hasOvr          = ov.exists { case (k, _) => k.startsWith("api.") || k.startsWith("cli.") }
+          connId          = ov.get(s"$mode.provider").orElse(ov.get(s"$mode.connector"))
+                              .getOrElse(gs.getOrElse(s"connector.default.$mode.provider",
+                                gs.getOrElse(s"connector.default.$mode.connector", "")))
+          allInfos        = registryAgents.map(toAgentInfo) ++ AgentRegistry.allAgents(customAgents)
+          agentInfo       = allInfos.find(_.name == name)
+          allRuns        <- loadAllWorkspaceRuns
+          bindings       <- repository.listAgentChannelBindings
+        yield agentInfo match
+          case Some(info) =>
+            val agentRuns        = allRuns.filter(_.agentName.equalsIgnoreCase(name))
+            val metrics          = computeMetrics(agentRuns, now)
+            val bindingsForAgent = bindings.filter(_.agentId.value.equalsIgnoreCase(name))
+            val registryAgent    = registryAgents.find(_.name.equalsIgnoreCase(name))
+            val card = AgentsView.AgentCard(
+              info = info,
+              registryAgent = registryAgent,
+              metrics = metrics.summary,
+              activeRuns = metrics.activeRuns,
+              bindings = bindingsForAgent,
+              connectorMode = mode,
+              connectorId = connId,
+              hasConnectorOverride = hasOvr,
+            )
+            htmlFragment(AgentsView.agentRowFragment(card))
+          case None => Response.notFound
       }
     },
     Method.GET / "agents" / string("slug") / "edit"                      -> handler { (slug: String, req: Request) =>
@@ -621,6 +683,12 @@ final case class AgentsControllerLive(
   private def html(content: String): Response =
     Response.text(content).contentType(MediaType.text.html)
 
+  private def htmlFragment(content: String): Response =
+    Response.text(content).contentType(MediaType.text.html)
+
+  private def checkpointConfigStore: IO[PersistenceError, Unit] =
+    ZIO.unit // Config store checkpoint is handled by SettingsController; agent mode changes are persisted via upsertSetting
+
   private def redirectToConfig(agentName: String, flash: String): Response =
     Response(
       status = Status.SeeOther,
@@ -739,6 +807,8 @@ final case class AgentsControllerLive(
     bindings: List[AgentChannelBinding],
     runs: List[WorkspaceRun],
     now: Instant,
+    connectorOverrides: Map[String, Map[String, String]] = Map.empty,
+    globalSettings: Map[String, String] = Map.empty,
   ): List[AgentsView.AgentCard] =
     val infoByNameLower = (registryAgents.map(toAgentInfo) ++ AgentRegistry.allAgents(customAgents))
       .groupBy(_.name.trim.toLowerCase)
@@ -753,12 +823,21 @@ final case class AgentsControllerLive(
       val agentRuns        = runs.filter(_.agentName.equalsIgnoreCase(info.name))
       val metrics          = computeMetrics(agentRuns, now)
       val bindingsForAgent = bindings.filter(_.agentId.value.equalsIgnoreCase(info.name))
+      val ov               = connectorOverrides.getOrElse(info.name, Map.empty)
+      val mode             = ov.getOrElse("mode", "api")
+      val hasOvr           = ov.exists { case (k, _) => k.startsWith("api.") || k.startsWith("cli.") }
+      val connId           = ov.get(s"$mode.provider").orElse(ov.get(s"$mode.connector"))
+                              .getOrElse(globalSettings.getOrElse(s"connector.default.$mode.provider",
+                                globalSettings.getOrElse(s"connector.default.$mode.connector", "")))
       AgentsView.AgentCard(
         info = info,
         registryAgent = registryAgent,
         metrics = metrics.summary,
         activeRuns = metrics.activeRuns,
         bindings = bindingsForAgent,
+        connectorMode = mode,
+        connectorId = connId,
+        hasConnectorOverride = hasOvr,
       )
     }
 

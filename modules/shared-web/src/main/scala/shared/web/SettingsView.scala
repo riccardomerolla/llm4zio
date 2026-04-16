@@ -28,8 +28,8 @@ object SettingsView:
     settings: Map[String, String],
     registry: config.entity.ModelRegistryResponse,
     statuses: List[config.entity.ProviderProbeStatus],
-    agents: List[AgentInfo] = Nil,
-    agentOverrides: Map[String, Map[String, String]] = Map.empty,
+    agents: List[AgentInfo] = Nil,                           // kept for backward compat, unused
+    agentOverrides: Map[String, Map[String, String]] = Map.empty, // kept for backward compat, unused
     flash: Option[String] = None,
     errors: Map[String, String] = Map.empty,
   ): String =
@@ -49,13 +49,6 @@ object SettingsView:
         )
       else (),
       defaultConnectorsSection(settings, errors),
-      if agents.nonEmpty then
-        agentConnectorTable(
-          agents,
-          agentOverrides,
-          settings,
-        )
-      else (),
       modelRegistrySection(registry, statusMap),
       toolsSection,
       envVarsScript,
@@ -385,53 +378,6 @@ object SettingsView:
         cls             := "text-red-400 hover:text-red-300 text-sm px-2",
         attr("onclick") := "this.parentElement.remove()",
       )("x"),
-    )
-
-  // ---------------------------------------------------------------------------
-  // Agent connector assignment table
-  // ---------------------------------------------------------------------------
-
-  private def agentConnectorTable(
-    agents: List[AgentInfo],
-    overrides: Map[String, Map[String, String]],
-    defaults: Map[String, String],
-  ): Frag =
-    div(cls := sectionCls + " mt-8")(
-      h2(cls := "text-lg font-semibold text-white mb-4")("Agent Connector Assignments"),
-      p(cls := "text-sm text-slate-300 mb-4")(
-        "Override default connector settings per agent. Agents without overrides use the global defaults above."
-      ),
-      div(cls := "overflow-x-auto")(
-        table(cls := "min-w-full text-left text-sm text-slate-200")(
-          thead(
-            tr(
-              th(cls := "py-2 pr-4 text-xs font-semibold uppercase text-slate-400")("Agent"),
-              th(cls := "py-2 pr-4 text-xs font-semibold uppercase text-slate-400")("Mode"),
-              th(cls := "py-2 pr-4 text-xs font-semibold uppercase text-slate-400")("Connector"),
-              th(cls := "py-2 pr-4 text-xs font-semibold uppercase text-slate-400")("Model"),
-              th(cls := "py-2 text-xs font-semibold uppercase text-slate-400")("Actions"),
-            )
-          ),
-          tbody(
-            agents.filter(_.usesAI).flatMap { agent =>
-              val ov           = overrides.getOrElse(agent.name, Map.empty)
-              val mode         = ov.getOrElse("mode", "api")
-              val hasOverride  = ov.exists { case (k, _) => k.startsWith("api.") || k.startsWith("cli.") }
-              val connectorId  = ov.get(s"$mode.provider").orElse(ov.get(s"$mode.connector"))
-                                  .getOrElse(defaults.getOrElse(s"connector.default.$mode.provider",
-                                    defaults.getOrElse(s"connector.default.$mode.connector", "")))
-              val model        = ov.get(s"$mode.model")
-                                  .getOrElse(defaults.getOrElse(s"connector.default.$mode.model", ""))
-              Seq(
-                agentRow(agent, mode, hasOverride, connectorId, model),
-                tr(id := s"override-panel-${agent.name}")(
-                  td(attr("colspan") := "5")()
-                ),
-              )
-            }
-          ),
-        ),
-      ),
     )
 
   def agentRow(

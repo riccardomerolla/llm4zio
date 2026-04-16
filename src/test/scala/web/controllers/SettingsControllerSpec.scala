@@ -15,8 +15,6 @@ import activity.entity.{ ActivityEvent, ActivityEventType, ActivityRepository }
 import conversation.entity.ConversationRow
 import llm4zio.core.*
 import llm4zio.tools.{ AnyTool, JsonSchema, ToolRegistry }
-import orchestration.entity.AgentRegistry
-import shared.entity.TaskStep
 import shared.errors.PersistenceError
 import shared.store.{ ConfigStoreModule, DataStoreModule, DataStoreService, MemoryStoreModule, StoreConfig }
 
@@ -92,23 +90,6 @@ object SettingsControllerSpec extends ZIOSpecDefault:
     override def deleteCustomAgent(id: Long): IO[PersistenceError, Unit]                          =
       ZIO.fail(PersistenceError.QueryFailed("deleteCustomAgent", "unused"))
 
-  private object StubAgentRegistry extends AgentRegistry:
-    override def registerAgent(r: RegisterAgentRequest): UIO[AgentInfo]                  =
-      ZIO.succeed(AgentInfo(r.name, r.name, r.displayName, r.description, r.agentType, r.usesAI, r.tags))
-    override def findByName(name: String): UIO[Option[AgentInfo]]                        = ZIO.succeed(None)
-    override def findAgents(q: AgentQuery): UIO[List[AgentInfo]]                         = ZIO.succeed(Nil)
-    override def getAllAgents: UIO[List[AgentInfo]]                                      = ZIO.succeed(Nil)
-    override def findAgentsWithSkill(skill: String): UIO[List[AgentInfo]]                = ZIO.succeed(Nil)
-    override def findAgentsForStep(step: TaskStep): UIO[List[AgentInfo]]                 = ZIO.succeed(Nil)
-    override def findAgentsForTransformation(i: String, o: String): UIO[List[AgentInfo]] = ZIO.succeed(Nil)
-    override def recordInvocation(name: String, ok: Boolean, ms: Long): UIO[Unit]        = ZIO.unit
-    override def updateHealth(name: String, ok: Boolean, msg: Option[String]): UIO[Unit] = ZIO.unit
-    override def setAgentEnabled(name: String, enabled: Boolean): UIO[Unit]              = ZIO.unit
-    override def getMetrics(name: String): UIO[Option[AgentMetrics]]                     = ZIO.succeed(None)
-    override def getHealth(name: String): UIO[Option[AgentHealth]]                       = ZIO.succeed(None)
-    override def loadCustomAgents(customAgents: List[CustomAgentRow]): UIO[Int]          = ZIO.succeed(0)
-    override def getRankedAgents(q: AgentQuery): UIO[List[AgentInfo]]                    = ZIO.succeed(Nil)
-
   private def mkLayer
     : UIO[
       ZLayer[Any, Nothing, SettingsController & ConfigRepository & StoreConfig & DataStoreService]
@@ -135,7 +116,6 @@ object SettingsControllerSpec extends ZIOSpecDefault:
       ZLayer.succeed(stubLlmService),
       ZLayer.succeed(stubModelService),
       ToolRegistry.layer,
-      ZLayer.succeed[AgentRegistry](StubAgentRegistry),
       SettingsController.live,
     )
 
@@ -167,7 +147,6 @@ object SettingsControllerSpec extends ZIOSpecDefault:
       ZLayer.succeed(stubLlmService),
       ZLayer.succeed(stubModelService),
       ToolRegistry.layer,
-      ZLayer.succeed[AgentRegistry](StubAgentRegistry),
       SettingsController.live,
     )
 
