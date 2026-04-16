@@ -7,11 +7,11 @@ import db.TaskRepository
 import llm4zio.core.LlmProvider
 import shared.errors.PersistenceError
 
-@deprecated("Use config.control.ConnectorConfigResolver instead", "2026-04-15")
+/** Deprecated: prefer `config.control.ConnectorConfigResolver` for new code. */
 trait AgentConfigResolver:
   def resolveConfig(agentName: String): IO[PersistenceError, ProviderConfig]
 
-@deprecated("Use config.control.ConnectorConfigResolver instead", "2026-04-15")
+/** Deprecated: prefer `config.control.ConnectorConfigResolver` for new code. */
 object AgentConfigResolver:
 
   def resolveConfig(agentName: String): ZIO[AgentConfigResolver, PersistenceError, ProviderConfig] =
@@ -20,7 +20,7 @@ object AgentConfigResolver:
   val live: ZLayer[TaskRepository & ProviderConfig, Nothing, AgentConfigResolver] =
     ZLayer.fromFunction(AgentConfigResolverLive.apply)
 
-@deprecated("Use config.control.ConnectorConfigResolverLive instead", "2026-04-15")
+/** Deprecated: prefer `config.control.ConnectorConfigResolverLive` for new code. */
 final case class AgentConfigResolverLive(
   repository: TaskRepository,
   startupConfig: ProviderConfig,
