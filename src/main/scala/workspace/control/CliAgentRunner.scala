@@ -178,6 +178,97 @@ object CliAgentRunner:
         // callers and let ExecutionRuntime decide how to execute remotely.
         buildInteractiveArgvForHost(cliTool, effectiveIncludePath, isWindowsHost)
 
+  // ---------------------------------------------------------------------------
+  // Connector-aware methods — delegate argv construction to CliConnector
+  // ---------------------------------------------------------------------------
+
+  /** Wrap an already-built inner argv list for the active [[RunMode]].
+    *
+    * When `runMode` is `Docker`, the inner argv is prefixed with `docker run`
+    * and the appropriate mount / network / env / resource flags.  For `Host`
+    * and `Cloud` the inner argv is returned unchanged.
+    */
+  private[workspace] def wrapForRunMode(
+    innerArgv: List[String],
+    worktreePath: String,
+    runMode: RunMode,
+    envVars: Map[String, String] = Map.empty,
+    dockerMemoryLimit: Option[String] = None,
+    dockerCpuLimit: Option[String] = None,
+  ): List[String] =
+    runMode match
+      case RunMode.Host                                             => innerArgv
+      case RunMode.Docker(image, extraArgs, mountWorktree, network) =>
+        val mountFlags    = if mountWorktree then List("-v", s"$worktreePath:/workspace", "--workdir", "/workspace")
+        else List.empty
+        val networkFlags  = network.map(n => List("--network", n)).getOrElse(List.empty)
+        val envFlags      = envVars.toList.sortBy(_._1).flatMap((k, v) => List("-e", s"$k=$v"))
+        val resourceFlags =
+          dockerMemoryLimit.map(v => List("--memory", v)).getOrElse(Nil) ++
+            dockerCpuLimit.map(v => List("--cpus", v)).getOrElse(Nil)
+        List("docker", "run", "--rm", "-i") ++ mountFlags ++ networkFlags ++ resourceFlags ++ envFlags ++ extraArgs ++ List(
+          image
+        ) ++ innerArgv
+      case RunMode.Cloud(_, _, _, _, _)                             => innerArgv
+
+  /** Build argv using a [[llm4zio.core.CliConnector]] instead of a string `cliTool` name.
+    *
+    * The connector handles tool-specific argv construction; this method adds
+    * run-mode wrapping (Docker / Cloud) on top.  All existing `buildArgv`
+    * callers are unaffected — this is a parallel code-path for the new
+    * connector architecture.
+    */
+  def buildArgvFromConnector(
+    connector: llm4zio.core.CliConnector,
+    prompt: String,
+    worktreePath: String,
+    runMode: RunMode = RunMode.Host,
+    repoPath: String = "",
+    envVars: Map[String, String] = Map.empty,
+    dockerMemoryLimit: Option[String] = None,
+    dockerCpuLimit: Option[String] = None,
+    permissions: Option[AgentPermissions] = None,
+  ): List[String] =
+    val ctx = llm4zio.core.CliContext(
+      worktreePath = worktreePath,
+      repoPath = if repoPath.nonEmpty then repoPath else worktreePath,
+      envVars = envVars,
+    )
+    val innerArgv = connector.buildArgv(prompt, ctx)
+    wrapForRunMode(
+      innerArgv,
+      worktreePath,
+      enforceRunMode(runMode, permissions),
+      envVars,
+      dockerMemoryLimit,
+      dockerCpuLimit,
+    )
+
+  /** Build interactive argv using a [[llm4zio.core.CliConnector]]. */
+  def buildInteractiveArgvFromConnector(
+    connector: llm4zio.core.CliConnector,
+    worktreePath: String,
+    runMode: RunMode = RunMode.Host,
+    repoPath: String = "",
+    permissions: Option[AgentPermissions] = None,
+  ): List[String] =
+    val ctx = llm4zio.core.CliContext(
+      worktreePath = worktreePath,
+      repoPath = if repoPath.nonEmpty then repoPath else worktreePath,
+    )
+    val innerArgv = connector.buildInteractiveArgv(ctx)
+    wrapForRunMode(
+      innerArgv,
+      worktreePath,
+      enforceRunMode(runMode, permissions),
+    )
+
+  /** Map a [[llm4zio.core.CliConnector]]'s interaction support to the local enum. */
+  def connectorInteractionSupport(connector: llm4zio.core.CliConnector): InteractionSupport =
+    connector.interactionSupport match
+      case llm4zio.core.InteractionSupport.InteractiveStdin => InteractionSupport.InteractiveStdin
+      case llm4zio.core.InteractionSupport.ContinuationOnly => InteractionSupport.ContinuationOnly
+
   def validatePermissions(cliTool: String, permissions: Option[AgentPermissions]): Either[String, Unit] =
     permissions match
       case Some(value)
@@ -249,20 +340,29 @@ object CliAgentRunner:
         readLoop(outReader, onLine)
           .ensuring(ZIO.attemptBlocking(outReader.close()).ignoreLogged)
 
+      val stderrBuffer = new java.util.concurrent.ConcurrentLinkedQueue[String]()
+
       val drainStderr =
         readLoop(
           errReader,
           line =>
             if line.trim.nonEmpty then
+              stderrBuffer.add(line.take(500))
               ZIO.logDebug(s"[$commandLabel][stderr] ${line.take(500)}${if line.length > 500 then "..." else ""}")
             else ZIO.unit,
         )
           .ensuring(ZIO.attemptBlocking(errReader.close()).ignoreLogged)
           .catchAll(err => ZIO.logDebug(s"[$commandLabel] stderr drain stopped: ${err.getMessage}"))
 
-      (for
+      for
         stderrFiber <- drainStderr.forkDaemon
         _           <- drainStdout
-        _           <- stderrFiber.interrupt.ignore
-      yield ()) *> ZIO.attemptBlockingIO(process.waitFor())
+        _           <- stderrFiber.join.timeout(java.time.Duration.ofSeconds(2)).ignore
+        exitCode    <- ZIO.attemptBlockingIO(process.waitFor())
+        _           <- ZIO.when(exitCode != 0 && !stderrBuffer.isEmpty) {
+                         val lines = scala.jdk.CollectionConverters.IterableHasAsScala(stderrBuffer).asScala.toList
+                         val tail  = lines.takeRight(20).mkString("\n")
+                         onLine(s"[stderr] $tail")
+                       }
+      yield exitCode
     }
