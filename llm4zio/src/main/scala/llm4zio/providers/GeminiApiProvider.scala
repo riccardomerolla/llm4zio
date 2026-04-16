@@ -12,13 +12,15 @@ object GeminiApiProvider:
     new ApiConnector:
       override def id: ConnectorId = ConnectorId.GeminiApi
 
-      override def healthCheck: IO[LlmError, HealthStatus] =
-        val start = java.lang.System.nanoTime()
-        isAvailable.map { available =>
-          val latency = Duration.fromNanos(java.lang.System.nanoTime() - start)
+      override def healthCheck: IO[LlmError, HealthStatus]                         =
+        for
+          start     <- Clock.nanoTime
+          available <- isAvailable
+          end       <- Clock.nanoTime
+          latency    = Duration.fromNanos(end - start)
+        yield
           if available then HealthStatus(Availability.Healthy, AuthStatus.Valid, Some(latency))
           else HealthStatus(Availability.Unhealthy, AuthStatus.Invalid, Some(latency))
-        }
       override def executeStream(prompt: String): ZStream[Any, LlmError, LlmChunk] =
         val contents = List(GeminiContent(parts = List(GeminiPart(text = Some(prompt)))))
         executeStreamWithContents(contents)

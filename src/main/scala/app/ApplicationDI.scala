@@ -100,16 +100,18 @@ private object DefaultCliProcessExecutor:
         envVars: Map[String, String],
       ): IO[LlmError, ProcessResult] =
         ZIO.attemptBlocking {
-          val pb = new ProcessBuilder(argv*)
+          val pb     = new ProcessBuilder(argv*)
           pb.directory(new java.io.File(cwd))
           envVars.foreach((k, v) => pb.environment().put(k, v))
           pb.redirectErrorStream(true)
           val proc   = pb.start()
           val reader = new java.io.BufferedReader(new java.io.InputStreamReader(proc.getInputStream))
-          val lines  = Iterator.continually(reader.readLine()).takeWhile(_ != null).toList
+          val lines  = Iterator.continually(Option(reader.readLine())).takeWhile(_.isDefined).flatten.toList
           val exit   = proc.waitFor()
           ProcessResult(lines, exit)
-        }.mapError(th => LlmError.ProviderError(s"CLI process failed: ${Option(th.getMessage).getOrElse(th.toString)}", Some(th)))
+        }.mapError(th =>
+          LlmError.ProviderError(s"CLI process failed: ${Option(th.getMessage).getOrElse(th.toString)}", Some(th))
+        )
 
       override def runStreaming(
         argv: List[String],
@@ -118,15 +120,24 @@ private object DefaultCliProcessExecutor:
       ): zio.stream.ZStream[Any, LlmError, String] =
         zio.stream.ZStream.unwrap {
           ZIO.attemptBlocking {
-            val pb = new ProcessBuilder(argv*)
+            val pb     = new ProcessBuilder(argv*)
             pb.directory(new java.io.File(cwd))
             envVars.foreach((k, v) => pb.environment().put(k, v))
             pb.redirectErrorStream(true)
             val proc   = pb.start()
             val reader = new java.io.BufferedReader(new java.io.InputStreamReader(proc.getInputStream))
-            zio.stream.ZStream.fromIterator(Iterator.continually(reader.readLine()).takeWhile(_ != null))
-              .mapError(th => LlmError.ProviderError(s"CLI stream failed: ${Option(th.getMessage).getOrElse(th.toString)}", Some(th)))
-          }.mapError(th => LlmError.ProviderError(s"CLI process start failed: ${Option(th.getMessage).getOrElse(th.toString)}", Some(th)))
+            zio.stream.ZStream.fromIterator(
+              Iterator.continually(Option(reader.readLine())).takeWhile(_.isDefined).flatten
+            )
+              .mapError(th =>
+                LlmError.ProviderError(s"CLI stream failed: ${Option(th.getMessage).getOrElse(th.toString)}", Some(th))
+              )
+          }.mapError(th =>
+            LlmError.ProviderError(
+              s"CLI process start failed: ${Option(th.getMessage).getOrElse(th.toString)}",
+              Some(th),
+            )
+          )
         }
   }
 
