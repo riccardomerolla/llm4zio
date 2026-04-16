@@ -83,6 +83,8 @@ final case class ConnectorConfigResolverLive(repo: ConfigRepository) extends Con
 
     val connectorId = get("id")
       .flatMap(parseConnectorId)
+      .orElse(get("provider").flatMap(parseConnectorId))
+      .orElse(get("connector").flatMap(parseConnectorId))
       .orElse(get("provider").flatMap(parseLegacyProvider))
       .getOrElse(defaultConnector)
 
@@ -135,6 +137,7 @@ final case class ConnectorConfigResolverLive(repo: ConfigRepository) extends Con
 
   private[control] def parseSandbox(value: String): Option[CliSandbox] =
     value.trim.toLowerCase match
+      case "docker"        => Some(CliSandbox.Docker(image = "default"))
       case "podman"        => Some(CliSandbox.Podman)
       case "seatbeltmacos" => Some(CliSandbox.SeatbeltMacOS)
       case "runsc"         => Some(CliSandbox.Runsc)

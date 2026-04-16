@@ -92,7 +92,7 @@ final case class SettingsControllerLive(
   )
 
   private val apiConnectorKeys: List[String] = List(
-    "connector.default.api.id",
+    "connector.default.api.provider",
     "connector.default.api.model",
     "connector.default.api.baseUrl",
     "connector.default.api.apiKey",
@@ -107,7 +107,7 @@ final case class SettingsControllerLive(
   )
 
   private val cliConnectorKeys: List[String] = List(
-    "connector.default.cli.id",
+    "connector.default.cli.connector",
     "connector.default.cli.model",
     "connector.default.cli.timeout",
     "connector.default.cli.maxRetries",
@@ -287,7 +287,8 @@ final case class SettingsControllerLive(
                       }
           // Dual-write ai.* keys for backward compat
           _        <- ZIO.foreachDiscard(apiConnectorKeys) { key =>
-                        val legacyKey = key.replace("connector.default.api.", "ai.")
+                        val shortKey  = key.stripPrefix("connector.default.api.")
+                        val legacyKey = if shortKey == "provider" then "ai.provider" else s"ai.$shortKey"
                         val value     = form.getOrElse(key, "")
                         repository.upsertSetting(legacyKey, value)
                       }
@@ -338,65 +339,45 @@ final case class SettingsControllerLive(
         yield htmlFragment(SettingsView.cliDefaultCard(saved, Map.empty).render)
       }
     },
-    Method.PUT / "agents" / string("name") / "connector" / "mode" -> handler {
+    // Agent override form — loads inline form pre-filled from defaults
+    Method.GET / "settings" / "connectors" / "agent" / string("name") / "override-form" -> handler {
       (name: String, req: Request) =>
         ErrorHandlingMiddleware.fromPersistence {
+          val mode = req.queryParam("mode").getOrElse("api")
           for
-            form        <- parseForm(req)
-            mode         = form.getOrElse("mode", "api")
-            _           <- repository.upsertSetting(s"agent.$name.connector.mode", mode)
-            _           <- checkpointConfigStore
-            rows        <- repository.getAllSettings
-            settings     = rows.map(r => r.key -> r.value).toMap
-            agents      <- agentRegistry.getAllAgents
-            agent        = agents.find(_.name == name)
-            agentOvr    <- repository
-                             .getSettingsByPrefix(s"agent.$name.connector.")
-                             .map(_.map(r => r.key.stripPrefix(s"agent.$name.connector.") -> r.value).toMap)
-            hasOverride  = agentOvr.exists { case (k, _) => k.startsWith("api.") || k.startsWith("cli.") }
-            effectiveId  = agentOvr
-                             .get(s"$mode.id")
-                             .orElse(settings.get(s"connector.default.$mode.id"))
-                             .getOrElse(if mode == "cli" then "claude-cli" else "gemini-api")
-            effectiveModel = agentOvr
-                               .get(s"$mode.model")
-                               .orElse(settings.get(s"connector.default.$mode.model"))
-                               .getOrElse("")
-          yield agent match
-            case Some(a) => htmlFragment(SettingsView.agentRow(a, mode, hasOverride, effectiveId, effectiveModel).render)
-            case None    => Response.notFound
-        }
-    },
-    Method.GET / "agents" / string("name") / "connector" / "edit" -> handler {
-      (name: String, _: Request) =>
-        ErrorHandlingMiddleware.fromPersistence {
-          for
+            _       <- repository.upsertSetting(s"agent.$name.connector.mode", mode)
+            _       <- checkpointConfigStore
+            rows    <- repository.getAllSettings
+            defaults = rows.map(r => r.key -> r.value).toMap
             agentOvr <- repository
                           .getSettingsByPrefix(s"agent.$name.connector.")
                           .map(_.map(r => r.key.stripPrefix(s"agent.$name.connector.") -> r.value).toMap)
-            mode      = agentOvr.getOrElse("mode", "api")
-            rows     <- repository.getAllSettings
-            defaults  = rows.map(r => r.key -> r.value).toMap
-            // Merge agent overrides into defaults for pre-filling
             merged    = defaults ++ agentOvr.map { case (k, v) => s"agent.$name.connector.$k" -> v }
           yield htmlFragment(SettingsView.agentOverrideForm(name, mode, merged))
         }
     },
-    Method.POST / "agents" / string("name") / "connector"     -> handler {
+    // Empty panel — clears the override panel (Cancel button)
+    Method.GET / "settings" / "connectors" / "agent" / string("name") / "override-panel-empty" -> handler {
+      (name: String, _: Request) =>
+        ZIO.succeed(htmlFragment(""))
+    },
+    // Save agent override
+    Method.POST / "settings" / "connectors" / "agent" / string("name") / "override" -> handler {
       (name: String, req: Request) =>
         ErrorHandlingMiddleware.fromPersistence {
           for
             form        <- parseForm(req)
+            // Save all form fields that belong to this agent
+            _           <- ZIO.foreachDiscard(form.toList.filter(_._1.startsWith(s"agent.$name."))) { case (key, value) =>
+                             repository.upsertSetting(key, value)
+                           }
+            // Handle envVars specially for CLI mode
             agentOvr    <- repository
                              .getSettingsByPrefix(s"agent.$name.connector.")
                              .map(_.map(r => r.key.stripPrefix(s"agent.$name.connector.") -> r.value).toMap)
             mode         = agentOvr.getOrElse("mode", "api")
-            prefix       = s"agent.$name.connector.$mode"
-            _           <- ZIO.foreachDiscard(form.toList.filter(_._1.startsWith(prefix))) { case (key, value) =>
-                             repository.upsertSetting(key, value)
-                           }
-            // Handle envVars specially for CLI mode
             _           <- if mode == "cli" then {
+                              val prefix  = s"agent.$name.connector.cli"
                               val envVars = parseEnvVars(form, s"$prefix.envVars")
                               repository.upsertSetting(s"$prefix.envVars", envVars)
                             } else ZIO.unit
@@ -410,8 +391,10 @@ final case class SettingsControllerLive(
                              .map(_.map(r => r.key.stripPrefix(s"agent.$name.connector.") -> r.value).toMap)
             hasOverride  = updOvr.exists { case (k, _) => k.startsWith("api.") || k.startsWith("cli.") }
             effectiveId  = updOvr
-                             .get(s"$mode.id")
-                             .orElse(settings.get(s"connector.default.$mode.id"))
+                             .get(s"$mode.provider")
+                             .orElse(updOvr.get(s"$mode.connector"))
+                             .orElse(settings.get(s"connector.default.$mode.provider"))
+                             .orElse(settings.get(s"connector.default.$mode.connector"))
                              .getOrElse(if mode == "cli" then "claude-cli" else "gemini-api")
             effectiveModel = updOvr
                                .get(s"$mode.model")
@@ -422,7 +405,8 @@ final case class SettingsControllerLive(
             case None    => Response.notFound
         }
     },
-    Method.DELETE / "agents" / string("name") / "connector"    -> handler {
+    // Delete agent override
+    Method.DELETE / "settings" / "connectors" / "agent" / string("name") / "override" -> handler {
       (name: String, _: Request) =>
         ErrorHandlingMiddleware.fromPersistence {
           for
@@ -435,7 +419,7 @@ final case class SettingsControllerLive(
             settings       = rows.map(r => r.key -> r.value).toMap
             agents        <- agentRegistry.getAllAgents
             agent          = agents.find(_.name == name)
-            effectiveId    = settings.get("connector.default.api.id").getOrElse("gemini-api")
+            effectiveId    = settings.get("connector.default.api.provider").getOrElse("gemini-api")
             effectiveModel = settings.get("connector.default.api.model").getOrElse("")
           yield agent match
             case Some(a) => htmlFragment(SettingsView.agentRow(a, "api", false, effectiveId, effectiveModel).render)

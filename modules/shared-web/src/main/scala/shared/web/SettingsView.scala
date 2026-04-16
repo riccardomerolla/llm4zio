@@ -415,10 +415,13 @@ object SettingsView:
           tbody(
             agents.filter(_.usesAI).flatMap { agent =>
               val ov           = overrides.getOrElse(agent.name, Map.empty)
-              val hasOverride  = ov.nonEmpty
               val mode         = ov.getOrElse("mode", "api")
-              val connectorId  = ov.getOrElse("connector", defaults.getOrElse(s"connector.default.$mode.provider", ""))
-              val model        = ov.getOrElse("model", defaults.getOrElse(s"connector.default.$mode.model", ""))
+              val hasOverride  = ov.exists { case (k, _) => k.startsWith("api.") || k.startsWith("cli.") }
+              val connectorId  = ov.get(s"$mode.provider").orElse(ov.get(s"$mode.connector"))
+                                  .getOrElse(defaults.getOrElse(s"connector.default.$mode.provider",
+                                    defaults.getOrElse(s"connector.default.$mode.connector", "")))
+              val model        = ov.get(s"$mode.model")
+                                  .getOrElse(defaults.getOrElse(s"connector.default.$mode.model", ""))
               Seq(
                 agentRow(agent, mode, hasOverride, connectorId, model),
                 tr(id := s"override-panel-${agent.name}")(
