@@ -5,7 +5,6 @@ import zio.http.*
 import zio.json.*
 
 import memory.entity.{ Scope, * }
-import shared.web.MemoryView
 
 trait MemoryController:
   def routes: Routes[Any, Response]

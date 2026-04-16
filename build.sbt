@@ -218,11 +218,13 @@ lazy val activityDomain = (project in file("modules/activity-domain"))
   )
 
 lazy val memoryDomain = (project in file("modules/memory-domain"))
-  .dependsOn(sharedIds, sharedStoreCore)
+  .dependsOn(sharedIds, sharedStoreCore, sharedWebCore, configDomain, llm4zio)
   .settings(foundationSettings)
   .settings(
     name := "memory-domain",
-    libraryDependencies ++= domainDeps,
+    libraryDependencies ++= domainBceDeps ++ Seq(
+      "io.github.riccardomerolla" %% "zio-eclipsestore-gigamap" % zioEclipseStoreVersion,
+    ),
   )
 
 lazy val governanceDomain = (project in file("modules/governance-domain"))

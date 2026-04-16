@@ -1,7 +1,8 @@
-package shared.web
+package memory.boundary
 
 import memory.entity.{ MemoryEntry, MemoryKind, Scope, ScoredMemory }
 import scalatags.Text.all.*
+import shared.web.Layout
 
 object MemoryView:
 
