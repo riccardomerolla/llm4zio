@@ -3,6 +3,7 @@ package shared.web
 import zio.json.*
 
 import config.boundary.ModelsView
+import config.entity.AgentInfo
 import gateway.boundary.{ ChannelCardData, ChannelView }
 import issues.entity.api.IssueTemplate
 import llm4zio.tools.{ Tool, ToolSandbox }
@@ -27,6 +28,8 @@ object SettingsView:
     settings: Map[String, String],
     registry: config.entity.ModelRegistryResponse,
     statuses: List[config.entity.ProviderProbeStatus],
+    agents: List[AgentInfo] = Nil,
+    agentOverrides: Map[String, Map[String, String]] = Map.empty,
     flash: Option[String] = None,
     errors: Map[String, String] = Map.empty,
   ): String =
@@ -45,15 +48,570 @@ object SettingsView:
           ),
         )
       else (),
-      tag("form")(method := "post", action := "/settings/connectors", cls := "space-y-6 max-w-2xl mb-10")(
-        aiProviderSection(settings, errors),
-        div(cls := "flex gap-4 pt-2")(
+      defaultConnectorsSection(settings, errors),
+      if agents.nonEmpty then
+        agentConnectorTable(
+          agents,
+          agentOverrides,
+          settings,
+        )
+      else (),
+      modelRegistrySection(registry, statusMap),
+      toolsSection,
+      envVarsScript,
+    )
+
+  /** @deprecated Use connectorsTab instead. Kept for backward compatibility. */
+  def aiTab(
+    settings: Map[String, String],
+    registry: config.entity.ModelRegistryResponse,
+    statuses: List[config.entity.ProviderProbeStatus],
+    flash: Option[String] = None,
+    errors: Map[String, String] = Map.empty,
+  ): String = connectorsTab(settings, registry, statuses, Nil, Map.empty, flash, errors)
+
+  // ---------------------------------------------------------------------------
+  // Default connectors section — two side-by-side cards
+  // ---------------------------------------------------------------------------
+
+  private def defaultConnectorsSection(s: Map[String, String], errors: Map[String, String]): Frag =
+    div(cls := "grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8")(
+      apiDefaultCard(s, errors),
+      cliDefaultCard(s, errors),
+    )
+
+  def apiDefaultCard(s: Map[String, String], errors: Map[String, String] = Map.empty): Frag =
+    div(id := "api-card", cls := sectionCls)(
+      tag("form")(
+        attr("hx-post")  := "/settings/connectors/api",
+        attr("hx-target") := "#api-card",
+        attr("hx-swap")   := "outerHTML",
+        cls               := "space-y-4",
+      )(
+        h2(cls := "text-lg font-semibold text-white mb-4")("API Default"),
+        div(
+          label(cls := labelCls, `for` := "connector.default.api.provider")("Provider"),
+          tag("select")(
+            name := "connector.default.api.provider",
+            id   := "connector.default.api.provider",
+            cls  := selectCls,
+          )(
+            connectorOption("gemini-api", "Gemini API", s.get("connector.default.api.provider")),
+            connectorOption("openai", "OpenAI", s.get("connector.default.api.provider")),
+            connectorOption("anthropic", "Anthropic", s.get("connector.default.api.provider")),
+            connectorOption("lm-studio", "LM Studio (Local)", s.get("connector.default.api.provider")),
+            connectorOption("ollama", "Ollama (Local)", s.get("connector.default.api.provider")),
+          ),
+          showError(errors.get("connector.default.api.provider")),
+        ),
+        textField(
+          "connector.default.api.model",
+          "Model",
+          s,
+          placeholder = "gemini-2.5-flash",
+          error = errors.get("connector.default.api.model"),
+        ),
+        textField(
+          "connector.default.api.baseUrl",
+          "Base URL",
+          s,
+          placeholder = "Optional: http://localhost:1234",
+          error = errors.get("connector.default.api.baseUrl"),
+        ),
+        div(
+          label(cls := labelCls, `for` := "connector.default.api.apiKey")("API Key"),
+          input(
+            `type`      := "password",
+            name        := "connector.default.api.apiKey",
+            id          := "connector.default.api.apiKey",
+            value       := s.getOrElse("connector.default.api.apiKey", ""),
+            placeholder := "Enter API key (optional)",
+            cls         := inputCls,
+          ),
+          showError(errors.get("connector.default.api.apiKey")),
+        ),
+        div(cls := "grid grid-cols-2 gap-4")(
+          numberField(
+            "connector.default.api.timeout",
+            "Timeout (s)",
+            s,
+            default = "300",
+            min = "10",
+            max = "900",
+            error = errors.get("connector.default.api.timeout"),
+          ),
+          numberField(
+            "connector.default.api.maxRetries",
+            "Max Retries",
+            s,
+            default = "3",
+            min = "0",
+            max = "10",
+            error = errors.get("connector.default.api.maxRetries"),
+          ),
+        ),
+        div(cls := "grid grid-cols-2 gap-4")(
+          numberField(
+            "connector.default.api.requestsPerMinute",
+            "Requests/min",
+            s,
+            default = "60",
+            min = "1",
+            max = "600",
+            error = errors.get("connector.default.api.requestsPerMinute"),
+          ),
+          numberField(
+            "connector.default.api.burstSize",
+            "Burst Size",
+            s,
+            default = "10",
+            min = "1",
+            max = "100",
+            error = errors.get("connector.default.api.burstSize"),
+          ),
+        ),
+        numberField(
+          "connector.default.api.acquireTimeout",
+          "Acquire Timeout (s)",
+          s,
+          default = "30",
+          min = "1",
+          max = "300",
+          error = errors.get("connector.default.api.acquireTimeout"),
+        ),
+        div(cls := "grid grid-cols-2 gap-4")(
+          numberField(
+            "connector.default.api.temperature",
+            "Temperature",
+            s,
+            default = "",
+            min = "0",
+            max = "2",
+            step = "0.1",
+            placeholder = "Optional (0.0 - 2.0)",
+            error = errors.get("connector.default.api.temperature"),
+          ),
+          numberField(
+            "connector.default.api.maxTokens",
+            "Max Tokens",
+            s,
+            default = "",
+            min = "1",
+            max = "1048576",
+            placeholder = "Optional",
+            error = errors.get("connector.default.api.maxTokens"),
+          ),
+        ),
+        textField(
+          "connector.default.api.fallbackChain",
+          "Fallback Chain",
+          s,
+          placeholder = "openai:gpt-4o-mini, anthropic:claude-3-5-haiku-latest",
+          error = errors.get("connector.default.api.fallbackChain"),
+        ),
+        p(cls := "text-xs text-gray-400 -mt-2")(
+          "Comma-separated fallback models. Use connector:model format."
+        ),
+        div(cls := "flex gap-3 pt-4 border-t border-white/10")(
           button(
             `type` := "submit",
             cls    := "rounded-md bg-indigo-500 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-400",
-          )("Save Connector Settings")
+          )("Save"),
+          button(
+            `type`             := "button",
+            cls                := "rounded-md bg-emerald-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-500",
+            attr("hx-post")    := "/api/settings/test-ai",
+            attr("hx-include") := "[name^='connector.default.api.']",
+            attr("hx-target")  := "#api-test-result",
+            attr("hx-swap")    := "innerHTML",
+          )("Test Connection"),
+        ),
+        div(id := "api-test-result", cls := "mt-3")(),
+      ),
+    )
+
+  def cliDefaultCard(s: Map[String, String], errors: Map[String, String] = Map.empty): Frag =
+    div(id := "cli-card", cls := sectionCls)(
+      tag("form")(
+        attr("hx-post")  := "/settings/connectors/cli",
+        attr("hx-target") := "#cli-card",
+        attr("hx-swap")   := "outerHTML",
+        cls               := "space-y-4",
+      )(
+        h2(cls := "text-lg font-semibold text-white mb-4")("CLI Default"),
+        div(
+          label(cls := labelCls, `for` := "connector.default.cli.connector")("Connector"),
+          tag("select")(
+            name := "connector.default.cli.connector",
+            id   := "connector.default.cli.connector",
+            cls  := selectCls,
+          )(
+            connectorOption("claude-cli", "Claude CLI", s.get("connector.default.cli.connector")),
+            connectorOption("gemini-cli", "Gemini CLI", s.get("connector.default.cli.connector")),
+            connectorOption("opencode", "OpenCode", s.get("connector.default.cli.connector")),
+            connectorOption("codex", "Codex", s.get("connector.default.cli.connector")),
+            connectorOption("copilot", "Copilot", s.get("connector.default.cli.connector")),
+          ),
+          showError(errors.get("connector.default.cli.connector")),
+        ),
+        textField(
+          "connector.default.cli.model",
+          "Model",
+          s,
+          placeholder = "Optional model override",
+          error = errors.get("connector.default.cli.model"),
+        ),
+        div(cls := "grid grid-cols-2 gap-4")(
+          numberField(
+            "connector.default.cli.timeout",
+            "Timeout (s)",
+            s,
+            default = "300",
+            min = "10",
+            max = "900",
+            error = errors.get("connector.default.cli.timeout"),
+          ),
+          numberField(
+            "connector.default.cli.maxRetries",
+            "Max Retries",
+            s,
+            default = "3",
+            min = "0",
+            max = "10",
+            error = errors.get("connector.default.cli.maxRetries"),
+          ),
+        ),
+        numberField(
+          "connector.default.cli.turnLimit",
+          "Turn Limit",
+          s,
+          default = "25",
+          min = "1",
+          max = "200",
+          error = errors.get("connector.default.cli.turnLimit"),
+        ),
+        div(
+          label(cls := labelCls, `for` := "connector.default.cli.sandbox")("Sandbox"),
+          tag("select")(
+            name := "connector.default.cli.sandbox",
+            id   := "connector.default.cli.sandbox",
+            cls  := selectCls,
+          )(
+            connectorOption("none", "None", s.get("connector.default.cli.sandbox")),
+            connectorOption("docker", "Docker", s.get("connector.default.cli.sandbox")),
+            connectorOption("podman", "Podman", s.get("connector.default.cli.sandbox")),
+            connectorOption("seatbeltmacos", "Seatbelt (macOS)", s.get("connector.default.cli.sandbox")),
+            connectorOption("runsc", "gVisor (runsc)", s.get("connector.default.cli.sandbox")),
+            connectorOption("lxc", "LXC", s.get("connector.default.cli.sandbox")),
+          ),
+          showError(errors.get("connector.default.cli.sandbox")),
+        ),
+        div(
+          label(cls := labelCls, `for` := "connector.default.cli.flags")("Flags"),
+          textarea(
+            name := "connector.default.cli.flags",
+            id   := "connector.default.cli.flags",
+            rows := 3,
+            cls  := "block w-full rounded-md bg-white/5 border-0 py-2 text-white shadow-sm ring-1 ring-inset ring-white/10 focus:ring-2 focus:ring-inset focus:ring-indigo-500 sm:text-sm/6 px-3",
+            attr("placeholder") := "Additional CLI flags, one per line",
+          )(s.getOrElse("connector.default.cli.flags", "")),
+          showError(errors.get("connector.default.cli.flags")),
+        ),
+        envVarsEditor("connector.default.cli.envVars", s.getOrElse("connector.default.cli.envVars", "")),
+        div(cls := "flex gap-3 pt-4 border-t border-white/10")(
+          button(
+            `type` := "submit",
+            cls    := "rounded-md bg-indigo-500 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-400",
+          )("Save"),
         ),
       ),
+    )
+
+  // ---------------------------------------------------------------------------
+  // Connector option helper
+  // ---------------------------------------------------------------------------
+
+  private def connectorOption(value: String, labelText: String, current: Option[String]): Frag =
+    val isSelected = current.contains(value)
+    tag("option")(
+      attr("value") := value,
+      if isSelected then attr("selected") := "selected" else (),
+    )(labelText)
+
+  // ---------------------------------------------------------------------------
+  // Env vars editor
+  // ---------------------------------------------------------------------------
+
+  private def envVarsEditor(fieldPrefix: String, rawEnvVars: String): Frag =
+    val pairs = rawEnvVars.split(",").toList.map(_.trim).filter(_.contains("=")).zipWithIndex.map {
+      case (kv, idx) =>
+        val parts = kv.split("=", 2)
+        (idx, parts(0).trim, if parts.length > 1 then parts(1).trim else "")
+    }
+    div(cls := "space-y-2")(
+      label(cls := labelCls)("Environment Variables"),
+      div(id := s"env-vars-$fieldPrefix", cls := "space-y-2")(
+        if pairs.nonEmpty then
+          pairs.map { case (idx, k, v) => envVarRow(fieldPrefix, idx, k, v) }
+        else
+          Seq(envVarRow(fieldPrefix, 0, "", ""))
+      ),
+      button(
+        `type`           := "button",
+        cls              := "mt-2 rounded-md bg-white/10 px-3 py-1.5 text-xs font-semibold text-gray-300 ring-1 ring-white/10 hover:bg-white/20",
+        attr("onclick")  := s"addEnvVarRow('$fieldPrefix')",
+      )("+ Add Variable"),
+    )
+
+  private def envVarRow(fieldPrefix: String, index: Int, key: String, value: String): Frag =
+    div(cls := "flex items-center gap-2", attr("data-env-row") := "")(
+      input(
+        `type`              := "text",
+        name                := s"${fieldPrefix}.key.$index",
+        attr("placeholder") := "KEY",
+        cls                 := "flex-1 " + inputCls,
+        attr("value")       := key,
+      ),
+      span(cls := "text-gray-400")("="),
+      input(
+        `type`              := "text",
+        name                := s"${fieldPrefix}.value.$index",
+        attr("placeholder") := "value",
+        cls                 := "flex-1 " + inputCls,
+        attr("value")       := value,
+      ),
+      button(
+        `type`          := "button",
+        cls             := "text-red-400 hover:text-red-300 text-sm px-2",
+        attr("onclick") := "this.parentElement.remove()",
+      )("x"),
+    )
+
+  // ---------------------------------------------------------------------------
+  // Agent connector assignment table
+  // ---------------------------------------------------------------------------
+
+  private def agentConnectorTable(
+    agents: List[AgentInfo],
+    overrides: Map[String, Map[String, String]],
+    defaults: Map[String, String],
+  ): Frag =
+    div(cls := sectionCls + " mt-8")(
+      h2(cls := "text-lg font-semibold text-white mb-4")("Agent Connector Assignments"),
+      p(cls := "text-sm text-slate-300 mb-4")(
+        "Override default connector settings per agent. Agents without overrides use the global defaults above."
+      ),
+      div(cls := "overflow-x-auto")(
+        table(cls := "min-w-full text-left text-sm text-slate-200")(
+          thead(
+            tr(
+              th(cls := "py-2 pr-4 text-xs font-semibold uppercase text-slate-400")("Agent"),
+              th(cls := "py-2 pr-4 text-xs font-semibold uppercase text-slate-400")("Mode"),
+              th(cls := "py-2 pr-4 text-xs font-semibold uppercase text-slate-400")("Connector"),
+              th(cls := "py-2 pr-4 text-xs font-semibold uppercase text-slate-400")("Model"),
+              th(cls := "py-2 text-xs font-semibold uppercase text-slate-400")("Actions"),
+            )
+          ),
+          tbody(
+            agents.filter(_.usesAI).flatMap { agent =>
+              val ov           = overrides.getOrElse(agent.name, Map.empty)
+              val hasOverride  = ov.nonEmpty
+              val mode         = ov.getOrElse("mode", "api")
+              val connectorId  = ov.getOrElse("connector", defaults.getOrElse(s"connector.default.$mode.provider", ""))
+              val model        = ov.getOrElse("model", defaults.getOrElse(s"connector.default.$mode.model", ""))
+              Seq(
+                agentRow(agent, mode, hasOverride, connectorId, model),
+                tr(id := s"override-panel-${agent.name}")(
+                  td(attr("colspan") := "5")()
+                ),
+              )
+            }
+          ),
+        ),
+      ),
+    )
+
+  def agentRow(
+    agent: AgentInfo,
+    mode: String,
+    hasOverride: Boolean,
+    connectorId: String,
+    model: String,
+  ): Frag =
+    tr(cls := "border-t border-white/5")(
+      td(cls := "py-2 pr-4")(
+        div(
+          span(cls := "font-medium text-white")(agent.displayName),
+          if hasOverride then
+            span(cls := "ml-2 inline-flex items-center rounded-md bg-indigo-500/10 px-1.5 py-0.5 text-[10px] font-medium text-indigo-300 ring-1 ring-indigo-400/30")(
+              "override"
+            )
+          else (),
+        )
+      ),
+      td(cls := "py-2 pr-4")(
+        div(cls := "inline-flex rounded-md ring-1 ring-white/10")(
+          button(
+            `type`             := "button",
+            cls                := (if mode == "api" then "rounded-l-md bg-indigo-500/30 px-2.5 py-1 text-xs font-semibold text-indigo-200"
+                                   else "rounded-l-md bg-white/5 px-2.5 py-1 text-xs text-gray-400 hover:bg-white/10"),
+            attr("hx-get")     := s"/settings/connectors/agent/${agent.name}/override-form?mode=api",
+            attr("hx-target")  := s"#override-panel-${agent.name}",
+            attr("hx-swap")    := "innerHTML",
+          )("API"),
+          button(
+            `type`             := "button",
+            cls                := (if mode == "cli" then "rounded-r-md bg-indigo-500/30 px-2.5 py-1 text-xs font-semibold text-indigo-200"
+                                   else "rounded-r-md bg-white/5 px-2.5 py-1 text-xs text-gray-400 hover:bg-white/10"),
+            attr("hx-get")     := s"/settings/connectors/agent/${agent.name}/override-form?mode=cli",
+            attr("hx-target")  := s"#override-panel-${agent.name}",
+            attr("hx-swap")    := "innerHTML",
+          )("CLI"),
+        )
+      ),
+      td(cls := "py-2 pr-4 font-mono text-xs")(if connectorId.nonEmpty then connectorId else "default"),
+      td(cls := "py-2 pr-4 font-mono text-xs")(if model.nonEmpty then model else "default"),
+      td(cls := "py-2")(
+        div(cls := "flex gap-2")(
+          button(
+            `type`             := "button",
+            cls                := "rounded-md bg-white/10 px-2.5 py-1 text-xs font-semibold text-gray-300 ring-1 ring-white/10 hover:bg-white/20",
+            attr("hx-get")     := s"/settings/connectors/agent/${agent.name}/override-form?mode=$mode",
+            attr("hx-target")  := s"#override-panel-${agent.name}",
+            attr("hx-swap")    := "innerHTML",
+          )("Override"),
+          if hasOverride then
+            button(
+              `type`             := "button",
+              cls                := "rounded-md bg-red-500/10 px-2.5 py-1 text-xs font-semibold text-red-300 ring-1 ring-red-400/30 hover:bg-red-500/20",
+              attr("hx-delete")  := s"/settings/connectors/agent/${agent.name}/override",
+              attr("hx-target")  := s"#override-panel-${agent.name}",
+              attr("hx-swap")    := "innerHTML",
+              attr("hx-confirm") := s"Reset ${agent.displayName} to defaults?",
+            )("Reset")
+          else (),
+        )
+      ),
+    )
+
+  def agentOverrideForm(agentName: String, mode: String, defaults: Map[String, String]): String =
+    val prefix = s"agent.$agentName"
+    div(cls := "p-4 bg-slate-800/60 rounded-b-lg border border-white/5")(
+      tag("form")(
+        attr("hx-post")  := s"/settings/connectors/agent/$agentName/override",
+        attr("hx-target") := s"#override-panel-$agentName",
+        attr("hx-swap")   := "innerHTML",
+        cls               := "space-y-4",
+      )(
+        input(`type` := "hidden", name := s"$prefix.mode", value := mode),
+        h3(cls := "text-sm font-semibold text-white mb-3")(
+          s"Override for $agentName",
+          span(cls := "ml-2 text-xs font-normal text-gray-400")(s"(${mode.toUpperCase})")
+        ),
+        if mode == "api" then apiOverrideFields(prefix, defaults)
+        else cliOverrideFields(prefix, defaults),
+        div(cls := "flex gap-3 pt-3 border-t border-white/10")(
+          button(
+            `type` := "submit",
+            cls    := "rounded-md bg-indigo-500 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-indigo-400",
+          )("Save Override"),
+          button(
+            `type`             := "button",
+            cls                := "rounded-md border border-white/20 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-white/10",
+            attr("hx-get")     := s"/settings/connectors/agent/$agentName/override-panel-empty",
+            attr("hx-target")  := s"#override-panel-$agentName",
+            attr("hx-swap")    := "innerHTML",
+          )("Cancel"),
+        ),
+      ),
+    ).render
+
+  private def apiOverrideFields(prefix: String, s: Map[String, String]): Frag =
+    frag(
+      div(
+        label(cls := labelCls, `for` := s"$prefix.provider")("Provider"),
+        tag("select")(name := s"$prefix.provider", id := s"$prefix.provider", cls := selectCls)(
+          connectorOption("gemini-api", "Gemini API", s.get(s"$prefix.provider")),
+          connectorOption("openai", "OpenAI", s.get(s"$prefix.provider")),
+          connectorOption("anthropic", "Anthropic", s.get(s"$prefix.provider")),
+          connectorOption("lm-studio", "LM Studio", s.get(s"$prefix.provider")),
+          connectorOption("ollama", "Ollama", s.get(s"$prefix.provider")),
+        ),
+      ),
+      textField(s"$prefix.model", "Model", s, placeholder = "Override model"),
+      textField(s"$prefix.baseUrl", "Base URL", s, placeholder = "Optional"),
+      div(
+        label(cls := labelCls, `for` := s"$prefix.apiKey")("API Key"),
+        input(
+          `type`      := "password",
+          name        := s"$prefix.apiKey",
+          id          := s"$prefix.apiKey",
+          value       := s.getOrElse(s"$prefix.apiKey", ""),
+          placeholder := "Optional override",
+          cls         := inputCls,
+        ),
+      ),
+      div(cls := "grid grid-cols-2 gap-4")(
+        numberField(s"$prefix.timeout", "Timeout (s)", s, default = "300", min = "10", max = "900"),
+        numberField(s"$prefix.maxRetries", "Max Retries", s, default = "3", min = "0", max = "10"),
+      ),
+      div(cls := "grid grid-cols-2 gap-4")(
+        numberField(s"$prefix.temperature", "Temperature", s, default = "", min = "0", max = "2", step = "0.1", placeholder = "Optional"),
+        numberField(s"$prefix.maxTokens", "Max Tokens", s, default = "", min = "1", max = "1048576", placeholder = "Optional"),
+      ),
+    )
+
+  private def cliOverrideFields(prefix: String, s: Map[String, String]): Frag =
+    frag(
+      div(
+        label(cls := labelCls, `for` := s"$prefix.connector")("Connector"),
+        tag("select")(name := s"$prefix.connector", id := s"$prefix.connector", cls := selectCls)(
+          connectorOption("claude-cli", "Claude CLI", s.get(s"$prefix.connector")),
+          connectorOption("gemini-cli", "Gemini CLI", s.get(s"$prefix.connector")),
+          connectorOption("opencode", "OpenCode", s.get(s"$prefix.connector")),
+          connectorOption("codex", "Codex", s.get(s"$prefix.connector")),
+          connectorOption("copilot", "Copilot", s.get(s"$prefix.connector")),
+        ),
+      ),
+      textField(s"$prefix.model", "Model", s, placeholder = "Optional model override"),
+      div(cls := "grid grid-cols-2 gap-4")(
+        numberField(s"$prefix.timeout", "Timeout (s)", s, default = "300", min = "10", max = "900"),
+        numberField(s"$prefix.maxRetries", "Max Retries", s, default = "3", min = "0", max = "10"),
+      ),
+      numberField(s"$prefix.turnLimit", "Turn Limit", s, default = "25", min = "1", max = "200"),
+      div(
+        label(cls := labelCls, `for` := s"$prefix.sandbox")("Sandbox"),
+        tag("select")(name := s"$prefix.sandbox", id := s"$prefix.sandbox", cls := selectCls)(
+          connectorOption("none", "None", s.get(s"$prefix.sandbox")),
+          connectorOption("docker", "Docker", s.get(s"$prefix.sandbox")),
+          connectorOption("podman", "Podman", s.get(s"$prefix.sandbox")),
+          connectorOption("seatbeltmacos", "Seatbelt (macOS)", s.get(s"$prefix.sandbox")),
+          connectorOption("runsc", "gVisor (runsc)", s.get(s"$prefix.sandbox")),
+          connectorOption("lxc", "LXC", s.get(s"$prefix.sandbox")),
+        ),
+      ),
+      div(
+        label(cls := labelCls, `for` := s"$prefix.flags")("Flags"),
+        textarea(
+          name := s"$prefix.flags",
+          id   := s"$prefix.flags",
+          rows := 2,
+          cls  := "block w-full rounded-md bg-white/5 border-0 py-2 text-white shadow-sm ring-1 ring-inset ring-white/10 focus:ring-2 focus:ring-inset focus:ring-indigo-500 sm:text-sm/6 px-3",
+          attr("placeholder") := "Additional flags",
+        )(s.getOrElse(s"$prefix.flags", "")),
+      ),
+      envVarsEditor(s"$prefix.envVars", s.getOrElse(s"$prefix.envVars", "")),
+    )
+
+  // ---------------------------------------------------------------------------
+  // Model registry section (extracted from old connectorsTab)
+  // ---------------------------------------------------------------------------
+
+  private def modelRegistrySection(
+    registry: config.entity.ModelRegistryResponse,
+    statusMap: Map[llm4zio.core.LlmProvider, config.entity.ProviderProbeStatus],
+  ): Frag =
+    div(cls := "mt-10")(
       h2(cls := "text-lg font-semibold text-white mb-4")("Available Models"),
       p(cls := "text-sm text-slate-300 mb-4")(
         "Models grouped by provider. Configure primary model and fallback chain above."
@@ -88,28 +646,71 @@ object SettingsView:
           )
         }
       ),
-      div(cls := "mt-10")(
-        h2(cls := "text-lg font-semibold text-white mb-4")("Available Tools"),
-        p(cls := "text-sm text-slate-300 mb-4")("Built-in tools registered in the tool registry."),
-        div(
-          id                 := "tools-list",
-          attr("hx-get")     := "/settings/connectors/tools-fragment",
-          attr("hx-trigger") := "load",
-          attr("hx-swap")    := "innerHTML",
-        )(
-          div(cls := "text-sm text-gray-400")("Loading tools...")
-        ),
+    )
+
+  // ---------------------------------------------------------------------------
+  // Tools section (extracted from old connectorsTab)
+  // ---------------------------------------------------------------------------
+
+  private def toolsSection: Frag =
+    div(cls := "mt-10")(
+      h2(cls := "text-lg font-semibold text-white mb-4")("Available Tools"),
+      p(cls := "text-sm text-slate-300 mb-4")("Built-in tools registered in the tool registry."),
+      div(
+        id                 := "tools-list",
+        attr("hx-get")     := "/settings/connectors/tools-fragment",
+        attr("hx-trigger") := "load",
+        attr("hx-swap")    := "innerHTML",
+      )(
+        div(cls := "text-sm text-gray-400")("Loading tools...")
       ),
     )
 
-  /** @deprecated Use connectorsTab instead. Kept for backward compatibility. */
-  def aiTab(
-    settings: Map[String, String],
-    registry: config.entity.ModelRegistryResponse,
-    statuses: List[config.entity.ProviderProbeStatus],
-    flash: Option[String] = None,
-    errors: Map[String, String] = Map.empty,
-  ): String = connectorsTab(settings, registry, statuses, flash, errors)
+  // ---------------------------------------------------------------------------
+  // Env vars inline JS
+  // ---------------------------------------------------------------------------
+
+  private def envVarsScript: Frag =
+    tag("script")(raw(
+      """
+      |function addEnvVarRow(fieldPrefix) {
+      |  var container = document.getElementById('env-vars-' + fieldPrefix);
+      |  if (!container) return;
+      |  var rows = container.querySelectorAll('[data-env-row]');
+      |  var idx = rows.length;
+      |  var row = document.createElement('div');
+      |  row.className = 'flex items-center gap-2';
+      |  row.setAttribute('data-env-row', '');
+      |  var keyInput = document.createElement('input');
+      |  keyInput.type = 'text';
+      |  keyInput.name = fieldPrefix + '.key.' + idx;
+      |  keyInput.placeholder = 'KEY';
+      |  keyInput.className = 'flex-1 block w-full rounded-md bg-white/5 border-0 py-1.5 text-white shadow-sm ring-1 ring-inset ring-white/10 focus:ring-2 focus:ring-inset focus:ring-indigo-500 sm:text-sm/6 px-3';
+      |  var eq = document.createElement('span');
+      |  eq.className = 'text-gray-400';
+      |  eq.textContent = '=';
+      |  var valInput = document.createElement('input');
+      |  valInput.type = 'text';
+      |  valInput.name = fieldPrefix + '.value.' + idx;
+      |  valInput.placeholder = 'value';
+      |  valInput.className = 'flex-1 block w-full rounded-md bg-white/5 border-0 py-1.5 text-white shadow-sm ring-1 ring-inset ring-white/10 focus:ring-2 focus:ring-inset focus:ring-indigo-500 sm:text-sm/6 px-3';
+      |  var removeBtn = document.createElement('button');
+      |  removeBtn.type = 'button';
+      |  removeBtn.className = 'text-red-400 hover:text-red-300 text-sm px-2';
+      |  removeBtn.textContent = 'x';
+      |  removeBtn.addEventListener('click', function() { row.remove(); });
+      |  row.appendChild(keyInput);
+      |  row.appendChild(eq);
+      |  row.appendChild(valInput);
+      |  row.appendChild(removeBtn);
+      |  container.appendChild(row);
+      |}
+      """.stripMargin
+    ))
+
+  // ---------------------------------------------------------------------------
+  // Other tabs (unchanged)
+  // ---------------------------------------------------------------------------
 
   def channelsTab(
     cards: List[ChannelCardData],
@@ -452,7 +1053,7 @@ object SettingsView:
         div(cls := "mt-8 pt-6 border-t border-white/10")(
           div(cls := "bg-white/5 ring-1 ring-white/10 rounded-lg p-4")(
             p(cls := "text-sm text-gray-300")(
-              "💡 For advanced configuration with validation, diff, history, and hot reload, use the ",
+              "\uD83D\uDCA1 For advanced configuration with validation, diff, history, and hot reload, use the ",
               a(href := "/config", cls := "text-indigo-400 hover:text-indigo-300 underline")("Config Editor"),
               ".",
             )
@@ -887,7 +1488,7 @@ object SettingsView:
 
   def testConnectionSuccess(model: String, latencyMs: Long): String =
     div(cls := "inline-flex items-center gap-2 rounded-full bg-emerald-500/20 border border-emerald-500/50 px-4 py-2")(
-      span(cls := "text-emerald-400 text-sm font-medium")("✓ Connection successful"),
+      span(cls := "text-emerald-400 text-sm font-medium")("\u2713 Connection successful"),
       span(cls := "text-emerald-300 text-xs")("("),
       span(cls := "text-emerald-300 text-xs font-mono")(model),
       span(cls := "text-emerald-300 text-xs")(s", ${latencyMs}ms)"),
@@ -895,8 +1496,8 @@ object SettingsView:
 
   def testConnectionError(error: String): String =
     div(cls := "inline-flex items-center gap-2 rounded-full bg-red-500/20 border border-red-500/50 px-4 py-2")(
-      span(cls := "text-red-400 text-sm font-medium")("✗ Connection failed"),
-      span(cls := "text-red-300 text-xs")("–"),
+      span(cls := "text-red-400 text-sm font-medium")("\u2717 Connection failed"),
+      span(cls := "text-red-300 text-xs")("\u2013"),
       span(cls := "text-red-300 text-xs")(error),
     ).toString
 

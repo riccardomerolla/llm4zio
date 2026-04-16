@@ -258,7 +258,7 @@ final case class SettingsControllerLive(
                       )
           models   <- modelService.listAvailableModels
           status   <- modelService.probeProviders
-        yield html(HtmlViews.settingsConnectorsTab(saved, models, status, Some("Connector settings saved.")))
+        yield html(HtmlViews.settingsConnectorsTab(saved, models, status, flash = Some("Connector settings saved.")))
       }
     },
     Method.POST / "settings" / "ai"                           -> handler { (req: Request) =>
@@ -288,7 +288,7 @@ final case class SettingsControllerLive(
                       )
           models   <- modelService.listAvailableModels
           status   <- modelService.probeProviders
-        yield html(HtmlViews.settingsConnectorsTab(saved, models, status, Some("AI settings saved.")))
+        yield html(HtmlViews.settingsConnectorsTab(saved, models, status, flash = Some("AI settings saved.")))
       }
     },
     Method.GET / "settings" / "gateway"                       -> handler {

@@ -60,10 +60,12 @@ object HtmlViews:
     settings: Map[String, String],
     registry: ModelRegistryResponse,
     statuses: List[ProviderProbeStatus],
+    agents: List[AgentInfo] = Nil,
+    agentOverrides: Map[String, Map[String, String]] = Map.empty,
     flash: Option[String] = None,
     errors: Map[String, String] = Map.empty,
   ): String =
-    SettingsView.connectorsTab(settings, registry, statuses, flash, errors)
+    SettingsView.connectorsTab(settings, registry, statuses, agents, agentOverrides, flash, errors)
 
   /** @deprecated Use settingsConnectorsTab instead. */
   def settingsAiTab(
@@ -73,7 +75,7 @@ object HtmlViews:
     flash: Option[String] = None,
     errors: Map[String, String] = Map.empty,
   ): String =
-    settingsConnectorsTab(settings, registry, statuses, flash, errors)
+    settingsConnectorsTab(settings, registry, statuses, flash = flash, errors = errors)
 
   def settingsChannelsTab(
     cards: List[ChannelCardData],
