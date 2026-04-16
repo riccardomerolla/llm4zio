@@ -59,6 +59,7 @@ case class Workspace(
   description: Option[String],
   enabled: Boolean,
   runMode: RunMode,
+  /** @deprecated Use ConnectorConfigResolver instead. Kept for event replay compatibility. */
   cliTool: String,
   createdAt: Instant,
   updatedAt: Instant,

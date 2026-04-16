@@ -18,13 +18,13 @@ object AgentPermissionsSpec extends ZIOSpecDefault:
           trustLevel = TrustLevel.Untrusted,
           cliTool = "codex",
           timeout = Duration.ofMinutes(5),
-          maxEstimatedTokens = Some(1000),
+          maxEstimatedTokens = Some(1000L),
         )
         val elevated  = AgentPermissions.defaults(
           trustLevel = TrustLevel.Elevated,
           cliTool = "codex",
           timeout = Duration.ofMinutes(5),
-          maxEstimatedTokens = Some(2000),
+          maxEstimatedTokens = Some(2000L),
         )
 
         assertTrue(
@@ -60,7 +60,7 @@ object AgentPermissionsSpec extends ZIOSpecDefault:
             trustLevel = TrustLevel.Limited,
             cliTool = "codex",
             timeout = Duration.ofMinutes(15),
-            maxEstimatedTokens = Some(5000),
+            maxEstimatedTokens = Some(5000L),
           ),
         )
 

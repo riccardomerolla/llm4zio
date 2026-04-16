@@ -114,6 +114,14 @@ object AgentPermissions:
 
   def defaults(
     trustLevel: TrustLevel,
+    connectorId: llm4zio.core.ConnectorId,
+    timeout: Duration,
+    maxEstimatedTokens: Option[Long],
+  ): AgentPermissions =
+    defaults(trustLevel, connectorId.value, timeout, maxEstimatedTokens)
+
+  def defaults(
+    trustLevel: TrustLevel,
     cliTool: String,
     timeout: Duration,
     maxEstimatedTokens: Option[Long],
