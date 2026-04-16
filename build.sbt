@@ -303,13 +303,11 @@ lazy val boardDomain = (project in file("modules/board-domain"))
 
 lazy val knowledgeDomain = (project in file("modules/knowledge-domain"))
   .dependsOn(sharedIds, sharedErrors, sharedStoreCore, sharedWebCore, analysisDomain,
-    memoryDomain, workspaceDomain, conversationDomain, issuesDomain, llm4zio)
+    memoryDomain, workspaceDomain)
   .settings(foundationSettings)
   .settings(
     name := "knowledge-domain",
-    libraryDependencies ++= domainBceDeps ++ Seq(
-      "io.github.riccardomerolla" %% "zio-eclipsestore-gigamap" % zioEclipseStoreVersion % Test,
-    ),
+    libraryDependencies ++= domainBceDeps,
   )
 
 lazy val projectDomain = (project in file("modules/project-domain"))
