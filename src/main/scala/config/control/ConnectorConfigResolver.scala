@@ -19,24 +19,25 @@ final case class ConnectorConfigResolverLive(repo: ConfigRepository) extends Con
 
   override def resolve(agentName: Option[String]): IO[PersistenceError, ConnectorConfig] =
     for
-      agentSettings  <- agentName.fold(ZIO.succeed(Map.empty[String, String]))(name =>
-                          repo
-                            .getSettingsByPrefix(s"agent.$name.connector.")
-                            .map(_.map(row => row.key -> row.value).toMap)
-                        )
-      globalSettings <- repo
-                          .getSettingsByPrefix("connector.default.")
-                          .map(_.map(row => row.key -> row.value).toMap)
-      legacySettings     <- repo
-                              .getSettingsByPrefix("ai.")
-                              .map(_.map(row => row.key -> row.value).toMap)
-      (config, unparsed)  = buildConfig(agentSettings, globalSettings, legacySettings, agentName)
-      _                  <- ZIO.foreachDiscard(unparsed) { case (key, value) =>
-                              ZIO.logDebug(
-                                s"ConnectorConfigResolver: could not parse connector identifier '$value' " +
-                                  s"(from key '$key', agent=${agentName.getOrElse("<global>")}) — falling back"
-                              )
-                            }
+      agentSettings     <- agentName.fold(ZIO.succeed(Map.empty[String, String]))(name =>
+                             repo
+                               .getSettingsByPrefix(s"agent.$name.connector.")
+                               .map(_.map(row => row.key -> row.value).toMap)
+                           )
+      globalSettings    <- repo
+                             .getSettingsByPrefix("connector.default.")
+                             .map(_.map(row => row.key -> row.value).toMap)
+      legacySettings    <- repo
+                             .getSettingsByPrefix("ai.")
+                             .map(_.map(row => row.key -> row.value).toMap)
+      (config, unparsed) = buildConfig(agentSettings, globalSettings, legacySettings, agentName)
+      _                 <- ZIO.foreachDiscard(unparsed) {
+                             case (key, value) =>
+                               ZIO.logDebug(
+                                 s"ConnectorConfigResolver: could not parse connector identifier '$value' " +
+                                   s"(from key '$key', agent=${agentName.getOrElse("<global>")}) — falling back"
+                               )
+                           }
     yield config
 
   private def buildConfig(
@@ -62,13 +63,15 @@ final case class ConnectorConfigResolverLive(repo: ConfigRepository) extends Con
     val globalModed = global.collect { case (k, v) if k.startsWith(s"$mode.") => k.stripPrefix(s"$mode.") -> v }
 
     // Flat agent keys (no api./cli. prefix) for backward compat
-    val agentFlat = agent.filterNot { case (k, _) =>
-      k.startsWith("api.") || k.startsWith("cli.") || k == "mode"
+    val agentFlat = agent.filterNot {
+      case (k, _) =>
+        k.startsWith("api.") || k.startsWith("cli.") || k == "mode"
     }
 
     // Flat global keys (no api./cli. prefix) for backward compat
-    val globalFlat = global.filterNot { case (k, _) =>
-      k.startsWith("api.") || k.startsWith("cli.")
+    val globalFlat = global.filterNot {
+      case (k, _) =>
+        k.startsWith("api.") || k.startsWith("cli.")
     }
 
     // Resolution order:
@@ -89,7 +92,7 @@ final case class ConnectorConfigResolverLive(repo: ConfigRepository) extends Con
     val defaultConnector = if mode == "cli" then ConnectorId.ClaudeCli else ConnectorId.GeminiCli
 
     // Collect parse failures so the caller can log them at debug level.
-    val unparsed = List.newBuilder[(String, String)]
+    val unparsed                                                                          = List.newBuilder[(String, String)]
     def tryParse(key: String, parser: String => Option[ConnectorId]): Option[ConnectorId] =
       get(key) match
         case None        => None
@@ -168,8 +171,9 @@ final case class ConnectorConfigResolverLive(repo: ConfigRepository) extends Con
     agentFlat: Map[String, String],
     globalFlat: Map[String, String],
   ): Map[String, String] =
-    val prefix = "flags."
-    def collect(m: Map[String, String]) = m.collect { case (k, v) if k.startsWith(prefix) => k.stripPrefix(prefix) -> v }
+    val prefix                          = "flags."
+    def collect(m: Map[String, String]) =
+      m.collect { case (k, v) if k.startsWith(prefix) => k.stripPrefix(prefix) -> v }
     collect(globalFlat) ++ collect(globalModed) ++ collect(agentFlat) ++ collect(agentModed)
 
   private def extractEnvVars(
@@ -178,6 +182,7 @@ final case class ConnectorConfigResolverLive(repo: ConfigRepository) extends Con
     agentFlat: Map[String, String],
     globalFlat: Map[String, String],
   ): Map[String, String] =
-    val prefix = "env."
-    def collect(m: Map[String, String]) = m.collect { case (k, v) if k.startsWith(prefix) => k.stripPrefix(prefix) -> v }
+    val prefix                          = "env."
+    def collect(m: Map[String, String]) =
+      m.collect { case (k, v) if k.startsWith(prefix) => k.stripPrefix(prefix) -> v }
     collect(globalFlat) ++ collect(globalModed) ++ collect(agentFlat) ++ collect(agentModed)

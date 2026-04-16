@@ -247,7 +247,9 @@ final case class AgentsControllerLive(
           globalSettings  = globalRows.map(r => r.key -> r.value).toMap
           connectorMap    = connectorRows.groupBy { r =>
                               val k = r.key; k.substring("agent.".length, k.indexOf(".connector."))
-                            }.view.mapValues(_.map(r => r.key.substring(r.key.indexOf(".connector.") + ".connector.".length) -> r.value).toMap).toMap
+                            }.view.mapValues(_.map(r =>
+                              r.key.substring(r.key.indexOf(".connector.") + ".connector.".length) -> r.value
+                            ).toMap).toMap
           cards           = buildAgentCards(
                               registryAgents = registryAgents,
                               customAgents = customAgents,
@@ -355,8 +357,10 @@ final case class AgentsControllerLive(
           mode           = ov.getOrElse("mode", "api")
           hasOvr         = ov.exists { case (k, _) => k.startsWith("api.") || k.startsWith("cli.") }
           connId         = ov.get(s"$mode.provider").orElse(ov.get(s"$mode.connector"))
-                             .getOrElse(gs.getOrElse(s"connector.default.$mode.provider",
-                               gs.getOrElse(s"connector.default.$mode.connector", "")))
+                             .getOrElse(gs.getOrElse(
+                               s"connector.default.$mode.provider",
+                               gs.getOrElse(s"connector.default.$mode.connector", ""),
+                             ))
           agent         <- ZIO
                              .fromOption(registryAgent)
                              .orElseFail(PersistenceError.NotFound("agent", name))
@@ -374,7 +378,7 @@ final case class AgentsControllerLive(
       }
     },
     // HTMX: toggle agent connector mode (API/CLI) — returns updated table row
-    Method.POST / "agents" / string("name") / "connector" / "mode"      -> handler { (name: String, req: Request) =>
+    Method.POST / "agents" / string("name") / "connector" / "mode"       -> handler { (name: String, req: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         val mode = req.queryParam("mode").getOrElse("api")
         for
@@ -389,8 +393,10 @@ final case class AgentsControllerLive(
           gs              = globalRows.map(r => r.key -> r.value).toMap
           hasOvr          = ov.exists { case (k, _) => k.startsWith("api.") || k.startsWith("cli.") }
           connId          = ov.get(s"$mode.provider").orElse(ov.get(s"$mode.connector"))
-                              .getOrElse(gs.getOrElse(s"connector.default.$mode.provider",
-                                gs.getOrElse(s"connector.default.$mode.connector", "")))
+                              .getOrElse(gs.getOrElse(
+                                s"connector.default.$mode.provider",
+                                gs.getOrElse(s"connector.default.$mode.connector", ""),
+                              ))
           allInfos        = registryAgents.map(toAgentInfo) ++ AgentRegistry.allAgents(customAgents)
           agentInfo       = allInfos.find(_.name == name)
           allRuns        <- loadAllWorkspaceRuns
@@ -401,7 +407,7 @@ final case class AgentsControllerLive(
             val metrics          = computeMetrics(agentRuns, now)
             val bindingsForAgent = bindings.filter(_.agentId.value.equalsIgnoreCase(name))
             val registryAgent    = registryAgents.find(_.name.equalsIgnoreCase(name))
-            val card = AgentsView.AgentCard(
+            val card             = AgentsView.AgentCard(
               info = info,
               registryAgent = registryAgent,
               metrics = metrics.summary,
@@ -412,7 +418,7 @@ final case class AgentsControllerLive(
               hasConnectorOverride = hasOvr,
             )
             htmlFragment(AgentsView.agentRowFragment(card))
-          case None => Response.notFound
+          case None       => Response.notFound
       }
     },
     Method.GET / "agents" / string("slug") / "edit"                      -> handler { (slug: String, req: Request) =>
@@ -827,8 +833,10 @@ final case class AgentsControllerLive(
       val mode             = ov.getOrElse("mode", "api")
       val hasOvr           = ov.exists { case (k, _) => k.startsWith("api.") || k.startsWith("cli.") }
       val connId           = ov.get(s"$mode.provider").orElse(ov.get(s"$mode.connector"))
-                              .getOrElse(globalSettings.getOrElse(s"connector.default.$mode.provider",
-                                globalSettings.getOrElse(s"connector.default.$mode.connector", "")))
+        .getOrElse(globalSettings.getOrElse(
+          s"connector.default.$mode.provider",
+          globalSettings.getOrElse(s"connector.default.$mode.connector", ""),
+        ))
       AgentsView.AgentCard(
         info = info,
         registryAgent = registryAgent,

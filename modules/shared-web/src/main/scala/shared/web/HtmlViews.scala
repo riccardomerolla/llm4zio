@@ -4,7 +4,7 @@ import java.time.Instant
 
 import activity.entity.ActivityEvent
 import agent.boundary.AgentsView
-import config.entity.{ AgentInfo, ModelRegistryResponse, ProviderProbeStatus, WorkflowDefinition }
+import config.entity.{ AgentInfo, WorkflowDefinition }
 import conversation.entity.api.{ ChatConversation, ConversationEntry, ConversationSessionMeta }
 import decision.entity.Decision
 import gateway.boundary.ChannelCardData
@@ -58,22 +58,18 @@ object HtmlViews:
 
   def settingsConnectorsTab(
     settings: Map[String, String],
-    registry: ModelRegistryResponse,
-    statuses: List[ProviderProbeStatus],
     flash: Option[String] = None,
     errors: Map[String, String] = Map.empty,
   ): String =
-    SettingsView.connectorsTab(settings, registry, statuses, flash, errors)
+    SettingsView.connectorsTab(settings, flash, errors)
 
   /** @deprecated Use settingsConnectorsTab instead. */
   def settingsAiTab(
     settings: Map[String, String],
-    registry: ModelRegistryResponse,
-    statuses: List[ProviderProbeStatus],
     flash: Option[String] = None,
     errors: Map[String, String] = Map.empty,
   ): String =
-    settingsConnectorsTab(settings, registry, statuses, flash = flash, errors = errors)
+    settingsConnectorsTab(settings, flash = flash, errors = errors)
 
   def settingsChannelsTab(
     cards: List[ChannelCardData],
@@ -96,8 +92,6 @@ object HtmlViews:
     flash: Option[String] = None,
   ): String =
     DemoView.demoTab(settings, flash)
-
-  def settingsAdvancedTab: String = SettingsView.advancedTab
 
   def settingsIssueTemplatesTab(
     templates: List[IssueTemplate],

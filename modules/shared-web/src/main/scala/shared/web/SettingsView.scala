@@ -2,7 +2,6 @@ package shared.web
 
 import zio.json.*
 
-import config.boundary.ModelsView
 import gateway.boundary.{ ChannelCardData, ChannelView }
 import issues.entity.api.IssueTemplate
 import llm4zio.tools.{ Tool, ToolSandbox }
@@ -25,12 +24,9 @@ object SettingsView:
 
   def connectorsTab(
     settings: Map[String, String],
-    registry: config.entity.ModelRegistryResponse,
-    statuses: List[config.entity.ProviderProbeStatus],
     flash: Option[String] = None,
     errors: Map[String, String] = Map.empty,
   ): String =
-    val statusMap = statuses.map(ps => ps.provider -> ps).toMap
     settingsShell("connectors", "Settings — Connectors")(
       flash.map { msg =>
         div(cls := "mb-6 rounded-md bg-green-500/10 border border-green-500/30 p-4")(
@@ -46,19 +42,8 @@ object SettingsView:
         )
       else (),
       defaultConnectorsSection(settings, errors),
-      modelRegistrySection(registry, statusMap),
-      toolsSection,
       envVarsScript,
     )
-
-  /** @deprecated Use connectorsTab instead. Kept for backward compatibility. */
-  def aiTab(
-    settings: Map[String, String],
-    registry: config.entity.ModelRegistryResponse,
-    statuses: List[config.entity.ProviderProbeStatus],
-    flash: Option[String] = None,
-    errors: Map[String, String] = Map.empty,
-  ): String = connectorsTab(settings, registry, statuses, flash, errors)
 
   // ---------------------------------------------------------------------------
   // Default connectors section — two side-by-side cards
@@ -73,7 +58,7 @@ object SettingsView:
   def apiDefaultCard(s: Map[String, String], errors: Map[String, String] = Map.empty): Frag =
     div(id := "api-card", cls := sectionCls)(
       tag("form")(
-        attr("hx-post")  := "/settings/connectors/api",
+        attr("hx-post")   := "/settings/connectors/api",
         attr("hx-target") := "#api-card",
         attr("hx-swap")   := "outerHTML",
         cls               := "space-y-4",
@@ -217,13 +202,13 @@ object SettingsView:
           )("Test Connection"),
         ),
         div(id := "api-test-result", cls := "mt-3")(),
-      ),
+      )
     )
 
   def cliDefaultCard(s: Map[String, String], errors: Map[String, String] = Map.empty): Frag =
     div(id := "cli-card", cls := sectionCls)(
       tag("form")(
-        attr("hx-post")  := "/settings/connectors/cli",
+        attr("hx-post")   := "/settings/connectors/cli",
         attr("hx-target") := "#cli-card",
         attr("hx-swap")   := "outerHTML",
         cls               := "space-y-4",
@@ -299,10 +284,10 @@ object SettingsView:
         div(
           label(cls := labelCls, `for` := "connector.default.cli.flags")("Flags"),
           textarea(
-            name := "connector.default.cli.flags",
-            id   := "connector.default.cli.flags",
-            rows := 3,
-            cls  := "block w-full rounded-md bg-white/5 border-0 py-2 text-white shadow-sm ring-1 ring-inset ring-white/10 focus:ring-2 focus:ring-inset focus:ring-indigo-500 sm:text-sm/6 px-3",
+            name                := "connector.default.cli.flags",
+            id                  := "connector.default.cli.flags",
+            rows                := 3,
+            cls                 := "block w-full rounded-md bg-white/5 border-0 py-2 text-white shadow-sm ring-1 ring-inset ring-white/10 focus:ring-2 focus:ring-inset focus:ring-indigo-500 sm:text-sm/6 px-3",
             attr("placeholder") := "Additional CLI flags, one per line",
           )(s.getOrElse("connector.default.cli.flags", "")),
           showError(errors.get("connector.default.cli.flags")),
@@ -312,9 +297,9 @@ object SettingsView:
           button(
             `type` := "submit",
             cls    := "rounded-md bg-indigo-500 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-400",
-          )("Save"),
+          )("Save")
         ),
-      ),
+      )
     )
 
   // ---------------------------------------------------------------------------
@@ -347,9 +332,9 @@ object SettingsView:
           Seq(envVarRow(fieldPrefix, 0, "", ""))
       ),
       button(
-        `type`           := "button",
-        cls              := "mt-2 rounded-md bg-white/10 px-3 py-1.5 text-xs font-semibold text-gray-300 ring-1 ring-white/10 hover:bg-white/20",
-        attr("onclick")  := s"addEnvVarRow('$fieldPrefix')",
+        `type`          := "button",
+        cls             := "mt-2 rounded-md bg-white/10 px-3 py-1.5 text-xs font-semibold text-gray-300 ring-1 ring-white/10 hover:bg-white/20",
+        attr("onclick") := s"addEnvVarRow('$fieldPrefix')",
       )("+ Add Variable"),
     )
 
@@ -375,69 +360,6 @@ object SettingsView:
         cls             := "text-red-400 hover:text-red-300 text-sm px-2",
         attr("onclick") := "this.parentElement.remove()",
       )("x"),
-    )
-
-  // ---------------------------------------------------------------------------
-  // Model registry section (extracted from old connectorsTab)
-  // ---------------------------------------------------------------------------
-
-  private def modelRegistrySection(
-    registry: config.entity.ModelRegistryResponse,
-    statusMap: Map[llm4zio.core.LlmProvider, config.entity.ProviderProbeStatus],
-  ): Frag =
-    div(cls := "mt-10")(
-      h2(cls := "text-lg font-semibold text-white mb-4")("Available Models"),
-      p(cls := "text-sm text-slate-300 mb-4")(
-        "Models grouped by provider. Configure primary model and fallback chain above."
-      ),
-      div(cls := "space-y-4")(
-        registry.providers.map { group =>
-          val status = statusMap.get(group.provider)
-          div(cls := "rounded-lg border border-white/10 bg-slate-900/70 p-5")(
-            div(cls := "mb-3 flex items-center justify-between")(
-              h3(cls := "text-lg font-semibold text-white")(group.provider.toString),
-              ModelsView.statusBadge(status),
-            ),
-            p(cls := "mb-3 text-xs text-slate-400")(status.map(_.statusMessage).getOrElse("No health probe available")),
-            table(cls := "min-w-full text-left text-sm text-slate-200")(
-              thead(
-                tr(
-                  th(cls := "py-2 pr-4 text-xs font-semibold uppercase text-slate-400")("Model"),
-                  th(cls := "py-2 pr-4 text-xs font-semibold uppercase text-slate-400")("Context"),
-                  th(cls := "py-2 pr-4 text-xs font-semibold uppercase text-slate-400")("Capabilities"),
-                )
-              ),
-              tbody(
-                group.models.map { model =>
-                  tr(cls := "border-t border-white/5")(
-                    td(cls := "py-2 pr-4 font-mono text-xs")(model.modelId),
-                    td(cls := "py-2 pr-4")(model.contextWindow.toString),
-                    td(cls := "py-2 pr-4")(model.capabilities.toList.map(_.toString).sorted.mkString(", ")),
-                  )
-                }
-              ),
-            ),
-          )
-        }
-      ),
-    )
-
-  // ---------------------------------------------------------------------------
-  // Tools section (extracted from old connectorsTab)
-  // ---------------------------------------------------------------------------
-
-  private def toolsSection: Frag =
-    div(cls := "mt-10")(
-      h2(cls := "text-lg font-semibold text-white mb-4")("Available Tools"),
-      p(cls := "text-sm text-slate-300 mb-4")("Built-in tools registered in the tool registry."),
-      div(
-        id                 := "tools-list",
-        attr("hx-get")     := "/settings/connectors/tools-fragment",
-        attr("hx-trigger") := "load",
-        attr("hx-swap")    := "innerHTML",
-      )(
-        div(cls := "text-sm text-gray-400")("Loading tools...")
-      ),
     )
 
   // ---------------------------------------------------------------------------
@@ -753,29 +675,6 @@ object SettingsView:
         )()
       ),
       JsResources.inlineModuleScript("/static/client/components/ab-health-dashboard.js"),
-    )
-
-  /** @deprecated Advanced Config tab removed from UI. Kept for backward compatibility. */
-  def advancedTab: String =
-    settingsShell("advanced", "Settings — Advanced Config")(
-      div(cls := "mb-4 rounded-md bg-amber-500/10 border border-amber-500/20 p-3")(
-        p(cls := "text-sm text-amber-300")(
-          "Advanced users only. Most settings are configurable via the tabs above with validation and helper text."
-        )
-      ),
-      div(cls := "bg-white/5 ring-1 ring-white/10 rounded-lg p-4")(
-        tag("ab-config-editor")(attr("api-base") := "/api/config")()
-      ),
-      script(src := "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"),
-      tag("script")(
-        raw("""
-          |const _hlCss = document.createElement('link');
-          |_hlCss.rel = 'stylesheet';
-          |_hlCss.href = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark.min.css';
-          |document.head.appendChild(_hlCss);
-        """.stripMargin)
-      ),
-      JsResources.inlineModuleScript("/static/client/components/ab-config-editor.js"),
     )
 
   def page(

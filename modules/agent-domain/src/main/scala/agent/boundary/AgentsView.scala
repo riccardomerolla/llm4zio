@@ -106,7 +106,9 @@ object AgentsView:
           statusBadge(card.registryAgent),
           span(cls := "font-medium text-white")(agent.displayName),
           if card.hasConnectorOverride then
-            span(cls := "inline-flex items-center rounded-md bg-indigo-500/10 px-1.5 py-0.5 text-[10px] font-medium text-indigo-300 ring-1 ring-indigo-400/30")(
+            span(
+              cls := "inline-flex items-center rounded-md bg-indigo-500/10 px-1.5 py-0.5 text-[10px] font-medium text-indigo-300 ring-1 ring-indigo-400/30"
+            )(
               "override"
             )
           else (),
@@ -146,24 +148,26 @@ object AgentsView:
 
   /** Inline API/CLI toggle rendered via HTMX. Swaps the entire agent row. */
   private def modeToggle(agentName: String, currentMode: String): Frag =
-    val apiCls = if currentMode == "api" then "rounded-l-md bg-indigo-500/30 px-2 py-1 text-xs font-semibold text-indigo-200"
-                 else "rounded-l-md bg-white/5 px-2 py-1 text-xs text-gray-400 hover:bg-white/10"
-    val cliCls = if currentMode == "cli" then "rounded-r-md bg-indigo-500/30 px-2 py-1 text-xs font-semibold text-indigo-200"
-                 else "rounded-r-md bg-white/5 px-2 py-1 text-xs text-gray-400 hover:bg-white/10"
+    val apiCls = if currentMode == "api" then
+      "rounded-l-md bg-indigo-500/30 px-2 py-1 text-xs font-semibold text-indigo-200"
+    else "rounded-l-md bg-white/5 px-2 py-1 text-xs text-gray-400 hover:bg-white/10"
+    val cliCls = if currentMode == "cli" then
+      "rounded-r-md bg-indigo-500/30 px-2 py-1 text-xs font-semibold text-indigo-200"
+    else "rounded-r-md bg-white/5 px-2 py-1 text-xs text-gray-400 hover:bg-white/10"
     div(cls := "inline-flex rounded-md ring-1 ring-white/10")(
       button(
-        `type`             := "button",
-        cls                := apiCls,
-        attr("hx-post")    := s"/agents/$agentName/connector/mode?mode=api",
-        attr("hx-target")  := s"#agent-row-$agentName",
-        attr("hx-swap")    := "outerHTML",
+        `type`            := "button",
+        cls               := apiCls,
+        attr("hx-post")   := s"/agents/$agentName/connector/mode?mode=api",
+        attr("hx-target") := s"#agent-row-$agentName",
+        attr("hx-swap")   := "outerHTML",
       )("API"),
       button(
-        `type`             := "button",
-        cls                := cliCls,
-        attr("hx-post")    := s"/agents/$agentName/connector/mode?mode=cli",
-        attr("hx-target")  := s"#agent-row-$agentName",
-        attr("hx-swap")    := "outerHTML",
+        `type`            := "button",
+        cls               := cliCls,
+        attr("hx-post")   := s"/agents/$agentName/connector/mode?mode=cli",
+        attr("hx-target") := s"#agent-row-$agentName",
+        attr("hx-swap")   := "outerHTML",
       )("CLI"),
     )
 
@@ -214,7 +218,9 @@ object AgentsView:
             ),
             if card.hasConnectorOverride then
               div(cls := "flex items-center gap-2")(
-                span(cls := "inline-flex items-center rounded-md bg-indigo-500/10 px-1.5 py-0.5 text-[10px] font-medium text-indigo-300 ring-1 ring-indigo-400/30")(
+                span(
+                  cls := "inline-flex items-center rounded-md bg-indigo-500/10 px-1.5 py-0.5 text-[10px] font-medium text-indigo-300 ring-1 ring-indigo-400/30"
+                )(
                   "has override"
                 ),
                 a(
@@ -824,7 +830,7 @@ object AgentsView:
           a(
             href := "/agents",
             cls  := "text-sm font-medium text-indigo-300 hover:text-indigo-200",
-          )("Back to agents"),
+          )("Back to agents")
         ),
         div(cls := "rounded-xl border border-white/10 bg-slate-900/80 px-5 py-4")(
           h1(cls := "text-2xl font-bold text-white")(s"${agent.displayName} Configuration"),
@@ -844,9 +850,9 @@ object AgentsView:
               cls  := "font-semibold underline decoration-indigo-300/50 hover:text-white",
             )("Connectors settings page"),
             ".",
-          ),
+          )
         ),
-      ),
+      )
     )
 
   private def effectiveHandle(agent: AgentInfo): String =
