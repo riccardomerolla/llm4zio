@@ -18,7 +18,6 @@ import issues.entity.api.{
   IssueTemplate,
   MergeHistoryEntryView,
 }
-import orchestration.boundary.AgentMonitorView
 import shared.ids.Ids.IssueId
 import taskrun.boundary.{ CommandCenterView, GraphView, ReportsView, WorkflowsView }
 import taskrun.entity.{ TaskReportRow, TaskRunRow }
@@ -28,12 +27,7 @@ import workspace.entity.WorkspaceRun
 object HtmlViews:
 
   def dashboard(summary: CommandCenterView.PipelineSummary, recentEvents: List[ActivityEvent]): String =
-    // Pre-render the empty agent-stats header here (sharedWeb dependsOn orchestrationDomain
-    // so AgentMonitorView is reachable) and hand the HTML string to CommandCenterView,
-    // which lives in taskrun-domain and cannot dependsOn sharedWeb. HTMX/SSE swaps this
-    // initial fragment with live data.
-    val statsHeaderHtml = AgentMonitorView.statsHeaderFragment(AgentMonitorView.AgentGlobalStats.empty).render
-    CommandCenterView.page(summary, recentEvents, statsHeaderHtml)
+    CommandCenterView.page(summary, recentEvents)
 
   def recentRunsFragment(runs: List[TaskRunRow]): String =
     CommandCenterView.recentRunsFragment(runs)
