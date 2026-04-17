@@ -1,11 +1,8 @@
 package issues.boundary
 
-import java.nio.charset.StandardCharsets
-import java.nio.file.{ Files, Path, Paths }
+import java.nio.file.Paths
 import java.time.Instant
 import java.util.UUID
-
-import scala.jdk.CollectionConverters.*
 
 import zio.*
 import zio.http.*
@@ -159,16 +156,6 @@ final case class IssueControllerLive(
                              yield ()
           redirect     = form.get("runId").map(id => s"/board?mode=list&run_id=$id").getOrElse("/board?mode=list")
         yield Response(status = Status.SeeOther, headers = Headers(Header.Custom("Location", redirect)))
-      }
-    },
-    Method.POST / "issues" / "import"                                -> handler { (_: Request) =>
-      ErrorHandlingMiddleware.fromPersistence {
-        for
-          imported <- importIssuesFromConfiguredFolder
-        yield Response(
-          status = Status.SeeOther,
-          headers = Headers(Header.Custom("Location", s"/board?mode=list&imported=$imported")),
-        )
       }
     },
     Method.GET / "issues" / string("id")                             -> handler { (id: String, req: Request) =>
@@ -525,50 +512,6 @@ final case class IssueControllerLive(
       val runIdStr = req.queryParam("run_id").map(_.trim).filter(_.nonEmpty)
       ErrorHandlingMiddleware.fromPersistence {
         loadApiIssues(runIdStr).map(issues => Response.json(issues.toJson))
-      }
-    },
-    Method.POST / "api" / "issues" / "import" / "folder" / "preview" -> handler { (req: Request) =>
-      ErrorHandlingMiddleware.fromPersistence {
-        for
-          body    <- req.body.asString.mapError(err => PersistenceError.QueryFailed("request_body", err.getMessage))
-          request <- ZIO
-                       .fromEither(body.fromJson[FolderImportRequest])
-                       .mapError(err => PersistenceError.QueryFailed("json_parse", err))
-          items   <- previewIssuesFromFolder(request)
-        yield Response.json(items.toJson)
-      }
-    },
-    Method.POST / "api" / "issues" / "import" / "folder"             -> handler { (req: Request) =>
-      ErrorHandlingMiddleware.fromPersistence {
-        for
-          body    <- req.body.asString.mapError(err => PersistenceError.QueryFailed("request_body", err.getMessage))
-          request <- ZIO
-                       .fromEither(body.fromJson[FolderImportRequest])
-                       .mapError(err => PersistenceError.QueryFailed("json_parse", err))
-          result  <- importIssuesFromFolderDetailed(request)
-        yield Response.json(result.toJson)
-      }
-    },
-    Method.POST / "api" / "issues" / "import" / "github" / "preview" -> handler { (req: Request) =>
-      ErrorHandlingMiddleware.fromPersistence {
-        for
-          body    <- req.body.asString.mapError(err => PersistenceError.QueryFailed("request_body", err.getMessage))
-          preview <- ZIO
-                       .fromEither(body.fromJson[GitHubImportPreviewRequest])
-                       .mapError(err => PersistenceError.QueryFailed("json_parse", err))
-          items   <- previewGitHubIssues(preview)
-        yield Response.json(items.toJson)
-      }
-    },
-    Method.POST / "api" / "issues" / "import" / "github"             -> handler { (req: Request) =>
-      ErrorHandlingMiddleware.fromPersistence {
-        for
-          body     <- req.body.asString.mapError(err => PersistenceError.QueryFailed("request_body", err.getMessage))
-          preview  <- ZIO
-                        .fromEither(body.fromJson[GitHubImportPreviewRequest])
-                        .mapError(err => PersistenceError.QueryFailed("json_parse", err))
-          imported <- importGitHubIssues(preview)
-        yield Response.json(imported.toJson)
       }
     },
     Method.GET / "api" / "issues" / string("id")                     -> handler { (id: String, req: Request) =>
@@ -1484,18 +1427,6 @@ final case class IssueControllerLive(
         byQuery.filter(_.tags.exists(_.toLowerCase.split(",").map(_.trim).contains(needle)))
       case None        => byQuery
 
-  private def toBulkResponse(
-    requested: Int,
-    results: List[Either[PersistenceError, Unit]],
-  ): BulkIssueOperationResponse =
-    val errors = results.collect { case Left(err) => err.toString }
-    BulkIssueOperationResponse(
-      requested = requested,
-      succeeded = results.count(_.isRight),
-      failed = errors.size,
-      errors = errors,
-    )
-
   private def assignedAgentFromState(state: IssueState): Option[String] =
     state match
       case IssueState.Assigned(agent, _)     => Some(agent.value)
@@ -1842,184 +1773,6 @@ final case class IssueControllerLive(
         }
       }
 
-  private def previewIssuesFromFolder(request: FolderImportRequest)
-    : IO[PersistenceError, List[FolderImportPreviewItem]] =
-    for
-      files <- issueImportMarkdownFiles(request.folder)
-      now   <- Clock.instant
-      items <- ZIO.foreach(files) { file =>
-                 for
-                   markdown <- ZIO
-                                 .attemptBlocking(Files.readString(file, StandardCharsets.UTF_8))
-                                 .mapError(e => PersistenceError.QueryFailed(file.toString, e.getMessage))
-                   parsed    = parseMarkdownIssue(file, markdown, now)
-                 yield FolderImportPreviewItem(
-                   fileName = file.getFileName.toString,
-                   title = parsed.title,
-                   issueType = parsed.issueType,
-                   priority = parsed.priority,
-                 )
-               }
-    yield items
-
-  private def importIssuesFromFolderDetailed(
-    request: FolderImportRequest
-  ): IO[PersistenceError, BulkIssueOperationResponse] =
-    for
-      files   <- issueImportMarkdownFiles(request.folder)
-      results <- ZIO.foreach(files) { file =>
-                   (for
-                     now      <- Clock.instant
-                     markdown <- ZIO
-                                   .attemptBlocking(Files.readString(file, StandardCharsets.UTF_8))
-                                   .mapError(e => PersistenceError.QueryFailed(file.toString, e.getMessage))
-                     event     = parseMarkdownIssue(file, markdown, now)
-                     _        <- issueRepository.append(event).mapError(mapIssueRepoError)
-                   yield ()).either
-                 }
-    yield toBulkResponse(files.size, results)
-
-  private def importIssuesFromConfiguredFolderDetailed: IO[PersistenceError, BulkIssueOperationResponse] =
-    for
-      configuredFolder <- issueImportFolderFromSettings
-      result           <- importIssuesFromFolderDetailed(FolderImportRequest(configuredFolder))
-    yield result
-
-  private def issueImportFolderFromSettings: IO[PersistenceError, String] =
-    for
-      setting <-
-        taskRepository
-          .getSetting("issues.importFolder")
-          .flatMap(opt =>
-            ZIO
-              .fromOption(opt.map(_.value.trim).filter(_.nonEmpty))
-              .orElseFail(PersistenceError.QueryFailed("settings", "'issues.importFolder' is empty or missing"))
-          )
-    yield setting
-
-  private def issueImportMarkdownFiles(folderSetting: String): IO[PersistenceError, List[Path]] =
-    for
-      folderPath <- ZIO
-                      .fromOption(Option(folderSetting).map(_.trim).filter(_.nonEmpty))
-                      .orElseFail(PersistenceError.QueryFailed("folder", "Folder path is required"))
-      folder     <- ZIO
-                      .attempt(Paths.get(folderPath))
-                      .mapError(e => PersistenceError.QueryFailed("folder", e.getMessage))
-      files      <- ZIO
-                      .attemptBlocking {
-                        if !Files.exists(folder) then List.empty[Path]
-                        else
-                          Files
-                            .list(folder)
-                            .iterator()
-                            .asScala
-                            .filter(path =>
-                              Files.isRegularFile(path) && path.getFileName.toString.toLowerCase.endsWith(".md")
-                            )
-                            .toList
-                      }
-                      .mapError(e => PersistenceError.QueryFailed("folder", e.getMessage))
-    yield files
-
-  private def previewGitHubIssues(request: GitHubImportPreviewRequest)
-    : IO[PersistenceError, List[GitHubImportPreviewItem]] =
-    ghListIssues(request).map { raw =>
-      raw.fromJson[List[GitHubImportPreviewItem]].getOrElse(Nil)
-    }
-
-  private def importGitHubIssues(request: GitHubImportPreviewRequest)
-    : IO[PersistenceError, BulkIssueOperationResponse] =
-    for
-      items   <- previewGitHubIssues(request)
-      results <- ZIO.foreach(items) { item =>
-                   (for
-                     now    <- Clock.instant
-                     issueId = IssueId.generate
-                     _      <- issueRepository
-                                 .append(
-                                   IssueEvent.Created(
-                                     issueId = issueId,
-                                     title = s"[GH#${item.number}] ${item.title}",
-                                     description = item.body,
-                                     issueType = "github",
-                                     priority = "medium",
-                                     occurredAt = now,
-                                     requiredCapabilities = Nil,
-                                   )
-                                 )
-                                 .mapError(mapIssueRepoError)
-                     _      <- issueRepository
-                                 .append(
-                                   IssueEvent.ExternalRefLinked(
-                                     issueId = issueId,
-                                     externalRef = s"GH:${request.repo}#${item.number}",
-                                     externalUrl = Some(item.url),
-                                     occurredAt = now,
-                                   )
-                                 )
-                                 .mapError(mapIssueRepoError)
-                   yield ()).either
-                 }
-    yield toBulkResponse(items.size, results)
-
-  private def ghListIssues(request: GitHubImportPreviewRequest): IO[PersistenceError, String] =
-    val safeLimit = request.limit.max(1).min(200)
-    val safeState = request.state.trim.toLowerCase match
-      case "closed" => "closed"
-      case "all"    => "all"
-      case _        => "open"
-    final case class GhIssueLabel(name: String) derives JsonCodec
-    final case class GhIssueItem(
-      number: Long,
-      title: String,
-      body: String,
-      labels: List[GhIssueLabel] = Nil,
-      state: String,
-      url: String,
-    ) derives JsonCodec
-    ZIO
-      .attemptBlocking {
-        val args    = List(
-          "gh",
-          "issue",
-          "list",
-          "--repo",
-          request.repo.trim,
-          "--state",
-          safeState,
-          "--limit",
-          safeLimit.toString,
-          "--json",
-          "number,title,body,labels,state,url",
-        )
-        val process = new ProcessBuilder(args*).redirectErrorStream(true).start()
-        val output  = scala.io.Source.fromInputStream(process.getInputStream, "UTF-8").mkString
-        val exit    = process.waitFor()
-        exit -> output
-      }
-      .mapError(err => PersistenceError.QueryFailed("github_import", Option(err.getMessage).getOrElse(err.toString)))
-      .flatMap {
-        case (exit, output) =>
-          if exit == 0 then
-            output.fromJson[List[GhIssueItem]] match
-              case Right(values) =>
-                ZIO.succeed(
-                  values.map { item =>
-                    GitHubImportPreviewItem(
-                      number = item.number,
-                      title = item.title,
-                      body = item.body,
-                      labels = item.labels.map(_.name),
-                      state = item.state,
-                      url = item.url,
-                    )
-                  }.toJson
-                )
-              case Left(_)       => ZIO.succeed("[]")
-          else
-            ZIO.fail(PersistenceError.QueryFailed("github_import", output.trim))
-      }
-
   private def parseTagList(raw: Option[String]): List[String] =
     raw.toList.flatMap(_.split(",").toList).map(_.trim).filter(_.nonEmpty).distinct
 
@@ -2193,9 +1946,6 @@ final case class IssueControllerLive(
         case Some(_) => ZIO.unit
         case None    => ZIO.fail(PersistenceError.QueryFailed("workspace", s"Not found: $workspaceId"))
       }
-
-  private def importIssuesFromConfiguredFolder: IO[PersistenceError, Int] =
-    importIssuesFromConfiguredFolderDetailed.map(_.succeeded)
 
   private def settingBoolean(key: String, default: Boolean): IO[PersistenceError, Boolean] =
     configRepository
