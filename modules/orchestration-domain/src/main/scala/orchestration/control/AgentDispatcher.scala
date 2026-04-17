@@ -6,7 +6,7 @@ import java.time.Instant
 import zio.*
 
 import _root_.config.entity.{ ConfigRepository, ProviderConfig }
-import agent.entity.AgentRegistry
+import taskrun.entity.TaskRepository
 import llm4zio.core.*
 import llm4zio.providers.{ GeminiCliExecutor, HttpClient }
 import memory.entity.{ Scope, * }

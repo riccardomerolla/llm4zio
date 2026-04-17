@@ -3,6 +3,7 @@ package taskrun.boundary
 import zio.*
 import zio.http.*
 
+import taskrun.entity.TaskRepository
 import shared.errors.PersistenceError
 import shared.web.{ ErrorHandlingMiddleware, HtmlViews }
 import taskrun.entity.TaskRepository

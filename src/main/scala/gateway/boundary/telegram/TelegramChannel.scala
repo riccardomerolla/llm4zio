@@ -5,6 +5,7 @@ import zio.json.*
 import zio.stream.ZStream
 
 import _root_.config.entity.{ WorkflowDefinition, WorkflowGraph, WorkflowRow, WorkflowStepAgent }
+import taskrun.entity.TaskRepository
 import decision.entity.{ DecisionEvent, DecisionFilter, DecisionRepository, DecisionStatus }
 import gateway.control.*
 import gateway.entity.*

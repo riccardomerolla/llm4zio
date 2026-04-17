@@ -13,7 +13,7 @@ import activity.control.ActivityHub
 import activity.entity.{ ActivityEvent, ActivityEventType }
 import conversation.entity.ChatRepository
 import conversation.entity.api.*
-import db.TaskRepository
+import taskrun.entity.TaskRepository
 import gateway.control.{ ChannelRegistry, GatewayService, GatewayServiceError, MessageChannelError }
 import gateway.entity.{ GatewayMessageRole as GatewayMessageRole, MessageDirection as GatewayMessageDirection, * }
 import issues.entity.{ IssueReport, IssueWorkReport }

@@ -7,7 +7,7 @@ import zio.stream.ZStream
 import zio.test.*
 
 import _root_.config.entity.{ CustomAgentRow, SettingRow, * }
-import agent.entity.AgentRegistry
+import taskrun.entity.TaskRepository
 import gateway.control.*
 import gateway.entity.{
   GatewayMetricsSnapshot,

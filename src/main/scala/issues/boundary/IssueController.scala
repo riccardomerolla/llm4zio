@@ -18,7 +18,7 @@ import analysis.entity.AnalysisRepository
 import board.control.BoardOrchestrator
 import board.entity.{ IssueEstimate as BoardIssueEstimate, IssuePriority as BoardIssuePriority, * }
 import conversation.entity.ChatRepository
-import db.TaskRepository
+import taskrun.entity.TaskRepository
 import decision.control.DecisionInbox
 import decision.entity.*
 import issues.control.{ IssueAnalysisAttachment, IssueTemplateService }

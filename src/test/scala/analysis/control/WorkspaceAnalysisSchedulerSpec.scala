@@ -9,6 +9,7 @@ import _root_.config.entity.SettingRow
 import activity.entity.{ ActivityEvent, ActivityEventType }
 import analysis.entity.*
 import board.entity.*
+import taskrun.entity.TaskRepository
 import project.control.ProjectStorageService
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ AgentId, AnalysisDocId, BoardIssueId, ProjectId }

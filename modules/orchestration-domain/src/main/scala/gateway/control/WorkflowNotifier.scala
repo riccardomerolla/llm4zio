@@ -4,7 +4,7 @@ import zio.*
 import zio.json.*
 
 import _root_.config.entity.WorkflowRow
-import agent.entity.AgentRegistry
+import taskrun.entity.TaskRepository
 import gateway.entity.*
 import orchestration.entity.TaskExecutor
 import shared.errors.PersistenceError
