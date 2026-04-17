@@ -104,13 +104,6 @@ final case class IssueControllerLive(
         )
       }
     },
-    Method.GET / "settings" / "issues-templates"                     -> handler { (_: Request) =>
-      ErrorHandlingMiddleware.fromPersistence {
-        for
-          templates <- templateService.listTemplates
-        yield html(HtmlViews.settingsIssueTemplatesTab(templates))
-      }
-    },
     Method.POST / "issues"                                           -> handler { (req: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
@@ -517,58 +510,10 @@ final case class IssueControllerLive(
         yield Response.json(created.toJson)
       }
     },
-    Method.GET / "api" / "issue-templates"                           -> handler { (_: Request) =>
-      ErrorHandlingMiddleware.fromPersistence {
-        templateService.listTemplates.map(templates => Response.json(templates.toJson))
-      }
-    },
-    Method.POST / "api" / "issue-templates"                          -> handler { (req: Request) =>
-      ErrorHandlingMiddleware.fromPersistence {
-        for
-          body      <- req.body.asString.mapError(err => PersistenceError.QueryFailed("request_body", err.getMessage))
-          upsertReq <- ZIO
-                         .fromEither(body.fromJson[IssueTemplateUpsertRequest])
-                         .mapError(err => PersistenceError.QueryFailed("json_parse", err))
-          template  <- templateService.createTemplate(upsertReq)
-        yield Response.json(template.toJson).copy(status = Status.Created)
-      }
-    },
-    Method.PUT / "api" / "issue-templates" / string("id")            -> handler { (id: String, req: Request) =>
-      ErrorHandlingMiddleware.fromPersistence {
-        for
-          body      <- req.body.asString.mapError(err => PersistenceError.QueryFailed("request_body", err.getMessage))
-          upsertReq <- ZIO
-                         .fromEither(body.fromJson[IssueTemplateUpsertRequest])
-                         .mapError(err => PersistenceError.QueryFailed("json_parse", err))
-          template  <- templateService.updateTemplate(id, upsertReq)
-        yield Response.json(template.toJson)
-      }
-    },
-    Method.DELETE / "api" / "issue-templates" / string("id")         -> handler { (id: String, _: Request) =>
-      ErrorHandlingMiddleware.fromPersistence {
-        templateService.deleteTemplate(id).as(Response(status = Status.NoContent))
-      }
-    },
     Method.GET / "api" / "issues"                                    -> handler { (req: Request) =>
       val runIdStr = req.queryParam("run_id").map(_.trim).filter(_.nonEmpty)
       ErrorHandlingMiddleware.fromPersistence {
         loadApiIssues(runIdStr).map(issues => Response.json(issues.toJson))
-      }
-    },
-    Method.GET / "api" / "pipelines"                                 -> handler { (_: Request) =>
-      ErrorHandlingMiddleware.fromPersistence {
-        templateService.listPipelines.map(values => Response.json(values.toJson))
-      }
-    },
-    Method.POST / "api" / "pipelines"                                -> handler { (req: Request) =>
-      ErrorHandlingMiddleware.fromPersistence {
-        for
-          body     <- req.body.asString.mapError(err => PersistenceError.QueryFailed("request_body", err.getMessage))
-          create   <- ZIO
-                        .fromEither(body.fromJson[PipelineCreateRequest])
-                        .mapError(err => PersistenceError.QueryFailed("json_parse", err))
-          pipeline <- templateService.createPipeline(create)
-        yield Response.json(pipeline.toJson).copy(status = Status.Created)
       }
     },
     Method.POST / "api" / "issues" / "bulk" / "assign"               -> handler { (req: Request) =>

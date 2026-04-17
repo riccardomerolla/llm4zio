@@ -1,6 +1,6 @@
 # llm4zio Project Review — 2026-04-17
 
-Scope: state of `main` at HEAD `7e08e9a` plus in-flight phase 4F.1. Revised 2026-04-17 (eighth pass) after phases 4C, 4D, 4E.A–4E.H, and 4F.1 landed. The connectors-UI branch has merged, the `db/` legacy module has been deleted, orchestration-domain has grown its own `control/` layer, `WorkspaceRunService` and `MessageRouter` trait halves now live in their domain modules' `entity/` packages, `AgentRegistry` has relocated to `agent-domain`, `AgentMatching` has moved out of `agent-domain` (dropping the `agentDomain → workspaceDomain` edge), and phases 4E.E–4E.H have drained 28 more root files into `orchestration-domain`, `config-domain`, `knowledge-domain`, and `shared-services`. Root `src/main/scala/` is down to **56 files**, mostly boundary controllers.
+Scope: state of `main` at HEAD `6b47c82` plus in-flight phase 4F.2. Revised 2026-04-17 (ninth pass) after phases 4C, 4D, 4E.A–4E.H, 4F.1, and 4F.2 landed. The connectors-UI branch has merged, the `db/` legacy module has been deleted, orchestration-domain has grown its own `control/` layer, `WorkspaceRunService` and `MessageRouter` trait halves now live in their domain modules' `entity/` packages, `AgentRegistry` has relocated to `agent-domain`, `AgentMatching` has moved out of `agent-domain` (dropping the `agentDomain → workspaceDomain` edge), and phases 4E.E–4E.H have drained 28 more root files into `orchestration-domain`, `config-domain`, `knowledge-domain`, and `shared-services`. Root `src/main/scala/` is down to **56 files**, mostly boundary controllers.
 
 ---
 
@@ -21,13 +21,14 @@ The connectors-UI branch merged, all five outstanding P1 structural items from t
 - ✅ **Phase 4E.H** (commits `a5920e7`, `06669f9`) — two-step drain:
   - **4E.H.1**: `AgentMatching` (+ spec) moved from `agent-domain/control` to `orchestration-domain/control`. Rationale: it's agent-vs-`WorkspaceRun` scoring logic, orchestration-shaped. `agentDomain.dependsOn(workspaceDomain)` edge removed.
   - **4E.H.2**: 12 root control files relocated — `KnowledgeExtractionService` → `knowledge-domain`; 9 `workspace/control/*` + 2 `analysis/control/*` files → `orchestration-domain` under their existing packages (same-package cross-module). Honest scope note: these files *conceptually* split between workspace-domain and orchestration-domain, but because `workspace/control/*` imports `orchestration.control.{OrchestratorControlPlane, WorkReportEventBus}` and `orchestrationDomain` already `dependsOn(workspaceDomain)`, any back-edge creates a cycle. Parking them under orchestration-domain keeps them out of root without destabilizing the graph; a later pass can split cleanly.
-- ✅ **Phase 4F.1** (in-flight) — `IssueTemplateService` extracted from `IssueController` into `issues-domain/control/` (~407 LOC trait + Live). `IssueController` shrinks from 2,758 → 2,394 LOC (−364). Built-in templates, custom-template CRUD, pipeline CRUD, and variable resolve/validate/apply all live behind the trait; controller delegates via `templateService.xxx`. `issuesDomain` gains `configDomain` edge. This is the first sub-feature extraction out of `IssueController` and establishes the seam pattern for 4F.2 (sub-controller splits).
+- ✅ **Phase 4F.1** (commit `6b47c82`) — `IssueTemplateService` extracted from `IssueController` into `issues-domain/control/` (~407 LOC trait + Live). `IssueController` shrinks from 2,758 → 2,394 LOC (−364). Built-in templates, custom-template CRUD, pipeline CRUD, and variable resolve/validate/apply all live behind the trait; controller delegates via `templateService.xxx`. `issuesDomain` gains `configDomain` edge. This is the first sub-feature extraction out of `IssueController` and establishes the seam pattern for 4F.2 (sub-controller splits).
+- ✅ **Phase 4F.2** (in-flight) — `IssueTemplatesController` extracted from `IssueController` into `src/main/scala/issues/boundary/IssueTemplatesController.scala` (~94 LOC). Seven template + pipeline CRUD routes (`GET /settings/issues-templates`, `GET/POST /api/issue-templates`, `PUT/DELETE /api/issue-templates/:id`, `GET/POST /api/pipelines`) now live in the sub-controller, which depends only on `IssueTemplateService` and rendering helpers. Wired via `CoreRouteModule.issueTemplates.routes`. `IssueController` shrinks further from 2,394 → 2,339 LOC (−55). `POST /issues/from-template/:templateId` stays in `IssueController` because it creates issues and needs workspace board-issue helpers. Scope was deliberately narrowed from the original 4F.2 plan (templates + bulk + import sub-controllers) because bulk and import helpers have deep internal dependencies that need service-layer extractions first — those will land as 4F.3 (`IssueBulkService`) and 4F.4 (`IssueImportService`).
 
 No structural P1 items remain. The modularization drive is effectively complete for control-layer code — remaining root files are boundary controllers (the structurally bound population) and `app/` DI wiring.
 
 Top three actions now:
 
-1. **Continue splitting `IssueController` (now 2,394 LOC after 4F.1)** — template + pipeline logic already behind a service; next extract import/bulk sub-controllers or continue with a TimelineService. Phase 4F.2.
+1. **Continue splitting `IssueController` (now 2,339 LOC after 4F.2)** — templates sub-controller extracted; next needs service-first extractions for bulk (phase 4F.3: `IssueBulkService` around `validateIssueIds` / `ensureTransitionAllowed` / `statusToEvents` / `assignWorkspaceRunAndMarkStarted`) and for import (phase 4F.4: `IssueImportService` around folder/GitHub preview + apply). Each service unlocks its matching sub-controller.
 2. **Distribute the top 5 multi-domain views out of `shared-web/`** to their owning `boundary/` packages, starting with the cleanest single-domain set.
 3. **Backfill module-scoped tests** for `checkpoint`, `gateway`, `orchestration` (highest churn, currently zero module-scoped tests).
 
@@ -84,7 +85,7 @@ Feature intent: split connector defaults into API/CLI cards, with per-agent over
   - `orchestration/control/` (1): `PlannerAgentService` — still root; could move alongside the other orchestration control if its imports permit.
   - `board/control/` (3): `IssueCreationWizard`, `IssueTimelineService`, `IssueWorkReportProjectionFactory` — candidates for a small follow-on drain.
   - `app/control/` (2): `HealthMonitor`, `Tracing` — `HealthMonitor` could move once cross-service deps are vetted; `Tracing` has OTEL deps not yet in `shared-services`.
-  - Boundary controllers: `IssueController` (2,394 LOC after 4F.1, down from 2,758), `AgentsController`, `SettingsController`, `ProjectsController`, plus smaller ones — cross-cut multiple domains. Structurally bound to stay in root until 4F-style sub-feature splits land.
+  - Boundary controllers: `IssueController` (2,339 LOC after 4F.2, down from 2,758 pre-4F.1), `IssueTemplatesController` (94 LOC, extracted 4F.2), `AgentsController`, `SettingsController`, `ProjectsController`, plus smaller ones — cross-cut multiple domains. Structurally bound to stay in root until further 4F sub-feature splits land.
   - `app/`: `WebServer`, `ApplicationDI`, `config/boundary/Main.scala` — the DI composition root; by design depends on everything and stays at root.
   - `mcp/`: cross-cutting MCP tool support.
 - **Architectural note on 4E.H.2**: 11 of the 12 files drained in 4E.H.2 are physically housed under `orchestration-domain` but keep their original `workspace.control` / `analysis.control` package declarations. Same-package cross-module is legal in Scala, but it does mean the physical/logical layout is no longer 1:1 for these packages. A future pass could clean this up by either (a) extracting the orchestration-trait subset from `orchestration.control` so `workspace-domain` could depend on the trait without the full graph, or (b) renaming packages to match their physical home. Neither is urgent.
@@ -139,7 +140,7 @@ The previous pass's P0 items all shipped. No critical items block day-to-day wor
 3. ✅ ~~Relocate `AgentRegistry` out of `orchestration-domain`~~ — shipped in 4E.D.
 4. ✅ ~~Move trapped root control files~~ — phases 4E.E/F/G/H shipped 30 relocations (8 + 7 + 3 + 12).
 5. ✅ ~~Drop `agentDomain → workspaceDomain` edge~~ — shipped in 4E.H.1 (via `AgentMatching` relocation).
-6. **Split `IssueController` further (2,394 LOC after 4F.1)** along remaining sub-feature lines (lifecycle / comments / dispatch / timeline / import / bulk). Phase 4F.2. First extraction (`IssueTemplateService`) is done and establishes the seam pattern.
+6. **Split `IssueController` further (2,339 LOC after 4F.2)** along remaining sub-feature lines. Templates sub-controller is extracted; next phases: 4F.3 extracts `IssueBulkService` + `IssueBulkController`; 4F.4 extracts `IssueImportService` + `IssueImportController`; optional 4F.5 extracts `IssueTimelineService`.
 7. **Distribute the top 5 multi-domain views out of `shared-web/`** to their owning `boundary/` packages, starting with the cleanest single-domain set.
 8. **Backfill module-scoped tests** for `checkpoint`, `gateway`, `orchestration` first (highest churn, currently zero module-scoped tests).
 9. **Replace the inline JS in `SettingsView` with a Lit 3 `ab-env-vars-editor` component**. Sets the precedent for removing inline scripts from other Scalatags views.
@@ -147,7 +148,7 @@ The previous pass's P0 items all shipped. No critical items block day-to-day wor
 ### P2 — strategic
 
 9. **Compile-time BCE enforcement**. Minimum viable: split each domain into `<domain>-entity`, `<domain>-control`, `<domain>-boundary` sbt submodules so the build refuses `control → boundary` imports. Higher-effort: ArchUnit-equivalent architecture tests. This is phase 4G in the modularization plan.
-10. **Continue `IssueController` split** (currently 2,394 LOC after 4F.1) along sub-feature lines (lifecycle, comments, dispatch, timeline, import, bulk). First extraction (`IssueTemplateService`) landed; phase 4F.2 continues the seam pattern with sub-controllers and a timeline service.
+10. **Continue `IssueController` split** (currently 2,339 LOC after 4F.2) along remaining sub-feature lines. `IssueTemplateService` + `IssueTemplatesController` extracted; next: 4F.3 `IssueBulkService`/`IssueBulkController`, then 4F.4 `IssueImportService`/`IssueImportController`, then optionally 4F.5 `IssueTimelineService`.
 11. **Introduce `CHANGELOG.md` and a lightweight release-branch policy**. The modularization plan would benefit from visible "epoch" markers.
 12. **Document the 6 allowed `Throwable` sites in CLAUDE.md** so future reviewers don't re-litigate them.
 13. **Document the mixed route-shape convention** (`/settings/connectors/{api|cli}` split vs `/agents/{name}/connector/mode?mode=` merged).
@@ -180,4 +181,5 @@ The previous pass's P0 items all shipped. No critical items block day-to-day wor
 | Phase 4E.G app/control utilities → shared-services | commit `392c7dd` |
 | Phase 4E.H.1 AgentMatching → orchestration-domain; agentDomain→workspaceDomain edge dropped | commit `a5920e7` |
 | Phase 4E.H.2 workspace/analysis control → orchestration-domain; KnowledgeExtractionService → knowledge-domain | commit `06669f9` |
-| Phase 4F.1 IssueTemplateService extraction (IssueController 2,758 → 2,394 LOC) | in-flight |
+| Phase 4F.1 IssueTemplateService extraction (IssueController 2,758 → 2,394 LOC) | commit `6b47c82` |
+| Phase 4F.2 IssueTemplatesController extraction (IssueController 2,394 → 2,339 LOC) | in-flight |

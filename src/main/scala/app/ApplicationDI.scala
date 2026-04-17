@@ -397,8 +397,6 @@ object ApplicationDI:
       issues.control.IssueTemplateService.live,
       IssuesIssueController.live,
       issues.boundary.IssueTemplatesController.live,
-      issues.boundary.IssueBulkController.live,
-      issues.boundary.IssueImportController.live,
       ActivityController.live,
       MemoryBoundaryController.live,
       DaemonsController.live,
