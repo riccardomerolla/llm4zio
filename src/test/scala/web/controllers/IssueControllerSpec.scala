@@ -32,7 +32,7 @@ import project.control.ProjectStorageService
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ AgentId, AnalysisDocId, BoardIssueId, IssueId }
 import shared.testfixtures.*
-import taskrun.entity.{ TaskArtifactRow, TaskReportRow, TaskRepository, TaskRunRow }
+import taskrun.entity.{ TaskArtifactRow, TaskReportRow, TaskRunRow }
 import workspace.entity.*
 
 object IssueControllerSpec extends ZIOSpecDefault:

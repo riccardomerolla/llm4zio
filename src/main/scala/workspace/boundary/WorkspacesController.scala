@@ -15,6 +15,7 @@ import analysis.control.WorkspaceAnalysisScheduler
 import project.entity.ProjectRepository
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ IssueId, ProjectId }
+import shared.web.{ WorkspaceTemplatesView, WorkspacesView }
 import workspace.control.GitService
 import workspace.entity.*
 

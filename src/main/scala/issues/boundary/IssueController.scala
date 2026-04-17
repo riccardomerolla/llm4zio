@@ -29,9 +29,9 @@ import project.control.ProjectStorageService
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ AgentId, BoardIssueId, EventId, IssueId, TaskRunId }
 import shared.web.{ ErrorHandlingMiddleware, HtmlViews }
-import taskrun.entity.TaskRepository
 import workspace.control.ProofOfWorkExtractor
-import workspace.entity.{ AssignRunRequest, WorkspaceRepository, WorkspaceRunService }
+import workspace.entity.WorkspaceRunService
+import workspace.entity.{ AssignRunRequest, WorkspaceRepository }
 
 trait IssueController:
   def routes: Routes[Any, Response]

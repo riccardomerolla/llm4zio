@@ -13,7 +13,7 @@ import project.control.ProjectStorageService
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ BoardIssueId, ProjectId }
 import shared.testfixtures.{ NoOpActivityHub, StubWorkspaceRepository }
-import workspace.control.{ GitServiceLive, WorkspaceRunService }
+import workspace.control.GitServiceLive
 import workspace.entity.*
 
 import IntegrationFixtures.*
