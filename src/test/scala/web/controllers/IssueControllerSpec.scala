@@ -29,7 +29,6 @@ import shared.errors.PersistenceError
 import shared.ids.Ids.{ AgentId, AnalysisDocId, BoardIssueId, IssueId }
 import shared.testfixtures.*
 import taskrun.entity.{ TaskArtifactRow, TaskReportRow, TaskRunRow }
-import workspace.control.WorkspaceRunService
 import workspace.entity.*
 
 object IssueControllerSpec extends ZIOSpecDefault:

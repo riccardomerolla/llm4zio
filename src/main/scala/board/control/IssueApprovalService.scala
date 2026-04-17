@@ -7,7 +7,7 @@ import decision.control.DecisionInbox
 import decision.entity.DecisionResolutionKind
 import project.control.ProjectStorageService
 import shared.ids.Ids.{ BoardIssueId, IssueId }
-import workspace.control.WorkspaceRunService
+import workspace.entity.WorkspaceRunService
 import workspace.entity.{ RunStatus, Workspace, WorkspaceRepository, WorkspaceRun }
 
 trait IssueApprovalService:

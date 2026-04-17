@@ -13,7 +13,7 @@ import issues.entity.AgentIssue
 import project.control.ProjectStorageService
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ BoardIssueId, DecisionId, IssueId, ProjectId }
-import workspace.control.WorkspaceRunService
+import workspace.entity.WorkspaceRunService
 import workspace.entity.{ Workspace, WorkspaceEvent, WorkspaceRepository, WorkspaceRun, WorkspaceRunEvent }
 
 object IssueApprovalServiceSpec extends ZIOSpecDefault:

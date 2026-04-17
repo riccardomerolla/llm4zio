@@ -33,7 +33,8 @@ import project.control.ProjectStorageService
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ AgentId, BoardIssueId, EventId, IssueId, TaskRunId }
 import shared.web.{ ErrorHandlingMiddleware, HtmlViews }
-import workspace.control.{ ProofOfWorkExtractor, WorkspaceRunService }
+import workspace.control.ProofOfWorkExtractor
+import workspace.entity.WorkspaceRunService
 import workspace.entity.{ AssignRunRequest, WorkspaceRepository }
 
 trait IssueController:

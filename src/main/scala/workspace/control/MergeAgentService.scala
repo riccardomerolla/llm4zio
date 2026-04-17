@@ -11,7 +11,7 @@ import orchestration.control.WorkReportEventBus
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ EventId, IssueId, TaskRunId }
 import taskrun.entity.{ CiStatus, TaskRunEvent }
-import workspace.entity.{ GitError, RunStatus, WorkspaceRepository, WorkspaceRun }
+import workspace.entity.{ GitError, RunStatus, WorkspaceRepository, WorkspaceRun, WorkspaceRunService }
 
 enum MergeAgentError:
   case IssueNotFound(issueId: IssueId)

@@ -10,7 +10,7 @@ object ParallelSessionCoordinatorWiringSpec extends ZIOSpecDefault:
   def spec: Spec[Environment, Any] = suite("ParallelSessionCoordinatorWiringSpec")(
     test("ParallelSessionCoordinator.live has the declared ZLayer type") {
       val _: ZLayer[
-        workspace.control.WorkspaceRunService &
+        workspace.entity.WorkspaceRunService &
           workspace.entity.WorkspaceRepository &
           OrchestratorControlPlane &
           gateway.control.MessageRouter,

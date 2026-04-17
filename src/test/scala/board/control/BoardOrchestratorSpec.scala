@@ -13,7 +13,7 @@ import governance.entity.*
 import project.control.ProjectStorageService
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ BoardIssueId, GovernancePolicyId, ProjectId }
-import workspace.control.{ GitService, WorkspaceRunService }
+import workspace.control.GitService
 import workspace.entity.*
 
 object BoardOrchestratorSpec extends ZIOSpecDefault:

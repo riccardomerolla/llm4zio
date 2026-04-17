@@ -17,7 +17,7 @@ import shared.errors.PersistenceError
 import shared.ids.Ids.{ IssueId, ProjectId }
 import shared.testfixtures.*
 import taskrun.entity.TaskStep
-import workspace.control.{ GitService, WorkspaceRunService }
+import workspace.control.GitService
 import workspace.entity.*
 
 object WorkspacesControllerSpec extends ZIOSpecDefault:

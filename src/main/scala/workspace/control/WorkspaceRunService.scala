@@ -20,17 +20,12 @@ import shared.ids.Ids.IssueId
 import workspace.control.WorkspaceErrorSupport.*
 import workspace.control.WorkspaceRunLifecycleSupport.*
 import workspace.entity.*
+import workspace.entity.WorkspaceRunService as WorkspaceRunServiceTrait
 
-trait WorkspaceRunService:
-  def assign(workspaceId: String, req: AssignRunRequest): IO[WorkspaceError, WorkspaceRun]
-  def continueRun(
-    runId: String,
-    followUpPrompt: String,
-    agentNameOverride: Option[String] = None,
-  ): IO[WorkspaceError, WorkspaceRun]
-  def cancelRun(runId: String): IO[WorkspaceError, Unit]
-  def cleanupAfterSuccessfulMerge(runId: String): UIO[Unit]      = ZIO.unit
-  def registerSlot(runId: String, handle: SlotHandle): UIO[Unit] = ZIO.unit
+// The trait `WorkspaceRunService` itself lives in `workspace.entity`; this file
+// hosts the `Live` implementation and its ZLayer wiring, which depend on types
+// from other domain modules (orchestration, knowledge, agent, activity, etc.)
+// that `workspace-domain` cannot pull in without creating dependency cycles.
 
 object WorkspaceRunService:
   type RunCliAgentFn = (List[String], String, String => Task[Unit], Map[String, String]) => Task[Int]
@@ -39,10 +34,10 @@ object WorkspaceRunService:
     WorkspaceRepository & ChatRepository & IssueRepository & ActivityHub & GitWatcher & AgentRepository &
       AnalysisRepository & DecisionInbox & KnowledgeExtractionService & AgentPoolManager & OrchestratorControlPlane
 
-  val live: ZLayer[LiveDeps, Nothing, WorkspaceRunService] =
+  val live: ZLayer[LiveDeps, Nothing, WorkspaceRunServiceTrait] =
     liveWithAgent(CliAgentRunner.runProcessStreaming)
 
-  def liveWithAgent(runCliAgent: RunCliAgentFn): ZLayer[LiveDeps, Nothing, WorkspaceRunService] =
+  def liveWithAgent(runCliAgent: RunCliAgentFn): ZLayer[LiveDeps, Nothing, WorkspaceRunServiceTrait] =
     ZLayer {
       for
         repo         <- ZIO.service[WorkspaceRepository]
@@ -92,8 +87,8 @@ object WorkspaceRunService:
       )
     }
 
-  def cancelRun(runId: String): ZIO[WorkspaceRunService, WorkspaceError, Unit] =
-    ZIO.serviceWithZIO[WorkspaceRunService](_.cancelRun(runId))
+  def cancelRun(runId: String): ZIO[WorkspaceRunServiceTrait, WorkspaceError, Unit] =
+    ZIO.serviceWithZIO[WorkspaceRunServiceTrait](_.cancelRun(runId))
 
   private def poolErrorToWorkspace(error: PoolError): WorkspaceError =
     error match
@@ -206,7 +201,7 @@ final case class WorkspaceRunServiceLive(
     (_, _, _, _, _, _) => ZIO.unit,
   resolveExecutionRuntime: (RunMode, AgentPermissions, Option[TrustLevel]) => ExecutionRuntime.Resolution =
     ExecutionRuntime.resolve,
-) extends WorkspaceRunService:
+) extends WorkspaceRunServiceTrait:
 
   private val lifecycle = WorkspaceRunLifecycleSupport(
     wsRepo = wsRepo,
@@ -222,7 +217,10 @@ final case class WorkspaceRunServiceLive(
     extractKnowledgeFromCompletedRun = extractKnowledgeFromCompletedRun,
   )
 
-  override def registerSlot(runId: String, handle: SlotHandle): UIO[Unit] =
+  // Not on the trait — implementation detail consumed only by self-calls from
+  // `assign`/`continueRun` below; keeps `orchestration.entity.SlotHandle` out of
+  // the public `WorkspaceRunService` interface in workspace-domain.
+  private def registerSlot(runId: String, handle: SlotHandle): UIO[Unit] =
     slotRegistry.update(_ + (runId -> handle))
 
   override def cleanupAfterSuccessfulMerge(runId: String): UIO[Unit] =
