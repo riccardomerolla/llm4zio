@@ -289,7 +289,9 @@ lazy val knowledgeDomain = (project in file("modules/knowledge-domain"))
   .settings(foundationSettings)
   .settings(
     name := "knowledge-domain",
-    libraryDependencies ++= domainBceDeps,
+    libraryDependencies ++= domainBceDeps ++ Seq(
+      "io.github.riccardomerolla" %% "zio-eclipsestore-gigamap" % zioEclipseStoreVersion % Test,
+    ),
   )
 
 lazy val projectDomain = (project in file("modules/project-domain"))
@@ -374,7 +376,9 @@ lazy val evolutionDomain = (project in file("modules/evolution-domain"))
   .settings(foundationSettings)
   .settings(
     name := "evolution-domain",
-    libraryDependencies ++= domainDeps,
+    libraryDependencies ++= domainDeps ++ Seq(
+      "io.github.riccardomerolla" %% "zio-eclipsestore-gigamap" % zioEclipseStoreVersion % Test,
+    ),
   )
 
 lazy val sharedWeb = (project in file("modules/shared-web"))
@@ -401,7 +405,9 @@ lazy val issuesDomain = (project in file("modules/issues-domain"))
   .settings(foundationSettings)
   .settings(
     name := "issues-domain",
-    libraryDependencies ++= domainBceDeps,
+    libraryDependencies ++= domainBceDeps ++ Seq(
+      "io.github.riccardomerolla" %% "zio-eclipsestore-gigamap" % zioEclipseStoreVersion % Test,
+    ),
   )
 
 lazy val demoDomain = (project in file("modules/demo-domain"))
