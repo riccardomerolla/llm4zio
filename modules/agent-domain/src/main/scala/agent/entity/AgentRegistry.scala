@@ -1,4 +1,4 @@
-package orchestration.entity
+package agent.entity
 
 import zio.*
 
@@ -288,7 +288,7 @@ object AgentRegistry:
 
     builtInAgents ++ customMapped
 
-  private[orchestration] def toCustomAgentInfo(agent: CustomAgentRow): AgentInfo =
+  private[agent] def toCustomAgentInfo(agent: CustomAgentRow): AgentInfo =
     AgentInfo(
       name = agent.name,
       handle = sanitizeHandle(agent.name),
@@ -307,5 +307,5 @@ object AgentRegistry:
   private def splitTags(raw: String): List[String] =
     raw.split(",").toList.map(_.trim).filter(_.nonEmpty)
 
-  private[orchestration] def sanitizeHandle(raw: String): String =
+  private[agent] def sanitizeHandle(raw: String): String =
     raw.trim.toLowerCase.replaceAll("[^a-z0-9_-]+", "-")

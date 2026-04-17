@@ -6,8 +6,8 @@ import zio.*
 import zio.test.*
 
 import _root_.config.entity.{ AgentQuery, AgentSkill, AgentType, CustomAgentRow, RegisterAgentRequest }
-import orchestration.control.AgentRegistryLive
-import orchestration.entity.AgentRegistry
+import agent.control.AgentRegistryLive
+import agent.entity.AgentRegistry
 
 object AgentRegistrySpec extends ZIOSpecDefault:
 

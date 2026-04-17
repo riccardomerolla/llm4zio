@@ -20,7 +20,8 @@ import _root_.config.entity.{ ConfigRepository, ConfigRepositoryES, GatewayConfi
 import activity.boundary.ActivityController
 import activity.control.ActivityHub
 import activity.entity.ActivityRepository
-import agent.entity.{ AgentEventStoreES, AgentRepositoryES }
+import agent.control.AgentRegistryLive
+import agent.entity.{ AgentEventStoreES, AgentRegistry, AgentRepositoryES }
 import analysis.control.{ AnalysisAgentRunner, WorkspaceAnalysisScheduler }
 import analysis.entity.{ AnalysisEventStoreES, AnalysisRepositoryES }
 import app.boundary.{ AgentMonitorController as AppAgentMonitorController, HealthController as AppHealthController, * }
@@ -69,7 +70,7 @@ import orchestration.control.{
   IssueAssignmentOrchestrator as OrchestrationIssueAssignmentOrchestrator,
   ProgressTracker as OrchestrationProgressTracker,
 }
-import orchestration.entity.{ AgentPoolManager, AgentRegistry, TaskExecutor, WorkflowService }
+import orchestration.entity.{ AgentPoolManager, TaskExecutor, WorkflowService }
 import plan.entity.{ PlanEventStoreES, PlanRepositoryES }
 import project.boundary.ProjectsController
 import project.control.ProjectStorageService

@@ -1,9 +1,9 @@
-package orchestration.control
+package agent.control
 
 import zio.*
 
 import _root_.config.entity.*
-import orchestration.entity.AgentRegistry
+import agent.entity.AgentRegistry
 import shared.entity.TaskStep
 
 object AgentRegistryLive:
@@ -16,7 +16,7 @@ object AgentRegistryLive:
     yield new AgentRegistryLiveImpl(agentsRef)
   }
 
-final private[control] class AgentRegistryLiveImpl(
+final private[agent] class AgentRegistryLiveImpl(
   agents: Ref.Synchronized[Map[String, AgentInfo]]
 ) extends AgentRegistry:
 

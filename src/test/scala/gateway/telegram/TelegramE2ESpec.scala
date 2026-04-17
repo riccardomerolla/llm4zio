@@ -9,11 +9,12 @@ import zio.*
 import zio.test.*
 
 import _root_.config.entity.{ CustomAgentRow, SettingRow, WorkflowDefinition, WorkflowRow }
+import agent.control.AgentRegistryLive
+import agent.entity.AgentRegistry
 import taskrun.entity.TaskRepository
 import gateway.control.{ TelegramClient, WorkflowNotifier, WorkflowNotifierLive }
 import gateway.entity.*
-import orchestration.control.AgentRegistryLive
-import orchestration.entity.{ AgentRegistry, TaskExecutor }
+import orchestration.entity.TaskExecutor
 import shared.errors.PersistenceError
 import taskrun.entity.{ TaskArtifactRow, TaskReportRow, TaskRunRow }
 

@@ -14,8 +14,8 @@ import gateway.entity.*
 import llm4zio.core.*
 import llm4zio.tools.{ AnyTool, JsonSchema }
 import memory.entity.{ Scope as MemoryScope, * }
-import orchestration.control.AgentRegistryLive
-import orchestration.entity.AgentRegistry
+import agent.control.AgentRegistryLive
+import agent.entity.AgentRegistry
 import prompts.PromptLoader
 import shared.errors.PersistenceError
 

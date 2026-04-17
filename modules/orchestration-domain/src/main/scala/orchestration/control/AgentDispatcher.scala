@@ -10,7 +10,7 @@ import taskrun.entity.TaskRepository
 import llm4zio.core.*
 import llm4zio.providers.{ GeminiCliExecutor, HttpClient }
 import memory.entity.{ Scope, * }
-import orchestration.entity.AgentRegistry
+import agent.entity.AgentRegistry
 import shared.errors.PersistenceError
 import taskrun.entity.{ TaskArtifactRow, TaskReportRow }
 

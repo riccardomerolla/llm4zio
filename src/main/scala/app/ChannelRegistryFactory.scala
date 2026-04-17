@@ -5,11 +5,12 @@ import scala.concurrent.ExecutionContext
 import zio.*
 
 import _root_.config.entity.{ ConfigRepository, GatewayConfig }
+import agent.entity.AgentRegistry
 import taskrun.entity.TaskRepository
 import gateway.boundary.telegram.{ ConfigAwareTelegramClient, TelegramChannel }
 import gateway.control.*
 import gateway.entity.SessionScopeStrategy
-import orchestration.entity.{ AgentRegistry, TaskExecutor }
+import orchestration.entity.TaskExecutor
 import sttp.client4.DefaultFutureBackend
 
 object ChannelRegistryFactory:

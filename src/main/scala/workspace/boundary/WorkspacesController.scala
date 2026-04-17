@@ -8,8 +8,8 @@ import zio.http.*
 import zio.json.*
 
 import _root_.config.entity.ConfigRepository
+import agent.entity.AgentRegistry
 import analysis.control.WorkspaceAnalysisScheduler
-import orchestration.entity.AgentRegistry
 import project.entity.ProjectRepository
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ IssueId, ProjectId }

@@ -7,10 +7,10 @@ import zio.json.*
 import zio.stream.*
 
 import _root_.config.entity.{ AgentHealthStatus, AgentInfo, GatewayConfig }
+import agent.entity.AgentRegistry
 import com.sun.management.OperatingSystemMXBean
 import taskrun.entity.TaskRepository
 import gateway.control.{ ChannelRegistry, GatewayService }
-import orchestration.entity.AgentRegistry
 import taskrun.entity.RunStatus
 
 final case class GatewayHealth(
