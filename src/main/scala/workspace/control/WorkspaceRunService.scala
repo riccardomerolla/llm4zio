@@ -9,7 +9,7 @@ import activity.entity.ActivityEvent
 import agent.entity.{ AgentPathScope, AgentPermissions, AgentRepository, NetworkAccessScope, TrustLevel }
 import analysis.entity.AnalysisRepository
 import conversation.entity.api.{ ChatConversation, ConversationEntry, MessageType, SenderType }
-import db.ChatRepository
+import conversation.entity.ChatRepository
 import decision.control.DecisionInbox
 import issues.entity.{ AgentIssue as DomainIssue, IssueRepository }
 import knowledge.control.KnowledgeExtractionService

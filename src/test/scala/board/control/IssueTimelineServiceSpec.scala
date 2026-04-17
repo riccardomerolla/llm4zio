@@ -9,7 +9,7 @@ import analysis.entity.{ AnalysisDoc, AnalysisEvent, AnalysisRepository, Analysi
 import board.entity.TimelineEntry
 import board.entity.TimelineEntry.*
 import conversation.entity.api.{ ChatConversation, ConversationEntry, MessageType, SenderType, SessionContextLink }
-import db.ChatRepository
+import conversation.entity.ChatRepository
 import decision.control.DecisionInbox
 import decision.entity.*
 import issues.entity.*

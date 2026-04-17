@@ -21,7 +21,8 @@ import agent.entity.api.AgentMatchSuggestion
 import analysis.entity.AnalysisRepository
 import board.control.BoardOrchestrator
 import board.entity.{ IssueEstimate as BoardIssueEstimate, IssuePriority as BoardIssuePriority, * }
-import db.{ ChatRepository, TaskRepository }
+import conversation.entity.ChatRepository
+import db.TaskRepository
 import decision.control.DecisionInbox
 import decision.entity.*
 import issues.control.IssueAnalysisAttachment

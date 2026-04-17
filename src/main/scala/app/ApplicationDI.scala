@@ -35,6 +35,7 @@ import conversation.boundary.{
 import daemon.boundary.DaemonsController
 import daemon.control.DaemonAgentScheduler
 import daemon.entity.DaemonAgentSpecRepositoryES
+import conversation.entity.ChatRepository
 import db.*
 import decision.control.DecisionInbox
 import decision.entity.{ DecisionEventStoreES, DecisionRepositoryES }

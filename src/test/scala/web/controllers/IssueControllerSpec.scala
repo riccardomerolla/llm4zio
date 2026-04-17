@@ -14,6 +14,7 @@ import analysis.entity.{ AnalysisDoc, AnalysisEvent, AnalysisRepository, Analysi
 import board.control.BoardOrchestrator
 import board.entity.*
 import conversation.entity.api.{ ChatConversation, ConversationEntry, SessionContextLink }
+import conversation.entity.ChatRepository
 import db.*
 import decision.control.DecisionInbox
 import decision.entity.{ Decision, DecisionFilter, DecisionResolutionKind }

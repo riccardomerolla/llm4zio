@@ -1,4 +1,4 @@
-package db
+package conversation.entity
 
 import java.time.Instant
 
@@ -6,7 +6,6 @@ import zio.*
 import zio.json.*
 
 import conversation.entity.api.*
-import conversation.entity.{ ChatMessageRow, ConversationRow, SessionContextRow }
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import shared.errors.PersistenceError
 import shared.store.*

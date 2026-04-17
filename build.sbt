@@ -322,7 +322,9 @@ lazy val conversationDomain = (project in file("modules/conversation-domain"))
   .settings(foundationSettings)
   .settings(
     name := "conversation-domain",
-    libraryDependencies ++= domainDeps,
+    libraryDependencies ++= domainDeps ++ Seq(
+      "io.github.riccardomerolla" %% "zio-eclipsestore-gigamap" % zioEclipseStoreVersion % Test,
+    ),
   )
 
 lazy val daemonDomain = (project in file("modules/daemon-domain"))

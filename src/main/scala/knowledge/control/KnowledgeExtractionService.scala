@@ -7,7 +7,7 @@ import zio.json.*
 
 import analysis.entity.AnalysisRepository
 import conversation.entity.api.SenderType
-import db.ChatRepository
+import conversation.entity.ChatRepository
 import issues.entity.AgentIssue
 import knowledge.entity.*
 import llm4zio.core.{ LlmService, Streaming }

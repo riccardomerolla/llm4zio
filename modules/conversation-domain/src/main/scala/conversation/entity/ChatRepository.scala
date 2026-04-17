@@ -1,4 +1,4 @@
-package db
+package conversation.entity
 
 import java.time.Instant
 

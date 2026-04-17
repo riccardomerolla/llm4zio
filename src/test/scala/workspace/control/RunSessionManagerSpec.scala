@@ -9,7 +9,7 @@ import zio.test.*
 
 import activity.entity.ActivityEvent
 import conversation.entity.api.{ ChatConversation, ConversationEntry }
-import db.ChatRepository
+import conversation.entity.ChatRepository
 import shared.errors.PersistenceError
 import workspace.entity.*
 

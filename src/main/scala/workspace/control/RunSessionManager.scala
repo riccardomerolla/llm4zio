@@ -6,7 +6,7 @@ import zio.json.*
 import activity.control.ActivityHub
 import activity.entity.{ ActivityEvent, ActivityEventType }
 import conversation.entity.api.{ ConversationEntry, MessageType, SenderType }
-import db.ChatRepository
+import conversation.entity.ChatRepository
 import shared.ids.Ids.{ EventId, TaskRunId }
 import workspace.control.WorkspaceErrorSupport.*
 import workspace.entity.*

@@ -7,7 +7,7 @@ import activity.entity.{ ActivityEvent, ActivityEventType }
 import agent.entity.AgentPermissions
 import analysis.entity.AnalysisRepository
 import conversation.entity.api.{ ConversationEntry, MessageType, SenderType }
-import db.ChatRepository
+import conversation.entity.ChatRepository
 import issues.control.IssueAnalysisAttachment
 import issues.entity.{ AgentIssue as DomainIssue, IssueEvent, IssueRepository }
 import orchestration.entity.SlotHandle
