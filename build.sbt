@@ -252,7 +252,7 @@ lazy val governanceDomain = (project in file("modules/governance-domain"))
   )
 
 lazy val agentDomain = (project in file("modules/agent-domain"))
-  .dependsOn(sharedIds, sharedErrors, sharedStoreCore, sharedWebCore, workspaceDomain, configDomain)
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore, sharedWebCore, configDomain)
   .settings(foundationSettings)
   .settings(
     name := "agent-domain",
