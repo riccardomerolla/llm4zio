@@ -1,10 +1,9 @@
-package db
+package taskrun.entity
 
 import zio.*
 
 import _root_.config.entity.{ CustomAgentRow, SettingRow, WorkflowRow }
 import shared.errors.PersistenceError
-import taskrun.entity.{ TaskArtifactRow, TaskReportRow, TaskRunRow }
 
 trait TaskRepository:
   // Runs

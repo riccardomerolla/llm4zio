@@ -3,7 +3,7 @@ package orchestration.control
 import zio.*
 
 import _root_.config.entity.{ ModelFallbackChain, ModelRef, ProviderConfig }
-import db.TaskRepository
+import taskrun.entity.TaskRepository
 import llm4zio.core.LlmProvider
 import shared.errors.PersistenceError
 

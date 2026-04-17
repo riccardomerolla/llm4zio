@@ -11,7 +11,7 @@ import _root_.config.entity.ProviderConfig
 import agent.control.BuiltInAgentSynchronizer
 import agent.entity.{ Agent, AgentRepository }
 import analysis.entity.{ AnalysisDoc, AnalysisEvent, AnalysisRepository, AnalysisType }
-import db.TaskRepository
+import taskrun.entity.TaskRepository
 import llm4zio.core.*
 import llm4zio.providers.{ GeminiCliExecutionContext, GeminiCliExecutor, HttpClient }
 import orchestration.control.AgentConfigResolver

@@ -12,7 +12,6 @@ import activity.entity.ActivityEvent
 import board.entity.*
 import conversation.entity.api.*
 import conversation.entity.ChatRepository
-import db.*
 import governance.control.{ GovernanceEvaluationContext, GovernancePolicyService, GovernanceTransitionDecision }
 import governance.entity.{ GovernanceGate, GovernancePolicy }
 import issues.entity.{ IssueEvent, IssueRepository }

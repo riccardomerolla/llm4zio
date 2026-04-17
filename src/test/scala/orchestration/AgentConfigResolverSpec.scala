@@ -6,7 +6,7 @@ import zio.*
 import zio.test.*
 
 import _root_.config.entity.{ ProviderConfig, SettingRow }
-import db.*
+import taskrun.entity.TaskRepository
 import llm4zio.core.LlmProvider
 import orchestration.control.AgentConfigResolverLive
 import shared.errors.PersistenceError

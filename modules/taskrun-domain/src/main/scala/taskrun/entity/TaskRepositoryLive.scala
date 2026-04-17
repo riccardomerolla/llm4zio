@@ -1,4 +1,4 @@
-package db
+package taskrun.entity
 
 import java.time.Instant
 
@@ -9,7 +9,6 @@ import _root_.config.entity.{ CustomAgentRow, SettingRow, StoredCustomAgentRow, 
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import shared.errors.PersistenceError
 import shared.store.*
-import taskrun.entity.*
 
 final case class TaskRepositoryLive(
   dataStore: DataStoreService,

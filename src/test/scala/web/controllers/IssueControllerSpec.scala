@@ -15,7 +15,7 @@ import board.control.BoardOrchestrator
 import board.entity.*
 import conversation.entity.api.{ ChatConversation, ConversationEntry, SessionContextLink }
 import conversation.entity.ChatRepository
-import db.*
+import taskrun.entity.TaskRepository
 import decision.control.DecisionInbox
 import decision.entity.{ Decision, DecisionFilter, DecisionResolutionKind }
 import issues.boundary.IssueControllerLive

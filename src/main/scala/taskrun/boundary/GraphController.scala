@@ -4,7 +4,7 @@ import zio.*
 import zio.http.*
 import zio.json.*
 
-import db.*
+import taskrun.entity.TaskRepository
 import shared.errors.PersistenceError
 import shared.web.{ ErrorHandlingMiddleware, HtmlViews }
 import taskrun.entity.TaskReportRow

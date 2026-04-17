@@ -9,7 +9,7 @@ import zio.*
 import zio.test.*
 
 import _root_.config.entity.{ CustomAgentRow, SettingRow, WorkflowDefinition, WorkflowRow }
-import db.*
+import taskrun.entity.TaskRepository
 import gateway.control.{ MessageChannelError, TelegramClient, WorkflowNotifier, WorkflowNotifierLive }
 import gateway.entity.*
 import orchestration.control.AgentRegistryLive

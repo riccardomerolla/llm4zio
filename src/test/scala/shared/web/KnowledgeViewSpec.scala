@@ -5,6 +5,7 @@ import java.time.Instant
 import zio.test.*
 
 import analysis.entity.{ AnalysisDoc, AnalysisType }
+import knowledge.boundary.KnowledgeView
 import knowledge.entity.*
 import memory.entity.{ MemoryEntry, MemoryId, MemoryKind, Scope as MemoryScope, SessionId }
 import shared.ids.Ids.{ AgentId, DecisionLogId, IssueId }

@@ -7,7 +7,6 @@ import zio.test.*
 
 import conversation.entity.api.{ ChatConversation, ConversationEntry, SessionContextLink }
 import conversation.entity.ChatRepository
-import db.*
 import llm4zio.agents.*
 import llm4zio.core.{ Message, MessageRole }
 import orchestration.control.{ ChatRepositoryMemoryStore, Llm4zioAgentAdapters }

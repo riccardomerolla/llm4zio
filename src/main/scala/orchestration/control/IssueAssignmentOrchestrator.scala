@@ -9,7 +9,7 @@ import board.control.BoardOrchestrator
 import board.entity.BoardError
 import conversation.entity.api.{ ChatConversation, ConversationEntry, MessageType, SenderType }
 import conversation.entity.ChatRepository
-import db.TaskRepository
+import taskrun.entity.TaskRepository
 import issues.entity.api.{ AgentIssueView, IssuePriority, IssueStatus }
 import issues.entity.{ IssueEvent, IssueRepository, IssueState }
 import llm4zio.core.{ LlmError, LlmService, Streaming }

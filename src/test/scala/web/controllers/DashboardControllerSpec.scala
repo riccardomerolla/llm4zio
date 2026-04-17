@@ -8,7 +8,7 @@ import zio.test.*
 
 import _root_.config.entity.SettingRow
 import activity.entity.{ ActivityEvent, ActivityEventType, ActivityRepository }
-import db.*
+import taskrun.entity.TaskRepository
 import issues.entity.*
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ AgentId, IssueId }

@@ -1,4 +1,4 @@
-package db
+package taskrun.entity
 
 import java.nio.file.{ Files, Path }
 import java.time.Instant
@@ -10,7 +10,6 @@ import _root_.config.entity.{ CustomAgentRow, WorkflowRow }
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.error.GigaMapError
 import shared.store.{ ConfigStoreModule, DataStoreModule, StoreConfig }
-import taskrun.entity.{ RunStatus, TaskArtifactRow, TaskReportRow, TaskRunRow }
 
 object TaskRepositoryESSpec extends ZIOSpecDefault:
 

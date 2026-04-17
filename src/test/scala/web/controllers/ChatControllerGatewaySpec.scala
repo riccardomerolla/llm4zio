@@ -12,7 +12,7 @@ import activity.entity.{ ActivityEvent, ActivityEventType, ActivityRepository }
 import conversation.boundary.ChatControllerLive
 import conversation.entity.api.*
 import conversation.entity.ChatRepository
-import db.*
+import taskrun.entity.TaskRepository
 import gateway.control.*
 import gateway.entity.*
 import issues.entity.api.AgentIssueView
