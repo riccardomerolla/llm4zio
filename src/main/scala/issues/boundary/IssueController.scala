@@ -4,6 +4,8 @@ import java.nio.file.Paths
 import java.time.Instant
 import java.util.UUID
 
+import scala.jdk.CollectionConverters.*
+
 import zio.*
 import zio.http.*
 import zio.json.*
@@ -100,6 +102,13 @@ final case class IssueControllerLive(
         yield html(
           HtmlViews.issueCreateForm(runId, workspaces.map(ws => ws.id -> ws.name), templates)
         )
+      }
+    },
+    Method.GET / "settings" / "issues-templates"                     -> handler { (_: Request) =>
+      ErrorHandlingMiddleware.fromPersistence {
+        for
+          templates <- templateService.listTemplates
+        yield html(HtmlViews.settingsIssueTemplatesTab(templates))
       }
     },
     Method.POST / "issues"                                           -> handler { (req: Request) =>
@@ -508,10 +517,146 @@ final case class IssueControllerLive(
         yield Response.json(created.toJson)
       }
     },
+    Method.GET / "api" / "issue-templates"                           -> handler { (_: Request) =>
+      ErrorHandlingMiddleware.fromPersistence {
+        templateService.listTemplates.map(templates => Response.json(templates.toJson))
+      }
+    },
+    Method.POST / "api" / "issue-templates"                          -> handler { (req: Request) =>
+      ErrorHandlingMiddleware.fromPersistence {
+        for
+          body      <- req.body.asString.mapError(err => PersistenceError.QueryFailed("request_body", err.getMessage))
+          upsertReq <- ZIO
+                         .fromEither(body.fromJson[IssueTemplateUpsertRequest])
+                         .mapError(err => PersistenceError.QueryFailed("json_parse", err))
+          template  <- templateService.createTemplate(upsertReq)
+        yield Response.json(template.toJson).copy(status = Status.Created)
+      }
+    },
+    Method.PUT / "api" / "issue-templates" / string("id")            -> handler { (id: String, req: Request) =>
+      ErrorHandlingMiddleware.fromPersistence {
+        for
+          body      <- req.body.asString.mapError(err => PersistenceError.QueryFailed("request_body", err.getMessage))
+          upsertReq <- ZIO
+                         .fromEither(body.fromJson[IssueTemplateUpsertRequest])
+                         .mapError(err => PersistenceError.QueryFailed("json_parse", err))
+          template  <- templateService.updateTemplate(id, upsertReq)
+        yield Response.json(template.toJson)
+      }
+    },
+    Method.DELETE / "api" / "issue-templates" / string("id")         -> handler { (id: String, _: Request) =>
+      ErrorHandlingMiddleware.fromPersistence {
+        templateService.deleteTemplate(id).as(Response(status = Status.NoContent))
+      }
+    },
     Method.GET / "api" / "issues"                                    -> handler { (req: Request) =>
       val runIdStr = req.queryParam("run_id").map(_.trim).filter(_.nonEmpty)
       ErrorHandlingMiddleware.fromPersistence {
         loadApiIssues(runIdStr).map(issues => Response.json(issues.toJson))
+      }
+    },
+    Method.GET / "api" / "pipelines"                                 -> handler { (_: Request) =>
+      ErrorHandlingMiddleware.fromPersistence {
+        templateService.listPipelines.map(values => Response.json(values.toJson))
+      }
+    },
+    Method.POST / "api" / "pipelines"                                -> handler { (req: Request) =>
+      ErrorHandlingMiddleware.fromPersistence {
+        for
+          body     <- req.body.asString.mapError(err => PersistenceError.QueryFailed("request_body", err.getMessage))
+          create   <- ZIO
+                        .fromEither(body.fromJson[PipelineCreateRequest])
+                        .mapError(err => PersistenceError.QueryFailed("json_parse", err))
+          pipeline <- templateService.createPipeline(create)
+        yield Response.json(pipeline.toJson).copy(status = Status.Created)
+      }
+    },
+    Method.POST / "api" / "issues" / "bulk" / "assign"               -> handler { (req: Request) =>
+      ErrorHandlingMiddleware.fromPersistence {
+        for
+          body        <- req.body.asString.mapError(err => PersistenceError.QueryFailed("request_body", err.getMessage))
+          bulkRequest <- ZIO
+                           .fromEither(body.fromJson[BulkIssueAssignRequest])
+                           .mapError(err => PersistenceError.QueryFailed("json_parse", err))
+          response    <- bulkAssignIssues(bulkRequest)
+        yield Response.json(response.toJson)
+      }
+    },
+    Method.POST / "api" / "issues" / "bulk" / "status"               -> handler { (req: Request) =>
+      ErrorHandlingMiddleware.fromPersistence {
+        for
+          body        <- req.body.asString.mapError(err => PersistenceError.QueryFailed("request_body", err.getMessage))
+          bulkRequest <- ZIO
+                           .fromEither(body.fromJson[BulkIssueStatusRequest])
+                           .mapError(err => PersistenceError.QueryFailed("json_parse", err))
+          response    <- bulkUpdateStatus(bulkRequest)
+        yield Response.json(response.toJson)
+      }
+    },
+    Method.POST / "api" / "issues" / "bulk" / "tags"                 -> handler { (req: Request) =>
+      ErrorHandlingMiddleware.fromPersistence {
+        for
+          body        <- req.body.asString.mapError(err => PersistenceError.QueryFailed("request_body", err.getMessage))
+          bulkRequest <- ZIO
+                           .fromEither(body.fromJson[BulkIssueTagsRequest])
+                           .mapError(err => PersistenceError.QueryFailed("json_parse", err))
+          response    <- bulkUpdateTags(bulkRequest)
+        yield Response.json(response.toJson)
+      }
+    },
+    Method.DELETE / "api" / "issues" / "bulk"                        -> handler { (req: Request) =>
+      ErrorHandlingMiddleware.fromPersistence {
+        for
+          body        <- req.body.asString.mapError(err => PersistenceError.QueryFailed("request_body", err.getMessage))
+          bulkRequest <- ZIO
+                           .fromEither(body.fromJson[BulkIssueDeleteRequest])
+                           .mapError(err => PersistenceError.QueryFailed("json_parse", err))
+          response    <- bulkDeleteIssues(bulkRequest)
+        yield Response.json(response.toJson)
+      }
+    },
+    Method.POST / "api" / "issues" / "import" / "folder" / "preview" -> handler { (req: Request) =>
+      ErrorHandlingMiddleware.fromPersistence {
+        for
+          body    <- req.body.asString.mapError(err => PersistenceError.QueryFailed("request_body", err.getMessage))
+          request <- ZIO
+                       .fromEither(body.fromJson[FolderImportRequest])
+                       .mapError(err => PersistenceError.QueryFailed("json_parse", err))
+          items   <- previewIssuesFromFolder(request)
+        yield Response.json(items.toJson)
+      }
+    },
+    Method.POST / "api" / "issues" / "import" / "folder"             -> handler { (req: Request) =>
+      ErrorHandlingMiddleware.fromPersistence {
+        for
+          body    <- req.body.asString.mapError(err => PersistenceError.QueryFailed("request_body", err.getMessage))
+          request <- ZIO
+                       .fromEither(body.fromJson[FolderImportRequest])
+                       .mapError(err => PersistenceError.QueryFailed("json_parse", err))
+          result  <- importIssuesFromFolderDetailed(request)
+        yield Response.json(result.toJson)
+      }
+    },
+    Method.POST / "api" / "issues" / "import" / "github" / "preview" -> handler { (req: Request) =>
+      ErrorHandlingMiddleware.fromPersistence {
+        for
+          body    <- req.body.asString.mapError(err => PersistenceError.QueryFailed("request_body", err.getMessage))
+          preview <- ZIO
+                       .fromEither(body.fromJson[GitHubImportPreviewRequest])
+                       .mapError(err => PersistenceError.QueryFailed("json_parse", err))
+          items   <- previewGitHubIssues(preview)
+        yield Response.json(items.toJson)
+      }
+    },
+    Method.POST / "api" / "issues" / "import" / "github"             -> handler { (req: Request) =>
+      ErrorHandlingMiddleware.fromPersistence {
+        for
+          body     <- req.body.asString.mapError(err => PersistenceError.QueryFailed("request_body", err.getMessage))
+          preview  <- ZIO
+                        .fromEither(body.fromJson[GitHubImportPreviewRequest])
+                        .mapError(err => PersistenceError.QueryFailed("json_parse", err))
+          imported <- importGitHubIssues(preview)
+        yield Response.json(imported.toJson)
       }
     },
     Method.GET / "api" / "issues" / string("id")                     -> handler { (id: String, req: Request) =>
@@ -1426,6 +1571,109 @@ final case class IssueControllerLive(
         val needle = value.toLowerCase
         byQuery.filter(_.tags.exists(_.toLowerCase.split(",").map(_.trim).contains(needle)))
       case None        => byQuery
+
+  private def bulkAssignIssues(request: BulkIssueAssignRequest): IO[PersistenceError, BulkIssueOperationResponse] =
+    for
+      issueIds <- validateIssueIds(request.issueIds)
+      _        <- ensureWorkspaceExists(request.workspaceId)
+      results  <- ZIO.foreach(issueIds) { issueId =>
+                    (for
+                      issue <- issueRepository.get(IssueId(issueId)).mapError(mapIssueRepoError)
+                      now   <- Clock.instant
+                      _     <- issueRepository
+                                 .append(
+                                   IssueEvent.WorkspaceLinked(
+                                     issueId = IssueId(issueId),
+                                     workspaceId = request.workspaceId,
+                                     occurredAt = now,
+                                   )
+                                 )
+                                 .mapError(mapIssueRepoError)
+                      _     <- issueAssignmentOrchestrator.assignIssue(
+                                 issueId,
+                                 request.agentId,
+                                 skipConversationBootstrap = true,
+                               )
+                      _     <- assignWorkspaceRunAndMarkStarted(
+                                 issue = issue,
+                                 workspaceId = request.workspaceId,
+                                 agentName = request.agentId,
+                               )
+                    yield ()).either
+                  }
+    yield toBulkResponse(issueIds.size, results)
+
+  private def bulkUpdateStatus(request: BulkIssueStatusRequest): IO[PersistenceError, BulkIssueOperationResponse] =
+    for
+      issueIds <- validateIssueIds(request.issueIds)
+      results  <- ZIO.foreach(issueIds) { issueId =>
+                    (for
+                      issue        <- issueRepository.get(IssueId(issueId)).mapError(mapIssueRepoError)
+                      now          <- Clock.instant
+                      fallbackAgent = request.agentName
+                                        .map(_.trim)
+                                        .filter(_.nonEmpty)
+                                        .orElse(assignedAgentFromState(issue.state))
+                                        .getOrElse("bulk")
+                      _            <- ensureTransitionAllowed(issue.state, request.status, issueId)
+                      events       <- statusToEvents(
+                                        issue,
+                                        IssueStatusUpdateRequest(
+                                          status = request.status,
+                                          agentName = request.agentName,
+                                          reason = request.reason,
+                                          resultData = request.resultData,
+                                        ),
+                                        fallbackAgent,
+                                        now,
+                                      )
+                      _            <- ZIO.foreachDiscard(events)(issueRepository.append(_).mapError(mapIssueRepoError))
+                    yield ()).either
+                  }
+    yield toBulkResponse(issueIds.size, results)
+
+  private def bulkUpdateTags(request: BulkIssueTagsRequest): IO[PersistenceError, BulkIssueOperationResponse] =
+    for
+      issueIds    <- validateIssueIds(request.issueIds)
+      tagsToAdd    = request.addTags.map(_.trim).filter(_.nonEmpty)
+      tagsToRemove = request.removeTags.map(_.trim).filter(_.nonEmpty).toSet
+      results     <- ZIO.foreach(issueIds) { issueId =>
+                       (for
+                         issue   <- issueRepository.get(IssueId(issueId)).mapError(mapIssueRepoError)
+                         now     <- Clock.instant
+                         existing = issue.tags.map(_.trim).filter(_.nonEmpty)
+                         merged   = (existing.filterNot(t => tagsToRemove.contains(t)) ++ tagsToAdd).distinct
+                         _       <- issueRepository
+                                      .append(IssueEvent.TagsUpdated(IssueId(issueId), merged, now))
+                                      .mapError(mapIssueRepoError)
+                       yield ()).either
+                     }
+    yield toBulkResponse(issueIds.size, results)
+
+  private def bulkDeleteIssues(request: BulkIssueDeleteRequest): IO[PersistenceError, BulkIssueOperationResponse] =
+    for
+      issueIds <- validateIssueIds(request.issueIds)
+      results  <-
+        ZIO.foreach(issueIds)(issueId => issueRepository.delete(IssueId(issueId)).mapError(mapIssueRepoError).either)
+    yield toBulkResponse(issueIds.size, results)
+
+  private def toBulkResponse(
+    requested: Int,
+    results: List[Either[PersistenceError, Unit]],
+  ): BulkIssueOperationResponse =
+    val errors = results.collect { case Left(err) => err.toString }
+    BulkIssueOperationResponse(
+      requested = requested,
+      succeeded = results.count(_.isRight),
+      failed = errors.size,
+      errors = errors,
+    )
+
+  private def validateIssueIds(issueIds: List[String]): IO[PersistenceError, List[String]] =
+    val normalized = issueIds.map(_.trim).filter(_.nonEmpty).distinct
+    ZIO
+      .fromOption(Option.when(normalized.nonEmpty)(normalized))
+      .orElseFail(PersistenceError.QueryFailed("bulk", "issueIds must contain at least one issue id"))
 
   private def assignedAgentFromState(state: IssueState): Option[String] =
     state match

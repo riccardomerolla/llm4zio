@@ -395,8 +395,6 @@ object ApplicationDI:
       MergeAgentService.live,
       ConversationChatController.live,
       issues.control.IssueTemplateService.live,
-      issues.control.IssueBulkService.live,
-      issues.control.IssueImportService.live,
       IssuesIssueController.live,
       issues.boundary.IssueTemplatesController.live,
       issues.boundary.IssueBulkController.live,

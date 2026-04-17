@@ -8,8 +8,8 @@ import zio.*
 import zio.json.*
 
 import _root_.config.entity.ConfigRepository
-import issues.entity.*
 import issues.entity.api.*
+import issues.entity.*
 import shared.errors.PersistenceError
 
 /** Service layer for issue-template and agent-pipeline management.
