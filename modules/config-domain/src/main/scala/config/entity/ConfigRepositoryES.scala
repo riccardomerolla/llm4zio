@@ -7,12 +7,12 @@ import zio.*
 import shared.errors.PersistenceError
 import shared.store.ConfigStoreModule
 
-/** EclipseStore-backed [[ConfigRepository]]. Persists settings, workflows and custom-agent rows into the shared config
-  * store (a small key/value projection over EclipseStore + GigaMap).
+/** EclipseStore-backed [[ConfigRepository]]. Persists settings, workflows and custom-agent rows
+  * into the shared config store (a small key/value projection over EclipseStore + GigaMap).
   *
-  * Consolidated in 4D.1 — previously split between `db.ConfigRepositoryES` (the logic) and a thin
-  * `config.entity.ConfigRepositoryES` wrapper that only delegated. The delegate pattern predated the config-domain
-  * module and has now been collapsed.
+  * Consolidated in 4D.1 — previously split between `db.ConfigRepositoryES` (the logic) and a
+  * thin `config.entity.ConfigRepositoryES` wrapper that only delegated. The delegate pattern
+  * predated the config-domain module and has now been collapsed.
   */
 final case class ConfigRepositoryES(
   configStore: ConfigStoreModule.ConfigStoreService
