@@ -4,8 +4,6 @@ import zio.*
 import zio.stream.ZStream
 
 import _root_.config.entity.{ MigrationConfig, WorkflowDefinition }
-import gateway.control.MessageRouter
-import gateway.entity.SessionScopeStrategy
 import orchestration.entity.*
 import shared.errors.ControlPlaneError
 import taskrun.entity.TaskStep
@@ -67,17 +65,6 @@ object OrchestratorControlPlane:
 
   def executeCommand(command: ControlCommand): ZIO[OrchestratorControlPlane, ControlPlaneError, Unit] =
     ZIO.serviceWithZIO[OrchestratorControlPlane](_.executeCommand(command))
-
-  def attachMessageRouterMiddleware(
-    runId: String,
-    channelName: String,
-    strategy: SessionScopeStrategy = SessionScopeStrategy.PerRun,
-  ): ZIO[
-    OrchestratorControlPlane & MessageRouter & Scope,
-    gateway.control.MessageRouterError,
-    Fiber.Runtime[Nothing, Unit],
-  ] =
-    MessageRouter.attachControlPlaneRouting(runId, channelName, strategy)
 
   def getResourceState: ZIO[OrchestratorControlPlane, ControlPlaneError, ResourceAllocationState] =
     ZIO.serviceWithZIO[OrchestratorControlPlane](_.getResourceState)
