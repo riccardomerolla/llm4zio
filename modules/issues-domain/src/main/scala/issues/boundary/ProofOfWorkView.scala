@@ -1,13 +1,17 @@
-package shared.web
+package issues.boundary
+
+import scalatags.Text.all.*
 
 import issues.entity.{ IssueCiStatus, IssuePrStatus, IssueWorkReport }
-import scalatags.Text.all.*
 import workspace.entity.RequirementCheck
 
 /** Renders the proof-of-work panel for an issue.
   *
   * Call [[panel]] with the projection's `IssueWorkReport`. Returns an empty string when no signals are present so
   * callers don't need to guard.
+  *
+  * Moved from `shared-web` to `issues-domain/boundary` in phase 5A.1 — `issuesDomain` already dependsOn
+  * `workspaceDomain`, so the dependency graph is clean.
   */
 object ProofOfWorkView:
 

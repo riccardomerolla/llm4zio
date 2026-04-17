@@ -6,6 +6,7 @@ import zio.json.*
 
 import config.entity.AgentInfo
 import decision.entity.{ Decision, DecisionResolutionKind }
+import issues.boundary.ProofOfWorkView
 import issues.entity.IssueWorkReport
 import issues.entity.api.*
 import scalatags.Text.all.*
