@@ -1,24 +1,25 @@
 # llm4zio Project Review — 2026-04-17
 
-Scope: state of `main` at HEAD `3ac72fd` (plus the pending 4E.B commit). Revised 2026-04-17 (third pass) after phases 4C, 4D, 4E.A, and 4E.B landed. The connectors-UI branch has merged, the `db/` legacy module has been deleted, orchestration-domain has grown its own `control/` layer, and the `WorkspaceRunService` trait now lives in `workspace-domain/entity`. This revision records what shipped and narrows focus to the remaining cycle work.
+Scope: state of `main` at HEAD `c38a4cf`. Revised 2026-04-17 (fourth pass) after phases 4C, 4D, 4E.A, 4E.B, and 4E.C landed. The connectors-UI branch has merged, the `db/` legacy module has been deleted, orchestration-domain has grown its own `control/` layer, and the trait halves of both `WorkspaceRunService` and `MessageRouter` now live in their domain modules' `entity/` packages. This revision records what shipped and narrows focus to the remaining cycle work.
 
 ---
 
 ## Executive Summary
 
-The project is in strong shape and accelerating. Foundations remain clean (no `var`, no `Throwable` leaks in business code, `PersistenceError` migration complete, `sbt compile` green). Modularization has advanced to **318 Scala files under `modules/`** vs **86 still in `src/main/scala/`** — roughly **79% modularized**, up from 74% at the previous review.
+The project is in strong shape and accelerating. Foundations remain clean (no `var`, no `Throwable` leaks in business code, `PersistenceError` migration complete, `sbt compile` green). Modularization has advanced to **320 Scala files under `modules/`** vs **83 still in `src/main/scala/`** — roughly **79% modularized**.
 
-The connectors-UI branch merged. More importantly, two of the three P1 items from the previous review have landed:
+The connectors-UI branch merged, and four of the five outstanding P1 items from the previous review have landed:
 
 - ✅ **`db/` module deleted** (phase 4D, commits `86579e6` → `06ec3d4`). `ChatRepository`, `TaskRepository`, and `ConfigRepository` were all migrated to their respective domain modules as event-sourced repositories, and the legacy package is gone. Zero `^import db\.` sites remain.
 - ✅ **Orchestration leaf services moved** (phase 4E.A, commit `3ac72fd`). `AgentConfigResolver`, `AgentDispatcher`, `Llm4zioAdapters`, `OrchestratorControlPlane`, and `TaskExecutor` now live in `orchestration-domain/control/`.
-- ✅ **`WorkspaceRunService` trait extracted** (phase 4E.B). The trait now lives at `workspace.entity.WorkspaceRunService`; the Live implementation and its ZLayer wiring stay in `workspace.control` (they pull in cross-domain deps that `workspace-domain` cannot take). `registerSlot` dropped from the trait (kept as a private self-call on Live) so the public interface no longer leaks `orchestration.entity.SlotHandle`.
+- ✅ **`WorkspaceRunService` trait extracted** (phase 4E.B, commit `0c98cf5`). The trait now lives at `workspace.entity.WorkspaceRunService`; the Live implementation and its ZLayer wiring stay in `workspace.control`. `registerSlot` dropped from the trait (kept as a private self-call on Live) so the public interface no longer leaks `orchestration.entity.SlotHandle`.
+- ✅ **`MessageRouter` trait extracted** (phase 4E.C, commit `c38a4cf`). The trait and `MessageChannelError` now live in `gateway.entity`; `attachControlPlaneRouting` was dropped from the trait and reborn as a standalone helper on `gateway.control.MessageRouter` that pulls `ChannelRegistry` and `OrchestratorControlPlane` from the ZIO environment — the trait no longer references orchestration types.
 
-The one remaining P1 risk is unchanged in shape but smaller in surface area:
+The one remaining P1 risk is the `agentDomain → orchestrationDomain` edge through `AgentRegistry`:
 
-1. **The orchestration ↔ gateway ↔ workspace logical cycle still traps ~21 root files under `src/main/scala/`.** Orchestration has 6 root control files left (AgentPoolManager, AutoDispatcher, IssueAssignmentOrchestrator, IssueDispatchStatusService, ParallelSessionCoordinator, PlannerAgentService); gateway has 6 (GatewayService, MessageRouter, WorkflowNotifier, DiscordGatewayService, IntentParser, TelegramPollingService); workspace has 9 control files. Breaking `WorkspaceRunService` into a trait in `workspace-domain/entity` is the next lever — that alone unblocks BoardOrchestrator, IssueApprovalService, AutoDispatcher, ParallelSessionCoordinator, and IssueAssignmentOrchestrator.
+1. **The orchestration ↔ gateway ↔ workspace logical cycle still traps ~19 root files under `src/main/scala/`.** Orchestration has 6 root control files left (AgentPoolManager, AutoDispatcher, IssueAssignmentOrchestrator, IssueDispatchStatusService, ParallelSessionCoordinator, PlannerAgentService); gateway has 6 (GatewayService, MessageRouter, WorkflowNotifier, DiscordGatewayService, IntentParser, TelegramPollingService); workspace has 7 control files. Now that the `WorkspaceRunService` and `MessageRouter` traits are in their entity packages, the remaining lever is relocating `AgentRegistry` to a shared spot so the `agentDomain → orchestrationDomain` edge can dissolve.
 
-Top three actions now: (a) extract `WorkspaceRunService` trait to `workspace.entity` (resolves the SlotHandle/orchestration.entity dependency first), (b) extract `MessageRouter` trait to `gateway.entity` with OCP-dependent plumbing split off, (c) resolve the `agentDomain → orchestrationDomain` dependency so `AgentPoolManager` and `IssueDispatchStatusService` can move.
+Top three actions now: (a) relocate `AgentRegistry` to a shared foundation package (or to `agent-domain/entity`) so `AgentPoolManager` and `IssueDispatchStatusService` can move, (b) follow-on: move `BoardOrchestrator`, `IssueApprovalService`, `AutoDispatcher`, `ParallelSessionCoordinator`, and `IssueAssignmentOrchestrator` into their domain modules now that the `WorkspaceRunService`/`MessageRouter` entity traits exist, (c) move `GatewayService` and `WorkflowNotifier` into `gateway-domain/control/`.
 
 ---
 
@@ -45,8 +46,8 @@ Feature intent: split connector defaults into API/CLI cards, with per-agent over
 
 ### Progress
 
-- 6 foundation modules + 25 domain modules in `build.sbt` (34 `lazy val` project declarations total, up from 31). All domain modules have `entity/` layers.
-- **318 Scala files under `modules/`** vs **86 in `src/main/scala/`** — roughly **79% modularized** (was 74%).
+- 6 foundation modules + 25 domain modules in `build.sbt` (34 `lazy val` project declarations total). All domain modules have `entity/` layers.
+- **320 Scala files under `modules/`** vs **83 in `src/main/scala/`** — roughly **79% modularized**.
 - Domain modules that now have `control/` populated inside the module: `agent`, `analysis`, `board`, `checkpoint`, `daemon`, `demo`, `evolution`, `issues`, `knowledge`, `memory`, `orchestration` (new), `project`, `sdlc`, `taskrun`, `workspace` (partial).
 
 ### Recent gains since the 2026-04-17 review (first pass)
@@ -54,16 +55,18 @@ Feature intent: split connector defaults into API/CLI cards, with per-agent over
 - **Phase 4C**: `config/control` and loader consolidated into `config-domain` (`551f797`).
 - **Phase 4D.1–4D.4**: `ConfigRepositoryES` into config-domain; `ChatRepository` into conversation-domain; `TaskRepository` into taskrun-domain; `db/` package deleted (`86579e6`, `4fd26d5`, `54e4a21`, `06ec3d4`).
 - **Phase 4E.A**: five orchestration leaf services moved into `orchestration-domain/control/` (`3ac72fd`).
+- **Phase 4E.B**: `WorkspaceRunService` trait extracted to `workspace.entity` (`0c98cf5`).
+- **Phase 4E.C**: `MessageRouter` trait + `MessageChannelError` extracted to `gateway.entity`; `attachControlPlaneRouting` split off the trait as a standalone helper (`c38a4cf`).
 - **IT fix**: `AssignRunRequest` relocated to `workspace.entity`; 3 integration specs updated (`c0eb1cd`).
 
 ### Remaining blockers
 
-- **Orchestration ↔ gateway ↔ workspace logical cycle**. sbt itself has no actual `dependsOn` cycle — `workspaceDomain` and `gatewayDomain` do not depend on `orchestrationDomain` — but root files reference types across these three clusters. ~21 root files remain trapped:
+- **Orchestration ↔ gateway ↔ workspace logical cycle**. sbt itself has no actual `dependsOn` cycle — `workspaceDomain` and `gatewayDomain` do not depend on `orchestrationDomain` — but root files reference types across these three clusters. ~19 root files remain trapped:
   - `orchestration/control/`: AgentPoolManager, AutoDispatcher, IssueAssignmentOrchestrator, IssueDispatchStatusService, ParallelSessionCoordinator, PlannerAgentService.
-  - `gateway/control/`: GatewayService, MessageRouter, WorkflowNotifier, DiscordGatewayService, IntentParser, TelegramPollingService.
-  - `workspace/control/`: CliAgentRunner, ExecutionRuntime, GitWatcher, MergeAgentService, ProofOfWorkExtractor, RunSessionManager, WorkspaceRunLifecycleSupport, WorkspaceRunService, WorkspaceRunServiceFactory.
-  - `board/control/`: BoardOrchestrator, IssueApprovalService (block on `WorkspaceRunService`).
-- **`agentDomain → orchestrationDomain` edge** (for `orchestration.entity.AgentRegistry`) prevents `AgentPoolManager` and `IssueDispatchStatusService` from moving into `agent-domain` or `orchestration-domain` without first relocating `AgentRegistry` to a shared foundation spot.
+  - `gateway/control/`: GatewayService, MessageRouter (object only — the trait is now in `gateway.entity`), WorkflowNotifier, DiscordGatewayService, IntentParser, TelegramPollingService.
+  - `workspace/control/`: CliAgentRunner, ExecutionRuntime, GitWatcher, MergeAgentService, ProofOfWorkExtractor, RunSessionManager, WorkspaceRunLifecycleSupport, WorkspaceRunService (Live only — the trait is now in `workspace.entity`), WorkspaceRunServiceFactory.
+  - `board/control/`: BoardOrchestrator, IssueApprovalService (unblocked by 4E.B — eligible to move now that they can type-reference the trait from `workspace.entity`).
+- **`agentDomain → orchestrationDomain` edge** (for `orchestration.entity.AgentRegistry`) prevents `AgentPoolManager` and `IssueDispatchStatusService` from moving into `agent-domain` or `orchestration-domain` without first relocating `AgentRegistry` to a shared foundation spot. This is now the single remaining structural blocker.
 - **`shared-web` still holds ~20 multi-domain views** (e.g. `SettingsView`, `HealthDashboard`) awaiting distribution to owning domains.
 
 ### Layer completeness
@@ -111,8 +114,8 @@ The previous pass's P0 items all shipped. No critical items block day-to-day wor
 ### P1 — next sprint (reorganized around what's left)
 
 1. ✅ ~~Extract `WorkspaceRunService` trait~~ — shipped in 4E.B. Follow-on: move `BoardOrchestrator`, `IssueApprovalService`, `AutoDispatcher`, `ParallelSessionCoordinator`, and `IssueAssignmentOrchestrator` into their domain modules now that they can type-reference the trait without crossing `workspace.control`.
-2. **Extract `MessageRouter` trait to `gateway.entity`**. Split `attachControlPlaneRouting` (which references OCP) off from the trait. Unblocks moving `GatewayService` / `WorkflowNotifier` into `gateway-domain/control/`.
-3. **Relocate `AgentRegistry`** (currently `orchestration.entity.AgentRegistry`) to a genuinely shared spot so `agentDomain` no longer needs `orchestrationDomain` as a dep. Unblocks moving `AgentPoolManager` and `IssueDispatchStatusService`.
+2. ✅ ~~Extract `MessageRouter` trait to `gateway.entity`~~ — shipped in 4E.C. `attachControlPlaneRouting` is now a standalone helper on `gateway.control.MessageRouter`. Follow-on: move `GatewayService` and `WorkflowNotifier` into `gateway-domain/control/`.
+3. **Relocate `AgentRegistry`** (currently `orchestration.entity.AgentRegistry`) to a genuinely shared spot so `agentDomain` no longer needs `orchestrationDomain` as a dep. Unblocks moving `AgentPoolManager` and `IssueDispatchStatusService`. With 4E.B and 4E.C shipped, this is the single remaining structural lever.
 4. **Distribute the top 5 multi-domain views out of `shared-web/`** to their owning `boundary/` packages, starting with the cleanest single-domain set.
 5. **Backfill module-scoped tests** for `checkpoint`, `gateway`, `orchestration` first (highest churn, currently zero module-scoped tests).
 6. **Replace the inline JS in `SettingsView` with a Lit 3 `ab-env-vars-editor` component**. Sets the precedent for removing inline scripts from other Scalatags views.
@@ -136,8 +139,12 @@ The previous pass's P0 items all shipped. No critical items block day-to-day wor
 | Resolver debug logging | [ConnectorConfigResolver.scala:36](../src/main/scala/config/control/ConnectorConfigResolver.scala#L36) |
 | Mode-scoped resolution logic | [ConnectorConfigResolver.scala:83-90](../src/main/scala/config/control/ConnectorConfigResolver.scala#L83) |
 | Inline `var` in `envVarsScript` | [SettingsView.scala:369-404](../modules/shared-web/src/main/scala/shared/web/SettingsView.scala#L369) |
-| WorkspaceRunService trait (P1 extraction target) | [WorkspaceRunService.scala:24-33](../src/main/scala/workspace/control/WorkspaceRunService.scala#L24) |
+| WorkspaceRunService trait (in entity after 4E.B) | [WorkspaceRunService.scala](../modules/workspace-domain/src/main/scala/workspace/entity/WorkspaceRunService.scala) |
+| MessageRouter trait (in entity after 4E.C) | [MessageRouter.scala](../modules/gateway-domain/src/main/scala/gateway/entity/MessageRouter.scala) |
+| `attachControlPlaneRouting` standalone helper | [MessageRouter.scala](../src/main/scala/gateway/control/MessageRouter.scala) |
 | Modularization plan | [snoopy-tinkering-hejlsberg.md](../.claude/plans/snoopy-tinkering-hejlsberg.md) |
 | Architecture conventions | [CLAUDE.md](../CLAUDE.md) |
 | Phase 4D.4 `db/` deletion | commit `06ec3d4` |
 | Phase 4E.A orchestration leaf moves | commit `3ac72fd` |
+| Phase 4E.B WorkspaceRunService trait extraction | commit `0c98cf5` |
+| Phase 4E.C MessageRouter trait extraction | commit `c38a4cf` |
