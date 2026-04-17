@@ -11,6 +11,8 @@ import agent.control.AgentRegistryLive
 import agent.entity.AgentRegistry
 import conversation.entity.ChatRepository
 import conversation.entity.api.{ ChatConversation, ConversationEntry, SessionContextLink }
+import conversation.entity.ChatRepository
+import db.*
 import gateway.control.*
 import gateway.entity.*
 import llm4zio.core.*

@@ -9,6 +9,8 @@ import zio.test.*
 import _root_.config.entity.MigrationConfig
 import conversation.entity.ChatRepository
 import conversation.entity.api.{ ChatConversation, ConversationEntry, SessionContextLink }
+import conversation.entity.ChatRepository
+import db.*
 import gateway.control.*
 import gateway.entity.*
 import orchestration.control.OrchestratorControlPlane

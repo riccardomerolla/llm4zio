@@ -7,6 +7,7 @@ import activity.control.ActivityHub
 import activity.entity.{ ActivityEvent, ActivityEventType }
 import conversation.entity.ChatRepository
 import conversation.entity.api.{ ConversationEntry, MessageType, SenderType }
+import conversation.entity.ChatRepository
 import shared.ids.Ids.{ EventId, TaskRunId }
 import workspace.control.WorkspaceErrorSupport.*
 import workspace.entity.*

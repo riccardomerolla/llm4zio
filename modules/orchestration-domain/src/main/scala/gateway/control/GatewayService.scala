@@ -5,9 +5,8 @@ import java.util.UUID
 import zio.*
 
 import _root_.config.entity.{ AgentInfo, ConfigRepository }
-import agent.entity.AgentRegistry
 import conversation.entity.ChatRepository
-import gateway.entity.{ MessageRouter, NormalizedMessage, * }
+import gateway.entity.{ NormalizedMessage, * }
 import llm4zio.core.{ LlmService, Streaming }
 import memory.entity.{ MemoryEntry, MemoryId, MemoryKind, MemoryRepository }
 import orchestration.control.ConversationMemory

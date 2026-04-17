@@ -10,6 +10,7 @@ import board.entity.TimelineEntry
 import board.entity.TimelineEntry.*
 import conversation.entity.ChatRepository
 import conversation.entity.api.{ ChatConversation, ConversationEntry, MessageType, SenderType, SessionContextLink }
+import conversation.entity.ChatRepository
 import decision.control.DecisionInbox
 import decision.entity.*
 import issues.entity.*

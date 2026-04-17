@@ -8,6 +8,7 @@ import _root_.config.entity.AgentInfo
 import agent.entity.AgentRegistry
 import conversation.entity.ChatRepository
 import conversation.entity.api.{ ChatConversation, ConversationEntry, MessageType, SenderType }
+import conversation.entity.ChatRepository
 import gateway.entity.SessionKey
 import llm4zio.agents.*
 import llm4zio.core.{ Message, MessageRole }
