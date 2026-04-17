@@ -395,6 +395,7 @@ object ApplicationDI:
       ConversationChatController.live,
       issues.control.IssueTemplateService.live,
       IssuesIssueController.live,
+      issues.boundary.IssueTemplatesController.live,
       ActivityController.live,
       MemoryBoundaryController.live,
       DaemonsController.live,

@@ -7,7 +7,7 @@ import _root_.config.boundary.AgentsController as ConfigAgentsController
 import activity.boundary.ActivityController
 import app.boundary.{ AgentMonitorController as AppAgentMonitorController, HealthController as AppHealthController }
 import conversation.boundary.ChatController as ConversationChatController
-import issues.boundary.IssueController as IssuesIssueController
+import issues.boundary.{ IssueController as IssuesIssueController, IssueTemplatesController }
 import memory.boundary.MemoryController as MemoryBoundaryController
 import sdlc.boundary.SdlcDashboardController
 import taskrun.boundary.{
@@ -33,6 +33,7 @@ object CoreRouteModule:
         AppAgentMonitorController &
         ConversationChatController &
         IssuesIssueController &
+        IssueTemplatesController &
         ActivityController &
         MemoryBoundaryController &
         AppHealthController &
@@ -51,6 +52,7 @@ object CoreRouteModule:
         monitor       <- ZIO.service[AppAgentMonitorController]
         chat          <- ZIO.service[ConversationChatController]
         issues        <- ZIO.service[IssuesIssueController]
+        issueTemplates <- ZIO.service[IssueTemplatesController]
         activity      <- ZIO.service[ActivityController]
         memory        <- ZIO.service[MemoryBoundaryController]
         health        <- ZIO.service[AppHealthController]
@@ -66,6 +68,7 @@ object CoreRouteModule:
             monitor.routes ++
             chat.routes ++
             issues.routes ++
+            issueTemplates.routes ++
             activity.routes ++
             memory.routes ++
             health.routes ++
