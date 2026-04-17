@@ -252,7 +252,7 @@ lazy val governanceDomain = (project in file("modules/governance-domain"))
   )
 
 lazy val agentDomain = (project in file("modules/agent-domain"))
-  .dependsOn(sharedIds, sharedErrors, sharedStoreCore, sharedWebCore, configDomain)
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore, sharedWebCore, workspaceDomain, configDomain)
   .settings(foundationSettings)
   .settings(
     name := "agent-domain",
@@ -388,8 +388,8 @@ lazy val gatewayDomain = (project in file("modules/gateway-domain"))
 
 lazy val orchestrationDomain = (project in file("modules/orchestration-domain"))
   .dependsOn(sharedIds, sharedErrors, sharedStoreCore, gatewayDomain, configDomain, planDomain,
-    activityDomain, issuesDomain, taskrunDomain, workspaceDomain, sharedServices, conversationDomain,
-    memoryDomain, llm4zio, boardDomain, projectDomain, governanceDomain)
+    activityDomain, agentDomain, issuesDomain, taskrunDomain, workspaceDomain, sharedServices,
+    conversationDomain, memoryDomain, llm4zio, boardDomain, projectDomain, governanceDomain)
   .settings(foundationSettings)
   .settings(
     name := "orchestration-domain",

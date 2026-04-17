@@ -13,6 +13,7 @@ import gateway.entity.SessionKey
 import llm4zio.agents.*
 import llm4zio.core.{ Message, MessageRole }
 import memory.entity.{ MemoryFilter, Scope as MemoryScope, ScoredMemory, SessionId as MemorySessionId }
+import agent.entity.AgentRegistry
 import shared.errors.PersistenceError
 
 object Llm4zioAgentAdapters:

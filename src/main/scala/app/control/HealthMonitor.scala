@@ -11,7 +11,7 @@ import agent.entity.AgentRegistry
 import com.sun.management.OperatingSystemMXBean
 import taskrun.entity.TaskRepository
 import gateway.control.{ ChannelRegistry, GatewayService }
-import taskrun.entity.{ RunStatus, TaskRepository }
+import taskrun.entity.RunStatus
 
 final case class GatewayHealth(
   uptimeSeconds: Long,

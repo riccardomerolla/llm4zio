@@ -11,6 +11,7 @@ import conversation.entity.api.{ ChatConversation, ConversationEntry, SessionCon
 import conversation.entity.ChatRepository
 import llm4zio.agents.*
 import llm4zio.core.{ Message, MessageRole }
+import _root_.agent.entity.AgentRegistry
 import orchestration.control.{ ChatRepositoryMemoryStore, Llm4zioAgentAdapters }
 import shared.errors.PersistenceError
 

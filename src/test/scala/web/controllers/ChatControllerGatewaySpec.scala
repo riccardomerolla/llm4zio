@@ -21,6 +21,7 @@ import issues.entity.api.AgentIssueView
 import llm4zio.core.*
 import llm4zio.providers.{ GeminiCliExecutor, HttpClient }
 import llm4zio.tools.{ AnyTool, JsonSchema }
+import agent.control.AgentRegistryLive
 import memory.entity.{ Scope as MemoryScope, * }
 import orchestration.control.{ IssueAssignmentOrchestrator, * }
 import orchestration.entity.{ PlannerPlanPreview, PlannerPreviewState }
