@@ -4,8 +4,6 @@ import java.nio.file.Paths
 import java.time.Instant
 import java.util.UUID
 
-import scala.jdk.CollectionConverters.*
-
 import zio.*
 import zio.http.*
 import zio.json.*
@@ -514,50 +512,6 @@ final case class IssueControllerLive(
       val runIdStr = req.queryParam("run_id").map(_.trim).filter(_.nonEmpty)
       ErrorHandlingMiddleware.fromPersistence {
         loadApiIssues(runIdStr).map(issues => Response.json(issues.toJson))
-      }
-    },
-    Method.POST / "api" / "issues" / "import" / "folder" / "preview" -> handler { (req: Request) =>
-      ErrorHandlingMiddleware.fromPersistence {
-        for
-          body    <- req.body.asString.mapError(err => PersistenceError.QueryFailed("request_body", err.getMessage))
-          request <- ZIO
-                       .fromEither(body.fromJson[FolderImportRequest])
-                       .mapError(err => PersistenceError.QueryFailed("json_parse", err))
-          items   <- previewIssuesFromFolder(request)
-        yield Response.json(items.toJson)
-      }
-    },
-    Method.POST / "api" / "issues" / "import" / "folder"             -> handler { (req: Request) =>
-      ErrorHandlingMiddleware.fromPersistence {
-        for
-          body    <- req.body.asString.mapError(err => PersistenceError.QueryFailed("request_body", err.getMessage))
-          request <- ZIO
-                       .fromEither(body.fromJson[FolderImportRequest])
-                       .mapError(err => PersistenceError.QueryFailed("json_parse", err))
-          result  <- importIssuesFromFolderDetailed(request)
-        yield Response.json(result.toJson)
-      }
-    },
-    Method.POST / "api" / "issues" / "import" / "github" / "preview" -> handler { (req: Request) =>
-      ErrorHandlingMiddleware.fromPersistence {
-        for
-          body    <- req.body.asString.mapError(err => PersistenceError.QueryFailed("request_body", err.getMessage))
-          preview <- ZIO
-                       .fromEither(body.fromJson[GitHubImportPreviewRequest])
-                       .mapError(err => PersistenceError.QueryFailed("json_parse", err))
-          items   <- previewGitHubIssues(preview)
-        yield Response.json(items.toJson)
-      }
-    },
-    Method.POST / "api" / "issues" / "import" / "github"             -> handler { (req: Request) =>
-      ErrorHandlingMiddleware.fromPersistence {
-        for
-          body     <- req.body.asString.mapError(err => PersistenceError.QueryFailed("request_body", err.getMessage))
-          preview  <- ZIO
-                        .fromEither(body.fromJson[GitHubImportPreviewRequest])
-                        .mapError(err => PersistenceError.QueryFailed("json_parse", err))
-          imported <- importGitHubIssues(preview)
-        yield Response.json(imported.toJson)
       }
     },
     Method.GET / "api" / "issues" / string("id")                     -> handler { (id: String, req: Request) =>
@@ -1472,18 +1426,6 @@ final case class IssueControllerLive(
         val needle = value.toLowerCase
         byQuery.filter(_.tags.exists(_.toLowerCase.split(",").map(_.trim).contains(needle)))
       case None        => byQuery
-
-  private def toBulkResponse(
-    requested: Int,
-    results: List[Either[PersistenceError, Unit]],
-  ): BulkIssueOperationResponse =
-    val errors = results.collect { case Left(err) => err.toString }
-    BulkIssueOperationResponse(
-      requested = requested,
-      succeeded = results.count(_.isRight),
-      failed = errors.size,
-      errors = errors,
-    )
 
   private def assignedAgentFromState(state: IssueState): Option[String] =
     state match

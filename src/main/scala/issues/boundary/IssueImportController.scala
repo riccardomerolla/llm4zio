@@ -12,11 +12,11 @@ import shared.web.ErrorHandlingMiddleware
 /** Folder + GitHub issue-import boundary — extracted from [[IssueController]] in phase 4F.4.
   *
   * Routes owned:
-  *   - POST /issues/import (onboarding — imports the configured folder, 303 redirect)
-  *   - POST /api/issues/import/folder/preview (list parsed items, no persistence)
-  *   - POST /api/issues/import/folder (persist parsed items)
-  *   - POST /api/issues/import/github/preview (list GH issues via `gh` CLI)
-  *   - POST /api/issues/import/github (persist GH issues as Created + ExternalRefLinked events)
+  *   - POST /issues/import                              (onboarding — imports the configured folder, 303 redirect)
+  *   - POST /api/issues/import/folder/preview           (list parsed items, no persistence)
+  *   - POST /api/issues/import/folder                   (persist parsed items)
+  *   - POST /api/issues/import/github/preview           (list GH issues via `gh` CLI)
+  *   - POST /api/issues/import/github                   (persist GH issues as Created + ExternalRefLinked events)
   *
   * Business logic lives in [[IssueImportService]]; this controller only handles HTTP body parsing and JSON/redirect
   * responses.
@@ -38,7 +38,7 @@ final case class IssueImportControllerLive(importService: IssueImportService) ex
     ZIO.fromEither(body.fromJson[A]).mapError(err => PersistenceError.QueryFailed("json_parse", err))
 
   override val routes: Routes[Any, Response] = Routes(
-    Method.POST / "issues" / "import"                                -> handler { (_: Request) =>
+    Method.POST / "issues" / "import" -> handler { (_: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for imported <- importService.importConfiguredFolder
         yield Response(
@@ -56,7 +56,7 @@ final case class IssueImportControllerLive(importService: IssueImportService) ex
         yield Response.json(items.toJson)
       }
     },
-    Method.POST / "api" / "issues" / "import" / "folder"             -> handler { (req: Request) =>
+    Method.POST / "api" / "issues" / "import" / "folder" -> handler { (req: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
           body    <- readBody(req)
@@ -74,7 +74,7 @@ final case class IssueImportControllerLive(importService: IssueImportService) ex
         yield Response.json(items.toJson)
       }
     },
-    Method.POST / "api" / "issues" / "import" / "github"             -> handler { (req: Request) =>
+    Method.POST / "api" / "issues" / "import" / "github" -> handler { (req: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
           body    <- readBody(req)
