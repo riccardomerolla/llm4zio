@@ -347,11 +347,11 @@ lazy val analysisDomain = (project in file("modules/analysis-domain"))
   )
 
 lazy val workspaceDomain = (project in file("modules/workspace-domain"))
-  .dependsOn(sharedIds, sharedErrors, sharedStoreCore)
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore, sharedWebCore)
   .settings(foundationSettings)
   .settings(
     name := "workspace-domain",
-    libraryDependencies ++= domainDeps ++ Seq(
+    libraryDependencies ++= domainBceDeps ++ Seq(
       "dev.zio" %% "zio-streams" % zioVersion,
       "dev.zio" %% "zio-process" % zioProcessVersion,
     ),

@@ -1,7 +1,15 @@
-package shared.web
+package workspace.boundary
 
 import scalatags.Text.all.*
 
+import shared.web.{ Components, Layout }
+
+/** Interactive template picker / wizard for new workspaces.
+  *
+  * Moved from `shared-web` to `workspace-domain/boundary` in phase 5A.2. The view has zero domain-entity dependencies
+  * (only pulls `Layout` + `Components` from `shared-web-core`), so its natural home is the workspace domain boundary
+  * layer.
+  */
 object WorkspaceTemplatesView:
 
   final private case class QuestionPreview(
