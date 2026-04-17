@@ -214,7 +214,9 @@ lazy val activityDomain = (project in file("modules/activity-domain"))
   .settings(foundationSettings)
   .settings(
     name := "activity-domain",
-    libraryDependencies ++= domainBceDeps,
+    libraryDependencies ++= domainBceDeps ++ Seq(
+      "io.github.riccardomerolla" %% "zio-eclipsestore-gigamap" % zioEclipseStoreVersion % Test,
+    ),
   )
 
 lazy val memoryDomain = (project in file("modules/memory-domain"))

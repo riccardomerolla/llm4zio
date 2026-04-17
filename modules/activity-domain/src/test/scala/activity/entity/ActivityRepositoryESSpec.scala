@@ -1,4 +1,4 @@
-package db
+package activity.entity
 
 import java.nio.file.{ Files, Path }
 import java.time.Instant
@@ -6,7 +6,6 @@ import java.time.Instant
 import zio.*
 import zio.test.*
 
-import activity.entity.{ ActivityEvent, ActivityEventType, ActivityRepository, ActivityRepositoryES }
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.error.GigaMapError
 import shared.ids.Ids.EventId
