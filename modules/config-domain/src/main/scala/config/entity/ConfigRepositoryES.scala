@@ -1,17 +1,22 @@
-package db
+package config.entity
 
 import java.time.Instant
 
 import zio.*
 
-import _root_.config.entity.*
 import shared.errors.PersistenceError
-import shared.ids.Ids.AgentId
 import shared.store.ConfigStoreModule
 
+/** EclipseStore-backed [[ConfigRepository]]. Persists settings, workflows and custom-agent rows
+  * into the shared config store (a small key/value projection over EclipseStore + GigaMap).
+  *
+  * Consolidated in 4D.1 — previously split between `db.ConfigRepositoryES` (the logic) and a
+  * thin `config.entity.ConfigRepositoryES` wrapper that only delegated. The delegate pattern
+  * predated the config-domain module and has now been collapsed.
+  */
 final case class ConfigRepositoryES(
   configStore: ConfigStoreModule.ConfigStoreService
-):
+) extends ConfigRepository:
 
   private val builtInAgentNamesLower: Set[String] = Set(
     "chat-agent",
@@ -27,7 +32,7 @@ final case class ConfigRepositoryES(
   private def workflowKey(id: Long): String   = s"workflow:$id"
   private def agentKey(id: Long): String      = s"agent:$id"
 
-  def getAllSettings: IO[PersistenceError, List[SettingRow]] =
+  override def getAllSettings: IO[PersistenceError, List[SettingRow]] =
     for
       keys <- configStore.streamKeys[String]
                 .filter(_.startsWith("setting:"))
@@ -41,22 +46,22 @@ final case class ConfigRepositoryES(
               }
     yield rows.flatten.sortBy(_.key)
 
-  def getSetting(key: String): IO[PersistenceError, Option[SettingRow]] =
+  override def getSetting(key: String): IO[PersistenceError, Option[SettingRow]] =
     configStore.fetch[String, String](settingKey(key)).mapError(storeErr("getSetting")).map(_.map(value =>
       decodeSetting(key, value)
     ))
 
-  def upsertSetting(key: String, value: String): IO[PersistenceError, Unit] =
+  override def upsertSetting(key: String, value: String): IO[PersistenceError, Unit] =
     configStore
       .store(settingKey(key), value)
       .mapError(storeErr("upsertSetting")) *> checkpointConfigStore("upsertSetting")
 
-  def deleteSetting(key: String): IO[PersistenceError, Unit] =
+  override def deleteSetting(key: String): IO[PersistenceError, Unit] =
     configStore.remove[String](settingKey(key)).mapError(storeErr("deleteSetting")) *> checkpointConfigStore(
       "deleteSetting"
     )
 
-  def deleteSettingsByPrefix(prefix: String): IO[PersistenceError, Unit] =
+  override def deleteSettingsByPrefix(prefix: String): IO[PersistenceError, Unit] =
     for
       keys <- configStore.streamKeys[String]
                 .filter(k => k.startsWith(s"setting:$prefix"))
@@ -68,16 +73,7 @@ final case class ConfigRepositoryES(
       _    <- checkpointConfigStore("deleteSettingsByPrefix")
     yield ()
 
-  def listAgentChannelBindings: IO[PersistenceError, List[AgentChannelBinding]] =
-    getAllSettings.map(_.filter(_.key.startsWith("agent.binding.")).flatMap(row => parseBindingKey(row.key)))
-
-  def upsertAgentChannelBinding(binding: AgentChannelBinding): IO[PersistenceError, Unit] =
-    upsertSetting(bindingKey(binding), "true")
-
-  def deleteAgentChannelBinding(binding: AgentChannelBinding): IO[PersistenceError, Unit] =
-    deleteSetting(bindingKey(binding))
-
-  def createWorkflow(workflow: WorkflowRow): IO[PersistenceError, Long] =
+  override def createWorkflow(workflow: WorkflowRow): IO[PersistenceError, Long] =
     for
       id <- nextId("createWorkflow")
       _  <- configStore
@@ -85,21 +81,21 @@ final case class ConfigRepositoryES(
               .mapError(storeErr("createWorkflow"))
     yield id
 
-  def getWorkflow(id: Long): IO[PersistenceError, Option[WorkflowRow]] =
+  override def getWorkflow(id: Long): IO[PersistenceError, Option[WorkflowRow]] =
     configStore
       .fetch[String, StoredWorkflowRow](workflowKey(id))
       .map(_.flatMap(fromStoreWorkflowRow))
       .mapError(storeErr("getWorkflow"))
 
-  def getWorkflowByName(name: String): IO[PersistenceError, Option[WorkflowRow]] =
+  override def getWorkflowByName(name: String): IO[PersistenceError, Option[WorkflowRow]] =
     fetchAllByPrefix[StoredWorkflowRow]("workflow:", "getWorkflowByName")
       .map(_.flatMap(fromStoreWorkflowRow).find(_.name.equalsIgnoreCase(name.trim)))
 
-  def listWorkflows: IO[PersistenceError, List[WorkflowRow]] =
+  override def listWorkflows: IO[PersistenceError, List[WorkflowRow]] =
     fetchAllByPrefix[StoredWorkflowRow]("workflow:", "listWorkflows")
       .map(_.flatMap(fromStoreWorkflowRow).sortBy(w => (!w.isBuiltin, w.name.toLowerCase)))
 
-  def updateWorkflow(workflow: WorkflowRow): IO[PersistenceError, Unit] =
+  override def updateWorkflow(workflow: WorkflowRow): IO[PersistenceError, Unit] =
     for
       id       <- ZIO
                     .fromOption(workflow.id)
@@ -114,7 +110,7 @@ final case class ConfigRepositoryES(
                     .mapError(storeErr("updateWorkflow"))
     yield ()
 
-  def deleteWorkflow(id: Long): IO[PersistenceError, Unit] =
+  override def deleteWorkflow(id: Long): IO[PersistenceError, Unit] =
     for
       existing <-
         configStore.fetch[String, StoredWorkflowRow](workflowKey(id)).mapError(storeErr("deleteWorkflow"))
@@ -124,7 +120,7 @@ final case class ConfigRepositoryES(
       _        <- configStore.remove[String](workflowKey(id)).mapError(storeErr("deleteWorkflow"))
     yield ()
 
-  def createCustomAgent(agent: CustomAgentRow): IO[PersistenceError, Long] =
+  override def createCustomAgent(agent: CustomAgentRow): IO[PersistenceError, Long] =
     for
       _  <- validateCustomAgentName(agent.name, "createCustomAgent")
       id <- nextId("createCustomAgent")
@@ -133,21 +129,21 @@ final case class ConfigRepositoryES(
               .mapError(storeErr("createCustomAgent"))
     yield id
 
-  def getCustomAgent(id: Long): IO[PersistenceError, Option[CustomAgentRow]] =
+  override def getCustomAgent(id: Long): IO[PersistenceError, Option[CustomAgentRow]] =
     configStore
       .fetch[String, StoredCustomAgentRow](agentKey(id))
       .map(_.flatMap(fromStoreAgentRow))
       .mapError(storeErr("getCustomAgent"))
 
-  def getCustomAgentByName(name: String): IO[PersistenceError, Option[CustomAgentRow]] =
+  override def getCustomAgentByName(name: String): IO[PersistenceError, Option[CustomAgentRow]] =
     fetchAllByPrefix[StoredCustomAgentRow]("agent:", "getCustomAgentByName")
       .map(_.flatMap(fromStoreAgentRow).find(_.name.equalsIgnoreCase(name.trim)))
 
-  def listCustomAgents: IO[PersistenceError, List[CustomAgentRow]] =
+  override def listCustomAgents: IO[PersistenceError, List[CustomAgentRow]] =
     fetchAllByPrefix[StoredCustomAgentRow]("agent:", "listCustomAgents")
       .map(_.flatMap(fromStoreAgentRow).sortBy(agent => (agent.displayName.toLowerCase, agent.name.toLowerCase)))
 
-  def updateCustomAgent(agent: CustomAgentRow): IO[PersistenceError, Unit] =
+  override def updateCustomAgent(agent: CustomAgentRow): IO[PersistenceError, Unit] =
     for
       id       <- ZIO
                     .fromOption(agent.id)
@@ -163,7 +159,7 @@ final case class ConfigRepositoryES(
                     .mapError(storeErr("updateCustomAgent"))
     yield ()
 
-  def deleteCustomAgent(id: Long): IO[PersistenceError, Unit] =
+  override def deleteCustomAgent(id: Long): IO[PersistenceError, Unit] =
     for
       existing <-
         configStore.fetch[String, StoredCustomAgentRow](agentKey(id)).mapError(storeErr("deleteCustomAgent"))
@@ -172,25 +168,6 @@ final case class ConfigRepositoryES(
                     .when(existing.isEmpty)
       _        <- configStore.remove[String](agentKey(id)).mapError(storeErr("deleteCustomAgent"))
     yield ()
-
-  private def bindingKey(binding: AgentChannelBinding): String =
-    val base = s"agent.binding.${binding.agentId.value}.${binding.channelName.trim.toLowerCase}"
-    binding.accountId.map(_.trim).filter(_.nonEmpty).map(id => s"$base.$id").getOrElse(base)
-
-  private def parseBindingKey(key: String): Option[AgentChannelBinding] =
-    key.stripPrefix("agent.binding.").split("\\.", -1).toList match
-      case agentId :: channelName :: Nil                                   =>
-        Some(AgentChannelBinding(AgentId(agentId), channelName, None))
-      case agentId :: channelName :: accountParts if accountParts.nonEmpty =>
-        val accountId = accountParts.mkString(".").trim
-        Some(
-          AgentChannelBinding(
-            agentId = AgentId(agentId),
-            channelName = channelName,
-            accountId = Option.when(accountId.nonEmpty)(accountId),
-          )
-        )
-      case _                                                               => None
 
   private def validateCustomAgentName(name: String, context: String): IO[PersistenceError, Unit] =
     val normalized = name.trim.toLowerCase
@@ -279,3 +256,7 @@ final case class ConfigRepositoryES(
 
   private def checkpointConfigStore(op: String): IO[PersistenceError, Unit] =
     configStore.checkpoint.mapError(err => PersistenceError.QueryFailed(op, err.toString))
+
+object ConfigRepositoryES:
+  val live: ZLayer[ConfigStoreModule.ConfigStoreService, Nothing, ConfigRepository] =
+    ZLayer.fromFunction(ConfigRepositoryES.apply)
