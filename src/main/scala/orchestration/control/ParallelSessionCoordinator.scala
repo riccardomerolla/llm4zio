@@ -7,8 +7,7 @@ import scala.util.matching.Regex
 
 import zio.*
 
-import gateway.control.MessageRouter
-import gateway.entity.SessionKey
+import gateway.entity.{ MessageRouter, SessionKey }
 import orchestration.entity.*
 import workspace.entity.WorkspaceRunService
 import workspace.entity.{ AssignRunRequest, WorkspaceRepository }

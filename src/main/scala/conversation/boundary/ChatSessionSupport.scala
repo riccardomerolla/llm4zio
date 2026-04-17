@@ -6,8 +6,8 @@ import zio.*
 
 import conversation.entity.api.*
 import conversation.entity.ChatRepository
-import gateway.control.{ ChannelRegistry, MessageChannelError }
-import gateway.entity.{ ChatSession, SessionKey }
+import gateway.control.ChannelRegistry
+import gateway.entity.{ ChatSession, MessageChannelError, SessionKey }
 import shared.errors.PersistenceError
 
 final private[boundary] case class ChatSessionSupport(

@@ -10,8 +10,8 @@ import zio.stream.ZStream
 
 import activity.control.ActivityHub
 import app.control.HealthMonitor
-import gateway.control.{ ChannelRegistry, MessageChannelError }
-import gateway.entity.SessionScopeStrategy
+import gateway.control.ChannelRegistry
+import gateway.entity.{ MessageChannelError, SessionScopeStrategy }
 import orchestration.entity.AgentMonitorService
 import shared.web.StreamAbortRegistry
 import shared.web.ws.{ ClientMessage, ServerMessage, SubscriptionTopic }

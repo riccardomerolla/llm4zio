@@ -8,44 +8,22 @@ import zio.stream.ZStream
 
 import conversation.entity.api.StoredSessionContext
 import conversation.entity.ChatRepository
-import gateway.entity.*
+import gateway.entity.{ MessageRouter, * }
 import orchestration.control.*
 import orchestration.entity.*
-import shared.errors.PersistenceError
 
-enum MessageRouterError:
-  case Channel(error: MessageChannelError)
-  case Persistence(error: PersistenceError)
-  case InvalidSession(reason: String)
-  case UnsupportedOperation(reason: String)
-
-case class SessionContext(
-  sessionKey: SessionKey,
-  lastInboundMessageId: Option[String] = None,
-  lastOutboundMessageId: Option[String] = None,
-  conversationId: Option[Long] = None,
-  runId: Option[Long] = None,
-  metadata: Map[String, String] = Map.empty,
-  updatedAt: Instant,
-) derives JsonCodec
-
-trait MessageRouter:
-  def resolveSession(
-    channelName: String,
-    rawSessionId: String,
-    strategy: SessionScopeStrategy,
-  ): IO[MessageRouterError, SessionKey]
-
-  def routeInbound(message: NormalizedMessage): IO[MessageRouterError, Unit]
-  def routeOutbound(message: NormalizedMessage): IO[MessageRouterError, Unit]
-  def sessionContext(sessionKey: SessionKey): IO[MessageRouterError, Option[SessionContext]]
-
-  def attachControlPlaneRouting(
-    runId: String,
-    channelName: String,
-    strategy: SessionScopeStrategy = SessionScopeStrategy.PerRun,
-  ): ZIO[Scope & OrchestratorControlPlane, MessageRouterError, Fiber.Runtime[Nothing, Unit]]
-
+/** Control-layer namespace for the `MessageRouter` service.
+  *
+  * The core trait lives in `gateway.entity.MessageRouter` so any domain module can depend on the trait without dragging
+  * in control-plane wiring. This object provides:
+  *
+  *   - Service accessors (`resolveSession`, `routeInbound`, `routeOutbound`, `sessionContext`) — convenience wrappers
+  *     around `ZIO.serviceWithZIO[MessageRouter]`.
+  *   - `val live` — ZLayer for the live implementation.
+  *   - `def attachControlPlaneRouting` — fans control-plane events out to the channel; composes `MessageRouter`,
+  *     `ChannelRegistry`, and `OrchestratorControlPlane` in a single effect. Was previously a method on the trait, but
+  *     is now a standalone helper so the trait can live in the entity layer.
+  */
 object MessageRouter:
   def resolveSession(
     channelName: String,
@@ -63,15 +41,69 @@ object MessageRouter:
   def sessionContext(sessionKey: SessionKey): ZIO[MessageRouter, MessageRouterError, Option[SessionContext]] =
     ZIO.serviceWithZIO[MessageRouter](_.sessionContext(sessionKey))
 
+  val live: ZLayer[ChannelRegistry & ChatRepository, Nothing, MessageRouter] =
+    ZLayer.fromFunction(MessageRouterLive.apply)
+
+  /** Subscribe to control-plane events for `runId` and fan them out as outbound messages on `channelName`.
+    *
+    * Previously a method on the `MessageRouter` trait. Moved off the trait so the trait can live in the entity layer
+    * (which must not depend on `orchestration.entity` / `orchestration.control`). The helper pulls `MessageRouter`,
+    * `ChannelRegistry`, and `OrchestratorControlPlane` from the ZIO environment.
+    */
   def attachControlPlaneRouting(
     runId: String,
     channelName: String,
     strategy: SessionScopeStrategy = SessionScopeStrategy.PerRun,
-  ): ZIO[MessageRouter & Scope & OrchestratorControlPlane, MessageRouterError, Fiber.Runtime[Nothing, Unit]] =
-    ZIO.serviceWithZIO[MessageRouter](_.attachControlPlaneRouting(runId, channelName, strategy))
+  ): ZIO[
+    MessageRouter & ChannelRegistry & Scope & OrchestratorControlPlane,
+    MessageRouterError,
+    Fiber.Runtime[Nothing, Unit],
+  ] =
+    for
+      router     <- ZIO.service[MessageRouter]
+      registry   <- ZIO.service[ChannelRegistry]
+      sessionKey <- router.resolveSession(channelName, runId, strategy)
+      channel    <- registry.get(channelName).mapError(MessageRouterError.Channel.apply)
+      _          <- channel.open(sessionKey).mapError(MessageRouterError.Channel.apply).ignore
+      queue      <- OrchestratorControlPlane.subscribeToEvents(runId)
+      fiber      <- ZStream
+                      .fromQueue(queue)
+                      .mapZIO(event =>
+                        router.routeOutbound(toControlPlaneMessage(event, sessionKey, channelName)).ignore
+                      )
+                      .runDrain
+                      .forkScoped
+    yield fiber
 
-  val live: ZLayer[ChannelRegistry & ChatRepository, Nothing, MessageRouter] =
-    ZLayer.fromFunction(MessageRouterLive.apply)
+  private def toControlPlaneMessage(
+    event: ControlPlaneEvent,
+    sessionKey: SessionKey,
+    channelName: String,
+  ): NormalizedMessage =
+    NormalizedMessage(
+      id = s"${event.correlationId}:${event.timestamp.toEpochMilli}",
+      channelName = channelName,
+      sessionKey = sessionKey,
+      direction = MessageDirection.Outbound,
+      role = GatewayMessageRole.System,
+      content = event.toJson,
+      metadata = Map(
+        "eventType" -> event.getClass.getSimpleName,
+        "runId"     -> extractRunId(event),
+      ),
+      timestamp = event.timestamp,
+    )
+
+  private def extractRunId(event: ControlPlaneEvent): String = event match
+    case value: WorkflowStarted   => value.runId
+    case value: WorkflowCompleted => value.runId
+    case value: WorkflowFailed    => value.runId
+    case value: StepStarted       => value.runId
+    case value: StepProgress      => value.runId
+    case value: StepCompleted     => value.runId
+    case value: StepFailed        => value.runId
+    case value: ResourceAllocated => value.runId
+    case value: ResourceReleased  => value.runId
 
 final case class MessageRouterLive(
   registry: ChannelRegistry,
@@ -124,23 +156,6 @@ final case class MessageRouterLive(
   override def sessionContext(sessionKey: SessionKey): IO[MessageRouterError, Option[SessionContext]] =
     loadContext(sessionKey)
 
-  override def attachControlPlaneRouting(
-    runId: String,
-    channelName: String,
-    strategy: SessionScopeStrategy,
-  ): ZIO[Scope & OrchestratorControlPlane, MessageRouterError, Fiber.Runtime[Nothing, Unit]] =
-    for
-      sessionKey <- resolveSession(channelName, runId, strategy)
-      channel    <- registry.get(channelName).mapError(MessageRouterError.Channel.apply)
-      _          <- channel.open(sessionKey).mapError(MessageRouterError.Channel.apply).ignore
-      queue      <- OrchestratorControlPlane.subscribeToEvents(runId)
-      fiber      <- ZStream
-                      .fromQueue(queue)
-                      .mapZIO(event => routeOutbound(toControlPlaneMessage(event, sessionKey, channelName)).ignore)
-                      .runDrain
-                      .forkScoped
-    yield fiber
-
   private def contextStoreKey(sessionKey: SessionKey): (String, String) =
     (sessionKey.channelName, sessionKey.value)
 
@@ -180,33 +195,3 @@ final case class MessageRouterLive(
       metadata = context.metadata,
       updatedAt = updatedAt,
     )
-
-  private def toControlPlaneMessage(
-    event: ControlPlaneEvent,
-    sessionKey: SessionKey,
-    channelName: String,
-  ): NormalizedMessage =
-    NormalizedMessage(
-      id = s"${event.correlationId}:${event.timestamp.toEpochMilli}",
-      channelName = channelName,
-      sessionKey = sessionKey,
-      direction = MessageDirection.Outbound,
-      role = GatewayMessageRole.System,
-      content = event.toJson,
-      metadata = Map(
-        "eventType" -> event.getClass.getSimpleName,
-        "runId"     -> extractRunId(event),
-      ),
-      timestamp = event.timestamp,
-    )
-
-  private def extractRunId(event: ControlPlaneEvent): String = event match
-    case value: WorkflowStarted   => value.runId
-    case value: WorkflowCompleted => value.runId
-    case value: WorkflowFailed    => value.runId
-    case value: StepStarted       => value.runId
-    case value: StepProgress      => value.runId
-    case value: StepCompleted     => value.runId
-    case value: StepFailed        => value.runId
-    case value: ResourceAllocated => value.runId
-    case value: ResourceReleased  => value.runId

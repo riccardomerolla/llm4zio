@@ -2,7 +2,7 @@ package gateway.control
 
 import zio.*
 
-import gateway.entity.NormalizedMessage
+import gateway.entity.{ MessageChannelError, NormalizedMessage }
 
 final case class PollingBatch(messages: List[NormalizedMessage], nextOffset: Option[Long])
 

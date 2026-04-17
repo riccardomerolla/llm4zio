@@ -13,7 +13,7 @@ object ParallelSessionCoordinatorWiringSpec extends ZIOSpecDefault:
         workspace.entity.WorkspaceRunService &
           workspace.entity.WorkspaceRepository &
           OrchestratorControlPlane &
-          gateway.control.MessageRouter,
+          gateway.entity.MessageRouter,
         Nothing,
         ParallelSessionCoordinator,
       ] = ParallelSessionCoordinator.live

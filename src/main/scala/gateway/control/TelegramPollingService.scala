@@ -3,6 +3,7 @@ package gateway.control
 import zio.*
 
 import _root_.config.entity.{ MigrationConfig, TelegramMode }
+import gateway.entity.MessageChannelError
 
 final case class TelegramPollingConfig(
   enabled: Boolean = false,
