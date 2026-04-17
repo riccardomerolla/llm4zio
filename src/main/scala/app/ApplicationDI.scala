@@ -393,6 +393,7 @@ object ApplicationDI:
       IssueWorkReportProjectionFactory.live,
       MergeAgentService.live,
       ConversationChatController.live,
+      issues.control.IssueTemplateService.live,
       IssuesIssueController.live,
       ActivityController.live,
       MemoryBoundaryController.live,

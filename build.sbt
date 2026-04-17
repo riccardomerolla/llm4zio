@@ -414,7 +414,7 @@ lazy val sharedWeb = (project in file("modules/shared-web"))
 
 lazy val issuesDomain = (project in file("modules/issues-domain"))
   .dependsOn(sharedIds, sharedErrors, sharedStoreCore, boardDomain, workspaceDomain,
-    taskrunDomain, analysisDomain)
+    taskrunDomain, analysisDomain, configDomain)
   .settings(foundationSettings)
   .settings(
     name := "issues-domain",

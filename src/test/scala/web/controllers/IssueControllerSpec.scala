@@ -19,6 +19,7 @@ import taskrun.entity.TaskRepository
 import decision.control.DecisionInbox
 import decision.entity.{ Decision, DecisionFilter, DecisionResolutionKind }
 import issues.boundary.IssueControllerLive
+import issues.control.IssueTemplateServiceLive
 import issues.entity.*
 import issues.entity.api.AutoAssignIssueResponse
 import llm4zio.core.*
@@ -388,6 +389,7 @@ object IssueControllerSpec extends ZIOSpecDefault:
           analysisRepository = StubAnalysisRepository,
           issueWorkReportProjection = StubWorkReportProjection,
           projectStorageService = StubProjectStorageService,
+          templateService = IssueTemplateServiceLive(StubConfigRepository.empty),
         ).routes
       )
 
