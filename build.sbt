@@ -289,7 +289,7 @@ lazy val boardDomain = (project in file("modules/board-domain"))
 
 lazy val knowledgeDomain = (project in file("modules/knowledge-domain"))
   .dependsOn(sharedIds, sharedErrors, sharedStoreCore, sharedWebCore, analysisDomain,
-    memoryDomain, workspaceDomain)
+    memoryDomain, workspaceDomain, conversationDomain, issuesDomain, llm4zio)
   .settings(foundationSettings)
   .settings(
     name := "knowledge-domain",
@@ -376,7 +376,7 @@ lazy val orchestrationDomain = (project in file("modules/orchestration-domain"))
   .dependsOn(sharedIds, sharedErrors, sharedStoreCore, gatewayDomain, configDomain, planDomain,
     activityDomain, agentDomain, issuesDomain, taskrunDomain, workspaceDomain, sharedServices,
     conversationDomain, memoryDomain, llm4zio, boardDomain, projectDomain, governanceDomain,
-    decisionDomain)
+    decisionDomain, demoDomain, knowledgeDomain, analysisDomain)
   .settings(foundationSettings)
   .settings(
     name := "orchestration-domain",
