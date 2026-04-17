@@ -16,6 +16,7 @@ import gateway.entity.{
   SessionKey,
   SessionScopeStrategy,
 }
+import orchestration.entity.AgentRegistry
 import shared.errors.PersistenceError
 import taskrun.entity.*
 

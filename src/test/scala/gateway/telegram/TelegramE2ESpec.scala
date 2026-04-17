@@ -10,7 +10,7 @@ import zio.test.*
 
 import _root_.config.entity.{ CustomAgentRow, SettingRow, WorkflowDefinition, WorkflowRow }
 import taskrun.entity.TaskRepository
-import gateway.control.{ MessageChannelError, TelegramClient, WorkflowNotifier, WorkflowNotifierLive }
+import gateway.control.{ TelegramClient, WorkflowNotifier, WorkflowNotifierLive }
 import gateway.entity.*
 import orchestration.entity.TaskExecutor
 import shared.errors.PersistenceError
