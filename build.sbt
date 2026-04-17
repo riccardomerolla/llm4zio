@@ -307,7 +307,9 @@ lazy val knowledgeDomain = (project in file("modules/knowledge-domain"))
   .settings(foundationSettings)
   .settings(
     name := "knowledge-domain",
-    libraryDependencies ++= domainBceDeps,
+    libraryDependencies ++= domainBceDeps ++ Seq(
+      "io.github.riccardomerolla" %% "zio-eclipsestore-gigamap" % zioEclipseStoreVersion % Test,
+    ),
   )
 
 lazy val projectDomain = (project in file("modules/project-domain"))
