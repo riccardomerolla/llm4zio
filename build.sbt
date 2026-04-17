@@ -272,7 +272,9 @@ lazy val taskrunDomain = (project in file("modules/taskrun-domain"))
   .settings(foundationSettings)
   .settings(
     name := "taskrun-domain",
-    libraryDependencies ++= domainBceDeps,
+    libraryDependencies ++= domainBceDeps ++ Seq(
+      "io.github.riccardomerolla" %% "zio-eclipsestore-gigamap" % zioEclipseStoreVersion % Test,
+    ),
   )
 
 lazy val boardDomain = (project in file("modules/board-domain"))
@@ -307,7 +309,11 @@ lazy val configDomain = (project in file("modules/config-domain"))
   .settings(foundationSettings)
   .settings(
     name := "config-domain",
-    libraryDependencies ++= domainBceDeps,
+    libraryDependencies ++= domainBceDeps ++ Seq(
+      "dev.zio" %% "zio-config" % zioConfigVersion,
+      "dev.zio" %% "zio-config-typesafe" % zioConfigVersion,
+      "dev.zio" %% "zio-config-magnolia" % zioConfigVersion,
+    ),
   )
 
 lazy val conversationDomain = (project in file("modules/conversation-domain"))

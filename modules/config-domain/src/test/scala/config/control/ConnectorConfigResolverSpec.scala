@@ -1,10 +1,46 @@
 package config.control
 
+import java.time.Instant
+
 import zio.*
 import zio.test.*
 
+import _root_.config.entity.*
 import llm4zio.core.*
-import shared.testfixtures.StubConfigRepository
+import shared.errors.PersistenceError
+
+/** Read-only ConfigRepository stub backed by a fixed Map. Write/workflow/custom-agent ops die.
+  *
+  * Colocated with ConnectorConfigResolverSpec rather than shared because the resolver is the
+  * only settings-only consumer inside config-domain; broader fixtures still live in root tests.
+  */
+final class StubConfigRepository(settings: Map[String, String]) extends ConfigRepository:
+
+  private val ts: Instant = Instant.parse("2026-01-01T00:00:00Z")
+
+  override def getAllSettings: IO[PersistenceError, List[SettingRow]] =
+    ZIO.succeed(settings.toList.map { case (k, v) => SettingRow(k, v, ts) })
+
+  override def getSetting(key: String): IO[PersistenceError, Option[SettingRow]] =
+    ZIO.succeed(settings.get(key).map(v => SettingRow(key, v, ts)))
+
+  override def upsertSetting(key: String, value: String): IO[PersistenceError, Unit] = ZIO.unit
+  override def deleteSetting(key: String): IO[PersistenceError, Unit]                = ZIO.unit
+  override def deleteSettingsByPrefix(prefix: String): IO[PersistenceError, Unit]    = ZIO.unit
+
+  override def createWorkflow(workflow: WorkflowRow): IO[PersistenceError, Long]                = ZIO.dieMessage("unused")
+  override def getWorkflow(id: Long): IO[PersistenceError, Option[WorkflowRow]]                 = ZIO.dieMessage("unused")
+  override def getWorkflowByName(name: String): IO[PersistenceError, Option[WorkflowRow]]       = ZIO.dieMessage("unused")
+  override def listWorkflows: IO[PersistenceError, List[WorkflowRow]]                           = ZIO.dieMessage("unused")
+  override def updateWorkflow(workflow: WorkflowRow): IO[PersistenceError, Unit]                = ZIO.dieMessage("unused")
+  override def deleteWorkflow(id: Long): IO[PersistenceError, Unit]                             = ZIO.dieMessage("unused")
+  override def createCustomAgent(agent: CustomAgentRow): IO[PersistenceError, Long]             = ZIO.dieMessage("unused")
+  override def getCustomAgent(id: Long): IO[PersistenceError, Option[CustomAgentRow]]           = ZIO.dieMessage("unused")
+  override def getCustomAgentByName(name: String): IO[PersistenceError, Option[CustomAgentRow]] =
+    ZIO.dieMessage("unused")
+  override def listCustomAgents: IO[PersistenceError, List[CustomAgentRow]]                     = ZIO.dieMessage("unused")
+  override def updateCustomAgent(agent: CustomAgentRow): IO[PersistenceError, Unit]             = ZIO.dieMessage("unused")
+  override def deleteCustomAgent(id: Long): IO[PersistenceError, Unit]                          = ZIO.dieMessage("unused")
 
 object ConnectorConfigResolverSpec extends ZIOSpecDefault:
 
