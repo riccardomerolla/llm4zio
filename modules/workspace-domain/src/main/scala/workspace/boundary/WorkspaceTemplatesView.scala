@@ -3,6 +3,8 @@ package workspace.boundary
 import scalatags.Text.all.*
 import shared.web.{ Components, Layout }
 
+import shared.web.{ Components, Layout }
+
 /** Interactive template picker / wizard for new workspaces.
   *
   * Moved from `shared-web` to `workspace-domain/boundary` in phase 5A.2. The view has zero domain-entity dependencies
