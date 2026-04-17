@@ -516,50 +516,6 @@ final case class IssueControllerLive(
         loadApiIssues(runIdStr).map(issues => Response.json(issues.toJson))
       }
     },
-    Method.POST / "api" / "issues" / "bulk" / "assign"               -> handler { (req: Request) =>
-      ErrorHandlingMiddleware.fromPersistence {
-        for
-          body        <- req.body.asString.mapError(err => PersistenceError.QueryFailed("request_body", err.getMessage))
-          bulkRequest <- ZIO
-                           .fromEither(body.fromJson[BulkIssueAssignRequest])
-                           .mapError(err => PersistenceError.QueryFailed("json_parse", err))
-          response    <- bulkAssignIssues(bulkRequest)
-        yield Response.json(response.toJson)
-      }
-    },
-    Method.POST / "api" / "issues" / "bulk" / "status"               -> handler { (req: Request) =>
-      ErrorHandlingMiddleware.fromPersistence {
-        for
-          body        <- req.body.asString.mapError(err => PersistenceError.QueryFailed("request_body", err.getMessage))
-          bulkRequest <- ZIO
-                           .fromEither(body.fromJson[BulkIssueStatusRequest])
-                           .mapError(err => PersistenceError.QueryFailed("json_parse", err))
-          response    <- bulkUpdateStatus(bulkRequest)
-        yield Response.json(response.toJson)
-      }
-    },
-    Method.POST / "api" / "issues" / "bulk" / "tags"                 -> handler { (req: Request) =>
-      ErrorHandlingMiddleware.fromPersistence {
-        for
-          body        <- req.body.asString.mapError(err => PersistenceError.QueryFailed("request_body", err.getMessage))
-          bulkRequest <- ZIO
-                           .fromEither(body.fromJson[BulkIssueTagsRequest])
-                           .mapError(err => PersistenceError.QueryFailed("json_parse", err))
-          response    <- bulkUpdateTags(bulkRequest)
-        yield Response.json(response.toJson)
-      }
-    },
-    Method.DELETE / "api" / "issues" / "bulk"                        -> handler { (req: Request) =>
-      ErrorHandlingMiddleware.fromPersistence {
-        for
-          body        <- req.body.asString.mapError(err => PersistenceError.QueryFailed("request_body", err.getMessage))
-          bulkRequest <- ZIO
-                           .fromEither(body.fromJson[BulkIssueDeleteRequest])
-                           .mapError(err => PersistenceError.QueryFailed("json_parse", err))
-          response    <- bulkDeleteIssues(bulkRequest)
-        yield Response.json(response.toJson)
-      }
-    },
     Method.POST / "api" / "issues" / "import" / "folder" / "preview" -> handler { (req: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
@@ -1517,91 +1473,6 @@ final case class IssueControllerLive(
         byQuery.filter(_.tags.exists(_.toLowerCase.split(",").map(_.trim).contains(needle)))
       case None        => byQuery
 
-  private def bulkAssignIssues(request: BulkIssueAssignRequest): IO[PersistenceError, BulkIssueOperationResponse] =
-    for
-      issueIds <- validateIssueIds(request.issueIds)
-      _        <- ensureWorkspaceExists(request.workspaceId)
-      results  <- ZIO.foreach(issueIds) { issueId =>
-                    (for
-                      issue <- issueRepository.get(IssueId(issueId)).mapError(mapIssueRepoError)
-                      now   <- Clock.instant
-                      _     <- issueRepository
-                                 .append(
-                                   IssueEvent.WorkspaceLinked(
-                                     issueId = IssueId(issueId),
-                                     workspaceId = request.workspaceId,
-                                     occurredAt = now,
-                                   )
-                                 )
-                                 .mapError(mapIssueRepoError)
-                      _     <- issueAssignmentOrchestrator.assignIssue(
-                                 issueId,
-                                 request.agentId,
-                                 skipConversationBootstrap = true,
-                               )
-                      _     <- assignWorkspaceRunAndMarkStarted(
-                                 issue = issue,
-                                 workspaceId = request.workspaceId,
-                                 agentName = request.agentId,
-                               )
-                    yield ()).either
-                  }
-    yield toBulkResponse(issueIds.size, results)
-
-  private def bulkUpdateStatus(request: BulkIssueStatusRequest): IO[PersistenceError, BulkIssueOperationResponse] =
-    for
-      issueIds <- validateIssueIds(request.issueIds)
-      results  <- ZIO.foreach(issueIds) { issueId =>
-                    (for
-                      issue        <- issueRepository.get(IssueId(issueId)).mapError(mapIssueRepoError)
-                      now          <- Clock.instant
-                      fallbackAgent = request.agentName
-                                        .map(_.trim)
-                                        .filter(_.nonEmpty)
-                                        .orElse(assignedAgentFromState(issue.state))
-                                        .getOrElse("bulk")
-                      _            <- ensureTransitionAllowed(issue.state, request.status, issueId)
-                      events       <- statusToEvents(
-                                        issue,
-                                        IssueStatusUpdateRequest(
-                                          status = request.status,
-                                          agentName = request.agentName,
-                                          reason = request.reason,
-                                          resultData = request.resultData,
-                                        ),
-                                        fallbackAgent,
-                                        now,
-                                      )
-                      _            <- ZIO.foreachDiscard(events)(issueRepository.append(_).mapError(mapIssueRepoError))
-                    yield ()).either
-                  }
-    yield toBulkResponse(issueIds.size, results)
-
-  private def bulkUpdateTags(request: BulkIssueTagsRequest): IO[PersistenceError, BulkIssueOperationResponse] =
-    for
-      issueIds    <- validateIssueIds(request.issueIds)
-      tagsToAdd    = request.addTags.map(_.trim).filter(_.nonEmpty)
-      tagsToRemove = request.removeTags.map(_.trim).filter(_.nonEmpty).toSet
-      results     <- ZIO.foreach(issueIds) { issueId =>
-                       (for
-                         issue   <- issueRepository.get(IssueId(issueId)).mapError(mapIssueRepoError)
-                         now     <- Clock.instant
-                         existing = issue.tags.map(_.trim).filter(_.nonEmpty)
-                         merged   = (existing.filterNot(t => tagsToRemove.contains(t)) ++ tagsToAdd).distinct
-                         _       <- issueRepository
-                                      .append(IssueEvent.TagsUpdated(IssueId(issueId), merged, now))
-                                      .mapError(mapIssueRepoError)
-                       yield ()).either
-                     }
-    yield toBulkResponse(issueIds.size, results)
-
-  private def bulkDeleteIssues(request: BulkIssueDeleteRequest): IO[PersistenceError, BulkIssueOperationResponse] =
-    for
-      issueIds <- validateIssueIds(request.issueIds)
-      results  <-
-        ZIO.foreach(issueIds)(issueId => issueRepository.delete(IssueId(issueId)).mapError(mapIssueRepoError).either)
-    yield toBulkResponse(issueIds.size, results)
-
   private def toBulkResponse(
     requested: Int,
     results: List[Either[PersistenceError, Unit]],
@@ -1613,12 +1484,6 @@ final case class IssueControllerLive(
       failed = errors.size,
       errors = errors,
     )
-
-  private def validateIssueIds(issueIds: List[String]): IO[PersistenceError, List[String]] =
-    val normalized = issueIds.map(_.trim).filter(_.nonEmpty).distinct
-    ZIO
-      .fromOption(Option.when(normalized.nonEmpty)(normalized))
-      .orElseFail(PersistenceError.QueryFailed("bulk", "issueIds must contain at least one issue id"))
 
   private def assignedAgentFromState(state: IssueState): Option[String] =
     state match

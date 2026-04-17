@@ -17,9 +17,9 @@ import shared.web.ErrorHandlingMiddleware
 /** Bulk-operation boundary for issues — extracted from [[IssueController]] in phase 4F.3.
   *
   * Owns four routes:
-  *   - POST /api/issues/bulk/assign
-  *   - POST /api/issues/bulk/status
-  *   - POST /api/issues/bulk/tags
+  *   - POST   /api/issues/bulk/assign
+  *   - POST   /api/issues/bulk/status
+  *   - POST   /api/issues/bulk/tags
   *   - DELETE /api/issues/bulk
   *
   * Business logic lives in [[IssueBulkService]]; this controller only handles HTTP body parsing and JSON rendering.
@@ -59,7 +59,7 @@ final case class IssueBulkControllerLive(bulkService: IssueBulkService) extends 
         yield Response.json(response.toJson)
       }
     },
-    Method.POST / "api" / "issues" / "bulk" / "tags"   -> handler { (req: Request) =>
+    Method.POST / "api" / "issues" / "bulk" / "tags" -> handler { (req: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
           body     <- readBody(req)
@@ -68,7 +68,7 @@ final case class IssueBulkControllerLive(bulkService: IssueBulkService) extends 
         yield Response.json(response.toJson)
       }
     },
-    Method.DELETE / "api" / "issues" / "bulk"          -> handler { (req: Request) =>
+    Method.DELETE / "api" / "issues" / "bulk" -> handler { (req: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for
           body     <- readBody(req)
