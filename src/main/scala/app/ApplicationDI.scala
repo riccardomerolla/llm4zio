@@ -33,11 +33,10 @@ import conversation.boundary.{
   ChatController as ConversationChatController,
   WebSocketController as ConversationWebSocketController,
 }
+import conversation.entity.ChatRepository
 import daemon.boundary.DaemonsController
 import daemon.control.DaemonAgentScheduler
 import daemon.entity.DaemonAgentSpecRepositoryES
-import conversation.entity.ChatRepository
-import taskrun.entity.TaskRepository
 import decision.control.DecisionInbox
 import decision.entity.{ DecisionEventStoreES, DecisionRepositoryES }
 import demo.boundary.DemoController
@@ -89,7 +88,7 @@ import taskrun.boundary.{
   ReportsController as TaskRunReportsController,
   TasksController as TaskRunTasksController,
 }
-import taskrun.entity.{ TaskRunEventStoreES, TaskRunRepositoryES }
+import taskrun.entity.{TaskRepository, TaskRunEventStoreES, TaskRunRepositoryES}
 import workspace.boundary.WorkspacesController
 import workspace.control.*
 import workspace.entity.WorkspaceRepository

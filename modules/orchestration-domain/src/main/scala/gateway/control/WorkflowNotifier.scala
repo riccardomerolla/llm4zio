@@ -5,11 +5,10 @@ import zio.json.*
 
 import _root_.config.entity.WorkflowRow
 import agent.entity.AgentRegistry
-import taskrun.entity.TaskRepository
 import gateway.entity.*
 import orchestration.entity.TaskExecutor
 import shared.errors.PersistenceError
-import taskrun.entity.{ RunStatus, TaskRunRow }
+import taskrun.entity.{RunStatus, TaskRepository, TaskRunRow}
 
 enum WorkflowNotifierError:
   case Telegram(error: TelegramClientError)

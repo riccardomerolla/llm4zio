@@ -11,8 +11,8 @@ import _root_.config.entity.{ ConfigRepository, ProviderConfig }
 import activity.control.ActivityHub
 import activity.entity.{ ActivityEvent, ActivityEventType }
 import board.entity.{ IssueEstimate as BoardIssueEstimate, IssuePriority as BoardIssuePriority, * }
-import conversation.entity.api.{ ChatConversation, ConversationEntry, MessageType, SenderType }
 import conversation.entity.ChatRepository
+import conversation.entity.api.{ ChatConversation, ConversationEntry, MessageType, SenderType }
 import governance.control.{ GovernanceEvaluationContext, GovernancePolicyService }
 import governance.entity.{ GovernanceGate, GovernanceLifecycleAction, GovernanceLifecycleStage, GovernanceTransition }
 import issues.entity.{ AgentIssue as DomainIssue, IssueRepository }

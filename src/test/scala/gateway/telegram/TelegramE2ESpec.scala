@@ -11,12 +11,11 @@ import zio.test.*
 import _root_.config.entity.{ CustomAgentRow, SettingRow, WorkflowDefinition, WorkflowRow }
 import agent.control.AgentRegistryLive
 import agent.entity.AgentRegistry
-import taskrun.entity.TaskRepository
 import gateway.control.{ TelegramClient, WorkflowNotifier, WorkflowNotifierLive }
 import gateway.entity.*
 import orchestration.entity.TaskExecutor
 import shared.errors.PersistenceError
-import taskrun.entity.{ TaskArtifactRow, TaskReportRow, TaskRunRow }
+import taskrun.entity.{TaskArtifactRow, TaskReportRow, TaskRepository, TaskRunRow}
 
 object TelegramE2ESpec extends ZIOSpecDefault:
 

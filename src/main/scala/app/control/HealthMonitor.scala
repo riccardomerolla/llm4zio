@@ -9,9 +9,8 @@ import zio.stream.*
 import _root_.config.entity.{ AgentHealthStatus, AgentInfo, GatewayConfig }
 import agent.entity.AgentRegistry
 import com.sun.management.OperatingSystemMXBean
-import taskrun.entity.TaskRepository
 import gateway.control.{ ChannelRegistry, GatewayService }
-import taskrun.entity.RunStatus
+import taskrun.entity.{RunStatus, TaskRepository}
 
 final case class GatewayHealth(
   uptimeSeconds: Long,

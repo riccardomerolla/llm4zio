@@ -9,24 +9,23 @@ import zio.test.*
 import _root_.config.entity.{ ConfigRepository, CustomAgentRow, ProviderConfig, SettingRow, WorkflowRow }
 import activity.control.ActivityHubLive
 import activity.entity.{ ActivityEvent, ActivityEventType, ActivityRepository }
+import agent.control.AgentRegistryLive
 import conversation.boundary.ChatControllerLive
-import conversation.entity.api.*
 import conversation.entity.ChatRepository
-import taskrun.entity.TaskRepository
+import conversation.entity.api.*
 import gateway.control.*
 import gateway.entity.*
 import issues.entity.api.AgentIssueView
 import llm4zio.core.*
 import llm4zio.providers.{ GeminiCliExecutor, HttpClient }
 import llm4zio.tools.{ AnyTool, JsonSchema }
-import agent.control.AgentRegistryLive
 import memory.entity.{ Scope as MemoryScope, * }
 import orchestration.control.{ IssueAssignmentOrchestrator, * }
 import orchestration.entity.{ PlannerPlanPreview, PlannerPreviewState }
 import prompts.PromptLoader
 import shared.errors.PersistenceError
 import shared.web.StreamAbortRegistryLive
-import taskrun.entity.{ TaskArtifactRow, TaskReportRow, TaskRunRow }
+import taskrun.entity.{TaskArtifactRow, TaskReportRow, TaskRepository, TaskRunRow}
 
 object ChatControllerGatewaySpec extends ZIOSpecDefault:
 

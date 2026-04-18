@@ -6,10 +6,9 @@ import zio.*
 
 import _root_.config.entity.{ WorkflowContext, WorkflowDefinition }
 import agent.entity.AgentRegistry
-import taskrun.entity.TaskRepository
 import orchestration.entity.*
 import shared.errors.PersistenceError
-import taskrun.entity.RunStatus
+import taskrun.entity.{RunStatus, TaskRepository}
 
 object TaskExecutorLive:
 

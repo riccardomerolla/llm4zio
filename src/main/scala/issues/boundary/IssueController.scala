@@ -18,7 +18,6 @@ import analysis.entity.AnalysisRepository
 import board.control.BoardOrchestrator
 import board.entity.{ IssueEstimate as BoardIssueEstimate, IssuePriority as BoardIssuePriority, * }
 import conversation.entity.ChatRepository
-import taskrun.entity.TaskRepository
 import decision.control.DecisionInbox
 import decision.entity.*
 import issues.control.{ IssueAnalysisAttachment, IssueTemplateService }
@@ -29,9 +28,9 @@ import project.control.ProjectStorageService
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ AgentId, BoardIssueId, EventId, IssueId, TaskRunId }
 import shared.web.{ ErrorHandlingMiddleware, HtmlViews }
+import taskrun.entity.TaskRepository
 import workspace.control.ProofOfWorkExtractor
-import workspace.entity.WorkspaceRunService
-import workspace.entity.{ AssignRunRequest, WorkspaceRepository }
+import workspace.entity.{AssignRunRequest, WorkspaceRepository, WorkspaceRunService}
 
 trait IssueController:
   def routes: Routes[Any, Response]

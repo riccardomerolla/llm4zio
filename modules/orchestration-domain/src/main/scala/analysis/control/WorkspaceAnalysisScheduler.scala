@@ -14,12 +14,12 @@ import analysis.entity.{
   WorkspaceAnalysisStatus,
 }
 import board.entity.*
-import taskrun.entity.TaskRepository
 import issues.entity.{ IssueEvent, IssueFilter, IssueRepository, IssueState }
 import orchestration.control.OrchestratorControlPlane
 import project.control.ProjectStorageService
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ BoardIssueId, EventId, IssueId }
+import taskrun.entity.TaskRepository
 import workspace.entity.WorkspaceRepository
 
 final private[analysis] case class WorkspaceAnalysisJob(

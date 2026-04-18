@@ -7,16 +7,15 @@ import activity.control.ActivityHub
 import activity.entity.{ ActivityEvent, ActivityEventType }
 import board.control.BoardOrchestrator
 import board.entity.BoardError
-import conversation.entity.api.{ ChatConversation, ConversationEntry, MessageType, SenderType }
 import conversation.entity.ChatRepository
-import taskrun.entity.TaskRepository
+import conversation.entity.api.{ ChatConversation, ConversationEntry, MessageType, SenderType }
 import issues.entity.api.{ AgentIssueView, IssuePriority, IssueStatus }
 import issues.entity.{ IssueEvent, IssueRepository, IssueState }
 import llm4zio.core.{ LlmError, LlmService, Streaming }
 import project.control.ProjectStorageService
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ AgentId, BoardIssueId, EventId, IssueId, TaskRunId }
-import taskrun.entity.TaskRunRow
+import taskrun.entity.{TaskRepository, TaskRunRow}
 import workspace.entity.WorkspaceRepository
 
 trait IssueAssignmentOrchestrator:

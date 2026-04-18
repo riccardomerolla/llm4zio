@@ -3,9 +3,9 @@ package orchestration.control
 import zio.*
 
 import _root_.config.entity.{ ModelFallbackChain, ModelRef, ProviderConfig }
-import taskrun.entity.TaskRepository
 import llm4zio.core.LlmProvider
 import shared.errors.PersistenceError
+import taskrun.entity.TaskRepository
 
 /** Deprecated: prefer `config.control.ConnectorConfigResolver` for new code. */
 trait AgentConfigResolver:

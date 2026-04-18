@@ -4,8 +4,8 @@ import java.time.Instant
 
 import zio.*
 
-import conversation.entity.api.*
 import conversation.entity.ChatRepository
+import conversation.entity.api.*
 import gateway.control.ChannelRegistry
 import gateway.entity.{ ChatSession, MessageChannelError, SessionKey }
 import shared.errors.PersistenceError

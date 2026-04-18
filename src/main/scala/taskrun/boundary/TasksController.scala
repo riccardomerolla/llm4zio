@@ -9,10 +9,9 @@ import zio.json.*
 import zio.stream.ZStream
 
 import _root_.config.entity.WorkflowDefinition
-import taskrun.entity.TaskRepository
 import orchestration.entity.*
 import shared.errors.PersistenceError
-import taskrun.entity.{ RunStatus, TaskArtifactRow, TaskRunRow }
+import taskrun.entity.{RunStatus, TaskArtifactRow, TaskRepository, TaskRunRow}
 
 trait TasksController:
   def routes: Routes[Any, Response]

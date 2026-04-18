@@ -8,8 +8,8 @@ import zio.stream.ZStream
 import zio.test.*
 
 import activity.entity.ActivityEvent
-import conversation.entity.api.{ ChatConversation, ConversationEntry }
 import conversation.entity.ChatRepository
+import conversation.entity.api.{ ChatConversation, ConversationEntry }
 import shared.errors.PersistenceError
 import workspace.entity.*
 

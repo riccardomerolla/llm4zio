@@ -10,8 +10,7 @@ import governance.entity.{ GovernanceGate, GovernanceLifecycleAction, Governance
 import project.control.ProjectStorageService
 import shared.ids.Ids.BoardIssueId
 import workspace.control.GitService
-import workspace.entity.WorkspaceRunService
-import workspace.entity.{ AssignRunRequest, GitError, WorkspaceRepository }
+import workspace.entity.{AssignRunRequest, GitError, WorkspaceRepository, WorkspaceRunService}
 
 /** Central board orchestrator for issue lifecycle management.
   *

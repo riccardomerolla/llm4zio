@@ -1,8 +1,7 @@
 package issues.boundary
 
-import scalatags.Text.all.*
-
 import issues.entity.{ IssueCiStatus, IssuePrStatus, IssueWorkReport }
+import scalatags.Text.all.*
 import workspace.entity.RequirementCheck
 
 /** Renders the proof-of-work panel for an issue.

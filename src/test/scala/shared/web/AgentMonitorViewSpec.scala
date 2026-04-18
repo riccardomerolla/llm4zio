@@ -5,9 +5,9 @@ import java.time.Instant
 import zio.test.*
 
 import llm4zio.observability.MetricsSnapshot
-import orchestration.entity.{ AgentExecutionInfo, AgentExecutionState, AgentMonitorSnapshot }
 import orchestration.boundary.AgentMonitorView
 import orchestration.boundary.AgentMonitorView.{ AgentGlobalStats, AgentRunView }
+import orchestration.entity.{ AgentExecutionInfo, AgentExecutionState, AgentMonitorSnapshot }
 
 object AgentMonitorViewSpec extends ZIOSpecDefault:
 

@@ -5,11 +5,11 @@ import java.time.Instant
 import zio.*
 import zio.test.*
 
-import conversation.entity.api.{ ChatConversation, ConversationEntry, SessionContextLink }
+import _root_.agent.entity.AgentRegistry
 import conversation.entity.ChatRepository
+import conversation.entity.api.{ ChatConversation, ConversationEntry, SessionContextLink }
 import llm4zio.agents.*
 import llm4zio.core.{ Message, MessageRole }
-import _root_.agent.entity.AgentRegistry
 import orchestration.control.{ ChatRepositoryMemoryStore, Llm4zioAgentAdapters }
 import shared.errors.PersistenceError
 

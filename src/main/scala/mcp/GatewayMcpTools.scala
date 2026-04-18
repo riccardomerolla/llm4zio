@@ -24,8 +24,7 @@ import plan.entity.*
 import sdlc.control.SdlcDashboardService
 import shared.ids.Ids.*
 import specification.entity.*
-import workspace.entity.WorkspaceRunService
-import workspace.entity.WorkspaceRepository
+import workspace.entity.{WorkspaceRepository, WorkspaceRunService}
 
 /** Gateway tools exposed over MCP.
   *

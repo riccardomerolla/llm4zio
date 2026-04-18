@@ -1,7 +1,6 @@
 package workspace.boundary
 
 import scalatags.Text.all.*
-
 import shared.web.{ Components, Layout }
 
 /** Interactive template picker / wizard for new workspaces.
