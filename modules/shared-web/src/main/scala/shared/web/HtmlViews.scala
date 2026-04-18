@@ -18,7 +18,7 @@ import issues.entity.api.{
   MergeHistoryEntryView,
 }
 import shared.ids.Ids.IssueId
-import taskrun.boundary.{ GraphView, ReportsView }
+import taskrun.boundary.{ GraphView, ReportsView, WorkflowsView }
 import taskrun.entity.{ TaskReportRow, TaskRunRow }
 import workspace.boundary.RunSessionUiMeta
 import workspace.entity.WorkspaceRun
