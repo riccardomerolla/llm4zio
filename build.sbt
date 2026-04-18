@@ -25,6 +25,8 @@ val zioEclipseStoreVersion = "2.2.2"
 val zioSchemaVersion       = "1.8.0"
 val scalaMetaVersion = "4.13.6"
 val bot4sTelegramCoreVersion = "7.0.0"
+val ironVersion            = "2.6.0"
+val zioBlocksSchemaVersion = "0.0.33"
 
 // Common dependencies shared across modules
 val zioCoreDeps = Seq(
@@ -491,11 +493,17 @@ lazy val cli = (project in file("modules/cli"))
 
 // ── Bankmod parallel assembly ─────────────────────────────────────────────────
 
+val bankmodDeps = Seq(
+  "io.github.iltotore"  %% "iron"             % ironVersion,
+  "dev.zio"             %% "zio-blocks-schema" % zioBlocksSchemaVersion,
+) ++ domainTestDeps
+
 lazy val bankmodGraphModel = (project in file("modules/bankmod-graph-model"))
   .settings(foundationSettings)
   .settings(
     name := "bankmod-graph-model",
-    libraryDependencies ++= domainDeps,
+    libraryDependencies ++= bankmodDeps,
+    testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
   )
 
 lazy val bankmodGraphValidate = (project in file("modules/bankmod-graph-validate"))
