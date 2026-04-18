@@ -299,11 +299,11 @@ lazy val knowledgeDomain = (project in file("modules/knowledge-domain"))
   )
 
 lazy val projectDomain = (project in file("modules/project-domain"))
-  .dependsOn(sharedIds, sharedErrors, sharedStoreCore, workspaceDomain)
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore, sharedWebCore, workspaceDomain)
   .settings(foundationSettings)
   .settings(
     name := "project-domain",
-    libraryDependencies ++= domainDeps,
+    libraryDependencies ++= domainBceDeps,
   )
 
 lazy val configDomain = (project in file("modules/config-domain"))

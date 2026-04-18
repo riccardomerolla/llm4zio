@@ -18,13 +18,7 @@ import project.control.ProjectStorageService
 import project.entity.*
 import shared.errors.PersistenceError
 import shared.ids.Ids.ProjectId
-import shared.web.{
-  ProjectAnalysisRow,
-  ProjectDetailPageData,
-  ProjectListItem,
-  ProjectWorkspaceRow,
-  ProjectsView,
-}
+import shared.web.IssuesView
 import workspace.entity.{ RunMode, Workspace, WorkspaceEvent, WorkspaceRepository }
 
 trait ProjectsController:
@@ -251,12 +245,15 @@ object ProjectsController:
         lastRunAt = latestAnalysisAt(statuses),
       )
     }
+    val boardWorkspaces    = assignedWorkspaces.map(ws => ws.id -> ws.name)
+    val boardFragmentHtml  =
+      if boardIssues.isEmpty then None
+      else Some(IssuesView.boardColumnsFragment(boardIssues, boardWorkspaces))
     ProjectDetailPageData(
       project = project,
       activeTab = activeTab,
       assignedWorkspaces = workspaceRows,
-      boardIssues = boardIssues,
-      boardWorkspaces = assignedWorkspaces.map(ws => ws.id -> ws.name),
+      boardFragmentHtml = boardFragmentHtml,
       analysisRows = analysisRows,
       availableAgents = agents.filter(_.health.isEnabled).sortBy(_.displayName.toLowerCase).map(agent =>
         agent.handle.trim match
