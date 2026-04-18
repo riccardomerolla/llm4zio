@@ -30,6 +30,13 @@ object Schemas:
 
   // ── Opaque identifier schemas ─────────────────────────────────────────────
   // Each uses Schema[String].transform(from, to) — no raw wrapping.
+  //
+  // NB: zio-blocks-schema 0.0.33 exposes only a pure `transform(A => B, B => A)` —
+  // there is no `transformOrFail`. On decode we must signal validation failure by
+  // throwing `SchemaError`; the codec layer catches it and returns `Left[SchemaError]`
+  // to the caller. So the error IS encoded in the public return type — the throw is
+  // a library-mandated internal escape hatch, not an exception leaking to business code.
+  // scalafix:off DisableSyntax.throw
 
   given schemaServiceId: Schema[ServiceId] =
     Schema[String].transform(
@@ -168,6 +175,7 @@ object Schemas:
           maxRetries = sla.maxRetries: Int,
         ),
     )
+  // scalafix:on DisableSyntax.throw
 
   given schemaSchemaRef: Schema[SchemaRef] = Schema.derived
   given schemaEdgeRef: Schema[EdgeRef]     = Schema.derived
