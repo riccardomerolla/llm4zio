@@ -8,7 +8,7 @@ import zio.stream.ZStream
 import llm4zio.observability.LlmMetrics
 import orchestration.entity.AgentMonitorService
 import shared.errors.ControlPlaneError
-import shared.web.AgentMonitorView
+import orchestration.boundary.AgentMonitorView
 
 trait AgentMonitorController:
   def routes: Routes[Any, Response]

@@ -6,7 +6,8 @@ import zio.test.*
 
 import llm4zio.observability.MetricsSnapshot
 import orchestration.entity.{ AgentExecutionInfo, AgentExecutionState, AgentMonitorSnapshot }
-import shared.web.AgentMonitorView.{ AgentGlobalStats, AgentRunView }
+import orchestration.boundary.AgentMonitorView
+import orchestration.boundary.AgentMonitorView.{ AgentGlobalStats, AgentRunView }
 
 object AgentMonitorViewSpec extends ZIOSpecDefault:
 

@@ -16,11 +16,12 @@ import taskrun.entity.TaskRunRow
   *
   * Cycle avoidance: the live-section used to call
   * `AgentMonitorView.statsHeaderFragment(AgentGlobalStats.empty)` directly,
-  * but `AgentMonitorView` still lives in `shared.web` and `taskrun-domain`
-  * cannot `dependsOn(sharedWeb)`. Resolution: `page()` now accepts a
-  * pre-rendered `statsHeaderHtml: String` which the caller (`HtmlViews`,
-  * same-package-as-AgentMonitorView) renders once and hands in. The default
-  * empty state is stable HTML so pre-rendering is a no-op cost.
+  * but `AgentMonitorView` lives in `orchestration-domain/boundary/` and
+  * `taskrun-domain` cannot `dependsOn(orchestrationDomain)` (the arrow
+  * goes the other way). Resolution: `page()` accepts a pre-rendered
+  * `statsHeaderHtml: String` which the caller (`HtmlViews` in shared-web,
+  * which reaches both domain modules) renders once and hands in. The
+  * default empty state is stable HTML so pre-rendering is a no-op cost.
   */
 object CommandCenterView:
 

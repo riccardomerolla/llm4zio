@@ -1,4 +1,4 @@
-package shared.web
+package orchestration.boundary
 
 import llm4zio.observability.MetricsSnapshot
 import orchestration.entity.{ AgentExecutionInfo, AgentExecutionState, AgentMonitorSnapshot }
@@ -7,6 +7,12 @@ import scalatags.Text.all.*
 /** Renders the Agent Monitor as a Symphony-style dark terminal table.
   *
   * Column order: ID | STAGE | PID | AGE | TOKENS | SESSION | EVENT
+  *
+  * Moved from `shared.web` to `orchestration.boundary` in phase 5A.7.
+  * All data inputs (`MetricsSnapshot`, `AgentExecutionInfo`,
+  * `AgentExecutionState`, `AgentMonitorSnapshot`) already live in
+  * `orchestration.entity` or `llm4zio.observability`, both modules that
+  * `orchestration-domain` depends on. No cycle risk.
   */
 object AgentMonitorView:
 
