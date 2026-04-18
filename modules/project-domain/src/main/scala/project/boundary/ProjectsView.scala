@@ -39,14 +39,15 @@ final case class ProjectAnalysisRow(
   lastRunAt: Option[Instant],
 )
 
-/** Data the project-detail page needs to render.
-  *
-  * The board tab is supplied as a pre-rendered HTML fragment instead of the raw `AgentIssueView` list: after
-  * ProjectsView moved out of `shared-web` in phase 5A.4, the board tab can no longer call
-  * `shared.web.IssuesView.boardColumnsFragment` directly (that would require `projectDomain dependsOn sharedWeb`, a
-  * cycle since `sharedWeb dependsOn projectDomain`). The controller renders the fragment — passing `None` to show the
-  * empty state — and this view only raw-includes the result.
-  */
+/**
+ * Data the project-detail page needs to render.
+ *
+ * The board tab is supplied as a pre-rendered HTML fragment instead of the raw `AgentIssueView` list: after
+ * ProjectsView moved out of `shared-web` in phase 5A.4, the board tab can no longer call
+ * `shared.web.IssuesView.boardColumnsFragment` directly (that would require `projectDomain dependsOn sharedWeb`, a
+ * cycle since `sharedWeb dependsOn projectDomain`). The controller renders the fragment — passing `None` to show the
+ * empty state — and this view only raw-includes the result.
+ */
 final case class ProjectDetailPageData(
   project: Project,
   activeTab: String,
@@ -443,14 +444,15 @@ object ProjectsView:
         ),
       ),
       data.boardFragmentHtml match
-        case None               =>
+        case None             =>
           div(
             cls := "rounded-xl border border-dashed border-white/10 bg-slate-900/60 p-10 text-center text-slate-400"
           )(
             "No project issues found for the assigned workspaces."
           )
         case Some(fragmentHtml) =>
-          div(cls := "rounded-xl border border-white/10 bg-slate-950/50 p-4")(raw(fragmentHtml)),
+          div(cls := "rounded-xl border border-white/10 bg-slate-950/50 p-4")(raw(fragmentHtml))
+      ,
     )
 
   private def analysisTab(data: ProjectDetailPageData): Frag =
