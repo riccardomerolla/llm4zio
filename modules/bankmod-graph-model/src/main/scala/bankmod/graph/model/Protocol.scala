@@ -15,6 +15,7 @@ object Protocol:
   final case class Grpc(endpoint: UrlLikeR)      extends Protocol
   final case class Event(topic: TopicName)        extends Protocol
   final case class Graphql(endpoint: UrlLikeR)   extends Protocol
+  final case class Soap(endpoint: UrlLikeR)      extends Protocol
 
   // ── Smart constructors ────────────────────────────────────────────────────
 
@@ -29,3 +30,6 @@ object Protocol:
 
   def graphql(endpoint: String): Either[String, Protocol] =
     UrlLike.from(endpoint).map(Graphql.apply)
+
+  def soap(endpoint: String): Either[String, Protocol] =
+    UrlLike.from(endpoint).map(Soap.apply)

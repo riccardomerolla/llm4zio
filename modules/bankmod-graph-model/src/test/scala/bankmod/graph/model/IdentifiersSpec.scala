@@ -18,8 +18,8 @@ object IdentifiersSpec extends ZIOSpecDefault:
       test("accepts valid lowercase-kebab name") {
         assertTrue(ServiceId.from("payments-api").isRight)
       },
-      test("accepts single lowercase letter") {
-        assertTrue(ServiceId.from("a").isLeft) // too short — min is 2 chars (regex {1,40} after first char means at least 2 total)
+      test("rejects single-character names (min 2 chars)") {
+        assertTrue(ServiceId.from("a").isLeft)
       },
       test("accepts minimal valid name") {
         assertTrue(ServiceId.from("ab").isRight)

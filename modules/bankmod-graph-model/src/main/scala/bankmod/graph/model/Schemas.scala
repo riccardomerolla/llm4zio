@@ -139,6 +139,7 @@ object Schemas:
   given schemaProtocolGrpc: Schema[Protocol.Grpc]       = Schema.derived
   given schemaProtocolEvent: Schema[Protocol.Event]     = Schema.derived
   given schemaProtocolGraphql: Schema[Protocol.Graphql] = Schema.derived
+  given schemaProtocolSoap: Schema[Protocol.Soap]       = Schema.derived
   given schemaProtocol: Schema[Protocol]                = Schema.derived
 
   // ── Service ADT schemas ───────────────────────────────────────────────────

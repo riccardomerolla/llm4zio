@@ -29,4 +29,10 @@ object ProtocolSpec extends ZIOSpecDefault:
     test("graphql smart constructor rejects invalid URL") {
       assertTrue(Protocol.graphql("not-valid!!!").isLeft)
     },
+    test("soap smart constructor accepts valid URL") {
+      assertTrue(Protocol.soap("https://legacy.bank.com/accounts").isRight)
+    },
+    test("soap smart constructor rejects invalid URL") {
+      assertTrue(Protocol.soap("not-a-url").isLeft)
+    },
   )
