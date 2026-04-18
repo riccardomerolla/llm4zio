@@ -489,6 +489,61 @@ lazy val cli = (project in file("modules/cli"))
     ),
   )
 
+// ── Bankmod parallel assembly ─────────────────────────────────────────────────
+
+lazy val bankmodGraphModel = (project in file("modules/bankmod-graph-model"))
+  .settings(foundationSettings)
+  .settings(
+    name := "bankmod-graph-model",
+    libraryDependencies ++= domainDeps,
+  )
+
+lazy val bankmodGraphValidate = (project in file("modules/bankmod-graph-validate"))
+  .dependsOn(bankmodGraphModel)
+  .settings(foundationSettings)
+  .settings(
+    name := "bankmod-graph-validate",
+    libraryDependencies ++= domainDeps,
+  )
+
+lazy val bankmodGraphRender = (project in file("modules/bankmod-graph-render"))
+  .dependsOn(bankmodGraphModel)
+  .settings(foundationSettings)
+  .settings(
+    name := "bankmod-graph-render",
+    libraryDependencies ++= domainBceDeps,
+  )
+
+lazy val bankmodMcpTools = (project in file("modules/bankmod-mcp-tools"))
+  .dependsOn(bankmodGraphModel, bankmodGraphValidate, bankmodGraphRender, sharedIds, sharedErrors)
+  .settings(foundationSettings)
+  .settings(
+    name := "bankmod-mcp-tools",
+    libraryDependencies ++= domainBceDeps,
+  )
+
+lazy val bankmodApp = (project in file("modules/bankmod-app"))
+  .dependsOn(bankmodGraphModel, bankmodGraphValidate, bankmodGraphRender, bankmodMcpTools, sharedIds, sharedErrors, sharedStoreCore)
+  .settings(foundationSettings)
+  .settings(
+    name := "bankmod-app",
+    libraryDependencies ++= domainBceDeps,
+    run / fork := true,
+    run / javaOptions ++= Seq(
+      "--enable-native-access=ALL-UNNAMED",
+      "--add-opens", "java.base/java.lang=ALL-UNNAMED",
+      "--add-opens", "java.base/java.util=ALL-UNNAMED",
+      "--add-opens", "java.base/java.nio=ALL-UNNAMED",
+    ),
+  )
+
+lazy val bankmod = (project in file("modules/bankmod"))
+  .aggregate(bankmodGraphModel, bankmodGraphValidate, bankmodGraphRender, bankmodMcpTools, bankmodApp)
+  .settings(
+    name := "bankmod",
+    publish / skip := true,
+  )
+
 lazy val allModules = Seq(
   llm4zio, sharedJson, sharedIds, sharedErrors, sharedStoreCore, sharedServices, sharedWebCore,
   activityDomain, memoryDomain, governanceDomain, agentDomain, decisionDomain, specificationDomain,
@@ -496,6 +551,7 @@ lazy val allModules = Seq(
   conversationDomain, daemonDomain, analysisDomain, workspaceDomain, gatewayDomain,
   orchestrationDomain, evolutionDomain, issuesDomain, demoDomain, sharedWeb,
   sdlcDomain,
+  bankmodGraphModel, bankmodGraphValidate, bankmodGraphRender, bankmodMcpTools, bankmodApp,
 )
 
 lazy val root = (project in file("."))
