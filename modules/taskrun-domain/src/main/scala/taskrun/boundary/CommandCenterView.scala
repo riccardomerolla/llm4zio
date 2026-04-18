@@ -1,10 +1,27 @@
-package shared.web
+package taskrun.boundary
 
 import activity.boundary.ActivityView
 import activity.entity.ActivityEvent
 import scalatags.Text.all.*
+import shared.web.{ Components, JsResources, Layout }
 import taskrun.entity.TaskRunRow
 
+/** Home-page dashboard view.
+  *
+  * Moved from `shared.web` to `taskrun.boundary` in phase 5A.6. The view's
+  * data inputs (`PipelineSummary`, `ActivityEvent`, `TaskRunRow`) are all
+  * taskrun/activity/issues-shaped, and the only caller — `DashboardController`
+  * — already lives in `taskrun.boundary`, so same-package access cleans up
+  * the call sites.
+  *
+  * Cycle avoidance: the live-section used to call
+  * `AgentMonitorView.statsHeaderFragment(AgentGlobalStats.empty)` directly,
+  * but `AgentMonitorView` still lives in `shared.web` and `taskrun-domain`
+  * cannot `dependsOn(sharedWeb)`. Resolution: `page()` now accepts a
+  * pre-rendered `statsHeaderHtml: String` which the caller (`HtmlViews`,
+  * same-package-as-AgentMonitorView) renders once and hands in. The default
+  * empty state is stable HTML so pre-rendering is a no-op cost.
+  */
 object CommandCenterView:
 
   final case class PipelineSummary(
@@ -17,12 +34,12 @@ object CommandCenterView:
   ):
     val total: Int = open + claimed + running + completed + failed
 
-  def page(summary: PipelineSummary, recentEvents: List[ActivityEvent]): String =
+  def page(summary: PipelineSummary, recentEvents: List[ActivityEvent], statsHeaderHtml: String): String =
     Layout.page("Command Center", "/")(
       div(cls := "space-y-6")(
         adeModuleGrid(),
         pipelineStrip(summary),
-        liveSection(),
+        liveSection(statsHeaderHtml),
         activeRunsSection(),
         recentActivitySection(recentEvents),
       ),
@@ -121,7 +138,7 @@ object CommandCenterView:
 
   // ── Live section (left column) ────────────────────────────────────────────
 
-  private def liveSection(): Frag =
+  private def liveSection(statsHeaderHtml: String): Frag =
     div(cls := "rounded-lg border border-white/10 bg-white/5 px-4 py-3 flex items-center justify-between gap-4")(
       span(cls := "text-xs font-medium uppercase tracking-wide text-gray-400 flex-shrink-0")("Live"),
       div(
@@ -134,7 +151,7 @@ object CommandCenterView:
           attr("sse-swap") := "agent-stats",
           cls              := "flex justify-end",
         )(
-          AgentMonitorView.statsHeaderFragment(AgentMonitorView.AgentGlobalStats.empty)
+          raw(statsHeaderHtml)
         )
       ),
     )

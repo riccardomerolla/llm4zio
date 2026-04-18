@@ -270,7 +270,7 @@ lazy val planDomain = (project in file("modules/plan-domain"))
   )
 
 lazy val taskrunDomain = (project in file("modules/taskrun-domain"))
-  .dependsOn(sharedIds, sharedErrors, sharedStoreCore, sharedJson, sharedWebCore, configDomain)
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore, sharedJson, sharedWebCore, configDomain, activityDomain)
   .settings(foundationSettings)
   .settings(
     name := "taskrun-domain",
