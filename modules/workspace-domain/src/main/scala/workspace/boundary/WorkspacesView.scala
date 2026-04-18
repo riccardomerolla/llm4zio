@@ -11,16 +11,20 @@ import workspace.entity.{ RunMode, RunSessionMode, RunStatus, Workspace, Workspa
   *
   * Moved from `shared.web` to `workspace.boundary` in phase 5A.9.
   *
-  * Cycle avoidance: the view previously took `List[AgentIssueView]` (issues-domain) for its issue-search dropdown, but
-  * `issuesDomain dependsOn workspaceDomain` already exists, so `workspace-domain` cannot reverse-dep on
-  * `issues-domain`. Resolution: introduce a local `IssueSearchItem` case class with the three fields the dropdown
-  * actually needs (`id`, `title`, `description`); callers map from `AgentIssueView` to this DTO at their site. This
-  * decouples the view from issues-domain entirely.
+  * Cycle avoidance: the view previously took `List[AgentIssueView]`
+  * (issues-domain) for its issue-search dropdown, but
+  * `issuesDomain dependsOn workspaceDomain` already exists, so
+  * `workspace-domain` cannot reverse-dep on `issues-domain`. Resolution:
+  * introduce a local `IssueSearchItem` case class with the three fields
+  * the dropdown actually needs (`id`, `title`, `description`); callers
+  * map from `AgentIssueView` to this DTO at their site. This decouples
+  * the view from issues-domain entirely.
   */
 object WorkspacesView:
 
-  /** Minimal DTO for the assign-run issue-search dropdown. Decouples this view from
-    * `issues-domain.entity.api.AgentIssueView`; callers map from the richer domain model down to these three fields.
+  /** Minimal DTO for the assign-run issue-search dropdown. Decouples this
+    * view from `issues-domain.entity.api.AgentIssueView`; callers map from
+    * the richer domain model down to these three fields.
     */
   final case class IssueSearchItem(id: String, title: String, description: String)
 
@@ -450,8 +454,8 @@ object WorkspacesView:
 
   /** HTMX fragment: list of selectable issue rows for the assign-run search dropdown.
     *
-    * Callers map their richer domain model (e.g. `issues.entity.api.AgentIssueView`) to `IssueSearchItem` at the call
-    * site — see cycle-avoidance note on this object.
+    * Callers map their richer domain model (e.g. `issues.entity.api.AgentIssueView`)
+    * to `IssueSearchItem` at the call site — see cycle-avoidance note on this object.
     */
   def issueSearchResults(items: List[IssueSearchItem]): String =
     if items.isEmpty then
