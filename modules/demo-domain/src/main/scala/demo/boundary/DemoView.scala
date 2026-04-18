@@ -1,14 +1,22 @@
-package shared.web
+package demo.boundary
 
 import demo.entity.{ DemoConfig, DemoResult, DemoStatus }
 import scalatags.Text.all.*
+import shared.web.SettingsShell
 
-/** Scalatags view fragments for the Demo mode settings tab and HTMX polling endpoints. */
+/**
+ * Scalatags view fragments for the Demo mode settings tab and HTMX polling endpoints.
+ *
+ * Moved from `shared-web` to `demo-domain/boundary` in phase 5A.5. `shared.web.SettingsView.settingsShell` was just a
+ * one-line passthrough to `SettingsShell.page` (defined in `shared-web-core`), so the call site is rewritten to point
+ * at the core helper directly — this avoids the `demo-domain → shared-web` cycle that would otherwise be required
+ * (since `sharedWeb dependsOn demoDomain` already).
+ */
 object DemoView:
 
   def demoTab(settings: Map[String, String], flash: Option[String] = None): String =
     val config = DemoConfig.fromSettings(settings)
-    SettingsView.settingsShell("demo", "Settings — Demo Mode")(
+    SettingsShell.page("demo", "Settings — Demo Mode")(
       flash.map { msg =>
         div(cls := "mb-6 rounded-md bg-green-500/10 border border-green-500/30 p-4")(
           p(cls := "text-sm text-green-400")(msg)

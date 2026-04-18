@@ -7,6 +7,7 @@ import agent.boundary.AgentsView
 import config.entity.{ AgentInfo, WorkflowDefinition }
 import conversation.entity.api.{ ChatConversation, ConversationEntry, ConversationSessionMeta }
 import decision.entity.Decision
+import demo.boundary.DemoView
 import gateway.boundary.ChannelCardData
 import gateway.entity.ChatSession
 import issues.entity.IssueWorkReport

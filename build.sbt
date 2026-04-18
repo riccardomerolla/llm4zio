@@ -424,14 +424,11 @@ lazy val issuesDomain = (project in file("modules/issues-domain"))
   )
 
 lazy val demoDomain = (project in file("modules/demo-domain"))
-  .dependsOn(sharedIds, boardDomain)
+  .dependsOn(sharedIds, sharedWebCore, boardDomain)
   .settings(foundationSettings)
   .settings(
     name := "demo-domain",
-    libraryDependencies ++= Seq(
-      "dev.zio" %% "zio" % zioVersion,
-      zioJsonDep,
-    ),
+    libraryDependencies ++= domainBceDeps,
   )
 
 // ── LLM library ──────────────────────────────────────────────────────────────

@@ -9,7 +9,6 @@ import zio.http.*
 import _root_.config.entity.ConfigRepository
 import demo.control.DemoOrchestrator
 import demo.entity.{ DemoConfig, DemoError }
-import shared.web.DemoView
 
 trait DemoController:
   def routes: Routes[Any, Response]
