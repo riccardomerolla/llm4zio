@@ -1,6 +1,6 @@
 package bankmod.graph.model
 
-import Refinements.*
+import bankmod.graph.model.Refinements.*
 
 /** Communication protocol carried on an edge in the service graph.
   *
@@ -11,11 +11,11 @@ sealed trait Protocol
 
 object Protocol:
 
-  final case class Rest(baseUrl: UrlLikeR)       extends Protocol
-  final case class Grpc(endpoint: UrlLikeR)      extends Protocol
-  final case class Event(topic: TopicName)        extends Protocol
-  final case class Graphql(endpoint: UrlLikeR)   extends Protocol
-  final case class Soap(endpoint: UrlLikeR)      extends Protocol
+  final case class Rest(baseUrl: UrlLikeR)     extends Protocol
+  final case class Grpc(endpoint: UrlLikeR)    extends Protocol
+  final case class Event(topic: TopicName)     extends Protocol
+  final case class Graphql(endpoint: UrlLikeR) extends Protocol
+  final case class Soap(endpoint: UrlLikeR)    extends Protocol
 
   // ── Smart constructors ────────────────────────────────────────────────────
 

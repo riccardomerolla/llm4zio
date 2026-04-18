@@ -1,6 +1,6 @@
 package bankmod.graph.model
 
-import Refinements.*
+import bankmod.graph.model.Refinements.*
 
 /** A named port on a service — the attachment point for inbound connections. */
 final case class Port(name: PortName)

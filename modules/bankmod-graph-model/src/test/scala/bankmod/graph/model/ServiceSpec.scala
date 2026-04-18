@@ -44,7 +44,7 @@ object ServiceSpec extends ZIOSpecDefault:
     },
     test("construction with outbound edge to unknown target succeeds") {
       val proto = Protocol.rest("https://accounts.svc/v1").toOption.get
-      val edge = Edge(
+      val edge  = Edge(
         fromPort = outPort,
         toService = sid2,
         toPort = PortName.from("http-in").toOption.get,
@@ -52,19 +52,19 @@ object ServiceSpec extends ZIOSpecDefault:
         consistency = Consistency.Eventual,
         ordering = Ordering.Unordered,
       )
-      val svc = mkService(sid1, outbound = Set(edge))
+      val svc   = mkService(sid1, outbound = Set(edge))
       assertTrue(svc.outbound.size == 1)
     },
     test("Graph construction with multiple services succeeds") {
-      val svc1 = mkService(sid1)
-      val svc2 = mkService(sid2)
-      val svc3 = mkService(sid3)
+      val svc1  = mkService(sid1)
+      val svc2  = mkService(sid2)
+      val svc3  = mkService(sid3)
       val graph = Graph(services = Map(sid1 -> svc1, sid2 -> svc2, sid3 -> svc3))
       assertTrue(graph.services.size == 3)
     },
     test("Graph allows cross-service edges without validation at construction time") {
       val proto = Protocol.grpc("grpc://fraud.svc:50051").toOption.get
-      val edge = Edge(
+      val edge  = Edge(
         fromPort = outPort,
         toService = sid3,
         toPort = PortName.from("grpc-in").toOption.get,
@@ -73,7 +73,7 @@ object ServiceSpec extends ZIOSpecDefault:
         ordering = Ordering.TotalOrder,
       )
       // sid3 is NOT in the graph — construction should still succeed
-      val svc1 = mkService(sid1, outbound = Set(edge))
+      val svc1  = mkService(sid1, outbound = Set(edge))
       val graph = Graph(services = Map(sid1 -> svc1))
       assertTrue(graph.services.contains(sid1))
     },

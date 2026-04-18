@@ -35,7 +35,7 @@ object CodecsSpec extends ZIOSpecDefault:
 
   private val fixture: Graph =
     val proto = Protocol.rest("https://accounts.svc/v1").toOption.get
-    val edge = Edge(
+    val edge  = Edge(
       fromPort = outPort1,
       toService = sid2,
       toPort = inPort1,
@@ -43,9 +43,9 @@ object CodecsSpec extends ZIOSpecDefault:
       consistency = Consistency.Strong,
       ordering = Ordering.TotalOrder,
     )
-    val svc1 = mkService(sid1, inbound = Set(Port(inPort1)), outbound = Set(edge))
-    val svc2 = mkService(sid2, inbound = Set(Port(inPort1)))
-    val svc3 = mkService(sid3)
+    val svc1  = mkService(sid1, inbound = Set(Port(inPort1)), outbound = Set(edge))
+    val svc2  = mkService(sid2, inbound = Set(Port(inPort1)))
+    val svc3  = mkService(sid3)
     Graph(services = Map(sid1 -> svc1, sid2 -> svc2, sid3 -> svc3))
 
   def spec: Spec[TestEnvironment, Any] = suite("Codecs")(
@@ -55,12 +55,12 @@ object CodecsSpec extends ZIOSpecDefault:
         val json   = codec.encodeToString(fixture)
         val result = codec.decode(json)
         assertTrue(result == Right(fixture))
-      },
+      }
     ),
     suite("JSON Schema emission")(
       test("toJsonSchema returns a document with 'properties' containing 'services'") {
-        val jsonSchema = Schemas.graphSchema.toJsonSchema
-        val json       = jsonSchema.toJson
+        val jsonSchema  = Schemas.graphSchema.toJsonSchema
+        val json        = jsonSchema.toJson
         val hasServices = json.get("properties").get("services").isSuccess
         assertTrue(hasServices)
       },
@@ -71,13 +71,13 @@ object CodecsSpec extends ZIOSpecDefault:
       // where a field that is listed in `properties` without a corresponding `nullable` / `null` type
       // union is implicitly required by the consumer.
       test("toJsonSchema returns a document with 'services' accessible as a non-null object property") {
-        val jsonSchema = Schemas.graphSchema.toJsonSchema
-        val json       = jsonSchema.toJson
+        val jsonSchema   = Schemas.graphSchema.toJsonSchema
+        val json         = jsonSchema.toJson
         val typeIsObject = json.get("type").one.map {
           case zio.blocks.schema.json.Json.String(v) => v == "object"
           case _                                     => false
         } == Right(true)
-        val hasServices = json.get("properties").get("services").isSuccess
+        val hasServices  = json.get("properties").get("services").isSuccess
         assertTrue(typeIsObject && hasServices)
       },
     ),
