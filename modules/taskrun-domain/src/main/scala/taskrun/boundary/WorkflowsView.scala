@@ -7,13 +7,14 @@ import scalatags.Text.all.*
 import shared.web.Layout
 import taskrun.entity.TaskStep
 
-/** Workflow editor, listing, and detail views.
-  *
-  * Moved from `shared-web` to `taskrun-domain/boundary` in phase 5A.3. The view's only non-foundation dependencies are
-  * `config.entity.{AgentInfo, WorkflowDefinition, WorkflowStepAgent}` and `taskrun.entity.TaskStep`. Because
-  * `taskrun-domain` already `dependsOn(configDomain)`, this is the natural home — placing it in `config-domain` instead
-  * would require `configDomain dependsOn taskrunDomain`, creating a cycle with the existing reverse dependency.
-  */
+/**
+ * Workflow editor, listing, and detail views.
+ *
+ * Moved from `shared-web` to `taskrun-domain/boundary` in phase 5A.3. The view's only non-foundation dependencies are
+ * `config.entity.{AgentInfo, WorkflowDefinition, WorkflowStepAgent}` and `taskrun.entity.TaskStep`. Because
+ * `taskrun-domain` already `dependsOn(configDomain)`, this is the natural home — placing it in `config-domain`
+ * instead would require `configDomain dependsOn taskrunDomain`, creating a cycle with the existing reverse dependency.
+ */
 object WorkflowsView:
 
   final private case class AgentOption(name: String, display: String) derives JsonEncoder
