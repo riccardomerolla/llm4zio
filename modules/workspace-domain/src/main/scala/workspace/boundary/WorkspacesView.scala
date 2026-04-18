@@ -1,13 +1,32 @@
-package shared.web
+package workspace.boundary
 
 import java.time.Instant
 
 import analysis.entity.{ AnalysisType, WorkspaceAnalysisState, WorkspaceAnalysisStatus }
-import issues.entity.api.AgentIssueView
 import scalatags.Text.all.*
+import shared.web.{ Components, JsResources, Layout }
 import workspace.entity.{ RunMode, RunSessionMode, RunStatus, Workspace, WorkspaceRun }
 
+/** Workspace management views.
+  *
+  * Moved from `shared.web` to `workspace.boundary` in phase 5A.9.
+  *
+  * Cycle avoidance: the view previously took `List[AgentIssueView]`
+  * (issues-domain) for its issue-search dropdown, but
+  * `issuesDomain dependsOn workspaceDomain` already exists, so
+  * `workspace-domain` cannot reverse-dep on `issues-domain`. Resolution:
+  * introduce a local `IssueSearchItem` case class with the three fields
+  * the dropdown actually needs (`id`, `title`, `description`); callers
+  * map from `AgentIssueView` to this DTO at their site. This decouples
+  * the view from issues-domain entirely.
+  */
 object WorkspacesView:
+
+  /** Minimal DTO for the assign-run issue-search dropdown. Decouples this
+    * view from `issues-domain.entity.api.AgentIssueView`; callers map from
+    * the richer domain model down to these three fields.
+    */
+  final case class IssueSearchItem(id: String, title: String, description: String)
 
   val supportedCliTools: List[String] = List("gemini", "claude", "opencode", "codex", "copilot")
 
@@ -433,16 +452,20 @@ object WorkspacesView:
       case RunStatus.Cancelled                           => ("Cancelled", "border-orange-400/30 bg-orange-500/20 text-orange-200")
     span(cls := s"rounded-full border px-2 py-0.5 text-xs font-semibold $colour")(label)
 
-  /** HTMX fragment: list of selectable issue rows for the assign-run search dropdown. */
-  def issueSearchResults(issues: List[AgentIssueView]): String =
-    if issues.isEmpty then
+  /** HTMX fragment: list of selectable issue rows for the assign-run search dropdown.
+    *
+    * Callers map their richer domain model (e.g. `issues.entity.api.AgentIssueView`)
+    * to `IssueSearchItem` at the call site — see cycle-avoidance note on this object.
+    */
+  def issueSearchResults(items: List[IssueSearchItem]): String =
+    if items.isEmpty then
       div(cls := "px-3 py-2 text-sm text-slate-400")("No open issues found").render
     else
       div(
-        issues.map { issue =>
-          val issueId    = issue.id.getOrElse("")
-          val issueTitle = issue.title
-          val issueDesc  = issue.description.take(80) + (if issue.description.length > 80 then "…" else "")
+        items.map { item =>
+          val issueId    = item.id
+          val issueTitle = item.title
+          val issueDesc  = item.description.take(80) + (if item.description.length > 80 then "…" else "")
           // On click: populate the hidden fields and update the label, then close the dropdown
           val onclick    =
             s"""(function(el){

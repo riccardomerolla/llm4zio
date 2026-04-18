@@ -4,6 +4,7 @@ import java.time.Instant
 
 import zio.test.*
 
+import workspace.boundary.WorkspacesView
 import workspace.entity.{ RunStatus, WorkspaceRun }
 
 object WorkspacesViewSpec extends ZIOSpecDefault:

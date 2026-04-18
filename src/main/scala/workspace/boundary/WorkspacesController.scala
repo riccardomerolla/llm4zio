@@ -13,7 +13,6 @@ import analysis.control.WorkspaceAnalysisScheduler
 import project.entity.ProjectRepository
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ IssueId, ProjectId }
-import shared.web.WorkspacesView
 import workspace.control.GitService
 import workspace.entity.*
 
@@ -645,21 +644,18 @@ object WorkspacesController:
                     i.description.toLowerCase.contains(term) ||
                     i.id.value.contains(term)
                   )
-              val views    = filtered.map(i =>
-                issues.entity.api.AgentIssueView(
-                  id = Some(i.id.value),
+              // Map domain Issue -> view DTO. Previously built AgentIssueView here
+              // and passed it through; 5A.9 moved the view to workspace-domain and
+              // broke its dep on issues-domain, so the view now accepts a minimal
+              // IssueSearchItem instead and we map directly.
+              val items    = filtered.map(i =>
+                WorkspacesView.IssueSearchItem(
+                  id = i.id.value,
                   title = i.title,
                   description = i.description,
-                  issueType = i.issueType,
-                  priority = issues.entity.api.IssuePriority.values
-                    .find(_.toString.equalsIgnoreCase(i.priority))
-                    .getOrElse(issues.entity.api.IssuePriority.Medium),
-                  status = issues.entity.api.IssueStatus.Todo,
-                  createdAt = java.time.Instant.EPOCH,
-                  updatedAt = java.time.Instant.EPOCH,
                 )
               )
-              html(WorkspacesView.issueSearchResults(views))
+              html(WorkspacesView.issueSearchResults(items))
             }
             .catchAll(_ => ZIO.succeed(html(WorkspacesView.issueSearchResults(List.empty))))
         },
