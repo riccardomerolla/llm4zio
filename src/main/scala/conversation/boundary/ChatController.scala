@@ -20,6 +20,7 @@ import issues.entity.{ IssueReport, IssueWorkReport }
 import llm4zio.core.{ ConversationThread, LlmError, LlmService, Streaming, ToolConversationManager }
 import llm4zio.providers.{ GeminiCliExecutor, HttpClient }
 import llm4zio.tools.ToolRegistry
+import orchestration.boundary.PlanPreviewComponents
 import orchestration.control.*
 import orchestration.entity.{ PlannerPlanPreview, PlannerPreviewState }
 import plan.entity.PlanTaskDraft

@@ -7,6 +7,7 @@ import scala.annotation.tailrec
 
 import conversation.entity.api.{ ChatConversation, ConversationEntry, ConversationSessionMeta, MessageType, SenderType }
 import gateway.entity.ChatSession
+import orchestration.boundary.PlanPreviewComponents
 import scalatags.Text.all.*
 import workspace.boundary.RunSessionUiMeta
 import workspace.entity.{ RunSessionMode, RunStatus }

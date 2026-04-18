@@ -1,9 +1,21 @@
-package shared.web
+package orchestration.boundary
 
 import orchestration.entity.PlannerPreviewState
 import plan.entity.PlanTaskDraft
 import scalatags.Text.all.*
 
+/** Renders the planner-preview panels (plan summary, plan graph, Mermaid
+  * diagram init script).
+  *
+  * Moved from `shared.web` to `orchestration.boundary` in phase 5A.8.
+  * The view's primary data source is `orchestration.entity.PlannerPreviewState`
+  * (produced by `PlannerAgentService`). `plan.entity.PlanTaskDraft` is
+  * reachable because `orchestrationDomain` already `dependsOn(planDomain)`.
+  * Target was briefly considered to be `plan-domain/boundary/`, but
+  * `orchestrationDomain → planDomain` already exists, so reverse-depping
+  * would cycle. Orchestration is the natural home since the view renders
+  * orchestration-produced state.
+  */
 object PlanPreviewComponents:
 
   def planPanelsContent(state: PlannerPreviewState, basePath: String, fragmentPath: String): Frag =
