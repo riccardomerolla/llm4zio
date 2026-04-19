@@ -520,7 +520,8 @@ lazy val bankmodGraphRender = (project in file("modules/bankmod-graph-render"))
   .settings(foundationSettings)
   .settings(
     name := "bankmod-graph-render",
-    libraryDependencies ++= domainBceDeps,
+    libraryDependencies ++= bankmodDeps,
+    testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
   )
 
 lazy val bankmodMcpTools = (project in file("modules/bankmod-mcp-tools"))

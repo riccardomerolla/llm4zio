@@ -1,0 +1,24 @@
+graph LR
+    subgraph tier1
+        accounts-api[accounts-api]
+        ledger-core[ledger-core]
+        payments-engine[payments-engine]
+    end
+    subgraph tier2
+        customer-profile[customer-profile]
+        fraud-scorer[fraud-scorer]
+        statement-service[statement-service]
+    end
+    subgraph tier3
+        audit-log[audit-log]
+        notification-bus[notification-bus]
+    end
+
+    accounts-api -->|gRPC| customer-profile
+    accounts-api -->|REST| ledger-core
+    customer-profile -->|Event:profile.updated| audit-log
+    fraud-scorer -->|Event:fraud.scored| audit-log
+    ledger-core -->|Event:ledger.posted| statement-service
+    payments-engine -->|gRPC| fraud-scorer
+    payments-engine -->|REST| ledger-core
+    statement-service -->|Event:statements.ready| notification-bus
