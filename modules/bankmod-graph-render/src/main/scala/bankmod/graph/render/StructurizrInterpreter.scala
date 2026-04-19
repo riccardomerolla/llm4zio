@@ -65,8 +65,8 @@ object StructurizrInterpreter:
 
   /** Converts a kebab-case ServiceId string to camelCase. */
   private def toCamelCase(s: String): String =
-    val parts = s.split('-')
-    parts.head + parts.tail.map(p => p.head.toUpper.toString + p.tail).mkString
+    val parts = s.split('-').filter(_.nonEmpty)
+    parts.headOption.getOrElse("") + parts.tail.map(p => p.head.toUpper.toString + p.tail).mkString
 
   private def protocolLabel(p: Protocol): String = p match
     case Protocol.Rest(_)      => "REST"

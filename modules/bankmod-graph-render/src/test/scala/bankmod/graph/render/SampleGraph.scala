@@ -65,7 +65,7 @@ object SampleGraph:
   private val ledgerCoreId       = sid("ledger-core")
   private val paymentsEngineId   = sid("payments-engine")
   private val customerProfileId  = sid("customer-profile")
-  private val fraudScorerIid     = sid("fraud-scorer")
+  private val fraudScorerId      = sid("fraud-scorer")
   private val statementServiceId = sid("statement-service")
   private val auditLogId         = sid("audit-log")
   private val notificationBusId  = sid("notification-bus")
@@ -130,7 +130,7 @@ object SampleGraph:
   )
 
   private val fraudScorer = Service(
-    id = fraudScorerIid,
+    id = fraudScorerId,
     tier = Criticality.Tier2,
     owner = Ownership.Platform,
     inbound = Set(Port(port("grpc-in"))),
@@ -185,7 +185,7 @@ object SampleGraph:
       ledgerCoreId       -> ledgerCore,
       paymentsEngineId   -> paymentsEngine,
       customerProfileId  -> customerProfile,
-      fraudScorerIid     -> fraudScorer,
+      fraudScorerId      -> fraudScorer,
       statementServiceId -> statementService,
       auditLogId         -> auditLog,
       notificationBusId  -> notificationBus,

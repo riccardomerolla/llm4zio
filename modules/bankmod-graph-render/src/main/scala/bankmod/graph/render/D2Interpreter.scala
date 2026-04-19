@@ -65,16 +65,10 @@ object D2Interpreter:
           sb.append(s"""$from -> $to: "Event:${topic.value}" {\n""")
           sb.append("    style.stroke-dash: 5\n")
           sb.append("}\n")
-        case other                 =>
-          val label = protocolLabel(other)
-          sb.append(s"$from -> $to: $label\n")
+        case Protocol.Rest(_)      => sb.append(s"$from -> $to: REST\n")
+        case Protocol.Grpc(_)      => sb.append(s"$from -> $to: gRPC\n")
+        case Protocol.Graphql(_)   => sb.append(s"$from -> $to: GraphQL\n")
+        case Protocol.Soap(_)      => sb.append(s"$from -> $to: SOAP\n")
     }
 
     sb.toString.stripTrailing
-
-  private def protocolLabel(p: Protocol): String = p match
-    case Protocol.Rest(_)      => "REST"
-    case Protocol.Grpc(_)      => "gRPC"
-    case Protocol.Event(topic) => s"Event:${topic.value}"
-    case Protocol.Graphql(_)   => "GraphQL"
-    case Protocol.Soap(_)      => "SOAP"

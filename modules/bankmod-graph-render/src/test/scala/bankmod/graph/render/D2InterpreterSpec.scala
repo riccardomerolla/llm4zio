@@ -1,6 +1,7 @@
 package bankmod.graph.render
 
 import zio.test.*
+import zio.test.Assertion.*
 
 object D2InterpreterSpec extends ZIOSpecDefault:
 
@@ -21,6 +22,6 @@ object D2InterpreterSpec extends ZIOSpecDefault:
     },
     test("render(sample) matches golden file") {
       val expected = scala.io.Source.fromResource("golden/sample.d2").mkString
-      assertTrue(rendered.strip == expected.strip)
+      assert(rendered.strip)(equalTo(expected.strip))
     },
   )
