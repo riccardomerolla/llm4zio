@@ -512,6 +512,7 @@ lazy val bankmodGraphValidate = (project in file("modules/bankmod-graph-validate
   .settings(
     name := "bankmod-graph-validate",
     libraryDependencies ++= domainDeps,
+    testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
   )
 
 lazy val bankmodGraphRender = (project in file("modules/bankmod-graph-render"))
