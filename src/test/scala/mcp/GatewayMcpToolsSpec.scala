@@ -32,7 +32,7 @@ import sdlc.entity.*
 import shared.errors.PersistenceError
 import shared.ids.Ids.*
 import specification.entity.*
-import workspace.entity.{AssignRunRequest, WorkspaceError, WorkspaceRepository, WorkspaceRun, WorkspaceRunService}
+import workspace.entity.{ AssignRunRequest, WorkspaceError, WorkspaceRepository, WorkspaceRun, WorkspaceRunService }
 
 object GatewayMcpToolsSpec extends ZIOSpecDefault:
 

@@ -156,6 +156,5 @@ object Checks:
     * Any edge in `packedEdges` that is NOT also in `guardedEdges` is a violation. Both sets are supplied via
     * [[ValidationConfig]] because the graph ADT carries no type-annotation fields.
     */
-  def packedDecimalGuard(g: Graph, packedEdges: Set[EdgeRef], guardedEdges: Set[EdgeRef])
-    : List[MissingPackedDecimalGuard] =
+  def packedDecimalGuard(packedEdges: Set[EdgeRef], guardedEdges: Set[EdgeRef]): List[MissingPackedDecimalGuard] =
     (packedEdges -- guardedEdges).toList.map(MissingPackedDecimalGuard.apply)

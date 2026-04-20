@@ -393,8 +393,8 @@ final case class PlannerAgentServiceLive(
     preview: PlannerPlanPreview,
     specificationId: Option[SpecificationId],
     preserveConfirmation: Boolean,
-    isGenerating: Boolean = false,
-    lastError: Option[String] = None,
+    isGenerating: Boolean,
+    lastError: Option[String],
   ): UIO[PlannerPreviewState] =
     previewState.modify { current =>
       val existing     = current.get(conversationId)

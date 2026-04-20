@@ -15,7 +15,7 @@ import gateway.control.{ TelegramClient, WorkflowNotifier, WorkflowNotifierLive 
 import gateway.entity.*
 import orchestration.entity.TaskExecutor
 import shared.errors.PersistenceError
-import taskrun.entity.{TaskArtifactRow, TaskReportRow, TaskRepository, TaskRunRow}
+import taskrun.entity.{ TaskArtifactRow, TaskReportRow, TaskRepository, TaskRunRow }
 
 object TelegramE2ESpec extends ZIOSpecDefault:
 

@@ -1,4 +1,4 @@
-ThisBuild / scalaVersion := "3.5.2"
+ThisBuild / scalaVersion := "3.8.3"
 ThisBuild / organization := "io.github.riccardomerolla"
 ThisBuild / organizationName := "Riccardo Merolla"
 ThisBuild / organizationHomepage := Some(url("https://github.com/riccardomerolla"))
@@ -9,7 +9,7 @@ addCommandAlias("fmt", " ; scalafixAll ; scalafmtAll")
 addCommandAlias("check", "; scalafixAll --check; scalafmtCheckAll")
 
 // Centralized version management
-val zioVersion = "2.1.24"
+val zioVersion = "2.1.25"
 val zioProcessVersion = "0.8.0"
 val zioJsonVersion = "0.9.0"
 val zioHttpVersion = "3.10.1"
@@ -106,6 +106,10 @@ inThisBuild(List(
     "-Wunused:all",
     "-Xmax-inlines",
     "128",
+    // Scala 3.8 deprecated -Xfatal-warnings in favor of -Werror; sbt-tpolecat still
+    // emits the old flag, whose deprecation warning itself fails under -Werror.
+    // Silence that specific message until tpolecat catches up.
+    "-Wconf:msg=-Xfatal-warnings is a deprecated alias:silent",
   ),
   semanticdbEnabled                := true,
 ))

@@ -226,7 +226,7 @@ final private[control] case class WorkspaceRunLifecycleSupport(
       _    <- chatRepo.addMessage(entry).mapWorkspacePersistence("append_run_conversation_message")
     yield ()
 
-  private def publishRunLifecycle(runId: String, status: RunStatus, detail: Option[String] = None): UIO[Unit] =
+  private def publishRunLifecycle(runId: String, status: RunStatus, detail: Option[String]): UIO[Unit] =
     Clock.instant.flatMap { now =>
       val eventType = status match
         case RunStatus.Running(_) => ActivityEventType.RunStarted

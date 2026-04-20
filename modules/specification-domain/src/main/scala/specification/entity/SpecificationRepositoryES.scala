@@ -63,7 +63,7 @@ final case class SpecificationRepositoryES(
           }
         }
       )
-      .map(_.flatten.sortBy(_.updatedAt)(Ordering[Instant].reverse))
+      .map(_.flatten.sortBy(_.updatedAt)(using Ordering[Instant].reverse))
 
   override def diff(id: SpecificationId, fromVersion: Int, toVersion: Int): IO[PersistenceError, SpecificationDiff] =
     get(id).flatMap(specification =>

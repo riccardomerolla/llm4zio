@@ -8,11 +8,9 @@ import scalatags.Text.all.*
   *
   * Column order: ID | STAGE | PID | AGE | TOKENS | SESSION | EVENT
   *
-  * Moved from `shared.web` to `orchestration.boundary` in phase 5A.7.
-  * All data inputs (`MetricsSnapshot`, `AgentExecutionInfo`,
-  * `AgentExecutionState`, `AgentMonitorSnapshot`) already live in
-  * `orchestration.entity` or `llm4zio.observability`, both modules that
-  * `orchestration-domain` depends on. No cycle risk.
+  * Moved from `shared.web` to `orchestration.boundary` in phase 5A.7. All data inputs (`MetricsSnapshot`,
+  * `AgentExecutionInfo`, `AgentExecutionState`, `AgentMonitorSnapshot`) already live in `orchestration.entity` or
+  * `llm4zio.observability`, both modules that `orchestration-domain` depends on. No cycle risk.
   */
 object AgentMonitorView:
 

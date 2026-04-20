@@ -6,7 +6,6 @@ import java.nio.file.{ FileSystems, Files, Path, StandardOpenOption }
 import scala.jdk.CollectionConverters.*
 
 import zio.*
-import zio.json.*
 import zio.json.ast.Json
 
 object BuiltInTools:

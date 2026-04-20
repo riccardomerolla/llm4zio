@@ -66,7 +66,7 @@ final case class MemoryRepositoryES(
           .filter(entry => filter.sessionId.forall(_ == entry.sessionId))
           .filter(entry => filter.kind.forall(_ == entry.kind))
           .filter(entry => filter.tags.forall(tag => entry.tags.contains(tag)))
-          .sortBy(_.createdAt)(Ordering[java.time.Instant].reverse)
+          .sortBy(_.createdAt)(using Ordering[java.time.Instant].reverse)
           .slice(math.max(0, page) * math.max(1, pageSize), math.max(0, page + 1) * math.max(1, pageSize))
       )
 
@@ -84,7 +84,7 @@ final case class MemoryRepositoryES(
           .filter(entry => filter.sessionId.forall(_ == entry.sessionId))
           .filter(entry => filter.kind.forall(_ == entry.kind))
           .filter(entry => filter.tags.forall(tag => entry.tags.contains(tag)))
-          .sortBy(_.createdAt)(Ordering[java.time.Instant].reverse)
+          .sortBy(_.createdAt)(using Ordering[java.time.Instant].reverse)
           .slice(math.max(0, page) * math.max(1, pageSize), math.max(0, page + 1) * math.max(1, pageSize))
       )
 

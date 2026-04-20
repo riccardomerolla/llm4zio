@@ -81,7 +81,7 @@ final case class TaskRunRepositoryES(
               case TaskRunState.Completed(_, completedAt, _) => completedAt
               case TaskRunState.Failed(_, failedAt, _)       => failedAt
               case TaskRunState.Cancelled(cancelledAt, _)    => cancelledAt
-          )(Ordering[java.time.Instant].reverse)
+          )(using Ordering[java.time.Instant].reverse)
           .slice(filter.offset.max(0), filter.offset.max(0) + filter.limit.max(0))
       }
 

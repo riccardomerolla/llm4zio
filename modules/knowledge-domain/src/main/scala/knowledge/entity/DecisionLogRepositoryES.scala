@@ -94,7 +94,7 @@ final case class DecisionLogRepositoryES(
           }
         }
       )
-      .map(_.flatten.sortBy(_.decisionDate)(Ordering[java.time.Instant].reverse))
+      .map(_.flatten.sortBy(_.decisionDate)(using Ordering[java.time.Instant].reverse))
 
   private def matches(filter: DecisionLogFilter, value: DecisionLog): Boolean =
     val needle           = filter.query.map(_.trim.toLowerCase).filter(_.nonEmpty)

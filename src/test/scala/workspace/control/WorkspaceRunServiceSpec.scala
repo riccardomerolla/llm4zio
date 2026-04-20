@@ -2,6 +2,8 @@ package workspace.control
 
 import java.time.Instant
 
+import scala.annotation.unused
+
 import zio.*
 import zio.test.*
 
@@ -414,7 +416,7 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
           }
       }
 
-    def available(agentName: String): UIO[Int] =
+    def available(@unused agentName: String): UIO[Int] =
       availableRef.get
 
     def release(handle: SlotHandle): UIO[Unit] =

@@ -3,6 +3,8 @@ package workspace.boundary
 import java.nio.file.{ Files, Paths }
 import java.time.{ Instant, LocalDate, ZoneOffset }
 
+import scala.annotation.unused
+
 import zio.*
 import zio.http.*
 import zio.json.*
@@ -57,7 +59,7 @@ object WorkspacesController:
   def make(
     repo: WorkspaceRepository,
     runSvc: WorkspaceRunService,
-    agentRegistry: AgentRegistry,
+    @unused agentRegistry: AgentRegistry,
     issueRepo: issues.entity.IssueRepository,
     gitService: GitService,
     analysisScheduler: WorkspaceAnalysisScheduler,
@@ -224,7 +226,7 @@ object WorkspacesController:
         },
 
         // Runs dashboard page (across all workspaces)
-        Method.GET / "runs" -> handler { (req: Request) =>
+        Method.GET / "runs" -> handler { (_: Request) =>
           ZIO.succeed(
             Response(
               status = Status.MovedPermanently,
@@ -407,7 +409,7 @@ object WorkspacesController:
         },
 
         // Delete
-        Method.DELETE / "api" / "workspaces" / string("id") -> handler { (id: String, req: Request) =>
+        Method.DELETE / "api" / "workspaces" / string("id") -> handler { (id: String, _: Request) =>
           repo.delete(id)
             .mapError(persistErr)
             .as {
@@ -468,7 +470,7 @@ object WorkspacesController:
 
         // Run status (JSON)
         Method.GET / "api" / "workspaces" / string("wsId") / "runs" / string("runId") ->
-          handler { (wsId: String, runId: String, _: Request) =>
+          handler { (_: String, runId: String, _: Request) =>
             repo.getRun(runId)
               .mapError(persistErr)
               .map {
@@ -480,7 +482,7 @@ object WorkspacesController:
 
         // Run row poll fragment (HTML) — used by HTMX to refresh a single row
         Method.GET / "api" / "workspaces" / string("wsId") / "runs" / string("runId") / "row" ->
-          handler { (wsId: String, runId: String, _: Request) =>
+          handler { (_: String, runId: String, _: Request) =>
             repo.getRun(runId)
               .mapError(persistErr)
               .map {
@@ -492,7 +494,7 @@ object WorkspacesController:
 
         // Cancel run
         Method.DELETE / "api" / "workspaces" / string("wsId") / "runs" / string("runId") ->
-          handler { (wsId: String, runId: String, _: Request) =>
+          handler { (_: String, runId: String, _: Request) =>
             runSvc.cancelRun(runId)
               .as(Response(status = Status.NoContent))
               .catchAll {
@@ -1100,15 +1102,17 @@ object WorkspacesController:
   private def sortRuns(runs: List[WorkspaceRun], sortBy: String): List[WorkspaceRun] =
     sortBy match
       case "last_activity" =>
-        runs.sortBy(_.updatedAt)(Ordering[Instant].reverse)
+        runs.sortBy(_.updatedAt)(using Ordering[Instant].reverse)
       case "duration"      =>
         runs.sortBy { run =>
           java.time.Duration.between(run.createdAt, run.updatedAt).getSeconds
-        }(Ordering[Long].reverse)
+        }(using Ordering[Long].reverse)
       case _               =>
         val active = runs.filter(run => run.status == RunStatus.Pending || run.status.isInstanceOf[RunStatus.Running])
         val rest   = runs.filterNot(run => run.status == RunStatus.Pending || run.status.isInstanceOf[RunStatus.Running])
-        active.sortBy(_.createdAt)(Ordering[Instant].reverse) ++ rest.sortBy(_.createdAt)(Ordering[Instant].reverse)
+        active.sortBy(_.createdAt)(using Ordering[Instant].reverse) ++ rest.sortBy(
+          _.createdAt
+        )(using Ordering[Instant].reverse)
 
 case class WorkspaceCreateRequest(
   name: String,

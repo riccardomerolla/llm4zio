@@ -60,7 +60,10 @@ final case class TaskRepositoryLive(
 
   override def listRuns(offset: Int, limit: Int): IO[PersistenceError, List[TaskRunRow]] =
     fetchAllDataByPrefix[StoredTaskRunRow]("run:", "listRuns")
-      .map(_.flatMap(fromStoreRunRow).sortBy(_.startedAt)(Ordering[Instant].reverse).slice(offset, offset + limit))
+      .map(_.flatMap(fromStoreRunRow).sortBy(_.startedAt)(using Ordering[Instant].reverse).slice(
+        offset,
+        offset + limit,
+      ))
 
   override def deleteRun(id: Long): IO[PersistenceError, Unit] =
     for

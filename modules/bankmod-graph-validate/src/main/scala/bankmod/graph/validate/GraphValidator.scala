@@ -50,7 +50,7 @@ object GraphValidator:
         Checks.structural(g) ++
         Checks.piiBoundary(g, cfg.piiServices, cfg.allowedPiiSinks) ++
         Checks.strongConsistencyOnFinancialTxns(g, cfg.financialEdges) ++
-        Checks.packedDecimalGuard(g, cfg.packedEdges, cfg.guardedEdges)
+        Checks.packedDecimalGuard(cfg.packedEdges, cfg.guardedEdges)
 
     NonEmptyChunk.fromIterableOption(errors) match
       case Some(nec) => Left(nec)

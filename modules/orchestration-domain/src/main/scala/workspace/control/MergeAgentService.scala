@@ -196,9 +196,9 @@ final case class MergeAgentServiceLive(
       .mapError(err => MergeAgentError.PersistenceFailure("list_runs_by_issue", err.toString))
       .flatMap { runs =>
         val preferred =
-          runs.sortBy(_.updatedAt.toEpochMilli)(Ordering.Long.reverse)
+          runs.sortBy(_.updatedAt.toEpochMilli)(using Ordering.Long.reverse)
             .find(_.status == RunStatus.Completed)
-            .orElse(runs.sortBy(_.updatedAt.toEpochMilli)(Ordering.Long.reverse).headOption)
+            .orElse(runs.sortBy(_.updatedAt.toEpochMilli)(using Ordering.Long.reverse).headOption)
         ZIO.fromOption(preferred).orElseFail(MergeAgentError.RunNotFound(issue.id))
       }
 

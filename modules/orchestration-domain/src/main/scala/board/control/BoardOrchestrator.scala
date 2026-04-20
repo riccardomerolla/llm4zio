@@ -10,7 +10,7 @@ import governance.entity.{ GovernanceGate, GovernanceLifecycleAction, Governance
 import project.control.ProjectStorageService
 import shared.ids.Ids.BoardIssueId
 import workspace.control.GitService
-import workspace.entity.{AssignRunRequest, GitError, WorkspaceRepository, WorkspaceRunService}
+import workspace.entity.{ AssignRunRequest, GitError, WorkspaceRepository, WorkspaceRunService }
 
 /** Central board orchestrator for issue lifecycle management.
   *
@@ -395,18 +395,17 @@ final case class BoardOrchestratorLive(
     yield ()
 
   private def completeFailure(workspacePath: String, issueId: BoardIssueId, details: String): IO[BoardError, Unit] =
+    val reason = Option(details).map(_.trim).filter(_.nonEmpty).getOrElse("Run failed")
     for
-      now   <- Clock.instant
-      reason = Option(details).map(_.trim).filter(_.nonEmpty).getOrElse("Run failed")
-      _     <- boardRepository.updateIssue(
-                 workspacePath,
-                 issueId,
-                 _.copy(
-                   transientState = TransientState.None,
-                   failureReason = Some(reason),
-                   completedAt = None,
-                 ),
-               )
+      _ <- boardRepository.updateIssue(
+             workspacePath,
+             issueId,
+             _.copy(
+               transientState = TransientState.None,
+               failureReason = Some(reason),
+               completedAt = None,
+             ),
+           )
     yield ()
 
   private def cleanupLatestRun(issueId: BoardIssueId): IO[BoardError, Unit] =
@@ -418,7 +417,7 @@ final case class BoardOrchestratorLive(
                   .listRunsByIssueRef(s"#${issueId.value}")
                   .mapError(err => BoardError.ParseError(s"list runs failed: $err"))
       all     = (direct ++ hash).groupBy(_.id).values.map(_.head).toList
-      latest  = all.sortBy(_.updatedAt.toEpochMilli)(Ordering.Long.reverse).headOption
+      latest  = all.sortBy(_.updatedAt.toEpochMilli)(using Ordering.Long.reverse).headOption
       _      <- ZIO.when(latest.isDefined)(workspaceRunService.cleanupAfterSuccessfulMerge(latest.get.id))
     yield ()
 
@@ -429,7 +428,7 @@ final case class BoardOrchestratorLive(
       .mapError(err => BoardError.ParseError(s"list runs failed: $err"))
       .map(
         _.filter(run => issueRefMatches(run.issueRef, issueId) && run.status == workspace.entity.RunStatus.Pending)
-          .sortBy(_.updatedAt.toEpochMilli)(Ordering.Long.reverse)
+          .sortBy(_.updatedAt.toEpochMilli)(using Ordering.Long.reverse)
           .headOption
       )
 

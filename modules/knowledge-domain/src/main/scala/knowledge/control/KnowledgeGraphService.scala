@@ -138,7 +138,7 @@ object KnowledgeGraphService:
 
       (explicitScores.keySet ++ semanticScores.keySet).toList
         .flatMap(id => byId.get(id).map(_ -> (explicitScores.getOrElse(id, 0.0) + semanticScores.getOrElse(id, 0.0))))
-        .sortBy(_._2)(Ordering[Double].reverse)
+        .sortBy(_._2)(using Ordering[Double].reverse)
         .map {
           case (decision, score) =>
             KnowledgeDecisionMatch(

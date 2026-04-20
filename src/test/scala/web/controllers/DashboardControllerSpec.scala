@@ -12,7 +12,7 @@ import issues.entity.*
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ AgentId, IssueId }
 import taskrun.boundary.DashboardControllerLive
-import taskrun.entity.{RunStatus, TaskArtifactRow, TaskReportRow, TaskRepository, TaskRunRow}
+import taskrun.entity.{ RunStatus, TaskArtifactRow, TaskReportRow, TaskRepository, TaskRunRow }
 
 object DashboardControllerSpec extends ZIOSpecDefault:
   private val sampleRun = TaskRunRow(

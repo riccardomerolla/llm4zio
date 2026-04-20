@@ -2,7 +2,6 @@ package app.control
 
 import zio.*
 import zio.test.*
-import zio.test.TestAspect.*
 
 import _root_.config.entity.{ MigrationConfig, ProviderConfig }
 import llm4zio.core.LlmProvider

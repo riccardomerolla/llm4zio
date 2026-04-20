@@ -125,7 +125,7 @@ object WorkflowOrchestratorSpec extends ZIOSpecDefault:
                         "run-1",
                         fiberRef,
                         fiber,
-                        (runId, exit) => ZIO.unit,
+                        (_, _) => ZIO.unit,
                       )
           initial  <- fiberRef.get
           _        <- promise.succeed("completed")
@@ -224,8 +224,8 @@ object WorkflowOrchestratorSpec extends ZIOSpecDefault:
                          onProgress = _ => ZIO.unit,
                          stateRef = stateRef,
                          errorsRef = errorsRef,
-                         updateState = (s, p, t) => s,
-                         markCompleted = (s, p, t) => s,
+                         updateState = (s, _, _) => s,
+                         markCompleted = (s, _, _) => s,
                          saveState = _ => ZIO.unit,
                          createCheckpoint = (_, _) => ZIO.unit,
                        )(ZIO.succeed("value"))
@@ -249,8 +249,8 @@ object WorkflowOrchestratorSpec extends ZIOSpecDefault:
                          onProgress = _ => ZIO.unit,
                          stateRef = stateRef,
                          errorsRef = errorsRef,
-                         updateState = (s, p, t) => s.copy(current = p),
-                         markCompleted = (s, p, t) => s.copy(completed = true),
+                         updateState = (s, p, _) => s.copy(current = p),
+                         markCompleted = (s, _, _) => s.copy(completed = true),
                          saveState = _ => ZIO.unit,
                          createCheckpoint = (_, _) => ZIO.unit,
                        )(ZIO.succeed("computed"))
@@ -276,8 +276,8 @@ object WorkflowOrchestratorSpec extends ZIOSpecDefault:
                          onProgress = _ => ZIO.unit,
                          stateRef = stateRef,
                          errorsRef = errorsRef,
-                         updateState = (s, p, t) => s.copy(current = p),
-                         markCompleted = (s, p, t) => s,
+                         updateState = (s, p, _) => s.copy(current = p),
+                         markCompleted = (s, _, _) => s,
                          saveState = _ => ZIO.unit,
                          createCheckpoint = (_, _) => ZIO.unit,
                        )(ZIO.fail("test error"))

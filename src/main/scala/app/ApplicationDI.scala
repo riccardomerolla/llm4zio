@@ -88,7 +88,7 @@ import taskrun.boundary.{
   ReportsController as TaskRunReportsController,
   TasksController as TaskRunTasksController,
 }
-import taskrun.entity.{TaskRepository, TaskRunEventStoreES, TaskRunRepositoryES}
+import taskrun.entity.{ TaskRepository, TaskRunEventStoreES, TaskRunRepositoryES }
 import workspace.boundary.WorkspacesController
 import workspace.control.*
 import workspace.entity.WorkspaceRepository

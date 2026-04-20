@@ -3,7 +3,6 @@ package mcp
 import zio.*
 import zio.http.*
 import zio.json.*
-import zio.json.ast.Json
 import zio.test.*
 
 import llm4zio.mcp.jsonrpc.{ JsonRpcRequest, RequestId }
@@ -16,7 +15,6 @@ object McpControllerSpec extends ZIOSpecDefault:
       test("returns 401 when API key is required but not provided") {
         for
           transport <- SseTransport.make(apiKey = Some("secret"))
-          registry   = transport.sessions
           controller = McpController(transport)
           request    = Request.post(URL.decode("/mcp?sessionId=s1").toOption.get, Body.fromString("{}"))
           response  <- controller.routes.runZIO(request)

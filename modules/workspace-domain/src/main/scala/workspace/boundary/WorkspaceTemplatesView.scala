@@ -482,7 +482,7 @@ object WorkspaceTemplatesView:
     if selected then s"$base border-indigo-500/35 bg-indigo-500/[0.05] shadow-[0_0_0_1px_rgba(99,102,241,0.14)]"
     else s"$base hover:border-white/20 hover:bg-white/[0.05]"
 
-  private def templatePanel(template: TemplateInfo, projectId: Option[String] = None): Frag =
+  private def templatePanel(template: TemplateInfo, projectId: Option[String]): Frag =
     div(
       id                          := s"workspace-template-panel-${template.id}",
       attr("data-template-panel") := template.id,

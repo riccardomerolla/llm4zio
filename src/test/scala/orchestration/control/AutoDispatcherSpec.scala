@@ -47,7 +47,7 @@ object AutoDispatcherSpec extends ZIOSpecDefault:
   private def agent(
     name: String,
     capabilities: List[String] = Nil,
-    maxConcurrentRuns: Int = 1,
+    maxConcurrentRuns: Int,
   ): Agent =
     Agent(
       id = AgentId(name),

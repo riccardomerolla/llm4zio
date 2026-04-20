@@ -230,17 +230,17 @@ object ChecksSpec extends ZIOSpecDefault:
     suite("packedDecimalGuard")(
       test("packed-decimal edge without guard yields MissingPackedDecimalGuard") {
         val ref    = EdgeRef(from = idA, to = idB, port = portIn)
-        val errors = Checks.packedDecimalGuard(Graph(Map.empty), packedEdges = Set(ref), guardedEdges = Set.empty)
+        val errors = Checks.packedDecimalGuard(packedEdges = Set(ref), guardedEdges = Set.empty)
         assertTrue(errors == List(MissingPackedDecimalGuard(ref)))
       },
       test("packed-decimal edge with guard yields no error") {
         val ref    = EdgeRef(from = idA, to = idB, port = portIn)
-        val errors = Checks.packedDecimalGuard(Graph(Map.empty), packedEdges = Set(ref), guardedEdges = Set(ref))
+        val errors = Checks.packedDecimalGuard(packedEdges = Set(ref), guardedEdges = Set(ref))
         assertTrue(errors.isEmpty)
       },
       test("guarded edge not in packed set yields no error") {
         val ref    = EdgeRef(from = idA, to = idB, port = portIn)
-        val errors = Checks.packedDecimalGuard(Graph(Map.empty), packedEdges = Set.empty, guardedEdges = Set(ref))
+        val errors = Checks.packedDecimalGuard(packedEdges = Set.empty, guardedEdges = Set(ref))
         assertTrue(errors.isEmpty)
       },
     ),

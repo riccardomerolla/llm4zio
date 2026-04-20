@@ -31,7 +31,7 @@ final private[boundary] case class ChatSessionSupport(
       sessions      <- ZIO.foreach(links)(buildChatSession(_, convById))
     yield sessions
       .filterNot(_.state.equalsIgnoreCase("closed"))
-      .sortBy(_.lastActivity)(Ordering[Instant].reverse)
+      .sortBy(_.lastActivity)(using Ordering[Instant].reverse)
 
   def getChatSession(sessionId: String): IO[PersistenceError, ChatSession] =
     listChatSessions.flatMap { sessions =>

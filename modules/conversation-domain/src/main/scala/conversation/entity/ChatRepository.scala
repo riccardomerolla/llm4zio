@@ -2,6 +2,8 @@ package conversation.entity
 
 import java.time.Instant
 
+import scala.annotation.unused
+
 import zio.*
 import zio.json.*
 
@@ -25,23 +27,23 @@ trait ChatRepository:
 
   // Channel session context storage (gateway integration)
   def upsertSessionContext(
-    channelName: String,
-    sessionKey: String,
-    contextJson: String,
-    updatedAt: Instant,
+    @unused channelName: String,
+    @unused sessionKey: String,
+    @unused contextJson: String,
+    @unused updatedAt: Instant,
   ): IO[PersistenceError, Unit] =
     ZIO.fail(PersistenceError.QueryFailed("upsertSessionContext", "Not implemented"))
 
   def getSessionContext(
-    channelName: String,
-    sessionKey: String,
+    @unused channelName: String,
+    @unused sessionKey: String,
   ): IO[PersistenceError, Option[String]] =
     ZIO.fail(PersistenceError.QueryFailed("getSessionContext", "Not implemented"))
 
-  def getSessionContextByConversation(conversationId: Long): IO[PersistenceError, Option[SessionContextLink]] =
+  def getSessionContextByConversation(@unused conversationId: Long): IO[PersistenceError, Option[SessionContextLink]] =
     ZIO.fail(PersistenceError.QueryFailed("getSessionContextByConversation", "Not implemented"))
 
-  def getSessionContextByTaskRunId(taskRunId: Long): IO[PersistenceError, Option[SessionContextLink]] =
+  def getSessionContextByTaskRunId(@unused taskRunId: Long): IO[PersistenceError, Option[SessionContextLink]] =
     ZIO.fail(PersistenceError.QueryFailed("getSessionContextByTaskRunId", "Not implemented"))
 
   def listSessionContexts: IO[PersistenceError, List[SessionContextLink]] =
@@ -110,8 +112,8 @@ trait ChatRepository:
     }
 
   def deleteSessionContext(
-    channelName: String,
-    sessionKey: String,
+    @unused channelName: String,
+    @unused sessionKey: String,
   ): IO[PersistenceError, Unit] =
     ZIO.fail(PersistenceError.QueryFailed("deleteSessionContext", "Not implemented"))
 

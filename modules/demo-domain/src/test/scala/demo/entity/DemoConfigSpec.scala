@@ -2,7 +2,6 @@ package demo.entity
 
 import zio.*
 import zio.test.*
-import zio.test.Assertion.*
 
 object DemoConfigSpec extends ZIOSpecDefault:
 

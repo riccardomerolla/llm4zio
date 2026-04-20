@@ -8,7 +8,7 @@ import _root_.config.entity.{ WorkflowContext, WorkflowDefinition }
 import agent.entity.AgentRegistry
 import orchestration.entity.*
 import shared.errors.PersistenceError
-import taskrun.entity.{RunStatus, TaskRepository}
+import taskrun.entity.{ RunStatus, TaskRepository }
 
 object TaskExecutorLive:
 

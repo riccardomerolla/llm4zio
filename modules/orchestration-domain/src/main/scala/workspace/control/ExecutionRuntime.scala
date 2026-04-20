@@ -1,5 +1,7 @@
 package workspace.control
 
+import scala.annotation.unused
+
 import zio.*
 
 import agent.entity.{ AgentPermissions, TrustLevel }
@@ -7,7 +9,7 @@ import workspace.entity.{ RunMode, WorkspaceError }
 
 trait ExecutionRuntime:
   def name: String
-  def preflight(context: ExecutionRuntime.Context): IO[WorkspaceError, Unit]                           = ZIO.unit
+  def preflight(@unused context: ExecutionRuntime.Context): IO[WorkspaceError, Unit]                                   = ZIO.unit
   def provision(context: ExecutionRuntime.Context): IO[WorkspaceError, ExecutionRuntime.Provisioned]
   def execute(
     context: ExecutionRuntime.Context,
@@ -15,10 +17,11 @@ trait ExecutionRuntime:
     onLine: String => Task[Unit],
   ): IO[WorkspaceError, ExecutionRuntime.ExecutionResult]
   def collectArtifacts(
-    context: ExecutionRuntime.Context,
-    provisioned: ExecutionRuntime.Provisioned,
+    @unused context: ExecutionRuntime.Context,
+    @unused provisioned: ExecutionRuntime.Provisioned,
   ): IO[WorkspaceError, List[ExecutionRuntime.Artifact]] = ZIO.succeed(Nil)
-  def cleanup(context: ExecutionRuntime.Context, provisioned: ExecutionRuntime.Provisioned): UIO[Unit] = ZIO.unit
+  def cleanup(@unused context: ExecutionRuntime.Context, @unused provisioned: ExecutionRuntime.Provisioned): UIO[Unit] =
+    ZIO.unit
 
 object ExecutionRuntime:
   final case class Resources(

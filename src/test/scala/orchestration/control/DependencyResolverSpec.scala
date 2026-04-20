@@ -6,7 +6,6 @@ import zio.*
 import zio.test.*
 
 import issues.entity.{ AgentIssue, IssueRepository, IssueState }
-import shared.errors.PersistenceError
 import shared.ids.Ids.{ AgentId, ConversationId, IssueId, TaskRunId }
 import shared.testfixtures.*
 

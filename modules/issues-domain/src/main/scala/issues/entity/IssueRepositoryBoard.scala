@@ -1,7 +1,5 @@
 package issues.entity
 
-import java.time.Instant
-
 import zio.*
 
 import board.entity.{ IssueEstimate as BoardIssueEstimate, IssuePriority as BoardIssuePriority, * }

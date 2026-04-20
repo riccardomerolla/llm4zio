@@ -2,7 +2,6 @@ package app.control
 
 import zio.*
 import zio.test.*
-import zio.test.Assertion.*
 
 object TracingSpec extends ZIOSpecDefault:
 

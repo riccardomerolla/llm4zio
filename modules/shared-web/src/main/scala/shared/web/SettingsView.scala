@@ -760,7 +760,7 @@ object SettingsView:
       ),
     )
 
-  private def aiProviderSection(s: Map[String, String], errors: Map[String, String] = Map.empty): Frag =
+  private def aiProviderSection(s: Map[String, String], errors: Map[String, String]): Frag =
     tag("section")(cls := sectionCls)(
       h2(cls := "text-lg font-semibold text-white mb-4")("AI Provider"),
       div(cls := "space-y-4")(
@@ -901,7 +901,7 @@ object SettingsView:
       ),
     )
 
-  private def gatewaySection(s: Map[String, String], errors: Map[String, String] = Map.empty): Frag =
+  private def gatewaySection(s: Map[String, String], errors: Map[String, String]): Frag =
     tag("section")(cls := sectionCls)(
       h2(cls := "text-lg font-semibold text-white mb-4")("Gateway"),
       div(cls := "space-y-4")(
@@ -925,7 +925,7 @@ object SettingsView:
       ),
     )
 
-  private def telegramSection(s: Map[String, String], errors: Map[String, String] = Map.empty): Frag =
+  private def telegramSection(s: Map[String, String], errors: Map[String, String]): Frag =
     tag("section")(cls := sectionCls)(
       h2(cls := "text-lg font-semibold text-white mb-4")("Telegram"),
       div(cls := "space-y-4")(
@@ -1004,7 +1004,7 @@ object SettingsView:
       ),
     )
 
-  private def memorySection(s: Map[String, String], errors: Map[String, String] = Map.empty): Frag =
+  private def memorySection(s: Map[String, String], errors: Map[String, String]): Frag =
     tag("section")(cls := sectionCls)(
       h2(cls := "text-lg font-semibold text-white mb-4")("Memory"),
       div(cls := "space-y-4")(
@@ -1055,8 +1055,8 @@ object SettingsView:
     fieldName: String,
     labelText: String,
     s: Map[String, String],
-    placeholder: String = "",
-    error: Option[String] = None,
+    placeholder: String,
+    error: Option[String],
   ): Frag =
     div(
       label(cls := labelCls, `for` := fieldName)(labelText),
@@ -1076,11 +1076,11 @@ object SettingsView:
     labelText: String,
     s: Map[String, String],
     default: String,
-    min: String = "",
-    max: String = "",
+    min: String,
+    max: String,
     step: String = "1",
     placeholder: String = "",
-    error: Option[String] = None,
+    error: Option[String],
   ): Frag =
     div(
       label(cls := labelCls, `for` := fieldName)(labelText),
@@ -1103,7 +1103,7 @@ object SettingsView:
     labelText: String,
     s: Map[String, String],
     default: Boolean,
-    error: Option[String] = None,
+    error: Option[String],
   ): Frag =
     val checked = s.get(fieldName).map(_ == "true").getOrElse(default)
     div(
@@ -1138,8 +1138,8 @@ object SettingsView:
     fieldName: String,
     labelText: String,
     s: Map[String, String],
-    placeholder: String = "",
-    error: Option[String] = None,
+    placeholder: String,
+    error: Option[String],
   ): Frag =
     div(
       label(cls := labelCls, `for` := fieldName)(labelText),

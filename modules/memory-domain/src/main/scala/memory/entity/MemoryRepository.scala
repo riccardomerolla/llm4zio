@@ -1,12 +1,18 @@
 package memory.entity
 
+import scala.annotation.unused
+
 import zio.{ IO, ZIO }
 
 trait MemoryRepository:
   def save(entry: MemoryEntry): IO[Throwable, Unit]
   def searchRelevant(scope: Scope, query: String, limit: Int, filter: MemoryFilter): IO[Throwable, List[ScoredMemory]]
   def listByScope(scope: Scope, filter: MemoryFilter, page: Int, pageSize: Int): IO[Throwable, List[MemoryEntry]]
-  def listAll(filter: MemoryFilter, page: Int, pageSize: Int): IO[Throwable, List[MemoryEntry]] =
+  def listAll(
+    @unused filter: MemoryFilter,
+    @unused page: Int,
+    @unused pageSize: Int,
+  ): IO[Throwable, List[MemoryEntry]] =
     ZIO.fail(new UnsupportedOperationException("listAll is not supported by this MemoryRepository implementation"))
   def deleteById(scope: Scope, id: MemoryId): IO[Throwable, Unit]
   def deleteBySession(sessionId: SessionId): IO[Throwable, Unit]

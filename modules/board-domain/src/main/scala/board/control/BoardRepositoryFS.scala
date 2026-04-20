@@ -67,7 +67,6 @@ final case class BoardRepositoryFS(
       withMutationRollback(workspacePath) {
         for
           workspace <- ensureWorkspaceDirectory(workspacePath)
-          boardRoot  = workspace.resolve(boardRootFolder)
           _         <- ensureBoardRoot(workspace)
           exists    <- issueExists(workspacePath, issue.frontmatter.id)
           _         <- ZIO.fail(BoardError.IssueAlreadyExists(issue.frontmatter.id.value)).when(exists)

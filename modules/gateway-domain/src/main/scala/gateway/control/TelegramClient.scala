@@ -1,5 +1,6 @@
 package gateway.control
 
+import scala.annotation.unused
 import scala.concurrent.{ ExecutionContext, Future }
 
 import zio.*
@@ -80,7 +81,7 @@ final case class Bot4sRequestHandler(value: RequestHandler[Future])
 
 final case class TelegramClientLive(
   requestHandler: RequestHandler[Future]
-)(using ExecutionContext
+)(using @unused ec: ExecutionContext
 ) extends TelegramClient:
   private given Decoder[Either[Boolean, BotMessage]] =
     Decoder.instance { cursor =>

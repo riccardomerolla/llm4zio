@@ -7,7 +7,7 @@ import decision.control.DecisionInbox
 import decision.entity.DecisionResolutionKind
 import project.control.ProjectStorageService
 import shared.ids.Ids.{ BoardIssueId, IssueId }
-import workspace.entity.{RunStatus, Workspace, WorkspaceRepository, WorkspaceRun, WorkspaceRunService}
+import workspace.entity.{ RunStatus, Workspace, WorkspaceRepository, WorkspaceRun, WorkspaceRunService }
 
 trait IssueApprovalService:
   def quickApprove(workspaceId: String, issueId: BoardIssueId, reviewerNotes: String): IO[BoardError, Unit]
@@ -124,7 +124,7 @@ final case class IssueApprovalServiceLive(
                       .values
                       .map(_.head)
                       .toList
-                      .sortBy(_.updatedAt.toEpochMilli)(Ordering.Long.reverse)
+                      .sortBy(_.updatedAt.toEpochMilli)(using Ordering.Long.reverse)
                       .headOption
                   )
                   .orElseFail(BoardError.ParseError(s"latest run not found for issue '${issueId.value}'"))
@@ -152,7 +152,7 @@ final case class IssueApprovalServiceLive(
       .values
       .map(_.head)
       .toList
-      .sortBy(_.updatedAt.toEpochMilli)(Ordering.Long.reverse)
+      .sortBy(_.updatedAt.toEpochMilli)(using Ordering.Long.reverse)
 
   private def normalizedReviewerNotes(reviewerNotes: String): String =
     Option(reviewerNotes).map(_.trim).filter(_.nonEmpty).getOrElse("Approved via quick approve")

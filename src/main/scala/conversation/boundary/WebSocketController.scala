@@ -469,7 +469,7 @@ final case class WebSocketControllerLive(
     for
       workspaces <- workspaceRepository.list.mapError(_.toString)
       runs       <- ZIO.foreach(workspaces)(ws => workspaceRepository.listRuns(ws.id).mapError(_.toString)).map(_.flatten)
-      sorted      = runs.sortBy(_.updatedAt)(Ordering[java.time.Instant].reverse).take(100)
+      sorted      = runs.sortBy(_.updatedAt)(using Ordering[java.time.Instant].reverse).take(100)
     yield sorted.toJson
 
   private def workspaceError(err: workspace.entity.WorkspaceError): String =

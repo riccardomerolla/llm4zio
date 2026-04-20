@@ -36,7 +36,7 @@ final case class ChatRepositoryLive(
   override def listConversations(offset: Int, limit: Int): IO[PersistenceError, List[ChatConversation]] =
     for
       rows  <- fetchAllByPrefix[ConversationRow]("conv:", "listConversations")
-      page   = rows.sortBy(_.createdAt)(Ordering[Instant].reverse).slice(offset, offset + limit)
+      page   = rows.sortBy(_.createdAt)(using Ordering[Instant].reverse).slice(offset, offset + limit)
       convs <- ZIO.foreach(page)(r =>
                  ZIO.foreach(r.id.toLongOption)(id =>
                    getMessages(id).map(msgs => fromConversationRow(r).copy(messages = msgs))
@@ -52,12 +52,12 @@ final case class ChatRepositoryLive(
                  .flatMap(l => decodeSessionContext(l.contextJson).flatMap(_.conversationId))
                  .distinct
       convs <- ZIO.foreach(ids)(getConversation).map(_.flatten)
-    yield convs.sortBy(_.updatedAt)(Ordering[Instant].reverse)
+    yield convs.sortBy(_.updatedAt)(using Ordering[Instant].reverse)
 
   override def listConversationsByRun(runId: Long): IO[PersistenceError, List[ChatConversation]] =
     for
       rows  <- fetchAllByPrefix[ConversationRow]("conv:", "listConversationsByRun")
-      page   = rows.filter(_.runId.contains(runId.toString)).sortBy(_.createdAt)(Ordering[Instant].reverse)
+      page   = rows.filter(_.runId.contains(runId.toString)).sortBy(_.createdAt)(using Ordering[Instant].reverse)
       convs <- ZIO.foreach(page)(r =>
                  ZIO.foreach(r.id.toLongOption)(id =>
                    getMessages(id).map(msgs => fromConversationRow(r).copy(messages = msgs))

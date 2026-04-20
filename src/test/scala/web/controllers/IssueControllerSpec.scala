@@ -2,6 +2,8 @@ package web.controllers
 
 import java.time.{ Duration, Instant }
 
+import scala.annotation.unused
+
 import zio.*
 import zio.http.*
 import zio.json.*
@@ -28,7 +30,7 @@ import project.control.ProjectStorageService
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ AgentId, AnalysisDocId, BoardIssueId, IssueId }
 import shared.testfixtures.*
-import taskrun.entity.{TaskArtifactRow, TaskReportRow, TaskRepository, TaskRunRow}
+import taskrun.entity.{ TaskArtifactRow, TaskReportRow, TaskRepository, TaskRunRow }
 import workspace.entity.*
 
 object IssueControllerSpec extends ZIOSpecDefault:
@@ -340,9 +342,9 @@ object IssueControllerSpec extends ZIOSpecDefault:
       ZIO.succeed(ProviderConfig())
 
   private object StubLlmService extends LlmService:
-    def execute(prompt: String): IO[LlmError, LlmResponse]                                              = ZIO.dieMessage("unused")
+    def execute(@unused prompt: String): IO[LlmError, LlmResponse]                                      = ZIO.dieMessage("unused")
     override def executeStream(prompt: String): ZStream[Any, LlmError, LlmChunk]                        = ZStream.dieMessage("unused")
-    def executeWithHistory(messages: List[Message]): IO[LlmError, LlmResponse]                          = ZIO.dieMessage("unused")
+    def executeWithHistory(@unused messages: List[Message]): IO[LlmError, LlmResponse]                  = ZIO.dieMessage("unused")
     override def executeStreamWithHistory(messages: List[Message]): ZStream[Any, LlmError, LlmChunk]    =
       ZStream.dieMessage("unused")
     override def executeWithTools(prompt: String, tools: List[AnyTool]): IO[LlmError, ToolCallResponse] =

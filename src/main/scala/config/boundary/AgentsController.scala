@@ -13,7 +13,7 @@ import _root_.agent.boundary.AgentsView
 import _root_.config.entity.{ AgentChannelBinding, AgentInfo, ConfigRepository, CustomAgentRow, SettingRow }
 import agent.control.{ AgentMatching, BuiltInAgentSynchronizer }
 import agent.entity.api.*
-import agent.entity.{Agent as RegistryAgent, *}
+import agent.entity.{ Agent as RegistryAgent, * }
 import llm4zio.core.{ LlmError, LlmService }
 import orchestration.entity.AgentMonitorService
 import prompts.PromptLoader
@@ -804,7 +804,7 @@ final case class AgentsControllerLive(
       allRuns <- loadAllWorkspaceRuns
       runs     = allRuns
                    .filter(_.agentName.equalsIgnoreCase(agent.name))
-                   .sortBy(_.updatedAt)(Ordering[Instant].reverse)
+                   .sortBy(_.updatedAt)(using Ordering[Instant].reverse)
     yield runs
 
   private def buildAgentCards(
@@ -813,8 +813,8 @@ final case class AgentsControllerLive(
     bindings: List[AgentChannelBinding],
     runs: List[WorkspaceRun],
     now: Instant,
-    connectorOverrides: Map[String, Map[String, String]] = Map.empty,
-    globalSettings: Map[String, String] = Map.empty,
+    connectorOverrides: Map[String, Map[String, String]],
+    globalSettings: Map[String, String],
   ): List[AgentsView.AgentCard] =
     val infoByNameLower = (registryAgents.map(toAgentInfo) ++ AgentRegistry.allAgents(customAgents))
       .groupBy(_.name.trim.toLowerCase)
@@ -885,7 +885,7 @@ final case class AgentsControllerLive(
           startedAt = run.createdAt,
         )
       )
-      .sortBy(_.startedAt)(Ordering[Instant].reverse)
+      .sortBy(_.startedAt)(using Ordering[Instant].reverse)
     AgentMetricsView(
       summary = AgentMetricsSummary(
         totalRuns = runs.size,

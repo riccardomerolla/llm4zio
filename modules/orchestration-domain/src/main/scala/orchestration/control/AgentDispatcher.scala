@@ -11,7 +11,7 @@ import llm4zio.core.*
 import llm4zio.providers.{ GeminiCliExecutor, HttpClient }
 import memory.entity.{ Scope, * }
 import shared.errors.PersistenceError
-import taskrun.entity.{TaskArtifactRow, TaskReportRow, TaskRepository}
+import taskrun.entity.{ TaskArtifactRow, TaskReportRow, TaskRepository }
 
 final case class StepDispatchResult(
   agentName: String,
@@ -118,7 +118,6 @@ final case class AgentDispatcherLive(
       startedAtNanos  <- Clock.nanoTime
       attemptedName   <- ZIO.succeed(agentName)
       result          <- (for
-                           now            <- Clock.instant
                            agentInfo      <- registry.findByName(attemptedName).flatMap {
                                                case Some(value) => ZIO.succeed(value)
                                                case None        =>

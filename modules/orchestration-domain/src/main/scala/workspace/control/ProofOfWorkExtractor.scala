@@ -2,6 +2,8 @@ package workspace.control
 
 import java.time.Instant
 
+import scala.annotation.unused
+
 import zio.*
 
 import issues.entity.{ IssueCiStatus, IssueWorkReport }
@@ -113,7 +115,7 @@ object ProofOfWorkExtractor:
     */
   def fromLines(
     runId: TaskRunId,
-    issueId: IssueId,
+    @unused issueId: IssueId,
     outputLines: List[String],
     bus: WorkReportEventBus,
     at: Instant,

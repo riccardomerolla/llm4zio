@@ -298,7 +298,7 @@ final case class DecisionInboxLive(
           limit = Int.MaxValue,
         )
       )
-      .map(_.sortBy(_.createdAt)(Ordering[java.time.Instant].reverse).headOption)
+      .map(_.sortBy(_.createdAt)(using Ordering[java.time.Instant].reverse).headOption)
 
   private def appendResolutionEvent(
     decision: Decision,

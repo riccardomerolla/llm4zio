@@ -771,8 +771,8 @@ final case class WorkspaceRunServiceLive(
     run: WorkspaceRun,
     runtimeResolution: ExecutionRuntime.Resolution,
     cliTool: String,
-    repoPath: String = "",
-    profile: Option[_root_.agent.entity.Agent] = None,
+    repoPath: String,
+    profile: Option[_root_.agent.entity.Agent],
     permissions: AgentPermissions,
   ): IO[WorkspaceError, Unit] =
     val context = executionContext(

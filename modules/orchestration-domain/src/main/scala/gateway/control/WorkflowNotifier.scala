@@ -8,7 +8,7 @@ import agent.entity.AgentRegistry
 import gateway.entity.*
 import orchestration.entity.TaskExecutor
 import shared.errors.PersistenceError
-import taskrun.entity.{RunStatus, TaskRepository, TaskRunRow}
+import taskrun.entity.{ RunStatus, TaskRepository, TaskRunRow }
 
 enum WorkflowNotifierError:
   case Telegram(error: TelegramClientError)

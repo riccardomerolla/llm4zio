@@ -6,7 +6,7 @@ import zio.*
 import zio.test.*
 
 import agent.entity.*
-import workspace.entity.{ RunMode, WorkspaceError }
+import workspace.entity.RunMode
 
 object ExecutionRuntimeSpec extends ZIOSpecDefault:
 

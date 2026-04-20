@@ -434,9 +434,9 @@ final case class IssueCreationWizardLive(
       .mapError(mapFileError)
       .flatMap { files =>
         ZIO.foldLeft(files.toList.sortBy(_.toString))((List.empty[String], 0)) {
-          case ((chunks, total), file) if total >= maxTotalChars =>
+          case ((chunks, total), _) if total >= maxTotalChars =>
             ZIO.succeed(chunks -> total)
-          case ((chunks, total), file)                           =>
+          case ((chunks, total), file)                        =>
             fileService
               .readFile(file)
               .mapError(mapFileError)

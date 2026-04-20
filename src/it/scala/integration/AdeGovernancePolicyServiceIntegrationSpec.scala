@@ -11,7 +11,6 @@ import governance.control.*
 import governance.entity.*
 import io.github.riccardomerolla.zio.eclipsestore.error.EclipseStoreError
 import io.github.riccardomerolla.zio.eclipsestore.gigamap.error.GigaMapError
-import shared.errors.PersistenceError
 import shared.ids.Ids.{ GovernancePolicyId, ProjectId }
 import shared.store.{ DataStoreModule, DataStoreService, EventStore, StoreConfig }
 import shared.testfixtures.StubWorkspaceRepository

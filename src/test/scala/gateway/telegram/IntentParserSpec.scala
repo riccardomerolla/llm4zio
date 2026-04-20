@@ -38,8 +38,7 @@ object IntentParserSpec extends ZIOSpecDefault:
   private val unavailableLlm: ULayer[LlmService] =
     ZLayer.succeed(
       new LlmService:
-        def execute(prompt: String): IO[LlmError, LlmResponse]                                                =
-          ZIO.fail(LlmError.ConfigError("unavailable"))
+
         override def executeStream(prompt: String): zio.stream.Stream[LlmError, LlmChunk]                     =
           zio.stream.ZStream.fail(LlmError.ConfigError("unavailable"))
         override def executeStreamWithHistory(messages: List[Message]): zio.stream.Stream[LlmError, LlmChunk] =
@@ -95,15 +94,13 @@ object IntentParserSpec extends ZIOSpecDefault:
     test("uses LLM decision when available and confident") {
       val llmLayer = ZLayer.succeed(
         new LlmService:
-          def execute(prompt: String): IO[LlmError, LlmResponse]                                                =
-            ZIO.succeed(LlmResponse("""{"agent":"web-search-agent","confidence":0.91}"""))
-          override def executeStream(prompt: String): zio.stream.Stream[LlmError, LlmChunk]                     =
+
+          override def executeStream(prompt: String): zio.stream.Stream[LlmError, LlmChunk] =
             zio.stream.ZStream.succeed(LlmChunk(
               """{"agent":"web-search-agent","confidence":0.91}""",
               finishReason = Some("stop"),
             ))
-          def executeWithHistory(messages: List[Message]): IO[LlmError, LlmResponse]                            =
-            ZIO.succeed(LlmResponse("ok"))
+
           override def executeStreamWithHistory(messages: List[Message]): zio.stream.Stream[LlmError, LlmChunk] =
             zio.stream.ZStream.empty
           override def executeWithTools(prompt: String, tools: List[llm4zio.tools.AnyTool])

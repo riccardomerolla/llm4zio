@@ -113,7 +113,7 @@ final private[agent] class AgentRegistryLiveImpl(
     findByName(agentName).map(_.map(_.health))
 
   override def loadCustomAgents(customAgents: List[CustomAgentRow]): UIO[Int] =
-    agents.get.flatMap { currentAgents =>
+    agents.get.flatMap { _ =>
       val builtInNamesLower = AgentRegistry.builtInAgents.map(_.name.toLowerCase).toSet
       val deduplicated      = customAgents
         .filterNot(agent => builtInNamesLower.contains(agent.name.trim.toLowerCase))

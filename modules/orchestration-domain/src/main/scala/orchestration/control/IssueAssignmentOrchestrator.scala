@@ -1,5 +1,7 @@
 package orchestration.control
 
+import scala.annotation.unused
+
 import zio.*
 import zio.json.*
 
@@ -15,7 +17,7 @@ import llm4zio.core.{ LlmError, LlmService, Streaming }
 import project.control.ProjectStorageService
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ AgentId, BoardIssueId, EventId, IssueId, TaskRunId }
-import taskrun.entity.{TaskRepository, TaskRunRow}
+import taskrun.entity.{ TaskRepository, TaskRunRow }
 import workspace.entity.WorkspaceRepository
 
 trait IssueAssignmentOrchestrator:
@@ -23,7 +25,7 @@ trait IssueAssignmentOrchestrator:
   def assignIssue(
     issueId: String,
     agentName: String,
-    skipConversationBootstrap: Boolean,
+    @unused skipConversationBootstrap: Boolean,
   ): IO[PersistenceError, AgentIssueView] =
     assignIssue(issueId, agentName)
 

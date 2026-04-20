@@ -50,22 +50,22 @@ object CoreRouteModule:
     ] =
     ZLayer {
       for
-        dashboard     <- ZIO.service[TaskRunDashboardController]
-        sdlcDashboard <- ZIO.service[SdlcDashboardController]
-        tasks         <- ZIO.service[TaskRunTasksController]
-        reports       <- ZIO.service[TaskRunReportsController]
-        graph         <- ZIO.service[TaskRunGraphController]
-        agents        <- ZIO.service[ConfigAgentsController]
-        monitor       <- ZIO.service[AppAgentMonitorController]
-        chat          <- ZIO.service[ConversationChatController]
-        issues        <- ZIO.service[IssuesIssueController]
+        dashboard      <- ZIO.service[TaskRunDashboardController]
+        sdlcDashboard  <- ZIO.service[SdlcDashboardController]
+        tasks          <- ZIO.service[TaskRunTasksController]
+        reports        <- ZIO.service[TaskRunReportsController]
+        graph          <- ZIO.service[TaskRunGraphController]
+        agents         <- ZIO.service[ConfigAgentsController]
+        monitor        <- ZIO.service[AppAgentMonitorController]
+        chat           <- ZIO.service[ConversationChatController]
+        issues         <- ZIO.service[IssuesIssueController]
         issueTemplates <- ZIO.service[IssueTemplatesController]
-        issueBulk     <- ZIO.service[IssueBulkController]
-        issueImport   <- ZIO.service[IssueImportController]
-        activity      <- ZIO.service[ActivityController]
-        memory        <- ZIO.service[MemoryBoundaryController]
-        health        <- ZIO.service[AppHealthController]
-        logs          <- ZIO.service[TaskRunLogsController]
+        issueBulk      <- ZIO.service[IssueBulkController]
+        issueImport    <- ZIO.service[IssueImportController]
+        activity       <- ZIO.service[ActivityController]
+        memory         <- ZIO.service[MemoryBoundaryController]
+        health         <- ZIO.service[AppHealthController]
+        logs           <- ZIO.service[TaskRunLogsController]
       yield new CoreRouteModule:
         override val routes: Routes[Any, Response] =
           dashboard.routes ++

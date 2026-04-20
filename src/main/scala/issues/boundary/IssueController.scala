@@ -30,7 +30,7 @@ import shared.ids.Ids.{ AgentId, BoardIssueId, EventId, IssueId, TaskRunId }
 import shared.web.{ ErrorHandlingMiddleware, HtmlViews }
 import taskrun.entity.TaskRepository
 import workspace.control.ProofOfWorkExtractor
-import workspace.entity.{AssignRunRequest, WorkspaceRepository, WorkspaceRunService}
+import workspace.entity.{ AssignRunRequest, WorkspaceRepository, WorkspaceRunService }
 
 trait IssueController:
   def routes: Routes[Any, Response]
@@ -1024,7 +1024,7 @@ final case class IssueControllerLive(
 
   private def resolveWorkspaceBoardIssue(
     issueId: String,
-    workspaceHint: Option[String] = None,
+    workspaceHint: Option[String],
   ): IO[PersistenceError, Option[(workspace.entity.Workspace, BoardIssue)]] =
     parseBoardIssueId(issueId).either.flatMap {
       case Left(_)        => ZIO.none

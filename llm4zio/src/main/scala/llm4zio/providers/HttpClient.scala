@@ -1,5 +1,7 @@
 package llm4zio.providers
 
+import scala.annotation.unused
+
 import zio.*
 import zio.http.*
 import zio.stream.{ ZPipeline, ZStream }
@@ -8,9 +10,9 @@ import llm4zio.core.LlmError
 
 trait HttpClient:
   def get(
-    url: String,
-    headers: Map[String, String] = Map.empty,
-    timeout: Duration,
+    @unused url: String,
+    @unused headers: Map[String, String] = Map.empty,
+    @unused timeout: Duration,
   ): ZIO[Any, LlmError, String] =
     ZIO.fail(LlmError.InvalidRequestError("GET is not supported by this HttpClient implementation"))
 

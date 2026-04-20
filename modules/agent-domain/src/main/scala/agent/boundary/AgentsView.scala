@@ -1,5 +1,7 @@
 package agent.boundary
 
+import scala.annotation.unused
+
 import zio.json.*
 
 import _root_.config.entity.{ AgentChannelBinding, AgentInfo, AgentType }
@@ -820,8 +822,8 @@ object AgentsView:
 
   def agentConfigPage(
     agent: AgentInfo,
-    overrideSettings: Map[String, String],
-    globalSettings: Map[String, String],
+    @unused overrideSettings: Map[String, String],
+    @unused globalSettings: Map[String, String],
     flash: Option[String],
   ): String =
     Layout.page(s"${agent.displayName} Config", "/agents")(

@@ -64,7 +64,7 @@ object ProjectsController:
   ): ProjectsController =
     new ProjectsController:
       override val routes: Routes[Any, Response] = Routes(
-        Method.GET / "projects"                                           -> handler { (req: Request) =>
+        Method.GET / "projects"                                           -> handler { (_: Request) =>
           listPage(
             projectRepository,
             workspaceRepository,

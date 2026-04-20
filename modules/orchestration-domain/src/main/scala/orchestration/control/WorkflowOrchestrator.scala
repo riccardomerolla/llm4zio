@@ -127,7 +127,7 @@ object WorkflowOrchestrator:
                         for
                           ts <- Clock.instant
                           _  <- errorsRef.update(_ :+ WorkflowError(phase, err.toString, ts))
-                          es <- errorsRef.get
+                          _  <- errorsRef.get
                           st <- stateRef.get
                           _  <- stateRef.set(updateState(st, phase, ts))
                           _  <- stateRef.get.flatMap(saveState)

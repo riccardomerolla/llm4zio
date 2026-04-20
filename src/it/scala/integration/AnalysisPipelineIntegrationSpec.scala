@@ -109,8 +109,7 @@ object AnalysisPipelineIntegrationSpec extends ZIOSpecDefault:
       test("runCodeReview: file written and committed, AnalysisCreated event persisted") {
         ZIO.scoped {
           for
-            repoPath     <- initGitRepo
-            workspacePath = repoPath.toString
+            repoPath <- initGitRepo
 
             // ── Stub collaborators ─────────────────────────────────────────────
             agentRepo    = StubAgentRepository()

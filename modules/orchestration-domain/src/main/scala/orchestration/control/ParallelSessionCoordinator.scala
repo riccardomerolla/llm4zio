@@ -1,6 +1,5 @@
 package orchestration.control
 
-import java.time.Instant
 import java.util.UUID
 
 import scala.util.matching.Regex
@@ -9,7 +8,7 @@ import zio.*
 
 import gateway.entity.{ MessageRouter, SessionKey }
 import orchestration.entity.*
-import workspace.entity.{AssignRunRequest, WorkspaceRepository, WorkspaceRunService}
+import workspace.entity.{ AssignRunRequest, WorkspaceRepository, WorkspaceRunService }
 
 trait ParallelSessionCoordinator:
   def launch(
@@ -233,9 +232,6 @@ final private case class ParallelSessionCoordinatorLive(
       .orElseSucceed(())
 
   private def publishEvent(sessionId: String, event: ParallelSessionEvent): UIO[Unit] =
-    (for
-      now       <- Clock.instant
-      sessionKey = SessionKey("system", s"parallel-session:$sessionId")
-      msg        = ParallelSessionFormatter.toNormalizedMessage(event, "system", sessionKey)
-      _         <- router.routeOutbound(msg)
-    yield ()).ignore
+    val sessionKey = SessionKey("system", s"parallel-session:$sessionId")
+    val msg        = ParallelSessionFormatter.toNormalizedMessage(event, "system", sessionKey)
+    router.routeOutbound(msg).ignore

@@ -15,7 +15,7 @@ import gateway.entity.{
 import orchestration.control.*
 import orchestration.entity.*
 import shared.errors.{ ControlPlaneError, PersistenceError }
-import taskrun.entity.{TaskRepository, TaskRunRow}
+import taskrun.entity.{ TaskRepository, TaskRunRow }
 
 enum TaskProgressNotifierError:
   case Persistence(error: PersistenceError)

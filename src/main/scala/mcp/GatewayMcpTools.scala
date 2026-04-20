@@ -24,7 +24,7 @@ import plan.entity.*
 import sdlc.control.SdlcDashboardService
 import shared.ids.Ids.*
 import specification.entity.*
-import workspace.entity.{WorkspaceRepository, WorkspaceRunService}
+import workspace.entity.{ WorkspaceRepository, WorkspaceRunService }
 
 /** Gateway tools exposed over MCP.
   *
@@ -1164,10 +1164,12 @@ final class GatewayMcpTools(
         Chunk.fromIterable(
           docs
             .filter(doc => analysisTypeOpt.forall(_ == doc.analysisType))
-            .sortBy(doc => (doc.updatedAt, doc.createdAt))(Ordering.Tuple2(
-              Ordering[Instant],
-              Ordering[Instant],
-            ).reverse)
+            .sortBy(doc => (doc.updatedAt, doc.createdAt))(
+              using Ordering.Tuple2(
+                using Ordering[Instant],
+                Ordering[Instant],
+              ).reverse
+            )
             .map(doc =>
               Json.Obj(
                 "id"           -> Json.Str(doc.id.value),

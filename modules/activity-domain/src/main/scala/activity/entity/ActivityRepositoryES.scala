@@ -29,7 +29,7 @@ final case class ActivityRepositoryES(
       .map(
         _.filter(event => eventType.forall(_ == event.eventType))
           .filter(event => since.forall(s => !event.createdAt.isBefore(s)))
-          .sortBy(_.createdAt)(Ordering[java.time.Instant].reverse)
+          .sortBy(_.createdAt)(using Ordering[java.time.Instant].reverse)
           .take(limit)
       )
 

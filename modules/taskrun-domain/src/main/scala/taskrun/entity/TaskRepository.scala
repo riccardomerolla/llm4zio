@@ -1,5 +1,7 @@
 package taskrun.entity
 
+import scala.annotation.unused
+
 import zio.*
 
 import _root_.config.entity.{ CustomAgentRow, SettingRow, WorkflowRow }
@@ -30,31 +32,31 @@ trait TaskRepository:
     ZIO.fail(PersistenceError.QueryFailed("deleteSettingsByPrefix", s"Not implemented for prefix: $prefix"))
 
   // Workflows
-  def createWorkflow(workflow: WorkflowRow): IO[PersistenceError, Long]          =
+  def createWorkflow(@unused workflow: WorkflowRow): IO[PersistenceError, Long]          =
     ZIO.fail(PersistenceError.QueryFailed("createWorkflow", "Not implemented"))
-  def getWorkflow(id: Long): IO[PersistenceError, Option[WorkflowRow]]           =
+  def getWorkflow(@unused id: Long): IO[PersistenceError, Option[WorkflowRow]]           =
     ZIO.fail(PersistenceError.QueryFailed("getWorkflow", "Not implemented"))
-  def getWorkflowByName(name: String): IO[PersistenceError, Option[WorkflowRow]] =
+  def getWorkflowByName(@unused name: String): IO[PersistenceError, Option[WorkflowRow]] =
     ZIO.fail(PersistenceError.QueryFailed("getWorkflowByName", "Not implemented"))
-  def listWorkflows: IO[PersistenceError, List[WorkflowRow]]                     =
+  def listWorkflows: IO[PersistenceError, List[WorkflowRow]]                             =
     ZIO.fail(PersistenceError.QueryFailed("listWorkflows", "Not implemented"))
-  def updateWorkflow(workflow: WorkflowRow): IO[PersistenceError, Unit]          =
+  def updateWorkflow(@unused workflow: WorkflowRow): IO[PersistenceError, Unit]          =
     ZIO.fail(PersistenceError.QueryFailed("updateWorkflow", "Not implemented"))
-  def deleteWorkflow(id: Long): IO[PersistenceError, Unit]                       =
+  def deleteWorkflow(@unused id: Long): IO[PersistenceError, Unit]                       =
     ZIO.fail(PersistenceError.QueryFailed("deleteWorkflow", "Not implemented"))
 
   // Custom Agents
-  def createCustomAgent(agent: CustomAgentRow): IO[PersistenceError, Long]             =
+  def createCustomAgent(@unused agent: CustomAgentRow): IO[PersistenceError, Long]             =
     ZIO.fail(PersistenceError.QueryFailed("createCustomAgent", "Not implemented"))
-  def getCustomAgent(id: Long): IO[PersistenceError, Option[CustomAgentRow]]           =
+  def getCustomAgent(@unused id: Long): IO[PersistenceError, Option[CustomAgentRow]]           =
     ZIO.fail(PersistenceError.QueryFailed("getCustomAgent", "Not implemented"))
-  def getCustomAgentByName(name: String): IO[PersistenceError, Option[CustomAgentRow]] =
+  def getCustomAgentByName(@unused name: String): IO[PersistenceError, Option[CustomAgentRow]] =
     ZIO.fail(PersistenceError.QueryFailed("getCustomAgentByName", "Not implemented"))
-  def listCustomAgents: IO[PersistenceError, List[CustomAgentRow]]                     =
+  def listCustomAgents: IO[PersistenceError, List[CustomAgentRow]]                             =
     ZIO.fail(PersistenceError.QueryFailed("listCustomAgents", "Not implemented"))
-  def updateCustomAgent(agent: CustomAgentRow): IO[PersistenceError, Unit]             =
+  def updateCustomAgent(@unused agent: CustomAgentRow): IO[PersistenceError, Unit]             =
     ZIO.fail(PersistenceError.QueryFailed("updateCustomAgent", "Not implemented"))
-  def deleteCustomAgent(id: Long): IO[PersistenceError, Unit]                          =
+  def deleteCustomAgent(@unused id: Long): IO[PersistenceError, Unit]                          =
     ZIO.fail(PersistenceError.QueryFailed("deleteCustomAgent", "Not implemented"))
 
 import shared.store.{ ConfigStoreModule, DataStoreService }
