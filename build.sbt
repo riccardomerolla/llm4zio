@@ -533,7 +533,13 @@ lazy val bankmodMcpTools = (project in file("modules/bankmod-mcp-tools"))
   .settings(foundationSettings)
   .settings(
     name := "bankmod-mcp-tools",
-    libraryDependencies ++= domainBceDeps,
+    libraryDependencies ++= bankmodDeps ++ Seq(
+      "com.jamesward" %% "zio-http-mcp"          % "0.0.6",
+      zioHttpDep,
+      "dev.zio"       %% "zio-schema"            % zioSchemaVersion,
+      "dev.zio"       %% "zio-schema-derivation" % zioSchemaVersion,
+    ),
+    testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
   )
 
 lazy val bankmodApp = (project in file("modules/bankmod-app"))
