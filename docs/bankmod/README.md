@@ -28,6 +28,7 @@ an MCP server that lets an LLM read, render, validate, and evolve the graph.
 3. Optional live-reload:
    `BANKMOD_GRAPH_FILE=examples/bankmod/sample-graph.json java -jar target/bankmod-app.jar`
    — any edit to the JSON file is re-decoded, re-validated, and hot-swapped.
+   Regenerate this fixture from the canonical Scala source with `sbt bankmodSeedExample`.
 
 ## Module map
 

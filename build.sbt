@@ -11,6 +11,10 @@ addCommandAlias(
   "bankmodDocs",
   "bankmodApp/runMain bankmod.app.DocsGenerator",
 )
+addCommandAlias(
+  "bankmodSeedExample",
+  "bankmodApp/runMain bankmod.app.SampleGraphSeeder",
+)
 
 // Centralized version management
 val zioVersion = "2.1.25"
@@ -554,6 +558,7 @@ lazy val bankmodApp = (project in file("modules/bankmod-app"))
     name := "bankmod-app",
     libraryDependencies ++= domainBceDeps,
     testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
+    Compile / mainClass := Some("bankmod.app.BankmodMain"),
     run / fork := true,
     run / javaOptions ++= Seq(
       "--enable-native-access=ALL-UNNAMED",
