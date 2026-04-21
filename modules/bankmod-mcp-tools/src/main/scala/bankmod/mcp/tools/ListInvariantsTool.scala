@@ -13,7 +13,7 @@ object ListInvariantsTool:
   object Output:
     given Schema[Output] = DeriveSchema.gen
 
-  private val catalog: List[InvariantEntry] = List(
+  val catalog: List[InvariantEntry] = List(
     InvariantEntry("CycleDetected", "No directed cycles in the service graph."),
     InvariantEntry("TierViolation", "Synchronous edges must not cross from higher to lower criticality tier."),
     InvariantEntry("OrphanEdge", "Outbound edges must target a service that exists in the graph."),
