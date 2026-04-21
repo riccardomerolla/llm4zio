@@ -11,14 +11,11 @@ import agent.control.AgentRegistryLive
 import agent.entity.AgentRegistry
 import conversation.entity.ChatRepository
 import conversation.entity.api.{ ChatConversation, ConversationEntry, SessionContextLink }
-import conversation.entity.ChatRepository
 import gateway.control.*
 import gateway.entity.*
 import llm4zio.core.*
 import llm4zio.tools.{ AnyTool, JsonSchema }
 import memory.entity.{ Scope as MemoryScope, * }
-import agent.control.AgentRegistryLive
-import agent.entity.AgentRegistry
 import prompts.PromptLoader
 import shared.errors.PersistenceError
 

@@ -1,7 +1,7 @@
 package bankmod.mcp.tools
 
 import zio.*
-import zio.schema.{DeriveSchema, Schema}
+import zio.schema.{ DeriveSchema, Schema }
 
 import bankmod.graph.model.*
 import bankmod.mcp.GraphStore
@@ -33,41 +33,45 @@ object QueryDependenciesTool:
   /** Pure BFS on an in-memory Graph. Validates input, bounds depth to [1, 5]. */
   def run(input: QueryDependenciesInput, graph: Graph): Either[Failure, Output] =
     for
-      _ <- Either.cond(
-             input.depth >= 1 && input.depth <= 5,
-             (),
-             Failure(s"depth must be in [1,5], got ${input.depth}"),
-           )
-      rootId <- ServiceId.from(input.serviceId).left.map(Failure.apply)
-      _ <- Either.cond(
-             graph.services.contains(rootId),
-             (),
-             Failure(s"Unknown service: ${input.serviceId}"),
-           )
-    yield
-      val visited = scala.collection.mutable.Set[(String, String, String)]()
-      val hops    = scala.collection.mutable.ListBuffer[Hop]()
-      val queue   = scala.collection.mutable.Queue[(ServiceId, Int)]((rootId, 0))
-      while queue.nonEmpty do
-        val (current, d) = queue.dequeue()
-        if d < input.depth then
-          graph.services.get(current).foreach { svc =>
-            svc.outbound.foreach { edge =>
-              val key = (current.value, edge.toService.value, edge.toPort.value)
-              if !visited.contains(key) then
-                val _ = visited.add(key)
-                hops.addOne(
-                  Hop(
-                    from = current.value,
-                    to = edge.toService.value,
-                    port = edge.toPort.value,
-                    protocol = protocolLabel(edge.protocol),
-                    hopDepth = d + 1,
-                  )
+      _      <- Either.cond(
+                  input.depth >= 1 && input.depth <= 5,
+                  (),
+                  Failure(s"depth must be in [1,5], got ${input.depth}"),
                 )
-                queue.enqueue((edge.toService, d + 1))
+      rootId <- ServiceId.from(input.serviceId).left.map(Failure.apply)
+      _      <- Either.cond(
+                  graph.services.contains(rootId),
+                  (),
+                  Failure(s"Unknown service: ${input.serviceId}"),
+                )
+    yield
+      val visited     = scala.collection.mutable.Set[(String, String, String)]()
+      val hops        = scala.collection.mutable.ListBuffer[Hop]()
+      val queue       = scala.collection.mutable.Queue[(ServiceId, Int)]((rootId, 0))
+      @scala.annotation.tailrec
+      def bfs(): Unit =
+        if queue.nonEmpty then
+          val (current, d) = queue.dequeue()
+          if d < input.depth then
+            graph.services.get(current).foreach { svc =>
+              svc.outbound.foreach { edge =>
+                val key = (current.value, edge.toService.value, edge.toPort.value)
+                if !visited.contains(key) then
+                  val _ = visited.add(key)
+                  hops.addOne(
+                    Hop(
+                      from = current.value,
+                      to = edge.toService.value,
+                      port = edge.toPort.value,
+                      protocol = protocolLabel(edge.protocol),
+                      hopDepth = d + 1,
+                    )
+                  )
+                  queue.enqueue((edge.toService, d + 1))
+              }
             }
-          }
+          bfs()
+      bfs()
       Output(rootId.value, hops.toList)
 
   /** Effectful wrapper: reads the current graph from the store, runs BFS. */

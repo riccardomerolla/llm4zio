@@ -6,11 +6,10 @@ import java.time.Instant
 import zio.*
 
 import _root_.config.entity.{ ConfigRepository, ProviderConfig }
-import taskrun.entity.TaskRepository
+import agent.entity.AgentRegistry
 import llm4zio.core.*
 import llm4zio.providers.{ GeminiCliExecutor, HttpClient }
 import memory.entity.{ Scope, * }
-import agent.entity.AgentRegistry
 import shared.errors.PersistenceError
 import taskrun.entity.{ TaskArtifactRow, TaskReportRow, TaskRepository }
 

@@ -6,7 +6,7 @@ import zio.test.TestAspect.*
 
 import bankmod.graph.model.*
 import bankmod.graph.model.Refinements.*
-import bankmod.mcp.{GraphStore, GraphStoreLive}
+import bankmod.mcp.{ GraphStore, GraphStoreLive }
 
 object ProposeServiceToolSpec extends ZIOSpecDefault:
 

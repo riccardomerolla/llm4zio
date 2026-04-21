@@ -1,5 +1,6 @@
 package bankmod.mcp.prompts
 
+import zio.Scope
 import zio.test.*
 
 import bankmod.mcp.prompts.BankmodPrompts.*
@@ -12,7 +13,7 @@ object BankmodPromptsSpec extends ZIOSpecDefault:
   private def mentionsAnyTool(body: String): Boolean =
     body.contains("validateEvolution") || body.contains("proposeService")
 
-  def spec = suite("BankmodPrompts")(
+  def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("BankmodPrompts")(
     // ── addService ──────────────────────────────────────────────────────────
     test("addService echoes params and has the expected name") {
       val params = AddServiceParams(

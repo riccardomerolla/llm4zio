@@ -1,8 +1,9 @@
 package bankmod.mcp.tools
 
-import zio.test.*
+import zio.Scope
 import zio.schema.Schema
 import zio.schema.codec.JsonCodec
+import zio.test.*
 
 object ToolInputsSpec extends ZIOSpecDefault:
 
@@ -12,7 +13,7 @@ object ToolInputsSpec extends ZIOSpecDefault:
     val result = codec.decode(bytes)
     assertTrue(result == Right(value))
 
-  def spec = suite("ToolInputs schema derivation")(
+  def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("ToolInputs schema derivation")(
     test("RenderDiagramInput round-trips") {
       roundTrip(RenderDiagramInput("full", "mermaid"))
     },

@@ -1,17 +1,17 @@
 package bankmod.mcp
 
 import zio.*
-import com.jamesward.ziohttp.mcp.*
 
 import bankmod.mcp.prompts.BankmodPrompts
 import bankmod.mcp.resources.GraphResources
 import bankmod.mcp.tools.*
+import com.jamesward.ziohttp.mcp.*
 
 /** Assembles the bankmod MCP surface on top of `zio-http-mcp`.
   *
-  * Tools use the `GraphStore` environment slot (wired by layer at boot). Resources close over
-  * the concrete store value because the library's resource-read handler is fixed to `ZIO[Any, ToolError, _]`.
-  * Prompts also run in `Any` and are pure transformations over argument maps.
+  * Tools use the `GraphStore` environment slot (wired by layer at boot). Resources close over the concrete store value
+  * because the library's resource-read handler is fixed to `ZIO[Any, ToolError, _]`. Prompts also run in `Any` and are
+  * pure transformations over argument maps.
   */
 object BankmodMcpServer:
 

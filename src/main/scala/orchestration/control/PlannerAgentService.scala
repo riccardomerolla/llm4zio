@@ -13,7 +13,6 @@ import activity.entity.{ ActivityEvent, ActivityEventType }
 import board.entity.{ IssueEstimate as BoardIssueEstimate, IssuePriority as BoardIssuePriority, * }
 import conversation.entity.ChatRepository
 import conversation.entity.api.{ ChatConversation, ConversationEntry, MessageType, SenderType }
-import conversation.entity.ChatRepository
 import governance.control.{ GovernanceEvaluationContext, GovernancePolicyService }
 import governance.entity.{ GovernanceGate, GovernanceLifecycleAction, GovernanceLifecycleStage, GovernanceTransition }
 import issues.entity.{ AgentIssue as DomainIssue, IssueRepository }

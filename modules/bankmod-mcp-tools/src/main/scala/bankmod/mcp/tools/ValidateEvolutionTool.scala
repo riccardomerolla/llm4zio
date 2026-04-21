@@ -9,16 +9,16 @@ import bankmod.mcp.GraphStore
 
 object ValidateEvolutionTool:
 
-  /** Flattened error representation for MCP wire format. The `kind` tag identifies which
-    * `InvariantError` variant this came from; `detail` is a human-readable description.
+  /** Flattened error representation for MCP wire format. The `kind` tag identifies which `InvariantError` variant this
+    * came from; `detail` is a human-readable description.
     */
   final case class ErrorItem(kind: String, detail: String)
   object ErrorItem:
     given Schema[ErrorItem] = DeriveSchema.gen
 
-  /** Structured outcome. When `accepted == true`, `errors` is empty and `previewJson` contains the JSON-re-encoded graph
-    * (round-trip proves the input is well-formed). When `accepted == false`, `previewJson` is empty and `errors` lists
-    * every accumulated violation.
+  /** Structured outcome. When `accepted == true`, `errors` is empty and `previewJson` contains the JSON-re-encoded
+    * graph (round-trip proves the input is well-formed). When `accepted == false`, `previewJson` is empty and `errors`
+    * lists every accumulated violation.
     */
   final case class Output(accepted: Boolean, errors: List[ErrorItem], previewJson: String)
   object Output:
@@ -30,7 +30,7 @@ object ValidateEvolutionTool:
   /** Pure: decode patchJson, run validator, produce outcome. Never throws. */
   def run(input: ValidateEvolutionInput): Output =
     Schemas.graphCodec.decode(input.patchJson) match
-      case Left(err) =>
+      case Left(err)    =>
         Output(accepted = false, errors = List(ErrorItem(DecodeKind, err.toString)), previewJson = "")
       case Right(graph) =>
         GraphValidator.validate(graph) match
@@ -40,7 +40,7 @@ object ValidateEvolutionTool:
               errors = errs.toList.map(toErrorItem),
               previewJson = "",
             )
-          case Right(g) =>
+          case Right(g)   =>
             Output(
               accepted = true,
               errors = Nil,

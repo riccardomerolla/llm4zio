@@ -9,7 +9,6 @@ import llm4zio.observability.LlmMetrics
 import orchestration.boundary.AgentMonitorView
 import orchestration.entity.AgentMonitorService
 import shared.errors.ControlPlaneError
-import orchestration.boundary.AgentMonitorView
 
 trait AgentMonitorController:
   def routes: Routes[Any, Response]

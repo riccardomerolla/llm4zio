@@ -1,5 +1,6 @@
 package bankmod.mcp.resources
 
+import zio.Scope
 import zio.test.*
 
 import bankmod.graph.model.*
@@ -32,7 +33,7 @@ object GraphResourcesSpec extends ZIOSpecDefault:
     )
   )
 
-  def spec = suite("GraphResources.read")(
+  def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("GraphResources.read")(
     test("graph://full returns JSON that round-trips to the fixture") {
       val result  = GraphResources.read("graph://full", fixture)
       val decoded = result.toOption.flatMap(r => Schemas.graphCodec.decode(r.body).toOption)

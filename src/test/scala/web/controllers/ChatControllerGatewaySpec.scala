@@ -13,15 +13,12 @@ import agent.control.AgentRegistryLive
 import conversation.boundary.ChatControllerLive
 import conversation.entity.ChatRepository
 import conversation.entity.api.*
-import conversation.entity.ChatRepository
-import taskrun.entity.TaskRepository
 import gateway.control.*
 import gateway.entity.*
 import issues.entity.api.AgentIssueView
 import llm4zio.core.*
 import llm4zio.providers.{ GeminiCliExecutor, HttpClient }
 import llm4zio.tools.{ AnyTool, JsonSchema }
-import agent.control.AgentRegistryLive
 import memory.entity.{ Scope as MemoryScope, * }
 import orchestration.control.{ IssueAssignmentOrchestrator, * }
 import orchestration.entity.{ PlannerPlanPreview, PlannerPreviewState }

@@ -7,15 +7,14 @@ import zio.json.ast.Json
 import zio.test.*
 import zio.test.TestAspect.*
 
-import bankmod.graph.model.*
 import bankmod.graph.model.Refinements.*
-import bankmod.graph.model.Schemas
+import bankmod.graph.model.{ Schemas, * }
 
 /** End-to-end test for the bankmod MCP server assembly.
   *
-  * Boots the stateless routes on an OS-assigned port and drives it with the zio-http `Client`,
-  * exercising JSON-RPC over HTTP: `initialize`, `resources/list`, `resources/templates/list`,
-  * `tools/list`, `prompts/list`, and two `tools/call` flavors of `validateEvolution`.
+  * Boots the stateless routes on an OS-assigned port and drives it with the zio-http `Client`, exercising JSON-RPC over
+  * HTTP: `initialize`, `resources/list`, `resources/templates/list`, `tools/list`, `prompts/list`, and two `tools/call`
+  * flavors of `validateEvolution`.
   */
 object BankmodMcpServerE2ESpec extends ZIOSpecDefault:
 
@@ -63,7 +62,7 @@ object BankmodMcpServerE2ESpec extends ZIOSpecDefault:
 
   // A patch that introduces a cycle (svc-b -> svc-a) — must fail validation.
   private val cyclePatchJson =
-    val edgeBA =
+    val edgeBA          =
       Edge(pOut, sidA, pIn, Protocol.Rest(url), Consistency.Strong, Ordering.TotalOrder)
     val svcAWithInbound = svcA.copy(inbound = Set(Port(pIn)))
     val svcBWithBack    = svcB.copy(outbound = Set(edgeBA))
@@ -87,11 +86,11 @@ object BankmodMcpServerE2ESpec extends ZIOSpecDefault:
   private def post(port: Int, body: String): ZIO[Client, Throwable, Json.Obj] =
     for
       client <- ZIO.service[Client]
-      resp <- client.batched(
-                Request
-                  .post(url = URL.decode(s"http://localhost:$port/mcp").toOption.get, body = Body.fromString(body))
-                  .addHeaders(Headers(Header.ContentType(MediaType.application.json)))
-              )
+      resp   <- client.batched(
+                  Request
+                    .post(url = URL.decode(s"http://localhost:$port/mcp").toOption.get, body = Body.fromString(body))
+                    .addHeaders(Headers(Header.ContentType(MediaType.application.json)))
+                )
       text   <- resp.body.asString
       parsed <- ZIO.fromEither(text.fromJson[Json.Obj]).mapError(e => new RuntimeException(s"Bad JSON: $text ($e)"))
     yield parsed
@@ -108,8 +107,8 @@ object BankmodMcpServerE2ESpec extends ZIOSpecDefault:
     ZLayer.scoped {
       for
         storeInstance <- ZIO.service[GraphStore]
-        routes = BankmodMcpServer.build(storeInstance).statelessRoutes
-        port <- Server.install(routes)
+        routes         = BankmodMcpServer.build(storeInstance).statelessRoutes
+        port          <- Server.install(routes)
       yield port
     }
 
@@ -121,53 +120,53 @@ object BankmodMcpServerE2ESpec extends ZIOSpecDefault:
   def spec: Spec[Any, Any] = suite("BankmodMcpServer E2E")(
     test("initialize → serverInfo, resources/list, templates/list, tools/list, prompts/list") {
       for
-        port <- ZIO.service[Int]
+        port        <- ZIO.service[Int]
         // initialize (required handshake — stateless still parses it)
-        initResp <- post(
-                      port,
-                      rpc(
-                        1,
-                        "initialize",
-                        Some(
-                          Json.Obj(
-                            "protocolVersion" -> Json.Str("2025-11-25"),
-                            "capabilities"    -> Json.Obj(),
-                            "clientInfo"      -> Json.Obj(
-                              "name"    -> Json.Str("bankmod-e2e"),
-                              "version" -> Json.Str("0.0.1"),
-                            ),
-                          )
-                        ),
-                      ),
-                    )
-        info = resultOf(initResp)
-          .get("serverInfo")
-          .flatMap(_.asObject)
-          .get
+        initResp    <- post(
+                         port,
+                         rpc(
+                           1,
+                           "initialize",
+                           Some(
+                             Json.Obj(
+                               "protocolVersion" -> Json.Str("2025-11-25"),
+                               "capabilities"    -> Json.Obj(),
+                               "clientInfo"      -> Json.Obj(
+                                 "name"    -> Json.Str("bankmod-e2e"),
+                                 "version" -> Json.Str("0.0.1"),
+                               ),
+                             )
+                           ),
+                         ),
+                       )
+        info         = resultOf(initResp)
+                         .get("serverInfo")
+                         .flatMap(_.asObject)
+                         .get
         // resources/list
-        resResp <- post(port, rpc(2, "resources/list"))
-        resources = resultOf(resResp)
-          .get("resources")
-          .flatMap(_.asArray)
-          .getOrElse(Chunk.empty)
+        resResp     <- post(port, rpc(2, "resources/list"))
+        resources    = resultOf(resResp)
+                         .get("resources")
+                         .flatMap(_.asArray)
+                         .getOrElse(Chunk.empty)
         // resources/templates/list
-        tmplResp <- post(port, rpc(3, "resources/templates/list"))
-        templates = resultOf(tmplResp)
-          .get("resourceTemplates")
-          .flatMap(_.asArray)
-          .getOrElse(Chunk.empty)
+        tmplResp    <- post(port, rpc(3, "resources/templates/list"))
+        templates    = resultOf(tmplResp)
+                         .get("resourceTemplates")
+                         .flatMap(_.asArray)
+                         .getOrElse(Chunk.empty)
         // tools/list
-        toolsResp <- post(port, rpc(4, "tools/list"))
-        tools = resultOf(toolsResp)
-          .get("tools")
-          .flatMap(_.asArray)
-          .getOrElse(Chunk.empty)
+        toolsResp   <- post(port, rpc(4, "tools/list"))
+        tools        = resultOf(toolsResp)
+                         .get("tools")
+                         .flatMap(_.asArray)
+                         .getOrElse(Chunk.empty)
         // prompts/list
         promptsResp <- post(port, rpc(5, "prompts/list"))
-        prompts = resultOf(promptsResp)
-          .get("prompts")
-          .flatMap(_.asArray)
-          .getOrElse(Chunk.empty)
+        prompts      = resultOf(promptsResp)
+                         .get("prompts")
+                         .flatMap(_.asArray)
+                         .getOrElse(Chunk.empty)
       yield assertTrue(
         info.get("name").contains(Json.Str("bankmod")),
         info.get("version").contains(Json.Str("0.1.0")),
@@ -179,16 +178,16 @@ object BankmodMcpServerE2ESpec extends ZIOSpecDefault:
     },
     test("tools/call validateEvolution: cycle patch → accepted=false, CycleDetected") {
       for
-        port <- ZIO.service[Int]
-        resp <- post(
-                  port,
-                  toolsCall(
-                    10,
-                    "validateEvolution",
-                    Json.Obj("patchJson" -> Json.Str(cyclePatchJson)),
-                  ),
-                )
-        result = resultOf(resp)
+        port      <- ZIO.service[Int]
+        resp      <- post(
+                       port,
+                       toolsCall(
+                         10,
+                         "validateEvolution",
+                         Json.Obj("patchJson" -> Json.Str(cyclePatchJson)),
+                       ),
+                     )
+        result     = resultOf(resp)
         structured = result.get("structuredContent").flatMap(_.asObject).get
         accepted   = structured.get("accepted").flatMap(_.asBoolean).getOrElse(true)
         errors     = structured.get("errors").flatMap(_.asArray).getOrElse(Chunk.empty)
@@ -205,15 +204,15 @@ object BankmodMcpServerE2ESpec extends ZIOSpecDefault:
     },
     test("tools/call validateEvolution: fixture graph → accepted=true") {
       for
-        port <- ZIO.service[Int]
-        resp <- post(
-                  port,
-                  toolsCall(
-                    11,
-                    "validateEvolution",
-                    Json.Obj("patchJson" -> Json.Str(fixtureJson)),
-                  ),
-                )
+        port      <- ZIO.service[Int]
+        resp      <- post(
+                       port,
+                       toolsCall(
+                         11,
+                         "validateEvolution",
+                         Json.Obj("patchJson" -> Json.Str(fixtureJson)),
+                       ),
+                     )
         result     = resultOf(resp)
         structured = result.get("structuredContent").flatMap(_.asObject).get
         accepted   = structured.get("accepted").flatMap(_.asBoolean).getOrElse(false)
@@ -221,18 +220,18 @@ object BankmodMcpServerE2ESpec extends ZIOSpecDefault:
     },
     test("tools/call renderDiagram: scope=full format=mermaid returns graph LR body") {
       for
-        port <- ZIO.service[Int]
-        resp <- post(
-                  port,
-                  toolsCall(
-                    12,
-                    "renderDiagram",
-                    Json.Obj(
-                      "scope"  -> Json.Str("full"),
-                      "format" -> Json.Str("mermaid"),
-                    ),
-                  ),
-                )
+        port      <- ZIO.service[Int]
+        resp      <- post(
+                       port,
+                       toolsCall(
+                         12,
+                         "renderDiagram",
+                         Json.Obj(
+                           "scope"  -> Json.Str("full"),
+                           "format" -> Json.Str("mermaid"),
+                         ),
+                       ),
+                     )
         result     = resultOf(resp)
         structured = result.get("structuredContent").flatMap(_.asObject).get
         body       = structured.get("body").flatMap(_.asString).getOrElse("")
@@ -240,22 +239,22 @@ object BankmodMcpServerE2ESpec extends ZIOSpecDefault:
     },
     test("resources/read graph://full returns the fixture JSON") {
       for
-        port <- ZIO.service[Int]
-        resp <- post(
-                  port,
-                  rpc(
-                    13,
-                    "resources/read",
-                    Some(Json.Obj("uri" -> Json.Str("graph://full"))),
-                  ),
-                )
+        port    <- ZIO.service[Int]
+        resp    <- post(
+                     port,
+                     rpc(
+                       13,
+                       "resources/read",
+                       Some(Json.Obj("uri" -> Json.Str("graph://full"))),
+                     ),
+                   )
         result   = resultOf(resp)
         contents = result.get("contents").flatMap(_.asArray).getOrElse(Chunk.empty)
-        text = contents.headOption
-                 .flatMap(_.asObject)
-                 .flatMap(_.get("text"))
-                 .flatMap(_.asString)
-                 .getOrElse("")
+        text     = contents.headOption
+                     .flatMap(_.asObject)
+                     .flatMap(_.get("text"))
+                     .flatMap(_.asString)
+                     .getOrElse("")
       yield assertTrue(text == fixtureJson)
     },
   ).provideShared(serverLayer, Client.default) @@ withLiveClock @@ sequential

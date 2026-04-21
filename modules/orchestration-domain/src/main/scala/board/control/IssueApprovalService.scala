@@ -7,8 +7,7 @@ import decision.control.DecisionInbox
 import decision.entity.DecisionResolutionKind
 import project.control.ProjectStorageService
 import shared.ids.Ids.{ BoardIssueId, IssueId }
-import workspace.entity.WorkspaceRunService
-import workspace.entity.{ RunStatus, Workspace, WorkspaceRepository, WorkspaceRun }
+import workspace.entity.{ RunStatus, Workspace, WorkspaceRepository, WorkspaceRun, WorkspaceRunService }
 
 trait IssueApprovalService:
   def quickApprove(workspaceId: String, issueId: BoardIssueId, reviewerNotes: String): IO[BoardError, Unit]

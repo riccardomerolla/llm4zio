@@ -1,6 +1,7 @@
 package bankmod.app
 
 import java.nio.file.{ Files, Path, StandardWatchEventKinds, WatchKey, WatchService }
+
 import scala.jdk.CollectionConverters.*
 
 import zio.*
@@ -15,16 +16,16 @@ import bankmod.mcp.GraphStore
   * [[reload]] is the pure primitive: read, decode, validate, swap. It swallows every failure mode (missing file, bad
   * JSON, invariant violations) so the watcher never crashes — failures are logged and the store is left alone.
   *
-  * [[watch]] runs an infinite `WatchService` loop over `path`'s parent directory, debounced so a flurry of editor
-  * saves collapses to a single reload. macOS's native `WatchService` is polling-based and coarse-grained, so we also
-  * trigger an initial reload on startup — the "debounce" is really a quiet-period timer.
+  * [[watch]] runs an infinite `WatchService` loop over `path`'s parent directory, debounced so a flurry of editor saves
+  * collapses to a single reload. macOS's native `WatchService` is polling-based and coarse-grained, so we also trigger
+  * an initial reload on startup — the "debounce" is really a quiet-period timer.
   */
 object ModelWatcher:
 
   private val debounce: Duration = 500.millis
 
-  /** Read `path`, decode a `Graph`, run the validator, and atomically swap the store.
-    * Never fails — errors are logged and the store is untouched.
+  /** Read `path`, decode a `Graph`, run the validator, and atomically swap the store. Never fails — errors are logged
+    * and the store is untouched.
     */
   def reload(path: Path): ZIO[GraphStore, Nothing, Unit] =
     val work =
@@ -32,7 +33,9 @@ object ModelWatcher:
         store <- ZIO.service[GraphStore]
         raw   <- ZIO.attemptBlocking(Files.readString(path))
         g     <- ZIO.fromEither(Schemas.graphCodec.decode(raw))
-        _     <- store.update(_ => GraphValidator.validate(g)).mapError(errs => s"invariant violations: ${errs.toList.map(_.getClass.getSimpleName).mkString(", ")}")
+        _     <- store.update(_ => GraphValidator.validate(g)).mapError(errs =>
+                   s"invariant violations: ${errs.toList.map(_.getClass.getSimpleName).mkString(", ")}"
+                 )
       yield ()
 
     work.catchAll {
@@ -40,11 +43,11 @@ object ModelWatcher:
       case s: String    => ZIO.logWarning(s"ModelWatcher.reload($path) rejected: $s")
     }
 
-  /** Watch `path`'s parent directory for MODIFY/CREATE events on `path` itself, reload on each,
-    * debounced so rapid successive writes collapse to one reload.
+  /** Watch `path`'s parent directory for MODIFY/CREATE events on `path` itself, reload on each, debounced so rapid
+    * successive writes collapse to one reload.
     */
   def watch(path: Path): ZIO[GraphStore & Scope, Throwable, Unit] =
-    val parent = path.toAbsolutePath.getParent
+    val parent   = path.toAbsolutePath.getParent
     val fileName = path.getFileName
 
     val acquireWatcher: ZIO[Scope, Throwable, WatchService] =

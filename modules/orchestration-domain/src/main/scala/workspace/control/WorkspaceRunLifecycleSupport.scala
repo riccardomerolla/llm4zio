@@ -8,7 +8,6 @@ import agent.entity.AgentPermissions
 import analysis.entity.AnalysisRepository
 import conversation.entity.ChatRepository
 import conversation.entity.api.{ ConversationEntry, MessageType, SenderType }
-import conversation.entity.ChatRepository
 import issues.control.IssueAnalysisAttachment
 import issues.entity.{ AgentIssue as DomainIssue, IssueEvent, IssueRepository }
 import orchestration.entity.SlotHandle

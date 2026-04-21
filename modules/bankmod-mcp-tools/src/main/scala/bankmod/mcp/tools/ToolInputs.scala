@@ -1,11 +1,13 @@
 package bankmod.mcp.tools
 
-import zio.schema.{DeriveSchema, Schema}
+import zio.schema.{ DeriveSchema, Schema }
 
 /** Input for the renderDiagram tool.
   *
-  * @param scope  one of "full" (the whole graph) or "service:<id>" (single-service subgraph)
-  * @param format one of "mermaid", "d2", "structurizr", "json"
+  * @param scope
+  *   one of "full" (the whole graph) or "service:<id>" (single-service subgraph)
+  * @param format
+  *   one of "mermaid", "d2", "structurizr", "json"
   */
 final case class RenderDiagramInput(scope: String, format: String)
 object RenderDiagramInput:
@@ -13,8 +15,10 @@ object RenderDiagramInput:
 
 /** Input for the queryDependencies tool.
   *
-  * @param serviceId unqualified service id (validated as ServiceId at handler time)
-  * @param depth     BFS depth; 1..5 enforced at handler time
+  * @param serviceId
+  *   unqualified service id (validated as ServiceId at handler time)
+  * @param depth
+  *   BFS depth; 1..5 enforced at handler time
   */
 final case class QueryDependenciesInput(serviceId: String, depth: Int)
 object QueryDependenciesInput:
@@ -22,8 +26,8 @@ object QueryDependenciesInput:
 
 /** Input for the validateEvolution tool.
   *
-  * The `patchJson` is a full Graph JSON — MVP does NOT support partial patches.
-  * The handler decodes, runs the validator, and returns a structured outcome without committing.
+  * The `patchJson` is a full Graph JSON — MVP does NOT support partial patches. The handler decodes, runs the
+  * validator, and returns a structured outcome without committing.
   */
 final case class ValidateEvolutionInput(patchJson: String)
 object ValidateEvolutionInput:
@@ -36,9 +40,8 @@ object ProposeServiceInput:
 
 /** Input for the explainInvariantViolation tool.
   *
-  * The error is identified by a kind tag ("CycleDetected", "TierViolation", ...) plus the
-  * JSON-encoded error payload. This is a thin surface — the real LLM-facing explanation
-  * is a pattern match in the tool handler.
+  * The error is identified by a kind tag ("CycleDetected", "TierViolation", ...) plus the JSON-encoded error payload.
+  * This is a thin surface — the real LLM-facing explanation is a pattern match in the tool handler.
   */
 final case class ExplainInvariantViolationInput(errorKind: String, errorJson: String)
 object ExplainInvariantViolationInput:

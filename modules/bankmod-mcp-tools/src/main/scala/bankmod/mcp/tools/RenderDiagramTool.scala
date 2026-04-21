@@ -1,7 +1,7 @@
 package bankmod.mcp.tools
 
 import zio.*
-import zio.schema.{DeriveSchema, Schema}
+import zio.schema.{ DeriveSchema, Schema }
 
 import bankmod.graph.model.*
 import bankmod.graph.render.*
@@ -20,10 +20,10 @@ object RenderDiagramTool:
   /** Pure render: decodes scope + format, slices the graph, delegates to the right interpreter. */
   def run(input: RenderDiagramInput, graph: Graph): Either[Failure, Output] =
     for
-      sliced     <- sliceByScope(input.scope, graph)
-      (scope, g0) = sliced
+      sliced      <- sliceByScope(input.scope, graph)
+      (scope, g0)  = sliced
       interpreter <- pickInterpreter(input.format)
-      body        = interpreter.render(g0)
+      body         = interpreter.render(g0)
     yield Output(format = input.format.toLowerCase, scope = scope, body = body)
 
   def handle(input: RenderDiagramInput): ZIO[GraphStore, Failure, Output] =
@@ -33,7 +33,7 @@ object RenderDiagramTool:
 
   private def sliceByScope(scope: String, graph: Graph): Either[Failure, (String, Graph)] =
     scope match
-      case "full" =>
+      case "full"                        =>
         Right("full" -> graph)
       case s if s.startsWith("service:") =>
         val idRaw = s.stripPrefix("service:")
@@ -45,7 +45,7 @@ object RenderDiagramTool:
           val neighbors = root.outbound.map(_.toService).flatMap(graph.services.get)
           val sliceMap  = (neighbors.toSeq :+ root).map(svc => svc.id -> svc).toMap
           (s"service:$idRaw", Graph(sliceMap))
-      case other =>
+      case other                         =>
         Left(Failure(s"Unknown scope: $other (expected 'full' or 'service:<id>')"))
 
   private def pickInterpreter(format: String): Either[Failure, GraphInterpreter[String]] =

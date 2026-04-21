@@ -21,14 +21,13 @@ object ProposeServiceTool:
   object Output:
     given Schema[Output] = DeriveSchema.gen
 
-  /** Effectful: decode, then run the validator *inside* `GraphStore.update` so that
-    * validate-and-swap is atomic with respect to concurrent writers. On decode failure
-    * we short-circuit with a non-committed Output — there is no point attempting an update
-    * if the input is not a well-formed graph.
+  /** Effectful: decode, then run the validator *inside* `GraphStore.update` so that validate-and-swap is atomic with
+    * respect to concurrent writers. On decode failure we short-circuit with a non-committed Output — there is no point
+    * attempting an update if the input is not a well-formed graph.
     */
   def handle(input: ProposeServiceInput): ZIO[GraphStore, Nothing, Output] =
     Schemas.graphCodec.decode(input.patchJson) match
-      case Left(err) =>
+      case Left(err)        =>
         ZIO.succeed(
           Output(
             committed = false,

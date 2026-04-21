@@ -1,5 +1,6 @@
 package bankmod.mcp.tools
 
+import zio.Scope
 import zio.test.*
 
 import bankmod.graph.model.*
@@ -78,7 +79,7 @@ object ValidateEvolutionToolSpec extends ZIOSpecDefault:
   private val cycleJson: String  = Schemas.graphCodec.encodeToString(cycleGraph)
   private val orphanJson: String = Schemas.graphCodec.encodeToString(orphanGraph)
 
-  def spec = suite("ValidateEvolutionTool.run")(
+  def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("ValidateEvolutionTool.run")(
     test("valid graph: accepted=true, no errors, non-empty previewJson") {
       val out = ValidateEvolutionTool.run(ValidateEvolutionInput(validJson))
       assertTrue(

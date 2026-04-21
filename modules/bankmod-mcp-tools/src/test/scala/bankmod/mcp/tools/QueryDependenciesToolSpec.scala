@@ -1,5 +1,6 @@
 package bankmod.mcp.tools
 
+import zio.Scope
 import zio.test.*
 
 import bankmod.graph.model.*
@@ -53,7 +54,7 @@ object QueryDependenciesToolSpec extends ZIOSpecDefault:
     )
   )
 
-  def spec = suite("QueryDependenciesTool.run")(
+  def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("QueryDependenciesTool.run")(
     test("depth=1 from A returns 2 hops: A->B and A->D") {
       val result = QueryDependenciesTool.run(QueryDependenciesInput("svc-a", 1), fixture)
       result match
@@ -65,7 +66,7 @@ object QueryDependenciesToolSpec extends ZIOSpecDefault:
             pairs == Set(("svc-a", "svc-b"), ("svc-a", "svc-d")),
             out.neighborhood.forall(_.hopDepth == 1),
           )
-        case Left(f) =>
+        case Left(f)    =>
           assertTrue(false) ?? s"expected Right, got Left($f)"
     },
     test("depth=2 from A returns 3 hops including B->C") {
@@ -81,7 +82,7 @@ object QueryDependenciesToolSpec extends ZIOSpecDefault:
               ("svc-b", "svc-c", 2),
             ),
           )
-        case Left(f) =>
+        case Left(f)    =>
           assertTrue(false) ?? s"expected Right, got Left($f)"
     },
     test("unknown serviceId produces Failure") {

@@ -14,8 +14,8 @@ import bankmod.mcp.tools.{
 
 /** Emits a plain-markdown doc bundle under `docs/bankmod/generated/`.
   *
-  * Option-2 scope (per M7 trim): no Laika plugin, no external SVG renderer. Pages use GitHub-flavoured fenced
-  * `mermaid` blocks, which render natively on github.com and on most markdown readers.
+  * Option-2 scope (per M7 trim): no Laika plugin, no external SVG renderer. Pages use GitHub-flavoured fenced `mermaid`
+  * blocks, which render natively on github.com and on most markdown readers.
   *
   * Single source of truth:
   *   - Diagram: [[MermaidInterpreter]] on [[SampleGraph.sample]].
@@ -26,34 +26,34 @@ import bankmod.mcp.tools.{
   */
 object DocsGenerator extends ZIOAppDefault:
 
-  /** Default output: walk up from CWD looking for the repo root (directory containing `build.sbt`)
-    * and write to `<root>/docs/bankmod/generated`. This makes the tool behave identically whether
-    * invoked from the repo root or from inside an sbt fork whose CWD is the module base.
+  /** Default output: walk up from CWD looking for the repo root (directory containing `build.sbt`) and write to
+    * `<root>/docs/bankmod/generated`. This makes the tool behave identically whether invoked from the repo root or from
+    * inside an sbt fork whose CWD is the module base.
     */
   private def defaultOutDir: Path =
-    val cwd = Paths.get("").toAbsolutePath
+    val cwd                     = Paths.get("").toAbsolutePath
     def findRoot(p: Path): Path =
-      if p == null then cwd
-      else if Files.exists(p.resolve("build.sbt")) then p
-      else if p.getParent == null then cwd
-      else findRoot(p.getParent)
+      Option(p).fold(cwd) { path =>
+        if Files.exists(path.resolve("build.sbt")) then path
+        else Option(path.getParent).fold(cwd)(findRoot)
+      }
     findRoot(cwd).resolve("docs").resolve("bankmod").resolve("generated")
 
   override def run: ZIO[ZIOAppArgs, Throwable, Unit] =
     for
-      args   <- getArgs
-      outDir  = args.headOption.map(Paths.get(_)).getOrElse(defaultOutDir)
-      _      <- ZIO.attemptBlocking(Files.createDirectories(outDir.resolve("services")))
-      _ <- writeFile(outDir.resolve("index.md"), renderIndex(SampleGraph.sample))
-      _ <- writeFile(outDir.resolve("invariants.md"), renderInvariants())
-      _ <- writeFile(outDir.resolve("graph-schema.json"), JsonSchemaInterpreter.jsonSchema)
-      _ <- ZIO.foreachDiscard(SampleGraph.sample.services.values.toList.sortBy(_.id.value)) { svc =>
-             writeFile(
-               outDir.resolve("services").resolve(s"${svc.id.value}.md"),
-               renderService(svc, SampleGraph.sample),
-             )
-           }
-      _ <- Console.printLine(s"bankmod docs: wrote ${SampleGraph.sample.services.size + 3} files under $outDir")
+      args  <- getArgs
+      outDir = args.headOption.map(Paths.get(_)).getOrElse(defaultOutDir)
+      _     <- ZIO.attemptBlocking(Files.createDirectories(outDir.resolve("services")))
+      _     <- writeFile(outDir.resolve("index.md"), renderIndex(SampleGraph.sample))
+      _     <- writeFile(outDir.resolve("invariants.md"), renderInvariants())
+      _     <- writeFile(outDir.resolve("graph-schema.json"), JsonSchemaInterpreter.jsonSchema)
+      _     <- ZIO.foreachDiscard(SampleGraph.sample.services.values.toList.sortBy(_.id.value)) { svc =>
+                 writeFile(
+                   outDir.resolve("services").resolve(s"${svc.id.value}.md"),
+                   renderService(svc, SampleGraph.sample),
+                 )
+               }
+      _     <- Console.printLine(s"bankmod docs: wrote ${SampleGraph.sample.services.size + 3} files under $outDir")
     yield ()
 
   private def writeFile(path: Path, body: String): ZIO[Any, Throwable, Unit] =
@@ -97,7 +97,7 @@ object DocsGenerator extends ZIOAppDefault:
     ).mkString("\n")
 
   private def servicesByTierTable(g: Graph): String =
-    val byTier = g.services.values.toList.sortBy(_.id.value).groupBy(_.tier)
+    val byTier                       = g.services.values.toList.sortBy(_.id.value).groupBy(_.tier)
     val tierOrder: List[Criticality] = List(Criticality.Tier1, Criticality.Tier2, Criticality.Tier3)
     tierOrder.flatMap { t =>
       byTier.get(t).map { svcs =>
@@ -124,15 +124,16 @@ object DocsGenerator extends ZIOAppDefault:
 
     val outboundList =
       if svc.outbound.isEmpty then "_none_"
-      else svc.outbound.toList
-             .sortBy(e => (e.toService.value, e.toPort.value))
-             .map(e =>
-               s"- `${e.fromPort.value}` → [`${e.toService.value}`](./${e.toService.value}.md) on `${e.toPort.value}`" +
-                 s" — ${protocolLabel(e.protocol)}, ${e.consistency}, ${e.ordering}"
-             )
-             .mkString("\n")
+      else
+        svc.outbound.toList
+          .sortBy(e => (e.toService.value, e.toPort.value))
+          .map(e =>
+            s"- `${e.fromPort.value}` → [`${e.toService.value}`](./${e.toService.value}.md) on `${e.toPort.value}`" +
+              s" — ${protocolLabel(e.protocol)}, ${e.consistency}, ${e.ordering}"
+          )
+          .mkString("\n")
 
-    val callers = g.services.values
+    val callers     = g.services.values
       .filter(_.outbound.exists(_.toService == svc.id))
       .toList
       .sortBy(_.id.value)
@@ -180,7 +181,7 @@ object DocsGenerator extends ZIOAppDefault:
         val explained = ExplainInvariantViolationTool.run(
           ExplainInvariantViolationInput(entry.kind, "")
         )
-        val fixes =
+        val fixes     =
           if explained.fixSuggestions.isEmpty then "_no suggestions_"
           else explained.fixSuggestions.map(f => s"- $f").mkString("\n")
         s"""### ${entry.kind}

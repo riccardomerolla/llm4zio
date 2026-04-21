@@ -234,6 +234,6 @@ final case class IssueImportServiceLive(
 
   private def mapIssueRepoError(e: PersistenceError): PersistenceError =
     e match
-      case PersistenceError.NotFound(entity, id)               =>
+      case PersistenceError.NotFound(entity, id) =>
         PersistenceError.QueryFailed(s"$entity", s"Not found: $id")
-      case other                                               => other
+      case other                                 => other

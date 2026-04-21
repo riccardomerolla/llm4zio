@@ -13,7 +13,7 @@ import _root_.agent.boundary.AgentsView
 import _root_.config.entity.{ AgentChannelBinding, AgentInfo, ConfigRepository, CustomAgentRow, SettingRow }
 import agent.control.{ AgentMatching, BuiltInAgentSynchronizer }
 import agent.entity.api.*
-import agent.entity.{ Agent as RegistryAgent, AgentEvent, AgentPermissions, AgentRegistry, AgentRepository, TrustLevel }
+import agent.entity.{ Agent as RegistryAgent, * }
 import llm4zio.core.{ LlmError, LlmService }
 import orchestration.entity.AgentMonitorService
 import prompts.PromptLoader

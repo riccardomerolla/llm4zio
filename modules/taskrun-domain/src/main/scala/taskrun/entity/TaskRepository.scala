@@ -1,5 +1,7 @@
 package taskrun.entity
 
+import scala.annotation.unused
+
 import zio.*
 
 import _root_.config.entity.{ CustomAgentRow, SettingRow, WorkflowRow }

@@ -1,5 +1,6 @@
 package bankmod.mcp.tools
 
+import zio.Scope
 import zio.test.*
 
 object ListInvariantsToolSpec extends ZIOSpecDefault:
@@ -14,14 +15,14 @@ object ListInvariantsToolSpec extends ZIOSpecDefault:
     "MissingPackedDecimalGuard",
   )
 
-  def spec = suite("ListInvariantsTool.run")(
+  def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("ListInvariantsTool.run")(
     test("catalog has exactly 7 entries") {
       val out = ListInvariantsTool.run(ListInvariantsInput())
       assertTrue(out.invariants.size == 7)
     },
     test("every catalog kind matches a real InvariantError variant name") {
-      val out       = ListInvariantsTool.run(ListInvariantsInput())
-      val kinds     = out.invariants.map(_.kind).toSet
+      val out   = ListInvariantsTool.run(ListInvariantsInput())
+      val kinds = out.invariants.map(_.kind).toSet
       assertTrue(kinds == expectedKinds)
     },
     test("every entry has a non-empty shortDescription") {

@@ -11,8 +11,8 @@ import shared.errors.PersistenceError
 
 /** Read-only ConfigRepository stub backed by a fixed Map. Write/workflow/custom-agent ops die.
   *
-  * Colocated with ConnectorConfigResolverSpec rather than shared because the resolver is the
-  * only settings-only consumer inside config-domain; broader fixtures still live in root tests.
+  * Colocated with ConnectorConfigResolverSpec rather than shared because the resolver is the only settings-only
+  * consumer inside config-domain; broader fixtures still live in root tests.
   */
 final class StubConfigRepository(settings: Map[String, String]) extends ConfigRepository:
 

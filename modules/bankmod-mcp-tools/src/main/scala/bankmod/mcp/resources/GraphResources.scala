@@ -10,9 +10,9 @@ import bankmod.graph.model.*
 import bankmod.mcp.GraphStore
 import bankmod.mcp.tools.*
 
-/** Pure URI-to-content lookup for bankmod graph resources. The zio-http-mcp `McpResource` /
-  * `McpResourceTemplate` wrappers are applied at server assembly time — this object is the
-  * single source of truth for resource semantics so it can be tested in isolation.
+/** Pure URI-to-content lookup for bankmod graph resources. The zio-http-mcp `McpResource` / `McpResourceTemplate`
+  * wrappers are applied at server assembly time — this object is the single source of truth for resource semantics so
+  * it can be tested in isolation.
   */
 object GraphResources:
 
@@ -32,7 +32,7 @@ object GraphResources:
     ordering: String,
   )
   object EdgeView:
-    given Schema[EdgeView]                      = DeriveSchema.gen
+    given Schema[EdgeView]           = DeriveSchema.gen
     val codec: BinaryCodec[EdgeView] = ZioJsonCodec.schemaBasedBinaryCodec[EdgeView]
 
   val uriTemplates: List[String] = List(
@@ -66,9 +66,9 @@ object GraphResources:
         for
           fromId <- ServiceId.from(fromRaw)
           svc    <- graph.services.get(fromId).toRight(s"Unknown service: $fromRaw")
-          edge <- svc.outbound
-                    .find(e => e.toService.value == toRaw && e.toPort.value == portRaw)
-                    .toRight(s"Edge not found: $fromRaw -> $toRaw on port $portRaw")
+          edge   <- svc.outbound
+                      .find(e => e.toService.value == toRaw && e.toPort.value == portRaw)
+                      .toRight(s"Edge not found: $fromRaw -> $toRaw on port $portRaw")
         yield
           val view = EdgeView(
             fromService = fromRaw,

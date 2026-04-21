@@ -6,9 +6,8 @@ import zio.*
 import zio.test.*
 import zio.test.TestAspect.*
 
-import bankmod.graph.model.*
 import bankmod.graph.model.Refinements.*
-import bankmod.graph.model.Schemas
+import bankmod.graph.model.{ Schemas, * }
 import bankmod.mcp.{ GraphStore, GraphStoreLive }
 
 object ModelWatcherSpec extends ZIOSpecDefault:
@@ -72,13 +71,13 @@ object ModelWatcherSpec extends ZIOSpecDefault:
     test("reload: malformed JSON leaves the store unchanged") {
       ZIO.scoped {
         for
-          path <- ZIO.acquireRelease(
-                    ZIO.attemptBlocking {
-                      val f = Files.createTempFile("bankmod-watcher-bad-", ".json")
-                      Files.writeString(f, "{ not valid json")
-                      f
-                    }
-                  )(f => ZIO.attemptBlocking(Files.deleteIfExists(f)).orDie)
+          path  <- ZIO.acquireRelease(
+                     ZIO.attemptBlocking {
+                       val f = Files.createTempFile("bankmod-watcher-bad-", ".json")
+                       Files.writeString(f, "{ not valid json")
+                       f
+                     }
+                   )(f => ZIO.attemptBlocking(Files.deleteIfExists(f)).orDie)
           _     <- ModelWatcher.reload(path)
           store <- ZIO.service[GraphStore]
           now   <- store.get
@@ -88,20 +87,20 @@ object ModelWatcherSpec extends ZIOSpecDefault:
     test("watch: writing to the file publishes an update on the store hub") {
       ZIO.scoped {
         for
-          path        <- tempJson(seed)
-          store       <- ZIO.service[GraphStore]
-          _           <- ModelWatcher.reload(path) // prime: file == store == seed
-          subscribed  <- Promise.make[Nothing, Graph]
-          _           <- store.updates.runHead
-                           .flatMap(g => ZIO.foreachDiscard(g)(subscribed.succeed))
-                           .fork
-          _           <- ZIO.sleep(200.millis) // let the subscriber attach to the hub
-          _           <- ModelWatcher.watch(path).forkScoped
-          _           <- ZIO.sleep(300.millis) // let watch() finish its initial no-op reload
-          _           <- ZIO.attemptBlocking(
-                           Files.writeString(path, Schemas.graphCodec.encodeToString(updated))
-                         ).orDie
-          observed    <- subscribed.await.timeout(8.seconds).someOrFailException
+          path       <- tempJson(seed)
+          store      <- ZIO.service[GraphStore]
+          _          <- ModelWatcher.reload(path) // prime: file == store == seed
+          subscribed <- Promise.make[Nothing, Graph]
+          _          <- store.updates.runHead
+                          .flatMap(g => ZIO.foreachDiscard(g)(subscribed.succeed))
+                          .fork
+          _          <- ZIO.sleep(200.millis)     // let the subscriber attach to the hub
+          _          <- ModelWatcher.watch(path).forkScoped
+          _          <- ZIO.sleep(300.millis)     // let watch() finish its initial no-op reload
+          _          <- ZIO.attemptBlocking(
+                          Files.writeString(path, Schemas.graphCodec.encodeToString(updated))
+                        ).orDie
+          observed   <- subscribed.await.timeout(8.seconds).someOrFailException
         yield assertTrue(observed == updated)
       }
     } @@ withLiveClock @@ timeout(15.seconds),

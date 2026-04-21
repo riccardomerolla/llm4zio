@@ -13,8 +13,8 @@ import bankmod.graph.validate.InvariantError
   * another writer between validation and commit. For the single-writer-via-MCP MVP this is overkill, but it costs
   * nothing and keeps the semantics trivially correct if we ever expose a second writer.
   *
-  * The hub is `sliding(16)` so a slow subscriber cannot back-pressure writers; an overwhelmed consumer simply drops
-  * the oldest buffered update.
+  * The hub is `sliding(16)` so a slow subscriber cannot back-pressure writers; an overwhelmed consumer simply drops the
+  * oldest buffered update.
   */
 object GraphStoreLive:
 

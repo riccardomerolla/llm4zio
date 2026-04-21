@@ -2,12 +2,11 @@ package bankmod.mcp.prompts
 
 import zio.schema.{ DeriveSchema, Schema }
 
-/** MCP prompt-generation primitives. Pure functions that turn typed parameters into a list of
-  * `PromptMessage` values the client LLM uses to launch a templated workflow.
+/** MCP prompt-generation primitives. Pure functions that turn typed parameters into a list of `PromptMessage` values
+  * the client LLM uses to launch a templated workflow.
   *
-  * MVP design: we don't depend on `com.jamesward.zio-http-mcp`'s `McpPrompt` class here — the
-  * server-assembly step wraps these into library values. Testing the logic here means we can
-  * verify prompt quality without booting a server.
+  * MVP design: we don't depend on `com.jamesward.zio-http-mcp`'s `McpPrompt` class here — the server-assembly step
+  * wraps these into library values. Testing the logic here means we can verify prompt quality without booting a server.
   */
 object BankmodPrompts:
 
@@ -29,9 +28,9 @@ object BankmodPrompts:
 
   final case class AddServiceParams(
     serviceId: String,
-    tier: String,         // "Tier1" | "Tier2" | "Tier3"
-    owner: String,        // "Platform" | "Product" | ...
-    reason: String,       // why we're adding it
+    tier: String,  // "Tier1" | "Tier2" | "Tier3"
+    owner: String, // "Platform" | "Product" | ...
+    reason: String, // why we're adding it
   )
   object AddServiceParams:
     given Schema[AddServiceParams] = DeriveSchema.gen
@@ -66,7 +65,7 @@ object BankmodPrompts:
     serviceId: String,
     oldPort: String,
     newPort: String,
-    protocol: String,    // "rest" | "grpc" | "event" | "graphql" | "soap"
+    protocol: String, // "rest" | "grpc" | "event" | "graphql" | "soap"
   )
   object MigrateEndpointParams:
     given Schema[MigrateEndpointParams] = DeriveSchema.gen

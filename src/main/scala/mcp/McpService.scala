@@ -17,8 +17,7 @@ import memory.entity.MemoryRepository
 import plan.entity.PlanRepository
 import sdlc.control.SdlcDashboardService
 import specification.entity.SpecificationRepository
-import workspace.entity.WorkspaceRunService
-import workspace.entity.WorkspaceRepository
+import workspace.entity.{ WorkspaceRepository, WorkspaceRunService }
 
 /** Holds the running MCP server (SSE transport) and its controller.
   *

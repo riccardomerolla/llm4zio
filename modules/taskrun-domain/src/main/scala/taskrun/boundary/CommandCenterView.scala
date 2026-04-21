@@ -8,20 +8,15 @@ import taskrun.entity.TaskRunRow
 
 /** Home-page dashboard view.
   *
-  * Moved from `shared.web` to `taskrun.boundary` in phase 5A.6. The view's
-  * data inputs (`PipelineSummary`, `ActivityEvent`, `TaskRunRow`) are all
-  * taskrun/activity/issues-shaped, and the only caller — `DashboardController`
-  * — already lives in `taskrun.boundary`, so same-package access cleans up
-  * the call sites.
+  * Moved from `shared.web` to `taskrun.boundary` in phase 5A.6. The view's data inputs (`PipelineSummary`,
+  * `ActivityEvent`, `TaskRunRow`) are all taskrun/activity/issues-shaped, and the only caller — `DashboardController` —
+  * already lives in `taskrun.boundary`, so same-package access cleans up the call sites.
   *
-  * Cycle avoidance: the live-section used to call
-  * `AgentMonitorView.statsHeaderFragment(AgentGlobalStats.empty)` directly,
-  * but `AgentMonitorView` lives in `orchestration-domain/boundary/` and
-  * `taskrun-domain` cannot `dependsOn(orchestrationDomain)` (the arrow
-  * goes the other way). Resolution: `page()` accepts a pre-rendered
-  * `statsHeaderHtml: String` which the caller (`HtmlViews` in shared-web,
-  * which reaches both domain modules) renders once and hands in. The
-  * default empty state is stable HTML so pre-rendering is a no-op cost.
+  * Cycle avoidance: the live-section used to call `AgentMonitorView.statsHeaderFragment(AgentGlobalStats.empty)`
+  * directly, but `AgentMonitorView` lives in `orchestration-domain/boundary/` and `taskrun-domain` cannot
+  * `dependsOn(orchestrationDomain)` (the arrow goes the other way). Resolution: `page()` accepts a pre-rendered
+  * `statsHeaderHtml: String` which the caller (`HtmlViews` in shared-web, which reaches both domain modules) renders
+  * once and hands in. The default empty state is stable HTML so pre-rendering is a no-op cost.
   */
 object CommandCenterView:
 

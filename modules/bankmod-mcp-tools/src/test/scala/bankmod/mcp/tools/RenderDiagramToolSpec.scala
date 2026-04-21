@@ -1,5 +1,6 @@
 package bankmod.mcp.tools
 
+import zio.Scope
 import zio.test.*
 
 import bankmod.graph.model.*
@@ -49,7 +50,7 @@ object RenderDiagramToolSpec extends ZIOSpecDefault:
     )
   )
 
-  def spec = suite("RenderDiagramTool.run")(
+  def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("RenderDiagramTool.run")(
     test("scope=full, format=mermaid produces non-empty body containing both service ids") {
       val result = RenderDiagramTool.run(RenderDiagramInput("full", "mermaid"), fixture)
       result match
@@ -61,7 +62,7 @@ object RenderDiagramToolSpec extends ZIOSpecDefault:
             out.body.contains("svc-a"),
             out.body.contains("svc-b"),
           )
-        case Left(f) =>
+        case Left(f)    =>
           assertTrue(false) ?? s"expected Right, got Left($f)"
     },
     test("scope=full, format=d2 produces non-empty body") {
@@ -69,7 +70,7 @@ object RenderDiagramToolSpec extends ZIOSpecDefault:
       result match
         case Right(out) =>
           assertTrue(out.format == "d2", out.body.nonEmpty)
-        case Left(f) =>
+        case Left(f)    =>
           assertTrue(false) ?? s"expected Right, got Left($f)"
     },
     test("scope=full, format=structurizr produces non-empty body") {
@@ -77,7 +78,7 @@ object RenderDiagramToolSpec extends ZIOSpecDefault:
       result match
         case Right(out) =>
           assertTrue(out.format == "structurizr", out.body.nonEmpty)
-        case Left(f) =>
+        case Left(f)    =>
           assertTrue(false) ?? s"expected Right, got Left($f)"
     },
     test("scope=full, format=json produces non-empty body") {
@@ -85,7 +86,7 @@ object RenderDiagramToolSpec extends ZIOSpecDefault:
       result match
         case Right(out) =>
           assertTrue(out.format == "json", out.body.nonEmpty)
-        case Left(f) =>
+        case Left(f)    =>
           assertTrue(false) ?? s"expected Right, got Left($f)"
     },
     test("scope=service:svc-a, format=mermaid contains svc-a and svc-b (direct outbound)") {
@@ -97,7 +98,7 @@ object RenderDiagramToolSpec extends ZIOSpecDefault:
             out.body.contains("svc-a"),
             out.body.contains("svc-b"),
           )
-        case Left(f) =>
+        case Left(f)    =>
           assertTrue(false) ?? s"expected Right, got Left($f)"
     },
     test("scope=service:svc-a, format=mermaid reports scope == service:svc-a") {
@@ -106,7 +107,7 @@ object RenderDiagramToolSpec extends ZIOSpecDefault:
       result match
         case Right(out) =>
           assertTrue(out.scope == "service:svc-a")
-        case Left(f) =>
+        case Left(f)    =>
           assertTrue(false) ?? s"expected Right, got Left($f)"
     },
     test("unknown scope produces Failure") {

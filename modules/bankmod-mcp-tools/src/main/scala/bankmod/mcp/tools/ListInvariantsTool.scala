@@ -1,7 +1,7 @@
 package bankmod.mcp.tools
 
 import zio.*
-import zio.schema.{DeriveSchema, Schema}
+import zio.schema.{ DeriveSchema, Schema }
 
 object ListInvariantsTool:
 

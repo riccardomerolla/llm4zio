@@ -1,10 +1,11 @@
 package bankmod.mcp.tools
 
+import zio.Scope
 import zio.test.*
 
 object ExplainInvariantViolationToolSpec extends ZIOSpecDefault:
 
-  def spec = suite("ExplainInvariantViolationTool.run")(
+  def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("ExplainInvariantViolationTool.run")(
     test("CycleDetected kind — non-empty explanation, non-empty fixes, rawErrorJson echoed back") {
       val rawJson = """{"path":["svc-a","svc-b","svc-a"]}"""
       val out     = ExplainInvariantViolationTool.run(
