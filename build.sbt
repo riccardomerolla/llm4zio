@@ -549,6 +549,7 @@ lazy val bankmodApp = (project in file("modules/bankmod-app"))
   .settings(
     name := "bankmod-app",
     libraryDependencies ++= domainBceDeps,
+    testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
     run / fork := true,
     run / javaOptions ++= Seq(
       "--enable-native-access=ALL-UNNAMED",
