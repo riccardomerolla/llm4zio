@@ -538,6 +538,7 @@ lazy val bankmodMcpTools = (project in file("modules/bankmod-mcp-tools"))
       zioHttpDep,
       "dev.zio"       %% "zio-schema"            % zioSchemaVersion,
       "dev.zio"       %% "zio-schema-derivation" % zioSchemaVersion,
+      "dev.zio"       %% "zio-schema-json"       % zioSchemaVersion,
     ),
     testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
   )
