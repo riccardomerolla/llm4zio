@@ -4,6 +4,7 @@ import zio.json.*
 import zio.test.*
 
 import _root_.config.entity.{ AgentInfo, AgentType, WorkflowDefinition }
+import taskrun.boundary.WorkflowsView
 
 object WorkflowsViewSpec extends ZIOSpecDefault:
   final private case class RenderedAgent(name: String, display: String) derives JsonDecoder

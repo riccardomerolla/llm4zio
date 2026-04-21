@@ -3,7 +3,7 @@ package gateway.control
 import zio.*
 import zio.stream.ZStream
 
-import gateway.entity.{ NormalizedMessage, SessionKey, SessionScopeStrategy }
+import gateway.entity.{ MessageChannelError, NormalizedMessage, SessionKey, SessionScopeStrategy }
 
 final case class SlackConfig(
   appToken: String,

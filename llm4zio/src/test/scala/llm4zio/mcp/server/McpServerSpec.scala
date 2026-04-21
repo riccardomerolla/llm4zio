@@ -5,11 +5,10 @@ import zio.json.*
 import zio.json.ast.Json
 import zio.stream.*
 import zio.test.*
-import zio.test.Assertion.*
 
 import llm4zio.mcp.jsonrpc.*
 import llm4zio.mcp.protocol.*
-import llm4zio.tools.{ Tool, ToolExecutionError, ToolRegistry }
+import llm4zio.tools.{ Tool, ToolRegistry }
 
 object McpServerSpec extends ZIOSpecDefault:
 

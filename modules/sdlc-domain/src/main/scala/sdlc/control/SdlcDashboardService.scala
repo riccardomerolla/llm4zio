@@ -49,7 +49,6 @@ final case class SdlcDashboardServiceLive(
   daemonAgentScheduler: DaemonAgentScheduler,
   evolutionProposalRepository: EvolutionProposalRepository,
 ) extends SdlcDashboardService:
-  import SdlcDashboardService.*
 
   private val trendWindow: Duration = 7.days
 

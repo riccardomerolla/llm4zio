@@ -10,8 +10,8 @@ import zio.stream.ZStream
 
 import activity.control.ActivityHub
 import app.control.HealthMonitor
-import gateway.control.{ ChannelRegistry, MessageChannelError }
-import gateway.entity.SessionScopeStrategy
+import gateway.control.ChannelRegistry
+import gateway.entity.{ MessageChannelError, SessionScopeStrategy }
 import orchestration.entity.AgentMonitorService
 import shared.web.StreamAbortRegistry
 import shared.web.ws.{ ClientMessage, ServerMessage, SubscriptionTopic }
@@ -469,7 +469,7 @@ final case class WebSocketControllerLive(
     for
       workspaces <- workspaceRepository.list.mapError(_.toString)
       runs       <- ZIO.foreach(workspaces)(ws => workspaceRepository.listRuns(ws.id).mapError(_.toString)).map(_.flatten)
-      sorted      = runs.sortBy(_.updatedAt)(Ordering[java.time.Instant].reverse).take(100)
+      sorted      = runs.sortBy(_.updatedAt)(using Ordering[java.time.Instant].reverse).take(100)
     yield sorted.toJson
 
   private def workspaceError(err: workspace.entity.WorkspaceError): String =

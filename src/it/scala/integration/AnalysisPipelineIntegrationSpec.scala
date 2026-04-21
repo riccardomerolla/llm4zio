@@ -11,7 +11,7 @@ import analysis.control.{ AnalysisAgentRunner, AnalysisAgentRunnerLive }
 import analysis.entity.{ AnalysisDoc, AnalysisEvent, AnalysisRepository, AnalysisType }
 import shared.services.FileService
 import _root_.config.entity.SettingRow
-import db.TaskRepository
+import taskrun.entity.TaskRepository
 import taskrun.entity.{ TaskArtifactRow, TaskReportRow, TaskRunRow }
 import project.control.ProjectStorageService
 import shared.errors.PersistenceError
@@ -109,8 +109,7 @@ object AnalysisPipelineIntegrationSpec extends ZIOSpecDefault:
       test("runCodeReview: file written and committed, AnalysisCreated event persisted") {
         ZIO.scoped {
           for
-            repoPath     <- initGitRepo
-            workspacePath = repoPath.toString
+            repoPath <- initGitRepo
 
             // ── Stub collaborators ─────────────────────────────────────────────
             agentRepo    = StubAgentRepository()

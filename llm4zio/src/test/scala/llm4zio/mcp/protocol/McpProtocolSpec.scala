@@ -4,7 +4,6 @@ import zio.*
 import zio.json.*
 import zio.json.ast.Json
 import zio.test.*
-import zio.test.Assertion.*
 
 import llm4zio.tools.{ Tool, ToolExecutionError }
 

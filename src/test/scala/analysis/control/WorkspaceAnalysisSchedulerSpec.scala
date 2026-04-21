@@ -9,12 +9,11 @@ import _root_.config.entity.SettingRow
 import activity.entity.{ ActivityEvent, ActivityEventType }
 import analysis.entity.*
 import board.entity.*
-import db.*
 import project.control.ProjectStorageService
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ AgentId, AnalysisDocId, BoardIssueId, ProjectId }
 import shared.testfixtures.*
-import taskrun.entity.{ TaskArtifactRow, TaskReportRow, TaskRunRow }
+import taskrun.entity.{ TaskArtifactRow, TaskReportRow, TaskRepository, TaskRunRow }
 import workspace.entity.*
 
 object WorkspaceAnalysisSchedulerSpec extends ZIOSpecDefault:

@@ -4,7 +4,7 @@ import zio.*
 import zio.stream.ZStream
 
 import _root_.config.entity.MigrationConfig
-import db.{ ChatRepository, TaskRepository }
+import conversation.entity.ChatRepository
 import gateway.control.{ ChannelRegistry, TelegramClient }
 import gateway.entity.{
   TelegramClientError,
@@ -15,7 +15,7 @@ import gateway.entity.{
 import orchestration.control.*
 import orchestration.entity.*
 import shared.errors.{ ControlPlaneError, PersistenceError }
-import taskrun.entity.TaskRunRow
+import taskrun.entity.{ TaskRepository, TaskRunRow }
 
 enum TaskProgressNotifierError:
   case Persistence(error: PersistenceError)

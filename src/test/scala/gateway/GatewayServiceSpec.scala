@@ -7,15 +7,15 @@ import zio.stream.ZStream
 import zio.test.*
 
 import _root_.config.entity.{ ConfigRepository, CustomAgentRow, SettingRow, WorkflowRow }
+import agent.control.AgentRegistryLive
+import agent.entity.AgentRegistry
+import conversation.entity.ChatRepository
 import conversation.entity.api.{ ChatConversation, ConversationEntry, SessionContextLink }
-import db.*
 import gateway.control.*
 import gateway.entity.*
 import llm4zio.core.*
 import llm4zio.tools.{ AnyTool, JsonSchema }
 import memory.entity.{ Scope as MemoryScope, * }
-import orchestration.control.AgentRegistryLive
-import orchestration.entity.AgentRegistry
 import prompts.PromptLoader
 import shared.errors.PersistenceError
 
@@ -68,8 +68,6 @@ object GatewayServiceSpec extends ZIOSpecDefault:
   private object TestLlm:
     val layer: ULayer[LlmService] = ZLayer.succeed(
       new LlmService:
-        def execute(prompt: String): IO[LlmError, LlmResponse] =
-          ZIO.succeed(LlmResponse("""{"agent":"code-agent","confidence":0.93}"""))
 
         override def executeStream(prompt: String): zio.stream.Stream[LlmError, LlmChunk] =
           ZStream.succeed(LlmChunk("""{"agent":"code-agent","confidence":0.93}""", finishReason = Some("stop")))
@@ -116,18 +114,11 @@ object GatewayServiceSpec extends ZIOSpecDefault:
   ): ZLayer[Any, Any, GatewayService & ChannelRegistry] =
     val llmLayer = ZLayer.succeed(
       new LlmService:
-        def execute(prompt: String): IO[LlmError, LlmResponse] =
-          if prompt.contains("You are a request router.") then
-            ZIO.succeed(LlmResponse("""{"agent":"code-agent","confidence":0.93}"""))
-          else promptRef.update(_ :+ prompt).as(LlmResponse("ok"))
 
         override def executeStream(prompt: String): zio.stream.Stream[LlmError, LlmChunk] =
           if prompt.contains("You are a request router.") then
             ZStream.succeed(LlmChunk("""{"agent":"code-agent","confidence":0.93}""", finishReason = Some("stop")))
           else ZStream.fromZIO(promptRef.update(_ :+ prompt).as(LlmChunk("ok", finishReason = Some("stop"))))
-
-        def executeWithHistory(messages: List[Message]): IO[LlmError, LlmResponse] =
-          ZIO.succeed(LlmResponse("history"))
 
         override def executeStreamWithHistory(messages: List[Message]): zio.stream.Stream[LlmError, LlmChunk] =
           ZStream.empty

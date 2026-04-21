@@ -3,9 +3,9 @@ package taskrun.boundary
 import zio.*
 import zio.http.*
 
-import db.*
 import shared.errors.PersistenceError
 import shared.web.{ ErrorHandlingMiddleware, HtmlViews }
+import taskrun.entity.TaskRepository
 
 trait ReportsController:
   def routes: Routes[Any, Response]

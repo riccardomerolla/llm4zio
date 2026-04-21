@@ -1,0 +1,511 @@
+package analysis.control
+
+import java.time.Instant
+
+import zio.*
+
+import activity.control.ActivityHub
+import activity.entity.{ ActivityEvent, ActivityEventType }
+import analysis.entity.{
+  AnalysisDoc,
+  AnalysisRepository,
+  AnalysisType,
+  WorkspaceAnalysisState,
+  WorkspaceAnalysisStatus,
+}
+import board.entity.*
+import issues.entity.{ IssueEvent, IssueFilter, IssueRepository, IssueState }
+import orchestration.control.OrchestratorControlPlane
+import project.control.ProjectStorageService
+import shared.errors.PersistenceError
+import shared.ids.Ids.{ BoardIssueId, EventId, IssueId }
+import taskrun.entity.TaskRepository
+import workspace.entity.WorkspaceRepository
+
+final private[analysis] case class WorkspaceAnalysisJob(
+  workspaceId: String,
+  analysisType: AnalysisType,
+)
+
+trait WorkspaceAnalysisScheduler:
+  def triggerForWorkspaceEvent(workspaceId: String): UIO[Unit]
+  def triggerManual(workspaceId: String): UIO[Unit]
+  def statusForWorkspace(workspaceId: String): IO[PersistenceError, List[WorkspaceAnalysisStatus]]
+
+object WorkspaceAnalysisScheduler:
+  val cooldownMinutesSettingKey: String = "analysis.autoTrigger.cooldownMinutes"
+  val defaultCooldown: Duration         = 1.hour
+
+  val trackedTypes: List[AnalysisType] =
+    List(AnalysisType.CodeReview, AnalysisType.Architecture, AnalysisType.Security)
+
+  def triggerForWorkspaceEvent(workspaceId: String): URIO[WorkspaceAnalysisScheduler, Unit] =
+    ZIO.serviceWithZIO[WorkspaceAnalysisScheduler](_.triggerForWorkspaceEvent(workspaceId))
+
+  def triggerManual(workspaceId: String): URIO[WorkspaceAnalysisScheduler, Unit] =
+    ZIO.serviceWithZIO[WorkspaceAnalysisScheduler](_.triggerManual(workspaceId))
+
+  def statusForWorkspace(
+    workspaceId: String
+  ): ZIO[WorkspaceAnalysisScheduler, PersistenceError, List[WorkspaceAnalysisStatus]] =
+    ZIO.serviceWithZIO[WorkspaceAnalysisScheduler](_.statusForWorkspace(workspaceId))
+
+  val live
+    : ZLayer[
+      AnalysisAgentRunner & AnalysisRepository & ActivityHub & TaskRepository & BoardRepository & WorkspaceRepository &
+        ProjectStorageService & OrchestratorControlPlane & IssueRepository,
+      Nothing,
+      WorkspaceAnalysisScheduler,
+    ] =
+    ZLayer.scoped {
+      for
+        runner         <- ZIO.service[AnalysisAgentRunner]
+        repository     <- ZIO.service[AnalysisRepository]
+        activityHub    <- ZIO.service[ActivityHub]
+        taskRepo       <- ZIO.service[TaskRepository]
+        boardRepo      <- ZIO.service[BoardRepository]
+        workspaceRepo  <- ZIO.service[WorkspaceRepository]
+        projectStorage <- ZIO.service[ProjectStorageService]
+        controlPlane   <- ZIO.service[OrchestratorControlPlane]
+        issueRepo      <- ZIO.service[IssueRepository]
+        queue          <- Queue.unbounded[WorkspaceAnalysisJob]
+        runtimeState   <- Ref.Synchronized.make(Map.empty[(String, AnalysisType), WorkspaceAnalysisStatus])
+        service         = WorkspaceAnalysisSchedulerLive(
+                            runner = runner,
+                            repository = repository,
+                            activityHub = activityHub,
+                            taskRepository = taskRepo,
+                            boardRepository = boardRepo,
+                            workspaceRepository = workspaceRepo,
+                            projectStorageService = projectStorage,
+                            controlPlane = controlPlane,
+                            issueRepository = issueRepo,
+                            queue = queue,
+                            runtimeState = runtimeState,
+                          )
+        _              <- ZIO.foreachParDiscard(1 to trackedTypes.size)(_ => service.worker.forever.forkScoped)
+      yield service
+    }
+
+final case class WorkspaceAnalysisSchedulerLive(
+  runner: AnalysisAgentRunner,
+  repository: AnalysisRepository,
+  activityHub: ActivityHub,
+  taskRepository: TaskRepository,
+  boardRepository: BoardRepository,
+  workspaceRepository: WorkspaceRepository,
+  projectStorageService: ProjectStorageService,
+  controlPlane: OrchestratorControlPlane,
+  issueRepository: IssueRepository,
+  queue: Queue[WorkspaceAnalysisJob],
+  runtimeState: Ref.Synchronized[Map[(String, AnalysisType), WorkspaceAnalysisStatus]],
+) extends WorkspaceAnalysisScheduler:
+
+  import WorkspaceAnalysisScheduler.*
+
+  override def triggerForWorkspaceEvent(workspaceId: String): UIO[Unit] =
+    trigger(workspaceId, bypassCooldown = false)
+
+  override def triggerManual(workspaceId: String): UIO[Unit] =
+    trigger(workspaceId, bypassCooldown = true)
+
+  override def statusForWorkspace(workspaceId: String): IO[PersistenceError, List[WorkspaceAnalysisStatus]] =
+    for
+      docs    <- repository.listByWorkspace(workspaceId)
+      runtime <- runtimeState.get.map(_.collect { case ((id, _), status) if id == workspaceId => status })
+      statuses = trackedTypes.map(analysisType => mergeStatus(workspaceId, analysisType, docs, runtime))
+    yield statuses.sortBy(statusOrder)
+
+  private[analysis] def worker: UIO[Unit] =
+    queue.take.flatMap(runJob)
+
+  private def trigger(workspaceId: String, bypassCooldown: Boolean): UIO[Unit] =
+    (for
+      docs     <- repository.listByWorkspace(workspaceId)
+      cooldown <- cooldownDuration
+      now      <- Clock.instant
+      _        <- ZIO.foreachDiscard(trackedTypes)(analysisType =>
+                    enqueueIfEligible(workspaceId, analysisType, docs, cooldown, now, bypassCooldown)
+                  )
+    yield ())
+      .catchAll(err => ZIO.logWarning(s"Analysis trigger failed for workspace $workspaceId: ${err.toString}"))
+
+  private def enqueueIfEligible(
+    workspaceId: String,
+    analysisType: AnalysisType,
+    docs: List[AnalysisDoc],
+    cooldown: Duration,
+    now: Instant,
+    bypassCooldown: Boolean,
+  ): IO[PersistenceError, Unit] =
+    runtimeState.modifyZIO { current =>
+      val key          = workspaceId -> analysisType
+      val currentState = current.get(key)
+      val shouldSkip   =
+        currentState.exists(status =>
+          status.state == WorkspaceAnalysisState.Pending || status.state == WorkspaceAnalysisState.Running
+        ) ||
+        (!bypassCooldown && withinCooldown(latestCompletion(docs, analysisType), now, cooldown))
+      if shouldSkip then ZIO.succeed(((), current))
+      else
+        val nextStatus = WorkspaceAnalysisStatus(
+          workspaceId = workspaceId,
+          analysisType = analysisType,
+          state = WorkspaceAnalysisState.Pending,
+          queuedAt = Some(now),
+          startedAt = currentState.flatMap(_.startedAt),
+          completedAt = currentState.flatMap(_.completedAt).orElse(latestCompletion(docs, analysisType)),
+          lastUpdatedAt = now,
+        )
+        queue.offer(WorkspaceAnalysisJob(workspaceId, analysisType)).as(((), current.updated(key, nextStatus)))
+    }
+
+  private def runJob(job: WorkspaceAnalysisJob): UIO[Unit] =
+    val typeName       = renderAnalysisType(job.analysisType)
+    val fingerprintTag = s"analysis-fingerprint:${job.workspaceId}:${typeName.toLowerCase.replace(" ", "-")}"
+
+    Ref.make(Option.empty[IssueId]).flatMap { issueIdRef =>
+      val effect =
+        for
+          startedAt    <- Clock.instant
+          // Check for existing in-flight issue with this fingerprint to prevent duplicates
+          allIssues    <- issueRepository.list(IssueFilter(limit = Int.MaxValue))
+          existingIssue = allIssues.find(_.tags.contains(fingerprintTag)).filter { issue =>
+                            issue.state match
+                              case _: IssueState.Done      => false
+                              case _: IssueState.Completed => false
+                              case _: IssueState.Archived  => false
+                              case _                       => true
+                          }
+          // Create a board issue for this analysis (or reuse existing)
+          issueId      <- existingIssue match
+                            case Some(issue) => ZIO.succeed(issue.id)
+                            case None        =>
+                              val newIssueId = IssueId.generate
+                              for
+                                _ <- issueRepository.append(IssueEvent.Created(
+                                       newIssueId,
+                                       s"$typeName analysis",
+                                       s"Automated $typeName analysis for workspace ${job.workspaceId}.",
+                                       "analysis",
+                                       "medium",
+                                       startedAt,
+                                     ))
+                                _ <-
+                                  issueRepository.append(IssueEvent.WorkspaceLinked(newIssueId, job.workspaceId, startedAt))
+                                _ <- issueRepository.append(IssueEvent.TagsUpdated(
+                                       newIssueId,
+                                       List("analysis", s"analysis:$typeName", "auto:analysis", fingerprintTag),
+                                       startedAt,
+                                     ))
+                                _ <- issueRepository.append(IssueEvent.MovedToTodo(newIssueId, startedAt, startedAt))
+                              yield newIssueId
+          _            <- issueIdRef.set(Some(issueId))
+          // Transition issue to InProgress
+          agentId       = shared.ids.Ids.AgentId(analysisAgentName(job.analysisType))
+          _            <- issueRepository
+                            .append(IssueEvent.Started(issueId, agentId, startedAt, startedAt))
+                            .catchAll(err => ZIO.logWarning(s"Failed to mark analysis issue as started: $err"))
+          // Also create the human-review board issue for the analysis docs
+          _            <- ensureHumanReviewIssueWithAnalysis(job.workspaceId, job.analysisType, startedAt).ignore
+          _            <- updateStatus(job.workspaceId, job.analysisType) { current =>
+                            current.copy(
+                              state = WorkspaceAnalysisState.Running,
+                              startedAt = Some(startedAt),
+                              lastUpdatedAt = startedAt,
+                            )
+                          }
+          _            <- publishActivity(
+                            job.workspaceId,
+                            job.analysisType,
+                            ActivityEventType.AnalysisStarted,
+                            startedAt,
+                            None,
+                          )
+          doc          <- runAnalysis(job.workspaceId, job.analysisType)
+          completed    <- Clock.instant
+          // Move issue to HumanReview on completion
+          _            <- issueRepository
+                            .append(IssueEvent.MovedToHumanReview(issueId, completed, completed))
+                            .catchAll(err => ZIO.logWarning(s"Failed to move analysis issue to review: $err"))
+          _            <- updateStatus(job.workspaceId, job.analysisType) { current =>
+                            current.copy(
+                              state = WorkspaceAnalysisState.Completed,
+                              completedAt = Some(doc.updatedAt),
+                              lastUpdatedAt = completed,
+                            )
+                          }
+          _            <- publishActivity(
+                            job.workspaceId,
+                            job.analysisType,
+                            ActivityEventType.AnalysisCompleted,
+                            completed,
+                            Some(doc.generatedBy.value),
+                          )
+        yield ()
+
+      effect.catchAll { err =>
+        Clock.instant.flatMap { failedAt =>
+          issueIdRef.get.flatMap { maybeIssueId =>
+            val markIssueFailed = maybeIssueId match
+              case Some(id) =>
+                issueRepository
+                  .append(IssueEvent.MovedToBacklog(id, failedAt, failedAt))
+                  .ignore
+              case None     => ZIO.unit
+            markIssueFailed *>
+              updateStatus(job.workspaceId, job.analysisType) { current =>
+                current.copy(state = WorkspaceAnalysisState.Failed, lastUpdatedAt = failedAt)
+              } *>
+              publishActivity(
+                job.workspaceId,
+                job.analysisType,
+                ActivityEventType.AnalysisFailed,
+                failedAt,
+                None,
+              ) *>
+              ZIO.logWarning(
+                s"Analysis execution failed for ${job.workspaceId}/${renderAnalysisType(job.analysisType)}: ${renderJobError(err)}"
+              )
+          }
+        }
+      }
+    }
+
+  private def runAnalysis(workspaceId: String, analysisType: AnalysisType): IO[AnalysisAgentRunnerError, AnalysisDoc] =
+    analysisType match
+      case AnalysisType.CodeReview     => runner.runCodeReview(workspaceId)
+      case AnalysisType.Architecture   => runner.runArchitecture(workspaceId)
+      case AnalysisType.Security       => runner.runSecurity(workspaceId)
+      case custom: AnalysisType.Custom =>
+        ZIO.fail(AnalysisAgentRunnerError.ProcessFailed(
+          custom.name,
+          "Unsupported analysis type for workspace scheduler",
+        ))
+
+  private def publishActivity(
+    workspaceId: String,
+    analysisType: AnalysisType,
+    eventType: ActivityEventType,
+    now: Instant,
+    agentName: Option[String],
+  ): UIO[Unit] =
+    activityHub.publish(
+      ActivityEvent(
+        id = EventId.generate,
+        eventType = eventType,
+        source = "workspace-analysis",
+        agentName = agentName,
+        summary =
+          s"${activitySummaryPrefix(eventType)} ${renderAnalysisType(analysisType)} analysis for workspace $workspaceId",
+        payload = Some(s"""{"workspaceId":"$workspaceId","analysisType":"${renderAnalysisType(analysisType)}"}"""),
+        createdAt = now,
+      )
+    )
+
+  private def ensureHumanReviewIssueWithAnalysis(
+    workspaceId: String,
+    analysisType: AnalysisType,
+    now: Instant,
+  ): IO[PersistenceError, BoardIssueId] =
+    val typeName    = renderAnalysisType(analysisType)
+    val typeTag     = analysisReviewTag(analysisType)
+    val title       = s"$typeName analysis for workspace $workspaceId"
+    val description = s"Review the latest $typeName analysis docs for workspace $workspaceId."
+    ensureWorkspaceBoardReviewIssue(workspaceId, title, description, typeTag, now)
+
+  private val boardColumns: List[BoardColumn] = List(
+    BoardColumn.Backlog,
+    BoardColumn.Todo,
+    BoardColumn.InProgress,
+    BoardColumn.Review,
+    BoardColumn.Done,
+    BoardColumn.Archive,
+  )
+
+  private def ensureWorkspaceBoardReviewIssue(
+    workspaceId: String,
+    title: String,
+    description: String,
+    typeTag: String,
+    now: Instant,
+  ): IO[PersistenceError, BoardIssueId] =
+    for
+      workspaceOpt  <- workspaceRepository.get(workspaceId)
+      workspace     <- ZIO.fromOption(workspaceOpt).orElseFail(PersistenceError.NotFound("workspace", workspaceId))
+      boardPath     <- projectStorageService.projectRoot(workspace.projectId).map(_.toString)
+      _             <- boardRepository.initBoard(boardPath).mapError(mapBoardError)
+      existing      <- ZIO
+                         .foreach(boardColumns)(column => boardRepository.listIssues(boardPath, column))
+                         .map(_.flatten)
+                         .mapError(mapBoardError)
+      existingReview = existing.find(issue =>
+                         issue.frontmatter.tags.exists(_.equalsIgnoreCase(typeTag)) ||
+                         issue.frontmatter.title.equalsIgnoreCase(title)
+                       )
+      issueId       <- existingReview match
+                         case Some(issue) => ZIO.succeed(issue.frontmatter.id)
+                         case None        =>
+                           createWorkspaceBoardReviewIssue(
+                             boardPath,
+                             title,
+                             description,
+                             List(typeTag, "auto-generated"),
+                             now,
+                           )
+    yield issueId
+
+  private def createWorkspaceBoardReviewIssue(
+    workspacePath: String,
+    title: String,
+    description: String,
+    tags: List[String],
+    now: Instant,
+  ): IO[PersistenceError, BoardIssueId] =
+    for
+      boardIssueId <- ZIO
+                        .fromEither(BoardIssueId.fromString(IssueId.generate.value))
+                        .mapError(err => PersistenceError.QueryFailed("board_issue_id", err))
+      _            <- boardRepository
+                        .createIssue(
+                          workspacePath,
+                          BoardColumn.Review,
+                          BoardIssue(
+                            frontmatter = IssueFrontmatter(
+                              id = boardIssueId,
+                              title = title,
+                              priority = IssuePriority.Medium,
+                              assignedAgent = None,
+                              requiredCapabilities = Nil,
+                              blockedBy = Nil,
+                              tags = tags,
+                              acceptanceCriteria = Nil,
+                              estimate = None,
+                              proofOfWork = Nil,
+                              transientState = TransientState.None,
+                              branchName = None,
+                              failureReason = None,
+                              completedAt = None,
+                              createdAt = now,
+                            ),
+                            body = description,
+                            column = BoardColumn.Review,
+                            directoryPath = "",
+                          ),
+                        )
+                        .unit
+                        .mapError(mapBoardError)
+    yield boardIssueId
+
+  private def mapBoardError(error: BoardError): PersistenceError =
+    error match
+      case BoardError.BoardNotFound(value)            => PersistenceError.QueryFailed("board", s"Not found: $value")
+      case BoardError.IssueNotFound(value)            => PersistenceError.QueryFailed("board_issue", s"Not found: $value")
+      case BoardError.IssueAlreadyExists(value)       => PersistenceError.QueryFailed("board_issue_exists", value)
+      case BoardError.InvalidColumn(value)            => PersistenceError.QueryFailed("board_column", value)
+      case BoardError.ParseError(message)             => PersistenceError.QueryFailed("board_parse", message)
+      case BoardError.WriteError(path, message)       => PersistenceError.QueryFailed("board_write", s"$path: $message")
+      case BoardError.GitOperationFailed(op, message) => PersistenceError.QueryFailed("board_git", s"$op: $message")
+      case BoardError.DependencyCycle(issueIds)       =>
+        PersistenceError.QueryFailed("board_cycle", issueIds.mkString(","))
+      case BoardError.ConcurrencyConflict(message)    => PersistenceError.QueryFailed("board_concurrency", message)
+
+  private def renderJobError(error: AnalysisAgentRunnerError | PersistenceError): String =
+    error match
+      case err: AnalysisAgentRunnerError => err.message
+      case err: PersistenceError         => err.toString
+
+  private def updateStatus(
+    workspaceId: String,
+    analysisType: AnalysisType,
+  )(
+    f: WorkspaceAnalysisStatus => WorkspaceAnalysisStatus
+  ): UIO[Unit] =
+    runtimeState.update { current =>
+      val key    = workspaceId -> analysisType
+      val status = current.getOrElse(
+        key,
+        WorkspaceAnalysisStatus(
+          workspaceId = workspaceId,
+          analysisType = analysisType,
+          state = WorkspaceAnalysisState.Idle,
+          lastUpdatedAt = Instant.EPOCH,
+        ),
+      )
+      current.updated(key, f(status))
+    }
+
+  private def cooldownDuration: IO[PersistenceError, Duration] =
+    taskRepository
+      .getSetting(cooldownMinutesSettingKey)
+      .mapError(err => PersistenceError.QueryFailed("analysisCooldownSetting", err.toString))
+      .map(setting =>
+        setting
+          .flatMap(_.value.trim.toLongOption)
+          .filter(_ >= 0L)
+          .map(_.minutes)
+          .getOrElse(defaultCooldown)
+      )
+
+  private def mergeStatus(
+    workspaceId: String,
+    analysisType: AnalysisType,
+    docs: List[AnalysisDoc],
+    runtime: Iterable[WorkspaceAnalysisStatus],
+  ): WorkspaceAnalysisStatus =
+    runtime.find(_.analysisType == analysisType).getOrElse {
+      val completedAt = latestCompletion(docs, analysisType)
+      WorkspaceAnalysisStatus(
+        workspaceId = workspaceId,
+        analysisType = analysisType,
+        state =
+          completedAt.fold[WorkspaceAnalysisState](WorkspaceAnalysisState.Idle)(_ => WorkspaceAnalysisState.Completed),
+        completedAt = completedAt,
+        lastUpdatedAt = completedAt.getOrElse(Instant.EPOCH),
+      )
+    }
+
+  private def latestCompletion(docs: List[AnalysisDoc], analysisType: AnalysisType): Option[Instant] =
+    docs
+      .filter(_.analysisType == analysisType)
+      .sortBy(_.updatedAt)
+      .lastOption
+      .map(_.updatedAt)
+
+  private def withinCooldown(latest: Option[Instant], now: Instant, cooldown: Duration): Boolean =
+    latest.exists(_.plusMillis(cooldown.toMillis).isAfter(now))
+
+  private def renderAnalysisType(analysisType: AnalysisType): String =
+    analysisType match
+      case AnalysisType.CodeReview   => "Code review"
+      case AnalysisType.Architecture => "Architecture"
+      case AnalysisType.Security     => "Security"
+      case AnalysisType.Custom(name) => name
+
+  private def activitySummaryPrefix(eventType: ActivityEventType): String =
+    eventType match
+      case ActivityEventType.AnalysisStarted   => "Started"
+      case ActivityEventType.AnalysisCompleted => "Completed"
+      case ActivityEventType.AnalysisFailed    => "Failed"
+      case _                                   => "Updated"
+
+  private def analysisReviewTag(analysisType: AnalysisType): String =
+    analysisType match
+      case AnalysisType.CodeReview   => "analysis-review-code-review"
+      case AnalysisType.Architecture => "analysis-review-architecture"
+      case AnalysisType.Security     => "analysis-review-security"
+      case AnalysisType.Custom(name) => s"analysis-review-${name.toLowerCase}"
+
+  private def analysisAgentName(analysisType: AnalysisType): String =
+    analysisType match
+      case AnalysisType.CodeReview   => "analysis-code-review"
+      case AnalysisType.Architecture => "analysis-architecture"
+      case AnalysisType.Security     => "analysis-security"
+      case AnalysisType.Custom(name) => s"analysis-${name.toLowerCase}"
+
+  private def statusOrder(status: WorkspaceAnalysisStatus): Int =
+    status.analysisType match
+      case AnalysisType.CodeReview   => 0
+      case AnalysisType.Architecture => 1
+      case AnalysisType.Security     => 2
+      case AnalysisType.Custom(_)    => 3

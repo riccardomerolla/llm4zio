@@ -45,7 +45,7 @@ final case class EvolutionProposalRepositoryES(
   override def list(filter: EvolutionProposalFilter): IO[PersistenceError, List[EvolutionProposal]] =
     listAll.map(
       _.filter(matches(filter, _))
-        .sortBy(_.createdAt)(Ordering[java.time.Instant].reverse)
+        .sortBy(_.createdAt)(using Ordering[java.time.Instant].reverse)
     )
 
   private def rebuildSnapshot(id: EvolutionProposalId): IO[PersistenceError, Option[EvolutionProposal]] =

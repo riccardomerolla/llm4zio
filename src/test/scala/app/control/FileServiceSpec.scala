@@ -4,7 +4,6 @@ import java.nio.file.{ Files, Path, Paths }
 
 import zio.*
 import zio.test.*
-import zio.test.Assertion.*
 
 import shared.errors.FileError
 import shared.services.FileService

@@ -58,7 +58,7 @@ object ProactiveAgentWorkflowSpec extends ZIOSpecDefault:
 
   private def makeScheduler(
     workspacePath: String,
-    customSpecs: List[DaemonAgentSpec] = Nil,
+    customSpecs: List[DaemonAgentSpec],
   ): ZIO[Any, Nothing, (DaemonAgentSchedulerLive, Ref[Map[IssueId, List[IssueEvent]]], Ref[List[ActivityEvent]])] =
     for
       issueRef    <- Ref.make(Map.empty[IssueId, List[IssueEvent]])

@@ -1,5 +1,7 @@
 package gateway.boundary.telegram
 
+import scala.annotation.unused
+
 import gateway.entity.{ NormalizedMessage, TelegramInlineKeyboardMarkup }
 import orchestration.entity.WorkflowRunState
 
@@ -25,7 +27,7 @@ object ResponseFormatter:
       remaining = None,
     )
 
-  def formatContinuation(token: String, remaining: String): FormattedTelegramResponse =
+  def formatContinuation(@unused token: String, remaining: String): FormattedTelegramResponse =
     val normalized = remaining.trim
     FormattedTelegramResponse(
       text = normalized,

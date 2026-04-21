@@ -2,6 +2,8 @@ package orchestration.entity
 
 import java.time.Instant
 
+import scala.annotation.unused
+
 import zio.*
 
 sealed trait PoolError derives CanEqual
@@ -24,8 +26,8 @@ trait AgentPoolManager:
   def releaseSlot(handle: SlotHandle): UIO[Unit]
   def availableSlots(agentName: String): UIO[Int]
   def resize(agentName: String, newMax: Int): UIO[Unit]
-  def recordTokenUsage(agentName: String, deltaTokens: Long): IO[PoolError, Unit] = ZIO.unit
-  def isPaused(agentName: String): UIO[Boolean]                                   = ZIO.succeed(false)
+  def recordTokenUsage(@unused agentName: String, @unused deltaTokens: Long): IO[PoolError, Unit] = ZIO.unit
+  def isPaused(@unused agentName: String): UIO[Boolean]                                           = ZIO.succeed(false)
 
 object AgentPoolManager:
   def configKey(agentName: String): String =

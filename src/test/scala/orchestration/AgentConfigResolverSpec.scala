@@ -6,11 +6,10 @@ import zio.*
 import zio.test.*
 
 import _root_.config.entity.{ ProviderConfig, SettingRow }
-import db.*
 import llm4zio.core.LlmProvider
 import orchestration.control.AgentConfigResolverLive
 import shared.errors.PersistenceError
-import taskrun.entity.{ TaskArtifactRow, TaskReportRow, TaskRunRow }
+import taskrun.entity.{ TaskArtifactRow, TaskReportRow, TaskRepository, TaskRunRow }
 
 object AgentConfigResolverSpec extends ZIOSpecDefault:
 

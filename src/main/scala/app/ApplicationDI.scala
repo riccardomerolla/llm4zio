@@ -20,7 +20,8 @@ import _root_.config.entity.{ ConfigRepository, ConfigRepositoryES, GatewayConfi
 import activity.boundary.ActivityController
 import activity.control.ActivityHub
 import activity.entity.ActivityRepository
-import agent.entity.{ AgentEventStoreES, AgentRepositoryES }
+import agent.control.AgentRegistryLive
+import agent.entity.{ AgentEventStoreES, AgentRegistry, AgentRepositoryES }
 import analysis.control.{ AnalysisAgentRunner, WorkspaceAnalysisScheduler }
 import analysis.entity.{ AnalysisEventStoreES, AnalysisRepositoryES }
 import app.boundary.{ AgentMonitorController as AppAgentMonitorController, HealthController as AppHealthController, * }
@@ -32,10 +33,10 @@ import conversation.boundary.{
   ChatController as ConversationChatController,
   WebSocketController as ConversationWebSocketController,
 }
+import conversation.entity.ChatRepository
 import daemon.boundary.DaemonsController
 import daemon.control.DaemonAgentScheduler
 import daemon.entity.DaemonAgentSpecRepositoryES
-import db.*
 import decision.control.DecisionInbox
 import decision.entity.{ DecisionEventStoreES, DecisionRepositoryES }
 import demo.boundary.DemoController
@@ -47,7 +48,8 @@ import gateway.boundary.{
   ChannelController as GatewayChannelController,
   TelegramController as GatewayTelegramController,
 }
-import gateway.control.{ MessageRouter, * }
+import gateway.control.*
+import gateway.entity.MessageRouter
 import governance.control.{ GovernancePolicyEngine, GovernancePolicyService }
 import governance.entity.{ GovernancePolicyEventStoreES, GovernancePolicyRepositoryES }
 import issues.boundary.IssueController as IssuesIssueController
@@ -67,7 +69,7 @@ import orchestration.control.{
   IssueAssignmentOrchestrator as OrchestrationIssueAssignmentOrchestrator,
   ProgressTracker as OrchestrationProgressTracker,
 }
-import orchestration.entity.{ AgentPoolManager, AgentRegistry, TaskExecutor, WorkflowService }
+import orchestration.entity.{ AgentPoolManager, TaskExecutor, WorkflowService }
 import plan.entity.{ PlanEventStoreES, PlanRepositoryES }
 import project.boundary.ProjectsController
 import project.control.ProjectStorageService
@@ -86,7 +88,7 @@ import taskrun.boundary.{
   ReportsController as TaskRunReportsController,
   TasksController as TaskRunTasksController,
 }
-import taskrun.entity.{ TaskRunEventStoreES, TaskRunRepositoryES }
+import taskrun.entity.{ TaskRepository, TaskRunEventStoreES, TaskRunRepositoryES }
 import workspace.boundary.WorkspacesController
 import workspace.control.*
 import workspace.entity.WorkspaceRepository
@@ -390,7 +392,13 @@ object ApplicationDI:
       IssueWorkReportProjectionFactory.live,
       MergeAgentService.live,
       ConversationChatController.live,
+      issues.control.IssueTemplateService.live,
+      issues.control.IssueBulkService.live,
+      issues.control.IssueImportService.live,
       IssuesIssueController.live,
+      issues.boundary.IssueTemplatesController.live,
+      issues.boundary.IssueBulkController.live,
+      issues.boundary.IssueImportController.live,
       ActivityController.live,
       MemoryBoundaryController.live,
       DaemonsController.live,

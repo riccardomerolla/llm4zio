@@ -10,8 +10,8 @@ import _root_.config.entity.{ ConfigRepository, CustomAgentRow, ProviderConfig, 
 import activity.control.ActivityHub
 import activity.entity.ActivityEvent
 import board.entity.*
+import conversation.entity.ChatRepository
 import conversation.entity.api.*
-import db.*
 import governance.control.{ GovernanceEvaluationContext, GovernancePolicyService, GovernanceTransitionDecision }
 import governance.entity.{ GovernanceGate, GovernancePolicy }
 import issues.entity.{ IssueEvent, IssueRepository }

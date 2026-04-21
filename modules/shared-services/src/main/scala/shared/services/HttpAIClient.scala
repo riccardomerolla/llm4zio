@@ -1,5 +1,7 @@
 package shared.services
 
+import scala.annotation.unused
+
 import zio.*
 import zio.http.*
 
@@ -7,9 +9,9 @@ import shared.errors.AIError
 
 trait HttpAIClient:
   def get(
-    url: String,
-    headers: Map[String, String] = Map.empty,
-    timeout: Duration,
+    @unused url: String,
+    @unused headers: Map[String, String] = Map.empty,
+    @unused timeout: Duration,
   ): ZIO[Any, AIError, String] =
     ZIO.fail(AIError.InvalidResponse("GET is not supported by this HttpAIClient implementation"))
 

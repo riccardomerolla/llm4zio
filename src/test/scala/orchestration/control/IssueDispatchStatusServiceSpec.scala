@@ -91,7 +91,7 @@ object IssueDispatchStatusServiceSpec extends ZIOSpecDefault:
     issues: List[AgentIssue],
     agents: List[Agent],
     available: Map[String, Int],
-    histories: Map[IssueId, List[IssueEvent]] = Map.empty,
+    histories: Map[IssueId, List[IssueEvent]],
   ): IssueDispatchStatusService =
     IssueDispatchStatusServiceLive(
       issueRepository = StubIssueRepository(issues, histories),

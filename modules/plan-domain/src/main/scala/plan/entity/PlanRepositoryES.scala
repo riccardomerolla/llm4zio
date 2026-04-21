@@ -61,7 +61,7 @@ final case class PlanRepositoryES(
           }
         }
       )
-      .map(_.flatten.sortBy(_.updatedAt)(Ordering[java.time.Instant].reverse))
+      .map(_.flatten.sortBy(_.updatedAt)(using Ordering[java.time.Instant].reverse))
 
   private def rebuildSnapshot(id: PlanId): IO[PersistenceError, Option[Plan]] =
     for

@@ -2,10 +2,13 @@ package shared.web
 
 import java.time.Instant
 
+import scala.annotation.unused
+
 import zio.json.*
 
 import config.entity.AgentInfo
 import decision.entity.{ Decision, DecisionResolutionKind }
+import issues.boundary.ProofOfWorkView
 import issues.entity.IssueWorkReport
 import issues.entity.api.*
 import scalatags.Text.all.*
@@ -13,7 +16,6 @@ import shared.ids.Ids.IssueId
 import workspace.entity.{ RequirementCheck, RunSessionMode, RunStatus, WorkspaceRun }
 
 object IssuesView:
-  import IssuesMarkdownSupport.*
 
   final case class SyncStatus(
     lastSyncAt: Option[String],
@@ -119,11 +121,11 @@ object IssuesView:
     tagFilter: Option[String],
     query: Option[String],
     statusFilter: Option[String] = None,
-    availableAgents: List[AgentInfo] = Nil,
+    @unused availableAgents: List[AgentInfo] = Nil,
     dispatchStatuses: Map[IssueId, DispatchStatusResponse] = Map.empty,
     autoDispatchEnabled: Boolean = false,
-    syncStatus: SyncStatus = SyncStatus(None, 0, 0),
-    agentUsage: Option[(Int, Int)] = None,
+    @unused syncStatus: SyncStatus = SyncStatus(None, 0, 0),
+    @unused agentUsage: Option[(Int, Int)] = None,
     workReports: Map[IssueId, IssueWorkReport] = Map.empty,
   ): String =
     val queryParts  = List(
@@ -278,7 +280,7 @@ object IssuesView:
     issues: List[AgentIssueView],
     workspaces: List[(String, String)],
     workReports: Map[IssueId, IssueWorkReport],
-    availableAgents: List[AgentInfo] = Nil,
+    @unused availableAgents: List[AgentInfo] = Nil,
     dispatchStatuses: Map[IssueId, DispatchStatusResponse] = Map.empty,
   ): String =
     tag("ab-board-layout")(
@@ -392,7 +394,7 @@ object IssuesView:
     issue: AgentIssueView,
     workspaces: List[(String, String)],
     workReport: Option[IssueWorkReport],
-    availableAgents: List[AgentInfo] = Nil,
+    @unused availableAgents: List[AgentInfo] = Nil,
     dispatchStatus: Option[DispatchStatusResponse] = None,
   ): String =
     boardCard(issue, workspaces, workReport, dispatchStatus).render
@@ -571,7 +573,7 @@ object IssuesView:
     catch case _: Throwable => fallback
 
   /** Safely map an Option[String] through a transform, returning fallback on any failure. */
-  private def safeMap(opt: => Option[String], f: String => String, fallback: String = ""): String =
+  private def safeMap(opt: => Option[String], f: String => String, fallback: String): String =
     try
       opt.flatMap(Option(_)).map(f).getOrElse(fallback)
     catch case _: Throwable => fallback
@@ -1304,7 +1306,7 @@ object IssuesView:
     workspaceFilter: Option[String],
     agentFilter: Option[String],
     priorityFilter: Option[String],
-    rightSide: Option[Frag] = None,
+    rightSide: Option[Frag],
   ): Frag =
     form(method := "get", action := "/board", cls := "rounded-xl border border-white/10 bg-slate-900/60 p-4")(
       input(`type` := "hidden", name := "mode", value := "list"),
@@ -1444,8 +1446,8 @@ object IssuesView:
   private def boardCard(
     issue: AgentIssueView,
     workspaces: List[(String, String)],
-    workReport: Option[IssueWorkReport] = None,
-    dispatchStatus: Option[DispatchStatusResponse] = None,
+    workReport: Option[IssueWorkReport],
+    dispatchStatus: Option[DispatchStatusResponse],
   ): Frag =
     val issueId       = safe(issue.id, "-")
     val workspaceId   = safe(issue.workspaceId)

@@ -3,7 +3,6 @@ package llm4zio.mcp.jsonrpc
 import zio.*
 import zio.json.*
 import zio.test.*
-import zio.test.Assertion.*
 
 object JsonRpcSpec extends ZIOSpecDefault:
   def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("JsonRpc")(

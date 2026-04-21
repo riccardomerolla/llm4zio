@@ -9,13 +9,12 @@ import zio.test.*
 import _root_.config.entity.{ CustomAgentRow, SettingRow, WorkflowRow }
 import agent.entity.{ Agent, AgentEvent, AgentRepository }
 import analysis.entity.{ AnalysisDoc, AnalysisEvent, AnalysisRepository, AnalysisType }
-import db.*
 import project.control.ProjectStorageService
 import shared.errors.PersistenceError
 import shared.ids.Ids
 import shared.ids.Ids.ProjectId
 import shared.services.FileService
-import taskrun.entity.{ TaskArtifactRow, TaskReportRow, TaskRunRow }
+import taskrun.entity.{ TaskArtifactRow, TaskReportRow, TaskRepository, TaskRunRow }
 import workspace.entity.*
 
 object AnalysisAgentRunnerSpec extends ZIOSpecDefault:
@@ -40,7 +39,7 @@ object AnalysisAgentRunnerSpec extends ZIOSpecDefault:
     id: String,
     name: String,
     cliTool: String = "gemini",
-    capabilities: List[String] = Nil,
+    capabilities: List[String],
     enabled: Boolean = true,
     envVars: Map[String, String] = Map.empty,
     systemPrompt: Option[String] = None,

@@ -7,8 +7,8 @@ import zio.stream.*
 import zio.test.*
 
 import analysis.entity.{ AnalysisDoc, AnalysisEvent, AnalysisRepository, AnalysisType }
+import conversation.entity.ChatRepository
 import conversation.entity.api.ConversationEntry
-import db.ChatRepository
 import issues.entity.{ AgentIssue, IssueState }
 import knowledge.entity.*
 import llm4zio.core.{ LlmChunk, LlmError, LlmService, Message, ToolCallResponse }

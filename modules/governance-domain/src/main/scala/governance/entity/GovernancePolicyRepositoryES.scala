@@ -44,7 +44,7 @@ final case class GovernancePolicyRepositoryES(
 
   override def getActiveByProject(projectId: ProjectId): IO[PersistenceError, GovernancePolicy] =
     listByProject(projectId).flatMap {
-      _.filter(_.archivedAt.isEmpty).sortBy(_.version)(Ordering.Int.reverse).headOption match
+      _.filter(_.archivedAt.isEmpty).sortBy(_.version)(using Ordering.Int.reverse).headOption match
         case Some(policy) => ZIO.succeed(policy)
         case None         => ZIO.fail(PersistenceError.NotFound("governance_policy_project", projectId.value))
     }

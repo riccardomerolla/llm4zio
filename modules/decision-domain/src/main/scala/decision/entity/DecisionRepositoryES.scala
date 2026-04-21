@@ -49,11 +49,13 @@ final case class DecisionRepositoryES(
     listAll.map { decisions =>
       decisions
         .filter(matches(filter, _))
-        .sortBy(decision => (decision.status.toString, decision.updatedAt, decision.createdAt))(Ordering.Tuple3(
-          Ordering.String,
-          Ordering[java.time.Instant].reverse,
-          Ordering[java.time.Instant].reverse,
-        ))
+        .sortBy(decision => (decision.status.toString, decision.updatedAt, decision.createdAt))(
+          using Ordering.Tuple3(
+            using Ordering.String,
+            Ordering[java.time.Instant].reverse,
+            Ordering[java.time.Instant].reverse,
+          )
+        )
         .slice(filter.offset.max(0), filter.offset.max(0) + filter.limit.max(0))
     }
 
@@ -97,7 +99,7 @@ final case class DecisionRepositoryES(
           }
         }
       )
-      .map(_.flatten.sortBy(_.createdAt)(Ordering[java.time.Instant].reverse))
+      .map(_.flatten.sortBy(_.createdAt)(using Ordering[java.time.Instant].reverse))
 
   private def matches(filter: DecisionFilter, decision: Decision): Boolean =
     val matchesStatus    = filter.statuses.isEmpty || filter.statuses.contains(decision.status)

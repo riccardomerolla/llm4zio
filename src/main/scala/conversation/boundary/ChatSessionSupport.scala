@@ -4,10 +4,10 @@ import java.time.Instant
 
 import zio.*
 
+import conversation.entity.ChatRepository
 import conversation.entity.api.*
-import db.ChatRepository
-import gateway.control.{ ChannelRegistry, MessageChannelError }
-import gateway.entity.{ ChatSession, SessionKey }
+import gateway.control.ChannelRegistry
+import gateway.entity.{ ChatSession, MessageChannelError, SessionKey }
 import shared.errors.PersistenceError
 
 final private[boundary] case class ChatSessionSupport(
@@ -31,7 +31,7 @@ final private[boundary] case class ChatSessionSupport(
       sessions      <- ZIO.foreach(links)(buildChatSession(_, convById))
     yield sessions
       .filterNot(_.state.equalsIgnoreCase("closed"))
-      .sortBy(_.lastActivity)(Ordering[Instant].reverse)
+      .sortBy(_.lastActivity)(using Ordering[Instant].reverse)
 
   def getChatSession(sessionId: String): IO[PersistenceError, ChatSession] =
     listChatSessions.flatMap { sessions =>

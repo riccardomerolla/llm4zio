@@ -6,7 +6,7 @@ import zio.*
 import zio.json.*
 import zio.stream.ZStream
 
-import gateway.entity.NormalizedMessage
+import gateway.entity.{ MessageChannelError, NormalizedMessage }
 
 enum ChannelStatus derives JsonCodec:
   case Connected

@@ -7,6 +7,7 @@ import agent.boundary.AgentsView
 import config.entity.{ AgentInfo, WorkflowDefinition }
 import conversation.entity.api.{ ChatConversation, ConversationEntry, ConversationSessionMeta }
 import decision.entity.Decision
+import demo.boundary.DemoView
 import gateway.boundary.ChannelCardData
 import gateway.entity.ChatSession
 import issues.entity.IssueWorkReport
@@ -17,9 +18,9 @@ import issues.entity.api.{
   IssueTemplate,
   MergeHistoryEntryView,
 }
-import sdlc.entity.SdlcSnapshot
+import orchestration.boundary.AgentMonitorView
 import shared.ids.Ids.IssueId
-import taskrun.boundary.{ GraphView, ReportsView }
+import taskrun.boundary.{ CommandCenterView, GraphView, ReportsView, WorkflowsView }
 import taskrun.entity.{ TaskReportRow, TaskRunRow }
 import workspace.boundary.RunSessionUiMeta
 import workspace.entity.WorkspaceRun
@@ -27,13 +28,12 @@ import workspace.entity.WorkspaceRun
 object HtmlViews:
 
   def dashboard(summary: CommandCenterView.PipelineSummary, recentEvents: List[ActivityEvent]): String =
-    CommandCenterView.page(summary, recentEvents)
-
-  def sdlcDashboard(snapshot: SdlcSnapshot): String =
-    SdlcDashboardView.page(snapshot)
-
-  def sdlcDashboardFragment(snapshot: SdlcSnapshot): String =
-    SdlcDashboardView.fragment(snapshot)
+    // Pre-render the empty agent-stats header here (sharedWeb dependsOn orchestrationDomain
+    // so AgentMonitorView is reachable) and hand the HTML string to CommandCenterView,
+    // which lives in taskrun-domain and cannot dependsOn sharedWeb. HTMX/SSE swaps this
+    // initial fragment with live data.
+    val statsHeaderHtml = AgentMonitorView.statsHeaderFragment(AgentMonitorView.AgentGlobalStats.empty).render
+    CommandCenterView.page(summary, recentEvents, statsHeaderHtml)
 
   def recentRunsFragment(runs: List[TaskRunRow]): String =
     CommandCenterView.recentRunsFragment(runs)

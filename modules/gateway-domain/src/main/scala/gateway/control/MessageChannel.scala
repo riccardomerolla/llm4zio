@@ -5,13 +5,6 @@ import zio.stream.ZStream
 
 import gateway.entity.{ ChannelStatus as EntityChannelStatus, * }
 
-enum MessageChannelError:
-  case ChannelNotFound(name: String)
-  case UnsupportedSession(channelName: String, sessionKey: SessionKey)
-  case SessionNotConnected(channelName: String, sessionKey: SessionKey)
-  case ChannelClosed(channelName: String)
-  case InvalidMessage(reason: String)
-
 trait MessageChannel extends Channel:
   def name: String
   def scopeStrategy: SessionScopeStrategy

@@ -168,7 +168,7 @@ object DecisionInboxMaintenanceIntegrationSpec extends ZIOSpecDefault:
             repo    <- ZIO.service[DecisionRepository]
             inbox    = makeInbox(repo, timeoutSeconds = shortTimeout)
             // One to expire, one to resolve before maintenance
-            d1      <- inbox.openManualDecision("Will expire", "ctx", "ref-1", "summary")
+            _       <- inbox.openManualDecision("Will expire", "ctx", "ref-1", "summary")
             d2      <- inbox.openManualDecision("Stays resolved", "ctx", "ref-2", "summary")
             _       <- inbox.resolve(d2.id, DecisionResolutionKind.Approved, "admin", "OK")
             _       <- inbox.runMaintenance(now.plusSeconds(shortTimeout + 60))

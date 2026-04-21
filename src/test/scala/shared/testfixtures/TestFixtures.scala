@@ -48,7 +48,7 @@ final class StubIssueRepository(issues: List[AgentIssue]) extends IssueRepositor
     ZIO.succeed(
       issues
         .filter(i => filter.states.isEmpty || filter.states.contains(IssueStateTag.fromState(i.state)))
-        .filter(i => filter.agentId.isEmpty)
+        .filter(_ => filter.agentId.isEmpty)
         .filter(i => filter.runId.isEmpty || i.runId == filter.runId)
         .slice(filter.offset, filter.offset + filter.limit)
     )

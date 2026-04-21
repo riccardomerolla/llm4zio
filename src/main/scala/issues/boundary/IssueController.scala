@@ -1,12 +1,8 @@
 package issues.boundary
 
-import java.nio.charset.StandardCharsets
-import java.nio.file.{ Files, Path, Paths }
+import java.nio.file.Paths
 import java.time.Instant
 import java.util.UUID
-
-import scala.jdk.CollectionConverters.*
-import scala.util.matching.Regex
 
 import zio.*
 import zio.http.*
@@ -21,10 +17,10 @@ import agent.entity.api.AgentMatchSuggestion
 import analysis.entity.AnalysisRepository
 import board.control.BoardOrchestrator
 import board.entity.{ IssueEstimate as BoardIssueEstimate, IssuePriority as BoardIssuePriority, * }
-import db.{ ChatRepository, TaskRepository }
+import conversation.entity.ChatRepository
 import decision.control.DecisionInbox
 import decision.entity.*
-import issues.control.IssueAnalysisAttachment
+import issues.control.{ IssueAnalysisAttachment, IssueTemplateService }
 import issues.entity.api.*
 import issues.entity.{ AgentIssue as DomainIssue, * }
 import orchestration.control.{ IssueAssignmentOrchestrator, IssueDispatchStatusService }
@@ -32,8 +28,9 @@ import project.control.ProjectStorageService
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ AgentId, BoardIssueId, EventId, IssueId, TaskRunId }
 import shared.web.{ ErrorHandlingMiddleware, HtmlViews }
-import workspace.control.{ ProofOfWorkExtractor, WorkspaceRunService }
-import workspace.entity.{ AssignRunRequest, WorkspaceRepository }
+import taskrun.entity.TaskRepository
+import workspace.control.ProofOfWorkExtractor
+import workspace.entity.{ AssignRunRequest, WorkspaceRepository, WorkspaceRunService }
 
 trait IssueController:
   def routes: Routes[Any, Response]
@@ -48,7 +45,7 @@ object IssueController:
       ChatRepository & TaskRepository & ConfigRepository & AgentRepository & IssueAssignmentOrchestrator &
         IssueRepository & WorkspaceRepository & WorkspaceRunService & ActivityHub & IssueDispatchStatusService &
         BoardOrchestrator & BoardRepository & DecisionInbox &
-        AnalysisRepository & IssueWorkReportProjection & ProjectStorageService,
+        AnalysisRepository & IssueWorkReportProjection & ProjectStorageService & IssueTemplateService,
       Nothing,
       IssueController,
     ] =
@@ -71,6 +68,7 @@ final case class IssueControllerLive(
   analysisRepository: AnalysisRepository,
   issueWorkReportProjection: IssueWorkReportProjection,
   projectStorageService: ProjectStorageService,
+  templateService: IssueTemplateService,
 ) extends IssueController:
 
   final private case class TimedResult[+A](value: A, durationMs: Long)
@@ -97,17 +95,10 @@ final case class IssueControllerLive(
       ErrorHandlingMiddleware.fromPersistence {
         for
           workspaces <- workspaceRepository.list.mapError(mapIssueRepoError)
-          templates  <- listIssueTemplates
+          templates  <- templateService.listTemplates
         yield html(
           HtmlViews.issueCreateForm(runId, workspaces.map(ws => ws.id -> ws.name), templates)
         )
-      }
-    },
-    Method.GET / "settings" / "issues-templates"                     -> handler { (_: Request) =>
-      ErrorHandlingMiddleware.fromPersistence {
-        for
-          templates <- listIssueTemplates
-        yield html(HtmlViews.settingsIssueTemplatesTab(templates))
       }
     },
     Method.POST / "issues"                                           -> handler { (req: Request) =>
@@ -164,16 +155,6 @@ final case class IssueControllerLive(
                              yield ()
           redirect     = form.get("runId").map(id => s"/board?mode=list&run_id=$id").getOrElse("/board?mode=list")
         yield Response(status = Status.SeeOther, headers = Headers(Header.Custom("Location", redirect)))
-      }
-    },
-    Method.POST / "issues" / "import"                                -> handler { (_: Request) =>
-      ErrorHandlingMiddleware.fromPersistence {
-        for
-          imported <- importIssuesFromConfiguredFolder
-        yield Response(
-          status = Status.SeeOther,
-          headers = Headers(Header.Custom("Location", s"/board?mode=list&imported=$imported")),
-        )
       }
     },
     Method.GET / "issues" / string("id")                             -> handler { (id: String, req: Request) =>
@@ -469,17 +450,20 @@ final case class IssueControllerLive(
                             else body.fromJson[CreateIssueFromTemplateRequest]
                           )
                           .mapError(err => PersistenceError.QueryFailed("json_parse", err))
-          template   <- getTemplateById(templateId)
-          variableMap = resolveTemplateVariables(template, normalizeVariableValues(createReq.variableValues))
-          _          <- validateTemplateVariables(template, variableMap)
+          template   <- templateService.getTemplate(templateId)
+          variableMap = templateService.resolveTemplateVariables(
+                          template,
+                          templateService.normalizeVariableValues(createReq.variableValues),
+                        )
+          _          <- templateService.validateTemplateVariables(template, variableMap)
           title       = createReq.overrideTitle
                           .map(_.trim)
                           .filter(_.nonEmpty)
-                          .getOrElse(applyTemplateVariables(template.titleTemplate, variableMap))
+                          .getOrElse(templateService.applyTemplateVariables(template.titleTemplate, variableMap))
           description = createReq.overrideDescription
                           .map(_.trim)
                           .filter(_.nonEmpty)
-                          .getOrElse(applyTemplateVariables(template.descriptionTemplate, variableMap))
+                          .getOrElse(templateService.applyTemplateVariables(template.descriptionTemplate, variableMap))
           _          <- ZIO
                           .fail(PersistenceError.QueryFailed("template", "Template produced an empty title"))
                           .when(title.trim.isEmpty)
@@ -523,146 +507,10 @@ final case class IssueControllerLive(
         yield Response.json(created.toJson)
       }
     },
-    Method.GET / "api" / "issue-templates"                           -> handler { (_: Request) =>
-      ErrorHandlingMiddleware.fromPersistence {
-        listIssueTemplates.map(templates => Response.json(templates.toJson))
-      }
-    },
-    Method.POST / "api" / "issue-templates"                          -> handler { (req: Request) =>
-      ErrorHandlingMiddleware.fromPersistence {
-        for
-          body      <- req.body.asString.mapError(err => PersistenceError.QueryFailed("request_body", err.getMessage))
-          upsertReq <- ZIO
-                         .fromEither(body.fromJson[IssueTemplateUpsertRequest])
-                         .mapError(err => PersistenceError.QueryFailed("json_parse", err))
-          template  <- createCustomTemplate(upsertReq)
-        yield Response.json(template.toJson).copy(status = Status.Created)
-      }
-    },
-    Method.PUT / "api" / "issue-templates" / string("id")            -> handler { (id: String, req: Request) =>
-      ErrorHandlingMiddleware.fromPersistence {
-        for
-          body      <- req.body.asString.mapError(err => PersistenceError.QueryFailed("request_body", err.getMessage))
-          upsertReq <- ZIO
-                         .fromEither(body.fromJson[IssueTemplateUpsertRequest])
-                         .mapError(err => PersistenceError.QueryFailed("json_parse", err))
-          template  <- updateCustomTemplate(id, upsertReq)
-        yield Response.json(template.toJson)
-      }
-    },
-    Method.DELETE / "api" / "issue-templates" / string("id")         -> handler { (id: String, _: Request) =>
-      ErrorHandlingMiddleware.fromPersistence {
-        deleteCustomTemplate(id).as(Response(status = Status.NoContent))
-      }
-    },
     Method.GET / "api" / "issues"                                    -> handler { (req: Request) =>
       val runIdStr = req.queryParam("run_id").map(_.trim).filter(_.nonEmpty)
       ErrorHandlingMiddleware.fromPersistence {
         loadApiIssues(runIdStr).map(issues => Response.json(issues.toJson))
-      }
-    },
-    Method.GET / "api" / "pipelines"                                 -> handler { (_: Request) =>
-      ErrorHandlingMiddleware.fromPersistence {
-        listPipelines.map(values => Response.json(values.toJson))
-      }
-    },
-    Method.POST / "api" / "pipelines"                                -> handler { (req: Request) =>
-      ErrorHandlingMiddleware.fromPersistence {
-        for
-          body     <- req.body.asString.mapError(err => PersistenceError.QueryFailed("request_body", err.getMessage))
-          create   <- ZIO
-                        .fromEither(body.fromJson[PipelineCreateRequest])
-                        .mapError(err => PersistenceError.QueryFailed("json_parse", err))
-          pipeline <- createPipeline(create)
-        yield Response.json(pipeline.toJson).copy(status = Status.Created)
-      }
-    },
-    Method.POST / "api" / "issues" / "bulk" / "assign"               -> handler { (req: Request) =>
-      ErrorHandlingMiddleware.fromPersistence {
-        for
-          body        <- req.body.asString.mapError(err => PersistenceError.QueryFailed("request_body", err.getMessage))
-          bulkRequest <- ZIO
-                           .fromEither(body.fromJson[BulkIssueAssignRequest])
-                           .mapError(err => PersistenceError.QueryFailed("json_parse", err))
-          response    <- bulkAssignIssues(bulkRequest)
-        yield Response.json(response.toJson)
-      }
-    },
-    Method.POST / "api" / "issues" / "bulk" / "status"               -> handler { (req: Request) =>
-      ErrorHandlingMiddleware.fromPersistence {
-        for
-          body        <- req.body.asString.mapError(err => PersistenceError.QueryFailed("request_body", err.getMessage))
-          bulkRequest <- ZIO
-                           .fromEither(body.fromJson[BulkIssueStatusRequest])
-                           .mapError(err => PersistenceError.QueryFailed("json_parse", err))
-          response    <- bulkUpdateStatus(bulkRequest)
-        yield Response.json(response.toJson)
-      }
-    },
-    Method.POST / "api" / "issues" / "bulk" / "tags"                 -> handler { (req: Request) =>
-      ErrorHandlingMiddleware.fromPersistence {
-        for
-          body        <- req.body.asString.mapError(err => PersistenceError.QueryFailed("request_body", err.getMessage))
-          bulkRequest <- ZIO
-                           .fromEither(body.fromJson[BulkIssueTagsRequest])
-                           .mapError(err => PersistenceError.QueryFailed("json_parse", err))
-          response    <- bulkUpdateTags(bulkRequest)
-        yield Response.json(response.toJson)
-      }
-    },
-    Method.DELETE / "api" / "issues" / "bulk"                        -> handler { (req: Request) =>
-      ErrorHandlingMiddleware.fromPersistence {
-        for
-          body        <- req.body.asString.mapError(err => PersistenceError.QueryFailed("request_body", err.getMessage))
-          bulkRequest <- ZIO
-                           .fromEither(body.fromJson[BulkIssueDeleteRequest])
-                           .mapError(err => PersistenceError.QueryFailed("json_parse", err))
-          response    <- bulkDeleteIssues(bulkRequest)
-        yield Response.json(response.toJson)
-      }
-    },
-    Method.POST / "api" / "issues" / "import" / "folder" / "preview" -> handler { (req: Request) =>
-      ErrorHandlingMiddleware.fromPersistence {
-        for
-          body    <- req.body.asString.mapError(err => PersistenceError.QueryFailed("request_body", err.getMessage))
-          request <- ZIO
-                       .fromEither(body.fromJson[FolderImportRequest])
-                       .mapError(err => PersistenceError.QueryFailed("json_parse", err))
-          items   <- previewIssuesFromFolder(request)
-        yield Response.json(items.toJson)
-      }
-    },
-    Method.POST / "api" / "issues" / "import" / "folder"             -> handler { (req: Request) =>
-      ErrorHandlingMiddleware.fromPersistence {
-        for
-          body    <- req.body.asString.mapError(err => PersistenceError.QueryFailed("request_body", err.getMessage))
-          request <- ZIO
-                       .fromEither(body.fromJson[FolderImportRequest])
-                       .mapError(err => PersistenceError.QueryFailed("json_parse", err))
-          result  <- importIssuesFromFolderDetailed(request)
-        yield Response.json(result.toJson)
-      }
-    },
-    Method.POST / "api" / "issues" / "import" / "github" / "preview" -> handler { (req: Request) =>
-      ErrorHandlingMiddleware.fromPersistence {
-        for
-          body    <- req.body.asString.mapError(err => PersistenceError.QueryFailed("request_body", err.getMessage))
-          preview <- ZIO
-                       .fromEither(body.fromJson[GitHubImportPreviewRequest])
-                       .mapError(err => PersistenceError.QueryFailed("json_parse", err))
-          items   <- previewGitHubIssues(preview)
-        yield Response.json(items.toJson)
-      }
-    },
-    Method.POST / "api" / "issues" / "import" / "github"             -> handler { (req: Request) =>
-      ErrorHandlingMiddleware.fromPersistence {
-        for
-          body     <- req.body.asString.mapError(err => PersistenceError.QueryFailed("request_body", err.getMessage))
-          preview  <- ZIO
-                        .fromEither(body.fromJson[GitHubImportPreviewRequest])
-                        .mapError(err => PersistenceError.QueryFailed("json_parse", err))
-          imported <- importGitHubIssues(preview)
-        yield Response.json(imported.toJson)
       }
     },
     Method.GET / "api" / "issues" / string("id")                     -> handler { (id: String, req: Request) =>
@@ -787,8 +635,10 @@ final case class IssueControllerLive(
                            .fromEither(body.fromJson[RunPipelineRequest])
                            .mapError(err => PersistenceError.QueryFailed("json_parse", err))
           issue       <- issueRepository.get(IssueId(id)).mapError(mapIssueRepoError)
-          pipeline    <- getPipelineById(runRequest.pipelineId)
-          _           <- validatePipelineSteps(pipeline.steps)
+          pipeline    <- templateService.getPipeline(runRequest.pipelineId)
+          _           <- ZIO
+                           .fail(PersistenceError.QueryFailed("pipeline", "Pipeline has no steps"))
+                           .when(pipeline.steps.isEmpty)
           workspaceId <- ZIO
                            .fromOption(issue.workspaceId.orElse(runRequest.workspaceId.map(_.trim).filter(_.nonEmpty)))
                            .orElseFail(PersistenceError.QueryFailed("pipeline", "workspaceId is required"))
@@ -1174,7 +1024,7 @@ final case class IssueControllerLive(
 
   private def resolveWorkspaceBoardIssue(
     issueId: String,
-    workspaceHint: Option[String] = None,
+    workspaceHint: Option[String],
   ): IO[PersistenceError, Option[(workspace.entity.Workspace, BoardIssue)]] =
     parseBoardIssueId(issueId).either.flatMap {
       case Left(_)        => ZIO.none
@@ -1576,472 +1426,6 @@ final case class IssueControllerLive(
         byQuery.filter(_.tags.exists(_.toLowerCase.split(",").map(_.trim).contains(needle)))
       case None        => byQuery
 
-  private val templateSettingPrefix  = "issue.template.custom."
-  private val pipelineSettingPrefix  = "pipeline.custom."
-  private val templatePattern: Regex =
-    "\\{\\{\\s*([a-zA-Z0-9_-]+)\\s*\\}\\}".r
-
-  private val builtInTemplates: List[IssueTemplate] = List(
-    IssueTemplate(
-      id = "bug-fix",
-      name = "Bug Fix",
-      description = "Patch a defect with root cause analysis and validation.",
-      issueType = "bug",
-      priority = IssuePriority.High,
-      tags = List("bug", "fix"),
-      titleTemplate = "Fix {{component}} failure in {{area}}",
-      descriptionTemplate =
-        """# Problem
-          |{{problem}}
-          |
-          |# Root Cause
-          |{{root_cause}}
-          |
-          |# Acceptance Criteria
-          |- [ ] Reproduce the issue
-          |- [ ] Implement fix in {{component}}
-          |- [ ] Add regression coverage for {{area}}
-          |""".stripMargin,
-      variables = List(
-        TemplateVariable("component", "Component", Some("Subsystem affected by the bug"), required = true),
-        TemplateVariable("area", "Area", Some("Functional area where the bug happens"), required = true),
-        TemplateVariable("problem", "Problem Summary", Some("What is broken"), required = true),
-        TemplateVariable("root_cause", "Root Cause", Some("Known or suspected cause"), required = false),
-      ),
-      isBuiltin = true,
-    ),
-    IssueTemplate(
-      id = "feature",
-      name = "Feature",
-      description = "Define a feature request with user value and deliverables.",
-      issueType = "feature",
-      priority = IssuePriority.Medium,
-      tags = List("feature"),
-      titleTemplate = "Implement {{feature_name}}",
-      descriptionTemplate =
-        """# Goal
-          |{{goal}}
-          |
-          |# User Value
-          |{{user_value}}
-          |
-          |# Scope
-          |{{scope}}
-          |
-          |# Acceptance Criteria
-          |- [ ] Feature available for {{target_user}}
-          |- [ ] Documentation updated
-          |""".stripMargin,
-      variables = List(
-        TemplateVariable("feature_name", "Feature Name", required = true),
-        TemplateVariable("goal", "Goal", required = true),
-        TemplateVariable("user_value", "User Value", required = true),
-        TemplateVariable("scope", "Scope", required = true),
-        TemplateVariable("target_user", "Target User", required = true),
-      ),
-      isBuiltin = true,
-    ),
-    IssueTemplate(
-      id = "refactor",
-      name = "Refactor",
-      description = "Track structural improvements without behavior changes.",
-      issueType = "refactor",
-      priority = IssuePriority.Medium,
-      tags = List("refactor", "tech-debt"),
-      titleTemplate = "Refactor {{module}} for {{objective}}",
-      descriptionTemplate =
-        """# Objective
-          |{{objective}}
-          |
-          |# Current Pain
-          |{{pain}}
-          |
-          |# Refactor Plan
-          |{{plan}}
-          |
-          |# Safety Checks
-          |- [ ] No behavioral regressions
-          |- [ ] Tests updated for {{module}}
-          |""".stripMargin,
-      variables = List(
-        TemplateVariable("module", "Module", required = true),
-        TemplateVariable("objective", "Objective", required = true),
-        TemplateVariable("pain", "Current Pain", required = true),
-        TemplateVariable("plan", "Refactor Plan", required = true),
-      ),
-      isBuiltin = true,
-    ),
-    IssueTemplate(
-      id = "code-review",
-      name = "Code Review",
-      description = "Request a targeted review with explicit risk focus.",
-      issueType = "review",
-      priority = IssuePriority.Medium,
-      tags = List("review"),
-      titleTemplate = "Review {{scope}} changes",
-      descriptionTemplate =
-        """# Context
-          |{{context}}
-          |
-          |# Review Scope
-          |{{scope}}
-          |
-          |# Focus Areas
-          |- Correctness
-          |- Regressions
-          |- Test coverage gaps
-          |
-          |# Notes
-          |{{notes}}
-          |""".stripMargin,
-      variables = List(
-        TemplateVariable("scope", "Scope", required = true),
-        TemplateVariable("context", "Context", required = true),
-        TemplateVariable("notes", "Notes", required = false),
-      ),
-      isBuiltin = true,
-    ),
-  )
-
-  private def listIssueTemplates: IO[PersistenceError, List[IssueTemplate]] =
-    for
-      rows      <- configRepository.getSettingsByPrefix(templateSettingPrefix)
-      customRaw <- ZIO.foreach(rows.sortBy(_.key)) { row =>
-                     ZIO
-                       .fromEither(row.value.fromJson[IssueTemplate])
-                       .map { parsed =>
-                         val id = row.key.stripPrefix(templateSettingPrefix)
-                         parsed.copy(
-                           id = id,
-                           isBuiltin = false,
-                           createdAt = Some(row.updatedAt),
-                           updatedAt = Some(row.updatedAt),
-                         )
-                       }
-                       .either
-                       .flatMap {
-                         case Right(template) => ZIO.succeed(Some(template))
-                         case Left(error)     =>
-                           ZIO.logWarning(
-                             s"Skipping invalid issue template setting key=${row.key}: $error"
-                           ) *> ZIO.succeed(None)
-                       }
-                   }
-    yield builtInTemplates ++ customRaw.flatten
-
-  private def getTemplateById(id: String): IO[PersistenceError, IssueTemplate] =
-    listIssueTemplates.flatMap { templates =>
-      ZIO
-        .fromOption(templates.find(_.id == id))
-        .orElseFail(PersistenceError.QueryFailed("issue_template", s"Template not found: $id"))
-    }
-
-  private def listPipelines: IO[PersistenceError, List[AgentPipeline]] =
-    for
-      rows      <- configRepository.getSettingsByPrefix(pipelineSettingPrefix)
-      pipelines <- ZIO.foreach(rows.sortBy(_.key)) { row =>
-                     ZIO
-                       .fromEither(row.value.fromJson[AgentPipeline])
-                       .map(_.copy(id = row.key.stripPrefix(pipelineSettingPrefix), updatedAt = row.updatedAt))
-                       .either
-                       .flatMap {
-                         case Right(p) => ZIO.succeed(Some(p))
-                         case Left(e)  =>
-                           ZIO.logWarning(s"Skipping invalid pipeline setting key=${row.key}: $e") *>
-                             ZIO.succeed(None)
-                       }
-                   }
-    yield pipelines.flatten
-
-  private def getPipelineById(id: String): IO[PersistenceError, AgentPipeline] =
-    listPipelines.flatMap { values =>
-      ZIO
-        .fromOption(values.find(_.id == id))
-        .orElseFail(PersistenceError.QueryFailed("pipeline", s"Pipeline not found: $id"))
-    }
-
-  private def createPipeline(request: PipelineCreateRequest): IO[PersistenceError, AgentPipeline] =
-    for
-      _        <- validatePipelineName(request.name)
-      _        <- validatePipelineSteps(request.steps)
-      now      <- Clock.instant
-      cleanName = request.name.trim
-      id        = s"${normalizeTemplateId(cleanName)}-${now.toEpochMilli}"
-      pipeline  = AgentPipeline(
-                    id = id,
-                    name = cleanName,
-                    steps = request.steps.map(step =>
-                      step.copy(
-                        agentId = step.agentId.trim,
-                        promptOverride = step.promptOverride.map(_.trim).filter(_.nonEmpty),
-                      )
-                    ),
-                    createdAt = now,
-                    updatedAt = now,
-                  )
-      _        <- configRepository.upsertSetting(pipelineSettingPrefix + id, pipeline.toJson)
-    yield pipeline
-
-  private def validatePipelineName(name: String): IO[PersistenceError, Unit] =
-    ZIO
-      .fail(PersistenceError.QueryFailed("pipeline", "Pipeline name is required"))
-      .when(name.trim.isEmpty)
-      .unit
-
-  private def validatePipelineSteps(steps: List[PipelineStep]): IO[PersistenceError, Unit] =
-    for
-      _ <- ZIO
-             .fail(PersistenceError.QueryFailed("pipeline", "Pipeline must contain at least one step"))
-             .when(steps.isEmpty)
-      _ <- ZIO.foreachDiscard(steps.zipWithIndex) {
-             case (step, idx) =>
-               ZIO
-                 .fail(PersistenceError.QueryFailed("pipeline", s"Pipeline step ${idx + 1} requires an agentId"))
-                 .when(step.agentId.trim.isEmpty)
-           }
-    yield ()
-
-  private def createCustomTemplate(request: IssueTemplateUpsertRequest): IO[PersistenceError, IssueTemplate] =
-    for
-      now       <- Clock.instant
-      templateId = request.id.map(normalizeTemplateId).filter(_.nonEmpty).getOrElse(s"custom-${now.toEpochMilli}")
-      _         <- ensureCustomTemplateIdAllowed(templateId)
-      template  <- buildTemplate(templateId, request, now)
-      _         <- configRepository.upsertSetting(templateSettingPrefix + templateId, template.toJson)
-    yield template
-
-  private def updateCustomTemplate(id: String, request: IssueTemplateUpsertRequest)
-    : IO[PersistenceError, IssueTemplate] =
-    for
-      normalized <- ZIO.succeed(normalizeTemplateId(id))
-      _          <- ensureCustomTemplateIdAllowed(normalized)
-      existing   <- configRepository.getSetting(templateSettingPrefix + normalized)
-      _          <- ZIO
-                      .fromOption(existing)
-                      .orElseFail(PersistenceError.QueryFailed("issue_template", s"Template not found: $normalized"))
-      now        <- Clock.instant
-      template   <- buildTemplate(normalized, request.copy(id = Some(normalized)), now)
-      _          <- configRepository.upsertSetting(templateSettingPrefix + normalized, template.toJson)
-    yield template
-
-  private def deleteCustomTemplate(id: String): IO[PersistenceError, Unit] =
-    val normalized = normalizeTemplateId(id)
-    if builtInTemplates.exists(_.id == normalized) then
-      ZIO.fail(PersistenceError.QueryFailed("issue_template", s"Built-in template cannot be deleted: $normalized"))
-    else
-      configRepository.deleteSetting(templateSettingPrefix + normalized)
-
-  private def buildTemplate(
-    id: String,
-    request: IssueTemplateUpsertRequest,
-    timestamp: Instant,
-  ): IO[PersistenceError, IssueTemplate] =
-    for
-      normalizedTags <- ZIO.succeed(request.tags.map(_.trim).filter(_.nonEmpty))
-      normalizedVars <- ZIO.succeed(request.variables.map(v =>
-                          v.copy(
-                            name = v.name.trim,
-                            label = v.label.trim,
-                            description = v.description.map(_.trim).filter(_.nonEmpty),
-                            defaultValue = v.defaultValue.map(_.trim).filter(_.nonEmpty),
-                          )
-                        ))
-      _              <- validateTemplatePayload(request, normalizedVars)
-    yield IssueTemplate(
-      id = id,
-      name = request.name.trim,
-      description = request.description.trim,
-      issueType = request.issueType.trim,
-      priority = request.priority,
-      tags = normalizedTags,
-      titleTemplate = request.titleTemplate,
-      descriptionTemplate = request.descriptionTemplate,
-      variables = normalizedVars,
-      isBuiltin = false,
-      createdAt = Some(timestamp),
-      updatedAt = Some(timestamp),
-    )
-
-  private def validateTemplatePayload(
-    request: IssueTemplateUpsertRequest,
-    variables: List[TemplateVariable],
-  ): IO[PersistenceError, Unit] =
-    for
-      _ <- ZIO
-             .fail(PersistenceError.QueryFailed("issue_template", "Template name is required"))
-             .when(request.name.trim.isEmpty)
-      _ <- ZIO
-             .fail(PersistenceError.QueryFailed("issue_template", "Template description is required"))
-             .when(request.description.trim.isEmpty)
-      _ <- ZIO
-             .fail(PersistenceError.QueryFailed("issue_template", "Template issueType is required"))
-             .when(request.issueType.trim.isEmpty)
-      _ <- ZIO
-             .fail(PersistenceError.QueryFailed("issue_template", "Template titleTemplate is required"))
-             .when(request.titleTemplate.trim.isEmpty)
-      _ <- ZIO
-             .fail(PersistenceError.QueryFailed("issue_template", "Template descriptionTemplate is required"))
-             .when(request.descriptionTemplate.trim.isEmpty)
-      _ <- ZIO
-             .fail(PersistenceError.QueryFailed("issue_template", "Template variable names must be unique"))
-             .when(variables.map(_.name).distinct.size != variables.size)
-      _ <- ZIO.foreachDiscard(variables) { variable =>
-             ZIO
-               .fail(PersistenceError.QueryFailed("issue_template", "Template variable name cannot be empty"))
-               .when(variable.name.trim.isEmpty) *>
-               ZIO
-                 .fail(PersistenceError.QueryFailed("issue_template", "Template variable label cannot be empty"))
-                 .when(variable.label.trim.isEmpty)
-           }
-    yield ()
-
-  private def normalizeTemplateId(id: String): String =
-    id.trim.toLowerCase.replaceAll("[^a-z0-9_-]+", "-").replaceAll("-{2,}", "-").stripPrefix("-").stripSuffix("-")
-
-  private def ensureCustomTemplateIdAllowed(id: String): IO[PersistenceError, Unit] =
-    for
-      _ <- ZIO
-             .fail(PersistenceError.QueryFailed("issue_template", "Template id cannot be empty"))
-             .when(id.trim.isEmpty)
-      _ <- ZIO
-             .fail(PersistenceError.QueryFailed("issue_template", s"Template id reserved by built-in template: $id"))
-             .when(builtInTemplates.exists(_.id == id))
-    yield ()
-
-  private def normalizeVariableValues(values: Map[String, String]): Map[String, String] =
-    values.collect { case (k, v) if k.trim.nonEmpty => k.trim -> v }
-
-  private def resolveTemplateVariables(template: IssueTemplate, provided: Map[String, String]): Map[String, String] =
-    template.variables.foldLeft(provided) { (acc, variable) =>
-      val current = acc.get(variable.name).map(_.trim).filter(_.nonEmpty)
-      val merged  = current.orElse(variable.defaultValue.map(_.trim).filter(_.nonEmpty))
-      merged match
-        case Some(value) => acc.updated(variable.name, value)
-        case None        => acc
-    }
-
-  private def validateTemplateVariables(
-    template: IssueTemplate,
-    values: Map[String, String],
-  ): IO[PersistenceError, Unit] =
-    ZIO.foreachDiscard(template.variables) { variable =>
-      val value = values.get(variable.name).map(_.trim).filter(_.nonEmpty)
-      ZIO
-        .fail(
-          PersistenceError.QueryFailed(
-            "issue_template",
-            s"Missing required template variable: ${variable.name}",
-          )
-        )
-        .when(variable.required && value.isEmpty)
-    }
-
-  private def applyTemplateVariables(source: String, values: Map[String, String]): String =
-    templatePattern.replaceAllIn(source, m => values.getOrElse(m.group(1), ""))
-
-  private def bulkAssignIssues(request: BulkIssueAssignRequest): IO[PersistenceError, BulkIssueOperationResponse] =
-    for
-      issueIds <- validateIssueIds(request.issueIds)
-      _        <- ensureWorkspaceExists(request.workspaceId)
-      results  <- ZIO.foreach(issueIds) { issueId =>
-                    (for
-                      issue <- issueRepository.get(IssueId(issueId)).mapError(mapIssueRepoError)
-                      now   <- Clock.instant
-                      _     <- issueRepository
-                                 .append(
-                                   IssueEvent.WorkspaceLinked(
-                                     issueId = IssueId(issueId),
-                                     workspaceId = request.workspaceId,
-                                     occurredAt = now,
-                                   )
-                                 )
-                                 .mapError(mapIssueRepoError)
-                      _     <- issueAssignmentOrchestrator.assignIssue(
-                                 issueId,
-                                 request.agentId,
-                                 skipConversationBootstrap = true,
-                               )
-                      _     <- assignWorkspaceRunAndMarkStarted(
-                                 issue = issue,
-                                 workspaceId = request.workspaceId,
-                                 agentName = request.agentId,
-                               )
-                    yield ()).either
-                  }
-    yield toBulkResponse(issueIds.size, results)
-
-  private def bulkUpdateStatus(request: BulkIssueStatusRequest): IO[PersistenceError, BulkIssueOperationResponse] =
-    for
-      issueIds <- validateIssueIds(request.issueIds)
-      results  <- ZIO.foreach(issueIds) { issueId =>
-                    (for
-                      issue        <- issueRepository.get(IssueId(issueId)).mapError(mapIssueRepoError)
-                      now          <- Clock.instant
-                      fallbackAgent = request.agentName
-                                        .map(_.trim)
-                                        .filter(_.nonEmpty)
-                                        .orElse(assignedAgentFromState(issue.state))
-                                        .getOrElse("bulk")
-                      _            <- ensureTransitionAllowed(issue.state, request.status, issueId)
-                      events       <- statusToEvents(
-                                        issue,
-                                        IssueStatusUpdateRequest(
-                                          status = request.status,
-                                          agentName = request.agentName,
-                                          reason = request.reason,
-                                          resultData = request.resultData,
-                                        ),
-                                        fallbackAgent,
-                                        now,
-                                      )
-                      _            <- ZIO.foreachDiscard(events)(issueRepository.append(_).mapError(mapIssueRepoError))
-                    yield ()).either
-                  }
-    yield toBulkResponse(issueIds.size, results)
-
-  private def bulkUpdateTags(request: BulkIssueTagsRequest): IO[PersistenceError, BulkIssueOperationResponse] =
-    for
-      issueIds    <- validateIssueIds(request.issueIds)
-      tagsToAdd    = request.addTags.map(_.trim).filter(_.nonEmpty)
-      tagsToRemove = request.removeTags.map(_.trim).filter(_.nonEmpty).toSet
-      results     <- ZIO.foreach(issueIds) { issueId =>
-                       (for
-                         issue   <- issueRepository.get(IssueId(issueId)).mapError(mapIssueRepoError)
-                         now     <- Clock.instant
-                         existing = issue.tags.map(_.trim).filter(_.nonEmpty)
-                         merged   = (existing.filterNot(t => tagsToRemove.contains(t)) ++ tagsToAdd).distinct
-                         _       <- issueRepository
-                                      .append(IssueEvent.TagsUpdated(IssueId(issueId), merged, now))
-                                      .mapError(mapIssueRepoError)
-                       yield ()).either
-                     }
-    yield toBulkResponse(issueIds.size, results)
-
-  private def bulkDeleteIssues(request: BulkIssueDeleteRequest): IO[PersistenceError, BulkIssueOperationResponse] =
-    for
-      issueIds <- validateIssueIds(request.issueIds)
-      results  <-
-        ZIO.foreach(issueIds)(issueId => issueRepository.delete(IssueId(issueId)).mapError(mapIssueRepoError).either)
-    yield toBulkResponse(issueIds.size, results)
-
-  private def toBulkResponse(
-    requested: Int,
-    results: List[Either[PersistenceError, Unit]],
-  ): BulkIssueOperationResponse =
-    val errors = results.collect { case Left(err) => err.toString }
-    BulkIssueOperationResponse(
-      requested = requested,
-      succeeded = results.count(_.isRight),
-      failed = errors.size,
-      errors = errors,
-    )
-
-  private def validateIssueIds(issueIds: List[String]): IO[PersistenceError, List[String]] =
-    val normalized = issueIds.map(_.trim).filter(_.nonEmpty).distinct
-    ZIO
-      .fromOption(Option.when(normalized.nonEmpty)(normalized))
-      .orElseFail(PersistenceError.QueryFailed("bulk", "issueIds must contain at least one issue id"))
-
   private def assignedAgentFromState(state: IssueState): Option[String] =
     state match
       case IssueState.Assigned(agent, _)     => Some(agent.value)
@@ -2388,184 +1772,6 @@ final case class IssueControllerLive(
         }
       }
 
-  private def previewIssuesFromFolder(request: FolderImportRequest)
-    : IO[PersistenceError, List[FolderImportPreviewItem]] =
-    for
-      files <- issueImportMarkdownFiles(request.folder)
-      now   <- Clock.instant
-      items <- ZIO.foreach(files) { file =>
-                 for
-                   markdown <- ZIO
-                                 .attemptBlocking(Files.readString(file, StandardCharsets.UTF_8))
-                                 .mapError(e => PersistenceError.QueryFailed(file.toString, e.getMessage))
-                   parsed    = parseMarkdownIssue(file, markdown, now)
-                 yield FolderImportPreviewItem(
-                   fileName = file.getFileName.toString,
-                   title = parsed.title,
-                   issueType = parsed.issueType,
-                   priority = parsed.priority,
-                 )
-               }
-    yield items
-
-  private def importIssuesFromFolderDetailed(
-    request: FolderImportRequest
-  ): IO[PersistenceError, BulkIssueOperationResponse] =
-    for
-      files   <- issueImportMarkdownFiles(request.folder)
-      results <- ZIO.foreach(files) { file =>
-                   (for
-                     now      <- Clock.instant
-                     markdown <- ZIO
-                                   .attemptBlocking(Files.readString(file, StandardCharsets.UTF_8))
-                                   .mapError(e => PersistenceError.QueryFailed(file.toString, e.getMessage))
-                     event     = parseMarkdownIssue(file, markdown, now)
-                     _        <- issueRepository.append(event).mapError(mapIssueRepoError)
-                   yield ()).either
-                 }
-    yield toBulkResponse(files.size, results)
-
-  private def importIssuesFromConfiguredFolderDetailed: IO[PersistenceError, BulkIssueOperationResponse] =
-    for
-      configuredFolder <- issueImportFolderFromSettings
-      result           <- importIssuesFromFolderDetailed(FolderImportRequest(configuredFolder))
-    yield result
-
-  private def issueImportFolderFromSettings: IO[PersistenceError, String] =
-    for
-      setting <-
-        taskRepository
-          .getSetting("issues.importFolder")
-          .flatMap(opt =>
-            ZIO
-              .fromOption(opt.map(_.value.trim).filter(_.nonEmpty))
-              .orElseFail(PersistenceError.QueryFailed("settings", "'issues.importFolder' is empty or missing"))
-          )
-    yield setting
-
-  private def issueImportMarkdownFiles(folderSetting: String): IO[PersistenceError, List[Path]] =
-    for
-      folderPath <- ZIO
-                      .fromOption(Option(folderSetting).map(_.trim).filter(_.nonEmpty))
-                      .orElseFail(PersistenceError.QueryFailed("folder", "Folder path is required"))
-      folder     <- ZIO
-                      .attempt(Paths.get(folderPath))
-                      .mapError(e => PersistenceError.QueryFailed("folder", e.getMessage))
-      files      <- ZIO
-                      .attemptBlocking {
-                        if !Files.exists(folder) then List.empty[Path]
-                        else
-                          Files
-                            .list(folder)
-                            .iterator()
-                            .asScala
-                            .filter(path =>
-                              Files.isRegularFile(path) && path.getFileName.toString.toLowerCase.endsWith(".md")
-                            )
-                            .toList
-                      }
-                      .mapError(e => PersistenceError.QueryFailed("folder", e.getMessage))
-    yield files
-
-  private def previewGitHubIssues(request: GitHubImportPreviewRequest)
-    : IO[PersistenceError, List[GitHubImportPreviewItem]] =
-    ghListIssues(request).map { raw =>
-      raw.fromJson[List[GitHubImportPreviewItem]].getOrElse(Nil)
-    }
-
-  private def importGitHubIssues(request: GitHubImportPreviewRequest)
-    : IO[PersistenceError, BulkIssueOperationResponse] =
-    for
-      items   <- previewGitHubIssues(request)
-      results <- ZIO.foreach(items) { item =>
-                   (for
-                     now    <- Clock.instant
-                     issueId = IssueId.generate
-                     _      <- issueRepository
-                                 .append(
-                                   IssueEvent.Created(
-                                     issueId = issueId,
-                                     title = s"[GH#${item.number}] ${item.title}",
-                                     description = item.body,
-                                     issueType = "github",
-                                     priority = "medium",
-                                     occurredAt = now,
-                                     requiredCapabilities = Nil,
-                                   )
-                                 )
-                                 .mapError(mapIssueRepoError)
-                     _      <- issueRepository
-                                 .append(
-                                   IssueEvent.ExternalRefLinked(
-                                     issueId = issueId,
-                                     externalRef = s"GH:${request.repo}#${item.number}",
-                                     externalUrl = Some(item.url),
-                                     occurredAt = now,
-                                   )
-                                 )
-                                 .mapError(mapIssueRepoError)
-                   yield ()).either
-                 }
-    yield toBulkResponse(items.size, results)
-
-  private def ghListIssues(request: GitHubImportPreviewRequest): IO[PersistenceError, String] =
-    val safeLimit = request.limit.max(1).min(200)
-    val safeState = request.state.trim.toLowerCase match
-      case "closed" => "closed"
-      case "all"    => "all"
-      case _        => "open"
-    final case class GhIssueLabel(name: String) derives JsonCodec
-    final case class GhIssueItem(
-      number: Long,
-      title: String,
-      body: String,
-      labels: List[GhIssueLabel] = Nil,
-      state: String,
-      url: String,
-    ) derives JsonCodec
-    ZIO
-      .attemptBlocking {
-        val args    = List(
-          "gh",
-          "issue",
-          "list",
-          "--repo",
-          request.repo.trim,
-          "--state",
-          safeState,
-          "--limit",
-          safeLimit.toString,
-          "--json",
-          "number,title,body,labels,state,url",
-        )
-        val process = new ProcessBuilder(args*).redirectErrorStream(true).start()
-        val output  = scala.io.Source.fromInputStream(process.getInputStream, "UTF-8").mkString
-        val exit    = process.waitFor()
-        exit -> output
-      }
-      .mapError(err => PersistenceError.QueryFailed("github_import", Option(err.getMessage).getOrElse(err.toString)))
-      .flatMap {
-        case (exit, output) =>
-          if exit == 0 then
-            output.fromJson[List[GhIssueItem]] match
-              case Right(values) =>
-                ZIO.succeed(
-                  values.map { item =>
-                    GitHubImportPreviewItem(
-                      number = item.number,
-                      title = item.title,
-                      body = item.body,
-                      labels = item.labels.map(_.name),
-                      state = item.state,
-                      url = item.url,
-                    )
-                  }.toJson
-                )
-              case Left(_)       => ZIO.succeed("[]")
-          else
-            ZIO.fail(PersistenceError.QueryFailed("github_import", output.trim))
-      }
-
   private def parseTagList(raw: Option[String]): List[String] =
     raw.toList.flatMap(_.split(",").toList).map(_.trim).filter(_.nonEmpty).distinct
 
@@ -2739,9 +1945,6 @@ final case class IssueControllerLive(
         case Some(_) => ZIO.unit
         case None    => ZIO.fail(PersistenceError.QueryFailed("workspace", s"Not found: $workspaceId"))
       }
-
-  private def importIssuesFromConfiguredFolder: IO[PersistenceError, Int] =
-    importIssuesFromConfiguredFolderDetailed.map(_.succeeded)
 
   private def settingBoolean(key: String, default: Boolean): IO[PersistenceError, Boolean] =
     configRepository

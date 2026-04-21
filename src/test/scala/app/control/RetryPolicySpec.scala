@@ -2,7 +2,6 @@ package app.control
 
 import zio.*
 import zio.test.*
-import zio.test.TestAspect.*
 
 import shared.errors.{ AIError, GeminiError }
 

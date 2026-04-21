@@ -4,6 +4,7 @@ import java.time.Instant
 
 import zio.test.*
 
+import issues.boundary.ProofOfWorkView
 import issues.entity.*
 import shared.ids.Ids.{ IssueId, ReportId }
 import workspace.control.ProofOfWorkExtractor

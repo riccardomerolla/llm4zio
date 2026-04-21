@@ -11,22 +11,23 @@ import zio.json.*
 import _root_.config.entity.ProviderConfig
 import activity.control.ActivityHub
 import activity.entity.{ ActivityEvent, ActivityEventType }
+import conversation.entity.ChatRepository
 import conversation.entity.api.*
-import db.{ ChatRepository, TaskRepository }
-import gateway.control.{ ChannelRegistry, GatewayService, GatewayServiceError, MessageChannelError }
+import gateway.control.{ ChannelRegistry, GatewayService, GatewayServiceError }
 import gateway.entity.{ GatewayMessageRole as GatewayMessageRole, MessageDirection as GatewayMessageDirection, * }
 import issues.entity.{ IssueReport, IssueWorkReport }
 import llm4zio.core.{ ConversationThread, LlmError, LlmService, Streaming, ToolConversationManager }
 import llm4zio.providers.{ GeminiCliExecutor, HttpClient }
 import llm4zio.tools.ToolRegistry
+import orchestration.boundary.PlanPreviewComponents
 import orchestration.control.*
-import orchestration.entity.{ PlannerPlanPreview, PlannerPreviewState }
+import orchestration.entity.PlannerPlanPreview
 import plan.entity.PlanTaskDraft
 import shared.errors.PersistenceError
 import shared.errors.PersistenceError as WorkspacePersistenceError
 import shared.ids.Ids.{ ConversationId, EventId, IssueId, ReportId }
 import shared.web.*
-import taskrun.entity.TaskReportRow
+import taskrun.entity.{ TaskReportRow, TaskRepository }
 import workspace.boundary.{ RunChainItem, RunSessionUiMeta }
 import workspace.entity.WorkspaceRepository
 
@@ -1086,14 +1087,14 @@ final case class ChatControllerLive(
                   .get(workspaceId)
                   .flatMap(ws => sanitizeString(ws.name))
                   .getOrElse(workspaceId),
-                chats = chats.sortBy(_.updatedAt)(Ordering[Instant].reverse),
+                chats = chats.sortBy(_.updatedAt)(using Ordering[Instant].reverse),
               )
           }
       chatFolder       = grouped.get("chat").map(chats =>
                            ChatView.ChatWorkspaceFolder(
                              id = "chat",
                              label = "Chat",
-                             chats = chats.sortBy(_.updatedAt)(Ordering[Instant].reverse),
+                             chats = chats.sortBy(_.updatedAt)(using Ordering[Instant].reverse),
                            )
                          )
     yield workspaceFolders ++ chatFolder.toList
@@ -1106,7 +1107,7 @@ final case class ChatControllerLive(
     Layout.ChatWorkspaceNav(
       groups = workspaceFolders.map { folder =>
         val chats = folder.chats
-          .sortBy(_.updatedAt)(Ordering[java.time.Instant].reverse)
+          .sortBy(_.updatedAt)(using Ordering[java.time.Instant].reverse)
           .take(80)
           .map { chat =>
             val conversationId = sanitizeOptional(chat.id).getOrElse("unknown")

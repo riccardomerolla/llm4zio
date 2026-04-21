@@ -7,7 +7,12 @@ import _root_.config.boundary.AgentsController as ConfigAgentsController
 import activity.boundary.ActivityController
 import app.boundary.{ AgentMonitorController as AppAgentMonitorController, HealthController as AppHealthController }
 import conversation.boundary.ChatController as ConversationChatController
-import issues.boundary.IssueController as IssuesIssueController
+import issues.boundary.{
+  IssueBulkController,
+  IssueController as IssuesIssueController,
+  IssueImportController,
+  IssueTemplatesController,
+}
 import memory.boundary.MemoryController as MemoryBoundaryController
 import sdlc.boundary.SdlcDashboardController
 import taskrun.boundary.{
@@ -33,6 +38,9 @@ object CoreRouteModule:
         AppAgentMonitorController &
         ConversationChatController &
         IssuesIssueController &
+        IssueTemplatesController &
+        IssueBulkController &
+        IssueImportController &
         ActivityController &
         MemoryBoundaryController &
         AppHealthController &
@@ -42,19 +50,22 @@ object CoreRouteModule:
     ] =
     ZLayer {
       for
-        dashboard     <- ZIO.service[TaskRunDashboardController]
-        sdlcDashboard <- ZIO.service[SdlcDashboardController]
-        tasks         <- ZIO.service[TaskRunTasksController]
-        reports       <- ZIO.service[TaskRunReportsController]
-        graph         <- ZIO.service[TaskRunGraphController]
-        agents        <- ZIO.service[ConfigAgentsController]
-        monitor       <- ZIO.service[AppAgentMonitorController]
-        chat          <- ZIO.service[ConversationChatController]
-        issues        <- ZIO.service[IssuesIssueController]
-        activity      <- ZIO.service[ActivityController]
-        memory        <- ZIO.service[MemoryBoundaryController]
-        health        <- ZIO.service[AppHealthController]
-        logs          <- ZIO.service[TaskRunLogsController]
+        dashboard      <- ZIO.service[TaskRunDashboardController]
+        sdlcDashboard  <- ZIO.service[SdlcDashboardController]
+        tasks          <- ZIO.service[TaskRunTasksController]
+        reports        <- ZIO.service[TaskRunReportsController]
+        graph          <- ZIO.service[TaskRunGraphController]
+        agents         <- ZIO.service[ConfigAgentsController]
+        monitor        <- ZIO.service[AppAgentMonitorController]
+        chat           <- ZIO.service[ConversationChatController]
+        issues         <- ZIO.service[IssuesIssueController]
+        issueTemplates <- ZIO.service[IssueTemplatesController]
+        issueBulk      <- ZIO.service[IssueBulkController]
+        issueImport    <- ZIO.service[IssueImportController]
+        activity       <- ZIO.service[ActivityController]
+        memory         <- ZIO.service[MemoryBoundaryController]
+        health         <- ZIO.service[AppHealthController]
+        logs           <- ZIO.service[TaskRunLogsController]
       yield new CoreRouteModule:
         override val routes: Routes[Any, Response] =
           dashboard.routes ++
@@ -66,6 +77,9 @@ object CoreRouteModule:
             monitor.routes ++
             chat.routes ++
             issues.routes ++
+            issueTemplates.routes ++
+            issueBulk.routes ++
+            issueImport.routes ++
             activity.routes ++
             memory.routes ++
             health.routes ++

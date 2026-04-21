@@ -2,6 +2,8 @@ package workspace.control
 
 import java.time.Instant
 
+import scala.annotation.unused
+
 import zio.*
 import zio.test.*
 
@@ -10,8 +12,8 @@ import activity.control.ActivityHub
 import activity.entity.ActivityEvent
 import agent.entity.{ Agent, AgentPermissions, AgentRepository, TrustLevel }
 import analysis.entity.{ AnalysisDoc, AnalysisRepository, AnalysisType }
+import conversation.entity.ChatRepository
 import conversation.entity.api.{ ChatConversation, ConversationEntry }
-import db.*
 import governance.control.{ GovernanceEvaluationContext, GovernancePolicyService, GovernanceTransitionDecision }
 import governance.entity.GovernancePolicy
 import issues.entity.{ AgentIssue, IssueEvent, IssueFilter, IssueRepository, IssueState }
@@ -414,7 +416,7 @@ object WorkspaceRunServiceSpec extends ZIOSpecDefault:
           }
       }
 
-    def available(agentName: String): UIO[Int] =
+    def available(@unused agentName: String): UIO[Int] =
       availableRef.get
 
     def release(handle: SlotHandle): UIO[Unit] =

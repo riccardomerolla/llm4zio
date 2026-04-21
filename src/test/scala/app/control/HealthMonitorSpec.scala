@@ -7,12 +7,17 @@ import zio.stream.ZStream
 import zio.test.*
 
 import _root_.config.entity.{ CustomAgentRow, SettingRow, * }
-import db.*
+import agent.entity.AgentRegistry
 import gateway.control.*
-import gateway.entity.{ GatewayMetricsSnapshot, NormalizedMessage, SessionKey, SessionScopeStrategy }
-import orchestration.entity.AgentRegistry
+import gateway.entity.{
+  GatewayMetricsSnapshot,
+  MessageChannelError,
+  NormalizedMessage,
+  SessionKey,
+  SessionScopeStrategy,
+}
 import shared.errors.PersistenceError
-import taskrun.entity.{ RunStatus, TaskArtifactRow, TaskReportRow, TaskRunRow, TaskStep }
+import taskrun.entity.*
 
 object HealthMonitorSpec extends ZIOSpecDefault:
 

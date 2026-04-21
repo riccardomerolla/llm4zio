@@ -1,0 +1,34 @@
+tier1: {
+    shape: rectangle
+    accounts-api: {}
+    ledger-core: {}
+    payments-engine: {}
+}
+tier2: {
+    shape: rectangle
+    customer-profile: {}
+    fraud-scorer: {}
+    statement-service: {}
+}
+tier3: {
+    shape: rectangle
+    audit-log: {}
+    notification-bus: {}
+}
+
+tier1.accounts-api -> tier2.customer-profile: gRPC
+tier1.accounts-api -> tier1.ledger-core: REST
+tier2.customer-profile -> tier3.audit-log: "Event:profile.updated" {
+    style.stroke-dash: 5
+}
+tier2.fraud-scorer -> tier3.audit-log: "Event:fraud.scored" {
+    style.stroke-dash: 5
+}
+tier1.ledger-core -> tier2.statement-service: "Event:ledger.posted" {
+    style.stroke-dash: 5
+}
+tier1.payments-engine -> tier2.fraud-scorer: gRPC
+tier1.payments-engine -> tier1.ledger-core: REST
+tier2.statement-service -> tier3.notification-bus: "Event:statements.ready" {
+    style.stroke-dash: 5
+}

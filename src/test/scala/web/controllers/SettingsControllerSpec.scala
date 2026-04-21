@@ -21,14 +21,9 @@ import shared.store.{ ConfigStoreModule, DataStoreModule, DataStoreService, Memo
 object SettingsControllerSpec extends ZIOSpecDefault:
 
   private val stubLlmService: LlmService = new LlmService:
-    def execute(prompt: String): IO[LlmError, LlmResponse] =
-      ZIO.succeed(LlmResponse("ok"))
 
     override def executeStream(prompt: String): ZStream[Any, LlmError, LlmChunk] =
       ZStream.empty
-
-    def executeWithHistory(messages: List[Message]): IO[LlmError, LlmResponse] =
-      ZIO.succeed(LlmResponse("ok"))
 
     override def executeStreamWithHistory(messages: List[Message]): ZStream[Any, LlmError, LlmChunk] =
       ZStream.empty

@@ -14,7 +14,6 @@ import orchestration.entity.{ AgentPoolManager, PoolError, SlotHandle }
 import shared.errors.PersistenceError
 import shared.ids.Ids.*
 import shared.testfixtures.*
-import workspace.control.WorkspaceRunService
 import workspace.entity.*
 
 object AutoDispatcherSpec extends ZIOSpecDefault:
@@ -48,7 +47,7 @@ object AutoDispatcherSpec extends ZIOSpecDefault:
   private def agent(
     name: String,
     capabilities: List[String] = Nil,
-    maxConcurrentRuns: Int = 1,
+    maxConcurrentRuns: Int,
   ): Agent =
     Agent(
       id = AgentId(name),
@@ -139,8 +138,6 @@ object AutoDispatcherSpec extends ZIOSpecDefault:
 
   final private case class StubWorkspaceRunService(assignments: Ref[List[AssignRunRequest]])
     extends WorkspaceRunService:
-    private val noOpSlotRegistration = ZIO.unit
-
     override def assign(workspaceId: String, req: AssignRunRequest): IO[WorkspaceError, WorkspaceRun] =
       assignments.update(_ :+ req).as(
         WorkspaceRun(
@@ -168,8 +165,6 @@ object AutoDispatcherSpec extends ZIOSpecDefault:
       ZIO.dieMessage("unused")
     override def cancelRun(runId: String): IO[WorkspaceError, Unit]                                   =
       ZIO.dieMessage("unused")
-    override def registerSlot(runId: String, handle: SlotHandle): UIO[Unit]                           =
-      noOpSlotRegistration
 
   final private case class StubAgentPoolManager(
     available: Map[String, Int] = Map.empty,

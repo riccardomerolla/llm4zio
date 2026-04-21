@@ -3,10 +3,11 @@ package shared.web
 import java.net.URLEncoder
 import java.time.Instant
 
-import scala.annotation.tailrec
+import scala.annotation.{ tailrec, unused }
 
 import conversation.entity.api.{ ChatConversation, ConversationEntry, ConversationSessionMeta, MessageType, SenderType }
 import gateway.entity.ChatSession
+import orchestration.boundary.PlanPreviewComponents
 import scalatags.Text.all.*
 import workspace.boundary.RunSessionUiMeta
 import workspace.entity.{ RunSessionMode, RunStatus }
@@ -21,12 +22,12 @@ object ChatView:
 
   def dashboard(
     conversations: List[ChatConversation],
-    sessionMetaByConversation: Map[String, ConversationSessionMeta],
+    @unused sessionMetaByConversation: Map[String, ConversationSessionMeta],
     sessions: List[ChatSession],
     workspaceFolders: List[ChatWorkspaceFolder],
     renderedAt: Instant = Instant.EPOCH,
   ): String =
-    val sorted = conversations.sortBy(_.updatedAt)(Ordering[java.time.Instant].reverse)
+    val sorted = conversations.sortBy(_.updatedAt)(using Ordering[java.time.Instant].reverse)
     Layout.page(
       "Chat",
       "/chat",
@@ -209,7 +210,7 @@ object ChatView:
 
   def detail(
     conversation: ChatConversation,
-    sessionMeta: Option[ConversationSessionMeta],
+    @unused sessionMeta: Option[ConversationSessionMeta],
     runSessionMeta: Option[RunSessionUiMeta],
     workspaceFolders: List[ChatWorkspaceFolder] = Nil,
     detailContext: ChatDetailContext = ChatDetailContext.empty,
@@ -428,7 +429,7 @@ object ChatView:
     Layout.ChatWorkspaceNav(
       groups = workspaceFolders.map { folder =>
         val chats = folder.chats
-          .sortBy(_.updatedAt)(Ordering[java.time.Instant].reverse)
+          .sortBy(_.updatedAt)(using Ordering[java.time.Instant].reverse)
           .take(80)
           .map { chat =>
             val conversationId = sanitizeOptionalString(chat.id).getOrElse("unknown")
@@ -659,8 +660,8 @@ object ChatView:
 
   private def messageCard(
     message: ConversationEntry,
-    prevSender: Option[SenderType] = None,
-    conversationId: Option[String] = None,
+    prevSender: Option[SenderType],
+    conversationId: Option[String],
   ): Frag =
     message.messageType match
       case MessageType.ToolCall   => toolCallCard(message)

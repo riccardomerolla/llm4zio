@@ -2,6 +2,8 @@ package shared.web
 
 import zio.test.*
 
+import workspace.boundary.WorkspaceTemplatesView
+
 object WorkspaceTemplatesViewSpec extends ZIOSpecDefault:
 
   def spec: Spec[TestEnvironment, Any] = suite("WorkspaceTemplatesViewSpec")(

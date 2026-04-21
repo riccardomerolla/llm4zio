@@ -2,6 +2,8 @@ package decision.entity
 
 import java.time.Instant
 
+import scala.annotation.unused
+
 import zio.*
 
 import issues.entity.AgentIssue
@@ -15,13 +17,13 @@ import shared.ids.Ids.{ DecisionId, IssueId }
 trait DecisionCreator:
   def openIssueReviewDecision(issue: AgentIssue): IO[PersistenceError, Decision]
   def openManualDecision(
-    title: String,
-    context: String,
-    referenceId: String,
-    summary: String,
-    urgency: DecisionUrgency = DecisionUrgency.Medium,
-    workspaceId: Option[String] = None,
-    issueId: Option[IssueId] = None,
+    @unused title: String,
+    @unused context: String,
+    @unused referenceId: String,
+    @unused summary: String,
+    @unused urgency: DecisionUrgency = DecisionUrgency.Medium,
+    @unused workspaceId: Option[String] = None,
+    @unused issueId: Option[IssueId] = None,
   ): IO[PersistenceError, Decision] =
     ZIO.fail(PersistenceError.QueryFailed("decision_manual", "Manual decision creation not implemented"))
 

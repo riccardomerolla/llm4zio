@@ -9,7 +9,7 @@ import llm4zio.core.*
 
 object OpenAIProviderSpec extends ZIOSpecDefault:
   // SSE chunk for success response
-  private def sseChunkLine(content: String, finish: Option[String] = None): String =
+  private def sseChunkLine(content: String, finish: Option[String]): String =
     OpenAIChatChunk(
       id = Some("chatcmpl-123"),
       model = Some("gpt-4"),

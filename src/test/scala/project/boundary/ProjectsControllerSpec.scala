@@ -7,10 +7,10 @@ import zio.http.*
 import zio.test.*
 
 import _root_.config.entity.*
+import agent.entity.AgentRegistry
 import analysis.control.WorkspaceAnalysisScheduler
 import analysis.entity.{ AnalysisType, WorkspaceAnalysisState, WorkspaceAnalysisStatus }
 import issues.entity.{ AgentIssue, IssueState }
-import orchestration.entity.AgentRegistry
 import project.control.ProjectStorageService
 import project.entity.{ Project, ProjectEvent, ProjectRepository, ProjectSettings }
 import shared.errors.PersistenceError

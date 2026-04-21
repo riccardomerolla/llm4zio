@@ -5,10 +5,8 @@ import java.io.{ ByteArrayInputStream, ByteArrayOutputStream }
 import zio.*
 import zio.json.*
 import zio.test.*
-import zio.test.Assertion.*
 
 import llm4zio.mcp.jsonrpc.*
-import llm4zio.mcp.server.McpError
 
 object StdioTransportSpec extends ZIOSpecDefault:
   def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("StdioTransport")(

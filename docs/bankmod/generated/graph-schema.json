@@ -1,0 +1,306 @@
+{
+  "properties": {
+    "services": {
+      "additionalProperties": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "tier": {
+            "enum": [
+              "Tier2",
+              "Tier3",
+              "Tier1"
+            ],
+            "title": "Criticality"
+          },
+          "owner": {
+            "enum": [
+              "Shared",
+              "External",
+              "Product",
+              "Platform"
+            ],
+            "title": "Ownership"
+          },
+          "inbound": {
+            "items": {
+              "properties": {
+                "name": {
+                  "type": "string"
+                }
+              },
+              "type": "object",
+              "required": [
+                "name"
+              ],
+              "title": "Port"
+            },
+            "type": [
+              "array",
+              "null"
+            ],
+            "title": "Set[Port]"
+          },
+          "outbound": {
+            "items": {
+              "properties": {
+                "fromPort": {
+                  "type": "string"
+                },
+                "toService": {
+                  "type": "string"
+                },
+                "toPort": {
+                  "type": "string"
+                },
+                "protocol": {
+                  "oneOf": [
+                    {
+                      "properties": {
+                        "Rest": {
+                          "properties": {
+                            "baseUrl": {
+                              "type": "string"
+                            }
+                          },
+                          "type": "object",
+                          "required": [
+                            "baseUrl"
+                          ],
+                          "title": "Rest"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "Rest"
+                      ]
+                    },
+                    {
+                      "properties": {
+                        "Grpc": {
+                          "properties": {
+                            "endpoint": {
+                              "type": "string"
+                            }
+                          },
+                          "type": "object",
+                          "required": [
+                            "endpoint"
+                          ],
+                          "title": "Grpc"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "Grpc"
+                      ]
+                    },
+                    {
+                      "properties": {
+                        "Event": {
+                          "properties": {
+                            "topic": {
+                              "type": "string"
+                            }
+                          },
+                          "type": "object",
+                          "required": [
+                            "topic"
+                          ],
+                          "title": "Event"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "Event"
+                      ]
+                    },
+                    {
+                      "properties": {
+                        "Graphql": {
+                          "properties": {
+                            "endpoint": {
+                              "type": "string"
+                            }
+                          },
+                          "type": "object",
+                          "required": [
+                            "endpoint"
+                          ],
+                          "title": "Graphql"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "Graphql"
+                      ]
+                    },
+                    {
+                      "properties": {
+                        "Soap": {
+                          "properties": {
+                            "endpoint": {
+                              "type": "string"
+                            }
+                          },
+                          "type": "object",
+                          "required": [
+                            "endpoint"
+                          ],
+                          "title": "Soap"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "Soap"
+                      ]
+                    }
+                  ],
+                  "title": "Protocol"
+                },
+                "consistency": {
+                  "enum": [
+                    "Strong",
+                    "Eventual"
+                  ],
+                  "title": "Consistency"
+                },
+                "ordering": {
+                  "enum": [
+                    "Unordered",
+                    "TotalOrder",
+                    "PartialOrder"
+                  ],
+                  "title": "Ordering"
+                }
+              },
+              "type": "object",
+              "required": [
+                "toPort",
+                "consistency",
+                "fromPort",
+                "toService",
+                "ordering",
+                "protocol"
+              ],
+              "title": "Edge"
+            },
+            "type": [
+              "array",
+              "null"
+            ],
+            "title": "Set[Edge]"
+          },
+          "schemas": {
+            "items": {
+              "properties": {
+                "hash": {
+                  "type": "string"
+                },
+                "version": {
+                  "type": "string"
+                }
+              },
+              "type": "object",
+              "required": [
+                "hash",
+                "version"
+              ],
+              "title": "SchemaRef"
+            },
+            "type": [
+              "array",
+              "null"
+            ],
+            "title": "Set[SchemaRef]"
+          },
+          "dataStores": {
+            "items": {
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "schemaRef": {
+                  "properties": {
+                    "hash": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "string"
+                    }
+                  },
+                  "type": [
+                    "null",
+                    "object"
+                  ],
+                  "required": [
+                    "hash",
+                    "version"
+                  ],
+                  "title": "SchemaRef"
+                }
+              },
+              "type": "object",
+              "required": [
+                "name"
+              ],
+              "title": "DataStore"
+            },
+            "type": [
+              "array",
+              "null"
+            ],
+            "title": "Set[DataStore]"
+          },
+          "sla": {
+            "properties": {
+              "latencyP99Ms": {
+                "type": "integer",
+                "maximum": 2147483647,
+                "minimum": -2147483648
+              },
+              "availabilityPct": {
+                "type": "integer",
+                "maximum": 2147483647,
+                "minimum": -2147483648
+              },
+              "maxRetries": {
+                "type": "integer",
+                "maximum": 2147483647,
+                "minimum": -2147483648
+              }
+            },
+            "type": "object",
+            "required": [
+              "latencyP99Ms",
+              "availabilityPct",
+              "maxRetries"
+            ],
+            "title": "SlaEncoded"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "tier",
+          "owner",
+          "sla"
+        ],
+        "title": "Service"
+      },
+      "type": [
+        "object",
+        "null"
+      ],
+      "title": "Map[ServiceId, Service]"
+    }
+  },
+  "type": "object",
+  "title": "Graph"
+}

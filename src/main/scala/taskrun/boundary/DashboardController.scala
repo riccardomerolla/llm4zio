@@ -4,10 +4,10 @@ import zio.*
 import zio.http.*
 
 import activity.entity.ActivityRepository
-import db.TaskRepository
 import issues.entity.{ IssueFilter, IssueRepository, IssueStateTag }
 import shared.errors.PersistenceError
 import shared.web.{ ErrorHandlingMiddleware, HtmlViews }
+import taskrun.entity.TaskRepository
 
 trait DashboardController:
   def routes: Routes[Any, Response]
@@ -73,7 +73,7 @@ final case class DashboardControllerLive(
                                case _ => false
                              }
           throughputPerDay = (completedLast24h + failedLast24h).toDouble
-          summary          = shared.web.CommandCenterView.PipelineSummary(
+          summary          = CommandCenterView.PipelineSummary(
                                open = stateCountByType.getOrElse(IssueStateTag.Backlog, 0) +
                                  stateCountByType.getOrElse(IssueStateTag.Open, 0),
                                claimed = stateCountByType.getOrElse(IssueStateTag.Todo, 0) +
