@@ -7,6 +7,10 @@ ThisBuild / dependencyOverrides += "com.lihaoyi" % "sourcecode_2.13" % "0.4.2"
 
 addCommandAlias("fmt", " ; scalafixAll ; scalafmtAll")
 addCommandAlias("check", "; scalafixAll --check; scalafmtCheckAll")
+addCommandAlias(
+  "bankmodDocs",
+  "bankmodApp/runMain bankmod.app.DocsGenerator",
+)
 
 // Centralized version management
 val zioVersion = "2.1.25"
