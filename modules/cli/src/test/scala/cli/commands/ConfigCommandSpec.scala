@@ -4,7 +4,6 @@ import java.time.Instant
 
 import zio.*
 import zio.test.*
-import zio.test.Assertion.*
 
 import _root_.config.entity.*
 import shared.errors.PersistenceError

@@ -301,6 +301,22 @@ lazy val boardDomain = (project in file("modules/board-domain"))
     libraryDependencies ++= domainBceDeps,
   )
 
+lazy val evalDomain = (project in file("modules/eval-domain"))
+  .dependsOn(sharedJson)
+  .settings(foundationSettings)
+  .settings(
+    name := "eval-domain",
+    libraryDependencies ++= domainDeps,
+  )
+
+lazy val deployDomain = (project in file("modules/deploy-domain"))
+  .dependsOn(sharedJson)
+  .settings(foundationSettings)
+  .settings(
+    name := "deploy-domain",
+    libraryDependencies ++= domainDeps,
+  )
+
 lazy val knowledgeDomain = (project in file("modules/knowledge-domain"))
   .dependsOn(sharedIds, sharedErrors, sharedStoreCore, sharedWebCore, analysisDomain,
     memoryDomain, workspaceDomain, conversationDomain, issuesDomain, llm4zio)
@@ -473,12 +489,16 @@ lazy val cli = (project in file("modules/cli"))
   .dependsOn(
     sharedJson, sharedIds, sharedErrors, sharedStoreCore, sharedServices,
     configDomain,
+    agentDomain,
     boardDomain,
     workspaceDomain,
     projectDomain,
     activityDomain,
     conversationDomain,
     taskrunDomain,
+    orchestrationDomain,
+    evalDomain,
+    deployDomain,
   )
   .settings(foundationSettings)
   .settings(
@@ -581,7 +601,7 @@ lazy val allModules = Seq(
   planDomain, taskrunDomain, boardDomain, knowledgeDomain, projectDomain, configDomain,
   conversationDomain, daemonDomain, analysisDomain, workspaceDomain, gatewayDomain,
   orchestrationDomain, evolutionDomain, issuesDomain, demoDomain, sharedWeb,
-  sdlcDomain,
+  sdlcDomain, evalDomain, deployDomain,
   bankmodGraphModel, bankmodGraphValidate, bankmodGraphRender, bankmodMcpTools, bankmodApp,
 )
 
