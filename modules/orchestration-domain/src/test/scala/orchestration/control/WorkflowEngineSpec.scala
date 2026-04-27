@@ -41,7 +41,7 @@ object WorkflowEngineSpec extends ZIOSpecDefault:
       supportedSteps = supportedSteps,
     )
 
-  def spec = suite("WorkflowEngineSpec")(
+  def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("WorkflowEngineSpec")(
     test("builds batches respecting dependencies") {
       val graph    = mkGraph(
         node("a"),
@@ -93,10 +93,9 @@ object WorkflowEngineSpec extends ZIOSpecDefault:
       )
       for
         result <- WorkflowEngine.removeNode(graph, "b")
-        nodeC   = result.nodes.find(_.id == "c").get
       yield assertTrue(
         result.nodes.map(_.id).sorted == List("a", "c"),
-        nodeC.dependsOn.contains("a"),
+        result.nodes.exists(n => n.id == "c" && n.dependsOn.contains("a")),
       )
     },
   ).provideLayer(WorkflowEngine.live)
