@@ -27,7 +27,7 @@ object WorkflowEngineSpec extends ZIOSpecDefault:
   private def mkWorkflow(graph: WorkflowGraph, name: String = "test"): WorkflowDefinition =
     WorkflowDefinition(name = name, steps = Nil, isBuiltin = false, dynamicGraph = Some(graph))
 
-  private def mkAgent(
+  private def mkAgentInfo(
     name: String,
     supportedSteps: List[String],
   ): AgentInfo =
@@ -73,9 +73,9 @@ object WorkflowEngineSpec extends ZIOSpecDefault:
         node("step1", step = "build", policy = Some(policy))
       )
       val workflow = mkWorkflow(graph)
-      val alice    = mkAgent("alice", supportedSteps = List("build"))
-      val bob      = mkAgent("bob", supportedSteps = List("build"))
-      val charlie  = mkAgent("charlie", supportedSteps = List("build"))
+      val alice    = mkAgentInfo("alice", supportedSteps = List("build"))
+      val bob      = mkAgentInfo("bob", supportedSteps = List("build"))
+      val charlie  = mkAgentInfo("charlie", supportedSteps = List("build"))
       for
         result      <- WorkflowEngine.buildPlan(workflow, WorkflowContext(), List(alice, bob))
         assignedOk   = assertTrue(result.batches.flatten.head.assignedAgent == Some("alice"))
