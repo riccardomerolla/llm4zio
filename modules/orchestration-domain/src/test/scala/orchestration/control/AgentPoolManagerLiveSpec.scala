@@ -53,16 +53,11 @@ object AgentPoolManagerLiveSpec extends ZIOSpecDefault:
 
   /** Build the AgentPoolManager layer from stub repos. */
   private def poolLayer(agents: List[Agent]): ZLayer[Any, Nothing, AgentPoolManager] =
-    ZLayer.fromZIO(
-      for
-        cfg <- StubConfigRepository.make()
-        ar  <- StubAgentRepository.make(agents)
-      yield (cfg, ar)
-    ).flatMap { env =>
-      val (cfg, ar) = env.get[(StubConfigRepository, StubAgentRepository)]
-      ZLayer.succeed[ConfigRepository](cfg) ++
-        ZLayer.succeed[AgentRepository](ar)
-    } >>> AgentPoolManagerLive.live
+    val cfgLayer: ZLayer[Any, Nothing, ConfigRepository] =
+      ZLayer.fromZIO(StubConfigRepository.make())
+    val agentLayer: ZLayer[Any, Nothing, AgentRepository] =
+      ZLayer.fromZIO(StubAgentRepository.make(agents))
+    (cfgLayer ++ agentLayer) >>> AgentPoolManagerLive.live
 
   def spec: Spec[Environment & (TestEnvironment & Scope), Any] =
     suite("AgentPoolManagerLiveSpec")(
@@ -75,7 +70,7 @@ object AgentPoolManagerLiveSpec extends ZIOSpecDefault:
           // Third acquire must block — fork it so the test can proceed
           fiber <- pool.acquireSlot("dispatcher").fork
           // Give the fiber a moment to block (it enqueues as a waiter)
-          _     <- ZIO.yieldNow
+          _     <- ZIO.sleep(50.millis)
           // Release one of the held slots — the waiter should be granted
           _     <- pool.releaseSlot(h1)
           // The forked fiber must complete within the timeout
@@ -91,7 +86,7 @@ object AgentPoolManagerLiveSpec extends ZIOSpecDefault:
           h1    <- pool.acquireSlot("worker")
           // Second acquire blocks immediately — capacity is 1
           fiber <- pool.acquireSlot("worker").fork
-          _     <- ZIO.yieldNow
+          _     <- ZIO.sleep(50.millis)
           _     <- pool.releaseSlot(h1)
           h2    <- fiber.join.timeoutFail("waiter not granted after releaseSlot")(5.seconds)
           _     <- pool.releaseSlot(h2)
