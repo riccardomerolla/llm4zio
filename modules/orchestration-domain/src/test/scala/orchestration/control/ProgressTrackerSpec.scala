@@ -6,7 +6,7 @@ import zio.*
 import zio.test.*
 
 import activity.control.ActivityHub
-import activity.entity.{ ActivityEvent, ActivityEventType }
+import activity.entity.ActivityEventType
 import shared.ids.Ids.TaskRunId
 import shared.testfixtures.StubActivityHub
 import taskrun.entity.ProgressUpdate
@@ -52,8 +52,7 @@ object ProgressTrackerSpec extends ZIOSpecDefault:
           val relevant = events.filter(_.eventType == ActivityEventType.RunStarted)
           assertTrue(
             relevant.size == 1,
-            relevant.head.source == "progress-tracker",
-            relevant.head.runId == Some(TaskRunId("run-1")),
+            relevant.exists(e => e.source == "progress-tracker" && e.runId == Some(TaskRunId("run-1"))),
           )
       }
     },
@@ -63,7 +62,8 @@ object ProgressTrackerSpec extends ZIOSpecDefault:
         for
           stub    <- StubActivityHub.make
           tracker <- makeLive(stub)
-          queue   <- tracker.subscribe("run-1")
+          q1      <- tracker.subscribe("run-1")
+          q2      <- tracker.subscribe("run-1")
           update   = ProgressUpdate(
                        runId           = "run-1",
                        phase           = "build",
@@ -75,10 +75,11 @@ object ProgressTrackerSpec extends ZIOSpecDefault:
                        percentComplete = 0.0,
                      )
           _       <- tracker.updateProgress(update)
-          result  <- queue.take.timeout(5.seconds)
+          got1    <- q1.take.timeoutFail("q1 did not receive update within 5s")(5.seconds)
+          got2    <- q2.take.timeoutFail("q2 did not receive update within 5s")(5.seconds)
         yield assertTrue(
-          result.isDefined,
-          result.exists(_.percentComplete == 0.5),
+          got1.percentComplete == 0.5,
+          got2.percentComplete == 0.5,
         )
       }
     } @@ TestAspect.withLiveClock @@ TestAspect.timeout(10.seconds),
@@ -91,12 +92,12 @@ object ProgressTrackerSpec extends ZIOSpecDefault:
           _       <- tracker.startPhase("run-2", "test", 5)
           _       <- tracker.completePhase("run-2", "test")
           events  <- stub.published
-        yield
-          val last = events.last
-          assertTrue(
-            last.eventType == ActivityEventType.RunCompleted,
-            last.summary.contains("completed step: test"),
+        yield assertTrue(
+          events.lastOption.exists(e =>
+            e.eventType == ActivityEventType.RunCompleted &&
+              e.summary.contains("completed step: test")
           )
+        )
       }
     },
 
@@ -108,12 +109,12 @@ object ProgressTrackerSpec extends ZIOSpecDefault:
           _       <- tracker.startPhase("run-3", "deploy", 3)
           _       <- tracker.failPhase("run-3", "deploy", "boom")
           events  <- stub.published
-        yield
-          val last = events.last
-          assertTrue(
-            last.eventType == ActivityEventType.RunFailed,
-            last.summary.contains("failed step: deploy"),
+        yield assertTrue(
+          events.lastOption.exists(e =>
+            e.eventType == ActivityEventType.RunFailed &&
+              e.summary.contains("failed step: deploy")
           )
+        )
       }
     },
 
