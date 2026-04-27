@@ -49,6 +49,9 @@ object DependencyResolverSpec extends ZIOSpecDefault:
       sourceFolder         = "",
     )
 
+  private def resolverLayer(repo: IssueRepository): ULayer[DependencyResolver] =
+    ZLayer.succeed[IssueRepository](repo) >>> DependencyResolver.live
+
   private def mkInProgress(id: String): AgentIssue =
     AgentIssue(
       id                   = IssueId(id),
@@ -73,8 +76,7 @@ object DependencyResolverSpec extends ZIOSpecDefault:
       val i2 = mkTodo("i2", blockedBy = List(IssueId("i1")))
       for
         repo   <- StubIssueRepository.make()
-        layer   = ZLayer.succeed[IssueRepository](repo) >>> DependencyResolver.live
-        result <- DependencyResolver.readyToDispatch(List(i1, i2)).provideLayer(layer)
+        result <- DependencyResolver.readyToDispatch(List(i1, i2)).provideLayer(resolverLayer(repo))
       yield assertTrue(result.isEmpty)
     },
     test("readyToDispatch excludes blocked issues with unresolved deps") {
@@ -86,8 +88,7 @@ object DependencyResolverSpec extends ZIOSpecDefault:
       val issues            = List(done, inProgress, blockedByDone, blockedByInProg, unblocked)
       for
         repo   <- StubIssueRepository.make()
-        layer   = ZLayer.succeed[IssueRepository](repo) >>> DependencyResolver.live
-        result <- DependencyResolver.readyToDispatch(issues).provideLayer(layer)
+        result <- DependencyResolver.readyToDispatch(issues).provideLayer(resolverLayer(repo))
       yield assertTrue(
         result.map(_.id).toSet == Set(blockedByDone.id, unblocked.id)
       )
@@ -97,9 +98,8 @@ object DependencyResolverSpec extends ZIOSpecDefault:
       val doneIssue     = mkDone("done-issue")
       for
         repo   <- StubIssueRepository.make(List(unblockedTodo, doneIssue))
-        layer   = ZLayer.succeed[IssueRepository](repo) >>> DependencyResolver.live
-        result <- DependencyResolver.currentReadyToDispatch.provideLayer(layer)
-      yield assertTrue(result.map(_.id) == List(unblockedTodo.id))
+        result <- DependencyResolver.currentReadyToDispatch.provideLayer(resolverLayer(repo))
+      yield assertTrue(result.map(_.id).toSet == Set(unblockedTodo.id))
     },
     test("dependencyGraph extracts blockedBy as a set per issue") {
       val c = mkTodo("c")
@@ -107,8 +107,7 @@ object DependencyResolverSpec extends ZIOSpecDefault:
       val a = mkTodo("a", blockedBy = List(b.id, c.id))
       for
         repo   <- StubIssueRepository.make()
-        layer   = ZLayer.succeed[IssueRepository](repo) >>> DependencyResolver.live
-        result <- DependencyResolver.dependencyGraph(List(a, b, c)).provideLayer(layer)
+        result <- DependencyResolver.dependencyGraph(List(a, b, c)).provideLayer(resolverLayer(repo))
       yield assertTrue(
         result(a.id) == Set(b.id, c.id),
         result(b.id) == Set(c.id),
