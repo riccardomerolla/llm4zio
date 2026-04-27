@@ -5,9 +5,9 @@ import java.time.{ Duration, Instant }
 import zio.*
 import zio.test.*
 
-import _root_.activity.entity.{ ActivityEvent, ActivityEventType }
+import _root_.activity.entity.ActivityEventType
 import _root_.agent.entity.{ Agent, AgentPermissions, TrustLevel }
-import issues.entity.{ AgentIssue, IssueState }
+import issues.entity.{ AgentIssue, IssueEvent, IssueState }
 import orchestration.entity.{ AgentPoolManager, SlotHandle }
 import shared.ids.Ids.{ AgentId, IssueId, ProjectId }
 import shared.testfixtures.{
@@ -137,11 +137,15 @@ object AutoDispatcherSpec extends ZIOSpecDefault:
           d       <- makeDispatcher(cfg, iRepo, aRepo, wsRepo, runSvc, actHub, stubPoolManager(5), govSvc)
           count   <- d.dispatchOnce
           assigns <- runSvc.assignments
+          events  <- iRepo.appendedEvents
         yield
-          assertTrue(count == 1) &&
-          assertTrue(assigns.size == 1) &&
-          assertTrue(assigns.head._1 == "ws-1") &&
-          assertTrue(assigns.head._2.agentName == "alice")
+          assertTrue(
+            count == 1,
+            assigns.size == 1,
+            assigns.exists { case (wsId, req) => wsId == "ws-1" && req.agentName == "alice" },
+            events.exists(_.isInstanceOf[IssueEvent.Assigned]),
+            events.exists(_.isInstanceOf[IssueEvent.Started]),
+          )
       },
 
       test("respects pool capacity — returns 0 when no slots are available for the matching agent") {
@@ -179,11 +183,14 @@ object AutoDispatcherSpec extends ZIOSpecDefault:
           d         <- makeDispatcher(cfg, iRepo, aRepo, wsRepo, runSvc, actHub, stubPoolManager(5), govSvc)
           _         <- d.dispatchOnce
           published <- actHub.published
-        yield
-          assertTrue(published.size == 1) &&
-          assertTrue(published.head.eventType == ActivityEventType.AgentAssigned) &&
-          assertTrue(published.head.source == "auto-dispatch") &&
-          assertTrue(published.head.agentName == Some("alice"))
+        yield assertTrue(
+          published.size == 1,
+          published.exists(e =>
+            e.eventType == ActivityEventType.AgentAssigned &&
+              e.source == "auto-dispatch" &&
+              e.agentName == Some("alice")
+          ),
+        )
       },
 
       test("skips dispatch when governance policy denies") {
