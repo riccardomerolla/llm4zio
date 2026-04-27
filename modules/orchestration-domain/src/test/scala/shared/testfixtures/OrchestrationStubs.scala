@@ -6,7 +6,7 @@ import _root_.activity.control.ActivityHub
 import _root_.activity.entity.ActivityEvent
 import _root_.agent.entity.{ Agent, AgentEvent, AgentRepository }
 import _root_.config.entity.{ ConfigRepository, CustomAgentRow, SettingRow, WorkflowRow }
-import _root_.governance.control.{ GovernancePolicyService, GovernanceTransitionDecision }
+import _root_.governance.control.{ GovernanceEvaluationContext, GovernancePolicyService, GovernanceTransitionDecision }
 import _root_.governance.entity.GovernancePolicy
 import _root_.issues.entity.{ AgentIssue, IssueEvent, IssueFilter, IssueRepository }
 import _root_.workspace.entity.{
@@ -33,9 +33,11 @@ import shared.ids.Ids.{ AgentId, IssueId, ProjectId }
 final class StubIssueRepository private (
   private val issuesRef:     Ref[Map[IssueId, AgentIssue]],
   private val historyRef:    Ref[Map[IssueId, List[IssueEvent]]],
-  private val allEventsRef:  Ref[List[IssueEvent]],
+  private val allEventsRef:  Ref[Chunk[IssueEvent]],
 ) extends IssueRepository:
 
+  // Filter is intentionally ignored: the stub returns all seeded issues.
+  // Tests that depend on filtering should drive issue selection via setIssues.
   override def list(filter: IssueFilter): IO[PersistenceError, List[AgentIssue]] =
     issuesRef.get.map(_.values.toList)
 
@@ -56,7 +58,7 @@ final class StubIssueRepository private (
   override def delete(id: IssueId): IO[PersistenceError, Unit] =
     issuesRef.update(_ - id)
 
-  def appendedEvents: UIO[List[IssueEvent]] = allEventsRef.get
+  def appendedEvents: UIO[Chunk[IssueEvent]] = allEventsRef.get
 
   def setIssues(issues: List[AgentIssue]): UIO[Unit] =
     issuesRef.set(issues.map(i => i.id -> i).toMap)
@@ -66,7 +68,7 @@ object StubIssueRepository:
     for
       issuesRef    <- Ref.make(initial.map(i => i.id -> i).toMap)
       historyRef   <- Ref.make(Map.empty[IssueId, List[IssueEvent]])
-      allEventsRef <- Ref.make(List.empty[IssueEvent])
+      allEventsRef <- Ref.make(Chunk.empty[IssueEvent])
     yield new StubIssueRepository(issuesRef, historyRef, allEventsRef)
 
 // ── StubAgentRepository ───────────────────────────────────────────────────
@@ -194,6 +196,8 @@ final class StubActivityHub private (
         ZIO.foreachDiscard(queues)(_.offer(event).unit)
       }
 
+  // Subscriber queues are never removed: not safe to reuse the stub across test cases.
+  // Build a fresh instance with `make` per test.
   override def subscribe: UIO[Dequeue[ActivityEvent]] =
     for
       queue <- Queue.bounded[ActivityEvent](64)
@@ -327,7 +331,7 @@ final class StubGovernancePolicyService private (
 
   override def evaluateForWorkspace(
     workspaceId: String,
-    context:     _root_.governance.control.GovernanceEvaluationContext,
+    context:     GovernanceEvaluationContext,
   ): IO[PersistenceError, GovernanceTransitionDecision] =
     decisionRef.get
 
