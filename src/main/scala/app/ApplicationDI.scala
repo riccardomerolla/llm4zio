@@ -80,6 +80,7 @@ import sdlc.control.SdlcDashboardService
 import shared.services.{ FileService, HttpAIClient, StateService }
 import shared.store.{ ConfigStoreModule, DataStoreModule, DataStoreService, MemoryStoreModule, StoreConfig }
 import shared.web.StreamAbortRegistry
+import canvas.entity.{ CanvasEventStoreES, ReasonsCanvasRepositoryES }
 import specification.entity.{ SpecificationEventStoreES, SpecificationRepositoryES }
 import taskrun.boundary.{
   DashboardController as TaskRunDashboardController,
@@ -330,6 +331,8 @@ object ApplicationDI:
       ProjectStorageService.live,
       SpecificationEventStoreES.live,
       SpecificationRepositoryES.live,
+      CanvasEventStoreES.live,
+      ReasonsCanvasRepositoryES.live,
       PlanEventStoreES.live,
       PlanRepositoryES.live,
       DecisionLogEventStoreES.live,

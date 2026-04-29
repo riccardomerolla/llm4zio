@@ -4,6 +4,7 @@ import zio.*
 
 import agent.entity.AgentRepository
 import analysis.entity.AnalysisRepository
+import canvas.entity.ReasonsCanvasRepository
 import daemon.control.DaemonAgentScheduler
 import decision.control.DecisionInbox
 import evolution.control.EvolutionEngine
@@ -15,6 +16,7 @@ import llm4zio.mcp.transport.SseTransport
 import llm4zio.tools.ToolRegistry
 import memory.entity.MemoryRepository
 import plan.entity.PlanRepository
+import prompts.PromptLoader
 import sdlc.control.SdlcDashboardService
 import specification.entity.SpecificationRepository
 import workspace.entity.{ WorkspaceRepository, WorkspaceRunService }
@@ -56,37 +58,40 @@ object McpService:
     planRepository: PlanRepository,
     daemonScheduler: DaemonAgentScheduler,
     sdlcDashboardService: SdlcDashboardService,
+    promptLoader: PromptLoader,
+    canvasRepository: ReasonsCanvasRepository,
   ): ZIO[Scope, McpServiceInitError, McpService] =
     for
-      transport <- SseTransport.make(apiKey)
-      registry  <- ToolRegistry.make
-      tools      = GatewayMcpTools(
-                     issueRepo,
-                     agentRepo,
-                     wsRepo,
-                     runService,
-                     decisionInbox,
-                     evolutionEngine,
-                     memoryRepo,
-                     analysisRepo,
-                     knowledgeGraph,
-                     governancePolicyService,
-                     specificationRepository,
-                     planRepository,
-                     daemonScheduler,
-                     sdlcDashboardService,
-                   )
-      _         <- registry
-                     .registerAll(tools.all)
-                     .mapError(error => McpServiceInitError.ToolRegistration(error.toString))
-      server    <- McpServer.make(registry, transport)
-      fiber     <- server.start.forkScoped
-      controller = McpController(transport)
+      transport  <- SseTransport.make(apiKey)
+      registry   <- ToolRegistry.make
+      gatewayTools = GatewayMcpTools(
+                       issueRepo,
+                       agentRepo,
+                       wsRepo,
+                       runService,
+                       decisionInbox,
+                       evolutionEngine,
+                       memoryRepo,
+                       analysisRepo,
+                       knowledgeGraph,
+                       governancePolicyService,
+                       specificationRepository,
+                       planRepository,
+                       daemonScheduler,
+                       sdlcDashboardService,
+                     )
+      spddTools    = SpddMcpTools(promptLoader, canvasRepository)
+      _          <- registry
+                      .registerAll(gatewayTools.all ++ spddTools.all)
+                      .mapError(error => McpServiceInitError.ToolRegistration(error.toString))
+      server     <- McpServer.make(registry, transport)
+      fiber      <- server.start.forkScoped
+      controller  = McpController(transport)
     yield McpService(transport, controller, fiber)
 
   /** ZLayer for wiring into ApplicationDI. */
   val live: ZLayer[
-    IssueRepository & AgentRepository & WorkspaceRepository & WorkspaceRunService & DecisionInbox & EvolutionEngine & MemoryRepository & AnalysisRepository & KnowledgeGraphService & GovernancePolicyService & SpecificationRepository & PlanRepository & DaemonAgentScheduler & SdlcDashboardService,
+    IssueRepository & AgentRepository & WorkspaceRepository & WorkspaceRunService & DecisionInbox & EvolutionEngine & MemoryRepository & AnalysisRepository & KnowledgeGraphService & GovernancePolicyService & SpecificationRepository & PlanRepository & DaemonAgentScheduler & SdlcDashboardService & PromptLoader & ReasonsCanvasRepository,
     Nothing,
     McpService,
   ] =
@@ -106,6 +111,8 @@ object McpService:
         plans          <- ZIO.service[PlanRepository]
         daemons        <- ZIO.service[DaemonAgentScheduler]
         dashboard      <- ZIO.service[SdlcDashboardService]
+        promptLoader   <- ZIO.service[PromptLoader]
+        canvasRepo     <- ZIO.service[ReasonsCanvasRepository]
         svc            <- make(
                             apiKey = None, // can be configured via GatewayConfig.mcp.apiKey later
                             issueRepo,
@@ -122,6 +129,8 @@ object McpService:
                             plans,
                             daemons,
                             dashboard,
+                            promptLoader,
+                            canvasRepo,
                           ).catchAll(error => ZIO.logError(error.message) *> ZIO.dieMessage(error.message))
       yield svc
     }
