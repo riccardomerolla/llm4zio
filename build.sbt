@@ -276,11 +276,11 @@ lazy val specificationDomain = (project in file("modules/specification-domain"))
   )
 
 lazy val canvasDomain = (project in file("modules/canvas-domain"))
-  .dependsOn(sharedIds, sharedErrors, sharedStoreCore)
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore, sharedWebCore)
   .settings(foundationSettings)
   .settings(
     name := "canvas-domain",
-    libraryDependencies ++= domainDeps,
+    libraryDependencies ++= domainBceDeps,
   )
 
 lazy val checkpointDomain = (project in file("modules/checkpoint-domain"))
