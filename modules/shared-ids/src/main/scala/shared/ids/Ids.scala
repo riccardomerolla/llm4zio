@@ -281,3 +281,14 @@ object Ids:
 
     given JsonCodec[CheckpointId] = JsonCodec.string.transform(CheckpointId.apply, _.value)
     given Schema[CheckpointId]    = stringSchema.transform(CheckpointId.apply, _.value)
+
+  opaque type TestScenarioDocId = String
+  object TestScenarioDocId:
+    def apply(value: String): TestScenarioDocId = value
+    def generate: TestScenarioDocId             = randomId()
+
+    extension (id: TestScenarioDocId)
+      def value: String = id
+
+    given JsonCodec[TestScenarioDocId] = JsonCodec.string.transform(TestScenarioDocId.apply, _.value)
+    given Schema[TestScenarioDocId]    = stringSchema.transform(TestScenarioDocId.apply, _.value)
