@@ -270,3 +270,14 @@ object Ids:
 
     given JsonCodec[SafeguardProfileId] = JsonCodec.string.transform(SafeguardProfileId.apply, _.value)
     given Schema[SafeguardProfileId]    = stringSchema.transform(SafeguardProfileId.apply, _.value)
+
+  opaque type CheckpointId = String
+  object CheckpointId:
+    def apply(value: String): CheckpointId = value
+    def generate: CheckpointId             = randomId()
+
+    extension (id: CheckpointId)
+      def value: String = id
+
+    given JsonCodec[CheckpointId] = JsonCodec.string.transform(CheckpointId.apply, _.value)
+    given Schema[CheckpointId]    = stringSchema.transform(CheckpointId.apply, _.value)
