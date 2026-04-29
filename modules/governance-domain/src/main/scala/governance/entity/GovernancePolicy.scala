@@ -32,6 +32,10 @@ enum GovernanceGate derives JsonCodec, Schema:
   case CodeReview
   case CiPassed
   case ProofOfWork
+  case CanvasReview
+  case NormsCompliance
+  case SafeguardsCompliance
+  case ApiTestPassed
   case Custom(name: String)
 
 enum GovernanceEscalationKind derives JsonCodec, Schema:

@@ -140,6 +140,42 @@ object GovernancePolicyEngineSpec extends ZIOSpecDefault:
           decision.missingGates == Set(GovernanceGate.CodeReview, GovernanceGate.CiPassed),
         )
       },
+      test("SPDD gates flow through the engine identically to legacy gates") {
+        val spddGates = List(
+          GovernanceGate.CanvasReview,
+          GovernanceGate.NormsCompliance,
+          GovernanceGate.SafeguardsCompliance,
+          GovernanceGate.ApiTestPassed,
+        )
+        for
+          blocked   <- engine.evaluateTransition(
+                         policy(rules = List(GovernanceTransitionRule(transition = dispatchTransition, requiredGates = spddGates))),
+                         GovernanceEvaluationContext(issueType = "task", transition = dispatchTransition),
+                       )
+          partial   <- engine.evaluateTransition(
+                         policy(rules = List(GovernanceTransitionRule(transition = dispatchTransition, requiredGates = spddGates))),
+                         GovernanceEvaluationContext(
+                           issueType = "task",
+                           transition = dispatchTransition,
+                           satisfiedGates = Set(GovernanceGate.CanvasReview, GovernanceGate.NormsCompliance),
+                         ),
+                       )
+          satisfied <- engine.evaluateTransition(
+                         policy(rules = List(GovernanceTransitionRule(transition = dispatchTransition, requiredGates = spddGates))),
+                         GovernanceEvaluationContext(
+                           issueType = "task",
+                           transition = dispatchTransition,
+                           satisfiedGates = spddGates.toSet,
+                         ),
+                       )
+        yield assertTrue(
+          !blocked.allowed,
+          blocked.missingGates == spddGates.toSet,
+          !partial.allowed,
+          partial.missingGates == Set(GovernanceGate.SafeguardsCompliance, GovernanceGate.ApiTestPassed),
+          satisfied.allowed,
+        )
+      },
       test("daemon triggers and escalations are returned for matching transitions") {
         val escalation = GovernanceEscalationRule(
           id = "notify-maintainer",
