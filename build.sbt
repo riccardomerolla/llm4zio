@@ -275,6 +275,14 @@ lazy val specificationDomain = (project in file("modules/specification-domain"))
     libraryDependencies ++= domainBceDeps,
   )
 
+lazy val canvasDomain = (project in file("modules/canvas-domain"))
+  .dependsOn(sharedIds, sharedErrors, sharedStoreCore)
+  .settings(foundationSettings)
+  .settings(
+    name := "canvas-domain",
+    libraryDependencies ++= domainDeps,
+  )
+
 lazy val planDomain = (project in file("modules/plan-domain"))
   .dependsOn(sharedIds, sharedErrors, sharedStoreCore, governanceDomain)
   .settings(foundationSettings)
@@ -598,7 +606,7 @@ lazy val bankmod = (project in file("modules/bankmod"))
 lazy val allModules = Seq(
   llm4zio, sharedJson, sharedIds, sharedErrors, sharedStoreCore, sharedServices, sharedWebCore,
   activityDomain, memoryDomain, governanceDomain, agentDomain, decisionDomain, specificationDomain,
-  planDomain, taskrunDomain, boardDomain, knowledgeDomain, projectDomain, configDomain,
+  canvasDomain, planDomain, taskrunDomain, boardDomain, knowledgeDomain, projectDomain, configDomain,
   conversationDomain, daemonDomain, analysisDomain, workspaceDomain, gatewayDomain,
   orchestrationDomain, evolutionDomain, issuesDomain, demoDomain, sharedWeb,
   sdlcDomain, evalDomain, deployDomain,

@@ -237,3 +237,36 @@ object Ids:
 
     given JsonCodec[BoardIssueId] = JsonCodec.string.transform(BoardIssueId.apply, _.value)
     given Schema[BoardIssueId]    = stringSchema.transform(BoardIssueId.apply, _.value)
+
+  opaque type CanvasId = String
+  object CanvasId:
+    def apply(value: String): CanvasId = value
+    def generate: CanvasId             = randomId()
+
+    extension (id: CanvasId)
+      def value: String = id
+
+    given JsonCodec[CanvasId] = JsonCodec.string.transform(CanvasId.apply, _.value)
+    given Schema[CanvasId]    = stringSchema.transform(CanvasId.apply, _.value)
+
+  opaque type NormProfileId = String
+  object NormProfileId:
+    def apply(value: String): NormProfileId = value
+    def generate: NormProfileId             = randomId()
+
+    extension (id: NormProfileId)
+      def value: String = id
+
+    given JsonCodec[NormProfileId] = JsonCodec.string.transform(NormProfileId.apply, _.value)
+    given Schema[NormProfileId]    = stringSchema.transform(NormProfileId.apply, _.value)
+
+  opaque type SafeguardProfileId = String
+  object SafeguardProfileId:
+    def apply(value: String): SafeguardProfileId = value
+    def generate: SafeguardProfileId             = randomId()
+
+    extension (id: SafeguardProfileId)
+      def value: String = id
+
+    given JsonCodec[SafeguardProfileId] = JsonCodec.string.transform(SafeguardProfileId.apply, _.value)
+    given Schema[SafeguardProfileId]    = stringSchema.transform(SafeguardProfileId.apply, _.value)
