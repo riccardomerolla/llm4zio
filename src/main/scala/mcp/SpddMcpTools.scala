@@ -4,6 +4,7 @@ import zio.*
 import zio.json.*
 import zio.json.ast.Json
 
+import canvas.control.CanvasSimilarityIndex
 import canvas.entity.*
 import llm4zio.tools.{ Tool, ToolExecutionError }
 import mcp.GatewayMcpToolSupport.*
@@ -31,6 +32,7 @@ import shared.ids.Ids.{
 final class SpddMcpTools(
   promptLoader: PromptLoader,
   canvasRepo: ReasonsCanvasRepository,
+  similarityIndex: CanvasSimilarityIndex,
 ):
 
   // ── Helpers ─────────────────────────────────────────────────────────────
@@ -465,6 +467,46 @@ final class SpddMcpTools(
       ),
   )
 
+  // ── 9. spdd_canvas_search_similar ──────────────────────────────────────
+
+  private val canvasSearchSimilarTool: Tool = Tool(
+    name = "spdd_canvas_search_similar",
+    description =
+      "Find approved Canvases similar to a query (Jaccard similarity over normalized section tokens). " +
+        "Use at the start of /spdd-analysis to bring prior context. Optional projectId filter. Default limit 5.",
+    parameters = Json.Obj(
+      "type"       -> Json.Str("object"),
+      "properties" -> Json.Obj(
+        "query"     -> primitiveSchema("string"),
+        "projectId" -> primitiveSchema("string"),
+        "limit"     -> primitiveSchema("integer"),
+      ),
+      "required"   -> Json.Arr(Chunk(Json.Str("query"))),
+    ),
+    execute = args =>
+      for
+        query     <- fieldStr(args, "query")
+        projectId  = fieldStrOpt(args, "projectId").map(ProjectId(_))
+        limit      = fieldIntOpt(args, "limit").getOrElse(5)
+        hits      <- liftPersistence(similarityIndex.findSimilar(query, projectId, limit), "canvas similarity")
+      yield Json.Obj(
+        "query"   -> Json.Str(query),
+        "matches" -> Json.Arr(
+          Chunk.fromIterable(
+            hits.map(hit =>
+              Json.Obj(
+                "canvasId"     -> Json.Str(hit.canvasId.value),
+                "projectId"    -> Json.Str(hit.projectId.value),
+                "title"        -> Json.Str(hit.title),
+                "score"        -> Json.Num(BigDecimal(hit.score)),
+                "matchedTerms" -> Json.Arr(Chunk.fromIterable(hit.matchedTerms.map(Json.Str(_)))),
+              )
+            )
+          )
+        ),
+      ),
+  )
+
   // ── Schema helpers ──────────────────────────────────────────────────────
 
   private def primitiveSchema(jsonType: String): Json =
@@ -481,4 +523,5 @@ final class SpddMcpTools(
     canvasApproveTool,
     canvasMarkStaleTool,
     canvasLinkRunTool,
+    canvasSearchSimilarTool,
   )

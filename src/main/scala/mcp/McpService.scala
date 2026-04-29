@@ -4,6 +4,7 @@ import zio.*
 
 import agent.entity.AgentRepository
 import analysis.entity.AnalysisRepository
+import canvas.control.CanvasSimilarityIndex
 import canvas.entity.ReasonsCanvasRepository
 import daemon.control.DaemonAgentScheduler
 import decision.control.DecisionInbox
@@ -60,6 +61,7 @@ object McpService:
     sdlcDashboardService: SdlcDashboardService,
     promptLoader: PromptLoader,
     canvasRepository: ReasonsCanvasRepository,
+    canvasSimilarity: CanvasSimilarityIndex,
   ): ZIO[Scope, McpServiceInitError, McpService] =
     for
       transport  <- SseTransport.make(apiKey)
@@ -80,7 +82,7 @@ object McpService:
                        daemonScheduler,
                        sdlcDashboardService,
                      )
-      spddTools    = SpddMcpTools(promptLoader, canvasRepository)
+      spddTools    = SpddMcpTools(promptLoader, canvasRepository, canvasSimilarity)
       _          <- registry
                       .registerAll(gatewayTools.all ++ spddTools.all)
                       .mapError(error => McpServiceInitError.ToolRegistration(error.toString))
@@ -91,7 +93,7 @@ object McpService:
 
   /** ZLayer for wiring into ApplicationDI. */
   val live: ZLayer[
-    IssueRepository & AgentRepository & WorkspaceRepository & WorkspaceRunService & DecisionInbox & EvolutionEngine & MemoryRepository & AnalysisRepository & KnowledgeGraphService & GovernancePolicyService & SpecificationRepository & PlanRepository & DaemonAgentScheduler & SdlcDashboardService & PromptLoader & ReasonsCanvasRepository,
+    IssueRepository & AgentRepository & WorkspaceRepository & WorkspaceRunService & DecisionInbox & EvolutionEngine & MemoryRepository & AnalysisRepository & KnowledgeGraphService & GovernancePolicyService & SpecificationRepository & PlanRepository & DaemonAgentScheduler & SdlcDashboardService & PromptLoader & ReasonsCanvasRepository & CanvasSimilarityIndex,
     Nothing,
     McpService,
   ] =
@@ -113,6 +115,7 @@ object McpService:
         dashboard      <- ZIO.service[SdlcDashboardService]
         promptLoader   <- ZIO.service[PromptLoader]
         canvasRepo     <- ZIO.service[ReasonsCanvasRepository]
+        canvasSimilar  <- ZIO.service[CanvasSimilarityIndex]
         svc            <- make(
                             apiKey = None, // can be configured via GatewayConfig.mcp.apiKey later
                             issueRepo,
@@ -131,6 +134,7 @@ object McpService:
                             dashboard,
                             promptLoader,
                             canvasRepo,
+                            canvasSimilar,
                           ).catchAll(error => ZIO.logError(error.message) *> ZIO.dieMessage(error.message))
       yield svc
     }

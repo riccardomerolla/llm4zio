@@ -4,6 +4,7 @@ import zio.*
 import zio.json.ast.Json
 import zio.test.*
 
+import canvas.control.CanvasSimilarityIndexLive
 import canvas.entity.*
 import llm4zio.tools.{ Tool, ToolExecutionError }
 import prompts.PromptLoader
@@ -107,11 +108,11 @@ object SpddMcpToolsSpec extends ZIOSpecDefault:
 
   def spec: Spec[TestEnvironment, Any] =
     suite("SpddMcpToolsSpec")(
-      test("exposes exactly the 8 SPDD tools") {
+      test("exposes exactly the 9 SPDD tools") {
         for
           repo  <- inMemoryCanvasRepo
           loader <- ZIO.service[PromptLoader]
-          tools = SpddMcpTools(loader, repo)
+          tools = SpddMcpTools(loader, repo, CanvasSimilarityIndexLive(repo))
         yield assertTrue(
           tools.all.map(_.name).toSet == Set(
             "spdd_render_prompt",
@@ -122,6 +123,7 @@ object SpddMcpToolsSpec extends ZIOSpecDefault:
             "spdd_canvas_approve",
             "spdd_canvas_mark_stale",
             "spdd_canvas_link_run",
+            "spdd_canvas_search_similar",
           )
         )
       },
@@ -129,7 +131,7 @@ object SpddMcpToolsSpec extends ZIOSpecDefault:
         for
           repo   <- inMemoryCanvasRepo
           loader <- ZIO.service[PromptLoader]
-          tools   = SpddMcpTools(loader, repo)
+          tools   = SpddMcpTools(loader, repo, CanvasSimilarityIndexLive(repo))
           args    = Json.Obj(
                       "name"    -> Json.Str("spdd-api-test"),
                       "context" -> Json.Obj("canvas" -> Json.Str("__SENTINEL__")),
@@ -145,7 +147,7 @@ object SpddMcpToolsSpec extends ZIOSpecDefault:
         for
           repo   <- inMemoryCanvasRepo
           loader <- ZIO.service[PromptLoader]
-          tools   = SpddMcpTools(loader, repo)
+          tools   = SpddMcpTools(loader, repo, CanvasSimilarityIndexLive(repo))
           args    = Json.Obj("name" -> Json.Str("nope-no-such-template"), "context" -> Json.Obj())
           result <- tool("spdd_render_prompt", tools).execute(args).either
         yield assertTrue(
@@ -158,7 +160,7 @@ object SpddMcpToolsSpec extends ZIOSpecDefault:
         for
           repo      <- inMemoryCanvasRepo
           loader    <- ZIO.service[PromptLoader]
-          tools      = SpddMcpTools(loader, repo)
+          tools      = SpddMcpTools(loader, repo, CanvasSimilarityIndexLive(repo))
           canvasId  <- createCanvas(tools)
           history   <- repo.history(CanvasId(canvasId))
           canvas    <- repo.get(CanvasId(canvasId))
@@ -174,7 +176,7 @@ object SpddMcpToolsSpec extends ZIOSpecDefault:
         for
           repo     <- inMemoryCanvasRepo
           loader   <- ZIO.service[PromptLoader]
-          tools     = SpddMcpTools(loader, repo)
+          tools     = SpddMcpTools(loader, repo, CanvasSimilarityIndexLive(repo))
           canvasId <- createCanvas(tools)
           result   <- tool("spdd_canvas_get", tools).execute(Json.Obj("canvasId" -> Json.Str(canvasId)))
         yield assertTrue(
@@ -188,7 +190,7 @@ object SpddMcpToolsSpec extends ZIOSpecDefault:
         for
           repo     <- inMemoryCanvasRepo
           loader   <- ZIO.service[PromptLoader]
-          tools     = SpddMcpTools(loader, repo)
+          tools     = SpddMcpTools(loader, repo, CanvasSimilarityIndexLive(repo))
           _        <- createCanvas(tools)
           all      <- tool("spdd_canvas_list", tools).execute(Json.Obj())
           filtered <- tool("spdd_canvas_list", tools).execute(Json.Obj("projectId" -> Json.Str("proj-1")))
@@ -203,7 +205,7 @@ object SpddMcpToolsSpec extends ZIOSpecDefault:
         for
           repo     <- inMemoryCanvasRepo
           loader   <- ZIO.service[PromptLoader]
-          tools     = SpddMcpTools(loader, repo)
+          tools     = SpddMcpTools(loader, repo, CanvasSimilarityIndexLive(repo))
           canvasId <- createCanvas(tools)
           args      = obj(
                         (Seq[(String, Json)](
@@ -237,7 +239,7 @@ object SpddMcpToolsSpec extends ZIOSpecDefault:
         for
           repo     <- inMemoryCanvasRepo
           loader   <- ZIO.service[PromptLoader]
-          tools     = SpddMcpTools(loader, repo)
+          tools     = SpddMcpTools(loader, repo, CanvasSimilarityIndexLive(repo))
           canvasId <- createCanvas(tools)
           args      = obj(
                         (Seq[(String, Json)](
@@ -256,7 +258,7 @@ object SpddMcpToolsSpec extends ZIOSpecDefault:
         for
           repo     <- inMemoryCanvasRepo
           loader   <- ZIO.service[PromptLoader]
-          tools     = SpddMcpTools(loader, repo)
+          tools     = SpddMcpTools(loader, repo, CanvasSimilarityIndexLive(repo))
           canvasId <- createCanvas(tools)
           args      = obj(
                         (Seq[(String, Json)]("canvasId" -> Json.Str(canvasId)) ++ author("human", "alice", "Alice")) *
@@ -272,7 +274,7 @@ object SpddMcpToolsSpec extends ZIOSpecDefault:
         for
           repo     <- inMemoryCanvasRepo
           loader   <- ZIO.service[PromptLoader]
-          tools     = SpddMcpTools(loader, repo)
+          tools     = SpddMcpTools(loader, repo, CanvasSimilarityIndexLive(repo))
           canvasId <- createCanvas(tools)
           _        <- tool("spdd_canvas_approve", tools)
                         .execute(obj((Seq[(String, Json)]("canvasId" -> Json.Str(canvasId)) ++ author()) *))
@@ -296,7 +298,7 @@ object SpddMcpToolsSpec extends ZIOSpecDefault:
         for
           repo     <- inMemoryCanvasRepo
           loader   <- ZIO.service[PromptLoader]
-          tools     = SpddMcpTools(loader, repo)
+          tools     = SpddMcpTools(loader, repo, CanvasSimilarityIndexLive(repo))
           canvasId <- createCanvas(tools)
           args      = obj(
                         (Seq[(String, Json)](
@@ -315,7 +317,7 @@ object SpddMcpToolsSpec extends ZIOSpecDefault:
         for
           repo     <- inMemoryCanvasRepo
           loader   <- ZIO.service[PromptLoader]
-          tools     = SpddMcpTools(loader, repo)
+          tools     = SpddMcpTools(loader, repo, CanvasSimilarityIndexLive(repo))
           canvasId <- createCanvas(tools)
           _        <- tool("spdd_canvas_link_run", tools)
                         .execute(Json.Obj("canvasId" -> Json.Str(canvasId), "taskRunId" -> Json.Str("run-1")))
@@ -328,11 +330,57 @@ object SpddMcpToolsSpec extends ZIOSpecDefault:
           canvas.linkedTaskRunIds == List(TaskRunId("run-1"), TaskRunId("run-2"))
         )
       },
+      test("spdd_canvas_search_similar returns hits ordered by score, only for Approved canvases") {
+        for
+          repo     <- inMemoryCanvasRepo
+          loader   <- ZIO.service[PromptLoader]
+          tools     = SpddMcpTools(loader, repo, CanvasSimilarityIndexLive(repo))
+          billing  <- createCanvas(tools)
+          // approve it so it's eligible for similarity hits
+          _        <- tool("spdd_canvas_approve", tools)
+                        .execute(obj((Seq[(String, Json)]("canvasId" -> Json.Str(billing)) ++ author()) *))
+          // create a draft canvas — must NOT show up
+          draftArgs = obj(
+                        (Seq[(String, Json)](
+                          "projectId" -> Json.Str("proj-1"),
+                          "title"     -> Json.Str("Telegram channel routing"),
+                          "sections"  -> Json.Obj(
+                            "requirements" -> Json.Str("R: route Telegram messages"),
+                            "entities"     -> Json.Str("E: Channel, Message, Subscriber"),
+                            "approach"     -> Json.Str("A: webhook-driven dispatcher"),
+                            "structure"    -> Json.Str("S: telegram-domain BCE module"),
+                            "operations"   -> Json.Str("O: dispatch deliver"),
+                            "norms"        -> Json.Str("N: structured logging"),
+                            "safeguards"   -> Json.Str("SG-1 idempotency on update_id"),
+                          ),
+                        ) ++ author()) *
+                      )
+          _        <- tool("spdd_canvas_create", tools).execute(draftArgs)
+          result   <- tool("spdd_canvas_search_similar", tools).execute(
+                        Json.Obj(
+                          "query" -> Json.Str("multi-plan billing quota overage"),
+                          "limit" -> Json.Num(BigDecimal(5)),
+                        )
+                      )
+          matches   = result match
+                        case Json.Obj(fs) =>
+                          fs.find(_._1 == "matches").map(_._2) match
+                            case Some(Json.Arr(values)) => values.toList
+                            case _                      => Nil
+                        case _            => Nil
+        yield assertTrue(
+          matches.size == 1,
+          matches.head match
+            case Json.Obj(fs) =>
+              fs.find(_._1 == "canvasId").map(_._2).contains(Json.Str(billing))
+            case _            => false,
+        )
+      },
       test("spdd_canvas_get on missing canvas returns ExecutionFailed") {
         for
           repo   <- inMemoryCanvasRepo
           loader <- ZIO.service[PromptLoader]
-          tools   = SpddMcpTools(loader, repo)
+          tools   = SpddMcpTools(loader, repo, CanvasSimilarityIndexLive(repo))
           result <- tool("spdd_canvas_get", tools)
                       .execute(Json.Obj("canvasId" -> Json.Str("nope")))
                       .either

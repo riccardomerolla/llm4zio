@@ -80,6 +80,7 @@ import sdlc.control.SdlcDashboardService
 import shared.services.{ FileService, HttpAIClient, StateService }
 import shared.store.{ ConfigStoreModule, DataStoreModule, DataStoreService, MemoryStoreModule, StoreConfig }
 import shared.web.StreamAbortRegistry
+import canvas.control.CanvasSimilarityIndex
 import canvas.entity.{ CanvasEventStoreES, ReasonsCanvasRepositoryES }
 import specification.entity.{ SpecificationEventStoreES, SpecificationRepositoryES }
 import taskrun.boundary.{
@@ -333,6 +334,7 @@ object ApplicationDI:
       SpecificationRepositoryES.live,
       CanvasEventStoreES.live,
       ReasonsCanvasRepositoryES.live,
+      CanvasSimilarityIndex.live,
       PlanEventStoreES.live,
       PlanRepositoryES.live,
       DecisionLogEventStoreES.live,
