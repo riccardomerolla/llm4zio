@@ -446,6 +446,80 @@ The orchestration ↔ gateway ↔ workspace cluster has circular control-layer d
 
 ---
 
+## SPDD on llm4zio
+
+Structured-Prompt-Driven Development ([Fowler, 2026](https://martinfowler.com/articles/structured-prompt-driven/)) is a first-class workflow on this gateway. The prompt is the delivery artefact; code is its mechanically-derived output. Approved prompts (REASONS Canvases) accumulate as reusable assets across iterations.
+
+A worked example lives at [`examples/spdd-walkthrough/`](examples/spdd-walkthrough/). The user-global skill at `~/.claude/skills/structured-prompt-driven-development/` drives the loop end to end.
+
+### The closed loop
+
+```
+Story → Analysis → REASONS Canvas → Generate → API Test → Review
+                       ↑                                      ↓
+                       └── prompt-first / code-first ─────────┘
+```
+
+When code review finds a problem:
+- **Behaviour change** → prompt-first: update the Canvas via `spdd_canvas_update_sections`, regenerate the affected code. The engine knocks an Approved canvas back to InReview automatically (the SPDD golden rule).
+- **Pure refactor** (no observable behaviour change) → code-first: refactor the code, then `spdd_canvas_update_sections` documents the new shape. Re-run the API tests after to prove behaviour is unchanged.
+
+If you can't tell which loop applies: you don't understand the change well enough to make it. Stop and analyse.
+
+### Domain map
+
+| SPDD concept | llm4zio entity | Module |
+|---|---|---|
+| REASONS Canvas (R/E/A/S/O/N/S) | `ReasonsCanvas` | `canvas-domain` |
+| Norms profile (cross-cutting standards) | `NormProfile` | `canvas-domain` |
+| Safeguards profile (non-negotiable invariants) | `SafeguardProfile` | `canvas-domain` |
+| API test scenarios (cURL-style, normal/boundary/error) | `TestScenarioDoc` | `canvas-domain` |
+| Story (INVEST + Given/When/Then) | `BoardIssue` (existing) | `board-domain` |
+| Analysis context | `AnalysisDoc` (existing) | `analysis-domain` |
+| Quality gates (Canvas/Norms/Safeguards/ApiTest + the legacy six) | `GovernanceGate` | `governance-domain` |
+| Post-stage gate evidence (per-run, event-sourced) | `Checkpoint` | `checkpoint-domain` |
+| Asset reuse (Jaccard similarity over approved Canvases) | `CanvasSimilarityIndex` | `canvas-domain` |
+
+### MCP tool surface
+
+The gateway exposes nine `spdd_*` tools. Tools are persistence verbs + a generic prompt renderer — they do **not** call an LLM internally; the calling agent renders the prompt, runs it itself, then commits the result. This keeps the gateway independent of any specific LLM and avoids recursive calls when Claude is the caller.
+
+| Tool | Purpose |
+|---|---|
+| `spdd_render_prompt(name, context)` | Render any `prompts/spdd-*.md` template with placeholders |
+| `spdd_canvas_create(...)` | Persist a new `ReasonsCanvas` (Draft, version 1) |
+| `spdd_canvas_get(canvasId)` | Fetch a canvas with all 7 sections, status, version, links |
+| `spdd_canvas_list(projectId?)` | List canvases newest-first, optionally project-scoped |
+| `spdd_canvas_update_sections(canvasId, updates[], rationale?, author)` | Apply section edits — bumps version, knocks Approved canvases back to InReview |
+| `spdd_canvas_approve(canvasId, author)` | Draft → Approved |
+| `spdd_canvas_mark_stale(canvasId, reason, author)` | Flag downstream code as drifted |
+| `spdd_canvas_link_run(canvasId, taskRunId)` | Record that a TaskRun was generated from this Canvas (idempotent) |
+| `spdd_canvas_search_similar(query, projectId?, limit?)` | Asset-reuse lookup at the start of `/spdd-analysis` |
+
+The eight prompt templates live at `src/main/resources/prompts/spdd-*.md` and are loaded by the existing `PromptLoader`.
+
+### UI
+
+- `GET /canvases` — project-filterable list with status counts.
+- `GET /canvases/:canvasId` — detail with all 7 sections side-by-side, revision timeline, and linked-TaskRun footer.
+
+### Quality gates
+
+`GovernanceGate` recognises the SPDD additions: `CanvasReview`, `NormsCompliance`, `SafeguardsCompliance`, `ApiTestPassed`. They flow through the existing `GovernancePolicyEngine` evaluation path with no engine-side changes — gates work uniformly via `requiredGates.diff(satisfiedGates)`.
+
+`Checkpoint` (`checkpoint-domain`) is the per-`TaskRun` evidence carrier: `Pending → Running → (Passed | Failed | Skipped)`, with a `findings` list on Failed. Synchronous gates may go `Pending → Passed` directly; double-Passed and post-Passed Failed are rejected.
+
+### Two SPDD-specific conventions
+
+- **Canvas section access from Scalatags views**: scalatags has a `<canvas>` HTML tag that shadows the `canvas` package. Use `import _root_.canvas.entity.*` in any view file (see `CanvasView.scala`).
+- **Approved canvas + section edit = InReview**: this is enforced at the entity level in `ReasonsCanvas.fromEvents`. Don't try to keep a canvas Approved through edits; that knock-back is the SPDD golden rule.
+
+### When NOT to use SPDD
+
+Skip the loop for: typo fixes, single-line patches with obvious correctness, exploratory spikes that will be thrown away, and pure refactors with no behaviour change (those use the code-first loop only). The skill at `~/.claude/skills/structured-prompt-driven-development/` triggers correctly on feature requests and explicitly does not trigger on these cases.
+
+---
+
 ## Key Conventions Summary
 
 - **No `var`** — use `Ref`, `Queue`, `Hub` for mutable state
@@ -461,3 +535,4 @@ The orchestration ↔ gateway ↔ workspace cluster has circular control-layer d
 - **`_root_` prefix** — use when `zio.config` shadows the `config` package or local variables shadow package names
 - **One domain per commit** — when moving code to modules, commit after each domain for safe rollback
 - **Views in `boundary/`** — domain-specific views belong in their domain module's boundary package, not in `shared-web`
+- **SPDD for non-trivial behaviour changes** — fix the prompt (`spdd_canvas_update_sections`) before the code; refactor first then sync only when behaviour is unchanged. See "SPDD on llm4zio" above.
