@@ -4,7 +4,7 @@ import java.time.Duration
 
 import zio.*
 
-import agent.entity.{ Agent, AgentEvent, AgentRegistry, AgentRepository }
+import agent.entity.{ Agent, AgentEvent, AgentRegistry, AgentRepository, DefaultRoster }
 import shared.errors.PersistenceError
 import shared.ids.Ids.AgentId
 
@@ -42,7 +42,7 @@ object BuiltInAgentSynchronizer:
     yield ()
 
   def seedBuiltInAgents(now: java.time.Instant): List[Agent] =
-    AgentRegistry.builtInAgents.map { info =>
+    val legacyBuiltIns = AgentRegistry.builtInAgents.map { info =>
       Agent(
         id = AgentId.generate,
         name = info.name,
@@ -59,6 +59,11 @@ object BuiltInAgentSynchronizer:
         updatedAt = now,
       )
     }
+    // Phase 2 (R2): seed the typed roster (Pat / Alex / Ben / Dana / Rex)
+    // with their canonical IDs and personas so the picker has employees
+    // to route lanes to.
+    val rosterAtNow = DefaultRoster.all.map(agent => agent.copy(createdAt = now, updatedAt = now))
+    legacyBuiltIns ++ rosterAtNow
 
   private def inferCliTool(name: String): String =
     val lower = name.trim.toLowerCase
@@ -78,4 +83,5 @@ object BuiltInAgentSynchronizer:
     existing.envVars != desired.envVars ||
     existing.dockerMemoryLimit != desired.dockerMemoryLimit ||
     existing.dockerCpuLimit != desired.dockerCpuLimit ||
-    existing.timeout != desired.timeout
+    existing.timeout != desired.timeout ||
+    existing.role != desired.role
