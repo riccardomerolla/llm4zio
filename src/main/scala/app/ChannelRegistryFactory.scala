@@ -18,7 +18,7 @@ object ChannelRegistryFactory:
   val live
     : ZLayer[
       Ref[GatewayConfig] & AgentRegistry & TaskRepository & TaskExecutor & ConfigRepository &
-        decision.entity.DecisionRepository,
+        decision.entity.DecisionRepository & decision.control.DecisionInbox,
       Nothing,
       ChannelRegistry,
     ] =
@@ -30,6 +30,7 @@ object ChannelRegistryFactory:
         taskExecutor  <- ZIO.service[TaskExecutor]
         configRepo    <- ZIO.service[ConfigRepository]
         decisionRepo  <- ZIO.service[decision.entity.DecisionRepository]
+        decisionInbox <- ZIO.service[decision.control.DecisionInbox]
         channels      <- Ref.Synchronized.make(Map.empty[String, MessageChannel])
         runtime       <- Ref.Synchronized.make(Map.empty[String, ChannelRuntime])
         clients       <- Ref.Synchronized.make(Map.empty[String, TelegramClient])
@@ -52,6 +53,7 @@ object ChannelRegistryFactory:
                            taskRepository = Some(repository),
                            taskExecutor = Some(taskExecutor),
                            decisionRepository = Some(decisionRepo),
+                           decisionInbox = Some(decisionInbox),
                            scopeStrategy = parseSessionScopeStrategy(settingMap.get("telegram.sessionScopeStrategy")),
                          )
         _             <- registry.register(websocket)

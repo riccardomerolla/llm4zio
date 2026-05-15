@@ -5,7 +5,14 @@ import zio.json.*
 import zio.stream.ZStream
 
 import _root_.config.entity.{ WorkflowDefinition, WorkflowGraph, WorkflowRow, WorkflowStepAgent }
-import decision.entity.{ DecisionEvent, DecisionFilter, DecisionRepository, DecisionStatus }
+import decision.control.DecisionInbox
+import decision.entity.{
+  DecisionEvent,
+  DecisionFilter,
+  DecisionRepository,
+  DecisionStatus,
+  QuickOption,
+}
 import gateway.control.*
 import gateway.entity.*
 import orchestration.entity.TaskExecutor
@@ -20,6 +27,7 @@ final case class TelegramChannel(
   taskRepository: Option[TaskRepository],
   taskExecutor: Option[TaskExecutor],
   decisionRepository: Option[DecisionRepository],
+  decisionInbox: Option[DecisionInbox],
   showMoreRef: Ref[Map[String, String]],
   sessionsRef: Ref[Set[SessionKey]],
   inboundQueue: Queue[NormalizedMessage],
@@ -483,6 +491,70 @@ final case class TelegramChannel(
     replyToMessageId: Long,
     action: DecisionKeyboardAction,
   ): IO[MessageChannelError, Unit] =
+    action.action match
+      case "resolve" => routeDecisionResolve(chatId, replyToMessageId, action)
+      case _         => routeDecisionLegacy(chatId, replyToMessageId, action)
+
+  /** Phase 3 R8: a tap on a Telegram quick-reply button. Looks up the
+    * Decision, finds the QuickOption that matches the callback's optionKey
+    * (using whatever options were attached at escalation time, or the
+    * defaults), then calls DecisionInbox.resolve so all the proper side-
+    * effects fire (issue state transition for IssueReview decisions, etc.).
+    */
+  private def routeDecisionResolve(
+    chatId: Long,
+    replyToMessageId: Long,
+    action: DecisionKeyboardAction,
+  ): IO[MessageChannelError, Unit] =
+    (decisionInbox, action.optionKey) match
+      case (None, _)              =>
+        sendCallbackFeedback(
+          chatId = chatId,
+          replyToMessageId = replyToMessageId,
+          text = "Decision inbox is unavailable.",
+          markup = None,
+        )
+      case (_, None)              =>
+        sendCallbackFeedback(
+          chatId = chatId,
+          replyToMessageId = replyToMessageId,
+          text = "Invalid decision callback (missing option key).",
+          markup = None,
+        )
+      case (Some(inbox), Some(optionKey)) =>
+        val decisionId = shared.ids.Ids.DecisionId(action.decisionId)
+        val effect     =
+          for
+            decision <- inbox.get(decisionId)
+            option   <- ZIO
+                          .fromOption(QuickOption.findByKey(decision.renderableQuickOptions, optionKey))
+                          .orElseFail(
+                            shared.errors.PersistenceError
+                              .QueryFailed("decision_resolve", s"unknown option key '$optionKey'")
+                          )
+            updated  <- inbox.resolve(
+                          id = decisionId,
+                          resolutionKind = option.resolution,
+                          actor = s"telegram:$chatId",
+                          summary = option.rationale,
+                        )
+          yield updated
+        effect
+          .mapError(err => MessageChannelError.InvalidMessage(s"decision resolve failed: $err"))
+          .flatMap(decision =>
+            sendCallbackFeedback(
+              chatId = chatId,
+              replyToMessageId = replyToMessageId,
+              text = s"Decision ${decision.id.value} resolved (${decision.resolution.map(_.kind.toString).getOrElse("?")}).",
+              markup = None,
+            )
+          )
+
+  private def routeDecisionLegacy(
+    chatId: Long,
+    replyToMessageId: Long,
+    action: DecisionKeyboardAction,
+  ): IO[MessageChannelError, Unit] =
     decisionRepository match
       case None             =>
         sendCallbackFeedback(
@@ -859,6 +931,7 @@ object TelegramChannel:
     taskRepository: Option[TaskRepository] = None,
     taskExecutor: Option[TaskExecutor] = None,
     decisionRepository: Option[DecisionRepository] = None,
+    decisionInbox: Option[DecisionInbox] = None,
     name: String = "telegram",
     scopeStrategy: SessionScopeStrategy = SessionScopeStrategy.PerConversation,
   ): UIO[TelegramChannel] =
@@ -869,6 +942,7 @@ object TelegramChannel:
       taskRepository = taskRepository,
       taskExecutor = taskExecutor,
       decisionRepository = decisionRepository,
+      decisionInbox = decisionInbox,
       name = name,
       scopeStrategy = scopeStrategy,
     )
@@ -880,6 +954,7 @@ object TelegramChannel:
     taskRepository: Option[TaskRepository],
     taskExecutor: Option[TaskExecutor],
     decisionRepository: Option[DecisionRepository],
+    decisionInbox: Option[DecisionInbox],
     name: String,
     scopeStrategy: SessionScopeStrategy,
   ): UIO[TelegramChannel] =
@@ -898,6 +973,7 @@ object TelegramChannel:
       taskRepository = taskRepository,
       taskExecutor = taskExecutor,
       decisionRepository = decisionRepository,
+      decisionInbox = decisionInbox,
       showMoreRef = showMore,
       sessionsRef = sessions,
       inboundQueue = inbound,
@@ -917,6 +993,7 @@ object TelegramChannel:
                      taskRepository = None,
                      taskExecutor = None,
                      decisionRepository = None,
+                     decisionInbox = None,
                      name = "telegram",
                      scopeStrategy = SessionScopeStrategy.PerConversation,
                    )

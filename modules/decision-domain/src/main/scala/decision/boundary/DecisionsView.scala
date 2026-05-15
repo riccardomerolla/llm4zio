@@ -2,8 +2,89 @@ package decision.boundary
 
 import decision.entity.*
 import scalatags.Text.all.*
+import shared.web.Layout
 
 object DecisionsView:
+
+  /** Phase 3 R9: the web-side supervisor inbox mirror. Renders pending +
+    * escalated decisions with QuickOption buttons that POST to
+    * `/decisions/{id}/resolve` with a `key=` form field — the same
+    * resolution model as Telegram's inline buttons, just in HTML.
+    *
+    * For policy-locked corp environments where Telegram is blocked, this
+    * is the supervisor's working surface.
+    */
+  def inboxPage(decisions: List[Decision], flash: Option[String] = None): String =
+    Layout.page("Supervisor Inbox", "/decisions/inbox")(
+      div(cls := "mx-auto max-w-5xl space-y-6 p-6")(
+        h1(cls := "text-2xl font-bold text-white")("Supervisor Inbox"),
+        p(cls := "text-sm text-slate-400")(
+          s"${decisions.size} decision(s) awaiting your attention. " +
+            "Tap a quick-reply button to resolve. Channel-agnostic — Telegram " +
+            "and this inbox stay in sync."
+        ),
+        flash.map(message =>
+          div(cls := "rounded-lg border border-emerald-400/30 bg-emerald-500/10 px-4 py-2 text-sm text-emerald-200")(
+            message
+          )
+        ).getOrElse(frag()),
+        if decisions.isEmpty then
+          div(cls := "rounded-xl border border-dashed border-white/10 bg-slate-900/40 p-12 text-center")(
+            p(cls := "text-sm text-slate-400")("No decisions need attention right now.")
+          )
+        else
+          div(cls := "space-y-4")(decisions.map(inboxCard)),
+      )
+    ).render
+
+  private def inboxCard(decision: Decision): Frag =
+    val borderTone =
+      if decision.urgency == DecisionUrgency.Critical then "border-rose-500/45"
+      else if decision.urgency == DecisionUrgency.High then "border-amber-400/35"
+      else "border-white/10"
+    val statusTone =
+      decision.status match
+        case DecisionStatus.Escalated => "text-rose-300"
+        case DecisionStatus.Pending   => "text-slate-300"
+        case _                        => "text-emerald-300"
+    div(cls := s"rounded-xl border bg-slate-900/60 p-5 $borderTone")(
+      div(cls := "flex flex-wrap items-start justify-between gap-3")(
+        div(
+          h2(cls := "text-lg font-semibold text-white")(decision.title),
+          p(cls := s"mt-1 text-xs uppercase tracking-wide $statusTone")(
+            s"${decision.status} · ${decision.urgency}"
+          ),
+        ),
+        urgencyBadge(decision.urgency),
+      ),
+      p(cls := "mt-3 text-sm text-slate-200 whitespace-pre-wrap")(decision.context),
+      decision.source.issueId.map(id =>
+        p(cls := "mt-2 text-xs text-indigo-300")(s"Issue: ${id.value}")
+      ).getOrElse(frag()),
+      div(cls := "mt-4 flex flex-wrap gap-2")(
+        decision.renderableQuickOptions.map(option => quickReplyButton(decision, option))
+      ),
+    )
+
+  private def quickReplyButton(decision: Decision, option: QuickOption): Frag =
+    val tone = option.resolution match
+      case DecisionResolutionKind.Approved        => "border-emerald-400/40 bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/20"
+      case DecisionResolutionKind.ReworkRequested => "border-amber-400/40 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20"
+      case DecisionResolutionKind.Acknowledged    => "border-cyan-400/40 bg-cyan-500/10 text-cyan-200 hover:bg-cyan-500/20"
+      case DecisionResolutionKind.Escalated       => "border-rose-400/40 bg-rose-500/10 text-rose-200 hover:bg-rose-500/20"
+      case DecisionResolutionKind.Expired         => "border-slate-400/40 bg-slate-500/10 text-slate-200"
+    form(
+      cls    := "inline-block",
+      action := s"/decisions/${decision.id.value}/resolve",
+      method := "post",
+    )(
+      input(`type` := "hidden", name := "key", value := option.key),
+      input(`type` := "hidden", name := "actor", value := "web-supervisor"),
+      button(
+        `type` := "submit",
+        cls    := s"rounded-md border px-3 py-1.5 text-sm font-semibold $tone",
+      )(option.label),
+    )
 
   def sidePanelFragment(decisions: List[Decision], runId: String): String =
     div(cls := "space-y-3 p-1", attr("data-decision-panel") := runId)(

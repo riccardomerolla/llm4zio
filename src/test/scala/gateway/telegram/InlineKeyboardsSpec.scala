@@ -27,4 +27,20 @@ object InlineKeyboardsSpec extends ZIOSpecDefault:
         bad2.isLeft,
       )
     },
+    test("parseDecisionCallbackData handles legacy 3-part `escalate` payload") {
+      val parsed = InlineKeyboards.parseDecisionCallbackData("decision:escalate:decision-99")
+      assertTrue(
+        parsed == Right(DecisionKeyboardAction("escalate", "decision-99", None))
+      )
+    },
+    test("parseDecisionCallbackData handles new 4-part `resolve` payload (Phase 3 R8)") {
+      val parsed = InlineKeyboards.parseDecisionCallbackData("decision:resolve:decision-42:approve")
+      assertTrue(
+        parsed == Right(DecisionKeyboardAction("resolve", "decision-42", Some("approve")))
+      )
+    },
+    test("parseDecisionCallbackData rejects empty option keys in resolve payload") {
+      val parsed = InlineKeyboards.parseDecisionCallbackData("decision:resolve:decision-1:")
+      assertTrue(parsed.isLeft)
+    },
   )

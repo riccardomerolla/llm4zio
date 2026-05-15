@@ -38,14 +38,16 @@ object DecisionEscalationNotifierSpec extends ZIOSpecDefault:
       val key    = "approve"
       val packed = DecisionEscalationNotifier.callbackData(id, key)
       assertTrue(
-        packed == "decision:decision-abc:approve",
+        packed == "decision:resolve:decision-abc:approve",
         DecisionEscalationNotifier.parseCallbackData(packed).contains(id -> key),
       )
     },
-    test("parseCallbackData rejects non-decision payloads (other Telegram callbacks coexist)") {
+    test("parseCallbackData rejects payloads that aren't the resolve variant") {
       assertTrue(
+        // Legacy 3-part escalate payload is handled elsewhere (InlineKeyboards)
+        DecisionEscalationNotifier.parseCallbackData("decision:escalate:decision-abc").isEmpty,
         DecisionEscalationNotifier.parseCallbackData("run:run-1:cancel").isEmpty,
-        DecisionEscalationNotifier.parseCallbackData("decision::missing-id").isEmpty,
+        DecisionEscalationNotifier.parseCallbackData("decision:resolve::approve").isEmpty,
         DecisionEscalationNotifier.parseCallbackData("not-our-callback").isEmpty,
       )
     },
@@ -69,7 +71,7 @@ object DecisionEscalationNotifierSpec extends ZIOSpecDefault:
       assertTrue(
         buttons.size == QuickOption.defaults.size,
         buttons.map(_.text) == QuickOption.defaults.map(_.label),
-        buttons.flatMap(_.callback_data).forall(_.startsWith("decision:decision-2:")),
+        buttons.flatMap(_.callback_data).forall(_.startsWith("decision:resolve:decision-2:")),
       )
     },
     test("buildKeyboard honours custom quick-reply options when set on the Decision") {
@@ -80,8 +82,8 @@ object DecisionEscalationNotifierSpec extends ZIOSpecDefault:
       assertTrue(
         buttons.map(_.text) == List("Approve", "Escalate"),
         buttons.flatMap(_.callback_data) == List(
-          "decision:decision-3:approve",
-          "decision:decision-3:escalate",
+          "decision:resolve:decision-3:approve",
+          "decision:resolve:decision-3:escalate",
         ),
       )
     },

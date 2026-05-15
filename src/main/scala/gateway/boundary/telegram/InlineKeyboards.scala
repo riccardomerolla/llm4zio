@@ -9,9 +9,15 @@ case class InlineKeyboardAction(
   paused: Boolean,
 )
 
+/** Action parsed from a Telegram inline-keyboard callback in the `decision:`
+  * namespace. `optionKey` is set only for the Phase 3 R7/R8 resolve path
+  * (`decision:resolve:{id}:{key}`); the legacy `escalate` action leaves it
+  * empty.
+  */
 case class DecisionKeyboardAction(
   action: String,
   decisionId: String,
+  optionKey: Option[String] = None,
 )
 
 object InlineKeyboards:
@@ -143,7 +149,13 @@ object InlineKeyboards:
         Left(s"invalid callback payload: $raw")
 
   def parseDecisionCallbackData(raw: String): Either[String, DecisionKeyboardAction] =
-    raw.trim.split(":").toList match
+    // -1 limit preserves trailing empty fields so we can reject `decision:resolve:id:` cleanly.
+    raw.trim.split(":", -1).toList match
+      // Phase 3 R7/R8: `decision:resolve:{id}:{optionKey}`
+      case DecisionPrefix :: "resolve" :: decisionId :: optionKey :: Nil
+           if decisionId.trim.nonEmpty && optionKey.trim.nonEmpty =>
+        Right(DecisionKeyboardAction("resolve", decisionId.trim, Some(optionKey.trim)))
+      // Legacy `decision:{action}:{id}` (currently only "escalate")
       case DecisionPrefix :: action :: decisionId :: Nil if decisionId.trim.nonEmpty =>
         Right(DecisionKeyboardAction(action.trim.toLowerCase, decisionId.trim))
       case _                                                                         =>

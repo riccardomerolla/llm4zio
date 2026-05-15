@@ -57,18 +57,22 @@ object DecisionEscalationNotifier:
   /** Wire format for inline-keyboard callbacks. Parsed by the R8 callback
     * handler back into a `(DecisionId, optionKey)` pair so the resolve path
     * can find the matching QuickOption on the Decision and apply it.
+    *
+    * Format: `decision:resolve:{decisionId}:{optionKey}`. The `resolve`
+    * infix disambiguates from the legacy 3-part `decision:escalate:{id}`
+    * payload that the existing escalation button uses.
     */
   def callbackData(decisionId: DecisionId, optionKey: String): String =
-    s"decision:${decisionId.value}:${optionKey.trim}"
+    s"decision:resolve:${decisionId.value}:${optionKey.trim}"
 
   /** Inverse of `callbackData`. Returns None for any payload that doesn't
     * carry our prefix (other callbacks coexist in Telegram).
     */
   def parseCallbackData(payload: String): Option[(DecisionId, String)] =
-    payload.split(":", 3).toList match
-      case "decision" :: id :: key :: Nil if id.nonEmpty && key.nonEmpty =>
+    payload.split(":", 4).toList match
+      case "decision" :: "resolve" :: id :: key :: Nil if id.nonEmpty && key.nonEmpty =>
         Some(DecisionId(id) -> key)
-      case _                                                              => None
+      case _                                                                          => None
 
   /** Build the supervisor message body. Pure — exported for testing. */
   def buildMessageText(decision: Decision, reason: String): String =

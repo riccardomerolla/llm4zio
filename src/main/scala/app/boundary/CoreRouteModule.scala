@@ -7,6 +7,7 @@ import _root_.config.boundary.AgentsController as ConfigAgentsController
 import activity.boundary.ActivityController
 import app.boundary.{ AgentMonitorController as AppAgentMonitorController, HealthController as AppHealthController }
 import conversation.boundary.ChatController as ConversationChatController
+import decision.boundary.DecisionsController
 import issues.boundary.{
   IssueBulkController,
   IssueController as IssuesIssueController,
@@ -41,6 +42,7 @@ object CoreRouteModule:
         IssueBulkController &
         IssueImportController &
         ActivityController &
+        DecisionsController &
         AppHealthController &
         TaskRunLogsController,
       Nothing,
@@ -61,6 +63,7 @@ object CoreRouteModule:
         issueBulk      <- ZIO.service[IssueBulkController]
         issueImport    <- ZIO.service[IssueImportController]
         activity       <- ZIO.service[ActivityController]
+        decisions      <- ZIO.service[DecisionsController]
         health         <- ZIO.service[AppHealthController]
         logs           <- ZIO.service[TaskRunLogsController]
       yield new CoreRouteModule:
@@ -78,6 +81,7 @@ object CoreRouteModule:
             issueBulk.routes ++
             issueImport.routes ++
             activity.routes ++
+            decisions.routes ++
             health.routes ++
             logs.routes
     }

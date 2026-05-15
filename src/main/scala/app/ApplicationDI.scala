@@ -173,14 +173,6 @@ object ApplicationDI:
       OrchestratorControlPlane &
       TaskExecutor &
       LogTailer &
-      HealthMonitor &
-      ConfigValidator &
-      ChannelRegistry &
-      MessageRouter &
-      GatewayService &
-      TelegramPollingService &
-      TaskProgressNotifier &
-      DecisionEscalationNotifier &
       AgentConfigResolver &
       PromptLoader &
       GitService &
@@ -228,14 +220,6 @@ object ApplicationDI:
       OrchestratorControlPlane.live,
       TaskExecutorLive.live,
       LogTailer.live,
-      HealthMonitor.live,
-      ConfigValidator.live,
-      ChannelRegistryFactory.live,
-      MessageRouter.live,
-      GatewayService.live,
-      TelegramPollingService.live,
-      TaskProgressNotifier.live,
-      DecisionEscalationNotifier.live,
     )
 
   private def fatalStartupLayer[R, E, A](component: String, layer: ZLayer[R, E, A])(render: E => String)
@@ -295,7 +279,10 @@ object ApplicationDI:
     }
 
   def webServerLayer(config: GatewayConfig, storeConfig: StoreConfig): ZLayer[Any, Nothing, WebServer] =
-    ZLayer.make[WebServer & AutoDispatcher & MergeAgentService & BoardOrchestrator](
+    ZLayer.make[
+      WebServer & AutoDispatcher & MergeAgentService & BoardOrchestrator &
+        TaskProgressNotifier & DecisionEscalationNotifier & TelegramPollingService
+    ](
       commonLayers(config, storeConfig),
       IssueMarkdownParser.live,
       (BoardRepositoryFS.live ++ ZLayer.service[GitService]) >>> BoardCache.live(),
@@ -367,6 +354,21 @@ object ApplicationDI:
       DaemonAgentScheduler.live,
       IssueDispatchStatusService.live,
       DecisionInbox.live,
+      // Phase 3 R9: supervisor web inbox controller.
+      decision.boundary.DecisionsController.live,
+      // Phase 3 R8: ChannelRegistry needs DecisionInbox so Telegram callback-
+      // query handler can call inbox.resolve with proper side-effects.
+      // HealthMonitor / ConfigValidator depend on the gateway services and
+      // move along with them — DecisionInbox can't fit into commonLayers
+      // because it needs IssueRepository (constructed below).
+      ChannelRegistryFactory.live,
+      MessageRouter.live,
+      GatewayService.live,
+      TelegramPollingService.live,
+      TaskProgressNotifier.live,
+      DecisionEscalationNotifier.live,
+      HealthMonitor.live,
+      ConfigValidator.live,
       WorkspaceRunServiceFactory.live,
       BoardOrchestrator.live,
       IssueTimelineService.live,
