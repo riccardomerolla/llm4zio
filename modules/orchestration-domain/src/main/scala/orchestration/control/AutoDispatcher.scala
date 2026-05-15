@@ -147,9 +147,11 @@ final case class AutoDispatcherLive(
     // Phase 2 (big-review R4): for issues with an explicit TicketLane,
     // route to the role-matched employee first. For lane=Custom (the back-
     // compat default), fall back to capability-based ranking.
+    // Strict role match: a frontend ticket goes to Alex or waits — never
+    // falls back to a Custom generalist (which pickEmployeeForLane would do).
     val laneCandidate: Option[Agent] =
       if issue.lane == TicketLane.Custom then None
-      else AgentMatching.pickEmployeeForLane(issue.lane, agents, activeRuns)
+      else AgentMatching.pickEmployeeForLaneStrict(issue.lane, agents, activeRuns)
 
     val laneAttempt: IO[PersistenceError, Option[AgentMatchResult]] = laneCandidate match
       case Some(agent) =>

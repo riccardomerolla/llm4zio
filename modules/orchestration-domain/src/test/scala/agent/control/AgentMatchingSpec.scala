@@ -118,4 +118,24 @@ object AgentMatchingSpec extends ZIOSpecDefault:
             .isEmpty
         )
       },
+      test("pickEmployeeForLaneStrict returns None even when a Custom employee is free") {
+        val cody = mkAgent("a1", "cody", Nil, maxConcurrentRuns = 1, role = EmployeeRole.Custom)
+
+        assertTrue(
+          AgentMatching
+            .pickEmployeeForLaneStrict(TicketLane.Frontend, List(cody), activeRunsByAgent = Map.empty)
+            .isEmpty
+        )
+      },
+      test("pickEmployeeForLaneStrict picks the role-matched employee when available") {
+        val alex = mkAgent("a2", "alex", Nil, maxConcurrentRuns = 1, role = EmployeeRole.FrontendEng)
+        val cody = mkAgent("a1", "cody", Nil, maxConcurrentRuns = 1, role = EmployeeRole.Custom)
+
+        assertTrue(
+          AgentMatching
+            .pickEmployeeForLaneStrict(TicketLane.Frontend, List(alex, cody), activeRunsByAgent = Map.empty)
+            .map(_.name)
+            .contains("alex")
+        )
+      },
     )
