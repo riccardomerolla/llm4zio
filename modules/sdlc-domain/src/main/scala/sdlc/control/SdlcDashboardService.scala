@@ -60,11 +60,12 @@ final case class SdlcDashboardServiceLive(
       workReports         <- workReportProjection.getAll
       policies            <- governancePolicyRepository.list
       daemonStatuses      <- daemonAgentScheduler.list
+      tokenPrice          <- loadDefaultTokenPrice
       lifecycle            = buildLifecycle(specifications, plans, issues)
       churn                = buildChurnAlerts(issues, histories, thresholds)
       stoppages            = buildStoppages(now, issues, histories, thresholds)
       escalations          = buildEscalations(now, issues, histories, decisions, thresholds)
-      agentPerf            = buildAgentPerformance(issues, histories, workReports)
+      agentPerf            = buildAgentPerformance(issues, histories, workReports, tokenPrice)
       governance           = buildGovernanceOverview(plans, policies)
       daemonHealth         = buildDaemonHealthOverview(daemonStatuses)
       specificationTrend   = buildTrend(
@@ -138,6 +139,26 @@ final case class SdlcDashboardServiceLive(
       .map(
         _.flatMap(row => Option(row.value).map(_.trim).filter(_.nonEmpty).flatMap(_.toLongOption)).getOrElse(default)
       )
+
+  /** Phase 6 (R1): resolve the default token-price for cost calculations by
+    * looking up the configured ai.provider + ai.model in the public price
+    * table. Falls back to `Pricing.default` when no setting is present.
+    *
+    * This is a deployment-wide default; per-issue provider tracking is a
+    * follow-up. With one configured model, all per-employee cost figures
+    * compute from one consistent rate — much better than the $1µ flat mock.
+    */
+  private def loadDefaultTokenPrice: IO[PersistenceError, TokenPrice] =
+    for
+      provider <- loadString("ai.provider", "")
+      model    <- loadString("ai.model", "")
+    yield Pricing.lookup(provider, model)
+
+  private def loadString(key: String, default: String): IO[PersistenceError, String] =
+    configRepository
+      .getSetting(key)
+      .mapError(err => PersistenceError.QueryFailed(s"config_get:$key", err.toString))
+      .map(_.flatMap(row => Option(row.value)).map(_.trim).filter(_.nonEmpty).getOrElse(default))
 
   private def buildLifecycle(
     specifications: List[Specification],
@@ -314,9 +335,10 @@ final case class SdlcDashboardServiceLive(
     issues: List[AgentIssue],
     histories: Map[shared.ids.Ids.IssueId, List[IssueEvent]],
     workReports: Map[shared.ids.Ids.IssueId, IssueWorkReport],
+    tokenPrice: TokenPrice,
   ): List[AgentPerformance] =
     val rows = issues.flatMap { issue =>
-      agentSummary(issue, histories.getOrElse(issue.id, Nil), workReports.get(issue.id))
+      agentSummary(issue, histories.getOrElse(issue.id, Nil), workReports.get(issue.id), tokenPrice)
     }
     rows
       .groupBy(_.agentName)
@@ -402,6 +424,7 @@ final case class SdlcDashboardServiceLive(
     issue: AgentIssue,
     events: List[IssueEvent],
     workReport: Option[IssueWorkReport],
+    tokenPrice: TokenPrice,
   ): Option[AgentIssueSummary] =
     val ordered     = events.sortBy(_.occurredAt)
     val latestAgent = ordered.foldLeft(Option.empty[String]) {
@@ -431,7 +454,8 @@ final case class SdlcDashboardServiceLive(
       case _: IssueEvent.Assigned | _: IssueEvent.Started | _: IssueEvent.Completed | _: IssueEvent.Failed => true
       case _                                                                                               => false
     }
-    val costUsd     = workReport.flatMap(_.tokenUsage).map(_.totalTokens.toDouble * 0.000001d).getOrElse(0.0d)
+    // Phase 6 (R1): real per-provider pricing in place of the $1µ flat mock.
+    val costUsd     = workReport.flatMap(_.tokenUsage).map(Pricing.costUsd(_, tokenPrice)).getOrElse(0.0d)
     latestAgent.map { agentName =>
       AgentIssueSummary(
         agentName = agentName,
