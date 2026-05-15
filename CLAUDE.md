@@ -73,12 +73,62 @@ modules/
   shared-web/           # Views with multi-domain deps (being distributed to domain modules)
 ```
 
-Phase 1 of the big-review dropped `memory-domain`, `evolution-domain`, and
-`demo-domain` modules along with Discord/Slack channel stubs. See
-[`.claude/plans/i-think-that-sharded-orbit.md`](.claude/plans/i-think-that-sharded-orbit.md)
-for the full rationale; the short version is solo-founder focus + SPDD spine +
-Telegram-first HITL doesn't need long-term semantic embeddings, multi-role
-governance approval chains, or onboarding-toy mock runs.
+### Big-review status (Phases 1–6 landed)
+
+The strategic refactor described in [`.claude/plans/i-think-that-sharded-orbit.md`](.claude/plans/i-think-that-sharded-orbit.md)
+is substantially complete. The locked positioning is: solo-founder agentic
+software house with three moats ranked **SPDD methodology > Telegram-first HITL
+> solo-founder ergonomics**.
+
+**What dropped (Phase 1)**: `memory-domain`, `evolution-domain`, `demo-domain`
+modules; Discord/Slack channel stubs; ~5500 lines net.
+
+**What's new in the domain model:**
+
+| Concept | Where | Why |
+|---|---|---|
+| `EmployeeRole` (PM, FrontendEng, BackendEng, QA, Reviewer, Custom) | `agent.entity` | Typed roster — Phase 2 R2 |
+| `DefaultRoster` (Pat, Alex, Ben, Dana, Rex) | `agent.entity` | Seeded employees, `maxConcurrentRuns=1` each |
+| `TicketLane` (Frontend, Backend, Testing, Triage, Review, Custom) | `issues.entity` | Routing — Phase 2 R5 |
+| `IssueEvent.LaneSet` | `issues.entity` | Pat sets lane at triage |
+| `AgentMatching.pickEmployeeForLaneStrict` | `agent.control` (orchestration) | Role + occupancy routing; `AutoDispatcher` uses it |
+| `QuickOption(key, label, resolution, rationale)` | `decision.entity` | Channel-agnostic decision payload — Phase 3 R6 |
+| `Decision.quickReplyOptions` | `decision.entity` | Telegram + web inbox both render these |
+| `DecisionEscalationNotifier` | `gateway.boundary.telegram` | Outbound: ActivityHub → Telegram inline buttons — Phase 3 R7 |
+| `TelegramChannel` callback handler | `gateway.boundary.telegram` | Inbound: callback-query → `DecisionInbox.resolve` — Phase 3 R8 |
+| `DecisionsController` + `/decisions/inbox` | `decision.boundary` | Web supervisor inbox mirror — Phase 3 R9 |
+| `sdlc.entity.Pricing` | `sdlc.entity` | Real per-provider token pricing — Phase 6 R1 |
+| `set_issue_lane` MCP tool | `mcp` | Pat sets lane from a prompt |
+
+**The supervisor round-trip is live end-to-end:**
+
+```
+governance gate fails
+  → DecisionInbox.escalate
+  → ActivityHub publishes DecisionEscalated
+  → DecisionEscalationNotifier sends Telegram message with
+    inline keyboard from Decision.renderableQuickOptions
+  → supervisor taps "Approve"
+  → TelegramChannel parses `decision:resolve:{id}:{key}`
+  → DecisionInbox.resolve fires (issue Approved → MovedToMerging)
+  → issue moves on the board
+```
+
+The web supervisor inbox at `/decisions/inbox` mirrors the Telegram flow
+for policy-locked environments. Both surfaces share `DecisionInbox` so
+they stay in sync.
+
+**Config keys added:**
+- `telegram.supervisorChatId` — destination chat for escalations
+- `ai.provider` + `ai.model` — drive cost computation via the `Pricing` table
+
+**Still deferred:**
+- Phase 4 cosmetic UI consolidation (`/agents` → `/employees` rename;
+  single `/dashboard` collapsing duplicates; `/settings` absorbing the
+  smaller config screens)
+- Phase 5 onboarding wizard at `/onboarding`
+- `DaemonAgentSpec` slim (Phase 2 R3 — event-sourced schema migration)
+- Per-issue provider tracking (currently global default drives pricing)
 
 ### What Lives Where
 
