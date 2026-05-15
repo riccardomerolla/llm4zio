@@ -1,6 +1,7 @@
 package agent.control
 
-import agent.entity.Agent
+import agent.entity.{ Agent, EmployeeRole }
+import issues.entity.TicketLane
 import workspace.entity.{ RunStatus, WorkspaceRun }
 
 final case class AgentMatchResult(
@@ -12,6 +13,39 @@ final case class AgentMatchResult(
 )
 
 object AgentMatching:
+
+  /** Phase 2 (R4): role-and-occupancy picker that supersedes capability
+    * matching. Picks the enabled employee whose role matches the lane and
+    * who has occupancy=0 (one-in-flight invariant from Q8). Falls back to a
+    * Custom employee if no role match is enabled and available.
+    *
+    * Returns None if every role-matched employee is busy — caller should
+    * leave the ticket on the board until an employee frees up.
+    */
+  def pickEmployeeForLane(
+    lane: TicketLane,
+    agents: List[Agent],
+    activeRunsByAgent: Map[String, Int],
+  ): Option[Agent] =
+    val targetRoles = rolesForLane(lane)
+    val available   = agents
+      .filter(_.enabled)
+      .filter(a => activeRunsByAgent.getOrElse(a.name.trim.toLowerCase, 0) < a.maxConcurrentRuns)
+    available
+      .find(a => targetRoles.contains(a.role))
+      .orElse(available.find(_.role == EmployeeRole.Custom))
+
+  /** Role(s) that handle a given lane. A single role per lane in the default
+    * cast; the function returns a Set to keep room for future overlap.
+    */
+  def rolesForLane(lane: TicketLane): Set[EmployeeRole] =
+    lane match
+      case TicketLane.Frontend => Set(EmployeeRole.FrontendEng)
+      case TicketLane.Backend  => Set(EmployeeRole.BackendEng)
+      case TicketLane.Testing  => Set(EmployeeRole.QA)
+      case TicketLane.Triage   => Set(EmployeeRole.PM)
+      case TicketLane.Review   => Set(EmployeeRole.Reviewer)
+      case TicketLane.Custom   => Set(EmployeeRole.Custom)
 
   def rankAgents(
     agents: List[Agent],

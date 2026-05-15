@@ -3,6 +3,7 @@ package agent.entity
 import java.time.{ Duration, Instant }
 
 import zio.json.*
+import zio.schema.annotation.fieldDefaultValue
 import zio.schema.{ Schema, derived }
 
 import shared.ids.Ids.AgentId
@@ -32,6 +33,9 @@ final case class Agent(
       timeout = Duration.ofMinutes(30),
       maxEstimatedTokens = None,
     ),
+  // Phase 2 (big-review R2): typed employee role.
+  // Default Custom for back-compat with existing persisted records.
+  @fieldDefaultValue(EmployeeRole.Custom) role: EmployeeRole = EmployeeRole.Custom,
 ) derives Schema, JsonCodec
 
 object Agent:

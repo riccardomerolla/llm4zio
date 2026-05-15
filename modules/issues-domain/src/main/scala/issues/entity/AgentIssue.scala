@@ -51,6 +51,10 @@ final case class AgentIssue(
   workspaceId: Option[String] = None,
   externalRef: Option[String] = None,
   externalUrl: Option[String] = None,
+  // Phase 2 (big-review R5): routing lane set by Pat at triage,
+  // consumed by AgentMatching.pickEmployeeForLane. Default Custom
+  // for back-compat with existing persisted issues.
+  @fieldDefaultValue(TicketLane.Custom) lane: TicketLane = TicketLane.Custom,
 ) derives JsonCodec, Schema
 
 object AgentIssue:

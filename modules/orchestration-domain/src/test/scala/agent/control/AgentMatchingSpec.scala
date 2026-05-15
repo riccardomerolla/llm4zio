@@ -5,7 +5,8 @@ import java.time.{ Duration, Instant }
 import zio.Scope
 import zio.test.*
 
-import agent.entity.Agent
+import agent.entity.{ Agent, EmployeeRole }
+import issues.entity.TicketLane
 import shared.ids.Ids.AgentId
 
 object AgentMatchingSpec extends ZIOSpecDefault:
@@ -18,6 +19,7 @@ object AgentMatchingSpec extends ZIOSpecDefault:
     caps: List[String],
     maxConcurrentRuns: Int,
     enabled: Boolean = true,
+    role: EmployeeRole = EmployeeRole.Custom,
   ): Agent =
     Agent(
       id = AgentId(id),
@@ -33,6 +35,7 @@ object AgentMatchingSpec extends ZIOSpecDefault:
       enabled = enabled,
       createdAt = now,
       updatedAt = now,
+      role = role,
     )
 
   def spec: Spec[Environment & (TestEnvironment & Scope), Any] =
@@ -68,6 +71,51 @@ object AgentMatchingSpec extends ZIOSpecDefault:
 
         assertTrue(
           ranked.map(_.agent.name) == List("beta")
+        )
+      },
+      test("pickEmployeeForLane picks the role-matched employee with occupancy zero") {
+        val agents = List(
+          mkAgent("a1", "pat", Nil, maxConcurrentRuns = 1, role = EmployeeRole.PM),
+          mkAgent("a2", "alex", Nil, maxConcurrentRuns = 1, role = EmployeeRole.FrontendEng),
+          mkAgent("a3", "ben", Nil, maxConcurrentRuns = 1, role = EmployeeRole.BackendEng),
+          mkAgent("a4", "dana", Nil, maxConcurrentRuns = 1, role = EmployeeRole.QA),
+          mkAgent("a5", "rex", Nil, maxConcurrentRuns = 1, role = EmployeeRole.Reviewer),
+        )
+
+        assertTrue(
+          AgentMatching.pickEmployeeForLane(TicketLane.Frontend, agents, Map.empty).map(_.name).contains("alex"),
+          AgentMatching.pickEmployeeForLane(TicketLane.Backend, agents, Map.empty).map(_.name).contains("ben"),
+          AgentMatching.pickEmployeeForLane(TicketLane.Testing, agents, Map.empty).map(_.name).contains("dana"),
+          AgentMatching.pickEmployeeForLane(TicketLane.Triage, agents, Map.empty).map(_.name).contains("pat"),
+          AgentMatching.pickEmployeeForLane(TicketLane.Review, agents, Map.empty).map(_.name).contains("rex"),
+        )
+      },
+      test("pickEmployeeForLane returns None when the role-matched employee is busy") {
+        val alex = mkAgent("a2", "alex", Nil, maxConcurrentRuns = 1, role = EmployeeRole.FrontendEng)
+
+        assertTrue(
+          AgentMatching
+            .pickEmployeeForLane(TicketLane.Frontend, List(alex), activeRunsByAgent = Map("alex" -> 1))
+            .isEmpty
+        )
+      },
+      test("pickEmployeeForLane falls back to a Custom employee if no role match available") {
+        val cody = mkAgent("a1", "cody", Nil, maxConcurrentRuns = 1, role = EmployeeRole.Custom)
+
+        assertTrue(
+          AgentMatching
+            .pickEmployeeForLane(TicketLane.Frontend, List(cody), activeRunsByAgent = Map.empty)
+            .map(_.name)
+            .contains("cody")
+        )
+      },
+      test("pickEmployeeForLane skips disabled employees") {
+        val alex = mkAgent("a2", "alex", Nil, maxConcurrentRuns = 1, enabled = false, role = EmployeeRole.FrontendEng)
+
+        assertTrue(
+          AgentMatching
+            .pickEmployeeForLane(TicketLane.Frontend, List(alex), activeRunsByAgent = Map.empty)
+            .isEmpty
         )
       },
     )
