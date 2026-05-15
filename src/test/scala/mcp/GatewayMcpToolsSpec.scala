@@ -558,6 +558,7 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
           names     = listed.map(_.name).toSet
         yield assertTrue(
           names.contains("assign_issue"),
+          names.contains("set_issue_lane"),
           names.contains("run_agent"),
           names.contains("get_run_status"),
           names.contains("list_agents"),
@@ -659,6 +660,65 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
           json.toJson.contains("issueId"),
         )
       }
+    ),
+    suite("set_issue_lane")(
+      test("emits a LaneSet event with the parsed lane") {
+        for
+          appendedRef  <- Ref.make(Option.empty[IssueEvent])
+          capturingRepo = new IssueRepository:
+                            override def append(event: IssueEvent): IO[PersistenceError, Unit]             =
+                              appendedRef.set(Some(event))
+                            override def get(id: IssueId): IO[PersistenceError, AgentIssue]                =
+                              ZIO.fail(PersistenceError.NotFound("issue", id.value))
+                            override def history(id: IssueId): IO[PersistenceError, List[IssueEvent]]      =
+                              ZIO.succeed(Nil)
+                            override def list(filter: IssueFilter): IO[PersistenceError, List[AgentIssue]] =
+                              ZIO.succeed(Nil)
+                            override def delete(id: IssueId): IO[PersistenceError, Unit]                   = ZIO.unit
+          registry     <- ToolRegistry.make
+          tools         = GatewayMcpTools(
+                            capturingRepo,
+                            stubAgentRepo,
+                            stubWorkspaceRepo,
+                            stubRunService,
+                            stubDecisionInbox,
+                            stubAnalysisRepo,
+                            stubKnowledgeGraph,
+                            stubGovernanceService,
+                            stubSpecificationRepo,
+                            stubPlanRepo,
+                            stubDaemonScheduler,
+                            stubDashboardService,
+                          )
+          _            <- registry.registerAll(tools.all)
+          args          = Json.Obj(
+                            "issueId" -> Json.Str("issue-42"),
+                            "lane"    -> Json.Str("frontend"),
+                            "setBy"   -> Json.Str("pat"),
+                          )
+          result       <- registry.execute(
+                            llm4zio.core.ToolCall(id = "3b", name = "set_issue_lane", arguments = args.toJson)
+                          )
+          json          = result.result.toOption.get
+          appended     <- appendedRef.get
+        yield assertTrue(
+          appended.exists(_.isInstanceOf[IssueEvent.LaneSet]),
+          appended
+            .collect { case e: IssueEvent.LaneSet => e }
+            .exists(e => e.lane == issues.entity.TicketLane.Frontend && e.setBy == "pat"),
+          json.toJson.contains("frontend") || json.toJson.contains("Frontend"),
+        )
+      },
+      test("rejects an unknown lane string with InvalidParameters") {
+        for
+          registry <- ToolRegistry.make
+          _        <- registry.registerAll(tools.all)
+          args      = Json.Obj("issueId" -> Json.Str("issue-x"), "lane" -> Json.Str("nonsense"))
+          result   <- registry.execute(
+                        llm4zio.core.ToolCall(id = "3c", name = "set_issue_lane", arguments = args.toJson)
+                      )
+        yield assertTrue(result.result.isLeft)
+      },
     ),
     suite("get_run_status")(
       test("returns not_found when run does not exist") {

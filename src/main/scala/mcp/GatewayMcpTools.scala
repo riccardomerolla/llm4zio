@@ -13,7 +13,7 @@ import decision.control.DecisionInbox
 import decision.entity.*
 import governance.control.{ GovernanceEvaluationContext, GovernancePolicyService }
 import governance.entity.*
-import issues.entity.{ IssueEvent, IssueRepository }
+import issues.entity.{ IssueEvent, IssueRepository, TicketLane }
 import knowledge.control.KnowledgeGraphService
 import llm4zio.tools.{ Tool, ToolExecutionError }
 import mcp.GatewayMcpToolSupport.*
@@ -76,6 +76,50 @@ final class GatewayMcpTools(
                          .append(event)
                          .mapError(e => ToolExecutionError.ExecutionFailed(e.toString))
       yield Json.Obj("issueId" -> Json.Str(issueId.value)),
+  )
+
+  // ── set_issue_lane ────────────────────────────────────────────────────────
+
+  /** Phase 2 (R5): the caller-side surface for IssueEvent.LaneSet. Pat (the
+    * triage employee) uses this from a prompt to route a ticket to the
+    * correct workload lane; AutoDispatcher's strict lane picker then sends
+    * it to the role-matched employee.
+    */
+  private val setIssueLaneTool: Tool = Tool(
+    name = "set_issue_lane",
+    description = "Set the routing lane on an issue (frontend, backend, testing, triage, review, custom). " +
+      "Pat the PM uses this at triage to direct the ticket to the right employee.",
+    parameters = Json.Obj(
+      "type"       -> Json.Str("object"),
+      "properties" -> Json.Obj(
+        "issueId" -> Json.Obj("type" -> Json.Str("string")),
+        "lane"    -> Json.Obj("type" -> Json.Str("string")),
+        "setBy"   -> Json.Obj("type" -> Json.Str("string")),
+      ),
+      "required"   -> Json.Arr(Chunk(Json.Str("issueId"), Json.Str("lane"))),
+    ),
+    execute = args =>
+      for
+        issueIdRaw <- fieldStr(args, "issueId")
+        laneRaw    <- fieldStr(args, "lane")
+        setBy       = fieldStrOpt(args, "setBy").getOrElse("mcp")
+        lane       <- ZIO
+                        .fromOption(TicketLane.fromString(laneRaw))
+                        .orElseFail(
+                          ToolExecutionError.InvalidParameters(
+                            s"Unknown lane '$laneRaw' (expected: frontend, backend, testing, triage, review, custom)"
+                          )
+                        )
+        issueId     = IssueId(issueIdRaw)
+        now        <- zio.Clock.instant
+        _          <- issueRepo
+                        .append(IssueEvent.LaneSet(issueId, lane, setBy, now))
+                        .mapError(e => ToolExecutionError.ExecutionFailed(e.toString))
+      yield Json.Obj(
+        "issueId" -> Json.Str(issueId.value),
+        "lane"    -> Json.Str(lane.toString),
+        "setBy"   -> Json.Str(setBy),
+      ),
   )
 
   // ── run_agent ─────────────────────────────────────────────────────────────
@@ -1254,6 +1298,7 @@ final class GatewayMcpTools(
 
   val all: List[Tool] = List(
     assignIssueTool,
+    setIssueLaneTool,
     runAgentTool,
     getRunStatusTool,
     listAgentsTool,
