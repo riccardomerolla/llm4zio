@@ -39,8 +39,6 @@ import daemon.control.DaemonAgentScheduler
 import daemon.entity.DaemonAgentSpecRepositoryES
 import decision.control.DecisionInbox
 import decision.entity.{ DecisionEventStoreES, DecisionRepositoryES }
-import evolution.control.EvolutionEngine
-import evolution.entity.{ EvolutionProposalEventStoreES, EvolutionProposalRepositoryES }
 import gateway.boundary.telegram.TaskProgressNotifier
 import gateway.boundary.{
   ChannelController as GatewayChannelController,
@@ -337,8 +335,6 @@ object ApplicationDI:
       PlanRepositoryES.live,
       DecisionLogEventStoreES.live,
       DecisionLogRepositoryES.live,
-      EvolutionProposalEventStoreES.live,
-      EvolutionProposalRepositoryES.live,
       GovernancePolicyEventStoreES.live,
       GovernancePolicyRepositoryES.live,
       GovernancePolicyEngine.live,
@@ -378,7 +374,6 @@ object ApplicationDI:
       DaemonAgentScheduler.live,
       IssueDispatchStatusService.live,
       DecisionInbox.live,
-      EvolutionEngine.live,
       WorkspaceRunServiceFactory.live,
       BoardOrchestrator.live,
       IssueTimelineService.live,

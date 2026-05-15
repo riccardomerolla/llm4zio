@@ -11,8 +11,6 @@ import analysis.entity.AnalysisRepository
 import daemon.control.DaemonAgentScheduler
 import decision.control.DecisionInbox
 import decision.entity.*
-import evolution.control.{ EvolutionEngine, EvolutionProposalRequest }
-import evolution.entity.*
 import governance.control.{ GovernanceEvaluationContext, GovernancePolicyService }
 import governance.entity.*
 import issues.entity.{ IssueEvent, IssueRepository }
@@ -37,7 +35,6 @@ final class GatewayMcpTools(
   wsRepo: WorkspaceRepository,
   runService: WorkspaceRunService,
   decisionInbox: DecisionInbox,
-  evolutionEngine: EvolutionEngine,
   memoryRepo: MemoryRepository,
   analysisRepo: AnalysisRepository,
   knowledgeGraph: KnowledgeGraphService,
@@ -1220,145 +1217,6 @@ final class GatewayMcpTools(
       ),
   )
 
-  private val proposeEvolutionTool: Tool = Tool(
-    name = "propose_evolution",
-    description = "Create a project-scoped platform evolution proposal that must be approved by a human",
-    parameters = Json.Obj(
-      "type"       -> Json.Str("object"),
-      "properties" -> Json.Obj(
-        "projectId"     -> Json.Obj("type" -> Json.Str("string")),
-        "title"         -> Json.Obj("type" -> Json.Str("string")),
-        "rationale"     -> Json.Obj("type" -> Json.Str("string")),
-        "summary"       -> Json.Obj("type" -> Json.Str("string")),
-        "proposedBy"    -> Json.Obj("type" -> Json.Str("string")),
-        "targetKind"    -> Json.Obj("type" -> Json.Str("string")),
-        "targetPayload" -> Json.Obj("type" -> Json.Str("object")),
-        "template"      -> Json.Obj("type" -> Json.Str("string")),
-      ),
-      "required"   -> Json.Arr(
-        Chunk(
-          Json.Str("projectId"),
-          Json.Str("title"),
-          Json.Str("rationale"),
-          Json.Str("summary"),
-          Json.Str("targetKind"),
-          Json.Str("targetPayload"),
-        )
-      ),
-    ),
-    execute = args =>
-      for
-        projectId  <- fieldStr(args, "projectId")
-        title      <- fieldStr(args, "title")
-        rationale  <- fieldStr(args, "rationale")
-        summary    <- fieldStr(args, "summary")
-        proposedBy  = fieldStrOpt(args, "proposedBy").getOrElse("mcp")
-        targetKind <- fieldStr(args, "targetKind")
-        payload    <- fieldObj(args, "targetPayload")
-        template   <- fieldStrOpt(args, "template") match
-                        case Some(raw) =>
-                          ZIO.fromEither(
-                            parseEvolutionTemplate(raw)
-                          ).map(Some(_)).mapError(ToolExecutionError.InvalidParameters.apply)
-                        case None      => ZIO.none
-        target     <- ZIO
-                        .fromEither(parseEvolutionTarget(projectId, targetKind, payload))
-                        .mapError(ToolExecutionError.InvalidParameters.apply)
-        created    <- evolutionEngine
-                        .propose(
-                          EvolutionProposalRequest(
-                            projectId = shared.ids.Ids.ProjectId(projectId),
-                            title = title,
-                            rationale = rationale,
-                            target = target,
-                            proposedBy = proposedBy,
-                            summary = summary,
-                            template = template,
-                          )
-                        )
-                        .mapError(error => ToolExecutionError.ExecutionFailed(error.toString))
-      yield Json.Obj(
-        "proposalId" -> Json.Str(created.id.value),
-        "status"     -> Json.Str(created.status.toString),
-        "decisionId" -> Json.Str(created.decisionId.map(_.value).getOrElse("")),
-      ),
-  )
-
-  private val listProposalsTool: Tool = Tool(
-    name = "list_proposals",
-    description = "List platform evolution proposals",
-    parameters = Json.Obj(
-      "type"       -> Json.Str("object"),
-      "properties" -> Json.Obj(
-        "projectId" -> Json.Obj("type" -> Json.Str("string")),
-        "status"    -> Json.Obj("type" -> Json.Str("string")),
-        "query"     -> Json.Obj("type" -> Json.Str("string")),
-      ),
-      "required"   -> Json.Arr(Chunk.empty),
-    ),
-    execute = args =>
-      for
-        statuses <- fieldStrOpt(args, "status") match
-                      case Some(raw) =>
-                        ZIO.fromEither(
-                          parseEvolutionStatus(raw)
-                        ).map(value => Set(value)).mapError(ToolExecutionError.InvalidParameters.apply)
-                      case None      => ZIO.succeed(Set.empty[EvolutionProposalStatus])
-        items    <- evolutionEngine
-                      .list(
-                        EvolutionProposalFilter(
-                          projectId = fieldStrOpt(args, "projectId").map(shared.ids.Ids.ProjectId.apply),
-                          statuses = statuses,
-                          query = fieldStrOpt(args, "query"),
-                        )
-                      )
-                      .mapError(error => ToolExecutionError.ExecutionFailed(error.toString))
-      yield Json.Arr(
-        Chunk.fromIterable(
-          items.map(item =>
-            Json.Obj(
-              "id"         -> Json.Str(item.id.value),
-              "projectId"  -> Json.Str(item.projectId.value),
-              "title"      -> Json.Str(item.title),
-              "status"     -> Json.Str(item.status.toString),
-              "proposedBy" -> Json.Str(item.proposer.actor),
-              "decisionId" -> Json.Str(item.decisionId.map(_.value).getOrElse("")),
-            )
-          )
-        )
-      ),
-  )
-
-  private val getEvolutionHistoryTool: Tool = Tool(
-    name = "get_evolution_history",
-    description = "Get the event history for a specific evolution proposal",
-    parameters = Json.Obj(
-      "type"       -> Json.Str("object"),
-      "properties" -> Json.Obj(
-        "proposalId" -> Json.Obj("type" -> Json.Str("string"))
-      ),
-      "required"   -> Json.Arr(Chunk(Json.Str("proposalId"))),
-    ),
-    execute = args =>
-      for
-        proposalId <- fieldStr(args, "proposalId")
-        events     <- evolutionEngine
-                        .history(shared.ids.Ids.EvolutionProposalId(proposalId))
-                        .mapError(error => ToolExecutionError.ExecutionFailed(error.toString))
-      yield Json.Arr(
-        Chunk.fromIterable(
-          events.map(event =>
-            Json.Obj(
-              "eventType"  -> Json.Str(event.getClass.getSimpleName.stripSuffix("$")),
-              "proposalId" -> Json.Str(event.proposalId.value),
-              "projectId"  -> Json.Str(event.projectId.value),
-              "occurredAt" -> Json.Str(event.occurredAt.toString),
-            )
-          )
-        )
-      ),
-  )
-
   // ── helpers ───────────────────────────────────────────────────────────────
 
   private def daemonLifecycleTool(
@@ -1474,9 +1332,6 @@ final class GatewayMcpTools(
     getChurnAlertsTool,
     getStoppagesTool,
     getEscalationsTool,
-    proposeEvolutionTool,
-    listProposalsTool,
-    getEvolutionHistoryTool,
     getAnalysisDocsTool,
     getAnalysisSummaryTool,
     searchDecisionsTool,

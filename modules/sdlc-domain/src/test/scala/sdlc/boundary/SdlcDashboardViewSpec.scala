@@ -44,17 +44,6 @@ object SdlcDashboardViewSpec extends ZIOSpecDefault:
     ),
     governance = GovernanceOverview(3, 1, 0.75, 2),
     daemonHealth = DaemonHealthOverview(4, 1, 1),
-    evolution = EvolutionOverview(
-      pendingProposalCount = 2,
-      recentlyApplied = List(
-        RecentEvolution(
-          proposalId = "proposal-1",
-          title = "Roll out daemon policy",
-          status = "Applied",
-          appliedAt = Instant.parse("2026-03-26T11:00:00Z"),
-        )
-      ),
-    ),
     recentActivity = List(
       ActivityEvent(
         id = shared.ids.Ids.EventId("evt-1"),
@@ -98,9 +87,6 @@ object SdlcDashboardViewSpec extends ZIOSpecDefault:
           html.contains("Pass Rate"),
           html.contains("Daemon Health"),
           html.contains("Errored"),
-          html.contains("Evolution"),
-          html.contains("Pending Proposals"),
-          html.contains("Roll out daemon policy"),
           html.contains("Lifecycle"),
           html.contains("Churn Detection"),
           html.contains("Stoppages"),

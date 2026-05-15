@@ -10,12 +10,6 @@ import daemon.control.DaemonAgentScheduler
 import daemon.entity.{ DaemonHealth, DaemonLifecycle }
 import decision.control.DecisionInbox
 import decision.entity.{ Decision, DecisionFilter, DecisionStatus, DecisionUrgency }
-import evolution.entity.{
-  EvolutionProposal,
-  EvolutionProposalFilter,
-  EvolutionProposalRepository,
-  EvolutionProposalStatus,
-}
 import governance.entity.GovernancePolicyRepository
 import issues.entity.*
 import plan.entity.{ Plan, PlanRepository, PlanStatus, PlanValidationResult, PlanValidationStatus }
@@ -31,7 +25,7 @@ object SdlcDashboardService:
   val live
     : ZLayer[
       SpecificationRepository & PlanRepository & IssueRepository & DecisionInbox & ActivityRepository & ConfigRepository &
-        IssueWorkReportProjection & GovernancePolicyRepository & DaemonAgentScheduler & EvolutionProposalRepository,
+        IssueWorkReportProjection & GovernancePolicyRepository & DaemonAgentScheduler,
       Nothing,
       SdlcDashboardService,
     ] =
@@ -47,7 +41,6 @@ final case class SdlcDashboardServiceLive(
   workReportProjection: IssueWorkReportProjection,
   governancePolicyRepository: GovernancePolicyRepository,
   daemonAgentScheduler: DaemonAgentScheduler,
-  evolutionProposalRepository: EvolutionProposalRepository,
 ) extends SdlcDashboardService:
 
   private val trendWindow: Duration = 7.days
@@ -67,7 +60,6 @@ final case class SdlcDashboardServiceLive(
       workReports         <- workReportProjection.getAll
       policies            <- governancePolicyRepository.list
       daemonStatuses      <- daemonAgentScheduler.list
-      proposals           <- evolutionProposalRepository.list(EvolutionProposalFilter())
       lifecycle            = buildLifecycle(specifications, plans, issues)
       churn                = buildChurnAlerts(issues, histories, thresholds)
       stoppages            = buildStoppages(now, issues, histories, thresholds)
@@ -75,7 +67,6 @@ final case class SdlcDashboardServiceLive(
       agentPerf            = buildAgentPerformance(issues, histories, workReports)
       governance           = buildGovernanceOverview(plans, policies)
       daemonHealth         = buildDaemonHealthOverview(daemonStatuses)
-      evolution            = buildEvolutionOverview(proposals)
       specificationTrend   = buildTrend(
                                now,
                                specifications,
@@ -106,7 +97,6 @@ final case class SdlcDashboardServiceLive(
       agentPerformance = agentPerf,
       governance = governance,
       daemonHealth = daemonHealth,
-      evolution = evolution,
       recentActivity = activity,
       specificationCount = specifications.size,
       planCount = plans.size,
@@ -380,27 +370,6 @@ final case class SdlcDashboardServiceLive(
       runningCount = counts._1,
       stoppedCount = counts._2,
       erroredCount = counts._3,
-    )
-
-  private def buildEvolutionOverview(
-    proposals: List[EvolutionProposal]
-  ): EvolutionOverview =
-    EvolutionOverview(
-      pendingProposalCount = proposals.count(proposal =>
-        proposal.status == EvolutionProposalStatus.Proposed || proposal.status == EvolutionProposalStatus.Approved
-      ),
-      recentlyApplied = proposals
-        .filter(_.status == EvolutionProposalStatus.Applied)
-        .sortBy(proposal => -proposal.updatedAt.toEpochMilli)
-        .take(5)
-        .map(proposal =>
-          RecentEvolution(
-            proposalId = proposal.id.value,
-            title = proposal.title,
-            status = proposal.status.toString,
-            appliedAt = proposal.application.map(_.at).getOrElse(proposal.updatedAt),
-          )
-        ),
     )
 
   private def buildTrend[A](

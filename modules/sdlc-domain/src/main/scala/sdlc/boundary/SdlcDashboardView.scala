@@ -27,10 +27,9 @@ object SdlcDashboardView:
   def fragment(snapshot: SdlcSnapshot): String =
     div(cls := "space-y-4")(
       overview(snapshot),
-      div(cls := "grid gap-4 xl:grid-cols-3")(
+      div(cls := "grid gap-4 xl:grid-cols-2")(
         governance(snapshot.governance),
         daemonHealth(snapshot.daemonHealth),
-        evolution(snapshot.evolution),
       ),
       lifecycle(snapshot),
       div(cls := "grid gap-4 xl:grid-cols-2")(
@@ -216,35 +215,6 @@ object SdlcDashboardView:
         metricTile("Running", daemonHealth.runningCount.toString, "Enabled daemons ready to execute"),
         metricTile("Stopped", daemonHealth.stoppedCount.toString, "Disabled or explicitly stopped daemons"),
         metricTile("Errored", daemonHealth.erroredCount.toString, "Daemons with degraded health or runtime errors"),
-      )
-    )
-
-  private def evolution(evolution: EvolutionOverview): Frag =
-    sectionPanel("Evolution", "Proposal backlog and the latest applied system changes")(
-      div(cls := "space-y-3")(
-        metricTile("Pending Proposals", evolution.pendingProposalCount.toString, "Awaiting approval or application"),
-        if evolution.recentlyApplied.isEmpty then emptyState("No applied evolutions have been recorded yet.")
-        else
-          div(cls := "space-y-2")(
-            evolution.recentlyApplied.map { proposal =>
-              div(cls := "rounded-lg border border-white/10 bg-slate-950/60 p-3")(
-                div(cls := "flex items-start justify-between gap-3")(
-                  div(
-                    p(cls := "font-medium text-white")(proposal.title),
-                    p(cls := "mt-1 text-xs text-slate-400")(s"#${proposal.proposalId}"),
-                  ),
-                  div(cls := "text-right")(
-                    span(
-                      cls := "rounded-md border border-emerald-400/30 bg-emerald-500/10 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-200"
-                    )(
-                      proposal.status
-                    ),
-                    p(cls := "mt-1 text-xs text-slate-400")(formatInstant(proposal.appliedAt)),
-                  ),
-                )
-              )
-            }
-          ),
       )
     )
 

@@ -30,7 +30,6 @@ object SdlcDashboardControllerSpec extends ZIOSpecDefault:
     agentPerformance = Nil,
     governance = GovernanceOverview(0, 0, 0.0, 1),
     daemonHealth = DaemonHealthOverview(0, 0, 0),
-    evolution = EvolutionOverview(0, Nil),
     recentActivity = List(
       ActivityEvent(
         id = shared.ids.Ids.EventId("evt-1"),

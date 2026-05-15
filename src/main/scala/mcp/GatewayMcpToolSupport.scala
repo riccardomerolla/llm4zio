@@ -4,17 +4,13 @@ import zio.*
 import zio.json.*
 import zio.json.ast.Json
 
-import _root_.config.entity.WorkflowDefinition
 import analysis.entity.AnalysisType
-import daemon.entity.DaemonAgentSpec
 import decision.entity.*
-import evolution.entity.*
 import governance.control.GovernanceTransitionDecision
 import governance.entity.*
 import llm4zio.tools.ToolExecutionError
 import plan.entity.*
 import sdlc.entity.*
-import shared.ids.Ids.ProjectId
 import specification.entity.*
 
 private[mcp] object GatewayMcpToolSupport:
@@ -311,49 +307,6 @@ private[mcp] object GatewayMcpToolSupport:
       case "escalated"       => Right(DecisionResolutionKind.Escalated)
       case "expired"         => Right(DecisionResolutionKind.Expired)
       case other             => Left(s"Unknown decision resolution: $other")
-
-  def parseEvolutionStatus(raw: String): Either[String, EvolutionProposalStatus] =
-    raw.trim.toLowerCase match
-      case "proposed"   => Right(EvolutionProposalStatus.Proposed)
-      case "approved"   => Right(EvolutionProposalStatus.Approved)
-      case "applied"    => Right(EvolutionProposalStatus.Applied)
-      case "rolledback" => Right(EvolutionProposalStatus.RolledBack)
-      case other        => Left(s"Unknown evolution status: $other")
-
-  def parseEvolutionTemplate(raw: String): Either[String, EvolutionTemplateKind] =
-    raw.trim.toLowerCase match
-      case "add_quality_gate" | "addqualitygate"               => Right(EvolutionTemplateKind.AddQualityGate)
-      case "change_testing_strategy" | "changetestingstrategy" => Right(EvolutionTemplateKind.ChangeTestingStrategy)
-      case "add_daemon_agent" | "adddaemonagent"               => Right(EvolutionTemplateKind.AddDaemonAgent)
-      case other if other.nonEmpty                             => Right(EvolutionTemplateKind.Custom(other))
-      case _                                                   => Left("Template must be a non-empty string")
-
-  def parseEvolutionTarget(projectId: String, rawKind: String, payload: Json.Obj): Either[String, EvolutionTarget] =
-    val project = ProjectId(projectId)
-    rawKind.trim.toLowerCase match
-      case "governance" | "governance_policy" =>
-        payload.toJson.fromJson[GovernancePolicy].map { policy =>
-          EvolutionTarget.GovernancePolicyTarget(
-            projectId = project,
-            policyId = Some(policy.id),
-            name = policy.name,
-            transitionRules = policy.transitionRules,
-            daemonTriggers = policy.daemonTriggers,
-            escalationRules = policy.escalationRules,
-            completionCriteria = policy.completionCriteria,
-            isDefault = policy.isDefault,
-          )
-        }.left.map(error => s"Invalid governance payload: $error")
-      case "workflow" | "workflow_definition" =>
-        payload.toJson.fromJson[WorkflowDefinition].map(workflow =>
-          EvolutionTarget.WorkflowDefinitionTarget(projectId = project, workflow = workflow)
-        ).left.map(error => s"Invalid workflow payload: $error")
-      case "daemon" | "daemon_agent_spec"     =>
-        payload.toJson.fromJson[DaemonAgentSpec].map(spec =>
-          EvolutionTarget.DaemonAgentSpecTarget(spec = spec.copy(projectId = project))
-        ).left.map(error => s"Invalid daemon payload: $error")
-      case other                              =>
-        Left(s"Unknown evolution target kind: $other")
 
   def renderAnalysisType(analysisType: AnalysisType): String =
     analysisType match

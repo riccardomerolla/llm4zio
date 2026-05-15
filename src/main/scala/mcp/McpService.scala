@@ -8,7 +8,6 @@ import canvas.control.CanvasSimilarityIndex
 import canvas.entity.ReasonsCanvasRepository
 import daemon.control.DaemonAgentScheduler
 import decision.control.DecisionInbox
-import evolution.control.EvolutionEngine
 import governance.control.GovernancePolicyService
 import issues.entity.IssueRepository
 import knowledge.control.KnowledgeGraphService
@@ -50,7 +49,6 @@ object McpService:
     wsRepo: WorkspaceRepository,
     runService: WorkspaceRunService,
     decisionInbox: DecisionInbox,
-    evolutionEngine: EvolutionEngine,
     memoryRepo: MemoryRepository,
     analysisRepo: AnalysisRepository,
     knowledgeGraph: KnowledgeGraphService,
@@ -72,7 +70,6 @@ object McpService:
                        wsRepo,
                        runService,
                        decisionInbox,
-                       evolutionEngine,
                        memoryRepo,
                        analysisRepo,
                        knowledgeGraph,
@@ -93,7 +90,7 @@ object McpService:
 
   /** ZLayer for wiring into ApplicationDI. */
   val live: ZLayer[
-    IssueRepository & AgentRepository & WorkspaceRepository & WorkspaceRunService & DecisionInbox & EvolutionEngine & MemoryRepository & AnalysisRepository & KnowledgeGraphService & GovernancePolicyService & SpecificationRepository & PlanRepository & DaemonAgentScheduler & SdlcDashboardService & PromptLoader & ReasonsCanvasRepository & CanvasSimilarityIndex,
+    IssueRepository & AgentRepository & WorkspaceRepository & WorkspaceRunService & DecisionInbox & MemoryRepository & AnalysisRepository & KnowledgeGraphService & GovernancePolicyService & SpecificationRepository & PlanRepository & DaemonAgentScheduler & SdlcDashboardService & PromptLoader & ReasonsCanvasRepository & CanvasSimilarityIndex,
     Nothing,
     McpService,
   ] =
@@ -104,7 +101,6 @@ object McpService:
         wsRepo         <- ZIO.service[WorkspaceRepository]
         runService     <- ZIO.service[WorkspaceRunService]
         decisionInbox  <- ZIO.service[DecisionInbox]
-        evolution      <- ZIO.service[EvolutionEngine]
         memoryRepo     <- ZIO.service[MemoryRepository]
         analysisRepo   <- ZIO.service[AnalysisRepository]
         knowledge      <- ZIO.service[KnowledgeGraphService]
@@ -123,7 +119,6 @@ object McpService:
                             wsRepo,
                             runService,
                             decisionInbox,
-                            evolution,
                             memoryRepo,
                             analysisRepo,
                             knowledge,

@@ -82,18 +82,6 @@ final case class DaemonHealthOverview(
   erroredCount: Int,
 )
 
-final case class RecentEvolution(
-  proposalId: String,
-  title: String,
-  status: String,
-  appliedAt: Instant,
-)
-
-final case class EvolutionOverview(
-  pendingProposalCount: Int,
-  recentlyApplied: List[RecentEvolution],
-)
-
 final case class SdlcSnapshot(
   generatedAt: Instant,
   thresholds: Thresholds,
@@ -104,7 +92,6 @@ final case class SdlcSnapshot(
   agentPerformance: List[AgentPerformance],
   governance: GovernanceOverview,
   daemonHealth: DaemonHealthOverview,
-  evolution: EvolutionOverview,
   recentActivity: List[ActivityEvent],
   specificationCount: Int,
   planCount: Int,

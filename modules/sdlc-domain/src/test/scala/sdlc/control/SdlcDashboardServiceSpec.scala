@@ -5,13 +5,12 @@ import java.time.Instant
 import zio.*
 import zio.test.*
 
-import _root_.config.entity.{ ConfigRepository, CustomAgentRow, SettingRow, WorkflowDefinition, WorkflowRow }
+import _root_.config.entity.{ ConfigRepository, CustomAgentRow, SettingRow, WorkflowRow }
 import activity.entity.{ ActivityEvent, ActivityEventType, ActivityRepository }
 import daemon.control.DaemonAgentScheduler
 import daemon.entity.*
 import decision.control.DecisionInbox
 import decision.entity.*
-import evolution.entity.*
 import governance.entity.*
 import issues.entity.*
 import plan.entity.*
@@ -280,38 +279,6 @@ object SdlcDashboardServiceSpec extends ZIOSpecDefault:
     runtime = runningDaemon.runtime.copy(health = DaemonHealth.Degraded, lastError = Some("boom")),
   )
 
-  private val pendingProposal = EvolutionProposal(
-    id = EvolutionProposalId("proposal-pending"),
-    projectId = ProjectId("project-1"),
-    title = "Add daemon guardrail",
-    rationale = "Need tighter controls",
-    target = EvolutionTarget.WorkflowDefinitionTarget(
-      projectId = ProjectId("project-1"),
-      workflow = WorkflowDefinition(
-        id = Some("quality-gate"),
-        name = "Quality Gate",
-        description = Some("Gate workflow"),
-        steps = List("chat"),
-        isBuiltin = false,
-      ),
-    ),
-    template = Some(EvolutionTemplateKind.AddDaemonAgent),
-    proposer = EvolutionAuditRecord("planner", "proposed", now.minusSeconds(3600)),
-    status = EvolutionProposalStatus.Proposed,
-    decisionId = None,
-    createdAt = now.minusSeconds(3600),
-    updatedAt = now.minusSeconds(3600),
-  )
-
-  private val appliedProposal = pendingProposal.copy(
-    id = EvolutionProposalId("proposal-applied"),
-    title = "Roll out governance policy",
-    status = EvolutionProposalStatus.Applied,
-    application = Some(EvolutionAuditRecord("operator", "applied", now.minusSeconds(900))),
-    createdAt = now.minusSeconds(86400),
-    updatedAt = now.minusSeconds(900),
-  )
-
   private val workReportProjection: IssueWorkReportProjection = new IssueWorkReportProjection:
     override def get(issueId: IssueId): UIO[Option[IssueWorkReport]]                                                 = getAll.map(_.get(issueId))
     override def getAll: UIO[Map[IssueId, IssueWorkReport]]                                                          =
@@ -350,7 +317,6 @@ object SdlcDashboardServiceSpec extends ZIOSpecDefault:
           workReportProjection = workReportProjection,
           governancePolicyRepository = stubGovernancePolicyRepository,
           daemonAgentScheduler = stubDaemonAgentScheduler,
-          evolutionProposalRepository = stubEvolutionProposalRepository,
         )
         for
           _         <- TestClock.adjust(now.toEpochMilli.millis)
@@ -385,8 +351,6 @@ object SdlcDashboardServiceSpec extends ZIOSpecDefault:
           snapshot.daemonHealth.runningCount == 1,
           snapshot.daemonHealth.stoppedCount == 1,
           snapshot.daemonHealth.erroredCount == 1,
-          snapshot.evolution.pendingProposalCount == 1,
-          snapshot.evolution.recentlyApplied.map(_.proposalId) == List("proposal-applied"),
           snapshot.specificationTrend.direction == TrendDirection.Up,
           snapshot.planTrend.direction == TrendDirection.Up,
           snapshot.issueTrend.direction == TrendDirection.Up,
@@ -551,14 +515,3 @@ object SdlcDashboardServiceSpec extends ZIOSpecDefault:
     override def setEnabled(id: DaemonAgentSpecId, enabled: Boolean): IO[PersistenceError, Unit]        = ZIO.unit
     override def trigger(id: DaemonAgentSpecId): IO[PersistenceError, Unit]                             = ZIO.unit
     override def triggerGovernance(projectId: ProjectId, triggerId: String): IO[PersistenceError, Unit] = ZIO.unit
-
-  private val stubEvolutionProposalRepository: EvolutionProposalRepository = new EvolutionProposalRepository:
-    override def append(event: EvolutionProposalEvent): IO[PersistenceError, Unit]                    = ZIO.unit
-    override def get(id: EvolutionProposalId): IO[PersistenceError, EvolutionProposal]                =
-      ZIO
-        .fromOption(List[EvolutionProposal](pendingProposal, appliedProposal).find(_.id == id))
-        .orElseFail(PersistenceError.NotFound("evolution_proposal", id.value))
-    override def history(id: EvolutionProposalId): IO[PersistenceError, List[EvolutionProposalEvent]] =
-      ZIO.succeed(Nil)
-    override def list(filter: EvolutionProposalFilter): IO[PersistenceError, List[EvolutionProposal]] =
-      ZIO.succeed(List(pendingProposal, appliedProposal))
