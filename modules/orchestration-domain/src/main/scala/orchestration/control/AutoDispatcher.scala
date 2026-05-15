@@ -9,7 +9,7 @@ import agent.control.{ AgentMatchResult, AgentMatching }
 import agent.entity.{ Agent, AgentRepository }
 import governance.control.{ GovernanceEvaluationContext, GovernancePolicyService }
 import governance.entity.{ GovernanceLifecycleAction, GovernanceLifecycleStage, GovernanceTransition }
-import issues.entity.{ AgentIssue, IssueEvent, IssueRepository, IssueState }
+import issues.entity.{ AgentIssue, IssueEvent, IssueRepository, IssueState, TicketLane }
 import orchestration.entity.AgentPoolManager
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ AgentId, EventId, TaskRunId }
@@ -144,11 +144,39 @@ final case class AutoDispatcherLive(
     issue: AgentIssue,
     activeRuns: Map[String, Int],
   ): IO[PersistenceError, Option[AgentMatchResult]] =
-    ZIO
-      .foreach(AgentMatching.rankAgents(agents, issue.requiredCapabilities, activeRuns)) { candidate =>
-        agentPoolManager.availableSlots(candidate.agent.name).map(available => candidate -> available)
-      }
-      .map(_.collectFirst { case (candidate, available) if available > 0 => candidate })
+    // Phase 2 (big-review R4): for issues with an explicit TicketLane,
+    // route to the role-matched employee first. For lane=Custom (the back-
+    // compat default), fall back to capability-based ranking.
+    val laneCandidate: Option[Agent] =
+      if issue.lane == TicketLane.Custom then None
+      else AgentMatching.pickEmployeeForLane(issue.lane, agents, activeRuns)
+
+    val laneAttempt: IO[PersistenceError, Option[AgentMatchResult]] = laneCandidate match
+      case Some(agent) =>
+        agentPoolManager.availableSlots(agent.name).map { slots =>
+          if slots > 0 then Some(asMatchResult(agent, activeRuns))
+          else None
+        }
+      case None        => ZIO.none
+
+    laneAttempt.flatMap {
+      case some @ Some(_) => ZIO.succeed(some)
+      case None           =>
+        ZIO
+          .foreach(AgentMatching.rankAgents(agents, issue.requiredCapabilities, activeRuns)) { candidate =>
+            agentPoolManager.availableSlots(candidate.agent.name).map(available => candidate -> available)
+          }
+          .map(_.collectFirst { case (candidate, available) if available > 0 => candidate })
+    }
+
+  private def asMatchResult(agent: Agent, activeRuns: Map[String, Int]): AgentMatchResult =
+    AgentMatchResult(
+      agent = agent,
+      score = 1.0,
+      overlapCount = 0,
+      requiredCount = 0,
+      activeRuns = activeRuns.getOrElse(agent.name.trim.toLowerCase, 0),
+    )
 
   private def governanceAllowsDispatch(issue: AgentIssue, workspaceId: String): IO[PersistenceError, Boolean] =
     val currentStage = issue.state match
