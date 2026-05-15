@@ -80,4 +80,43 @@ object DecisionSpec extends ZIOSpecDefault:
           result.exists(_.escalatedAt.contains(now.plusSeconds(62))),
         )
       },
+      test("renderableQuickOptions returns the default set when none were attached") {
+        val decision = Decision.fromEvents(
+          List(
+            DecisionEvent.Created(
+              decisionId = shared.ids.Ids.DecisionId("decision-3"),
+              title = "Pre-Phase-3 decision",
+              context = "No options attached",
+              action = DecisionAction.ReviewIssue,
+              source = DecisionSource(DecisionSourceKind.IssueReview, "issue-3", "Review"),
+              urgency = DecisionUrgency.Low,
+              deadlineAt = None,
+              occurredAt = now,
+            )
+          )
+        ).toOption.get
+
+        assertTrue(
+          decision.quickReplyOptions.isEmpty,
+          decision.renderableQuickOptions == QuickOption.defaults,
+        )
+      },
+      test("renderableQuickOptions returns the attached options when present") {
+        val customOptions = List(QuickOption.Approve, QuickOption.Escalate)
+        val decision      = Decision(
+          id = shared.ids.Ids.DecisionId("decision-4"),
+          title = "Custom-options decision",
+          context = "Channel renders these",
+          action = DecisionAction.ReviewIssue,
+          source = DecisionSource(DecisionSourceKind.Governance, "gate-1", "Custom gate"),
+          urgency = DecisionUrgency.High,
+          status = DecisionStatus.Pending,
+          deadlineAt = None,
+          createdAt = now,
+          updatedAt = now,
+          quickReplyOptions = customOptions,
+        )
+
+        assertTrue(decision.renderableQuickOptions == customOptions)
+      },
     )

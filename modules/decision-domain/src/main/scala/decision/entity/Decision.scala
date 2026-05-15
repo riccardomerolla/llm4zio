@@ -66,12 +66,26 @@ final case class Decision(
   @fieldDefaultValue(None) expiredAt: Option[Instant] = None,
   createdAt: Instant,
   updatedAt: Instant,
+  // Phase 3 (big-review R6): channel-agnostic quick-reply options that
+  // Telegram, the web supervisor inbox, and any future channel render
+  // as tappable buttons. Default Nil for back-compat — call sites
+  // (and channel renderers) substitute QuickOption.defaults when empty.
+  @fieldDefaultValue(Nil) quickReplyOptions: List[QuickOption] = Nil,
 ) derives JsonCodec, Schema:
 
   def isOpen: Boolean = status == DecisionStatus.Pending
 
   def responseTimeMillis: Option[Long] =
     resolution.map(res => java.time.Duration.between(createdAt, res.respondedAt).toMillis)
+
+  /** The quick-reply options to render — explicit options if set, otherwise
+    * the default set. Channel renderers should call this rather than reading
+    * `quickReplyOptions` directly so old (pre-Phase-3) decisions still get
+    * usable buttons.
+    */
+  def renderableQuickOptions: List[QuickOption] =
+    if quickReplyOptions.nonEmpty then quickReplyOptions
+    else QuickOption.defaults
 
 object Decision:
   def fromEvents(events: List[DecisionEvent]): Either[String, Decision] =
