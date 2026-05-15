@@ -562,7 +562,6 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
           names.contains("get_run_status"),
           names.contains("list_agents"),
           names.contains("list_workspaces"),
-          names.contains("search_conversations"),
           names.contains("get_metrics"),
           names.contains("get_decision"),
           names.contains("escalate_decision"),
@@ -670,18 +669,6 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
           result   <- registry.execute(llm4zio.core.ToolCall(id = "4", name = "get_run_status", arguments = args.toJson))
           json      = result.result.toOption.get
         yield assertTrue(json.toJson.contains("not_found"))
-      }
-    ),
-    suite("search_conversations")(
-      test("returns empty results from stub memory repository") {
-        for
-          registry <- ToolRegistry.make
-          _        <- registry.registerAll(tools.all)
-          args      = Json.Obj("query" -> Json.Str("test query"))
-          result   <-
-            registry.execute(llm4zio.core.ToolCall(id = "5", name = "search_conversations", arguments = args.toJson))
-          json      = result.result.toOption.get
-        yield assertTrue(json.isInstanceOf[Json.Arr])
       }
     ),
     suite("get_metrics")(
@@ -936,7 +923,6 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
                       )
           json      = result.result.toOption.get.toJson
         yield assertTrue(
-          json.contains("semantic_decision"),
           json.contains("decision-log-1"),
         )
       },

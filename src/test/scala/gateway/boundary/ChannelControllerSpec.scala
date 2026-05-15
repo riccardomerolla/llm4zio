@@ -81,6 +81,6 @@ object ChannelControllerSpec extends ZIOSpecDefault:
                                    Body.fromString("enabled=true"),
                                  )
         response              <- controller.routes.runZIO(request)
-      yield assertTrue(response.status == Status.NotFound)
+      yield assertTrue(response.status == Status.BadRequest)
     },
   )

@@ -63,16 +63,22 @@ modules/
 
   # Domain modules — each is a BCE unit:
   activity-domain/      agent-domain/        analysis-domain/
-  board-domain/         checkpoint-domain/   config-domain/
-  conversation-domain/  daemon-domain/       decision-domain/
-  demo-domain/          evolution-domain/    gateway-domain/
-  governance-domain/    issues-domain/       knowledge-domain/
-  memory-domain/        orchestration-domain/ plan-domain/
-  project-domain/       sdlc-domain/         specification-domain/
-  taskrun-domain/       workspace-domain/
+  board-domain/         canvas-domain/       checkpoint-domain/
+  config-domain/        conversation-domain/ daemon-domain/
+  decision-domain/      gateway-domain/      governance-domain/
+  issues-domain/        knowledge-domain/    orchestration-domain/
+  plan-domain/          project-domain/      sdlc-domain/
+  specification-domain/ taskrun-domain/      workspace-domain/
 
   shared-web/           # Views with multi-domain deps (being distributed to domain modules)
 ```
+
+Phase 1 of the big-review dropped `memory-domain`, `evolution-domain`, and
+`demo-domain` modules along with Discord/Slack channel stubs. See
+[`.claude/plans/i-think-that-sharded-orbit.md`](.claude/plans/i-think-that-sharded-orbit.md)
+for the full rationale; the short version is solo-founder focus + SPDD spine +
+Telegram-first HITL doesn't need long-term semantic embeddings, multi-role
+governance approval chains, or onboarding-toy mock runs.
 
 ### What Lives Where
 
@@ -132,10 +138,10 @@ import _root_.agent.boundary.AgentsView  // use _root_ prefix, then unqualified 
 All packages use **singular** names matching the domain:
 
 ```
-agent/        board/        checkpoint/   config/
-conversation/ daemon/       decision/     evolution/
-gateway/      governance/   issues/       knowledge/
-mcp/          memory/       orchestration/ plan/
+agent/        analysis/     board/        canvas/
+checkpoint/   config/       conversation/ daemon/
+decision/     gateway/      governance/   issues/
+knowledge/    mcp/          orchestration/ plan/
 project/      sdlc/         specification/ taskrun/
 workspace/    activity/
 ```
@@ -158,7 +164,7 @@ app/          Application entry point, WebServer, DI wiring
 
 ## ADE Domain Packages
 
-The 12 ADE feature packages:
+The ADE feature packages:
 
 | Package | Domain |
 |---------|--------|
@@ -167,10 +173,10 @@ The 12 ADE feature packages:
 | `plan/` | Implementation plans, validation |
 | `decision/` | Human-in-the-loop decision inbox |
 | `checkpoint/` | Quality gates during agent runs |
-| `knowledge/` | Persistent knowledge base, fact extraction |
+| `knowledge/` | DecisionLog audit trail + architectural-context lookup |
 | `governance/` | Policy engine, transition rules, gate evaluation |
 | `daemon/` | Background services, scheduled triggers |
-| `evolution/` | Structural change proposals and rollback |
+| `canvas/` | SPDD REASONS canvases (Norms, Safeguards, ApiTest scenarios) |
 | `project/` | Workspace grouping, project-policy linking |
 | `sdlc/` | SDLC metrics dashboard |
 | `activity/` | Activity feed, audit events |
@@ -419,8 +425,8 @@ The codebase is being modularized per [bce.design](https://bce.design/) principl
 
 **Completed:**
 - Foundation modules extracted (`shared-json`, `shared-ids`, `shared-errors`, `shared-store-core`, `shared-web-core`, `shared-services`)
-- All 23 domain modules have `entity/` layers
-- Most domain modules have `control/` services colocated (agent, board, daemon, evolution, issues, knowledge, orchestration, sdlc)
+- 21 domain modules in place (`memory-domain`, `evolution-domain`, `demo-domain` dropped in the big-review Phase 1)
+- Most domain modules have `control/` services colocated (agent, board, daemon, issues, knowledge, orchestration, sdlc)
 - Leaf domain views moved to `boundary/` (BoardView, IssueTimelineView, DaemonsView, AgentsView, ChannelView, ModelsView, BoardStats, RunSessionUiMeta)
 
 **Remaining:**
