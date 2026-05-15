@@ -359,3 +359,8 @@ object AgentIssue:
               )
             )
           }
+
+      case laneSet: IssueEvent.LaneSet =>
+        current
+          .toRight(s"Issue ${laneSet.issueId.value} not initialized before LaneSet event")
+          .map(issue => Some(issue.copy(lane = laneSet.lane)))

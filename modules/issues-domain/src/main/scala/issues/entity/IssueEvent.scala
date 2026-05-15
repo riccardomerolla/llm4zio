@@ -267,6 +267,14 @@ object IssueEvent:
     occurredAt: Instant,
   ) extends IssueEvent
 
+  /** Phase 2 (big-review R5): Pat sets the routing lane at triage time. */
+  final case class LaneSet(
+    issueId: IssueId,
+    lane: TicketLane,
+    setBy: String,
+    occurredAt: Instant,
+  ) extends IssueEvent
+
   final case class ExternalRefSynced(
     issueId: IssueId,
     @fieldDefaultValue(Map.empty) updatedFields: Map[String, String] = Map.empty,

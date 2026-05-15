@@ -480,7 +480,8 @@ final case class IssueRepositoryBoard(
         }
       case _: IssueEvent.WorkspaceUnlinked | _: IssueEvent.PromptTemplateUpdated |
            _: IssueEvent.AnalysisAttached | _: IssueEvent.Approved | _: IssueEvent.MergeAttempted |
-           _: IssueEvent.CiVerificationResult | _: IssueEvent.ExternalRefLinked | _: IssueEvent.ExternalRefSynced =>
+           _: IssueEvent.CiVerificationResult | _: IssueEvent.ExternalRefLinked | _: IssueEvent.ExternalRefSynced |
+           _: IssueEvent.LaneSet =>
         ZIO.unit
 
   private def ensureCreatedIssue(created: IssueEvent.Created): IO[PersistenceError, Unit] =
