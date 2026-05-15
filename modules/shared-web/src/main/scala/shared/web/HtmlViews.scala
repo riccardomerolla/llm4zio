@@ -7,7 +7,6 @@ import agent.boundary.AgentsView
 import config.entity.{ AgentInfo, WorkflowDefinition }
 import conversation.entity.api.{ ChatConversation, ConversationEntry, ConversationSessionMeta }
 import decision.entity.Decision
-import demo.boundary.DemoView
 import gateway.boundary.ChannelCardData
 import gateway.entity.ChatSession
 import issues.entity.IssueWorkReport
@@ -86,12 +85,6 @@ object HtmlViews:
     SettingsView.gatewayTab(settings, flash, errors)
 
   def settingsSystemTab: String = SettingsView.systemTab
-
-  def settingsDemoTab(
-    settings: Map[String, String],
-    flash: Option[String] = None,
-  ): String =
-    DemoView.demoTab(settings, flash)
 
   def settingsIssueTemplatesTab(
     templates: List[IssueTemplate],

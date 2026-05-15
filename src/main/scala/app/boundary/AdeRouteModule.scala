@@ -5,7 +5,6 @@ import zio.http.*
 
 import board.boundary.BoardController as BoardBoundaryController
 import canvas.boundary.CanvasController
-import demo.boundary.DemoController
 import issues.entity.IssueRepository
 import knowledge.boundary.KnowledgeController
 import project.boundary.ProjectsController
@@ -20,7 +19,6 @@ object AdeRouteModule:
         ProjectsController &
         KnowledgeController &
         CanvasController &
-        DemoController &
         IssueRepository,
       Nothing,
       AdeRouteModule,
@@ -31,7 +29,6 @@ object AdeRouteModule:
         projects        <- ZIO.service[ProjectsController]
         knowledge       <- ZIO.service[KnowledgeController]
         canvas          <- ZIO.service[CanvasController]
-        demoController  <- ZIO.service[DemoController]
         issueRepository <- ZIO.service[IssueRepository]
       yield new AdeRouteModule:
         override val routes: Routes[Any, Response] =
@@ -39,7 +36,6 @@ object AdeRouteModule:
             projects.routes ++
             knowledge.routes ++
             canvas.routes ++
-            demoController.routes ++
             NavBadgeController.routes(
               issueRepository
             )

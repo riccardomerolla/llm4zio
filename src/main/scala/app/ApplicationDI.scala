@@ -39,8 +39,6 @@ import daemon.control.DaemonAgentScheduler
 import daemon.entity.DaemonAgentSpecRepositoryES
 import decision.control.DecisionInbox
 import decision.entity.{ DecisionEventStoreES, DecisionRepositoryES }
-import demo.boundary.DemoController
-import demo.control.DemoOrchestrator
 import evolution.control.EvolutionEngine
 import evolution.entity.{ EvolutionProposalEventStoreES, EvolutionProposalRepositoryES }
 import gateway.boundary.telegram.TaskProgressNotifier
@@ -391,8 +389,6 @@ object ApplicationDI:
       conversation.control.AgentDialogueCoordinator.live,
       BoardBoundaryController.live,
       AutoDispatcher.live,
-      DemoOrchestrator.live,
-      DemoController.live,
       WorkReportEventBus.layer,
       IssueWorkReportProjectionFactory.live,
       MergeAgentService.live,

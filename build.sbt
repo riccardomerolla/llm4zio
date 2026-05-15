@@ -422,7 +422,7 @@ lazy val orchestrationDomain = (project in file("modules/orchestration-domain"))
   .dependsOn(sharedIds, sharedErrors, sharedStoreCore, gatewayDomain, configDomain, planDomain,
     activityDomain, agentDomain, issuesDomain, taskrunDomain, workspaceDomain, sharedServices,
     conversationDomain, memoryDomain, llm4zio, boardDomain, projectDomain, governanceDomain,
-    decisionDomain, demoDomain, knowledgeDomain, analysisDomain)
+    decisionDomain, knowledgeDomain, analysisDomain)
   .settings(foundationSettings)
   .settings(
     name := "orchestration-domain",
@@ -443,7 +443,7 @@ lazy val evolutionDomain = (project in file("modules/evolution-domain"))
 lazy val sharedWeb = (project in file("modules/shared-web"))
   .dependsOn(sharedIds, sharedErrors, sharedWebCore,
     activityDomain, agentDomain, boardDomain, configDomain, conversationDomain,
-    daemonDomain, decisionDomain, demoDomain, evolutionDomain, gatewayDomain,
+    daemonDomain, decisionDomain, evolutionDomain, gatewayDomain,
     governanceDomain, issuesDomain, knowledgeDomain, memoryDomain,
     planDomain, projectDomain, specificationDomain, taskrunDomain, workspaceDomain,
     orchestrationDomain, sdlcDomain, llm4zio)
@@ -467,14 +467,6 @@ lazy val issuesDomain = (project in file("modules/issues-domain"))
     libraryDependencies ++= domainBceDeps ++ Seq(
       "io.github.riccardomerolla" %% "zio-eclipsestore-gigamap" % zioEclipseStoreVersion % Test,
     ),
-  )
-
-lazy val demoDomain = (project in file("modules/demo-domain"))
-  .dependsOn(sharedIds, sharedWebCore, boardDomain)
-  .settings(foundationSettings)
-  .settings(
-    name := "demo-domain",
-    libraryDependencies ++= domainBceDeps,
   )
 
 // ── LLM library ──────────────────────────────────────────────────────────────
@@ -616,7 +608,7 @@ lazy val allModules = Seq(
   activityDomain, memoryDomain, governanceDomain, agentDomain, decisionDomain, specificationDomain,
   canvasDomain, checkpointDomain, planDomain, taskrunDomain, boardDomain, knowledgeDomain, projectDomain, configDomain,
   conversationDomain, daemonDomain, analysisDomain, workspaceDomain, gatewayDomain,
-  orchestrationDomain, evolutionDomain, issuesDomain, demoDomain, sharedWeb,
+  orchestrationDomain, evolutionDomain, issuesDomain, sharedWeb,
   sdlcDomain, evalDomain, deployDomain,
   bankmodGraphModel, bankmodGraphValidate, bankmodGraphRender, bankmodMcpTools, bankmodApp,
 )
