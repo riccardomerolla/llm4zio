@@ -6,7 +6,7 @@ import zio.*
 import zio.http.*
 import zio.test.*
 
-import _root_.config.entity.SettingRow
+import _root_.config.entity.{ ConfigRepository, CustomAgentRow, SettingRow, WorkflowRow }
 import activity.entity.{ ActivityEvent, ActivityEventType, ActivityRepository }
 import issues.entity.*
 import shared.errors.PersistenceError
@@ -36,7 +36,7 @@ object DashboardControllerSpec extends ZIOSpecDefault:
         repo      <- TestRepository.make
         issueRepo <- TestIssueRepository.make
         activity  <- TestActivityRepository.make
-        controller = DashboardControllerLive(repo, issueRepo, activity)
+        controller = DashboardControllerLive(repo, issueRepo, activity, OnboardedConfigRepo)
         response  <- controller.routes.runZIO(Request.get("/"))
         body      <- response.body.asString
       yield assertTrue(
@@ -55,7 +55,7 @@ object DashboardControllerSpec extends ZIOSpecDefault:
         repo      <- TestRepository.make
         issueRepo <- TestIssueRepository.make
         activity  <- TestActivityRepository.make
-        controller = DashboardControllerLive(repo, issueRepo, activity)
+        controller = DashboardControllerLive(repo, issueRepo, activity, OnboardedConfigRepo)
         response  <- controller.routes.runZIO(Request.get("/api/tasks/recent"))
         body      <- response.body.asString
       yield assertTrue(
@@ -63,7 +63,53 @@ object DashboardControllerSpec extends ZIOSpecDefault:
         body.contains("#2"),
       )
     },
+    test("GET / redirects to /onboarding when onboarding.completedAt is empty") {
+      for
+        repo      <- TestRepository.make
+        issueRepo <- TestIssueRepository.make
+        activity  <- TestActivityRepository.make
+        controller = DashboardControllerLive(repo, issueRepo, activity, FreshCloneConfigRepo)
+        response  <- controller.routes.runZIO(Request.get("/"))
+        locationHdr = response.headers.get(Header.Location).map(_.renderedValue).getOrElse("")
+      yield assertTrue(
+        response.status.isRedirection,
+        locationHdr == "/onboarding",
+      )
+    },
   )
+
+  /** Pretends the gateway has never been onboarded — no config rows.
+    * GET / should redirect to /onboarding. */
+  private object FreshCloneConfigRepo extends ConfigRepository:
+    override def getAllSettings: IO[PersistenceError, List[SettingRow]]                           = ZIO.succeed(Nil)
+    override def getSetting(key: String): IO[PersistenceError, Option[SettingRow]]                = ZIO.succeed(None)
+    override def upsertSetting(key: String, value: String): IO[PersistenceError, Unit]            = ZIO.unit
+    override def deleteSetting(key: String): IO[PersistenceError, Unit]                           = ZIO.unit
+    override def deleteSettingsByPrefix(prefix: String): IO[PersistenceError, Unit]               = ZIO.unit
+    override def createWorkflow(workflow: WorkflowRow): IO[PersistenceError, Long]                =
+      ZIO.fail(PersistenceError.QueryFailed("createWorkflow", "unused"))
+    override def getWorkflow(id: Long): IO[PersistenceError, Option[WorkflowRow]]                 =
+      ZIO.fail(PersistenceError.QueryFailed("getWorkflow", "unused"))
+    override def getWorkflowByName(name: String): IO[PersistenceError, Option[WorkflowRow]]       =
+      ZIO.fail(PersistenceError.QueryFailed("getWorkflowByName", "unused"))
+    override def listWorkflows: IO[PersistenceError, List[WorkflowRow]]                           =
+      ZIO.fail(PersistenceError.QueryFailed("listWorkflows", "unused"))
+    override def updateWorkflow(workflow: WorkflowRow): IO[PersistenceError, Unit]                =
+      ZIO.fail(PersistenceError.QueryFailed("updateWorkflow", "unused"))
+    override def deleteWorkflow(id: Long): IO[PersistenceError, Unit]                             =
+      ZIO.fail(PersistenceError.QueryFailed("deleteWorkflow", "unused"))
+    override def createCustomAgent(agent: CustomAgentRow): IO[PersistenceError, Long]             =
+      ZIO.fail(PersistenceError.QueryFailed("createCustomAgent", "unused"))
+    override def getCustomAgent(id: Long): IO[PersistenceError, Option[CustomAgentRow]]           =
+      ZIO.fail(PersistenceError.QueryFailed("getCustomAgent", "unused"))
+    override def getCustomAgentByName(name: String): IO[PersistenceError, Option[CustomAgentRow]] =
+      ZIO.fail(PersistenceError.QueryFailed("getCustomAgentByName", "unused"))
+    override def listCustomAgents: IO[PersistenceError, List[CustomAgentRow]]                     =
+      ZIO.fail(PersistenceError.QueryFailed("listCustomAgents", "unused"))
+    override def updateCustomAgent(agent: CustomAgentRow): IO[PersistenceError, Unit]             =
+      ZIO.fail(PersistenceError.QueryFailed("updateCustomAgent", "unused"))
+    override def deleteCustomAgent(id: Long): IO[PersistenceError, Unit]                          =
+      ZIO.fail(PersistenceError.QueryFailed("deleteCustomAgent", "unused"))
 
   final private case class TestRepository() extends TaskRepository:
 
@@ -166,3 +212,40 @@ object DashboardControllerSpec extends ZIOSpecDefault:
 
   private object TestActivityRepository:
     def make: UIO[TestActivityRepository] = ZIO.succeed(TestActivityRepository())
+
+  /** Pretend the user has already finished /onboarding so the dashboard
+    * renders normally instead of redirecting away. */
+  private object OnboardedConfigRepo extends ConfigRepository:
+    override def getAllSettings: IO[PersistenceError, List[SettingRow]] = ZIO.succeed(Nil)
+    override def getSetting(key: String): IO[PersistenceError, Option[SettingRow]] =
+      ZIO.succeed(
+        if key == "onboarding.completedAt" then Some(SettingRow(key, Instant.EPOCH.toString, Instant.EPOCH))
+        else None
+      )
+    override def upsertSetting(key: String, value: String): IO[PersistenceError, Unit] = ZIO.unit
+    override def deleteSetting(key: String): IO[PersistenceError, Unit] = ZIO.unit
+    override def deleteSettingsByPrefix(prefix: String): IO[PersistenceError, Unit] = ZIO.unit
+    override def createWorkflow(workflow: WorkflowRow): IO[PersistenceError, Long]          =
+      ZIO.fail(PersistenceError.QueryFailed("createWorkflow", "unused"))
+    override def getWorkflow(id: Long): IO[PersistenceError, Option[WorkflowRow]]           =
+      ZIO.fail(PersistenceError.QueryFailed("getWorkflow", "unused"))
+    override def getWorkflowByName(name: String): IO[PersistenceError, Option[WorkflowRow]] =
+      ZIO.fail(PersistenceError.QueryFailed("getWorkflowByName", "unused"))
+    override def listWorkflows: IO[PersistenceError, List[WorkflowRow]]                     =
+      ZIO.fail(PersistenceError.QueryFailed("listWorkflows", "unused"))
+    override def updateWorkflow(workflow: WorkflowRow): IO[PersistenceError, Unit]          =
+      ZIO.fail(PersistenceError.QueryFailed("updateWorkflow", "unused"))
+    override def deleteWorkflow(id: Long): IO[PersistenceError, Unit]                       =
+      ZIO.fail(PersistenceError.QueryFailed("deleteWorkflow", "unused"))
+    override def createCustomAgent(agent: CustomAgentRow): IO[PersistenceError, Long]             =
+      ZIO.fail(PersistenceError.QueryFailed("createCustomAgent", "unused"))
+    override def getCustomAgent(id: Long): IO[PersistenceError, Option[CustomAgentRow]]           =
+      ZIO.fail(PersistenceError.QueryFailed("getCustomAgent", "unused"))
+    override def getCustomAgentByName(name: String): IO[PersistenceError, Option[CustomAgentRow]] =
+      ZIO.fail(PersistenceError.QueryFailed("getCustomAgentByName", "unused"))
+    override def listCustomAgents: IO[PersistenceError, List[CustomAgentRow]]                     =
+      ZIO.fail(PersistenceError.QueryFailed("listCustomAgents", "unused"))
+    override def updateCustomAgent(agent: CustomAgentRow): IO[PersistenceError, Unit]             =
+      ZIO.fail(PersistenceError.QueryFailed("updateCustomAgent", "unused"))
+    override def deleteCustomAgent(id: Long): IO[PersistenceError, Unit]                          =
+      ZIO.fail(PersistenceError.QueryFailed("deleteCustomAgent", "unused"))
