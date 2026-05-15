@@ -39,7 +39,7 @@ import daemon.control.DaemonAgentScheduler
 import daemon.entity.DaemonAgentSpecRepositoryES
 import decision.control.DecisionInbox
 import decision.entity.{ DecisionEventStoreES, DecisionRepositoryES }
-import gateway.boundary.telegram.TaskProgressNotifier
+import gateway.boundary.telegram.{ DecisionEscalationNotifier, TaskProgressNotifier }
 import gateway.boundary.{
   ChannelController as GatewayChannelController,
   TelegramController as GatewayTelegramController,
@@ -180,6 +180,7 @@ object ApplicationDI:
       GatewayService &
       TelegramPollingService &
       TaskProgressNotifier &
+      DecisionEscalationNotifier &
       AgentConfigResolver &
       PromptLoader &
       GitService &
@@ -234,6 +235,7 @@ object ApplicationDI:
       GatewayService.live,
       TelegramPollingService.live,
       TaskProgressNotifier.live,
+      DecisionEscalationNotifier.live,
     )
 
   private def fatalStartupLayer[R, E, A](component: String, layer: ZLayer[R, E, A])(render: E => String)
