@@ -187,7 +187,6 @@ object ApplicationDI:
       MessageRouter &
       GatewayService &
       TelegramPollingService &
-      DiscordGatewayService &
       TaskProgressNotifier &
       AgentConfigResolver &
       PromptLoader &
@@ -247,7 +246,6 @@ object ApplicationDI:
       MessageRouter.live,
       GatewayService.live,
       TelegramPollingService.live,
-      DiscordGatewayService.live,
       TaskProgressNotifier.live,
     )
 

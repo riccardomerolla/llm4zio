@@ -72,38 +72,15 @@ object ChannelControllerSpec extends ZIOSpecDefault:
     yield (ChannelControllerLive(registry, gatewayService, cfgRef, repo), registry)
 
   def spec: Spec[TestEnvironment & Scope, Any] = suite("ChannelControllerSpec")(
-    test("enabling discord settings re-registers channel and clears NotConfigured status") {
+    test("posting unsupported channel returns NotFound") {
       for
         tuple                 <- mkController
-        (controller, registry) = tuple
-        _                     <- registry.markNotConfigured("discord")
+        (controller, _)        = tuple
         request                = Request.post(
                                    URL.decode("/settings/channels/discord").toOption.get,
-                                   Body.fromString("enabled=true&botToken=test-token&sessionScopeStrategy=PerConversation"),
+                                   Body.fromString("enabled=true"),
                                  )
         response              <- controller.routes.runZIO(request)
-        runtime               <- registry.getRuntime("discord")
-      yield assertTrue(
-        response.status == Status.Ok,
-        runtime.status == ChannelStatus.Disconnected,
-      )
-    },
-    test("disabling discord settings marks channel as NotConfigured") {
-      for
-        tuple                 <- mkController
-        (controller, registry) = tuple
-        existing              <-
-          DiscordChannel.make(config = DiscordConfig(botToken = "token", guildId = None, defaultChannelId = None))
-        _                     <- registry.register(existing)
-        request                = Request.post(
-                                   URL.decode("/settings/channels/discord").toOption.get,
-                                   Body.fromString("botToken=test-token&sessionScopeStrategy=PerConversation"),
-                                 )
-        response              <- controller.routes.runZIO(request)
-        runtime               <- registry.getRuntime("discord")
-      yield assertTrue(
-        response.status == Status.Ok,
-        runtime.status == ChannelStatus.NotConfigured,
-      )
+      yield assertTrue(response.status == Status.NotFound)
     },
   )

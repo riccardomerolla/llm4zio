@@ -220,70 +220,19 @@ final case class ChannelControllerLive(
 
   private def normalizeSupportedChannel(value: String): Option[String] =
     value match
-      case "discord"   => Some("discord")
-      case "slack"     => Some("slack")
       case "websocket" => Some("websocket")
       case _           => None
 
   private def channelConfig(name: String, form: Map[String, String]): Map[String, String] =
-    val base = Map(
+    Map(
       s"channel.$name.enabled"              -> form.get("enabled").exists(v => v == "on" || v.equalsIgnoreCase("true")).toString,
       s"channel.$name.sessionScopeStrategy" -> normalizeSessionScopeSetting(
         form.getOrElse("sessionScopeStrategy", SessionScopeStrategy.PerConversation.toString)
       ),
     )
-    name match
-      case "discord" =>
-        base ++ Map(
-          s"channel.$name.botToken"  -> form.getOrElse("botToken", ""),
-          s"channel.$name.guildId"   -> form.getOrElse("guildId", ""),
-          s"channel.$name.channelId" -> form.getOrElse("channelId", ""),
-        )
-      case "slack"   =>
-        val token = form.get("appToken").orElse(form.get("botToken")).getOrElse("")
-        base ++ Map(
-          s"channel.$name.appToken"   -> token,
-          s"channel.$name.botToken"   -> form.getOrElse("botToken", ""),
-          s"channel.$name.channelId"  -> form.getOrElse("channelId", ""),
-          s"channel.$name.socketMode" -> form.getOrElse("socketMode", "true"),
-        )
-      case _         => base
 
   private def instantiateChannel(name: String, cfg: Map[String, String]): IO[PersistenceError, MessageChannel] =
     name match
-      case "discord"   =>
-        val token = cfg.getOrElse("channel.discord.botToken", "").trim
-        val scope = parseSessionScopeStrategy(cfg.get("channel.discord.sessionScopeStrategy"))
-        if token.isEmpty then
-          ZIO.fail(PersistenceError.QueryFailed("addChannel", "Discord bot token is required"))
-        else
-          DiscordChannel
-            .make(
-              scopeStrategy = scope,
-              config = DiscordConfig(
-                botToken = token,
-                guildId = cfg.get("channel.discord.guildId").map(_.trim).filter(_.nonEmpty),
-                defaultChannelId = cfg.get("channel.discord.channelId").map(_.trim).filter(_.nonEmpty),
-              ),
-            )
-            .map(identity[MessageChannel])
-      case "slack"     =>
-        val appToken = cfg.getOrElse("channel.slack.appToken", "").trim
-        val scope    = parseSessionScopeStrategy(cfg.get("channel.slack.sessionScopeStrategy"))
-        if appToken.isEmpty then
-          ZIO.fail(PersistenceError.QueryFailed("addChannel", "Slack app token is required"))
-        else
-          SlackChannel
-            .make(
-              scopeStrategy = scope,
-              config = SlackConfig(
-                appToken = appToken,
-                botToken = cfg.get("channel.slack.botToken").map(_.trim).filter(_.nonEmpty),
-                defaultChannelId = cfg.get("channel.slack.channelId").map(_.trim).filter(_.nonEmpty),
-                socketMode = cfg.get("channel.slack.socketMode").exists(_.equalsIgnoreCase("true")),
-              ),
-            )
-            .map(identity[MessageChannel])
       case "telegram"  =>
         ZIO.fail(PersistenceError.QueryFailed("addChannel", "Telegram channel is managed from Settings"))
       case "websocket" =>
