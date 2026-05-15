@@ -9,8 +9,6 @@ import agent.entity.AgentRegistry
 import conversation.entity.ChatRepository
 import gateway.entity.{ MessageRouter, NormalizedMessage, * }
 import llm4zio.core.{ LlmService, Streaming }
-import memory.entity.{ MemoryEntry, MemoryId, MemoryKind, MemoryRepository }
-import orchestration.control.ConversationMemory
 import prompts.PromptLoader
 
 enum GatewayServiceError:
@@ -44,7 +42,7 @@ object GatewayService:
 
   val live
     : ZLayer[
-      MessageRouter & AgentRegistry & LlmService & ConfigRepository & MemoryRepository & ChatRepository & PromptLoader,
+      MessageRouter & AgentRegistry & LlmService & ConfigRepository & ChatRepository & PromptLoader,
       Nothing,
       GatewayService,
     ] =
@@ -54,7 +52,6 @@ object GatewayService:
         agentRegistry <- ZIO.service[AgentRegistry]
         llmService    <- ZIO.service[LlmService]
         configRepo    <- ZIO.service[ConfigRepository]
-        memoryRepo    <- ZIO.service[MemoryRepository]
         chatRepo      <- ZIO.service[ChatRepository]
         promptLoader  <- ZIO.service[PromptLoader]
         queue         <- Queue.unbounded[GatewayQueueCommand]
@@ -67,7 +64,6 @@ object GatewayService:
         agentRegistry,
         llmService,
         configRepo,
-        memoryRepo,
         chatRepo,
         promptLoader,
         metrics,
@@ -78,7 +74,7 @@ object GatewayService:
 
   val liveWithSteeringQueue
     : ZLayer[
-      MessageRouter & Queue[NormalizedMessage] & AgentRegistry & LlmService & ConfigRepository & MemoryRepository & ChatRepository & PromptLoader,
+      MessageRouter & Queue[NormalizedMessage] & AgentRegistry & LlmService & ConfigRepository & ChatRepository & PromptLoader,
       Nothing,
       GatewayService,
     ] =
@@ -88,7 +84,6 @@ object GatewayService:
         agentRegistry <- ZIO.service[AgentRegistry]
         llmService    <- ZIO.service[LlmService]
         configRepo    <- ZIO.service[ConfigRepository]
-        memoryRepo    <- ZIO.service[MemoryRepository]
         chatRepo      <- ZIO.service[ChatRepository]
         promptLoader  <- ZIO.service[PromptLoader]
         steeringQueue <- ZIO.service[Queue[NormalizedMessage]]
@@ -102,7 +97,6 @@ object GatewayService:
         agentRegistry,
         llmService,
         configRepo,
-        memoryRepo,
         chatRepo,
         promptLoader,
         metrics,
@@ -234,7 +228,6 @@ final case class GatewayServiceLive(
   agentRegistry: AgentRegistry,
   llmService: LlmService,
   configRepository: ConfigRepository,
-  memoryRepository: MemoryRepository,
   chatRepository: ChatRepository,
   promptLoader: PromptLoader,
   metricsRef: Ref[GatewayMetricsSnapshot],
@@ -271,7 +264,6 @@ final case class GatewayServiceLive(
                  metricsRef.update(current => current.copy(steeringForwarded = current.steeringForwarded + 1))
       _ <- router.routeInbound(message).mapError(GatewayServiceError.Router.apply)
       _ <- handleIntentRouting(message)
-      _ <- maybeScheduleSummarization(message).forkDaemon
       _ <- metricsRef.update(current =>
              GatewayService.markInboundProcessed(
                current.copy(processed = current.processed + 1),
@@ -460,11 +452,7 @@ final case class GatewayServiceLive(
   ): IO[GatewayServiceError, Unit] =
     if skipExecution then ZIO.unit
     else
-      (for
-        settings <- loadMemorySettings
-        prompt   <- enrichPromptWithMemory(inbound, settings)
-        response <- Streaming.collect(llmService.executeStream(prompt))
-      yield response).foldZIO(
+      Streaming.collect(llmService.executeStream(inbound.content)).foldZIO(
         error =>
           sendAssistantReply(
             inbound,
@@ -478,90 +466,6 @@ final case class GatewayServiceLive(
             Some(selectedAgent),
           ),
       )
-
-  private def loadMemorySettings: IO[GatewayServiceError, ConversationMemory.Settings] =
-    configRepository
-      .getSettingsByPrefix("memory.")
-      .map(rows => ConversationMemory.fromSettingsMap(rows.map(r => r.key -> r.value).toMap))
-      .mapError(err => GatewayServiceError.Router(MessageRouterError.Persistence(err)))
-
-  private def enrichPromptWithMemory(
-    inbound: NormalizedMessage,
-    settings: ConversationMemory.Settings,
-  ): IO[GatewayServiceError, String] =
-    if !settings.enabled then ZIO.succeed(inbound.content)
-    else
-      val scope = ConversationMemory.scopeFromSession(inbound.sessionKey)
-      memoryRepository
-        .searchRelevant(
-          scope = scope,
-          query = inbound.content,
-          limit = settings.maxContextMemories,
-          filter = ConversationMemory.memoryFilter(scope),
-        )
-        .orElseSucceed(Nil)
-        .map { memories =>
-          inbound.content + ConversationMemory.memoryContextBlock(memories)
-        }
-
-  private def maybeScheduleSummarization(message: NormalizedMessage): UIO[Unit] =
-    if message.direction == gateway.entity.MessageDirection.Inbound && message.role == gateway.entity.GatewayMessageRole.User
-    then
-      (for
-        settings <- loadMemorySettings
-        _        <- ZIO.when(settings.enabled) {
-                      message.metadata.get("conversationId").flatMap(_.toLongOption) match
-                        case None                 => ZIO.unit
-                        case Some(conversationId) =>
-                          for
-                            messages <- chatRepository
-                                          .getMessages(conversationId)
-                                          .mapError(_ => GatewayServiceError.QueueClosed)
-                            count     = messages.length
-                            _        <- ZIO.when(count > 0 && count % settings.summarizationThreshold == 0) {
-                                          summarizeConversation(conversationId, message.sessionKey)
-                                        }
-                          yield ()
-                    }
-      yield ()).ignore
-    else ZIO.unit
-
-  private def summarizeConversation(
-    conversationId: Long,
-    sessionKey: gateway.entity.SessionKey,
-  ): IO[GatewayServiceError, Unit] =
-    for
-      messages <- chatRepository.getMessages(conversationId).mapError(_ => GatewayServiceError.QueueClosed)
-      prompt    = {
-        val transcript = messages
-          .takeRight(50)
-          .map(m => s"[${m.sender}] ${m.content}")
-          .mkString("\n")
-        s"""Summarize the conversation into stable long-term memory.
-                       |Return plain text summary only.
-                       |
-                       |Conversation:
-                       |$transcript
-                       |""".stripMargin
-      }
-      summary  <- Streaming.collect(llmService.executeStream(prompt)).mapError(_ => GatewayServiceError.QueueClosed)
-      now      <- Clock.instant
-      _        <- memoryRepository
-                    .save(
-                      MemoryEntry(
-                        id = MemoryId.make,
-                        scope = ConversationMemory.scopeFromSession(sessionKey),
-                        sessionId = ConversationMemory.sessionIdFromSession(sessionKey),
-                        text = summary.content,
-                        embedding = Vector.empty,
-                        tags = List("summary", s"conversation:$conversationId"),
-                        kind = MemoryKind.Summary,
-                        createdAt = now,
-                        lastAccessedAt = now,
-                      )
-                    )
-                    .ignore
-    yield ()
 
   private def updateIntentState(
     inbound: NormalizedMessage,

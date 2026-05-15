@@ -19,7 +19,6 @@ import issues.entity.api.AgentIssueView
 import llm4zio.core.*
 import llm4zio.providers.{ GeminiCliExecutor, HttpClient }
 import llm4zio.tools.{ AnyTool, JsonSchema }
-import memory.entity.{ Scope as MemoryScope, * }
 import orchestration.control.{ IssueAssignmentOrchestrator, * }
 import orchestration.entity.{ PlannerPlanPreview, PlannerPreviewState }
 import prompts.PromptLoader
@@ -84,7 +83,6 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
       },
       AgentRegistryLive.live,
       MessageRouter.live,
-      EmptyMemoryRepo.layer,
       PromptLoader.reloading,
       GatewayService.live,
       TestLlm.layer,
@@ -107,30 +105,6 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
           ZIO.fail(LlmError.InvalidRequestError("unused in test"))
 
         override def isAvailable: UIO[Boolean] = ZIO.succeed(true)
-    )
-
-  private object EmptyMemoryRepo:
-    val layer: ULayer[MemoryRepository] = ZLayer.succeed(
-      new MemoryRepository:
-        override def save(entry: MemoryEntry): IO[Throwable, Unit] = ZIO.unit
-
-        override def searchRelevant(
-          scope: MemoryScope,
-          query: String,
-          limit: Int,
-          filter: MemoryFilter,
-        ): IO[Throwable, List[ScoredMemory]] = ZIO.succeed(Nil)
-
-        override def listByScope(
-          scope: MemoryScope,
-          filter: MemoryFilter,
-          page: Int,
-          pageSize: Int,
-        ): IO[Throwable, List[MemoryEntry]] = ZIO.succeed(Nil)
-
-        override def deleteById(scope: MemoryScope, id: MemoryId): IO[Throwable, Unit] = ZIO.unit
-
-        override def deleteBySession(sessionId: SessionId): IO[Throwable, Unit] = ZIO.unit
     )
 
   private val testIssueAssignment: IssueAssignmentOrchestrator =

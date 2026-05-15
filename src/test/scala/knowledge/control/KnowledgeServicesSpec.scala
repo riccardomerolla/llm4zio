@@ -13,7 +13,6 @@ import issues.entity.{ AgentIssue, IssueState }
 import knowledge.entity.*
 import llm4zio.core.{ LlmChunk, LlmError, LlmService, Message, ToolCallResponse }
 import llm4zio.tools.{ AnyTool, JsonSchema }
-import memory.entity.{ Scope as MemoryScope, * }
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ AnalysisDocId, DecisionLogId, IssueId }
 import workspace.entity.{ RunSessionMode, RunStatus, WorkspaceRun }
@@ -69,16 +68,6 @@ object KnowledgeServicesSpec extends ZIOSpecDefault:
   object StubDecisionLogRepository:
     def make(initial: List[DecisionLog] = Nil): UIO[StubDecisionLogRepository] =
       Ref.make(initial).map(StubDecisionLogRepository(_))
-
-  final class StubMemoryRepository extends MemoryRepository:
-    override def save(entry: MemoryEntry): IO[Throwable, Unit]                                                        = ZIO.unit
-    override def searchRelevant(s: MemoryScope, q: String, limit: Int, f: MemoryFilter)
-      : IO[Throwable, List[ScoredMemory]] =
-      ZIO.succeed(Nil)
-    override def listByScope(s: MemoryScope, f: MemoryFilter, page: Int, size: Int): IO[Throwable, List[MemoryEntry]] =
-      ZIO.succeed(Nil)
-    override def deleteById(s: MemoryScope, id: MemoryId): IO[Throwable, Unit]                                        = ZIO.unit
-    override def deleteBySession(sid: SessionId): IO[Throwable, Unit]                                                 = ZIO.unit
 
   final class StubAnalysisRepository extends AnalysisRepository:
     override def append(event: AnalysisEvent): IO[PersistenceError, Unit]                        = ZIO.unit
@@ -174,7 +163,6 @@ object KnowledgeServicesSpec extends ZIOSpecDefault:
     ZLayer.make[KnowledgeGraphService](
       KnowledgeGraphService.live,
       ZLayer.fromZIO(ZIO.succeed(StubDecisionLogRepository(ref))),
-      ZLayer.succeed(StubMemoryRepository()),
       ZLayer.succeed(StubAnalysisRepository()),
     )
 
@@ -186,7 +174,6 @@ object KnowledgeServicesSpec extends ZIOSpecDefault:
       ZLayer.succeed(StubChatRepository()),
       ZLayer.succeed(StubLlmService()),
       ZLayer.fromZIO(ZIO.succeed(StubDecisionLogRepository(ref))),
-      ZLayer.succeed(StubMemoryRepository()),
       ZLayer.succeed(StubAnalysisRepository()),
     )
 
@@ -226,7 +213,6 @@ object KnowledgeServicesSpec extends ZIOSpecDefault:
                    ).provideLayer(graphLayer(ref))
           yield assertTrue(
             ctx.decisions.size == 1,
-            ctx.knowledgeEntries.isEmpty,
             ctx.analysisDocs.isEmpty,
           )
         },

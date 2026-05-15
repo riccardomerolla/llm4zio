@@ -1,7 +1,6 @@
 package knowledge.entity
 
 import analysis.entity.AnalysisDoc
-import memory.entity.MemoryEntry
 
 final case class KnowledgeEdge(
   fromId: String,
@@ -19,7 +18,6 @@ final case class KnowledgeDecisionMatch(
 
 final case class ArchitecturalContext(
   decisions: List[KnowledgeDecisionMatch],
-  knowledgeEntries: List[MemoryEntry],
   analysisDocs: List[AnalysisDoc],
   edges: List[KnowledgeEdge],
 )

@@ -20,7 +20,7 @@ import llm4zio.core.{ LlmError, LlmService, Streaming }
 import llm4zio.tools.ToolRegistry
 import shared.errors.PersistenceError
 import shared.ids.Ids.EventId
-import shared.store.{ MemoryStoreModule, * }
+import shared.store.*
 import shared.web.{ ErrorHandlingMiddleware, HtmlViews, SettingsView }
 
 trait SettingsController:
@@ -34,8 +34,7 @@ object SettingsController:
   val live
     : ZLayer[
       ConfigRepository & ActivityHub & Ref[GatewayConfig] & LlmService & ModelService & ConfigStoreModule.ConfigStoreService &
-        DataStoreService & StoreConfig &
-        MemoryStoreModule.MemoryEntriesStore & ToolRegistry,
+        DataStoreService & StoreConfig & ToolRegistry,
       Nothing,
       SettingsController,
     ] =
@@ -50,7 +49,6 @@ final case class SettingsControllerLive(
   configStoreService: ConfigStoreModule.ConfigStoreService,
   dataStoreService: DataStoreService,
   storeConfig: StoreConfig,
-  memoryEntriesStore: MemoryStoreModule.MemoryEntriesStore,
   toolRegistry: ToolRegistry,
 ) extends SettingsController:
 
@@ -541,7 +539,6 @@ final case class SettingsControllerLive(
              .mapError(err =>
                PersistenceError.QueryFailed("resetDataStore", Option(err.getMessage).getOrElse(err.toString))
              )
-      _ <- safeReset("memoryEntries")(memoryEntriesStore.map.clear)
       _ <- safeReset("reloadRoots")(dataStoreService.checkpoint)
     yield ()
 

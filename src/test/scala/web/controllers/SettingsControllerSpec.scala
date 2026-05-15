@@ -16,7 +16,7 @@ import conversation.entity.ConversationRow
 import llm4zio.core.*
 import llm4zio.tools.{ AnyTool, JsonSchema, ToolRegistry }
 import shared.errors.PersistenceError
-import shared.store.{ ConfigStoreModule, DataStoreModule, DataStoreService, MemoryStoreModule, StoreConfig }
+import shared.store.{ ConfigStoreModule, DataStoreModule, DataStoreService, StoreConfig }
 
 object SettingsControllerSpec extends ZIOSpecDefault:
 
@@ -104,7 +104,6 @@ object SettingsControllerSpec extends ZIOSpecDefault:
       ZLayer.succeed(storeCfg),
       ConfigStoreModule.live.mapError(err => new RuntimeException(err.toString)).orDie,
       DataStoreModule.live.mapError(err => new RuntimeException(err.toString)).orDie,
-      MemoryStoreModule.live.mapError(err => new RuntimeException(err.toString)).orDie,
       ZLayer.succeed(configRepo),
       ZLayer.succeed(hub),
       ZLayer.fromZIO(Ref.make(MigrationConfig())),
@@ -134,7 +133,6 @@ object SettingsControllerSpec extends ZIOSpecDefault:
       ZLayer.succeed(storeCfg),
       ConfigStoreModule.live.mapError(err => new RuntimeException(err.toString)).orDie,
       DataStoreModule.live.mapError(err => new RuntimeException(err.toString)).orDie,
-      MemoryStoreModule.live.mapError(err => new RuntimeException(err.toString)).orDie,
       ConfigRepositoryES.live,
       ActivityRepository.live,
       ActivityHub.live,

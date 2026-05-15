@@ -1,7 +1,5 @@
 package knowledge.control
 
-import java.time.Instant
-
 import zio.*
 import zio.json.*
 
@@ -11,7 +9,6 @@ import conversation.entity.api.SenderType
 import issues.entity.AgentIssue
 import knowledge.entity.*
 import llm4zio.core.{ LlmService, Streaming }
-import memory.entity.{ Scope, * }
 import shared.errors.PersistenceError
 import shared.ids.Ids.DecisionLogId
 import workspace.entity.WorkspaceRun
@@ -23,11 +20,10 @@ trait KnowledgeExtractionService:
   ): IO[PersistenceError, Option[DecisionLogId]]
 
 object KnowledgeExtractionService:
-  private val knowledgeScope = Scope("knowledge")
 
   val live
     : ZLayer[
-      ChatRepository & LlmService & DecisionLogRepository & MemoryRepository & AnalysisRepository,
+      ChatRepository & LlmService & DecisionLogRepository & AnalysisRepository,
       Nothing,
       KnowledgeExtractionService,
     ] =
@@ -36,9 +32,8 @@ object KnowledgeExtractionService:
         chatRepo    <- ZIO.service[ChatRepository]
         llmService  <- ZIO.service[LlmService]
         decisionLog <- ZIO.service[DecisionLogRepository]
-        memoryRepo  <- ZIO.service[MemoryRepository]
         analysis    <- ZIO.service[AnalysisRepository]
-      yield KnowledgeExtractionServiceLive(chatRepo, llmService, decisionLog, memoryRepo, analysis)
+      yield KnowledgeExtractionServiceLive(chatRepo, llmService, decisionLog, analysis)
     }
 
   final private case class ExtractionPayload(
@@ -66,7 +61,6 @@ object KnowledgeExtractionService:
     chatRepo: ChatRepository,
     llmService: LlmService,
     decisionLogs: DecisionLogRepository,
-    memoryRepo: MemoryRepository,
     analysisRepository: AnalysisRepository,
   ) extends KnowledgeExtractionService:
 
@@ -118,13 +112,6 @@ object KnowledgeExtractionService:
                                architecturalRationales = payload.architecturalRationales.filter(_.trim.nonEmpty),
                                occurredAt = now,
                              )
-                           )
-              _         <- persistKnowledgeMemories(
-                             decisionId = decisionId,
-                             run = run,
-                             issue = issue,
-                             payload = payload,
-                             createdAt = now,
                            )
             yield Some(decisionId)
         }
@@ -191,115 +178,6 @@ object KnowledgeExtractionService:
         optionsConsidered = List(selectedOption),
         architecturalRationales = List(defaultRationale(issue)),
       )
-
-    private def persistKnowledgeMemories(
-      decisionId: DecisionLogId,
-      run: WorkspaceRun,
-      issue: Option[AgentIssue],
-      payload: ExtractionPayload,
-      createdAt: Instant,
-    ): IO[PersistenceError, Unit] =
-      val sessionId = SessionId(s"run:${run.id}")
-      val tags      = baseTags(decisionId, run, issue)
-      val entries   =
-        List(
-          Some(
-            MemoryEntry(
-              id = MemoryId.make,
-              scope = knowledgeScope,
-              sessionId = sessionId,
-              text =
-                s"${payload.title.getOrElse(defaultTitle(run, issue))}\n\n${payload.decisionTaken.getOrElse("")}".trim,
-              embedding = Vector.empty,
-              tags = "knowledge" :: "decision" :: tags,
-              kind = MemoryKind.Decision,
-              createdAt = createdAt,
-              lastAccessedAt = createdAt,
-            )
-          ),
-          payload.rationale.filter(_.trim.nonEmpty).map(text =>
-            MemoryEntry(
-              id = MemoryId.make,
-              scope = knowledgeScope,
-              sessionId = sessionId,
-              text = text,
-              embedding = Vector.empty,
-              tags = "knowledge" :: "rationale" :: tags,
-              kind = MemoryKind.ArchitecturalRationale,
-              createdAt = createdAt,
-              lastAccessedAt = createdAt,
-            )
-          ),
-        ).flatten ++
-          payload.designConstraints.filter(_.trim.nonEmpty).map(text =>
-            MemoryEntry(
-              id = MemoryId.make,
-              scope = knowledgeScope,
-              sessionId = sessionId,
-              text = text,
-              embedding = Vector.empty,
-              tags = "knowledge" :: "constraint" :: tags,
-              kind = MemoryKind.DesignConstraint,
-              createdAt = createdAt,
-              lastAccessedAt = createdAt,
-            )
-          ) ++
-          payload.lessonsLearned.filter(_.trim.nonEmpty).map(text =>
-            MemoryEntry(
-              id = MemoryId.make,
-              scope = knowledgeScope,
-              sessionId = sessionId,
-              text = text,
-              embedding = Vector.empty,
-              tags = "knowledge" :: "lesson" :: tags,
-              kind = MemoryKind.LessonsLearned,
-              createdAt = createdAt,
-              lastAccessedAt = createdAt,
-            )
-          ) ++
-          payload.systemUnderstanding.filter(_.trim.nonEmpty).map(text =>
-            MemoryEntry(
-              id = MemoryId.make,
-              scope = knowledgeScope,
-              sessionId = sessionId,
-              text = text,
-              embedding = Vector.empty,
-              tags = "knowledge" :: "understanding" :: tags,
-              kind = MemoryKind.SystemUnderstanding,
-              createdAt = createdAt,
-              lastAccessedAt = createdAt,
-            )
-          ) ++
-          payload.architecturalRationales.filter(_.trim.nonEmpty).map(text =>
-            MemoryEntry(
-              id = MemoryId.make,
-              scope = knowledgeScope,
-              sessionId = sessionId,
-              text = text,
-              embedding = Vector.empty,
-              tags = "knowledge" :: "architectural-rationale" :: tags,
-              kind = MemoryKind.ArchitecturalRationale,
-              createdAt = createdAt,
-              lastAccessedAt = createdAt,
-            )
-          )
-
-      ZIO.foreachDiscard(entries)(entry =>
-        memoryRepo.save(entry).mapError(err => PersistenceError.QueryFailed("knowledgeMemorySave", err.toString))
-      )
-
-    private def baseTags(
-      decisionId: DecisionLogId,
-      run: WorkspaceRun,
-      issue: Option[AgentIssue],
-    ): List[String] =
-      List(
-        Some(s"decision-log:${decisionId.value}"),
-        Some(s"workspace:${run.workspaceId}"),
-        Some(s"run:${run.id}"),
-        Some(s"conversation:${run.conversationId}"),
-        issue.map(value => s"issue:${value.id.value}"),
-      ).flatten
 
     private def defaultTitle(run: WorkspaceRun, issue: Option[AgentIssue]): String =
       issue.map(_.title).filter(_.trim.nonEmpty).getOrElse(s"Decision for ${run.issueRef}")

@@ -1,7 +1,6 @@
 package knowledge.boundary
 
 import knowledge.entity.{ ArchitecturalContext, DecisionLog }
-import memory.entity.MemoryEntry
 import scalatags.Text.all.*
 import shared.web.Layout
 
@@ -10,7 +9,6 @@ object KnowledgeView:
   def page(
     timeline: List[DecisionLog],
     context: ArchitecturalContext,
-    browserEntries: List[MemoryEntry],
     query: Option[String],
     workspaceId: Option[String],
     workspaces: List[(String, String)],
@@ -18,9 +16,8 @@ object KnowledgeView:
     Layout.page("Knowledge", "/knowledge")(
       div(cls := "space-y-6")(
         header(query, workspaceId, workspaces),
-        stats(context, timeline, browserEntries),
+        stats(context, timeline),
         decisionTimeline(timeline),
-        rationaleBrowser(browserEntries),
         architecturalContextSection(context),
       )
     )
@@ -73,11 +70,9 @@ object KnowledgeView:
   private def stats(
     context: ArchitecturalContext,
     timeline: List[DecisionLog],
-    browserEntries: List[MemoryEntry],
   ): Frag =
-    div(cls := "grid gap-3 md:grid-cols-4")(
+    div(cls := "grid gap-3 md:grid-cols-3")(
       statCard("Decisions", timeline.size.toString),
-      statCard("Linked knowledge", browserEntries.size.toString),
       statCard("Architecture docs", context.analysisDocs.size.toString),
       statCard("Graph edges", context.edges.size.toString),
     )
@@ -106,30 +101,6 @@ object KnowledgeView:
                 log.issueIds.map(id => chip(s"Issue ${id.value}")),
                 log.specificationIds.map(id => chip(s"Spec ${id.value}")),
                 log.planIds.map(id => chip(s"Plan ${id.value}")),
-              ),
-            )
-          )*
-        ),
-    )
-
-  private def rationaleBrowser(entries: List[MemoryEntry]): Frag =
-    sectionCard(
-      "Rationale Browser",
-      if entries.isEmpty then
-        emptyState("No rationale or knowledge entries match the current filters.")
-      else
-        div(cls := "grid gap-4 lg:grid-cols-2")(
-          entries.map(entry =>
-            div(cls := "rounded-xl border border-white/10 bg-black/20 p-4")(
-              div(cls := "flex items-center justify-between gap-3")(
-                span(cls := "rounded-full border border-cyan-400/30 bg-cyan-500/10 px-3 py-1 text-xs text-cyan-200")(
-                  entry.kind.value
-                ),
-                span(cls := "text-xs text-slate-500")(entry.createdAt.toString),
-              ),
-              p(cls := "mt-3 text-sm text-slate-200 whitespace-pre-wrap")(entry.text),
-              div(cls := "mt-3 flex flex-wrap gap-2 text-xs text-slate-400")(
-                entry.tags.take(6).map(chip)
               ),
             )
           )*

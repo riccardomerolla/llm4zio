@@ -13,7 +13,6 @@ import issues.boundary.{
   IssueImportController,
   IssueTemplatesController,
 }
-import memory.boundary.MemoryController as MemoryBoundaryController
 import sdlc.boundary.SdlcDashboardController
 import taskrun.boundary.{
   DashboardController as TaskRunDashboardController,
@@ -42,7 +41,6 @@ object CoreRouteModule:
         IssueBulkController &
         IssueImportController &
         ActivityController &
-        MemoryBoundaryController &
         AppHealthController &
         TaskRunLogsController,
       Nothing,
@@ -63,7 +61,6 @@ object CoreRouteModule:
         issueBulk      <- ZIO.service[IssueBulkController]
         issueImport    <- ZIO.service[IssueImportController]
         activity       <- ZIO.service[ActivityController]
-        memory         <- ZIO.service[MemoryBoundaryController]
         health         <- ZIO.service[AppHealthController]
         logs           <- ZIO.service[TaskRunLogsController]
       yield new CoreRouteModule:
@@ -81,7 +78,6 @@ object CoreRouteModule:
             issueBulk.routes ++
             issueImport.routes ++
             activity.routes ++
-            memory.routes ++
             health.routes ++
             logs.routes
     }

@@ -57,9 +57,6 @@ import llm4zio.core.*
 import llm4zio.observability.{ LlmMetrics, MeteredLlmService }
 import llm4zio.providers.{ ConnectorFactories, GeminiCliExecutor, HttpClient }
 import llm4zio.tools.ToolRegistry
-import memory.boundary.MemoryController as MemoryBoundaryController
-import memory.control.{ EmbeddingService, MemoryRepositoryES }
-import memory.entity.*
 import orchestration.control.*
 import orchestration.control.{
   IssueAssignmentOrchestrator as OrchestrationIssueAssignmentOrchestrator,
@@ -74,7 +71,7 @@ import prompts.PromptLoader
 import sdlc.boundary.SdlcDashboardController
 import sdlc.control.SdlcDashboardService
 import shared.services.{ FileService, HttpAIClient, StateService }
-import shared.store.{ ConfigStoreModule, DataStoreModule, DataStoreService, MemoryStoreModule, StoreConfig }
+import shared.store.{ ConfigStoreModule, DataStoreModule, DataStoreService, StoreConfig }
 import shared.web.StreamAbortRegistry
 import canvas.boundary.CanvasController
 import canvas.control.CanvasSimilarityIndex
@@ -152,7 +149,6 @@ object ApplicationDI:
       StoreConfig &
       ConfigStoreModule.ConfigStoreService &
       DataStoreService &
-      MemoryStoreModule.MemoryEntriesStore &
       GatewayConfig &
       ProviderConfig &
       Ref[GatewayConfig] &
@@ -186,8 +182,6 @@ object ApplicationDI:
       TaskProgressNotifier &
       AgentConfigResolver &
       PromptLoader &
-      MemoryRepository &
-      EmbeddingService &
       GitService &
       LlmMetrics
 
@@ -208,7 +202,6 @@ object ApplicationDI:
       ZLayer.succeed(storeConfig),
       fatalStartupLayer("config store module", ConfigStoreModule.live)(_.toString),
       fatalStartupLayer("data store module", DataStoreModule.live)(_.toString),
-      fatalStartupLayer("memory store module", MemoryStoreModule.live)(_.toString),
       ConfigRepositoryES.live,
       TaskRepository.live,
       ZLayer.succeed(config.resolvedProviderConfig),
@@ -220,9 +213,7 @@ object ApplicationDI:
       LlmMetrics.layer,
       // configAwareLlmService composed with MeteredLlmService wrapping, yielding the metered LlmService
       (configAwareLlmServiceLayer ++ ZLayer.service[LlmMetrics]) >>> MeteredLlmService.layer,
-      EmbeddingService.live,
       GitService.live,
-      MemoryRepositoryES.live,
       DecisionEventStoreES.live,
       DecisionRepositoryES.live,
       WorkflowServiceLive.live,
@@ -396,7 +387,6 @@ object ApplicationDI:
       issues.boundary.IssueBulkController.live,
       issues.boundary.IssueImportController.live,
       ActivityController.live,
-      MemoryBoundaryController.live,
       DaemonsController.live,
       GatewayChannelController.live,
       AppHealthController.live,

@@ -14,7 +14,6 @@ import knowledge.control.KnowledgeGraphService
 import llm4zio.mcp.server.{ McpError, McpServer }
 import llm4zio.mcp.transport.SseTransport
 import llm4zio.tools.ToolRegistry
-import memory.entity.MemoryRepository
 import plan.entity.PlanRepository
 import prompts.PromptLoader
 import sdlc.control.SdlcDashboardService
@@ -49,7 +48,6 @@ object McpService:
     wsRepo: WorkspaceRepository,
     runService: WorkspaceRunService,
     decisionInbox: DecisionInbox,
-    memoryRepo: MemoryRepository,
     analysisRepo: AnalysisRepository,
     knowledgeGraph: KnowledgeGraphService,
     governancePolicyService: GovernancePolicyService,
@@ -70,7 +68,6 @@ object McpService:
                        wsRepo,
                        runService,
                        decisionInbox,
-                       memoryRepo,
                        analysisRepo,
                        knowledgeGraph,
                        governancePolicyService,
@@ -90,7 +87,7 @@ object McpService:
 
   /** ZLayer for wiring into ApplicationDI. */
   val live: ZLayer[
-    IssueRepository & AgentRepository & WorkspaceRepository & WorkspaceRunService & DecisionInbox & MemoryRepository & AnalysisRepository & KnowledgeGraphService & GovernancePolicyService & SpecificationRepository & PlanRepository & DaemonAgentScheduler & SdlcDashboardService & PromptLoader & ReasonsCanvasRepository & CanvasSimilarityIndex,
+    IssueRepository & AgentRepository & WorkspaceRepository & WorkspaceRunService & DecisionInbox & AnalysisRepository & KnowledgeGraphService & GovernancePolicyService & SpecificationRepository & PlanRepository & DaemonAgentScheduler & SdlcDashboardService & PromptLoader & ReasonsCanvasRepository & CanvasSimilarityIndex,
     Nothing,
     McpService,
   ] =
@@ -101,7 +98,6 @@ object McpService:
         wsRepo         <- ZIO.service[WorkspaceRepository]
         runService     <- ZIO.service[WorkspaceRunService]
         decisionInbox  <- ZIO.service[DecisionInbox]
-        memoryRepo     <- ZIO.service[MemoryRepository]
         analysisRepo   <- ZIO.service[AnalysisRepository]
         knowledge      <- ZIO.service[KnowledgeGraphService]
         governance     <- ZIO.service[GovernancePolicyService]
@@ -119,7 +115,6 @@ object McpService:
                             wsRepo,
                             runService,
                             decisionInbox,
-                            memoryRepo,
                             analysisRepo,
                             knowledge,
                             governance,

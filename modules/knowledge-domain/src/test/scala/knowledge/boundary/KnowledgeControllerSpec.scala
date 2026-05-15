@@ -9,7 +9,6 @@ import zio.test.*
 import analysis.entity.{ AnalysisDoc, AnalysisType }
 import knowledge.control.KnowledgeGraphService
 import knowledge.entity.*
-import memory.entity.{ Scope as MemoryScope, * }
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ AgentId, DecisionLogId }
 import workspace.entity.{ Workspace, WorkspaceRepository }
@@ -30,18 +29,6 @@ object KnowledgeControllerSpec extends ZIOSpecDefault:
     workspaceId = Some("ws-1"),
     createdAt = now,
     updatedAt = now,
-  )
-
-  private val memory = MemoryEntry(
-    id = MemoryId("mem-1"),
-    scope = MemoryScope("knowledge"),
-    sessionId = SessionId("run:1"),
-    text = "Start with issue-linked knowledge extraction.",
-    embedding = Vector.empty,
-    tags = List("workspace:ws-1", "decision-log:decision-log-1"),
-    kind = MemoryKind.ArchitecturalRationale,
-    createdAt = now,
-    lastAccessedAt = now,
   )
 
   private val stubDecisionLogs: DecisionLogRepository = new DecisionLogRepository:
@@ -66,7 +53,6 @@ object KnowledgeControllerSpec extends ZIOSpecDefault:
       ZIO.succeed(
         ArchitecturalContext(
           decisions = List(KnowledgeDecisionMatch(decision, 0.9)),
-          knowledgeEntries = List(memory),
           analysisDocs = List(
             AnalysisDoc(
               id = shared.ids.Ids.AnalysisDocId("analysis-1"),
@@ -79,19 +65,9 @@ object KnowledgeControllerSpec extends ZIOSpecDefault:
               updatedAt = now,
             )
           ),
-          edges =
-            List(KnowledgeEdge("decision-log-1", "mem-1", "semantic_architecturalrationale", 0.8, explicit = false)),
+          edges = Nil,
         )
       )
-
-  private val stubMemoryRepo: MemoryRepository = new MemoryRepository:
-    override def save(entry: MemoryEntry): IO[Throwable, Unit]                     = ZIO.unit
-    override def searchRelevant(scope: MemoryScope, query: String, limit: Int, filter: MemoryFilter)
-      : IO[Throwable, List[ScoredMemory]] = ZIO.succeed(Nil)
-    override def listByScope(scope: MemoryScope, filter: MemoryFilter, page: Int, pageSize: Int)
-      : IO[Throwable, List[MemoryEntry]] = ZIO.succeed(List(memory))
-    override def deleteById(scope: MemoryScope, id: MemoryId): IO[Throwable, Unit] = ZIO.unit
-    override def deleteBySession(sessionId: SessionId): IO[Throwable, Unit]        = ZIO.unit
 
   private val stubWorkspaceRepo: WorkspaceRepository = new WorkspaceRepository:
     override def append(event: workspace.entity.WorkspaceEvent): IO[PersistenceError, Unit]                      = ZIO.unit
@@ -109,7 +85,7 @@ object KnowledgeControllerSpec extends ZIOSpecDefault:
   def spec: Spec[TestEnvironment & Scope, Any] =
     suite("KnowledgeControllerSpec")(
       test("GET /knowledge renders the knowledge page") {
-        val routes = KnowledgeController.make(stubDecisionLogs, stubGraph, stubMemoryRepo, stubWorkspaceRepo).routes
+        val routes = KnowledgeController.make(stubDecisionLogs, stubGraph, stubWorkspaceRepo).routes
         for
           resp <- routes.runZIO(Request.get(URL.decode("/knowledge?q=issue&workspaceId=ws-1").toOption.get))
           body <- resp.body.asString

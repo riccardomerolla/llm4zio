@@ -7,7 +7,6 @@ import zio.test.*
 import analysis.entity.{ AnalysisDoc, AnalysisType }
 import knowledge.boundary.KnowledgeView
 import knowledge.entity.*
-import memory.entity.{ MemoryEntry, MemoryId, MemoryKind, Scope as MemoryScope, SessionId }
 import shared.ids.Ids.{ AgentId, DecisionLogId, IssueId }
 
 object KnowledgeViewSpec extends ZIOSpecDefault:
@@ -39,21 +38,8 @@ object KnowledgeViewSpec extends ZIOSpecDefault:
     updatedAt = now,
   )
 
-  private val memory = MemoryEntry(
-    id = MemoryId("mem-1"),
-    scope = MemoryScope("knowledge"),
-    sessionId = SessionId("run:1"),
-    text = "Keep the graph derived from explicit ids and semantic memory links.",
-    embedding = Vector.empty,
-    tags = List("knowledge", "workspace:ws-1", "decision-log:decision-log-1"),
-    kind = MemoryKind.ArchitecturalRationale,
-    createdAt = now,
-    lastAccessedAt = now,
-  )
-
   private val context = ArchitecturalContext(
     decisions = List(KnowledgeDecisionMatch(decision, 0.92)),
-    knowledgeEntries = List(memory),
     analysisDocs = List(
       AnalysisDoc(
         id = shared.ids.Ids.AnalysisDocId("analysis-1"),
@@ -66,7 +52,7 @@ object KnowledgeViewSpec extends ZIOSpecDefault:
         updatedAt = now,
       )
     ),
-    edges = List(KnowledgeEdge("decision-log-1", "mem-1", "semantic_architecturalrationale", 0.82, explicit = false)),
+    edges = List(KnowledgeEdge("decision-log-1", "decision-log-2", "references_decision", 1.0, explicit = true)),
   )
 
   def spec: Spec[Any, Nothing] =
@@ -75,7 +61,6 @@ object KnowledgeViewSpec extends ZIOSpecDefault:
         val html = KnowledgeView.page(
           List(decision),
           context,
-          List(memory),
           Some("graph"),
           Some("ws-1"),
           List("ws-1" -> "Knowledge Workspace"),
@@ -83,7 +68,6 @@ object KnowledgeViewSpec extends ZIOSpecDefault:
         assertTrue(
           html.contains("Knowledge Base"),
           html.contains("Decision Timeline"),
-          html.contains("Rationale Browser"),
           html.contains("Architectural Context"),
           html.contains("Adopt knowledge graph"),
           html.contains("Architecture docs"),

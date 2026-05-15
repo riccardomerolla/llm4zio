@@ -9,7 +9,6 @@ import _root_.config.entity.{ ConfigRepository, ProviderConfig }
 import agent.entity.AgentRegistry
 import llm4zio.core.*
 import llm4zio.providers.{ GeminiCliExecutor, HttpClient }
-import memory.entity.{ Scope, * }
 import shared.errors.PersistenceError
 import taskrun.entity.{ TaskArtifactRow, TaskReportRow, TaskRepository }
 
@@ -34,7 +33,7 @@ object AgentDispatcher:
 
   val live
     : ZLayer[
-      TaskRepository & AgentRegistry & LlmService & MemoryRepository & ConfigRepository & AgentConfigResolver &
+      TaskRepository & AgentRegistry & LlmService & ConfigRepository & AgentConfigResolver &
         HttpClient & GeminiCliExecutor,
       Nothing,
       AgentDispatcher,
@@ -44,7 +43,6 @@ object AgentDispatcher:
         repository     <- ZIO.service[TaskRepository]
         registry       <- ZIO.service[AgentRegistry]
         llmService     <- ZIO.service[LlmService]
-        memoryRepo     <- ZIO.service[MemoryRepository]
         configRepo     <- ZIO.service[ConfigRepository]
         configResolver <- ZIO.service[AgentConfigResolver]
         httpClient     <- ZIO.service[HttpClient]
@@ -54,7 +52,6 @@ object AgentDispatcher:
         repository = repository,
         registry = registry,
         llmService = llmService,
-        memoryRepository = memoryRepo,
         configRepository = configRepo,
         configResolver = configResolver,
         httpClient = httpClient,
@@ -67,7 +64,6 @@ final case class AgentDispatcherLive(
   repository: TaskRepository,
   registry: AgentRegistry,
   llmService: LlmService,
-  memoryRepository: MemoryRepository,
   configRepository: ConfigRepository,
   configResolver: AgentConfigResolver,
   httpClient: HttpClient,
@@ -184,7 +180,6 @@ final case class AgentDispatcherLive(
                                                  createdAt = completedAt,
                                                )
                                              )
-                           _              <- persistMemoryArtifacts(taskRunId, stepPlan.step, stepPlan.nodeId, response.content).forkDaemon
                          yield StepDispatchResult(
                            agentName = agentInfo.name,
                            content = response.content,
@@ -299,67 +294,3 @@ final case class AgentDispatcherLive(
 
   private def sanitizeForPath(value: String): String =
     value.trim.toLowerCase.replaceAll("[^a-z0-9._-]+", "-")
-
-  private def persistMemoryArtifacts(
-    taskRunId: Long,
-    stepName: String,
-    nodeId: String,
-    responseContent: String,
-  ): UIO[Unit] =
-    (for
-      settings <- configRepository.getSettingsByPrefix("memory.")
-      cfg       = ConversationMemory.fromSettingsMap(settings.map(v => v.key -> v.value).toMap)
-      _        <- ZIO.when(cfg.enabled) {
-                    for
-                      fromArtifacts <- repository
-                                         .getArtifactsByTask(taskRunId)
-                                         .map(_.filter(a => a.stepName == stepName && a.key.startsWith("memory.")))
-                      fromContent    = parseMemoryLines(responseContent)
-                      allEntries     = (
-                                         fromArtifacts.map(a => MemoryArtifact(a.key, a.value)) ++
-                                           fromContent
-                                       ).filter(_.value.trim.nonEmpty).distinct
-                      _             <- ZIO.foreachDiscard(allEntries) { item =>
-                                         saveMemoryEntry(taskRunId, nodeId, item)
-                                       }
-                    yield ()
-                  }
-    yield ()).ignore
-
-  private def saveMemoryEntry(
-    taskRunId: Long,
-    nodeId: String,
-    artifact: MemoryArtifact,
-  ): IO[Throwable, Unit] =
-    for
-      now <- Clock.instant
-      _   <- memoryRepository.save(
-               MemoryEntry(
-                 id = MemoryId.make,
-                 scope = Scope(s"task-run:$taskRunId"),
-                 sessionId = SessionId(nodeId),
-                 text = artifact.value.trim,
-                 embedding = Vector.empty,
-                 tags = List("workflow", s"task:$taskRunId"),
-                 kind = toMemoryKind(artifact.key),
-                 createdAt = now,
-                 lastAccessedAt = now,
-               )
-             )
-    yield ()
-
-  private def parseMemoryLines(content: String): List[MemoryArtifact] =
-    val Pattern = """(?i)^\s*(memory\.[a-z0-9_-]+)\s*[:=]\s*(.+?)\s*$""".r
-    content.linesIterator.toList.flatMap {
-      case Pattern(key, value) => Some(MemoryArtifact(key, value))
-      case _                   => None
-    }
-
-  private def toMemoryKind(key: String): MemoryKind =
-    key.trim.toLowerCase match
-      case k if k.startsWith("memory.preference") => MemoryKind.Preference
-      case k if k.startsWith("memory.context")    => MemoryKind.Context
-      case k if k.startsWith("memory.summary")    => MemoryKind.Summary
-      case _                                      => MemoryKind.Fact
-
-  final private case class MemoryArtifact(key: String, value: String)

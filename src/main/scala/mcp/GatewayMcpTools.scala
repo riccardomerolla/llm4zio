@@ -17,7 +17,6 @@ import issues.entity.{ IssueEvent, IssueRepository }
 import knowledge.control.KnowledgeGraphService
 import llm4zio.tools.{ Tool, ToolExecutionError }
 import mcp.GatewayMcpToolSupport.*
-import memory.entity.{ MemoryFilter, MemoryRepository, Scope }
 import plan.entity.*
 import sdlc.control.SdlcDashboardService
 import shared.ids.Ids.*
@@ -35,7 +34,6 @@ final class GatewayMcpTools(
   wsRepo: WorkspaceRepository,
   runService: WorkspaceRunService,
   decisionInbox: DecisionInbox,
-  memoryRepo: MemoryRepository,
   analysisRepo: AnalysisRepository,
   knowledgeGraph: KnowledgeGraphService,
   governancePolicyService: GovernancePolicyService,
@@ -197,38 +195,6 @@ final class GatewayMcpTools(
         },
   )
 
-  // ── search_conversations ──────────────────────────────────────────────────
-
-  private val searchConversationsTool: Tool = Tool(
-    name = "search_conversations",
-    description = "Semantic search over conversation memory",
-    parameters = Json.Obj(
-      "type"       -> Json.Str("object"),
-      "properties" -> Json.Obj(
-        "query" -> Json.Obj("type" -> Json.Str("string")),
-        "limit" -> Json.Obj("type" -> Json.Str("integer")),
-      ),
-      "required"   -> Json.Arr(Chunk(Json.Str("query"))),
-    ),
-    execute = args =>
-      for
-        query   <- fieldStr(args, "query")
-        limit    = fieldIntOpt(args, "limit").getOrElse(10)
-        results <- memoryRepo
-                     .searchRelevant(Scope("mcp"), query, limit, MemoryFilter())
-                     .mapError(e => ToolExecutionError.ExecutionFailed(e.getMessage))
-      yield Json.Arr(
-        Chunk.fromIterable(
-          results.map(r =>
-            Json.Obj(
-              "text"  -> Json.Str(r.entry.text),
-              "score" -> Json.Num(BigDecimal(r.score.toDouble)),
-            )
-          )
-        )
-      ),
-  )
-
   // ── get_metrics ───────────────────────────────────────────────────────────
 
   private val getMetricsTool: Tool = Tool(
@@ -326,17 +292,6 @@ final class GatewayMcpTools(
                 "id"    -> Json.Str(item.decision.id.value),
                 "title" -> Json.Str(item.decision.title),
                 "score" -> Json.Num(BigDecimal(item.score)),
-              )
-            )
-          )
-        ),
-        "knowledgeEntries" -> Json.Arr(
-          Chunk.fromIterable(
-            context.knowledgeEntries.map(entry =>
-              Json.Obj(
-                "id"   -> Json.Str(entry.id.value),
-                "kind" -> Json.Str(entry.kind.value),
-                "text" -> Json.Str(entry.text),
               )
             )
           )
@@ -1303,7 +1258,6 @@ final class GatewayMcpTools(
     getRunStatusTool,
     listAgentsTool,
     listWorkspacesTool,
-    searchConversationsTool,
     getMetricsTool,
     listDecisionsTool,
     getDecisionTool,

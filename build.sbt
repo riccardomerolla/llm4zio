@@ -233,16 +233,6 @@ lazy val activityDomain = (project in file("modules/activity-domain"))
     ),
   )
 
-lazy val memoryDomain = (project in file("modules/memory-domain"))
-  .dependsOn(sharedIds, sharedStoreCore, sharedWebCore, configDomain, llm4zio)
-  .settings(foundationSettings)
-  .settings(
-    name := "memory-domain",
-    libraryDependencies ++= domainBceDeps ++ Seq(
-      "io.github.riccardomerolla" %% "zio-eclipsestore-gigamap" % zioEclipseStoreVersion,
-    ),
-  )
-
 lazy val governanceDomain = (project in file("modules/governance-domain"))
   .dependsOn(sharedIds, sharedErrors, sharedStoreCore, sharedWebCore, workspaceDomain)
   .settings(foundationSettings)
@@ -335,7 +325,7 @@ lazy val deployDomain = (project in file("modules/deploy-domain"))
 
 lazy val knowledgeDomain = (project in file("modules/knowledge-domain"))
   .dependsOn(sharedIds, sharedErrors, sharedStoreCore, sharedWebCore, analysisDomain,
-    memoryDomain, workspaceDomain, conversationDomain, issuesDomain, llm4zio)
+    workspaceDomain, conversationDomain, issuesDomain, llm4zio)
   .settings(foundationSettings)
   .settings(
     name := "knowledge-domain",
@@ -421,7 +411,7 @@ lazy val gatewayDomain = (project in file("modules/gateway-domain"))
 lazy val orchestrationDomain = (project in file("modules/orchestration-domain"))
   .dependsOn(sharedIds, sharedErrors, sharedStoreCore, gatewayDomain, configDomain, planDomain,
     activityDomain, agentDomain, issuesDomain, taskrunDomain, workspaceDomain, sharedServices,
-    conversationDomain, memoryDomain, llm4zio, boardDomain, projectDomain, governanceDomain,
+    conversationDomain, llm4zio, boardDomain, projectDomain, governanceDomain,
     decisionDomain, knowledgeDomain, analysisDomain)
   .settings(foundationSettings)
   .settings(
@@ -433,7 +423,7 @@ lazy val sharedWeb = (project in file("modules/shared-web"))
   .dependsOn(sharedIds, sharedErrors, sharedWebCore,
     activityDomain, agentDomain, boardDomain, configDomain, conversationDomain,
     daemonDomain, decisionDomain, gatewayDomain,
-    governanceDomain, issuesDomain, knowledgeDomain, memoryDomain,
+    governanceDomain, issuesDomain, knowledgeDomain,
     planDomain, projectDomain, specificationDomain, taskrunDomain, workspaceDomain,
     orchestrationDomain, sdlcDomain, llm4zio)
   .settings(foundationSettings)
@@ -594,7 +584,7 @@ lazy val bankmod = (project in file("modules/bankmod"))
 
 lazy val allModules = Seq(
   llm4zio, sharedJson, sharedIds, sharedErrors, sharedStoreCore, sharedServices, sharedWebCore,
-  activityDomain, memoryDomain, governanceDomain, agentDomain, decisionDomain, specificationDomain,
+  activityDomain, governanceDomain, agentDomain, decisionDomain, specificationDomain,
   canvasDomain, checkpointDomain, planDomain, taskrunDomain, boardDomain, knowledgeDomain, projectDomain, configDomain,
   conversationDomain, daemonDomain, analysisDomain, workspaceDomain, gatewayDomain,
   orchestrationDomain, issuesDomain, sharedWeb,

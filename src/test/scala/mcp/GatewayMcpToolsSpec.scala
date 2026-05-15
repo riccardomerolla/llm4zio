@@ -17,7 +17,6 @@ import issues.entity.{ AgentIssue, IssueEvent, IssueFilter, IssueRepository }
 import knowledge.control.KnowledgeGraphService
 import knowledge.entity.*
 import llm4zio.tools.ToolRegistry
-import memory.entity.MemoryRepository
 import plan.entity.*
 import sdlc.control.SdlcDashboardService
 import sdlc.entity.*
@@ -98,18 +97,6 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
       ZIO.fail(WorkspaceError.NotFound(runId))
     override def cancelRun(runId: String): IO[WorkspaceError, Unit]                                   =
       ZIO.fail(WorkspaceError.NotFound(runId))
-
-  private val stubMemoryRepo: MemoryRepository = new MemoryRepository:
-    import memory.entity.*
-    override def save(entry: MemoryEntry): IO[Throwable, Unit]                             = ZIO.unit
-    override def searchRelevant(scope: Scope, query: String, limit: Int, filter: MemoryFilter)
-      : IO[Throwable, List[ScoredMemory]] =
-      ZIO.succeed(Nil)
-    override def listByScope(scope: Scope, filter: MemoryFilter, page: Int, pageSize: Int)
-      : IO[Throwable, List[MemoryEntry]] =
-      ZIO.succeed(Nil)
-    override def deleteById(scope: Scope, id: memory.entity.MemoryId): IO[Throwable, Unit] = ZIO.unit
-    override def deleteBySession(sessionId: memory.entity.SessionId): IO[Throwable, Unit]  = ZIO.unit
 
   private val stubDecisionInbox: DecisionInbox = new DecisionInbox:
     override def openIssueReviewDecision(issue: AgentIssue): IO[PersistenceError, Decision]              = ZIO.fail(
@@ -203,9 +190,8 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
       ZIO.succeed(
         ArchitecturalContext(
           decisions = List(KnowledgeDecisionMatch(stubDecisionLog, 0.91)),
-          knowledgeEntries = Nil,
           analysisDocs = Nil,
-          edges = List(KnowledgeEdge("decision-log-1", "mem-1", "semantic_decision", 0.8, explicit = false)),
+          edges = Nil,
         )
       )
 
@@ -551,7 +537,6 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
       stubWorkspaceRepo,
       stubRunService,
       stubDecisionInbox,
-      stubMemoryRepo,
       stubAnalysisRepo,
       stubKnowledgeGraph,
       stubGovernanceService,
@@ -652,7 +637,6 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
                             stubWorkspaceRepo,
                             stubRunService,
                             stubDecisionInbox,
-                            stubMemoryRepo,
                             stubAnalysisRepo,
                             stubKnowledgeGraph,
                             stubGovernanceService,
@@ -767,7 +751,6 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
                         stubWorkspaceRepo,
                         stubRunService,
                         stubDecisionInbox,
-                        stubMemoryRepo,
                         stubAnalysisRepo,
                         stubKnowledgeGraph,
                         stubGovernanceService,
@@ -833,7 +816,6 @@ object GatewayMcpToolsSpec extends ZIOSpecDefault:
                         stubWorkspaceRepo,
                         stubRunService,
                         stubDecisionInbox,
-                        stubMemoryRepo,
                         stubAnalysisRepo,
                         stubKnowledgeGraph,
                         stubGovernanceService,
