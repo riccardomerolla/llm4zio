@@ -233,6 +233,12 @@ object Layout:
       NavItem("/projects", "Projects", Icons.workflow, _.startsWith("/projects")),
       NavItem("/knowledge", "Knowledge", Icons.documentText, _.startsWith("/knowledge")),
       NavItem("/agents", "Agents", Icons.cpuChip, _.startsWith("/agents")),
+      NavItem(
+        "/decisions/inbox",
+        "Inbox",
+        Icons.flag,
+        _.startsWith("/decisions"),
+      ),
       NavItem("/sdlc", "SDLC", Icons.activity, _.startsWith("/sdlc")),
       NavItem(
         "/settings",

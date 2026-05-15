@@ -6,7 +6,7 @@ import zio.json.*
 
 import _root_.config.entity.{ AgentChannelBinding, AgentInfo, AgentType }
 import agent.entity.api.{ AgentActiveRun, AgentMetricsHistoryPoint, AgentMetricsSummary, AgentRunHistoryItem }
-import agent.entity.{ Agent, TrustLevel }
+import agent.entity.{ Agent, EmployeeRole, TrustLevel }
 import scalatags.Text.all.*
 import shared.web.*
 
@@ -107,6 +107,8 @@ object AgentsView:
         div(cls := "flex items-center gap-2")(
           statusBadge(card.registryAgent),
           span(cls := "font-medium text-white")(agent.displayName),
+          // Phase 2 (R2): show typed role for employees on the default roster
+          card.registryAgent.map(_.role).filter(_ != EmployeeRole.Custom).map(roleBadge).getOrElse(frag()),
           if card.hasConnectorOverride then
             span(
               cls := "inline-flex items-center rounded-md bg-indigo-500/10 px-1.5 py-0.5 text-[10px] font-medium text-indigo-300 ring-1 ring-indigo-400/30"
@@ -873,6 +875,26 @@ object AgentsView:
     val variants = Vector("error", "amber", "success", "info", "indigo", "purple")
     val variant  = variants(math.abs(tag.toLowerCase.hashCode) % variants.size)
     Components.badge(tag, variant)
+
+  /** Phase 2 (R2): badge identifying a typed employee role on the agents list. */
+  private def roleBadge(role: EmployeeRole): Frag =
+    val tone = role match
+      case EmployeeRole.PM          => "bg-purple-500/10 ring-purple-400/30 text-purple-300"
+      case EmployeeRole.FrontendEng => "bg-pink-500/10 ring-pink-400/30 text-pink-300"
+      case EmployeeRole.BackendEng  => "bg-blue-500/10 ring-blue-400/30 text-blue-300"
+      case EmployeeRole.QA          => "bg-emerald-500/10 ring-emerald-400/30 text-emerald-300"
+      case EmployeeRole.Reviewer    => "bg-amber-500/10 ring-amber-400/30 text-amber-300"
+      case EmployeeRole.Custom      => "bg-gray-500/10 ring-gray-400/30 text-gray-300"
+    val label = role match
+      case EmployeeRole.PM          => "PM"
+      case EmployeeRole.FrontendEng => "Frontend"
+      case EmployeeRole.BackendEng  => "Backend"
+      case EmployeeRole.QA          => "QA"
+      case EmployeeRole.Reviewer    => "Reviewer"
+      case EmployeeRole.Custom      => "Custom"
+    span(
+      cls := s"inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-medium ring-1 $tone"
+    )(label)
 
   private def formatSeconds(seconds: Long): String =
     if seconds <= 0 then "0s"
