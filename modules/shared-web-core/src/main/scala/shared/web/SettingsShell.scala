@@ -13,7 +13,6 @@ object SettingsShell:
     ("governance", "Governance"),
     ("daemons", "Daemons"),
     ("system", "System"),
-    ("demo", "Demo"),
   )
 
   def page(activeTab: String, pageTitle: String)(bodyContent: Frag*): String =

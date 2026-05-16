@@ -81,10 +81,6 @@ final case class SettingsControllerLive(
     "memory.summarizationThreshold",
     "memory.retentionDays",
     "prompts.reloading",
-    "demo.enabled",
-    "demo.issueCount",
-    "demo.agentDelaySeconds",
-    "demo.previousProvider",
   )
 
   private val apiConnectorKeys: List[String] = List(
