@@ -100,6 +100,10 @@ object OnboardingControllerSpec extends ZIOSpecDefault:
         // All five roster employees on the page
         body.contains("Pat") && body.contains("Alex") && body.contains("Ben") &&
           body.contains("Dana") && body.contains("Rex"),
+        // Body must be raw HTML, not entity-escaped (regression guard: the
+        // view used to call .render on a String, double-escaping the page).
+        body.startsWith("<!DOCTYPE html>"),
+        !body.contains("&lt;!DOCTYPE"),
       )
     },
     test("POST /onboarding persists config + creates project + creates workspace + redirects") {

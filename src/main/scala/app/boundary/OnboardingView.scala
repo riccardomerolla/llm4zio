@@ -68,7 +68,7 @@ object OnboardingView:
           ),
         ),
       )
-    ).render
+    )
 
   private def stepLlm(d: Defaults): Frag =
     stepCard(
