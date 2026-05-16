@@ -6,6 +6,7 @@ import zio.*
 
 import _root_.config.entity.ConfigRepository
 import activity.entity.ActivityRepository
+import agent.entity.AgentRepository
 import daemon.control.DaemonAgentScheduler
 import daemon.entity.{ DaemonHealth, DaemonLifecycle }
 import decision.control.DecisionInbox
@@ -25,7 +26,7 @@ object SdlcDashboardService:
   val live
     : ZLayer[
       SpecificationRepository & PlanRepository & IssueRepository & DecisionInbox & ActivityRepository & ConfigRepository &
-        IssueWorkReportProjection & GovernancePolicyRepository & DaemonAgentScheduler,
+        IssueWorkReportProjection & GovernancePolicyRepository & DaemonAgentScheduler & AgentRepository,
       Nothing,
       SdlcDashboardService,
     ] =
@@ -41,6 +42,7 @@ final case class SdlcDashboardServiceLive(
   workReportProjection: IssueWorkReportProjection,
   governancePolicyRepository: GovernancePolicyRepository,
   daemonAgentScheduler: DaemonAgentScheduler,
+  agentRepository: AgentRepository,
 ) extends SdlcDashboardService:
 
   private val trendWindow: Duration = 7.days
@@ -60,12 +62,13 @@ final case class SdlcDashboardServiceLive(
       workReports         <- workReportProjection.getAll
       policies            <- governancePolicyRepository.list
       daemonStatuses      <- daemonAgentScheduler.list
-      tokenPrice          <- loadDefaultTokenPrice
+      defaultPrice        <- loadDefaultTokenPrice
+      agentPrices         <- loadAgentPriceMap(defaultPrice)
       lifecycle            = buildLifecycle(specifications, plans, issues)
       churn                = buildChurnAlerts(issues, histories, thresholds)
       stoppages            = buildStoppages(now, issues, histories, thresholds)
       escalations          = buildEscalations(now, issues, histories, decisions, thresholds)
-      agentPerf            = buildAgentPerformance(issues, histories, workReports, tokenPrice)
+      agentPerf            = buildAgentPerformance(issues, histories, workReports, agentPrices, defaultPrice)
       governance           = buildGovernanceOverview(plans, policies)
       daemonHealth         = buildDaemonHealthOverview(daemonStatuses)
       specificationTrend   = buildTrend(
@@ -153,6 +156,22 @@ final case class SdlcDashboardServiceLive(
       provider <- loadString("ai.provider", "")
       model    <- loadString("ai.model", "")
     yield Pricing.lookup(provider, model)
+
+  /** Phase 6 follow-on: per-agent price map. Each registered Agent carries
+    * its own `defaultModel`. When set, we look up that model against the
+    * global default provider (the model name uniquely identifies a tier
+    * across providers for now). Falls back to the deployment-wide default
+    * for agents without a defaultModel.
+    *
+    * Result: Pat-on-Haiku gets Haiku rates, Rex-on-Opus gets Opus rates.
+    */
+  private def loadAgentPriceMap(defaultPrice: TokenPrice): IO[PersistenceError, Map[String, TokenPrice]] =
+    for
+      provider <- loadString("ai.provider", "")
+      agents   <- agentRepository.list().mapError(identity)
+    yield agents.flatMap { agent =>
+      agent.defaultModel.map(model => agent.name.trim.toLowerCase -> Pricing.lookup(provider, model))
+    }.toMap.withDefaultValue(defaultPrice)
 
   private def loadString(key: String, default: String): IO[PersistenceError, String] =
     configRepository
@@ -335,10 +354,11 @@ final case class SdlcDashboardServiceLive(
     issues: List[AgentIssue],
     histories: Map[shared.ids.Ids.IssueId, List[IssueEvent]],
     workReports: Map[shared.ids.Ids.IssueId, IssueWorkReport],
-    tokenPrice: TokenPrice,
+    agentPrices: Map[String, TokenPrice],
+    defaultPrice: TokenPrice,
   ): List[AgentPerformance] =
     val rows = issues.flatMap { issue =>
-      agentSummary(issue, histories.getOrElse(issue.id, Nil), workReports.get(issue.id), tokenPrice)
+      agentSummary(issue, histories.getOrElse(issue.id, Nil), workReports.get(issue.id), agentPrices, defaultPrice)
     }
     rows
       .groupBy(_.agentName)
@@ -424,7 +444,8 @@ final case class SdlcDashboardServiceLive(
     issue: AgentIssue,
     events: List[IssueEvent],
     workReport: Option[IssueWorkReport],
-    tokenPrice: TokenPrice,
+    agentPrices: Map[String, TokenPrice],
+    defaultPrice: TokenPrice,
   ): Option[AgentIssueSummary] =
     val ordered     = events.sortBy(_.occurredAt)
     val latestAgent = ordered.foldLeft(Option.empty[String]) {
@@ -454,8 +475,12 @@ final case class SdlcDashboardServiceLive(
       case _: IssueEvent.Assigned | _: IssueEvent.Started | _: IssueEvent.Completed | _: IssueEvent.Failed => true
       case _                                                                                               => false
     }
-    // Phase 6 (R1): real per-provider pricing in place of the $1µ flat mock.
-    val costUsd     = workReport.flatMap(_.tokenUsage).map(Pricing.costUsd(_, tokenPrice)).getOrElse(0.0d)
+    // Phase 6 (R1) + per-agent follow-on: price each issue at its dispatched
+    // agent's tier when known (Pat-on-Haiku → Haiku rates), else fall back to
+    // the deployment-wide default.
+    val priceForIssue =
+      latestAgent.flatMap(name => agentPrices.get(name.trim.toLowerCase)).getOrElse(defaultPrice)
+    val costUsd       = workReport.flatMap(_.tokenUsage).map(Pricing.costUsd(_, priceForIssue)).getOrElse(0.0d)
     latestAgent.map { agentName =>
       AgentIssueSummary(
         agentName = agentName,

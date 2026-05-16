@@ -317,6 +317,7 @@ object SdlcDashboardServiceSpec extends ZIOSpecDefault:
           workReportProjection = workReportProjection,
           governancePolicyRepository = stubGovernancePolicyRepository,
           daemonAgentScheduler = stubDaemonAgentScheduler,
+          agentRepository = stubAgentRepository,
         )
         for
           _         <- TestClock.adjust(now.toEpochMilli.millis)
@@ -515,3 +516,11 @@ object SdlcDashboardServiceSpec extends ZIOSpecDefault:
     override def setEnabled(id: DaemonAgentSpecId, enabled: Boolean): IO[PersistenceError, Unit]        = ZIO.unit
     override def trigger(id: DaemonAgentSpecId): IO[PersistenceError, Unit]                             = ZIO.unit
     override def triggerGovernance(projectId: ProjectId, triggerId: String): IO[PersistenceError, Unit] = ZIO.unit
+
+  /** Empty agent repo — cost falls back to the global default price. */
+  private val stubAgentRepository: agent.entity.AgentRepository = new agent.entity.AgentRepository:
+    override def append(event: agent.entity.AgentEvent): IO[PersistenceError, Unit]      = ZIO.unit
+    override def get(id: AgentId): IO[PersistenceError, agent.entity.Agent]              =
+      ZIO.fail(PersistenceError.NotFound("agent", id.value))
+    override def list(includeDeleted: Boolean): IO[PersistenceError, List[agent.entity.Agent]] = ZIO.succeed(Nil)
+    override def findByName(name: String): IO[PersistenceError, Option[agent.entity.Agent]]    = ZIO.succeed(None)

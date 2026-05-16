@@ -464,7 +464,7 @@ lazy val llm4zio = (project in file("llm4zio"))
   )
 
 lazy val sdlcDomain = (project in file("modules/sdlc-domain"))
-  .dependsOn(sharedIds, sharedErrors, sharedWebCore, activityDomain, configDomain, daemonDomain,
+  .dependsOn(sharedIds, sharedErrors, sharedWebCore, activityDomain, agentDomain, configDomain, daemonDomain,
     decisionDomain, governanceDomain, issuesDomain, planDomain, specificationDomain)
   .settings(foundationSettings)
   .settings(

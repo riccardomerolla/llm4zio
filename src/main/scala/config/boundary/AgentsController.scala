@@ -232,6 +232,19 @@ final case class AgentsControllerLive(
     Method.GET / "agents" / "registry"                                   -> handler { (_: Request) =>
       ZIO.succeed(redirectPermanent("/agents"))
     },
+    // Phase 4 R12: /employees is the new canonical name aligned with the
+    // typed-employee metaphor (Pat / Alex / Ben / Dana / Rex). For now it's
+    // an alias for /agents; the full rename will fold connector/binding UIs
+    // into per-employee detail pages in a follow-up.
+    Method.GET / "employees" / "new"                                     -> handler { (_: Request) =>
+      ZIO.succeed(redirectPermanent("/agents/new"))
+    },
+    Method.GET / "employees" / string("id")                              -> handler { (id: String, _: Request) =>
+      ZIO.succeed(redirectPermanent(s"/agents/$id"))
+    },
+    Method.GET / "employees"                                             -> handler { (_: Request) =>
+      ZIO.succeed(redirectPermanent("/agents"))
+    },
     Method.GET / "agents"                                                -> handler { (req: Request) =>
       ErrorHandlingMiddleware.fromPersistence {
         for

@@ -232,7 +232,7 @@ object Layout:
       ),
       NavItem("/projects", "Projects", Icons.workflow, _.startsWith("/projects")),
       NavItem("/knowledge", "Knowledge", Icons.documentText, _.startsWith("/knowledge")),
-      NavItem("/agents", "Agents", Icons.cpuChip, _.startsWith("/agents")),
+      NavItem("/employees", "Employees", Icons.cpuChip, p => p.startsWith("/agents") || p.startsWith("/employees")),
       NavItem(
         "/decisions/inbox",
         "Inbox",
