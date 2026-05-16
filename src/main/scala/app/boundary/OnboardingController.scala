@@ -7,6 +7,7 @@ import zio.*
 import zio.http.*
 
 import _root_.config.entity.ConfigRepository
+import project.control.ProjectStorageService
 import project.entity.{ ProjectEvent, ProjectRepository }
 import shared.errors.PersistenceError
 import shared.ids.Ids.ProjectId
@@ -32,7 +33,7 @@ object OnboardingController:
     ZIO.serviceWith[OnboardingController](_.routes)
 
   val live: ZLayer[
-    ConfigRepository & ProjectRepository & WorkspaceRepository & TelegramTokenTester,
+    ConfigRepository & ProjectRepository & WorkspaceRepository & ProjectStorageService & TelegramTokenTester,
     Nothing,
     OnboardingController,
   ] =
@@ -42,6 +43,7 @@ final case class OnboardingControllerLive(
   configRepository: ConfigRepository,
   projectRepository: ProjectRepository,
   workspaceRepository: WorkspaceRepository,
+  projectStorage: ProjectStorageService,
   tokenTester: TelegramTokenTester,
 ) extends OnboardingController:
 
@@ -127,7 +129,20 @@ final case class OnboardingControllerLive(
                          occurredAt = now,
                        )
                      )
-    yield Response.redirect(URL.decode("/").toOption.get, isPermanent = false)
+      // Materialise the project's board-git directory so the dashboard's
+      // first read of issueRepository.list (and the AutoDispatcher's git
+      // rev-parse) don't fail with NotAGitRepository on the freshly-created
+      // project. Errors here are non-fatal: we log and keep going so the
+      // user still reaches the dashboard.
+      _           <- projectStorage
+                       .initProjectStorage(projectId)
+                       .catchAll(err =>
+                         ZIO.logWarning(s"onboarding: project storage init failed for $projectId: $err")
+                       )
+    // 303 See Other so the browser converts the form POST into a GET on /;
+    // a 307 (zio-http's Response.redirect default) makes the browser re-POST
+    // to /, which has no POST handler and returns 404.
+    yield Response(status = Status.SeeOther, headers = Headers(Header.Custom("Location", "/")))
 
   private def saveConfig(form: Map[String, String], now: java.time.Instant): IO[PersistenceError, Unit] =
     val pairs = List(

@@ -7,6 +7,7 @@ import zio.http.*
 import zio.test.*
 
 import _root_.config.entity.{ ConfigRepository, CustomAgentRow, SettingRow, WorkflowRow }
+import project.control.ProjectStorageService
 import project.entity.{ Project, ProjectEvent, ProjectRepository }
 import shared.errors.PersistenceError
 import shared.ids.Ids.ProjectId
@@ -67,6 +68,16 @@ object OnboardingControllerSpec extends ZIOSpecDefault:
     override def listRunsByIssueRef(issueRef: String): IO[PersistenceError, List[WorkspaceRun]]            = ZIO.succeed(Nil)
     override def getRun(id: String): IO[PersistenceError, Option[WorkspaceRun]]                            = ZIO.succeed(None)
 
+  private object StubProjectStorage extends ProjectStorageService:
+    override def initProjectStorage(projectId: ProjectId): IO[PersistenceError, java.nio.file.Path] =
+      ZIO.succeed(java.nio.file.Paths.get("/tmp/onboarding-test"))
+    override def projectRoot(projectId: ProjectId): UIO[java.nio.file.Path]                          =
+      ZIO.succeed(java.nio.file.Paths.get("/tmp/onboarding-test"))
+    override def boardPath(projectId: ProjectId): UIO[java.nio.file.Path]                            =
+      ZIO.succeed(java.nio.file.Paths.get("/tmp/onboarding-test/.board"))
+    override def workspaceAnalysisPath(projectId: ProjectId, workspaceId: String): UIO[java.nio.file.Path] =
+      ZIO.succeed(java.nio.file.Paths.get("/tmp/onboarding-test/workspaces").resolve(workspaceId))
+
   private val stubTester: TelegramTokenTester = (_: String) =>
     ZIO.succeed(TelegramTokenTester.Result(ok = false, "stub", None))
 
@@ -79,6 +90,7 @@ object OnboardingControllerSpec extends ZIOSpecDefault:
                         StubConfigRepo(configRef),
                         StubProjectRepo(projectRef),
                         StubWorkspaceRepo(workspaceRef),
+                        StubProjectStorage,
                         stubTester,
                       )
     yield (controller, configRef, projectRef, workspaceRef)
@@ -119,7 +131,10 @@ object OnboardingControllerSpec extends ZIOSpecDefault:
         projectEvents               <- proj.get
         workspaceEvents             <- ws.get
       yield assertTrue(
-        response.status.isRedirection,
+        // 303 See Other so the browser converts POST→GET on /; 307 would
+        // re-POST to / where no POST handler exists, producing a 404.
+        response.status == Status.SeeOther,
+        response.headers.get("Location").contains("/"),
         cfgMap.get("ai.provider").contains("Anthropic"),
         cfgMap.get("ai.model").contains("claude-sonnet-4-6"),
         cfgMap.get("ai.apiKey").contains("sk-test-123"),
@@ -179,6 +194,7 @@ object OnboardingControllerSpec extends ZIOSpecDefault:
                           StubConfigRepo(configRef),
                           StubProjectRepo(projectRef),
                           StubWorkspaceRepo(workspaceRef),
+                          StubProjectStorage,
                           tester,
                         )
         request       = Request.post(
