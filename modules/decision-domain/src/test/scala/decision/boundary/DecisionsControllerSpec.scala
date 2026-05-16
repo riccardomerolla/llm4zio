@@ -119,6 +119,11 @@ object DecisionsControllerSpec extends ZIOSpecDefault:
         body.contains("Approve"),
         body.contains("Request changes"),
         body.contains("/decisions/decision-1/resolve"),
+        // Body must be raw HTML, not entity-escaped (regression guard: the
+        // view used to call .render on Layout.page's String result, which
+        // double-escaped the page so browsers showed literal &lt;!DOCTYPE…).
+        body.startsWith("<!DOCTYPE html>"),
+        !body.contains("&lt;!DOCTYPE"),
       )
     },
     test("POST /decisions/{id}/resolve calls inbox.resolve with the option's resolution") {

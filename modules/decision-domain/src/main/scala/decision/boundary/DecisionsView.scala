@@ -35,7 +35,7 @@ object DecisionsView:
         else
           div(cls := "space-y-4")(decisions.map(inboxCard)),
       )
-    ).render
+    )
 
   private def inboxCard(decision: Decision): Frag =
     val borderTone =
