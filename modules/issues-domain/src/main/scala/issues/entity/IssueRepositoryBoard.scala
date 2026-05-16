@@ -478,10 +478,27 @@ final case class IssueRepositoryBoard(
                      .mapError(mapBoardError)
             yield ()
         }
+      case titleEdited: IssueEvent.TitleEdited                 =>
+        withExistingIssue(titleEdited.issueId) {
+          case (boardPath, issue) =>
+            boardRepository
+              .updateIssue(
+                boardPath,
+                issue.frontmatter.id,
+                _.copy(title = titleEdited.title.trim),
+              )
+              .mapError(mapBoardError)
+              .unit
+        }
       case _: IssueEvent.WorkspaceUnlinked | _: IssueEvent.PromptTemplateUpdated |
            _: IssueEvent.AnalysisAttached | _: IssueEvent.Approved | _: IssueEvent.MergeAttempted |
            _: IssueEvent.CiVerificationResult | _: IssueEvent.ExternalRefLinked | _: IssueEvent.ExternalRefSynced |
-           _: IssueEvent.LaneSet =>
+           _: IssueEvent.LaneSet | _: IssueEvent.DescriptionEdited =>
+        // DescriptionEdited is a projection-only event: it updates the
+        // in-memory AgentIssue (via AgentIssue.fromEvents) but doesn't
+        // rewrite the markdown body. BoardRepository.updateIssue only
+        // accepts a frontmatter transform; a body-rewrite API is a
+        // separate piece of work.
         ZIO.unit
 
   private def ensureCreatedIssue(created: IssueEvent.Created): IO[PersistenceError, Unit] =

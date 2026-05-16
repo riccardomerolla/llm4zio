@@ -364,3 +364,13 @@ object AgentIssue:
         current
           .toRight(s"Issue ${laneSet.issueId.value} not initialized before LaneSet event")
           .map(issue => Some(issue.copy(lane = laneSet.lane)))
+
+      case titleEdited: IssueEvent.TitleEdited =>
+        current
+          .toRight(s"Issue ${titleEdited.issueId.value} not initialized before TitleEdited event")
+          .map(issue => Some(issue.copy(title = titleEdited.title)))
+
+      case descriptionEdited: IssueEvent.DescriptionEdited =>
+        current
+          .toRight(s"Issue ${descriptionEdited.issueId.value} not initialized before DescriptionEdited event")
+          .map(issue => Some(issue.copy(description = descriptionEdited.description)))

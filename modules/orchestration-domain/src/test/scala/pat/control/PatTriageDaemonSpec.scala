@@ -375,6 +375,77 @@ object PatTriageDaemonSpec extends ZIOSpecDefault:
         moved <- fx.daemon.triageOnce
       yield assertTrue(moved == PatTriageDaemon.PerTickLimit)
     },
+    test("title and description suggestions append TitleEdited + DescriptionEdited events") {
+      for
+        fx     <- mkFixture(
+                    backlog = List(backlogIssue("i-tt", title = "hmm", description = "vague")),
+                    outcome = Right(
+                      PatTriageOutcome.LaneAndNote(
+                        TicketLane.Backend,
+                        note = Some("clarified"),
+                        titleSuggestion = Some("Refactor the auth middleware to drop session tokens"),
+                        descriptionSuggestion = Some("Compliance requires we drop tokens from cookies before the audit."),
+                      )
+                    ),
+                  )
+        _      <- fx.daemon.triageOnce
+        state  <- fx.issues.state
+        events  = state(IssueId("i-tt"))._2
+      yield assertTrue(
+        events.exists {
+          case e: IssueEvent.TitleEdited       => e.title.contains("Refactor the auth middleware") && e.editedBy == "pat"
+          case _                               => false
+        },
+        events.exists {
+          case e: IssueEvent.DescriptionEdited => e.description.contains("Compliance requires") && e.editedBy == "pat"
+          case _                               => false
+        },
+        events.exists(_.isInstanceOf[IssueEvent.LaneSet]),
+        events.exists(_.isInstanceOf[IssueEvent.MovedToTodo]),
+      )
+    },
+    test("blank or unchanged title/description suggestions do not emit edit events") {
+      for
+        fx     <- mkFixture(
+                    backlog = List(backlogIssue("i-skip", title = "Add login bug fix", description = "details")),
+                    outcome = Right(
+                      PatTriageOutcome.LaneAndNote(
+                        TicketLane.Custom,
+                        titleSuggestion = Some("  Add login bug fix  "), // same after trim
+                        descriptionSuggestion = Some("   "),              // blank
+                      )
+                    ),
+                  )
+        _      <- fx.daemon.triageOnce
+        state  <- fx.issues.state
+        events  = state(IssueId("i-skip"))._2
+      yield assertTrue(
+        !events.exists(_.isInstanceOf[IssueEvent.TitleEdited]),
+        !events.exists(_.isInstanceOf[IssueEvent.DescriptionEdited]),
+        events.exists(_.isInstanceOf[IssueEvent.LaneSet]),
+      )
+    },
+    test("re-triage: an issue moved BACK to Backlog after a prior LaneSet gets re-triaged") {
+      for
+        fx     <- mkFixture(
+                    backlog = List(backlogIssue("i-re")),
+                    outcome = Right(PatTriageOutcome.LaneAndNote(TicketLane.Testing, Some("flaky"))),
+                  )
+        // Seed prior triage history: LaneSet, then a MovedToBacklog event
+        // simulating the issue being kicked back to Backlog from a later
+        // column (e.g. Rework, manual move).
+        _      <- fx.issues.append(IssueEvent.LaneSet(IssueId("i-re"), TicketLane.Frontend, "pat", now))
+        _      <- fx.issues.append(IssueEvent.MovedToBacklog(IssueId("i-re"), now, now))
+        moved  <- fx.daemon.triageOnce
+        state  <- fx.issues.state
+        events  = state(IssueId("i-re"))._2
+        laneSets = events.collect { case e: IssueEvent.LaneSet => e }
+      yield assertTrue(
+        moved == 1,
+        laneSets.size == 2,                          // original + re-triage
+        laneSets.last.lane == TicketLane.Testing,    // re-triage decision wins
+      )
+    },
     test("connector resolved per agent name (pat) — verifies the daemon doesn't fall back to global") {
       for
         called  <- Ref.make(List.empty[Option[String]])

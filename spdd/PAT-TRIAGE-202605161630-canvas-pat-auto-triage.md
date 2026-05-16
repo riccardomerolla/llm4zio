@@ -459,3 +459,55 @@ Two — I'll default to the conservative answer unless you disagree:
   minutes of first issue.
 - **Per-issue timeout (60 s).** CLI runs can take longer for big repos.
   60 s for v1; we can ratchet up after we see real durations.
+
+---
+
+## v2 extension (landed in the same PR family)
+
+After v1 shipped, three follow-ups were folded in:
+
+### Title / description rewriting
+
+Pat can optionally include `titleSuggestion` and `descriptionSuggestion`
+in `LaneAndNote`. The daemon appends new `IssueEvent.TitleEdited` /
+`IssueEvent.DescriptionEdited` events when the suggestion is non-blank
+and differs from the existing value (trim-and-compare). `TitleEdited`
+also writes through to the board markdown frontmatter via the existing
+`BoardRepository.updateIssue`; `DescriptionEdited` is projection-only
+(in-memory `AgentIssue` updates, but the markdown body stays put — a
+body-rewrite API is a separate piece of work).
+
+The prompt explicitly tells Pat to **only** suggest a rewrite when the
+original is genuinely unclear, with size caps (80 chars / 500 chars).
+
+### Re-triage after MovedToBacklog
+
+`needsTriage` was rewritten to allow re-triage:
+
+```
+1. Never triaged (no LaneSet)       → candidate
+2. Triaged, then back to Backlog
+   (Created or MovedToBacklog AFTER
+   the most recent LaneSet)         → candidate (re-triage)
+3. Triaged, still in Backlog        → skip (idempotent)
+```
+
+This lets a Rework or manual move-back-to-Backlog re-engage Pat. The
+backoff tag (`pat:awaiting-supervisor`) still wins — those issues stay
+parked until the supervisor resolves the open Decision.
+
+### Settings UI
+
+`gatewayTab` gets a new "Pat (PM) — auto-triage" section with the
+`pat.triage.enabled` toggle and `pat.triage.intervalSeconds` field.
+`SettingsValidator.allowedPrefixes` accepts `pat.`;
+`pat.triage.enabled` is normalised as a checkbox;
+`pat.triage.intervalSeconds` is validated as a positive integer.
+
+### Still NOT done (separate canvases if you want them)
+
+- **Body-rewrite API** on `BoardRepository` so `DescriptionEdited`
+  propagates to the markdown body, not just the in-memory projection.
+- **Re-triage cooldown** — currently re-triage fires the next tick
+  after `MovedToBacklog`; no debounce. If a human is shuttling an issue
+  back and forth manually, Pat might re-triage repeatedly.

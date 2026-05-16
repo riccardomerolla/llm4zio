@@ -90,7 +90,7 @@ object PatTriageDaemon:
           "required"             -> Json.Arr(Json.Str("lane")),
           "additionalProperties" -> Json.Bool(false),
           "properties"           -> Json.Obj(
-            "lane" -> Json.Obj(
+            "lane"                  -> Json.Obj(
               "type" -> Json.Str("string"),
               "enum" -> Json.Arr(
                 Json.Str("Frontend"),
@@ -101,7 +101,9 @@ object PatTriageDaemon:
                 Json.Str("Custom"),
               ),
             ),
-            "note" -> Json.Obj("type" -> Json.Str("string")),
+            "note"                  -> Json.Obj("type" -> Json.Str("string")),
+            "titleSuggestion"       -> Json.Obj("type" -> Json.Str("string")),
+            "descriptionSuggestion" -> Json.Obj("type" -> Json.Str("string")),
           ),
         ),
         Json.Obj(
@@ -119,16 +121,29 @@ object PatTriageDaemon:
       ),
     )
 
-  /** Filter Backlog issues that haven't been triaged yet. Used in tests
-    * directly; the live daemon calls into it via `pickCandidates`.
+  /** Filter Backlog issues that haven't been triaged for this stint in
+    * the Backlog column. Re-triage support: an issue that was triaged,
+    * worked on, then sent back to Backlog (via `MovedToBacklog`) becomes
+    * a candidate again — its old `LaneSet` is "before" the most recent
+    * backlog entry and is therefore stale.
     */
   private[control] def needsTriage(
     issue: AgentIssue,
     history: List[IssueEvent],
   ): Boolean =
     issue.state.isInstanceOf[IssueState.Backlog] &&
-      !history.exists(_.isInstanceOf[IssueEvent.LaneSet]) &&
-      !issue.tags.contains(BackoffTag)
+      !issue.tags.contains(BackoffTag) && {
+        val lastLaneSet = history.lastIndexWhere(_.isInstanceOf[IssueEvent.LaneSet])
+        if lastLaneSet < 0 then true // never triaged → always a candidate
+        else
+          // Re-triage if a fresh backlog entry (`Created` or
+          // `MovedToBacklog`) followed the most recent `LaneSet`.
+          val lastBacklogEntry = history.lastIndexWhere(event =>
+            event.isInstanceOf[IssueEvent.Created] ||
+              event.isInstanceOf[IssueEvent.MovedToBacklog]
+          )
+          lastLaneSet < lastBacklogEntry
+      }
 
 final case class PatTriageDaemonLive(
   issueRepository: IssueRepository,
@@ -268,25 +283,50 @@ final case class PatTriageDaemonLive(
     outcome: PatTriageOutcome,
   ): IO[PersistenceError, Boolean] =
     outcome match
-      case PatTriageOutcome.LaneAndNote(lane, note) =>
+      case PatTriageOutcome.LaneAndNote(lane, note, titleSuggestion, descriptionSuggestion) =>
         for
-          now <- Clock.instant
-          _   <- issueRepository.append(IssueEvent.LaneSet(issue.id, lane, "pat", now))
-          _   <- note.map(_.trim).filter(_.nonEmpty) match
-                   case None => ZIO.unit
-                   case Some(value) =>
-                     issueRepository.append(
-                       IssueEvent.TagsUpdated(
-                         issue.id,
-                         (issue.tags :+ s"triage:$value").distinct,
-                         now,
-                       )
-                     )
-          _   <- issueRepository.append(IssueEvent.MovedToTodo(issue.id, movedAt = now, occurredAt = now))
+          now            <- Clock.instant
+          // Optional refinements first so the lane/move events see the
+          // updated title/description if downstream readers care about
+          // event ordering.
+          _              <- appendIfNewTitle(issue, titleSuggestion, now)
+          _              <- appendIfNewDescription(issue, descriptionSuggestion, now)
+          _              <- issueRepository.append(IssueEvent.LaneSet(issue.id, lane, "pat", now))
+          _              <- note.map(_.trim).filter(_.nonEmpty) match
+                              case None        => ZIO.unit
+                              case Some(value) =>
+                                issueRepository.append(
+                                  IssueEvent.TagsUpdated(
+                                    issue.id,
+                                    (issue.tags :+ s"triage:$value").distinct,
+                                    now,
+                                  )
+                                )
+          _              <- issueRepository.append(IssueEvent.MovedToTodo(issue.id, movedAt = now, occurredAt = now))
         yield true
 
       case PatTriageOutcome.Clarify(question, options) =>
         openClarifyDecision(issue, question, options).as(true)
+
+  private def appendIfNewTitle(
+    issue: AgentIssue,
+    suggestion: Option[String],
+    now: Instant,
+  ): IO[PersistenceError, Unit] =
+    suggestion.map(_.trim).filter(_.nonEmpty).filter(_ != issue.title.trim) match
+      case None        => ZIO.unit
+      case Some(value) =>
+        issueRepository.append(IssueEvent.TitleEdited(issue.id, value, "pat", now))
+
+  private def appendIfNewDescription(
+    issue: AgentIssue,
+    suggestion: Option[String],
+    now: Instant,
+  ): IO[PersistenceError, Unit] =
+    suggestion.map(_.trim).filter(_.nonEmpty).filter(_ != Option(issue.description).map(_.trim).getOrElse("")) match
+      case None        => ZIO.unit
+      case Some(value) =>
+        issueRepository.append(IssueEvent.DescriptionEdited(issue.id, value, "pat", now))
 
   // ── failure handling ────────────────────────────────────────────────
 

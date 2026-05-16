@@ -20,9 +20,16 @@ import shared.errors.PersistenceError
   */
 sealed trait PatTriageOutcome derives JsonCodec
 object PatTriageOutcome:
+  /** Pat made a triage call. Optional `titleSuggestion` and
+    * `descriptionSuggestion` are applied if Pat thinks the original
+    * needs sharpening. Empty / blank suggestions are ignored at apply
+    * time (the daemon trims and filters).
+    */
   final case class LaneAndNote(
     lane: TicketLane,
     note: Option[String] = None,
+    titleSuggestion: Option[String] = None,
+    descriptionSuggestion: Option[String] = None,
   ) extends PatTriageOutcome
 
   final case class Clarify(

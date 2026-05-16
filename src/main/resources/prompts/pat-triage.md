@@ -23,12 +23,21 @@ Your output is a single JSON object — nothing else, no preamble, no fences.
 ```json
 {
   "lane": "Frontend" | "Backend" | "Testing" | "Triage" | "Review" | "Custom",
-  "note": "short tag-friendly hint, optional, max 40 chars"
+  "note": "short tag-friendly hint, optional, max 40 chars",
+  "titleSuggestion": "optional rewritten title, only if the original is unclear",
+  "descriptionSuggestion": "optional rewritten description, only when sharpening helps"
 }
 ```
 
-Keep `note` short and lower-case: `"safari-only"`, `"db-migration"`,
-`"flaky-spec"`. It becomes a board tag (`triage:<note>`).
+- Keep `note` short and lower-case: `"safari-only"`, `"db-migration"`,
+  `"flaky-spec"`. It becomes a board tag (`triage:<note>`).
+- Only set `titleSuggestion` if the existing title is genuinely unclear
+  (cryptic, all-lowercase rambling, missing scope). If the title is
+  already fine, omit the field entirely — don't rewrite for style.
+- Only set `descriptionSuggestion` if the existing description is too
+  thin to act on AND you can sharpen it from the title + body alone
+  (don't invent requirements). Omit otherwise.
+- Title rewrites must be ≤80 chars. Descriptions ≤500 chars.
 
 ## Output shape B — you need help
 

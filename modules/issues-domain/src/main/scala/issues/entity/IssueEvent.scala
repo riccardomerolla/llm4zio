@@ -275,6 +275,25 @@ object IssueEvent:
     occurredAt: Instant,
   ) extends IssueEvent
 
+  /** Pat (or a future editor) refined the issue title during triage.
+    * The previous title is preserved in the prior `Created` /
+    * `TitleEdited` events — the event log keeps the history.
+    */
+  final case class TitleEdited(
+    issueId: IssueId,
+    title: String,
+    editedBy: String,
+    occurredAt: Instant,
+  ) extends IssueEvent
+
+  /** Same as `TitleEdited` for the description. */
+  final case class DescriptionEdited(
+    issueId: IssueId,
+    description: String,
+    editedBy: String,
+    occurredAt: Instant,
+  ) extends IssueEvent
+
   final case class ExternalRefSynced(
     issueId: IssueId,
     @fieldDefaultValue(Map.empty) updatedFields: Map[String, String] = Map.empty,
