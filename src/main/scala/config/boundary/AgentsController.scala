@@ -38,6 +38,20 @@ object AgentsController:
     ] =
     ZLayer.fromFunction(AgentsControllerLive.apply)
 
+object AgentsControllerLive:
+
+  /** Cards whose registry agent has a typed role (anything other than
+    * `Custom`) are treated as employees. Default-roster employees
+    * (Pat/Alex/Ben/Dana/Rex) qualify; legacy built-ins seeded by
+    * `BuiltInAgentSynchronizer` keep the `Custom` default and fall through
+    * to the legacy bucket. User-created agents with an explicit typed role
+    * join their fellow employees automatically.
+    */
+  def partitionByEmployeeRole(
+    cards: List[AgentsView.AgentCard]
+  ): (List[AgentsView.AgentCard], List[AgentsView.AgentCard]) =
+    cards.partition(_.registryAgent.exists(_.role != EmployeeRole.Custom))
+
 final case class AgentsControllerLive(
   repository: ConfigRepository,
   llmService: LlmService,
@@ -257,6 +271,7 @@ final case class AgentsControllerLive(
           globalRows     <- repository.getSettingsByPrefix("connector.default.")
           now            <- Clock.instant
           flash           = req.queryParam("flash").map(urlDecode).filter(_.nonEmpty)
+          showAll         = req.queryParam("show").contains("all")
           globalSettings  = globalRows.map(r => r.key -> r.value).toMap
           connectorMap    = connectorRows.groupBy { r =>
                               val k = r.key; k.substring("agent.".length, k.indexOf(".connector."))
@@ -272,7 +287,15 @@ final case class AgentsControllerLive(
                               connectorOverrides = connectorMap,
                               globalSettings = globalSettings,
                             )
-        yield html(HtmlViews.agentsPage(cards, flash))
+          (employees, legacy) = AgentsControllerLive.partitionByEmployeeRole(cards)
+        yield html(
+          HtmlViews.agentsPage(
+            employees = employees,
+            legacyVisible = if showAll then legacy else Nil,
+            legacyHiddenCount = if showAll then 0 else legacy.size,
+            flash = flash,
+          )
+        )
       }
     },
     Method.GET / "agents" / "new"                                        -> handler { (_: Request) =>

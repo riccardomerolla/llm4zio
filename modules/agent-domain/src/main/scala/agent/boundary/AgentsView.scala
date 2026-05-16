@@ -23,14 +23,36 @@ object AgentsView:
     hasConnectorOverride: Boolean = false,
   )
 
-  def list(cards: List[AgentCard], flash: Option[String] = None): String =
+  /** Order in which typed employees render at the top of the list. */
+  private val roleOrder: Map[EmployeeRole, Int] = Map(
+    EmployeeRole.PM          -> 0,
+    EmployeeRole.FrontendEng -> 1,
+    EmployeeRole.BackendEng  -> 2,
+    EmployeeRole.QA          -> 3,
+    EmployeeRole.Reviewer    -> 4,
+    EmployeeRole.Custom      -> 5,
+  )
+
+  private def employeeSortKey(card: AgentCard): (Int, String) =
+    val rank = card.registryAgent.map(_.role).map(roleOrder.getOrElse(_, 99)).getOrElse(99)
+    (rank, card.info.displayName.toLowerCase)
+
+  def list(
+    employees: List[AgentCard],
+    legacyVisible: List[AgentCard] = Nil,
+    legacyHiddenCount: Int = 0,
+    flash: Option[String] = None,
+  ): String =
+    val sortedEmployees = employees.sortBy(employeeSortKey)
+    val sortedLegacy    = legacyVisible.sortBy(_.info.displayName.toLowerCase)
+    val nothingToShow   = sortedEmployees.isEmpty && sortedLegacy.isEmpty && legacyHiddenCount == 0
     Layout.page("Agents", "/agents")(
       div(cls := "flex gap-0")(
         // Main list
         div(cls := "flex-1 min-w-0 space-y-4")(
           Components.pageHeader(
             title = "Agents",
-            subtitle = "Built-in, custom config, and registry agents",
+            subtitle = "Your typed employees by default — Pat, Alex, Ben, Dana, Rex.",
             actions = Seq(a(
               href := "/agents/new",
               cls  := "rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-500",
@@ -39,7 +61,7 @@ object AgentsView:
           flash.map { msg =>
             div(cls := "rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-300")(msg)
           },
-          if cards.isEmpty then
+          if nothingToShow then
             Components.emptyStateFull(
               "No agents configured yet",
               "Create a built-in or custom agent to get started.",
@@ -49,32 +71,30 @@ object AgentsView:
               )("Create Agent"),
             )
           else
-            div(cls := "rounded-lg border border-white/10 overflow-hidden")(
-              tag("table")(cls := "w-full text-sm")(
-                tag("thead")(
-                  tag("tr")(cls := "border-b border-white/10 bg-white/5")(
-                    tag("th")(cls := "px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-400")(
-                      "Agent"
-                    ),
-                    tag("th")(
-                      cls := "hidden px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-400 sm:table-cell"
-                    )("Skills"),
-                    tag("th")(cls := "px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-400")(
-                      "Mode"
-                    ),
-                    tag("th")(cls := "px-4 py-2 text-right text-xs font-medium uppercase tracking-wide text-gray-400")(
-                      "Runs"
-                    ),
-                    tag("th")(
-                      cls := "hidden px-4 py-2 text-right text-xs font-medium uppercase tracking-wide text-gray-400 sm:table-cell"
-                    )("Success"),
-                    tag("th")(cls := "px-4 py-2")(),
-                  )
-                ),
-                tag("tbody")(cls := "divide-y divide-white/10")(
-                  cards.sortBy(_.info.displayName.toLowerCase).map(agentRow)
-                ),
-              )
+            frag(
+              agentTable(sortedEmployees),
+              // When showAll=true the controller passes legacyVisible; render
+              // it under its own subheading so supervisors can still see what
+              // built-ins remain from a previous iteration.
+              if sortedLegacy.nonEmpty then
+                frag(
+                  h2(cls := "mt-6 text-sm font-semibold uppercase tracking-wide text-gray-400")(
+                    "Legacy built-ins"
+                  ),
+                  agentTable(sortedLegacy),
+                )
+              else frag(),
+              // When showAll=false and legacy agents exist, render a footer
+              // link that flips the query param so users can recover the
+              // full list without leaving the page.
+              if legacyHiddenCount > 0 then
+                div(cls := "mt-3 text-xs text-gray-400")(
+                  s"$legacyHiddenCount legacy ${if legacyHiddenCount == 1 then "agent" else "agents"} hidden · ",
+                  a(href := "/agents?show=all", cls := "text-indigo-300 hover:text-indigo-200 underline")(
+                    "show all"
+                  ),
+                )
+              else frag(),
             ),
         ),
         // Side panel (hidden until opened)
@@ -84,6 +104,35 @@ object AgentsView:
         )(),
       ),
       JsResources.inlineModuleScript("/static/client/components/ab-side-panel.js"),
+    )
+
+  private def agentTable(cards: List[AgentCard]): Frag =
+    div(cls := "rounded-lg border border-white/10 overflow-hidden")(
+      tag("table")(cls := "w-full text-sm")(
+        tag("thead")(
+          tag("tr")(cls := "border-b border-white/10 bg-white/5")(
+            tag("th")(cls := "px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-400")(
+              "Agent"
+            ),
+            tag("th")(
+              cls := "hidden px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-400 sm:table-cell"
+            )("Skills"),
+            tag("th")(cls := "px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-400")(
+              "Mode"
+            ),
+            tag("th")(cls := "px-4 py-2 text-right text-xs font-medium uppercase tracking-wide text-gray-400")(
+              "Runs"
+            ),
+            tag("th")(
+              cls := "hidden px-4 py-2 text-right text-xs font-medium uppercase tracking-wide text-gray-400 sm:table-cell"
+            )("Success"),
+            tag("th")(cls := "px-4 py-2")(),
+          )
+        ),
+        tag("tbody")(cls := "divide-y divide-white/10")(
+          cards.map(agentRow)
+        ),
+      )
     )
 
   /** Returns the HTML string for a single agent table row (used by HTMX swaps). */

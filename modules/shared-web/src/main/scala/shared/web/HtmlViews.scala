@@ -111,8 +111,18 @@ object HtmlViews:
   def workflowDetail(workflow: WorkflowDefinition): String =
     WorkflowsView.detail(workflow)
 
-  def agentsPage(cards: List[AgentsView.AgentCard], flash: Option[String] = None): String =
-    AgentsView.list(cards, flash)
+  def agentsPage(
+    employees: List[AgentsView.AgentCard],
+    legacyVisible: List[AgentsView.AgentCard] = Nil,
+    legacyHiddenCount: Int = 0,
+    flash: Option[String] = None,
+  ): String =
+    AgentsView.list(
+      employees = employees,
+      legacyVisible = legacyVisible,
+      legacyHiddenCount = legacyHiddenCount,
+      flash = flash,
+    )
 
   def newAgentPage(
     values: Map[String, String] = Map.empty,
