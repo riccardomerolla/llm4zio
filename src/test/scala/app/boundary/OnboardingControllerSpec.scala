@@ -67,6 +67,9 @@ object OnboardingControllerSpec extends ZIOSpecDefault:
     override def listRunsByIssueRef(issueRef: String): IO[PersistenceError, List[WorkspaceRun]]            = ZIO.succeed(Nil)
     override def getRun(id: String): IO[PersistenceError, Option[WorkspaceRun]]                            = ZIO.succeed(None)
 
+  private val stubTester: TelegramTokenTester = (_: String) =>
+    ZIO.succeed(TelegramTokenTester.Result(ok = false, "stub", None))
+
   private def mkController: UIO[(OnboardingController, Ref[Map[String, String]], Ref[List[ProjectEvent]], Ref[List[WorkspaceEvent]])] =
     for
       configRef    <- Ref.make(Map.empty[String, String])
@@ -76,6 +79,7 @@ object OnboardingControllerSpec extends ZIOSpecDefault:
                         StubConfigRepo(configRef),
                         StubProjectRepo(projectRef),
                         StubWorkspaceRepo(workspaceRef),
+                        stubTester,
                       )
     yield (controller, configRef, projectRef, workspaceRef)
 
@@ -124,6 +128,66 @@ object OnboardingControllerSpec extends ZIOSpecDefault:
         workspaceEvents.size == 1,
         workspaceEvents.head.isInstanceOf[WorkspaceEvent.Created],
         workspaceEvents.collect { case e: WorkspaceEvent.Created => e }.head.localPath == "/tmp/code",
+      )
+    },
+    test("POST /onboarding/test-telegram with empty token renders a 'paste a bot token' notice") {
+      for
+        tuple                <- mkController
+        (controller, _, _, _) = tuple
+        request               = Request.post(
+                                  URL.decode("/onboarding/test-telegram").toOption.get,
+                                  Body.fromString("telegramBotToken="),
+                                )
+        response             <- controller.routes.runZIO(request)
+        bodyStr              <- response.body.asString
+      yield assertTrue(
+        response.status == Status.Ok,
+        bodyStr.contains("Paste a bot token first."),
+      )
+    },
+    test("POST /onboarding/test-telegram with malformed token rejects without hitting the network") {
+      for
+        tuple                <- mkController
+        (controller, _, _, _) = tuple
+        request               = Request.post(
+                                  URL.decode("/onboarding/test-telegram").toOption.get,
+                                  Body.fromString("telegramBotToken=not-a-bot-token"),
+                                )
+        response             <- controller.routes.runZIO(request)
+        bodyStr              <- response.body.asString
+      yield assertTrue(
+        response.status == Status.Ok,
+        bodyStr.contains("doesn't look like a bot token"),
+      )
+    },
+    test("POST /onboarding/test-telegram with a well-formed token delegates to the tester") {
+      for
+        configRef    <- Ref.make(Map.empty[String, String])
+        projectRef   <- Ref.make(List.empty[ProjectEvent])
+        workspaceRef <- Ref.make(List.empty[WorkspaceEvent])
+        capturedRef  <- Ref.make(Option.empty[String])
+        tester        = new TelegramTokenTester:
+                          override def test(token: String): UIO[TelegramTokenTester.Result] =
+                            capturedRef
+                              .set(Some(token))
+                              .as(TelegramTokenTester.Result(ok = true, "Connected to @demo_bot", Some("https://t.me/demo_bot")))
+        controller    = OnboardingControllerLive(
+                          StubConfigRepo(configRef),
+                          StubProjectRepo(projectRef),
+                          StubWorkspaceRepo(workspaceRef),
+                          tester,
+                        )
+        request       = Request.post(
+                          URL.decode("/onboarding/test-telegram").toOption.get,
+                          Body.fromString("telegramBotToken=123456%3AABC-DEF1234ghIkl-zyx57W2v1u123ew11"),
+                        )
+        response     <- controller.routes.runZIO(request)
+        bodyStr      <- response.body.asString
+        captured     <- capturedRef.get
+      yield assertTrue(
+        response.status == Status.Ok,
+        bodyStr.contains("Connected to @demo_bot"),
+        captured.contains("123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"),
       )
     },
     test("POST /onboarding with missing localPath re-renders the page with the error") {

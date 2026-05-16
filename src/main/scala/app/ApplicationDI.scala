@@ -154,6 +154,7 @@ object ApplicationDI:
       Ref[GatewayConfig] &
       ModelService &
       HttpClient &
+      Client &
       GeminiCliExecutor &
       ConnectorRegistry &
       HttpAIClient &
@@ -356,7 +357,9 @@ object ApplicationDI:
       DecisionInbox.live,
       // Phase 3 R9: supervisor web inbox controller.
       decision.boundary.DecisionsController.live,
-      // Phase 5 R10: onboarding wizard controller (/onboarding).
+      // Phase 5 R10: onboarding wizard controller (/onboarding) + Telegram
+      // bot-token live tester invoked by the wizard's "Test" button.
+      app.boundary.TelegramTokenTester.live,
       app.boundary.OnboardingController.live,
       // Phase 3 R8: ChannelRegistry needs DecisionInbox so Telegram callback-
       // query handler can call inbox.resolve with proper side-effects.

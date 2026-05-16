@@ -125,12 +125,28 @@ object OnboardingView:
         )
       ),
       labelledField("Bot token")(
-        input(
-          attr("type")  := "text",
-          attr("name")  := "telegramBotToken",
-          attr("value") := d.telegramBotToken,
-          placeholder   := "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11",
-          cls           := fieldCls,
+        div(cls := "space-y-2")(
+          div(cls := "flex gap-2")(
+            input(
+              attr("type")  := "text",
+              attr("name")  := "telegramBotToken",
+              attr("id")    := "telegramBotToken",
+              attr("value") := d.telegramBotToken,
+              placeholder   := "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11",
+              cls           := s"$fieldCls flex-1",
+            ),
+            button(
+              attr("type")           := "button",
+              attr("hx-post")        := "/onboarding/test-telegram",
+              attr("hx-include")     := "#telegramBotToken",
+              attr("hx-target")      := "#telegramTestResult",
+              attr("hx-swap")        := "innerHTML",
+              attr("hx-indicator")   := "#telegramTestSpinner",
+              cls                    := "shrink-0 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/20",
+            )("Test"),
+          ),
+          div(id := "telegramTestSpinner", cls := "htmx-indicator text-xs text-slate-400")("Talking to api.telegram.org…"),
+          div(id := "telegramTestResult"),
         )
       ),
       labelledField("Supervisor chat ID")(

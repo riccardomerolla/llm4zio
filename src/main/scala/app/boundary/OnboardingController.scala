@@ -31,21 +31,31 @@ object OnboardingController:
   def routes: ZIO[OnboardingController, Nothing, Routes[Any, Response]] =
     ZIO.serviceWith[OnboardingController](_.routes)
 
-  val live: ZLayer[ConfigRepository & ProjectRepository & WorkspaceRepository, Nothing, OnboardingController] =
+  val live: ZLayer[
+    ConfigRepository & ProjectRepository & WorkspaceRepository & TelegramTokenTester,
+    Nothing,
+    OnboardingController,
+  ] =
     ZLayer.fromFunction(OnboardingControllerLive.apply)
 
 final case class OnboardingControllerLive(
   configRepository: ConfigRepository,
   projectRepository: ProjectRepository,
   workspaceRepository: WorkspaceRepository,
+  tokenTester: TelegramTokenTester,
 ) extends OnboardingController:
 
   override val routes: Routes[Any, Response] = Routes(
-    Method.GET / "onboarding"  -> handler {
+    Method.GET / "onboarding"                    -> handler {
       show.catchAll(err => ZIO.succeed(persistErr(err)))
     },
-    Method.POST / "onboarding" -> handler { (req: Request) =>
+    Method.POST / "onboarding"                   -> handler { (req: Request) =>
       submit(req).catchAll(err => ZIO.succeed(persistErr(err)))
+    },
+    Method.POST / "onboarding" / "test-telegram" -> handler { (req: Request) =>
+      testTelegram(req).catchAllCause(cause =>
+        ZIO.succeed(testResult(TelegramTokenTester.Result(ok = false, "Unexpected error checking the token.", Some(cause.prettyPrint.take(140)))))
+      )
     },
   )
 
@@ -130,6 +140,39 @@ final case class OnboardingControllerLive(
       "onboarding.completedAt"     -> now.toString,
     )
     ZIO.foreachDiscard(pairs) { case (key, value) => configRepository.upsertSetting(key, value) }
+
+  private def testTelegram(req: Request): UIO[Response] =
+    for
+      form  <- parseForm(req).orElseSucceed(Map.empty[String, String])
+      token  = form.getOrElse("telegramBotToken", "").trim
+      result <-
+        if token.isEmpty then
+          ZIO.succeed(TelegramTokenTester.Result(ok = false, "Paste a bot token first.", None))
+        else if !token.matches("""\d+:[A-Za-z0-9_-]{10,}""") then
+          ZIO.succeed(
+            TelegramTokenTester.Result(
+              ok = false,
+              "That doesn't look like a bot token (expected like 123456:ABC…).",
+              None,
+            )
+          )
+        else tokenTester.test(token)
+    yield testResult(result)
+
+  private def testResult(result: TelegramTokenTester.Result): Response =
+    val tone =
+      if result.ok then "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"
+      else "border-rose-500/40 bg-rose-500/10 text-rose-200"
+    val icon = if result.ok then "✓" else "✗"
+    val detailHtml =
+      result.detail.filter(_.trim.nonEmpty).map { d =>
+        val safe = d.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        s"""<div class="mt-1 text-xs text-slate-400">$safe</div>"""
+      }.getOrElse("")
+    val safeMessage = result.message.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    val body =
+      s"""<div class="rounded-md border $tone px-3 py-2 text-sm"><span class="mr-1 font-semibold">$icon</span>$safeMessage$detailHtml</div>"""
+    Response.text(body).contentType(MediaType.text.html)
 
   private def renderWithError(form: Map[String, String], message: String): IO[PersistenceError, Response] =
     val defaults = OnboardingView.Defaults(
