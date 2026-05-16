@@ -282,7 +282,8 @@ object ApplicationDI:
   def webServerLayer(config: GatewayConfig, storeConfig: StoreConfig): ZLayer[Any, Nothing, WebServer] =
     ZLayer.make[
       WebServer & AutoDispatcher & MergeAgentService & BoardOrchestrator &
-        TaskProgressNotifier & DecisionEscalationNotifier & TelegramPollingService
+        TaskProgressNotifier & DecisionEscalationNotifier & TelegramPollingService &
+        pat.control.PatTriageDaemon
     ](
       commonLayers(config, storeConfig),
       IssueMarkdownParser.live,
@@ -385,6 +386,12 @@ object ApplicationDI:
       conversation.control.AgentDialogueCoordinator.live,
       BoardBoundaryController.live,
       AutoDispatcher.live,
+      // Pat-triage moves Backlog issues to Todo with a TicketLane so
+      // AutoDispatcher (which only acts on Todo) can route them. Disabled
+      // by default for existing installs; onboarding flips it on for new
+      // ones via `pat.triage.enabled`.
+      _root_.config.control.ConnectorConfigResolver.live,
+      pat.control.PatTriageDaemon.live,
       WorkReportEventBus.layer,
       IssueWorkReportProjectionFactory.live,
       MergeAgentService.live,

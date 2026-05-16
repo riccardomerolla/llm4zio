@@ -156,6 +156,10 @@ final case class OnboardingControllerLive(
       "telegram.mode"              -> "Polling",
       "telegram.botToken"          -> form.getOrElse("telegramBotToken", "").trim,
       "telegram.supervisorChatId"  -> form.getOrElse("telegramSupervisorChatId", "").trim,
+      // Pat auto-triage: new installs get the loop running by default so
+      // Backlog issues actually move. Existing installs leave this unset
+      // (defaults to off) and opt in from /settings.
+      "pat.triage.enabled"         -> "true",
       "onboarding.completedAt"     -> now.toString,
     )
     ZIO.foreachDiscard(pairs) { case (key, value) => configRepository.upsertSetting(key, value) }
