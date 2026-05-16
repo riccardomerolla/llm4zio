@@ -40,24 +40,35 @@ object GatewayService:
   def metrics: ZIO[GatewayService, Nothing, GatewayMetricsSnapshot] =
     ZIO.serviceWithZIO[GatewayService](_.metrics)
 
+  /** Branch predicate for `processInbound`: a Telegram message whose content
+    * does not start with a slash command. Lives on the companion so it can
+    * be unit-tested without spinning up the full service.
+    */
+  private[control] def isTelegramFreeText(message: NormalizedMessage): Boolean =
+    message.channelName == "telegram" && {
+      val trimmed = Option(message.content).map(_.trim).getOrElse("")
+      trimmed.nonEmpty && !trimmed.startsWith("/")
+    }
+
   val live
     : ZLayer[
-      MessageRouter & AgentRegistry & LlmService & ConfigRepository & ChatRepository & PromptLoader,
+      MessageRouter & AgentRegistry & LlmService & ConfigRepository & ChatRepository & PromptLoader & TelegramIntake,
       Nothing,
       GatewayService,
     ] =
     ZLayer.scoped {
       for
-        router        <- ZIO.service[MessageRouter]
-        agentRegistry <- ZIO.service[AgentRegistry]
-        llmService    <- ZIO.service[LlmService]
-        configRepo    <- ZIO.service[ConfigRepository]
-        chatRepo      <- ZIO.service[ChatRepository]
-        promptLoader  <- ZIO.service[PromptLoader]
-        queue         <- Queue.unbounded[GatewayQueueCommand]
-        metrics       <- Ref.make(GatewayMetricsSnapshot())
-        intents       <- Ref.make(Map.empty[gateway.entity.SessionKey, IntentConversationState])
-        _             <- startWorker(queue, router, metrics, None).forkScoped
+        router         <- ZIO.service[MessageRouter]
+        agentRegistry  <- ZIO.service[AgentRegistry]
+        llmService     <- ZIO.service[LlmService]
+        configRepo     <- ZIO.service[ConfigRepository]
+        chatRepo       <- ZIO.service[ChatRepository]
+        promptLoader   <- ZIO.service[PromptLoader]
+        telegramIntake <- ZIO.service[TelegramIntake]
+        queue          <- Queue.unbounded[GatewayQueueCommand]
+        metrics        <- Ref.make(GatewayMetricsSnapshot())
+        intents        <- Ref.make(Map.empty[gateway.entity.SessionKey, IntentConversationState])
+        _              <- startWorker(queue, router, metrics, None).forkScoped
       yield GatewayServiceLive(
         queue,
         router,
@@ -66,6 +77,7 @@ object GatewayService:
         configRepo,
         chatRepo,
         promptLoader,
+        telegramIntake,
         metrics,
         None,
         intents,
@@ -74,23 +86,26 @@ object GatewayService:
 
   val liveWithSteeringQueue
     : ZLayer[
-      MessageRouter & Queue[NormalizedMessage] & AgentRegistry & LlmService & ConfigRepository & ChatRepository & PromptLoader,
+      MessageRouter & Queue[
+        NormalizedMessage
+      ] & AgentRegistry & LlmService & ConfigRepository & ChatRepository & PromptLoader & TelegramIntake,
       Nothing,
       GatewayService,
     ] =
     ZLayer.scoped {
       for
-        router        <- ZIO.service[MessageRouter]
-        agentRegistry <- ZIO.service[AgentRegistry]
-        llmService    <- ZIO.service[LlmService]
-        configRepo    <- ZIO.service[ConfigRepository]
-        chatRepo      <- ZIO.service[ChatRepository]
-        promptLoader  <- ZIO.service[PromptLoader]
-        steeringQueue <- ZIO.service[Queue[NormalizedMessage]]
-        queue         <- Queue.unbounded[GatewayQueueCommand]
-        metrics       <- Ref.make(GatewayMetricsSnapshot())
-        intents       <- Ref.make(Map.empty[gateway.entity.SessionKey, IntentConversationState])
-        _             <- startWorker(queue, router, metrics, Some(steeringQueue)).forkScoped
+        router         <- ZIO.service[MessageRouter]
+        agentRegistry  <- ZIO.service[AgentRegistry]
+        llmService     <- ZIO.service[LlmService]
+        configRepo     <- ZIO.service[ConfigRepository]
+        chatRepo       <- ZIO.service[ChatRepository]
+        promptLoader   <- ZIO.service[PromptLoader]
+        telegramIntake <- ZIO.service[TelegramIntake]
+        steeringQueue  <- ZIO.service[Queue[NormalizedMessage]]
+        queue          <- Queue.unbounded[GatewayQueueCommand]
+        metrics        <- Ref.make(GatewayMetricsSnapshot())
+        intents        <- Ref.make(Map.empty[gateway.entity.SessionKey, IntentConversationState])
+        _              <- startWorker(queue, router, metrics, Some(steeringQueue)).forkScoped
       yield GatewayServiceLive(
         queue,
         router,
@@ -99,6 +114,7 @@ object GatewayService:
         configRepo,
         chatRepo,
         promptLoader,
+        telegramIntake,
         metrics,
         Some(steeringQueue),
         intents,
@@ -230,6 +246,7 @@ final case class GatewayServiceLive(
   configRepository: ConfigRepository,
   chatRepository: ChatRepository,
   promptLoader: PromptLoader,
+  telegramIntake: TelegramIntake,
   metricsRef: Ref[GatewayMetricsSnapshot],
   steeringQueue: Option[Queue[NormalizedMessage]],
   intentStateRef: Ref[Map[gateway.entity.SessionKey, IntentConversationState]],
@@ -263,7 +280,8 @@ final case class GatewayServiceLive(
                q.offer(message).unit *>
                  metricsRef.update(current => current.copy(steeringForwarded = current.steeringForwarded + 1))
       _ <- router.routeInbound(message).mapError(GatewayServiceError.Router.apply)
-      _ <- handleIntentRouting(message)
+      _ <- if GatewayService.isTelegramFreeText(message) then handleTelegramIntake(message)
+           else handleIntentRouting(message)
       _ <- metricsRef.update(current =>
              GatewayService.markInboundProcessed(
                current.copy(processed = current.processed + 1),
@@ -272,6 +290,36 @@ final case class GatewayServiceLive(
              )
            )
     yield ()
+
+  private def handleTelegramIntake(message: NormalizedMessage): IO[GatewayServiceError, Unit] =
+    telegramIntake
+      .fileIssue(message)
+      .foldZIO(
+        {
+          case TelegramIntakeError.NoWorkspaceConfigured =>
+            sendAssistantReply(
+              message,
+              "No workspace configured yet. Finish onboarding at /onboarding.",
+              None,
+            )
+          case TelegramIntakeError.EmptyMessage          =>
+            ZIO.unit
+          case TelegramIntakeError.Storage(cause)        =>
+            ZIO.logError(s"telegram intake storage failure: $cause") *>
+              sendAssistantReply(
+                message,
+                "Couldn't file your message — check the server logs.",
+                None,
+              )
+        },
+        outcome =>
+          sendAssistantReply(
+            message,
+            s"Filed `${outcome.title}` (#${outcome.issueId.value}) to backlog of `${outcome.workspaceName}` " +
+              "— Pat will triage shortly.",
+            None,
+          ),
+      )
 
   override def processOutbound(message: NormalizedMessage): IO[GatewayServiceError, List[NormalizedMessage]] =
     val chunks = ResponseChunker.chunkMessageForChannel(message)

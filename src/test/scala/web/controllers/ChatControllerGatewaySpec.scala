@@ -67,6 +67,14 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
       override def confirmPlan(conversationId: Long): IO[PlannerAgentError, PlannerConfirmation] =
         ZIO.fail(PlannerAgentError.IssueDraftInvalid("unused in test"))
 
+  // Web-chat path never hits TelegramIntake (the predicate is gated on
+  // `channelName == "telegram"`); a no-op stub satisfies the DI graph.
+  private val noopTelegramIntake: gateway.control.TelegramIntake = new gateway.control.TelegramIntake:
+    override def fileIssue(
+      message: gateway.entity.NormalizedMessage
+    ): IO[gateway.control.TelegramIntakeError, gateway.control.TelegramIntakeOutcome] =
+      ZIO.fail(gateway.control.TelegramIntakeError.EmptyMessage)
+
   private def appLayer
     : ZLayer[Any, Any, ChatRepository & TaskRepository & GatewayService & ChannelRegistry & LlmService] =
     ZLayer.make[ChatRepository & TaskRepository & GatewayService & ChannelRegistry & LlmService](
@@ -84,6 +92,7 @@ object ChatControllerGatewaySpec extends ZIOSpecDefault:
       AgentRegistryLive.live,
       MessageRouter.live,
       PromptLoader.reloading,
+      ZLayer.succeed[gateway.control.TelegramIntake](noopTelegramIntake),
       GatewayService.live,
       TestLlm.layer,
     )

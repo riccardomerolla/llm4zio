@@ -368,6 +368,7 @@ object ApplicationDI:
       // because it needs IssueRepository (constructed below).
       ChannelRegistryFactory.live,
       MessageRouter.live,
+      gateway.control.TelegramIntake.live,
       GatewayService.live,
       TelegramPollingService.live,
       TaskProgressNotifier.live,
