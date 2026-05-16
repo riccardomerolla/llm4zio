@@ -139,6 +139,7 @@ object OnboardingControllerSpec extends ZIOSpecDefault:
         cfgMap.get("ai.model").contains("claude-sonnet-4-6"),
         cfgMap.get("ai.apiKey").contains("sk-test-123"),
         cfgMap.get("telegram.enabled").contains("true"),
+        cfgMap.get("telegram.mode").contains("Polling"),
         cfgMap.get("telegram.botToken").contains("bot-token-xyz"),
         cfgMap.get("telegram.supervisorChatId").contains("42"),
         cfgMap.get("onboarding.completedAt").exists(_.nonEmpty),

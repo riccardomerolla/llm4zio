@@ -150,6 +150,10 @@ final case class OnboardingControllerLive(
       "ai.model"                   -> form.getOrElse("aiModel", "").trim,
       "ai.apiKey"                  -> form.getOrElse("aiApiKey", "").trim,
       "telegram.enabled"           -> (if form.get("telegramEnabled").contains("true") then "true" else "false"),
+      // Local-first solo-founder default: Polling. Webhook requires a public
+      // HTTPS endpoint the wizard can't set up. Supervisors can still flip to
+      // Webhook from /settings if they're running behind a tunnel/reverse-proxy.
+      "telegram.mode"              -> "Polling",
       "telegram.botToken"          -> form.getOrElse("telegramBotToken", "").trim,
       "telegram.supervisorChatId"  -> form.getOrElse("telegramSupervisorChatId", "").trim,
       "onboarding.completedAt"     -> now.toString,
