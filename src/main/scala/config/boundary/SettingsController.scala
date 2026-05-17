@@ -81,6 +81,8 @@ final case class SettingsControllerLive(
     "memory.summarizationThreshold",
     "memory.retentionDays",
     "prompts.reloading",
+    "pat.triage.enabled",
+    "pat.triage.intervalSeconds",
   )
 
   private val apiConnectorKeys: List[String] = List(
@@ -161,14 +163,14 @@ final case class SettingsControllerLive(
           _        <- ZIO.foreachDiscard(settingsKeys) { key =>
                         val value = key match
                           case "gateway.dryRun" | "gateway.verbose" | "telegram.enabled" | "memory.enabled" |
-                               "prompts.reloading" =>
+                               "prompts.reloading" | "pat.triage.enabled" =>
                             if form.get(key).exists(_.equalsIgnoreCase("on")) then "true" else "false"
                           case _ =>
                             form.getOrElse(key, "")
                         if value.nonEmpty || key.startsWith("ai.") || key.startsWith("gateway.") || key.startsWith(
                             "telegram."
                           ) || key
-                            .startsWith("memory.") || key.startsWith("prompts.")
+                            .startsWith("memory.") || key.startsWith("prompts.") || key.startsWith("pat.")
                         then
                           repository.upsertSetting(key, value)
                         else ZIO.unit
@@ -368,12 +370,12 @@ final case class SettingsControllerLive(
             settingsKeys.filter(k =>
               k.startsWith("gateway.") || k.startsWith("telegram.") || k.startsWith("memory.") || k.startsWith(
                 "prompts."
-              )
+              ) || k.startsWith("pat.")
             )
           _        <- ZIO.foreachDiscard(keys) { key =>
                         val value = key match
                           case "gateway.dryRun" | "gateway.verbose" | "telegram.enabled" | "memory.enabled" |
-                               "prompts.reloading" =>
+                               "prompts.reloading" | "pat.triage.enabled" =>
                             if form.get(key).exists(v => v.equalsIgnoreCase("on") || v.equalsIgnoreCase("true")) then "true"
                             else "false"
                           case _ => form.getOrElse(key, "")
