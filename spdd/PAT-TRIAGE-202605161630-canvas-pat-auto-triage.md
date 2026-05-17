@@ -555,8 +555,53 @@ shape exactly.
 
 ### Result
 
-`/settings/daemons` now shows Pat alongside the other daemons with the
-same operational affordances. The triage logic in `PatTriageDaemon` is
-unchanged — only its driver and its surface area moved. All 14 daemon
-tests transfer verbatim; the two new tests cover workspace filtering
-(Set("ws-1") vs Set.empty).
+`/settings/daemons` now shows the auto-triage daemon alongside the
+others with the same operational affordances. The triage logic in
+`PatTriageDaemon` is unchanged — only its driver and its surface area
+moved. All 14 daemon tests transfer verbatim; the two new tests cover
+workspace filtering (Set("ws-1") vs Set.empty).
+
+---
+
+## v4 extension — drop the "Pat" name from the source code
+
+Pat is a person on the default roster, not a class of behaviour. The
+codebase was using `"pat"` as a hardcoded literal in places where it
+should have been a runtime parameter — breaking the moment a supervisor
+renames the PM employee. v4 sands that off:
+
+- **Package + class rename.** `pat.entity` / `pat.control` →
+  `triage.entity` / `triage.control`. `PatTriageDaemon` →
+  `TriageDaemon`. `PatTriageOutcome` → `TriageOutcome` (same for
+  `PatTriageError` / `PatTriageBatchOutcome`).
+- **Agent name flows through.** `TriageDaemon.triageBatch` now takes
+  `agentName: String` as a parameter. The daemon passes it to
+  `ConnectorConfigResolver.resolve(Some(agentName))` (so connector
+  config lookups respect the current name), stamps it on `LaneSet`,
+  `TitleEdited`, and `DescriptionEdited` events (so the audit trail
+  shows the actual employee, not a magic string), and uses it in
+  decision titles ("$agentName needs clarification: …",
+  "$agentName couldn't triage: …") and activity-event `agentName` fields.
+- **Backoff tag renamed.** `pat:awaiting-supervisor` →
+  `triage:awaiting-supervisor` — same `triage:*` prefix as the
+  category tags Pat writes (`triage:safari`, `triage:flaky-spec`).
+- **`DaemonAgentScheduler.deriveSpecs` reads the PM employee name from
+  `DefaultRoster.forRole(EmployeeRole.PM)`.** No more `defaultAgent = "pat"`
+  literal. If the supervisor adds a custom employee with `role = PM`
+  and disables Pat, the daemon would still point at "pat" until the
+  governance policy is updated — but the rename plumbing means it
+  resolves connector / writes events under the right name once that
+  swap happens.
+- **Spec name on `/settings/daemons` is now generic** ("Auto-triage"),
+  with the actual agent visible as a separate "Agent" stat on the card.
+- **Prompt template renamed.** `pat-triage.md` → `triage.md`. The
+  template no longer addresses the agent as "Pat" — just "the project's
+  triage employee (the PM)".
+- **`TriageDaemonSpec`** has a new test (`connector resolved per agent
+  name passed to triageBatch`) using `customAgent = "sarah"` to prove
+  the daemon honours whatever name the spec hands it. Two scheduler
+  specs (DaemonAgentSchedulerSpec / ProactiveAgentWorkflowSpec) were
+  updated: the legacy spec count went 2 → 3 (TriageAgent is now a
+  built-in), and the old "creates maintenance issue" assertion was
+  swapped for "delegates to TriageDaemon; does NOT create issues"
+  (since runTriageAgent no longer falls through to runCustomDaemon).

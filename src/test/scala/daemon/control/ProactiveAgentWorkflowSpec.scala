@@ -11,19 +11,19 @@ import daemon.entity.*
 import governance.entity.*
 import issues.entity.*
 import orchestration.entity.{ AgentPoolManager, PoolError, SlotHandle }
-import pat.control.PatTriageDaemon
-import pat.entity.PatTriageBatchOutcome
 import project.entity.*
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ DaemonAgentSpecId, IssueId, ProjectId }
 import shared.testfixtures.*
+import triage.control.TriageDaemon
+import triage.entity.TriageBatchOutcome
 import workspace.entity.*
 
 object ProactiveAgentWorkflowSpec extends ZIOSpecDefault:
 
-  private object NoOpPatTriageDaemon extends PatTriageDaemon:
-    override def triageBatch(workspaceIds: Set[String]): UIO[PatTriageBatchOutcome] =
-      ZIO.succeed(PatTriageBatchOutcome(triaged = 0, escalated = 0, skipped = 0))
+  private object NoOpTriageDaemon extends TriageDaemon:
+    override def triageBatch(workspaceIds: Set[String], agentName: String): UIO[TriageBatchOutcome] =
+      ZIO.succeed(TriageBatchOutcome(triaged = 0, escalated = 0, skipped = 0))
 
   private val now = Instant.parse("2026-04-14T10:00:00Z")
 
@@ -103,7 +103,7 @@ object ProactiveAgentWorkflowSpec extends ZIOSpecDefault:
                        configRepository = new MutableConfigRepository(configRef),
                        governanceRepository = new StubGovernancePolicyRepository,
                        daemonRepository = new StubDaemonAgentSpecRepository(customSpecs),
-                       patTriageDaemon = NoOpPatTriageDaemon,
+                       triageDaemon = NoOpTriageDaemon,
                        queue = queue,
                        runtimeState = runtimeRef,
                      )
@@ -163,7 +163,13 @@ object ProactiveAgentWorkflowSpec extends ZIOSpecDefault:
           activities.exists(_.eventType == activity.entity.ActivityEventType.DaemonCompleted),
         )
       },
-      test("triage agent creates categorization maintenance issue") {
+      test("triage agent delegates to TriageDaemon — does NOT create maintenance issues") {
+        // Reality check: before the v3 refold, runTriageAgent fell through
+        // to runCustomDaemon (which manufactured a maintenance issue per
+        // workspace). After v3, runTriageAgent delegates to TriageDaemon
+        // which acts on EXISTING Backlog issues — no new issues are created.
+        // This test locks the no-side-effect behaviour for an empty
+        // workspace (NoOpTriageDaemon returns zeros).
         val projectId  = ProjectId("project-1")
         val triageSpec = makeTriageSpec(projectId)
         for
@@ -178,8 +184,7 @@ object ProactiveAgentWorkflowSpec extends ZIOSpecDefault:
           maintenance                         = rebuilt.filter(_.issueType == "maintenance")
           activities                         <- activityRef.get
         yield assertTrue(
-          maintenance.size == 1,
-          maintenance.head.tags.exists(_.startsWith(s"daemon:${DaemonAgentSpec.TriageAgentKey}")),
+          maintenance.isEmpty,
           activities.exists(_.eventType == activity.entity.ActivityEventType.DaemonCompleted),
         )
       },

@@ -1,4 +1,4 @@
-package pat.control
+package triage.control
 
 import java.time.Instant
 
@@ -13,55 +13,68 @@ import decision.entity.DecisionUrgency
 import issues.entity.*
 import llm4zio.core.{ ApiConnector, CliConnector, ConnectorRegistry, LlmError, LlmService }
 import llm4zio.tools.JsonSchema
-import pat.entity.{ PatTriageBatchOutcome, PatTriageError, PatTriageOutcome }
 import prompts.PromptLoader
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ EventId, IssueId }
+import triage.entity.{ TriageBatchOutcome, TriageError, TriageOutcome }
 
-/** Pat's triage logic, invoked by `DaemonAgentScheduler` on its tick.
+/** Triage worker, invoked by `DaemonAgentScheduler` on its tick.
   *
   * Scans Backlog issues that haven't been triaged yet (no `LaneSet`
   * since the most recent backlog entry), filtered to the workspaces
-  * the daemon spec covers, and asks Pat to triage them through whichever
-  * connector Pat is configured for (CLI or API, per `/agents/pat/edit`).
+  * the daemon spec covers, and asks the configured triage agent to
+  * triage them through whichever connector that agent is wired to
+  * (CLI or API, per `/agents/<name>/edit`).
   *
   * On a successful triage, appends `LaneSet` + optional
   * `TagsUpdated(triage:<note>)` + `MovedToTodo`, making the issue
-  * dispatchable to Alex/Ben/Dana/Rex by the existing `AutoDispatcher`.
-  * On failure or ambiguity, opens a Decision so the supervisor gets a
-  * Telegram tap-to-resolve prompt.
+  * dispatchable to the lane-matched engineer by the existing
+  * `AutoDispatcher`. On failure or ambiguity, opens a Decision so the
+  * supervisor gets a Telegram tap-to-resolve prompt.
   *
   * This is a stateless service — the scheduler owns the tick cadence
   * (`DaemonAgentSpec.trigger`) and the enable flag
   * (`DaemonAgentScheduler.setEnabled`).
   */
-trait PatTriageDaemon:
-  /** Triage one batch. Filters Backlog issues to the workspaces given;
-    * empty set means "all workspaces". Errors are recovered into the
-    * `skipped` counter; this method never fails.
+trait TriageDaemon:
+  /** Triage one batch.
+    *
+    * @param workspaceIds Backlog issues whose workspace is in this set
+    *                     are picked up; empty set means "all workspaces".
+    * @param agentName    Which agent does the triage call (resolved
+    *                     against the connector + registry, used as the
+    *                     `setBy` field on `LaneSet`, and stamped on the
+    *                     activity events). Comes from
+    *                     `DaemonAgentSpec.agentName`.
+    *
+    * Errors are recovered into the `skipped` counter; this method
+    * never fails.
     */
-  def triageBatch(workspaceIds: Set[String]): UIO[PatTriageBatchOutcome]
+  def triageBatch(workspaceIds: Set[String], agentName: String): UIO[TriageBatchOutcome]
 
-object PatTriageDaemon:
+object TriageDaemon:
 
   val PerTickLimit: Int           = 5
   val PerIssueTimeout: Duration   = 60.seconds
 
-  // Tag suffix; `pat:awaiting-supervisor` blocks re-triage until the
-  // supervisor resolves the decision (which clears the tag).
-  val BackoffTag: String          = "pat:awaiting-supervisor"
+  /** Backlog issues with this tag are parked until the supervisor
+    * resolves the open Decision. Tag is generic (not agent-specific)
+    * so it survives a rename of the triage agent.
+    */
+  val BackoffTag: String          = "triage:awaiting-supervisor"
 
-  def triageBatch(workspaceIds: Set[String]): ZIO[PatTriageDaemon, Nothing, PatTriageBatchOutcome] =
-    ZIO.serviceWithZIO[PatTriageDaemon](_.triageBatch(workspaceIds))
+  def triageBatch(workspaceIds: Set[String], agentName: String)
+    : ZIO[TriageDaemon, Nothing, TriageBatchOutcome] =
+    ZIO.serviceWithZIO[TriageDaemon](_.triageBatch(workspaceIds, agentName))
 
   val live
     : ZLayer[
       IssueRepository & PromptLoader & ConnectorConfigResolver & ConnectorRegistry
         & DecisionInbox & ActivityHub,
       Nothing,
-      PatTriageDaemon,
+      TriageDaemon,
     ] =
-    ZLayer.fromFunction(PatTriageDaemonLive.apply)
+    ZLayer.fromFunction(TriageDaemonLive.apply)
 
   /** JSON schema handed to `executeStructured`. `Json` is what
     * `llm4zio.tools.JsonSchema` aliases to.
@@ -69,7 +82,7 @@ object PatTriageDaemon:
   private[control] val schema: JsonSchema =
     Json.Obj(
       "type"        -> Json.Str("object"),
-      "description" -> Json.Str("Pat's triage decision for a single backlog issue."),
+      "description" -> Json.Str("Triage decision for a single backlog issue."),
       "oneOf"       -> Json.Arr(
         Json.Obj(
           "type"                 -> Json.Str("object"),
@@ -109,9 +122,9 @@ object PatTriageDaemon:
 
   /** Filter Backlog issues that haven't been triaged for this stint in
     * the Backlog column. Re-triage support: an issue that was triaged,
-    * worked on, then sent back to Backlog (via `MovedToBacklog`) becomes
-    * a candidate again — its old `LaneSet` is "before" the most recent
-    * backlog entry and is therefore stale.
+    * worked on, then sent back to Backlog (via `MovedToBacklog`)
+    * becomes a candidate again — its old `LaneSet` is "before" the
+    * most recent backlog entry and is therefore stale.
     */
   private[control] def needsTriage(
     issue: AgentIssue,
@@ -131,22 +144,22 @@ object PatTriageDaemon:
           lastLaneSet < lastBacklogEntry
       }
 
-final case class PatTriageDaemonLive(
+final case class TriageDaemonLive(
   issueRepository: IssueRepository,
   promptLoader: PromptLoader,
   connectorConfigResolver: ConnectorConfigResolver,
   connectorRegistry: ConnectorRegistry,
   decisionInbox: DecisionInbox,
   activityHub: ActivityHub,
-) extends PatTriageDaemon:
+) extends TriageDaemon:
 
   // ── public API ──────────────────────────────────────────────────────
 
-  override def triageBatch(workspaceIds: Set[String]): UIO[PatTriageBatchOutcome] =
+  override def triageBatch(workspaceIds: Set[String], agentName: String): UIO[TriageBatchOutcome] =
     pickCandidates(workspaceIds)
       .flatMap { candidates =>
-        ZIO.foreach(candidates)(triageOne).map { results =>
-          PatTriageBatchOutcome(
+        ZIO.foreach(candidates)(issue => triageOne(issue, agentName)).map { results =>
+          TriageBatchOutcome(
             triaged = results.count(_ == TriageResult.Triaged),
             escalated = results.count(_ == TriageResult.Escalated),
             skipped = results.count(_ == TriageResult.Skipped),
@@ -155,8 +168,8 @@ final case class PatTriageDaemonLive(
       }
       .catchAll(err =>
         ZIO
-          .logWarning(s"pat-triage batch failed at list step: $err")
-          .as(PatTriageBatchOutcome(0, 0, 0))
+          .logWarning(s"triage batch ($agentName) failed at list step: $err")
+          .as(TriageBatchOutcome(0, 0, 0))
       )
 
   // ── candidate selection ─────────────────────────────────────────────
@@ -172,11 +185,11 @@ final case class PatTriageDaemonLive(
                      issueRepository.history(issue.id).map(history => issue -> history)
                    )
       filtered   = withHist.collect {
-                     case (issue, history) if PatTriageDaemon.needsTriage(issue, history) => issue
+                     case (issue, history) if TriageDaemon.needsTriage(issue, history) => issue
                    }
       // Oldest first so the queue drains predictably under load.
       sorted     = filtered.sortBy(backlogEnteredAt)
-      capped     = sorted.take(PatTriageDaemon.PerTickLimit)
+      capped     = sorted.take(TriageDaemon.PerTickLimit)
     yield capped
 
   private def backlogEnteredAt(issue: AgentIssue): Instant =
@@ -189,33 +202,33 @@ final case class PatTriageDaemonLive(
   private enum TriageResult:
     case Triaged, Escalated, Skipped
 
-  private def triageOne(issue: AgentIssue): UIO[TriageResult] =
-    publishStart(issue) *> attemptTriage(issue)
+  private def triageOne(issue: AgentIssue, agentName: String): UIO[TriageResult] =
+    publishStart(issue, agentName) *> attemptTriage(issue, agentName)
       .foldZIO(
-        err     => handleFailure(issue, err).as(TriageResult.Skipped),
-        result  => publishCompleted(issue).as(result),
+        err     => handleFailure(issue, agentName, err).as(TriageResult.Skipped),
+        result  => publishCompleted(issue, agentName).as(result),
       )
 
-  private def attemptTriage(issue: AgentIssue): IO[PatTriageError, TriageResult] =
+  private def attemptTriage(issue: AgentIssue, agentName: String): IO[TriageError, TriageResult] =
     for
       cfg       <- connectorConfigResolver
-                     .resolve(Some("pat"))
-                     .mapError(PatTriageError.Storage.apply)
+                     .resolve(Some(agentName))
+                     .mapError(TriageError.Storage.apply)
       connector <- connectorRegistry
                      .resolve(cfg)
-                     .mapError(PatTriageError.ConnectorFailure.apply)
+                     .mapError(TriageError.ConnectorFailure.apply)
       llm       <- asLlmService(connector)
-                     .mapError(PatTriageError.ConnectorFailure.apply)
+                     .mapError(TriageError.ConnectorFailure.apply)
       prompt    <- renderPrompt(issue).mapError(err =>
-                     PatTriageError.Storage(PersistenceError.QueryFailed("pat-triage-prompt", err.toString))
+                     TriageError.Storage(PersistenceError.QueryFailed("triage-prompt", err.toString))
                    )
       outcome   <- llm
-                     .executeStructured[PatTriageOutcome](prompt, PatTriageDaemon.schema)
-                     .mapError(PatTriageError.ConnectorFailure.apply)
-                     .timeout(PatTriageDaemon.PerIssueTimeout)
-                     .someOrFail(PatTriageError.Timeout)
-      result    <- applyOutcome(issue, outcome)
-                     .mapError(PatTriageError.Storage.apply)
+                     .executeStructured[TriageOutcome](prompt, TriageDaemon.schema)
+                     .mapError(TriageError.ConnectorFailure.apply)
+                     .timeout(TriageDaemon.PerIssueTimeout)
+                     .someOrFail(TriageError.Timeout)
+      result    <- applyOutcome(issue, agentName, outcome)
+                     .mapError(TriageError.Storage.apply)
     yield result
 
   // CLI connectors may or may not also extend LlmService — only the ones
@@ -239,7 +252,7 @@ final case class PatTriageDaemonLive(
 
   private def renderPrompt(issue: AgentIssue): IO[prompts.PromptError, String] =
     promptLoader.load(
-      "pat-triage",
+      "triage",
       Map(
         "issueTitle"       -> issue.title,
         "issueDescription" -> Option(issue.description).getOrElse(""),
@@ -250,18 +263,19 @@ final case class PatTriageDaemonLive(
 
   private def applyOutcome(
     issue: AgentIssue,
-    outcome: PatTriageOutcome,
+    agentName: String,
+    outcome: TriageOutcome,
   ): IO[PersistenceError, TriageResult] =
     outcome match
-      case PatTriageOutcome.LaneAndNote(lane, note, titleSuggestion, descriptionSuggestion) =>
+      case TriageOutcome.LaneAndNote(lane, note, titleSuggestion, descriptionSuggestion) =>
         for
           now            <- Clock.instant
           // Optional refinements first so the lane/move events see the
           // updated title/description if downstream readers care about
           // event ordering.
-          _              <- appendIfNewTitle(issue, titleSuggestion, now)
-          _              <- appendIfNewDescription(issue, descriptionSuggestion, now)
-          _              <- issueRepository.append(IssueEvent.LaneSet(issue.id, lane, "pat", now))
+          _              <- appendIfNewTitle(issue, agentName, titleSuggestion, now)
+          _              <- appendIfNewDescription(issue, agentName, descriptionSuggestion, now)
+          _              <- issueRepository.append(IssueEvent.LaneSet(issue.id, lane, agentName, now))
           _              <- note.map(_.trim).filter(_.nonEmpty) match
                               case None        => ZIO.unit
                               case Some(value) =>
@@ -275,50 +289,53 @@ final case class PatTriageDaemonLive(
           _              <- issueRepository.append(IssueEvent.MovedToTodo(issue.id, movedAt = now, occurredAt = now))
         yield TriageResult.Triaged
 
-      case PatTriageOutcome.Clarify(question, options) =>
-        openClarifyDecision(issue, question, options).as(TriageResult.Escalated)
+      case TriageOutcome.Clarify(question, options) =>
+        openClarifyDecision(issue, agentName, question, options).as(TriageResult.Escalated)
 
   private def appendIfNewTitle(
     issue: AgentIssue,
+    agentName: String,
     suggestion: Option[String],
     now: Instant,
   ): IO[PersistenceError, Unit] =
     suggestion.map(_.trim).filter(_.nonEmpty).filter(_ != issue.title.trim) match
       case None        => ZIO.unit
       case Some(value) =>
-        issueRepository.append(IssueEvent.TitleEdited(issue.id, value, "pat", now))
+        issueRepository.append(IssueEvent.TitleEdited(issue.id, value, agentName, now))
 
   private def appendIfNewDescription(
     issue: AgentIssue,
+    agentName: String,
     suggestion: Option[String],
     now: Instant,
   ): IO[PersistenceError, Unit] =
     suggestion.map(_.trim).filter(_.nonEmpty).filter(_ != Option(issue.description).map(_.trim).getOrElse("")) match
       case None        => ZIO.unit
       case Some(value) =>
-        issueRepository.append(IssueEvent.DescriptionEdited(issue.id, value, "pat", now))
+        issueRepository.append(IssueEvent.DescriptionEdited(issue.id, value, agentName, now))
 
   // ── failure handling ────────────────────────────────────────────────
 
-  private def handleFailure(issue: AgentIssue, err: PatTriageError): UIO[Unit] =
+  private def handleFailure(issue: AgentIssue, agentName: String, err: TriageError): UIO[Unit] =
     val message = renderError(err)
     (for
-      _   <- ZIO.logWarning(s"pat-triage failed for ${issue.id.value}: $message")
-      _   <- openFailureDecision(issue, message)
+      _   <- ZIO.logWarning(s"triage ($agentName) failed for ${issue.id.value}: $message")
+      _   <- openFailureDecision(issue, agentName, message)
       _   <- markAwaitingSupervisor(issue)
-      _   <- publishFailed(issue, message)
+      _   <- publishFailed(issue, agentName, message)
     yield ()).catchAll(persistErr =>
-      ZIO.logWarning(s"pat-triage could not record failure for ${issue.id.value}: $persistErr")
+      ZIO.logWarning(s"triage could not record failure for ${issue.id.value}: $persistErr")
     )
 
   private def openClarifyDecision(
     issue: AgentIssue,
+    agentName: String,
     question: String,
     @scala.annotation.unused options: List[String],
   ): IO[PersistenceError, Unit] =
     decisionInbox
       .openManualDecision(
-        title = s"Pat needs clarification: ${issue.title}",
+        title = s"$agentName needs clarification: ${issue.title}",
         context = Option(issue.description).getOrElse(""),
         referenceId = issue.id.value,
         summary = question,
@@ -329,10 +346,14 @@ final case class PatTriageDaemonLive(
       .unit
       .zipLeft(markAwaitingSupervisor(issue))
 
-  private def openFailureDecision(issue: AgentIssue, reason: String): IO[PersistenceError, Unit] =
+  private def openFailureDecision(
+    issue: AgentIssue,
+    agentName: String,
+    reason: String,
+  ): IO[PersistenceError, Unit] =
     decisionInbox
       .openManualDecision(
-        title = s"Pat couldn't triage: ${issue.title}",
+        title = s"$agentName couldn't triage: ${issue.title}",
         context = Option(issue.description).getOrElse(""),
         referenceId = issue.id.value,
         summary = reason,
@@ -343,14 +364,14 @@ final case class PatTriageDaemonLive(
       .unit
 
   private def markAwaitingSupervisor(issue: AgentIssue): IO[PersistenceError, Unit] =
-    if issue.tags.contains(PatTriageDaemon.BackoffTag) then ZIO.unit
+    if issue.tags.contains(TriageDaemon.BackoffTag) then ZIO.unit
     else
       for
         now <- Clock.instant
         _   <- issueRepository.append(
                  IssueEvent.TagsUpdated(
                    issue.id,
-                   (issue.tags :+ PatTriageDaemon.BackoffTag).distinct,
+                   (issue.tags :+ TriageDaemon.BackoffTag).distinct,
                    now,
                  )
                )
@@ -358,58 +379,58 @@ final case class PatTriageDaemonLive(
 
   // ── activity events ─────────────────────────────────────────────────
 
-  private def publishStart(issue: AgentIssue): UIO[Unit] =
+  private def publishStart(issue: AgentIssue, agentName: String): UIO[Unit] =
     for
       now <- Clock.instant
       _   <- activityHub.publish(
                ActivityEvent(
                  id = EventId.generate,
                  eventType = ActivityEventType.RunStarted,
-                 source = "pat-triage",
-                 agentName = Some("pat"),
+                 source = "triage",
+                 agentName = Some(agentName),
                  summary = s"Triaging issue ${issue.id.value}",
                  createdAt = now,
                )
              )
     yield ()
 
-  private def publishCompleted(issue: AgentIssue): UIO[Unit] =
+  private def publishCompleted(issue: AgentIssue, agentName: String): UIO[Unit] =
     for
       now <- Clock.instant
       _   <- activityHub.publish(
                ActivityEvent(
                  id = EventId.generate,
                  eventType = ActivityEventType.RunCompleted,
-                 source = "pat-triage",
-                 agentName = Some("pat"),
+                 source = "triage",
+                 agentName = Some(agentName),
                  summary = s"Triaged issue ${issue.id.value}",
                  createdAt = now,
                )
              )
     yield ()
 
-  private def publishFailed(issue: AgentIssue, reason: String): UIO[Unit] =
+  private def publishFailed(issue: AgentIssue, agentName: String, reason: String): UIO[Unit] =
     for
       now <- Clock.instant
       _   <- activityHub.publish(
                ActivityEvent(
                  id = EventId.generate,
                  eventType = ActivityEventType.RunFailed,
-                 source = "pat-triage",
-                 agentName = Some("pat"),
-                 summary = s"Pat-triage failed for ${issue.id.value}: $reason",
+                 source = "triage",
+                 agentName = Some(agentName),
+                 summary = s"Triage failed for ${issue.id.value}: $reason",
                  createdAt = now,
                )
              )
     yield ()
 
-  private def renderError(err: PatTriageError): String =
+  private def renderError(err: TriageError): String =
     err match
-      case PatTriageError.ConnectorFailure(cause) =>
+      case TriageError.ConnectorFailure(cause) =>
         s"Connector failure: ${describeLlmError(cause)}"
-      case PatTriageError.Timeout                 =>
-        s"Pat's connector timed out after ${PatTriageDaemon.PerIssueTimeout.toMillis}ms"
-      case PatTriageError.Storage(cause)          =>
+      case TriageError.Timeout                 =>
+        s"Connector timed out after ${TriageDaemon.PerIssueTimeout.toMillis}ms"
+      case TriageError.Storage(cause)          =>
         s"Storage failure: $cause"
 
   // `LlmError extends Throwable` but the case classes don't pass their

@@ -385,14 +385,15 @@ object ApplicationDI:
       conversation.control.AgentDialogueCoordinator.live,
       BoardBoundaryController.live,
       AutoDispatcher.live,
-      // Pat auto-triage runs as a built-in DaemonAgentSpec
+      // Auto-triage runs as a built-in DaemonAgentSpec
       // (TriageAgentKey) via DaemonAgentScheduler — it shows up on
       // /settings/daemons with the same lifecycle controls (start /
       // stop / restart / enable / disable) as the other daemons. The
-      // PatTriageDaemon layer below is the actual triage worker the
-      // scheduler delegates to.
+      // TriageDaemon layer below is the actual triage worker the
+      // scheduler delegates to; it uses whichever agent the spec
+      // points at (default: the PM from DefaultRoster).
       _root_.config.control.ConnectorConfigResolver.live,
-      pat.control.PatTriageDaemon.live,
+      triage.control.TriageDaemon.live,
       WorkReportEventBus.layer,
       IssueWorkReportProjectionFactory.live,
       MergeAgentService.live,

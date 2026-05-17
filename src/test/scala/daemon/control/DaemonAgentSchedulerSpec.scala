@@ -11,25 +11,25 @@ import daemon.entity.*
 import governance.entity.*
 import issues.entity.*
 import orchestration.entity.{ AgentPoolManager, PoolError, SlotHandle }
-import pat.control.PatTriageDaemon
-import pat.entity.PatTriageBatchOutcome
 import project.entity.*
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ IssueId, ProjectId }
 import shared.testfixtures.*
+import triage.control.TriageDaemon
+import triage.entity.TriageBatchOutcome
 import workspace.entity.*
 
 object DaemonAgentSchedulerSpec extends ZIOSpecDefault:
 
   private val now = Instant.parse("2026-03-26T12:00:00Z")
 
-  /** Stub Pat daemon — these tests cover the legacy daemons
+  /** Stub triage daemon — these tests cover the legacy daemons
     * (TestGuardian / DebtDetector / governance triggers), not the
-    * Pat-triage path. Pat is exercised in PatTriageDaemonSpec.
+    * triage path. The triage daemon is exercised in TriageDaemonSpec.
     */
-  private object NoOpPatTriageDaemon extends PatTriageDaemon:
-    override def triageBatch(workspaceIds: Set[String]): UIO[PatTriageBatchOutcome] =
-      ZIO.succeed(PatTriageBatchOutcome(triaged = 0, escalated = 0, skipped = 0))
+  private object NoOpTriageDaemon extends TriageDaemon:
+    override def triageBatch(workspaceIds: Set[String], agentName: String): UIO[TriageBatchOutcome] =
+      ZIO.succeed(TriageBatchOutcome(triaged = 0, escalated = 0, skipped = 0))
 
   final private class StubProjectRepository(projects: List[Project]) extends ProjectRepository:
     override def append(event: ProjectEvent): IO[PersistenceError, Unit]   = ZIO.unit
@@ -112,7 +112,7 @@ object DaemonAgentSchedulerSpec extends ZIOSpecDefault:
                        configRepository = new MutableConfigRepository(configRef),
                        governanceRepository = new StubGovernancePolicyRepository(governancePolicy),
                        daemonRepository = new StubDaemonAgentSpecRepository(customSpecs),
-                       patTriageDaemon = NoOpPatTriageDaemon,
+                       triageDaemon = NoOpTriageDaemon,
                        queue = queue,
                        runtimeState = runtimeRef,
                      )
@@ -165,10 +165,14 @@ object DaemonAgentSchedulerSpec extends ZIOSpecDefault:
           statuses          <- scheduler.list
           testGuardian       = statuses.find(_.spec.daemonKey == DaemonAgentSpec.TestGuardianKey)
           debtDetector       = statuses.find(_.spec.daemonKey == DaemonAgentSpec.DebtDetectorKey)
+          triageAgent        = statuses.find(_.spec.daemonKey == DaemonAgentSpec.TriageAgentKey)
         yield assertTrue(
-          statuses.size == 2,
+          statuses.size == 3,
           testGuardian.exists(status => !status.enabled && status.spec.governed),
           debtDetector.exists(status => status.enabled && !status.spec.governed),
+          // Triage spec is a new built-in: enabled by default, not governed,
+          // and uses the PM employee from DefaultRoster.
+          triageAgent.exists(status => status.enabled && !status.spec.governed && status.spec.agentName == "pat"),
         )
       },
       test("test guardian creates one maintenance issue and avoids duplicates") {

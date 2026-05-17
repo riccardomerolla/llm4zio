@@ -156,8 +156,8 @@ final case class OnboardingControllerLive(
       "telegram.mode"              -> "Polling",
       "telegram.botToken"          -> form.getOrElse("telegramBotToken", "").trim,
       "telegram.supervisorChatId"  -> form.getOrElse("telegramSupervisorChatId", "").trim,
-      // Pat auto-triage runs as a built-in daemon (TriageAgentKey) and
-      // is enabled by default for new projects. Toggle from
+      // Auto-triage runs as a built-in daemon (TriageAgentKey) and is
+      // enabled by default for new projects. Toggle from
       // /settings/daemons after onboarding if you want it off.
       "onboarding.completedAt"     -> now.toString,
     )
