@@ -11,6 +11,8 @@ import daemon.entity.*
 import governance.entity.*
 import issues.entity.*
 import orchestration.entity.{ AgentPoolManager, PoolError, SlotHandle }
+import pat.control.PatTriageDaemon
+import pat.entity.PatTriageBatchOutcome
 import project.entity.*
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ DaemonAgentSpecId, IssueId, ProjectId }
@@ -18,6 +20,10 @@ import shared.testfixtures.*
 import workspace.entity.*
 
 object ProactiveAgentWorkflowSpec extends ZIOSpecDefault:
+
+  private object NoOpPatTriageDaemon extends PatTriageDaemon:
+    override def triageBatch(workspaceIds: Set[String]): UIO[PatTriageBatchOutcome] =
+      ZIO.succeed(PatTriageBatchOutcome(triaged = 0, escalated = 0, skipped = 0))
 
   private val now = Instant.parse("2026-04-14T10:00:00Z")
 
@@ -97,6 +103,7 @@ object ProactiveAgentWorkflowSpec extends ZIOSpecDefault:
                        configRepository = new MutableConfigRepository(configRef),
                        governanceRepository = new StubGovernancePolicyRepository,
                        daemonRepository = new StubDaemonAgentSpecRepository(customSpecs),
+                       patTriageDaemon = NoOpPatTriageDaemon,
                        queue = queue,
                        runtimeState = runtimeRef,
                      )

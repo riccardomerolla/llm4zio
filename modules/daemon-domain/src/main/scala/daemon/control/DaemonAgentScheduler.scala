@@ -18,6 +18,7 @@ import daemon.entity.*
 import governance.entity.{ GovernanceDaemonTrigger, GovernancePolicy, GovernancePolicyRepository }
 import issues.entity.*
 import orchestration.entity.{ AgentPoolManager, PoolError }
+import pat.control.PatTriageDaemon
 import project.entity.{ Project, ProjectRepository }
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ DaemonAgentSpecId, EventId, IssueId, ProjectId }
@@ -59,7 +60,7 @@ object DaemonAgentScheduler:
   val live
     : ZLayer[
       ProjectRepository & WorkspaceRepository & IssueRepository & ActivityHub & AgentPoolManager & ConfigRepository &
-        GovernancePolicyRepository & DaemonAgentSpecRepository,
+        GovernancePolicyRepository & DaemonAgentSpecRepository & PatTriageDaemon,
       Nothing,
       DaemonAgentScheduler,
     ] =
@@ -73,6 +74,7 @@ object DaemonAgentScheduler:
         configRepository     <- ZIO.service[ConfigRepository]
         governanceRepository <- ZIO.service[GovernancePolicyRepository]
         daemonRepository     <- ZIO.service[DaemonAgentSpecRepository]
+        patTriageDaemon      <- ZIO.service[PatTriageDaemon]
         queue                <- Queue.unbounded[DaemonJob]
         runtimeState         <- Ref.Synchronized.make(Map.empty[DaemonAgentSpecId, DaemonAgentRuntime])
         service               = DaemonAgentSchedulerLive(
@@ -84,6 +86,7 @@ object DaemonAgentScheduler:
                                   configRepository = configRepository,
                                   governanceRepository = governanceRepository,
                                   daemonRepository = daemonRepository,
+                                  patTriageDaemon = patTriageDaemon,
                                   queue = queue,
                                   runtimeState = runtimeState,
                                 )
@@ -107,6 +110,7 @@ final case class DaemonAgentSchedulerLive(
   configRepository: ConfigRepository,
   governanceRepository: GovernancePolicyRepository,
   daemonRepository: DaemonAgentSpecRepository,
+  patTriageDaemon: PatTriageDaemon,
   queue: Queue[DaemonJob],
   runtimeState: Ref.Synchronized[Map[DaemonAgentSpecId, DaemonAgentRuntime]],
 ) extends DaemonAgentScheduler:
@@ -331,9 +335,15 @@ final case class DaemonAgentSchedulerLive(
 
   private def runTriageAgent(spec: DaemonAgentSpec): IO[PersistenceError, DaemonRunOutcome] =
     for
-      _       <- ZIO.logInfo(s"[TriageAgent] Triaging new issues in workspace(s): ${spec.workspaceIds.mkString(", ")}")
-      outcome <- runCustomDaemon(spec)
-    yield outcome
+      _       <- ZIO.logInfo(s"[TriageAgent] Pat triaging Backlog in workspace(s): ${spec.workspaceIds.mkString(", ")}")
+      batch   <- patTriageDaemon.triageBatch(spec.workspaceIds.toSet)
+      now     <- Clock.instant
+      acted    = batch.triaged + batch.escalated
+    yield DaemonRunOutcome(
+      issuesCreated = acted,
+      lastIssueCreatedAt = if acted > 0 then Some(now) else None,
+      summary = s"Pat triaged ${batch.triaged}, escalated ${batch.escalated}, skipped ${batch.skipped}",
+    )
 
   private def runRefactorAgent(spec: DaemonAgentSpec): IO[PersistenceError, DaemonRunOutcome] =
     for
@@ -589,6 +599,24 @@ final case class DaemonAgentSchedulerLive(
               defaultTrigger = DaemonTriggerCondition.Scheduled(2.hours),
               defaultAgent = defaultAgent,
               defaultLimits = DaemonExecutionLimits(maxIssuesPerRun = 1, cooldown = 2.hours, timeout = 10.minutes),
+              policyOpt = policyOpt,
+            ),
+            buildSpec(
+              project = project,
+              workspaces = workspaces,
+              daemonKey = DaemonAgentSpec.TriageAgentKey,
+              name = "Pat — auto-triage",
+              purpose =
+                "Pat (PM) reads new Backlog issues and picks a TicketLane so the AutoDispatcher can route them to Alex / Ben / Dana / Rex.",
+              prompt =
+                "Triage incoming Backlog issues: set a TicketLane, optionally sharpen the title or add a triage tag, and move to Todo.",
+              defaultTrigger = DaemonTriggerCondition.Continuous(60.seconds),
+              defaultAgent = "pat",
+              defaultLimits = DaemonExecutionLimits(
+                maxIssuesPerRun = PatTriageDaemon.PerTickLimit,
+                cooldown = 60.seconds,
+                timeout = 5.minutes,
+              ),
               policyOpt = policyOpt,
             ),
           )

@@ -142,7 +142,6 @@ object OnboardingControllerSpec extends ZIOSpecDefault:
         cfgMap.get("telegram.mode").contains("Polling"),
         cfgMap.get("telegram.botToken").contains("bot-token-xyz"),
         cfgMap.get("telegram.supervisorChatId").contains("42"),
-        cfgMap.get("pat.triage.enabled").contains("true"),
         cfgMap.get("onboarding.completedAt").exists(_.nonEmpty),
         projectEvents.size == 1,
         projectEvents.head.isInstanceOf[ProjectEvent.ProjectCreated],

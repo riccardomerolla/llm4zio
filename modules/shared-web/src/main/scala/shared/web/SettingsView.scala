@@ -494,7 +494,6 @@ object SettingsView:
       tag("form")(method := "post", action := "/settings/gateway", cls := "space-y-6 max-w-2xl")(
         gatewaySection(settings, errors),
         telegramSection(settings, errors),
-        patTriageSection(settings, errors),
         memorySection(settings, errors),
         div(cls := "flex gap-4 pt-2")(
           button(
@@ -1001,34 +1000,6 @@ object SettingsView:
           min = "1",
           max = "120",
           error = errors.get("telegram.polling.timeout"),
-        ),
-      ),
-    )
-
-  private def patTriageSection(s: Map[String, String], errors: Map[String, String]): Frag =
-    tag("section")(cls := sectionCls)(
-      h2(cls := "text-lg font-semibold text-white mb-4")("Pat (PM) — auto-triage"),
-      p(cls := "text-xs text-gray-400 mb-4")(
-        "When enabled, Pat reads new Backlog issues every interval and picks a TicketLane " +
-          "so the AutoDispatcher can route them to Alex / Ben / Dana / Rex. Pat uses her " +
-          "connector configured on /agents/pat/edit — CLI or API, whichever you've set."
-      ),
-      div(cls := "space-y-4")(
-        checkboxField(
-          "pat.triage.enabled",
-          "Enable Pat auto-triage",
-          s,
-          default = false,
-          error = errors.get("pat.triage.enabled"),
-        ),
-        numberField(
-          "pat.triage.intervalSeconds",
-          "Tick interval (seconds)",
-          s,
-          default = "60",
-          min = "10",
-          max = "3600",
-          error = errors.get("pat.triage.intervalSeconds"),
         ),
       ),
     )

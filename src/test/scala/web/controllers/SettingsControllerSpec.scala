@@ -168,39 +168,6 @@ object SettingsControllerSpec extends ZIOSpecDefault:
                     }
         yield result
       },
-      test("POST /settings/gateway persists pat.triage.* keys (toggle + interval) across reload") {
-        for
-          layer  <- mkLayer
-          result <- ZIO.scoped {
-                      for
-                        env        <- layer.build
-                        controller <- ZIO.service[SettingsController].provideEnvironment(env)
-                        configRepo <- ZIO.service[ConfigRepository].provideEnvironment(env)
-                        enableResp <- controller.routes.runZIO(Request.post(
-                                        "/settings/gateway",
-                                        Body.fromString("pat.triage.enabled=on&pat.triage.intervalSeconds=120"),
-                                      ))
-                        afterEnable     <- configRepo.getSetting("pat.triage.enabled")
-                        afterInterval   <- configRepo.getSetting("pat.triage.intervalSeconds")
-                        // Simulating "reload" = post again with the checkbox unchecked.
-                        // An unchecked HTML checkbox sends no value, so the form lacks the key.
-                        disableResp     <- controller.routes.runZIO(Request.post(
-                                             "/settings/gateway",
-                                             Body.fromString("pat.triage.intervalSeconds=120"),
-                                           ))
-                        afterDisable    <- configRepo.getSetting("pat.triage.enabled")
-                      yield assertTrue(
-                        enableResp.status == Status.Ok,
-                        afterEnable.map(_.value).contains("true"),
-                        afterInterval.map(_.value).contains("120"),
-                        disableResp.status == Status.Ok,
-                        // Critical: an unchecked checkbox flips the saved value to "false"
-                        // (rather than leaving stale "true" behind).
-                        afterDisable.map(_.value).contains("false"),
-                      )
-                    }
-        yield result
-      },
       test("POST /settings persists ConfigChanged activity event end-to-end") {
         for
           layer  <- mkLayerWithPersistentActivity

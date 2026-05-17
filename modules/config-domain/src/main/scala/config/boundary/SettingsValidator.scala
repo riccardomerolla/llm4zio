@@ -7,7 +7,7 @@ package config.boundary
 object SettingsValidator:
 
   /** Allowed setting key prefixes — anything else is rejected */
-  val allowedPrefixes: Set[String] = Set("ai.", "gateway.", "telegram.", "prompts.", "demo.", "pat.")
+  val allowedPrefixes: Set[String] = Set("ai.", "gateway.", "telegram.", "prompts.", "demo.")
 
   /** Predicate to check if a key should be saved */
   def isAllowedKey(key: String): Boolean =
@@ -27,8 +27,7 @@ object SettingsValidator:
     else
       key match
         // Checkboxes — normalize "on"/"off" to "true"/"false"
-        case "gateway.dryRun" | "gateway.verbose" | "telegram.enabled" | "prompts.reloading" |
-            "pat.triage.enabled" =>
+        case "gateway.dryRun" | "gateway.verbose" | "telegram.enabled" | "prompts.reloading" =>
           normalizeCheckbox(value).map(v => if v then "true" else "false")
 
         // AI Provider — must be a valid provider enum
@@ -41,8 +40,7 @@ object SettingsValidator:
              if k.endsWith(".timeout") | k.endsWith(".interval") | k.endsWith(".batchSize") | k.endsWith(
                ".maxRetries"
              ) | k
-               .endsWith(".parallelism") | k.endsWith(".acquireTimeout") | k.endsWith(".requestTimeout") |
-               k == "pat.triage.intervalSeconds" =>
+               .endsWith(".parallelism") | k.endsWith(".acquireTimeout") | k.endsWith(".requestTimeout") =>
           validatePositiveInt(value, fieldName = key)
 
         // Temperature — must be empty or decimal 0.0 to 2.0

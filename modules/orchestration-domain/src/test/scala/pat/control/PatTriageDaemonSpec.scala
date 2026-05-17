@@ -12,11 +12,11 @@ import decision.entity.*
 import issues.entity.*
 import llm4zio.core.*
 import llm4zio.tools.JsonSchema
-import pat.entity.PatTriageOutcome
+import pat.entity.{ PatTriageBatchOutcome, PatTriageOutcome }
 import prompts.{ PromptError, PromptLoader }
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ DecisionId, IssueId }
-import shared.testfixtures.{ StubActivityHub, StubConfigRepository }
+import shared.testfixtures.StubActivityHub
 
 /** Locks the contract from spdd/PAT-TRIAGE-202605161630. The daemon
   * stubs the entire DI graph so we can drive every branch in the
@@ -211,20 +211,17 @@ object PatTriageDaemonSpec extends ZIOSpecDefault:
 
   private def mkFixture(
     backlog: List[AgentIssue],
-    settings: Map[String, String] = Map("pat.triage.enabled" -> "true"),
     cfg: ConnectorConfig = ApiConnectorConfig(ConnectorId.Mock),
     outcome: Either[LlmError, PatTriageOutcome] = Right(PatTriageOutcome.LaneAndNote(TicketLane.Custom, None)),
   ): UIO[Fixture] =
     for
       issues      <- StubIssueRepo.make(backlog)
-      configRepo  <- StubConfigRepository.make(settings)
       decisions   <- CapturingDecisionInbox.make
       activityHub <- StubActivityHub.make
       callCount   <- Ref.make(0)
       connector    = new StubConnector(outcome, callCount)
       daemon       = PatTriageDaemonLive(
                        issueRepository = issues,
-                       configRepository = configRepo,
                        promptLoader = new StubPromptLoader,
                        connectorConfigResolver = new StubResolver(cfg),
                        connectorRegistry = new StubRegistry(connector),
@@ -242,12 +239,12 @@ object PatTriageDaemonSpec extends ZIOSpecDefault:
                       backlog = List(backlogIssue("i-1", title = "Fix login bug on Safari")),
                       outcome = Right(PatTriageOutcome.LaneAndNote(TicketLane.Frontend, Some("safari"))),
                     )
-        moved    <- fx.daemon.triageOnce
+        outcome  <- fx.daemon.triageBatch(Set.empty)
         state    <- fx.issues.state
         events    = state(IssueId("i-1"))._2
         sentToInbox <- fx.decisions.captured
       yield assertTrue(
-        moved == 1,
+        outcome == PatTriageBatchOutcome(triaged = 1, escalated = 0, skipped = 0),
         events.exists {
           case lane: IssueEvent.LaneSet => lane.lane == TicketLane.Frontend && lane.setBy == "pat"
           case _                        => false
@@ -266,10 +263,11 @@ object PatTriageDaemonSpec extends ZIOSpecDefault:
                    backlog = List(backlogIssue("i-2")),
                    outcome = Right(PatTriageOutcome.LaneAndNote(TicketLane.Custom, None)),
                  )
-        _     <- fx.daemon.triageOnce
-        state <- fx.issues.state
-        events = state(IssueId("i-2"))._2
+        outcome <- fx.daemon.triageBatch(Set.empty)
+        state   <- fx.issues.state
+        events   = state(IssueId("i-2"))._2
       yield assertTrue(
+        outcome.triaged == 1,
         events.count(_.isInstanceOf[IssueEvent.LaneSet]) == 1,
         events.count(_.isInstanceOf[IssueEvent.MovedToTodo]) == 1,
         // No TagsUpdated event when Pat returns no note
@@ -282,12 +280,12 @@ object PatTriageDaemonSpec extends ZIOSpecDefault:
                       backlog = List(backlogIssue("i-3", title = "hmm")),
                       outcome = Right(PatTriageOutcome.Clarify("What do you want?", List("A", "B"))),
                     )
-        moved    <- fx.daemon.triageOnce
+        outcome  <- fx.daemon.triageBatch(Set.empty)
         state    <- fx.issues.state
         events    = state(IssueId("i-3"))._2
         captured <- fx.decisions.captured
       yield assertTrue(
-        moved == 1,
+        outcome == PatTriageBatchOutcome(triaged = 0, escalated = 1, skipped = 0),
         !events.exists(_.isInstanceOf[IssueEvent.LaneSet]),
         !events.exists(_.isInstanceOf[IssueEvent.MovedToTodo]),
         captured.size == 1,
@@ -301,12 +299,12 @@ object PatTriageDaemonSpec extends ZIOSpecDefault:
                       backlog = List(backlogIssue("i-4")),
                       outcome = Left(LlmError.ParseError("bad json", "raw")),
                     )
-        moved    <- fx.daemon.triageOnce
+        outcome  <- fx.daemon.triageBatch(Set.empty)
         state    <- fx.issues.state
         events    = state(IssueId("i-4"))._2
         captured <- fx.decisions.captured
       yield assertTrue(
-        moved == 0, // failure path returns false
+        outcome == PatTriageBatchOutcome(triaged = 0, escalated = 0, skipped = 1),
         !events.exists(_.isInstanceOf[IssueEvent.LaneSet]),
         !events.exists(_.isInstanceOf[IssueEvent.MovedToTodo]),
         captured.size == 1,
@@ -320,10 +318,11 @@ object PatTriageDaemonSpec extends ZIOSpecDefault:
                       backlog = List(backlogIssue("i-5")),
                       outcome = Left(LlmError.AuthenticationError("missing API key")),
                     )
-        moved    <- fx.daemon.triageOnce
+        outcome  <- fx.daemon.triageBatch(Set.empty)
         captured <- fx.decisions.captured
       yield assertTrue(
-        moved == 0,
+        outcome.skipped == 1,
+        outcome.triaged == 0,
         captured.size == 1,
         captured.head._2.contains("AuthenticationError"),
         captured.head._2.contains("missing API key"),
@@ -336,10 +335,10 @@ object PatTriageDaemonSpec extends ZIOSpecDefault:
                     )
         // Pre-seed a LaneSet event so needsTriage returns false
         _        <- fx.issues.append(IssueEvent.LaneSet(IssueId("i-6"), TicketLane.Backend, "pat", now))
-        moved    <- fx.daemon.triageOnce
+        outcome  <- fx.daemon.triageBatch(Set.empty)
         callCnt  <- fx.callCount.get
       yield assertTrue(
-        moved == 0,
+        outcome.total == 0,
         callCnt == 0, // connector never invoked
       )
     },
@@ -348,32 +347,45 @@ object PatTriageDaemonSpec extends ZIOSpecDefault:
         fx       <- mkFixture(
                       backlog = List(backlogIssue("i-7", tags = List("pat:awaiting-supervisor"))),
                     )
-        moved    <- fx.daemon.triageOnce
+        outcome  <- fx.daemon.triageBatch(Set.empty)
         callCnt  <- fx.callCount.get
       yield assertTrue(
-        moved == 0,
+        outcome.total == 0,
         callCnt == 0,
       )
     },
-    test("disabled: pat.triage.enabled=false short-circuits with zero connector calls") {
+    test("workspace filter: only Backlog issues in the given workspace set are picked up") {
+      val ws1   = backlogIssue("ws1-only").copy(workspaceId = Some("ws-1"))
+      val ws2   = backlogIssue("ws2-only").copy(workspaceId = Some("ws-2"))
+      val noWs  = backlogIssue("no-ws").copy(workspaceId = None)
       for
-        fx       <- mkFixture(
-                      backlog = List(backlogIssue("i-8")),
-                      settings = Map("pat.triage.enabled" -> "false"),
-                    )
-        moved    <- fx.daemon.triageOnce
-        callCnt  <- fx.callCount.get
+        fx       <- mkFixture(backlog = List(ws1, ws2, noWs))
+        outcome  <- fx.daemon.triageBatch(Set("ws-1"))
+        state    <- fx.issues.state
+        triagedWs1 = state(IssueId("ws1-only"))._2.exists(_.isInstanceOf[IssueEvent.LaneSet])
+        triagedWs2 = state(IssueId("ws2-only"))._2.exists(_.isInstanceOf[IssueEvent.LaneSet])
+        triagedNoWs = state(IssueId("no-ws"))._2.exists(_.isInstanceOf[IssueEvent.LaneSet])
       yield assertTrue(
-        moved == 0,
-        callCnt == 0,
+        outcome.triaged == 1,
+        triagedWs1,
+        !triagedWs2,
+        !triagedNoWs,
       )
+    },
+    test("empty workspace filter (Set.empty) picks up all Backlog issues regardless of workspace") {
+      val ws1  = backlogIssue("a").copy(workspaceId = Some("ws-1"))
+      val ws2  = backlogIssue("b").copy(workspaceId = Some("ws-2"))
+      for
+        fx      <- mkFixture(backlog = List(ws1, ws2))
+        outcome <- fx.daemon.triageBatch(Set.empty)
+      yield assertTrue(outcome.triaged == 2)
     },
     test("per-tick cap: at most PerTickLimit issues processed per call") {
       val many = (1 to (PatTriageDaemon.PerTickLimit + 3)).toList.map(n => backlogIssue(s"big-$n"))
       for
-        fx    <- mkFixture(backlog = many)
-        moved <- fx.daemon.triageOnce
-      yield assertTrue(moved == PatTriageDaemon.PerTickLimit)
+        fx      <- mkFixture(backlog = many)
+        outcome <- fx.daemon.triageBatch(Set.empty)
+      yield assertTrue(outcome.triaged == PatTriageDaemon.PerTickLimit)
     },
     test("title and description suggestions append TitleEdited + DescriptionEdited events") {
       for
@@ -388,7 +400,7 @@ object PatTriageDaemonSpec extends ZIOSpecDefault:
                       )
                     ),
                   )
-        _      <- fx.daemon.triageOnce
+        _      <- fx.daemon.triageBatch(Set.empty)
         state  <- fx.issues.state
         events  = state(IssueId("i-tt"))._2
       yield assertTrue(
@@ -416,7 +428,7 @@ object PatTriageDaemonSpec extends ZIOSpecDefault:
                       )
                     ),
                   )
-        _      <- fx.daemon.triageOnce
+        _      <- fx.daemon.triageBatch(Set.empty)
         state  <- fx.issues.state
         events  = state(IssueId("i-skip"))._2
       yield assertTrue(
@@ -436,12 +448,12 @@ object PatTriageDaemonSpec extends ZIOSpecDefault:
         // column (e.g. Rework, manual move).
         _      <- fx.issues.append(IssueEvent.LaneSet(IssueId("i-re"), TicketLane.Frontend, "pat", now))
         _      <- fx.issues.append(IssueEvent.MovedToBacklog(IssueId("i-re"), now, now))
-        moved  <- fx.daemon.triageOnce
-        state  <- fx.issues.state
-        events  = state(IssueId("i-re"))._2
-        laneSets = events.collect { case e: IssueEvent.LaneSet => e }
+        outcome  <- fx.daemon.triageBatch(Set.empty)
+        state    <- fx.issues.state
+        events    = state(IssueId("i-re"))._2
+        laneSets  = events.collect { case e: IssueEvent.LaneSet => e }
       yield assertTrue(
-        moved == 1,
+        outcome.triaged == 1,
         laneSets.size == 2,                          // original + re-triage
         laneSets.last.lane == TicketLane.Testing,    // re-triage decision wins
       )
@@ -453,7 +465,6 @@ object PatTriageDaemonSpec extends ZIOSpecDefault:
           override def resolve(agentName: Option[String]): IO[PersistenceError, ConnectorConfig] =
             called.update(_ :+ agentName).as(ApiConnectorConfig(ConnectorId.Mock))
         issues      <- StubIssueRepo.make(List(backlogIssue("i-9")))
-        configRepo  <- StubConfigRepository.make(Map("pat.triage.enabled" -> "true"))
         decisions   <- CapturingDecisionInbox.make
         activityHub <- StubActivityHub.make
         callCount   <- Ref.make(0)
@@ -463,14 +474,13 @@ object PatTriageDaemonSpec extends ZIOSpecDefault:
                        )
         daemon       = PatTriageDaemonLive(
                          issueRepository = issues,
-                         configRepository = configRepo,
                          promptLoader = new StubPromptLoader,
                          connectorConfigResolver = recordingResolver,
                          connectorRegistry = new StubRegistry(connector),
                          decisionInbox = decisions,
                          activityHub = activityHub,
                        )
-        _       <- daemon.triageOnce
+        _       <- daemon.triageBatch(Set.empty)
         agents  <- called.get
       yield assertTrue(agents == List(Some("pat")))
     },

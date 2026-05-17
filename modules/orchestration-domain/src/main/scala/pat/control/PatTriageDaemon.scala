@@ -6,7 +6,6 @@ import zio.*
 import zio.json.ast.Json
 
 import _root_.config.control.ConnectorConfigResolver
-import _root_.config.entity.ConfigRepository
 import activity.control.ActivityHub
 import activity.entity.{ ActivityEvent, ActivityEventType }
 import decision.control.DecisionInbox
@@ -14,30 +13,37 @@ import decision.entity.DecisionUrgency
 import issues.entity.*
 import llm4zio.core.{ ApiConnector, CliConnector, ConnectorRegistry, LlmError, LlmService }
 import llm4zio.tools.JsonSchema
-import pat.entity.{ PatTriageError, PatTriageOutcome }
+import pat.entity.{ PatTriageBatchOutcome, PatTriageError, PatTriageOutcome }
 import prompts.PromptLoader
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ EventId, IssueId }
 
-/** Background daemon: scans Backlog issues without a `LaneSet` and asks
-  * Pat to triage them through whichever connector Pat is configured for
-  * (CLI or API, per `/agents/pat/edit`). On a successful triage, appends
-  * `LaneSet` + optional `TagsUpdated(triage:<note>)` + `MovedToTodo`,
-  * making the issue dispatchable to Alex/Ben/Dana/Rex by the existing
-  * `AutoDispatcher`. On failure or ambiguity, opens a Decision so the
-  * supervisor gets a Telegram tap-to-resolve prompt.
+/** Pat's triage logic, invoked by `DaemonAgentScheduler` on its tick.
+  *
+  * Scans Backlog issues that haven't been triaged yet (no `LaneSet`
+  * since the most recent backlog entry), filtered to the workspaces
+  * the daemon spec covers, and asks Pat to triage them through whichever
+  * connector Pat is configured for (CLI or API, per `/agents/pat/edit`).
+  *
+  * On a successful triage, appends `LaneSet` + optional
+  * `TagsUpdated(triage:<note>)` + `MovedToTodo`, making the issue
+  * dispatchable to Alex/Ben/Dana/Rex by the existing `AutoDispatcher`.
+  * On failure or ambiguity, opens a Decision so the supervisor gets a
+  * Telegram tap-to-resolve prompt.
+  *
+  * This is a stateless service — the scheduler owns the tick cadence
+  * (`DaemonAgentSpec.trigger`) and the enable flag
+  * (`DaemonAgentScheduler.setEnabled`).
   */
 trait PatTriageDaemon:
-  def triageOnce: UIO[Int]
+  /** Triage one batch. Filters Backlog issues to the workspaces given;
+    * empty set means "all workspaces". Errors are recovered into the
+    * `skipped` counter; this method never fails.
+    */
+  def triageBatch(workspaceIds: Set[String]): UIO[PatTriageBatchOutcome]
 
 object PatTriageDaemon:
 
-  /** Settings keys. `enabled` defaults to off for back-compat; new
-    * installs flip it on through onboarding.
-    */
-  val EnabledKey: String          = "pat.triage.enabled"
-  val IntervalKey: String         = "pat.triage.intervalSeconds"
-  val DefaultIntervalSec: Long    = 60L
   val PerTickLimit: Int           = 5
   val PerIssueTimeout: Duration   = 60.seconds
 
@@ -45,37 +51,17 @@ object PatTriageDaemon:
   // supervisor resolves the decision (which clears the tag).
   val BackoffTag: String          = "pat:awaiting-supervisor"
 
-  def triageOnce: ZIO[PatTriageDaemon, Nothing, Int] =
-    ZIO.serviceWithZIO[PatTriageDaemon](_.triageOnce)
+  def triageBatch(workspaceIds: Set[String]): ZIO[PatTriageDaemon, Nothing, PatTriageBatchOutcome] =
+    ZIO.serviceWithZIO[PatTriageDaemon](_.triageBatch(workspaceIds))
 
   val live
     : ZLayer[
-      IssueRepository & ConfigRepository & PromptLoader & ConnectorConfigResolver
-        & ConnectorRegistry & DecisionInbox & ActivityHub,
+      IssueRepository & PromptLoader & ConnectorConfigResolver & ConnectorRegistry
+        & DecisionInbox & ActivityHub,
       Nothing,
       PatTriageDaemon,
     ] =
-    ZLayer.scoped {
-      for
-        issueRepository <- ZIO.service[IssueRepository]
-        configRepo      <- ZIO.service[ConfigRepository]
-        promptLoader    <- ZIO.service[PromptLoader]
-        resolver        <- ZIO.service[ConnectorConfigResolver]
-        registry        <- ZIO.service[ConnectorRegistry]
-        decisionInbox   <- ZIO.service[DecisionInbox]
-        activityHub     <- ZIO.service[ActivityHub]
-        daemon           = PatTriageDaemonLive(
-                             issueRepository,
-                             configRepo,
-                             promptLoader,
-                             resolver,
-                             registry,
-                             decisionInbox,
-                             activityHub,
-                           )
-        _               <- daemon.runLoop.forkScoped
-      yield daemon
-    }
+    ZLayer.fromFunction(PatTriageDaemonLive.apply)
 
   /** JSON schema handed to `executeStructured`. `Json` is what
     * `llm4zio.tools.JsonSchema` aliases to.
@@ -147,7 +133,6 @@ object PatTriageDaemon:
 
 final case class PatTriageDaemonLive(
   issueRepository: IssueRepository,
-  configRepository: ConfigRepository,
   promptLoader: PromptLoader,
   connectorConfigResolver: ConnectorConfigResolver,
   connectorRegistry: ConnectorRegistry,
@@ -157,51 +142,33 @@ final case class PatTriageDaemonLive(
 
   // ── public API ──────────────────────────────────────────────────────
 
-  override def triageOnce: UIO[Int] =
-    isEnabled.flatMap {
-      case false => ZIO.succeed(0)
-      case true  =>
-        pickCandidates
-          .flatMap(candidates =>
-            ZIO.foreach(candidates)(triageOne).map(_.count(identity))
+  override def triageBatch(workspaceIds: Set[String]): UIO[PatTriageBatchOutcome] =
+    pickCandidates(workspaceIds)
+      .flatMap { candidates =>
+        ZIO.foreach(candidates)(triageOne).map { results =>
+          PatTriageBatchOutcome(
+            triaged = results.count(_ == TriageResult.Triaged),
+            escalated = results.count(_ == TriageResult.Escalated),
+            skipped = results.count(_ == TriageResult.Skipped),
           )
-          .catchAll(err =>
-            ZIO.logWarning(s"pat-triage tick failed at list step: $err").as(0)
-          )
-    }
-
-  // ── loop ────────────────────────────────────────────────────────────
-
-  private[control] def runLoop: UIO[Nothing] =
-    val tick = triageOnce *> intervalDuration.flatMap(ZIO.sleep(_))
-    tick.forever
-
-  private def intervalDuration: UIO[Duration] =
-    configRepository
-      .getSetting(PatTriageDaemon.IntervalKey)
-      .map(opt =>
-        opt
-          .flatMap(_.value.toLongOption)
-          .filter(_ > 0L)
-          .getOrElse(PatTriageDaemon.DefaultIntervalSec)
+        }
+      }
+      .catchAll(err =>
+        ZIO
+          .logWarning(s"pat-triage batch failed at list step: $err")
+          .as(PatTriageBatchOutcome(0, 0, 0))
       )
-      .catchAll(_ => ZIO.succeed(PatTriageDaemon.DefaultIntervalSec))
-      .map(_.seconds)
-
-  private def isEnabled: UIO[Boolean] =
-    configRepository
-      .getSetting(PatTriageDaemon.EnabledKey)
-      .map(_.exists(_.value.equalsIgnoreCase("true")))
-      .catchAll(_ => ZIO.succeed(false))
 
   // ── candidate selection ─────────────────────────────────────────────
 
-  private def pickCandidates: IO[PersistenceError, List[AgentIssue]] =
+  private def pickCandidates(workspaceIds: Set[String]): IO[PersistenceError, List[AgentIssue]] =
     for
       all       <- issueRepository.list(
                      IssueFilter(states = Set(IssueStateTag.Backlog), limit = 100)
                    )
-      withHist  <- ZIO.foreach(all)(issue =>
+      scoped     = if workspaceIds.isEmpty then all
+                   else all.filter(_.workspaceId.exists(workspaceIds.contains))
+      withHist  <- ZIO.foreach(scoped)(issue =>
                      issueRepository.history(issue.id).map(history => issue -> history)
                    )
       filtered   = withHist.collect {
@@ -219,14 +186,17 @@ final case class PatTriageDaemonLive(
 
   // ── per-issue triage ────────────────────────────────────────────────
 
-  private def triageOne(issue: AgentIssue): UIO[Boolean] =
+  private enum TriageResult:
+    case Triaged, Escalated, Skipped
+
+  private def triageOne(issue: AgentIssue): UIO[TriageResult] =
     publishStart(issue) *> attemptTriage(issue)
       .foldZIO(
-        err     => handleFailure(issue, err).as(false),
-        applied => publishCompleted(issue).as(applied),
+        err     => handleFailure(issue, err).as(TriageResult.Skipped),
+        result  => publishCompleted(issue).as(result),
       )
 
-  private def attemptTriage(issue: AgentIssue): IO[PatTriageError, Boolean] =
+  private def attemptTriage(issue: AgentIssue): IO[PatTriageError, TriageResult] =
     for
       cfg       <- connectorConfigResolver
                      .resolve(Some("pat"))
@@ -244,9 +214,9 @@ final case class PatTriageDaemonLive(
                      .mapError(PatTriageError.ConnectorFailure.apply)
                      .timeout(PatTriageDaemon.PerIssueTimeout)
                      .someOrFail(PatTriageError.Timeout)
-      applied   <- applyOutcome(issue, outcome)
+      result    <- applyOutcome(issue, outcome)
                      .mapError(PatTriageError.Storage.apply)
-    yield applied
+    yield result
 
   // CLI connectors may or may not also extend LlmService — only the ones
   // that wire up `executeStructured` do. Mirrors the same downcast
@@ -281,7 +251,7 @@ final case class PatTriageDaemonLive(
   private def applyOutcome(
     issue: AgentIssue,
     outcome: PatTriageOutcome,
-  ): IO[PersistenceError, Boolean] =
+  ): IO[PersistenceError, TriageResult] =
     outcome match
       case PatTriageOutcome.LaneAndNote(lane, note, titleSuggestion, descriptionSuggestion) =>
         for
@@ -303,10 +273,10 @@ final case class PatTriageDaemonLive(
                                   )
                                 )
           _              <- issueRepository.append(IssueEvent.MovedToTodo(issue.id, movedAt = now, occurredAt = now))
-        yield true
+        yield TriageResult.Triaged
 
       case PatTriageOutcome.Clarify(question, options) =>
-        openClarifyDecision(issue, question, options).as(true)
+        openClarifyDecision(issue, question, options).as(TriageResult.Escalated)
 
   private def appendIfNewTitle(
     issue: AgentIssue,

@@ -511,3 +511,52 @@ parked until the supervisor resolves the open Decision.
 - **Re-triage cooldown** — currently re-triage fires the next tick
   after `MovedToBacklog`; no debounce. If a human is shuttling an issue
   back and forth manually, Pat might re-triage repeatedly.
+
+---
+
+## v3 extension — refold into `DaemonAgentScheduler`
+
+The v1/v2 implementation ran Pat as a standalone forkScoped loop with
+its own `pat.triage.*` settings and a UI section under the Gateway tab.
+That was wrong: a project already has `DaemonAgentScheduler` driving
+`debt-detector` and `test-guardian`, surfaced on `/settings/daemons`
+with full lifecycle controls (start/stop/restart/enable/disable),
+health badges, runtime stats, last summary / last error. Pat fit that
+shape exactly.
+
+### What changed
+
+- **`PatTriageDaemon` is now a stateless worker.** No auto-loop, no
+  `pat.triage.enabled` / `pat.triage.intervalSeconds` config reads.
+  Its only public method is
+  `triageBatch(workspaceIds: Set[String]): UIO[PatTriageBatchOutcome]`.
+- **Cadence + enable/disable now live on the daemon spec.** A new
+  built-in `DaemonAgentSpec` with `daemonKey = TriageAgentKey`,
+  `trigger = Continuous(60.seconds)`, `agentName = "pat"` is derived
+  per project alongside `TestGuardian` / `DebtDetector` in
+  `DaemonAgentScheduler.deriveSpecs`.
+- **`DaemonAgentScheduler.runTriageAgent`** (previously a stub that
+  fell through to `runCustomDaemon`) now invokes
+  `PatTriageDaemon.triageBatch(spec.workspaceIds.toSet)` and translates
+  the `PatTriageBatchOutcome` into a `DaemonRunOutcome`. Runtime stats
+  fall out of the existing daemon plumbing: `issuesCreated` counts
+  triaged + escalated, `summary` reports both plus skipped, errors
+  surface as `DaemonHealth.Degraded` with `lastError`.
+- **`PatTriageBatchOutcome(triaged, escalated, skipped)`** is the
+  cross-boundary contract — daemon-domain depends on this entity from
+  `pat.entity`.
+- **Gateway tab section deleted.** `patTriageSection` is gone;
+  `SettingsValidator` no longer accepts the `pat.` prefix;
+  `SettingsController.settingsKeys` no longer lists the keys;
+  `OnboardingController` no longer writes `pat.triage.enabled`. The
+  scheduler's existing per-spec enabled flag
+  (`daemon.<projectId>.<daemonKey>.enabled`, managed via
+  `DaemonAgentScheduler.setEnabled`) is the canonical home.
+
+### Result
+
+`/settings/daemons` now shows Pat alongside the other daemons with the
+same operational affordances. The triage logic in `PatTriageDaemon` is
+unchanged — only its driver and its surface area moved. All 14 daemon
+tests transfer verbatim; the two new tests cover workspace filtering
+(Set("ws-1") vs Set.empty).

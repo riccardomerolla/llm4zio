@@ -11,6 +11,8 @@ import daemon.entity.*
 import governance.entity.*
 import issues.entity.*
 import orchestration.entity.{ AgentPoolManager, PoolError, SlotHandle }
+import pat.control.PatTriageDaemon
+import pat.entity.PatTriageBatchOutcome
 import project.entity.*
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ IssueId, ProjectId }
@@ -20,6 +22,14 @@ import workspace.entity.*
 object DaemonAgentSchedulerSpec extends ZIOSpecDefault:
 
   private val now = Instant.parse("2026-03-26T12:00:00Z")
+
+  /** Stub Pat daemon — these tests cover the legacy daemons
+    * (TestGuardian / DebtDetector / governance triggers), not the
+    * Pat-triage path. Pat is exercised in PatTriageDaemonSpec.
+    */
+  private object NoOpPatTriageDaemon extends PatTriageDaemon:
+    override def triageBatch(workspaceIds: Set[String]): UIO[PatTriageBatchOutcome] =
+      ZIO.succeed(PatTriageBatchOutcome(triaged = 0, escalated = 0, skipped = 0))
 
   final private class StubProjectRepository(projects: List[Project]) extends ProjectRepository:
     override def append(event: ProjectEvent): IO[PersistenceError, Unit]   = ZIO.unit
@@ -102,6 +112,7 @@ object DaemonAgentSchedulerSpec extends ZIOSpecDefault:
                        configRepository = new MutableConfigRepository(configRef),
                        governanceRepository = new StubGovernancePolicyRepository(governancePolicy),
                        daemonRepository = new StubDaemonAgentSpecRepository(customSpecs),
+                       patTriageDaemon = NoOpPatTriageDaemon,
                        queue = queue,
                        runtimeState = runtimeRef,
                      )
