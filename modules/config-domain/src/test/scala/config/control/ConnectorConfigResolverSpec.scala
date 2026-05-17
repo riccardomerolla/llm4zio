@@ -82,13 +82,16 @@ object ConnectorConfigResolverSpec extends ZIOSpecDefault:
         config.isInstanceOf[CliConnectorConfig],
       )
     },
-    test("falls back to library defaults when no settings") {
+    test("falls back to library default for api mode (the global default mode) when no settings") {
+      // Mode defaults to "api"; the default connector for api mode is
+      // GeminiApi (was GeminiCli before the v4 fix — a CLI default in
+      // API mode was the pre-existing bug).
       val repo     = new StubConfigRepository(Map.empty)
       val resolver = ConnectorConfigResolverLive(repo)
       for config <- resolver.resolve(agentName = None)
       yield assertTrue(
-        config.connectorId == ConnectorId.GeminiCli,
-        config.isInstanceOf[CliConnectorConfig],
+        config.connectorId == ConnectorId.GeminiApi,
+        config.isInstanceOf[ApiConnectorConfig],
       )
     },
     test("reads legacy ai.* keys as fallback") {
@@ -236,8 +239,45 @@ object ConnectorConfigResolverSpec extends ZIOSpecDefault:
       val resolver = ConnectorConfigResolverLive(repo)
       for config <- resolver.resolve(agentName = None)
       yield assertTrue(
-        config.connectorId == ConnectorId.GeminiCli,
+        config.connectorId == ConnectorId.GeminiApi,
+        config.isInstanceOf[ApiConnectorConfig],
+      )
+    },
+    test("mode=cli with legacy ai.provider=Anthropic does NOT leak into an API config") {
+      // The bug: an explicitly-CLI agent inherited `ai.provider =
+      // "Anthropic"` from onboarding via the legacy fallback chain,
+      // got resolved to ConnectorId.Anthropic (an API connector), and
+      // built an `ApiConnectorConfig(Anthropic, baseUrl = None)` that
+      // exploded at runtime with "Missing baseUrl for Anthropic
+      // provider". The fix clamps the resolved id to the chosen mode.
+      val repo     = new StubConfigRepository(
+        Map(
+          "agent.pat.connector.mode" -> "cli",
+          "ai.provider"              -> "Anthropic",
+          "ai.apiKey"                -> "sk-onboarding",
+        )
+      )
+      val resolver = ConnectorConfigResolverLive(repo)
+      for config <- resolver.resolve(agentName = Some("pat"))
+      yield assertTrue(
         config.isInstanceOf[CliConnectorConfig],
+        config.connectorId == ConnectorId.ClaudeCli, // mode-default for cli
+      )
+    },
+    test("mode=api with legacy ai.provider=GeminiCli does NOT leak into a CLI config") {
+      // Symmetric case: an explicitly-API agent shouldn't get a CLI
+      // config just because someone set a CLI connector in `ai.provider`.
+      val repo     = new StubConfigRepository(
+        Map(
+          "agent.alex.connector.mode" -> "api",
+          "ai.provider"               -> "GeminiCli",
+        )
+      )
+      val resolver = ConnectorConfigResolverLive(repo)
+      for config <- resolver.resolve(agentName = Some("alex"))
+      yield assertTrue(
+        config.isInstanceOf[ApiConnectorConfig],
+        config.connectorId == ConnectorId.GeminiApi, // mode-default for api
       )
     },
   )

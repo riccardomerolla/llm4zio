@@ -53,8 +53,13 @@ final case class ConnectorConfigResolverLive(repo: ConfigRepository) extends Con
     val global = globalSettings.map { case (k, v) => k.stripPrefix("connector.default.") -> v }
     val legacy = legacySettings.map { case (k, v) => k.stripPrefix("ai.") -> v }
 
-    // Determine mode: agent.<name>.connector.mode, default "api"
-    val mode = agent.get("mode").filter(_.nonEmpty).getOrElse("api")
+    // Determine mode: agent.<name>.connector.mode, default "api".
+    // `explicitMode` is the user's authoritative choice from the UI
+    // (the API/CLI toggle on /agents/<name>/edit); a `None` means the
+    // mode was never explicitly set and should be derived from the
+    // resolved connector class.
+    val explicitMode: Option[String] = agent.get("mode").filter(_.nonEmpty)
+    val mode: String                 = explicitMode.getOrElse("api")
 
     // Mode-scoped agent keys: agent.<name>.connector.{api|cli}.*
     val agentModed = agent.collect { case (k, v) if k.startsWith(s"$mode.") => k.stripPrefix(s"$mode.") -> v }
@@ -89,7 +94,9 @@ final case class ConnectorConfigResolverLive(repo: ConfigRepository) extends Con
         .orElse(globalFlat.get(key).filter(_.nonEmpty))
         .orElse(legacy.get(key).filter(_.nonEmpty))
 
-    val defaultConnector = if mode == "cli" then ConnectorId.ClaudeCli else ConnectorId.GeminiCli
+    // Default connector for each mode. Was wrong for "api" (returned a
+    // CLI connector) — now `api` defaults to GeminiApi.
+    val defaultConnector = if mode == "cli" then ConnectorId.ClaudeCli else ConnectorId.GeminiApi
 
     // Collect parse failures so the caller can log them at debug level.
     val unparsed                                                                          = List.newBuilder[(String, String)]
@@ -101,11 +108,29 @@ final case class ConnectorConfigResolverLive(repo: ConfigRepository) extends Con
           if parsed.isEmpty then unparsed += ((key, value))
           parsed
 
-    val connectorId = tryParse("id", parseConnectorId)
+    val rawConnectorId = tryParse("id", parseConnectorId)
       .orElse(tryParse("provider", parseConnectorId))
       .orElse(tryParse("connector", parseConnectorId))
       .orElse(get("provider").flatMap(parseLegacyProvider))
       .getOrElse(defaultConnector)
+
+    // Reconcile the resolved connectorId with the chosen mode, but
+    // ONLY when the mode was set explicitly. Without this clamp the
+    // five-level fallback chain reaches down into `ai.*` (legacy
+    // globals), which means a global `ai.provider = "Anthropic"`
+    // would leak into an explicitly-CLI agent — producing an
+    // `ApiConnectorConfig(Anthropic, baseUrl = None)` that fails at
+    // runtime with "Missing baseUrl".
+    //
+    // When the mode was NOT explicitly set, the connector class itself
+    // is the user's intent (e.g. `agent.coder.connector.id = "claude-cli"`
+    // implies CLI), so we leave the resolved id alone and let the
+    // config-builder branch on `allCli.contains(connectorId)` below
+    // pick the right shape.
+    val connectorId = explicitMode match
+      case Some("cli") if !ConnectorId.allCli.contains(rawConnectorId) => defaultConnector
+      case Some("api") if !ConnectorId.allApi.contains(rawConnectorId) => defaultConnector
+      case _                                                            => rawConnectorId
 
     val model   = get("model")
     val timeout = get("timeout").flatMap(s => scala.util.Try(s.toLong).toOption).map(_.seconds).getOrElse(300.seconds)
