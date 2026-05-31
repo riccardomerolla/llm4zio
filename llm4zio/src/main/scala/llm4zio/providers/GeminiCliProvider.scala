@@ -357,7 +357,7 @@ object GeminiCliProvider:
     val normalized = output.replace("\r\n", "\n").trim
     if normalized.isEmpty then Left("Gemini CLI returned empty output")
     else
-      val jsonDecoded = jsonCandidates(normalized)
+      val jsonDecoded = StructuredOutputs.jsonCandidates(normalized)
         .iterator
         .flatMap(tryDecodeHeadless)
         .nextOption()
@@ -426,63 +426,6 @@ object GeminiCliProvider:
       .trim
     Option(content).filter(_.nonEmpty)
 
-  private def jsonCandidates(raw: String): List[String] =
-    val fencedSlices = extractJsonFromMarkdownFences(raw)
-    val balancedJson = extractBalancedJsonObjects(raw) ++ fencedSlices.flatMap(extractBalancedJsonObjects)
-    (raw :: fencedSlices ::: balancedJson).map(_.trim).filter(_.nonEmpty).distinct
-
-  private def extractJsonFromMarkdownFences(raw: String): List[String] =
-    val fencePattern = "(?is)```(?:[\\w.+-]+)?\\s*(.*?)\\s*```".r
-    fencePattern
-      .findAllMatchIn(raw)
-      .flatMap { matched =>
-        val content = matched.group(1).trim
-        Option.when(content.nonEmpty)(content)
-      }
-      .toList
-
-  private def extractBalancedJsonObjects(raw: String): List[String] =
-    final case class ScanState(
-      startIdx: Option[Int] = None,
-      depth: Int = 0,
-      inString: Boolean = false,
-      escaping: Boolean = false,
-      results: List[String] = Nil,
-    )
-
-    raw.zipWithIndex.foldLeft(ScanState()) {
-      case (state, (ch, idx)) =>
-        if state.inString then
-          if state.escaping then state.copy(escaping = false)
-          else if ch == '\\' then state.copy(escaping = true)
-          else if ch == '"' then state.copy(inString = false)
-          else state
-        else
-          ch match
-            case '"'                    =>
-              state.copy(inString = true)
-            case '{'                    =>
-              state.copy(
-                startIdx = state.startIdx.orElse(Some(idx)),
-                depth = state.depth + 1,
-              )
-            case '}' if state.depth > 0 =>
-              val nextDepth = state.depth - 1
-              if nextDepth == 0 then
-                state.startIdx match
-                  case Some(start) =>
-                    state.copy(
-                      startIdx = None,
-                      depth = 0,
-                      results = raw.substring(start, idx + 1) :: state.results,
-                    )
-                  case None        =>
-                    state.copy(depth = 0)
-              else state.copy(depth = nextDepth)
-            case _                      =>
-              state
-    }.results.reverse
-
   private def streamStatsToUsage(stats: Option[GeminiStreamStats]): Option[TokenUsage] =
     stats.flatMap(s =>
       for
@@ -496,8 +439,8 @@ object GeminiCliProvider:
     config: LlmConfig,
     executor: GeminiCliExecutor,
     executionContext: GeminiCliExecutionContext = GeminiCliExecutionContext.default,
-  ): CliConnector & LlmService =
-    new CliConnector with LlmService:
+  ): CliConnector =
+    new CliConnector:
 
       // CliConnector methods
       override def id: ConnectorId = ConnectorId.GeminiCli
@@ -675,29 +618,17 @@ object GeminiCliProvider:
       override def executeWithTools(prompt: String, tools: List[AnyTool]): IO[LlmError, ToolCallResponse] =
         ZIO.fail(LlmError.InvalidRequestError("Gemini CLI does not support tool calling"))
 
+      // Override the inherited default to collect text from the rich event
+      // stream rather than the non-streaming `complete` path — Gemini's
+      // stream carries metadata that downstream observers expect to see.
       override def executeStructured[A: JsonCodec](prompt: String, schema: JsonSchema): IO[LlmError, A] =
         for
-          streamed  <- executeStream(prompt)
-                         .runFold(new StringBuilder()) { (acc, chunk) =>
-                           if chunk.delta.nonEmpty then acc.append(chunk.delta) else acc
-                         }
-                         .map(_.result())
-          candidates = jsonCandidates(streamed)
-          parsed     = candidates.iterator
-                         .map(candidate => candidate -> candidate.fromJson[A])
-                         .collectFirst { case (_, Right(value)) => value }
-          parseError = candidates.iterator
-                         .map(_.fromJson[A])
-                         .collectFirst { case Left(error) => error }
-                         .orElse(streamed.fromJson[A].left.toOption)
-                         .getOrElse("no JSON candidate found")
-          parsed    <-
-            ZIO.fromOption(parsed).orElseFail(
-              LlmError.ParseError(
-                s"Failed to parse response as structured output: $parseError",
-                streamed,
-              )
-            )
+          streamed <- executeStream(prompt)
+                        .runFold(new StringBuilder()) { (acc, chunk) =>
+                          if chunk.delta.nonEmpty then acc.append(chunk.delta) else acc
+                        }
+                        .map(_.result())
+          parsed   <- StructuredOutputs.parseFromText[A](streamed, schema)
         yield parsed
 
       override def isAvailable: UIO[Boolean] =

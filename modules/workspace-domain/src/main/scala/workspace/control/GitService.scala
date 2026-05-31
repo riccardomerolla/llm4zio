@@ -350,11 +350,15 @@ final case class GitServiceLive() extends GitService:
   override def diffStatVsBase(repoPath: String, baseBranch: String): IO[GitError, GitDiffStat] =
     for
       _      <- ensureRepo(repoPath)
-      ref    <- resolveRef(repoPath, baseBranch)
+      ref    <- resolveBaseRef(repoPath, baseBranch)
       raw    <- ref match
-                  case None    => ZIO.succeed("")
+                  case None    =>
+                    ZIO.logWarning(
+                      s"diffStatVsBase: no ref for base='$baseBranch' in $repoPath (tried main/master/origin variants); returning empty diff."
+                    ).as("")
                   case Some(r) =>
                     runGit(repoPath, "diff", s"$r...HEAD", "--numstat")
+                      .tapError(err => ZIO.logWarning(s"diffStatVsBase $r...HEAD failed in $repoPath: $err"))
                       .catchAll(_ => ZIO.succeed(""))
       result <- ZIO.fromEither(GitParsers.parseDiffNumStat(raw))
     yield result
@@ -362,11 +366,17 @@ final case class GitServiceLive() extends GitService:
   override def diffFileVsBase(repoPath: String, filePath: String, baseBranch: String): IO[GitError, String] =
     for
       _   <- ensureRepo(repoPath)
-      ref <- resolveRef(repoPath, baseBranch)
+      ref <- resolveBaseRef(repoPath, baseBranch)
       out <- ref match
-               case None    => ZIO.succeed("")
+               case None    =>
+                 ZIO.logWarning(
+                   s"diffFileVsBase: no ref for base='$baseBranch' in $repoPath when diffing $filePath; returning empty diff."
+                 ).as("")
                case Some(r) =>
                  runGit(repoPath, "diff", s"$r...HEAD", "--no-color", "--", filePath)
+                   .tapError(err =>
+                     ZIO.logWarning(s"diffFileVsBase $r...HEAD -- $filePath failed in $repoPath: $err")
+                   )
                    .catchAll(_ => ZIO.succeed(""))
     yield out
 
@@ -380,3 +390,27 @@ final case class GitServiceLive() extends GitService:
           .as(Some(ref))
           .catchAll(_ => ZIO.succeed(None))
     }
+
+  /** Resolve the diff base branch with fallbacks: the requested branch
+    * (e.g. "main"), then "master", then whatever `origin/HEAD` points at.
+    * This stops the diff UI from going silent when callers ask for `main`
+    * in a worktree where the default branch is actually `master`, or when
+    * the agent's worktree has no remote-tracking branches at all.
+    */
+  private def resolveBaseRef(repoPath: String, branch: String): IO[GitError, Option[String]] =
+    firstResolvable(repoPath, List(branch, "master").distinct).flatMap {
+      case Some(ref) => ZIO.succeed(Some(ref))
+      case None      => detectOriginHead(repoPath)
+    }
+
+  private def firstResolvable(repoPath: String, candidates: List[String]): IO[GitError, Option[String]] =
+    ZIO.foldLeft(candidates)(Option.empty[String]) { (found, candidate) =>
+      if found.isDefined then ZIO.succeed(found)
+      else resolveRef(repoPath, candidate)
+    }
+
+  private def detectOriginHead(repoPath: String): IO[GitError, Option[String]] =
+    runGit(repoPath, "symbolic-ref", "--short", "refs/remotes/origin/HEAD")
+      .map(_.trim)
+      .map(ref => if ref.isEmpty then None else Some(ref))
+      .catchAll(_ => ZIO.succeed(None))

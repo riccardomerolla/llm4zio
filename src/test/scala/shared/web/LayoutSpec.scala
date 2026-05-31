@@ -45,12 +45,12 @@ object LayoutSpec extends ZIOSpecDefault:
         val html = Layout.page("Test", "/issues")()
         assertTrue(html.contains("/board"))
       },
-      test("board nav item includes live badge loader") {
+      test("board and inbox nav items include live badge loaders") {
         val html = Layout.page("Test", "/board")()
         assertTrue(
           html.contains("/nav/badges/board"),
+          html.contains("/nav/badges/decisions"),
           !html.contains("/nav/badges/checkpoints"),
-          !html.contains("/nav/badges/decisions"),
         )
       },
       test("top nav bar markup is present and sidebar markup is absent") {

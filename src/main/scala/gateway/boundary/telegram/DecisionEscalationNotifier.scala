@@ -144,12 +144,23 @@ final case class DecisionEscalationNotifierLive(
     if event.eventType != ActivityEventType.DecisionEscalated then ZIO.unit
     else
       handleEvent(event).catchAll {
-        case DecisionEscalationNotifierError.MissingSupervisor =>
+        case DecisionEscalationNotifierError.MissingSupervisor                   =>
           // Quiet skip — supervisor not configured yet (first-run / policy-locked)
           ZIO.unit
-        case other                                             =>
+        case DecisionEscalationNotifierError.Telegram(err) if isBotSelfTarget(err.toString) =>
+          ZIO.logWarning(
+            "DecisionEscalationNotifier: Telegram refused delivery because the destination chat is the bot itself. " +
+              "Set `telegram.supervisorChatId` to a human chat_id (DM the bot once, then use the numeric `from.id` " +
+              "from the resulting update — NOT the bot's own user id). Falling back to the web inbox at /decisions/inbox."
+          )
+        case other                                                               =>
           ZIO.logWarning(s"DecisionEscalationNotifier skipped escalation: $other")
       }
+
+  private def isBotSelfTarget(message: String): Boolean =
+    val lower = message.toLowerCase
+    lower.contains("can't send messages to the bot") ||
+      lower.contains("bot can't send messages to itself")
 
   private def handleEvent(event: ActivityEvent): IO[DecisionEscalationNotifierError, Unit] =
     for

@@ -238,6 +238,7 @@ object Layout:
         "Inbox",
         Icons.flag,
         _.startsWith("/decisions"),
+        liveBadgePath = Some("/nav/badges/decisions"),
       ),
       NavItem("/sdlc", "SDLC", Icons.activity, _.startsWith("/sdlc")),
       NavItem(

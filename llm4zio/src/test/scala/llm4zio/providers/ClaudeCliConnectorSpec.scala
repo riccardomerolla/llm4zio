@@ -1,12 +1,15 @@
 package llm4zio.providers
 
 import zio.*
+import zio.json.*
 import zio.stream.ZStream
 import zio.test.*
 
 import llm4zio.core.*
 
 object ClaudeCliConnectorSpec extends ZIOSpecDefault:
+
+  final case class TriagePick(lane: String, rationale: String) derives JsonCodec
 
   class MockCliExec(
     responses: Map[List[String], ProcessResult] = Map.empty
@@ -48,6 +51,41 @@ object ClaudeCliConnectorSpec extends ZIOSpecDefault:
       val connector = ClaudeCliConnector.make(CliConnectorConfig(ConnectorId.ClaudeCli), mock)
       for result <- connector.complete("hello")
       yield assertTrue(result == "mocked response")
+    },
+    test("is an LlmService — the CliConnector trait provides the capability uniformly") {
+      val connector = ClaudeCliConnector.make(CliConnectorConfig(ConnectorId.ClaudeCli), new MockCliExec())
+      assertTrue(connector.isInstanceOf[LlmService])
+    },
+    test("executeStructured parses a JSON pick out of the shell stdout") {
+      val mock      = new MockCliExec(responses =
+        Map(
+          List("claude", "--print", "triage prompt") ->
+            ProcessResult(List("""{"lane":"Frontend","rationale":"UI change"}"""), 0)
+        )
+      )
+      val connector = ClaudeCliConnector.make(CliConnectorConfig(ConnectorId.ClaudeCli), mock)
+      for pick <- connector.executeStructured[TriagePick]("triage prompt", zio.json.ast.Json.Obj())
+      yield assertTrue(pick == TriagePick("Frontend", "UI change"))
+    },
+    test("executeStructured tolerates a fenced JSON block in the shell output") {
+      val mock      = new MockCliExec(responses =
+        Map(
+          List("claude", "--print", "triage prompt") ->
+            ProcessResult(
+              List(
+                "Here is your triage:",
+                "```json",
+                """{"lane":"Backend","rationale":"server work"}""",
+                "```",
+                "Done.",
+              ),
+              0,
+            )
+        )
+      )
+      val connector = ClaudeCliConnector.make(CliConnectorConfig(ConnectorId.ClaudeCli), mock)
+      for pick <- connector.executeStructured[TriagePick]("triage prompt", zio.json.ast.Json.Obj())
+      yield assertTrue(pick == TriagePick("Backend", "server work"))
     },
     test("healthCheck returns Healthy when claude is installed") {
       val mock      = new MockCliExec(responses =

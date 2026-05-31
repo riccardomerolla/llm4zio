@@ -11,7 +11,7 @@ import activity.entity.{ ActivityEvent, ActivityEventType }
 import decision.control.DecisionInbox
 import decision.entity.DecisionUrgency
 import issues.entity.*
-import llm4zio.core.{ ApiConnector, CliConnector, ConnectorRegistry, LlmError, LlmService }
+import llm4zio.core.{ ConnectorRegistry, LlmError }
 import llm4zio.tools.JsonSchema
 import prompts.PromptLoader
 import shared.errors.PersistenceError
@@ -59,9 +59,11 @@ object TriageDaemon:
 
   /** Backlog issues with this tag are parked until the supervisor
     * resolves the open Decision. Tag is generic (not agent-specific)
-    * so it survives a rename of the triage agent.
+    * so it survives a rename of the triage agent. The constant lives in
+    * `issues.entity.IssueTags` so the DecisionInbox can clear it when the
+    * supervisor resolves the matching decision.
     */
-  val BackoffTag: String          = "triage:awaiting-supervisor"
+  val BackoffTag: String          = issues.entity.IssueTags.TriageAwaitingSupervisor
 
   def triageBatch(workspaceIds: Set[String], agentName: String)
     : ZIO[TriageDaemon, Nothing, TriageBatchOutcome] =
@@ -214,10 +216,8 @@ final case class TriageDaemonLive(
       cfg       <- connectorConfigResolver
                      .resolve(Some(agentName))
                      .mapError(TriageError.Storage.apply)
-      connector <- connectorRegistry
+      llm       <- connectorRegistry
                      .resolve(cfg)
-                     .mapError(TriageError.ConnectorFailure.apply)
-      llm       <- asLlmService(connector)
                      .mapError(TriageError.ConnectorFailure.apply)
       prompt    <- renderPrompt(issue).mapError(err =>
                      TriageError.Storage(PersistenceError.QueryFailed("triage-prompt", err.toString))
@@ -230,25 +230,6 @@ final case class TriageDaemonLive(
       result    <- applyOutcome(issue, agentName, outcome)
                      .mapError(TriageError.Storage.apply)
     yield result
-
-  // CLI connectors may or may not also extend LlmService — only the ones
-  // that wire up `executeStructured` do. Mirrors the same downcast
-  // ConfigAwareLlmService does, with a typed failure if the connector
-  // can't produce structured output (e.g. a CLI tool wired for
-  // continuation-only chat).
-  private def asLlmService(connector: llm4zio.core.Connector): IO[LlmError, LlmService] =
-    connector match
-      case api: ApiConnector  => ZIO.succeed(api)
-      case cli: CliConnector  =>
-        cli match
-          case svc: LlmService => ZIO.succeed(svc)
-          case _               =>
-            ZIO.fail(
-              LlmError.ConfigError(
-                s"CLI connector ${cli.id.value} doesn't support structured triage output — " +
-                  "pick a CLI that implements LlmService (e.g. claude, gemini, opencode)."
-              )
-            )
 
   private def renderPrompt(issue: AgentIssue): IO[prompts.PromptError, String] =
     promptLoader.load(

@@ -43,13 +43,8 @@ final private[app] case class ConfigAwareLlmService(
       current.get(cfg) match
         case Some(existing) => ZIO.succeed((existing, current))
         case None           =>
-          registry.resolve(cfg).flatMap {
-            case api: ApiConnector => ZIO.succeed(api: LlmService)
-            case cli: CliConnector =>
-              cli match
-                case svc: LlmService => ZIO.succeed(svc)
-                case _               => ZIO.fail(LlmError.ConfigError(s"CLI connector ${cli.id.value} does not support LlmService"))
-          }.map(created => (created, current + (cfg -> created)))
+          // Connector extends LlmService now — no runtime check needed.
+          registry.resolve(cfg).map(connector => (connector, current + (cfg -> connector)))
     }
 
   private def fallbackConfigs(primary: ProviderConfig): List[ConnectorConfig] =

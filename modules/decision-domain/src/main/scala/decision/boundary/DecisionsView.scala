@@ -6,6 +6,16 @@ import shared.web.Layout
 
 object DecisionsView:
 
+  enum FlashKind:
+    case Success, Error, Info
+
+  final case class Flash(message: String, kind: FlashKind = FlashKind.Success)
+
+  object Flash:
+    def success(message: String): Flash = Flash(message, FlashKind.Success)
+    def error(message: String): Flash   = Flash(message, FlashKind.Error)
+    def info(message: String): Flash    = Flash(message, FlashKind.Info)
+
   /** Phase 3 R9: the web-side supervisor inbox mirror. Renders pending +
     * escalated decisions with QuickOption buttons that POST to
     * `/decisions/{id}/resolve` with a `key=` form field — the same
@@ -14,7 +24,7 @@ object DecisionsView:
     * For policy-locked corp environments where Telegram is blocked, this
     * is the supervisor's working surface.
     */
-  def inboxPage(decisions: List[Decision], flash: Option[String] = None): String =
+  def inboxPage(decisions: List[Decision], flash: Option[Flash] = None): String =
     Layout.page("Supervisor Inbox", "/decisions/inbox")(
       div(cls := "mx-auto max-w-5xl space-y-6 p-6")(
         h1(cls := "text-2xl font-bold text-white")("Supervisor Inbox"),
@@ -23,11 +33,7 @@ object DecisionsView:
             "Tap a quick-reply button to resolve. Channel-agnostic — Telegram " +
             "and this inbox stay in sync."
         ),
-        flash.map(message =>
-          div(cls := "rounded-lg border border-emerald-400/30 bg-emerald-500/10 px-4 py-2 text-sm text-emerald-200")(
-            message
-          )
-        ).getOrElse(frag()),
+        flash.map(flashBanner).getOrElse(frag()),
         if decisions.isEmpty then
           div(cls := "rounded-xl border border-dashed border-white/10 bg-slate-900/40 p-12 text-center")(
             p(cls := "text-sm text-slate-400")("No decisions need attention right now.")
@@ -35,6 +41,20 @@ object DecisionsView:
         else
           div(cls := "space-y-4")(decisions.map(inboxCard)),
       )
+    )
+
+  private def flashBanner(flash: Flash): Frag =
+    val tone = flash.kind match
+      case FlashKind.Success => "border-emerald-400/30 bg-emerald-500/10 text-emerald-200"
+      case FlashKind.Error   => "border-rose-400/40 bg-rose-500/15 text-rose-200"
+      case FlashKind.Info    => "border-cyan-400/30 bg-cyan-500/10 text-cyan-200"
+    val icon = flash.kind match
+      case FlashKind.Success => "✓"
+      case FlashKind.Error   => "⚠"
+      case FlashKind.Info    => "ℹ"
+    div(cls := s"flex items-start gap-2 rounded-lg border px-4 py-2 text-sm $tone")(
+      span(cls := "font-semibold")(icon),
+      span(cls := "flex-1")(flash.message),
     )
 
   private def inboxCard(decision: Decision): Frag =
@@ -47,6 +67,7 @@ object DecisionsView:
         case DecisionStatus.Escalated => "text-rose-300"
         case DecisionStatus.Pending   => "text-slate-300"
         case _                        => "text-emerald-300"
+    val reason = Option(decision.source.summary).map(_.trim).filter(_.nonEmpty)
     div(cls := s"rounded-xl border bg-slate-900/60 p-5 $borderTone")(
       div(cls := "flex flex-wrap items-start justify-between gap-3")(
         div(
@@ -58,6 +79,12 @@ object DecisionsView:
         urgencyBadge(decision.urgency),
       ),
       p(cls := "mt-3 text-sm text-slate-200 whitespace-pre-wrap")(decision.context),
+      reason.map(text =>
+        div(cls := "mt-3 rounded-md border border-rose-400/25 bg-rose-500/5 px-3 py-2")(
+          p(cls := "text-[10px] font-semibold uppercase tracking-wide text-rose-300")("Why this needs you"),
+          p(cls := "mt-1 text-xs text-rose-100 whitespace-pre-wrap")(text),
+        )
+      ).getOrElse(frag()),
       decision.source.issueId.map(id =>
         p(cls := "mt-2 text-xs text-indigo-300")(s"Issue: ${id.value}")
       ).getOrElse(frag()),

@@ -78,7 +78,11 @@ object IssueTimelineView:
             button(
               `type`  := "button",
               cls     := "rounded-md border border-amber-400/25 bg-amber-400/10 px-2.5 py-1 text-xs font-semibold text-amber-100 hover:bg-amber-400/20",
-              onclick := "document.getElementById('issue-review-form')?.scrollIntoView({behavior:'smooth', block:'start'})",
+              // Scroll to the form AND focus the textarea — the comment is
+              // required, and a 2-line ring-only hint at the bottom was easy
+              // to miss. Focusing on click makes the next step obvious.
+              onclick :=
+                "var f=document.getElementById('issue-review-form');var t=document.getElementById('review-comment');if(f){f.scrollIntoView({behavior:'smooth', block:'start'});}if(t){setTimeout(function(){t.focus();},250);}",
             )("Rework"),
           )
         else frag(),
@@ -457,7 +461,12 @@ object IssueTimelineView:
         rows        := 3,
         placeholder := "Leave a comment...",
         cls         := "w-full rounded-lg border border-white/10 bg-slate-800/70 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-400/50 resize-y",
+        oninput     := "var e=document.getElementById('review-comment-error');if(e){e.classList.add('hidden');}",
       )(),
+      p(
+        id  := "review-comment-error",
+        cls := "mt-1 hidden text-xs text-amber-300",
+      )("Add a comment before requesting rework — it tells the agent what to change."),
       div(cls := "mt-3 flex items-center justify-end gap-2")(
         button(
           `type`                      := "button",
@@ -576,15 +585,21 @@ object IssueTimelineView:
           var msg     = btn.getAttribute('data-confirm-msg') || 'Are you sure?';
           var incSel  = btn.getAttribute('data-include');
 
-          // For rework, require comment first
+          // For rework, require comment first. A persistent inline error
+          // is clearer than the 2-second amber ring we used to flash —
+          // users had no idea why the button "didn't work".
           if(action === 'rework'){
             var ta = document.getElementById('review-comment');
             if(ta && !ta.value.trim()){
               ta.focus();
               ta.classList.add('ring-1','ring-amber-400');
-              setTimeout(function(){ ta.classList.remove('ring-1','ring-amber-400'); }, 2000);
+              var errEl = document.getElementById('review-comment-error');
+              if(errEl){ errEl.classList.remove('hidden'); }
               return;
             }
+            var errEl = document.getElementById('review-comment-error');
+            if(errEl){ errEl.classList.add('hidden'); }
+            if(ta){ ta.classList.remove('ring-1','ring-amber-400'); }
           }
 
           var heading = action === 'approve' ? 'Approve & Merge' : 'Request Rework';

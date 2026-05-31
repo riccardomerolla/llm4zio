@@ -9,7 +9,7 @@ import _root_.config.entity.ConfigRepository
 import activity.control.ActivityHub
 import activity.entity.{ ActivityEvent, ActivityEventType }
 import decision.entity.*
-import issues.entity.{ AgentIssue, IssueEvent, IssueRepository }
+import issues.entity.{ AgentIssue, IssueEvent, IssueRepository, IssueTags }
 import shared.errors.PersistenceError
 import shared.ids.Ids.{ DecisionId, EventId, IssueId }
 
@@ -265,28 +265,71 @@ final case class DecisionInboxLive(
     summary: String,
     now: Instant,
   ): IO[PersistenceError, Unit] =
-    decision.source.kind match
-      case DecisionSourceKind.IssueReview =>
-        val issueId = decision.source.issueId.getOrElse(IssueId(decision.source.referenceId))
-        resolutionKind match
-          case DecisionResolutionKind.Approved        =>
-            for
-              autoMerge <- loadAutoMergePolicy
-              approved   = IssueEvent.Approved(issueId, actor.trim, now, now)
-              transition =
-                if autoMerge then IssueEvent.MovedToMerging(issueId, now, now)
-                else IssueEvent.MarkedDone(issueId, now, summarize(summary, resolutionKind), now)
-              _         <- issueRepository.append(approved)
-              _         <- issueRepository.append(transition)
-            yield ()
-          case DecisionResolutionKind.ReworkRequested =>
-            issueRepository.append(
-              IssueEvent.MovedToRework(issueId, now, summarize(summary, resolutionKind), now)
-            )
-          case DecisionResolutionKind.Acknowledged    => ZIO.unit
-          case DecisionResolutionKind.Escalated       => ZIO.unit
-          case DecisionResolutionKind.Expired         => ZIO.unit
-      case _                              => ZIO.unit
+    val reviewEffects: IO[PersistenceError, Unit] =
+      decision.source.kind match
+        case DecisionSourceKind.IssueReview =>
+          val issueId = decision.source.issueId.getOrElse(IssueId(decision.source.referenceId))
+          resolutionKind match
+            case DecisionResolutionKind.Approved        =>
+              for
+                autoMerge <- loadAutoMergePolicy
+                approved   = IssueEvent.Approved(issueId, actor.trim, now, now)
+                transition =
+                  if autoMerge then IssueEvent.MovedToMerging(issueId, now, now)
+                  else IssueEvent.MarkedDone(issueId, now, summarize(summary, resolutionKind), now)
+                _         <- issueRepository.append(approved)
+                _         <- issueRepository.append(transition)
+              yield ()
+            case DecisionResolutionKind.ReworkRequested =>
+              issueRepository.append(
+                IssueEvent.MovedToRework(issueId, now, summarize(summary, resolutionKind), now)
+              )
+            case DecisionResolutionKind.Acknowledged    => ZIO.unit
+            case DecisionResolutionKind.Escalated       => ZIO.unit
+            case DecisionResolutionKind.Expired         => ZIO.unit
+        case _                              => ZIO.unit
+    reviewEffects *> clearTriageBackoffIfNeeded(decision, resolutionKind, now)
+
+  /** When the supervisor resolves a decision (other than escalating or letting
+    * it expire) that's linked to an issue parked by triage with the
+    * `triage:awaiting-supervisor` tag, drop the tag so Pat re-triages on the
+    * next tick. Without this, a triage-failure decision stays "approved" in
+    * the inbox while the underlying issue remains stuck in Backlog forever.
+    */
+  private def clearTriageBackoffIfNeeded(
+    decision: Decision,
+    resolutionKind: DecisionResolutionKind,
+    now: Instant,
+  ): IO[PersistenceError, Unit] =
+    val shouldClear = resolutionKind match
+      case DecisionResolutionKind.Approved | DecisionResolutionKind.ReworkRequested |
+          DecisionResolutionKind.Acknowledged => true
+      case DecisionResolutionKind.Escalated | DecisionResolutionKind.Expired => false
+    decision.source.issueId match
+      case Some(issueId) if shouldClear =>
+        // Read the latest tags from the history rather than rebuilding the
+        // full AgentIssue: tag-clearing is a best-effort side effect and
+        // must not abort the resolution if the issue stream is incomplete.
+        issueRepository
+          .history(issueId)
+          .map(latestTags)
+          .foldZIO(
+            _ => ZIO.unit, // issue missing or unreadable — skip the cleanup
+            tags =>
+              if !tags.contains(IssueTags.TriageAwaitingSupervisor) then ZIO.unit
+              else
+                issueRepository.append(
+                  IssueEvent.TagsUpdated(
+                    issueId,
+                    tags.filterNot(_ == IssueTags.TriageAwaitingSupervisor),
+                    now,
+                  )
+                ),
+          )
+      case _                            => ZIO.unit
+
+  private def latestTags(history: List[IssueEvent]): List[String] =
+    history.reverse.collectFirst { case t: IssueEvent.TagsUpdated => t.tags }.getOrElse(Nil)
 
   private def openDecisionForIssue(issueId: IssueId): IO[PersistenceError, Option[Decision]] =
     decisionRepository
@@ -308,7 +351,7 @@ final case class DecisionInboxLive(
   ): IO[PersistenceError, Decision] =
     for
       now     <- Clock.instant
-      _       <- ensureOpen(decision)
+      _       <- ensureResolvable(decision)
       _       <- decisionRepository.append(
                    DecisionEvent.Resolved(
                      decisionId = decision.id,
@@ -334,6 +377,20 @@ final case class DecisionInboxLive(
           s"Decision ${decision.id.value} is already ${decision.status.toString.toLowerCase}",
         )
       )
+
+  // Resolution is also the supervisor's response to an escalation, so
+  // Escalated decisions must be resolvable. Re-escalation (escalate on
+  // Escalated) is still blocked by `ensureOpen` above.
+  private def ensureResolvable(decision: Decision): IO[PersistenceError, Unit] =
+    decision.status match
+      case DecisionStatus.Pending | DecisionStatus.Escalated => ZIO.unit
+      case terminal                                          =>
+        ZIO.fail(
+          PersistenceError.QueryFailed(
+            "decision_state",
+            s"Decision ${decision.id.value} is already ${terminal.toString.toLowerCase}",
+          )
+        )
 
   private def loadTimeoutSeconds: IO[PersistenceError, Long] =
     configRepository

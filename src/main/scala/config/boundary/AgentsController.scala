@@ -11,6 +11,7 @@ import zio.stream.ZStream
 
 import _root_.agent.boundary.AgentsView
 import _root_.config.entity.{ AgentChannelBinding, AgentInfo, ConfigRepository, CustomAgentRow, SettingRow }
+import activity.entity.{ ActivityEvent, ActivityEventType, ActivityRepository }
 import agent.control.{ AgentMatching, BuiltInAgentSynchronizer }
 import agent.entity.api.*
 import agent.entity.{ Agent as RegistryAgent, * }
@@ -32,7 +33,8 @@ object AgentsController:
 
   val live
     : ZLayer[
-      ConfigRepository & LlmService & AgentRepository & WorkspaceRepository & AgentMonitorService & PromptLoader,
+      ConfigRepository & LlmService & AgentRepository & WorkspaceRepository & AgentMonitorService & PromptLoader &
+        ActivityRepository,
       Nothing,
       AgentsController,
     ] =
@@ -52,6 +54,57 @@ object AgentsControllerLive:
   ): (List[AgentsView.AgentCard], List[AgentsView.AgentCard]) =
     cards.partition(_.registryAgent.exists(_.role != EmployeeRole.Custom))
 
+  /** Daemon-source activity events that represent a single run of a
+    * daemon-driven agent. Today only triage qualifies; other daemons (debt
+    * detector etc.) can join by publishing with a `daemon-*` source.
+    */
+  private val DaemonSources: Set[String] = Set("triage")
+
+  private[boundary] def isDaemonRunEvent(event: ActivityEvent, agentName: String): Boolean =
+    event.agentName.exists(_.equalsIgnoreCase(agentName)) &&
+      DaemonSources.contains(event.source) &&
+      (event.eventType == ActivityEventType.RunCompleted ||
+        event.eventType == ActivityEventType.RunFailed)
+
+  /** Build a `WorkspaceRun`-shaped record from a daemon activity event so it
+    * flows through the same `computeMetrics` path as real workspace runs.
+    * Worktree/branch/prompt fields stay empty — the metrics view only reads
+    * status, timestamps, agentName, and issueRef.
+    */
+  private[boundary] def synthesizeRunFromActivity(event: ActivityEvent, agentName: String): WorkspaceRun =
+    val status   = event.eventType match
+      case ActivityEventType.RunCompleted => RunStatus.Completed
+      case _                              => RunStatus.Failed
+    val issueRef = extractIssueRef(event.summary)
+    WorkspaceRun(
+      id = s"${event.source}:${event.id.value}",
+      workspaceId = "",
+      parentRunId = None,
+      issueRef = issueRef,
+      agentName = agentName,
+      prompt = "",
+      conversationId = "",
+      worktreePath = "",
+      branchName = "",
+      status = status,
+      attachedUsers = Set.empty,
+      controllerUserId = None,
+      createdAt = event.createdAt,
+      updatedAt = event.createdAt,
+    )
+
+  /** TriageDaemon summary lines look like "Triaged issue <id>" or
+    * "Triage failed for <id>: ...". Pull the id and prefix with `#` so it
+    * counts toward `issuesResolved` in `computeMetrics`.
+    */
+  private[boundary] def extractIssueRef(summary: String): String =
+    val pattern = "(?i)Triaged issue\\s+([A-Za-z0-9_-]+)|Triage failed for\\s+([A-Za-z0-9_-]+)".r
+    pattern
+      .findFirstMatchIn(summary)
+      .flatMap(m => Option(m.group(1)).orElse(Option(m.group(2))))
+      .map(id => s"#$id")
+      .getOrElse("")
+
 final case class AgentsControllerLive(
   repository: ConfigRepository,
   llmService: LlmService,
@@ -59,6 +112,7 @@ final case class AgentsControllerLive(
   workspaceRepository: WorkspaceRepository,
   controlPlane: AgentMonitorService,
   promptLoader: PromptLoader,
+  activityRepository: ActivityRepository,
 ) extends AgentsController:
 
   private val aiSettingKeys: List[String] = List(
@@ -837,11 +891,26 @@ final case class AgentsControllerLive(
 
   private def loadWorkspaceRuns(agent: RegistryAgent): IO[PersistenceError, List[WorkspaceRun]] =
     for
-      allRuns <- loadAllWorkspaceRuns
-      runs     = allRuns
-                   .filter(_.agentName.equalsIgnoreCase(agent.name))
-                   .sortBy(_.updatedAt)(using Ordering[Instant].reverse)
-    yield runs
+      allRuns     <- loadAllWorkspaceRuns
+      direct       = allRuns.filter(_.agentName.equalsIgnoreCase(agent.name))
+      daemonRuns  <- loadDaemonAgentRuns(agent.name)
+      combined     = (direct ++ daemonRuns).sortBy(_.updatedAt)(using Ordering[Instant].reverse)
+    yield combined
+
+  /** Daemon-driven agents (Pat triage, etc.) never create real
+    * `WorkspaceRun` records — they have no worktree — but they DO publish
+    * `RunCompleted`/`RunFailed` activity events with their `agentName`.
+    * Without this synthesis, the agents grid shows them as 0 runs / 0% even
+    * after a busy triage tick. Synthesize one `WorkspaceRun` per terminal
+    * triage event so the metrics view treats them uniformly with the rest.
+    */
+  private def loadDaemonAgentRuns(agentName: String): IO[PersistenceError, List[WorkspaceRun]] =
+    activityRepository
+      .listEvents(eventType = None, since = None, limit = Int.MaxValue)
+      .map(_.collect {
+        case event if AgentsControllerLive.isDaemonRunEvent(event, agentName) =>
+          AgentsControllerLive.synthesizeRunFromActivity(event, agentName)
+      })
 
   private def buildAgentCards(
     registryAgents: List[RegistryAgent],

@@ -31,50 +31,43 @@ object DecisionsController:
 final case class DecisionsControllerLive(decisionInbox: DecisionInbox) extends DecisionsController:
 
   override val routes: Routes[Any, Response] = Routes(
-    Method.GET / "decisions" / "inbox"                       -> handler {
-      list.catchAll(err => ZIO.succeed(persistErr(err)))
+    Method.GET / "decisions" / "inbox"                    -> handler {
+      list.catchAll(err => renderInboxOnError(err))
     },
-    Method.POST / "decisions" / string("id") / "resolve"     -> handler { (id: String, req: Request) =>
-      resolve(id, req).catchAll(err => ZIO.succeed(persistErr(err)))
+    Method.POST / "decisions" / string("id") / "resolve"  -> handler { (id: String, req: Request) =>
+      resolve(id, req).catchAll(err => renderInboxOnError(err))
     },
-    Method.POST / "decisions" / string("id") / "escalate"    -> handler { (id: String, req: Request) =>
-      escalate(id, req).catchAll(err => ZIO.succeed(persistErr(err)))
+    Method.POST / "decisions" / string("id") / "escalate" -> handler { (id: String, req: Request) =>
+      escalate(id, req).catchAll(err => renderInboxOnError(err))
     },
   )
 
   private def list: IO[PersistenceError, Response] =
-    for
-      pending    <- decisionInbox.list(DecisionFilter(statuses = Set(DecisionStatus.Pending), limit = Int.MaxValue))
-      escalated  <- decisionInbox.list(DecisionFilter(statuses = Set(DecisionStatus.Escalated), limit = Int.MaxValue))
-      decisions   = (pending ++ escalated).distinctBy(_.id.value)
-    yield html(DecisionsView.inboxPage(decisions))
+    loadInboxDecisions.map(decisions => html(DecisionsView.inboxPage(decisions)))
 
   private def resolve(id: String, req: Request): IO[PersistenceError, Response] =
     for
-      form     <- parseForm(req)
+      form      <- parseForm(req)
       decisionId = DecisionId(id)
-      decision <- decisionInbox.get(decisionId)
-      key       = form.getOrElse("key", "").trim
-      actor     = form.getOrElse("actor", "web-supervisor").trim
-      option   <- ZIO
-                    .fromOption(QuickOption.findByKey(decision.renderableQuickOptions, key))
-                    .orElseFail(
-                      PersistenceError.QueryFailed("decision_resolve", s"unknown option key '$key'")
-                    )
-      _        <- decisionInbox.resolve(
-                    id = decisionId,
-                    resolutionKind = option.resolution,
-                    actor = actor,
-                    summary = option.rationale,
-                  )
-      // Re-render the inbox after resolving
-      pending   <- decisionInbox.list(DecisionFilter(statuses = Set(DecisionStatus.Pending), limit = Int.MaxValue))
-      escalated <- decisionInbox.list(DecisionFilter(statuses = Set(DecisionStatus.Escalated), limit = Int.MaxValue))
-      decisions  = (pending ++ escalated).distinctBy(_.id.value)
+      decision  <- decisionInbox.get(decisionId)
+      key        = form.getOrElse("key", "").trim
+      actor      = form.getOrElse("actor", "web-supervisor").trim
+      option    <- ZIO
+                     .fromOption(QuickOption.findByKey(decision.renderableQuickOptions, key))
+                     .orElseFail(
+                       PersistenceError.QueryFailed("decision_resolve", s"unknown option key '$key'")
+                     )
+      _         <- decisionInbox.resolve(
+                     id = decisionId,
+                     resolutionKind = option.resolution,
+                     actor = actor,
+                     summary = option.rationale,
+                   )
+      decisions <- loadInboxDecisions
     yield html(
       DecisionsView.inboxPage(
         decisions,
-        flash = Some(s"Decision ${decisionId.value} resolved as ${option.resolution}."),
+        flash = Some(DecisionsView.Flash.success(s"Decision ${decisionId.value} resolved as ${option.resolution}.")),
       )
     )
 
@@ -83,10 +76,32 @@ final case class DecisionsControllerLive(decisionInbox: DecisionInbox) extends D
       form      <- parseForm(req)
       reason     = form.getOrElse("reason", "Escalated from supervisor inbox").trim
       _         <- decisionInbox.escalate(DecisionId(id), reason)
+      decisions <- loadInboxDecisions
+    yield html(DecisionsView.inboxPage(decisions, flash = Some(DecisionsView.Flash.success(s"Decision $id escalated."))))
+
+  private def loadInboxDecisions: IO[PersistenceError, List[Decision]] =
+    for
       pending   <- decisionInbox.list(DecisionFilter(statuses = Set(DecisionStatus.Pending), limit = Int.MaxValue))
       escalated <- decisionInbox.list(DecisionFilter(statuses = Set(DecisionStatus.Escalated), limit = Int.MaxValue))
-      decisions  = (pending ++ escalated).distinctBy(_.id.value)
-    yield html(DecisionsView.inboxPage(decisions, flash = Some(s"Decision $id escalated.")))
+    yield (pending ++ escalated).distinctBy(_.id.value)
+
+  /** Render the inbox page with a red error flash, preserving the appropriate
+    * HTTP status so HTMX and tests still see a non-2xx response. Falls back to
+    * plain text only when the inbox itself can't be loaded.
+    */
+  private def renderInboxOnError(error: PersistenceError): UIO[Response] =
+    val (status, message) = error match
+      case PersistenceError.NotFound(entity, entityId)    =>
+        (Status.NotFound, s"$entity with id $entityId not found")
+      case PersistenceError.StoreUnavailable(message)     =>
+        (Status.ServiceUnavailable, s"Decision inbox unavailable: $message")
+      case PersistenceError.QueryFailed(_, cause)         =>
+        (Status.BadRequest, cause)
+      case PersistenceError.SerializationFailed(_, cause) =>
+        (Status.InternalServerError, s"Decision serialization failed: $cause")
+    loadInboxDecisions
+      .map(decisions => html(DecisionsView.inboxPage(decisions, flash = Some(DecisionsView.Flash.error(message)))).status(status))
+      .catchAll(_ => ZIO.succeed(Response.text(message).status(status)))
 
   private def parseForm(req: Request): IO[PersistenceError, Map[String, String]] =
     req.body.asString
@@ -108,14 +123,3 @@ final case class DecisionsControllerLive(decisionInbox: DecisionInbox) extends D
 
   private def html(body: String): Response =
     Response.text(body).contentType(MediaType.text.html)
-
-  private def persistErr(error: PersistenceError): Response =
-    error match
-      case PersistenceError.NotFound(entity, entityId)    =>
-        Response.text(s"$entity with id $entityId not found").status(Status.NotFound)
-      case PersistenceError.StoreUnavailable(message)     =>
-        Response.text(s"Decision inbox unavailable: $message").status(Status.ServiceUnavailable)
-      case PersistenceError.QueryFailed(_, cause)         =>
-        Response.text(s"Decision action failed: $cause").status(Status.BadRequest)
-      case PersistenceError.SerializationFailed(_, cause) =>
-        Response.text(s"Decision serialization failed: $cause").status(Status.InternalServerError)

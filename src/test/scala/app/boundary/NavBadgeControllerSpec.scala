@@ -6,6 +6,7 @@ import zio.*
 import zio.http.*
 import zio.test.*
 
+import decision.entity.*
 import issues.entity.*
 import shared.errors.PersistenceError
 import shared.ids.Ids.*
@@ -38,7 +39,34 @@ object NavBadgeControllerSpec extends ZIOSpecDefault:
       )
     override def delete(id: IssueId): IO[PersistenceError, Unit]                   = ZIO.unit
 
-  private val routes = NavBadgeController.routes(issueRepository)
+  private val pendingDecision = Decision(
+    id = DecisionId("decision-1"),
+    title = "Triage failure",
+    context = "Pat could not triage",
+    action = DecisionAction.ManualEscalation,
+    source = DecisionSource(DecisionSourceKind.AgentEscalation, "issue-1", "summary"),
+    urgency = DecisionUrgency.High,
+    status = DecisionStatus.Pending,
+    deadlineAt = None,
+    createdAt = Instant.parse("2026-03-27T09:00:00Z"),
+    updatedAt = Instant.parse("2026-03-27T09:00:00Z"),
+  )
+  private val escalatedDecision = pendingDecision.copy(
+    id = DecisionId("decision-2"),
+    status = DecisionStatus.Escalated,
+    escalatedAt = Some(Instant.parse("2026-03-27T09:05:00Z")),
+  )
+
+  private val decisionRepository = new DecisionRepository:
+    override def append(event: DecisionEvent): IO[PersistenceError, Unit]            = ZIO.unit
+    override def get(id: DecisionId): IO[PersistenceError, Decision]                 = ZIO.succeed(pendingDecision)
+    override def history(id: DecisionId): IO[PersistenceError, List[DecisionEvent]]  = ZIO.succeed(Nil)
+    override def list(filter: DecisionFilter): IO[PersistenceError, List[Decision]]  =
+      ZIO.succeed(
+        List(pendingDecision, escalatedDecision).filter(d => filter.statuses.isEmpty || filter.statuses.contains(d.status))
+      )
+
+  private val routes = NavBadgeController.routes(issueRepository, decisionRepository)
 
   def spec: Spec[TestEnvironment & Scope, Any] =
     suite("NavBadgeControllerSpec")(
@@ -47,5 +75,11 @@ object NavBadgeControllerSpec extends ZIOSpecDefault:
           response <- routes.runZIO(Request.get(URL(Path.decode("/nav/badges/board"))))
           body     <- response.body.asString
         yield assertTrue(response.status == Status.Ok, body.contains(">1<"))
-      }
+      },
+      test("decisions badge renders pending+escalated count") {
+        for
+          response <- routes.runZIO(Request.get(URL(Path.decode("/nav/badges/decisions"))))
+          body     <- response.body.asString
+        yield assertTrue(response.status == Status.Ok, body.contains(">2<"))
+      },
     )

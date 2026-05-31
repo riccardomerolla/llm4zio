@@ -1,6 +1,7 @@
 package triage.entity
 
 import zio.json.*
+import zio.json.ast.Json
 
 import issues.entity.TicketLane
 import llm4zio.core.LlmError
@@ -15,10 +16,15 @@ import shared.errors.PersistenceError
   *     daemon opens a `Decision` via `DecisionInbox` and leaves the
   *     issue in Backlog.
   *
-  * The discriminator is the presence of the `lane` field; zio-json
-  * decodes the first matching shape.
+  * Structural discrimination by field name — matches what the triage
+  * prompt asks the agent to emit (flat JSON object, no wrapper):
+  *   - if the object has a `lane` field → LaneAndNote
+  *   - if the object has a `clarify` field → Clarify
+  *
+  * Default zio-json sealed-trait codecs require a `{"CaseName": {...}}`
+  * wrapper, which neither the prompt nor the agents produce.
   */
-sealed trait TriageOutcome derives JsonCodec
+sealed trait TriageOutcome
 object TriageOutcome:
   /** A successful triage call. Optional `titleSuggestion` and
     * `descriptionSuggestion` are applied if the agent thinks the
@@ -30,12 +36,31 @@ object TriageOutcome:
     note: Option[String] = None,
     titleSuggestion: Option[String] = None,
     descriptionSuggestion: Option[String] = None,
-  ) extends TriageOutcome
+  ) extends TriageOutcome derives JsonCodec
 
   final case class Clarify(
     clarify: String,
     options: List[String] = Nil,
-  ) extends TriageOutcome
+  ) extends TriageOutcome derives JsonCodec
+
+  given JsonDecoder[TriageOutcome] = JsonDecoder[Json.Obj].mapOrFail { obj =>
+    val fieldNames = obj.fields.map(_._1).toSet
+    if fieldNames.contains("lane") then obj.toJson.fromJson[LaneAndNote]
+    else if fieldNames.contains("clarify") then obj.toJson.fromJson[Clarify]
+    else
+      Left(
+        "TriageOutcome JSON must have either a `lane` field (LaneAndNote) " +
+          "or a `clarify` field (Clarify); got fields: " +
+          fieldNames.mkString("[", ", ", "]")
+      )
+  }
+
+  given JsonEncoder[TriageOutcome] = JsonEncoder[Json].contramap {
+    case lane: LaneAndNote   => lane.toJsonAST.getOrElse(Json.Null)
+    case clarify: Clarify    => clarify.toJsonAST.getOrElse(Json.Null)
+  }
+
+  given JsonCodec[TriageOutcome] = JsonCodec(summon[JsonEncoder[TriageOutcome]], summon[JsonDecoder[TriageOutcome]])
 
 sealed trait TriageError
 object TriageError:

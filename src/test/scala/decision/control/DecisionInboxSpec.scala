@@ -255,6 +255,92 @@ object DecisionInboxSpec extends ZIOSpecDefault:
           resolved.head.id == d1.id,
         )
       },
+      test("resolve succeeds on an Escalated decision (supervisor responding to escalation)") {
+        for
+          (inbox, _, _) <- makeInbox()
+          _             <- TestClock.setTime(now)
+          decision      <- inbox.openManualDecision("Needs supervisor", "ctx", "ref-x", "s", DecisionUrgency.High)
+          _             <- TestClock.setTime(now.plusSeconds(2))
+          _             <- inbox.escalate(decision.id, "Triage stalled")
+          beforeResolve <- inbox.get(decision.id)
+          _             <- TestClock.setTime(now.plusSeconds(3))
+          resolved      <- inbox.resolve(decision.id, DecisionResolutionKind.Approved, "supervisor", "approved post-escalation")
+        yield assertTrue(
+          beforeResolve.status == DecisionStatus.Escalated,
+          resolved.status == DecisionStatus.Resolved,
+          resolved.resolution.exists(_.actor == "supervisor"),
+        )
+      },
+      test("resolve clears triage:awaiting-supervisor tag on the linked issue so Pat retriages") {
+        val issueId      = IssueId("issue-parked-1")
+        val initialEvents = List(
+          IssueEvent.Created(issueId, "Stuck in triage", "Pat failed", "bug", "high", now.minusSeconds(600)),
+          IssueEvent.TagsUpdated(issueId, List(IssueTags.TriageAwaitingSupervisor), now.minusSeconds(500)),
+        )
+        for
+          (inbox, issueRef, _) <- makeInbox(seededIssues = Map(issueId -> initialEvents))
+          _                    <- TestClock.setTime(now)
+          decision             <- inbox.openManualDecision(
+                                    title = "Pat couldn't triage",
+                                    context = "needs supervisor",
+                                    referenceId = issueId.value,
+                                    summary = "ambiguous",
+                                    workspaceId = None,
+                                    issueId = Some(issueId),
+                                  )
+          _                    <- TestClock.setTime(now.plusSeconds(1))
+          _                    <- inbox.resolve(decision.id, DecisionResolutionKind.Approved, "supervisor", "ok")
+          afterEvents          <- issueRef.get.map(_(issueId))
+          finalTags             = afterEvents
+                                    .collect { case t: IssueEvent.TagsUpdated => t }
+                                    .lastOption
+                                    .map(_.tags)
+                                    .getOrElse(Nil)
+        yield assertTrue(
+          !finalTags.contains(IssueTags.TriageAwaitingSupervisor),
+          afterEvents.exists(_.isInstanceOf[IssueEvent.TagsUpdated]),
+        )
+      },
+      test("resolve(Escalated) on a parked issue keeps the triage backoff tag in place") {
+        val issueId       = IssueId("issue-parked-2")
+        val initialEvents = List(
+          IssueEvent.Created(issueId, "Still ambiguous", "", "bug", "low", now.minusSeconds(600)),
+          IssueEvent.TagsUpdated(issueId, List(IssueTags.TriageAwaitingSupervisor), now.minusSeconds(500)),
+        )
+        for
+          (inbox, issueRef, _) <- makeInbox(seededIssues = Map(issueId -> initialEvents))
+          _                    <- TestClock.setTime(now)
+          decision             <- inbox.openManualDecision(
+                                    title = "Pat couldn't triage",
+                                    context = "needs supervisor",
+                                    referenceId = issueId.value,
+                                    summary = "ambiguous",
+                                    workspaceId = None,
+                                    issueId = Some(issueId),
+                                  )
+          _                    <- TestClock.setTime(now.plusSeconds(1))
+          _                    <- inbox.resolve(decision.id, DecisionResolutionKind.Escalated, "supervisor", "kick upstairs")
+          afterEvents          <- issueRef.get.map(_(issueId))
+          finalTags             = afterEvents
+                                    .collect { case t: IssueEvent.TagsUpdated => t }
+                                    .lastOption
+                                    .map(_.tags)
+                                    .getOrElse(Nil)
+        yield assertTrue(finalTags.contains(IssueTags.TriageAwaitingSupervisor))
+      },
+      test("resolve rejects already-Resolved decisions") {
+        for
+          (inbox, _, _) <- makeInbox()
+          _             <- TestClock.setTime(now)
+          decision      <- inbox.openManualDecision("Already done", "ctx", "ref-y", "s", DecisionUrgency.Low)
+          _             <- TestClock.setTime(now.plusSeconds(1))
+          _             <- inbox.resolve(decision.id, DecisionResolutionKind.Approved, "actor", "ok")
+          retry         <- inbox.resolve(decision.id, DecisionResolutionKind.Approved, "actor", "again").exit
+        yield assertTrue(retry.causeOption.exists(_.failures.exists {
+          case PersistenceError.QueryFailed(_, msg) => msg.toLowerCase.contains("already resolved")
+          case _                                    => false
+        }))
+      },
       test("list filters by urgency") {
         for
           (inbox, _, _) <- makeInbox()
