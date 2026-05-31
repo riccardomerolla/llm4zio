@@ -1,4 +1,4 @@
-import { LitElement } from 'https://cdn.jsdelivr.net/npm/lit@3/+esm';
+import { LitElement } from 'lit';
 
 class AgentMonitorPanel extends LitElement {
   static properties = {

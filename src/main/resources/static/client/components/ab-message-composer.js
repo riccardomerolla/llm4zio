@@ -1,4 +1,4 @@
-import { LitElement, html } from 'https://cdn.jsdelivr.net/npm/lit@3/+esm';
+import { LitElement, html } from 'lit';
 
 class AbMessageComposer extends LitElement {
   static properties = {
@@ -28,7 +28,7 @@ class AbMessageComposer extends LitElement {
   connectedCallback() {
     super.connectedCallback();
     // highlight.js global used by marked highlighter callback
-    import('https://cdn.jsdelivr.net/npm/highlight.js@11.11.1/+esm')
+    import('highlight.js')
       .then((module) => {
         window.hljs = module.default;
         this._init();

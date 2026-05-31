@@ -1,5 +1,5 @@
-import { LitElement } from 'https://cdn.jsdelivr.net/npm/lit@3/+esm';
-import hljs from 'https://cdn.jsdelivr.net/npm/highlight.js@11.11.1/+esm';
+import { LitElement } from 'lit';
+import hljs from 'highlight.js';
 
 class ConfigEditor extends LitElement {
   static properties = {

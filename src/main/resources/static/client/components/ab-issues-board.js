@@ -1,4 +1,4 @@
-import { LitElement } from 'https://cdn.jsdelivr.net/npm/lit@3/+esm';
+import { LitElement } from 'lit';
 
 // Timeout for a single board fragment fetch (ms). Sized above the server-side
 // 10-second limit so the server can return a clean error first.

@@ -1,5 +1,5 @@
-import { LitElement } from 'https://cdn.jsdelivr.net/npm/lit@3/+esm';
-import { Chart, LineController, LineElement, PointElement, LinearScale, CategoryScale, Tooltip, Legend } from 'https://cdn.jsdelivr.net/npm/chart.js@4.4.7/+esm';
+import { LitElement } from 'lit';
+import { Chart, LineController, LineElement, PointElement, LinearScale, CategoryScale, Tooltip, Legend } from 'chart.js';
 
 Chart.register(LineController, LineElement, PointElement, LinearScale, CategoryScale, Tooltip, Legend);
 

@@ -63,6 +63,17 @@ object LayoutSpec extends ZIOSpecDefault:
           !html.contains("id=\"desktop-sidebar-restore\""),
         )
       },
+      test("browser libraries are loaded from local WebJar paths") {
+        val html = Layout.page("Test", "/board")()
+        assertTrue(
+          html.contains("/webjars/tailwindcss__browser/4.1.12/dist/index.global.js"),
+          html.contains("/webjars/htmx.org/2.0.7/dist/htmx.min.js"),
+          html.contains("/webjars/htmx-ext-sse/2.2.4/dist/sse.min.js"),
+          html.contains("\"lit\": \"/webjars/lit/3.3.0/index.js\""),
+          !html.contains("cdn.jsdelivr.net"),
+          !html.contains("unpkg.com"),
+        )
+      },
       test("workspace chat groups are collapsed by default and show load more after 10 chats") {
         val chats = (1 to 12).toList.map { idx =>
           Layout.ChatNavItem(

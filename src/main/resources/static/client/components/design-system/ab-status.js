@@ -1,4 +1,4 @@
-import { LitElement, html } from 'https://cdn.jsdelivr.net/npm/lit@3/+esm';
+import { LitElement, html } from 'lit';
 
 // ---------------------------------------------------------------------------
 // ab-status

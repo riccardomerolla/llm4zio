@@ -1,4 +1,4 @@
-import { LitElement, html, nothing } from 'https://cdn.jsdelivr.net/npm/lit@3/+esm';
+import { LitElement, html, nothing } from 'lit';
 
 // ---------------------------------------------------------------------------
 // ab-page-header

@@ -390,10 +390,7 @@ object ChatView:
       JsResources.markedScript,
       markdownRenderScript,
       if detailContext.graphReports.nonEmpty || plannerState.isDefined then JsResources.mermaidScript else frag(),
-      tag("link")(
-        attr("rel")  := "stylesheet",
-        attr("href") := "https://cdn.jsdelivr.net/npm/highlight.js@11.11.1/styles/github-dark.min.css",
-      ),
+      JsResources.highlightThemeStylesheet,
       JsResources.inlineModuleScript("/static/client/components/ab-side-panel.js"),
       JsResources.inlineModuleScript("/static/client/components/ab-message-search.js"),
       JsResources.inlineModuleScript("/static/client/components/ab-icon-button.js"),

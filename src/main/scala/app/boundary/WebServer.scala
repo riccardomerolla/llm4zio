@@ -19,7 +19,8 @@ object WebServer:
       gatewayRoutes   <- ZIO.service[GatewayRouteModule]
       configRoutes    <- ZIO.service[ConfigRouteModule]
       workspaceRoutes <- ZIO.service[WorkspaceRouteModule]
-      staticRoutes     = Routes.serveResources(Path.empty / "static")
+      staticRoutes     = Routes.serveResources(Path.empty / "static", "static")
+      webJarRoutes     = Routes.serveResources(Path.empty / "webjars", "META-INF/resources/webjars")
       devCatalogRoutes = Routes(
                            Method.GET / "components" -> handler {
                              Response
@@ -35,6 +36,7 @@ object WebServer:
           workspaceRoutes.routes ++
           adeRoutes.routes ++
           devCatalogRoutes ++
+          webJarRoutes ++
           staticRoutes) @@ shared.web.RequestLoggingMiddleware.live
     }
   }

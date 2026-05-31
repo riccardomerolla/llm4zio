@@ -35,6 +35,14 @@ val scalaMetaVersion = "4.13.6"
 val bot4sTelegramCoreVersion = "7.0.0"
 val ironVersion            = "2.6.0"
 val zioBlocksSchemaVersion = "0.0.33"
+val tailwindBrowserVersion = "4.1.12"
+val htmxVersion            = "2.0.7"
+val htmxSseVersion         = "2.2.4"
+val litVersion             = "3.3.0"
+val markedVersion          = "16.2.1"
+val mermaidVersion         = "11.6.0"
+val highlightJsVersion     = "11.11.1"
+val chartJsVersion         = "4.4.7"
 
 // Common dependencies shared across modules
 val zioCoreDeps = Seq(
@@ -51,6 +59,19 @@ val zioCliDep = "dev.zio" %% "zio-cli" % zioCliVersion
 
 val zioLoggingDeps = Seq(
   "dev.zio" %% "zio-logging" % zioLoggingVersion,
+)
+
+val webJarDeps = Seq(
+  "org.webjars.npm" % "tailwindcss__browser" % tailwindBrowserVersion,
+  "org.webjars.npm" % "htmx.org"              % htmxVersion,
+  "org.webjars.npm" % "htmx-ext-sse"          % htmxSseVersion,
+  "org.webjars.npm" % "lit"                   % litVersion,
+  "org.webjars.npm" % "marked"                % markedVersion,
+  ("org.webjars.npm" % "mermaid"              % mermaidVersion)
+    .exclude("org.webjars.npm", "marked")
+    .exclude("org.webjars.npm", "types__d3"),
+  "org.webjars.npm" % "highlight.js"          % highlightJsVersion,
+  "org.webjars.npm" % "chart.js"              % chartJsVersion,
 )
 
 val zioTestDeps = Seq(
@@ -85,7 +106,7 @@ val rootDeps = zioCoreDeps ++ Seq(
   "dev.zio" %% "zio-schema"            % zioSchemaVersion,
   "dev.zio" %% "zio-schema-derivation" % zioSchemaVersion,
   "com.bot4s" %% "telegram-core" % bot4sTelegramCoreVersion,
-) ++ zioLoggingDeps ++ zioTestDeps
+) ++ zioLoggingDeps ++ webJarDeps ++ zioTestDeps
 
 inThisBuild(List(
   organization := "io.github.riccardomerolla",

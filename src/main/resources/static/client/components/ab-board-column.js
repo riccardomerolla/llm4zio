@@ -11,7 +11,7 @@
  * Events:
  *   ab-column-toggle — bubbles, composed; detail: { status }
  */
-import { LitElement, html } from 'https://cdn.jsdelivr.net/npm/lit@3/+esm';
+import { LitElement, html } from 'lit';
 
 class AbBoardColumn extends LitElement {
   static properties = {

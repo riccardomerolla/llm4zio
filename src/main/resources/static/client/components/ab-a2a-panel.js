@@ -1,4 +1,4 @@
-import { LitElement, html, css } from 'https://cdn.jsdelivr.net/npm/lit@3/+esm';
+import { LitElement, html, css } from 'lit';
 
 class AbA2aPanel extends LitElement {
   createRenderRoot() { return this; }

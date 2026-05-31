@@ -22,9 +22,6 @@ object LogsView:
           attr("max-lines") := "1500",
         )()
       ),
-      tag("link")(
-        attr("rel")  := "stylesheet",
-        attr("href") := "https://cdn.jsdelivr.net/npm/highlight.js@11.11.1/styles/github-dark.min.css",
-      ),
+      JsResources.highlightThemeStylesheet,
       JsResources.inlineModuleScript("/static/client/components/ab-log-viewer.js"),
     )

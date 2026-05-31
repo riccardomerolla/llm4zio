@@ -42,13 +42,13 @@ this.dispatchEvent(new CustomEvent('ab-close', { bubbles: true, composed: true }
 ## Import pattern
 
 ```js
-import { LitElement, html } from 'https://cdn.jsdelivr.net/npm/lit@3/+esm';
+import { LitElement, html } from 'lit';
 ```
 
 ## Component template
 
 ```js
-import { LitElement, html } from 'https://cdn.jsdelivr.net/npm/lit@3/+esm';
+import { LitElement, html } from 'lit';
 
 class AbExample extends LitElement {
   static properties = {

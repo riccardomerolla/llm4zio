@@ -4,7 +4,7 @@ import zio.json.*
 
 import _root_.config.entity.{ AgentInfo, WorkflowDefinition, WorkflowStepAgent }
 import scalatags.Text.all.*
-import shared.web.Layout
+import shared.web.{ JsResources, Layout }
 import taskrun.entity.TaskStep
 
 /** Workflow editor, listing, and detail views.
@@ -170,7 +170,7 @@ object WorkflowsView:
             ),
           ),
         ),
-        script(src := "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"),
+        JsResources.mermaidScript,
         script(raw(formScript(agentOptions.map(a => a.name -> a.displayName)))),
       )
     )
@@ -217,7 +217,7 @@ object WorkflowsView:
             }
           ),
         ),
-        script(src := "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"),
+        JsResources.mermaidScript,
         script(raw(
           "document.addEventListener('DOMContentLoaded', function () { if (window.mermaid) { mermaid.initialize({ startOnLoad: true, securityLevel: 'loose' }); } });"
         )),

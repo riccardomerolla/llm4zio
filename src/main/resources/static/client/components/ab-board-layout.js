@@ -13,7 +13,7 @@
  *
  * localStorage key: board-expanded-columns:v2  — JSON array of up to 2 status strings
  */
-import { LitElement, html } from 'https://cdn.jsdelivr.net/npm/lit@3/+esm';
+import { LitElement, html } from 'lit';
 
 class AbBoardLayout extends LitElement {
   static _STORAGE_KEY = 'board-expanded-columns:v2';
