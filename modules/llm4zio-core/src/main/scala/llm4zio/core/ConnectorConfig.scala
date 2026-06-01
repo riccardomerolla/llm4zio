@@ -56,6 +56,9 @@ final case class CliConnectorConfig(
   sandbox: Option[CliSandbox] = None,
   turnLimit: Option[Int] = None,
   envVars: Map[String, String] = Map.empty,
+  // Directory the CLI agent runs in — so it edits files in the target repo, not
+  // the host process's cwd. None falls back to ".".
+  workingDir: Option[String] = None,
 ) extends ConnectorConfig derives JsonCodec
 
 final case class FallbackChain(connectors: List[ConnectorConfig] = Nil) derives JsonCodec:

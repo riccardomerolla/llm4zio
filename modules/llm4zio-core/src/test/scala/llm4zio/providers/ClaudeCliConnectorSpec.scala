@@ -97,4 +97,33 @@ object ClaudeCliConnectorSpec extends ZIOSpecDefault:
       for status <- connector.healthCheck
       yield assertTrue(status.availability == Availability.Healthy)
     },
+    test("buildArgv includes --model and passthrough flags when configured") {
+      val cfg       = CliConnectorConfig(
+        ConnectorId.ClaudeCli,
+        model = Some("sonnet"),
+        flags = Map("permission-mode" -> "acceptEdits", "dangerously-skip-permissions" -> ""),
+      )
+      val connector = ClaudeCliConnector.make(cfg, new MockCliExec())
+      val argv      = connector.buildArgv("do it", CliContext("/w", "/r"))
+      assertTrue(
+        argv.startsWith(List("claude", "--print", "--model", "sonnet")),
+        argv.containsSlice(List("--permission-mode", "acceptEdits")),
+        argv.contains("--dangerously-skip-permissions"),
+        argv.last == "do it",
+      )
+    },
+    test("complete runs the agent in the configured workingDir") {
+      final class RecordingExec(seen: Ref[String]) extends CliProcessExecutor:
+        def run(argv: List[String], cwd: String, envVars: Map[String, String]): IO[LlmError, ProcessResult] =
+          seen.set(cwd).as(ProcessResult(List("ok"), 0))
+        def runStreaming(argv: List[String], cwd: String, envVars: Map[String, String])
+          : ZStream[Any, LlmError, String] = ZStream.empty
+      for
+        seen <- Ref.make("")
+        cfg   = CliConnectorConfig(ConnectorId.ClaudeCli, workingDir = Some("/tmp/repo"))
+        conn  = ClaudeCliConnector.make(cfg, RecordingExec(seen))
+        _    <- conn.complete("x")
+        cwd  <- seen.get
+      yield assertTrue(cwd == "/tmp/repo")
+    },
   )
