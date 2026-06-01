@@ -95,8 +95,25 @@ lazy val llm4zioCore = (project in file("modules/llm4zio-core"))
     It / testFrameworks ++= (Test / testFrameworks).value,
   )
 
+// ── llm4zio-flow ──────────────────────────────────────────────────────────────
+// The orca-shaped flow layer (ZIO-native): Plan/Task + resumable plans, git/gh
+// tools over zio-process, reviewAndFixLoop, stage/event stream. Reasoning runs
+// over API connectors; code-editing runs over CLI connectors.
+lazy val llm4zioFlow = (project in file("modules/llm4zio-flow"))
+  .dependsOn(llm4zioCore)
+  .configs(It)
+  .settings(inConfig(It)(Defaults.testSettings): _*)
+  .settings(
+    name        := "llm4zio-flow",
+    description := "ZIO-native agentic flow layer for llm4zio — plan, review, git/gh, resumable runs",
+    libraryDependencySchemes += "dev.zio" %% "zio-json" % VersionScheme.Always,
+    libraryDependencies ++= zioCoreDeps ++ Seq(zioJsonDep) ++ zioLoggingDeps ++ zioTestDeps,
+    testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
+    It / testFrameworks ++= (Test / testFrameworks).value,
+  )
+
 lazy val root = (project in file("."))
-  .aggregate(llm4zioCore)
+  .aggregate(llm4zioCore, llm4zioFlow)
   .settings(
     name           := "llm4zio",
     publish / skip := true,
