@@ -48,3 +48,21 @@ object Planner:
     reasoning
       .executeStructured[Plan](s"$instructions\n\nRequest:\n$prompt", schema)
       .mapError(e => FlowError.Llm(e.toString))
+
+  val triageInstructions: String =
+    """Triage this bug report. Decide exactly one verdict and respond ONLY with JSON
+      |using a "kind" discriminator:
+      |  {"kind":"NotABug","explanation":"..."}
+      |  {"kind":"Untestable","summary":"...","reproductionSteps":"..."}
+      |  {"kind":"Testable","summary":"...","branchName":"fix/...","failingTestPath":"..."}""".stripMargin
+
+  /** Triage a bug report into [[Triage]] via the reasoning connector. */
+  def triage(
+    reasoning: LlmService,
+    title: String,
+    body: String,
+    instructions: String = triageInstructions,
+  ): IO[FlowError, Triage] =
+    reasoning
+      .executeStructured[Triage](s"$instructions\n\nTitle: $title\n\n$body", Json.Obj("type" -> Json.Str("object")))
+      .mapError(e => FlowError.Llm(e.toString))
