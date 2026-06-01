@@ -47,5 +47,7 @@ object ConnectorFactories:
       def create(config: ConnectorConfig): IO[LlmError, Connector] = config match
         case cfg: CliConnectorConfig =>
           val llmConfig = LlmConfig(LlmProvider.GeminiCli, cfg.model.getOrElse("gemini-2.5-flash"))
-          ZIO.succeed(GeminiCliProvider.make(llmConfig, GeminiCliExecutor.default))
+          // Thread workingDir so a Gemini coder edits files in the target repo.
+          val execCtx = GeminiCliExecutionContext(cwd = cfg.workingDir)
+          ZIO.succeed(GeminiCliProvider.make(llmConfig, GeminiCliExecutor.default, execCtx))
         case _                       => ZIO.fail(LlmError.ConfigError("Expected CliConnectorConfig for gemini-cli"))

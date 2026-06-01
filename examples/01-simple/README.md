@@ -33,5 +33,23 @@ cd /tmp/llm4zio-01-simple-…
 scala-cli run implement.sc -- "Add a multiply function to the calculator crate"
 ```
 
+### Choosing the coder backend
+
+The same flow runs with any of the three CLI coding agents — set `LLM4ZIO_CODER`
+(default `claude`); each runs rooted in the repo with its headless edit-approval:
+
+```bash
+LLM4ZIO_CODER=claude scala-cli run implement.sc -- "Add a multiply function"   # claude --print --permission-mode acceptEdits
+LLM4ZIO_CODER=codex  scala-cli run implement.sc -- "Add a multiply function"   # codex exec --full-auto
+LLM4ZIO_CODER=gemini scala-cli run implement.sc -- "Add a multiply function"   # gemini -p -y (auto-approve)
+```
+
+- `claude` → needs `claude` logged in.
+- `codex` → needs `codex` logged in.
+- `gemini` → needs `gemini` logged in (the CLI auto-approves edits via its built-in `-y`).
+
+Reasoning (planning + review) always runs over the API connector
+(`ANTHROPIC_API_KEY`), regardless of the coder.
+
 Edit [`test-project/`](test-project/) for a different starter, or
 [`plans/implement.sc`](../../plans/implement.sc) for a different flow.

@@ -31,17 +31,40 @@ object CodexConnectorSpec extends ZIOSpecDefault:
       val connector = CodexConnector.make(CliConnectorConfig(ConnectorId.Codex), new MockCliExec())
       assertTrue(connector.interactionSupport == InteractionSupport.InteractiveStdin)
     },
-    test("buildArgv produces codex prompt") {
+    test("buildArgv produces codex exec prompt") {
       val connector = CodexConnector.make(CliConnectorConfig(ConnectorId.Codex), new MockCliExec())
       val ctx       = CliContext("/workspace", "/repo")
       val argv      = connector.buildArgv("fix the bug", ctx)
-      assertTrue(argv == List("codex", "fix the bug"))
+      assertTrue(argv == List("codex", "exec", "fix the bug"))
+    },
+    test("buildArgv threads --model and passthrough flags (e.g. --full-auto)") {
+      val cfg       = CliConnectorConfig(ConnectorId.Codex, model = Some("o3"), flags = Map("full-auto" -> ""))
+      val connector = CodexConnector.make(cfg, new MockCliExec())
+      val argv      = connector.buildArgv("do it", CliContext("/w", "/r"))
+      assertTrue(
+        argv.startsWith(List("codex", "exec", "--model", "o3")),
+        argv.contains("--full-auto"),
+        argv.last == "do it",
+      )
     },
     test("buildInteractiveArgv produces codex") {
       val connector = CodexConnector.make(CliConnectorConfig(ConnectorId.Codex), new MockCliExec())
       val ctx       = CliContext("/workspace", "/repo")
       val argv      = connector.buildInteractiveArgv(ctx)
       assertTrue(argv == List("codex"))
+    },
+    test("complete runs codex in the configured workingDir") {
+      final class RecordingExec(seen: Ref[String]) extends CliProcessExecutor:
+        def run(argv: List[String], cwd: String, envVars: Map[String, String]): IO[LlmError, ProcessResult] =
+          seen.set(cwd).as(ProcessResult(List("ok"), 0))
+        def runStreaming(argv: List[String], cwd: String, envVars: Map[String, String])
+          : ZStream[Any, LlmError, String] = ZStream.empty
+      for
+        seen <- Ref.make("")
+        conn  = CodexConnector.make(CliConnectorConfig(ConnectorId.Codex, workingDir = Some("/tmp/repo")), RecordingExec(seen))
+        _    <- conn.complete("x")
+        cwd  <- seen.get
+      yield assertTrue(cwd == "/tmp/repo")
     },
     test("complete returns stdout joined") {
       val mock      = new MockCliExec()

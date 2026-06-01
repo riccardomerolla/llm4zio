@@ -29,15 +29,23 @@ import llm4zio.runner.Llm4zio
 
 object Main extends ZIOAppDefault:
 
-  // Reasoning over an API connector; code-editing over the claude CLI rooted in
-  // the repo, allowed to apply edits headlessly.
+  // Reasoning over an API connector.
   private val reasoning = ApiConnectorConfig(ConnectorId.Anthropic, model = Some("claude-sonnet-4-5"))
-  private val coder     = CliConnectorConfig(ConnectorId.ClaudeCli, flags = Map("permission-mode" -> "acceptEdits"))
+
+  /** Code-editing backend, selectable via LLM4ZIO_CODER=claude|codex|gemini
+    * (default claude). Each runs rooted in the repo with its headless
+    * edit-permission flag.
+    */
+  private def coderFor(name: String): CliConnectorConfig = name match
+    case "codex"  => CliConnectorConfig(ConnectorId.Codex, flags = Map("full-auto" -> ""))
+    case "gemini" => CliConnectorConfig(ConnectorId.GeminiCli) // gemini auto-approves edits via built-in -y
+    case _        => CliConnectorConfig(ConnectorId.ClaudeCli, flags = Map("permission-mode" -> "acceptEdits"))
 
   def run =
     getArgs.flatMap { args =>
       val prompt  = args.headOption.getOrElse("Add a multiply function to the calculator crate")
       val workDir = Path.of(".").toAbsolutePath.normalize
+      val coder   = coderFor(sys.env.getOrElse("LLM4ZIO_CODER", "claude"))
 
       Llm4zio.run(workDir, reasoning, coder) { ctx =>
         given FlowEvents = ctx.events
