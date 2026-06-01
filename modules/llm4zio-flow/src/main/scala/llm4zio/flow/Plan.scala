@@ -1,14 +1,16 @@
 package llm4zio.flow
 
+import zio.json.JsonCodec
+
 /** A single unit of work within a [[Plan]]. */
-final case class Task(title: String, description: String, completed: Boolean = false)
+final case class Task(title: String, description: String, completed: Boolean = false) derives JsonCodec
 
 /** An ordered list of [[Task]]s tied to a branch/epic id.
   *
   * Plans persist as plain Markdown (no datastore), so a run can be resumed by
   * re-reading the file and continuing from the first incomplete task.
   */
-final case class Plan(epicId: String, tasks: List[Task]):
+final case class Plan(epicId: String, tasks: List[Task]) derives JsonCodec:
 
   /** The first task not yet completed, or None when the plan is fully done. */
   def nextIncomplete: Option[Task] = tasks.find(!_.completed)

@@ -16,3 +16,6 @@ object FlowError:
 
   /** An external process (git, gh, a CLI agent) failed unexpectedly. */
   final case class Process(message: String, detail: String) extends FlowError
+
+  /** A wrapped failure from the underlying LLM service. */
+  final case class Llm(message: String) extends FlowError
