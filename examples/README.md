@@ -7,10 +7,11 @@ to [orca's examples](https://github.com/VirtusLab/orca/tree/main/examples).
 | Example | What it shows |
 | ------- | ------------- |
 | [01-simple](01-simple/) | Autonomous planning + coding for a small task: plan → per-task implement (claude CLI) → LLM review-and-fix → commit. Plan persists to `.llm4zio/plan-*.md`, so a re-run resumes. |
-| [04-epic](04-epic/) | A multi-task epic in a resumable on-disk file, with **cross-agent review** (claude implements; the API model + codex review in parallel), a final doc-update stage, and epic-file cleanup. |
+| [02-interactive](02-interactive/) | Same shape as 01, but the planner can ask clarifying questions on the terminal (`Interaction` / `TerminalInteraction`) before planning. For open-ended prompts. |
 | [03-bugfix](03-bugfix/) | Issue-driven Scala bugfix (touches GitHub): read issue → triage → failing test on a branch → PR → wait for CI red → fix → update PR. No `--run` (needs a real repo + issue). |
+| [04-epic](04-epic/) | A multi-task epic in a resumable on-disk file, with **cross-agent review** (claude implements; the API model + codex review in parallel), a final doc-update stage, and epic-file cleanup. |
 
-(02-interactive is planned — see `.claude/plans/orca-examples-parity.md`.)
+All four orca examples are ported. See `.claude/plans/orca-examples-parity.md`.
 
 ## Prerequisites
 
