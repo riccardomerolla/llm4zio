@@ -13,3 +13,6 @@ object FlowError:
 
   /** A flow step aborted deliberately (see `fail`). */
   final case class Aborted(message: String) extends FlowError
+
+  /** An external process (git, gh, a CLI agent) failed unexpectedly. */
+  final case class Process(message: String, detail: String) extends FlowError
