@@ -78,15 +78,17 @@ inThisBuild(List(
 
 lazy val It = config("it") extend Test
 
-// ── The library ───────────────────────────────────────────────────────────────
-// Phase 1 leaves a single module. Phase 2 splits this into llm4zio-core /
-// llm4zio-flow / llm4zio-runner (see .claude/plans/orca-shaped-shedding.md).
-lazy val llm4zio = (project in file("llm4zio"))
+// ── llm4zio-core ──────────────────────────────────────────────────────────────
+// The LLM plumbing: Connector/LlmService, providers (API + CLI), streaming,
+// tool-calling, structured output, observability. llm4zio-flow and
+// llm4zio-runner join this module list in later phases
+// (see .claude/plans/orca-shaped-shedding.md).
+lazy val llm4zioCore = (project in file("modules/llm4zio-core"))
   .configs(It)
   .settings(inConfig(It)(Defaults.testSettings): _*)
   .settings(
-    name        := "llm4zio",
-    description := "ZIO-native LLM library",
+    name        := "llm4zio-core",
+    description := "ZIO-native LLM library — provider plumbing, streaming, tools, structured output",
     libraryDependencySchemes += "dev.zio" %% "zio-json" % VersionScheme.Always,
     libraryDependencies ++= llm4zioDeps,
     testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
@@ -94,8 +96,8 @@ lazy val llm4zio = (project in file("llm4zio"))
   )
 
 lazy val root = (project in file("."))
-  .aggregate(llm4zio)
+  .aggregate(llm4zioCore)
   .settings(
-    name           := "llm4zio-root",
+    name           := "llm4zio",
     publish / skip := true,
   )
