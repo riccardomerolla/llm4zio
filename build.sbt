@@ -124,7 +124,7 @@ lazy val llm4zioRunner = (project in file("modules/llm4zio-runner"))
     name        := "llm4zio-runner",
     description := "Entry point, terminal renderer, and example flows for llm4zio",
     libraryDependencySchemes += "dev.zio" %% "zio-json" % VersionScheme.Always,
-    libraryDependencies ++= zioCoreDeps ++ Seq(zioJsonDep) ++ zioLoggingDeps ++ zioTestDeps,
+    libraryDependencies ++= zioCoreDeps ++ Seq(zioJsonDep, zioHttpDep) ++ zioLoggingDeps ++ zioTestDeps,
     testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
     It / testFrameworks ++= (Test / testFrameworks).value,
   )

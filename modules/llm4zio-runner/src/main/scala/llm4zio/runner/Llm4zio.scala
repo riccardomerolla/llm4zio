@@ -1,0 +1,40 @@
+package llm4zio.runner
+
+import zio.*
+import zio.http.Client
+
+import java.nio.file.Path
+
+import llm4zio.core.{ApiConnectorConfig, CliConnectorConfig}
+import llm4zio.providers.HttpClient
+import llm4zio.flow.FlowContext
+
+/** Entry point for scala-cli flow scripts. Builds a real [[FlowContext]],
+  * streams progress to the terminal, runs the flow body, and provides the
+  * zio-http client + HttpClient layers — so a `.sc` reads top-to-bottom:
+  *
+  * {{{
+  * object Main extends zio.ZIOAppDefault:
+  *   def run = Llm4zio.run(os.pwd, reasoning, coder) { ctx =>
+  *     // ... a flow over ctx ...
+  *   }
+  * }}}
+  */
+object Llm4zio:
+
+  def run(
+    workDir: Path,
+    reasoning: ApiConnectorConfig,
+    coder: CliConnectorConfig,
+  )(body: FlowContext => ZIO[Any, Any, Any]): ZIO[Any, Throwable, Unit] =
+    ZIO
+      .scoped {
+        DefaultFlowContext.build(reasoning, coder, workDir).flatMap { case (ctx, hub) =>
+          TerminalListener.consume(hub) *> body(ctx).unit
+        }
+      }
+      .provide(Client.default, HttpClient.live)
+      .mapError {
+        case t: Throwable => t
+        case other        => new RuntimeException(other.toString)
+      }
