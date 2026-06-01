@@ -41,10 +41,16 @@ object GitToolSpec extends ZIOSpecDefault:
           a   <- git.createBranch("feature/x")
           cur <- git.currentBranch
           b   <- git.createBranch("feature/x")
+          _   <- git.checkout("main")
+          onMain <- git.currentBranch
+          _   <- git.checkoutOrCreate("feature/x") // existing → switches back
+          back   <- git.currentBranch
         yield assertTrue(
           a == GitTool.CreateBranch.Created,
           cur == "feature/x",
           b == GitTool.CreateBranch.AlreadyExists,
+          onMain == "main",
+          back == "feature/x",
         )
       }
     },

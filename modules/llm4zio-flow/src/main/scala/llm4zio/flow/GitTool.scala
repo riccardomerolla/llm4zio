@@ -37,6 +37,16 @@ final class GitTool(workDir: Path):
 
   def addRemote(name: String, url: String): IO[FlowError, Unit] = execOrFail("remote", "add", name, url).unit
 
+  /** Check out an existing branch. */
+  def checkout(name: String): IO[FlowError, Unit] = execOrFail("checkout", name).unit
+
+  /** Ensure `name` is checked out, creating it if it does not exist. */
+  def checkoutOrCreate(name: String): IO[FlowError, Unit] =
+    createBranch(name).flatMap {
+      case CreateBranch.Created       => ZIO.unit
+      case CreateBranch.AlreadyExists => checkout(name)
+    }
+
   /** Create and check out a branch; [[CreateBranch.AlreadyExists]] if it exists. */
   def createBranch(name: String): IO[FlowError, CreateBranch] =
     exec("checkout", "-b", name).flatMap { r =>
