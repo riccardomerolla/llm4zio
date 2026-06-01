@@ -32,6 +32,13 @@ object PlanStore:
         case Some(text) => ZIO.fromEither(Plan.parse(text)).mapBoth(FlowError.PlanParse(_), Some(_))
       }
 
+  /** Remove the plan file (no-op if absent) — e.g. after an epic completes. */
+  def delete(path: Path): IO[FlowError, Unit] =
+    ZIO
+      .attemptBlocking(Files.deleteIfExists(path))
+      .mapError(e => FlowError.Persistence(s"failed to delete plan at $path", Some(e)))
+      .unit
+
   /** Resume the plan at `path` if present; otherwise run `create`, persist it, and return it. */
   def recoverOrCreate[R, E >: FlowError](path: Path)(create: => ZIO[R, E, Plan]): ZIO[R, E, Plan] =
     load(path).flatMap {

@@ -58,4 +58,16 @@ object PlanStoreSpec extends ZIOSpecDefault:
         yield assertTrue(got == fresh, disk.contains(fresh))
       }
     },
+    test("delete removes the plan file and is a no-op when already absent") {
+      ZIO.scoped {
+        for
+          dir <- tempDir
+          path = dir.resolve("plan.md")
+          _    <- PlanStore.save(path, Plan("e", List(Task("x", ""))))
+          _    <- PlanStore.delete(path)
+          gone <- PlanStore.load(path)
+          _    <- PlanStore.delete(path) // no-op, must not fail
+        yield assertTrue(gone.isEmpty)
+      }
+    },
   )

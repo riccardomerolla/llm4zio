@@ -1,6 +1,6 @@
 package llm4zio.flow
 
-import zio.IO
+import zio.{IO, ZIO}
 import zio.json.ast.Json
 
 import llm4zio.core.LlmService
@@ -40,14 +40,22 @@ object Reviewers:
     s"""Address these review findings, then stop:
        |$lines""".stripMargin
 
-/** Review → fix → re-review until the reviewer is clean or `maxRounds` reached.
+  /** Combine findings from several reviewers into one result. */
+  def merge(results: List[ReviewResult]): ReviewResult =
+    ReviewResult(
+      issues = results.flatMap(_.issues),
+      summary = results.map(_.summary).filter(_.nonEmpty).mkString("; "),
+    )
+
+/** Review → fix → re-review until clean or `maxRounds` reached.
   *
-  * The reviewer is the reasoning connector (structured `ReviewResult`); the
-  * fixer is the coder [[Chat]]. `currentDiff` is re-read each round so the
-  * reviewer sees the latest state. Built on the generic [[fixLoop]].
+  * `reviewers` run in parallel each round (cross-agent review: route reviews
+  * through different backends than the implementer) and their findings are
+  * merged; the fixer is the coder [[Chat]]. `currentDiff` is re-read each round
+  * so reviewers see the latest state. Built on the generic [[fixLoop]].
   */
 def reviewAndFixLoop(
-  reasoning: LlmService,
+  reviewers: List[LlmService],
   coder: Chat,
   taskTitle: String,
   currentDiff: IO[FlowError, String],
@@ -55,9 +63,13 @@ def reviewAndFixLoop(
 )(using FlowEvents): IO[FlowError, ReviewResult] =
   val evaluate: IO[FlowError, ReviewResult] =
     currentDiff.flatMap { diff =>
-      reasoning
-        .executeStructured[ReviewResult](Reviewers.reviewPrompt(taskTitle, diff), Reviewers.schema)
-        .mapError(e => FlowError.Llm(e.toString))
+      ZIO
+        .foreachPar(reviewers) { reviewer =>
+          reviewer
+            .executeStructured[ReviewResult](Reviewers.reviewPrompt(taskTitle, diff), Reviewers.schema)
+            .mapError(e => FlowError.Llm(e.toString))
+        }
+        .map(Reviewers.merge)
     }
 
   val fix: ReviewResult => IO[FlowError, Unit] = result =>
