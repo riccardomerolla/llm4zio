@@ -24,19 +24,19 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 parse_args "$@"
 resolve_dest "llm4zio-01-simple"
-init_destination "$SEED_DIR" "$PLANS_DIR" "implement.sc" "Initial calculator crate"
-apply_local_flag "$REPO_ROOT" "$DEST/implement.sc"
+init_destination "$SEED_DIR" "$PLANS_DIR" "implement.scala" "Initial calculator crate"
+apply_local_flag "$REPO_ROOT" "$DEST/implement.scala"
 
 PROMPT="Add a multiply function to the calculator crate"
 
 echo
 echo "Test project ready at: $DEST"
-maybe_run "implement.sc" "$PROMPT"   # execs scala-cli when --run; else no-op
+maybe_run "implement.scala" "$PROMPT"   # execs scala-cli when --run; else no-op
 cat <<EOF
 
 Next steps:
   cd $DEST
-  scala-cli run implement.sc -- "$PROMPT"
+  scala-cli run implement.scala -- "$PROMPT"
 
 Requires: JDK 21+, scala-cli, cargo, and \`claude\` logged in.
 A reasoning API key is read from the environment (e.g. ANTHROPIC_API_KEY).

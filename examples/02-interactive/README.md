@@ -12,7 +12,7 @@ planner shouldn't guess.
 2. **Then, exactly as 01-simple**: branch → per-task implement (claude CLI) →
    `reviewAndFixLoop` → commit, resumable via `.llm4zio/plan-*.md`.
 
-The flow script is [`plans/implement-interactive.sc`](../../plans/implement-interactive.sc).
+The flow script is [`plans/implement-interactive.scala`](../../plans/implement-interactive.scala).
 Interactivity is modeled by the `Interaction` trait (the ZIO-native stand-in for
 orca's `ask_user` MCP tool); the runner ships `TerminalInteraction` (stdin).
 
@@ -28,7 +28,7 @@ orca's `ask_user` MCP tool); the runner ships `TerminalInteraction` (stdin).
 # or step by step:
 ./examples/02-interactive/create-test-project.sh --local
 cd /tmp/llm4zio-02-interactive-…
-scala-cli run implement-interactive.sc -- "Make the calculator crate more useful"
+scala-cli run implement-interactive.scala -- "Make the calculator crate more useful"
 ```
 
 The planner will ask you a clarifying question on the terminal before planning.

@@ -27,8 +27,8 @@ if [ "$RUN" -eq 1 ]; then
   exit 2
 fi
 resolve_dest "llm4zio-03-bugfix"
-init_destination "$SEED_DIR" "$PLANS_DIR" "issue-pr-bugfix.sc" "Initial calculator (with a bug in average)"
-apply_local_flag "$REPO_ROOT" "$DEST/issue-pr-bugfix.sc"
+init_destination "$SEED_DIR" "$PLANS_DIR" "issue-pr-bugfix.scala" "Initial calculator (with a bug in average)"
+apply_local_flag "$REPO_ROOT" "$DEST/issue-pr-bugfix.scala"
 
 echo
 echo "Test project ready at: $DEST"
@@ -41,7 +41,7 @@ This flow needs a real GitHub repo, an issue, and CI. Manual steps:
   gh issue create --title "average([]) throws ArithmeticException" \\
     --body "Calculator.average on an empty list divides by zero."
   # finally run the flow against the issue reference it prints:
-  scala-cli run issue-pr-bugfix.sc -- "<you>/calculator-demo#1"
+  scala-cli run issue-pr-bugfix.scala -- "<you>/calculator-demo#1"
 
 Requires: JDK 21+, scala-cli, sbt, \`claude\` logged in, \`gh\` authenticated,
 and a reasoning API key in the environment (e.g. ANTHROPIC_API_KEY).

@@ -37,7 +37,7 @@ object DefaultFlowContext:
     ZIO.serviceWithZIO[HttpClient] { http =>
       val registry = ConnectorFactories.createRegistry(http, LiveCliProcessExecutor.instance)
       for
-        reasoning <- registry.resolveApi(reasoningCfg)
+        reasoning <- registry.resolveApi(enrichApi(reasoningCfg))
         coder     <- registry.resolveCli(coderCfg.copy(workingDir = Some(workDir.toString)))
         reviewers <- ZIO.foreach(reviewerCfgs)(cfg => registry.resolve(withWorkdir(cfg, workDir)))
         bundle    <- make(reasoning, coder, workDir, reviewers)
@@ -47,3 +47,18 @@ object DefaultFlowContext:
   private def withWorkdir(cfg: ConnectorConfig, workDir: Path): ConnectorConfig = cfg match
     case c: CliConnectorConfig => c.copy(workingDir = Some(workDir.toString))
     case other                 => other
+
+  /** Fill an API config's base URL (from the provider default) and API key (from
+    * the environment) when the caller left them unset — so examples can name
+    * just the provider + model.
+    */
+  def enrichApi(cfg: ApiConnectorConfig): ApiConnectorConfig =
+    val envKey = cfg.connectorId match
+      case ConnectorId.Anthropic => sys.env.get("ANTHROPIC_API_KEY")
+      case ConnectorId.OpenAI    => sys.env.get("OPENAI_API_KEY")
+      case ConnectorId.GeminiApi => sys.env.get("GEMINI_API_KEY").orElse(sys.env.get("GOOGLE_API_KEY"))
+      case _                     => None
+    cfg.copy(
+      baseUrl = cfg.baseUrl.orElse(LlmProvider.defaultBaseUrl(cfg.toLlmConfig.provider)),
+      apiKey = cfg.apiKey.orElse(envKey),
+    )

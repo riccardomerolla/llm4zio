@@ -21,7 +21,7 @@ docs are updated and the epic file is removed.
 4. **Update documentation** — coder updates the README/doc-comments; commit.
 5. **Clean up** — `PlanStore.delete(planPath)`.
 
-The flow script is [`plans/epic.sc`](../../plans/epic.sc).
+The flow script is [`plans/epic.scala`](../../plans/epic.scala).
 
 ## Prerequisites
 
@@ -36,8 +36,8 @@ The flow script is [`plans/epic.sc`](../../plans/epic.sc).
 # or step by step:
 ./examples/04-epic/create-test-project.sh --local
 cd /tmp/llm4zio-04-epic-…
-scala-cli run epic.sc -- "…your epic prompt…"
+scala-cli run epic.scala -- "…your epic prompt…"
 ```
 
 Edit [`test-project/`](test-project/) for a different starter, or
-[`plans/epic.sc`](../../plans/epic.sc) for a different flow.
+[`plans/epic.scala`](../../plans/epic.scala) for a different flow.

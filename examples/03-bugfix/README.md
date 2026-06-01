@@ -18,7 +18,7 @@ Unlike 01/04 this needs a real GitHub repo + issue + CI, so there's no `--run`.
 5. **Fix** — `Planner.from` + `implementTaskLoop` with `reviewAndFixLoop`.
 6. **Finish** — push, regenerate the PR title/body from the full diff, `updatePr`.
 
-The flow script is [`plans/issue-pr-bugfix.sc`](../../plans/issue-pr-bugfix.sc).
+The flow script is [`plans/issue-pr-bugfix.scala`](../../plans/issue-pr-bugfix.scala).
 The starter ships an sbt Calculator whose `average` divides by zero on an empty
 list, plus a CI workflow that runs `sbt test`.
 
@@ -34,7 +34,7 @@ list, plus a CI workflow that runs `sbt test`.
 cd /tmp/llm4zio-03-bugfix-…
 gh repo create <you>/calculator-demo --private --source=. --push
 gh issue create --title "average([]) throws" --body "Divide by zero on empty list."
-scala-cli run issue-pr-bugfix.sc -- "<you>/calculator-demo#1"
+scala-cli run issue-pr-bugfix.scala -- "<you>/calculator-demo#1"
 ```
 
 > Simplifications vs orca: the failure comment is a fixed note (orca has sonnet

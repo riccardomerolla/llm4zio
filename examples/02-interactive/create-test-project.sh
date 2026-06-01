@@ -23,19 +23,19 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 parse_args "$@"
 resolve_dest "llm4zio-02-interactive"
-init_destination "$SEED_DIR" "$PLANS_DIR" "implement-interactive.sc" "Initial calculator crate"
-apply_local_flag "$REPO_ROOT" "$DEST/implement-interactive.sc"
+init_destination "$SEED_DIR" "$PLANS_DIR" "implement-interactive.scala" "Initial calculator crate"
+apply_local_flag "$REPO_ROOT" "$DEST/implement-interactive.scala"
 
 PROMPT="Make the calculator crate more useful"
 
 echo
 echo "Test project ready at: $DEST"
-maybe_run "implement-interactive.sc" "$PROMPT"
+maybe_run "implement-interactive.scala" "$PROMPT"
 cat <<EOF
 
 Next steps:
   cd $DEST
-  scala-cli run implement-interactive.sc -- "$PROMPT"
+  scala-cli run implement-interactive.scala -- "$PROMPT"
 
 The planner will ask you a clarifying question on the terminal before planning.
 Requires: JDK 21+, scala-cli, cargo, \`claude\` logged in, and a reasoning API

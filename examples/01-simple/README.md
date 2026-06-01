@@ -16,7 +16,7 @@ or re-run resumes from the first incomplete task.
      the reasoning model reviews the diff; the coder fixes; repeat until clean.
    - `ctx.git.commitAll(...)` — commit the task.
 
-The flow script is [`plans/implement.sc`](../../plans/implement.sc).
+The flow script is [`plans/implement.scala`](../../plans/implement.scala).
 
 ## Prerequisites
 
@@ -30,7 +30,7 @@ The flow script is [`plans/implement.sc`](../../plans/implement.sc).
 # or, step by step:
 ./examples/01-simple/create-test-project.sh --local
 cd /tmp/llm4zio-01-simple-…
-scala-cli run implement.sc -- "Add a multiply function to the calculator crate"
+scala-cli run implement.scala -- "Add a multiply function to the calculator crate"
 ```
 
 ### Choosing the coder backend
@@ -39,9 +39,9 @@ The same flow runs with any of the three CLI coding agents — set `LLM4ZIO_CODE
 (default `claude`); each runs rooted in the repo with its headless edit-approval:
 
 ```bash
-LLM4ZIO_CODER=claude scala-cli run implement.sc -- "Add a multiply function"   # claude --print --permission-mode acceptEdits
-LLM4ZIO_CODER=codex  scala-cli run implement.sc -- "Add a multiply function"   # codex exec --full-auto
-LLM4ZIO_CODER=gemini scala-cli run implement.sc -- "Add a multiply function"   # gemini -p -y (auto-approve)
+LLM4ZIO_CODER=claude scala-cli run implement.scala -- "Add a multiply function"   # claude --print --permission-mode acceptEdits
+LLM4ZIO_CODER=codex  scala-cli run implement.scala -- "Add a multiply function"   # codex exec --full-auto
+LLM4ZIO_CODER=gemini scala-cli run implement.scala -- "Add a multiply function"   # gemini -p -y (auto-approve)
 ```
 
 - `claude` → needs `claude` logged in.
@@ -52,4 +52,4 @@ Reasoning (planning + review) always runs over the API connector
 (`ANTHROPIC_API_KEY`), regardless of the coder.
 
 Edit [`test-project/`](test-project/) for a different starter, or
-[`plans/implement.sc`](../../plans/implement.sc) for a different flow.
+[`plans/implement.scala`](../../plans/implement.scala) for a different flow.

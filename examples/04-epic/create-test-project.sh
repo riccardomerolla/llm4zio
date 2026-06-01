@@ -23,19 +23,19 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 parse_args "$@"
 resolve_dest "llm4zio-04-epic"
-init_destination "$SEED_DIR" "$PLANS_DIR" "epic.sc" "Initial todo-cli"
-apply_local_flag "$REPO_ROOT" "$DEST/epic.sc"
+init_destination "$SEED_DIR" "$PLANS_DIR" "epic.scala" "Initial todo-cli"
+apply_local_flag "$REPO_ROOT" "$DEST/epic.scala"
 
 PROMPT="Persist tasks to a JSON file (load on startup, save on every change), add 'done <id>' and 'delete <id>' commands, and support priority levels (low/medium/high) with a 'list --priority' filter"
 
 echo
 echo "Test project ready at: $DEST"
-maybe_run "epic.sc" "$PROMPT"   # execs scala-cli when --run; else no-op
+maybe_run "epic.scala" "$PROMPT"   # execs scala-cli when --run; else no-op
 cat <<EOF
 
 Next steps:
   cd $DEST
-  scala-cli run epic.sc -- "$PROMPT"
+  scala-cli run epic.scala -- "$PROMPT"
 
 Requires: JDK 21+, scala-cli, and BOTH \`claude\` and \`codex\` logged in
 (claude implements, codex + the API model review). A reasoning API key is read
