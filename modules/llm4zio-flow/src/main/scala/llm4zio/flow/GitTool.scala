@@ -1,7 +1,6 @@
 package llm4zio.flow
 
 import zio.*
-import zio.process.Command
 
 import java.nio.file.Path
 
@@ -14,22 +13,8 @@ import java.nio.file.Path
 final class GitTool(workDir: Path):
   import GitTool.*
 
-  private def exec(args: String*): IO[FlowError, ProcResult] =
-    (for
-      process <- Command("git", args*).workingDirectory(workDir.toFile).run
-      outF    <- process.stdout.string.fork
-      errF    <- process.stderr.string.fork
-      exit    <- process.exitCode
-      out     <- outF.join
-      err     <- errF.join
-    yield ProcResult(exit.code, out.trim, err.trim))
-      .mapError(t => FlowError.Process(s"git ${args.mkString(" ")}", Option(t.getMessage).getOrElse(t.toString)))
-
-  private def execOrFail(args: String*): IO[FlowError, String] =
-    exec(args*).flatMap { r =>
-      if r.ok then ZIO.succeed(r.stdout)
-      else ZIO.fail(FlowError.Process(s"git ${args.mkString(" ")} (exit ${r.exitCode})", r.problem))
-    }
+  private def exec(args: String*): IO[FlowError, Proc.Result]   = Proc.run("git", args, workDir)
+  private def execOrFail(args: String*): IO[FlowError, String]  = Proc.runOrFail("git", args, workDir)
 
   /** `git init` with `main` as the default branch. */
   def init: IO[FlowError, Unit] = execOrFail("-c", "init.defaultBranch=main", "init").unit
@@ -78,7 +63,3 @@ object GitTool:
 
   enum Commit:
     case Committed, NothingToCommit
-
-  private final case class ProcResult(exitCode: Int, stdout: String, stderr: String):
-    def ok: Boolean      = exitCode == 0
-    def problem: String  = if stderr.nonEmpty then stderr else stdout
