@@ -3,12 +3,12 @@ name: CI
 on:
   push:
     branches:
-      - master
+      - main
     tags:
       - "v*"
   pull_request:
     branches:
-      - master
+      - main
 
 permissions:
   contents: write
@@ -33,10 +33,14 @@ jobs:
       - name: Setup SBT
         uses: sbt/setup-sbt@v1
 
-      - name: Check formatting and run tests
-        run: |
-          sbt "project llm4zio" check
-          sbt "project llm4zio" test
+      - name: Check formatting
+        run: sbt check
+
+      - name: Unit tests
+        run: sbt test
+
+      - name: Integration tests
+        run: sbt "llm4zioFlow/It/test" "llm4zioRunner/It/test"
 
   publish:
     name: Publish to Maven Central
@@ -49,13 +53,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup GraalVM
-        uses: graalvm/setup-graalvm@v1
+      - name: Setup Java
+        uses: actions/setup-java@v4
         with:
+          distribution: 'temurin'
           java-version: '21'
-          distribution: 'graalvm'
-          components: 'native-image'
-          github-token: ${{ secrets.GITHUB_TOKEN }}
           cache: 'sbt'
 
       - name: Setup SBT
@@ -67,8 +69,8 @@ jobs:
           gpg_private_key: ${{ secrets.PGP_SECRET }}
           passphrase: ${{ secrets.PGP_PASSPHRASE }}
 
-      - name: Publish llm4zio to Maven Central
-        run: sbt --batch --no-colors "project llm4zio" ci-release 
+      - name: Publish to Maven Central
+        run: sbt --batch --no-colors ci-release
         env:
           PGP_PASSPHRASE: ${{ secrets.PGP_PASSPHRASE }}
           PGP_SECRET: ${{ secrets.PGP_SECRET }}
@@ -82,5 +84,4 @@ jobs:
           tag: ${{ github.ref_name }}
           name: Release ${{ github.ref_name }}
           body: "See CHANGELOG.md for detailed release notes."
-          artifacts: ${{ env.CLI_NATIVE_ARCHIVE }}
           token: ${{ secrets.GITHUB_TOKEN }}

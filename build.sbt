@@ -112,8 +112,25 @@ lazy val llm4zioFlow = (project in file("modules/llm4zio-flow"))
     It / testFrameworks ++= (Test / testFrameworks).value,
   )
 
+// ── llm4zio-runner ────────────────────────────────────────────────────────────
+// Entry point + terminal progress renderer + a worked example flow. Depends on
+// flow (and transitively core). Real connectors are wired by the user via core's
+// ConnectorRegistry; the runner stays thin.
+lazy val llm4zioRunner = (project in file("modules/llm4zio-runner"))
+  .dependsOn(llm4zioFlow, llm4zioCore)
+  .configs(It)
+  .settings(inConfig(It)(Defaults.testSettings): _*)
+  .settings(
+    name        := "llm4zio-runner",
+    description := "Entry point, terminal renderer, and example flows for llm4zio",
+    libraryDependencySchemes += "dev.zio" %% "zio-json" % VersionScheme.Always,
+    libraryDependencies ++= zioCoreDeps ++ Seq(zioJsonDep) ++ zioLoggingDeps ++ zioTestDeps,
+    testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
+    It / testFrameworks ++= (Test / testFrameworks).value,
+  )
+
 lazy val root = (project in file("."))
-  .aggregate(llm4zioCore, llm4zioFlow)
+  .aggregate(llm4zioCore, llm4zioFlow, llm4zioRunner)
   .settings(
     name           := "llm4zio",
     publish / skip := true,

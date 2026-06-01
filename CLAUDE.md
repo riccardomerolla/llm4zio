@@ -1,594 +1,114 @@
-# CLAUDE.md — llm4zio Project Conventions
+# CLAUDE.md — llm4zio
 
-This file documents the conventions, patterns, and structure of the llm4zio codebase for AI assistants and new contributors.
+llm4zio is a **ZIO-native library for talking to LLMs and running agentic
+development flows**. It is the ZIO counterpart to VirtusLab's
+[orca](https://github.com/VirtusLab/orca) (which is Ox/direct-style): orca's
+values — thin, readable, no ceremony — expressed in `ZIO[R, E, A]`.
+
+> History: llm4zio was once a large agentic-software-house *product* (board,
+> governance, SPDD, Telegram HITL, web UI — ~39 modules). In 2026 it was forked
+> down to this focused library. The full product is preserved on the
+> `archive/product-2026-06` branch. The plan lives at
+> `.claude/plans/orca-shaped-shedding.md`.
 
 ---
 
-## Build Commands
+## Build
 
 ```bash
-sbt compile           # compile all sources
-sbt test              # run unit tests (1121+)
-sbt it:test           # run integration tests (18+, no external services required)
-sbt run               # start the gateway (http://localhost:8080)
-sbt fmt               # format: scalafmt + scalafix
-sbt check             # check formatting without modifying
-sbt assembly          # build fat JAR
+sbt compile                 # all modules
+sbt test                    # unit tests
+sbt "llm4zioFlow/It/test"   # integration tests (spawn real git; no network)
+sbt fmt                     # scalafmt + scalafix
+sbt check                   # verify formatting
 
-# Per-module commands (faster feedback loops):
-sbt boardDomain/compile       # compile only board-domain + its deps
-sbt boardDomain/test          # run only board-domain tests
-sbt 'testOnly board.control.BoardCacheSpec'  # run a single test class
+# Per-module:
+sbt llm4zioCore/test
+sbt llm4zioFlow/test
+sbt 'llm4zioFlow/testOnly llm4zio.flow.PlanSpec'
 ```
 
 ---
 
-## Architecture: BCE Pattern
-
-All domain packages follow **Boundary / Control / Entity** ([bce.design](https://bce.design/)):
-
-```
-domain/
-  boundary/   HTTP controllers, views, SSE endpoints, WebSocket handlers
-              — only routing, rendering, and HTTP concern live here
-  control/    Services, repositories, orchestrators, use-case logic
-              — business logic, state machines, event sourcing
-  entity/     Domain types: case classes, enums, event ADTs, errors
-              — pure data, no ZIO effects
-```
-
-**Rules:**
-- `boundary` may depend on `control` and `entity`
-- `control` may depend on `entity` only (never `boundary`)
-- `entity` has zero dependencies on other layers
-- Service logic must NOT live in `boundary/` — BCE violation
-- Views (Scalatags) belong in `boundary/`, not in a separate view package
-
----
-
-## Multi-Module Structure
-
-The codebase uses **sbt multi-module builds** to enforce BCE cohesion. Each domain is a self-contained module combining all three layers together, named after its domain.
-
-### Module Layout
+## Modules
 
 ```
 modules/
-  shared-json/          # JSON codec support
-  shared-ids/           # Typed ID wrappers (GovernancePolicyId, ProjectId, etc.)
-  shared-errors/        # PersistenceError and shared error ADTs
-  shared-store-core/    # EventStore trait, EclipseStore integration
-  shared-web-core/      # Domain-independent view infra: Layout, Components, JsResources
-  shared-services/      # Cross-cutting services: FileService, RateLimiter, HttpAIClient, StateService
-
-  # Domain modules — each is a BCE unit:
-  activity-domain/      agent-domain/        analysis-domain/
-  board-domain/         canvas-domain/       checkpoint-domain/
-  config-domain/        conversation-domain/ daemon-domain/
-  decision-domain/      gateway-domain/      governance-domain/
-  issues-domain/        knowledge-domain/    orchestration-domain/
-  plan-domain/          project-domain/      sdlc-domain/
-  specification-domain/ taskrun-domain/      workspace-domain/
-
-  shared-web/           # Views with multi-domain deps (being distributed to domain modules)
+  llm4zio-core/     # LLM plumbing: Connector/LlmService, providers (API + CLI),
+                    #   streaming, tool-calling, structured output, observability
+  llm4zio-flow/     # the agentic flow layer (orca-shaped, ZIO-native):
+                    #   Plan/Task, PlanStore (resumable plain-file), Chat,
+                    #   FlowEvent + stage/fail, fixLoop + Review, GitTool/GhTool
+                    #   over Proc (zio-process), FlowContext, implementTaskLoop
+  llm4zio-runner/   # entry point, TerminalListener, worked ExampleFlow
 ```
 
-### Big-review status (Phases 1–6 landed)
+Dependency direction: `runner → flow → core`. Never the reverse.
 
-The strategic refactor described in [`.claude/plans/i-think-that-sharded-orbit.md`](.claude/plans/i-think-that-sharded-orbit.md)
-is substantially complete. The locked positioning is: solo-founder agentic
-software house with three moats ranked **SPDD methodology > Telegram-first HITL
-> solo-founder ergonomics**.
+Published artifacts (Maven Central, `io.github.riccardomerolla`):
+`llm4zio-core`, `llm4zio-flow`, `llm4zio-runner`. The root project is
+`publish / skip := true`.
 
-**What dropped (Phase 1)**: `memory-domain`, `evolution-domain`, `demo-domain`
-modules; Discord/Slack channel stubs; ~5500 lines net.
+---
 
-**What's new in the domain model:**
-
-| Concept | Where | Why |
-|---|---|---|
-| `EmployeeRole` (PM, FrontendEng, BackendEng, QA, Reviewer, Custom) | `agent.entity` | Typed roster — Phase 2 R2 |
-| `DefaultRoster` (Pat, Alex, Ben, Dana, Rex) | `agent.entity` | Seeded employees, `maxConcurrentRuns=1` each |
-| `TicketLane` (Frontend, Backend, Testing, Triage, Review, Custom) | `issues.entity` | Routing — Phase 2 R5 |
-| `IssueEvent.LaneSet` | `issues.entity` | Pat sets lane at triage |
-| `AgentMatching.pickEmployeeForLaneStrict` | `agent.control` (orchestration) | Role + occupancy routing; `AutoDispatcher` uses it |
-| `QuickOption(key, label, resolution, rationale)` | `decision.entity` | Channel-agnostic decision payload — Phase 3 R6 |
-| `Decision.quickReplyOptions` | `decision.entity` | Telegram + web inbox both render these |
-| `DecisionEscalationNotifier` | `gateway.boundary.telegram` | Outbound: ActivityHub → Telegram inline buttons — Phase 3 R7 |
-| `TelegramChannel` callback handler | `gateway.boundary.telegram` | Inbound: callback-query → `DecisionInbox.resolve` — Phase 3 R8 |
-| `DecisionsController` + `/decisions/inbox` | `decision.boundary` | Web supervisor inbox mirror — Phase 3 R9 |
-| `sdlc.entity.Pricing` | `sdlc.entity` | Real per-provider token pricing — Phase 6 R1 |
-| `set_issue_lane` MCP tool | `mcp` | Pat sets lane from a prompt |
-
-**The supervisor round-trip is live end-to-end:**
+## Packages
 
 ```
-governance gate fails
-  → DecisionInbox.escalate
-  → ActivityHub publishes DecisionEscalated
-  → DecisionEscalationNotifier sends Telegram message with
-    inline keyboard from Decision.renderableQuickOptions
-  → supervisor taps "Approve"
-  → TelegramChannel parses `decision:resolve:{id}:{key}`
-  → DecisionInbox.resolve fires (issue Approved → MovedToMerging)
-  → issue moves on the board
-```
-
-The web supervisor inbox at `/decisions/inbox` mirrors the Telegram flow
-for policy-locked environments. Both surfaces share `DecisionInbox` so
-they stay in sync.
-
-**Config keys added:**
-- `telegram.supervisorChatId` — destination chat for escalations
-- `ai.provider` + `ai.model` — drive cost computation via the `Pricing` table
-
-**Still deferred:**
-- Phase 4 cosmetic UI consolidation (`/agents` → `/employees` rename;
-  single `/dashboard` collapsing duplicates; `/settings` absorbing the
-  smaller config screens)
-- Phase 5 onboarding wizard at `/onboarding`
-- `DaemonAgentSpec` slim (Phase 2 R3 — event-sourced schema migration)
-- Per-issue provider tracking (currently global default drives pricing)
-
-### What Lives Where
-
-**Domain modules** (`modules/*-domain/`) contain:
-- `entity/` — all domain modules have this (models, events, repository traits)
-- `control/` — most modules now have services colocated (e.g., `AgentMatching`, `BoardCache`, `DaemonAgentScheduler`, `WorkflowEngine`)
-- `boundary/` — views that only depend on their own domain (e.g., `BoardView`, `IssueTimelineView`, `DaemonsView`, `AgentsView`, `ChannelView`)
-
-**Root `src/main/scala/`** retains files that depend on multiple domains or have circular dependency constraints:
-- `app/` — `ApplicationDI`, `WebServer`, DI wiring (depends on everything)
-- `mcp/` — cross-cutting MCP tool support
-- `db/` — legacy database layer
-- Domain `boundary/` controllers (HTTP routing that cross-cuts multiple domains)
-- Domain `control/` services with unresolved cross-domain dependencies (e.g., `BoardOrchestrator`, `OrchestratorControlPlane`)
-
-**`shared-web`** contains ~20 view files with multi-domain dependencies that cannot yet move to a single domain module (e.g., `SettingsView` depends on config + gateway + agent). These are being distributed to domain `boundary/` packages as dependencies are untangled.
-
-### Module Dependency Rules
-
-```scala
-// In build.sbt:
-val domainDeps    = Seq(zioCoreDep, zioStreamsDep, zioJsonDep)       // entity-only modules
-val domainBceDeps = domainDeps ++ Seq(zioHttpDep, scalatags)          // modules with boundary layer
-
-// Domain modules depend on foundation + other domain modules:
-lazy val boardDomain = project.in(file("modules/board-domain"))
-  .dependsOn(sharedIds, sharedErrors, sharedStoreCore, sharedWebCore, workspaceDomain)
-  .settings(libraryDependencies ++= domainBceDeps)
-```
-
-**Key constraints:**
-- Domain modules MUST NOT depend on root `src/main/scala/`
-- Circular `dependsOn` is illegal in sbt — break cycles by extracting trait interfaces to entity packages
-- `orchestration-domain` holds trait interfaces (e.g., `AgentPoolManager`, `TaskExecutor`) that other modules depend on; `*Live` implementations live in root or in the module itself
-- Use `_root_.config.entity.ConfigRepository` when `zio.config` shadows the `config` package
-
-### Import Conventions for Modules
-
-When a domain module and the root project share the same package (e.g., `board.boundary`), Scala allows same-package access across sbt module boundaries — **do NOT add explicit imports** for same-package types (causes unused import errors with `-Werror`).
-
-When `config` package is shadowed by `zio.config`:
-```scala
-import _root_.config.entity.ConfigRepository  // use _root_ prefix
-```
-
-When a local variable name shadows a package:
-```scala
-// In AgentsController, `agent` is a local val of type Agent
-// agent.boundary.AgentsView would be parsed as accessing .boundary on the val
-import _root_.agent.boundary.AgentsView  // use _root_ prefix, then unqualified name
+llm4zio.core         LlmService, Connector{,Api,Cli}, Models (Message, LlmChunk,
+                     LlmConfig, LlmProvider), Streaming, Errors (LlmError),
+                     ConnectorRegistry, ConnectorFactories, Conversation
+llm4zio.providers    OpenAI/Anthropic/GeminiApi/LmStudio/Ollama (API),
+                     ClaudeCli/Codex/Copilot/GeminiCli/OpenCode (CLI), Mock, HttpClient
+llm4zio.tools        Tool, AnyTool, JsonSchema, tool-calling executor
+llm4zio.observability  lightweight tracing/metrics hooks
+llm4zio.flow         the flow layer (see modules table)
+llm4zio.runner       TerminalListener, ExampleFlow
 ```
 
 ---
 
-## Package Naming
+## Conventions
 
-All packages use **singular** names matching the domain:
-
-```
-agent/        analysis/     board/        canvas/
-checkpoint/   config/       conversation/ daemon/
-decision/     gateway/      governance/   issues/
-knowledge/    mcp/          orchestration/ plan/
-project/      sdlc/         specification/ taskrun/
-workspace/    activity/
-```
-
-**Foundation packages** (shared infrastructure):
-
-```
-shared/
-  errors/     PersistenceError and other shared error ADTs
-  ids/        Typed ID wrappers (GovernancePolicyId, ProjectId, etc.)
-  store/      EventStore trait, StoreConfig, DataStoreModule
-  web/        Scalatags view helpers, layout, HTML components
-  services/   Cross-cutting services (FileService, RateLimiter, etc.)
-
-db/           Legacy database layer — avoid adding new code here
-app/          Application entry point, WebServer, DI wiring
-```
+- **ZIO-native throughout.** No `Future`, no blocking-by-default. Wrap blocking
+  work in `ZIO.attemptBlocking`. Subprocesses go through **zio-process**
+  (`flow.Proc`), never raw `ProcessBuilder`.
+- **Typed errors, no `Throwable` in signatures.** Core uses `LlmError`; flow uses
+  `FlowError` (`Persistence`, `PlanParse`, `Aborted`, `Process`, `Llm`).
+- **Recoverable vs catastrophic** (the orca split, ZIO-flavoured): expected,
+  handleable outcomes are returned in the **value channel** as typed results
+  (e.g. `GitTool.CreateBranch.AlreadyExists`, `Commit.NothingToCommit`); genuinely
+  unexpected failures fail the effect (`FlowError.Process`).
+- **No `var`** — `Ref`/`Queue`/`Hub` for state.
+- **Stateless + plain files.** No datastore. Resumable plans persist as Markdown
+  via `PlanStore` (`.llm4zio/plan-*.md`).
+- **Role split.** Reasoning (planning, review) runs over an **API** connector;
+  code-editing runs over a **CLI** coding agent (claude/codex/gemini). `FlowContext`
+  carries both as `reasoning` and `coder`.
+- **`-Werror` / `-Wunused:all`** — unused imports are fatal. NB: a wildcard
+  `import zio.*` brings `zio.Task`, which shadows the library's `flow.Task` in
+  *type* position; import `zio.ZIO` (or specific names) in files that name `Task`.
+- **TDD.** Every behaviour is driven by a test first; integration tests that spawn
+  `git` live under `src/it/scala` and use a temp repo + local bare remote (no
+  network). Use the `Mock` provider for deterministic LLM behaviour in tests.
 
 ---
 
-## ADE Domain Packages
-
-The ADE feature packages:
-
-| Package | Domain |
-|---------|--------|
-| `board/` | Kanban board, issue lifecycle, git-backed storage |
-| `specification/` | Spec documents, approval workflow |
-| `plan/` | Implementation plans, validation |
-| `decision/` | Human-in-the-loop decision inbox |
-| `checkpoint/` | Quality gates during agent runs |
-| `knowledge/` | DecisionLog audit trail + architectural-context lookup |
-| `governance/` | Policy engine, transition rules, gate evaluation |
-| `daemon/` | Background services, scheduled triggers |
-| `canvas/` | SPDD REASONS canvases (Norms, Safeguards, ApiTest scenarios) |
-| `project/` | Workspace grouping, project-policy linking |
-| `sdlc/` | SDLC metrics dashboard |
-| `activity/` | Activity feed, audit events |
-
----
-
-## Event Sourcing
-
-All ADE aggregates are fully event-sourced:
+## A flow reads top-to-bottom
 
 ```scala
-// 1. Events — sealed trait in entity/
-sealed trait GovernancePolicyEvent
-object GovernancePolicyEvent:
-  case class PolicyCreated(policyId: GovernancePolicyId, ...) extends GovernancePolicyEvent
-  case class PolicyArchived(policyId: GovernancePolicyId, ...) extends GovernancePolicyEvent
+import llm4zio.flow.*
 
-// 2. Aggregate — built by replaying events
-case class GovernancePolicy(id: GovernancePolicyId, ...)
-object GovernancePolicy:
-  def fromEvents(events: List[GovernancePolicyEvent]): Option[GovernancePolicy] = ...
-  val noOp: GovernancePolicy = ...  // default pass-through policy
-
-// 3. Repository — append + replay via EventStore
-trait GovernancePolicyRepository:
-  def append(event: GovernancePolicyEvent): IO[PersistenceError, Unit]
-  def get(id: GovernancePolicyId): IO[PersistenceError, Option[GovernancePolicy]]
-  def list: IO[PersistenceError, List[GovernancePolicy]]
+given FlowEvents = ctx.events
+for
+  _     <- stage("branch")(ctx.git.createBranch(plan.epicId).unit)
+  coder <- Chat.start(ctx.coder, system = Some("You implement one task at a time."))
+  _     <- implementTaskLoop(planPath, plan) { task =>
+             coder.ask(task.description).mapError(e => FlowError.Llm(e.toString)) *>
+               ctx.git.commitAll(s"${plan.epicId}: ${task.title}").unit
+           }
+  _     <- stage("push")(ctx.git.push("origin", plan.epicId))
+  url   <- ctx.gh.createPr(plan.epicId, body = "…", base = Some("main"))
+yield url
 ```
 
-**EventStore** is the generic persistence abstraction:
-
-```scala
-trait EventStore[Id, Event]:
-  def append(id: Id, event: Event): IO[PersistenceError, Unit]
-  def getEvents(id: Id): IO[PersistenceError, List[Event]]
-  def getAllEvents: IO[PersistenceError, List[Event]]
-```
-
-Real backend: `EclipseStore` (`DataStoreModule.live`). Test backend: in-memory `Ref`-based stubs.
-
----
-
-## Error Handling
-
-**Always use `shared.errors.PersistenceError`** — not `db.PersistenceError` (legacy, being removed):
-
-```scala
-import shared.errors.PersistenceError
-
-// PersistenceError variants:
-PersistenceError.NotFound(entity: String, id: String)
-PersistenceError.StorageError(message: String, cause: Option[Throwable])
-PersistenceError.SerializationError(message: String)
-```
-
-All service methods use typed error channels — no `Throwable` in business logic:
-
-```scala
-def get(id: WorkspaceId): IO[PersistenceError, Option[Workspace]]
-def evaluateTransition(...): IO[PersistenceError, GovernanceTransitionDecision]
-```
-
----
-
-## Dependency Injection: ZLayer
-
-Standard service definition pattern:
-
-```scala
-trait MyService:
-  def doThing(id: String): IO[PersistenceError, Result]
-
-object MyService:
-  val live: ZLayer[Dependency1 & Dependency2, Nothing, MyService] =
-    ZLayer.fromFunction(MyServiceLive.apply)
-
-final case class MyServiceLive(dep1: Dependency1, dep2: Dependency2) extends MyService:
-  def doThing(id: String): IO[PersistenceError, Result] = ...
-```
-
-**Rules:**
-- Services accessed via `ZIO.serviceWithZIO[MyService](_.doThing(id))`
-- No layer construction inside effect bodies
-- Compose the full dependency graph at application startup in `app/`
-
----
-
-## Testing Patterns
-
-**Unit tests** live alongside their module in `src/test/scala/`:
-- Module-specific tests: `modules/*-domain/src/test/scala/` (when the module has tests)
-- Root tests: `src/test/scala/` (for code still in root, or cross-domain tests)
-
-```scala
-object MyServiceSpec extends ZIOSpecDefault:
-  def spec = suite("MyService")(
-    test("describes success case") {
-      for
-        result <- MyService.doThing("id")
-      yield assertTrue(result == expected)
-    },
-    test("describes failure case") {
-      for
-        result <- MyService.doThing("bad-id").exit
-      yield assert(result)(fails(equalTo(PersistenceError.NotFound("entity", "bad-id"))))
-    },
-  )
-```
-
-**Integration tests** live in `src/it/scala/integration/` and use real EclipseStore:
-
-```scala
-object MyIntegrationSpec extends ZIOSpecDefault:
-  def spec = suite("MyIntegrationSpec")(
-    test("...") {
-      withTempDir { path =>
-        (for
-          repo <- ZIO.service[MyRepository]
-          ...
-        yield assertTrue(...)).provideLayer(esLayer(path))
-      }
-    }
-  ) @@ sequential
-```
-
-**Stub naming convention** — prefix with `Stub` or `NoOp`:
-
-```scala
-final class StubActivityHub extends ActivityHub:         // configurable stub
-object NoOpGovernancePolicyService extends GovernancePolicyService:  // always passes
-```
-
-Common stubs are shared from:
-- `src/test/scala/shared/testfixtures/` — reusable stubs (StubConfigRepository, StubActivityHub, etc.)
-- `src/test/scala/integration/IntegrationFixtures.scala` — IT test helpers
-
----
-
-## Frontend Conventions
-
-### Server-side rendering: Scalatags
-
-Views are generated in Scala via Scalatags. Domain-specific views live in their domain module's `boundary/` package; shared view infrastructure (Layout, Components) lives in `shared-web-core`:
-
-```scala
-// modules/board-domain/src/main/scala/board/boundary/BoardView.scala
-package board.boundary
-
-import shared.web.*  // Layout, Components from shared-web-core
-
-object BoardView:
-  def page(workspaceId: String, issues: List[BoardIssue]): String =
-    Layout.page("Board", "/board")(
-      div(cls := "container",
-        issues.map(issue => Components.card(issue.title))
-      )
-    ).render
-```
-
-### Client-side: Lit 3 web components
-
-Custom elements live in `src/main/resources/static/client/components/` with `ab-` prefix:
-
-```javascript
-// ab-my-component.js
-import { LitElement, html, css } from 'https://cdn.jsdelivr.net/npm/lit@3/+esm';
-
-class AbMyComponent extends LitElement {
-  // Render into light DOM for Tailwind CSS compatibility
-  createRenderRoot() { return this; }
-
-  static properties = {
-    title: { type: String },
-    count: { type: Number },
-  };
-
-  render() {
-    return html`<div class="ab-my-component">${this.title}: ${this.count}</div>`;
-  }
-}
-customElements.define('ab-my-component', AbMyComponent);
-```
-
-**Rules:**
-- All custom elements use `ab-` prefix
-- Render into light DOM (`createRenderRoot() { return this; }`) for Tailwind compatibility
-- Import Lit from CDN (`cdn.jsdelivr.net/npm/lit@3/+esm`)
-- Events: `CustomEvent` with `bubbles: true, composed: true`
-
-### HTMX for server interactions
-
-Use HTMX attributes for dynamic UI without writing JavaScript:
-
-```html
-<button hx-post="/decisions/123/approve"
-        hx-target="#decision-123"
-        hx-swap="outerHTML">
-  Approve
-</button>
-```
-
----
-
-## Board Workflow
-
-The board uses git-backed Markdown files in `.board/` within each workspace repo:
-
-```
-.board/
-  backlog/   issue-*.md
-  todo/      issue-*.md
-  in-progress/  issue-*.md
-  review/    issue-*.md
-  done/      issue-*.md
-```
-
-Lifecycle: `Backlog → Todo → InProgress → Review → Done`
-
-- **Dispatch** (Todo → InProgress): subject to governance policy evaluation
-- **Complete** (InProgress → Review): agent completes, goes to human review
-- **Approve** (Review → Done): human approves, triggers git merge
-- **Rework** (Review → InProgress): human requests changes
-
----
-
-## Typed IDs
-
-Use typed ID wrappers from `shared.ids.Ids` — never raw `String` for entity IDs:
-
-```scala
-import shared.ids.Ids.*
-
-val policyId: GovernancePolicyId = GovernancePolicyId("policy-123")
-val projectId: ProjectId         = ProjectId("project-abc")
-val workspaceId: String          = "ws-1"  // workspaces use String by convention
-```
-
----
-
-## Modularization Strategy
-
-The codebase is being modularized per [bce.design](https://bce.design/) principles. The plan lives at `.claude/plans/snoopy-tinkering-hejlsberg.md`.
-
-### Current State (Phases 0–3 complete, Phase 4 in progress)
-
-**Completed:**
-- Foundation modules extracted (`shared-json`, `shared-ids`, `shared-errors`, `shared-store-core`, `shared-web-core`, `shared-services`)
-- 21 domain modules in place (`memory-domain`, `evolution-domain`, `demo-domain` dropped in the big-review Phase 1)
-- Most domain modules have `control/` services colocated (agent, board, daemon, issues, knowledge, orchestration, sdlc)
-- Leaf domain views moved to `boundary/` (BoardView, IssueTimelineView, DaemonsView, AgentsView, ChannelView, ModelsView, BoardStats, RunSessionUiMeta)
-
-**Remaining:**
-- ~20 views in `shared-web` with multi-domain dependencies → distribute to domain `boundary/` packages
-- ~80 root files (controllers, services) blocked by circular or cross-domain dependencies
-- Cross-domain integration tests → stay in root or move to domain modules
-
-### How to Move Code to a Module
-
-1. **Check dependencies** — run `grep -r "import.*the.package" src/` to find all import sites
-2. **Move the file** — preserve the package declaration (same package across sbt modules is fine in Scala)
-3. **Update `build.sbt`** — add required `dependsOn` and `libraryDependencies`
-4. **Remove unused imports** — `-Werror` makes unused imports fatal
-5. **Compile** — `sbt compile` after every file move
-6. **Verify circular deps** — if `A dependsOn B` and `B dependsOn A`, extract trait interfaces to break the cycle
-
-### Circular Dependency Resolution
-
-The orchestration ↔ gateway ↔ workspace cluster has circular control-layer dependencies. The pattern used:
-- **Trait interfaces** live in `orchestration-domain` entity package (e.g., `AgentPoolManager`, `TaskExecutor`, `WorkReportEventBus`)
-- **`*Live` implementations** live in the module with the richest dependency set, or remain in root
-- Other modules `dependsOn(orchestrationDomain)` for the trait, not the implementation
-
----
-
-## SPDD on llm4zio
-
-Structured-Prompt-Driven Development ([Fowler, 2026](https://martinfowler.com/articles/structured-prompt-driven/)) is a first-class workflow on this gateway. The prompt is the delivery artefact; code is its mechanically-derived output. Approved prompts (REASONS Canvases) accumulate as reusable assets across iterations.
-
-A worked example lives at [`examples/spdd-walkthrough/`](examples/spdd-walkthrough/). The user-global skill at `~/.claude/skills/structured-prompt-driven-development/` drives the loop end to end.
-
-### The closed loop
-
-```
-Story → Analysis → REASONS Canvas → Generate → API Test → Review
-                       ↑                                      ↓
-                       └── prompt-first / code-first ─────────┘
-```
-
-When code review finds a problem:
-- **Behaviour change** → prompt-first: update the Canvas via `spdd_canvas_update_sections`, regenerate the affected code. The engine knocks an Approved canvas back to InReview automatically (the SPDD golden rule).
-- **Pure refactor** (no observable behaviour change) → code-first: refactor the code, then `spdd_canvas_update_sections` documents the new shape. Re-run the API tests after to prove behaviour is unchanged.
-
-If you can't tell which loop applies: you don't understand the change well enough to make it. Stop and analyse.
-
-### Domain map
-
-| SPDD concept | llm4zio entity | Module |
-|---|---|---|
-| REASONS Canvas (R/E/A/S/O/N/S) | `ReasonsCanvas` | `canvas-domain` |
-| Norms profile (cross-cutting standards) | `NormProfile` | `canvas-domain` |
-| Safeguards profile (non-negotiable invariants) | `SafeguardProfile` | `canvas-domain` |
-| API test scenarios (cURL-style, normal/boundary/error) | `TestScenarioDoc` | `canvas-domain` |
-| Story (INVEST + Given/When/Then) | `BoardIssue` (existing) | `board-domain` |
-| Analysis context | `AnalysisDoc` (existing) | `analysis-domain` |
-| Quality gates (Canvas/Norms/Safeguards/ApiTest + the legacy six) | `GovernanceGate` | `governance-domain` |
-| Post-stage gate evidence (per-run, event-sourced) | `Checkpoint` | `checkpoint-domain` |
-| Asset reuse (Jaccard similarity over approved Canvases) | `CanvasSimilarityIndex` | `canvas-domain` |
-
-### MCP tool surface
-
-The gateway exposes nine `spdd_*` tools. Tools are persistence verbs + a generic prompt renderer — they do **not** call an LLM internally; the calling agent renders the prompt, runs it itself, then commits the result. This keeps the gateway independent of any specific LLM and avoids recursive calls when Claude is the caller.
-
-| Tool | Purpose |
-|---|---|
-| `spdd_render_prompt(name, context)` | Render any `prompts/spdd-*.md` template with placeholders |
-| `spdd_canvas_create(...)` | Persist a new `ReasonsCanvas` (Draft, version 1) |
-| `spdd_canvas_get(canvasId)` | Fetch a canvas with all 7 sections, status, version, links |
-| `spdd_canvas_list(projectId?)` | List canvases newest-first, optionally project-scoped |
-| `spdd_canvas_update_sections(canvasId, updates[], rationale?, author)` | Apply section edits — bumps version, knocks Approved canvases back to InReview |
-| `spdd_canvas_approve(canvasId, author)` | Draft → Approved |
-| `spdd_canvas_mark_stale(canvasId, reason, author)` | Flag downstream code as drifted |
-| `spdd_canvas_link_run(canvasId, taskRunId)` | Record that a TaskRun was generated from this Canvas (idempotent) |
-| `spdd_canvas_search_similar(query, projectId?, limit?)` | Asset-reuse lookup at the start of `/spdd-analysis` |
-
-The eight prompt templates live at `src/main/resources/prompts/spdd-*.md` and are loaded by the existing `PromptLoader`.
-
-### UI
-
-- `GET /canvases` — project-filterable list with status counts.
-- `GET /canvases/:canvasId` — detail with all 7 sections side-by-side, revision timeline, and linked-TaskRun footer.
-
-### Quality gates
-
-`GovernanceGate` recognises the SPDD additions: `CanvasReview`, `NormsCompliance`, `SafeguardsCompliance`, `ApiTestPassed`. They flow through the existing `GovernancePolicyEngine` evaluation path with no engine-side changes — gates work uniformly via `requiredGates.diff(satisfiedGates)`.
-
-`Checkpoint` (`checkpoint-domain`) is the per-`TaskRun` evidence carrier: `Pending → Running → (Passed | Failed | Skipped)`, with a `findings` list on Failed. Synchronous gates may go `Pending → Passed` directly; double-Passed and post-Passed Failed are rejected.
-
-### Two SPDD-specific conventions
-
-- **Canvas section access from Scalatags views**: scalatags has a `<canvas>` HTML tag that shadows the `canvas` package. Use `import _root_.canvas.entity.*` in any view file (see `CanvasView.scala`).
-- **Approved canvas + section edit = InReview**: this is enforced at the entity level in `ReasonsCanvas.fromEvents`. Don't try to keep a canvas Approved through edits; that knock-back is the SPDD golden rule.
-
-### When NOT to use SPDD
-
-Skip the loop for: typo fixes, single-line patches with obvious correctness, exploratory spikes that will be thrown away, and pure refactors with no behaviour change (those use the code-first loop only). The skill at `~/.claude/skills/structured-prompt-driven-development/` triggers correctly on feature requests and explicitly does not trigger on these cases.
-
----
-
-## Key Conventions Summary
-
-- **No `var`** — use `Ref`, `Queue`, `Hub` for mutable state
-- **No `Throwable`** — typed error ADTs everywhere
-- **No side effects outside ZIO** — wrap with `ZIO.attempt` / `ZIO.attemptBlocking`
-- **Singular package names** — `agent/` not `agents/`
-- **`shared.errors.PersistenceError`** — not `db.PersistenceError`
-- **ZLayer for DI** — no manual wiring inside effects
-- **Event sourcing** — `*Event` sealed traits, `*.fromEvents` projections
-- **SSR + Lit 3** — Scalatags for HTML, `ab-` prefix for web components
-- **HTMX** — server-driven interactivity, no custom JS for CRUD
-- **`-Werror`** — unused imports are fatal; same-package access across sbt modules needs no import
-- **`_root_` prefix** — use when `zio.config` shadows the `config` package or local variables shadow package names
-- **One domain per commit** — when moving code to modules, commit after each domain for safe rollback
-- **Views in `boundary/`** — domain-specific views belong in their domain module's boundary package, not in `shared-web`
-- **SPDD for non-trivial behaviour changes** — fix the prompt (`spdd_canvas_update_sections`) before the code; refactor first then sync only when behaviour is unchanged. See "SPDD on llm4zio" above.
+See `llm4zio.runner.ExampleFlow` for the worked version and its end-to-end test.
