@@ -1,6 +1,6 @@
 package llm4zio.flow
 
-import zio.IO
+import zio.{IO, ZIO}
 import zio.json.ast.Json
 
 import llm4zio.core.LlmService
@@ -48,6 +48,42 @@ object Planner:
     reasoning
       .executeStructured[Plan](s"$instructions\n\nRequest:\n$prompt", schema)
       .mapError(e => FlowError.Llm(e.toString))
+
+  val interactiveInstructions: String =
+    """You are an interactive planner. If the request is underspecified, ask ONE
+      |clarifying question; otherwise propose the plan. Respond ONLY with JSON
+      |using a "kind" discriminator, exactly one of:
+      |  {"kind":"AskUser","question":"..."}
+      |  {"kind":"Proposed","plan":{"epicId":"kebab-id","tasks":[{"title":"...","description":"...","completed":false}]}}""".stripMargin
+
+  /** Plan interactively: the model may ask the user clarifying questions (via
+    * `interaction`) before proposing a [[Plan]]. Loops until a plan is proposed
+    * or `maxTurns` is reached.
+    */
+  def interactive(
+    reasoning: LlmService,
+    prompt: String,
+    interaction: Interaction,
+    maxTurns: Int = 6,
+    instructions: String = interactiveInstructions,
+  ): IO[FlowError, Plan] =
+    def turnPrompt(qa: List[(String, String)]): String =
+      val convo = qa.map((q, a) => s"Q: $q\nA: $a").mkString("\n\n")
+      s"$instructions\n\nRequest:\n$prompt\n\n$convo".strip
+
+    def loop(qa: List[(String, String)], turn: Int): IO[FlowError, Plan] =
+      if turn > maxTurns then
+        ZIO.fail(FlowError.Aborted(s"planner did not propose a plan within $maxTurns turns"))
+      else
+        reasoning
+          .executeStructured[PlanningStep](turnPrompt(qa), schema)
+          .mapError(e => FlowError.Llm(e.toString))
+          .flatMap {
+            case PlanningStep.Proposed(plan) => ZIO.succeed(plan)
+            case PlanningStep.AskUser(q)     => interaction.ask(q).flatMap(a => loop(qa :+ (q -> a), turn + 1))
+          }
+
+    loop(Nil, 1)
 
   val triageInstructions: String =
     """Triage this bug report. Decide exactly one verdict and respond ONLY with JSON
