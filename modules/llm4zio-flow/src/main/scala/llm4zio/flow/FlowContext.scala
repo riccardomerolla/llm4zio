@@ -16,6 +16,9 @@ final case class FlowContext(
   git: GitTool,
   gh: GhTool,
   events: FlowEvents,
+  // Extra review backends (cross-agent review). The reasoning connector is the
+  // default reviewer; these are run alongside it.
+  reviewers: List[LlmService] = Nil,
 ):
   /** Expose the event sink as a given so `stage`/`fail` resolve it implicitly. */
   given FlowEvents = events

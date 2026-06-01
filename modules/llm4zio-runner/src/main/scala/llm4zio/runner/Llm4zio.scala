@@ -5,7 +5,7 @@ import zio.http.Client
 
 import java.nio.file.Path
 
-import llm4zio.core.{ApiConnectorConfig, CliConnectorConfig}
+import llm4zio.core.{ApiConnectorConfig, CliConnectorConfig, ConnectorConfig}
 import llm4zio.providers.HttpClient
 import llm4zio.flow.FlowContext
 
@@ -26,10 +26,11 @@ object Llm4zio:
     workDir: Path,
     reasoning: ApiConnectorConfig,
     coder: CliConnectorConfig,
+    reviewers: List[ConnectorConfig] = Nil,
   )(body: FlowContext => ZIO[Any, Any, Any]): ZIO[Any, Throwable, Unit] =
     ZIO
       .scoped {
-        DefaultFlowContext.build(reasoning, coder, workDir).flatMap { case (ctx, hub) =>
+        DefaultFlowContext.build(reasoning, coder, workDir, reviewers).flatMap { case (ctx, hub) =>
           TerminalListener.consume(hub) *> body(ctx).unit
         }
       }

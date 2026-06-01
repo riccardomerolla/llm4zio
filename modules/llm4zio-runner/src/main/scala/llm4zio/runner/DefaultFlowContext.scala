@@ -15,24 +15,35 @@ import llm4zio.flow.*
 object DefaultFlowContext:
 
   /** Bundle already-built connectors with git/gh on `workDir` and a fresh hub. */
-  def make(reasoning: LlmService, coder: LlmService, workDir: Path): UIO[(FlowContext, FlowEvents.Hub)] =
+  def make(
+    reasoning: LlmService,
+    coder: LlmService,
+    workDir: Path,
+    reviewers: List[LlmService] = Nil,
+  ): UIO[(FlowContext, FlowEvents.Hub)] =
     FlowEvents.hub().map { hub =>
-      (FlowContext(reasoning, coder, GitTool(workDir), GhTool(workDir), hub), hub)
+      (FlowContext(reasoning, coder, GitTool(workDir), GhTool(workDir), hub, reviewers), hub)
     }
 
-  /** Build connectors from config: API reasoning (needs an [[HttpClient]]) + a
-    * CLI coder rooted in `workDir`.
+  /** Build connectors from config: API reasoning (needs an [[HttpClient]]), a
+    * CLI coder rooted in `workDir`, and any extra cross-agent reviewers.
     */
   def build(
     reasoningCfg: ApiConnectorConfig,
     coderCfg: CliConnectorConfig,
     workDir: Path,
+    reviewerCfgs: List[ConnectorConfig] = Nil,
   ): ZIO[HttpClient, LlmError, (FlowContext, FlowEvents.Hub)] =
     ZIO.serviceWithZIO[HttpClient] { http =>
       val registry = ConnectorFactories.createRegistry(http, LiveCliProcessExecutor.instance)
       for
         reasoning <- registry.resolveApi(reasoningCfg)
         coder     <- registry.resolveCli(coderCfg.copy(workingDir = Some(workDir.toString)))
-        bundle    <- make(reasoning, coder, workDir)
+        reviewers <- ZIO.foreach(reviewerCfgs)(cfg => registry.resolve(withWorkdir(cfg, workDir)))
+        bundle    <- make(reasoning, coder, workDir, reviewers)
       yield bundle
     }
+
+  private def withWorkdir(cfg: ConnectorConfig, workDir: Path): ConnectorConfig = cfg match
+    case c: CliConnectorConfig => c.copy(workingDir = Some(workDir.toString))
+    case other                 => other
