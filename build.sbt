@@ -26,6 +26,7 @@ val zioCoreDeps = Seq(
 
 val zioJsonDep = "dev.zio" %% "zio-json" % zioJsonVersion
 val zioHttpDep = "dev.zio" %% "zio-http" % zioHttpVersion
+val fansiDep   = "com.lihaoyi" %% "fansi" % "0.5.0"
 
 val zioLoggingDeps = Seq(
   "dev.zio" %% "zio-logging" % zioLoggingVersion,
@@ -124,7 +125,7 @@ lazy val llm4zioRunner = (project in file("modules/llm4zio-runner"))
     name        := "llm4zio-runner",
     description := "Entry point, terminal renderer, and example flows for llm4zio",
     libraryDependencySchemes += "dev.zio" %% "zio-json" % VersionScheme.Always,
-    libraryDependencies ++= zioCoreDeps ++ Seq(zioJsonDep, zioHttpDep) ++ zioLoggingDeps ++ zioTestDeps,
+    libraryDependencies ++= zioCoreDeps ++ Seq(zioJsonDep, zioHttpDep, fansiDep) ++ zioLoggingDeps ++ zioTestDeps,
     testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
     It / testFrameworks ++= (Test / testFrameworks).value,
   )
