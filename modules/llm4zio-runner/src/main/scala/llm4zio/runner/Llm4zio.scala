@@ -6,7 +6,7 @@ import zio.*
 import zio.http.Client
 
 import llm4zio.core.{ CliConnectorConfig, ConnectorConfig }
-import llm4zio.flow.FlowContext
+import llm4zio.flow.{ CostTracker, FlowContext }
 import llm4zio.providers.HttpClient
 
 /** Entry point for scala-cli flow scripts. Builds a real [[FlowContext]], streams progress to the terminal, runs the
@@ -36,10 +36,15 @@ object Llm4zio:
       _       <- Console.printLine("").orDie
       _       <- ZIO
                    .scoped {
-                     DefaultFlowContext.build(reasoning, coder, workDir, reviewers).flatMap {
-                       case (ctx, hub) =>
-                         TerminalListener.consume(hub, palette) *> body(ctx).unit
-                     }
+                     for
+                       bundle    <- DefaultFlowContext.build(reasoning, coder, workDir, reviewers)
+                       (ctx, hub) = bundle
+                       tracker   <- CostTracker.make
+                       _         <- TerminalListener.consume(hub, palette)
+                       _         <- tracker.consume(hub)
+                       _         <- body(ctx).unit
+                                      .ensuring(tracker.summary.flatMap(s => Console.printLine("\n" + s).orDie))
+                     yield ()
                    }
                    .provideSomeLayer[HttpClient & Client](RunnerLog.fileOnly(logPath))
     yield ())
