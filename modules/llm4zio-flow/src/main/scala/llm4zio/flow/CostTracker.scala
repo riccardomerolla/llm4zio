@@ -5,8 +5,9 @@ import zio.*
 import llm4zio.core.TokenUsage
 
 /** Accumulates [[FlowEvent.TokensUsed]] events per-agent and per-model and renders the orca-style footer. Cost is an
-  * estimate from [[PriceList]] (flagged `*`); token counts are exact. Only streamed calls emit usage today, so the
-  * footer reflects the coder's streamed usage (planner/reviewer use structured output, which exposes no usage).
+  * estimate from [[PriceList]] (flagged `*`); token counts are exact. Usage is captured from both streamed coder turns
+  * and structured planner/reviewer calls (via `executeStructuredWithUsage`), so the footer covers the whole flow for
+  * backends that surface usage (gemini/codex; claude's non-stream structured path reports none).
   */
 final class CostTracker private (
   byAgent: Ref[Map[String, TokenUsage]],

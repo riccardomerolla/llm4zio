@@ -632,18 +632,19 @@ object GeminiCliProvider:
       override def executeWithTools(prompt: String, tools: List[AnyTool]): IO[LlmError, ToolCallResponse] =
         ZIO.fail(LlmError.InvalidRequestError("Gemini CLI does not support tool calling"))
 
-      // Override the inherited default to collect text from the rich event
-      // stream rather than the non-streaming `complete` path — Gemini's
-      // stream carries metadata that downstream observers expect to see.
+      // Override the inherited default to collect text from the rich event stream rather than the non-streaming
+      // `complete` path — Gemini's stream carries usage + model metadata that cost tracking expects to see.
       override def executeStructured[A: JsonCodec](prompt: String, schema: JsonSchema): IO[LlmError, A] =
+        executeStructuredWithUsage[A](prompt, schema).map(_._1)
+
+      override def executeStructuredWithUsage[A: JsonCodec](
+        prompt: String,
+        schema: JsonSchema,
+      ): IO[LlmError, (A, Option[TokenUsage], Option[String])] =
         for
-          streamed <- executeStream(StructuredOutputs.withSchemaHint(prompt, schema))
-                        .runFold(new StringBuilder()) { (acc, chunk) =>
-                          if chunk.delta.nonEmpty then acc.append(chunk.delta) else acc
-                        }
-                        .map(_.result())
-          parsed   <- StructuredOutputs.parseFromText[A](streamed, schema)
-        yield parsed
+          resp   <- Streaming.collect(executeStream(StructuredOutputs.withSchemaHint(prompt, schema)))
+          parsed <- StructuredOutputs.parseFromText[A](resp.content, schema)
+        yield (parsed, resp.usage, resp.metadata.get("model"))
 
       override def isAvailable: UIO[Boolean] =
         executor.checkGeminiInstalled.fold(_ => false, _ => true)

@@ -54,12 +54,21 @@ object CodexConnector:
         val argv = List("codex", "exec", "--json") ++ extraArgs ++ List(prompt)
         executor.runStreaming(argv, cwd, config.envVars).mapConcat(CodexConnector.parseStreamLine)
 
-      // Codex enforces a JSON Schema natively via `--output-schema <file>`. For a non-trivial schema, write it to a
-      // temp file and constrain the model; the shared text parser still decodes. Trivial/empty schemas fall through
-      // to the default (prompt-hint) path.
       override def executeStructured[A: JsonCodec](prompt: String, schema: JsonSchema): IO[LlmError, A] =
+        executeStructuredWithUsage[A](prompt, schema).map(_._1)
+
+      // Codex enforces a JSON Schema natively via `--output-schema <file>`. For a non-trivial schema, write it to a
+      // temp file, constrain the model, and capture token usage from the JSONL stream. Trivial/empty schemas use the
+      // prompt-hint + non-streaming `complete` path (no usage available there).
+      override def executeStructuredWithUsage[A: JsonCodec](
+        prompt: String,
+        schema: JsonSchema,
+      ): IO[LlmError, (A, Option[TokenUsage], Option[String])] =
         val s = schema.toString
-        if s.isEmpty || s == "{}" then super.executeStructured(prompt, schema)
+        if s.isEmpty || s == "{}" then
+          complete(StructuredOutputs.withSchemaHint(prompt, schema))
+            .flatMap(text => StructuredOutputs.parseFromText[A](text, schema))
+            .map(a => (a, None, None))
         else
           ZIO.scoped {
             for
@@ -76,7 +85,7 @@ object CodexConnector:
                          executor.runStreaming(argv, cwd, config.envVars).mapConcat(CodexConnector.parseStreamLine)
                        )
               out   <- StructuredOutputs.parseFromText[A](reply.content, schema)
-            yield out
+            yield (out, reply.usage, reply.metadata.get("model"))
           }
 
   /** Parse one codex `--json` line into zero or more chunks. Stateless. */

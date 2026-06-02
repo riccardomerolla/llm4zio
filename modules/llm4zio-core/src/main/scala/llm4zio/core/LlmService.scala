@@ -27,6 +27,16 @@ trait LlmService:
   // Structured output
   def executeStructured[A: JsonCodec](prompt: String, schema: JsonSchema): IO[LlmError, A]
 
+  /** Like [[executeStructured]] but also returns the call's token usage + model name when the backend exposes them
+    * (streaming CLI/API providers). Default: delegate to [[executeStructured]] with no usage. Overridden by providers
+    * that can surface usage so cost tracking covers planning/review, not just the streamed coder.
+    */
+  def executeStructuredWithUsage[A: JsonCodec](
+    prompt: String,
+    schema: JsonSchema,
+  ): IO[LlmError, (A, Option[TokenUsage], Option[String])] =
+    executeStructured(prompt, schema).map(a => (a, None, None))
+
   // Health check
   def isAvailable: UIO[Boolean]
 

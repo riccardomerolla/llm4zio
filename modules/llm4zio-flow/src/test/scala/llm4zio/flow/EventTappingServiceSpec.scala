@@ -22,7 +22,40 @@ object EventTappingServiceSpec extends ZIOSpecDefault:
       ZIO.fail(LlmError.InvalidRequestError("n/a"))
     def isAvailable: UIO[Boolean]                                                              = ZIO.succeed(true)
 
+  /** A stub whose structured call decodes canned JSON and reports usage + model. */
+  private def structuredStub(json: String, usage: TokenUsage, model: String): LlmService = new LlmService:
+    def executeStream(prompt: String): Stream[LlmError, LlmChunk]                              = ZStream.empty
+    def executeStreamWithHistory(messages: List[Message]): Stream[LlmError, LlmChunk]          = ZStream.empty
+    def executeWithTools(prompt: String, tools: List[AnyTool]): IO[LlmError, ToolCallResponse] =
+      ZIO.fail(LlmError.InvalidRequestError("n/a"))
+    def executeStructured[A: JsonCodec](prompt: String, schema: JsonSchema): IO[LlmError, A]   =
+      ZIO.fromEither(summon[JsonCodec[A]].decoder.decodeJson(json)).mapError(e => LlmError.ParseError(e, json))
+    override def executeStructuredWithUsage[A: JsonCodec](
+      prompt: String,
+      schema: JsonSchema,
+    ): IO[LlmError, (A, Option[TokenUsage], Option[String])] =
+      executeStructured[A](prompt, schema).map(a => (a, Some(usage), Some(model)))
+    def isAvailable: UIO[Boolean]                                                              = ZIO.succeed(true)
+
+  final case class Out(x: Int) derives JsonCodec
+
   def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("EventTappingService")(
+    test("publishes TokensUsed (tagged with the agent) from a structured call that reports usage") {
+      for
+        sink <- FlowEvents.collecting
+        svc   = EventTappingService(
+                  structuredStub("""{"x":1}""", TokenUsage(7, 3, 10), "claude-sonnet-4-6"),
+                  agent = "reasoning",
+                  events = sink,
+                  workDir = Paths.get("/repo"),
+                )
+        out  <- svc.executeStructured[Out]("plan it", zio.json.ast.Json.Obj())
+        rec  <- sink.recorded
+      yield assertTrue(
+        out == Out(1),
+        rec.contains(FlowEvent.TokensUsed("reasoning", Some("claude-sonnet-4-6"), TokenUsage(7, 3, 10))),
+      )
+    },
     test("publishes ToolUse, one AssistantMessage, and TokensUsed") {
       val chunks = List(
         LlmChunk(

@@ -68,6 +68,15 @@ final class EventTappingService(
     underlying.executeWithTools(prompt, tools)
 
   override def executeStructured[A: JsonCodec](prompt: String, schema: JsonSchema): IO[LlmError, A] =
-    underlying.executeStructured(prompt, schema)
+    underlying.executeStructuredWithUsage[A](prompt, schema).flatMap {
+      case (a, usage, model) =>
+        usage.fold[UIO[Unit]](ZIO.unit)(u => events.publish(FlowEvent.TokensUsed(agent, model, u))).as(a)
+    }
+
+  override def executeStructuredWithUsage[A: JsonCodec](
+    prompt: String,
+    schema: JsonSchema,
+  ): IO[LlmError, (A, Option[TokenUsage], Option[String])] =
+    underlying.executeStructuredWithUsage(prompt, schema)
 
   override def isAvailable: UIO[Boolean] = underlying.isAvailable
