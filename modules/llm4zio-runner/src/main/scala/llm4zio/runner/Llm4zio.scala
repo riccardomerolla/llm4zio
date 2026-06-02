@@ -33,7 +33,7 @@ object Llm4zio:
       .scoped {
         DefaultFlowContext.build(reasoning, coder, workDir, reviewers).flatMap {
           case (ctx, hub) =>
-            TerminalListener.consume(hub) *> body(ctx).unit
+            Palette.auto.flatMap(palette => TerminalListener.consume(hub, palette)) *> body(ctx).unit
         }
       }
       .provide(Client.default, HttpClient.live)
