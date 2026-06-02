@@ -93,6 +93,21 @@ object GeminiCliExecutor:
         ZIO.logError(s"Gemini CLI exited with code $exitCode: $stderr") *>
           ZIO.fail(LlmError.ProviderError(s"Gemini CLI exited with code $exitCode: $stderr", None))
 
+  /** Environment variables injected into every spawned gemini process.
+    *
+    * `GEMINI_CLI_TRUST_WORKSPACE=true` is always set: llm4zio runs gemini non-interactively with `-y` (auto-approve),
+    * and gemini's folder-trust gate otherwise aborts with exit 55 (`FatalUntrustedWorkspaceError`) in any untrusted
+    * directory — including the fresh temp working dirs the example flows run in. Trusting the workspace is gemini's
+    * documented bypass for headless/automated environments and is consistent with the `-y` autonomy already chosen.
+    *
+    * `GEMINI_SANDBOX` selects the sandbox backend when a concrete one is configured (see [[GeminiSandbox.envValue]]);
+    * the `Default` case emits `-s` only and lets gemini pick, so no env var is set.
+    */
+  private[providers] def geminiProcessEnv(ctx: GeminiCliExecutionContext): Map[String, String] =
+    val trust   = Map("GEMINI_CLI_TRUST_WORKSPACE" -> "true")
+    val sandbox = ctx.sandbox.flatMap(GeminiSandbox.envValue).map("GEMINI_SANDBOX" -> _).toMap
+    trust ++ sandbox
+
   private[providers] def buildGeminiArgs(
     prompt: String,
     config: LlmConfig,
@@ -210,10 +225,8 @@ object GeminiCliExecutor:
             .attemptBlocking {
               val builder = new ProcessBuilder(commands.asJava)
               executionContext.cwd.foreach(path => builder.directory(java.nio.file.Paths.get(path).toFile))
-              executionContext.sandbox.foreach { s =>
-                GeminiSandbox.envValue(s).foreach { v =>
-                  builder.environment().put("GEMINI_SANDBOX", v)
-                }
+              GeminiCliExecutor.geminiProcessEnv(executionContext).foreach { (k, v) =>
+                builder.environment().put(k, v)
               }
               builder
                 .redirectErrorStream(mergeErrorStream)

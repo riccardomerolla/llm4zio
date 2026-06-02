@@ -619,6 +619,28 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
         assertTrue(args.contains("-s"))
       },
     ),
+    suite("geminiProcessEnv")(
+      // llm4zio drives gemini headlessly with -y (auto-approve). Gemini's folder-trust
+      // gate aborts with exit 55 (FatalUntrustedWorkspaceError) in untrusted dirs — which
+      // includes any fresh temp working dir. Trusting the workspace is the documented
+      // bypass for headless/automated environments and matches the -y autonomy already opted into.
+      test("always trusts the workspace so headless runs never hit exit 55") {
+        val env = GeminiCliExecutor.geminiProcessEnv(GeminiCliExecutionContext())
+        assertTrue(env.get("GEMINI_CLI_TRUST_WORKSPACE").contains("true"))
+      },
+      test("includes GEMINI_SANDBOX when a concrete sandbox backend is set") {
+        val env = GeminiCliExecutor.geminiProcessEnv(GeminiCliExecutionContext(sandbox = Some(GeminiSandbox.Docker)))
+        assertTrue(env.get("GEMINI_SANDBOX").contains("docker"))
+      },
+      test("omits GEMINI_SANDBOX for Default sandbox (gemini picks the backend)") {
+        val env = GeminiCliExecutor.geminiProcessEnv(GeminiCliExecutionContext(sandbox = Some(GeminiSandbox.Default)))
+        assertTrue(!env.contains("GEMINI_SANDBOX"), env.get("GEMINI_CLI_TRUST_WORKSPACE").contains("true"))
+      },
+      test("omits GEMINI_SANDBOX when sandbox is None") {
+        val env = GeminiCliExecutor.geminiProcessEnv(GeminiCliExecutionContext(sandbox = None))
+        assertTrue(!env.contains("GEMINI_SANDBOX"), env.get("GEMINI_CLI_TRUST_WORKSPACE").contains("true"))
+      },
+    ),
     suite("normalizePromptForWindowsCmd")(
       test("replaces Unix newlines with spaces") {
         val prompt     = "Analyze the repo at:\n/path/to/repo\n\nDo not modify files."
