@@ -1,5 +1,7 @@
 package llm4zio.providers
 
+import scala.io.Source
+
 import zio.*
 import zio.stream.ZStream
 import zio.test.*
@@ -7,6 +9,11 @@ import zio.test.*
 import llm4zio.core.*
 
 object CodexConnectorSpec extends ZIOSpecDefault:
+
+  private def codexFixtureLines: List[String] =
+    val src = Source.fromResource("codex-stream.jsonl")
+    try src.getLines().toList
+    finally src.close()
 
   class MockCliExec(
     responses: Map[List[String], ProcessResult] = Map.empty
@@ -84,5 +91,32 @@ object CodexConnectorSpec extends ZIOSpecDefault:
       val connector = CodexConnector.make(CliConnectorConfig(ConnectorId.Codex), mock)
       for status <- connector.healthCheck
       yield assertTrue(status.availability == Availability.Healthy)
+    },
+    test("parseStreamLine maps an agent_message to a text chunk") {
+      val chunks = codexFixtureLines.flatMap(CodexConnector.parseStreamLine)
+      assertTrue(chunks.exists(c => c.delta == "Adding multiply."))
+    },
+    test("parseStreamLine maps a command_execution to a tool chunk") {
+      val chunks = codexFixtureLines.flatMap(CodexConnector.parseStreamLine)
+      assertTrue(chunks.exists(c =>
+        c.metadata.get("event").contains("tool_use") &&
+        c.metadata.get("tool_name").contains("Bash") &&
+        c.metadata.get("tool_input").exists(_.contains("cargo test"))
+      ))
+    },
+    test("parseStreamLine maps turn.completed to a usage chunk") {
+      val chunks = codexFixtureLines.flatMap(CodexConnector.parseStreamLine)
+      assertTrue(chunks.exists(c => c.usage.exists(_.prompt == 900) && c.usage.exists(_.completion == 30)))
+    },
+    test("completeStream emits the agent text and a tool chunk from the JSONL stream") {
+      val argv      = List("codex", "exec", "--json", "go")
+      val mock      = new MockCliExec(Map(argv -> ProcessResult(codexFixtureLines, 0)))
+      val connector = CodexConnector.make(CliConnectorConfig(ConnectorId.Codex), mock)
+      for chunks <- connector.completeStream("go").runCollect
+      yield assertTrue(
+        chunks.map(_.delta).mkString.contains("Adding multiply."),
+        chunks.exists(_.metadata.get("event").contains("tool_use")),
+        chunks.exists(_.usage.exists(_.prompt == 900)),
+      )
     },
   )
