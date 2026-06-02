@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.0] - 2026-06-02
+
+### Added
+
+- **Orca-like terminal UI.** Flow progress now renders as a colored, depth-nested tree:
+  a `llm4zio <version>, logs: <path>` header banner, magenta stage markers, per-coder
+  tool-call lines (e.g. `● Edit (src/lib.rs)`, `● Bash (cargo test)`), assistant-message
+  bullets, and a `By agent / By model / Total` cost footer. Noisy `INFO` logs are routed
+  to a temp file so stdout stays clean. Color degrades gracefully under `NO_COLOR` or a
+  non-TTY. New flow events `ToolUse`/`AssistantMessage`/`TokensUsed`, an
+  `EventTappingService` that publishes them from every role connector, a pure
+  `ToolInputSummary`, and `CostTracker` + `PriceList`. Styling uses `fansi` (runner only).
+- **stream-json parsing for the Claude and Codex CLI coders.** `ClaudeCliConnector`
+  (`claude -p --output-format stream-json --verbose`) and `CodexConnector`
+  (`codex exec --json`) now parse their event streams into the shared `LlmChunk` metadata
+  contract — so tool calls and token usage surface in the tree for all three coders, not
+  just Gemini. Shared `CliStreamJson` helper; non-streaming `complete` paths unchanged.
+
+### Fixed
+
+- **Gemini headless runs no longer abort with exit 55** (`FatalUntrustedWorkspaceError`)
+  in untrusted/temporary working directories. `GEMINI_CLI_TRUST_WORKSPACE=true` is now set
+  on every spawned gemini process, consistent with the `-y` auto-approval the library
+  already uses.
+
+[2.3.0]: https://github.com/riccardomerolla/llm4zio/releases/tag/v2.3.0
+
 ## [2.2.0] - 2026-06-02
 
 ### Changed
