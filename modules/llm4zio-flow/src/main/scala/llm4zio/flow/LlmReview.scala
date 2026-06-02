@@ -21,8 +21,18 @@ object ReviewerSelector:
   val whileDirty: ReviewerSelector =
     (reviewers, round, previous) => if round == 1 || previous.exists(!_.isClean) then reviewers else Nil
 
-/** Prompts, schema, and helpers for LLM reviewers. */
+/** Prompts, schema, helpers, and the shipped reviewer roster. */
 object Reviewers:
+
+  /** The canonical reviewer lenses, loaded from classpath resources under `llm4zio/review/reviewers`. */
+  lazy val all: List[Reviewer] =
+    List("code-functionality", "test", "readability", "code-structure", "performance", "security", "scala-zio")
+      .map(Reviewer.fromResource)
+
+  /** A lighter default: correctness, readability, tests. */
+  lazy val minimal: List[Reviewer] =
+    List("code-functionality", "readability", "test").map(Reviewer.fromResource)
+
   val schema: JsonSchema =
     Json.Obj(
       "type"       -> Json.Str("object"),
