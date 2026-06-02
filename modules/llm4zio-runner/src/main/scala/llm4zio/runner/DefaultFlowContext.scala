@@ -24,28 +24,31 @@ object DefaultFlowContext:
       (FlowContext(reasoning, coder, GitTool(workDir), GhTool(workDir), hub, reviewers), hub)
     }
 
-  /** Build connectors from config: API reasoning (needs an [[HttpClient]]), a CLI coder rooted in `workDir`, and any
-    * extra cross-agent reviewers.
+  /** Build connectors from config: a reasoning connector — **API or CLI** (a CLI reasoner needs no API key, e.g. an
+    * all-gemini run) — a CLI coder rooted in `workDir`, and any extra cross-agent reviewers.
     */
   def build(
-    reasoningCfg: ApiConnectorConfig,
-    coderCfg: CliConnectorConfig,
+    reasoning: ConnectorConfig,
+    coder: CliConnectorConfig,
     workDir: Path,
     reviewerCfgs: List[ConnectorConfig] = Nil,
   ): ZIO[HttpClient, LlmError, (FlowContext, FlowEvents.Hub)] =
     ZIO.serviceWithZIO[HttpClient] { http =>
       val registry = ConnectorFactories.createRegistry(http, LiveCliProcessExecutor.instance)
       for
-        reasoning <- registry.resolveApi(enrichApi(reasoningCfg))
-        coder     <- registry.resolveCli(coderCfg.copy(workingDir = Some(workDir.toString)))
-        reviewers <- ZIO.foreach(reviewerCfgs)(cfg => registry.resolve(withWorkdir(cfg, workDir)))
-        bundle    <- make(reasoning, coder, workDir, reviewers)
+        reasoningC <- registry.resolve(prepare(reasoning, workDir))
+        coderC     <- registry.resolveCli(coder.copy(workingDir = Some(workDir.toString)))
+        reviewers  <- ZIO.foreach(reviewerCfgs)(cfg => registry.resolve(prepare(cfg, workDir)))
+        bundle     <- make(reasoningC, coderC, workDir, reviewers)
       yield bundle
     }
 
-  private def withWorkdir(cfg: ConnectorConfig, workDir: Path): ConnectorConfig = cfg match
-    case c: CliConnectorConfig => c.copy(workingDir = Some(workDir.toString))
-    case other                 => other
+  /** Ready a config for resolution: fill an API config's baseUrl/key (see [[enrichApi]]); root a CLI config in
+    * `workDir`.
+    */
+  def prepare(cfg: ConnectorConfig, workDir: Path): ConnectorConfig = cfg match
+    case api: ApiConnectorConfig => enrichApi(api)
+    case cli: CliConnectorConfig => cli.copy(workingDir = Some(workDir.toString))
 
   /** Fill an API config's base URL (from the provider default) and API key (from the environment) when the caller left
     * them unset — so examples can name just the provider + model.

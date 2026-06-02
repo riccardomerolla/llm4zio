@@ -5,7 +5,7 @@ import java.nio.file.Path
 import zio.Scope
 import zio.test.*
 
-import llm4zio.core.{ ApiConnectorConfig, ConnectorId, LlmConfig, LlmProvider }
+import llm4zio.core.{ ApiConnectorConfig, CliConnectorConfig, ConnectorId, LlmConfig, LlmProvider }
 import llm4zio.providers.MockProvider
 
 object DefaultFlowContextSpec extends ZIOSpecDefault:
@@ -18,6 +18,15 @@ object DefaultFlowContextSpec extends ZIOSpecDefault:
       val enriched =
         DefaultFlowContext.enrichApi(ApiConnectorConfig(ConnectorId.Anthropic, baseUrl = Some("http://x")))
       assertTrue(enriched.baseUrl.contains("http://x"))
+    },
+    test("prepare enriches an API reasoner and roots a CLI reasoner in the workDir") {
+      val dir = Path.of("/tmp/repo")
+      val api = DefaultFlowContext.prepare(ApiConnectorConfig(ConnectorId.Anthropic), dir)
+      val cli = DefaultFlowContext.prepare(CliConnectorConfig(ConnectorId.GeminiCli), dir)
+      assertTrue(
+        api.asInstanceOf[ApiConnectorConfig].baseUrl == LlmProvider.defaultBaseUrl(LlmProvider.Anthropic),
+        cli.asInstanceOf[CliConnectorConfig].workingDir.contains("/tmp/repo"),
+      )
     },
     test("bundles the given connectors and exposes the same hub as the context's events") {
       val reasoning = MockProvider.make(LlmConfig(LlmProvider.Mock, "r"))

@@ -5,7 +5,7 @@ import java.nio.file.Path
 import zio.*
 import zio.http.Client
 
-import llm4zio.core.{ ApiConnectorConfig, CliConnectorConfig, ConnectorConfig }
+import llm4zio.core.{ CliConnectorConfig, ConnectorConfig }
 import llm4zio.flow.FlowContext
 import llm4zio.providers.HttpClient
 
@@ -23,7 +23,7 @@ object Llm4zio:
 
   def run(
     workDir: Path,
-    reasoning: ApiConnectorConfig,
+    reasoning: ConnectorConfig,
     coder: CliConnectorConfig,
     reviewers: List[ConnectorConfig] = Nil,
   )(
