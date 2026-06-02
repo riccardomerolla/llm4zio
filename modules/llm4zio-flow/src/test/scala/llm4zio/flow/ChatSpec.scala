@@ -25,7 +25,7 @@ object ChatSpec extends ZIOSpecDefault:
     test("ask threads accumulated history and records both turns") {
       for
         calls <- Ref.make(List.empty[List[Message]])
-        chat  <- Chat.start(new RecordingService("ok", calls))
+        chat  <- Chat.start(new RecordingService("ok", calls), manageGit = true)
         r1    <- chat.ask("first")
         r2    <- chat.ask("second")
         seen  <- calls.get
@@ -47,10 +47,10 @@ object ChatSpec extends ZIOSpecDefault:
         ),
       )
     },
-    test("start seeds an optional system prompt as the first message") {
+    test("start seeds an optional system prompt as the first message (manageGit=true: no git prefix)") {
       for
         calls <- Ref.make(List.empty[List[Message]])
-        chat  <- Chat.start(new RecordingService("ok", calls), system = Some("be terse"))
+        chat  <- Chat.start(new RecordingService("ok", calls), system = Some("be terse"), manageGit = true)
         _     <- chat.ask("hi")
         seen  <- calls.get
       yield assertTrue(seen.head.head == Message(MessageRole.System, "be terse"))

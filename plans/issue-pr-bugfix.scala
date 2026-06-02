@@ -70,7 +70,7 @@ object Main extends ZIOAppDefault:
   )(using FlowEvents): IO[FlowError, Unit] =
     for
       _     <- stage("Branch")(ctx.git.checkoutOrCreate(branchName))
-      coder <- Chat.start(ctx.coder, system = Some("You write code in the current repo. Do not commit."))
+      coder <- Chat.start(ctx.coder, system = Some("You write code in the current repo."))
       _     <- stage("Write the failing test") {
                  coder
                    .ask(s"Write a failing unit test at `$failingTestPath` that reproduces: ${issue.title}\n\n${issue.body}")

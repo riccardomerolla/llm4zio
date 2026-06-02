@@ -26,6 +26,12 @@ final class Chat private (service: LlmService, history: Ref[List[Message]]):
   def messages: UIO[List[Message]] = history.get
 
 object Chat:
-  /** Start a fresh chat, optionally seeded with a system prompt. */
-  def start(service: LlmService, system: Option[String] = None): UIO[Chat] =
-    Ref.make(system.map(Message(MessageRole.System, _)).toList).map(new Chat(service, _))
+  /** Start a fresh chat, optionally seeded with a system prompt. By default the runtime-owns-git instruction
+    * ([[CoderSystem.gitOwnership]]) is prepended to the system prompt so coders don't manage git themselves; pass
+    * `manageGit = true` for the rare flow that wants agent-driven git.
+    */
+  def start(service: LlmService, system: Option[String] = None, manageGit: Boolean = false): UIO[Chat] =
+    val sys =
+      if manageGit then system
+      else Some(List(Some(CoderSystem.gitOwnership), system).flatten.mkString("\n\n"))
+    Ref.make(sys.map(Message(MessageRole.System, _)).toList).map(new Chat(service, _))

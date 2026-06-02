@@ -51,7 +51,7 @@ object Main extends ZIOAppDefault:
         for
           plan      <- stage("Acquire epic")(PlanStore.recoverOrCreate(planPath)(Planner.from(ctx.reasoning, prompt)))
           _         <- stage("Branch")(ctx.git.checkoutOrCreate(plan.epicId))
-          coderChat <- Chat.start(ctx.coder, system = Some("You implement one task at a time in the current repo. Do not commit."))
+          coderChat <- Chat.start(ctx.coder, system = Some("You implement one task at a time in the current repo."))
           _         <- implementTaskLoop(planPath, plan) { task =>
                          for
                            _ <- coderChat.ask(task.description).mapError(e => FlowError.Llm(e.toString))
