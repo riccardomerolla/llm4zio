@@ -1,9 +1,9 @@
 package llm4zio.core
 
+import zio.Scope
 import zio.json.JsonCodec
 import zio.json.ast.Json
 import zio.test.*
-import zio.Scope
 
 object SchemaDerivationSpec extends ZIOSpecDefault:
   final case class Task(title: String, description: String, completed: Boolean) derives JsonCodec

@@ -1,10 +1,14 @@
 package llm4zio.providers
 
+import java.nio.file.Files
+
 import zio.*
+import zio.json.JsonCodec
 import zio.json.ast.Json
 import zio.stream.ZStream
 
 import llm4zio.core.*
+import llm4zio.tools.JsonSchema
 
 object CodexConnector:
   def make(config: CliConnectorConfig, executor: CliProcessExecutor): CliConnector =
@@ -49,6 +53,31 @@ object CodexConnector:
       override def completeStream(prompt: String): ZStream[Any, LlmError, LlmChunk] =
         val argv = List("codex", "exec", "--json") ++ extraArgs ++ List(prompt)
         executor.runStreaming(argv, cwd, config.envVars).mapConcat(CodexConnector.parseStreamLine)
+
+      // Codex enforces a JSON Schema natively via `--output-schema <file>`. For a non-trivial schema, write it to a
+      // temp file and constrain the model; the shared text parser still decodes. Trivial/empty schemas fall through
+      // to the default (prompt-hint) path.
+      override def executeStructured[A: JsonCodec](prompt: String, schema: JsonSchema): IO[LlmError, A] =
+        val s = schema.toString
+        if s.isEmpty || s == "{}" then super.executeStructured(prompt, schema)
+        else
+          ZIO.scoped {
+            for
+              file  <- ZIO.acquireRelease(
+                         ZIO
+                           .attemptBlocking(Files.createTempFile("codex-schema-", ".json"))
+                           .mapError(e => LlmError.ProviderError(e.getMessage, Some(e)))
+                       )(f => ZIO.attemptBlocking(Files.deleteIfExists(f)).ignore)
+              _     <- ZIO
+                         .attemptBlocking(Files.writeString(file, s))
+                         .mapError(e => LlmError.ProviderError(e.getMessage, Some(e)))
+              argv   = List("codex", "exec", "--json", "--output-schema", file.toString) ++ extraArgs ++ List(prompt)
+              reply <- Streaming.collect(
+                         executor.runStreaming(argv, cwd, config.envVars).mapConcat(CodexConnector.parseStreamLine)
+                       )
+              out   <- StructuredOutputs.parseFromText[A](reply.content, schema)
+            yield out
+          }
 
   /** Parse one codex `--json` line into zero or more chunks. Stateless. */
   def parseStreamLine(line: String): List[LlmChunk] =

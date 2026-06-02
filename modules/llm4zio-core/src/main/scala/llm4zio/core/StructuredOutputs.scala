@@ -18,6 +18,15 @@ import llm4zio.tools.JsonSchema
   */
 object StructuredOutputs:
 
+  /** Append an advisory schema to a prompt for backends without native schema enforcement (claude/gemini/copilot/
+    * opencode). A no-op for an empty/trivial schema. The model is asked to return JSON matching the schema; the
+    * universal fallback parser ([[parseFromText]]) still does the actual decoding.
+    */
+  def withSchemaHint(prompt: String, schema: JsonSchema): String =
+    val s = schema.toString
+    if s.isEmpty || s == "{}" then prompt
+    else s"$prompt\n\nReturn JSON matching this schema:\n$s"
+
   /** Parse `A` out of arbitrary text. The schema is currently unused but kept in the signature so callers can pass it
     * through from `LlmService`; future implementations may use it to ask the underlying model for a constrained
     * response.

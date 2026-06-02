@@ -46,7 +46,8 @@ trait CliConnector extends Connector:
     )
 
   override def executeStructured[A: JsonCodec](prompt: String, schema: JsonSchema): IO[LlmError, A] =
-    complete(prompt).flatMap(text => StructuredOutputs.parseFromText[A](text, schema))
+    complete(StructuredOutputs.withSchemaHint(prompt, schema))
+      .flatMap(text => StructuredOutputs.parseFromText[A](text, schema))
 
 object CliConnector:
   /** Default history flattening for CLI connectors without native conversation support: render each turn as a labelled

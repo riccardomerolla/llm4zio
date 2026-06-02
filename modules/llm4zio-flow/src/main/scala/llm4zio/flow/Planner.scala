@@ -3,7 +3,7 @@ package llm4zio.flow
 import zio.json.ast.Json
 import zio.{ IO, ZIO }
 
-import llm4zio.core.LlmService
+import llm4zio.core.{ LlmService, SchemaDerivation }
 import llm4zio.tools.JsonSchema
 
 /** Turn a free-form request into a structured [[Plan]] using a reasoning connector's structured-output capability. The
@@ -17,27 +17,14 @@ object Planner:
       |for the overall change. Respond ONLY with JSON of the form:
       |{"epicId":"kebab-case-id","tasks":[{"title":"...","description":"...","completed":false}]}""".stripMargin
 
-  /** JSON-schema hint for the Plan shape (advisory; connectors that derive structured output from text ignore it, API
-    * connectors may use it).
+  /** JSON-schema for the Plan shape, derived from the [[Plan]] type (used by [[from]]). */
+  val schema: JsonSchema = SchemaDerivation.derive[Plan]
+
+  /** A permissive schema for sum-typed structured calls ([[interactive]]'s `PlanningStep`, [[assessThenPlan]]'s
+    * `Verdict[Plan]`): their shape is a discriminated union spelled out in the prompt, so we must not enforce a product
+    * schema on backends that honour it (e.g. codex `--output-schema`).
     */
-  val schema: JsonSchema =
-    Json.Obj(
-      "type"       -> Json.Str("object"),
-      "properties" -> Json.Obj(
-        "epicId" -> Json.Obj("type" -> Json.Str("string")),
-        "tasks"  -> Json.Obj(
-          "type"  -> Json.Str("array"),
-          "items" -> Json.Obj(
-            "type"       -> Json.Str("object"),
-            "properties" -> Json.Obj(
-              "title"       -> Json.Obj("type" -> Json.Str("string")),
-              "description" -> Json.Obj("type" -> Json.Str("string")),
-              "completed"   -> Json.Obj("type" -> Json.Str("boolean")),
-            ),
-          ),
-        ),
-      ),
-    )
+  private val freeform: JsonSchema = Json.Obj("type" -> Json.Str("object"))
 
   def from(
     reasoning: LlmService,
@@ -63,7 +50,7 @@ object Planner:
     instructions: String = assessThenPlanInstructions,
   ): IO[FlowError, Verdict[Plan]] =
     reasoning
-      .executeStructured[Verdict[Plan]](s"$instructions\n\nRequest:\n$prompt", schema)
+      .executeStructured[Verdict[Plan]](s"$instructions\n\nRequest:\n$prompt", freeform)
       .mapError(e => FlowError.Llm(e.toString))
 
   val interactiveInstructions: String =
@@ -92,7 +79,7 @@ object Planner:
         ZIO.fail(FlowError.Aborted(s"planner did not propose a plan within $maxTurns turns"))
       else
         reasoning
-          .executeStructured[PlanningStep](turnPrompt(qa), schema)
+          .executeStructured[PlanningStep](turnPrompt(qa), freeform)
           .mapError(e => FlowError.Llm(e.toString))
           .flatMap {
             case PlanningStep.Proposed(plan) => ZIO.succeed(plan)
@@ -116,5 +103,5 @@ object Planner:
     instructions: String = triageInstructions,
   ): IO[FlowError, Triage] =
     reasoning
-      .executeStructured[Triage](s"$instructions\n\nTitle: $title\n\n$body", Json.Obj("type" -> Json.Str("object")))
+      .executeStructured[Triage](s"$instructions\n\nTitle: $title\n\n$body", freeform)
       .mapError(e => FlowError.Llm(e.toString))

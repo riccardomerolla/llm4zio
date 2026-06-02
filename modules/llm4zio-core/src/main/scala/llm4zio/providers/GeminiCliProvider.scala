@@ -636,7 +636,7 @@ object GeminiCliProvider:
       // stream carries metadata that downstream observers expect to see.
       override def executeStructured[A: JsonCodec](prompt: String, schema: JsonSchema): IO[LlmError, A] =
         for
-          streamed <- executeStream(prompt)
+          streamed <- executeStream(StructuredOutputs.withSchemaHint(prompt, schema))
                         .runFold(new StringBuilder()) { (acc, chunk) =>
                           if chunk.delta.nonEmpty then acc.append(chunk.delta) else acc
                         }

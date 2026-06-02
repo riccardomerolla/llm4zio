@@ -65,4 +65,19 @@ object StructuredOutputsSpec extends ZIOSpecDefault:
         candidates.contains("""{"b":2}"""),
       )
     },
+    test("withSchemaHint returns the prompt unchanged for an empty/trivial schema") {
+      assertTrue(
+        StructuredOutputs.withSchemaHint("go", Json.Obj()) == "go",
+        StructuredOutputs.withSchemaHint("go", Json.Obj("type" -> Json.Str("object"))) != "go",
+      )
+    },
+    test("withSchemaHint appends a schema block for a non-trivial schema") {
+      val schema = Json.Obj("type" -> Json.Str("object"), "properties" -> Json.Obj("x" -> Json.Obj()))
+      val out    = StructuredOutputs.withSchemaHint("do it", schema)
+      assertTrue(
+        out.startsWith("do it"),
+        out.contains("Return JSON matching this schema:"),
+        out.contains(schema.toString),
+      )
+    },
   )

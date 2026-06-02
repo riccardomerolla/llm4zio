@@ -3,12 +3,22 @@ package llm4zio.providers
 import scala.io.Source
 
 import zio.*
+import zio.json.JsonCodec
 import zio.stream.ZStream
 import zio.test.*
 
 import llm4zio.core.*
 
 object CodexConnectorSpec extends ZIOSpecDefault:
+
+  final case class ReplyStub(summary: String) derives JsonCodec
+
+  /** Captures the argv passed to runStreaming, then replays a canned agent_message line. */
+  final class RecordingExec(seen: Ref[List[String]], line: String) extends CliProcessExecutor:
+    def run(a: List[String], c: String, e: Map[String, String]): IO[LlmError, ProcessResult]             =
+      ZIO.succeed(ProcessResult(List("{}"), 0))
+    def runStreaming(a: List[String], c: String, e: Map[String, String]): ZStream[Any, LlmError, String] =
+      ZStream.fromZIO(seen.set(a)).drain ++ ZStream.succeed(line)
 
   private def codexFixtureLines: List[String] =
     val src = Source.fromResource("codex-stream.jsonl")
@@ -117,6 +127,19 @@ object CodexConnectorSpec extends ZIOSpecDefault:
         chunks.map(_.delta).mkString.contains("Adding multiply."),
         chunks.exists(_.metadata.get("event").contains("tool_use")),
         chunks.exists(_.usage.exists(_.prompt == 900)),
+      )
+    },
+    test("executeStructured passes --output-schema to codex when a non-trivial schema is given") {
+      val line = """{"type":"item.completed","item":{"type":"agent_message","text":"{\"summary\":\"x\"}"}}"""
+      for
+        seen <- Ref.make(List.empty[String])
+        conn  = CodexConnector.make(CliConnectorConfig(ConnectorId.Codex), new RecordingExec(seen, line))
+        out  <- conn.executeStructured[ReplyStub]("go", SchemaDerivation.derive[ReplyStub])
+        argv <- seen.get
+      yield assertTrue(
+        out == ReplyStub("x"),
+        argv.contains("--output-schema"),
+        argv.containsSlice(List("codex", "exec", "--json")),
       )
     },
   )
