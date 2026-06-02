@@ -21,7 +21,12 @@ object DefaultFlowContext:
     reviewers: List[LlmService] = Nil,
   ): UIO[(FlowContext, FlowEvents.Hub)] =
     FlowEvents.hub().map { hub =>
-      (FlowContext(reasoning, coder, GitTool(workDir), GhTool(workDir), hub, reviewers), hub)
+      def tap(svc: LlmService, agent: String): LlmService =
+        EventTappingService(svc, agent, hub, workDir)
+      val reasoningT                                      = tap(reasoning, "reasoning")
+      val coderT                                          = tap(coder, "coder")
+      val reviewersT                                      = reviewers.zipWithIndex.map { case (r, i) => tap(r, s"reviewer:${i + 1}") }
+      (FlowContext(reasoningT, coderT, GitTool(workDir), GhTool(workDir), hub, reviewersT), hub)
     }
 
   /** Build connectors from config: a reasoning connector — **API or CLI** (a CLI reasoner needs no API key, e.g. an

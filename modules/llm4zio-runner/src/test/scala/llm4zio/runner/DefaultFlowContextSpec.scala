@@ -6,6 +6,7 @@ import zio.Scope
 import zio.test.*
 
 import llm4zio.core.{ ApiConnectorConfig, CliConnectorConfig, ConnectorId, LlmConfig, LlmProvider }
+import llm4zio.flow.EventTappingService
 import llm4zio.providers.MockProvider
 
 object DefaultFlowContextSpec extends ZIOSpecDefault:
@@ -28,12 +29,16 @@ object DefaultFlowContextSpec extends ZIOSpecDefault:
         cli.asInstanceOf[CliConnectorConfig].workingDir.contains("/tmp/repo"),
       )
     },
-    test("bundles the given connectors and exposes the same hub as the context's events") {
+    test("wraps the connectors for event-tapping and exposes the same hub as the context's events") {
       val reasoning = MockProvider.make(LlmConfig(LlmProvider.Mock, "r"))
       val coder     = MockProvider.make(LlmConfig(LlmProvider.Mock, "c"))
       for bundle <- DefaultFlowContext.make(reasoning, coder, Path.of("/tmp/repo"))
       yield
         val (ctx, hub) = bundle
-        assertTrue(ctx.reasoning eq reasoning, ctx.coder eq coder, ctx.events eq hub)
+        assertTrue(
+          ctx.events eq hub,
+          ctx.reasoning.isInstanceOf[EventTappingService],
+          ctx.coder.isInstanceOf[EventTappingService],
+        )
     },
   )
