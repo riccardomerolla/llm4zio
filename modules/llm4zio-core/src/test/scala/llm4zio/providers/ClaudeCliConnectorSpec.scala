@@ -1,5 +1,7 @@
 package llm4zio.providers
 
+import scala.io.Source
+
 import zio.*
 import zio.json.*
 import zio.stream.ZStream
@@ -10,6 +12,11 @@ import llm4zio.core.*
 object ClaudeCliConnectorSpec extends ZIOSpecDefault:
 
   final case class TriagePick(lane: String, rationale: String) derives JsonCodec
+
+  private def claudeFixtureLines: List[String] =
+    val src = Source.fromResource("claude-stream.jsonl")
+    try src.getLines().toList
+    finally src.close()
 
   class MockCliExec(
     responses: Map[List[String], ProcessResult] = Map.empty
@@ -125,5 +132,24 @@ object ClaudeCliConnectorSpec extends ZIOSpecDefault:
         _    <- conn.complete("x")
         cwd  <- seen.get
       yield assertTrue(cwd == "/tmp/repo")
+    },
+    test("parseStreamLine maps assistant text to a text chunk") {
+      val chunks = claudeFixtureLines.flatMap(ClaudeCliConnector.parseStreamLine)
+      assertTrue(chunks.exists(c => c.delta == "Editing the file."))
+    },
+    test("parseStreamLine maps a tool_use block to contract metadata") {
+      val chunks = claudeFixtureLines.flatMap(ClaudeCliConnector.parseStreamLine)
+      assertTrue(chunks.exists(c =>
+        c.metadata.get("event").contains("tool_use") &&
+        c.metadata.get("tool_name").contains("Edit") &&
+        c.metadata.get("tool_input").exists(_.contains("src/lib.rs"))
+      ))
+    },
+    test("parseStreamLine maps a result to a usage chunk") {
+      val chunks = claudeFixtureLines.flatMap(ClaudeCliConnector.parseStreamLine)
+      assertTrue(chunks.exists(c => c.usage.exists(_.prompt == 1200) && c.usage.exists(_.completion == 40)))
+    },
+    test("initModel reads the model from the system init line") {
+      assertTrue(claudeFixtureLines.flatMap(ClaudeCliConnector.initModel).headOption.contains("claude-sonnet-4-6"))
     },
   )
