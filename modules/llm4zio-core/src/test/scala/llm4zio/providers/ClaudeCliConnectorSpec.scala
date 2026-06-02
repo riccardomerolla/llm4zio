@@ -152,4 +152,14 @@ object ClaudeCliConnectorSpec extends ZIOSpecDefault:
     test("initModel reads the model from the system init line") {
       assertTrue(claudeFixtureLines.flatMap(ClaudeCliConnector.initModel).headOption.contains("claude-sonnet-4-6"))
     },
+    test("completeStream stamps the init model onto the usage chunk and emits assistant text") {
+      val argv      = List("claude", "--print", "--output-format", "stream-json", "--verbose", "go")
+      val mock      = new MockCliExec(Map(argv -> ProcessResult(claudeFixtureLines, 0)))
+      val connector = ClaudeCliConnector.make(CliConnectorConfig(ConnectorId.ClaudeCli), mock)
+      for chunks <- connector.completeStream("go").runCollect
+      yield assertTrue(
+        chunks.exists(c => c.usage.exists(_.prompt == 1200) && c.metadata.get("model").contains("claude-sonnet-4-6")),
+        chunks.map(_.delta).mkString.contains("Editing the file."),
+      )
+    },
   )
