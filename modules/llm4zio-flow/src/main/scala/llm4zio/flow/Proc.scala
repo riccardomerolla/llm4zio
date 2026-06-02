@@ -1,9 +1,9 @@
 package llm4zio.flow
 
+import java.nio.file.Path
+
 import zio.*
 import zio.process.Command
-
-import java.nio.file.Path
 
 /** Small zio-process helper shared by the CLI-backed tools (git, gh, …). */
 private[flow] object Proc:
@@ -12,8 +12,8 @@ private[flow] object Proc:
     def ok: Boolean     = exitCode == 0
     def problem: String = if stderr.nonEmpty then stderr else stdout
 
-  /** Run `command args*` in `workDir`, capturing stdout/stderr/exit without
-    * failing on a non-zero exit. Only a failure to launch fails the effect.
+  /** Run `command args*` in `workDir`, capturing stdout/stderr/exit without failing on a non-zero exit. Only a failure
+    * to launch fails the effect.
     */
   def run(command: String, args: Seq[String], workDir: Path): IO[FlowError, Result] =
     (for

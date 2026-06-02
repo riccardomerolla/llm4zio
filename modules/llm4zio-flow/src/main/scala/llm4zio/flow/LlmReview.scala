@@ -1,7 +1,7 @@
 package llm4zio.flow
 
-import zio.{IO, ZIO}
 import zio.json.ast.Json
+import zio.{ IO, ZIO }
 
 import llm4zio.core.LlmService
 import llm4zio.tools.JsonSchema
@@ -10,12 +10,12 @@ import llm4zio.tools.JsonSchema
 object Reviewers:
   val schema: JsonSchema =
     Json.Obj(
-      "type" -> Json.Str("object"),
+      "type"       -> Json.Str("object"),
       "properties" -> Json.Obj(
-        "issues" -> Json.Obj(
-          "type" -> Json.Str("array"),
+        "issues"  -> Json.Obj(
+          "type"  -> Json.Str("array"),
           "items" -> Json.Obj(
-            "type" -> Json.Str("object"),
+            "type"       -> Json.Str("object"),
             "properties" -> Json.Obj(
               "severity"    -> Json.Obj("type" -> Json.Str("string")),
               "title"       -> Json.Obj("type" -> Json.Str("string")),
@@ -49,10 +49,9 @@ object Reviewers:
 
 /** Review → fix → re-review until clean or `maxRounds` reached.
   *
-  * `reviewers` run in parallel each round (cross-agent review: route reviews
-  * through different backends than the implementer) and their findings are
-  * merged; the fixer is the coder [[Chat]]. `currentDiff` is re-read each round
-  * so reviewers see the latest state. Built on the generic [[fixLoop]].
+  * `reviewers` run in parallel each round (cross-agent review: route reviews through different backends than the
+  * implementer) and their findings are merged; the fixer is the coder [[Chat]]. `currentDiff` is re-read each round so
+  * reviewers see the latest state. Built on the generic [[fixLoop]].
   */
 def reviewAndFixLoop(
   reviewers: List[LlmService],
@@ -60,7 +59,8 @@ def reviewAndFixLoop(
   taskTitle: String,
   currentDiff: IO[FlowError, String],
   maxRounds: Int = 3,
-)(using FlowEvents): IO[FlowError, ReviewResult] =
+)(using FlowEvents
+): IO[FlowError, ReviewResult] =
   val evaluate: IO[FlowError, ReviewResult] =
     currentDiff.flatMap { diff =>
       ZIO

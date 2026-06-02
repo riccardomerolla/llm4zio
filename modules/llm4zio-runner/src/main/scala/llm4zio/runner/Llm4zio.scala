@@ -1,17 +1,16 @@
 package llm4zio.runner
 
+import java.nio.file.Path
+
 import zio.*
 import zio.http.Client
 
-import java.nio.file.Path
-
-import llm4zio.core.{ApiConnectorConfig, CliConnectorConfig, ConnectorConfig}
-import llm4zio.providers.HttpClient
+import llm4zio.core.{ ApiConnectorConfig, CliConnectorConfig, ConnectorConfig }
 import llm4zio.flow.FlowContext
+import llm4zio.providers.HttpClient
 
-/** Entry point for scala-cli flow scripts. Builds a real [[FlowContext]],
-  * streams progress to the terminal, runs the flow body, and provides the
-  * zio-http client + HttpClient layers — so a `.sc` reads top-to-bottom:
+/** Entry point for scala-cli flow scripts. Builds a real [[FlowContext]], streams progress to the terminal, runs the
+  * flow body, and provides the zio-http client + HttpClient layers — so a `.sc` reads top-to-bottom:
   *
   * {{{
   * object Main extends zio.ZIOAppDefault:
@@ -27,11 +26,14 @@ object Llm4zio:
     reasoning: ApiConnectorConfig,
     coder: CliConnectorConfig,
     reviewers: List[ConnectorConfig] = Nil,
-  )(body: FlowContext => ZIO[Any, Any, Any]): ZIO[Any, Throwable, Unit] =
+  )(
+    body: FlowContext => ZIO[Any, Any, Any]
+  ): ZIO[Any, Throwable, Unit] =
     ZIO
       .scoped {
-        DefaultFlowContext.build(reasoning, coder, workDir, reviewers).flatMap { case (ctx, hub) =>
-          TerminalListener.consume(hub) *> body(ctx).unit
+        DefaultFlowContext.build(reasoning, coder, workDir, reviewers).flatMap {
+          case (ctx, hub) =>
+            TerminalListener.consume(hub) *> body(ctx).unit
         }
       }
       .provide(Client.default, HttpClient.live)

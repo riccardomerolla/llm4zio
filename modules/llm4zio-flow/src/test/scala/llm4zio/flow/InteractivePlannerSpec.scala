@@ -1,29 +1,29 @@
 package llm4zio.flow
 
 import zio.*
+import zio.json.{ DecoderOps, JsonCodec }
 import zio.stream.*
 import zio.test.*
-import zio.json.{DecoderOps, JsonCodec}
 
 import llm4zio.core.*
-import llm4zio.tools.{AnyTool, JsonSchema}
+import llm4zio.tools.{ AnyTool, JsonSchema }
 
 object InteractivePlannerSpec extends ZIOSpecDefault:
 
   /** Pops the next canned PlanningStep JSON per structured call. */
   final class StubSteps(steps: Ref[List[String]]) extends LlmService:
-    def executeStream(prompt: String): Stream[LlmError, LlmChunk]                     = ZStream.empty
-    def executeStreamWithHistory(messages: List[Message]): Stream[LlmError, LlmChunk] = ZStream.empty
+    def executeStream(prompt: String): Stream[LlmError, LlmChunk]                              = ZStream.empty
+    def executeStreamWithHistory(messages: List[Message]): Stream[LlmError, LlmChunk]          = ZStream.empty
     def executeWithTools(prompt: String, tools: List[AnyTool]): IO[LlmError, ToolCallResponse] =
       ZIO.dieMessage("unused")
-    def executeStructured[A: JsonCodec](prompt: String, schema: JsonSchema): IO[LlmError, A] =
+    def executeStructured[A: JsonCodec](prompt: String, schema: JsonSchema): IO[LlmError, A]   =
       steps
         .modify {
           case head :: tail => (head, tail)
           case Nil          => ("""{"kind":"Proposed","plan":{"epicId":"x","tasks":[]}}""", Nil)
         }
         .flatMap(json => ZIO.fromEither(json.fromJson[A]).mapError(e => LlmError.ParseError(e, json)))
-    def isAvailable: UIO[Boolean] = ZIO.succeed(true)
+    def isAvailable: UIO[Boolean]                                                              = ZIO.succeed(true)
 
   final class Scripted(answers: Ref[List[String]], asked: Ref[List[String]]) extends Interaction:
     def ask(question: String): IO[FlowError, String] =
@@ -33,10 +33,11 @@ object InteractivePlannerSpec extends ZIOSpecDefault:
           case Nil          => ("(no answer)", Nil)
         }
 
-  def spec = suite("Planner.interactive")(
+  def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("Planner.interactive")(
     test("asks a clarifying question, then returns the proposed plan") {
       val ask  = """{"kind":"AskUser","question":"web or cli?"}"""
-      val done = """{"kind":"Proposed","plan":{"epicId":"calc","tasks":[{"title":"t","description":"d","completed":false}]}}"""
+      val done =
+        """{"kind":"Proposed","plan":{"epicId":"calc","tasks":[{"title":"t","description":"d","completed":false}]}}"""
       for
         steps <- Ref.make(List(ask, done))
         ans   <- Ref.make(List("cli"))

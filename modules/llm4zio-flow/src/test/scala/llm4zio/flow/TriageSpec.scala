@@ -1,25 +1,25 @@
 package llm4zio.flow
 
 import zio.*
+import zio.json.{ DecoderOps, JsonCodec }
 import zio.stream.*
 import zio.test.*
-import zio.json.{DecoderOps, JsonCodec}
 
 import llm4zio.core.*
-import llm4zio.tools.{AnyTool, JsonSchema}
+import llm4zio.tools.{ AnyTool, JsonSchema }
 
 object TriageSpec extends ZIOSpecDefault:
 
   final class StubStructured(json: String) extends LlmService:
-    def executeStream(prompt: String): Stream[LlmError, LlmChunk]                     = ZStream.empty
-    def executeStreamWithHistory(messages: List[Message]): Stream[LlmError, LlmChunk] = ZStream.empty
+    def executeStream(prompt: String): Stream[LlmError, LlmChunk]                              = ZStream.empty
+    def executeStreamWithHistory(messages: List[Message]): Stream[LlmError, LlmChunk]          = ZStream.empty
     def executeWithTools(prompt: String, tools: List[AnyTool]): IO[LlmError, ToolCallResponse] =
       ZIO.dieMessage("unused")
-    def executeStructured[A: JsonCodec](prompt: String, schema: JsonSchema): IO[LlmError, A] =
+    def executeStructured[A: JsonCodec](prompt: String, schema: JsonSchema): IO[LlmError, A]   =
       ZIO.fromEither(json.fromJson[A]).mapError(e => LlmError.ParseError(e, json))
-    def isAvailable: UIO[Boolean] = ZIO.succeed(true)
+    def isAvailable: UIO[Boolean]                                                              = ZIO.succeed(true)
 
-  def spec = suite("IssueRef + Triage")(
+  def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("IssueRef + Triage")(
     test("IssueRef parses owner/repo#number") {
       assertTrue(
         IssueRef.parse("acme/widgets#42").contains(IssueRef("acme", "widgets", 42)),

@@ -1,14 +1,13 @@
 package llm4zio.flow
 
-import zio.{IO, ZIO}
 import zio.json.ast.Json
+import zio.{ IO, ZIO }
 
 import llm4zio.core.LlmService
 import llm4zio.tools.JsonSchema
 
-/** Turn a free-form request into a structured [[Plan]] using a reasoning
-  * connector's structured-output capability. The reasoning step is an API
-  * connector (the role split: reasoning over API, editing over CLI).
+/** Turn a free-form request into a structured [[Plan]] using a reasoning connector's structured-output capability. The
+  * reasoning step is an API connector (the role split: reasoning over API, editing over CLI).
   */
 object Planner:
 
@@ -18,18 +17,18 @@ object Planner:
       |for the overall change. Respond ONLY with JSON of the form:
       |{"epicId":"kebab-case-id","tasks":[{"title":"...","description":"...","completed":false}]}""".stripMargin
 
-  /** JSON-schema hint for the Plan shape (advisory; connectors that derive
-    * structured output from text ignore it, API connectors may use it).
+  /** JSON-schema hint for the Plan shape (advisory; connectors that derive structured output from text ignore it, API
+    * connectors may use it).
     */
   val schema: JsonSchema =
     Json.Obj(
-      "type" -> Json.Str("object"),
+      "type"       -> Json.Str("object"),
       "properties" -> Json.Obj(
         "epicId" -> Json.Obj("type" -> Json.Str("string")),
-        "tasks" -> Json.Obj(
-          "type" -> Json.Str("array"),
+        "tasks"  -> Json.Obj(
+          "type"  -> Json.Str("array"),
           "items" -> Json.Obj(
-            "type" -> Json.Str("object"),
+            "type"       -> Json.Str("object"),
             "properties" -> Json.Obj(
               "title"       -> Json.Obj("type" -> Json.Str("string")),
               "description" -> Json.Obj("type" -> Json.Str("string")),
@@ -56,9 +55,8 @@ object Planner:
       |  {"kind":"AskUser","question":"..."}
       |  {"kind":"Proposed","plan":{"epicId":"kebab-id","tasks":[{"title":"...","description":"...","completed":false}]}}""".stripMargin
 
-  /** Plan interactively: the model may ask the user clarifying questions (via
-    * `interaction`) before proposing a [[Plan]]. Loops until a plan is proposed
-    * or `maxTurns` is reached.
+  /** Plan interactively: the model may ask the user clarifying questions (via `interaction`) before proposing a
+    * [[Plan]]. Loops until a plan is proposed or `maxTurns` is reached.
     */
   def interactive(
     reasoning: LlmService,

@@ -4,11 +4,10 @@ import llm4zio.core.LlmService
 
 /** Everything a flow needs, bundled in one place.
   *
-  * The role split from the design: reasoning steps (planning, review judgements,
-  * structured output) run over `reasoning` — typically an API connector — while
-  * code-editing steps run over `coder`, a CLI coding agent (claude/codex/gemini)
-  * that owns the file-editing tool loop. `git`/`gh` carry out version-control
-  * side effects; `events` is the progress sink.
+  * The role split from the design: reasoning steps (planning, review judgements, structured output) run over
+  * `reasoning` — typically an API connector — while code-editing steps run over `coder`, a CLI coding agent
+  * (claude/codex/gemini) that owns the file-editing tool loop. `git`/`gh` carry out version-control side effects;
+  * `events` is the progress sink.
   */
 final case class FlowContext(
   reasoning: LlmService,

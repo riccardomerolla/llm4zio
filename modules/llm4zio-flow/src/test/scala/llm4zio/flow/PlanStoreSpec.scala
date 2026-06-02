@@ -1,9 +1,9 @@
 package llm4zio.flow
 
+import java.nio.file.{ Files, Path }
+
 import zio.*
 import zio.test.*
-
-import java.nio.file.{Files, Path}
 
 object PlanStoreSpec extends ZIOSpecDefault:
 
@@ -14,13 +14,13 @@ object PlanStoreSpec extends ZIOSpecDefault:
       }.orDie
     )
 
-  def spec = suite("PlanStore")(
+  def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("PlanStore")(
     test("save then load round-trips a plan") {
       ZIO.scoped {
         for
-          dir <- tempDir
-          plan = Plan("epic-1", List(Task("a", "do a"), Task("b", "do b", completed = true)))
-          path = dir.resolve("plan.md")
+          dir  <- tempDir
+          plan  = Plan("epic-1", List(Task("a", "do a"), Task("b", "do b", completed = true)))
+          path  = dir.resolve("plan.md")
           _    <- PlanStore.save(path, plan)
           back <- PlanStore.load(path)
         yield assertTrue(back.contains(plan))
@@ -37,7 +37,7 @@ object PlanStoreSpec extends ZIOSpecDefault:
     test("recoverOrCreate loads an existing plan without re-running create") {
       ZIO.scoped {
         for
-          dir <- tempDir
+          dir   <- tempDir
           path   = dir.resolve("plan.md")
           stored = Plan("epic", List(Task("x", "")))
           _     <- PlanStore.save(path, stored)
@@ -50,8 +50,8 @@ object PlanStoreSpec extends ZIOSpecDefault:
     test("recoverOrCreate runs create and persists it when no plan exists") {
       ZIO.scoped {
         for
-          dir <- tempDir
-          path = dir.resolve("nested/plan.md")
+          dir  <- tempDir
+          path  = dir.resolve("nested/plan.md")
           fresh = Plan("epic", List(Task("x", "")))
           got  <- PlanStore.recoverOrCreate(path)(ZIO.succeed(fresh))
           disk <- PlanStore.load(path)
@@ -61,8 +61,8 @@ object PlanStoreSpec extends ZIOSpecDefault:
     test("delete removes the plan file and is a no-op when already absent") {
       ZIO.scoped {
         for
-          dir <- tempDir
-          path = dir.resolve("plan.md")
+          dir  <- tempDir
+          path  = dir.resolve("plan.md")
           _    <- PlanStore.save(path, Plan("e", List(Task("x", ""))))
           _    <- PlanStore.delete(path)
           gone <- PlanStore.load(path)

@@ -13,7 +13,7 @@ final case class PrSummary(title: String, body: String) derives JsonCodec
 object PrSummary:
   val schema: JsonSchema =
     Json.Obj(
-      "type" -> Json.Str("object"),
+      "type"       -> Json.Str("object"),
       "properties" -> Json.Obj(
         "title" -> Json.Obj("type" -> Json.Str("string")),
         "body"  -> Json.Obj("type" -> Json.Str("string")),
@@ -23,7 +23,7 @@ object PrSummary:
 /** Generate a PR title + body from a diff using the reasoning connector. */
 def summarisePr(reasoning: LlmService, diff: String, context: Option[String] = None): IO[FlowError, PrSummary] =
   val ctxBlock = context.fold("")(c => s"\nContext:\n$c\n")
-  val prompt =
+  val prompt   =
     s"""Summarise this change as a pull request. Respond ONLY with JSON
        |{"title":"...","body":"..."}.$ctxBlock
        |Diff:

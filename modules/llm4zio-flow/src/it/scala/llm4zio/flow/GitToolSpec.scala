@@ -3,7 +3,7 @@ package llm4zio.flow
 import zio.*
 import zio.test.*
 
-import java.nio.file.{Files, Path}
+import java.nio.file.{ Files, Path }
 
 object GitToolSpec extends ZIOSpecDefault:
 
@@ -36,14 +36,14 @@ object GitToolSpec extends ZIOSpecDefault:
     test("createBranch creates a branch, then reports AlreadyExists") {
       ZIO.scoped {
         for
-          dir <- tempDir
-          git <- newRepo(dir)
-          a   <- git.createBranch("feature/x")
-          cur <- git.currentBranch
-          b   <- git.createBranch("feature/x")
-          _   <- git.checkout("main")
+          dir    <- tempDir
+          git    <- newRepo(dir)
+          a      <- git.createBranch("feature/x")
+          cur    <- git.currentBranch
+          b      <- git.createBranch("feature/x")
+          _      <- git.checkout("main")
           onMain <- git.currentBranch
-          _   <- git.checkoutOrCreate("feature/x") // existing → switches back
+          _      <- git.checkoutOrCreate("feature/x") // existing → switches back
           back   <- git.currentBranch
         yield assertTrue(
           a == GitTool.CreateBranch.Created,

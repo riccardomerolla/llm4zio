@@ -1,8 +1,8 @@
 package llm4zio.runner
 
-import zio.{Console, Scope, ZIO}
+import zio.{ Console, Scope, ZIO }
 
-import llm4zio.flow.{FlowEvent, FlowEvents}
+import llm4zio.flow.{ FlowEvent, FlowEvents }
 
 /** Renders [[FlowEvent]]s to the terminal. */
 object TerminalListener:

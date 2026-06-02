@@ -1,12 +1,12 @@
 package llm4zio.runner
 
-import zio.{IO, Scope, ZIO}
+import zio.{ IO, Scope, ZIO }
 import zio.test.*
 
-import java.nio.file.{Files, Path}
+import java.nio.file.{ Files, Path }
 
 import llm4zio.flow.*
-import llm4zio.core.{LlmConfig, LlmProvider}
+import llm4zio.core.{ LlmConfig, LlmProvider }
 import llm4zio.providers.MockProvider
 
 object ExampleFlowSpec extends ZIOSpecDefault:

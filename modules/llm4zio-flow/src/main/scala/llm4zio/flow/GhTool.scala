@@ -1,9 +1,9 @@
 package llm4zio.flow
 
-import zio.*
-import zio.json.{DecoderOps, JsonCodec}
-
 import java.nio.file.Path
+
+import zio.*
+import zio.json.{ DecoderOps, JsonCodec }
 
 /** A GitHub issue, as read via `gh`. */
 final case class Issue(title: String, body: String, author: String)

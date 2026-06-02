@@ -11,8 +11,8 @@ enum FlowEvent:
   case Aborted(message: String)
   case Info(message: String)
 
-/** Sink for [[FlowEvent]]s. Flows publish; listeners (a terminal renderer, a
-  * Telegram bridge, a test) consume. Default is [[FlowEvents.noop]].
+/** Sink for [[FlowEvent]]s. Flows publish; listeners (a terminal renderer, a Telegram bridge, a test) consume. Default
+  * is [[FlowEvents.noop]].
   */
 trait FlowEvents:
   def publish(event: FlowEvent): UIO[Unit]

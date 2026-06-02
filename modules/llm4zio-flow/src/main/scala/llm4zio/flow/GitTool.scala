@@ -1,20 +1,19 @@
 package llm4zio.flow
 
-import zio.*
-
 import java.nio.file.Path
+
+import zio.*
 
 /** Thin git wrapper over zio-process, bound to a working directory.
   *
-  * Recoverable outcomes (branch already exists, nothing to commit) are returned
-  * in the value channel as typed results; genuinely unexpected failures (git
-  * missing, a corrupt repo) fail the effect with [[FlowError.Process]].
+  * Recoverable outcomes (branch already exists, nothing to commit) are returned in the value channel as typed results;
+  * genuinely unexpected failures (git missing, a corrupt repo) fail the effect with [[FlowError.Process]].
   */
 final class GitTool(workDir: Path):
   import GitTool.*
 
-  private def exec(args: String*): IO[FlowError, Proc.Result]   = Proc.run("git", args, workDir)
-  private def execOrFail(args: String*): IO[FlowError, String]  = Proc.runOrFail("git", args, workDir)
+  private def exec(args: String*): IO[FlowError, Proc.Result]  = Proc.run("git", args, workDir)
+  private def execOrFail(args: String*): IO[FlowError, String] = Proc.runOrFail("git", args, workDir)
 
   /** `git init` with `main` as the default branch. */
   def init: IO[FlowError, Unit] = execOrFail("-c", "init.defaultBranch=main", "init").unit

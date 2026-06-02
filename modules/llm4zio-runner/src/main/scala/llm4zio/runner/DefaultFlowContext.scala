@@ -1,16 +1,15 @@
 package llm4zio.runner
 
-import zio.*
-
 import java.nio.file.Path
 
-import llm4zio.core.*
-import llm4zio.providers.{ConnectorFactories, HttpClient}
-import llm4zio.flow.*
+import zio.*
 
-/** Wiring for a real [[FlowContext]]: reasoning over an API connector, coding
-  * over a CLI agent rooted in the target repo, git/gh tools on that repo, and a
-  * broadcast event hub.
+import llm4zio.core.*
+import llm4zio.flow.*
+import llm4zio.providers.{ ConnectorFactories, HttpClient }
+
+/** Wiring for a real [[FlowContext]]: reasoning over an API connector, coding over a CLI agent rooted in the target
+  * repo, git/gh tools on that repo, and a broadcast event hub.
   */
 object DefaultFlowContext:
 
@@ -25,8 +24,8 @@ object DefaultFlowContext:
       (FlowContext(reasoning, coder, GitTool(workDir), GhTool(workDir), hub, reviewers), hub)
     }
 
-  /** Build connectors from config: API reasoning (needs an [[HttpClient]]), a
-    * CLI coder rooted in `workDir`, and any extra cross-agent reviewers.
+  /** Build connectors from config: API reasoning (needs an [[HttpClient]]), a CLI coder rooted in `workDir`, and any
+    * extra cross-agent reviewers.
     */
   def build(
     reasoningCfg: ApiConnectorConfig,
@@ -48,9 +47,8 @@ object DefaultFlowContext:
     case c: CliConnectorConfig => c.copy(workingDir = Some(workDir.toString))
     case other                 => other
 
-  /** Fill an API config's base URL (from the provider default) and API key (from
-    * the environment) when the caller left them unset — so examples can name
-    * just the provider + model.
+  /** Fill an API config's base URL (from the provider default) and API key (from the environment) when the caller left
+    * them unset — so examples can name just the provider + model.
     */
   def enrichApi(cfg: ApiConnectorConfig): ApiConnectorConfig =
     val envKey = cfg.connectorId match

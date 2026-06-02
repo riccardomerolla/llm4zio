@@ -5,10 +5,9 @@ import zio.json.*
 
 import llm4zio.tools.JsonSchema
 
-/** Shared JSON-extraction + parsing helper used by connectors that derive
-  * `LlmService.executeStructured` from plain text completion. Pulled out of
-  * GeminiCliProvider so every CLI connector can use the same logic instead of
-  * each one re-implementing JSON parsing (or skipping it entirely).
+/** Shared JSON-extraction + parsing helper used by connectors that derive `LlmService.executeStructured` from plain
+  * text completion. Pulled out of GeminiCliProvider so every CLI connector can use the same logic instead of each one
+  * re-implementing JSON parsing (or skipping it entirely).
   *
   * Strategy:
   *   1. Try the raw output as JSON
@@ -19,17 +18,14 @@ import llm4zio.tools.JsonSchema
   */
 object StructuredOutputs:
 
-  /** Parse `A` out of arbitrary text. The schema is currently unused but kept
-    * in the signature so callers can pass it through from `LlmService`; future
-    * implementations may use it to ask the underlying model for a constrained
+  /** Parse `A` out of arbitrary text. The schema is currently unused but kept in the signature so callers can pass it
+    * through from `LlmService`; future implementations may use it to ask the underlying model for a constrained
     * response.
     *
-    * Tries every candidate JSON slice in order (full text, fenced blocks,
-    * balanced `{...}` objects) and returns the first that decodes. On total
-    * failure, reports the error from the JSON-looking candidate (the last
-    * balanced object found) rather than the first attempt, so callers see
-    * the relevant codec mismatch instead of a generic "expected '{' got 'W'"
-    * from the raw text that started with a CLI stderr warning.
+    * Tries every candidate JSON slice in order (full text, fenced blocks, balanced `{...}` objects) and returns the
+    * first that decodes. On total failure, reports the error from the JSON-looking candidate (the last balanced object
+    * found) rather than the first attempt, so callers see the relevant codec mismatch instead of a generic "expected
+    * '{' got 'W'" from the raw text that started with a CLI stderr warning.
     */
   def parseFromText[A: JsonCodec](raw: String, @scala.annotation.unused schema: JsonSchema): IO[LlmError, A] =
     val candidates = jsonCandidates(raw)
@@ -58,8 +54,7 @@ object StructuredOutputs:
     if trimmed.length <= 120 then trimmed
     else trimmed.take(117) + "..."
 
-  /** All viable JSON snippets to try: raw, every fenced block, every balanced
-    * `{...}` substring, deduped and trimmed.
+  /** All viable JSON snippets to try: raw, every fenced block, every balanced `{...}` substring, deduped and trimmed.
     */
   def jsonCandidates(raw: String): List[String] =
     val fenced   = extractJsonFromMarkdownFences(raw)

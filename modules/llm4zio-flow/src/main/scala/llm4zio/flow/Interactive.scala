@@ -1,11 +1,10 @@
 package llm4zio.flow
 
-import zio.{IO, ZIO}
-import zio.json.{jsonDiscriminator, JsonCodec}
+import zio.json.{ JsonCodec, jsonDiscriminator }
+import zio.{ IO, ZIO }
 
-/** A channel for asking the user a question mid-flow (e.g. an interactive
-  * planner clarifying an open-ended request). Implementations: a terminal/stdin
-  * prompt (in the runner), or a scripted queue (tests).
+/** A channel for asking the user a question mid-flow (e.g. an interactive planner clarifying an open-ended request).
+  * Implementations: a terminal/stdin prompt (in the runner), or a scripted queue (tests).
   */
 trait Interaction:
   def ask(question: String): IO[FlowError, String]
@@ -15,8 +14,8 @@ object Interaction:
   val noninteractive: Interaction = question =>
     ZIO.fail(FlowError.Aborted(s"interaction required but unavailable: $question"))
 
-/** One step of interactive planning: either ask the user a question, or propose
-  * the finished plan. `"kind"`-discriminated for structured output.
+/** One step of interactive planning: either ask the user a question, or propose the finished plan.
+  * `"kind"`-discriminated for structured output.
   */
 @jsonDiscriminator("kind")
 enum PlanningStep derives JsonCodec:

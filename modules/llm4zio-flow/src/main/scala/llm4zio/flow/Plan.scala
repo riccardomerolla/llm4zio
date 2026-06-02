@@ -7,8 +7,8 @@ final case class Task(title: String, description: String, completed: Boolean = f
 
 /** An ordered list of [[Task]]s tied to a branch/epic id.
   *
-  * Plans persist as plain Markdown (no datastore), so a run can be resumed by
-  * re-reading the file and continuing from the first incomplete task.
+  * Plans persist as plain Markdown (no datastore), so a run can be resumed by re-reading the file and continuing from
+  * the first incomplete task.
   */
 final case class Plan(epicId: String, tasks: List[Task]) derives JsonCodec:
 
@@ -22,7 +22,7 @@ final case class Plan(epicId: String, tasks: List[Task]) derives JsonCodec:
   /** Render to the canonical Markdown form that [[Plan.parse]] round-trips. */
   def render: String =
     val header = s"${Plan.HeaderPrefix}$epicId"
-    val body = tasks.map { t =>
+    val body   = tasks.map { t =>
       val box = if t.completed then "[x]" else "[ ]"
       s"## $box ${t.title}\n${t.description}".stripTrailing
     }
@@ -37,7 +37,7 @@ object Plan:
     markdown.strip.linesIterator.toList match
       case head :: rest if head.startsWith(HeaderPrefix) =>
         parseTasks(rest.mkString("\n").strip).map(Plan(head.drop(HeaderPrefix.length).trim, _))
-      case _ =>
+      case _                                             =>
         Left(s"expected a '$HeaderPrefix<epicId>' header")
 
   private def parseTasks(body: String): Either[String, List[Task]] =
@@ -55,5 +55,5 @@ object Plan:
     chunk.linesIterator.toList match
       case TaskHeader(box, title) :: descLines =>
         Right(Task(title.trim, descLines.mkString("\n").strip, completed = box.equalsIgnoreCase("x")))
-      case head :: _ => Left(s"malformed task header: $head")
-      case Nil       => Left("empty task chunk")
+      case head :: _                           => Left(s"malformed task header: $head")
+      case Nil                                 => Left("empty task chunk")

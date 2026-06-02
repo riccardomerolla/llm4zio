@@ -1,9 +1,10 @@
 package llm4zio.flow
 
+import zio.Scope
 import zio.test.*
 
 object PlanSpec extends ZIOSpecDefault:
-  def spec = suite("Plan")(
+  def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("Plan")(
     test("render then parse round-trips a plan with mixed task state") {
       val plan = Plan(
         epicId = "add-multiply",
@@ -15,11 +16,14 @@ object PlanSpec extends ZIOSpecDefault:
       assertTrue(Plan.parse(plan.render) == Right(plan))
     },
     test("nextIncomplete returns the first not-completed task, None when all done") {
-      val plan = Plan("epic", List(
-        Task("a", "", completed = true),
-        Task("b", "second"),
-        Task("c", ""),
-      ))
+      val plan    = Plan(
+        "epic",
+        List(
+          Task("a", "", completed = true),
+          Task("b", "second"),
+          Task("c", ""),
+        ),
+      )
       val allDone = Plan("epic", plan.tasks.map(_.copy(completed = true)))
       assertTrue(
         plan.nextIncomplete.contains(plan.tasks(1)),

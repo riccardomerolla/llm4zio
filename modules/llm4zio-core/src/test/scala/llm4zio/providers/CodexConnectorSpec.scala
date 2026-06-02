@@ -61,7 +61,10 @@ object CodexConnectorSpec extends ZIOSpecDefault:
           : ZStream[Any, LlmError, String] = ZStream.empty
       for
         seen <- Ref.make("")
-        conn  = CodexConnector.make(CliConnectorConfig(ConnectorId.Codex, workingDir = Some("/tmp/repo")), RecordingExec(seen))
+        conn  = CodexConnector.make(
+                  CliConnectorConfig(ConnectorId.Codex, workingDir = Some("/tmp/repo")),
+                  RecordingExec(seen),
+                )
         _    <- conn.complete("x")
         cwd  <- seen.get
       yield assertTrue(cwd == "/tmp/repo")

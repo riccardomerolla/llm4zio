@@ -1,14 +1,14 @@
 package llm4zio.flow
 
-import zio.*
-
 import java.nio.charset.StandardCharsets
-import java.nio.file.{Files, Path}
+import java.nio.file.{ Files, Path }
+
+import zio.*
 
 /** Plain-file persistence for [[Plan]]s.
   *
-  * Plans are stored as the Markdown rendered by [[Plan.render]] — no datastore —
-  * so a crashed run resumes by re-reading the file via [[recoverOrCreate]].
+  * Plans are stored as the Markdown rendered by [[Plan.render]] — no datastore — so a crashed run resumes by re-reading
+  * the file via [[recoverOrCreate]].
   */
 object PlanStore:
 

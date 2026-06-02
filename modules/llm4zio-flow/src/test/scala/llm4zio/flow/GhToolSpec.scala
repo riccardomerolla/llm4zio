@@ -1,9 +1,10 @@
 package llm4zio.flow
 
+import zio.Scope
 import zio.test.*
 
 object GhToolSpec extends ZIOSpecDefault:
-  def spec = suite("GhTool")(
+  def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("GhTool")(
     test("prCreateArgs builds title/body args, omitting base and draft by default") {
       assertTrue(
         GhTool.prCreateArgs("My PR", "Body text", base = None, draft = false) ==

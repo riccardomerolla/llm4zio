@@ -2,19 +2,18 @@ package llm4zio.flow
 
 import zio.*
 
-import llm4zio.core.{LlmError, LlmService, Message, MessageRole, Streaming}
+import llm4zio.core.{ LlmError, LlmService, Message, MessageRole, Streaming }
 
 /** A stateful conversation over an [[LlmService]].
   *
-  * llm4zio-core continues a conversation by replaying message history (there is
-  * no backend session token), so continuity is just an accumulating
-  * `List[Message]` threaded through `executeStreamWithHistory`. One `Chat` gives
-  * an agent memory across the tasks of a flow.
+  * llm4zio-core continues a conversation by replaying message history (there is no backend session token), so
+  * continuity is just an accumulating `List[Message]` threaded through `executeStreamWithHistory`. One `Chat` gives an
+  * agent memory across the tasks of a flow.
   */
 final class Chat private (service: LlmService, history: Ref[List[Message]]):
 
-  /** Send `prompt`, append both the user turn and the assistant reply to the
-    * running history, and return the assistant's text.
+  /** Send `prompt`, append both the user turn and the assistant reply to the running history, and return the
+    * assistant's text.
     */
   def ask(prompt: String): IO[LlmError, String] =
     for

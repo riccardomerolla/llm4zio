@@ -1,11 +1,12 @@
 package llm4zio.runner
 
+import zio.Scope
 import zio.test.*
 
 import llm4zio.flow.FlowEvent
 
 object TerminalListenerSpec extends ZIOSpecDefault:
-  def spec = suite("TerminalListener.render")(
+  def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("TerminalListener.render")(
     test("renders each event kind, surfacing its salient text") {
       assertTrue(
         TerminalListener.render(FlowEvent.StageStarted("build")).contains("build"),

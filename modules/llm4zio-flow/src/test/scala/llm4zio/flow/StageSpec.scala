@@ -4,7 +4,7 @@ import zio.*
 import zio.test.*
 
 object StageSpec extends ZIOSpecDefault:
-  def spec = suite("stage / fail / FlowEvents")(
+  def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("stage / fail / FlowEvents")(
     test("stage emits started then completed and returns the value") {
       for
         ev  <- FlowEvents.collecting

@@ -4,7 +4,7 @@ import zio.*
 import zio.test.*
 
 object ReviewLoopSpec extends ZIOSpecDefault:
-  def spec = suite("fixLoop")(
+  def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("fixLoop")(
     test("stops as soon as evaluate reports clean; fixes once") {
       for
         ev     <- FlowEvents.collecting

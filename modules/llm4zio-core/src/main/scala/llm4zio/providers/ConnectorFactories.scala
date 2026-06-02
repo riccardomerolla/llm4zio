@@ -48,6 +48,6 @@ object ConnectorFactories:
         case cfg: CliConnectorConfig =>
           val llmConfig = LlmConfig(LlmProvider.GeminiCli, cfg.model.getOrElse("gemini-2.5-flash"))
           // Thread workingDir so a Gemini coder edits files in the target repo.
-          val execCtx = GeminiCliExecutionContext(cwd = cfg.workingDir)
+          val execCtx   = GeminiCliExecutionContext(cwd = cfg.workingDir)
           ZIO.succeed(GeminiCliProvider.make(llmConfig, GeminiCliExecutor.default, execCtx))
         case _                       => ZIO.fail(LlmError.ConfigError("Expected CliConnectorConfig for gemini-cli"))

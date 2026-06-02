@@ -1,9 +1,9 @@
 package llm4zio.flow
 
+import java.nio.file.{ Files, Path }
+
 import zio.*
 import zio.test.*
-
-import java.nio.file.{Files, Path}
 
 object ImplementLoopSpec extends ZIOSpecDefault:
 
@@ -14,7 +14,7 @@ object ImplementLoopSpec extends ZIOSpecDefault:
       }.orDie
     )
 
-  def spec = suite("implementTaskLoop")(
+  def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("implementTaskLoop")(
     test("runs each incomplete task in order, skips done ones, persists progress") {
       ZIO.scoped {
         for

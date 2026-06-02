@@ -1,22 +1,21 @@
 package llm4zio.runner
 
+import java.io.File
+
 import zio.*
 import zio.process.Command
 import zio.stream.ZStream
 
-import llm4zio.core.{CliProcessExecutor, LlmError, ProcessResult}
+import llm4zio.core.{ CliProcessExecutor, LlmError, ProcessResult }
 
-import java.io.File
-
-/** A real [[CliProcessExecutor]] over zio-process, for driving CLI coding agents
-  * (claude/codex/gemini) from a flow.
+/** A real [[CliProcessExecutor]] over zio-process, for driving CLI coding agents (claude/codex/gemini) from a flow.
   */
 object LiveCliProcessExecutor:
 
   val instance: CliProcessExecutor = new CliProcessExecutor:
     override def run(argv: List[String], cwd: String, envVars: Map[String, String]): IO[LlmError, ProcessResult] =
       argv match
-        case Nil => ZIO.fail(LlmError.InvalidRequestError("empty argv"))
+        case Nil         => ZIO.fail(LlmError.InvalidRequestError("empty argv"))
         case cmd :: args =>
           (for
             process <- command(cmd, args, cwd, envVars).run
@@ -32,7 +31,7 @@ object LiveCliProcessExecutor:
       envVars: Map[String, String],
     ): ZStream[Any, LlmError, String] =
       argv match
-        case Nil => ZStream.fail(LlmError.InvalidRequestError("empty argv"))
+        case Nil         => ZStream.fail(LlmError.InvalidRequestError("empty argv"))
         case cmd :: args =>
           ZStream
             .unwrap(command(cmd, args, cwd, envVars).run.map(_.stdout.linesStream))
