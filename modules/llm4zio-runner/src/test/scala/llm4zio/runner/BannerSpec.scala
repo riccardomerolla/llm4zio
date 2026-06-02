@@ -2,8 +2,8 @@ package llm4zio.runner
 
 import java.nio.file.Paths
 
-import zio.test.*
 import zio.Scope
+import zio.test.*
 
 object BannerSpec extends ZIOSpecDefault:
   def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("Banner")(

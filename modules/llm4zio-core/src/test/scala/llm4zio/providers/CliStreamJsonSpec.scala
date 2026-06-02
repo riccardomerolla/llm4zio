@@ -1,7 +1,7 @@
 package llm4zio.providers
 
-import zio.test.*
 import zio.Scope
+import zio.test.*
 
 object CliStreamJsonSpec extends ZIOSpecDefault:
   def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("CliStreamJson")(

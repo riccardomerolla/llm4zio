@@ -1,9 +1,9 @@
 package llm4zio.flow
 
+import zio.Scope
 import zio.test.*
 
 import llm4zio.core.TokenUsage
-import zio.Scope
 
 object PriceListSpec extends ZIOSpecDefault:
   def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("PriceList")(

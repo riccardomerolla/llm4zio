@@ -2,8 +2,8 @@ package llm4zio.flow
 
 import java.nio.file.Paths
 
-import zio.test.*
 import zio.Scope
+import zio.test.*
 
 object ToolInputSummarySpec extends ZIOSpecDefault:
   private val wd                                               = Paths.get("/repo")
