@@ -29,13 +29,20 @@ object Llm4zio:
   )(
     body: FlowContext => ZIO[Any, Any, Any]
   ): ZIO[Any, Throwable, Unit] =
-    ZIO
-      .scoped {
-        DefaultFlowContext.build(reasoning, coder, workDir, reviewers).flatMap {
-          case (ctx, hub) =>
-            Palette.auto.flatMap(palette => TerminalListener.consume(hub, palette)) *> body(ctx).unit
-        }
-      }
+    (for
+      logPath <- RunnerLog.newLogFile
+      palette <- Palette.auto
+      _       <- Console.printLine(Banner.line(Banner.version, logPath)).orDie
+      _       <- Console.printLine("").orDie
+      _       <- ZIO
+                   .scoped {
+                     DefaultFlowContext.build(reasoning, coder, workDir, reviewers).flatMap {
+                       case (ctx, hub) =>
+                         TerminalListener.consume(hub, palette) *> body(ctx).unit
+                     }
+                   }
+                   .provideSomeLayer[HttpClient & Client](RunnerLog.fileOnly(logPath))
+    yield ())
       .provide(Client.default, HttpClient.live)
       .mapError {
         case t: Throwable => t
