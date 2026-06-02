@@ -64,4 +64,45 @@ object LlmReviewSpec extends ZIOSpecDefault:
         nAsks == 0,
       )
     },
+    test("a failing lint gate short-circuits the LLM reviewers for that round") {
+      for
+        ev      <- FlowEvents.collecting
+        calls   <- Ref.make(0)
+        asks    <- Ref.make(0)
+        coder   <- Chat.start(CountingCoder(asks))
+        reviewer = new LlmService:
+                     def executeStream(p: String): Stream[LlmError, LlmChunk]                          = ZStream.empty
+                     def executeStreamWithHistory(m: List[Message]): Stream[LlmError, LlmChunk]        = ZStream.empty
+                     def executeWithTools(p: String, t: List[AnyTool]): IO[LlmError, ToolCallResponse] =
+                       ZIO.dieMessage("unused")
+                     def executeStructured[A: JsonCodec](p: String, s: JsonSchema): IO[LlmError, A]    =
+                       calls.update(_ + 1) *> ZIO.dieMessage("reviewer must not run when lint fails")
+                     def isAvailable: UIO[Boolean]                                                     = ZIO.succeed(true)
+        lint     = ZIO.succeed(ReviewResult(List(ReviewIssue(Severity.Critical, "build broke")), "lint failed"))
+        out     <-
+          reviewAndFixLoop(List(reviewer), coder, "t", ZIO.succeed("d"), maxRounds = 1, lint = Some(lint))(using ev)
+        nCalls  <- calls.get
+      yield assertTrue(!out.isClean, out.issues.map(_.title) == List("build broke"), nCalls == 0)
+    },
+    test("a selector returning no reviewers yields a clean round (no reviewer calls)") {
+      for
+        ev      <- FlowEvents.collecting
+        calls   <- Ref.make(0)
+        asks    <- Ref.make(0)
+        coder   <- Chat.start(CountingCoder(asks))
+        reviewer = new LlmService:
+                     def executeStream(p: String): Stream[LlmError, LlmChunk]                          = ZStream.empty
+                     def executeStreamWithHistory(m: List[Message]): Stream[LlmError, LlmChunk]        = ZStream.empty
+                     def executeWithTools(p: String, t: List[AnyTool]): IO[LlmError, ToolCallResponse] =
+                       ZIO.dieMessage("unused")
+                     def executeStructured[A: JsonCodec](p: String, s: JsonSchema): IO[LlmError, A]    =
+                       calls.update(_ + 1) *> ZIO.dieMessage("reviewer must not run")
+                     def isAvailable: UIO[Boolean]                                                     = ZIO.succeed(true)
+        noneSel  = new ReviewerSelector:
+                     def select(rs: List[LlmService], round: Int, prev: Option[ReviewResult]): List[LlmService] = Nil
+        out     <- reviewAndFixLoop(List(reviewer), coder, "t", ZIO.succeed("d"), selector = noneSel)(using ev)
+        nCalls  <- calls.get
+        nAsks   <- asks.get
+      yield assertTrue(out.isClean, nCalls == 0, nAsks == 0)
+    },
   )

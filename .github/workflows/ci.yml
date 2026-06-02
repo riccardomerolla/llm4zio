@@ -13,6 +13,12 @@ on:
 permissions:
   contents: write
 
+# Opt the JS-based actions into Node 24 ahead of the Node 20 removal (GitHub
+# Actions deprecation, 2025). Avoids the deprecation warnings on checkout/
+# setup-java/import-gpg without pinning specific action major versions.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   test:
     name: Test
