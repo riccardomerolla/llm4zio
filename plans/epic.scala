@@ -10,29 +10,30 @@
   *     generates it; a re-run recovers it and restarts from the first incomplete
   *     task (each task's checkbox is committed as it lands, so a crash loses no
   *     progress). The file is removed when the epic completes.
-  *   - **Cross-agent review.** `claude` implements; the API reasoning model and
-  *     `codex` review in parallel. The implementer is its own worst critic, so
-  *     reviews run on different backends. Fixes go back to the same claude chat.
+  *   - **Cross-agent review.** `claude` implements; the `claude` reasoner and
+  *     `codex` review in parallel — reviews run on a different backend than the
+  *     coder. Fixes go back to the same claude chat.
   *
   * At the end the docs are updated and the epic file is cleaned up.
   *
   * `examples/04-epic/create-test-project.sh` seeds a Java todo-cli and copies
-  * this script alongside it. Needs `claude` and `codex` logged in and a
-  * reasoning API key in the environment (e.g. ANTHROPIC_API_KEY).
+  * this script alongside it. Needs `claude` and `codex` logged in (no API key —
+  * reasoning runs over the claude CLI).
   */
 
 import zio.*
 import java.nio.file.Path
 
-import llm4zio.core.{ApiConnectorConfig, CliConnectorConfig, ConnectorConfig, ConnectorId}
+import llm4zio.core.{CliConnectorConfig, ConnectorConfig, ConnectorId}
 import llm4zio.flow.*
 import llm4zio.runner.Llm4zio
 
 object Main extends ZIOAppDefault:
 
-  private val reasoning      = ApiConnectorConfig(ConnectorId.Anthropic, model = Some("claude-sonnet-4-5"))
+  // All CLI — no API key. claude implements + reasons; codex reviews alongside it.
+  private val reasoning      = CliConnectorConfig(ConnectorId.ClaudeCli)
   private val coder          = CliConnectorConfig(ConnectorId.ClaudeCli, flags = Map("permission-mode" -> "acceptEdits"))
-  // Cross-agent review: codex reviews what claude implements (alongside the API model).
+  // Cross-agent review: codex reviews what claude implements (alongside the claude reasoner).
   private val extraReviewers = List[ConnectorConfig](CliConnectorConfig(ConnectorId.Codex))
 
   def run =

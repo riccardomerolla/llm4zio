@@ -5,27 +5,28 @@
 /** Interactive planning + coding flow — the ZIO-native counterpart of orca's
   * `implement-interactive.sc`.
   *
-  * Same shape as `implement.sc`, but planning is interactive: the reasoning
-  * model may ask clarifying questions on the terminal (via `TerminalInteraction`)
-  * before proposing the plan. Use it for open-ended prompts. Once a plan is
-  * proposed, implementation proceeds exactly as in 01-simple.
+  * Same shape as `implement.scala`, but planning is interactive: the reasoner
+  * (the `claude` CLI) may ask clarifying questions on the terminal (via
+  * `TerminalInteraction`) before proposing the plan. Use it for open-ended
+  * prompts. Once a plan is proposed, implementation proceeds exactly as in 01-simple.
   *
   * `examples/02-interactive/create-test-project.sh` seeds the crate and copies
-  * this script alongside it. Requires `claude` logged in, `cargo` on PATH, and a
-  * reasoning API key in the environment (e.g. ANTHROPIC_API_KEY).
+  * this script alongside it. Requires `claude` logged in and `cargo` on PATH
+  * (no API key — reasoning runs over the claude CLI).
   */
 
 import zio.*
 import java.nio.file.Path
 
-import llm4zio.core.{ApiConnectorConfig, CliConnectorConfig, ConnectorId}
+import llm4zio.core.{CliConnectorConfig, ConnectorId}
 import llm4zio.flow.*
 import llm4zio.runner.{Llm4zio, TerminalInteraction}
 
 object Main extends ZIOAppDefault:
 
-  private val reasoning = ApiConnectorConfig(ConnectorId.Anthropic, model = Some("claude-sonnet-4-5"))
+  // CLI for both reasoning and coding — no API key needed.
   private val coder     = CliConnectorConfig(ConnectorId.ClaudeCli, flags = Map("permission-mode" -> "acceptEdits"))
+  private val reasoning = CliConnectorConfig(ConnectorId.ClaudeCli)
 
   def run =
     getArgs.flatMap { args =>

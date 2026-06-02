@@ -22,13 +22,14 @@
 import zio.*
 import java.nio.file.Path
 
-import llm4zio.core.{ApiConnectorConfig, CliConnectorConfig, ConnectorId}
+import llm4zio.core.{CliConnectorConfig, ConnectorId}
 import llm4zio.flow.*
 import llm4zio.runner.Llm4zio
 
 object Main extends ZIOAppDefault:
 
-  private val reasoning = ApiConnectorConfig(ConnectorId.Anthropic, model = Some("claude-sonnet-4-5"))
+  // CLI for both reasoning (triage / review / PR summary) and coding — no API key.
+  private val reasoning = CliConnectorConfig(ConnectorId.ClaudeCli)
   private val coder     = CliConnectorConfig(ConnectorId.ClaudeCli, flags = Map("permission-mode" -> "acceptEdits"))
   private val CiTimeout  = 30.minutes
 

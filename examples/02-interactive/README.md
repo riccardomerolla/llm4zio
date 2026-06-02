@@ -19,7 +19,7 @@ orca's `ask_user` MCP tool); the runner ships `TerminalInteraction` (stdin).
 ## Prerequisites
 
 - JDK 21+, [scala-cli](https://scala-cli.virtuslab.org/), `cargo`.
-- `claude` logged in; a reasoning API key (`ANTHROPIC_API_KEY`).
+- `claude` logged in — no API key needed (reasoning runs over the claude CLI).
 
 ## Run
 

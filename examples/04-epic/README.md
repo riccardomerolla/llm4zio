@@ -27,7 +27,7 @@ The flow script is [`plans/epic.scala`](../../plans/epic.scala).
 
 - JDK 21+, [scala-cli](https://scala-cli.virtuslab.org/).
 - **Both** `claude` and `codex` logged in (claude implements; codex reviews).
-- A reasoning API key in the environment (`ANTHROPIC_API_KEY`).
+- No API key needed — reasoning runs over the claude CLI.
 
 ## Run
 

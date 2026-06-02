@@ -5,47 +5,45 @@
 /** Persistent planning + coding flow (autonomous planning) — the ZIO-native
   * counterpart of orca's `implement.sc`.
   *
-  * The reasoning connector (an API model) breaks the prompt into a `Plan`; the
-  * plan is persisted to `.llm4zio/plan-<epicId>.md` so a re-run resumes from the
-  * first incomplete task. Each task is implemented on one epic branch by the
-  * coder (the `claude` CLI, which edits files in the repo), reviewed by the
-  * reasoning model via `reviewAndFixLoop`, and committed.
+  * A CLI agent breaks the prompt into a `Plan`; the plan is persisted to
+  * `.llm4zio/plan-<epicId>.md` so a re-run resumes from the first incomplete
+  * task. Each task is implemented on one epic branch by the coder (a CLI agent
+  * that edits files in the repo), reviewed via `reviewAndFixLoop`, and committed.
+  * Reasoning and coding share the chosen backend, so no API key is needed.
   *
   * `examples/01-simple/create-test-project.sh` seeds a calculator crate and
   * copies this script alongside it, then prints:
   *
-  *   scala-cli run implement.sc -- "Add a multiply function to the calculator crate"
+  *   scala-cli run implement.scala -- "Add a multiply function to the calculator crate"
   *
-  * Requires `claude` logged in, `cargo` on PATH, and a reasoning API key in the
-  * environment (e.g. ANTHROPIC_API_KEY).
+  * Requires the chosen agent CLI logged in (`claude` by default) and `cargo` on PATH.
   */
 
 import zio.*
 import java.nio.file.Path
 
-import llm4zio.core.{ApiConnectorConfig, CliConnectorConfig, ConnectorId}
+import llm4zio.core.{CliConnectorConfig, ConnectorId}
 import llm4zio.flow.*
 import llm4zio.runner.Llm4zio
 
 object Main extends ZIOAppDefault:
 
-  // Reasoning over an API connector.
-  private val reasoning = ApiConnectorConfig(ConnectorId.Anthropic, model = Some("claude-sonnet-4-5"))
-
-  /** Code-editing backend, selectable via LLM4ZIO_CODER=claude|codex|gemini
-    * (default claude). Each runs rooted in the repo with its headless
-    * edit-permission flag.
+  /** Both reasoning (planning + review) and coding run over a CLI agent —
+    * selectable via LLM4ZIO_CODER=claude|codex|gemini (default claude). No API
+    * key required; a single CLI login is enough.
     */
-  private def coderFor(name: String): CliConnectorConfig = name match
+  private def cliFor(name: String): CliConnectorConfig = name match
     case "codex"  => CliConnectorConfig(ConnectorId.Codex, flags = Map("full-auto" -> ""))
     case "gemini" => CliConnectorConfig(ConnectorId.GeminiCli) // gemini auto-approves edits via built-in -y
     case _        => CliConnectorConfig(ConnectorId.ClaudeCli, flags = Map("permission-mode" -> "acceptEdits"))
 
   def run =
     getArgs.flatMap { args =>
-      val prompt  = args.headOption.getOrElse("Add a multiply function to the calculator crate")
-      val workDir = Path.of(".").toAbsolutePath.normalize
-      val coder   = coderFor(sys.env.getOrElse("LLM4ZIO_CODER", "claude"))
+      val prompt    = args.headOption.getOrElse("Add a multiply function to the calculator crate")
+      val workDir   = Path.of(".").toAbsolutePath.normalize
+      val backend   = sys.env.getOrElse("LLM4ZIO_CODER", "claude")
+      val coder     = cliFor(backend)
+      val reasoning = cliFor(backend)
 
       Llm4zio.run(workDir, reasoning, coder) { ctx =>
         given FlowEvents = ctx.events

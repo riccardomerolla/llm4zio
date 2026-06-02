@@ -8,7 +8,7 @@ or re-run resumes from the first incomplete task.
 ## What it does
 
 1. **Plan.** `Planner.from(ctx.reasoning, prompt)` returns a structured
-   `Plan(epicId, tasks)` via the API connector's structured output.
+   `Plan(epicId, tasks)` via the CLI agent's structured output.
 2. **Branch.** `stage("branch")(ctx.git.createBranch(plan.epicId))`.
 3. **For each task** (`implementTaskLoop`, resumable):
    - `coderChat.ask(task.description)` — the `claude` CLI edits files in the repo.
@@ -21,7 +21,7 @@ The flow script is [`plans/implement.scala`](../../plans/implement.scala).
 ## Prerequisites
 
 - JDK 21+, [scala-cli](https://scala-cli.virtuslab.org/), `cargo`.
-- `claude` logged in; a reasoning API key in the environment (`ANTHROPIC_API_KEY`).
+- the chosen agent CLI logged in (`claude` default) — no API key needed.
 
 ## Run
 
@@ -48,8 +48,9 @@ LLM4ZIO_CODER=gemini scala-cli run implement.scala -- "Add a multiply function" 
 - `codex` → needs `codex` logged in.
 - `gemini` → needs `gemini` logged in (the CLI auto-approves edits via its built-in `-y`).
 
-Reasoning (planning + review) always runs over the API connector
-(`ANTHROPIC_API_KEY`), regardless of the coder.
+Reasoning (planning + review) runs over the **same CLI backend** as the coder,
+so a single CLI login is enough and no API key is needed. (Want an API model for
+reasoning instead? Pass an `ApiConnectorConfig` as the `reasoning` arg.)
 
 Edit [`test-project/`](test-project/) for a different starter, or
 [`plans/implement.scala`](../../plans/implement.scala) for a different flow.

@@ -24,8 +24,7 @@ list, plus a CI workflow that runs `sbt test`.
 
 ## Prerequisites
 
-- JDK 21+, scala-cli, sbt; `claude` logged in; `gh` authenticated; a reasoning
-  API key (`ANTHROPIC_API_KEY`).
+- JDK 21+, scala-cli, sbt; `claude` logged in; `gh` authenticated. No API key needed — reasoning runs over the claude CLI.
 
 ## Run
 
