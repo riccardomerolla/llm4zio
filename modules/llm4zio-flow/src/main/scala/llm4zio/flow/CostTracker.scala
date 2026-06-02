@@ -47,7 +47,7 @@ final class CostTracker private (
     val total        = costs.sum
     val totalStr     = if total > 0 then f"$$$total%.2f" else "$0.00"
     val footnote     =
-      if costs.nonEmpty then "\n\n* estimated from the pricing table (rates as of 2026-06 — may be stale)" else ""
+      if total > 0 then "\n\n* estimated from the pricing table (rates as of 2026-06 — may be stale)" else ""
     s"By agent:\n${agentLines.mkString("\n")}\n\nBy model:\n${modelEntries.map(_._1).mkString("\n")}" +
       s"\n\nTotal: $totalStr$footnote"
 

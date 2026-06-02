@@ -1,9 +1,9 @@
 package llm4zio.flow
 
+import zio.Scope
 import zio.test.*
 
 import llm4zio.core.TokenUsage
-import zio.Scope
 
 object CostTrackerSpec extends ZIOSpecDefault:
   def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("CostTracker")(
@@ -18,8 +18,19 @@ object CostTrackerSpec extends ZIOSpecDefault:
         s.contains("coder: 1500 in, 300 out"),
         s.contains("By model:"),
         s.contains("gemini-2.5-flash: 1500 in, 300 out"),
-        s.contains("Total:"),
+        s.contains("Total: $"),
         s.contains("*"),
+      )
+    },
+    test("buckets an unknown (None) model under '(unknown)' with no cost") {
+      for
+        t <- CostTracker.make
+        _ <- t.record(FlowEvent.TokensUsed("coder", None, TokenUsage(100, 20, 120)))
+        s <- t.summary
+      yield assertTrue(
+        s.contains("(unknown): 100 in, 20 out"),
+        s.contains("Total: $0.00"),
+        !s.contains("*"),
       )
     },
     test("ignores non-token events") {
