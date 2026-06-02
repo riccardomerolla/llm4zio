@@ -40,6 +40,9 @@ object Llm4zio:
                        bundle    <- DefaultFlowContext.build(reasoning, coder, workDir, reviewers)
                        (ctx, hub) = bundle
                        tracker   <- CostTracker.make
+                       // Two fire-and-forget subscribers on the bounded event hub. Both drain fast
+                       // (terminal print / map update); the hub back-pressures the producer if a
+                       // subscriber stalls, which paces output rather than dropping events.
                        _         <- TerminalListener.consume(hub, palette)
                        _         <- tracker.consume(hub)
                        _         <- body(ctx).unit
