@@ -31,4 +31,18 @@ object PlannerSpec extends ZIOSpecDefault:
       for res <- Planner.from(StubStructured("not json at all"), "x").either
       yield assertTrue(res.isLeft, res.left.exists(_.isInstanceOf[FlowError.Llm]))
     },
+    test("assessThenPlan returns Proceed(plan) when the model proposes one") {
+      val json = """{"kind":"Proceed","value":{"epicId":"x","tasks":[]}}"""
+      for v <- Planner.assessThenPlan(StubStructured(json), "do a thing")
+      yield assertTrue(v match
+        case Verdict.Proceed(p) => p.epicId == "x"
+        case _                  => false)
+    },
+    test("assessThenPlan returns Blocked(reason) when the model declines") {
+      val json = """{"kind":"Blocked","reason":"needs design"}"""
+      for v <- Planner.assessThenPlan(StubStructured(json), "vague")
+      yield assertTrue(v match
+        case Verdict.Blocked(r) => r == "needs design"
+        case _                  => false)
+    },
   )

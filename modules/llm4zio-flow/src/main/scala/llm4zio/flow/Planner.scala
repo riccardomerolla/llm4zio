@@ -48,6 +48,24 @@ object Planner:
       .executeStructured[Plan](s"$instructions\n\nRequest:\n$prompt", schema)
       .mapError(e => FlowError.Llm(e.toString))
 
+  val assessThenPlanInstructions: String =
+    """First decide whether this request is ready to implement. Respond ONLY with JSON using a "kind" discriminator,
+      |exactly one of:
+      |  {"kind":"Blocked","reason":"why it can't proceed yet"}
+      |  {"kind":"Proceed","value":{"epicId":"kebab-id","tasks":[{"title":"...","description":"...","completed":false}]}}""".stripMargin
+
+  /** Assess whether the request is ready to plan, then either propose a [[Plan]] ([[Verdict.Proceed]]) or decline with
+    * a reason ([[Verdict.Blocked]]).
+    */
+  def assessThenPlan(
+    reasoning: LlmService,
+    prompt: String,
+    instructions: String = assessThenPlanInstructions,
+  ): IO[FlowError, Verdict[Plan]] =
+    reasoning
+      .executeStructured[Verdict[Plan]](s"$instructions\n\nRequest:\n$prompt", schema)
+      .mapError(e => FlowError.Llm(e.toString))
+
   val interactiveInstructions: String =
     """You are an interactive planner. If the request is underspecified, ask ONE
       |clarifying question; otherwise propose the plan. Respond ONLY with JSON
