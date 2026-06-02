@@ -1,0 +1,4 @@
+{"type":"system","subtype":"init","model":"claude-sonnet-4-6","session_id":"s1"}
+{"type":"assistant","message":{"model":"claude-sonnet-4-6","content":[{"type":"text","text":"Editing the file."}]}}
+{"type":"assistant","message":{"model":"claude-sonnet-4-6","content":[{"type":"tool_use","name":"Edit","input":{"file_path":"src/lib.rs"}}]}}
+{"type":"result","subtype":"success","usage":{"input_tokens":1200,"output_tokens":40},"total_cost_usd":0.01,"result":"Editing the file."}
