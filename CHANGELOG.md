@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2026-06-02
+
+### Changed
+
+- **Pluggable reasoning backend.** `DefaultFlowContext.build` and `Llm4zio.run` now
+  accept `reasoning: ConnectorConfig` (was `ApiConnectorConfig`), resolved via
+  `registry.resolve` — so a **CLI model can be the reasoner with no API key** (e.g.
+  an all-gemini run). New `DefaultFlowContext.prepare` readies a config (enrich API
+  base-URL/key, or root a CLI config in the work dir). Source-compatible for callers
+  passing an `ApiConnectorConfig`.
+
+[2.2.0]: https://github.com/riccardomerolla/llm4zio/releases/tag/v2.2.0
+
 ## [2.1.0] - 2026-06-02
 
 ### Added
