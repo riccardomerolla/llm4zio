@@ -5,40 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.0.0] - 2026-06-01
 
-### Added
+**llm4zio was forked from a ~39-module agentic-software-house *product* down to a
+small, focused, ZIO-native LLM library** — the ZIO counterpart to VirtusLab's
+[orca](https://github.com/VirtusLab/orca). The full pre-fork product is preserved
+on the `archive/product-2026-06` branch.
 
-- **openclaw Pattern Analysis** (#146) — Comprehensive evaluation of openclaw architectural patterns for Phase 3 enhancement
-  - Analysis document: `docs/plans/2026-02-14-openclaw-pattern-analysis.md`
-  - Architecture Decision Record: `docs/adr/0001-adopt-openclaw-patterns.md`
-  - 5 high-priority patterns identified: Control Plane, Workspace Isolation, Agent Registry, Progress Streaming, Dynamic Workflows
-  - 12-week implementation roadmap with 6 sprints
-- Project template scaffolding for Scala 3 + ZIO 2.x libraries (typed errors, domain model, config helpers, service layer, tests, and sample app).
-- Multi-provider `AIService` runtime factory (`AIService.fromConfig`) with provider selection for `gemini-cli`, `gemini-api`, `openai`, and `anthropic`.
-- ADR-003 documenting the provider-agnostic AI architecture decision.
+### Changed (breaking)
 
-### Changed
-
-- Replaced the previous implementation with the new `io.github.riccardomerolla.zio.quickstart` library starter structure.
-- Migrated orchestrator and core AI agents to depend on `AIService` instead of `GeminiService`.
-- Updated runtime wiring in `Main.scala` to compose `Client.default`, `HttpAIClient.live`, and provider-aware `AIService.fromConfig`.
-
-### Deprecated
+- **New artifact coordinates.** The project now publishes three modules:
+  - `io.github.riccardomerolla::llm4zio-core` — LLM plumbing: `Connector`/`LlmService`,
+    providers (API: OpenAI/Anthropic/Gemini/Ollama/LM Studio; CLI: claude/codex/gemini/
+    opencode/copilot; Mock), streaming, tool-calling, structured output, observability.
+  - `io.github.riccardomerolla::llm4zio-flow` — the orca-shaped flow layer: `Plan`/`Task`,
+    resumable plain-file `PlanStore`, `Chat`, `stage`/`fail` + `FlowEvent` stream,
+    `fixLoop`/`reviewAndFixLoop`, `GitTool`/`GhTool` over zio-process, `Planner`
+    (`from`/`triage`/`interactive`), `summarisePr`, `implementTaskLoop`, `Interaction`.
+  - `io.github.riccardomerolla::llm4zio-runner` — `TerminalListener`, `DefaultFlowContext`,
+    `LiveCliProcessExecutor`, `Llm4zio.run` entry point, and worked example flows.
+- The previous single `io.github.riccardomerolla::llm4zio` artifact (1.0.3) is
+  **frozen** and superseded by `llm4zio-core`; it is no longer published.
 
 ### Removed
 
-### Fixed
-
-### Security
-
-## [0.1.0] - TBD
+- The product: board, governance, SPDD/canvas, Telegram HITL, web UI, daemons,
+  EclipseStore event-sourcing, bankmod, and ~36 domain modules — all archived on
+  `archive/product-2026-06`.
 
 ### Added
 
-### Features
+- Four runnable example flows (scala-cli `.scala`) mirroring orca's examples, with
+  per-example seeders (`--local`/`--run`): 01-simple (claude/codex/gemini coders),
+  02-interactive, 03-bugfix, 04-epic.
 
----
+## Pre-2.0 history
 
-[Unreleased]: https://github.com/.../compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/.../releases/tag/v0.1.0
+Versions 1.0.x and earlier describe the archived agentic-software-house product;
+see the `archive/product-2026-06` branch.
+
+[2.0.0]: https://github.com/riccardomerolla/llm4zio/releases/tag/v2.0.0
