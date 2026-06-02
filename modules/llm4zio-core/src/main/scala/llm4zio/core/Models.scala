@@ -65,6 +65,7 @@ case class TokenUsage(
   prompt: Int,
   completion: Int,
   total: Int,
+  cached: Option[Int] = None,
 ) derives JsonCodec
 
 case class LlmResponse(

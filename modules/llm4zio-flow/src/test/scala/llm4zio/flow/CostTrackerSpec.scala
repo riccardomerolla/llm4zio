@@ -40,4 +40,12 @@ object CostTrackerSpec extends ZIOSpecDefault:
         s <- t.summary
       yield assertTrue(s.contains("Total: $0.00"))
     },
+    test("shows cached tokens when present and sums them across records") {
+      for
+        t <- CostTracker.make
+        _ <- t.record(FlowEvent.TokensUsed("coder", Some("gemini-2.5-flash"), TokenUsage(1000, 200, 1200, Some(800))))
+        _ <- t.record(FlowEvent.TokensUsed("coder", Some("gemini-2.5-flash"), TokenUsage(500, 100, 600, Some(200))))
+        s <- t.summary
+      yield assertTrue(s.contains("1000 cached"))
+    },
   )

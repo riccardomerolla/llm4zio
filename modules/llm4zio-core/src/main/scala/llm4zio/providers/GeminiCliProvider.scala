@@ -349,6 +349,7 @@ object GeminiCliProvider:
     total_tokens: Option[Int] = None,
     input_tokens: Option[Int] = None,
     output_tokens: Option[Int] = None,
+    cached: Option[Int] = None,
   ) derives JsonDecoder
 
   final private case class GeminiStreamJsonEvent(
@@ -445,7 +446,7 @@ object GeminiCliProvider:
         inputCount  <- s.input_tokens
         outputCount <- s.output_tokens
         totalCount  <- s.total_tokens
-      yield TokenUsage(prompt = inputCount, completion = outputCount, total = totalCount)
+      yield TokenUsage(prompt = inputCount, completion = outputCount, total = totalCount, cached = s.cached)
     )
 
   def make(

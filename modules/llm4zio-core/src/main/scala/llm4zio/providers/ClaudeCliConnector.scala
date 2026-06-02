@@ -99,7 +99,8 @@ object ClaudeCliConnector:
 
   private def resultChunk(json: Json): Option[LlmChunk] =
     CliStreamJson.field(json, "usage").map { usage =>
-      val in  = CliStreamJson.int(usage, "input_tokens").getOrElse(0)
-      val out = CliStreamJson.int(usage, "output_tokens").getOrElse(0)
-      CliStreamJson.usageChunk(None, TokenUsage(in, out, in + out))
+      val in     = CliStreamJson.int(usage, "input_tokens").getOrElse(0)
+      val out    = CliStreamJson.int(usage, "output_tokens").getOrElse(0)
+      val cached = CliStreamJson.int(usage, "cache_read_input_tokens")
+      CliStreamJson.usageChunk(None, TokenUsage(in, out, in + out, cached))
     }

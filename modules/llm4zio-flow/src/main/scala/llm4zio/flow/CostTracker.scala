@@ -29,12 +29,14 @@ final class CostTracker private (
     yield render(agents, models)
 
   private def add(m: Map[String, TokenUsage], k: String, u: TokenUsage): Map[String, TokenUsage] =
-    val prev = m.getOrElse(k, TokenUsage(0, 0, 0))
-    m.updated(k, TokenUsage(prev.prompt + u.prompt, prev.completion + u.completion, prev.total + u.total))
+    val prev   = m.getOrElse(k, TokenUsage(0, 0, 0))
+    val cached = (prev.cached.toList ++ u.cached.toList).reduceOption(_ + _)
+    m.updated(k, TokenUsage(prev.prompt + u.prompt, prev.completion + u.completion, prev.total + u.total, cached))
 
   private def tokenLine(label: String, cost: Option[Double], u: TokenUsage): String =
-    val money = cost.map(c => f" ($$$c%.4f*)").getOrElse("")
-    f"  $label: ${u.prompt} in, ${u.completion} out$money"
+    val cached = u.cached.filter(_ > 0).fold("")(c => s" ($c cached)")
+    val money  = cost.map(c => f" ($$$c%.4f*)").getOrElse("")
+    f"  $label: ${u.prompt} in$cached, ${u.completion} out$money"
 
   private def render(agents: Map[String, TokenUsage], models: Map[String, TokenUsage]): String =
     val agentLines   = agents.toList.sortBy(_._1).map { case (a, u) => tokenLine(a, None, u) }
