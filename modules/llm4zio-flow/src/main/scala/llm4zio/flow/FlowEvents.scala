@@ -3,6 +3,8 @@ package llm4zio.flow
 import zio.*
 import zio.stream.*
 
+import llm4zio.core.TokenUsage
+
 /** A progress event emitted while a flow runs. */
 enum FlowEvent:
   case StageStarted(stage: String)
@@ -10,6 +12,9 @@ enum FlowEvent:
   case StageFailed(stage: String, message: String)
   case Aborted(message: String)
   case Info(message: String)
+  case ToolUse(tool: String, args: String)
+  case AssistantMessage(text: String)
+  case TokensUsed(agent: String, model: Option[String], usage: TokenUsage)
 
 /** Sink for [[FlowEvent]]s. Flows publish; listeners (a terminal renderer, a Telegram bridge, a test) consume. Default
   * is [[FlowEvents.noop]].
