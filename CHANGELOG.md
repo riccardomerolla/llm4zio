@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-06-02
+
+### Added
+
+- **`reviewAndFixLoop` v2** — a `ReviewerSelector` strategy (`allEveryRound` default,
+  `whileDirty`) controls which reviewers run each round, and an optional **lint gate**
+  (`Reviewers.lintCommand`, over zio-process) short-circuits LLM review when a
+  compile/lint command fails, so a broken build is fixed before spending LLM turns.
+
+### Changed
+
+- `reviewAndFixLoop` gained defaulted `selector`/`lint` parameters (source-compatible;
+  binary-incompatible vs 2.0.0 — hence the minor bump).
+- CI opts JS actions into Node 24 (`FORCE_JAVASCRIPT_ACTIONS_TO_NODE24`) ahead of the
+  GitHub Actions Node 20 removal.
+
+[2.1.0]: https://github.com/riccardomerolla/llm4zio/releases/tag/v2.1.0
+
 ## [2.0.0] - 2026-06-01
 
 **llm4zio was forked from a ~39-module agentic-software-house *product* down to a
