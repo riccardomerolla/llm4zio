@@ -31,6 +31,34 @@ final class GitTool(workDir: Path):
   /** Working-tree diff (unstaged changes to tracked files). */
   def diff: IO[FlowError, String] = execOrFail("diff")
 
+  /** The branch the current work targets: `origin/HEAD` symbolic ref → its branch, else `origin/main`, then
+    * `origin/master`, else `"main"`. Used for PR-accurate diffs and branch-level review.
+    */
+  def defaultBase: IO[FlowError, String] =
+    exec("symbolic-ref", "refs/remotes/origin/HEAD").flatMap { r =>
+      val ref = r.stdout.trim
+      if r.exitCode == 0 && ref.nonEmpty then ZIO.succeed(ref.stripPrefix("refs/remotes/"))
+      else
+        exec("rev-parse", "--verify", "--quiet", "origin/main").flatMap { m =>
+          if m.exitCode == 0 then ZIO.succeed("origin/main")
+          else
+            exec("rev-parse", "--verify", "--quiet", "origin/master").map { ms =>
+              if ms.exitCode == 0 then "origin/master" else "main"
+            }
+        }
+    }
+
+  /** Diff of HEAD vs `base`. 3-dot (default) = merge-base/PR-accurate; 2-dot = direct comparison. */
+  def diffVsBase(base: String, threeDot: Boolean = true): IO[FlowError, String] =
+    val range = if threeDot then s"$base...HEAD" else s"$base..HEAD"
+    execOrFail("diff", range)
+
+  /** Names of files changed vs `base` — for reviewer file-scoping. */
+  def changedFilesVsBase(base: String, threeDot: Boolean = true): IO[FlowError, List[String]] =
+    val range = if threeDot then s"$base...HEAD" else s"$base..HEAD"
+    execOrFail("diff", "--name-only", range)
+      .map(_.linesIterator.map(_.trim).filter(_.nonEmpty).toList)
+
   /** `git ls-remote <remote>` — the refs a remote advertises. */
   def lsRemote(remote: String): IO[FlowError, String] = execOrFail("ls-remote", remote)
 

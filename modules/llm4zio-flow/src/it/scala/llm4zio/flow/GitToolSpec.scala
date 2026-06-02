@@ -88,4 +88,30 @@ object GitToolSpec extends ZIOSpecDefault:
         yield assertTrue(refs.contains("refs/heads/main"))
       }
     },
+    test("diffVsBase shows the branch delta vs base; changedFilesVsBase lists the file") {
+      ZIO.scoped {
+        for
+          dir   <- tempDir
+          git   <- newRepo(dir)
+          _     <- git.createBranch("feat")
+          _     <- write(dir, "README.md", "changed-content-xyz")
+          _     <- git.commitAll("change")
+          diff  <- git.diffVsBase("main")
+          files <- git.changedFilesVsBase("main")
+        yield assertTrue(
+          diff.contains("changed-content-xyz"),
+          diff.contains("README.md"),
+          files == List("README.md"),
+        )
+      }
+    },
+    test("defaultBase falls back to main when there is no remote") {
+      ZIO.scoped {
+        for
+          dir  <- tempDir
+          git  <- newRepo(dir)
+          base <- git.defaultBase
+        yield assertTrue(base == "main")
+      }
+    },
   ) @@ TestAspect.sequential
