@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.0] - 2026-06-03
+
+### Added
+
+- **Reviewer roster + file-scoping + LLM-driven selection.** Seven shipped review lenses
+  (`code-functionality`, `test`, `readability`, `code-structure`, `performance`, `security`,
+  `scala-zio`) loaded from prompt resources, `Reviewers.all`/`minimal` presets, `Reviewer.asService`
+  to run a lens on any connector, per-file scoping via `Reviewer.files`, and a
+  `ReviewerSelector.llmDriven` strategy. `reviewAndFixLoop` now takes `List[Reviewer]` + a reviewer
+  service + a changed-file list.
+- **Derived + enforced structured output.** `SchemaDerivation.derive[A]` generates an advisory JSON
+  schema from a case class (replacing hand-written literals for `Plan`/`PrSummary`); codex enforces
+  it natively via `--output-schema`, other CLI backends embed it in the prompt.
+- **`Planner.assessThenPlan`** returning `Verdict[Plan]` (`Proceed` | `Blocked`) — a worth-doing gate.
+- **`GitTool.diffVsBase` / `defaultBase` / `changedFilesVsBase`** for branch-accurate (merge-base)
+  diffs and reviewer file-scoping.
+- **Animated terminal surface** — a braille spinner + active-stage label pinned to the bottom line
+  (TTY only; `NO_COLOR`/non-TTY fall back to plain output).
+
+### Changed
+
+- **Centralized runtime-owns-git coder prompt.** `Chat.start` prepends a "don't commit/push/branch"
+  instruction by default (`manageGit = true` opts out), replacing the ad-hoc per-example variants.
+- **Complete cost accounting.** The footer now tracks cached tokens and captures usage from
+  structured planner/reviewer calls (`executeStructuredWithUsage`), not just the streamed coder, for
+  backends that surface usage.
+
+[2.4.0]: https://github.com/riccardomerolla/llm4zio/releases/tag/v2.4.0
+
 ## [2.3.0] - 2026-06-02
 
 ### Added
