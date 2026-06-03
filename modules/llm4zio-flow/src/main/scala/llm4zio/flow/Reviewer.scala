@@ -14,11 +14,14 @@ import llm4zio.tools.{ AnyTool, JsonSchema }
   */
 final case class Reviewer(name: String, systemPrompt: String, files: Option[String]):
 
-  /** True if this reviewer should run given the changed files (no scope ⇒ always). */
+  /** True if this reviewer should run given the changed files. No scope ⇒ always. An empty/unknown file list also runs
+    * (we can't scope out a reviewer without file information). Otherwise at least one changed file must match.
+    */
   def matches(changedFiles: List[String]): Boolean =
     files match
-      case None        => true
-      case Some(regex) => changedFiles.exists(_.matches(regex))
+      case None                            => true
+      case Some(_) if changedFiles.isEmpty => true
+      case Some(regex)                     => changedFiles.exists(_.matches(regex))
 
   /** Wrap `base` so its structured calls carry this reviewer's lens (system prompt prepended). Streaming and tool
     * methods pass through unchanged.
@@ -40,13 +43,10 @@ final case class Reviewer(name: String, systemPrompt: String, files: Option[Stri
 
 object Reviewer:
   /** Load a reviewer from `llm4zio/review/reviewers/<slug>.md` — frontmatter (`files` scope) + body prompt, delimited
-    * by `---` lines. Throws a clear error (not a bare NPE) if the resource is absent on the classpath.
+    * by `---` lines. The roster resources are baked into the jar, so absence is a packaging error, not a runtime case.
     */
   def fromResource(slug: String): Reviewer =
-    val path       = s"llm4zio/review/reviewers/$slug.md"
-    val src        =
-      try Source.fromResource(path)
-      catch case _: Throwable => throw new IllegalArgumentException(s"reviewer resource not found: $path")
+    val src        = Source.fromResource(s"llm4zio/review/reviewers/$slug.md")
     val text       =
       try src.mkString
       finally src.close()

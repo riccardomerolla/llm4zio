@@ -2,24 +2,58 @@ package llm4zio.flow
 
 import java.nio.file.Path
 
+import zio.json.JsonCodec
 import zio.json.ast.Json
 import zio.{ IO, ZIO }
 
-import llm4zio.core.LlmService
+import llm4zio.core.{ LlmService, SchemaDerivation }
 import llm4zio.tools.JsonSchema
 
-/** Strategy for choosing which reviewers run in a given review round. */
+/** An LLM's choice of which reviewers to run (by name). */
+final case class ReviewerPick(reviewers: List[String]) derives JsonCodec
+
+/** Strategy for choosing which reviewers run in a given review round. Effectful so strategies like [[llmDriven]] can
+  * consult a model. All built-in strategies first drop reviewers whose file scope doesn't match the changed files.
+  */
 trait ReviewerSelector:
-  def select(reviewers: List[LlmService], round: Int, previous: Option[ReviewResult]): List[LlmService]
+  def select(
+    reviewers: List[Reviewer],
+    changedFiles: List[String],
+    round: Int,
+    previous: Option[ReviewResult],
+  ): IO[FlowError, List[Reviewer]]
 
 object ReviewerSelector:
-  /** Every reviewer, every round (default). */
+  /** Every (file-matching) reviewer, every round (default). */
   val allEveryRound: ReviewerSelector =
-    (reviewers, _, _) => reviewers
+    (reviewers, files, _, _) => ZIO.succeed(reviewers.filter(_.matches(files)))
 
-  /** All reviewers on round 1; on later rounds, only if the previous round was still dirty. */
+  /** All (file-matching) reviewers on round 1; on later rounds, only if the previous round was still dirty. */
   val whileDirty: ReviewerSelector =
-    (reviewers, round, previous) => if round == 1 || previous.exists(!_.isClean) then reviewers else Nil
+    (reviewers, files, round, previous) =>
+      ZIO.succeed(if round == 1 || previous.exists(!_.isClean) then reviewers.filter(_.matches(files)) else Nil)
+
+  /** A cheap model picks, from the file-matching reviewers, the ones relevant to the changed files. Falls back to all
+    * file-matching reviewers on any parse/LLM failure, and never selects none.
+    */
+  def llmDriven(picker: LlmService): ReviewerSelector =
+    (reviewers, files, _, _) =>
+      val scoped = reviewers.filter(_.matches(files))
+      if scoped.sizeIs <= 1 || files.isEmpty then ZIO.succeed(scoped)
+      else
+        val names  = scoped.map(_.name)
+        val prompt =
+          s"""Pick which code reviewers are relevant to these changed files. Available reviewers: ${names.mkString(
+              ", "
+            )}.
+             |Changed files:
+             |${files.mkString("\n")}
+             |Respond ONLY with JSON: {"reviewers":["name", ...]} using only the available names.""".stripMargin
+        picker
+          .executeStructured[ReviewerPick](prompt, SchemaDerivation.derive[ReviewerPick])
+          .map(pick => scoped.filter(r => pick.reviewers.contains(r.name)))
+          .catchAll(_ => ZIO.succeed(scoped))
+          .map(chosen => if chosen.isEmpty then scoped else chosen)
 
 /** Prompts, schema, helpers, and the shipped reviewer roster. */
 object Reviewers:
@@ -96,10 +130,12 @@ object Reviewers:
   * the latest state.
   */
 def reviewAndFixLoop(
-  reviewers: List[LlmService],
+  reviewers: List[Reviewer],
+  reviewerService: LlmService,
   coder: Chat,
   taskTitle: String,
   currentDiff: IO[FlowError, String],
+  changedFiles: IO[FlowError, List[String]] = ZIO.succeed(Nil),
   maxRounds: Int = 3,
   selector: ReviewerSelector = ReviewerSelector.allEveryRound,
   lint: Option[IO[FlowError, ReviewResult]] = None,
@@ -110,15 +146,19 @@ def reviewAndFixLoop(
     lint.getOrElse(ZIO.succeed(ReviewResult(Nil))).flatMap { lintResult =>
       if !lintResult.isClean then ZIO.succeed(lintResult)
       else
-        currentDiff.flatMap { diff =>
-          ZIO
-            .foreachPar(selector.select(reviewers, round, previous)) { reviewer =>
-              reviewer
-                .executeStructured[ReviewResult](Reviewers.reviewPrompt(taskTitle, diff), Reviewers.schema)
-                .mapError(e => FlowError.Llm(e.toString))
-            }
-            .map(Reviewers.merge)
-        }
+        for
+          diff   <- currentDiff
+          files  <- changedFiles
+          chosen <- selector.select(reviewers, files, round, previous)
+          merged <- ZIO
+                      .foreachPar(chosen) { reviewer =>
+                        reviewer
+                          .asService(reviewerService)
+                          .executeStructured[ReviewResult](Reviewers.reviewPrompt(taskTitle, diff), Reviewers.schema)
+                          .mapError(e => FlowError.Llm(e.toString))
+                      }
+                      .map(Reviewers.merge)
+        yield merged
     }
 
   def loop(round: Int, previous: Option[ReviewResult]): IO[FlowError, ReviewResult] =

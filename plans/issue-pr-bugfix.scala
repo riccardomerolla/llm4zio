@@ -99,7 +99,7 @@ object Main extends ZIOAppDefault:
       _       <- implementTaskLoop(planPath, fixPlan) { task =>
                    for
                      _ <- coder.ask(task.description).mapError(e => FlowError.Llm(e.toString))
-                     _ <- reviewAndFixLoop(List(ctx.reasoning), coder, task.title, ctx.git.diff)
+                     _ <- reviewAndFixLoop(Reviewers.minimal, ctx.reasoning, coder, task.title, ctx.git.diff)
                      _ <- ctx.git.commitAll(s"$branchName: ${task.title}").unit
                    yield ()
                  }

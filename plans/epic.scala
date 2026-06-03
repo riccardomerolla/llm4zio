@@ -55,7 +55,7 @@ object Main extends ZIOAppDefault:
           _         <- implementTaskLoop(planPath, plan) { task =>
                          for
                            _ <- coderChat.ask(task.description).mapError(e => FlowError.Llm(e.toString))
-                           _ <- reviewAndFixLoop(reviewers, coderChat, task.title, ctx.git.diff)
+                           _ <- reviewAndFixLoop(Reviewers.all, ctx.reasoning, coderChat, task.title, ctx.git.diff)
                            _ <- ctx.git.commitAll(s"${plan.epicId}: ${task.title}").unit
                          yield ()
                        }

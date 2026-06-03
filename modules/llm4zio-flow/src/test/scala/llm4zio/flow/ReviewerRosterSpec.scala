@@ -24,9 +24,9 @@ object ReviewerRosterSpec extends ZIOSpecDefault:
     test("minimal preset is a subset of all") {
       assertTrue(Reviewers.minimal.map(_.name).toSet.subsetOf(Reviewers.all.map(_.name).toSet))
     },
-    test("scala-zio reviewer is scoped to .scala files") {
+    test("scala-zio reviewer is scoped to .scala files; an empty file list always runs") {
       val z = Reviewers.all.find(_.name == "scala-zio").get
-      assertTrue(z.matches(List("src/Main.scala")), !z.matches(List("README.md")))
+      assertTrue(z.matches(List("src/Main.scala")), !z.matches(List("README.md")), z.matches(Nil))
     },
     test("asService prepends the reviewer's system prompt to structured calls") {
       val reviewer = Reviewer("security", "SECURITY-LENS", None)
