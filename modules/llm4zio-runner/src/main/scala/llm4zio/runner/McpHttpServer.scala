@@ -40,16 +40,28 @@ object McpHttpServer:
   def routes(tools: List[McpTool]): Routes[Any, Response] =
     Routes(
       Method.POST / "mcp" -> handler { (req: Request) =>
-        for
-          body    <- req.body.asString.orDie
-          json     = Json.decoder.decodeJson(body).getOrElse(Json.Obj())
-          respOpt <- McpServer.handle(json, tools)
-        yield respOpt match
-          case Some(j) => Response.json(j.toString)
-          case None    => Response.status(Status.Accepted)
+        req.body.asString.orDie.flatMap { body =>
+          Json.decoder.decodeJson(body) match
+            case Left(_)     => ZIO.succeed(Response.json(parseError)) // JSON-RPC -32700
+            case Right(json) =>
+              McpServer.handle(json, tools).map {
+                case Some(j) => Response.json(j.toString)
+                case None    => Response.status(Status.Accepted)
+              }
+        }
       },
       Method.GET / "mcp"  -> handler(Response.status(Status.MethodNotAllowed)),
     )
+
+  /** JSON-RPC parse-error response (id null), for a body that isn't valid JSON. */
+  private val parseError: String =
+    Json
+      .Obj(
+        "jsonrpc" -> Json.Str("2.0"),
+        "id"      -> Json.Null,
+        "error"   -> Json.Obj("code" -> Json.Num(-32700), "message" -> Json.Str("Parse error")),
+      )
+      .toString
 
   /** Start the server on an ephemeral localhost port; returns the bound port. Scoped — the server is allocated into the
     * caller's scope and stays up until it closes.

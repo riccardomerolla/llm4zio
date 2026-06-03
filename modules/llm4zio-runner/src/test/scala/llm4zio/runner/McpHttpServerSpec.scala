@@ -34,6 +34,12 @@ object McpHttpServerSpec extends ZIOSpecDefault:
       for resp <- post("""{"jsonrpc":"2.0","method":"notifications/initialized"}""")
       yield assertTrue(resp.status == Status.Accepted)
     },
+    test("POST /mcp with an unparseable body returns a -32700 parse error") {
+      for
+        resp <- post("not json at all {{{")
+        body <- resp.body.asString.orDie
+      yield assertTrue(resp.status == Status.Ok, body.contains("-32700"), body.contains("Parse error"))
+    },
     test("GET /mcp is not allowed (no server→client stream)") {
       for resp <- McpHttpServer.routes(tools).runZIO(Request.get(URL.root / "mcp"))
       yield assertTrue(resp.status == Status.MethodNotAllowed)
