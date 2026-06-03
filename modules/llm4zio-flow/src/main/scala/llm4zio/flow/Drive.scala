@@ -53,6 +53,7 @@ object Drive:
     event match
       case SessionEvent.TextDelta(text)          => events.publish(FlowEvent.AssistantMessage(text))
       case SessionEvent.ToolUse(tool, raw, _)    => events.publish(FlowEvent.ToolUse(tool, raw))
+      // Successful tool results aren't echoed (the tool-use line already shows the call); only surface failures.
       case SessionEvent.ToolResult(_, status, c) =>
         ZIO.when(status == "error")(events.publish(FlowEvent.Info(s"tool error: ${c.take(200)}"))).unit
       case SessionEvent.AskUser(question)        =>
