@@ -19,7 +19,7 @@ object McpServerSpec extends ZIOSpecDefault:
   private def strAt(j: Json, path: String*): Option[String] = at(j, path*).collect { case Json.Str(s) => s }
 
   private val echo: Interaction = q => ZIO.succeed(s"you said: $q")
-  private val tools            = List(McpServer.askUserTool(echo))
+  private val tools             = List(McpServer.askUserTool(echo))
 
   private def req(method: String, params: String = "{}", id: String = "1"): Json =
     parse(s"""{"jsonrpc":"2.0","id":$id,"method":"$method","params":$params}""")
@@ -69,9 +69,9 @@ object McpServerSpec extends ZIOSpecDefault:
       yield assertTrue(at(resp.get, "error", "code").contains(Json.Num(-32602)))
     },
     test("a failing tool is reported as an isError result, not a failed effect") {
-      val failing: Interaction      = _ => ZIO.fail(FlowError.Aborted("no human available"))
-      val failingTools              = List(McpServer.askUserTool(failing))
-      val params                    = """{"name":"ask_user","arguments":{"question":"x?"}}"""
+      val failing: Interaction = _ => ZIO.fail(FlowError.Aborted("no human available"))
+      val failingTools         = List(McpServer.askUserTool(failing))
+      val params               = """{"name":"ask_user","arguments":{"question":"x?"}}"""
       for resp <- McpServer.handle(req("tools/call", params), failingTools)
       yield assertTrue(
         at(resp.get, "result", "isError").contains(Json.Bool(true)),
