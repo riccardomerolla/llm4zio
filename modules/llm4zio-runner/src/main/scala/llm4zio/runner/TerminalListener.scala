@@ -1,6 +1,6 @@
 package llm4zio.runner
 
-import zio.{ Chunk, Console, Ref, Scope, ZIO }
+import zio.{ Chunk, Ref, Scope, ZIO }
 
 import llm4zio.flow.{ FlowEvent, FlowEvents }
 
@@ -44,15 +44,27 @@ object TerminalListener:
     case _: FlowEvent.StageCompleted | _: FlowEvent.StageFailed | _: FlowEvent.Aborted => true
     case _                                                                             => false
 
-  /** Subscribe to a hub and print every event as an indented, colored line until the scope closes. */
-  def consume(events: FlowEvents.Hub, palette: Palette): ZIO[Scope, Nothing, Unit] =
+  private def stageLabel(e: FlowEvent): Option[Option[String]] = e match
+    case FlowEvent.StageStarted(s)                                                     => Some(Some(s))
+    case _: FlowEvent.StageCompleted | _: FlowEvent.StageFailed | _: FlowEvent.Aborted => Some(None)
+    case _                                                                             => None
+
+  /** Subscribe to a hub and render every event to `surface`: indented colored lines, with the active stage pinned to
+    * the status line. Runs until the scope closes.
+    */
+  def consumeTo(events: FlowEvents.Hub, palette: Palette, surface: TerminalSurface): ZIO[Scope, Nothing, Unit] =
     Ref.make(0).flatMap { depth =>
       events.stream.foreach { event =>
         for
           d <- if closesChild(event) then depth.updateAndGet(x => math.max(0, x - 1)) else depth.get
           _ <- if opensChild(event) then depth.update(_ + 1) else ZIO.unit
+          _ <- stageLabel(event).fold(ZIO.unit)(surface.setStatus)
           s  = line(event, palette)
-          _ <- ZIO.unlessDiscard(s.isEmpty)(Console.printLine("  " * d + s).orDie)
+          _ <- ZIO.unlessDiscard(s.isEmpty)(surface.log("  " * d + s))
         yield ()
       }.forkScoped.unit
     }
+
+  /** Convenience: consume to a plain (non-animated) surface — back-compat for callers that don't build a surface. */
+  def consume(events: FlowEvents.Hub, palette: Palette): ZIO[Scope, Nothing, Unit] =
+    TerminalSurface.plain.flatMap(consumeTo(events, palette, _))
