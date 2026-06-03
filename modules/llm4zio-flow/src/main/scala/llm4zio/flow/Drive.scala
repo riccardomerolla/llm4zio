@@ -18,21 +18,30 @@ object Drive:
 
   private def liftErr(e: LlmError): FlowError = FlowError.Llm(e.toString)
 
-  /** Send `userMessage` to the session and run it to its next `Done`, relaying events and bridging questions. */
+  /** Send `userMessage` to the session and run it to its next `Done`, relaying events and bridging questions.
+    *
+    * The event relay runs on a forked fiber; the turn finishes on whichever happens first: [[AgentSession.awaitResult]]
+    * completing (the happy path), or the relay *failing* — e.g. the [[Interaction]] aborts. Racing the two is what
+    * keeps a failed relay from deadlocking against a result that will now never arrive (the agent never sees an answer,
+    * so it never reaches `Done`). A relay that finishes cleanly does not end the turn on its own; the promised result
+    * does.
+    */
   def run(session: AgentSession, interaction: Interaction, userMessage: String)(using FlowEvents)
     : IO[FlowError, SessionResult] =
-    for
-      consumer <- session.events
-                    .takeUntil {
-                      case SessionEvent.Done(_) => true
-                      case _                    => false
-                    }
-                    .runForeach(relay(session, interaction, _))
-                    .fork
-      _        <- session.sendUserMessage(userMessage).mapError(liftErr)
-      result   <- session.awaitResult.mapError(liftErr)
-      _        <- consumer.join.mapError(liftErr) // surfaces a failed Interaction/respondToAsk
-    yield result
+    ZIO.scoped {
+      for
+        relayFiber <- session.events
+                        .takeUntil {
+                          case SessionEvent.Done(_) => true
+                          case _                    => false
+                        }
+                        .runForeach(relay(session, interaction, _))
+                        .mapError(liftErr)
+                        .forkScoped
+        _          <- session.sendUserMessage(userMessage).mapError(liftErr)
+        result     <- session.awaitResult.mapError(liftErr).raceFirst(relayFiber.join *> ZIO.never)
+      yield result
+    }
 
   private def relay(
     session: AgentSession,
