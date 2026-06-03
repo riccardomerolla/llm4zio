@@ -1,5 +1,6 @@
 package llm4zio.runner
 
+import zio.*
 import zio.test.*
 
 object LiveCliProcessExecutorSpec extends ZIOSpecDefault:
@@ -12,4 +13,18 @@ object LiveCliProcessExecutorSpec extends ZIOSpecDefault:
       for res <- LiveCliProcessExecutor.instance.run(List("definitely-not-a-real-binary-xyz"), ".", Map.empty).either
       yield assertTrue(res.isLeft)
     },
-  ) @@ TestAspect.sequential
+    test("runBidirectional feeds stdin lines and reads them back") {
+      // A line-buffered echo loop: read a line on stdin, echo it immediately. Avoids cat's pipe block-buffering.
+      val echoLoop = List("sh", "-c", "while IFS= read -r line; do printf '%s\\n' \"$line\"; done")
+      ZIO.scoped {
+        for
+          bundle      <- LiveCliProcessExecutor.instance.runBidirectional(echoLoop, ".", Map.empty)
+          (queue, out) = bundle
+          fiber       <- out.take(2).runCollect.fork
+          _           <- queue.offer("alpha")
+          _           <- queue.offer("beta")
+          lines       <- fiber.join
+        yield assertTrue(lines.toList == List("alpha", "beta"))
+      }
+    },
+  ) @@ TestAspect.sequential @@ TestAspect.withLiveClock @@ TestAspect.timeout(30.seconds)
