@@ -82,7 +82,7 @@ object ClaudeAgentSession:
     usageEvent.toList :+ doneEvent
 
   /** Open a live claude session over `executor.runBidirectional`. An internal fiber drains stdout, publishes events to
-    * a hub, accumulates the final result, and threads the init model onto the Usage event. Scoped — closing the scope
+    * a hub, accumulates the final result, and threads the init model onto the SessionResult. Scoped — closing the scope
     * kills the process.
     */
   def open(
