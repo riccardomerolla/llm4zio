@@ -22,7 +22,8 @@ import llm4zio.runner.{ InteractiveCoder, Llm4zio, TerminalInteraction }
 
 object Main extends ZIOAppDefault:
 
-  // Reasoning (planning) over the claude CLI; the coder is a *live* claude session opened by InteractiveCoder.
+  // Reasoning (planning) over the claude CLI. `coder` is required by Llm4zio.run to build the FlowContext, but the
+  // live path doesn't use ctx.coder — InteractiveCoder opens a fresh claude AgentSession per task instead.
   private val reasoning = CliConnectorConfig(ConnectorId.ClaudeCli)
   private val coder     = CliConnectorConfig(ConnectorId.ClaudeCli)
 
