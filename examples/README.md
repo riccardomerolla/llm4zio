@@ -10,8 +10,10 @@ to [orca's examples](https://github.com/VirtusLab/orca/tree/main/examples).
 | [02-interactive](02-interactive/) | Same shape as 01, but the planner can ask clarifying questions on the terminal (`Interaction` / `TerminalInteraction`) before planning. For open-ended prompts. |
 | [03-bugfix](03-bugfix/) | Issue-driven Scala bugfix (touches GitHub): read issue → triage → failing test on a branch → PR → wait for CI red → fix → update PR. No `--run` (needs a real repo + issue). |
 | [04-epic](04-epic/) | A multi-task epic in a resumable on-disk file, with **cross-agent review** (claude implements; the claude reasoner + codex review in parallel), a final doc-update stage, and epic-file cleanup. |
+| [05-interactive-live](05-interactive-live/) | **Interactive live coding**: each task drives a held, steerable `claude` session — streaming its work, asking you questions mid-task (`ask_user`), and gating tool calls through an approval policy, all over an in-process MCP server. claude-only. |
 
-All four orca examples are ported. See `.claude/plans/orca-examples-parity.md`.
+The four orca examples (01–04) are ported; 05 adds llm4zio's interactive runtime.
+See `.claude/plans/orca-examples-parity.md`.
 
 ## Prerequisites
 
