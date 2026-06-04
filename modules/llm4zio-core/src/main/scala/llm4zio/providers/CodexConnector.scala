@@ -77,12 +77,20 @@ object CodexConnector:
                            .attemptBlocking(Files.createTempFile("codex-schema-", ".json"))
                            .mapError(e => LlmError.ProviderError(e.getMessage, Some(e)))
                        )(f => ZIO.attemptBlocking(Files.deleteIfExists(f)).ignore)
+              // codex's --output-schema is OpenAI strict structured output: every object must carry
+              // `additionalProperties: false` and list all properties in `required`, or codex rejects it with a
+              // 400 invalid_json_schema. Make the schema compliant before handing it over.
               _     <- ZIO
-                         .attemptBlocking(Files.writeString(file, s))
+                         .attemptBlocking(Files.writeString(file, CodexConnector.strictSchema(schema).toString))
                          .mapError(e => LlmError.ProviderError(e.getMessage, Some(e)))
               argv   = List("codex", "exec", "--json", "--output-schema", file.toString) ++ extraArgs ++ List(prompt)
               reply <- Streaming.collect(
                          executor.runStreaming(argv, cwd, config.envVars).mapConcat(CodexConnector.parseStreamLine)
+                       )
+              // codex surfaces request failures (e.g. a bad schema or a model error) as error/turn.failed events,
+              // which carry no agent_message — fail with codex's reason instead of an opaque "no JSON candidate".
+              _     <- ZIO.foreachDiscard(reply.metadata.get("codexError"))(msg =>
+                         ZIO.fail(LlmError.ProviderError(s"codex error: $msg", None))
                        )
               out   <- StructuredOutputs.parseFromText[A](reply.content, schema)
             yield (out, reply.usage, reply.metadata.get("model"))
@@ -110,4 +118,29 @@ object CodexConnector:
               val out = CliStreamJson.int(usage, "output_tokens").getOrElse(0)
               CliStreamJson.usageChunk(None, TokenUsage(in, out, in + out))
             }
+          // Request/turn failures carry no agent_message; stash the reason under `codexError` so callers can surface it.
+          case Some("error")          =>
+            List(LlmChunk(
+              delta = "",
+              metadata = Map("codexError" -> CliStreamJson.str(json, "message").getOrElse("codex error")),
+            ))
+          case Some("turn.failed")    =>
+            val msg =
+              CliStreamJson.field(json, "error").flatMap(e => CliStreamJson.str(e, "message")).getOrElse("turn failed")
+            List(LlmChunk(delta = "", metadata = Map("codexError" -> msg)))
           case _                      => Nil
+
+  /** Make a JSON Schema compliant with codex's OpenAI strict structured-output mode: every object gets
+    * `additionalProperties: false` and lists all of its properties in `required`. Recurses through `properties` values
+    * and array `items`. Other nodes pass through unchanged.
+    */
+  def strictSchema(json: Json): Json = json match
+    case Json.Obj(fields) =>
+      val recursed = fields.map((k, v) => (k, strictSchema(v)))
+      recursed.collectFirst { case ("properties", Json.Obj(props)) => props.map((k, _) => Json.Str(k): Json) } match
+        case Some(names) =>
+          val cleaned = recursed.filterNot(kv => kv._1 == "additionalProperties" || kv._1 == "required")
+          Json.Obj(cleaned ++ zio.Chunk("additionalProperties" -> Json.Bool(false), "required" -> Json.Arr(names)))
+        case None        => Json.Obj(recursed)
+    case Json.Arr(elems)  => Json.Arr(elems.map(strictSchema))
+    case other            => other

@@ -1,4 +1,4 @@
-//> using dep "io.github.riccardomerolla::llm4zio-runner:2.6.0"
+//> using dep "io.github.riccardomerolla::llm4zio-runner:2.6.1"
 //> using scala "3.8.3"
 //> using jvm 21
 
@@ -33,7 +33,7 @@ object Main extends ZIOAppDefault:
     * key required; a single CLI login is enough.
     */
   private def cliFor(name: String): CliConnectorConfig = name match
-    case "codex"  => CliConnectorConfig(ConnectorId.Codex, flags = Map("full-auto" -> ""))
+    case "codex"  => CliConnectorConfig(ConnectorId.Codex, flags = Map("sandbox" -> "workspace-write"))
     case "gemini" => CliConnectorConfig(ConnectorId.GeminiCli) // gemini auto-approves edits via built-in -y
     case _        => CliConnectorConfig(ConnectorId.ClaudeCli, flags = Map("permission-mode" -> "acceptEdits"))
 
