@@ -22,4 +22,4 @@ def summarisePr(reasoning: LlmService, diff: String, context: Option[String] = N
        |$diff""".stripMargin
   reasoning
     .executeStructured[PrSummary](prompt, PrSummary.schema)
-    .mapError(e => FlowError.Llm(e.toString))
+    .mapError(e => FlowError.Llm(e.message))

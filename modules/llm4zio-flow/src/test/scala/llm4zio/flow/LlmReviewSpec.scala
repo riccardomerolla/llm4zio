@@ -36,6 +36,20 @@ object LlmReviewSpec extends ZIOSpecDefault:
       ZIO.dieMessage("unused")
     def isAvailable: UIO[Boolean]                                                              = ZIO.succeed(true)
 
+  /** Reviewer that records the peak number of concurrent `executeStructured` calls, then returns a clean result. */
+  final class ConcurrencyReviewer(current: Ref[Int], peak: Ref[Int]) extends LlmService:
+    def executeStream(p: String): Stream[LlmError, LlmChunk]                          = ZStream.empty
+    def executeStreamWithHistory(m: List[Message]): Stream[LlmError, LlmChunk]        = ZStream.empty
+    def executeWithTools(p: String, t: List[AnyTool]): IO[LlmError, ToolCallResponse] = ZIO.dieMessage("unused")
+    def executeStructured[A: JsonCodec](p: String, s: JsonSchema): IO[LlmError, A]    =
+      ZIO.acquireReleaseWith(current.updateAndGet(_ + 1).tap(n => peak.update(_.max(n))))(_ => current.update(_ - 1)) {
+        _ =>
+          ZIO.sleep(50.millis) *> ZIO.fromEither("""{"issues":[],"summary":"clean"}""".fromJson[A]).orDieWith(e =>
+            new RuntimeException(e)
+          )
+      }
+    def isAvailable: UIO[Boolean]                                                     = ZIO.succeed(true)
+
   private def lens(name: String, files: Option[String] = None): Reviewer = Reviewer(name, s"$name-lens", files)
 
   /** A reviewer-service that records calls then dies (must not be invoked). */
@@ -80,6 +94,37 @@ object LlmReviewSpec extends ZIOSpecDefault:
         nAsks   <- asks.get
       yield assertTrue(out.issues.map(_.title).toSet == Set("a", "b"), nAsks == 0)
     },
+    test("parallelism = 1 serializes reviewer calls; the default fans them out") {
+      val lenses = List(lens("a"), lens("b"), lens("c"), lens("d"), lens("e"))
+      for
+        ev     <- FlowEvents.collecting
+        asks   <- Ref.make(0)
+        coder  <- Chat.start(CountingCoder(asks))
+        cur1   <- Ref.make(0)
+        peak1  <- Ref.make(0)
+        _      <- reviewAndFixLoop(
+                    lenses,
+                    ConcurrencyReviewer(cur1, peak1),
+                    coder,
+                    "t",
+                    ZIO.succeed("d"),
+                    maxRounds = 1,
+                    parallelism = 1,
+                  )(using ev)
+        capped <- peak1.get
+        cur2   <- Ref.make(0)
+        peak2  <- Ref.make(0)
+        _      <- reviewAndFixLoop(
+                    lenses,
+                    ConcurrencyReviewer(cur2, peak2),
+                    coder,
+                    "t",
+                    ZIO.succeed("d"),
+                    maxRounds = 1,
+                  )(using ev)
+        fanned <- peak2.get
+      yield assertTrue(capped == 1, fanned > 1)
+    } @@ TestAspect.withLiveClock,
     test("a failing lint gate short-circuits the LLM reviewers for that round") {
       for
         ev     <- FlowEvents.collecting

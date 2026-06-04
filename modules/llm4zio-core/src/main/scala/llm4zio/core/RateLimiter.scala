@@ -2,8 +2,8 @@ package llm4zio.core
 
 import zio.*
 
-// Rate limit errors
-enum RateLimitError extends Exception:
+// Rate limit errors — a pure ADT, surfaced via ZIO's typed error channel (not a JVM exception).
+enum RateLimitError:
   case AcquireTimeout(timeout: Duration)
   case InvalidConfig(details: String)
 
