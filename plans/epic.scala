@@ -2,7 +2,7 @@
 //> using scala "3.8.3"
 //> using jvm 21
 
-/** Run an epic: a multi-task workstream with cross-agent review — the
+/** Run an epic: a resumable multi-task workstream with a full review pass — the
   * ZIO-native counterpart of orca's `epic.sc`.
   *
   * Two layers stack here:
@@ -10,15 +10,15 @@
   *     generates it; a re-run recovers it and restarts from the first incomplete
   *     task (each task's checkbox is committed as it lands, so a crash loses no
   *     progress). The file is removed when the epic completes.
-  *   - **Cross-agent review.** `claude` implements; the `claude` reasoner and
-  *     `codex` review in parallel — reviews run on a different backend than the
-  *     coder. Fixes go back to the same claude chat.
+  *   - **Full reviewer roster.** After each task the seven review lenses
+  *     (`Reviewers.all`) run and the coder fixes their findings. One CLI agent
+  *     does everything — planning, coding, review — selectable via
+  *     `LLM4ZIO_CODER=claude|codex|gemini` (default `claude`).
   *
   * At the end the docs are updated and the epic file is cleaned up.
   *
   * `examples/04-epic/create-test-project.sh` seeds a Java todo-cli and copies
-  * this script alongside it. Needs `claude` and `codex` logged in (no API key —
-  * reasoning runs over the claude CLI).
+  * this script alongside it. Needs the chosen agent CLI logged in (no API key).
   */
 
 import zio.*
