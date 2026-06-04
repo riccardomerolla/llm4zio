@@ -1,5 +1,6 @@
 package llm4zio.core
 
+import java.time.Instant
 import zio.*
 
 /** Typed, pure-ADT errors for the core LLM layer.
@@ -15,6 +16,7 @@ sealed trait LlmError:
 
 object LlmError:
   case class ProviderError(message: String, cause: Option[Throwable] = None) extends LlmError
+  case class UsageLimitError(resetAt: Option[Instant], provider: String, message: String) extends LlmError
   case class AuthenticationError(message: String)                            extends LlmError
   case class InvalidRequestError(message: String)                            extends LlmError
   case class ParseError(message: String, raw: String)                        extends LlmError
