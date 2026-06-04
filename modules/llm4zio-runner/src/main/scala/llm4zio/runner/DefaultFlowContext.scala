@@ -22,7 +22,7 @@ object DefaultFlowContext:
     usageLimit: UsageLimitPolicy = UsageLimitPolicy.off,
   ): UIO[(FlowContext, FlowEvents.Hub)] =
     FlowEvents.hub().map { hub =>
-      given FlowEvents = hub
+      given FlowEvents                                    = hub
       def tap(svc: LlmService, agent: String): LlmService =
         val tapped = EventTappingService(svc, agent, hub, workDir)
         if usageLimit.enabled then UsageLimitAware(tapped, usageLimit) else tapped

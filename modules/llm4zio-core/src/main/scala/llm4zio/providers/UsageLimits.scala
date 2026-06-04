@@ -20,7 +20,8 @@ object UsageLimits:
   def classify(provider: String, text: String, now: Instant, zone: ZoneId): Option[LlmError] =
     provider match
       case "codex"  => wallClock(text, codexAt, now, zone).map(at => LlmError.UsageLimitError(Some(at), provider, text))
-      case "claude" => wallClock(text, claudeAt, now, zone).map(at => LlmError.UsageLimitError(Some(at), provider, text))
+      case "claude" =>
+        wallClock(text, claudeAt, now, zone).map(at => LlmError.UsageLimitError(Some(at), provider, text))
       case "gemini" =>
         text match
           case geminiSec(secs) => Some(LlmError.RateLimitError(Some(Duration.fromSeconds(secs.toLong))))

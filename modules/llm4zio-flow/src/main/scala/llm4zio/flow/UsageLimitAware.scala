@@ -12,7 +12,7 @@ import llm4zio.tools.{ AnyTool, JsonSchema }
   * unchanged (the streaming coder is handled by [[withUsageLimitRetry]]).
   */
 final class UsageLimitAware(underlying: LlmService, policy: UsageLimitPolicy)(using events: FlowEvents)
-    extends LlmService:
+  extends LlmService:
 
   private val buffer = 30.seconds
 
@@ -41,7 +41,8 @@ final class UsageLimitAware(underlying: LlmService, policy: UsageLimitPolicy)(us
     s"⏳ usage limit (${err.provider}) — sleeping ${mins}m$until"
 
   override def executeStream(prompt: String): Stream[LlmError, LlmChunk]              = underlying.executeStream(prompt)
-  override def executeStreamWithHistory(m: List[Message]): Stream[LlmError, LlmChunk] = underlying.executeStreamWithHistory(m)
+  override def executeStreamWithHistory(m: List[Message]): Stream[LlmError, LlmChunk] =
+    underlying.executeStreamWithHistory(m)
   override def isAvailable: UIO[Boolean]                                              = underlying.isAvailable
 
   override def executeWithTools(prompt: String, tools: List[AnyTool]): IO[LlmError, ToolCallResponse] =

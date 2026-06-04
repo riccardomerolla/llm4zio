@@ -8,7 +8,10 @@ import llm4zio.flow.UsageLimitPolicy
 object UsageWaitEnvSpec extends ZIOSpecDefault:
   def spec: Spec[Environment & TestEnvironment, Any] = suite("UsageWaitEnv.parse")(
     test("unset or 'off' → off") {
-      assertTrue(UsageWaitEnv.parse(None) == UsageLimitPolicy.off, UsageWaitEnv.parse(Some("off")) == UsageLimitPolicy.off)
+      assertTrue(
+        UsageWaitEnv.parse(None) == UsageLimitPolicy.off,
+        UsageWaitEnv.parse(Some("off")) == UsageLimitPolicy.off,
+      )
     },
     test("'4h' → enabled with a 4h cap") {
       val p = UsageWaitEnv.parse(Some("4h"))

@@ -16,14 +16,14 @@ object UsageLimitsSpec extends ZIOSpecDefault:
       UsageLimits.classify("codex", text, now, zone) match
         case Some(LlmError.UsageLimitError(Some(at), "codex", _)) =>
           assertTrue(at == Instant.parse("2026-06-04T14:38:00Z"))
-        case _ => assertTrue(false)
+        case _                                                    => assertTrue(false)
     },
     test("codex time already passed today → rolls to tomorrow") {
       val text = "usage limit ... try again at 11:00 AM."
       UsageLimits.classify("codex", text, now, zone) match
         case Some(LlmError.UsageLimitError(Some(at), _, _)) =>
           assertTrue(at == Instant.parse("2026-06-05T11:00:00Z"))
-        case _ => assertTrue(false)
+        case _                                              => assertTrue(false)
     },
     test("gemini short 'reset after 2s' → RateLimitError, not UsageLimitError") {
       val text = "You have exhausted your capacity on this model. Your quota will reset after 2s.."

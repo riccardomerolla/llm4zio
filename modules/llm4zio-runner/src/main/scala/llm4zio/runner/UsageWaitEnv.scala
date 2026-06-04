@@ -4,8 +4,8 @@ import zio.*
 
 import llm4zio.flow.UsageLimitPolicy
 
-/** Parse the `LLM4ZIO_USAGE_WAIT` env value into a [[UsageLimitPolicy]]: `off`/unset disables; `on`/`true` enables
-  * with the default cap; `<n>h` / `<n>m` enables with that cap.
+/** Parse the `LLM4ZIO_USAGE_WAIT` env value into a [[UsageLimitPolicy]]: `off`/unset disables; `on`/`true` enables with
+  * the default cap; `<n>h` / `<n>m` enables with that cap.
   */
 object UsageWaitEnv:
   private val hours = """(?i)(\d+)h""".r

@@ -1,6 +1,7 @@
 package llm4zio.core
 
 import java.time.Instant
+
 import zio.*
 
 /** Typed, pure-ADT errors for the core LLM layer.
@@ -15,17 +16,17 @@ sealed trait LlmError:
   def message: String
 
 object LlmError:
-  case class ProviderError(message: String, cause: Option[Throwable] = None) extends LlmError
+  case class ProviderError(message: String, cause: Option[Throwable] = None)              extends LlmError
   case class UsageLimitError(resetAt: Option[Instant], provider: String, message: String) extends LlmError
-  case class AuthenticationError(message: String)                            extends LlmError
-  case class InvalidRequestError(message: String)                            extends LlmError
-  case class ParseError(message: String, raw: String)                        extends LlmError
-  case class ToolError(toolName: String, detail: String)                     extends LlmError:
+  case class AuthenticationError(message: String)                                         extends LlmError
+  case class InvalidRequestError(message: String)                                         extends LlmError
+  case class ParseError(message: String, raw: String)                                     extends LlmError
+  case class ToolError(toolName: String, detail: String)                                  extends LlmError:
     def message: String = s"tool '$toolName' failed: $detail"
-  case class ConfigError(message: String)                                    extends LlmError
-  case class RateLimitError(retryAfter: Option[Duration] = None)             extends LlmError:
+  case class ConfigError(message: String)                                                 extends LlmError
+  case class RateLimitError(retryAfter: Option[Duration] = None)                          extends LlmError:
     def message: String = retryAfter.fold("rate limited")(d => s"rate limited; retry after $d")
-  case class TimeoutError(duration: Duration)                                extends LlmError:
+  case class TimeoutError(duration: Duration)                                             extends LlmError:
     def message: String = s"timed out after $duration"
-  case class TurnLimitError(limit: Option[Int] = None)                       extends LlmError:
+  case class TurnLimitError(limit: Option[Int] = None)                                    extends LlmError:
     def message: String = limit.fold("turn limit reached")(n => s"turn limit reached after $n turn(s)")

@@ -4,9 +4,12 @@ import zio.*
 
 /** Opt-in policy for waiting out a provider usage/credit cap.
   *
-  * @param enabled      master switch (off ⇒ usage limits fail fast, but typed)
-  * @param maxWait      ceiling on total wait before giving up and re-raising the UsageLimitError
-  * @param pollInterval probe cadence when the reset time is unknown
+  * @param enabled
+  *   master switch (off ⇒ usage limits fail fast, but typed)
+  * @param maxWait
+  *   ceiling on total wait before giving up and re-raising the UsageLimitError
+  * @param pollInterval
+  *   probe cadence when the reset time is unknown
   */
 final case class UsageLimitPolicy(
   enabled: Boolean = false,

@@ -26,7 +26,7 @@ object UsageLimitAwareSpec extends ZIOSpecDefault:
         case Some(err) => ZIO.fail(err)
         case None      => ZIO.fromEither("\"ok\"".fromJson[A]).orDieWith(e => new RuntimeException(e))
       }
-    def isAvailable: UIO[Boolean] = ZIO.succeed(true)
+    def isAvailable: UIO[Boolean]                                                     = ZIO.succeed(true)
 
   private def usageErr(at: Instant) = LlmError.UsageLimitError(Some(at), "codex", "limit")
 
@@ -41,7 +41,10 @@ object UsageLimitAwareSpec extends ZIOSpecDefault:
         _       <- TestClock.adjust(2.hours + 1.minute)
         out     <- fiber.join
         emitted <- events.recorded
-      yield assertTrue(out == "ok", emitted.exists { case FlowEvent.Info(m) => m.contains("usage limit"); case _ => false })
+      yield assertTrue(
+        out == "ok",
+        emitted.exists { case FlowEvent.Info(m) => m.contains("usage limit"); case _ => false },
+      )
     },
     test("gives up (re-raises) when reset is beyond maxWait") {
       for

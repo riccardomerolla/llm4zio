@@ -6,7 +6,7 @@ import zio.*
 import zio.http.Client
 
 import llm4zio.core.{ CliConnectorConfig, ConnectorConfig }
-import llm4zio.flow.{ CostTracker, FlowContext, FlowError, FlowEvents, UsageLimitPolicy, withUsageLimitRetry }
+import llm4zio.flow.*
 import llm4zio.providers.HttpClient
 
 /** Entry point for scala-cli flow scripts. Builds a real [[FlowContext]], streams progress to the terminal, runs the
@@ -37,7 +37,8 @@ object Llm4zio:
       _       <- Console.printLine("").orDie
       _       <- ZIO
                    .scoped {
-                     val policy = if usageLimit.enabled then usageLimit else UsageWaitEnv.parse(sys.env.get("LLM4ZIO_USAGE_WAIT"))
+                     val policy =
+                       if usageLimit.enabled then usageLimit else UsageWaitEnv.parse(sys.env.get("LLM4ZIO_USAGE_WAIT"))
                      for
                        surface   <- if palette.enabled then TerminalSurface.live(palette) else TerminalSurface.plain
                        bundle    <- DefaultFlowContext.build(reasoning, coder, workDir, reviewers, policy)
@@ -49,15 +50,15 @@ object Llm4zio:
                        _         <- TerminalListener.consumeTo(hub, palette, surface)
                        _         <- tracker.consume(hub)
                        _         <- {
-                                      given FlowEvents = hub
-                                      withUsageLimitRetry(policy)(
-                                        body(ctx).mapError {
-                                          case fe: FlowError => fe
-                                          case other         => FlowError.Llm(other.toString)
-                                        }
-                                      ).unit
-                                        .ensuring(tracker.summary.flatMap(s => surface.log("\n" + s)))
-                                    }
+                         given FlowEvents = hub
+                         withUsageLimitRetry(policy)(
+                           body(ctx).mapError {
+                             case fe: FlowError => fe
+                             case other         => FlowError.Llm(other.toString)
+                           }
+                         ).unit
+                           .ensuring(tracker.summary.flatMap(s => surface.log("\n" + s)))
+                       }
                      yield ()
                    }
                    .provideSomeLayer[HttpClient & Client](RunnerLog.fileOnly(logPath))
