@@ -55,7 +55,7 @@ object ApprovalSpec extends ZIOSpecDefault:
       for v <- verdict(deny, "Bash", """{"command":"rm -rf /"}""")
       yield assertTrue(
         v.flatMap(strAt(_, "behavior")).contains("deny"),
-        v.flatMap(strAt(_, "message")).exists(_.nonEmpty),
+        v.flatMap(strAt(_, "message")).exists(_.contains("denied")),
       )
     },
   )

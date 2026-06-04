@@ -36,5 +36,6 @@ object ApprovalPolicy:
     a == "y" || a == "yes"
 
   private def defaultSummary(tool: String, input: Json): String =
-    val args = input.toString
-    if args.length <= 80 then s"$tool$args" else s"$tool${args.take(79)}…"
+    val maxArgs = 80
+    val args    = input.toString
+    if args.length <= maxArgs then s"$tool $args" else s"$tool ${args.take(maxArgs - 1)}…"
