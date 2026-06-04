@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.1] - 2026-06-04
+
+### Fixed
+
+- **codex structured output now works.** `codex exec --output-schema` uses OpenAI strict structured
+  outputs, which require every object in the schema to carry `additionalProperties: false` and list all
+  its properties in `required`. llm4zio's schemas didn't, so codex returned `400 invalid_json_schema`,
+  emitted an `error`/`turn.failed` event the parser silently dropped, and produced no `agent_message` —
+  surfacing as an opaque `ParseError: no JSON candidate found in output`. This had broken **every** codex
+  structured call (planning, review, PR summary). `CodexConnector` now makes the schema strict-compliant
+  before passing it, and surfaces codex's actual error reason (`error`/`turn.failed`) instead of the
+  opaque parse failure.
+- **Examples:** the codex backend now uses `--sandbox workspace-write` instead of the deprecated
+  `--full-auto` (codex 0.136 deprecates the latter; the new flag is the recommended equivalent).
+
+[2.6.1]: https://github.com/riccardomerolla/llm4zio/releases/tag/v2.6.1
+
 ## [2.6.0] - 2026-06-04
 
 ### Changed
