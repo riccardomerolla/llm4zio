@@ -19,6 +19,9 @@ object McpHttpServer:
   /** Claude namespaces MCP tools as `mcp__<server>__<tool>`; this is what `--allowedTools` expects. */
   def allowedToolName(server: String, tool: String): String = s"mcp__${server}__$tool"
 
+  /** The reference to pass to claude's `--permission-prompt-tool` for the `approve` tool of this server. */
+  def permissionPromptToolName(server: String): String = allowedToolName(server, "approve")
+
   /** The `--mcp-config` payload registering this HTTP server under `server` at the given localhost `port`. */
   def mcpConfigJson(server: String, port: Int): String =
     Json

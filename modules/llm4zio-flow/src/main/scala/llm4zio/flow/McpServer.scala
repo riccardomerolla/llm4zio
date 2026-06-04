@@ -45,6 +45,37 @@ object McpServer:
       call = args => interaction.ask(str(args, "question").getOrElse("")),
     )
 
+  /** The `approve` tool: claude's `--permission-prompt-tool` target. Given a pending `tool_name` + `input`, it returns
+    * the JSON verdict claude expects — `{"behavior":"allow","updatedInput":…}` or `{"behavior":"deny","message":…}` —
+    * by consulting an [[ApprovalPolicy]].
+    */
+  def approvalTool(policy: ApprovalPolicy): McpTool =
+    McpTool(
+      name = "approve",
+      description =
+        "Decide whether the agent may run a pending tool call. Returns the permission verdict; this is the " +
+          "target of claude's --permission-prompt-tool and is not called directly by the agent.",
+      inputSchema = Json.Obj(
+        "type"       -> Json.Str("object"),
+        "properties" -> Json.Obj(
+          "tool_name" -> Json.Obj("type" -> Json.Str("string")),
+          "input"     -> Json.Obj("type" -> Json.Str("object")),
+        ),
+        "required"   -> Json.Arr(Json.Str("tool_name")),
+      ),
+      call = args =>
+        val input = field(args, "input").getOrElse(Json.Obj())
+        policy.decide(str(args, "tool_name").getOrElse(""), input).map {
+          case ApprovalDecision.Allow        => permissionVerdict(allow = true, input, None)
+          case ApprovalDecision.Deny(reason) => permissionVerdict(allow = false, input, Some(reason))
+        },
+    )
+
+  /** The claude permission-prompt verdict, serialised as the tool's text content. */
+  private def permissionVerdict(allow: Boolean, input: Json, denyReason: Option[String]): String =
+    if allow then Json.Obj("behavior" -> Json.Str("allow"), "updatedInput" -> input).toString
+    else Json.Obj("behavior" -> Json.Str("deny"), "message" -> Json.Str(denyReason.getOrElse("denied"))).toString
+
   /** Handle one JSON-RPC request. Returns `None` for notifications (no `id`), `Some(response)` otherwise. Tool-call
     * failures are reported as MCP `isError` results rather than failing the effect, so the agent always gets a reply.
     */
