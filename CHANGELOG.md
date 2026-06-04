@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.0] - 2026-06-04
+
+### Changed
+
+- **`LlmError` and `RateLimitError` are pure ADTs** — they no longer extend `Throwable`. Domain
+  errors travel ZIO's typed error channel only; `ProviderError.cause: Option[Throwable]` still carries
+  an underlying JVM exception when one exists. `LlmError` now exposes a `message: String`, and the flow
+  layer surfaces `e.message` instead of `e.toString`. This also fixes opaque error reporting (failures
+  previously rendered as bare class names like `Llm(llm4zio.core.LlmError$ProviderError)` because
+  `Throwable.toString` masked the real message). *Source-breaking* for downstream code that relied on
+  `LlmError <: Throwable` (e.g. `.orDie` on an `IO[LlmError, _]`, or catching it as a `Throwable`).
+
+### Added
+
+- **`reviewAndFixLoop(..., parallelism: Int = 0)`** — caps how many reviewer lenses run concurrently.
+  `0` keeps the default unbounded fan-out; a positive value throttles it so rate-limited backends
+  (e.g. the gemini free tier) don't get `429`d when all lenses fire at once.
+
+### Fixed
+
+- **Example `04-epic` now runs on a single backend** selectable via `LLM4ZIO_CODER=claude|codex|gemini`
+  (default `claude`), like `01-simple`. Removed the dead cross-agent codex wiring (it was configured but
+  never invoked); gemini review is throttled to one lens at a time to stay under quota.
+- **`examples/_seed_lib.sh` is now Linux-portable** — replaced the macOS-only `mktemp -t` and BSD `sed`
+  append with forms that work on both GNU and BSD.
+
+[2.6.0]: https://github.com/riccardomerolla/llm4zio/releases/tag/v2.6.0
+
 ## [2.5.0] - 2026-06-04
 
 ### Added
