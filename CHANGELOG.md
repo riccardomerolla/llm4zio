@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.0] - 2026-06-04
+
+### Added
+
+- **Interactive live-coding runtime (claude).** A steerable alternative to the one-shot coder:
+  each task drives a held `claude --input-format stream-json` session that streams its work,
+  can ask the human questions mid-task, and gates tool calls through an approval policy.
+  - `AgentSession` (core) — a long-lived, steerable session (`events` stream of `SessionEvent`,
+    `sendUserMessage`, `respondToAsk`, `awaitResult`, `cancel`) alongside the one-shot `LlmService`.
+    `ClaudeAgentSession` parses claude's bidirectional stream-json and frames user turns; built on a
+    new `CliProcessExecutor.runBidirectional` (held-process stdin queue + stdout stream).
+  - `McpServer` (flow, transport-free MCP JSON-RPC) exposing `ask_user` (bridged to `Interaction`)
+    and `approve` (claude's `--permission-prompt-tool` target, returning its allow/deny verdict),
+    served in-process over HTTP by `McpHttpServer` and registered via `--mcp-config`.
+  - `ApprovalPolicy` (`autoApprove` / `interactive`) decides each tool call.
+  - `Drive.run` relays `SessionEvent`s to the `FlowEvents` sink and answers questions; the new
+    `implementTaskLoopLive` runs each plan task on a live session (resumable, per-task commit).
+  - `InteractiveCoder` wires it all together; `examples/05-interactive-live` +
+    `plans/implement-live.scala` demonstrate it end-to-end. Interactive mode is claude-only;
+    codex/gemini stay autonomous-parity.
+
+[2.5.0]: https://github.com/riccardomerolla/llm4zio/releases/tag/v2.5.0
+
 ## [2.4.0] - 2026-06-03
 
 ### Added
