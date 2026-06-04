@@ -1,6 +1,7 @@
 package llm4zio.providers
 
 import java.nio.file.Files
+import java.time.ZoneId
 
 import zio.*
 import zio.json.JsonCodec
@@ -52,7 +53,17 @@ object CodexConnector:
       // Stream via `codex exec --json`, parsing the JSONL event stream into the shared LlmChunk metadata contract.
       override def completeStream(prompt: String): ZStream[Any, LlmError, LlmChunk] =
         val argv = List("codex", "exec", "--json") ++ extraArgs ++ List(prompt)
-        executor.runStreaming(argv, cwd, config.envVars).mapConcat(CodexConnector.parseStreamLine)
+        executor.runStreaming(argv, cwd, config.envVars)
+          .mapConcat(CodexConnector.parseStreamLine)
+          .mapZIO { chunk =>
+            chunk.metadata.get("codexError") match
+              case Some(msg) =>
+                Clock.instant.flatMap(now =>
+                  ZIO.fail(UsageLimits.classify("codex", msg, now, ZoneId.systemDefault)
+                    .getOrElse(LlmError.ProviderError(s"codex error: $msg", None)))
+                )
+              case None      => ZIO.succeed(chunk)
+          }
 
       override def executeStructured[A: JsonCodec](prompt: String, schema: JsonSchema): IO[LlmError, A] =
         executeStructuredWithUsage[A](prompt, schema).map(_._1)
@@ -89,9 +100,13 @@ object CodexConnector:
                        )
               // codex surfaces request failures (e.g. a bad schema or a model error) as error/turn.failed events,
               // which carry no agent_message — fail with codex's reason instead of an opaque "no JSON candidate".
-              _     <- ZIO.foreachDiscard(reply.metadata.get("codexError"))(msg =>
-                         ZIO.fail(LlmError.ProviderError(s"codex error: $msg", None))
-                       )
+              _     <- ZIO.foreachDiscard(reply.metadata.get("codexError")) { msg =>
+                         Clock.instant.flatMap { now =>
+                           val err = UsageLimits.classify("codex", msg, now, ZoneId.systemDefault)
+                             .getOrElse(LlmError.ProviderError(s"codex error: $msg", None))
+                           ZIO.fail(err)
+                         }
+                       }
               out   <- StructuredOutputs.parseFromText[A](reply.content, schema)
             yield (out, reply.usage, reply.metadata.get("model"))
           }

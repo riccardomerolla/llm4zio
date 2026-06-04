@@ -1,5 +1,7 @@
 package llm4zio.providers
 
+import java.time.ZoneId
+
 import zio.*
 import zio.json.ast.Json
 import zio.stream.ZStream
@@ -39,10 +41,11 @@ object ClaudeCliConnector:
           .flatMap { result =>
             if result.exitCode == 0 then ZIO.succeed(result.stdout.mkString("\n"))
             else
-              ZIO.fail(LlmError.ProviderError(
-                s"claude exited with code ${result.exitCode}: ${result.stdout.mkString("\n")}",
-                None,
-              ))
+              Clock.instant.flatMap { now =>
+                val raw = result.stdout.mkString("\n")
+                ZIO.fail(UsageLimits.classify("claude", raw, now, ZoneId.systemDefault)
+                  .getOrElse(LlmError.ProviderError(s"claude exited with code ${result.exitCode}: $raw", None)))
+              }
           }
 
       // Stream via `claude -p --output-format stream-json --verbose`, parsing JSONL events into the shared
