@@ -61,4 +61,23 @@ object UsageLimitAwareSpec extends ZIOSpecDefault:
         exit   <- svc.executeStructured[String]("go", Json.Obj()).exit
       yield assertTrue(exit.isFailure)
     },
+    test("unknown resetAt: polls every pollInterval then succeeds") {
+      for
+        events <- FlowEvents.collecting
+        fails  <- Ref.make(List[LlmError](LlmError.UsageLimitError(None, "codex", "limit")))
+        svc     = UsageLimitAware(ScriptedService(fails), UsageLimitPolicy.patient)(using events) // pollInterval = 2m
+        fiber  <- svc.executeStructured[String]("go", Json.Obj()).fork
+        _      <- TestClock.adjust(2.minutes + 1.second)
+        out    <- fiber.join
+      yield assertTrue(out == "ok")
+    },
+    test("unknown resetAt: gives up when pollInterval exceeds maxWait") {
+      val tight = UsageLimitPolicy(enabled = true, maxWait = 2.minutes, pollInterval = 3.minutes)
+      for
+        events <- FlowEvents.collecting
+        fails  <- Ref.make(List[LlmError](LlmError.UsageLimitError(None, "codex", "limit")))
+        svc     = UsageLimitAware(ScriptedService(fails), tight)(using events)
+        exit   <- svc.executeStructured[String]("go", Json.Obj()).exit
+      yield assertTrue(exit.isFailure)
+    },
   )

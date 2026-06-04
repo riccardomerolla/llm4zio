@@ -40,14 +40,14 @@ final class UsageLimitAware(underlying: LlmService, policy: UsageLimitPolicy)(us
     val until = err.resetAt.fold("")(at => s" until $at")
     s"⏳ usage limit (${err.provider}) — sleeping ${mins}m$until"
 
-  def executeStream(prompt: String): Stream[LlmError, LlmChunk]              = underlying.executeStream(prompt)
-  def executeStreamWithHistory(m: List[Message]): Stream[LlmError, LlmChunk] = underlying.executeStreamWithHistory(m)
-  def isAvailable: UIO[Boolean]                                              = underlying.isAvailable
+  override def executeStream(prompt: String): Stream[LlmError, LlmChunk]              = underlying.executeStream(prompt)
+  override def executeStreamWithHistory(m: List[Message]): Stream[LlmError, LlmChunk] = underlying.executeStreamWithHistory(m)
+  override def isAvailable: UIO[Boolean]                                              = underlying.isAvailable
 
-  def executeWithTools(prompt: String, tools: List[AnyTool]): IO[LlmError, ToolCallResponse] =
+  override def executeWithTools(prompt: String, tools: List[AnyTool]): IO[LlmError, ToolCallResponse] =
     patient(underlying.executeWithTools(prompt, tools))
 
-  def executeStructured[A: JsonCodec](prompt: String, schema: JsonSchema): IO[LlmError, A] =
+  override def executeStructured[A: JsonCodec](prompt: String, schema: JsonSchema): IO[LlmError, A] =
     patient(underlying.executeStructured[A](prompt, schema))
 
   override def executeStructuredWithUsage[A: JsonCodec](
