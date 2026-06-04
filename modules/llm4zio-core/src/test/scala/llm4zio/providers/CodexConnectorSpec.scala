@@ -4,6 +4,7 @@ import scala.io.Source
 
 import zio.*
 import zio.json.JsonCodec
+import zio.json.ast.Json
 import zio.stream.ZStream
 import zio.test.*
 
@@ -141,5 +142,41 @@ object CodexConnectorSpec extends ZIOSpecDefault:
         argv.contains("--output-schema"),
         argv.containsSlice(List("codex", "exec", "--json")),
       )
+    },
+    test("strictSchema adds additionalProperties:false + required to every object, recursively") {
+      val schema                          = Json.Obj(
+        "type"       -> Json.Str("object"),
+        "properties" -> Json.Obj(
+          "epicId" -> Json.Obj("type" -> Json.Str("string")),
+          "tasks"  -> Json.Obj(
+            "type"  -> Json.Str("array"),
+            "items" -> Json.Obj(
+              "type"       -> Json.Str("object"),
+              "properties" -> Json.Obj("title" -> Json.Obj("type" -> Json.Str("string"))),
+            ),
+          ),
+        ),
+      )
+      def obj(j: Json): Map[String, Json] = j match
+        case Json.Obj(fs) => fs.toMap
+        case _            => Map.empty
+      val top                             = obj(CodexConnector.strictSchema(schema))
+      val items                           = obj(obj(obj(top("properties"))("tasks"))("items"))
+      assertTrue(
+        top.get("additionalProperties").contains(Json.Bool(false)),
+        top.get("required").contains(Json.Arr(Json.Str("epicId"), Json.Str("tasks"))),
+        items.get("additionalProperties").contains(Json.Bool(false)),
+        items.get("required").contains(Json.Arr(Json.Str("title"))),
+        // leaf (non-object) schemas are untouched
+        obj(obj(top("properties"))("epicId")).get("additionalProperties").isEmpty,
+      )
+    },
+    test("executeStructured surfaces a codex turn.failed as a ProviderError, not 'no JSON candidate'") {
+      val failLine = """{"type":"turn.failed","error":{"message":"invalid_json_schema: boom"}}"""
+      for
+        seen <- Ref.make(List.empty[String])
+        conn  = CodexConnector.make(CliConnectorConfig(ConnectorId.Codex), new RecordingExec(seen, failLine))
+        res  <- conn.executeStructured[ReplyStub]("go", SchemaDerivation.derive[ReplyStub]).either
+      yield assertTrue(res.isLeft, res.left.toOption.exists(_.message.contains("boom")))
     },
   )

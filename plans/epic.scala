@@ -35,7 +35,7 @@ object Main extends ZIOAppDefault:
     * No API key required; a single CLI login is enough.
     */
   private def cliFor(name: String): CliConnectorConfig = name match
-    case "codex"  => CliConnectorConfig(ConnectorId.Codex, flags = Map("full-auto" -> ""))
+    case "codex"  => CliConnectorConfig(ConnectorId.Codex, flags = Map("sandbox" -> "workspace-write"))
     case "gemini" => CliConnectorConfig(ConnectorId.GeminiCli) // gemini auto-approves edits via built-in -y
     case _        => CliConnectorConfig(ConnectorId.ClaudeCli, flags = Map("permission-mode" -> "acceptEdits"))
 
