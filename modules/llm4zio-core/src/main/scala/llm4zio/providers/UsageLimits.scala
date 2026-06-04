@@ -1,7 +1,7 @@
 package llm4zio.providers
 
-import java.time.{ Instant, LocalDate, LocalTime, ZoneId }
 import java.time.format.DateTimeFormatter
+import java.time.{ Instant, LocalDate, LocalTime, ZoneId }
 import java.util.Locale
 
 import zio.Duration
@@ -41,5 +41,5 @@ object UsageLimits:
     val fmts    = List("h:mma", "ha")
     fmts.iterator.flatMap { p =>
       try Some(LocalTime.parse(cleaned, DateTimeFormatter.ofPattern(p, Locale.US)))
-      catch case _: Throwable => None
+      catch case _: java.time.format.DateTimeParseException => None
     }.nextOption()
