@@ -25,10 +25,14 @@ parse_args() {
 }
 
 # resolve_dest <prefix> — sets DEST to the given path or a fresh temp dir.
+# Portable across macOS/BSD and Linux/GNU: an explicit `<dir>/<prefix>.XXXXXXXX`
+# template works on both, unlike `mktemp -t <prefix>` (deprecated on GNU and
+# rejected there without trailing X's).
 resolve_dest() {
   local prefix="$1"
   if [ -z "$DEST" ]; then
-    DEST="$(mktemp -d -t "$prefix")"
+    local tmp="${TMPDIR:-/tmp}"
+    DEST="$(mktemp -d "${tmp%/}/${prefix}.XXXXXXXX")"
   fi
   mkdir -p "$DEST"
 }
@@ -64,14 +68,16 @@ apply_local_flag() {
   fi
   echo "Pinning script to local version $version"
 
-  # Pin the dependency version and resolve from the local ivy repo.
+  # Pin the dependency version (sed -i.bak + -E are accepted by both BSD and GNU sed).
   sed -i.bak -E "s#(io\.github\.riccardomerolla::llm4zio-runner:)[^\"]+#\1$version#" "$script_path"
-  if ! grep -q 'using repository ivy2Local' "$script_path"; then
-    sed -i.bak '1a\
-//> using repository ivy2Local
-' "$script_path"
-  fi
   rm -f "$script_path.bak"
+
+  # Add the resolver directive. Prepending via a temp file avoids sed's `a\` append
+  # idiom, which differs between BSD and GNU sed; directive order is irrelevant to scala-cli.
+  if ! grep -q 'using repository ivy2Local' "$script_path"; then
+    printf '%s\n' '//> using repository ivy2Local' | cat - "$script_path" > "$script_path.tmp"
+    mv "$script_path.tmp" "$script_path"
+  fi
 }
 
 # maybe_run <script_name> <prompt> — under --run, cd into DEST and exec the flow.

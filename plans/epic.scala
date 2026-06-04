@@ -24,29 +24,34 @@
 import zio.*
 import java.nio.file.Path
 
-import llm4zio.core.{CliConnectorConfig, ConnectorConfig, ConnectorId}
+import llm4zio.core.{CliConnectorConfig, ConnectorId}
 import llm4zio.flow.*
 import llm4zio.runner.Llm4zio
 
 object Main extends ZIOAppDefault:
 
-  // All CLI — no API key. claude implements + reasons; codex reviews alongside it.
-  private val reasoning      = CliConnectorConfig(ConnectorId.ClaudeCli)
-  private val coder          = CliConnectorConfig(ConnectorId.ClaudeCli, flags = Map("permission-mode" -> "acceptEdits"))
-  // Cross-agent review: codex reviews what claude implements (alongside the claude reasoner).
-  private val extraReviewers = List[ConnectorConfig](CliConnectorConfig(ConnectorId.Codex))
+  /** Reasoning (planning), coding, and the full reviewer roster all run over one
+    * CLI agent — selectable via LLM4ZIO_CODER=claude|codex|gemini (default claude).
+    * No API key required; a single CLI login is enough.
+    */
+  private def cliFor(name: String): CliConnectorConfig = name match
+    case "codex"  => CliConnectorConfig(ConnectorId.Codex, flags = Map("full-auto" -> ""))
+    case "gemini" => CliConnectorConfig(ConnectorId.GeminiCli) // gemini auto-approves edits via built-in -y
+    case _        => CliConnectorConfig(ConnectorId.ClaudeCli, flags = Map("permission-mode" -> "acceptEdits"))
 
   def run =
     getArgs.flatMap { args =>
       val prompt  = args.headOption.getOrElse(
         "Persist tasks to a JSON file, add 'done <id>' and 'delete <id>' commands, and priority levels"
       )
-      val workDir = Path.of(".").toAbsolutePath.normalize
+      val workDir   = Path.of(".").toAbsolutePath.normalize
+      val backend   = sys.env.getOrElse("LLM4ZIO_CODER", "claude")
+      val coder     = cliFor(backend)
+      val reasoning = cliFor(backend)
 
-      Llm4zio.run(workDir, reasoning, coder, extraReviewers) { ctx =>
+      Llm4zio.run(workDir, reasoning, coder) { ctx =>
         given FlowEvents = ctx.events
-        val planPath  = workDir.resolve(".llm4zio/epic.md")
-        val reviewers = ctx.reasoning :: ctx.reviewers
+        val planPath = workDir.resolve(".llm4zio/epic.md")
 
         for
           plan      <- stage("Acquire epic")(PlanStore.recoverOrCreate(planPath)(Planner.from(ctx.reasoning, prompt)))

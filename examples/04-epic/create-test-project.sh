@@ -36,8 +36,9 @@ cat <<EOF
 Next steps:
   cd $DEST
   scala-cli run epic.scala -- "$PROMPT"
+  # or pick a backend: LLM4ZIO_CODER=gemini scala-cli run epic.scala -- "$PROMPT"
 
-Requires: JDK 21+, scala-cli, and BOTH \`claude\` and \`codex\` logged in
-(claude implements, codex + the API model review). A reasoning API key is read
-from the environment (e.g. ANTHROPIC_API_KEY).
+Requires: JDK 21+, scala-cli, and the chosen agent CLI logged in — \`claude\` by
+default, or \`codex\` / \`gemini\` via LLM4ZIO_CODER. No API key needed; one CLI
+login does planning, coding, and review.
 EOF
