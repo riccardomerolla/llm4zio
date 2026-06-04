@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.0] - 2026-06-04
+
+### Added
+
+- **Usage-limit handling.** A typed `LlmError.UsageLimitError(resetAt, provider, message)` (distinct from the
+  transient `RateLimitError`), produced by a per-provider `UsageLimits.classify` matcher (codex/claude wall-clock
+  caps → `UsageLimitError`; gemini's short "reset after Ns" → `RateLimitError`). Opt-in "patient mode"
+  (`UsageLimitPolicy`, via `Llm4zio.run(usageLimit = …)` or `LLM4ZIO_USAGE_WAIT=4h`) makes a flow **sleep until the
+  reset and continue** instead of failing: the `UsageLimitAware` decorator waits in place on idempotent
+  planning/review/tool calls, and the `withUsageLimitRetry` combinator sleeps-and-re-enters for the streaming coder
+  and interactive `Drive`. Bounded by a `maxWait` cap (default 4h). Off by default (usage limits then fail fast, but
+  with the typed error).
+
+### Changed
+
+- `FlowError.Llm` gains an optional `cause: Option[LlmError]` (defaulted) so the typed error survives into the flow layer.
+
+[2.7.0]: https://github.com/riccardomerolla/llm4zio/releases/tag/v2.7.0
+
 ## [2.6.1] - 2026-06-04
 
 ### Fixed

@@ -179,4 +179,13 @@ object CodexConnectorSpec extends ZIOSpecDefault:
         res  <- conn.executeStructured[ReplyStub]("go", SchemaDerivation.derive[ReplyStub]).either
       yield assertTrue(res.isLeft, res.left.toOption.exists(_.message.contains("boom")))
     },
+    test("a codex usage-limit message becomes a typed UsageLimitError") {
+      val failLine =
+        """{"type":"turn.failed","error":{"message":"You've hit your usage limit. try again at 2:38 PM."}}"""
+      for
+        seen <- Ref.make(List.empty[String])
+        conn  = CodexConnector.make(CliConnectorConfig(ConnectorId.Codex), new RecordingExec(seen, failLine))
+        res  <- conn.executeStructured[ReplyStub]("go", SchemaDerivation.derive[ReplyStub]).either
+      yield assertTrue(res.left.toOption.exists(_.isInstanceOf[LlmError.UsageLimitError]))
+    },
   )

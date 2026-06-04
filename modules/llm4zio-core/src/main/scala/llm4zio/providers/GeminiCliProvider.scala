@@ -2,6 +2,7 @@ package llm4zio.providers
 
 import java.io.{ BufferedReader, InputStreamReader }
 import java.nio.charset.StandardCharsets
+import java.time.ZoneId
 
 import scala.jdk.CollectionConverters.*
 
@@ -584,15 +585,13 @@ object GeminiCliProvider:
                     )
                   )
 
-                case GeminiCliStreamEvent.Result(status, errorMessage, stats) if status.contains("error") =>
-                  ZStream.fail(
-                    LlmError.ProviderError(
-                      errorMessage.map(msg => s"Gemini CLI returned an error: $msg").getOrElse(
-                        "Gemini CLI returned an error"
-                      ),
-                      None,
-                    )
-                  )
+                case GeminiCliStreamEvent.Result(status, errorMessage, _) if status.contains("error") =>
+                  ZStream.unwrap(Clock.instant.map { now =>
+                    val raw = errorMessage.getOrElse("Gemini CLI returned an error")
+                    val err = UsageLimits.classify("gemini", raw, now, ZoneId.systemDefault)
+                      .getOrElse(LlmError.ProviderError(s"Gemini CLI returned an error: $raw", None))
+                    ZStream.fail(err)
+                  })
 
                 case GeminiCliStreamEvent.Result(_, _, stats) =>
                   ZStream.fromZIO(metaRef.get).map { meta =>

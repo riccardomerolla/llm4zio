@@ -32,4 +32,14 @@ object ErrorsSpec extends ZIOSpecDefault:
         LlmError.TurnLimitError(Some(10)).message.contains("10"),
       )
     },
+    test("UsageLimitError is a pure ADT carrying resetAt + provider, and renders its message") {
+      val at  = java.time.Instant.parse("2026-06-04T14:38:00Z")
+      val err = LlmError.UsageLimitError(Some(at), "codex", "You've hit your usage limit")
+      assertTrue(
+        !err.isInstanceOf[Throwable],
+        err.resetAt.contains(at),
+        err.provider == "codex",
+        err.message == "You've hit your usage limit",
+      )
+    },
   )

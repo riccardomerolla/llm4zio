@@ -19,10 +19,13 @@ object DefaultFlowContext:
     coder: LlmService,
     workDir: Path,
     reviewers: List[LlmService] = Nil,
+    usageLimit: UsageLimitPolicy = UsageLimitPolicy.off,
   ): UIO[(FlowContext, FlowEvents.Hub)] =
     FlowEvents.hub().map { hub =>
+      given FlowEvents                                    = hub
       def tap(svc: LlmService, agent: String): LlmService =
-        EventTappingService(svc, agent, hub, workDir)
+        val tapped = EventTappingService(svc, agent, hub, workDir)
+        if usageLimit.enabled then UsageLimitAware(tapped, usageLimit) else tapped
       val reasoningT                                      = tap(reasoning, "reasoning")
       val coderT                                          = tap(coder, "coder")
       val reviewersT                                      = reviewers.zipWithIndex.map { case (r, i) => tap(r, s"reviewer:${i + 1}") }
@@ -37,6 +40,7 @@ object DefaultFlowContext:
     coder: CliConnectorConfig,
     workDir: Path,
     reviewerCfgs: List[ConnectorConfig] = Nil,
+    usageLimit: UsageLimitPolicy = UsageLimitPolicy.off,
   ): ZIO[HttpClient, LlmError, (FlowContext, FlowEvents.Hub)] =
     ZIO.serviceWithZIO[HttpClient] { http =>
       val registry = ConnectorFactories.createRegistry(http, LiveCliProcessExecutor.instance)
@@ -44,7 +48,7 @@ object DefaultFlowContext:
         reasoningC <- registry.resolve(prepare(reasoning, workDir))
         coderC     <- registry.resolveCli(coder.copy(workingDir = Some(workDir.toString)))
         reviewers  <- ZIO.foreach(reviewerCfgs)(cfg => registry.resolve(prepare(cfg, workDir)))
-        bundle     <- make(reasoningC, coderC, workDir, reviewers)
+        bundle     <- make(reasoningC, coderC, workDir, reviewers, usageLimit)
       yield bundle
     }
 

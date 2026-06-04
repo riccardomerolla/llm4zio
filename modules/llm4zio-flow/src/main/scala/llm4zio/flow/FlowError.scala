@@ -1,5 +1,7 @@
 package llm4zio.flow
 
+import llm4zio.core.LlmError
+
 /** Typed errors raised by the flow layer. */
 sealed trait FlowError:
   def message: String
@@ -17,5 +19,5 @@ object FlowError:
   /** An external process (git, gh, a CLI agent) failed unexpectedly. */
   final case class Process(message: String, detail: String) extends FlowError
 
-  /** A wrapped failure from the underlying LLM service. */
-  final case class Llm(message: String) extends FlowError
+  /** A wrapped failure from the underlying LLM service. `cause` carries the typed error when available. */
+  final case class Llm(message: String, cause: Option[LlmError] = None) extends FlowError
