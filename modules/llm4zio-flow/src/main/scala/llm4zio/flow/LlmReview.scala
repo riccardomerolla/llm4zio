@@ -125,9 +125,11 @@ object Reviewers:
 /** Review → fix → re-review until clean or `maxRounds` reached.
   *
   * Each round: an optional `lint` gate runs first — if it fails, that's the round's result and LLM reviewers are
-  * skipped (fix the build first). Otherwise `selector` picks which `reviewers` run (in parallel; cross-agent review),
-  * and their findings are merged. The fixer is the coder [[Chat]]; `currentDiff` is re-read each round so reviewers see
-  * the latest state.
+  * skipped (fix the build first). Otherwise `selector` picks which `reviewers` run, and their findings are merged. The
+  * fixer is the coder [[Chat]]; `currentDiff` is re-read each round so reviewers see the latest state.
+  *
+  * `parallelism` caps how many reviewer calls run at once: `0` (default) fans them all out concurrently; a positive
+  * value throttles them, which a rate-limited backend (e.g. the gemini free tier) needs to avoid 429s.
   */
 def reviewAndFixLoop(
   reviewers: List[Reviewer],
@@ -139,6 +141,7 @@ def reviewAndFixLoop(
   maxRounds: Int = 3,
   selector: ReviewerSelector = ReviewerSelector.allEveryRound,
   lint: Option[IO[FlowError, ReviewResult]] = None,
+  parallelism: Int = 0,
 )(using events: FlowEvents
 ): IO[FlowError, ReviewResult] =
 
@@ -150,14 +153,15 @@ def reviewAndFixLoop(
           diff   <- currentDiff
           files  <- changedFiles
           chosen <- selector.select(reviewers, files, round, previous)
-          merged <- ZIO
-                      .foreachPar(chosen) { reviewer =>
-                        reviewer
-                          .asService(reviewerService)
-                          .executeStructured[ReviewResult](Reviewers.reviewPrompt(taskTitle, diff), Reviewers.schema)
-                          .mapError(e => FlowError.Llm(e.toString))
-                      }
-                      .map(Reviewers.merge)
+          reviews = ZIO.foreachPar(chosen) { reviewer =>
+                      reviewer
+                        .asService(reviewerService)
+                        .executeStructured[ReviewResult](Reviewers.reviewPrompt(taskTitle, diff), Reviewers.schema)
+                        .mapError(e => FlowError.Llm(e.message))
+                    }
+          // `parallelism = 0` keeps the default unbounded fan-out (fine for high-throughput backends); a positive
+          // cap throttles concurrent reviewer calls so rate-limited backends (e.g. the gemini free tier) don't 429.
+          merged <- (if parallelism > 0 then reviews.withParallelism(parallelism) else reviews).map(Reviewers.merge)
         yield merged
     }
 
@@ -168,7 +172,7 @@ def reviewAndFixLoop(
         events.publish(FlowEvent.Info(s"review settled after round $round: $verdict")).as(result)
       else
         events.publish(FlowEvent.Info(s"review round $round: $verdict, fixing")) *>
-          coder.ask(Reviewers.fixPrompt(result)).mapError(e => FlowError.Llm(e.toString)) *>
+          coder.ask(Reviewers.fixPrompt(result)).mapError(e => FlowError.Llm(e.message)) *>
           loop(round + 1, Some(result))
     }
 

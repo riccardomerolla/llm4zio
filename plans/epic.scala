@@ -48,6 +48,9 @@ object Main extends ZIOAppDefault:
       val backend   = sys.env.getOrElse("LLM4ZIO_CODER", "claude")
       val coder     = cliFor(backend)
       val reasoning = cliFor(backend)
+      // The seven review lenses fan out concurrently by default. gemini's free tier 429s under that burst, so run its
+      // reviews one at a time (gemini's own retry/backoff then absorbs transient limits); 0 = unbounded for the rest.
+      val reviewParallelism = if backend == "gemini" then 1 else 0
 
       Llm4zio.run(workDir, reasoning, coder) { ctx =>
         given FlowEvents = ctx.events
@@ -59,15 +62,22 @@ object Main extends ZIOAppDefault:
           coderChat <- Chat.start(ctx.coder, system = Some("You implement one task at a time in the current repo."))
           _         <- implementTaskLoop(planPath, plan) { task =>
                          for
-                           _ <- coderChat.ask(task.description).mapError(e => FlowError.Llm(e.toString))
-                           _ <- reviewAndFixLoop(Reviewers.all, ctx.reasoning, coderChat, task.title, ctx.git.diff)
+                           _ <- coderChat.ask(task.description).mapError(e => FlowError.Llm(e.message))
+                           _ <- reviewAndFixLoop(
+                                  Reviewers.all,
+                                  ctx.reasoning,
+                                  coderChat,
+                                  task.title,
+                                  ctx.git.diff,
+                                  parallelism = reviewParallelism,
+                                )
                            _ <- ctx.git.commitAll(s"${plan.epicId}: ${task.title}").unit
                          yield ()
                        }
           _         <- stage("Update documentation") {
                          coderChat
                            .ask("All tasks are done. Update the project docs (README, doc-comments) for the changes made — only what's affected, no new sections.")
-                           .mapError(e => FlowError.Llm(e.toString)) *>
+                           .mapError(e => FlowError.Llm(e.message)) *>
                            ctx.git.commitAll("docs: update for completed epic").unit
                        }
           _         <- stage("Clean up epic file")(PlanStore.delete(planPath))

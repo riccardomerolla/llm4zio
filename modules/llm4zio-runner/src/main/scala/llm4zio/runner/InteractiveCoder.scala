@@ -48,7 +48,7 @@ object InteractiveCoder:
       flags   = sessionFlags(serverName, config) ++ List("--append-system-prompt", CoderSystem.gitOwnership)
       argv    = ClaudeAgentSession.sessionArgv(model, flags)
     yield _ =>
-      ClaudeAgentSession.open(executor, argv, cwd.toString).mapError(e => FlowError.Llm(e.toString))
+      ClaudeAgentSession.open(executor, argv, cwd.toString).mapError(e => FlowError.Llm(e.message))
 
   private def processError(step: String)(t: Throwable): FlowError =
     FlowError.Process(step, Option(t.getMessage).getOrElse(t.toString))

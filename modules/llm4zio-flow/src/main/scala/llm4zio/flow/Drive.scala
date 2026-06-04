@@ -16,7 +16,7 @@ import llm4zio.core.{ AgentSession, LlmError, SessionEvent, SessionResult }
   */
 object Drive:
 
-  private def liftErr(e: LlmError): FlowError = FlowError.Llm(e.toString)
+  private def liftErr(e: LlmError): FlowError = FlowError.Llm(e.message)
 
   /** Send `userMessage` to the session and run it to its next `Done`, relaying events and bridging questions.
     *

@@ -31,7 +31,7 @@ object ExampleFlow:
                  for
                    reply <- coder
                               .ask(s"Implement ${task.title}: ${task.description}")
-                              .mapError(e => FlowError.Llm(e.toString))
+                              .mapError(e => FlowError.Llm(e.message))
                    _     <- writeFile(repoDir, s"${slug(task.title)}.md", reply)
                    _     <- ctx.git.commitAll(s"${plan.epicId}: ${task.title}")
                  yield ()
