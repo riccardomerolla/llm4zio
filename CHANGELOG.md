@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.6] - 2026-06-06
+
+### Added
+
+- **`LLM4ZIO_RETRIES` — configurable transient-retry count.** Sets how many times a transient provider blip is retried
+  before failing: unset → **3**, `0` → **fail fast** (no retries), `<n>` → that many. Applies to every connector via
+  `TransientRetry`. Gemini's catch-all `[API Error: An unknown error occurred.]` (and similar "API error" / "unknown
+  error" messages) is now classified transient, so it's retried with a visible `⟳` notice instead of failing the run
+  on the first hiccup.
+
+[2.7.6]: https://github.com/riccardomerolla/llm4zio/releases/tag/v2.7.6
+
 ## [2.7.5] - 2026-06-06
 
 ### Fixed

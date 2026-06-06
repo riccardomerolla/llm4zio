@@ -17,7 +17,7 @@ import llm4zio.tools.{ AnyTool, JsonSchema }
   */
 final class TransientRetry(
   underlying: LlmService,
-  maxRetries: Int = 2,
+  maxRetries: Int = 3,
   baseDelay: Duration = 1.second,
 )(using events: FlowEvents
 ) extends LlmService:
@@ -83,6 +83,10 @@ object TransientRetry:
         "overloaded",
         "temporarily",
         "timed out",
+        // Gemini's catch-all server-side glitch, surfaced as "[API Error: An unknown error occurred.]" — flaky, worth
+        // retrying (bounded). Tune the count with LLM4ZIO_RETRIES (0 = fail fast).
+        "api error",
+        "unknown error",
         "code=500",
         "code=502",
         "code=503",

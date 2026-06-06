@@ -50,7 +50,8 @@ object Llm4zio:
                        base      <- if palette.enabled then TerminalSurface.live(palette) else TerminalSurface.plain
                        // Tee every rendered tree line into the log file too, so the log is a complete record.
                        surface    = TerminalSurface.teeingToLog(base)
-                       bundle    <- DefaultFlowContext.build(reasoning, coder, workDir, reviewers, policy)
+                       retries    = RetryEnv.parse(sys.env.get("LLM4ZIO_RETRIES"))
+                       bundle    <- DefaultFlowContext.build(reasoning, coder, workDir, reviewers, policy, retries)
                        (ctx, hub) = bundle
                        tracker   <- CostTracker.make
                        // Two fire-and-forget subscribers on the bounded event hub. Both drain fast

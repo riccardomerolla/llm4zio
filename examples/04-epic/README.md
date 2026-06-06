@@ -43,6 +43,10 @@ scala-cli run epic.scala -- "…your epic prompt…"
 
 # pick a different backend:
 LLM4ZIO_CODER=gemini scala-cli run epic.scala -- "…your epic prompt…"
+
+# retry transient provider blips (timeouts, 5xx, gemini "API Error") N times;
+# default 3, set 0 to fail fast:
+LLM4ZIO_RETRIES=5 LLM4ZIO_CODER=gemini scala-cli run epic.scala -- "…"
 ```
 
 Edit [`test-project/`](test-project/) for a different starter, or

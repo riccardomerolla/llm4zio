@@ -37,6 +37,10 @@ object TransientRetrySpec extends ZIOSpecDefault:
           TransientRetry.isTransient(LlmError.RateLimitError()),
           TransientRetry.isTransient(LlmError.ProviderError("Gemini CLI stream error: connection reset by peer")),
           TransientRetry.isTransient(LlmError.ProviderError("api error code=503 type=server_error")),
+          // gemini's catch-all glitch, now retryable
+          TransientRetry.isTransient(
+            LlmError.ProviderError("Gemini CLI returned an error: [API Error: An unknown error occurred.]")
+          ),
         )
       },
       test("does NOT retry bad requests, parse errors, config errors, or usage caps") {
@@ -75,6 +79,18 @@ object TransientRetrySpec extends ZIOSpecDefault:
         result          <- retry.executeStream("hi").runCollect.exit
         tries           <- attempts.get
       yield assertTrue(result.isFailure, tries == 3) // initial + 2 retries
+    },
+    test("maxRetries = 0 fails fast on a transient error (one attempt, no retry notice)") {
+      for
+        events          <- FlowEvents.collecting
+        given FlowEvents = events
+        attempts        <- Ref.make(0)
+        svc              = FlakyService(attempts, failTimes = 99, LlmError.ProviderError("connection reset"))
+        retry            = TransientRetry(svc, maxRetries = 0, baseDelay = Duration.Zero)
+        result          <- retry.executeStream("hi").runCollect.exit
+        tries           <- attempts.get
+        infos           <- events.recorded
+      yield assertTrue(result.isFailure, tries == 1, infos.isEmpty)
     },
     test("does not retry a non-transient stream failure") {
       for
