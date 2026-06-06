@@ -1,14 +1,11 @@
 package llm4zio.providers
 
-import java.io.{ BufferedReader, InputStreamReader }
-import java.nio.charset.StandardCharsets
 import java.time.ZoneId
-
-import scala.jdk.CollectionConverters.*
 
 import zio.*
 import zio.json.*
 import zio.json.ast.Json
+import zio.process.{ Command, ProcessInput }
 import zio.stream.ZStream
 
 import llm4zio.core.*
@@ -117,43 +114,67 @@ object GeminiCliExecutor:
       private def isWindows: Boolean =
         Option(java.lang.System.getProperty("os.name")).getOrElse("").toLowerCase.contains("win")
 
-      private def findCommand: List[String] =
-        if isWindows then List("where", "gemini") else List("which", "gemini")
+      private def geminiArgv(config: LlmConfig, ctx: GeminiCliExecutionContext, outputFormat: String): List[String] =
+        val gemini = if isWindows then List("cmd", "/c", "gemini") else List("gemini")
+        gemini ++ GeminiCliExecutor.buildGeminiArgs(config, ctx, outputFormat)
 
-      private def geminiCommand: List[String] =
-        if isWindows then List("cmd", "/c", "gemini") else List("gemini")
+      /** A zio-process [[Command]] for gemini: argv + working dir + additive env + the prompt on stdin (bypasses
+        * ARG_MAX). zio-process owns the lifecycle — the child is killed when the using scope closes and its streams are
+        * interruptible — so a failed turn or a Ctrl+C tears gemini down instead of deadlocking on an uninterruptible
+        * blocking read (the cause of the earlier hang).
+        */
+      private def geminiCmd(
+        prompt: String,
+        config: LlmConfig,
+        ctx: GeminiCliExecutionContext,
+        outputFormat: String,
+      ): Command =
+        val argv    = geminiArgv(config, ctx, outputFormat)
+        val base    = Command(argv.head, argv.tail*)
+        val withCwd = ctx.cwd.fold(base)(p => base.workingDirectory(java.nio.file.Paths.get(p).toFile))
+        val env     = GeminiCliExecutor.geminiProcessEnv(ctx)
+        val withEnv = if env.isEmpty then withCwd else withCwd.env(env)
+        withEnv.stdin(ProcessInput.fromUTF8String(prompt))
+
+      private def startError(e: Throwable): LlmError =
+        LlmError.ProviderError(s"Failed to start gemini process: ${e.getMessage}", Some(e))
 
       override def checkGeminiInstalled: IO[LlmError, Unit] =
-        ZIO
-          .attemptBlocking {
-            val process  = new ProcessBuilder(findCommand.asJava)
-              .redirectErrorStream(true)
-              .start()
-            val exitCode = process.waitFor()
-            exitCode == 0
-          }
+        val probe = if isWindows then Command("where", "gemini") else Command("which", "gemini")
+        probe.exitCode
           .mapError(e => LlmError.ProviderError(s"Failed to check gemini installation: ${e.getMessage}", Some(e)))
-          .flatMap { installed =>
-            if !installed then ZIO.fail(LlmError.ConfigError("gemini-cli not installed"))
-            else ZIO.unit
-          }
+          .flatMap(code =>
+            if code.code == 0 then ZIO.unit else ZIO.fail(LlmError.ConfigError("gemini-cli not installed"))
+          )
 
       override def runGeminiProcess(
         prompt: String,
         config: LlmConfig,
         executionContext: GeminiCliExecutionContext,
       ): IO[LlmError, String] =
-        for
-          process  <- startProcess(prompt, config, executionContext, outputFormat = "json")
-          output   <- readOutput(process, config)
-          exitCode <- waitForCompletion(process)
-          _        <- GeminiCliExecutor.validateExitCode(
-                        exitCode,
-                        s"Gemini process exited with code $exitCode",
-                        executionContext.turnLimit,
-                      )
-          finalOut <- extractFinalResponse(output)
-        yield finalOut
+        ZIO.scoped {
+          for
+            _       <- ZIO.logDebug(s"Starting Gemini: ${geminiArgv(config, executionContext, "json").mkString(" ")}")
+            process <- ZIO.acquireRelease(
+                         geminiCmd(prompt, config, executionContext, "json").run.mapError(startError)
+                       )(p => p.killForcibly.ignore)
+            errF    <- process.stderr.string.fork
+            output  <-
+              process.stdout.string
+                .mapError(e => LlmError.ProviderError(s"Failed to read gemini output: ${e.getMessage}", Some(e)))
+            exit    <- process.exitCode
+                         .mapError(e => LlmError.ProviderError(s"Process wait failed: ${e.getMessage}", Some(e)))
+            stderr  <- errF.join.orElseSucceed("")
+            _       <- GeminiCliExecutor.validateExitCode(
+                         exit.code,
+                         if stderr.trim.nonEmpty then stderr.trim else s"Gemini process exited with code ${exit.code}",
+                         executionContext.turnLimit,
+                       )
+            out     <- ZIO
+                         .fromEither(GeminiCliProvider.extractResponse(output))
+                         .mapError(err => LlmError.ParseError(err, output))
+          yield out
+        }.timeoutFail(LlmError.TimeoutError(config.timeout))(config.timeout)
 
       override def runGeminiProcessStream(
         prompt: String,
@@ -162,158 +183,37 @@ object GeminiCliExecutor:
       ): ZStream[Any, LlmError, GeminiCliStreamEvent] =
         ZStream.unwrapScoped {
           for
-            process <- ZIO.acquireRelease(startProcess(
-                         prompt,
-                         config,
-                         executionContext,
-                         outputFormat = "stream-json",
-                         mergeErrorStream = false,
-                       ))(terminateProcess)
-            _       <- streamStderrOutput(process)
-                         .mapZIO(line =>
-                           if line.trim.nonEmpty then
-                             ZIO.logDebug(
-                               s"Gemini stream stderr: ${line.take(500)}${if line.length > 500 then "..." else ""}"
-                             )
-                           else ZIO.unit
+            _       <- ZIO.logDebug(
+                         s"Starting Gemini stream: ${geminiArgv(config, executionContext, "stream-json").mkString(" ")}"
+                       )
+            process <- geminiCmd(prompt, config, executionContext, "stream-json").run.mapError(startError)
+            // Drain stderr (debug log only). Killing the child first on teardown (finalizer below, registered last ⇒
+            // runs first) closes this stream so the drain fiber can never wedge scope shutdown.
+            _       <- process.stderr.linesStream
+                         .foreach(line =>
+                           ZIO.logDebug(s"Gemini stream stderr: ${line.take(500)}${if line.length > 500 then "..." else ""}")
                          )
-                         .runDrain
-                         .catchAll(err => ZIO.logDebug(s"Gemini stderr stream closed: ${err.toString}"))
+                         .ignore
                          .forkScoped
-          yield streamOutput(process) ++ ZStream.fromZIO(
-            waitForCompletion(process).flatMap(exitCode =>
-              GeminiCliExecutor.validateExitCode(
-                exitCode,
-                s"Gemini stream process exited with code $exitCode",
-                executionContext.turnLimit,
-              )
+            _       <- ZIO.addFinalizer(process.killForcibly.ignore)
+          yield process.stdout.linesStream
+            .mapError(e => LlmError.ProviderError(s"Failed to read gemini stream output: ${e.getMessage}", Some(e)))
+            .tap(line =>
+              ZIO.logDebug(s"Gemini stream output: ${line.take(500)}${if line.length > 500 then "..." else ""}")
             )
-          ).drain
-        }
-
-      private def startProcess(
-        prompt: String,
-        config: LlmConfig,
-        executionContext: GeminiCliExecutionContext,
-        outputFormat: String,
-        mergeErrorStream: Boolean = true,
-      ): IO[LlmError, Process] =
-        val geminiArgs = GeminiCliExecutor.buildGeminiArgs(config, executionContext, outputFormat)
-        val commands   = geminiCommand ++ geminiArgs
-        ZIO.logDebug(s"Starting Gemini process: gemini ${geminiArgs.mkString(" ")}") *>
-          ZIO
-            .attemptBlocking {
-              val builder = new ProcessBuilder(commands.asJava)
-              executionContext.cwd.foreach(path => builder.directory(java.nio.file.Paths.get(path).toFile))
-              GeminiCliExecutor.geminiProcessEnv(executionContext).foreach { (k, v) =>
-                builder.environment().put(k, v)
-              }
-              builder
-                .redirectErrorStream(mergeErrorStream)
-                .start()
-            }
-            .mapError(e => LlmError.ProviderError(s"Failed to start gemini process: ${e.getMessage}", Some(e)))
-            .tapError(err => ZIO.logError(s"Failed to start Gemini process: $err"))
-            .tap { process =>
-              // Feed the prompt via stdin (bypasses ARG_MAX). Forked so a large prompt streams
-              // while gemini reads, without blocking stdout consumption. Broken-pipe (process
-              // already exited) is ignored.
-              ZIO.attemptBlocking {
-                val os = process.getOutputStream
-                try
-                  os.write(prompt.getBytes(StandardCharsets.UTF_8))
-                  os.flush()
-                finally os.close()
-              }.catchAll(_ => ZIO.unit).forkDaemon.unit
-            }
-
-      private def streamOutput(process: Process): ZStream[Any, LlmError, GeminiCliStreamEvent] =
-        ZStream.unwrapScoped {
-          ZIO.acquireRelease(
-            ZIO
-              .attemptBlocking(new BufferedReader(new InputStreamReader(
-                process.getInputStream,
-                StandardCharsets.UTF_8,
-              )))
-              .mapError(e => LlmError.ProviderError(s"Failed to open gemini output stream: ${e.getMessage}", Some(e)))
-          )((reader: BufferedReader) => ZIO.attemptBlocking(reader.close()).ignoreLogged)
-            .map { reader =>
-              ZStream
-                .repeatZIOOption {
-                  ZIO
-                    .attemptBlocking(Option(reader.readLine()))
-                    .mapError(e =>
-                      Some(LlmError.ProviderError(s"Failed to read gemini stream output: ${e.getMessage}", Some(e)))
-                    )
-                    .someOrFail(None)
-                }
-                .tap(line =>
-                  ZIO.logDebug(s"Gemini stream output: ${line.take(500)}${if line.length > 500 then "..." else ""}")
-                )
-                .map(GeminiCliProvider.parseStreamEvent)
-            }
-        }
-
-      private def readOutput(process: Process, config: LlmConfig): IO[LlmError, String] =
-        ZIO
-          .attemptBlocking {
-            val inputStream = process.getInputStream
-            val bytes       = inputStream.readAllBytes()
-            new String(bytes, StandardCharsets.UTF_8)
-          }
-          .tap(output =>
-            ZIO.logDebug(s"Gemini output received: ${output.take(500)}${if output.length > 500 then "..." else ""}")
-          )
-          .mapError(e => LlmError.ProviderError(s"Failed to read gemini output: ${e.getMessage}", Some(e)))
-          .timeoutFail(LlmError.TimeoutError(config.timeout))(config.timeout)
-          .tapError {
-            case LlmError.TimeoutError(d) => ZIO.logError(s"Gemini process timed out after ${d.toSeconds}s")
-            case other                    => ZIO.logError(s"Gemini output read error: $other")
-          }
-
-      private def streamStderrOutput(process: Process): ZStream[Any, LlmError, String] =
-        ZStream.unwrapScoped {
-          ZIO.acquireRelease(
-            ZIO
-              .attemptBlocking(new BufferedReader(new InputStreamReader(
-                process.getErrorStream,
-                StandardCharsets.UTF_8,
-              )))
-              .mapError(e =>
-                LlmError.ProviderError(s"Failed to open gemini stderr stream: ${e.getMessage}", Some(e))
-              )
-          )((reader: BufferedReader) => ZIO.attemptBlocking(reader.close()).ignoreLogged)
-            .map { reader =>
-              ZStream.repeatZIOOption {
-                ZIO
-                  .attemptBlocking(Option(reader.readLine()))
-                  .mapError(e =>
-                    Some(LlmError.ProviderError(s"Failed to read gemini stderr: ${e.getMessage}", Some(e)))
+            .map(GeminiCliProvider.parseStreamEvent) ++
+            ZStream.fromZIO(
+              process.exitCode
+                .mapError(e => LlmError.ProviderError(s"Process wait failed: ${e.getMessage}", Some(e)))
+                .flatMap(exit =>
+                  GeminiCliExecutor.validateExitCode(
+                    exit.code,
+                    s"Gemini stream process exited with code ${exit.code}",
+                    executionContext.turnLimit,
                   )
-                  .someOrFail(None)
-              }
-            }
+                )
+            ).drain
         }
-
-      private def waitForCompletion(process: Process): IO[LlmError, Int] =
-        ZIO
-          .attemptBlocking(process.waitFor())
-          .mapError(e => LlmError.ProviderError(s"Process wait failed: ${e.getMessage}", Some(e)))
-
-      private def extractFinalResponse(output: String): IO[LlmError, String] =
-        ZIO
-          .fromEither(GeminiCliProvider.extractResponse(output))
-          .mapError(err => LlmError.ParseError(err, output))
-
-      private def terminateProcess(process: Process): UIO[Unit] =
-        ZIO
-          .attemptBlocking {
-            process.destroy()
-            if process.isAlive then
-              val _ = process.destroyForcibly()
-            ()
-          }
-          .ignoreLogged
     }
 
   val live: ULayer[GeminiCliExecutor] =
@@ -392,9 +292,14 @@ object GeminiCliProvider:
               GeminiCliStreamEvent.ToolUse(event.tool_name, event.tool_id, event.parameters.map(_.toString))
             case "tool_result" => GeminiCliStreamEvent.ToolResult(event.tool_id, event.status, event.output)
             case "error"       =>
-              // Prefer the real flat `text`; fall back to a nested error object if a future version emits one.
+              // Prefer the real flat `text`; fall back to a nested error object, then to the raw event line — so an
+              // error we don't fully recognise still surfaces *something* instead of a useless empty message.
               GeminiCliStreamEvent.Error(
-                message = event.text.orElse(event.error.flatMap(_.message)),
+                message = event.text
+                  .map(_.trim)
+                  .filter(_.nonEmpty)
+                  .orElse(event.error.flatMap(_.message))
+                  .orElse(Some(trimmed)),
                 code = event.error.flatMap(_.code),
                 errorType = event.error.flatMap(_.`type`),
               )

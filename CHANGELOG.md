@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.5] - 2026-06-06
+
+### Fixed
+
+- **A failed gemini turn no longer hangs the run (and Ctrl+C works again).** The gemini provider drove the child
+  process with a raw `ProcessBuilder` and **uninterruptible** blocking reads (`attemptBlocking(readLine())`); on a
+  stream failure or Ctrl+C, ZIO couldn't interrupt the parked stderr-drain fiber, so teardown deadlocked, the process
+  was never killed, and the run wedged. The provider now drives gemini through **zio-process** (`Command`/`Process`),
+  matching the rest of the codebase: streams are interruptible and the child is force-killed when the scope closes, so
+  a failed turn or a Ctrl+C tears gemini down in ~1s. Verified against real gemini (streams + parses, and interrupt →
+  teardown in ~1s).
+- **Error detail is no longer empty.** An unrecognised gemini error event used to surface as
+  `Llm(Gemini CLI stream error,None)`. Now: the decoder falls back to the **raw event line** when no `text`/message
+  field is present (never an empty message), `stage`/the failure banner render a `FlowError`'s **`message`** instead of
+  its noisy case-class `toString`, and the underlying cause is preserved through the example flow's `mapError`.
+
+[2.7.5]: https://github.com/riccardomerolla/llm4zio/releases/tag/v2.7.5
+
 ## [2.7.4] - 2026-06-06
 
 ### Fixed

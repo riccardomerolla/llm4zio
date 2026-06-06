@@ -25,6 +25,19 @@ object StageSpec extends ZIOSpecDefault:
         rec == Chunk(FlowEvent.StageStarted("build"), FlowEvent.StageFailed("build", "boom")),
       )
     },
+    test("a FlowError failure renders its message, not the noisy case-class toString") {
+      for
+        ev  <- FlowEvents.collecting
+        res <- stage("load")(ZIO.fail(FlowError.Llm("Gemini CLI stream error: quota", None)))(using ev).either
+        rec <- ev.recorded
+      yield assertTrue(
+        res == Left(FlowError.Llm("Gemini CLI stream error: quota", None)),
+        rec == Chunk(
+          FlowEvent.StageStarted("load"),
+          FlowEvent.StageFailed("load", "Gemini CLI stream error: quota"),
+        ),
+      )
+    },
     test("fail publishes Aborted and fails with FlowError.Aborted") {
       for
         ev  <- FlowEvents.collecting

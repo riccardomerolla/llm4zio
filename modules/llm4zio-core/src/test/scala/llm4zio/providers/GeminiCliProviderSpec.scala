@@ -409,6 +409,17 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
         )
       )
     },
+    test("parseStreamEvent error with no recognised message field falls back to the raw event line") {
+      // Defends against gemini error shapes we don't model: never lose the detail to an empty message.
+      val line = """{"type":"error","detail":"some unmodelled shape"}"""
+      assertTrue(
+        GeminiCliProvider.parseStreamEvent(line) == GeminiCliStreamEvent.Error(
+          message = Some("""{"type":"error","detail":"some unmodelled shape"}"""),
+          code = None,
+          errorType = None,
+        )
+      )
+    },
     test("parseStreamEvent still falls back to a nested error object when present") {
       val line = """{"type":"error","error":{"type":"rate_limit","message":"quota exceeded","code":429}}"""
       assertTrue(

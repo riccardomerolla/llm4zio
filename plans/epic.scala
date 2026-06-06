@@ -1,4 +1,4 @@
-//> using dep "io.github.riccardomerolla::llm4zio-runner:2.7.4"
+//> using dep "io.github.riccardomerolla::llm4zio-runner:2.7.5"
 //> using scala "3.8.3"
 //> using jvm 21
 
@@ -62,7 +62,7 @@ object Main extends ZIOAppDefault:
           coderChat <- Chat.start(ctx.coder, system = Some("You implement one task at a time in the current repo."))
           _         <- implementTaskLoop(planPath, plan) { task =>
                          for
-                           _ <- coderChat.ask(task.description).mapError(e => FlowError.Llm(e.message))
+                           _ <- coderChat.ask(task.description).mapError(e => FlowError.Llm(e.message, Some(e)))
                            _ <- reviewAndFixLoop(
                                   Reviewers.all,
                                   ctx.reasoning,
@@ -77,7 +77,7 @@ object Main extends ZIOAppDefault:
           _         <- stage("Update documentation") {
                          coderChat
                            .ask("All tasks are done. Update the project docs (README, doc-comments) for the changes made — only what's affected, no new sections.")
-                           .mapError(e => FlowError.Llm(e.message)) *>
+                           .mapError(e => FlowError.Llm(e.message, Some(e))) *>
                            ctx.git.commitAll("docs: update for completed epic").unit
                        }
           _         <- stage("Clean up epic file")(PlanStore.delete(planPath))
