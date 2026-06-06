@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.1] - 2026-06-05
+
+### Fixed
+
+- **gemini "Argument list too long" (#702).** The gemini CLI provider passed the prompt as a command-line argument
+  (`-p <prompt>`), so a large prompt (e.g. a review of a big diff, or accumulated epic context) exceeded the OS
+  `ARG_MAX` and the process failed to start (`error=7, Argument list too long`). The prompt is now fed via the
+  process **stdin** instead, bypassing the limit (and removing the need for Windows command-line prompt escaping).
+  _Note: claude and codex still pass the prompt on argv — same latent limit — tracked as a follow-up._
+
+[2.7.1]: https://github.com/riccardomerolla/llm4zio/releases/tag/v2.7.1
+
 ## [2.7.0] - 2026-06-04
 
 ### Added
