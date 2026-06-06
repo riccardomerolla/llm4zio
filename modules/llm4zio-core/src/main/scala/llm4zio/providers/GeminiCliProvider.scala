@@ -219,9 +219,10 @@ object GeminiCliExecutor:
               // already exited) is ignored.
               ZIO.attemptBlocking {
                 val os = process.getOutputStream
-                os.write(prompt.getBytes(java.nio.charset.StandardCharsets.UTF_8))
-                os.flush()
-                os.close()
+                try
+                  os.write(prompt.getBytes(StandardCharsets.UTF_8))
+                  os.flush()
+                finally os.close()
               }.catchAll(_ => ZIO.unit).forkDaemon.unit
             }
 
