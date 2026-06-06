@@ -498,41 +498,41 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
         val config = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
         val ctx    = GeminiCliExecutionContext()
         Seq(
-          test("includes -p flag and prompt") {
-            val args = GeminiCliExecutor.buildGeminiArgs("hello", config, ctx, "stream-json", false)
-            assertTrue(args.contains("-p"), args.contains("hello"))
+          test("does not include -p flag or prompt in argv (prompt goes via stdin)") {
+            val args = GeminiCliExecutor.buildGeminiArgs(config, ctx, "stream-json")
+            assertTrue(!args.contains("-p"), !args.contains("hello"))
           },
           test("includes -m flag and model") {
-            val args = GeminiCliExecutor.buildGeminiArgs("hello", config, ctx, "stream-json", false)
+            val args = GeminiCliExecutor.buildGeminiArgs(config, ctx, "stream-json")
             assertTrue(args.contains("-m"), args.contains(config.model))
           },
           test("includes --output-format flag") {
-            val args = GeminiCliExecutor.buildGeminiArgs("hello", config, ctx, "stream-json", false)
+            val args = GeminiCliExecutor.buildGeminiArgs(config, ctx, "stream-json")
             assertTrue(args.contains("--output-format"), args.contains("stream-json"))
           },
           test("includes -s when sandbox is set") {
             val ctxS = GeminiCliExecutionContext(sandbox = Some(GeminiSandbox.Docker))
-            val args = GeminiCliExecutor.buildGeminiArgs("hello", config, ctxS, "stream-json", false)
+            val args = GeminiCliExecutor.buildGeminiArgs(config, ctxS, "stream-json")
             assertTrue(args.contains("-s"))
           },
           test("no -s when sandbox is None") {
             val ctxN = GeminiCliExecutionContext(sandbox = None)
-            val args = GeminiCliExecutor.buildGeminiArgs("hello", config, ctxN, "stream-json", false)
+            val args = GeminiCliExecutor.buildGeminiArgs(config, ctxN, "stream-json")
             assertTrue(!args.contains("-s"))
           },
           test("includes --turn-limit when turnLimit is set") {
             val ctxT = GeminiCliExecutionContext(turnLimit = Some(5))
-            val args = GeminiCliExecutor.buildGeminiArgs("hello", config, ctxT, "stream-json", false)
+            val args = GeminiCliExecutor.buildGeminiArgs(config, ctxT, "stream-json")
             assertTrue(args.contains("--turn-limit"), args.contains("5"))
           },
           test("no --turn-limit when turnLimit is None") {
             val ctxT = GeminiCliExecutionContext(turnLimit = None)
-            val args = GeminiCliExecutor.buildGeminiArgs("hello", config, ctxT, "stream-json", false)
+            val args = GeminiCliExecutor.buildGeminiArgs(config, ctxT, "stream-json")
             assertTrue(!args.contains("--turn-limit"))
           },
           test("includes --include-directories for each includeDirectories entry") {
             val ctxD = GeminiCliExecutionContext(includeDirectories = List("src", "docs"))
-            val args = GeminiCliExecutor.buildGeminiArgs("hello", config, ctxD, "stream-json", false)
+            val args = GeminiCliExecutor.buildGeminiArgs(config, ctxD, "stream-json")
             assertTrue(
               args.count(_ == "--include-directories") == 2,
               args.contains("src"),
@@ -541,20 +541,20 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
           },
           test("Default sandbox still produces -s flag") {
             val ctxDef = GeminiCliExecutionContext(sandbox = Some(GeminiSandbox.Default))
-            val args   = GeminiCliExecutor.buildGeminiArgs("hello", config, ctxDef, "stream-json", false)
+            val args   = GeminiCliExecutor.buildGeminiArgs(config, ctxDef, "stream-json")
             assertTrue(args.contains("-s"))
           },
         )
       }*
     ),
     suite("buildGeminiArgs")(
-      test("includes base flags") {
+      test("includes base flags and does not put prompt in argv") {
         val config = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
         val ctx    = GeminiCliExecutionContext()
-        val args   = GeminiCliExecutor.buildGeminiArgs("my prompt", config, ctx, "stream-json", isWindows = false)
+        val args   = GeminiCliExecutor.buildGeminiArgs(config, ctx, "stream-json")
         assertTrue(
-          args.contains("-p"),
-          args.contains("my prompt"),
+          !args.contains("-p"),
+          !args.contains("my prompt"),
           args.contains("-m"),
           args.contains("gemini-2.5-pro"),
           args.contains("-y"),
@@ -565,19 +565,19 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
       test("includes -s flag when sandbox is set") {
         val config = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
         val ctx    = GeminiCliExecutionContext(sandbox = Some(GeminiSandbox.Docker))
-        val args   = GeminiCliExecutor.buildGeminiArgs("prompt", config, ctx, "json", isWindows = false)
+        val args   = GeminiCliExecutor.buildGeminiArgs(config, ctx, "json")
         assertTrue(args.contains("-s"))
       },
       test("omits -s flag when sandbox is None") {
         val config = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
         val ctx    = GeminiCliExecutionContext(sandbox = None)
-        val args   = GeminiCliExecutor.buildGeminiArgs("prompt", config, ctx, "json", isWindows = false)
+        val args   = GeminiCliExecutor.buildGeminiArgs(config, ctx, "json")
         assertTrue(!args.contains("-s"))
       },
       test("includes --turn-limit when configured") {
         val config = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
         val ctx    = GeminiCliExecutionContext(turnLimit = Some(5))
-        val args   = GeminiCliExecutor.buildGeminiArgs("prompt", config, ctx, "json", isWindows = false)
+        val args   = GeminiCliExecutor.buildGeminiArgs(config, ctx, "json")
         assertTrue(
           args.contains("--turn-limit"),
           args.contains("5"),
@@ -586,13 +586,13 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
       test("omits --turn-limit when not configured") {
         val config = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
         val ctx    = GeminiCliExecutionContext()
-        val args   = GeminiCliExecutor.buildGeminiArgs("prompt", config, ctx, "json", isWindows = false)
+        val args   = GeminiCliExecutor.buildGeminiArgs(config, ctx, "json")
         assertTrue(!args.contains("--turn-limit"))
       },
       test("includes --include-directories for each includeDirectories entry") {
         val config = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
         val ctx    = GeminiCliExecutionContext(includeDirectories = List("/a", "/b"))
-        val args   = GeminiCliExecutor.buildGeminiArgs("prompt", config, ctx, "json", isWindows = false)
+        val args   = GeminiCliExecutor.buildGeminiArgs(config, ctx, "json")
         assertTrue(
           args.count(_ == "--include-directories") == 2,
           args.contains("/a"),
@@ -602,21 +602,20 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
       test("deduplicates include-directories") {
         val config = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
         val ctx    = GeminiCliExecutionContext(includeDirectories = List("/a", "/a"))
-        val args   = GeminiCliExecutor.buildGeminiArgs("prompt", config, ctx, "json", isWindows = false)
+        val args   = GeminiCliExecutor.buildGeminiArgs(config, ctx, "json")
         assertTrue(args.count(_ == "/a") == 1)
-      },
-      test("normalizes prompt newlines on Windows") {
-        val config    = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
-        val ctx       = GeminiCliExecutionContext()
-        val args      = GeminiCliExecutor.buildGeminiArgs("line1\nline2", config, ctx, "json", isWindows = true)
-        val promptIdx = args.indexOf("-p") + 1
-        assertTrue(!args(promptIdx).contains("\n"))
       },
       test("Default sandbox still produces -s flag") {
         val config = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
         val ctx    = GeminiCliExecutionContext(sandbox = Some(GeminiSandbox.Default))
-        val args   = GeminiCliExecutor.buildGeminiArgs("prompt", config, ctx, "json", isWindows = false)
+        val args   = GeminiCliExecutor.buildGeminiArgs(config, ctx, "json")
         assertTrue(args.contains("-s"))
+      },
+      test("buildGeminiArgs does not put the prompt in argv (issue #702: prompt goes via stdin)") {
+        val config = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
+        val ctx    = GeminiCliExecutionContext()
+        val args   = GeminiCliExecutor.buildGeminiArgs(config, ctx, "stream-json")
+        assertTrue(!args.contains("-p"), args.contains("-m"), args.contains("gemini-2.5-pro"), args.contains("-y"))
       },
     ),
     suite("geminiProcessEnv")(
@@ -639,41 +638,6 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
       test("omits GEMINI_SANDBOX when sandbox is None") {
         val env = GeminiCliExecutor.geminiProcessEnv(GeminiCliExecutionContext(sandbox = None))
         assertTrue(!env.contains("GEMINI_SANDBOX"), env.get("GEMINI_CLI_TRUST_WORKSPACE").contains("true"))
-      },
-    ),
-    suite("normalizePromptForWindowsCmd")(
-      test("replaces Unix newlines with spaces") {
-        val prompt     = "Analyze the repo at:\n/path/to/repo\n\nDo not modify files."
-        val normalized = GeminiCliExecutor.normalizePromptForWindowsCmd(prompt)
-        assertTrue(
-          !normalized.contains("\n"),
-          normalized == "Analyze the repo at: /path/to/repo  Do not modify files.",
-        )
-      },
-      test("replaces Windows CRLF sequences with spaces") {
-        val prompt     = "Analyze the repo at:\r\n/path/to/repo\r\n\r\nDo not modify files."
-        val normalized = GeminiCliExecutor.normalizePromptForWindowsCmd(prompt)
-        assertTrue(
-          !normalized.contains("\r"),
-          !normalized.contains("\n"),
-          normalized == "Analyze the repo at: /path/to/repo  Do not modify files.",
-        )
-      },
-      test("replaces bare carriage returns with spaces") {
-        val prompt     = "line1\rline2"
-        val normalized = GeminiCliExecutor.normalizePromptForWindowsCmd(prompt)
-        assertTrue(
-          !normalized.contains("\r"),
-          normalized == "line1 line2",
-        )
-      },
-      test("leaves single-line prompts unchanged") {
-        val prompt     = "Analyze the repo and return markdown only."
-        val normalized = GeminiCliExecutor.normalizePromptForWindowsCmd(prompt)
-        assertTrue(normalized == prompt)
-      },
-      test("handles empty prompt") {
-        assertTrue(GeminiCliExecutor.normalizePromptForWindowsCmd("") == "")
       },
     ),
     suite("executeStream metadata and tool observability")(
