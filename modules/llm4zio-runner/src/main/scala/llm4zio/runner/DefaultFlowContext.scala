@@ -22,13 +22,16 @@ object DefaultFlowContext:
     usageLimit: UsageLimitPolicy = UsageLimitPolicy.off,
   ): UIO[(FlowContext, FlowEvents.Hub)] =
     FlowEvents.hub().map { hub =>
-      given FlowEvents                                    = hub
+      given FlowEvents = hub
       def tap(svc: LlmService, agent: String): LlmService =
-        val tapped = EventTappingService(svc, agent, hub, workDir)
+        // Retry transient provider blips beneath the tap (so a retried stream re-emits cleanly), then expose events,
+        // then layer usage-cap waiting on top.
+        val retried = TransientRetry(svc)
+        val tapped  = EventTappingService(retried, agent, hub, workDir)
         if usageLimit.enabled then UsageLimitAware(tapped, usageLimit) else tapped
-      val reasoningT                                      = tap(reasoning, "reasoning")
-      val coderT                                          = tap(coder, "coder")
-      val reviewersT                                      = reviewers.zipWithIndex.map { case (r, i) => tap(r, s"reviewer:${i + 1}") }
+      val reasoningT   = tap(reasoning, "reasoning")
+      val coderT       = tap(coder, "coder")
+      val reviewersT   = reviewers.zipWithIndex.map { case (r, i) => tap(r, s"reviewer:${i + 1}") }
       (FlowContext(reasoningT, coderT, GitTool(workDir), GhTool(workDir), hub, reviewersT), hub)
     }
 

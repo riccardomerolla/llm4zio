@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.4] - 2026-06-06
+
+### Fixed
+
+- **gemini failures are no longer silent.** A gemini stream error could pass with no visible sign: the flow tree
+  looked clean and the cost summary still printed, while only the log file hinted at trouble. Three compounding bugs,
+  now fixed:
+  - **Real error text was dropped.** Gemini emits errors as a flat `{ "type":"error", "text":… }`, but the parser
+    read a nested `error` object gemini never sends — so the message became a useless `unknown` / generic "Gemini CLI
+    stream error". The decoder now reads the real `text` (confirmed against gemini-cli's own bundle).
+  - **The failure event was rendered into the void.** The terminal renderer consumes the event hub on a fire-and-
+    forget fiber that the run's teardown interrupted before the just-published `StageFailed` was drawn. The hub now
+    tracks a published count, the listener a processed count, and the runner drains trailing events (bounded) before
+    teardown — and a failed run ends with an authoritative `✖ flow failed: …` banner written straight to the surface.
+  - **The tree and the log diverged.** The rendered tree now tees into the log file (ANSI-stripped), so the log is a
+    complete record of tree + provider output instead of two disjoint halves.
+
+### Added
+
+- **Bounded retry for transient provider errors.** `TransientRetry` wraps every connector (reasoning, coder,
+  reviewers) and retries transient blips — timeouts, short rate limits, connection resets, 5xx — up to twice with
+  exponential backoff, publishing a visible `⟳` notice each time. Bad requests, parse/config errors, and usage caps
+  are never retried (usage caps stay with `UsageLimitAware`).
+
+[2.7.4]: https://github.com/riccardomerolla/llm4zio/releases/tag/v2.7.4
+
 ## [2.7.3] - 2026-06-06
 
 ### Fixed

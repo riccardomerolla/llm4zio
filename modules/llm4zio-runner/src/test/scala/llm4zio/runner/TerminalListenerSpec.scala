@@ -1,10 +1,10 @@
 package llm4zio.runner
 
+import zio.*
 import zio.test.*
-import zio.{ Chunk, Scope }
 
 import llm4zio.core.TokenUsage
-import llm4zio.flow.FlowEvent
+import llm4zio.flow.{ FlowEvent, FlowEvents }
 
 object TerminalListenerSpec extends ZIOSpecDefault:
   private val p                                                = Palette(enabled = false)
@@ -37,4 +37,22 @@ object TerminalListenerSpec extends ZIOSpecDefault:
       )
       assertTrue(TerminalListener.indentDepths(events) == Chunk(0, 1, 1, 2, 1, 0))
     },
+    test("awaitDrained renders a failure published just before teardown — no silent drop") {
+      // Reproduces the silent-error bug: a StageFailed published right before the scope closes must still render.
+      def recording(ref: Ref[List[String]]): TerminalSurface = new TerminalSurface:
+        def log(line: String): UIO[Unit]                       = ref.update(_ :+ line)
+        def setStatus(label: Option[String]): UIO[Unit]        = ZIO.unit
+        def suspend[R, E, A](read: ZIO[R, E, A]): ZIO[R, E, A] = read
+      ZIO.scoped {
+        for
+          hub      <- FlowEvents.hub()
+          recorded <- Ref.make(List.empty[String])
+          consumed <- TerminalListener.consumeTo(hub, p, recording(recorded))
+          _        <- (hub: FlowEvents).publish(FlowEvent.StageStarted("task"))
+          _        <- (hub: FlowEvents).publish(FlowEvent.StageFailed("task", "boom"))
+          _        <- TerminalListener.awaitDrained(hub, consumed, 3.seconds)
+          lines    <- recorded.get
+        yield assertTrue(lines.exists(_.contains("✖ task — boom")))
+      }
+    } @@ TestAspect.withLiveClock, // awaitDrained polls with real ZIO.sleep; don't run it on the virtual TestClock
   )

@@ -20,6 +20,22 @@ object TerminalSurface:
   private val frames: Vector[String] = Vector("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
   private val clearLine: String      = "\r\u001b[2K" // carriage-return + erase-to-end-of-line
 
+  private val ansiCode = "\\x1b\\[[0-9;]*m".r
+
+  /** Strip SGR colour/style escapes so a styled tree line is readable in a plain log file. */
+  def stripAnsi(line: String): String = ansiCode.replaceAllIn(line, "")
+
+  /** Decorate a surface so every rendered line is ALSO written to the log (ANSI stripped). The terminal shows the
+    * colored tree; the log file gets a complete plain-text record of that same tree alongside provider logs — so the
+    * two sinks no longer diverge.
+    */
+  def teeingToLog(underlying: TerminalSurface): TerminalSurface =
+    new TerminalSurface:
+      def log(line: String): UIO[Unit]                       =
+        underlying.log(line) *> ZIO.logInfo(stripAnsi(line))
+      def setStatus(label: Option[String]): UIO[Unit]        = underlying.setStatus(label)
+      def suspend[R, E, A](read: ZIO[R, E, A]): ZIO[R, E, A] = underlying.suspend(read)
+
   /** Plain surface: no animation, one line per `log`, no status line. For non-TTY / NO_COLOR / CI and tests. */
   val plain: UIO[TerminalSurface] =
     ZIO.succeed(new TerminalSurface:

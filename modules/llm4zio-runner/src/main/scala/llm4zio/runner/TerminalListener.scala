@@ -1,6 +1,7 @@
 package llm4zio.runner
 
-import zio.{ Chunk, Ref, Scope, ZIO }
+import zio.*
+import zio.stream.ZStream
 
 import llm4zio.flow.{ FlowEvent, FlowEvents }
 
@@ -50,21 +51,36 @@ object TerminalListener:
     case _                                                                             => None
 
   /** Subscribe to a hub and render every event to `surface`: indented colored lines, with the active stage pinned to
-    * the status line. Runs until the scope closes.
+    * the status line. Runs (forked) until the scope closes. Returns a counter of events processed so far — pass it to
+    * [[awaitDrained]] before teardown so trailing events (notably a final `StageFailed`) are rendered, not dropped.
     */
-  def consumeTo(events: FlowEvents.Hub, palette: Palette, surface: TerminalSurface): ZIO[Scope, Nothing, Unit] =
-    Ref.make(0).flatMap { depth =>
-      events.stream.foreach { event =>
-        for
-          d <- if closesChild(event) then depth.updateAndGet(x => math.max(0, x - 1)) else depth.get
-          _ <- if opensChild(event) then depth.update(_ + 1) else ZIO.unit
-          _ <- stageLabel(event).fold(ZIO.unit)(surface.setStatus)
-          s  = line(event, palette)
-          _ <- ZIO.unlessDiscard(s.isEmpty)(surface.log("  " * d + s))
-        yield ()
-      }.forkScoped.unit
-    }
+  def consumeTo(events: FlowEvents.Hub, palette: Palette, surface: TerminalSurface): ZIO[Scope, Nothing, Ref[Long]] =
+    for
+      depth    <- Ref.make(0)
+      consumed <- Ref.make(0L)
+      // Subscribe BEFORE returning (and before any event is published) so no early event is missed — the hub is
+      // pub/sub, so a late `ZStream.fromHub` would silently drop everything published before it attached.
+      queue    <- events.subscribe
+      _        <- ZStream.fromQueue(queue).foreach { event =>
+                    (for
+                      d <- if closesChild(event) then depth.updateAndGet(x => math.max(0, x - 1)) else depth.get
+                      _ <- if opensChild(event) then depth.update(_ + 1) else ZIO.unit
+                      _ <- stageLabel(event).fold(ZIO.unit)(surface.setStatus)
+                      s  = line(event, palette)
+                      _ <- ZIO.unlessDiscard(s.isEmpty)(surface.log("  " * d + s))
+                    yield ()) *> consumed.update(_ + 1)
+                  }.forkScoped
+    yield consumed
+
+  /** Wait until the listener has processed every event published to `events` as of now (snapshot), so trailing events
+    * render before the scope interrupts the consumer. Bounded by `timeout`, so a stalled consumer can never hang the
+    * shutdown.
+    */
+  def awaitDrained(events: FlowEvents.Hub, consumed: Ref[Long], timeout: Duration): ZIO[Any, Nothing, Unit] =
+    def loop(target: Long): ZIO[Any, Nothing, Unit] =
+      consumed.get.flatMap(c => if c >= target then ZIO.unit else ZIO.sleep(5.millis) *> loop(target))
+    events.publishedCount.flatMap(loop).timeout(timeout).unit
 
   /** Convenience: consume to a plain (non-animated) surface — back-compat for callers that don't build a surface. */
-  def consume(events: FlowEvents.Hub, palette: Palette): ZIO[Scope, Nothing, Unit] =
+  def consume(events: FlowEvents.Hub, palette: Palette): ZIO[Scope, Nothing, Ref[Long]] =
     TerminalSurface.plain.flatMap(consumeTo(events, palette, _))

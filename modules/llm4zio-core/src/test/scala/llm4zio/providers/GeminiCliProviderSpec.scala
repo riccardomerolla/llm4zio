@@ -397,7 +397,19 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
           GeminiCliStreamEvent.LogLine("Error when talking to Gemini API Full report available at: ..."),
       )
     },
-    test("parseStreamEvent decodes error event into Error variant") {
+    test("parseStreamEvent decodes the real flat error event {type:error,text} into Error variant") {
+      // Ground truth from gemini-cli's bundle: errors are emitted as { type: "error", text: <message> } — a flat
+      // `text` field, NOT a nested {error:{message,code,type}}. Reading the nested shape dropped the real message.
+      val line = """{"type":"error","text":"You have exhausted your capacity on this model."}"""
+      assertTrue(
+        GeminiCliProvider.parseStreamEvent(line) == GeminiCliStreamEvent.Error(
+          message = Some("You have exhausted your capacity on this model."),
+          code = None,
+          errorType = None,
+        )
+      )
+    },
+    test("parseStreamEvent still falls back to a nested error object when present") {
       val line = """{"type":"error","error":{"type":"rate_limit","message":"quota exceeded","code":429}}"""
       assertTrue(
         GeminiCliProvider.parseStreamEvent(line) == GeminiCliStreamEvent.Error(

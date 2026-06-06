@@ -351,9 +351,11 @@ object GeminiCliProvider:
     delta: Option[Boolean] = None,
     tool_name: Option[String] = None,
     tool_id: Option[String] = None,
-    // Real gemini stream-json: tool args arrive as `parameters` (a JSON object), results as `output`.
+    // Real gemini stream-json: tool args arrive as `parameters` (a JSON object), results as `output`,
+    // and errors as a flat `text` field (not a nested error object).
     parameters: Option[Json] = None,
     output: Option[String] = None,
+    text: Option[String] = None,
     status: Option[String] = None,
     model: Option[String] = None,
     session_id: Option[String] = None,
@@ -390,8 +392,9 @@ object GeminiCliProvider:
               GeminiCliStreamEvent.ToolUse(event.tool_name, event.tool_id, event.parameters.map(_.toString))
             case "tool_result" => GeminiCliStreamEvent.ToolResult(event.tool_id, event.status, event.output)
             case "error"       =>
+              // Prefer the real flat `text`; fall back to a nested error object if a future version emits one.
               GeminiCliStreamEvent.Error(
-                message = event.error.flatMap(_.message),
+                message = event.text.orElse(event.error.flatMap(_.message)),
                 code = event.error.flatMap(_.code),
                 errorType = event.error.flatMap(_.`type`),
               )

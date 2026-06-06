@@ -35,10 +35,19 @@ object FlowEvents:
     Ref.make(Chunk.empty[FlowEvent]).map(new Collecting(_))
 
   /** Broadcasts events to any number of live subscribers. */
-  final class Hub private[FlowEvents] (hub: zio.Hub[FlowEvent]) extends FlowEvents:
-    def publish(event: FlowEvent): UIO[Unit]               = hub.publish(event).unit
+  final class Hub private[FlowEvents] (hub: zio.Hub[FlowEvent], published: Ref[Long]) extends FlowEvents:
+    // Count before offering, so `publishedCount` is always >= what any consumer has processed.
+    def publish(event: FlowEvent): UIO[Unit]               = published.update(_ + 1) *> hub.publish(event).unit
     def subscribe: ZIO[Scope, Nothing, Dequeue[FlowEvent]] = hub.subscribe
     def stream: ZStream[Any, Nothing, FlowEvent]           = ZStream.fromHub(hub)
 
+    /** Total events published so far. Paired with a consumer's processed count, this lets a listener drain trailing
+      * events (notably a final `StageFailed`) before the run's scope tears the consumer down.
+      */
+    def publishedCount: UIO[Long] = published.get
+
   def hub(capacity: Int = 64): UIO[Hub] =
-    zio.Hub.bounded[FlowEvent](capacity).map(new Hub(_))
+    for
+      h <- zio.Hub.bounded[FlowEvent](capacity)
+      p <- Ref.make(0L)
+    yield new Hub(h, p)
