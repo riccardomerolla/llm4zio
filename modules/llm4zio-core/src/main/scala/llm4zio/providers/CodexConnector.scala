@@ -98,7 +98,12 @@ object CodexConnector:
                          .mapError(e => LlmError.ProviderError(e.getMessage, Some(e)))
               argv   = List("codex", "exec", "--json", "--output-schema", file.toString) ++ extraArgs
               reply <- Streaming.collect(
-                         executor.runStreamingWithStdin(argv, cwd, config.envVars, prompt).mapConcat(CodexConnector.parseStreamLine)
+                         executor.runStreamingWithStdin(
+                           argv,
+                           cwd,
+                           config.envVars,
+                           prompt,
+                         ).mapConcat(CodexConnector.parseStreamLine)
                        )
               // codex surfaces request failures (e.g. a bad schema or a model error) as error/turn.failed events,
               // which carry no agent_message — fail with codex's reason instead of an opaque "no JSON candidate".

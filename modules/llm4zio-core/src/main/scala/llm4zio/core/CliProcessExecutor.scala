@@ -8,8 +8,9 @@ trait CliProcessExecutor:
   def runStreaming(argv: List[String], cwd: String, envVars: Map[String, String] = Map.empty)
     : ZStream[Any, LlmError, String]
 
-  /** Like [[run]], but feeds `stdin` to the process — used to pass a large prompt without hitting argv length
-    * limits (`ARG_MAX`). Default: ignore `stdin` and delegate to [[run]]; executors that support stdin override. */
+  /** Like [[run]], but feeds `stdin` to the process — used to pass a large prompt without hitting argv length limits
+    * (`ARG_MAX`). Default: ignore `stdin` and delegate to [[run]]; executors that support stdin override.
+    */
   def runWithStdin(
     argv: List[String],
     cwd: String,
@@ -18,8 +19,9 @@ trait CliProcessExecutor:
   ): IO[LlmError, ProcessResult] =
     run(argv, cwd, envVars)
 
-  /** Like [[runStreaming]], but feeds `stdin` to the process (large prompt, avoids `ARG_MAX`). Default: ignore
-    * `stdin` and delegate to [[runStreaming]]; executors that support stdin override. */
+  /** Like [[runStreaming]], but feeds `stdin` to the process (large prompt, avoids `ARG_MAX`). Default: ignore `stdin`
+    * and delegate to [[runStreaming]]; executors that support stdin override.
+    */
   def runStreamingWithStdin(
     argv: List[String],
     cwd: String,

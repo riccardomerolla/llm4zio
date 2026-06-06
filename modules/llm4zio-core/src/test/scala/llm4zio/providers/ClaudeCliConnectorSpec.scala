@@ -179,11 +179,11 @@ object ClaudeCliConnectorSpec extends ZIOSpecDefault:
     },
     test("completeStream stamps the init model onto the usage chunk and emits assistant text") {
       for
-        seenArgv <- Ref.make(List.empty[String])
+        seenArgv  <- Ref.make(List.empty[String])
         seenStdin <- Ref.make("")
-        exec      = StdinCapturingExec(seenArgv, seenStdin, claudeFixtureLines)
-        connector = ClaudeCliConnector.make(CliConnectorConfig(ConnectorId.ClaudeCli), exec)
-        chunks   <- connector.completeStream("go").runCollect
+        exec       = StdinCapturingExec(seenArgv, seenStdin, claudeFixtureLines)
+        connector  = ClaudeCliConnector.make(CliConnectorConfig(ConnectorId.ClaudeCli), exec)
+        chunks    <- connector.completeStream("go").runCollect
       yield assertTrue(
         chunks.exists(c => c.usage.exists(_.prompt == 1200) && c.metadata.get("model").contains("claude-sonnet-4-6")),
         chunks.map(_.delta).mkString.contains("Editing the file."),

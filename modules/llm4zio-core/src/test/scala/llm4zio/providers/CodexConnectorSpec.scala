@@ -26,7 +26,7 @@ object CodexConnectorSpec extends ZIOSpecDefault:
       c: String,
       e: Map[String, String],
       stdin: String,
-    ): ZStream[Any, LlmError, String]                                                                     =
+    ): ZStream[Any, LlmError, String] =
       ZStream.fromZIO(seenArgv.set(a) *> seenStdin.set(stdin)).drain ++ ZStream.succeed(line)
 
   private def codexFixtureLines: List[String] =
@@ -217,7 +217,8 @@ object CodexConnectorSpec extends ZIOSpecDefault:
       for
         seenArgv  <- Ref.make(List.empty[String])
         seenStdin <- Ref.make("")
-        conn       = CodexConnector.make(CliConnectorConfig(ConnectorId.Codex), new RecordingExec(seenArgv, seenStdin, failLine))
+        conn       =
+          CodexConnector.make(CliConnectorConfig(ConnectorId.Codex), new RecordingExec(seenArgv, seenStdin, failLine))
         res       <- conn.executeStructured[ReplyStub]("go", SchemaDerivation.derive[ReplyStub]).either
       yield assertTrue(res.isLeft, res.left.toOption.exists(_.message.contains("boom")))
     },
@@ -227,7 +228,8 @@ object CodexConnectorSpec extends ZIOSpecDefault:
       for
         seenArgv  <- Ref.make(List.empty[String])
         seenStdin <- Ref.make("")
-        conn       = CodexConnector.make(CliConnectorConfig(ConnectorId.Codex), new RecordingExec(seenArgv, seenStdin, failLine))
+        conn       =
+          CodexConnector.make(CliConnectorConfig(ConnectorId.Codex), new RecordingExec(seenArgv, seenStdin, failLine))
         res       <- conn.executeStructured[ReplyStub]("go", SchemaDerivation.derive[ReplyStub]).either
       yield assertTrue(res.left.toOption.exists(_.isInstanceOf[LlmError.UsageLimitError]))
     },
