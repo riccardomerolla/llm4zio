@@ -37,7 +37,8 @@ object ClaudeCliConnector:
       override def buildInteractiveArgv(ctx: CliContext): List[String]      =
         List("claude") ++ extraArgs
       override def complete(prompt: String): IO[LlmError, String]           =
-        executor.run(buildArgv(prompt, CliContext(cwd, cwd)), cwd, config.envVars)
+        val argv = List("claude", "--print") ++ extraArgs
+        executor.runWithStdin(argv, cwd, config.envVars, prompt)
           .flatMap { result =>
             if result.exitCode == 0 then ZIO.succeed(result.stdout.mkString("\n"))
             else
@@ -49,13 +50,14 @@ object ClaudeCliConnector:
           }
 
       // Stream via `claude -p --output-format stream-json --verbose`, parsing JSONL events into the shared
-      // LlmChunk metadata contract. The model name from the init line is captured and stamped onto usage chunks.
+      // LlmChunk metadata contract. Prompt is fed via stdin to avoid hitting ARG_MAX on large prompts.
+      // The model name from the init line is captured and stamped onto usage chunks.
       override def completeStream(prompt: String): ZStream[Any, LlmError, LlmChunk] =
         val argv =
-          List("claude", "--print", "--output-format", "stream-json", "--verbose") ++ extraArgs ++ List(prompt)
+          List("claude", "--print", "--output-format", "stream-json", "--verbose") ++ extraArgs
         ZStream.unwrap {
           Ref.make(Option.empty[String]).map { modelRef =>
-            executor.runStreaming(argv, cwd, config.envVars).mapConcatZIO { line =>
+            executor.runStreamingWithStdin(argv, cwd, config.envVars, prompt).mapConcatZIO { line =>
               val captureModel = ClaudeCliConnector.initModel(line) match
                 case Some(m) => modelRef.set(Some(m))
                 case None    => ZIO.unit
