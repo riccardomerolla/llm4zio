@@ -65,18 +65,6 @@ object GeminiCliExecutionContext:
 
 object GeminiCliExecutor:
 
-  /** On Windows, `cmd.exe` may interpret literal newline characters inside a quoted command-line argument as command
-    * separators. When the gemini process is launched via `cmd /c gemini -p <prompt> …`, a multi-line prompt causes
-    * `cmd.exe` to truncate the argument list at the first newline, dropping everything that follows — including
-    * `--output-format stream-json`. The result is that gemini outputs plain text instead of JSON stream events, so
-    * every output line is parsed as a `LogLine` and no content is accumulated.
-    *
-    * Replace every newline sequence with a single space so the full command reaches gemini unchanged. The LLM still
-    * understands the compacted prompt.
-    */
-  private[providers] def normalizePromptForWindowsCmd(prompt: String): String =
-    prompt.replaceAll("""\r\n|\n|\r""", " ")
-
   private[providers] def validateExitCode(
     exitCode: Int,
     stderr: String,
@@ -110,20 +98,17 @@ object GeminiCliExecutor:
     trust ++ sandbox
 
   private[providers] def buildGeminiArgs(
-    prompt: String,
     config: LlmConfig,
     ctx: GeminiCliExecutionContext,
     outputFormat: String,
-    isWindows: Boolean,
   ): List[String] =
-    val effectivePrompt = if isWindows then normalizePromptForWindowsCmd(prompt) else prompt
-    val baseArgs        = List("-p", effectivePrompt, "-m", config.model, "-y", "--output-format", outputFormat)
-    val includeDirArgs  = ctx.includeDirectories.distinct.flatMap(p => List("--include-directories", p))
+    val baseArgs       = List("-m", config.model, "-y", "--output-format", outputFormat)
+    val includeDirArgs = ctx.includeDirectories.distinct.flatMap(p => List("--include-directories", p))
     // The -s flag enables sandbox mode. The backend is controlled separately via
     // GEMINI_SANDBOX env var injected in startProcess (see GeminiSandbox.envValue).
     // Default sandbox: -s is emitted but no env var is set, letting gemini pick the backend.
-    val sandboxArgs     = ctx.sandbox.map(_ => "-s").toList
-    val turnLimitArgs   = ctx.turnLimit.toList.flatMap(n => List("--turn-limit", n.toString))
+    val sandboxArgs    = ctx.sandbox.map(_ => "-s").toList
+    val turnLimitArgs  = ctx.turnLimit.toList.flatMap(n => List("--turn-limit", n.toString))
     baseArgs ++ includeDirArgs ++ sandboxArgs ++ turnLimitArgs
 
   val default: GeminiCliExecutor =
@@ -212,16 +197,9 @@ object GeminiCliExecutor:
         outputFormat: String,
         mergeErrorStream: Boolean = true,
       ): IO[LlmError, Process] =
-        val geminiArgs = GeminiCliExecutor.buildGeminiArgs(prompt, config, executionContext, outputFormat, isWindows)
+        val geminiArgs = GeminiCliExecutor.buildGeminiArgs(config, executionContext, outputFormat)
         val commands   = geminiCommand ++ geminiArgs
-        val promptIdx  = geminiArgs.indexOf("-p")
-        val argsForLog =
-          if promptIdx >= 0 && promptIdx + 1 < geminiArgs.length
-          then geminiArgs.patch(promptIdx + 1, List("<prompt>"), 1)
-          else geminiArgs
-        ZIO.logDebug(
-          s"Starting Gemini process: gemini ${argsForLog.mkString(" ")}"
-        ) *>
+        ZIO.logDebug(s"Starting Gemini process: gemini ${geminiArgs.mkString(" ")}") *>
           ZIO
             .attemptBlocking {
               val builder = new ProcessBuilder(commands.asJava)
@@ -235,6 +213,17 @@ object GeminiCliExecutor:
             }
             .mapError(e => LlmError.ProviderError(s"Failed to start gemini process: ${e.getMessage}", Some(e)))
             .tapError(err => ZIO.logError(s"Failed to start Gemini process: $err"))
+            .tap { process =>
+              // Feed the prompt via stdin (bypasses ARG_MAX). Forked so a large prompt streams
+              // while gemini reads, without blocking stdout consumption. Broken-pipe (process
+              // already exited) is ignored.
+              ZIO.attemptBlocking {
+                val os = process.getOutputStream
+                os.write(prompt.getBytes(java.nio.charset.StandardCharsets.UTF_8))
+                os.flush()
+                os.close()
+              }.catchAll(_ => ZIO.unit).forkDaemon.unit
+            }
 
       private def streamOutput(process: Process): ZStream[Any, LlmError, GeminiCliStreamEvent] =
         ZStream.unwrapScoped {
