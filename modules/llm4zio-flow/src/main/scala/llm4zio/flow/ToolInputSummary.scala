@@ -12,7 +12,8 @@ import zio.json.ast.Json
 object ToolInputSummary:
 
   /** Headline fields in priority order: the first present non-empty one becomes the summary. */
-  private val headlineFields = List("file_path", "path", "command", "pattern", "query", "url", "description")
+  private val headlineFields =
+    List("file_path", "path", "command", "pattern", "query", "url", "description", "title")
   private val pathFields     = Set("file_path", "path")
 
   def summarise(rawInput: String, maxLen: Int, workDir: Path): String =

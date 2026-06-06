@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.3] - 2026-06-06
+
+### Fixed
+
+- **gemini-cli coder tool calls now show their grey detail, matching codex.** The flow tree rendered gemini tool
+  calls as a bare name (`read_file`, `run_shell_command`) with no dim `(…)` summary, while codex showed
+  `Bash (…)`. Cause: real gemini `stream-json` carries a tool call's arguments under `parameters` (a JSON object)
+  and a tool result's body under `output`, but the decoder only knew the never-emitted `tool_input`/`content`
+  fields — so the detail was silently dropped. `GeminiStreamJsonEvent` now decodes `parameters` (serialized into
+  the existing `tool_input` metadata) and `output`, and `ToolInputSummary` gained `title` as a lowest-priority
+  headline so gemini's `update_topic` shows its topic. Grounded by a real captured `gemini-stream.jsonl` fixture
+  (gemini 0.45.2), matching the codex/claude convention.
+
+[2.7.3]: https://github.com/riccardomerolla/llm4zio/releases/tag/v2.7.3
+
 ## [2.7.2] - 2026-06-05
 
 ### Fixed

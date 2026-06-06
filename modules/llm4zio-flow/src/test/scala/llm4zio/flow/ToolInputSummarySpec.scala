@@ -35,6 +35,17 @@ object ToolInputSummarySpec extends ZIOSpecDefault:
         wd,
       ).length <= 22) // 20 + parens
     },
+    test("extracts title (gemini update_topic) as lowest-priority headline") {
+      assertTrue(
+        ToolInputSummary.summarise(
+          """{"title":"Reading sample.txt","summary":"x"}""",
+          120,
+          wd,
+        ) == "(Reading sample.txt)",
+        // file_path still wins over title when both are present
+        ToolInputSummary.summarise("""{"title":"t","file_path":"src/lib.rs"}""", 120, wd) == "(src/lib.rs)",
+      )
+    },
     test("returns empty string when no headline field present") {
       assertTrue(ToolInputSummary.summarise("""{"foo":"bar"}""", 120, wd) == "")
     },

@@ -1,0 +1,7 @@
+{"type":"init","timestamp":"2026-06-06T05:04:31.825Z","session_id":"113c017a-0803-4428-84ca-1d57a7edf694","model":"gemini-3-flash-preview"}
+{"type":"message","timestamp":"2026-06-06T05:04:31.826Z","role":"user","content":"Read the file sample.txt and tell me its first line"}
+{"type":"tool_use","timestamp":"2026-06-06T05:04:35.136Z","tool_name":"update_topic","tool_id":"update_topic__update_topic_1780722275113_0","parameters":{"title":"Reading sample.txt","strategic_intent":"Reading sample.txt to provide its first line.","summary":"The user wants the first line of sample.txt."}}
+{"type":"tool_use","timestamp":"2026-06-06T05:04:35.139Z","tool_name":"read_file","tool_id":"read_file__read_file_1780722275137_1","parameters":{"file_path":"sample.txt"}}
+{"type":"tool_result","timestamp":"2026-06-06T05:04:35.208Z","tool_id":"read_file__read_file_1780722275137_1","status":"success","output":"hello world\nline two\n"}
+{"type":"message","timestamp":"2026-06-06T05:04:45.044Z","role":"assistant","content":"The first line of the file is:\n`hello world`","delta":true}
+{"type":"result","timestamp":"2026-06-06T05:04:45.116Z","status":"success","stats":{"total_tokens":23524,"input_tokens":23118,"output_tokens":125,"cached":7588}}

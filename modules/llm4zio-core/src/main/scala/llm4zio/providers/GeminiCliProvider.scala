@@ -8,6 +8,7 @@ import scala.jdk.CollectionConverters.*
 
 import zio.*
 import zio.json.*
+import zio.json.ast.Json
 import zio.stream.ZStream
 
 import llm4zio.core.*
@@ -350,7 +351,9 @@ object GeminiCliProvider:
     delta: Option[Boolean] = None,
     tool_name: Option[String] = None,
     tool_id: Option[String] = None,
-    tool_input: Option[String] = None,
+    // Real gemini stream-json: tool args arrive as `parameters` (a JSON object), results as `output`.
+    parameters: Option[Json] = None,
+    output: Option[String] = None,
     status: Option[String] = None,
     model: Option[String] = None,
     session_id: Option[String] = None,
@@ -383,8 +386,9 @@ object GeminiCliProvider:
           event.`type` match
             case "init"        => GeminiCliStreamEvent.Init(event.model, event.session_id)
             case "message"     => GeminiCliStreamEvent.Message(event.role, event.content, event.delta.getOrElse(false))
-            case "tool_use"    => GeminiCliStreamEvent.ToolUse(event.tool_name, event.tool_id, event.tool_input)
-            case "tool_result" => GeminiCliStreamEvent.ToolResult(event.tool_id, event.status, event.content)
+            case "tool_use"    =>
+              GeminiCliStreamEvent.ToolUse(event.tool_name, event.tool_id, event.parameters.map(_.toString))
+            case "tool_result" => GeminiCliStreamEvent.ToolResult(event.tool_id, event.status, event.output)
             case "error"       =>
               GeminiCliStreamEvent.Error(
                 message = event.error.flatMap(_.message),

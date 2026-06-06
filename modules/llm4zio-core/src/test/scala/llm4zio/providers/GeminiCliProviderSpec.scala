@@ -1,5 +1,7 @@
 package llm4zio.providers
 
+import scala.io.Source
+
 import zio.*
 import zio.json.JsonCodec
 import zio.json.ast.Json
@@ -9,6 +11,13 @@ import zio.test.*
 import llm4zio.core.*
 
 object GeminiCliProviderSpec extends ZIOSpecDefault:
+
+  /** Real gemini 0.45.2 `stream-json` transcript, captured verbatim (schema), trimmed string values. */
+  private def geminiFixtureLines: List[String] =
+    val src = Source.fromResource("gemini-stream.jsonl")
+    try src.getLines().toList
+    finally src.close()
+
   // Mock executor for testing
   class MockGeminiCliExecutor(
     shouldSucceed: Boolean = true,
@@ -398,24 +407,53 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
         )
       )
     },
-    test("parseStreamEvent decodes tool_use with input into ToolUse") {
-      val line = """{"type":"tool_use","tool_name":"read_file","tool_id":"t1","tool_input":"{\"path\":\"/foo\"}"}"""
+    test("parseStreamEvent decodes tool_use with parameters object into ToolUse") {
+      // Real gemini 0.45.2 stream-json carries args under `parameters` (a JSON object), serialized into `input`.
+      val line =
+        """{"type":"tool_use","tool_name":"read_file","tool_id":"t1","parameters":{"file_path":"sample.txt"}}"""
       assertTrue(
         GeminiCliProvider.parseStreamEvent(line) == GeminiCliStreamEvent.ToolUse(
           toolName = Some("read_file"),
           toolId = Some("t1"),
-          input = Some("""{"path":"/foo"}"""),
+          input = Some("""{"file_path":"sample.txt"}"""),
         )
       )
     },
-    test("parseStreamEvent decodes tool_result with content into ToolResult") {
-      val line = """{"type":"tool_result","tool_id":"t1","status":"success","content":"file body"}"""
+    test("parseStreamEvent decodes tool_result with output into ToolResult") {
+      // Real gemini 0.45.2 stream-json carries the result body under `output`, not `content`.
+      val line = """{"type":"tool_result","tool_id":"t1","status":"success","output":"file body"}"""
       assertTrue(
         GeminiCliProvider.parseStreamEvent(line) == GeminiCliStreamEvent.ToolResult(
           toolId = Some("t1"),
           status = Some("success"),
           content = Some("file body"),
         )
+      )
+    },
+    test("parses the captured gemini-stream.jsonl fixture into the expected real-shape events") {
+      val events      = geminiFixtureLines.map(GeminiCliProvider.parseStreamEvent)
+      val toolUses    = events.collect { case t: GeminiCliStreamEvent.ToolUse => t }
+      val toolResults = events.collect { case t: GeminiCliStreamEvent.ToolResult => t }
+      assertTrue(
+        events.head == GeminiCliStreamEvent.Init(
+          model = Some("gemini-3-flash-preview"),
+          sessionId = Some("113c017a-0803-4428-84ca-1d57a7edf694"),
+        ),
+        // update_topic's title rides along in the serialized `parameters` object
+        toolUses.exists(t =>
+          t.toolName.contains("update_topic") && t.input.exists(_.contains(""""title":"Reading sample.txt"""))
+        ),
+        // read_file carries its file_path
+        toolUses.exists(t => t.toolName.contains("read_file") && t.input.contains("""{"file_path":"sample.txt"}""")),
+        // the result body comes from `output`, not `content`
+        toolResults.exists(_.content.contains("hello world\nline two\n")),
+        events.exists {
+          case GeminiCliStreamEvent.Message(Some("assistant"), Some(_), _) => true
+          case _                                                           => false
+        },
+        events.last match
+          case GeminiCliStreamEvent.Result(Some("success"), _, _) => true
+          case _                                                  => false,
       )
     },
     test("parseStreamEvent decodes init event with model and session_id") {
