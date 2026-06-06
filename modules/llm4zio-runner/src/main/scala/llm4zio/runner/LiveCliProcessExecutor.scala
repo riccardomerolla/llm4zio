@@ -38,6 +38,30 @@ object LiveCliProcessExecutor:
             .unwrap(command(cmd, args, cwd, envVars).run.map(_.stdout.linesStream))
             .mapError(t => LlmError.ProviderError(s"$cmd failed: ${t.getMessage}", None))
 
+    override def runWithStdin(argv: List[String], cwd: String, envVars: Map[String, String], stdin: String)
+      : IO[LlmError, ProcessResult] =
+      argv match
+        case Nil         => ZIO.fail(LlmError.InvalidRequestError("empty argv"))
+        case cmd :: args =>
+          (for
+            process <- command(cmd, args, cwd, envVars).stdin(ProcessInput.fromUTF8String(stdin)).run
+            linesF  <- process.stdout.lines.fork
+            exit    <- process.exitCode
+            lines   <- linesF.join
+          yield ProcessResult(lines.toList, exit.code))
+            .mapError(t => LlmError.ProviderError(s"$cmd failed: ${t.getMessage}", None))
+
+    override def runStreamingWithStdin(argv: List[String], cwd: String, envVars: Map[String, String], stdin: String)
+      : ZStream[Any, LlmError, String] =
+      argv match
+        case Nil         => ZStream.fail(LlmError.InvalidRequestError("empty argv"))
+        case cmd :: args =>
+          ZStream
+            .unwrap(
+              command(cmd, args, cwd, envVars).stdin(ProcessInput.fromUTF8String(stdin)).run.map(_.stdout.linesStream)
+            )
+            .mapError(t => LlmError.ProviderError(s"$cmd failed: ${t.getMessage}", None))
+
     override def runBidirectional(
       argv: List[String],
       cwd: String,

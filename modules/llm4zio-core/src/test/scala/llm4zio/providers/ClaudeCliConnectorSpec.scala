@@ -28,6 +28,31 @@ object ClaudeCliConnectorSpec extends ZIOSpecDefault:
       : ZStream[Any, LlmError, String] =
       ZStream.fromIterable(responses.get(argv).map(_.stdout).getOrElse(List("mocked")))
 
+  /** Captures the argv and stdin passed to runWithStdin / runStreamingWithStdin. */
+  final class StdinCapturingExec(
+    seenArgv: Ref[List[String]],
+    seenStdin: Ref[String],
+    streamLines: List[String],
+  ) extends CliProcessExecutor:
+    override def run(argv: List[String], cwd: String, envVars: Map[String, String]): IO[LlmError, ProcessResult] =
+      ZIO.succeed(ProcessResult(List("mocked response"), 0))
+    override def runStreaming(argv: List[String], cwd: String, envVars: Map[String, String])
+      : ZStream[Any, LlmError, String] = ZStream.fromIterable(streamLines)
+    override def runWithStdin(
+      argv: List[String],
+      cwd: String,
+      envVars: Map[String, String],
+      stdin: String,
+    ): IO[LlmError, ProcessResult] =
+      seenArgv.set(argv) *> seenStdin.set(stdin) *> ZIO.succeed(ProcessResult(List("mocked response"), 0))
+    override def runStreamingWithStdin(
+      argv: List[String],
+      cwd: String,
+      envVars: Map[String, String],
+      stdin: String,
+    ): ZStream[Any, LlmError, String] =
+      ZStream.fromZIO(seenArgv.set(argv) *> seenStdin.set(stdin)).drain ++ ZStream.fromIterable(streamLines)
+
   def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("ClaudeCliConnector")(
     test("id is claude-cli") {
       val connector = ClaudeCliConnector.make(CliConnectorConfig(ConnectorId.ClaudeCli), new MockCliExec())
@@ -66,7 +91,7 @@ object ClaudeCliConnectorSpec extends ZIOSpecDefault:
     test("executeStructured parses a JSON pick out of the shell stdout") {
       val mock      = new MockCliExec(responses =
         Map(
-          List("claude", "--print", "triage prompt") ->
+          List("claude", "--print") ->
             ProcessResult(List("""{"lane":"Frontend","rationale":"UI change"}"""), 0)
         )
       )
@@ -77,7 +102,7 @@ object ClaudeCliConnectorSpec extends ZIOSpecDefault:
     test("executeStructured tolerates a fenced JSON block in the shell output") {
       val mock      = new MockCliExec(responses =
         Map(
-          List("claude", "--print", "triage prompt") ->
+          List("claude", "--print") ->
             ProcessResult(
               List(
                 "Here is your triage:",
@@ -153,13 +178,43 @@ object ClaudeCliConnectorSpec extends ZIOSpecDefault:
       assertTrue(claudeFixtureLines.flatMap(ClaudeCliConnector.initModel).headOption.contains("claude-sonnet-4-6"))
     },
     test("completeStream stamps the init model onto the usage chunk and emits assistant text") {
-      val argv      = List("claude", "--print", "--output-format", "stream-json", "--verbose", "go")
-      val mock      = new MockCliExec(Map(argv -> ProcessResult(claudeFixtureLines, 0)))
-      val connector = ClaudeCliConnector.make(CliConnectorConfig(ConnectorId.ClaudeCli), mock)
-      for chunks <- connector.completeStream("go").runCollect
+      for
+        seenArgv  <- Ref.make(List.empty[String])
+        seenStdin <- Ref.make("")
+        exec       = StdinCapturingExec(seenArgv, seenStdin, claudeFixtureLines)
+        connector  = ClaudeCliConnector.make(CliConnectorConfig(ConnectorId.ClaudeCli), exec)
+        chunks    <- connector.completeStream("go").runCollect
       yield assertTrue(
         chunks.exists(c => c.usage.exists(_.prompt == 1200) && c.metadata.get("model").contains("claude-sonnet-4-6")),
         chunks.map(_.delta).mkString.contains("Editing the file."),
+      )
+    },
+    test("completeStream passes prompt via stdin, NOT in argv") {
+      for
+        seenArgv  <- Ref.make(List.empty[String])
+        seenStdin <- Ref.make("")
+        exec       = StdinCapturingExec(seenArgv, seenStdin, claudeFixtureLines)
+        connector  = ClaudeCliConnector.make(CliConnectorConfig(ConnectorId.ClaudeCli), exec)
+        _         <- connector.completeStream("THE-PROMPT").runDrain
+        argv      <- seenArgv.get
+        stdin     <- seenStdin.get
+      yield assertTrue(
+        !argv.contains("THE-PROMPT"),
+        stdin == "THE-PROMPT",
+      )
+    },
+    test("complete passes prompt via stdin, NOT in argv") {
+      for
+        seenArgv  <- Ref.make(List.empty[String])
+        seenStdin <- Ref.make("")
+        exec       = StdinCapturingExec(seenArgv, seenStdin, Nil)
+        connector  = ClaudeCliConnector.make(CliConnectorConfig(ConnectorId.ClaudeCli), exec)
+        _         <- connector.complete("THE-PROMPT")
+        argv      <- seenArgv.get
+        stdin     <- seenStdin.get
+      yield assertTrue(
+        !argv.contains("THE-PROMPT"),
+        stdin == "THE-PROMPT",
       )
     },
   )

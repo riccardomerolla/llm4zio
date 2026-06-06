@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.2] - 2026-06-05
+
+### Fixed
+
+- **claude and codex "Argument list too long" (follows #702).** Like gemini in 2.7.1, the `claude` and `codex` CLI
+  providers passed the prompt as a command-line argument, so a large prompt (a review of a big diff, accumulated
+  epic context) exceeded `ARG_MAX` and the process failed to start. The prompt is now fed via the process **stdin**
+  for all prompt-carrying paths (`complete`, `completeStream`, and codex's `--output-schema` structured path). New
+  `CliProcessExecutor.runWithStdin` / `runStreamingWithStdin` (the real `LiveCliProcessExecutor` feeds stdin; the
+  defaults delegate to the non-stdin variants). Verified with real claude + codex on a 300 KB prompt.
+  _Copilot and OpenCode connectors have the same latent limit — tracked as a follow-up._
+
+[2.7.2]: https://github.com/riccardomerolla/llm4zio/releases/tag/v2.7.2
+
 ## [2.7.1] - 2026-06-05
 
 ### Fixed

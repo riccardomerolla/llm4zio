@@ -14,12 +14,20 @@ object CodexConnectorSpec extends ZIOSpecDefault:
 
   final case class ReplyStub(summary: String) derives JsonCodec
 
-  /** Captures the argv passed to runStreaming, then replays a canned agent_message line. */
-  final class RecordingExec(seen: Ref[List[String]], line: String) extends CliProcessExecutor:
+  /** Captures the argv and stdin passed to runStreamingWithStdin, then replays a canned line. */
+  final class RecordingExec(seenArgv: Ref[List[String]], seenStdin: Ref[String], line: String)
+    extends CliProcessExecutor:
     def run(a: List[String], c: String, e: Map[String, String]): IO[LlmError, ProcessResult]             =
       ZIO.succeed(ProcessResult(List("{}"), 0))
     def runStreaming(a: List[String], c: String, e: Map[String, String]): ZStream[Any, LlmError, String] =
-      ZStream.fromZIO(seen.set(a)).drain ++ ZStream.succeed(line)
+      ZStream.fromZIO(seenArgv.set(a)).drain ++ ZStream.succeed(line)
+    override def runStreamingWithStdin(
+      a: List[String],
+      c: String,
+      e: Map[String, String],
+      stdin: String,
+    ): ZStream[Any, LlmError, String] =
+      ZStream.fromZIO(seenArgv.set(a) *> seenStdin.set(stdin)).drain ++ ZStream.succeed(line)
 
   private def codexFixtureLines: List[String] =
     val src = Source.fromResource("codex-stream.jsonl")
@@ -34,6 +42,13 @@ object CodexConnectorSpec extends ZIOSpecDefault:
         .orElse(ZIO.succeed(ProcessResult(List("mocked response"), 0)))
     override def runStreaming(argv: List[String], cwd: String, envVars: Map[String, String])
       : ZStream[Any, LlmError, String] =
+      ZStream.fromIterable(responses.get(argv).map(_.stdout).getOrElse(List("mocked")))
+    override def runStreamingWithStdin(
+      argv: List[String],
+      cwd: String,
+      envVars: Map[String, String],
+      stdin: String,
+    ): ZStream[Any, LlmError, String] =
       ZStream.fromIterable(responses.get(argv).map(_.stdout).getOrElse(List("mocked")))
 
   def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("CodexConnector")(
@@ -72,16 +87,23 @@ object CodexConnectorSpec extends ZIOSpecDefault:
       assertTrue(argv == List("codex"))
     },
     test("complete runs codex in the configured workingDir") {
-      final class RecordingExec(seen: Ref[String]) extends CliProcessExecutor:
+      final class CwdCapturingExec(seen: Ref[String]) extends CliProcessExecutor:
         def run(argv: List[String], cwd: String, envVars: Map[String, String]): IO[LlmError, ProcessResult] =
           seen.set(cwd).as(ProcessResult(List("ok"), 0))
         def runStreaming(argv: List[String], cwd: String, envVars: Map[String, String])
           : ZStream[Any, LlmError, String] = ZStream.empty
+        override def runWithStdin(
+          argv: List[String],
+          cwd: String,
+          envVars: Map[String, String],
+          stdin: String,
+        ): IO[LlmError, ProcessResult] =
+          seen.set(cwd).as(ProcessResult(List("ok"), 0))
       for
         seen <- Ref.make("")
         conn  = CodexConnector.make(
                   CliConnectorConfig(ConnectorId.Codex, workingDir = Some("/tmp/repo")),
-                  RecordingExec(seen),
+                  CwdCapturingExec(seen),
                 )
         _    <- conn.complete("x")
         cwd  <- seen.get
@@ -120,7 +142,7 @@ object CodexConnectorSpec extends ZIOSpecDefault:
       assertTrue(chunks.exists(c => c.usage.exists(_.prompt == 900) && c.usage.exists(_.completion == 30)))
     },
     test("completeStream emits the agent text and a tool chunk from the JSONL stream") {
-      val argv      = List("codex", "exec", "--json", "go")
+      val argv      = List("codex", "exec", "--json")
       val mock      = new MockCliExec(Map(argv -> ProcessResult(codexFixtureLines, 0)))
       val connector = CodexConnector.make(CliConnectorConfig(ConnectorId.Codex), mock)
       for chunks <- connector.completeStream("go").runCollect
@@ -130,17 +152,36 @@ object CodexConnectorSpec extends ZIOSpecDefault:
         chunks.exists(_.usage.exists(_.prompt == 900)),
       )
     },
+    test("completeStream passes prompt via stdin, NOT in argv") {
+      for
+        seenArgv  <- Ref.make(List.empty[String])
+        seenStdin <- Ref.make("")
+        line       = """{"type":"item.completed","item":{"type":"agent_message","text":"ok"}}"""
+        exec       = new RecordingExec(seenArgv, seenStdin, line)
+        conn       = CodexConnector.make(CliConnectorConfig(ConnectorId.Codex), exec)
+        _         <- conn.completeStream("THE-PROMPT").runDrain
+        argv      <- seenArgv.get
+        stdin     <- seenStdin.get
+      yield assertTrue(
+        !argv.contains("THE-PROMPT"),
+        stdin == "THE-PROMPT",
+      )
+    },
     test("executeStructured passes --output-schema to codex when a non-trivial schema is given") {
       val line = """{"type":"item.completed","item":{"type":"agent_message","text":"{\"summary\":\"x\"}"}}"""
       for
-        seen <- Ref.make(List.empty[String])
-        conn  = CodexConnector.make(CliConnectorConfig(ConnectorId.Codex), new RecordingExec(seen, line))
-        out  <- conn.executeStructured[ReplyStub]("go", SchemaDerivation.derive[ReplyStub])
-        argv <- seen.get
+        seenArgv  <- Ref.make(List.empty[String])
+        seenStdin <- Ref.make("")
+        conn       = CodexConnector.make(CliConnectorConfig(ConnectorId.Codex), new RecordingExec(seenArgv, seenStdin, line))
+        out       <- conn.executeStructured[ReplyStub]("go", SchemaDerivation.derive[ReplyStub])
+        argv      <- seenArgv.get
+        stdin     <- seenStdin.get
       yield assertTrue(
         out == ReplyStub("x"),
         argv.contains("--output-schema"),
         argv.containsSlice(List("codex", "exec", "--json")),
+        !argv.contains("go"),
+        stdin == "go",
       )
     },
     test("strictSchema adds additionalProperties:false + required to every object, recursively") {
@@ -174,18 +215,22 @@ object CodexConnectorSpec extends ZIOSpecDefault:
     test("executeStructured surfaces a codex turn.failed as a ProviderError, not 'no JSON candidate'") {
       val failLine = """{"type":"turn.failed","error":{"message":"invalid_json_schema: boom"}}"""
       for
-        seen <- Ref.make(List.empty[String])
-        conn  = CodexConnector.make(CliConnectorConfig(ConnectorId.Codex), new RecordingExec(seen, failLine))
-        res  <- conn.executeStructured[ReplyStub]("go", SchemaDerivation.derive[ReplyStub]).either
+        seenArgv  <- Ref.make(List.empty[String])
+        seenStdin <- Ref.make("")
+        conn       =
+          CodexConnector.make(CliConnectorConfig(ConnectorId.Codex), new RecordingExec(seenArgv, seenStdin, failLine))
+        res       <- conn.executeStructured[ReplyStub]("go", SchemaDerivation.derive[ReplyStub]).either
       yield assertTrue(res.isLeft, res.left.toOption.exists(_.message.contains("boom")))
     },
     test("a codex usage-limit message becomes a typed UsageLimitError") {
       val failLine =
         """{"type":"turn.failed","error":{"message":"You've hit your usage limit. try again at 2:38 PM."}}"""
       for
-        seen <- Ref.make(List.empty[String])
-        conn  = CodexConnector.make(CliConnectorConfig(ConnectorId.Codex), new RecordingExec(seen, failLine))
-        res  <- conn.executeStructured[ReplyStub]("go", SchemaDerivation.derive[ReplyStub]).either
+        seenArgv  <- Ref.make(List.empty[String])
+        seenStdin <- Ref.make("")
+        conn       =
+          CodexConnector.make(CliConnectorConfig(ConnectorId.Codex), new RecordingExec(seenArgv, seenStdin, failLine))
+        res       <- conn.executeStructured[ReplyStub]("go", SchemaDerivation.derive[ReplyStub]).either
       yield assertTrue(res.left.toOption.exists(_.isInstanceOf[LlmError.UsageLimitError]))
     },
   )
