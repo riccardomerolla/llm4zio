@@ -27,4 +27,14 @@ object LiveCliProcessExecutorSpec extends ZIOSpecDefault:
         yield assertTrue(lines.toList == List("alpha", "beta"))
       }
     },
+    test("runStreamingWithStdin feeds the prompt on stdin (cat echoes it back)") {
+      for lines <- LiveCliProcessExecutor.instance
+                     .runStreamingWithStdin(List("cat"), ".", Map.empty, "alpha\nbeta")
+                     .runCollect
+      yield assertTrue(lines.toList == List("alpha", "beta"))
+    },
+    test("runWithStdin feeds the prompt on stdin and captures stdout") {
+      for result <- LiveCliProcessExecutor.instance.runWithStdin(List("cat"), ".", Map.empty, "one\ntwo")
+      yield assertTrue(result.exitCode == 0, result.stdout == List("one", "two"))
+    },
   ) @@ TestAspect.sequential @@ TestAspect.withLiveClock @@ TestAspect.timeout(30.seconds)
