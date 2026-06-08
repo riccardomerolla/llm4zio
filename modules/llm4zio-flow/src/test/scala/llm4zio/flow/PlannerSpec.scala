@@ -20,6 +20,17 @@ object PlannerSpec extends ZIOSpecDefault:
       ZIO.fromEither(json.fromJson[A]).mapError(e => LlmError.ParseError(e, json))
     def isAvailable: UIO[Boolean]                                                              = ZIO.succeed(true)
 
+  /** Streams a canned text reply — used to exercise the free-text `brief`. */
+  final class StubText(text: String) extends LlmService:
+    def executeStream(prompt: String): Stream[LlmError, LlmChunk]                              =
+      ZStream.succeed(LlmChunk(delta = text, finishReason = Some("stop")))
+    def executeStreamWithHistory(messages: List[Message]): Stream[LlmError, LlmChunk]          = executeStream("")
+    def executeWithTools(prompt: String, tools: List[AnyTool]): IO[LlmError, ToolCallResponse] =
+      ZIO.dieMessage("unused")
+    def executeStructured[A: JsonCodec](prompt: String, schema: JsonSchema): IO[LlmError, A]   =
+      ZIO.dieMessage("unused")
+    def isAvailable: UIO[Boolean]                                                              = ZIO.succeed(true)
+
   def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("Planner")(
     test("from returns the plan the model produced") {
       val json =
@@ -44,5 +55,19 @@ object PlannerSpec extends ZIOSpecDefault:
       yield assertTrue(v match
         case Verdict.Blocked(r) => r == "needs design"
         case _                  => false)
+    },
+    test("reviewed returns the improved plan and preserves an already-attached brief") {
+      val improved = """{"epicId":"x","tasks":[{"title":"better","description":"sharper","completed":false}]}"""
+      val draft    = Plan("x", List(Task("vague", "")), brief = Some("KEEP ME"))
+      for p <- Planner.reviewed(StubStructured(improved), draft)
+      yield assertTrue(p.tasks == List(Task("better", "sharper")), p.brief.contains("KEEP ME"))
+    },
+    test("briefed attaches the generated codebase brief so taskPrompt prepends it") {
+      val plan = Plan("x", List(Task("a", "do it")))
+      for p <- Planner.briefed(StubText("Modules: core/flow. Build: sbt test."), plan, "add a thing")
+      yield assertTrue(
+        p.brief.contains("Modules: core/flow. Build: sbt test."),
+        p.taskPrompt(plan.tasks.head).startsWith("Modules: core/flow."),
+      )
     },
   )

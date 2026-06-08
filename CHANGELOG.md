@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.0] - 2026-06-08
+
+### Added
+
+- **Plan self-review + codebase brief** (orca parity — `implement-enhanced`). `Planner.reviewed` critiques a draft plan
+  along four dimensions (correctness, completeness, simplicity, conciseness) and returns an improved one;
+  `Planner.briefed` / `Planner.brief` write a one-off codebase brief. `Plan` gains an optional `brief` (round-tripped in
+  a trailing `# Brief` section, so it persists/resumes/cleans up with the single plan file) and `taskPrompt(task)`,
+  which prepends the brief to a task so a cold coder doesn't re-discover what the planner learned.
+- **Two new examples complete orca example parity.** `07-enhanced` (plan review + codebase brief + format/lint after
+  every edit) and `06-issue-pr` (autonomous GitHub-issue → PR: assess → branch → implement+review → push → open PR).
+  The `03-bugfix` flow now self-reviews + briefs its fix plan too.
+
+### Changed
+
+- **Aligned with orca's latest:** the plan-review prompt uses orca's four dimensions; the formatter hook runs via a
+  shell (`bash -c`) so `LLM4ZIO_FORMAT` can be a pipeline; `gh.readIssue` now retries transient GitHub blips with a
+  bounded backoff (idempotent read).
+
+[2.9.0]: https://github.com/riccardomerolla/llm4zio/releases/tag/v2.9.0
+
 ## [2.8.0] - 2026-06-08
 
 ### Added

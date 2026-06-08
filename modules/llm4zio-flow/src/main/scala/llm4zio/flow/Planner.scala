@@ -3,7 +3,7 @@ package llm4zio.flow
 import zio.json.ast.Json
 import zio.{ IO, ZIO }
 
-import llm4zio.core.{ LlmService, SchemaDerivation }
+import llm4zio.core.{ LlmService, SchemaDerivation, Streaming }
 import llm4zio.tools.JsonSchema
 
 /** Turn a free-form request into a structured [[Plan]] using a reasoning connector's structured-output capability. The
@@ -34,6 +34,53 @@ object Planner:
     reasoning
       .executeStructured[Plan](s"$instructions\n\nRequest:\n$prompt", schema)
       .mapError(e => FlowError.Llm(e.toString))
+
+  val reviewInstructions: String =
+    """Review the draft implementation plan below and return an improved version. Focus on four dimensions:
+      |  - Correctness: every task matches how the codebase actually works; ordering and inter-task dependencies are
+      |    right; no step rests on a wrong assumption.
+      |  - Completeness: the plan fully covers the request, with no missing task or step an implementer would need.
+      |  - Simplicity: prefer the simplest approach that works; cut over-engineering; split or merge tasks so each is
+      |    one coherent unit of work.
+      |  - Conciseness: no redundant or busy-work tasks; each description carries only what an implementer needs.
+      |Keep the same epicId unless it is clearly wrong. Return the COMPLETE improved plan (not just the changes),
+      |ONLY as JSON: {"epicId":"kebab-case-id","tasks":[{"title":"...","description":"...","completed":false}]}""".stripMargin
+
+  /** Have the reasoning connector critique its own draft [[Plan]] and return an improved one. */
+  def reviewed(
+    reasoning: LlmService,
+    plan: Plan,
+    instructions: String = reviewInstructions,
+  ): IO[FlowError, Plan] =
+    reasoning
+      .executeStructured[Plan](s"$instructions\n\nDraft plan:\n${plan.render}", schema)
+      .mapError(e => FlowError.Llm(e.toString))
+      .map(_.copy(brief = plan.brief)) // a review must not drop an already-attached brief
+
+  val briefInstructions: String =
+    """Write a concise codebase brief for an engineer about to implement a change: the relevant modules, key file
+      |paths, important APIs/types, conventions, and the build/test commands. Explore the repo as needed. Do NOT
+      |restate the task list — just the orientation a cold agent would otherwise have to rediscover. Plain prose.""".stripMargin
+
+  /** Ask the reasoning connector (a CLI agent that can explore the repo) for a one-off codebase brief. */
+  def brief(
+    reasoning: LlmService,
+    prompt: String,
+    instructions: String = briefInstructions,
+  ): IO[FlowError, String] =
+    Streaming
+      .collect(reasoning.executeStream(s"$instructions\n\nChange request:\n$prompt"))
+      .map(_.content.strip)
+      .mapError(e => FlowError.Llm(e.toString))
+
+  /** Attach a freshly-written codebase [[brief]] to `plan`, so `plan.taskPrompt` prepends it to every task. */
+  def briefed(
+    reasoning: LlmService,
+    plan: Plan,
+    prompt: String,
+    instructions: String = briefInstructions,
+  ): IO[FlowError, Plan] =
+    brief(reasoning, prompt, instructions).map(b => plan.copy(brief = Some(b)))
 
   val assessThenPlanInstructions: String =
     """First decide whether this request is ready to implement. Respond ONLY with JSON using a "kind" discriminator,

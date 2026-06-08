@@ -15,10 +15,10 @@ object Formatter:
     command.map(_.trim).filter(_.nonEmpty) match
       case None      => ZIO.unit
       case Some(cmd) =>
-        val parts = cmd.split("\\s+").toList
+        // Run through a shell (like orca's `bash -c`) so the command can be a pipeline or use shell features.
         events.publish(FlowEvent.Info(s"⌗ format: $cmd")) *>
           Proc
-            .run(parts.head, parts.tail, workDir)
+            .run("bash", List("-c", cmd), workDir)
             .flatMap(r =>
               ZIO.unless(r.ok)(
                 events.publish(FlowEvent.Info(s"format exited ${r.exitCode}: ${r.problem.take(200)}"))

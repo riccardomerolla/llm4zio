@@ -39,4 +39,21 @@ object PlanSpec extends ZIOSpecDefault:
         Plan.parse(done.render) == Right(done),
       )
     },
+    test("render then parse round-trips a plan that carries a codebase brief") {
+      val plan = Plan(
+        epicId = "add-multiply",
+        tasks = List(Task("Add multiply", "Implement multiply(a, b).", completed = true), Task("Test it", "Cases.")),
+        brief = Some("Modules: core, flow.\nBuild/test: sbt test.\nConvention: typed errors."),
+      )
+      assertTrue(Plan.parse(plan.render) == Right(plan))
+    },
+    test("taskPrompt prepends the brief, or returns the bare description when there is none") {
+      val task      = Task("a", "do the thing")
+      val withBrief = Plan("x", List(task), brief = Some("BRIEF"))
+      val noBrief   = Plan("x", List(task))
+      assertTrue(
+        withBrief.taskPrompt(task) == "BRIEF\n\n---\n\ndo the thing",
+        noBrief.taskPrompt(task) == "do the thing",
+      )
+    },
   )

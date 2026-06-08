@@ -41,11 +41,14 @@ final class GhTool(workDir: Path):
         .orElseFail(FlowError.Process("gh pr create", s"could not parse a PR URL from: $out"))
     }
 
-  /** Read an issue via `gh issue view --json`. */
+  /** Read an issue via `gh issue view --json`. Idempotent, so a transient gh/GitHub blip (e.g. a dropped GraphQL
+    * connection) is retried a few times with backoff rather than aborting the flow.
+    */
   def readIssue(ref: IssueRef): IO[FlowError, Issue] =
-    Proc.runOrFail("gh", GhTool.issueViewArgs(ref), workDir).flatMap { json =>
-      ZIO.fromEither(GhTool.parseIssue(json)).mapError(e => FlowError.Process("gh issue view", e))
-    }
+    Proc
+      .runOrFail("gh", GhTool.issueViewArgs(ref), workDir)
+      .flatMap(json => ZIO.fromEither(GhTool.parseIssue(json)).mapError(e => FlowError.Process("gh issue view", e)))
+      .retry(GhTool.transientRead)
 
   /** Comment on an issue. */
   def writeIssueComment(ref: IssueRef, body: String): IO[FlowError, Unit] =
@@ -73,6 +76,10 @@ final class GhTool(workDir: Path):
     loop.timeoutTo(BuildOutcome.TimedOut)(identity)(timeout)
 
 object GhTool:
+  /** Bounded backoff for idempotent `gh` reads — absorbs a transient GitHub/network blip without aborting the flow. */
+  private[flow] val transientRead: Schedule[Any, FlowError, Any] =
+    Schedule.recurs(3) && Schedule.exponential(1.second)
+
   /** The `gh` argv for opening a PR — pure, so it can be unit-tested. */
   def prCreateArgs(title: String, body: String, base: Option[String], draft: Boolean): List[String] =
     List("pr", "create", "--title", title, "--body", body) ++

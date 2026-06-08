@@ -1,4 +1,4 @@
-//> using dep "io.github.riccardomerolla::llm4zio-runner:2.8.0"
+//> using dep "io.github.riccardomerolla::llm4zio-runner:2.9.0"
 //> using scala "3.8.3"
 //> using jvm 21
 
@@ -91,14 +91,19 @@ object Main extends ZIOAppDefault:
                    fail("CI passed on the failing-test commit — the reproduction doesn't reproduce.")
                  )
       _       <- stage("Comment on PR")(ctx.gh.writePrComment(pr, s"CI is red as expected for: $summary. Implementing the fix."))
-      fixPlan <- stage("Plan the fix")(
-                   Planner.from(ctx.reasoning, s"Fix ${ref.shortRef} on branch $branchName so the failing test passes without regressing others.")
-                 )
+      fixPrompt = s"Fix ${ref.shortRef} on branch $branchName so the failing test passes without regressing others."
+      fixPlan <- stage("Plan the fix (review + brief)") {
+                   for
+                     draft    <- Planner.from(ctx.reasoning, fixPrompt)
+                     reviewed <- Planner.reviewed(ctx.reasoning, draft)
+                     briefed  <- Planner.briefed(ctx.reasoning, reviewed, fixPrompt)
+                   yield briefed
+                 }
       planPath = workDir.resolve(s".llm4zio/fix-${ref.number}.md")
       _       <- PlanStore.save(planPath, fixPlan)
       _       <- implementTaskLoop(planPath, fixPlan) { task =>
                    for
-                     _ <- coder.ask(task.description).mapError(e => FlowError.Llm(e.toString))
+                     _ <- coder.ask(fixPlan.taskPrompt(task)).mapError(e => FlowError.Llm(e.toString))
                      _ <- reviewAndFixLoop(Reviewers.minimal, ctx.reasoning, coder, task.title, ctx.git.diff)
                      _ <- ctx.git.commitAll(s"$branchName: ${task.title}").unit
                    yield ()

@@ -11,9 +11,12 @@ to [orca's examples](https://github.com/VirtusLab/orca/tree/main/examples).
 | [03-bugfix](03-bugfix/) | Issue-driven Scala bugfix (touches GitHub): read issue → triage → failing test on a branch → PR → wait for CI red → fix → update PR. No `--run` (needs a real repo + issue). |
 | [04-epic](04-epic/) | A multi-task epic in a resumable on-disk file, with **cross-agent review** (claude implements; the claude reasoner + codex review in parallel), a final doc-update stage, and epic-file cleanup. |
 | [05-interactive-live](05-interactive-live/) | **Interactive live coding**: each task drives a held, steerable `claude` session — streaming its work, asking you questions mid-task (`ask_user`), and gating tool calls through an approval policy, all over an in-process MCP server. claude-only. |
+| [06-issue-pr](06-issue-pr/) | Autonomous GitHub-issue → PR (touches GitHub): read issue → skeptically assess (`Planner.assessThenPlan`; a "blocked" verdict comments the reason and stops) → branch → per-task implement + review → push → summarise the diff → open a PR. No `--run` (needs a real repo + issue). |
+| [07-enhanced](07-enhanced/) | Like 01, **enhanced**: the planner self-reviews its draft (correctness / completeness / simplicity / conciseness) and writes a one-off **codebase brief** prepended to every task (`Planner.reviewed` + `briefed`, persisted in the plan file), plus format-after-every-edit (`LLM4ZIO_FORMAT`) and optional lint (`LLM4ZIO_LINT`). |
 
-The four orca examples (01–04) are ported; 05 adds llm4zio's interactive runtime.
-See `.claude/plans/orca-examples-parity.md`.
+All six orca examples are ported (implement → 01 & 07, interactive → 02, issue-pr-bugfix
+→ 03, epic → 04, issue-pr → 06, implement-enhanced → 07); 05 adds llm4zio's interactive
+runtime. See `.claude/plans/orca-examples-parity.md`.
 
 ## Prerequisites
 
