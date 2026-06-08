@@ -142,6 +142,7 @@ def reviewAndFixLoop(
   selector: ReviewerSelector = ReviewerSelector.allEveryRound,
   lint: Option[IO[FlowError, ReviewResult]] = None,
   parallelism: Int = 0,
+  format: IO[FlowError, Unit] = ZIO.unit,
 )(using events: FlowEvents
 ): IO[FlowError, ReviewResult] =
 
@@ -166,7 +167,8 @@ def reviewAndFixLoop(
     }
 
   def loop(round: Int, previous: Option[ReviewResult]): IO[FlowError, ReviewResult] =
-    reviewOnce(round, previous).flatMap { result =>
+    // Format before each round so reviewers (and the eventual commit) see consistently formatted code.
+    format *> reviewOnce(round, previous).flatMap { result =>
       val verdict = if result.isClean then "clean" else s"${result.issues.size} issue(s)"
       if result.isClean || round >= maxRounds then
         events.publish(FlowEvent.Info(s"review settled after round $round: $verdict")).as(result)

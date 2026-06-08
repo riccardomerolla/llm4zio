@@ -11,15 +11,19 @@ object TerminalListener:
   /** The styled glyph line for one event, without indentation. Pure -> trivially testable. Returns empty for events
     * that produce no visible line (e.g. token accounting).
     */
-  def line(event: FlowEvent, palette: Palette): String = event match
-    case FlowEvent.StageStarted(stage)        => palette.stageStart(stage)
-    case FlowEvent.StageCompleted(stage)      => palette.stageDone(stage)
-    case FlowEvent.StageFailed(stage, detail) => palette.fail(s"$stage — $detail")
-    case FlowEvent.Aborted(message)           => palette.fail(s"aborted: $message")
-    case FlowEvent.Info(message)              => palette.info(message)
-    case FlowEvent.ToolUse(tool, args)        => palette.toolCall(tool, args)
-    case FlowEvent.AssistantMessage(text)     => palette.assistant(oneLine(text))
-    case FlowEvent.TokensUsed(_, _, _)        => ""
+  def line(event: FlowEvent, palette: Palette): String =
+    // Every dynamic field below originates from an LLM or a backend CLI — sanitize control sequences before styling so
+    // a crafted byte stream can't drive the terminal (cursor moves, screen clears, title sets) or corrupt the tree.
+    val s = TerminalSafe.sanitize
+    event match
+      case FlowEvent.StageStarted(stage)        => palette.stageStart(s(stage))
+      case FlowEvent.StageCompleted(stage)      => palette.stageDone(s(stage))
+      case FlowEvent.StageFailed(stage, detail) => palette.fail(s"${s(stage)} — ${s(detail)}")
+      case FlowEvent.Aborted(message)           => palette.fail(s"aborted: ${s(message)}")
+      case FlowEvent.Info(message)              => palette.info(s(message))
+      case FlowEvent.ToolUse(tool, args)        => palette.toolCall(s(tool), s(args))
+      case FlowEvent.AssistantMessage(text)     => palette.assistant(oneLine(s(text)))
+      case FlowEvent.TokensUsed(_, _, _)        => ""
 
   /** Indent depth (in levels) at which each event's line is printed. `StageStarted` prints at the current depth then
     * opens a child level; `StageCompleted`/`StageFailed`/`Aborted` close a level then print.

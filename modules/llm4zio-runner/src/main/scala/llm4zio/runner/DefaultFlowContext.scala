@@ -21,6 +21,7 @@ object DefaultFlowContext:
     reviewers: List[LlmService] = Nil,
     usageLimit: UsageLimitPolicy = UsageLimitPolicy.off,
     retries: Int = 3,
+    coderCapabilities: ConnectorCapabilities = ConnectorCapabilities(),
   ): UIO[(FlowContext, FlowEvents.Hub)] =
     FlowEvents.hub().map { hub =>
       given FlowEvents = hub
@@ -33,7 +34,7 @@ object DefaultFlowContext:
       val reasoningT   = tap(reasoning, "reasoning")
       val coderT       = tap(coder, "coder")
       val reviewersT   = reviewers.zipWithIndex.map { case (r, i) => tap(r, s"reviewer:${i + 1}") }
-      (FlowContext(reasoningT, coderT, GitTool(workDir), GhTool(workDir), hub, reviewersT), hub)
+      (FlowContext(reasoningT, coderT, GitTool(workDir), GhTool(workDir), hub, reviewersT, coderCapabilities), hub)
     }
 
   /** Build connectors from config: a reasoning connector — **API or CLI** (a CLI reasoner needs no API key, e.g. an
@@ -53,7 +54,7 @@ object DefaultFlowContext:
         reasoningC <- registry.resolve(prepare(reasoning, workDir))
         coderC     <- registry.resolveCli(coder.copy(workingDir = Some(workDir.toString)))
         reviewers  <- ZIO.foreach(reviewerCfgs)(cfg => registry.resolve(prepare(cfg, workDir)))
-        bundle     <- make(reasoningC, coderC, workDir, reviewers, usageLimit, retries)
+        bundle     <- make(reasoningC, coderC, workDir, reviewers, usageLimit, retries, coderC.capabilities)
       yield bundle
     }
 

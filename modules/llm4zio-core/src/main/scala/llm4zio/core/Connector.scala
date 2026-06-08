@@ -16,6 +16,12 @@ trait Connector extends LlmService:
   def healthCheck: IO[LlmError, HealthStatus]
   override def isAvailable: UIO[Boolean]
 
+  /** What this connector can actually do through llm4zio — lets a flow choose a coder and refuse an interactive /
+    * ask-user / approval workflow up front instead of failing mid-run. Defaults suit an API connector (streaming,
+    * structured output, usage); CLI connectors refine it.
+    */
+  def capabilities: ConnectorCapabilities = ConnectorCapabilities()
+
 trait ApiConnector extends Connector:
   final def kind: ConnectorKind = ConnectorKind.Api
 
@@ -28,6 +34,14 @@ trait ApiConnector extends Connector:
 trait CliConnector extends Connector:
   final def kind: ConnectorKind = ConnectorKind.Cli
   def interactionSupport: InteractionSupport
+
+  /** Derived from `interactionSupport` by default: a connector that can drive an interactive stdin session is marked
+    * `interactiveSessions`. ask-user / approval / resumable-sessions stay off until a connector proves it supports them
+    * (e.g. claude via its held agent session) — gemini, for instance, declares InteractiveStdin yet cannot expose an
+    * ask-user tool in headless mode, so it keeps `askUser = false`.
+    */
+  override def capabilities: ConnectorCapabilities =
+    ConnectorCapabilities(interactiveSessions = interactionSupport == InteractionSupport.InteractiveStdin)
   def buildArgv(prompt: String, ctx: CliContext): List[String]
   def buildInteractiveArgv(ctx: CliContext): List[String]
   def complete(prompt: String): IO[LlmError, String]
@@ -84,6 +98,17 @@ final case class HealthStatus(
 
 enum InteractionSupport derives JsonCodec:
   case InteractiveStdin, ContinuationOnly
+
+/** The capability surface of a connector — what a flow can rely on before runtime. */
+final case class ConnectorCapabilities(
+  streaming: Boolean = true,
+  resumableSessions: Boolean = false,
+  interactiveSessions: Boolean = false,
+  askUser: Boolean = false,
+  approval: Boolean = false,
+  structuredOutput: Boolean = true,
+  usageReporting: Boolean = true,
+) derives JsonCodec
 
 enum CliSandbox derives JsonCodec:
   case Docker(image: String, mount: Boolean = true, network: Option[String] = None)

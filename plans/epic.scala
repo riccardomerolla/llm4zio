@@ -1,4 +1,4 @@
-//> using dep "io.github.riccardomerolla::llm4zio-runner:2.7.8"
+//> using dep "io.github.riccardomerolla::llm4zio-runner:2.8.0"
 //> using scala "3.8.3"
 //> using jvm 21
 
@@ -55,6 +55,8 @@ object Main extends ZIOAppDefault:
       Llm4zio.run(workDir, reasoning, coder) { ctx =>
         given FlowEvents = ctx.events
         val planPath = workDir.resolve(".llm4zio/epic.md")
+        // Optional project formatter (e.g. LLM4ZIO_FORMAT="sbt fmt"): run before each review round and before commit.
+        val format   = Formatter.step(sys.env.get("LLM4ZIO_FORMAT"), workDir)
 
         for
           plan      <- stage("Acquire epic")(PlanStore.recoverOrCreate(planPath)(Planner.from(ctx.reasoning, prompt)))
@@ -70,7 +72,9 @@ object Main extends ZIOAppDefault:
                                   task.title,
                                   ctx.git.diff,
                                   parallelism = reviewParallelism,
+                                  format = format,
                                 )
+                           _ <- format // format once more before committing the task
                            _ <- ctx.git.commitAll(s"${plan.epicId}: ${task.title}").unit
                          yield ()
                        }

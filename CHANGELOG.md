@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.8.0] - 2026-06-08
+
+### Added
+
+- **CLI connector capability contracts (orca-parity #1).** New `ConnectorCapabilities` (streaming, resumable sessions,
+  interactive sessions, ask-user, approval, structured output, usage reporting). Every connector declares its surface —
+  derived from `interactionSupport` by default; claude declares full interactive/ask-user/approval/resumable support;
+  gemini stays `askUser = false` (headless gemini can't expose MCP tools — verified). Exposed on
+  `FlowContext.coderCapabilities` so a flow can refuse an unsupported interactive/approval workflow before runtime.
+- **Formatter hook in the review/fix loop (orca-parity #9).** `reviewAndFixLoop` gains an optional `format` step run
+  before each review round; new `Formatter.step(command, workDir)` runs a project formatter best-effort (a failure is
+  surfaced but never aborts the flow). The 04-epic example wires it via `LLM4ZIO_FORMAT` (e.g. `"sbt fmt"`, off unless
+  set) and also formats once more before each per-task commit.
+
+### Security
+
+- **Terminal control-sequence sanitization (orca-parity #11).** All backend/LLM-derived text (stage and tool names,
+  tool args, assistant text, error details, info messages) is stripped of ANSI CSI/OSC escapes and C0/C1 control bytes
+  (tabs and newlines preserved) before terminal styling — so crafted tool/stderr/model output can't move the cursor,
+  clear the screen, set the title, or corrupt the rendered tree.
+
+[2.8.0]: https://github.com/riccardomerolla/llm4zio/releases/tag/v2.8.0
+
 ## [2.7.8] - 2026-06-06
 
 ### Changed

@@ -1,6 +1,6 @@
 package llm4zio.flow
 
-import llm4zio.core.LlmService
+import llm4zio.core.{ ConnectorCapabilities, LlmService }
 
 /** Everything a flow needs, bundled in one place.
   *
@@ -18,6 +18,8 @@ final case class FlowContext(
   // Extra review backends (cross-agent review). The reasoning connector is the
   // default reviewer; these are run alongside it.
   reviewers: List[LlmService] = Nil,
+  // What the coder can do (interactive/ask-user/approval/…), so a flow can refuse an unsupported workflow up front.
+  coderCapabilities: ConnectorCapabilities = ConnectorCapabilities(),
 ):
   /** Expose the event sink as a given so `stage`/`fail` resolve it implicitly. */
   given FlowEvents = events

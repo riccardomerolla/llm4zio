@@ -26,6 +26,15 @@ object ClaudeCliConnector:
 
       override def id: ConnectorId                                          = ConnectorId.ClaudeCli
       override def interactionSupport: InteractionSupport                   = InteractionSupport.InteractiveStdin
+      // Claude is the one CLI llm4zio drives as a held agent session (ClaudeAgentSession + InteractiveCoder), so it
+      // genuinely supports ask-user and approval over MCP and resumable multi-turn sessions.
+      override def capabilities: ConnectorCapabilities                      =
+        ConnectorCapabilities(
+          interactiveSessions = true,
+          askUser = true,
+          approval = true,
+          resumableSessions = true,
+        )
       override def healthCheck: IO[LlmError, HealthStatus]                  =
         executor.run(List("claude", "--version"), cwd, Map.empty)
           .map(_ => HealthStatus(Availability.Healthy, AuthStatus.Valid, None))
