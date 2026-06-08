@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.1] - 2026-06-08
+
+### Fixed
+
+- **Multi-line assistant prose keeps its formatting in the terminal tree.** Assistant text (e.g. a long codebase
+  brief) was flattened to a single run-on line — `oneLine` collapsed every newline/tab to a space. It now preserves
+  the model's line breaks and tabs, and the renderer hang-indents continuation lines under the glyph so the block
+  stays aligned in the tree. Backend/LLM text is still control-sanitized first (no cursor/title escapes).
+
+[2.9.1]: https://github.com/riccardomerolla/llm4zio/releases/tag/v2.9.1
+
 ## [2.9.0] - 2026-06-08
 
 ### Added

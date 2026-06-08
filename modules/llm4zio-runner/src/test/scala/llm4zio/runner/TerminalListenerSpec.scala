@@ -20,8 +20,15 @@ object TerminalListenerSpec extends ZIOSpecDefault:
         TerminalListener.line(FlowEvent.AssistantMessage("done"), p) == "● done",
       )
     },
-    test("AssistantMessage collapses multi-line text to one line") {
-      assertTrue(TerminalListener.line(FlowEvent.AssistantMessage("a\nb\n  c"), p) == "● a b c")
+    test("AssistantMessage preserves the model's line breaks (trimmed at the ends)") {
+      assertTrue(TerminalListener.line(FlowEvent.AssistantMessage("\na\nb\n  c\n"), p) == "● a\nb\n  c")
+    },
+    test("indentBlock prefixes a single line and hang-indents continuation lines") {
+      assertTrue(
+        TerminalListener.indentBlock(1, "● done") == "  ● done",
+        TerminalListener.indentBlock(2, "● a\nb\nc") == "    ● a\n      b\n      c",
+        TerminalListener.indentBlock(0, "✔ x") == "✔ x",
+      )
     },
     test("TokensUsed renders nothing inline (consumed by CostTracker)") {
       assertTrue(TerminalListener.line(FlowEvent.TokensUsed("coder", None, TokenUsage(1, 1, 2)), p).isEmpty)

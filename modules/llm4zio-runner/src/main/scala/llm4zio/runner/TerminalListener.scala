@@ -22,8 +22,19 @@ object TerminalListener:
       case FlowEvent.Aborted(message)           => palette.fail(s"aborted: ${s(message)}")
       case FlowEvent.Info(message)              => palette.info(s(message))
       case FlowEvent.ToolUse(tool, args)        => palette.toolCall(s(tool), s(args))
-      case FlowEvent.AssistantMessage(text)     => palette.assistant(oneLine(s(text)))
+      // Keep the assistant's own line breaks (sanitize preserves tabs/newlines); the renderer hang-indents the block.
+      case FlowEvent.AssistantMessage(text)     => palette.assistant(s(text).strip)
       case FlowEvent.TokensUsed(_, _, _)        => ""
+
+  /** Indent a (possibly multi-line) rendered entry under its tree depth: the first line at `depth`, continuation lines
+    * hung two columns further so wrapped prose aligns under the text rather than the glyph. Single-line entries are
+    * just prefixed, unchanged.
+    */
+  def indentBlock(depth: Int, rendered: String): String =
+    val pad = "  " * depth
+    rendered.linesIterator.toList match
+      case Nil          => pad
+      case head :: tail => (s"$pad$head" :: tail.map(l => s"$pad  $l")).mkString("\n")
 
   /** Indent depth (in levels) at which each event's line is printed. `StageStarted` prints at the current depth then
     * opens a child level; `StageCompleted`/`StageFailed`/`Aborted` close a level then print.
@@ -38,8 +49,6 @@ object TerminalListener:
         else (depth, acc :+ depth)
     }
     depths
-
-  private def oneLine(text: String): String = text.replaceAll("\\s+", " ").trim
 
   private def opensChild(e: FlowEvent): Boolean = e match
     case _: FlowEvent.StageStarted => true
@@ -71,7 +80,7 @@ object TerminalListener:
                       _ <- if opensChild(event) then depth.update(_ + 1) else ZIO.unit
                       _ <- stageLabel(event).fold(ZIO.unit)(surface.setStatus)
                       s  = line(event, palette)
-                      _ <- ZIO.unlessDiscard(s.isEmpty)(surface.log("  " * d + s))
+                      _ <- ZIO.unlessDiscard(s.isEmpty)(surface.log(indentBlock(d, s)))
                     yield ()) *> consumed.update(_ + 1)
                   }.forkScoped
     yield consumed
