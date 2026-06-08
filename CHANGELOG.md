@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.8] - 2026-06-06
+
+### Changed
+
+- **Gemini stream anomalies surface in the log instead of vanishing** (inspired by orca's gemini driver). Previously a
+  JSON-looking line that failed to decode was logged at `trace`, and all stderr at `debug` — both below the default
+  log level, so genuine protocol/stderr errors were effectively invisible. Now: an unparseable JSON-looking stdout
+  line is logged at `WARN`, and stderr lines that aren't known benign chatter (YOLO/256-color/cwd-reset/cached/
+  extension/IDEClient notices) are logged at `WARN`. Benign noise stays at `debug`.
+
+[2.7.8]: https://github.com/riccardomerolla/llm4zio/releases/tag/v2.7.8
+
 ## [2.7.7] - 2026-06-06
 
 ### Fixed

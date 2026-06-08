@@ -187,11 +187,14 @@ object GeminiCliExecutor:
                          s"Starting Gemini stream: ${geminiArgv(config, executionContext, "stream-json").mkString(" ")}"
                        )
             process <- geminiCmd(prompt, config, executionContext, "stream-json").run.mapError(startError)
-            // Drain stderr (debug log only). Killing the child first on teardown (finalizer below, registered last ⇒
-            // runs first) closes this stream so the drain fiber can never wedge scope shutdown.
+            // Drain stderr: benign chatter at debug, anything else at WARN (so a stderr-only failure isn't lost).
+            // Killing the child first on teardown (finalizer below, registered last ⇒ runs first) closes this stream
+            // so the drain fiber can never wedge scope shutdown.
             _       <- process.stderr.linesStream
                          .foreach(line =>
-                           ZIO.logDebug(s"Gemini stream stderr: ${line.take(500)}${if line.length > 500 then "..." else ""}")
+                           val shown = line.take(500) + (if line.length > 500 then "..." else "")
+                           if GeminiCliProvider.isKnownStderrNoise(line) then ZIO.logDebug(s"Gemini stderr: $shown")
+                           else ZIO.logWarning(s"Gemini stderr: $shown")
                          )
                          .ignore
                          .forkScoped
@@ -338,6 +341,19 @@ object GeminiCliProvider:
   private def isPreambleLine(line: String): Boolean =
     preamblePatterns.exists(_.matches(line))
 
+  /** Benign stderr chatter the gemini CLI prints to stderr regardless of success — not worth surfacing. Anything else
+    * on stderr is treated as a real diagnostic and logged at WARN.
+    */
+  private[providers] def isKnownStderrNoise(line: String): Boolean =
+    val l = line.trim
+    l.isEmpty ||
+    l.contains("256-color support not detected") ||
+    l.startsWith("YOLO mode is enabled") ||
+    l.startsWith("Shell cwd was reset to") ||
+    l.startsWith("Loaded cached") ||
+    l.startsWith("Loading extension") ||
+    l.contains("[IDEClient]")
+
   private def extractAfterPreamble(text: String): Option[String] =
     val content = text.linesIterator
       .dropWhile(line => line.trim.isEmpty || isPreambleLine(line.trim))
@@ -405,6 +421,10 @@ object GeminiCliProvider:
               .tap {
                 case GeminiCliStreamEvent.LogLine(line) if line.trim.isEmpty || isPreambleLine(line.trim) =>
                   ZIO.logDebug(s"Gemini stream preamble: ${line.trim}")
+                case GeminiCliStreamEvent.LogLine(line) if line.trim.startsWith("{")                      =>
+                  // A line that looks like a stream-json event but failed to decode — surface it (WARN reaches the log;
+                  // trace/debug do not) so an unrecognised/half-formed protocol line isn't lost silently.
+                  ZIO.logWarning(s"Gemini stream: unparseable JSON line: ${line.trim.take(300)}")
                 case GeminiCliStreamEvent.LogLine(line)                                                   =>
                   ZIO.logTrace(s"Gemini stream non-JSON output: ${line.trim}")
                 case GeminiCliStreamEvent.Init(model, sessionId)                                          =>

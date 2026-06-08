@@ -491,6 +491,31 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
           case _                                                  => false,
       )
     },
+    test("isKnownStderrNoise filters benign gemini chatter but keeps real errors") {
+      assertTrue(
+        GeminiCliProvider.isKnownStderrNoise(""),
+        GeminiCliProvider.isKnownStderrNoise("YOLO mode is enabled. All tool calls will be auto-approved."),
+        GeminiCliProvider.isKnownStderrNoise("Warning: 256-color support not detected"),
+        GeminiCliProvider.isKnownStderrNoise("Shell cwd was reset to /tmp/x"),
+        !GeminiCliProvider.isKnownStderrNoise("Error: connection refused"),
+      )
+    },
+    test("a JSON-looking but unparseable stream line is logged at WARN, not lost at trace") {
+      val config   = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
+      val executor = new MockGeminiCliExecutor(
+        streamEvents = List(
+          GeminiCliStreamEvent.LogLine("""{"type":"tool_use","oops"""),
+          GeminiCliStreamEvent.Result(status = Some("success"), errorMessage = None, stats = None),
+        )
+      )
+      val provider = GeminiCliProvider.make(config, executor)
+      (for
+        _    <- provider.executeStream("hi").runDrain
+        logs <- ZTestLogger.logOutput
+      yield assertTrue(
+        logs.exists(e => e.logLevel == LogLevel.Warning && e.message().contains("unparseable JSON"))
+      )).provideLayer(ZTestLogger.default)
+    },
     test("parseStreamEvent decodes init event with model and session_id") {
       val line = """{"type":"init","model":"gemini-2.5-pro","session_id":"s42"}"""
       assertTrue(
