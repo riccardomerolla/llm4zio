@@ -41,6 +41,12 @@ object TransientRetrySpec extends ZIOSpecDefault:
           TransientRetry.isTransient(
             LlmError.ProviderError("Gemini CLI returned an error: [API Error: An unknown error occurred.]")
           ),
+          // gemini intermittently closes the stream with no candidates / a half-formed tool call — a fresh run recovers
+          TransientRetry.isTransient(
+            LlmError.ProviderError(
+              "Gemini CLI stream error: Invalid stream: The model returned an empty response or malformed tool call"
+            )
+          ),
         )
       },
       test("does NOT retry bad requests, parse errors, config errors, or usage caps") {

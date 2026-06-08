@@ -87,6 +87,11 @@ object TransientRetry:
         // retrying (bounded). Tune the count with LLM4ZIO_RETRIES (0 = fail fast).
         "api error",
         "unknown error",
+        // Gemini intermittently closes the stream with no candidates or a half-formed function call. Non-deterministic;
+        // a fresh run (which retryStream does — it spawns a new gemini process) almost always succeeds.
+        "empty response",
+        "malformed tool call",
+        "invalid stream",
         "code=500",
         "code=502",
         "code=503",

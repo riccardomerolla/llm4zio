@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.7] - 2026-06-06
+
+### Fixed
+
+- **Gemini's intermittent empty-stream error is now retried.** The gemini CLI occasionally closes the stream with no
+  candidates — `Invalid stream: The model returned an empty response or malformed tool call` — a non-deterministic
+  glitch a fresh run almost always recovers. `TransientRetry.isTransient` now classifies `empty response`,
+  `malformed tool call`, and `invalid stream` (and `code=500`) as transient, so the existing retry path re-runs the
+  turn (a fresh `gemini` process) instead of failing fast — bounded by `LLM4ZIO_RETRIES` (default 3, `0` = fail fast).
+- **Gemini error events with a flat top-level `message` are surfaced cleanly.** `GeminiStreamJsonEvent` now decodes a
+  flat `message` field (in addition to `text`), so the error reads `Invalid stream: …` rather than the raw JSON
+  envelope — and gives the classifier a stable string to match.
+
+[2.7.7]: https://github.com/riccardomerolla/llm4zio/releases/tag/v2.7.7
+
 ## [2.7.6] - 2026-06-06
 
 ### Added

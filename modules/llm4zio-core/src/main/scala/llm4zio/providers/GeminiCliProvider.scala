@@ -256,6 +256,7 @@ object GeminiCliProvider:
     parameters: Option[Json] = None,
     output: Option[String] = None,
     text: Option[String] = None,
+    message: Option[String] = None, // error events also carry a flat top-level `message`
     status: Option[String] = None,
     model: Option[String] = None,
     session_id: Option[String] = None,
@@ -298,6 +299,7 @@ object GeminiCliProvider:
                 message = event.text
                   .map(_.trim)
                   .filter(_.nonEmpty)
+                  .orElse(event.message.map(_.trim).filter(_.nonEmpty))
                   .orElse(event.error.flatMap(_.message))
                   .orElse(Some(trimmed)),
                 code = event.error.flatMap(_.code),

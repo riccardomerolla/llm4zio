@@ -409,6 +409,18 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
         )
       )
     },
+    test("parseStreamEvent error reads a flat top-level `message` field") {
+      // Gemini's real empty-stream error: {"type":"error","message":"Invalid stream: ..."}.
+      val line =
+        """{"type":"error","message":"Invalid stream: The model returned an empty response or malformed tool call"}"""
+      assertTrue(
+        GeminiCliProvider.parseStreamEvent(line) == GeminiCliStreamEvent.Error(
+          message = Some("Invalid stream: The model returned an empty response or malformed tool call"),
+          code = None,
+          errorType = None,
+        )
+      )
+    },
     test("parseStreamEvent error with no recognised message field falls back to the raw event line") {
       // Defends against gemini error shapes we don't model: never lose the detail to an empty message.
       val line = """{"type":"error","detail":"some unmodelled shape"}"""
