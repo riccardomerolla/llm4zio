@@ -14,6 +14,7 @@ object ConnectorsSpec extends ZIOSpecDefault:
         codex.connectorId == ConnectorId.Codex,
         codex.flags == Map("sandbox" -> "workspace-write"),
         gemini.connectorId == ConnectorId.GeminiCli,
+        gemini.flags == Map.empty,
       )
     },
     test("withModel pins a model") {
