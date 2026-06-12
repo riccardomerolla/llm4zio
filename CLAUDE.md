@@ -63,7 +63,7 @@ llm4zio.providers    OpenAI/Anthropic/GeminiApi/LmStudio/Ollama (API),
 llm4zio.tools        Tool, AnyTool, JsonSchema, tool-calling executor
 llm4zio.observability  lightweight tracing/metrics hooks
 llm4zio.flow         the flow layer (see modules table)
-llm4zio.runner       TerminalListener, ExampleFlow
+llm4zio.runner       flow entry point, Connectors presets (claude/codex/gemini), Llm4zio.run/script, TerminalListener, ExampleFlow
 ```
 
 ---
@@ -115,8 +115,8 @@ flow(args, defaultPrompt = Some("Add a multiply function")):
                      git.commitAll(s"${plan.epicId}: ${task.title}").unit
                  }
     _         <- stage("push")(git.push("origin", plan.epicId))
-    url       <- gh.createPr(plan.epicId, body = "…", base = Some("main"))
-  yield url
+    pr        <- gh.createPr(plan.epicId, body = "…", base = Some("main"))
+  yield pr.url
 ```
 
 See `examples/*.sc` for worked versions; `llm4zio.runner.ExampleFlow` is the embedded (ZIOAppDefault) variant with an end-to-end test.
