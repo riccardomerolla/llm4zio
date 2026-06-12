@@ -27,7 +27,7 @@ import llm4zio.flow.{ FlowContext, FlowError, UsageLimitPolicy }
   * prompt prints usage and exits 2; a failed flow exits 1 (the runner has already rendered the failure).
   */
 def flow(
-  args: Seq[String],
+  args: Array[String],
   coder: CliConnectorConfig = Connectors.coderFromEnv(),
   reasoning: Option[ConnectorConfig] = None,
   defaultPrompt: Option[String] = None,
