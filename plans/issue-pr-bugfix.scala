@@ -1,4 +1,4 @@
-//> using dep "io.github.riccardomerolla::llm4zio-runner:2.9.1"
+//> using dep "io.github.riccardomerolla::llm4zio-runner:2.10.0"
 //> using scala "3.8.3"
 //> using jvm 21
 
@@ -29,7 +29,7 @@ import llm4zio.runner.Llm4zio
 object Main extends ZIOAppDefault:
 
   // CLI for both reasoning (triage / review / PR summary) and coding — no API key.
-  private val reasoning = CliConnectorConfig(ConnectorId.ClaudeCli)
+  private val reasoning = CliConnectorConfig(ConnectorId.ClaudeCli, readOnly = true)
   private val coder     = CliConnectorConfig(ConnectorId.ClaudeCli, flags = Map("permission-mode" -> "acceptEdits"))
   private val CiTimeout  = 30.minutes
 
@@ -69,6 +69,7 @@ object Main extends ZIOAppDefault:
     failingTestPath: String,
   )(using FlowEvents): IO[FlowError, Unit] =
     for
+      start <- ctx.git.currentBranch // return here at the end, so the user lands back where they started
       _     <- stage("Branch")(ctx.git.checkoutOrCreate(branchName))
       coder <- Chat.start(ctx.coder, system = Some("You write code in the current repo."))
       _     <- stage("Write the failing test") {
@@ -119,4 +120,5 @@ object Main extends ZIOAppDefault:
                       )
       _       <- stage("Update PR")(ctx.gh.updatePr(pr, finalSummary.title, s"${finalSummary.body}\n\nCloses ${ref.shortRef}."))
       _       <- PlanStore.delete(planPath)
+      _       <- stage(s"Return to $start")(ctx.git.checkout(start))
     yield ()

@@ -18,7 +18,9 @@ object ClaudeCliConnector:
       // Empty config → just `claude --print <prompt>` (unchanged default).
       private def extraArgs: List[String] =
         val modelArgs = config.model.toList.flatMap(m => List("--model", m))
-        val flagArgs  = config.flags.toList.sortBy(_._1).flatMap {
+        // Read-only forces plan mode (no edits/no side-effecting tools), overriding any permission-mode flag.
+        val effective = if config.readOnly then config.flags + ("permission-mode" -> "plan") else config.flags
+        val flagArgs  = effective.toList.sortBy(_._1).flatMap {
           case (k, v) if v.isEmpty => List(s"--$k")
           case (k, v)              => List(s"--$k", v)
         }

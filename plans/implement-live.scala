@@ -1,4 +1,4 @@
-//> using dep "io.github.riccardomerolla::llm4zio-runner:2.9.1"
+//> using dep "io.github.riccardomerolla::llm4zio-runner:2.10.0"
 //> using scala "3.8.3"
 //> using jvm 21
 
@@ -24,7 +24,7 @@ object Main extends ZIOAppDefault:
 
   // Reasoning (planning) over the claude CLI. `coder` is required by Llm4zio.run to build the FlowContext, but the
   // live path doesn't use ctx.coder — InteractiveCoder opens a fresh claude AgentSession per task instead.
-  private val reasoning = CliConnectorConfig(ConnectorId.ClaudeCli)
+  private val reasoning = CliConnectorConfig(ConnectorId.ClaudeCli, readOnly = true)
   private val coder     = CliConnectorConfig(ConnectorId.ClaudeCli)
 
   def run =

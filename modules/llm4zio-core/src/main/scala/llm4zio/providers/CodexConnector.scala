@@ -20,7 +20,9 @@ object CodexConnector:
       // value → bare `--flag`, e.g. `--full-auto`), sorted for determinism.
       private def extraArgs: List[String] =
         val modelArgs = config.model.toList.flatMap(m => List("--model", m))
-        val flagArgs  = config.flags.toList.sortBy(_._1).flatMap {
+        // Read-only forces the read-only sandbox (no edits/shell), overriding any sandbox flag.
+        val effective = if config.readOnly then config.flags + ("sandbox" -> "read-only") else config.flags
+        val flagArgs  = effective.toList.sortBy(_._1).flatMap {
           case (k, v) if v.isEmpty => List(s"--$k")
           case (k, v)              => List(s"--$k", v)
         }

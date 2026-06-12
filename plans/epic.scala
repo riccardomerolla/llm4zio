@@ -1,4 +1,4 @@
-//> using dep "io.github.riccardomerolla::llm4zio-runner:2.9.1"
+//> using dep "io.github.riccardomerolla::llm4zio-runner:2.10.0"
 //> using scala "3.8.3"
 //> using jvm 21
 
@@ -47,7 +47,7 @@ object Main extends ZIOAppDefault:
       val workDir   = Path.of(".").toAbsolutePath.normalize
       val backend   = sys.env.getOrElse("LLM4ZIO_CODER", "claude")
       val coder     = cliFor(backend)
-      val reasoning = cliFor(backend)
+      val reasoning = cliFor(backend).copy(readOnly = true) // planning + review never edit files
       // The seven review lenses fan out concurrently by default. gemini's free tier 429s under that burst, so run its
       // reviews one at a time (gemini's own retry/backoff then absorbs transient limits); 0 = unbounded for the rest.
       val reviewParallelism = if backend == "gemini" then 1 else 0

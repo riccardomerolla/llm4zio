@@ -59,6 +59,9 @@ final case class CliConnectorConfig(
   // Directory the CLI agent runs in — so it edits files in the target repo, not
   // the host process's cwd. None falls back to ".".
   workingDir: Option[String] = None,
+  // Run the agent with no edit capability: claude `--permission-mode plan`, codex `--sandbox read-only`,
+  // gemini `--approval-mode plan`. Use for the reasoning connector (planning + review) so it can't touch files.
+  readOnly: Boolean = false,
 ) extends ConnectorConfig derives JsonCodec
 
 final case class FallbackChain(connectors: List[ConnectorConfig] = Nil) derives JsonCodec:

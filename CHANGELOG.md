@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.10.0] - 2026-06-11
+
+### Added
+
+- **Read-only reasoning** (orca parity — ADR 0016's read-only gate). `CliConnectorConfig.readOnly` (and
+  `GeminiCliExecutionContext.readOnly`) runs a CLI agent with no edit capability, overriding any edit flag:
+  claude `--permission-mode plan`, codex `--sandbox read-only`, gemini `--approval-mode plan` (instead of `-y`). Every
+  example now gives its `reasoning` connector `readOnly = true`, so planning and review can't touch files. (llm4zio
+  needs none of orca's fragile `NetworkOnly` axis — the flow reads issues via `gh.readIssue`, not agent web access.)
+
+### Changed
+
+- **PR flows return to the start branch.** `issue-pr` and `issue-pr-bugfix` capture the current branch up front and
+  check it back out once the PR is open, so a run leaves you where you started instead of on the work branch.
+
+[2.10.0]: https://github.com/riccardomerolla/llm4zio/releases/tag/v2.10.0
+
 ## [2.9.1] - 2026-06-08
 
 ### Fixed

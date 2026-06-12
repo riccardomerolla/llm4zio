@@ -56,6 +56,8 @@ final case class GeminiCliExecutionContext(
   includeDirectories: List[String] = Nil,
   sandbox: Option[GeminiSandbox] = None,
   turnLimit: Option[Int] = None,
+  // Read-only: drive gemini with `--approval-mode plan` (no edits) instead of `-y` (auto-approve all).
+  readOnly: Boolean = false,
 )
 
 object GeminiCliExecutionContext:
@@ -100,7 +102,9 @@ object GeminiCliExecutor:
     ctx: GeminiCliExecutionContext,
     outputFormat: String,
   ): List[String] =
-    val baseArgs       = List("-m", config.model, "-y", "--output-format", outputFormat)
+    // Read-only ⇒ `--approval-mode plan` (no edits); otherwise `-y` auto-approves all tools.
+    val approvalArgs   = if ctx.readOnly then List("--approval-mode", "plan") else List("-y")
+    val baseArgs       = List("-m", config.model) ++ approvalArgs ++ List("--output-format", outputFormat)
     val includeDirArgs = ctx.includeDirectories.distinct.flatMap(p => List("--include-directories", p))
     // The -s flag enables sandbox mode. The backend is controlled separately via
     // GEMINI_SANDBOX env var injected in startProcess (see GeminiSandbox.envValue).

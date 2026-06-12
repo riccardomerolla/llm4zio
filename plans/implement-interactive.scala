@@ -1,4 +1,4 @@
-//> using dep "io.github.riccardomerolla::llm4zio-runner:2.9.1"
+//> using dep "io.github.riccardomerolla::llm4zio-runner:2.10.0"
 //> using scala "3.8.3"
 //> using jvm 21
 
@@ -26,7 +26,7 @@ object Main extends ZIOAppDefault:
 
   // CLI for both reasoning and coding — no API key needed.
   private val coder     = CliConnectorConfig(ConnectorId.ClaudeCli, flags = Map("permission-mode" -> "acceptEdits"))
-  private val reasoning = CliConnectorConfig(ConnectorId.ClaudeCli)
+  private val reasoning = CliConnectorConfig(ConnectorId.ClaudeCli, readOnly = true)
 
   def run =
     getArgs.flatMap { args =>

@@ -1,4 +1,4 @@
-//> using dep "io.github.riccardomerolla::llm4zio-runner:2.9.1"
+//> using dep "io.github.riccardomerolla::llm4zio-runner:2.10.0"
 //> using scala "3.8.3"
 //> using jvm 21
 
@@ -52,7 +52,7 @@ object Main extends ZIOAppDefault:
       val workDir   = Path.of(".").toAbsolutePath.normalize
       val backend   = sys.env.getOrElse("LLM4ZIO_CODER", "claude")
       val coder     = cliFor(backend)
-      val reasoning = cliFor(backend)
+      val reasoning = cliFor(backend).copy(readOnly = true) // planning, review + brief never edit files
       // gemini's free tier 429s under concurrent reviewers; throttle it (0 = unbounded for the rest).
       val reviewParallelism = if backend == "gemini" then 1 else 0
 

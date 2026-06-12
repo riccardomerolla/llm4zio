@@ -1,4 +1,4 @@
-//> using dep "io.github.riccardomerolla::llm4zio-runner:2.9.1"
+//> using dep "io.github.riccardomerolla::llm4zio-runner:2.10.0"
 //> using scala "3.8.3"
 //> using jvm 21
 
@@ -43,7 +43,7 @@ object Main extends ZIOAppDefault:
       val workDir   = Path.of(".").toAbsolutePath.normalize
       val backend   = sys.env.getOrElse("LLM4ZIO_CODER", "claude")
       val coder     = cliFor(backend)
-      val reasoning = cliFor(backend)
+      val reasoning = cliFor(backend).copy(readOnly = true) // planning + review never edit files
 
       Llm4zio.run(workDir, reasoning, coder) { ctx =>
         given FlowEvents = ctx.events

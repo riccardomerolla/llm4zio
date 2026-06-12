@@ -1,4 +1,4 @@
-//> using dep "io.github.riccardomerolla::llm4zio-runner:2.9.1"
+//> using dep "io.github.riccardomerolla::llm4zio-runner:2.10.0"
 //> using scala "3.8.3"
 //> using jvm 21
 
@@ -30,7 +30,7 @@ import llm4zio.runner.Llm4zio
 object Main extends ZIOAppDefault:
 
   // CLI for both reasoning (assess / review / PR summary) and coding — no API key.
-  private val reasoning = CliConnectorConfig(ConnectorId.ClaudeCli)
+  private val reasoning = CliConnectorConfig(ConnectorId.ClaudeCli, readOnly = true)
   private val coder     = CliConnectorConfig(ConnectorId.ClaudeCli, flags = Map("permission-mode" -> "acceptEdits"))
 
   def run =
@@ -48,6 +48,7 @@ object Main extends ZIOAppDefault:
 
   private def issueToPr(ctx: FlowContext, workDir: Path, ref: IssueRef)(using FlowEvents): IO[FlowError, Unit] =
     for
+      start    <- ctx.git.currentBranch // return here at the end, so the user lands back where they started
       issue    <- stage(s"Read issue ${ref.shortRef}")(ctx.gh.readIssue(ref))
       payload   = s"Issue: ${issue.title}\n\nReporter: ${issue.author}\n\n${issue.body}"
       planPath  = workDir.resolve(s".llm4zio/issue-${ref.number}.md")
@@ -65,8 +66,8 @@ object Main extends ZIOAppDefault:
                      }
                    }
       _         <- maybePlan match
-                     case None       => ZIO.unit
-                     case Some(plan) => implementAndOpen(ctx, ref, issue, plan, planPath)
+                     case None       => ZIO.unit // Blocked: never switched branch, nothing to return from
+                     case Some(plan) => implementAndOpen(ctx, ref, issue, plan, planPath, start)
     yield ()
 
   private def implementAndOpen(
@@ -75,6 +76,7 @@ object Main extends ZIOAppDefault:
     issue: Issue,
     plan: Plan,
     planPath: Path,
+    startBranch: String,
   )(using FlowEvents): IO[FlowError, Unit] =
     for
       coderChat <- Chat.start(ctx.coder, system = Some("You implement one task at a time in the current repo."))
@@ -99,4 +101,5 @@ object Main extends ZIOAppDefault:
                      ctx.gh.createPr(summary.title, s"${summary.body}\n\nCloses ${ref.shortRef}.", base = Some(base))
                    )
       _         <- PlanStore.delete(planPath)
+      _         <- stage(s"Return to $startBranch")(ctx.git.checkout(startBranch))
     yield ()
