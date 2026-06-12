@@ -50,15 +50,15 @@ val planInstructions =
     "\nexactly: encode the acceptance criteria as JUnit 5 tests (no production code). Every" +
     "\nlater task implements production code towards making those tests pass."
 
-def writeIfAbsent(path: Path, content: String): IO[FlowError, Unit] =
+def writeIfAbsent(path: Path, content: String): IO[FlowError, Boolean] =
   ZIO
     .attemptBlocking {
-      if !Files.exists(path) then
+      if Files.exists(path) then false
+      else
         Option(path.getParent).foreach(Files.createDirectories(_))
         Files.write(path, content.getBytes(StandardCharsets.UTF_8))
-        ()
+        true
     }
-    .unit
     .mapError(e => FlowError.Persistence(s"failed to write $path", Some(e)))
 
 flow(
@@ -86,8 +86,9 @@ flow(
                  }
     _         <- stage("Branch")(git.checkoutOrCreate(plan.epicId))
     _         <- stage("Commit spec") {
-                   writeIfAbsent(workDir.resolve(s"specs/${plan.epicId}.md"), plan.brief.getOrElse("")) *>
-                     git.commitAll(s"${plan.epicId}: spec").unit
+                   writeIfAbsent(workDir.resolve(s"specs/${plan.epicId}.md"), plan.brief.getOrElse("")).flatMap {
+                     wrote => ZIO.when(wrote)(git.commitAll(s"${plan.epicId}: spec")).unit
+                   }
                  }
     coderChat <- Chat.start(
                    coder,
@@ -105,7 +106,7 @@ flow(
                             reviewSvc,
                             coderChat,
                             task.title,
-                            git.diff,
+                            git.diffAll,
                             lint = Some(if testsTask then buildGate else testGate),
                             parallelism = 1, // gemini's free tier 429s under concurrent reviewers
                           )
