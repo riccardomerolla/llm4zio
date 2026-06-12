@@ -1,5 +1,7 @@
 package llm4zio.flow
 
+import java.nio.file.Path
+
 import llm4zio.core.{ ConnectorCapabilities, LlmService }
 
 /** Everything a flow needs, bundled in one place.
@@ -20,6 +22,10 @@ final case class FlowContext(
   reviewers: List[LlmService] = Nil,
   // What the coder can do (interactive/ask-user/approval/…), so a flow can refuse an unsupported workflow up front.
   coderCapabilities: ConnectorCapabilities = ConnectorCapabilities(),
+  // The free-form prompt a flow script was started with (first CLI arg, or the script's default).
+  userPrompt: String = "",
+  // The repository the flow operates on; tools and connectors are rooted here.
+  workDir: Path = Path.of(".").toAbsolutePath.normalize,
 ):
   /** Expose the event sink as a given so `stage`/`fail` resolve it implicitly. */
   given FlowEvents = events

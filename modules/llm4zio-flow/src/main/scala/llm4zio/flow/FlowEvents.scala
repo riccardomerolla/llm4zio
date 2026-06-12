@@ -26,6 +26,11 @@ object FlowEvents:
   /** Discards everything. */
   val noop: FlowEvents = _ => ZIO.unit
 
+  /** Derive the sink from an in-scope [[FlowContext]], so a flow body written as `FlowContext ?=> …` never needs a
+    * `given FlowEvents = ctx.events` line. Lives in the companion: implicit scope finds it with no extra import.
+    */
+  given fromContext(using ctx: FlowContext): FlowEvents = ctx.events
+
   /** Captures events into a buffer — handy for tests and simple embedding. */
   final class Collecting private[FlowEvents] (ref: Ref[Chunk[FlowEvent]]) extends FlowEvents:
     def publish(event: FlowEvent): UIO[Unit] = ref.update(_ :+ event)
