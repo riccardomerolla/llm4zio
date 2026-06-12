@@ -1,6 +1,5 @@
-//! A tiny calculator crate. The 02-interactive example points an open-ended
-//! prompt at it ("make the calculator more useful"), so the planner asks a
-//! clarifying question before producing a plan.
+//! A tiny calculator crate with an open-ended starting point — the interactive
+//! examples aim a vague prompt at it so the planner has to ask questions.
 
 pub fn add(a: i64, b: i64) -> i64 {
     a + b
