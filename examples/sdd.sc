@@ -123,7 +123,10 @@ flow(
     _         <- stage("Verify")(
                    testGate.flatMap { r =>
                      if r.isClean then ZIO.unit
-                     else fail(s"acceptance criteria not met: ${r.issues.map(_.title).mkString("; ")}")
+                     else
+                       fail(
+                         s"acceptance criteria not met:\n${r.issues.map(i => s"${i.title}\n${i.description}".strip).mkString("\n\n")}"
+                       )
                    }
                  )
   yield ()
