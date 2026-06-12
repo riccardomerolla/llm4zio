@@ -37,73 +37,50 @@ from the environment (e.g. `ANTHROPIC_API_KEY`).
 
 ## An example flow
 
-Save this as `implement.scala` and run it with your task:
+Save this as `implement.sc` and run it with your task:
 
 ```scala
-//> using dep "io.github.riccardomerolla::llm4zio-runner:2.9.0"
+//> using dep "io.github.riccardomerolla::llm4zio-runner:3.0.0"
 //> using scala "3.8.3"
 //> using jvm 21
 
-import zio.*
-import java.nio.file.Path
-import llm4zio.core.{CliConnectorConfig, ConnectorId}
 import llm4zio.flow.*
-import llm4zio.runner.Llm4zio
+import llm4zio.runner.*
 
-object Main extends ZIOAppDefault:
-  // One CLI agent does planning, coding, and review — selectable via
-  // LLM4ZIO_CODER=claude|codex|gemini (default claude). No API key needed.
-  private val coder = CliConnectorConfig(ConnectorId.ClaudeCli, flags = Map("permission-mode" -> "acceptEdits"))
-
-  def run = getArgs.flatMap { args =>
-    val prompt  = args.headOption.getOrElse("Add a rate-limiter to the /login endpoint")
-    val workDir = Path.of(".").toAbsolutePath.normalize
-
-    // Llm4zio.run builds the FlowContext, streams progress to the terminal, and
-    // provides the http/process layers, so the body reads top-to-bottom.
-    Llm4zio.run(workDir, reasoning = coder, coder = coder) { ctx =>
-      given FlowEvents = ctx.events
-      for
-        plan      <- Planner.from(ctx.reasoning, prompt)            // task list, in one structured call
-        planPath   = workDir.resolve(s".llm4zio/plan-${plan.epicId}.md")
-        _         <- PlanStore.save(planPath, plan)                 // resume from here on a re-run
-        _         <- stage("branch")(ctx.git.checkoutOrCreate(plan.epicId))
-        coderChat <- Chat.start(ctx.coder, system = Some("You implement one task at a time in the current repo."))
-        // implementTaskLoop ticks each task's checkbox on disk + commits it, and
-        // removes the plan file when every task is done (so a crash resumes).
-        _         <- implementTaskLoop(planPath, plan) { task =>
-                       for
-                         _ <- coderChat.ask(task.description).mapError(e => FlowError.Llm(e.message, Some(e)))
-                         _ <- reviewAndFixLoop(Reviewers.minimal, ctx.reasoning, coderChat, task.title, ctx.git.diff)
-                         _ <- ctx.git.commitAll(s"${plan.epicId}: ${task.title}").unit
-                       yield ()
-                     }
-      yield ()
-    }
-  }
+flow(args, defaultPrompt = Some("Add a multiply function to the calculator crate")):
+  val planPath = Plan.defaultPath(userPrompt)
+  for
+    plan      <- PlanStore.recoverOrCreate(planPath)(Planner.from(reasoning, userPrompt))
+    _         <- stage("branch")(git.checkoutOrCreate(plan.epicId))
+    coderChat <- Chat.start(coder, system = Some("You implement one task at a time in the current repo."))
+    _         <- implementTaskLoop(planPath, plan) { task =>
+                   coderChat.ask(task.description) *>
+                     reviewAndFixLoop(Reviewers.minimal, reasoning, coderChat, task.title, git.diff) *>
+                     git.commitAll(s"${plan.epicId}: ${task.title}").unit
+                 }
+  yield ()
 ```
 
 ```bash
-scala-cli run implement.scala -- "Add a rate-limiter to the /login endpoint"
+scala-cli run implement.sc -- "Add a multiply function to the calculator crate"
 ```
 
-Seven worked flows live under [`examples/`](examples/), each with a
-`create-test-project.sh` that seeds a starter project and copies the flow script
-([`plans/`](plans/)) next to it:
+Seven worked flows live under [`examples/`](examples/). Seed a starter and run
+with one command:
 
 | Example | What it shows |
 | ------- | ------------- |
-| [01-simple](examples/01-simple/) | Autonomous plan → per-task implement → review-and-fix → commit. Resumable plan. |
-| [02-interactive](examples/02-interactive/) | Same shape; the planner asks clarifying questions first (`Interaction`). |
-| [03-bugfix](examples/03-bugfix/) | Issue → triage → failing test → PR → wait for CI red → fix → update PR (GitHub). |
-| [04-epic](examples/04-epic/) | Multi-task epic with the full reviewer roster, doc-update stage, and cleanup. |
-| [05-interactive-live](examples/05-interactive-live/) | Held, steerable claude session per task (stream / `ask_user` / approvals over MCP). |
-| [06-issue-pr](examples/06-issue-pr/) | Autonomous issue → assess → implement+review → push → open PR (GitHub). |
-| [07-enhanced](examples/07-enhanced/) | Like 01, plus plan self-review + a codebase brief, and format/lint after every edit. |
+| `implement.sc` | Autonomous plan → per-task implement → review-and-fix → commit. Resumable plan. |
+| `implement-interactive.sc` | Same shape; the planner asks clarifying questions first. |
+| `issue-pr-bugfix.sc` | Issue → triage → failing test → PR → wait for CI red → fix → update PR (GitHub). |
+| `epic.sc` | Multi-task epic with the full reviewer roster, doc-update stage, and cleanup. |
+| `implement-live.sc` | Held, steerable claude session per task (stream / `ask_user` / approvals over MCP). |
+| `issue-pr.sc` | Autonomous issue → assess → implement+review → push → open PR (GitHub). |
+| `implement-enhanced.sc` | Plan self-review + codebase brief, format/lint after every edit. |
 
 ```bash
-./examples/01-simple/create-test-project.sh --run            # seed + run against Maven Central
-./examples/01-simple/create-test-project.sh --local --run    # run against your in-tree build
+examples/seed.sh implement --run            # seed + run against Maven Central
+examples/seed.sh implement --local --run    # run against your in-tree build
 ```
 
 For editing flow scripts with code-completion, the
@@ -120,7 +97,7 @@ layers you need:
 |---|---|
 | `llm4zio-core` | LLM plumbing: a `LlmService`/`Connector` abstraction over the providers, streaming (`ZStream`), tool-calling, structured output, observability. |
 | `llm4zio-flow` | The agentic flow layer: `Plan`/`Task`, resumable plain-file plans, `Chat`, `stage`/`fail` + a `FlowEvent` stream, the review loop, `GitTool`/`GhTool` over zio-process, `implementTaskLoop`. |
-| `llm4zio-runner` | Entry point (`Llm4zio.run`), the terminal renderer, the ask-user MCP server, and a worked `ExampleFlow`. |
+| `llm4zio-runner` | Script entry point (`flow(args) { ... }` in `examples/*.sc`), embedding entry (`Llm4zio.run` for ZIO apps), terminal renderer, ask-user MCP server, and a worked `ExampleFlow`. |
 
 ```scala
 libraryDependencies += "io.github.riccardomerolla" %% "llm4zio-flow" % "<version>"
@@ -203,7 +180,7 @@ run the flow in a sandbox (e.g. [Docker
 sandboxes](https://docs.docker.com/ai/sandboxes/)). For attended runs, supply an
 `Interaction` (`TerminalInteraction.live`) and gate tool calls through an
 `ApprovalPolicy`; the held-session path (`InteractiveCoder`, see
-[05-interactive-live](examples/05-interactive-live/)) routes a claude agent's
+[`examples/implement-live.sc`](examples/implement-live.sc)) routes a claude agent's
 `ask_user` / approval requests back to you over an in-process MCP server.
 
 Transient provider blips (timeouts, 5xx, connection resets, gemini's
@@ -319,10 +296,20 @@ For a flow script, `scala-cli` fetches the artifacts on first run — nothing el
 to install beyond the JDK and the agent CLIs:
 
 ```bash
-scala-cli run implement.scala -- "your task here"
+scala-cli run implement.sc -- "your task here"
 ```
 
-To embed llm4zio as a library, add the dependency and build with sbt:
+To embed llm4zio as a library (the `Llm4zio.run` embedding surface), add the
+dependency and build with sbt:
+
+```scala
+// In a ZIO app — Llm4zio.run builds the FlowContext, streams progress to the
+// terminal, and provides the http/process layers.
+object MyApp extends ZIOAppDefault:
+  def run = Llm4zio.run(workDir, reasoning = claude.copy(readOnly = true), coder = claude) { ctx =>
+    // ... a flow over ctx.git / ctx.gh / ctx.coder / ctx.reasoning ...
+  }
+```
 
 ```bash
 sbt compile

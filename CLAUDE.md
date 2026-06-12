@@ -40,7 +40,8 @@ modules/
                     #   Plan/Task, PlanStore (resumable plain-file), Chat,
                     #   FlowEvent + stage/fail, fixLoop + Review, GitTool/GhTool
                     #   over Proc (zio-process), FlowContext, implementTaskLoop
-  llm4zio-runner/   # entry point, TerminalListener, worked ExampleFlow
+  llm4zio-runner/   # flow() script entry point (examples/*.sc), Llm4zio.run embedding entry,
+                    #   TerminalListener, Connectors presets, worked ExampleFlow
 ```
 
 Dependency direction: `runner → flow → core`. Never the reverse.
@@ -87,6 +88,10 @@ llm4zio.runner       TerminalListener, ExampleFlow
 - **`-Werror` / `-Wunused:all`** — unused imports are fatal. NB: a wildcard
   `import zio.*` brings `zio.Task`, which shadows the library's `flow.Task` in
   *type* position; import `zio.ZIO` (or specific names) in files that name `Task`.
+- **Script surface.** Examples are flat `examples/*.sc` files: `llm4zio.runner.flow(args) { body }`
+  holds the library's only `unsafeRun`; the body is `FlowContext ?=> ZIO[Any, FlowError, Any]`.
+  Bare names (`git`, `gh`, `coder`, `reasoning`, `userPrompt`, `workDir`) summon the context;
+  `FlowEvents` derives from `FlowContext` via the companion given. Embedders use `Llm4zio.run`.
 - **TDD.** Every behaviour is driven by a test first; integration tests that spawn
   `git` live under `src/it/scala` and use a temp repo + local bare remote (no
   network). Use the `Mock` provider for deterministic LLM behaviour in tests.
@@ -97,18 +102,21 @@ llm4zio.runner       TerminalListener, ExampleFlow
 
 ```scala
 import llm4zio.flow.*
+import llm4zio.runner.*
 
-given FlowEvents = ctx.events
-for
-  _     <- stage("branch")(ctx.git.createBranch(plan.epicId).unit)
-  coder <- Chat.start(ctx.coder, system = Some("You implement one task at a time."))
-  _     <- implementTaskLoop(planPath, plan) { task =>
-             coder.ask(task.description).mapError(e => FlowError.Llm(e.toString)) *>
-               ctx.git.commitAll(s"${plan.epicId}: ${task.title}").unit
-           }
-  _     <- stage("push")(ctx.git.push("origin", plan.epicId))
-  url   <- ctx.gh.createPr(plan.epicId, body = "…", base = Some("main"))
-yield url
+flow(args, defaultPrompt = Some("Add a multiply function")):
+  val planPath = Plan.defaultPath(userPrompt)
+  for
+    plan      <- PlanStore.recoverOrCreate(planPath)(Planner.from(reasoning, userPrompt))
+    _         <- stage("branch")(git.checkoutOrCreate(plan.epicId))
+    coderChat <- Chat.start(coder, system = Some("You implement one task at a time."))
+    _         <- implementTaskLoop(planPath, plan) { task =>
+                   coderChat.ask(task.description) *>
+                     git.commitAll(s"${plan.epicId}: ${task.title}").unit
+                 }
+    _         <- stage("push")(git.push("origin", plan.epicId))
+    url       <- gh.createPr(plan.epicId, body = "…", base = Some("main"))
+  yield url
 ```
 
-See `llm4zio.runner.ExampleFlow` for the worked version and its end-to-end test.
+See `examples/*.sc` for worked versions; `llm4zio.runner.ExampleFlow` is the embedded (ZIOAppDefault) variant with an end-to-end test.
