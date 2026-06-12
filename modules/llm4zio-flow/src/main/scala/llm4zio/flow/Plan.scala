@@ -45,7 +45,10 @@ object Plan:
   private val HeaderPrefix = "# Plan: "
 
   /** Deterministic plan path for a prompt — `.llm4zio/plan-<hash>.md`. Same prompt, same path, so a re-run of the same
-    * script resolves its own crashed plan file without the user computing paths (orca's `Plan.defaultPath`).
+    * script resolves its own crashed plan file without the user computing paths (orca's `Plan.defaultPath`). The
+    * default `dir` is the relative `.llm4zio` (cwd-anchored), which is right for scripts where the runner pins
+    * `workDir` to the cwd; embedders running against a non-cwd repo should pass `dir = workDir.resolve(".llm4zio")`
+    * explicitly.
     */
   def defaultPath(prompt: String, dir: Path = Path.of(".llm4zio")): Path =
     val hash = Integer.toHexString(MurmurHash3.stringHash(prompt))
