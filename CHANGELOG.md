@@ -5,6 +5,62 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0] - 2026-06-12
+
+### Added
+
+- **`llm4zio.runner.flow(args)(body)` — script entry point.** The library's only `unsafeRun`. SIGINT interrupts the
+  flow fiber (stages unwind, ✖ banner renders, exit 130); a missing prompt prints usage and exits 2; a failed flow
+  exits 1. Designed to be the sole top-level call in a flat `.sc` flow script.
+- **Connector presets `claude` / `codex` / `gemini` and `Connectors.coderFromEnv()`.** `LLM4ZIO_CODER=claude|codex|gemini`
+  (default `claude`) lets a script swap backends without any code change. `withModel` extension pins a specific model,
+  e.g. `claude.withModel("opus")`.
+- **Bare-name flow accessors `git`, `gh`, `coder`, `reasoning`, `userPrompt`, `workDir`.** Summon the in-scope
+  `FlowContext` given — no `ctx.` prefix needed inside a flow body. `FlowEvents` now derives from a given
+  `FlowContext` (companion given), so flow bodies no longer need an explicit `given FlowEvents = ctx.events` line.
+- **`Plan.defaultPath(prompt)` — deterministic `.llm4zio/plan-<hash>.md`.** Same prompt, same path — a re-run of the
+  same script picks up its own crashed plan file without the user computing paths. Chainable `.reviewed(llm)` /
+  `.briefed(llm, prompt)` extensions on the planning effect.
+- **`Llm4zio.script(...)` — the testable ZIO core under `flow()`.** Everything up to the single `unsafeRun` is an
+  ordinary testable effect.
+
+### Changed
+
+- **`Chat.ask` returns `IO[FlowError, String]`** (was `IO[LlmError, String]`); the typed `LlmError` rides in
+  `FlowError.Llm`'s `cause`. **Migration:** delete `.mapError(e => FlowError.Llm(...))` calls after `ask` — they
+  are now a type error.
+- **`FlowContext` gained `userPrompt` and `workDir` fields** (binary-breaking for embedders constructing it
+  positionally with all fields; both fields have defaults so most usages compile unchanged).
+- **Reasoning defaults to the coder's read-only twin.** When `flow()` / `script()` receive no explicit reasoning
+  connector, reasoning is `coder.copy(readOnly = true)` — read-only planning/review with no extra config.
+- **Examples restructured.** `plans/*.scala` + `examples/01-simple`…`07-enhanced` replaced by flat `examples/*.sc`
+  + shared `examples/seed.sh <example> [--local] [--run]` + consolidated `examples/starters/`.
+
+### Migrating from 2.x
+
+Replace the `object Main extends ZIOAppDefault` + `Llm4zio.run` frame with `flow(args)`:
+
+```diff
+-object Main extends ZIOAppDefault:
+-  def run = Llm4zio.run(workDir, reasoning, coder) { ctx =>
+-    given FlowEvents = ctx.events
+-    for
+-      _ <- stage("build")(ctx.git.commitAll("…"))
+-      _ <- ctx.coder.ask("…").mapError(e => FlowError.Llm(e.toString))
+-    yield ()
+-  }
++@main def main(args: String*) = flow(args.toArray) {
++  for
++    _ <- stage("build")(git.commitAll("…"))
++    _ <- coder.ask("…")
++  yield ()
++}
+```
+
+`Llm4zio.run { ctx => ... }` remains for embedding in full ZIO apps.
+
+[3.0.0]: https://github.com/riccardomerolla/llm4zio/releases/tag/v3.0.0
+
 ## [2.10.0] - 2026-06-11
 
 ### Added
