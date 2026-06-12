@@ -48,9 +48,9 @@ def flow(
     try java.lang.Runtime.getRuntime.removeShutdownHook(hook)
     catch case _: IllegalStateException => () // shutdown already in progress (Ctrl-C path)
     exit match
-      case Exit.Success(_)                            => ()
-      case Exit.Failure(cause) if cause.isInterrupted => () // SIGINT path: the JVM itself exits 130
-      case Exit.Failure(cause)                        =>
+      case Exit.Success(_)                                => ()
+      case Exit.Failure(cause) if cause.isInterruptedOnly => () // SIGINT path: the JVM itself exits 130
+      case Exit.Failure(cause)                            =>
         cause.failureOption match
           case Some(usage: Llm4zio.ScriptUsage) =>
             java.lang.System.err.print(usage.getMessage + "\n")
