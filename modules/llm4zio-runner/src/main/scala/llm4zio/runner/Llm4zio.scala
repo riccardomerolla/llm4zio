@@ -103,6 +103,18 @@ object Llm4zio:
       .orElse(defaultPrompt)
       .toRight("""usage: scala-cli run <script>.sc -- "<prompt>"""")
 
+  /** The reasoning connector a script uses: the explicit one, else the coder's read-only twin. */
+  private[runner] def scriptReasoning(coder: CliConnectorConfig, explicit: Option[ConnectorConfig]): ConnectorConfig =
+    explicit.getOrElse(coder.copy(readOnly = true))
+
+  /** Adapt a context-function body to [[run]]'s plain-function shape, riding `prompt` in the context. */
+  private[runner] def withPrompt[A](
+    prompt: String
+  )(
+    body: FlowContext ?=> ZIO[Any, FlowError, A]
+  ): FlowContext => ZIO[Any, FlowError, A] =
+    ctx => body(using ctx.copy(userPrompt = prompt))
+
   /** The pure-ZIO core of [[flow]]: resolve the prompt, derive the read-only reasoning twin when none is given, then
     * delegate to [[run]] with the prompt riding in the [[FlowContext]]. Kept separate from [[flow]] so everything up to
     * the single `unsafeRun` is an ordinary testable effect.
@@ -121,6 +133,4 @@ object Llm4zio:
     resolvePrompt(args, defaultPrompt) match
       case Left(usage)   => ZIO.fail(ScriptUsage(usage))
       case Right(prompt) =>
-        run(workDir, reasoning.getOrElse(coder.copy(readOnly = true)), coder, reviewers, usageLimit) { ctx =>
-          body(using ctx.copy(userPrompt = prompt))
-        }
+        run(workDir, scriptReasoning(coder, reasoning), coder, reviewers, usageLimit)(withPrompt(prompt)(body))
