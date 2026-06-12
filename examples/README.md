@@ -14,6 +14,7 @@ Documentation lives in each script's header comment.
 | `epic.sc`                 | Multi-task epic, full reviewer roster, doc update at the end | todo-java         |
 | `issue-pr.sc`             | GitHub issue → assess → implement → PR                       | calculator-scala  |
 | `issue-pr-bugfix.sc`      | Bug report → failing test → red CI → fix → PR                | calculator-scala  |
+| `sdd.sc`                  | Spec → tests-first → implement → verify; per-role gemini models; mvn as the gate | todo-java |
 
 ## Running one
 

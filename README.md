@@ -77,6 +77,7 @@ with one command:
 | `implement-live.sc` | Held, steerable claude session per task (stream / `ask_user` / approvals over MCP). |
 | `issue-pr.sc` | Autonomous issue → assess → implement+review → push → open PR (GitHub). |
 | `implement-enhanced.sc` | Plan self-review + codebase brief, format/lint after every edit. |
+| `sdd.sc` | Spec-driven development: Spec → tests-first → implement → verify; per-role gemini models; mvn as the gate. |
 
 ```bash
 examples/seed.sh implement --run            # seed + run against Maven Central

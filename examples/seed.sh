@@ -8,7 +8,7 @@
 #   examples/seed.sh <example> --run          # seed, then run the flow
 #
 # Examples: implement, implement-interactive, implement-enhanced, implement-live,
-#           epic, issue-pr, issue-pr-bugfix
+#           epic, issue-pr, issue-pr-bugfix, sdd
 
 set -euo pipefail
 
@@ -28,6 +28,7 @@ case "$EXAMPLE" in
   epic)                  STARTER="todo-java";          PROMPT="Persist tasks to a JSON file (load on startup, save on every change), add 'done <id>' and 'delete <id>' commands, and support priority levels (low/medium/high) with a 'list --priority' filter" ;;
   issue-pr)              STARTER="calculator-scala";   PROMPT="" ;;
   issue-pr-bugfix)       STARTER="calculator-scala";   PROMPT="" ;;
+  sdd)                   STARTER="todo-java";          PROMPT="Add due dates: 'add <text> --due YYYY-MM-DD', mark overdue items in 'list', and a 'due' command showing items due today" ;;
   *) echo "unknown example: $EXAMPLE" >&2; exit 2 ;;
 esac
 SCRIPT_NAME="$EXAMPLE.sc"
