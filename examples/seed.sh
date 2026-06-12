@@ -73,15 +73,27 @@ fi
 echo
 echo "Test project ready at: $DEST"
 if [ "$RUN" -eq 1 ]; then
+  if [ -z "$PROMPT" ]; then
+    echo "$EXAMPLE needs an issue reference (owner/repo#number); run it yourself:"
+    echo "  cd $DEST"
+    echo "  scala-cli run $SCRIPT_NAME -- \"owner/repo#42\""
+    exit 0
+  fi
   echo "Running: scala-cli run $SCRIPT_NAME -- \"$PROMPT\""
   cd "$DEST"
   exec scala-cli run "$SCRIPT_NAME" -- "$PROMPT"
+fi
+
+if [ -z "$PROMPT" ]; then
+  NEXT_PROMPT="owner/repo#42"
+else
+  NEXT_PROMPT="$PROMPT"
 fi
 cat <<EOF
 
 Next steps:
   cd $DEST
-  scala-cli run $SCRIPT_NAME -- "$PROMPT"
+  scala-cli run $SCRIPT_NAME -- "$NEXT_PROMPT"
 
 Requires: JDK 21+, scala-cli, the starter's toolchain (cargo / sbt / maven), and the
 chosen agent CLI logged in (claude by default; LLM4ZIO_CODER=codex|gemini to swap).
