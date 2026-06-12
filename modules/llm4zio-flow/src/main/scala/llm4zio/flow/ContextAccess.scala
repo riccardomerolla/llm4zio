@@ -16,6 +16,8 @@ def coder(using ctx: FlowContext): LlmService = ctx.coder
 
 def reasoning(using ctx: FlowContext): LlmService = ctx.reasoning
 
+def reviewers(using ctx: FlowContext): List[LlmService] = ctx.reviewers
+
 def userPrompt(using ctx: FlowContext): String = ctx.userPrompt
 
 def workDir(using ctx: FlowContext): Path = ctx.workDir

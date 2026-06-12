@@ -33,6 +33,7 @@ object ContextAccessSpec extends ZIOSpecDefault:
       events = events,
       userPrompt = "add multiply",
       workDir = dir,
+      reviewers = List(StubService()),
     )
 
   def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("FlowContext as the single given")(
@@ -60,6 +61,7 @@ object ContextAccessSpec extends ZIOSpecDefault:
         reasoning == ctx.reasoning,
         userPrompt == "add multiply",
         workDir == dir,
+        reviewers == ctx.reviewers,
       )
     },
   )
