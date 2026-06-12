@@ -70,4 +70,18 @@ object PlannerSpec extends ZIOSpecDefault:
         p.taskPrompt(plan.tasks.head).startsWith("Modules: core/flow."),
       )
     },
+    test("extensions chain: from(...).reviewed(...).briefed(...) reads like orca") {
+      val draft    =
+        """{"epicId":"add-multiply","tasks":[{"title":"draft","description":"d","completed":false}]}"""
+      val improved =
+        """{"epicId":"add-multiply","tasks":[{"title":"better","description":"sharper","completed":false}]}"""
+      for plan <- Planner
+                    .from(StubStructured(draft), "Add multiply")
+                    .reviewed(StubStructured(improved))
+                    .briefed(StubText("the brief"), "Add multiply")
+      yield assertTrue(
+        plan.tasks.map(_.title) == List("better"),
+        plan.brief == Some("the brief"),
+      )
+    },
   )

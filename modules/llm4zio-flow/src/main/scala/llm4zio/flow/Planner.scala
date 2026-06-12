@@ -152,3 +152,14 @@ object Planner:
     reasoning
       .executeStructured[Triage](s"$instructions\n\nTitle: $title\n\n$body", freeform)
       .mapError(e => FlowError.Llm(e.toString))
+
+/** Chain plan transforms off the planning effect, orca-style:
+  * `Planner.from(reasoning, prompt).reviewed(reasoning).briefed(reasoning, prompt)`. Thin sugar over the
+  * [[Planner.reviewed]] / [[Planner.briefed]] functions — the LLM stays an explicit argument because which model
+  * critiques the plan is a real decision.
+  */
+extension [R](plan: ZIO[R, FlowError, Plan])
+  def reviewed(reasoning: LlmService): ZIO[R, FlowError, Plan]                =
+    plan.flatMap(p => Planner.reviewed(reasoning, p))
+  def briefed(reasoning: LlmService, prompt: String): ZIO[R, FlowError, Plan] =
+    plan.flatMap(p => Planner.briefed(reasoning, p, prompt))
