@@ -31,6 +31,13 @@ final class GitTool(workDir: Path):
   /** Working-tree diff (unstaged changes to tracked files). */
   def diff: IO[FlowError, String] = execOrFail("diff")
 
+  /** Working-tree diff that INCLUDES untracked files (via `git add --intent-to-add`), so a review step sees newly
+    * created files, not just edits. Leaves intent-to-add entries in the index; a later `commitAll` (`git add -A`)
+    * subsumes them.
+    */
+  def diffAll: IO[FlowError, String] =
+    execOrFail("add", "--intent-to-add", "-A") *> execOrFail("diff")
+
   /** The branch the current work targets: `origin/HEAD` symbolic ref → its branch, else `origin/main`, then
     * `origin/master`, else `"main"`. Used for PR-accurate diffs and branch-level review.
     */

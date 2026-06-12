@@ -114,4 +114,22 @@ object GitToolSpec extends ZIOSpecDefault:
         yield assertTrue(base == "main")
       }
     },
+    test("diffAll includes untracked files; diff does not; commitAll still commits cleanly after") {
+      ZIO.scoped {
+        for
+          dir         <- tempDir
+          git         <- newRepo(dir)
+          _           <- write(dir, "NewFile.scala", "class NewFile { val x = 42 }")
+          trackedDiff <- git.diff
+          allDiff     <- git.diffAll
+          committed   <- git.commitAll("add new file")
+        yield assertTrue(
+          !trackedDiff.contains("NewFile.scala"),
+          !trackedDiff.contains("val x = 42"),
+          allDiff.contains("NewFile.scala"),
+          allDiff.contains("val x = 42"),
+          committed == GitTool.Commit.Committed,
+        )
+      }
+    },
   ) @@ TestAspect.sequential

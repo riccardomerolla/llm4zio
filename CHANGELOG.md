@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `reviewers` bare-name accessor in `llm4zio.flow` — the extra review services passed via
   `flow(reviewers = …)` are now reachable inside a flow body without summoning the context,
   completing the accessor set for multi-model flows (`examples/sdd.sc`).
+- `GitTool.diffAll` — working-tree diff that includes untracked files (intent-to-add), so review
+  steps see newly created files; flow scripts should prefer it over `diff` for review loops.
 
 [3.0.1]: https://github.com/riccardomerolla/llm4zio/releases/tag/v3.0.1
 
