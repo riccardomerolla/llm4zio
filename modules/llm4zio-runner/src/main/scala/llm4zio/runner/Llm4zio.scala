@@ -9,12 +9,13 @@ import llm4zio.core.{ CliConnectorConfig, ConnectorConfig }
 import llm4zio.flow.*
 import llm4zio.providers.HttpClient
 
-/** Entry point for scala-cli flow scripts. Builds a real [[FlowContext]], streams progress to the terminal, runs the
-  * flow body, and provides the zio-http client + HttpClient layers — so a `.sc` reads top-to-bottom:
+/** Runner entry points. [[flow]] (in this package) is the script surface — top-level in a `.sc`, one `unsafeRun`
+  * inside. [[Llm4zio.run]] is the embedding surface for real ZIO apps: builds a [[FlowContext]], streams progress to
+  * the terminal, runs the body, and provides the zio-http client layers.
   *
   * {{{
-  * object Main extends zio.ZIOAppDefault:
-  *   def run = Llm4zio.run(os.pwd, reasoning, coder) { ctx =>
+  * object MyApp extends zio.ZIOAppDefault:
+  *   def run = Llm4zio.run(workDir, reasoning, coder) { ctx =>
   *     // ... a flow over ctx ...
   *   }
   * }}}
