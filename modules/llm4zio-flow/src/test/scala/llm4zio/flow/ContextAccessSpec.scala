@@ -50,4 +50,16 @@ object ContextAccessSpec extends ZIOSpecDefault:
       val ctx = ctxWith(FlowEvents.noop)
       assertTrue(ctx.userPrompt == "add multiply", ctx.workDir == dir)
     },
+    test("bare-name accessors return the context members") {
+      val ctx           = ctxWith(FlowEvents.noop)
+      given FlowContext = ctx
+      assertTrue(
+        git == ctx.git,
+        gh == ctx.gh,
+        coder == ctx.coder,
+        reasoning == ctx.reasoning,
+        userPrompt == "add multiply",
+        workDir == dir,
+      )
+    },
   )
