@@ -34,7 +34,19 @@ object DefaultFlowContext:
       val reasoningT   = tap(reasoning, "reasoning")
       val coderT       = tap(coder, "coder")
       val reviewersT   = reviewers.zipWithIndex.map { case (r, i) => tap(r, s"reviewer:${i + 1}") }
-      (FlowContext(reasoningT, coderT, GitTool(workDir), GhTool(workDir), hub, reviewersT, coderCapabilities), hub)
+      (
+        FlowContext(
+          reasoningT,
+          coderT,
+          GitTool(workDir),
+          GhTool(workDir),
+          hub,
+          reviewersT,
+          coderCapabilities,
+          workDir = workDir,
+        ),
+        hub,
+      )
     }
 
   /** Build connectors from config: a reasoning connector — **API or CLI** (a CLI reasoner needs no API key, e.g. an

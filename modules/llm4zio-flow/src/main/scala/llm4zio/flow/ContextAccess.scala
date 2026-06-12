@@ -8,7 +8,6 @@ import llm4zio.core.LlmService
   * `git.push(…)`, `gh.createPr(…)`, `Chat.start(coder, …)` instead of `ctx.git.push(…)`. Each is a one-line summon —
   * go-to-definition lands here, not in macro territory.
   */
-
 def git(using ctx: FlowContext): GitTool = ctx.git
 
 def gh(using ctx: FlowContext): GhTool = ctx.gh
