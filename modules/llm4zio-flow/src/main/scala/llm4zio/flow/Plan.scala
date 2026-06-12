@@ -2,6 +2,8 @@ package llm4zio.flow
 
 import java.nio.file.Path
 
+import scala.util.hashing.MurmurHash3
+
 import zio.json.JsonCodec
 
 /** A single unit of work within a [[Plan]]. */
@@ -46,7 +48,7 @@ object Plan:
     * script resolves its own crashed plan file without the user computing paths (orca's `Plan.defaultPath`).
     */
   def defaultPath(prompt: String, dir: Path = Path.of(".llm4zio")): Path =
-    val hash = Integer.toHexString(scala.util.hashing.MurmurHash3.stringHash(prompt))
+    val hash = Integer.toHexString(MurmurHash3.stringHash(prompt))
     dir.resolve(s"plan-$hash.md")
   private val BriefHeader                                                = "# Brief"
   private val TaskHeader                                                 = """## \[([ xX])\] (.+)""".r
