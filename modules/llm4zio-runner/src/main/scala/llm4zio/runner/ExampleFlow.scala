@@ -29,9 +29,7 @@ object ExampleFlow:
       coder <- Chat.start(ctx.coder, system = Some("You implement one task at a time."))
       done  <- implementTaskLoop(planPath, plan) { task =>
                  for
-                   reply <- coder
-                              .ask(s"Implement ${task.title}: ${task.description}")
-                              .mapError(e => FlowError.Llm(e.message))
+                   reply <- coder.ask(s"Implement ${task.title}: ${task.description}")
                    _     <- writeFile(repoDir, s"${slug(task.title)}.md", reply)
                    _     <- ctx.git.commitAll(s"${plan.epicId}: ${task.title}")
                  yield ()

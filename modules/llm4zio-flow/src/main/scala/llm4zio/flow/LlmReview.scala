@@ -174,7 +174,7 @@ def reviewAndFixLoop(
         events.publish(FlowEvent.Info(s"review settled after round $round: $verdict")).as(result)
       else
         events.publish(FlowEvent.Info(s"review round $round: $verdict, fixing")) *>
-          coder.ask(Reviewers.fixPrompt(result)).mapError(e => FlowError.Llm(e.message)) *>
+          coder.ask(Reviewers.fixPrompt(result)) *>
           loop(round + 1, Some(result))
     }
 

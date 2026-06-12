@@ -55,4 +55,19 @@ object ChatSpec extends ZIOSpecDefault:
         seen  <- calls.get
       yield assertTrue(seen.head.head == Message(MessageRole.System, "be terse"))
     },
+    test("ask wraps an LlmError into FlowError.Llm carrying the typed cause") {
+      final class FailingService extends LlmService:
+        def executeStream(prompt: String): Stream[LlmError, LlmChunk]                              = ZStream.empty
+        def executeStreamWithHistory(messages: List[Message]): Stream[LlmError, LlmChunk]          =
+          ZStream.fail(LlmError.ProviderError("boom"))
+        def executeWithTools(prompt: String, tools: List[AnyTool]): IO[LlmError, ToolCallResponse] =
+          ZIO.dieMessage("unused")
+        def executeStructured[A: JsonCodec](prompt: String, schema: JsonSchema): IO[LlmError, A]   =
+          ZIO.dieMessage("unused")
+        def isAvailable: UIO[Boolean]                                                              = ZIO.succeed(true)
+      for
+        chat <- Chat.start(FailingService(), manageGit = true)
+        res  <- chat.ask("x").either
+      yield assertTrue(res == Left(FlowError.Llm("boom", Some(LlmError.ProviderError("boom")))))
+    },
   )

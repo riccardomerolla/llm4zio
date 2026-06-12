@@ -60,10 +60,10 @@ object PlanExecutionFailureSpec extends ZIOSpecDefault:
   private def alwaysFailing(err: LlmError): UIO[(ScriptedCoder, Ref[Int])] =
     coderWithDefault(ZIO.fail(err))()
 
-  // The per-task body the example flow uses: ask the coder, map its LlmError to FlowError.Llm (cause preserved).
+  // The per-task body the example flow uses: ask the coder (which now speaks FlowError directly).
   // NB: `import zio.*` brings `zio.Task`, which shadows `flow.Task` in type position — so qualify it here.
   private def implement(chat: Chat)(t: llm4zio.flow.Task): IO[FlowError, Unit] =
-    chat.ask(t.description).mapError(e => FlowError.Llm(e.message, Some(e))).unit
+    chat.ask(t.description).unit
 
   private val tempDir: ZIO[Scope, Nothing, Path] =
     ZIO.acquireRelease(ZIO.attempt(Files.createTempDirectory("llm4zio-planfail-")).orDie)(d =>
