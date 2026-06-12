@@ -1,5 +1,7 @@
 package llm4zio.flow
 
+import java.nio.file.Path
+
 import zio.json.JsonCodec
 
 /** A single unit of work within a [[Plan]]. */
@@ -39,8 +41,15 @@ final case class Plan(epicId: String, tasks: List[Task], brief: Option[String] =
 
 object Plan:
   private val HeaderPrefix = "# Plan: "
-  private val BriefHeader  = "# Brief"
-  private val TaskHeader   = """## \[([ xX])\] (.+)""".r
+
+  /** Deterministic plan path for a prompt — `.llm4zio/plan-<hash>.md`. Same prompt, same path, so a re-run of the same
+    * script resolves its own crashed plan file without the user computing paths (orca's `Plan.defaultPath`).
+    */
+  def defaultPath(prompt: String, dir: Path = Path.of(".llm4zio")): Path =
+    val hash = Integer.toHexString(scala.util.hashing.MurmurHash3.stringHash(prompt))
+    dir.resolve(s"plan-$hash.md")
+  private val BriefHeader                                                = "# Brief"
+  private val TaskHeader                                                 = """## \[([ xX])\] (.+)""".r
 
   /** Parse the Markdown produced by [[Plan.render]]. Left on a malformed document. */
   def parse(markdown: String): Either[String, Plan] =

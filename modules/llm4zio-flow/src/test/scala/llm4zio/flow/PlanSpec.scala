@@ -56,4 +56,16 @@ object PlanSpec extends ZIOSpecDefault:
         noBrief.taskPrompt(task) == "do the thing",
       )
     },
+    test("defaultPath is deterministic in the prompt and lives under .llm4zio") {
+      val a = Plan.defaultPath("Add a multiply function")
+      val b = Plan.defaultPath("Add a multiply function")
+      val c = Plan.defaultPath("Different prompt entirely")
+      assertTrue(
+        a == b,
+        a != c,
+        a.getParent == java.nio.file.Path.of(".llm4zio"),
+        a.getFileName.toString.startsWith("plan-"),
+        a.getFileName.toString.endsWith(".md"),
+      )
+    },
   )
