@@ -88,3 +88,38 @@ object Llm4zio:
         case t: Throwable => t
         case other        => new RuntimeException(other.toString)
       }
+
+  /** A script was started without a usable prompt. Carried as a Throwable so [[script]] composes with [[run]]'s
+    * `ZIO[Any, Throwable, Unit]`; [[flow]] renders `message` as the usage line and exits 2.
+    */
+  final case class ScriptUsage(usage: String) extends RuntimeException(usage)
+
+  /** First non-blank CLI arg, else the script's default, else a usage error. */
+  def resolvePrompt(args: List[String], defaultPrompt: Option[String] = None): Either[String, String] =
+    args.headOption
+      .map(_.trim)
+      .filter(_.nonEmpty)
+      .orElse(defaultPrompt)
+      .toRight("""usage: scala-cli run <script>.sc -- "<prompt>"""")
+
+  /** The pure-ZIO core of [[flow]]: resolve the prompt, derive the read-only reasoning twin when none is given, then
+    * delegate to [[run]] with the prompt riding in the [[FlowContext]]. Kept separate from [[flow]] so everything up to
+    * the single `unsafeRun` is an ordinary testable effect.
+    */
+  def script(
+    args: List[String],
+    coder: CliConnectorConfig,
+    reasoning: Option[ConnectorConfig] = None,
+    defaultPrompt: Option[String] = None,
+    reviewers: List[ConnectorConfig] = Nil,
+    usageLimit: UsageLimitPolicy = UsageLimitPolicy.off,
+    workDir: Path = Path.of(".").toAbsolutePath.normalize,
+  )(
+    body: FlowContext ?=> ZIO[Any, FlowError, Any]
+  ): ZIO[Any, Throwable, Unit] =
+    resolvePrompt(args, defaultPrompt) match
+      case Left(usage)   => ZIO.fail(ScriptUsage(usage))
+      case Right(prompt) =>
+        run(workDir, reasoning.getOrElse(coder.copy(readOnly = true)), coder, reviewers, usageLimit) { ctx =>
+          body(using ctx.copy(userPrompt = prompt))
+        }
