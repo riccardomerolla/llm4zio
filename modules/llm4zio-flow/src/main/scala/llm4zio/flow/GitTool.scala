@@ -33,7 +33,8 @@ final class GitTool(workDir: Path):
 
   /** Working-tree diff that INCLUDES untracked files (via `git add --intent-to-add`), so a review step sees newly
     * created files, not just edits. Leaves intent-to-add entries in the index; a later `commitAll` (`git add -A`)
-    * subsumes them.
+    * subsumes them. NB: those entries also make a later [[diff]] include the registered files — once a flow calls
+    * `diffAll`, prefer it over `diff` for the rest of the run rather than mixing the two.
     */
   def diffAll: IO[FlowError, String] =
     execOrFail("add", "--intent-to-add", "-A") *> execOrFail("diff")
