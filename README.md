@@ -78,6 +78,7 @@ with one command:
 | `issue-pr.sc` | Autonomous issue → assess → implement+review → push → open PR (GitHub). |
 | `implement-enhanced.sc` | Plan self-review + codebase brief, format/lint after every edit. |
 | `sdd.sc` | Spec-driven development: Spec → tests-first → implement → verify; per-role gemini models; mvn as the gate. |
+| `local.sc` | Fully local — reasoning on LM Studio, coding on pi (local model); no cloud, no API key. |
 
 ```bash
 examples/seed.sh implement --run            # seed + run against Maven Central

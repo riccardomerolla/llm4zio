@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.2.0] - 2026-06-15
+
+### Added
+
+- `pi` CLI coding-agent connector (`ConnectorId.Pi` / `PiConnector`) — drives the `pi` agent
+  headlessly via `pi -p --mode json`, parsing its JSONL event stream.
+- `pi` and `lmStudio` presets in `llm4zio.runner` (and `LLM4ZIO_CODER=pi`), enabling a
+  fully-local flow: reasoning on LM Studio, coding on pi via a local model.
+- `examples/local.sc` — a fully-local example (no cloud, no API key): LM Studio reasoning +
+  pi coder.
+
+[3.2.0]: https://github.com/riccardomerolla/llm4zio/releases/tag/v3.2.0
+
 ## [3.0.1] - 2026-06-12
 
 ### Added
