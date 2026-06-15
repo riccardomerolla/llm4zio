@@ -124,6 +124,19 @@ object PiConnectorSpec extends ZIOSpecDefault:
       val chunks = streamLines.flatMap(PiConnector.parseStreamLine)
       assertTrue(chunks.exists(c => c.usage.exists(_.prompt == 900) && c.usage.exists(_.completion == 100)))
     },
+    test("parseStreamLine accumulates multiple text_delta updates in order") {
+      val multiDelta = List(
+        """{"type":"message_update","assistantMessageEvent":{"type":"text_delta","delta":"Adding "}}""",
+        """{"type":"message_update","assistantMessageEvent":{"type":"text_delta","delta":"multiply."}}""",
+      )
+      val chunks     = multiDelta.flatMap(PiConnector.parseStreamLine)
+      assertTrue(chunks.map(_.delta).mkString.contains("Adding multiply."))
+    },
+    test("parseStreamLine maps agent_end usage to a usage chunk") {
+      val line   = """{"type":"agent_end","message":{"usage":{"input":700,"output":40}}}"""
+      val chunks = PiConnector.parseStreamLine(line)
+      assertTrue(chunks.exists(_.usage.exists(_.prompt == 700)))
+    },
     test("an extension_error event surfaces in metadata") {
       val errLine = """{"type":"extension_error","error":"boom"}"""
       val chunks  = PiConnector.parseStreamLine(errLine)

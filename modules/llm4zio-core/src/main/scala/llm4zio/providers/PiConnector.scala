@@ -68,27 +68,20 @@ object PiConnector:
       case None       => Nil
       case Some(json) =>
         CliStreamJson.str(json, "type") match
-          case Some("message_update")       =>
+          case Some("message_update")                  =>
             CliStreamJson.field(json, "assistantMessageEvent").toList.flatMap { ev =>
               CliStreamJson.str(ev, "type") match
                 case Some("text_delta") =>
                   CliStreamJson.str(ev, "delta").filter(_.nonEmpty).map(t => LlmChunk(delta = t)).toList
                 case _                  => Nil
             }
-          case Some("tool_execution_start") =>
+          case Some("tool_execution_start")            =>
             val name    = CliStreamJson.str(json, "toolName").getOrElse("")
             val argsStr = CliStreamJson.field(json, "args").map(_.toString).getOrElse("{}")
             List(CliStreamJson.toolChunk(name, argsStr))
-          case Some("message_end")          =>
-            CliStreamJson.field(json, "message")
-              .flatMap(m => CliStreamJson.field(m, "usage"))
-              .toList
-              .map { usage =>
-                val in  = CliStreamJson.int(usage, "input").getOrElse(0)
-                val out = CliStreamJson.int(usage, "output").getOrElse(0)
-                CliStreamJson.usageChunk(None, TokenUsage(in, out, in + out))
-              }
-          case Some("auto_retry_end")       =>
+          case Some("message_end") | Some("agent_end") =>
+            extractUsage(json)
+          case Some("auto_retry_end")                  =>
             val failed = json match
               case Json.Obj(fields) => fields.toMap.get("success").contains(Json.Bool(false))
               case _                => false
@@ -96,7 +89,18 @@ object PiConnector:
               val msg = CliStreamJson.str(json, "finalError").getOrElse("pi retry failed")
               List(LlmChunk(delta = "", metadata = Map("piError" -> msg)))
             else Nil
-          case Some("extension_error")      =>
+          case Some("extension_error")                 =>
             val msg = CliStreamJson.str(json, "error").getOrElse("pi extension error")
             List(LlmChunk(delta = "", metadata = Map("piError" -> msg)))
-          case _                            => Nil
+          case _                                       => Nil
+
+  /** Read terminal token usage from `message.usage.{input,output}`; empty if absent (don't crash). */
+  private def extractUsage(json: Json): List[LlmChunk] =
+    CliStreamJson.field(json, "message")
+      .flatMap(m => CliStreamJson.field(m, "usage"))
+      .toList
+      .map { usage =>
+        val in  = CliStreamJson.int(usage, "input").getOrElse(0)
+        val out = CliStreamJson.int(usage, "output").getOrElse(0)
+        CliStreamJson.usageChunk(None, TokenUsage(in, out, in + out))
+      }
