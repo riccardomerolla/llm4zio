@@ -46,7 +46,7 @@ jobs:
         run: sbt test
 
       - name: Integration tests
-        run: sbt "llm4zioFlow/It/test" "llm4zioRunner/It/test"
+        run: sbt "llm4zioFlow/It/test; llm4zioRunner/It/test"
 
   publish:
     name: Publish to Maven Central
