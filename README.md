@@ -18,7 +18,7 @@ It is the ZIO counterpart to VirtusLab's
 takes the same values — thin, readable, no ceremony, errors as data — and
 expresses them in `ZIO[R, E, A]`, with first-class **direct-API providers**
 (OpenAI, Anthropic, Gemini, Ollama, LM Studio) alongside **CLI coding agents**
-(claude, codex, gemini, opencode, copilot).
+(claude, codex, gemini, pi, opencode, copilot).
 
 llm4zio is both a **library** you embed in a ZIO app and a way to run single-file
 **flow scripts** with one [scala-cli](https://scala-cli.virtuslab.org) command —
@@ -159,9 +159,10 @@ carry model + flags:
 - **API providers** (`ApiConnector`): `OpenAI`, `Anthropic`, `GeminiApi`,
   `LmStudio`, `Ollama` — streaming, structured output, usage reporting.
 - **CLI coding agents** (`CliConnector`): `ClaudeCli`, `Codex`, `GeminiCli`,
-  `OpenCode`, `Copilot` — claude declares full interactive/ask-user/approval
+  `Pi`, `OpenCode`, `Copilot` — claude declares full interactive/ask-user/approval
   support; gemini is interactive but can't expose an ask-user tool in headless
-  mode (`capabilities.askUser = false`); opencode/copilot are continuation-only.
+  mode (`capabilities.askUser = false`); pi runs headless via `pi -p --mode json`
+  (YOLO by default — edits unattended); opencode/copilot are continuation-only.
 - `Mock` — deterministic, for tests.
 
 **Role split.** Reasoning (planning, review, structured output) runs over
@@ -275,7 +276,7 @@ into a per-run log file.
 Colour and animation auto-disable when stdout isn't a terminal; set `NO_COLOR=1`
 to force plain output.
 
-**Environment knobs:** `LLM4ZIO_CODER` (claude\|codex\|gemini),
+**Environment knobs:** `LLM4ZIO_CODER` (claude\|codex\|gemini\|pi),
 `LLM4ZIO_RETRIES` (transient-retry count; `0` = fail fast),
 `LLM4ZIO_USAGE_WAIT` (`off`\|`on`\|`<n>h`\|`<n>m`), `LLM4ZIO_FORMAT` /
 `LLM4ZIO_LINT` (project formatter / lint for the review loop).

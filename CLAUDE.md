@@ -62,7 +62,7 @@ llm4zio.core         LlmService, Connector{,Api,Cli}, Models (Message, LlmChunk,
                      LlmConfig, LlmProvider), Streaming, Errors (LlmError),
                      ConnectorRegistry, ConnectorFactories, Conversation
 llm4zio.providers    OpenAI/Anthropic/GeminiApi/LmStudio/Ollama (API),
-                     ClaudeCli/Codex/Copilot/GeminiCli/OpenCode (CLI), Mock, HttpClient
+                     ClaudeCli/Codex/Copilot/GeminiCli/OpenCode/Pi (CLI), Mock, HttpClient
 llm4zio.tools        Tool, AnyTool, JsonSchema, tool-calling executor
 llm4zio.observability  lightweight tracing/metrics hooks
 llm4zio.flow         the flow layer (see modules table)
