@@ -15,16 +15,28 @@ object ConnectorsSpec extends ZIOSpecDefault:
         codex.flags == Map("sandbox" -> "workspace-write"),
         gemini.connectorId == ConnectorId.GeminiCli,
         gemini.flags == Map.empty,
+        pi.connectorId == ConnectorId.Pi,
+        pi.flags.isEmpty,
+      )
+    },
+    test("lmStudio is a local API reasoning seat") {
+      assertTrue(
+        lmStudio.connectorId == ConnectorId.LmStudio,
+        lmStudio.baseUrl == Some("http://localhost:1234/v1"),
       )
     },
     test("withModel pins a model") {
-      assertTrue(claude.withModel("opus").model == Some("opus"))
+      assertTrue(
+        claude.withModel("opus").model == Some("opus"),
+        pi.withModel("lmstudio/foo").model == Some("lmstudio/foo"),
+      )
     },
     test("coderFromEnv honours LLM4ZIO_CODER and defaults to claude") {
       assertTrue(
         Connectors.coderFromEnv(Map.empty) == claude,
         Connectors.coderFromEnv(Map("LLM4ZIO_CODER" -> "codex")) == codex,
         Connectors.coderFromEnv(Map("LLM4ZIO_CODER" -> "gemini")) == gemini,
+        Connectors.coderFromEnv(Map("LLM4ZIO_CODER" -> "pi")) == pi,
         Connectors.coderFromEnv(Map("LLM4ZIO_CODER" -> "anything-else")) == claude,
       )
     },
