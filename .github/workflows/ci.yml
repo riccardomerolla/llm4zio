@@ -43,10 +43,11 @@ jobs:
         run: sbt check
 
       - name: Unit tests
-        run: sbt test
+        # sbt 2.x `test` is incremental/cached; `testFull` forces a full run so CI never passes without running tests.
+        run: sbt testFull
 
       - name: Integration tests
-        run: sbt "llm4zioFlow/It/test; llm4zioRunner/It/test"
+        run: sbt "llm4zioFlow/It/testFull; llm4zioRunner/It/testFull"
 
   publish:
     name: Publish to Maven Central
