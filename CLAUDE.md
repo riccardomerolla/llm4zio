@@ -15,12 +15,15 @@ values — thin, readable, no ceremony — expressed in `ZIO[R, E, A]`.
 
 ## Build
 
+Built with **sbt 2.x**. Note: sbt 2's `test` is incremental/cached (runs only what
+changed) — use `testFull` to force a full run, which is what CI does.
+
 ```bash
-sbt compile                 # all modules
-sbt test                    # unit tests
-sbt "llm4zioFlow/It/test"   # integration tests (spawn real git; no network)
-sbt fmt                     # scalafmt + scalafix
-sbt check                   # verify formatting
+sbt compile                     # all modules
+sbt test                        # unit tests (incremental); use testFull to force all
+sbt "llm4zioFlow/It/testFull"   # integration tests (spawn real git; no network)
+sbt fmt                         # scalafmt + scalafix
+sbt check                       # verify formatting
 
 # Per-module:
 sbt llm4zioCore/test
