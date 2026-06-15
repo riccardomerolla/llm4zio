@@ -18,6 +18,7 @@ object ConnectorFactories:
       ConnectorId.GeminiCli -> geminiCliFactory(),
       ConnectorId.Codex     -> cliFactory(ConnectorId.Codex, cfg => CodexConnector.make(cfg, cli)),
       ConnectorId.Copilot   -> cliFactory(ConnectorId.Copilot, cfg => CopilotConnector.make(cfg, cli)),
+      ConnectorId.Pi        -> cliFactory(ConnectorId.Pi, cfg => PiConnector.make(cfg, cli)),
       ConnectorId.Mock      -> apiFactory(ConnectorId.Mock, cfg => MockProvider.make(cfg)),
     ))
 

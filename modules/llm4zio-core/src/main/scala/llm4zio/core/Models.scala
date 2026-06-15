@@ -43,11 +43,12 @@ object ConnectorId:
   val OpenCode: ConnectorId  = ConnectorId("opencode")
   val Codex: ConnectorId     = ConnectorId("codex")
   val Copilot: ConnectorId   = ConnectorId("copilot")
+  val Pi: ConnectorId        = ConnectorId("pi")
   // Test
   val Mock: ConnectorId      = ConnectorId("mock")
 
   val allApi: List[ConnectorId] = List(OpenAI, Anthropic, GeminiApi, LmStudio, Ollama)
-  val allCli: List[ConnectorId] = List(ClaudeCli, GeminiCli, OpenCode, Codex, Copilot)
+  val allCli: List[ConnectorId] = List(ClaudeCli, GeminiCli, OpenCode, Codex, Copilot, Pi)
   val all: List[ConnectorId]    = allApi ++ allCli :+ Mock
 
 enum ConnectorKind derives JsonCodec:
