@@ -505,13 +505,22 @@ object GeminiCliProvider:
                     )
                   }
 
-                case GeminiCliStreamEvent.Error(message, _, _) =>
-                  ZStream.fail(
-                    LlmError.ProviderError(
-                      message.map(m => s"Gemini CLI stream error: $m").getOrElse("Gemini CLI stream error"),
-                      None,
-                    )
-                  )
+                case GeminiCliStreamEvent.Error(message, code, errorType) =>
+                  ZStream.unwrap(Clock.instant.map { now =>
+                    // Fold type/code into the classified text so a 429/rate_limit on an error event is recognized,
+                    // mirroring the tryDecodeHeadless formatting convention.
+                    val details = List(
+                      errorType.map(t => s"type=$t"),
+                      code.map(c => s"code=$c"),
+                    ).flatten.mkString(", ")
+                    val msg     = message.getOrElse("unknown error")
+                    val raw     =
+                      if details.nonEmpty then s"Gemini CLI stream error ($details): $msg"
+                      else s"Gemini CLI stream error: $msg"
+                    val err     = UsageLimits.classify("gemini", raw, now, ZoneId.systemDefault)
+                      .getOrElse(LlmError.ProviderError(raw, None))
+                    ZStream.fail(err)
+                  })
 
                 case GeminiCliStreamEvent.Result(status, errorMessage, _) if status.contains("error") =>
                   ZStream.unwrap(Clock.instant.map { now =>

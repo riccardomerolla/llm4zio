@@ -31,6 +31,29 @@ object UsageLimitsSpec extends ZIOSpecDefault:
         case Some(LlmError.RateLimitError(Some(d))) => assertTrue(d == zio.Duration.fromSeconds(2))
         case _                                      => assertTrue(false)
     },
+    test("gemini 'exhausted your capacity' (no reset) → UsageLimitError, resetAt None") {
+      val text = "You have exhausted your capacity on this model."
+      UsageLimits.classify("gemini", text, now, zone) match
+        case Some(LlmError.UsageLimitError(resetAt, "gemini", msg)) =>
+          assertTrue(resetAt.isEmpty, msg == text)
+        case _                                                      => assertTrue(false)
+    },
+    test("gemini 'quota exceeded' → UsageLimitError") {
+      UsageLimits.classify("gemini", "Quota exceeded for this project.", now, zone) match
+        case Some(LlmError.UsageLimitError(None, "gemini", _)) => assertTrue(true)
+        case _                                                 => assertTrue(false)
+    },
+    test("gemini RESOURCE_EXHAUSTED with code=429 → UsageLimitError") {
+      val text = "Gemini CLI stream error (type=RESOURCE_EXHAUSTED, code=429): rate_limit reached"
+      UsageLimits.classify("gemini", text, now, zone) match
+        case Some(LlmError.UsageLimitError(None, "gemini", _)) => assertTrue(true)
+        case _                                                 => assertTrue(false)
+    },
+    test("gemini ambiguous catch-all 'an unknown error occurred' → None") {
+      assertTrue(
+        UsageLimits.classify("gemini", "API Error: An unknown error occurred.", now, zone).isEmpty
+      )
+    },
     test("unrecognized text → None") {
       assertTrue(UsageLimits.classify("codex", "some unrelated failure", now, zone).isEmpty)
     },

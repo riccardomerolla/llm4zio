@@ -2,8 +2,10 @@ package llm4zio.runner
 
 import java.nio.file.Paths
 
-import zio.Scope
 import zio.test.*
+import zio.{ Cause, Scope }
+
+import llm4zio.flow.FlowError
 
 object BannerSpec extends ZIOSpecDefault:
   def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("Banner")(
@@ -13,5 +15,19 @@ object BannerSpec extends ZIOSpecDefault:
     },
     test("version falls back to dev when manifest is absent") {
       assertTrue(Banner.version.nonEmpty)
+    },
+    test("failMessage appends a quota hint for gemini's ambiguous catch-all") {
+      val msg = Llm4zio.failMessage(
+        Cause.fail(FlowError.Llm("Gemini CLI stream error: [API Error: An unknown error occurred.]", None))
+      )
+      assertTrue(
+        msg.contains("Gemini CLI stream error"),
+        msg.toLowerCase.contains("quota"),
+        msg.contains("LLM4ZIO_USAGE_WAIT"),
+      )
+    },
+    test("failMessage does not append the quota hint for unrelated errors") {
+      val msg = Llm4zio.failMessage(Cause.fail(FlowError.Llm("something else broke", None)))
+      assertTrue(!msg.toLowerCase.contains("quota"), !msg.contains("LLM4ZIO_USAGE_WAIT"))
     },
   )

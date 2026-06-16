@@ -823,6 +823,25 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
           result <- provider.executeStream("hi").runCollect.exit
         yield assertTrue(result.isFailure)
       },
+      test("Error stream event with capacity message fails with UsageLimitError") {
+        val config   = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
+        val executor = new MockGeminiCliExecutor(
+          streamEvents = List(
+            GeminiCliStreamEvent.Error(
+              message = Some("You have exhausted your capacity on this model."),
+              code = None,
+              errorType = None,
+            )
+          )
+        )
+        val provider = GeminiCliProvider.make(config, executor)
+        for
+          result <- provider.executeStream("hi").runCollect.exit
+        yield assertTrue(result.causeOption.exists(_.failures.exists {
+          case _: LlmError.UsageLimitError => true
+          case _                           => false
+        }))
+      },
     ),
     suite("formatHistory via executeStreamWithHistory")(
       test("empty message list fails with InvalidRequestError") {

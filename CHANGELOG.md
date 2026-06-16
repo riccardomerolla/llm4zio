@@ -16,6 +16,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `examples/local.sc` — a fully-local example (no cloud, no API key): LM Studio reasoning +
   pi coder.
 
+### Fixed
+
+- Gemini CLI quota/capacity errors — including those surfaced as stream `error` events (folding in
+  their `code`/`type`) — are now classified as usage limits (`UsageLimitError`/`RateLimitError`)
+  instead of plain provider errors, so `LLM4ZIO_USAGE_WAIT` can wait them out and resume. Gemini's
+  ambiguous catch-all (`an unknown error occurred`) still stays a transient error, but now terminates
+  with an actionable hint pointing at quota exhaustion and `LLM4ZIO_USAGE_WAIT`.
+
 [3.2.0]: https://github.com/riccardomerolla/llm4zio/releases/tag/v3.2.0
 
 ## [3.0.1] - 2026-06-12
