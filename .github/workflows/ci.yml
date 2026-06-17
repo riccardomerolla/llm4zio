@@ -39,15 +39,12 @@ jobs:
       - name: Setup SBT
         uses: sbt/setup-sbt@v1
 
-      - name: Check formatting
-        run: sbt check
-
-      - name: Unit tests
-        # sbt 2.x `test` is incremental/cached; `testFull` forces a full run so CI never passes without running tests.
-        run: sbt testFull
-
-      - name: Integration tests
-        run: sbt "llm4zioFlow/It/testFull; llm4zioRunner/It/testFull"
+      - name: Check, test, integration-test
+        # One sbt invocation for the whole build: separate `sbt ...` steps each spawn/attach a server, and a second
+        # invocation attaching to the first step's lingering server can die instantly (0-output exit 1). A single
+        # server lifecycle avoids that. `check` = scalafix+scalafmt; sbt 2.x `test` is incremental, so `testFull`
+        # forces a full run; It/testFull runs the integration suites.
+        run: sbt "; check ; testFull ; llm4zioFlow/It/testFull ; llm4zioRunner/It/testFull"
 
   publish:
     name: Publish to Maven Central
