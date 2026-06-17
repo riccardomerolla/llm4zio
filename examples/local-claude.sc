@@ -28,8 +28,8 @@ import llm4zio.flow.*
 import llm4zio.runner.*
 
 // Edit these to match the model loaded in LM Studio.
-val ReasoningModel = "openai/gpt-oss-20b"
-val CoderModel     = "openai/gpt-oss-20b"
+val ReasoningModel = "qwen/qwen3.6-35b-a3b"
+val CoderModel     = "qwen/qwen3.6-35b-a3b"
 
 // Claude Code as the coder, routed to LM Studio's Anthropic-compatible endpoint (no Anthropic key).
 // llm4zio passes these env vars through to the spawned `claude` process (merged onto the environment).
