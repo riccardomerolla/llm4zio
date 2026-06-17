@@ -1,4 +1,4 @@
-//> using dep "io.github.riccardomerolla::llm4zio-runner:3.2.0"
+//> using dep "io.github.riccardomerolla::llm4zio-runner:3.3.0"
 //> using scala "3.8.3"
 //> using jvm 21
 
@@ -26,8 +26,8 @@ import llm4zio.flow.*
 import llm4zio.runner.*
 
 // Edit these to match your local setup.
-val ReasoningModel = "local-model"          // the model id loaded in LM Studio
-val CoderModel     = "lmstudio/local-model" // pi's address for your LM Studio model (pi-lmstudio)
+val ReasoningModel = "qwen/qwen3-coder-30b"          // the model id loaded in LM Studio
+val CoderModel     = "qwen/qwen3-coder-30b" // pi's address for your LM Studio model (pi-lmstudio)
 
 flow(
   args,

@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.3.0] - 2026-06-17
+
+### Added
+
+- Non-interactive git (orca #16): every git invocation now carries `GIT_TERMINAL_PROMPT=0` and an ssh
+  `-o BatchMode=yes` (appended to any existing `GIT_SSH_COMMAND`), so a TTY-less flow fails fast on a
+  credential/passphrase prompt instead of hanging forever. `Proc.run`/`runOrFail` gained an optional `env`
+  parameter (merged onto the inherited environment).
+- Push credential fallback (orca #16/#19): for a github.com remote, `GitTool.push` appends a last-resort,
+  github.com-scoped credential helper — after any configured helper (a working setup still wins). With
+  `GH_TOKEN`/`GITHUB_TOKEN` in the env the token is used directly (read at helper runtime, never in argv/logs);
+  otherwise it defers to `gh auth git-credential`. Inert for SSH and non-github hosts.
+- `examples/implement-enhanced-pr.sc` — enhanced plan (self-review + brief) → branch → implement → push →
+  open PR → return to the start branch.
+
+### Changed
+
+- `GhTool.updatePr` now uses a REST `PATCH` via `gh api` instead of `gh pr edit` (orca #20): `gh pr edit` runs a
+  GraphQL `projectCards` query that fails on repos with Projects (classic) sunset, silently aborting the update.
+- On flow failure the full cause (stack trace, defects) is now logged to the file-only log for post-mortem; the
+  console still shows just the one-line `✖ flow failed: <reason>` (orca #18; the console half was already in place).
+- Example pins bumped to 3.3.0.
+
 ## [3.2.0] - 2026-06-15
 
 ### Added

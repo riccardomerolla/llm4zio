@@ -13,11 +13,18 @@ private[flow] object Proc:
     def problem: String = if stderr.nonEmpty then stderr else stdout
 
   /** Run `command args*` in `workDir`, capturing stdout/stderr/exit without failing on a non-zero exit. Only a failure
-    * to launch fails the effect.
+    * to launch fails the effect. `env` entries are merged onto the inherited environment (so PATH etc. survive), with
+    * `env` winning on conflicts; an empty `env` inherits the parent environment unchanged.
     */
-  def run(command: String, args: Seq[String], workDir: Path): IO[FlowError, Result] =
+  def run(
+    command: String,
+    args: Seq[String],
+    workDir: Path,
+    env: Map[String, String] = Map.empty,
+  ): IO[FlowError, Result] =
     (for
-      process <- Command(command, args*).workingDirectory(workDir.toFile).run
+      base    <- ZIO.succeed(Command(command, args*).workingDirectory(workDir.toFile))
+      process <- (if env.isEmpty then base else base.env(sys.env ++ env)).run
       outF    <- process.stdout.string.fork
       errF    <- process.stderr.string.fork
       exit    <- process.exitCode
@@ -29,8 +36,13 @@ private[flow] object Proc:
       )
 
   /** Like [[run]] but fails the effect on a non-zero exit, returning stdout otherwise. */
-  def runOrFail(command: String, args: Seq[String], workDir: Path): IO[FlowError, String] =
-    run(command, args, workDir).flatMap { r =>
+  def runOrFail(
+    command: String,
+    args: Seq[String],
+    workDir: Path,
+    env: Map[String, String] = Map.empty,
+  ): IO[FlowError, String] =
+    run(command, args, workDir, env).flatMap { r =>
       if r.ok then ZIO.succeed(r.stdout)
       else ZIO.fail(FlowError.Process(s"$command ${args.mkString(" ")} (exit ${r.exitCode})", r.problem))
     }

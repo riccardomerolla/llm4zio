@@ -7,8 +7,8 @@
 #   examples/seed.sh <example> --local        # sbt publishLocal + pin the local version
 #   examples/seed.sh <example> --run          # seed, then run the flow
 #
-# Examples: implement, implement-interactive, implement-enhanced, implement-live,
-#           epic, issue-pr, issue-pr-bugfix, sdd, local
+# Examples: implement, implement-interactive, implement-enhanced, implement-enhanced-pr,
+#           implement-live, epic, issue-pr, issue-pr-bugfix, sdd, local
 
 set -euo pipefail
 
@@ -23,6 +23,7 @@ shift
 case "$EXAMPLE" in
   implement)             STARTER="calculator-rs";      PROMPT="Add a multiply function to the calculator crate" ;;
   implement-enhanced)    STARTER="calculator-rs";      PROMPT="Add a multiply function to the calculator crate" ;;
+  implement-enhanced-pr) STARTER="calculator-rs";      PROMPT="Add a multiply function to the calculator crate" ;; # also needs a remote + gh
   implement-interactive) STARTER="calculator-rs-open"; PROMPT="Make the calculator crate more useful" ;;
   implement-live)        STARTER="calculator-rs-open"; PROMPT="Make the calculator crate more useful" ;;
   epic)                  STARTER="todo-java";          PROMPT="Persist tasks to a JSON file (load on startup, save on every change), add 'done <id>' and 'delete <id>' commands, and support priority levels (low/medium/high) with a 'list --priority' filter" ;;

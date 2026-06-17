@@ -10,6 +10,7 @@ Documentation lives in each script's header comment.
 | `implement.sc`            | Autonomous plan → implement → review loop                    | calculator-rs     |
 | `implement-interactive.sc`| Planner asks clarifying questions first                      | calculator-rs-open|
 | `implement-enhanced.sc`   | Plan self-review + shared codebase brief (`.reviewed/.briefed`) | calculator-rs  |
+| `implement-enhanced-pr.sc`| Enhanced plan → branch → implement → push → open PR (needs a remote + `gh`) | calculator-rs |
 | `implement-live.sc`       | Held, steerable claude session, streaming + ask_user over MCP | calculator-rs-open|
 | `epic.sc`                 | Multi-task epic, full reviewer roster, doc update at the end | todo-java         |
 | `issue-pr.sc`             | GitHub issue → assess → implement → PR                       | calculator-scala  |

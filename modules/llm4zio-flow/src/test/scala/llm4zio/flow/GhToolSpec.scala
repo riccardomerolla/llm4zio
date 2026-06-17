@@ -39,8 +39,8 @@ object GhToolSpec extends ZIOSpecDefault:
           List("issue", "view", "42", "--repo", "acme/widgets", "--json", "title,body,author"),
         GhTool.issueCommentArgs(ref, "hi") ==
           List("issue", "comment", "42", "--repo", "acme/widgets", "--body", "hi"),
-        GhTool.prEditArgs(pr, "T", "B") ==
-          List("pr", "edit", "7", "--repo", "acme/widgets", "--title", "T", "--body", "B"),
+        GhTool.prPatchArgs(pr, "T", "B") ==
+          List("api", "--method", "PATCH", "repos/acme/widgets/pulls/7", "-f", "title=T", "-f", "body=B"),
         GhTool.prChecksArgs(pr) == List("pr", "checks", "7", "--repo", "acme/widgets"),
       )
     },

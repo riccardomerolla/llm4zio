@@ -58,9 +58,11 @@ final class GhTool(workDir: Path):
   def writePrComment(pr: PullRequest, body: String): IO[FlowError, Unit] =
     Proc.runOrFail("gh", GhTool.prCommentArgs(pr, body), workDir).unit
 
-  /** Update a PR's title + body via `gh pr edit`. */
+  /** Update a PR's title + body via a REST PATCH (`gh api`), which — unlike `gh pr edit` — works on repos with Projects
+    * (classic) sunset. See [[GhTool.prPatchArgs]].
+    */
   def updatePr(pr: PullRequest, title: String, body: String): IO[FlowError, Unit] =
-    Proc.runOrFail("gh", GhTool.prEditArgs(pr, title, body), workDir).unit
+    Proc.runOrFail("gh", GhTool.prPatchArgs(pr, title, body), workDir).unit
 
   /** One-shot check of a PR's CI state (maps `gh pr checks` exit code). */
   def prChecks(pr: PullRequest): IO[FlowError, BuildOutcome] =
@@ -95,8 +97,21 @@ object GhTool:
   def prCommentArgs(pr: PullRequest, body: String): List[String] =
     List("pr", "comment", pr.number.toString, "--repo", s"${pr.owner}/${pr.repo}", "--body", body)
 
-  def prEditArgs(pr: PullRequest, title: String, body: String): List[String] =
-    List("pr", "edit", pr.number.toString, "--repo", s"${pr.owner}/${pr.repo}", "--title", title, "--body", body)
+  /** A REST PATCH on the pull endpoint rather than `gh pr edit`: the latter runs a GraphQL metadata query selecting
+    * `projectCards`, which fails on repos where GitHub has sunset Projects (classic), aborting the edit. `gh api` PATCH
+    * touches no projects.
+    */
+  def prPatchArgs(pr: PullRequest, title: String, body: String): List[String] =
+    List(
+      "api",
+      "--method",
+      "PATCH",
+      s"repos/${pr.owner}/${pr.repo}/pulls/${pr.number}",
+      "-f",
+      s"title=$title",
+      "-f",
+      s"body=$body",
+    )
 
   def prChecksArgs(pr: PullRequest): List[String] =
     List("pr", "checks", pr.number.toString, "--repo", s"${pr.owner}/${pr.repo}")

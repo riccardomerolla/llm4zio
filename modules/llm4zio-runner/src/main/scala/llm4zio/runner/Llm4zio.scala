@@ -82,9 +82,12 @@ object Llm4zio:
                            // On exit, first drain the hub so trailing events (notably a final StageFailed) render
                            // rather than being interrupted away; on failure, follow with an authoritative ✖ banner
                            // written straight to the surface — so a failed run can never look like a clean finish.
+                           // The full cause (stack trace, defects) goes to the file-only logger for post-mortem; the
+                           // console still shows just the one-line reason.
                            .onExit {
                              case Exit.Failure(cause) =>
-                               TerminalListener.awaitDrained(hub, consumed, 3.seconds) *>
+                               ZIO.logErrorCause("flow failed", cause) *>
+                                 TerminalListener.awaitDrained(hub, consumed, 3.seconds) *>
                                  surface.log("\n" + palette.fail(s"flow failed: ${failMessage(cause)}"))
                              case Exit.Success(_)     =>
                                TerminalListener.awaitDrained(hub, consumed, 3.seconds)

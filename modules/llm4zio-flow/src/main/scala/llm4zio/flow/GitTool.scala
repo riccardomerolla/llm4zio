@@ -12,8 +12,16 @@ import zio.*
 final class GitTool(workDir: Path):
   import GitTool.*
 
-  private def exec(args: String*): IO[FlowError, Proc.Result]  = Proc.run("git", args, workDir)
-  private def execOrFail(args: String*): IO[FlowError, String] = Proc.runOrFail("git", args, workDir)
+  // Every git invocation carries GitTool.nonInteractiveEnv so neither git nor any ssh it spawns can block a
+  // TTY-less flow on a credential or passphrase prompt — they fail fast instead.
+  private def exec(args: String*): IO[FlowError, Proc.Result]  =
+    Proc.run("git", args, workDir, GitTool.nonInteractiveEnv)
+  private def execOrFail(args: String*): IO[FlowError, String] =
+    Proc.runOrFail("git", args, workDir, GitTool.nonInteractiveEnv)
+
+  /** Read a single git config value (`git config --get`); `None` when unset. */
+  private def configGet(key: String): IO[FlowError, Option[String]] =
+    exec("config", "--get", key).map(r => if r.ok then Some(r.stdout.trim).filter(_.nonEmpty) else None)
 
   /** `git init` with `main` as the default branch. */
   def init: IO[FlowError, Unit] = execOrFail("-c", "init.defaultBranch=main", "init").unit
@@ -98,9 +106,16 @@ final class GitTool(workDir: Path):
       else ZIO.fail(FlowError.Process("git commit", r.problem))
     }
 
-  /** Push `branch` to `remote`, setting upstream. */
+  /** Push `branch` to `remote`, setting upstream. For a github.com remote a last-resort credential helper is appended
+    * (after any configured helper, so a working credential setup still wins; inert for SSH and other hosts), so the
+    * push authenticates via `GH_TOKEN`/`GITHUB_TOKEN` or the `gh` login the PR flows already require even when git has
+    * no helper configured.
+    */
   def push(remote: String, branch: String): IO[FlowError, Unit] =
-    execOrFail("push", "-u", remote, branch).unit
+    configGet(s"remote.$remote.url").flatMap { url =>
+      val token = sys.env.get("GH_TOKEN").orElse(sys.env.get("GITHUB_TOKEN")).filter(_.nonEmpty)
+      execOrFail(GitTool.pushArgs(remote, branch, url, token)*).unit
+    }
 
 object GitTool:
   enum CreateBranch:
@@ -108,3 +123,53 @@ object GitTool:
 
   enum Commit:
     case Committed, NothingToCommit
+
+  /** Environment that forces git — and any ssh it spawns — to run non-interactively. A flow subprocess has no usable
+    * TTY, so an HTTPS username/password prompt or an SSH key-passphrase prompt would block the flow forever rather than
+    * failing. `GIT_TERMINAL_PROMPT=0` disables the former; `-o BatchMode=yes` on the ssh command disables the latter
+    * (appended, so a user's custom `GIT_SSH_COMMAND` is preserved). Merged onto the inherited env by [[Proc]].
+    */
+  private[flow] val nonInteractiveEnv: Map[String, String] =
+    val baseSsh = sys.env.getOrElse("GIT_SSH_COMMAND", "ssh")
+    Map("GIT_TERMINAL_PROMPT" -> "0", "GIT_SSH_COMMAND" -> s"$baseSsh -o BatchMode=yes")
+
+  /** Host of a git remote URL, for both `scp`-like SSH (`git@host:path`) and URL forms
+    * (`scheme://[user@]host[:port]/path`). `None` for local paths or anything without a recognisable host.
+    */
+  private[flow] def remoteHost(url: String): Option[String] =
+    val scpLike = """^[^@/]+@([^:/]+):.*""".r
+    val urlLike = """^[a-zA-Z][a-zA-Z0-9+.\-]*://(?:[^@/]+@)?([^:/]+).*""".r
+    url.trim match
+      case scpLike(host) => Some(host)
+      case urlLike(host) => Some(host)
+      case _             => None
+
+  private[flow] def isGithubRemote(url: String): Boolean = remoteHost(url).contains("github.com")
+
+  /** The `git push` args (sans the leading `git`). For a github.com remote it prepends a `-c` credential helper scoped
+    * to github.com HTTPS — appended after any config-file helper (a working setup still wins) and added only for github
+    * remotes (the scoped helper is meaningless elsewhere). With a token in the env it is used directly (see
+    * [[githubHelper]]); otherwise the `gh` CLI's own auth resolution is used.
+    */
+  private[flow] def pushArgs(
+    remote: String,
+    branch: String,
+    remoteUrl: Option[String],
+    envToken: Option[String],
+  ): List[String] =
+    val credential =
+      if remoteUrl.exists(isGithubRemote) then
+        List("-c", s"credential.https://github.com.helper=${githubHelper(envToken.isDefined)}")
+      else Nil
+    credential ++ List("push", "-u", remote, branch)
+
+  /** Shell credential helper for github.com. With a token in the env it echoes that token (`x-access-token` is GitHub's
+    * conventional username for token auth); the token is read from `$GH_TOKEN`/`$GITHUB_TOKEN` at helper runtime, never
+    * interpolated here, so it stays out of argv and logs. With no token it defers to the `gh` CLI.
+    */
+  private def githubHelper(hasEnvToken: Boolean): String =
+    if hasEnvToken then
+      "!f() { test \"$1\" = get && " +
+        "printf 'username=x-access-token\\npassword=%s\\n' " +
+        "\"${GH_TOKEN:-$GITHUB_TOKEN}\"; }; f"
+    else "!gh auth git-credential"
