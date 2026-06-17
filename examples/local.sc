@@ -42,7 +42,9 @@ flow(
     coderChat <- Chat.start(coder, system = Some("You implement one task at a time in the current repo."))
     _         <- implementTaskLoop(planPath, plan) { task =>
                    coderChat.ask(task.description) *>
-                     reviewAndFixLoop(Reviewers.minimal, reasoning, coderChat, task.title, git.diff) *>
+                     // One local LM Studio serves one request at a time, so run the review lenses sequentially
+                     // (parallelism = 1) instead of firing all three at the single model at once.
+                     reviewAndFixLoop(Reviewers.minimal, reasoning, coderChat, task.title, git.diff, parallelism = 1) *>
                      git.commitAll(s"${plan.epicId}: ${task.title}").unit
                  }
   yield ()
