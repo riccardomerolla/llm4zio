@@ -60,10 +60,15 @@ cp "$SCRIPT_DIR/$SCRIPT_NAME" "$DEST/$SCRIPT_NAME"
 
 if [ "$LOCAL" -eq 1 ]; then
   echo "Publishing llm4zio locally (sbt publishLocal)…"
-  ( cd "$REPO_ROOT" && sbt -batch -Dsbt.log.noformat=true publishLocal >/dev/null )
-  ivy="$HOME/.ivy2/local/io.github.riccardomerolla/llm4zio-runner_3"
-  version="$(ls -t "$ivy" 2>/dev/null | head -1)"
-  [ -n "$version" ] || { echo "no locally published llm4zio-runner under $ivy" >&2; exit 1; }
+  # Capture the output (don't hide failures) and read the version sbt ACTUALLY published from it — never guess from
+  # the ivy cache with `ls -t`, which silently pins a stale prior publish if this run is a no-op, fails, or a
+  # long-lived sbt server is reporting an outdated sbt-dynver version (run `sbt shutdown` if the version looks wrong).
+  if ! publishLog="$( cd "$REPO_ROOT" && sbt -batch -Dsbt.log.noformat=true publishLocal 2>&1 )"; then
+    printf '%s\n' "$publishLog" >&2
+    echo "sbt publishLocal failed" >&2; exit 1
+  fi
+  version="$(printf '%s\n' "$publishLog" | grep -oE 'llm4zio-runner_3/[^/]+' | sed 's#.*/##' | tail -1)"
+  [ -n "$version" ] || { echo "could not parse the published version from sbt publishLocal output" >&2; exit 1; }
   echo "Pinning script to local version $version"
   sed -i.bak -E "s#(io\.github\.riccardomerolla::llm4zio-runner:)[^\"]+#\1$version#" "$DEST/$SCRIPT_NAME"
   rm -f "$DEST/$SCRIPT_NAME.bak"
