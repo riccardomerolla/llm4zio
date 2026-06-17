@@ -1,7 +1,6 @@
 package llm4zio.runner
 
 import zio.*
-import zio.http.Client
 
 import llm4zio.flow.{ AdoConfig, AdoTool, FlowError }
 import llm4zio.providers.HttpClient
@@ -37,7 +36,7 @@ object Ado:
       case Left(msg)  => ZIO.fail(FlowError.Aborted(s"Azure DevOps config: $msg"))
       case Right(cfg) =>
         val client: ZLayer[Any, FlowError, HttpClient] =
-          Client.default.mapError(t =>
+          HttpClient.reliableClient.mapError(t =>
             FlowError.Process("ado http client", Option(t.getMessage).getOrElse(t.toString))
           ) >>> HttpClient.live
         ZIO.serviceWithZIO[HttpClient](http => use(new AdoTool(cfg, http))).provideLayer(client)

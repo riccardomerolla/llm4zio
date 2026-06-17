@@ -4,6 +4,7 @@ import scala.annotation.unused
 
 import zio.*
 import zio.http.*
+import zio.http.netty.NettyConfig
 import zio.stream.{ ZPipeline, ZStream }
 
 import llm4zio.core.LlmError
@@ -104,6 +105,20 @@ object HttpClient:
 
   val live: ZLayer[Client, Nothing, HttpClient] =
     ZLayer.fromFunction((client: Client) => fromRequestExecutor(request => client.batched(request)))
+
+  /** zio-http client Config with the **idle timeout disabled**. zio-http's default idle timeout (50s) closes a
+    * connection that has seen no traffic for that long — but a slow local model (e.g. a 20–30B model in LM Studio that
+    * spends tens of seconds processing a prompt before emitting the first response byte) looks exactly like an idle
+    * connection, so it gets dropped mid-generation and the request is needlessly retried. Disabling it makes the
+    * per-request `timeout` (e.g. `ApiConnectorConfig.timeout`, default 300s) the single, intentional bound.
+    */
+  val reliableClientConfig: ZClient.Config = ZClient.Config.default.noIdleTimeout
+
+  /** A live zio-http [[Client]] built from [[reliableClientConfig]] — use this in place of `Client.default` so slow
+    * (local) backends aren't disconnected before they answer.
+    */
+  val reliableClient: ZLayer[Any, Throwable, Client] =
+    (ZLayer.succeed(reliableClientConfig) ++ ZLayer.succeed(NettyConfig.default) ++ DnsResolver.default) >>> Client.live
 
   private[providers] def fromRequestExecutor(execute: Request => Task[Response]): HttpClient =
     new HttpClient {

@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.4.1] - 2026-06-17
+
+### Fixed
+
+- HTTP client no longer disconnects slow (local) backends mid-response. zio-http's default 50s
+  idle timeout dropped the connection while a local model (e.g. a 20–30B in LM Studio) was still
+  processing a long prompt before the first response byte, surfacing as "Provider unavailable"
+  and triggering a wasteful retry that re-processed the whole prompt. `HttpClient.reliableClient`
+  builds the zio-http client with the idle timeout disabled, so the per-request `timeout`
+  (`ApiConnectorConfig.timeout`, default 300s) is the single intentional bound. Used by the runner
+  and the Azure DevOps tool.
+- `examples/local.sc` runs the review lenses sequentially (`parallelism = 1`) — a single local
+  LM Studio serves one request at a time.
+
 ## [3.4.0] - 2026-06-17
 
 ### Added

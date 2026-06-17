@@ -44,6 +44,11 @@ object HttpClientSendSpec extends ZIOSpecDefault:
         out   <- client.send("POST", "https://dev.azure.com/x", Some("{}"), Map.empty, "application/json", 5.seconds)
       yield assertTrue(out == """{"pullRequestId":42}""")
     },
+    test("reliableClient config disables the zio-http idle timeout (slow local models)") {
+      // zio-http's default idle timeout (50s) drops a connection while a slow local model is still
+      // processing a prompt before the first response byte. We disable it; config.timeout is the real bound.
+      assertTrue(HttpClient.reliableClientConfig.idleTimeout.isEmpty)
+    },
     test("fails typed on 401 and on 404") {
       for
         cap  <- Ref.make[Option[Request]](None)

@@ -98,7 +98,7 @@ object Llm4zio:
                    }
                    .provideSomeLayer[HttpClient & Client](RunnerLog.fileOnly(logPath))
     yield ())
-      .provide(Client.default, HttpClient.live)
+      .provide(HttpClient.reliableClient, HttpClient.live)
       .mapError {
         case t: Throwable => t
         case other        => new RuntimeException(other.toString)

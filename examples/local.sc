@@ -32,6 +32,8 @@ val CoderModel     = "qwen/qwen3-coder-30b" // pi's address for your LM Studio m
 flow(
   args,
   coder = pi.withModel(CoderModel),
+  // A very slow local model can exceed the 300s default request timeout on a big prompt; raise it with
+  // `.copy(model = Some(ReasoningModel), timeout = 10.minutes)` if you hit a 5-minute cut-off.
   reasoning = Some(lmStudio.copy(model = Some(ReasoningModel))),
   defaultPrompt = Some("Add a multiply function to the calculator crate"),
 ):
