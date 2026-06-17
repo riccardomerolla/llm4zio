@@ -23,6 +23,21 @@ trait HttpClient:
     timeout: Duration,
   ): ZIO[Any, LlmError, String]
 
+  /** Generic request with an arbitrary method, content-type, and optional body. Returns the response body on any 2xx
+    * (200/201/204/…), and fails with a typed [[LlmError]] otherwise — for REST APIs (e.g. Azure DevOps) that use PATCH
+    * with `application/json-patch+json` and return 201 on create. The default impl is unsupported, so existing mock
+    * clients need not implement it.
+    */
+  def send(
+    @unused method: String,
+    @unused url: String,
+    @unused body: Option[String] = None,
+    @unused headers: Map[String, String] = Map.empty,
+    @unused contentType: String = "application/json",
+    @unused timeout: Duration,
+  ): ZIO[Any, LlmError, String] =
+    ZIO.fail(LlmError.InvalidRequestError("send is not supported by this HttpClient implementation"))
+
   def postJsonStream(
     url: String,
     body: String,
@@ -60,6 +75,16 @@ object HttpClient:
     timeout: Duration,
   ): ZIO[HttpClient, LlmError, String] =
     ZIO.serviceWithZIO[HttpClient](_.postJson(url, body, headers, timeout))
+
+  def send(
+    method: String,
+    url: String,
+    body: Option[String] = None,
+    headers: Map[String, String] = Map.empty,
+    contentType: String = "application/json",
+    timeout: Duration,
+  ): ZIO[HttpClient, LlmError, String] =
+    ZIO.serviceWithZIO[HttpClient](_.send(method, url, body, headers, contentType, timeout))
 
   def postJsonStream(
     url: String,
@@ -145,6 +170,42 @@ object HttpClient:
                               ZIO.fail(LlmError.InvalidRequestError(s"HTTP $status: $responseBody"))
                             case status if status >= 500                 =>
                               ZIO.fail(LlmError.ProviderError(s"HTTP $status: $responseBody", None))
+                            case status                                  =>
+                              ZIO.fail(LlmError.ProviderError(s"HTTP $status: $responseBody", None))
+        yield result
+
+      override def send(
+        method: String,
+        url: String,
+        body: Option[String],
+        headers: Map[String, String],
+        contentType: String,
+        timeout: Duration,
+      ): ZIO[Any, LlmError, String] =
+        for
+          urlObj       <-
+            ZIO
+              .fromEither(URL.decode(url).left.map(err => LlmError.InvalidRequestError(s"Invalid URL '$url': $err")))
+          base          = body.fold(Request(method = Method.fromString(method), url = urlObj))(b =>
+                            Request(method = Method.fromString(method), url = urlObj, body = Body.fromString(b))
+                          )
+          // Content-type rides as a header so arbitrary types (e.g. application/json-patch+json) need no MediaType.
+          request       = addHeaders(base, headers + ("Content-Type" -> contentType))
+          response     <- execute(request)
+                            .timeoutFail(LlmError.TimeoutError(timeout))(timeout)
+                            .mapError {
+                              case llm: LlmError => llm
+                              case e: Throwable  =>
+                                LlmError.ProviderError(s"Provider unavailable: $url", Some(e))
+                            }
+          responseBody <- response.body.asString.mapError(err => LlmError.ParseError(err.getMessage, ""))
+          result       <- response.status.code match
+                            case status if status >= 200 && status < 300 => ZIO.succeed(responseBody)
+                            case 401 | 403                               => ZIO.fail(LlmError.AuthenticationError(url))
+                            case 429                                     =>
+                              ZIO.fail(LlmError.RateLimitError(Some(retryAfterDuration(response, timeout))))
+                            case status if status >= 400 && status < 500 =>
+                              ZIO.fail(LlmError.InvalidRequestError(s"HTTP $status: $responseBody"))
                             case status                                  =>
                               ZIO.fail(LlmError.ProviderError(s"HTTP $status: $responseBody", None))
         yield result

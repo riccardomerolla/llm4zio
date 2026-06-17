@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.4.0] - 2026-06-17
+
+### Added
+
+- **Azure DevOps integration** (v1): spec-driven development driven by Azure Boards states.
+  - `AdoTool` (`llm4zio-flow`): REST client for work items (read, WIQL, comment, set
+    fields/state/tags), pull requests (create, thread), and work-item↔PR linking. Pure
+    request-builders + parsers (unit-tested), thin effectful methods over `HttpClient`.
+  - `HttpClient.send(method, url, body, headers, contentType)` — a generic request (arbitrary
+    method, `application/json-patch+json`, Basic/Bearer auth) treating any 2xx as success.
+    The existing `get`/`postJson` are unchanged.
+  - `Ado.withTool` / `Ado.configFrom` (`llm4zio-runner`): build an `AdoTool` from ADO pipeline
+    env vars (`SYSTEM_*`, with `LLM4ZIO_ADO_*` overrides) and provide a live HTTP client for the
+    flow's duration. `FlowContext` is untouched.
+  - `examples/ado-spec.sc` (Refine → draft spec onto the card → Spec Review) and
+    `examples/ado-implement.sc` (Approved → spec→tests→implement → PR linked to the work item →
+    In Review), reusing the `sdd.sc` harness.
+  - `docs/azure-devops.md`: deployment guide (dispatcher pipeline, board config, agent image,
+    secrets). Design in `.claude/plans/azure-devops-integration.md`.
+
 ## [3.3.0] - 2026-06-17
 
 ### Added

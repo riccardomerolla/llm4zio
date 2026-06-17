@@ -17,6 +17,8 @@ Documentation lives in each script's header comment.
 | `issue-pr-bugfix.sc`      | Bug report → failing test → red CI → fix → PR                | calculator-scala  |
 | `sdd.sc`                  | Spec → tests-first → implement → verify; per-role gemini models; mvn as the gate | todo-java |
 | `local.sc`                | Fully local — reasoning on LM Studio, coding on pi (local model); no cloud/API key | calculator-rs |
+| `ado-spec.sc`             | Azure DevOps: card→Refine → draft spec onto the work item → Spec Review (needs ADO) | — |
+| `ado-implement.sc`        | Azure DevOps: card→Approved → spec→tests→implement → PR linked to the work item (needs ADO) | — |
 
 ## Running one
 
@@ -36,3 +38,6 @@ scala-cli run implement.sc -- "Add a multiply function to the calculator crate"
 Backend: `LLM4ZIO_CODER=claude|codex|gemini` (default claude). No API key —
 one CLI login is enough. The issue-pr flows additionally need `gh` authenticated
 and a repo with a remote.
+
+The `ado-*` examples target Azure DevOps instead of a local starter and are run by a
+pipeline (or locally with `LLM4ZIO_ADO_*` env vars + a PAT) — see [docs/azure-devops.md](../docs/azure-devops.md).
