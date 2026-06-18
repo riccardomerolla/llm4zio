@@ -24,6 +24,15 @@ object ReviewerRosterSpec extends ZIOSpecDefault:
     test("minimal preset is a subset of all") {
       assertTrue(Reviewers.minimal.map(_.name).toSet.subsetOf(Reviewers.all.map(_.name).toSet))
     },
+    test("tddDiscipline is an opt-in lens, loaded with a non-empty prompt, outside the presets") {
+      val all = Reviewers.all.map(_.name).toSet
+      assertTrue(
+        Reviewers.tddDiscipline.name == "tdd-discipline",
+        Reviewers.tddDiscipline.systemPrompt.nonEmpty,
+        Reviewers.tddDiscipline.matches(Nil),
+        !all.contains("tdd-discipline"),
+      )
+    },
     test("scala-zio reviewer is scoped to .scala files; an empty file list always runs") {
       val z = Reviewers.all.find(_.name == "scala-zio").get
       assertTrue(z.matches(List("src/Main.scala")), !z.matches(List("README.md")), z.matches(Nil))

@@ -67,6 +67,12 @@ object Reviewers:
   lazy val minimal: List[Reviewer] =
     List("code-functionality", "readability", "test").map(Reviewer.fromResource)
 
+  /** An opt-in lens that polices test-driven *discipline* (test integrity, fixture theater, wiring,
+    * red-for-the-right-reason, traceability) rather than coverage. Not in [[all]]/[[minimal]] — add it explicitly to a
+    * roster, e.g. `Reviewers.minimal :+ Reviewers.tddDiscipline`.
+    */
+  lazy val tddDiscipline: Reviewer = Reviewer.fromResource("tdd-discipline")
+
   val schema: JsonSchema =
     Json.Obj(
       "type"       -> Json.Str("object"),
