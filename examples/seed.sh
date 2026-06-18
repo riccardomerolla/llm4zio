@@ -8,7 +8,8 @@
 #   examples/seed.sh <example> --run          # seed, then run the flow
 #
 # Examples: implement, implement-interactive, implement-enhanced, implement-enhanced-pr,
-#           implement-live, epic, issue-pr, issue-pr-bugfix, sdd, pipeline, local, local-claude
+#           implement-live, epic, issue-pr, issue-pr-bugfix, sdd, pipeline, reverse-engineer,
+#           local, local-claude
 
 set -euo pipefail
 
@@ -31,6 +32,7 @@ case "$EXAMPLE" in
   issue-pr-bugfix)       STARTER="calculator-scala";   PROMPT="" ;;
   sdd)                   STARTER="todo-java";          PROMPT="Add due dates: 'add <text> --due YYYY-MM-DD', mark overdue items in 'list', and a 'due' command showing items due today" ;;
   pipeline)              STARTER="todo-java";          PROMPT="Support hashtags: 'add <text> #tag' stores tags, 'list --tag <tag>' filters, and a 'tags' command lists every tag with its count" ;;
+  reverse-engineer)      STARTER="todo-java";          PROMPT="for a new contributor" ;;
   local)                 STARTER="calculator-rs";      PROMPT="Add a multiply function to the calculator crate" ;;
   local-claude)          STARTER="calculator-rs";      PROMPT="Add a multiply function to the calculator crate" ;;
   *) echo "unknown example: $EXAMPLE" >&2; exit 2 ;;

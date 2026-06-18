@@ -17,6 +17,7 @@ Documentation lives in each script's header comment.
 | `issue-pr-bugfix.sc`      | Bug report → failing test → red CI → fix → PR                | calculator-scala  |
 | `sdd.sc`                  | Spec → tests-first → implement → verify; per-role gemini models; mvn as the gate | todo-java |
 | `pipeline.sc`             | Specify → design → acceptance → implement → verify; outside-in, one scenario per commit | todo-java |
+| `reverse-engineer.sc`     | Read-only: discover → architecture → domain → ADRs → reverse-spec → review; docs an existing repo | todo-java |
 | `local.sc`                | Fully local — reasoning on LM Studio, coding on pi (local model); no cloud/API key | calculator-rs |
 | `local-claude.sc`         | Fully local — reasoning on LM Studio, coding on Claude Code routed to LM Studio; no cloud/API key | calculator-rs |
 | `ado-spec.sc`             | Azure DevOps: card→Refine → draft spec onto the work item → Spec Review (needs ADO) | — |
