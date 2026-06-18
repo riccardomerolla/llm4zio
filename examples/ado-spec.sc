@@ -29,10 +29,20 @@ val specInstructions =
     |context, goals, non-goals, and a numbered list of testable acceptance criteria
     |(Given/When/Then). Explore the repo as needed. Plain Markdown, no task list.""".stripMargin
 
+// Seats default to all-gemini (Pro reasoning, Flash coder). Set LLM4ZIO_CODER=claude|codex|gemini|pi
+// to run the WHOLE flow on that one provider (its own default model); reasoning stays read-only.
+val (coderCfg, reasoningCfg) =
+  sys.env.get("LLM4ZIO_CODER").map(_.trim.toLowerCase).filter(_.nonEmpty) match
+    case None | Some("gemini") =>
+      (gemini.withModel(FlashModel), gemini.withModel(ProModel).copy(readOnly = true))
+    case Some(_) =>
+      val agent = Connectors.coderFromEnv()
+      (agent, agent.copy(readOnly = true))
+
 flow(
   args,
-  coder = gemini.withModel(FlashModel), // unused here (no code edits), but keeps the flow all-gemini
-  reasoning = Some(gemini.withModel(ProModel).copy(readOnly = true)),
+  coder = coderCfg, // unused here (no code edits), but keeps the flow on one provider
+  reasoning = Some(reasoningCfg),
 ):
   userPrompt.trim.toIntOption match
     case None     => fail("usage: scala-cli run ado-spec.sc -- \"<work-item-id>\"")

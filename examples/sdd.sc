@@ -61,11 +61,26 @@ def writeIfAbsent(path: Path, content: String): IO[FlowError, Boolean] =
     }
     .mapError(e => FlowError.Persistence(s"failed to write $path", Some(e)))
 
+// Seats default to all-gemini, per-role (Pro reasoning, Flash coder + reviewers). Set
+// LLM4ZIO_CODER=claude|codex|gemini|pi to run the WHOLE flow — reasoning, coder, AND reviewers —
+// on that one provider (its own default model); reasoning + reviewers stay read-only.
+val (coderCfg, reasoningCfg, reviewerCfg) =
+  sys.env.get("LLM4ZIO_CODER").map(_.trim.toLowerCase).filter(_.nonEmpty) match
+    case None | Some("gemini") =>
+      (
+        gemini.withModel(FlashModel),
+        gemini.withModel(ProModel).copy(readOnly = true),
+        gemini.withModel(FlashModel).copy(readOnly = true),
+      )
+    case Some(_) =>
+      val agent = Connectors.coderFromEnv()
+      (agent, agent.copy(readOnly = true), agent.copy(readOnly = true))
+
 flow(
   args,
-  coder = gemini.withModel(FlashModel),
-  reasoning = Some(gemini.withModel(ProModel).copy(readOnly = true)),
-  reviewers = List(gemini.withModel(FlashModel).copy(readOnly = true)),
+  coder = coderCfg,
+  reasoning = Some(reasoningCfg),
+  reviewers = List(reviewerCfg),
   defaultPrompt = Some(
     "Add due dates: 'add <text> --due YYYY-MM-DD', mark overdue items in 'list', and a 'due' command showing items due today"
   ),
