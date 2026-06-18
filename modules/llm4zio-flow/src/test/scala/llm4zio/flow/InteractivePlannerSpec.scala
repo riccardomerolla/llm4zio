@@ -55,6 +55,12 @@ object InteractivePlannerSpec extends ZIOSpecDefault:
         qs    <- asked.get
       yield assertTrue(plan == Plan("e", Nil), qs.isEmpty)
     },
+    test("interactiveInstructions bias the planner toward asking before proposing") {
+      // The reasoning seat defaults to a repo-exploring read-only CLI agent, which rarely deems a request
+      // "underspecified" — so the instructions must actively prefer asking, else implement-interactive never asks.
+      val instr = Planner.interactiveInstructions.toLowerCase
+      assertTrue(instr.contains("at least one"), instr.contains("fully specified"))
+    },
     test("fails if the planner never proposes within maxTurns") {
       for
         steps <- Ref.make(List.fill(10)("""{"kind":"AskUser","question":"more?"}"""))

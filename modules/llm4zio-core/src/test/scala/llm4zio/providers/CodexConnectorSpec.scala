@@ -29,6 +29,30 @@ object CodexConnectorSpec extends ZIOSpecDefault:
     ): ZStream[Any, LlmError, String] =
       ZStream.fromZIO(seenArgv.set(a) *> seenStdin.set(stdin)).drain ++ ZStream.succeed(line)
 
+  /** Records argv from whichever path runs (non-streaming `run`/`runWithStdin` or streaming), replaying a canned
+    * non-streaming result and a canned streaming line. Lets a test assert which path a structured call took.
+    */
+  final class ArgvRecordingExec(seenArgv: Ref[List[String]], runResult: ProcessResult, streamLine: String)
+    extends CliProcessExecutor:
+    def run(a: List[String], c: String, e: Map[String, String]): IO[LlmError, ProcessResult]             =
+      seenArgv.set(a).as(runResult)
+    def runStreaming(a: List[String], c: String, e: Map[String, String]): ZStream[Any, LlmError, String] =
+      ZStream.fromZIO(seenArgv.set(a)).drain ++ ZStream.succeed(streamLine)
+    override def runWithStdin(
+      a: List[String],
+      c: String,
+      e: Map[String, String],
+      stdin: String,
+    ): IO[LlmError, ProcessResult] =
+      seenArgv.set(a).as(runResult)
+    override def runStreamingWithStdin(
+      a: List[String],
+      c: String,
+      e: Map[String, String],
+      stdin: String,
+    ): ZStream[Any, LlmError, String] =
+      ZStream.fromZIO(seenArgv.set(a)).drain ++ ZStream.succeed(streamLine)
+
   private def codexFixtureLines: List[String] =
     val src = Source.fromResource("codex-stream.jsonl")
     try src.getLines().toList
@@ -183,6 +207,22 @@ object CodexConnectorSpec extends ZIOSpecDefault:
         !argv.contains("go"),
         stdin == "go",
       )
+    },
+    test("a permissive object schema (no properties) skips --output-schema, using the prompt-hint path") {
+      // {"type":"object"} carries nothing to enforce: codex strict mode needs properties + additionalProperties:false
+      // + required, so passing it via --output-schema gets rejected with invalid_json_schema. Fall back to the
+      // prompt-hint `complete` path instead. (Repro: Planner.freeform for sum-typed structured calls.)
+      val permissive = Json.Obj("type" -> Json.Str("object"))
+      val streamLine = """{"type":"item.completed","item":{"type":"agent_message","text":"{\"summary\":\"x\"}"}}"""
+      for
+        seenArgv <- Ref.make(List.empty[String])
+        conn      = CodexConnector.make(
+                      CliConnectorConfig(ConnectorId.Codex),
+                      new ArgvRecordingExec(seenArgv, ProcessResult(List("""{"summary":"x"}"""), 0), streamLine),
+                    )
+        out      <- conn.executeStructured[ReplyStub]("go", permissive)
+        argv     <- seenArgv.get
+      yield assertTrue(out == ReplyStub("x"), !argv.contains("--output-schema"))
     },
     test("strictSchema adds additionalProperties:false + required to every object, recursively") {
       val schema                          = Json.Obj(

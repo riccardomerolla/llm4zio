@@ -72,15 +72,15 @@ object CodexConnector:
       override def executeStructured[A: JsonCodec](prompt: String, schema: JsonSchema): IO[LlmError, A] =
         executeStructuredWithUsage[A](prompt, schema).map(_._1)
 
-      // Codex enforces a JSON Schema natively via `--output-schema <file>`. For a non-trivial schema, write it to a
-      // temp file, constrain the model, and capture token usage from the JSONL stream. Trivial/empty schemas use the
-      // prompt-hint + non-streaming `complete` path (no usage available there).
+      // Codex enforces a JSON Schema natively via `--output-schema <file>`. For an enforceable schema, write it to a
+      // temp file, constrain the model, and capture token usage from the JSONL stream. Non-enforceable schemas (no
+      // properties to constrain — e.g. a permissive `{"type":"object"}` or `{}`) use the prompt-hint + non-streaming
+      // `complete` path (no usage available there): codex rejects such schemas with invalid_json_schema.
       override def executeStructuredWithUsage[A: JsonCodec](
         prompt: String,
         schema: JsonSchema,
       ): IO[LlmError, (A, Option[TokenUsage], Option[String])] =
-        val s = schema.toString
-        if s.isEmpty || s == "{}" then
+        if !CodexConnector.enforceable(schema) then
           complete(StructuredOutputs.withSchemaHint(prompt, schema))
             .flatMap(text => StructuredOutputs.parseFromText[A](text, schema))
             .map(a => (a, None, None))
@@ -153,6 +153,20 @@ object CodexConnector:
               CliStreamJson.field(json, "error").flatMap(e => CliStreamJson.str(e, "message")).getOrElse("turn failed")
             List(LlmChunk(delta = "", metadata = Map("codexError" -> msg)))
           case _                      => Nil
+
+  /** Whether a schema can be enforced by codex's `--output-schema` (OpenAI strict structured output). That mode needs a
+    * root object with at least one property (it then requires `additionalProperties:false` + `required`). A permissive
+    * schema like `{"type":"object"}` (the shape [[llm4zio.flow.Planner]] uses for sum-typed calls) or `{}` carries
+    * nothing to constrain, and codex rejects it with `invalid_json_schema` — such schemas must take the prompt-hint
+    * path.
+    */
+  def enforceable(schema: Json): Boolean = schema match
+    case Json.Obj(fields) =>
+      fields.exists {
+        case ("properties", Json.Obj(props)) => props.nonEmpty
+        case _                               => false
+      }
+    case _                => false
 
   /** Make a JSON Schema compliant with codex's OpenAI strict structured-output mode: every object gets
     * `additionalProperties: false` and lists all of its properties in `required`. Recurses through `properties` values

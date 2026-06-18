@@ -101,9 +101,11 @@ object Planner:
       .mapError(e => FlowError.Llm(e.toString))
 
   val interactiveInstructions: String =
-    """You are an interactive planner. If the request is underspecified, ask ONE
-      |clarifying question; otherwise propose the plan. Respond ONLY with JSON
-      |using a "kind" discriminator, exactly one of:
+    """You are an interactive planner. Before proposing a plan, ask at least one
+      |clarifying question UNLESS the request is already fully specified and
+      |unambiguous — prefer asking whenever scope, priorities, or constraints are
+      |open to interpretation, even if you could guess. Ask ONE question at a time.
+      |Respond ONLY with JSON using a "kind" discriminator, exactly one of:
       |  {"kind":"AskUser","question":"..."}
       |  {"kind":"Proposed","plan":{"epicId":"kebab-id","tasks":[{"title":"...","description":"...","completed":false}]}}""".stripMargin
 
