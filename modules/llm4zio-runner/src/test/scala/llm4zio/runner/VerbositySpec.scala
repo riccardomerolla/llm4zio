@@ -1,10 +1,10 @@
 package llm4zio.runner
 
+import zio.Scope
 import zio.test.*
 
 import llm4zio.core.TokenUsage
 import llm4zio.flow.FlowEvent
-import zio.Scope
 
 object VerbositySpec extends ZIOSpecDefault:
   private val tokens                                           = FlowEvent.TokensUsed("coder", Some("m"), TokenUsage(1, 2, 3))
