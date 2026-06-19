@@ -21,6 +21,7 @@ object DefaultFlowContext:
     reviewers: List[LlmService] = Nil,
     usageLimit: UsageLimitPolicy = UsageLimitPolicy.off,
     retries: Int = 3,
+    flakyRetries: Int = 6,
     coderCapabilities: ConnectorCapabilities = ConnectorCapabilities(),
   ): UIO[(FlowContext, FlowEvents.Hub)] =
     FlowEvents.hub().map { hub =>
@@ -28,7 +29,7 @@ object DefaultFlowContext:
       def tap(svc: LlmService, agent: String): LlmService =
         // Retry transient provider blips beneath the tap (so a retried stream re-emits cleanly), then expose events,
         // then layer usage-cap waiting on top. `retries` (LLM4ZIO_RETRIES) sets the count; 0 = fail fast.
-        val retried = TransientRetry(svc, maxRetries = retries)
+        val retried = TransientRetry(svc, maxRetries = retries, flakyRetries = flakyRetries)
         val tapped  = EventTappingService(retried, agent, hub, workDir)
         if usageLimit.enabled then UsageLimitAware(tapped, usageLimit) else tapped
       val reasoningT   = tap(reasoning, "reasoning")
@@ -59,6 +60,7 @@ object DefaultFlowContext:
     reviewerCfgs: List[ConnectorConfig] = Nil,
     usageLimit: UsageLimitPolicy = UsageLimitPolicy.off,
     retries: Int = 3,
+    flakyRetries: Int = 6,
   ): ZIO[HttpClient, LlmError, (FlowContext, FlowEvents.Hub)] =
     ZIO.serviceWithZIO[HttpClient] { http =>
       val registry = ConnectorFactories.createRegistry(http, LiveCliProcessExecutor.instance)
@@ -66,7 +68,7 @@ object DefaultFlowContext:
         reasoningC <- registry.resolve(prepare(reasoning, workDir))
         coderC     <- registry.resolveCli(coder.copy(workingDir = Some(workDir.toString)))
         reviewers  <- ZIO.foreach(reviewerCfgs)(cfg => registry.resolve(prepare(cfg, workDir)))
-        bundle     <- make(reasoningC, coderC, workDir, reviewers, usageLimit, retries, coderC.capabilities)
+        bundle     <- make(reasoningC, coderC, workDir, reviewers, usageLimit, retries, flakyRetries, coderC.capabilities)
       yield bundle
     }
 
