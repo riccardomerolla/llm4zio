@@ -18,14 +18,21 @@ object ReadOnlySpec extends ZIOSpecDefault:
   private val ctx = CliContext("/work", "/repo")
 
   def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("read-only CLI mapping")(
-    test("claude readOnly → --permission-mode plan, overriding the edit flag") {
+    test("claude readOnly → default mode + edit tools disallowed, overriding the edit flag") {
       val argv = ClaudeCliConnector
         .make(
           CliConnectorConfig(ConnectorId.ClaudeCli, flags = Map("permission-mode" -> "acceptEdits"), readOnly = true),
           noopExec,
         )
         .buildArgv("p", ctx)
-      assertTrue(argv.containsSlice(List("--permission-mode", "plan")), !argv.contains("acceptEdits"))
+      assertTrue(
+        argv.containsSlice(List("--permission-mode", "default")),
+        argv.containsSlice(List("--disallowed-tools", "Write,Edit,NotebookEdit")),
+        !argv.contains("acceptEdits"),
+        !argv.contains("plan"),
+        // disallowed-tools sorts before --permission-mode, so its value can't swallow the trailing prompt
+        argv.last == "p",
+      )
     },
     test("claude without readOnly keeps the configured edit flag") {
       val argv = ClaudeCliConnector
