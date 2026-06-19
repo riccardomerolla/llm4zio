@@ -78,8 +78,11 @@ val comprehensionSkill =
     |  component and cite the file, so the docs form a connected set rather than islands.
     |- Use ONLY the repository and these instructions — do not invoke any environment, user, or
     |  IDE-provided skill or tool beyond reading the repo.
-    |- Output ONLY the requested deliverable: no narration, no "I'll use…/I'm reading…" preamble,
-    |  no tool-call commentary. Begin directly with the document (or JSON).""".stripMargin
+    |- You CANNOT write or save files and must not try — the runtime saves your reply for you.
+    |  Produce the COMPLETE document as your reply text; never offer to "write the file" or ask for
+    |  approval to save. Output ONLY the deliverable: no narration, no "I'll use…/I'm reading…"
+    |  preamble, no tool-call commentary. For a prose document, begin with a single top-level
+    |  `# ` heading that names it, then the body. For JSON, output only the JSON object.""".stripMargin
 
 val discoverInstructions =
   """You are a code archaeologist. Explore this repository and write an orientation brief for a
