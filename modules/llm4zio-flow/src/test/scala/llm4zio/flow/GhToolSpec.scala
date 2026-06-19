@@ -48,4 +48,7 @@ object GhToolSpec extends ZIOSpecDefault:
       val json = """{"title":"Bug","body":"It breaks","author":{"login":"octocat"}}"""
       assertTrue(GhTool.parseIssue(json) == Right(Issue("Bug", "It breaks", "octocat")))
     },
+    test("prViewArgs queries the current branch's PR url") {
+      assertTrue(GhTool.prViewArgs == List("pr", "view", "--json", "url", "--jq", ".url"))
+    },
   )

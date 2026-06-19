@@ -34,7 +34,7 @@ object Planner:
   ): IO[FlowError, Plan] =
     reasoning
       .executeStructured[Plan](s"$instructions\n\nRequest:\n$prompt", schema)
-      .mapError(e => FlowError.Llm(e.toString))
+      .mapError(e => FlowError.Llm(e.toString, Some(e)))
 
   val reviewInstructions: String =
     """Review the draft implementation plan below and return an improved version. Focus on four dimensions:
@@ -55,7 +55,7 @@ object Planner:
   ): IO[FlowError, Plan] =
     reasoning
       .executeStructured[Plan](s"$instructions\n\nDraft plan:\n${plan.render}", schema)
-      .mapError(e => FlowError.Llm(e.toString))
+      .mapError(e => FlowError.Llm(e.toString, Some(e)))
       .map(_.copy(brief = plan.brief)) // a review must not drop an already-attached brief
 
   val briefInstructions: String =
@@ -72,7 +72,7 @@ object Planner:
     Streaming
       .collect(reasoning.executeStream(s"$instructions\n\nChange request:\n$prompt"))
       .map(_.content.strip)
-      .mapError(e => FlowError.Llm(e.toString))
+      .mapError(e => FlowError.Llm(e.toString, Some(e)))
 
   /** Attach a freshly-written codebase [[brief]] to `plan`, so `plan.taskPrompt` prepends it to every task. */
   def briefed(
@@ -99,7 +99,7 @@ object Planner:
   ): IO[FlowError, Verdict[Plan]] =
     reasoning
       .executeStructured[Verdict[Plan]](s"$instructions\n\nRequest:\n$prompt", freeform)
-      .mapError(e => FlowError.Llm(e.toString))
+      .mapError(e => FlowError.Llm(e.toString, Some(e)))
 
   val interactiveInstructions: String =
     """You are an interactive planner. Before proposing a plan, ask at least one
@@ -130,7 +130,7 @@ object Planner:
       else
         reasoning
           .executeStructured[PlanningStep](turnPrompt(qa), freeform)
-          .mapError(e => FlowError.Llm(e.toString))
+          .mapError(e => FlowError.Llm(e.toString, Some(e)))
           .flatMap {
             case PlanningStep.Proposed(plan) => ZIO.succeed(plan)
             case PlanningStep.AskUser(q)     => interaction.ask(q).flatMap(a => loop(qa :+ (q -> a), turn + 1))
@@ -154,7 +154,7 @@ object Planner:
   ): IO[FlowError, Triage] =
     reasoning
       .executeStructured[Triage](s"$instructions\n\nTitle: $title\n\n$body", freeform)
-      .mapError(e => FlowError.Llm(e.toString))
+      .mapError(e => FlowError.Llm(e.toString, Some(e)))
 
 /** Chain plan transforms off the planning effect, orca-style:
   * `Planner.from(reasoning, prompt).reviewed(reasoning).briefed(reasoning, prompt)`. Thin sugar over the

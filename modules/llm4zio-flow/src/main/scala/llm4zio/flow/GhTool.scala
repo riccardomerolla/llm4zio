@@ -28,17 +28,31 @@ enum BuildOutcome:
 /** Thin GitHub CLI (`gh`) wrapper over zio-process, bound to a working directory. */
 final class GhTool(workDir: Path):
 
-  /** Open a pull request via `gh pr create`; parses the printed URL. */
+  /** Open a pull request, or return the existing open PR for the current branch if one is already there. Find-or-create
+    * makes the step idempotent, so a re-run (e.g. auto-resume) past PR creation does not fail with "a pull request
+    * already exists".
+    */
   def createPr(
     title: String,
     body: String,
     base: Option[String] = None,
     draft: Boolean = false,
   ): IO[FlowError, PullRequest] =
-    Proc.runOrFail("gh", GhTool.prCreateArgs(title, body, base, draft), workDir).flatMap { out =>
-      ZIO
-        .fromOption(out.linesIterator.flatMap(PullRequest.fromUrl).nextOption())
-        .orElseFail(FlowError.Process("gh pr create", s"could not parse a PR URL from: $out"))
+    findOpenPr.flatMap {
+      case Some(existing) =>
+        ZIO.logInfo(s"reusing existing PR ${existing.shortRef}").as(existing)
+      case None           =>
+        Proc.runOrFail("gh", GhTool.prCreateArgs(title, body, base, draft), workDir).flatMap { out =>
+          ZIO
+            .fromOption(out.linesIterator.flatMap(PullRequest.fromUrl).nextOption())
+            .orElseFail(FlowError.Process("gh pr create", s"could not parse a PR URL from: $out"))
+        }
+    }
+
+  /** The open PR for the current branch, if any (`gh pr view` exits non-zero when there is none). */
+  private def findOpenPr: IO[FlowError, Option[PullRequest]] =
+    Proc.run("gh", GhTool.prViewArgs, workDir).map { r =>
+      if r.ok then r.stdout.linesIterator.flatMap(PullRequest.fromUrl).nextOption() else None
     }
 
   /** Read an issue via `gh issue view --json`. Idempotent, so a transient gh/GitHub blip (e.g. a dropped GraphQL
@@ -81,6 +95,9 @@ object GhTool:
   /** Bounded backoff for idempotent `gh` reads — absorbs a transient GitHub/network blip without aborting the flow. */
   private[flow] val transientRead: Schedule[Any, FlowError, Any] =
     Schedule.recurs(3) && Schedule.exponential(1.second)
+
+  /** `gh` argv to read the current branch's PR URL (empty output / non-zero exit when there is none). Pure. */
+  val prViewArgs: List[String] = List("pr", "view", "--json", "url", "--jq", ".url")
 
   /** The `gh` argv for opening a PR — pure, so it can be unit-tested. */
   def prCreateArgs(title: String, body: String, base: Option[String], draft: Boolean): List[String] =

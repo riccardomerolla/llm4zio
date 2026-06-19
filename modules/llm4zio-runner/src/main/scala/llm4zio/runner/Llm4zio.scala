@@ -67,6 +67,7 @@ object Llm4zio:
                        flakyRetries = FlakyRetryEnv.parse(sys.env.get("LLM4ZIO_FLAKY_RETRIES"))
                        traceKeep    = TraceKeepEnv.parse(sys.env.get("LLM4ZIO_TRACE_KEEP"))
                        level        = verbosity.getOrElse(VerbosityEnv.parse(sys.env.get("LLM4ZIO_VERBOSITY")))
+                       autoResume   = AutoResumeEnv.parse(sys.env.get("LLM4ZIO_AUTO_RESUME"))
                        bundle      <- DefaultFlowContext.build(reasoning, coder, workDir, reviewers, policy, retries, flakyRetries)
                        (ctx, hub)   = bundle
                        tracker     <- CostTracker.make
@@ -84,11 +85,13 @@ object Llm4zio:
                                       )
                        _           <- {
                          given FlowEvents = hub
-                         withUsageLimitRetry(policy)(
-                           body(ctx).mapError {
-                             case fe: FlowError => fe
-                             case other         => FlowError.Llm(other.toString)
-                           }
+                         AutoResume.withAutoResume(autoResume)(
+                           withUsageLimitRetry(policy)(
+                             body(ctx).mapError {
+                               case fe: FlowError => fe
+                               case other         => FlowError.Llm(other.toString)
+                             }
+                           )
                          ).unit
                            // On exit, first drain the hub so trailing events (notably a final StageFailed) render
                            // rather than being interrupted away; on failure, follow with an authoritative ✖ banner
