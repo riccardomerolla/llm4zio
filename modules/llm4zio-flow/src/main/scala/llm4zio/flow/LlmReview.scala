@@ -67,11 +67,22 @@ object Reviewers:
   lazy val minimal: List[Reviewer] =
     List("code-functionality", "readability", "test").map(Reviewer.fromResource)
 
-  /** An opt-in lens that polices test-driven *discipline* (test integrity, fixture theater, wiring,
-    * red-for-the-right-reason, traceability) rather than coverage. Not in [[all]]/[[minimal]] — add it explicitly to a
-    * roster, e.g. `Reviewers.minimal :+ Reviewers.tddDiscipline`.
+  /** An opt-in lens that polices test-driven *discipline* (test integrity, self-proving fixtures, hollow tests, wiring,
+    * red-for-the-right-reason, over-specification) rather than coverage. Not in [[all]]/[[minimal]] — add it explicitly
+    * to a roster, e.g. `Reviewers.minimal :+ Reviewers.tddDiscipline`.
     */
   lazy val tddDiscipline: Reviewer = Reviewer.fromResource("tdd-discipline")
+
+  /** An opt-in lens for business-language purity in behavior-bearing artifacts (tests, scenarios, acceptance criteria,
+    * domain names): flags technical/transport jargon and vague, non-concrete examples. Not in [[all]]/[[minimal]].
+    */
+  lazy val domainLanguage: Reviewer = Reviewer.fromResource("domain-language")
+
+  /** An opt-in lens that checks operations honor their declared effect shape: read-only stays read-only, previews
+    * return a plan value instead of performing effects, and dependencies are narrow injected capabilities rather than
+    * ambient access. Not in [[all]]/[[minimal]].
+    */
+  lazy val effectShape: Reviewer = Reviewer.fromResource("effect-shape")
 
   val schema: JsonSchema =
     Json.Obj(
