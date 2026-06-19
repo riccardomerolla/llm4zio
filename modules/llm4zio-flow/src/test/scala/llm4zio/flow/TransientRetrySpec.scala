@@ -29,6 +29,20 @@ object TransientRetrySpec extends ZIOSpecDefault:
     ): IO[LlmError, (A, Option[TokenUsage], Option[String])] = ZIO.fail(LlmError.InvalidRequestError("n/a"))
     def isAvailable: UIO[Boolean]                                                              = ZIO.succeed(true)
 
+  // A stream that fails `failTimes` times with `failWith`, then emits a single "ok" chunk. Counts attempts in `calls`.
+  final class CountingStream(calls: Ref[Int], failWith: LlmError, failTimes: Int) extends LlmService:
+    def executeStream(prompt: String): Stream[LlmError, LlmChunk]                              =
+      ZStream.unwrap(calls.updateAndGet(_ + 1).map { n =>
+        if n <= failTimes then ZStream.fail(failWith)
+        else ZStream.succeed(LlmChunk(delta = "ok"))
+      })
+    def executeStreamWithHistory(messages: List[Message]): Stream[LlmError, LlmChunk]          = executeStream("")
+    def executeWithTools(prompt: String, tools: List[AnyTool]): IO[LlmError, ToolCallResponse] =
+      ZIO.fail(LlmError.InvalidRequestError("n/a"))
+    def executeStructured[A: JsonCodec](prompt: String, schema: JsonSchema): IO[LlmError, A]   =
+      ZIO.fail(LlmError.InvalidRequestError("n/a"))
+    def isAvailable: UIO[Boolean]                                                              = ZIO.succeed(true)
+
   def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("TransientRetry")(
     suite("isTransient")(
       test("classifies timeouts, rate limits, and 5xx/connection-reset provider errors as transient") {
@@ -40,12 +54,6 @@ object TransientRetrySpec extends ZIOSpecDefault:
           // gemini's catch-all glitch, now retryable
           TransientRetry.isTransient(
             LlmError.ProviderError("Gemini CLI returned an error: [API Error: An unknown error occurred.]")
-          ),
-          // gemini intermittently closes the stream with no candidates / a half-formed tool call — a fresh run recovers
-          TransientRetry.isTransient(
-            LlmError.ProviderError(
-              "Gemini CLI stream error: Invalid stream: The model returned an empty response or malformed tool call"
-            )
           ),
         )
       },
@@ -109,5 +117,47 @@ object TransientRetrySpec extends ZIOSpecDefault:
         tries           <- attempts.get
         infos           <- events.recorded
       yield assertTrue(result.isFailure, tries == 1, infos.isEmpty)
+    },
+    test("isFlakyStream matches empty-stream signals; isTransient no longer does") {
+      val flaky = LlmError.ProviderError("Gemini CLI stream error: Invalid stream: empty response", None)
+      assertTrue(
+        TransientRetry.isFlakyStream(flaky),
+        !TransientRetry.isTransient(flaky),
+        !TransientRetry.isFlakyStream(LlmError.ProviderError("connection reset", None)),
+        TransientRetry.isTransient(LlmError.ProviderError("connection reset", None)),
+      )
+    },
+    test("a flaky stream is retried on its own budget, independent of maxRetries") {
+      // maxRetries = 0 (transient budget exhausted) but flakyRetries = 2 => two flaky retries still happen.
+      for
+        events          <- FlowEvents.collecting
+        given FlowEvents = events
+        calls           <- Ref.make(0)
+        svc              = new TransientRetrySpec.CountingStream(
+                             calls,
+                             failWith = LlmError.ProviderError(
+                               "Gemini CLI stream error: Invalid stream: empty response",
+                               None,
+                             ),
+                             failTimes = 2,
+                           )
+        rt               = TransientRetry(svc, maxRetries = 0, flakyRetries = 2, flakyDelay = zio.Duration.Zero)
+        out             <- rt.executeStream("p").runCollect
+        n               <- calls.get
+      yield assertTrue(out.map(_.delta).mkString == "ok", n == 3) // 2 failures + 1 success
+    },
+    test("a flaky stream past its budget fails") {
+      for
+        events          <- FlowEvents.collecting
+        given FlowEvents = events
+        calls           <- Ref.make(0)
+        svc              = new TransientRetrySpec.CountingStream(
+                             calls,
+                             failWith = LlmError.ProviderError("Invalid stream: empty response", None),
+                             failTimes = 5,
+                           )
+        rt               = TransientRetry(svc, maxRetries = 0, flakyRetries = 2, flakyDelay = zio.Duration.Zero)
+        exit            <- rt.executeStream("p").runCollect.exit
+      yield assertTrue(exit.isFailure)
     },
   )
