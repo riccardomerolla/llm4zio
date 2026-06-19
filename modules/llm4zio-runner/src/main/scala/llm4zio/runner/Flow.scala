@@ -33,11 +33,12 @@ def flow(
   defaultPrompt: Option[String] = None,
   reviewers: List[ConnectorConfig] = Nil,
   usageLimit: UsageLimitPolicy = UsageLimitPolicy.off,
+  verbosity: Option[Verbosity] = None,
 )(
   body: FlowContext ?=> ZIO[Any, FlowError, Any]
 ): Unit =
   val effect =
-    Llm4zio.script(args.toList, coder, reasoning, defaultPrompt, reviewers, usageLimit)(body)
+    Llm4zio.script(args.toList, coder, reasoning, defaultPrompt, reviewers, usageLimit, verbosity)(body)
   Unsafe.unsafe { implicit unsafe =>
     val runtime = Runtime.default
     val fiber   = runtime.unsafe.fork(effect)

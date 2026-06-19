@@ -17,6 +17,7 @@ final case class Palette(enabled: Boolean):
   def toolCall(name: String, args: String): String =
     val head = paint(fansi.Color.Yellow ++ fansi.Bold.On, "● " + name)
     if args.isEmpty then head else head + " " + paint(fansi.Color.DarkGray, args)
+  def raw(s: String): String                       = paint(fansi.Color.DarkGray, s)
 
 object Palette:
   /** Decide color from environment: disabled if `NO_COLOR` is set or stdout is not a TTY. */
