@@ -33,9 +33,13 @@ final class ReplayConnector(turns: List[ReplayTurn], cursor: Ref[Int]) extends L
       }
     )
 
+  // Replay is order-based: the recorded turn is chosen by call order, not prompt/history content, so the messages are
+  // intentionally discarded and this consumes the next turn just like executeStream.
   override def executeStreamWithHistory(messages: List[Message]): Stream[LlmError, LlmChunk] =
     executeStream("")
 
+  // Tool-calling is not replayed (v1 records no tool-call responses); this fails WITHOUT advancing the cursor, so a
+  // recorded flow that mixed tool-calls with streams would desync — out of scope for the order-based model.
   override def executeWithTools(prompt: String, tools: List[AnyTool]): IO[LlmError, ToolCallResponse] =
     ZIO.fail(LlmError.InvalidRequestError("replay does not support tool calling"))
 
