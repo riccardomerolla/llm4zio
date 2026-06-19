@@ -12,9 +12,10 @@ import llm4zio.tools.JsonSchema
 object Planner:
 
   val defaultInstructions: String =
-    """You are a planning assistant. Break the user's request into an ordered list
-      |of small, independently-implementable tasks. Choose a short kebab-case epicId
-      |for the overall change. Respond ONLY with JSON of the form:
+    """You are a planning assistant. Break the user's request into an ordered list of small,
+      |independently-implementable tasks — each a thin slice that delivers an observable outcome
+      |(split by outcome, not by technical layer), described in terms of behaviour, not mechanism.
+      |Choose a short kebab-case epicId for the overall change. Respond ONLY with JSON of the form:
       |{"epicId":"kebab-case-id","tasks":[{"title":"...","description":"...","completed":false}]}""".stripMargin
 
   /** JSON-schema for the Plan shape, derived from the [[Plan]] type (used by [[from]]). */
