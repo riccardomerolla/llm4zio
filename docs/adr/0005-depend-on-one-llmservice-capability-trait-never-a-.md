@@ -1,0 +1,12 @@
+# 5. Depend on one LlmService capability trait, never a concrete provider
+
+- Status: accepted
+
+## Context
+The library must talk to many backends — HTTP APIs (OpenAI, Anthropic, Gemini, LM Studio, Ollama) and CLI coding agents (claude, codex, gemini, pi, opencode, copilot) — plus a deterministic mock for tests. Callers (planner, chat, reviewers) should not know or care which backend is behind them, and swapping providers should not ripple through the flow code.
+
+## Decision
+Define a single capability trait LlmService (core/LlmService.scala) exposing executeStream, executeStreamWithHistory, executeWithTools, executeStructured/WithUsage, and isAvailable. All callers depend only on this trait. LlmService.fromConfig is a ZLayer that builds the right provider by matching on LlmProvider, and ConnectorRegistry/ConnectorFactories resolve a config to a live instance. The flow layer references the two seats (reasoning, coder) purely as LlmService.
+
+## Consequences
+Providers are interchangeable and tests use a deterministic MockProvider for the same interface. New providers are added without touching flow logic. The trait becomes a stable published contract that must evolve carefully, and any backend-specific feature must either fit the trait or be surfaced via capabilities (see ADR 6).
