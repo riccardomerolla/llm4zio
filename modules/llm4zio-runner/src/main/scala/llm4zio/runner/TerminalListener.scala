@@ -25,7 +25,7 @@ object TerminalListener:
       // Keep the assistant's own line breaks (sanitize preserves tabs/newlines); the renderer hang-indents the block.
       case FlowEvent.AssistantMessage(text)      => palette.assistant(s(text).strip)
       case FlowEvent.TokensUsed(agent, _, usage) =>
-        palette.info(s"tokens: $agent ${usage.prompt} in / ${usage.completion} out")
+        palette.info(s"tokens: ${s(agent)} ${usage.prompt} in / ${usage.completion} out")
 
   /** Indent a (possibly multi-line) rendered entry under its tree depth: the first line at `depth`, continuation lines
     * hung two columns further so wrapped prose aligns under the text rather than the glyph. Single-line entries are

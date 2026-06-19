@@ -75,6 +75,8 @@ object Llm4zio:
                        // subscriber stalls, which paces output rather than dropping events.
                        consumed    <- TerminalListener.consumeTo(hub, palette, surface, level)
                        _           <- tracker.consume(hub)
+                       // At debug, raw provider lines are teed here through the same surface lock the animator/tree use,
+                       // so a high-volume stream-json firehose can pace debug output (bounded by the hub's back-pressure).
                        rawSink      = Option.when(level == Verbosity.Debug)((l: String) => surface.log(palette.raw(l)))
                        recorder    <- FlowRecorder.install(hub, workDir.resolve(".llm4zio"), traceKeep, rawSink)
                        _           <- ZIO.when(level == Verbosity.Debug)(
