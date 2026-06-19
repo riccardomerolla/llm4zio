@@ -35,6 +35,12 @@
   * — it documents the project, not the tool. The same paths are added to `.gitignore` so they never
   * land in the doc commits.
   *
+  * Methodology lives in a library-defined `comprehensionSkill` bundled in this script (not an
+  * ambient codex/claude/IDE skill): ground claims in code, cite repo-root-relative paths (never
+  * absolute), cover the whole system (config, errors, observability, concurrency, utilities — not
+  * just the happy path), don't overstate, and emit only the final artifact (no narration). Every
+  * phase prompt prepends it; prose output is also defensively trimmed to its first heading.
+  *
   * Seed a starter:  examples/seed.sh reverse-engineer
   * Run anywhere:    cd <any repo> && scala-cli run reverse-engineer.sc -- "for a new contributor"
   *
@@ -62,6 +68,27 @@ val excludeNote =
     "study. Do not read, describe, or reference the `reverse-engineer.sc` script, the `.scala-build/` " +
     "directory, or anything from the llm4zio library, ZIO, or scala-cli used to generate these docs. " +
     "Document only the actual project."
+
+// A library-defined skill bundled with the example — NOT an ambient codex/claude/IDE skill. It
+// rides inside the script (the only thing that travels when the example is copied into a repo), so
+// the methodology is version-controlled and deterministic. Prepended to every phase prompt.
+val comprehensionSkill =
+  """SKILL — repository comprehension. Apply this in every phase:
+    |- Work from evidence: inventory the repo, then read entry points, public APIs, and tests.
+    |  Ground every claim in code — never rely on names, prose, or assumptions alone.
+    |- Cite files with paths RELATIVE TO THE REPOSITORY ROOT (e.g. `src/foo/Bar.ext:12`). Never
+    |  use absolute filesystem paths.
+    |- Cover the whole system, not just the primary happy path: configuration, error handling,
+    |  logging/metrics/observability, concurrency, persistence, public utility/library APIs, and
+    |  extension points — not only the main feature flow.
+    |- Distinguish what is actually wired/registered/used from what merely exists in the code;
+    |  never overstate capabilities. Where behavior varies across implementations, present a small
+    |  matrix instead of one blanket claim.
+    |- Separate domain logic from infrastructure and side effects.
+    |- Use ONLY the repository and these instructions — do not invoke any environment, user, or
+    |  IDE-provided skill or tool beyond reading the repo.
+    |- Output ONLY the requested deliverable: no narration, no "I'll use…/I'm reading…" preamble,
+    |  no tool-call commentary. Begin directly with the document (or JSON).""".stripMargin
 
 val discoverInstructions =
   """You are a code archaeologist. Explore this repository and write an orientation brief for a
@@ -131,6 +158,13 @@ def readFile(path: Path): IO[FlowError, String] =
     .attemptBlocking(Files.readString(path))
     .mapError(e => FlowError.Persistence(s"failed to read $path", Some(e)))
 
+// Belt-and-suspenders for the "no preamble" rule: if the model still prefixed the artifact with
+// narration, drop everything before the first Markdown heading. Falls back to the raw text if the
+// document has no heading at all.
+def stripNarration(markdown: String): String =
+  val body = markdown.linesIterator.dropWhile(l => !l.trim.startsWith("#")).mkString("\n").strip
+  if body.isEmpty then markdown.strip else body
+
 // Add any missing `entries` to `.gitignore` so `git add -A` never sweeps the tooling (the script
 // and its `.scala-build/` deps) into the doc commits — which would also pollute later phases.
 def ensureGitignored(gitignore: Path, entries: List[String]): IO[FlowError, Unit] =
@@ -197,9 +231,10 @@ flow(
         case true  => readFile(path) // resume — reuse the existing artifact
         case false =>
           for
-            text <- Planner.brief(svc, input, instructions)
-            _    <- writeIfAbsent(path, text)
-            _    <- git.commitAll(s"docs: ${rel}").unit
+            raw <- Planner.brief(svc, input, s"$comprehensionSkill\n\n$instructions")
+            text = stripNarration(raw)
+            _   <- writeIfAbsent(path, text)
+            _   <- git.commitAll(s"docs: ${rel}").unit
           yield text
       }
     }
@@ -234,7 +269,7 @@ flow(
                        for
                          set <- reasoning
                                   .executeStructured[AdrSet](
-                                    s"$adrInstructions\n\nArchitecture:\n$architect\n\nDomain model:\n$domain",
+                                    s"$comprehensionSkill\n\n$adrInstructions\n\nArchitecture:\n$architect\n\nDomain model:\n$domain",
                                     adrSchema,
                                   )
                                   .mapError(e => FlowError.Llm(e.toString))
