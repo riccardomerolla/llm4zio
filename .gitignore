@@ -32,4 +32,4 @@ plan.md
 # Claude Code local session state (plans, worktrees, settings)
 .claude/
 .scala-build/
-reverse-engineer.sc
+.bsp/
