@@ -61,5 +61,39 @@ final case class TraceLine(
 ) derives JsonEncoder:
   def toJson: String = JsonEncoder[TraceLine].encodeJson(this, None).toString
 
-// runId + prune land here in Task 4.
-object FlowTrace
+object FlowTrace:
+  import java.nio.file.{ Files, Path }
+  import java.time.ZoneId
+  import java.time.format.DateTimeFormatter
+  import scala.jdk.CollectionConverters.*
+
+  import zio.*
+
+  private val runIdFormat: DateTimeFormatter =
+    DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS").withZone(ZoneId.systemDefault)
+
+  /** A timestamp-based run id, unique per run at millisecond resolution. */
+  val runId: UIO[String] = Clock.instant.map(runIdFormat.format)
+
+  /** Keep the newest `keep` `trace-*.jsonl` files in `dir` by mtime; delete the rest. Best-effort: any I/O error is
+    * swallowed (retention must never break a run).
+    */
+  def prune(dir: Path, keep: Int): UIO[Unit] =
+    ZIO
+      .attemptBlocking {
+        if Files.isDirectory(dir) then
+          val traces = Files
+            .list(dir)
+            .iterator
+            .asScala
+            .filter { p =>
+              val n = p.getFileName.toString
+              n.startsWith("trace-") && n.endsWith(".jsonl")
+            }
+            .toList
+          traces
+            .sortBy(p => -Files.getLastModifiedTime(p).toMillis)
+            .drop(math.max(0, keep))
+            .foreach(Files.deleteIfExists(_))
+      }
+      .ignore

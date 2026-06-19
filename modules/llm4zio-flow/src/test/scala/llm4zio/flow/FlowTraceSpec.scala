@@ -1,9 +1,9 @@
 package llm4zio.flow
 
+import zio.*
 import zio.test.*
 
 import llm4zio.core.TokenUsage
-import zio.Scope
 
 object FlowTraceSpec extends ZIOSpecDefault:
   def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("FlowTrace")(
@@ -40,6 +40,37 @@ object FlowTraceSpec extends ZIOSpecDefault:
         line.contains("\"kind\":\"Info\""),
         line.contains("\"message\":\"hi\""),
         !line.contains("\n"),
+      )
+    },
+    test("runId is a timestamp slug of the expected shape") {
+      for id <- FlowTrace.runId
+      yield assertTrue(id.matches("""\d{8}-\d{6}-\d{3}"""))
+    },
+    test("prune keeps the newest `keep` trace files and deletes older ones") {
+      import java.nio.file.{ Files, attribute }
+      for
+        dir   <- ZIO.attemptBlocking(Files.createTempDirectory("prune-test")).orDie
+        _     <- ZIO.attemptBlocking {
+                   // three trace files + one unrelated file; stamp distinct mtimes
+                   List("trace-a.jsonl" -> 1000L, "trace-b.jsonl" -> 2000L, "trace-c.jsonl" -> 3000L)
+                     .foreach {
+                       case (name, ms) =>
+                         val p = dir.resolve(name)
+                         Files.writeString(p, "x")
+                         Files.setLastModifiedTime(p, attribute.FileTime.fromMillis(ms))
+                     }
+                   Files.writeString(dir.resolve("keep-me.txt"), "x")
+                 }.orDie
+        _     <- FlowTrace.prune(dir, keep = 1)
+        names <- ZIO.attemptBlocking {
+                   import scala.jdk.CollectionConverters.*
+                   Files.list(dir).iterator.asScala.map(_.getFileName.toString).toSet
+                 }.orDie
+      yield assertTrue(
+        names.contains("trace-c.jsonl"), // newest kept
+        !names.contains("trace-a.jsonl"),
+        !names.contains("trace-b.jsonl"),
+        names.contains("keep-me.txt"), // non-trace files untouched
       )
     },
   )
