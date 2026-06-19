@@ -42,6 +42,12 @@ object FlowTraceSpec extends ZIOSpecDefault:
         !line.contains("\n"),
       )
     },
+    test("TraceLine round-trips through JSON (encode then decode)") {
+      import zio.json.*
+      val line    = TraceLine(3L, "2026-06-19T10:00:00Z", "rid", "AssistantMessage", Map("text" -> "hi there"))
+      val decoded = line.toJson.fromJson[TraceLine]
+      assertTrue(decoded == Right(line))
+    },
     test("runId is a timestamp slug of the expected shape") {
       for id <- FlowTrace.runId
       yield assertTrue(id.matches("""\d{8}-\d{6}-\d{3}"""))

@@ -58,7 +58,7 @@ final case class TraceLine(
   runId: String,
   kind: String,
   fields: Map[String, String],
-) derives JsonEncoder:
+) derives JsonCodec:
   def toJson: String = JsonEncoder[TraceLine].encodeJson(this, None).toString
 
 object FlowTrace:
