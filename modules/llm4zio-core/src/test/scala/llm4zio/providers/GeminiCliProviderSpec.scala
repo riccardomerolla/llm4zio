@@ -1217,7 +1217,6 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
     ),
     test("executeStream taps raw LogLines and the no-chunk empty-stream error into the StreamRecorder") {
       import llm4zio.observability.StreamRecorder
-      import zio.stream.ZStream
 
       // A collecting recorder.
       final class Collecting(raw: Ref[Chunk[String]], errs: Ref[Chunk[String]]) extends StreamRecorder:

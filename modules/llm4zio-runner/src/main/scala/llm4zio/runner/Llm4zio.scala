@@ -64,7 +64,7 @@ object Llm4zio:
                        surface      = TerminalSurface.teeingToLog(base)
                        retries      = RetryEnv.parse(sys.env.get("LLM4ZIO_RETRIES"))
                        flakyRetries = FlakyRetryEnv.parse(sys.env.get("LLM4ZIO_FLAKY_RETRIES"))
-                       traceKeep    = sys.env.get("LLM4ZIO_TRACE_KEEP").flatMap(_.trim.toIntOption).filter(_ >= 0).getOrElse(20)
+                       traceKeep    = TraceKeepEnv.parse(sys.env.get("LLM4ZIO_TRACE_KEEP"))
                        bundle      <- DefaultFlowContext.build(reasoning, coder, workDir, reviewers, policy, retries, flakyRetries)
                        (ctx, hub)   = bundle
                        tracker     <- CostTracker.make
