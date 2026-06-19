@@ -65,4 +65,28 @@ object FlowRecorderSpec extends ZIOSpecDefault:
         yield assertTrue(ls.exists(_.contains("\"design\"")), ls.length == 2)
       }
     } @@ TestAspect.withLiveClock,
+    test("install prunes, opens under .llm4zio naming, subscribes to the hub, and installs the ambient recorder") {
+      import llm4zio.observability.StreamRecorder
+      ZIO.scoped {
+        for
+          dir     <- ZIO.attemptBlocking(Files.createTempDirectory("install-test")).orDie
+          hub     <- FlowEvents.hub()
+          rec     <- FlowRecorder.install(hub, dir, keep = 20)
+          ambient <- StreamRecorder.current.get
+          _       <- hub.publish(FlowEvent.StageStarted("specify"))
+          _       <- ZIO.sleep(50.millis)
+          files   <- ZIO.attemptBlocking(Files.list(dir).iterator.asScala.map(_.getFileName.toString).toList).orDie
+          // also exercise the ambient low-level channel
+          _       <- ambient.rawLine("gemini-cli", None, "raw-x")
+          _       <- ZIO.sleep(20.millis)
+          trace    = files.find(n => n.startsWith("trace-") && n.endsWith(".jsonl")).get
+          lines   <- ZIO.attemptBlocking(linesOf(dir.resolve(trace))).orDie
+        yield assertTrue(
+          ambient eq rec,
+          files.exists(n => n.startsWith("trace-") && n.endsWith(".jsonl")),
+          lines.exists(_.contains("specify")),
+          lines.exists(_.contains("raw-x")),
+        )
+      }
+    } @@ TestAspect.withLiveClock,
   )

@@ -74,3 +74,16 @@ object FlowRecorder:
       created  <- ZIO.attemptBlocking(Option(path.getParent).foreach(Files.createDirectories(_))).either
       degraded <- Ref.make(created.isLeft)
     yield new FlowRecorder(path, runId, seq, lock, degraded)
+
+  /** Prune old traces, open a fresh `trace-<runId>.jsonl` under `dir`, subscribe to `hub`, and install the recorder as
+    * the ambient [[StreamRecorder]] for the current scope. Returns the recorder. Pure flow/core — no HTTP, so the
+    * runner stays a thin caller.
+    */
+  def install(hub: FlowEvents.Hub, dir: Path, keep: Int): ZIO[Scope, Nothing, FlowRecorder] =
+    for
+      _     <- FlowTrace.prune(dir, keep)
+      runId <- FlowTrace.runId
+      rec   <- open(dir.resolve(s"trace-$runId.jsonl"), runId)
+      _     <- rec.consume(hub)
+      _     <- llm4zio.observability.StreamRecorder.current.locallyScoped(rec)
+    yield rec
