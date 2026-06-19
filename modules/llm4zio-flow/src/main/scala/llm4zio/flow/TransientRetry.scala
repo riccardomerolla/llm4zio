@@ -14,34 +14,48 @@ import llm4zio.tools.{ AnyTool, JsonSchema }
   *
   * A retried stream restarts from scratch, so any chunks (e.g. tool-call events) from the failed attempt are re-emitted
   * — that duplication is intentional and surfaced by the retry notice.
+  *
+  * Two independent retry budgets:
+  *   - ''Transient'' (connection resets, 5xx, rate limits): exponential backoff, bounded by `maxRetries`.
+  *   - ''Flaky-stream'' (empty response / malformed tool call / invalid stream): short fixed backoff, bounded by
+  *     `flakyRetries`. A fresh CLI process is cheap and almost always recovers, so this class gets a more generous
+  *     budget without burning the transient budget.
   */
 final class TransientRetry(
   underlying: LlmService,
   maxRetries: Int = 3,
   baseDelay: Duration = 1.second,
+  flakyRetries: Int = 6,
+  flakyDelay: Duration = 1.second,
 )(using events: FlowEvents
 ) extends LlmService:
 
   private def backoff(attempt: Int): Duration = baseDelay * math.pow(2, attempt.toDouble)
 
-  private def notice(what: String, attempt: Int, e: LlmError): UIO[Unit] =
-    events.publish(FlowEvent.Info(s"⟳ transient error ($what) — retry ${attempt + 1}/$maxRetries: ${e.message}"))
+  private def notice(what: String, attempt: Int, max: Int, e: LlmError): UIO[Unit] =
+    events.publish(FlowEvent.Info(s"⟳ $what — retry ${attempt + 1}/$max: ${e.message}"))
 
   private def retryIO[A](what: String)(io: IO[LlmError, A]): IO[LlmError, A] =
-    def loop(attempt: Int): IO[LlmError, A] =
+    def loop(tN: Int, fN: Int): IO[LlmError, A] =
       io.catchSome {
-        case e if TransientRetry.isTransient(e) && attempt < maxRetries =>
-          notice(what, attempt, e) *> ZIO.sleep(backoff(attempt)) *> loop(attempt + 1)
+        case e if TransientRetry.isFlakyStream(e) && fN < flakyRetries =>
+          notice(s"flaky $what (fresh retry)", fN, flakyRetries, e) *> ZIO.sleep(flakyDelay) *> loop(tN, fN + 1)
+        case e if TransientRetry.isTransient(e) && tN < maxRetries     =>
+          notice(s"transient error ($what)", tN, maxRetries, e) *> ZIO.sleep(backoff(tN)) *> loop(tN + 1, fN)
       }
-    loop(0)
+    loop(0, 0)
 
   private def retryStream(what: String)(stream: Stream[LlmError, LlmChunk]): Stream[LlmError, LlmChunk] =
-    def loop(attempt: Int): Stream[LlmError, LlmChunk] =
+    def loop(tN: Int, fN: Int): Stream[LlmError, LlmChunk] =
       stream.catchSome {
-        case e if TransientRetry.isTransient(e) && attempt < maxRetries =>
-          ZStream.fromZIO(notice(what, attempt, e) *> ZIO.sleep(backoff(attempt))).drain ++ loop(attempt + 1)
+        case e if TransientRetry.isFlakyStream(e) && fN < flakyRetries =>
+          ZStream.fromZIO(notice(s"flaky $what (fresh retry)", fN, flakyRetries, e) *> ZIO.sleep(flakyDelay)).drain ++
+            loop(tN, fN + 1)
+        case e if TransientRetry.isTransient(e) && tN < maxRetries     =>
+          ZStream.fromZIO(notice(s"transient error ($what)", tN, maxRetries, e) *> ZIO.sleep(backoff(tN))).drain ++
+            loop(tN + 1, fN)
       }
-    loop(0)
+    loop(0, 0)
 
   override def executeStream(prompt: String): Stream[LlmError, LlmChunk] =
     retryStream("stream")(underlying.executeStream(prompt))
@@ -65,9 +79,19 @@ final class TransientRetry(
 
 object TransientRetry:
 
+  /** Flaky-stream class: gemini intermittently closes the stream with no candidates or a half-formed function call.
+    * Non-deterministic; a fresh process (which a retried stream spawns) almost always succeeds, so this gets its own,
+    * more generous budget with a short fixed backoff — distinct from rate-limit-flavoured transients.
+    */
+  def isFlakyStream(e: LlmError): Boolean = e match
+    case LlmError.ProviderError(message, _) =>
+      val m = message.toLowerCase
+      List("empty response", "malformed tool call", "invalid stream").exists(m.contains)
+    case _                                  => false
+
   /** Transient = worth retrying: timeouts, short rate limits, and provider errors whose message points at a server-side
     * / network blip. Deliberately conservative so genuine failures (bad request, parse, config, usage cap) are NOT
-    * masked.
+    * masked. Flaky-stream signals ([[isFlakyStream]]) are intentionally excluded here — they have their own budget.
     */
   def isTransient(e: LlmError): Boolean = e match
     case _: LlmError.TimeoutError           => true
@@ -87,11 +111,6 @@ object TransientRetry:
         // retrying (bounded). Tune the count with LLM4ZIO_RETRIES (0 = fail fast).
         "api error",
         "unknown error",
-        // Gemini intermittently closes the stream with no candidates or a half-formed function call. Non-deterministic;
-        // a fresh run (which retryStream does — it spawns a new gemini process) almost always succeeds.
-        "empty response",
-        "malformed tool call",
-        "invalid stream",
         "code=500",
         "code=502",
         "code=503",

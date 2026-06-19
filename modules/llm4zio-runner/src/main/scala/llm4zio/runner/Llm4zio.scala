@@ -59,19 +59,22 @@ object Llm4zio:
                      val policy =
                        if usageLimit.enabled then usageLimit else UsageWaitEnv.parse(sys.env.get("LLM4ZIO_USAGE_WAIT"))
                      for
-                       base      <- if palette.enabled then TerminalSurface.live(palette) else TerminalSurface.plain
+                       base        <- if palette.enabled then TerminalSurface.live(palette) else TerminalSurface.plain
                        // Tee every rendered tree line into the log file too, so the log is a complete record.
-                       surface    = TerminalSurface.teeingToLog(base)
-                       retries    = RetryEnv.parse(sys.env.get("LLM4ZIO_RETRIES"))
-                       bundle    <- DefaultFlowContext.build(reasoning, coder, workDir, reviewers, policy, retries)
-                       (ctx, hub) = bundle
-                       tracker   <- CostTracker.make
+                       surface      = TerminalSurface.teeingToLog(base)
+                       retries      = RetryEnv.parse(sys.env.get("LLM4ZIO_RETRIES"))
+                       flakyRetries = FlakyRetryEnv.parse(sys.env.get("LLM4ZIO_FLAKY_RETRIES"))
+                       traceKeep    = TraceKeepEnv.parse(sys.env.get("LLM4ZIO_TRACE_KEEP"))
+                       bundle      <- DefaultFlowContext.build(reasoning, coder, workDir, reviewers, policy, retries, flakyRetries)
+                       (ctx, hub)   = bundle
+                       tracker     <- CostTracker.make
                        // Two fire-and-forget subscribers on the bounded event hub. Both drain fast
                        // (terminal write / map update); the hub back-pressures the producer if a
                        // subscriber stalls, which paces output rather than dropping events.
-                       consumed  <- TerminalListener.consumeTo(hub, palette, surface)
-                       _         <- tracker.consume(hub)
-                       _         <- {
+                       consumed    <- TerminalListener.consumeTo(hub, palette, surface)
+                       _           <- tracker.consume(hub)
+                       _           <- FlowRecorder.install(hub, workDir.resolve(".llm4zio"), traceKeep)
+                       _           <- {
                          given FlowEvents = hub
                          withUsageLimitRetry(policy)(
                            body(ctx).mapError {
