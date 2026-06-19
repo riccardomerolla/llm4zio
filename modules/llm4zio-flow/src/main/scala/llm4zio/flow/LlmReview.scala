@@ -175,7 +175,7 @@ def reviewAndFixLoop(
                       reviewer
                         .asService(reviewerService)
                         .executeStructured[ReviewResult](Reviewers.reviewPrompt(taskTitle, diff), Reviewers.schema)
-                        .mapError(e => FlowError.Llm(e.message))
+                        .mapError(e => FlowError.Llm(e.message, Some(e)))
                     }
           // `parallelism = 0` keeps the default unbounded fan-out (fine for high-throughput backends); a positive
           // cap throttles concurrent reviewer calls so rate-limited backends (e.g. the gemini free tier) don't 429.

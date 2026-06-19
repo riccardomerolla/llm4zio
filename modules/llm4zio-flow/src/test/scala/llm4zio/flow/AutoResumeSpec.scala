@@ -25,6 +25,8 @@ object AutoResumeSpec extends ZIOSpecDefault:
         !AutoResume.shouldResume(FlowError.Persistence("io")),
         !AutoResume.shouldResume(FlowError.PlanParse("bad")),
         !AutoResume.shouldResume(FlowError.Aborted("stop")),
+        // cause required: Llm without cause must NOT trigger auto-resume
+        !AutoResume.shouldResume(FlowError.Llm("x", None)),
       )
     },
     test("re-enters a transient failure within budget, then succeeds") {
