@@ -46,6 +46,7 @@ object Llm4zio:
     coder: CliConnectorConfig,
     reviewers: List[ConnectorConfig] = Nil,
     usageLimit: UsageLimitPolicy = UsageLimitPolicy.off,
+    verbosity: Option[Verbosity] = None,
   )(
     body: FlowContext => ZIO[Any, Any, Any]
   ): ZIO[Any, Throwable, Unit] =
@@ -65,15 +66,22 @@ object Llm4zio:
                        retries      = RetryEnv.parse(sys.env.get("LLM4ZIO_RETRIES"))
                        flakyRetries = FlakyRetryEnv.parse(sys.env.get("LLM4ZIO_FLAKY_RETRIES"))
                        traceKeep    = TraceKeepEnv.parse(sys.env.get("LLM4ZIO_TRACE_KEEP"))
+                       level        = verbosity.getOrElse(VerbosityEnv.parse(sys.env.get("LLM4ZIO_VERBOSITY")))
                        bundle      <- DefaultFlowContext.build(reasoning, coder, workDir, reviewers, policy, retries, flakyRetries)
                        (ctx, hub)   = bundle
                        tracker     <- CostTracker.make
                        // Two fire-and-forget subscribers on the bounded event hub. Both drain fast
                        // (terminal write / map update); the hub back-pressures the producer if a
                        // subscriber stalls, which paces output rather than dropping events.
-                       consumed    <- TerminalListener.consumeTo(hub, palette, surface)
+                       consumed    <- TerminalListener.consumeTo(hub, palette, surface, level)
                        _           <- tracker.consume(hub)
-                       _           <- FlowRecorder.install(hub, workDir.resolve(".llm4zio"), traceKeep)
+                       // At debug, raw provider lines are teed here through the same surface lock the animator/tree use,
+                       // so a high-volume stream-json firehose can pace debug output (bounded by the hub's back-pressure).
+                       rawSink      = Option.when(level == Verbosity.Debug)((l: String) => surface.log(palette.raw(l)))
+                       recorder    <- FlowRecorder.install(hub, workDir.resolve(".llm4zio"), traceKeep, rawSink)
+                       _           <- ZIO.when(level == Verbosity.Debug)(
+                                        surface.log(palette.info(s"trace: ${recorder.tracePath}"))
+                                      )
                        _           <- {
                          given FlowEvents = hub
                          withUsageLimitRetry(policy)(
@@ -143,6 +151,7 @@ object Llm4zio:
     defaultPrompt: Option[String] = None,
     reviewers: List[ConnectorConfig] = Nil,
     usageLimit: UsageLimitPolicy = UsageLimitPolicy.off,
+    verbosity: Option[Verbosity] = None,
     workDir: Path = Path.of(".").toAbsolutePath.normalize,
   )(
     body: FlowContext ?=> ZIO[Any, FlowError, Any]
@@ -150,4 +159,6 @@ object Llm4zio:
     resolvePrompt(args, defaultPrompt) match
       case Left(usage)   => ZIO.fail(ScriptUsage(usage))
       case Right(prompt) =>
-        run(workDir, scriptReasoning(coder, reasoning), coder, reviewers, usageLimit)(withPrompt(prompt)(body))
+        run(workDir, scriptReasoning(coder, reasoning), coder, reviewers, usageLimit, verbosity)(
+          withPrompt(prompt)(body)
+        )

@@ -47,6 +47,9 @@ final class FlowRecorder private (
       }
     }
 
+  /** The trace file this recorder writes to. */
+  def tracePath: Path = path
+
   def record(event: FlowEvent): UIO[Unit]                                              = append(TraceEvent.fromFlow(event))
   def rawLine(provider: String, model: Option[String], line: String): UIO[Unit]        =
     append(TraceEvent.RawLine(provider, model, line))
@@ -79,11 +82,17 @@ object FlowRecorder:
     * the ambient [[StreamRecorder]] for the current scope. Returns the recorder. Pure flow/core — no HTTP, so the
     * runner stays a thin caller.
     */
-  def install(hub: FlowEvents.Hub, dir: Path, keep: Int): ZIO[Scope, Nothing, FlowRecorder] =
+  def install(
+    hub: FlowEvents.Hub,
+    dir: Path,
+    keep: Int,
+    rawTerminalSink: Option[String => UIO[Unit]] = None,
+  ): ZIO[Scope, Nothing, FlowRecorder] =
     for
-      _     <- FlowTrace.prune(dir, keep)
-      runId <- FlowTrace.runId
-      rec   <- open(dir.resolve(s"trace-$runId.jsonl"), runId)
-      _     <- rec.consume(hub)
-      _     <- llm4zio.observability.StreamRecorder.current.locallyScoped(rec)
+      _      <- FlowTrace.prune(dir, keep)
+      runId  <- FlowTrace.runId
+      rec    <- open(dir.resolve(s"trace-$runId.jsonl"), runId)
+      _      <- rec.consume(hub)
+      ambient = rawTerminalSink.fold[StreamRecorder](rec)(sink => new Tee(rec, sink))
+      _      <- StreamRecorder.current.locallyScoped(ambient)
     yield rec

@@ -16,15 +16,16 @@ object TerminalListener:
     // a crafted byte stream can't drive the terminal (cursor moves, screen clears, title sets) or corrupt the tree.
     val s = TerminalSafe.sanitize
     event match
-      case FlowEvent.StageStarted(stage)        => palette.stageStart(s(stage))
-      case FlowEvent.StageCompleted(stage)      => palette.stageDone(s(stage))
-      case FlowEvent.StageFailed(stage, detail) => palette.fail(s"${s(stage)} — ${s(detail)}")
-      case FlowEvent.Aborted(message)           => palette.fail(s"aborted: ${s(message)}")
-      case FlowEvent.Info(message)              => palette.info(s(message))
-      case FlowEvent.ToolUse(tool, args)        => palette.toolCall(s(tool), s(args))
+      case FlowEvent.StageStarted(stage)         => palette.stageStart(s(stage))
+      case FlowEvent.StageCompleted(stage)       => palette.stageDone(s(stage))
+      case FlowEvent.StageFailed(stage, detail)  => palette.fail(s"${s(stage)} — ${s(detail)}")
+      case FlowEvent.Aborted(message)            => palette.fail(s"aborted: ${s(message)}")
+      case FlowEvent.Info(message)               => palette.info(s(message))
+      case FlowEvent.ToolUse(tool, args)         => palette.toolCall(s(tool), s(args))
       // Keep the assistant's own line breaks (sanitize preserves tabs/newlines); the renderer hang-indents the block.
-      case FlowEvent.AssistantMessage(text)     => palette.assistant(s(text).strip)
-      case FlowEvent.TokensUsed(_, _, _)        => ""
+      case FlowEvent.AssistantMessage(text)      => palette.assistant(s(text).strip)
+      case FlowEvent.TokensUsed(agent, _, usage) =>
+        palette.info(s"tokens: ${s(agent)} ${usage.prompt} in / ${usage.completion} out")
 
   /** Indent a (possibly multi-line) rendered entry under its tree depth: the first line at `depth`, continuation lines
     * hung two columns further so wrapped prose aligns under the text rather than the glyph. Single-line entries are
@@ -67,7 +68,12 @@ object TerminalListener:
     * the status line. Runs (forked) until the scope closes. Returns a counter of events processed so far — pass it to
     * [[awaitDrained]] before teardown so trailing events (notably a final `StageFailed`) are rendered, not dropped.
     */
-  def consumeTo(events: FlowEvents.Hub, palette: Palette, surface: TerminalSurface): ZIO[Scope, Nothing, Ref[Long]] =
+  def consumeTo(
+    events: FlowEvents.Hub,
+    palette: Palette,
+    surface: TerminalSurface,
+    verbosity: Verbosity = Verbosity.Normal,
+  ): ZIO[Scope, Nothing, Ref[Long]] =
     for
       depth    <- Ref.make(0)
       consumed <- Ref.make(0L)
@@ -80,7 +86,7 @@ object TerminalListener:
                       _ <- if opensChild(event) then depth.update(_ + 1) else ZIO.unit
                       _ <- stageLabel(event).fold(ZIO.unit)(surface.setStatus)
                       s  = line(event, palette)
-                      _ <- ZIO.unlessDiscard(s.isEmpty)(surface.log(indentBlock(d, s)))
+                      _ <- ZIO.unlessDiscard(!verbosity.renders(event) || s.isEmpty)(surface.log(indentBlock(d, s)))
                     yield ()) *> consumed.update(_ + 1)
                   }.forkScoped
     yield consumed
@@ -96,4 +102,4 @@ object TerminalListener:
 
   /** Convenience: consume to a plain (non-animated) surface — back-compat for callers that don't build a surface. */
   def consume(events: FlowEvents.Hub, palette: Palette): ZIO[Scope, Nothing, Ref[Long]] =
-    TerminalSurface.plain.flatMap(consumeTo(events, palette, _))
+    TerminalSurface.plain.flatMap(consumeTo(events, palette, _, Verbosity.Normal))
