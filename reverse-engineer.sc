@@ -15,10 +15,12 @@
   *   - Domain model   → docs/domain-model.md       (Mermaid)
   *   - ADRs           → docs/adr/NNNN-title.md      (status / context / decision / alternatives / consequences)
   *   - Reverse-spec   → specs/reverse-spec.md       (Given/When/Then capabilities)
-  *   - Review         → docs/review.md              (advisory completeness/accuracy audit, then consumed below)
-  *   - Address review → applies the audit's findings back to the prose docs, then DELETES docs/review.md
-  *                      and commits — a self-correcting pass, so the final tree has corrected docs and
-  *                      no leftover audit file.
+  *   - Review         → docs/review.md              (completeness/accuracy audit with a verdict)
+  *   - Address review → an audit-and-fix LOOP: while the verdict isn't clean and rounds remain, apply
+  *                      the findings to the prose docs, commit, and re-review; on a clean verdict (or
+  *                      after maxReviewRounds) DELETE docs/review.md and commit. So a completed run
+  *                      leaves corrected docs and no leftover audit file. Rounds default to 2 — override
+  *                      with LLM4ZIO_REVIEW_ROUNDS.
   *
   * Resume vs update: by default a re-run SKIPS artifacts that already exist (a crashed run resumes).
   * Set LLM4ZIO_DOCS_UPDATE=1 to instead REGENERATE each doc from its previous version as a starting
@@ -299,6 +301,46 @@ flow(
         yield ()
     }
 
+  // Audit-and-fix loop. Generate the review over the current docs; if its verdict is clean (or we hit
+  // maxReviewRounds) drop docs/review.md in a commit and stop; otherwise apply the findings, commit,
+  // and re-review. maxReviewRounds defaults to 2 (override with LLM4ZIO_REVIEW_ROUNDS).
+  val reviewPath      = workDir.resolve("docs/review.md")
+  val maxReviewRounds = sys.env.get("LLM4ZIO_REVIEW_ROUNDS").flatMap(_.toIntOption).filter(_ >= 1).getOrElse(2)
+  val reviewable      = List(
+    "docs/discovery.md"     -> discoverInstructions,
+    "docs/architecture.md"  -> architectureInstructions,
+    "docs/domain-model.md"  -> domainInstructions,
+    "specs/reverse-spec.md" -> reverseSpecInstructions,
+  )
+
+  // Heuristic on the review's stated verdict (Approved / Needs-revision / Restructure-required).
+  def reviewClean(review: String): Boolean =
+    val low = review.toLowerCase
+    low.contains("approved") && !low.contains("restructure") && !low.contains("needs-revision") &&
+      !low.contains("needs revision")
+
+  // Re-read the current docs from disk (they change as rounds revise them) and regenerate the audit.
+  def generateReview: IO[FlowError, String] =
+    for
+      docs <- ZIO.foreach(reviewable) { case (rel, _) => readFile(workDir.resolve(rel)).map(c => s"### $rel\n\n$c") }
+      raw  <- Planner.brief(reviewSvc, docs.mkString("\n\n"), reviewInstructions)
+      text  = stripNarration(raw)
+      _    <- writeFile(reviewPath, text)
+    yield text
+
+  def reviewRound(round: Int): IO[FlowError, Unit] =
+    stage(s"Review (round $round/$maxReviewRounds)")(generateReview).flatMap { review =>
+      def drop(msg: String): IO[FlowError, Unit] =
+        stage("Finalize review")(deleteFile(reviewPath) *> git.commitAll(msg).unit)
+      if reviewClean(review) then drop(s"docs: review clean after round $round, drop the audit")
+      else if round >= maxReviewRounds then drop(s"docs: review still open after $maxReviewRounds rounds, drop the audit")
+      else
+        stage(s"Address review (round $round)") {
+          ZIO.foreachDiscard(reviewable) { case (rel, instr) => reviseDoc(rel, instr, review) } *>
+            git.commitAll(s"docs: address review findings (round $round)").unit
+        } *> reviewRound(round + 1)
+    }
+
   for
     _         <- stage("Branch")(git.checkoutOrCreate(branch))
     _         <- stage("Ignore build cache") {
@@ -350,40 +392,13 @@ flow(
                        yield ()
                    }
                  }
-    spec      <- proseDoc(
+    _         <- proseDoc(
                    reasoning,
                    "Reverse-spec",
                    "specs/reverse-spec.md",
                    reverseSpecInstructions,
                    s"Discovery:\n$discovery\n\nArchitecture:\n$architect",
                  )
-    _         <- proseDoc(
-                   reviewSvc,
-                   "Review",
-                   "docs/review.md",
-                   reviewInstructions,
-                   s"Discovery:\n$discovery\n\nArchitecture:\n$architect\n\nDomain model:\n$domain\n\nReverse-spec:\n$spec",
-                 )
-    // Self-correct: read the audit, apply its findings to the prose docs, then drop the audit so the
-    // final tree carries corrected docs and no review file. One commit closes the loop.
-    _         <- stage("Address review") {
-                   val reviewPath = workDir.resolve("docs/review.md")
-                   exists(reviewPath).flatMap {
-                     case false => ZIO.unit
-                     case true  =>
-                       for
-                         review <- readFile(reviewPath)
-                         _      <- ZIO.foreachDiscard(
-                                     List(
-                                       "docs/discovery.md"     -> discoverInstructions,
-                                       "docs/architecture.md"  -> architectureInstructions,
-                                       "docs/domain-model.md"  -> domainInstructions,
-                                       "specs/reverse-spec.md" -> reverseSpecInstructions,
-                                     )
-                                   ) { case (rel, instr) => reviseDoc(rel, instr, review) }
-                         _      <- deleteFile(reviewPath)
-                         _      <- git.commitAll("docs: address review findings, drop the audit").unit
-                       yield ()
-                   }
-                 }
+    // Audit-and-fix until the review verdict is clean (or maxReviewRounds is reached), then drop it.
+    _         <- reviewRound(1)
   yield ()
