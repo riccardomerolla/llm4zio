@@ -1,7 +1,7 @@
 package llm4zio.runner
 
-import zio.test.*
 import zio.Scope
+import zio.test.*
 
 object FlakyRetryEnvSpec extends ZIOSpecDefault:
   def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("FlakyRetryEnv")(
