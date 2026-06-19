@@ -99,8 +99,9 @@ val discoverInstructions =
 val architectureInstructions =
   """You are a software architect. Document this repository's architecture: the major components
     |and their responsibilities, how data and control flow between them, the key public APIs/types,
-    |and external dependencies. Include a Mermaid diagram (a C4-style container or component view)
-    |in a ```mermaid block. Plain Markdown grounded in the code — cite file paths.""".stripMargin + excludeNote
+    |and external dependencies, noting the effect shape of key operations (pure, bounded change, or
+    |preview-returns-a-plan). Include a Mermaid diagram (a C4-style container or component view) in
+    |a ```mermaid block. Plain Markdown grounded in the code — cite file paths.""".stripMargin + excludeNote
 
 val domainInstructions =
   """You are a domain modeller (DDD). Identify the core domain of this system: the bounded contexts

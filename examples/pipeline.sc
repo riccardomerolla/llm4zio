@@ -83,9 +83,11 @@ val specInstructions =
 
 val designInstructions =
   """You are a software architect. From the spec below, write a SHORT design note (about one
-    |page): the classes/files to touch, the data model, the key design decisions and their
-    |trade-offs, and any risks. Plain Markdown. This guides implementation — write no code and
-    |no tests.""".stripMargin
+    |page): the classes/files to touch, the data model, and the key decisions — each with the
+    |alternatives considered and its consequences. Note the effect shape of the main operations
+    |(pure, bounded change, or preview-returns-a-plan) and any risks. Keep statements about
+    |behaviour observable, not about internal methods. Plain Markdown — write no code and no
+    |tests.""".stripMargin
 
 val planInstructions =
   Planner.defaultInstructions +
@@ -97,7 +99,9 @@ val planInstructions =
 val acceptanceInstructions =
   """Author the acceptance tests for this feature as JUnit 5 tests under src/test/java — ONE
     |@Test method per numbered acceptance criterion in the spec, each method named after its
-    |scenario. Also add the MINIMAL production API surface the tests call (method signatures
+    |scenario in the project's domain vocabulary with concrete, named values, and covering the
+    |error and boundary criteria, not only the happy path. Also add the MINIMAL production API
+    |surface the tests call (method signatures
     |with stub bodies that compile but do not implement the behaviour) so the suite compiles
     |and the enabled test fails for the right reason. Annotate EVERY test with
     |@org.junit.jupiter.api.Disabled EXCEPT the first criterion — leave that one enabled.
