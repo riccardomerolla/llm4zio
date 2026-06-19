@@ -9,6 +9,7 @@ import zio.process.{ Command, ProcessInput }
 import zio.stream.ZStream
 
 import llm4zio.core.*
+import llm4zio.observability.StreamRecorder
 import llm4zio.tools.{ AnyTool, JsonSchema }
 
 enum GeminiCliStreamEvent:
@@ -457,6 +458,24 @@ object GeminiCliProvider:
                         s", error=$msg"
                       )}"
                   )
+              }
+              .tap {
+                case GeminiCliStreamEvent.LogLine(line)                                               =>
+                  StreamRecorder.current.get.flatMap(_.rawLine("gemini-cli", Some(config.model), line))
+                case GeminiCliStreamEvent.Error(message, code, errorType)                             =>
+                  val details = List(errorType.map(t => s"type=$t"), code.map(c => s"code=$c")).flatten.mkString(", ")
+                  val msg     = message.getOrElse("unknown error")
+                  val text    = if details.nonEmpty then s"$msg ($details)" else msg
+                  StreamRecorder.current.get.flatMap(_.streamError("gemini-cli", Some(config.model), text))
+                case GeminiCliStreamEvent.Result(status, errorMessage, _) if status.contains("error") =>
+                  StreamRecorder.current.get.flatMap(
+                    _.streamError(
+                      "gemini-cli",
+                      Some(config.model),
+                      errorMessage.getOrElse("Gemini CLI returned an error"),
+                    )
+                  )
+                case _                                                                                => ZIO.unit
               }
               .flatMap {
                 case GeminiCliStreamEvent.Init(model, sessionId) =>

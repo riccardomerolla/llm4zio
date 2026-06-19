@@ -1215,6 +1215,50 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
         yield assertTrue(chunks.map(_.delta).mkString.contains("hello"))
       },
     ),
+    test("executeStream taps raw LogLines and the no-chunk empty-stream error into the StreamRecorder") {
+      import llm4zio.observability.StreamRecorder
+      import zio.stream.ZStream
+
+      // A collecting recorder.
+      final class Collecting(raw: Ref[Chunk[String]], errs: Ref[Chunk[String]]) extends StreamRecorder:
+        def rawLine(p: String, m: Option[String], line: String): UIO[Unit]    = raw.update(_ :+ line)
+        def streamError(p: String, m: Option[String], msg: String): UIO[Unit] = errs.update(_ :+ msg)
+
+      // A stub executor: one unparseable log line, then an empty-stream error event (emits NO LlmChunk).
+      val stubExecutor = new GeminiCliExecutor:
+        def checkGeminiInstalled: IO[LlmError, Unit]                                                                  = ZIO.unit
+        def runGeminiProcess(prompt: String, config: LlmConfig, ctx: GeminiCliExecutionContext): IO[LlmError, String] =
+          ZIO.succeed("")
+        def runGeminiProcessStream(prompt: String, config: LlmConfig, ctx: GeminiCliExecutionContext)
+          : ZStream[Any, LlmError, GeminiCliStreamEvent] =
+          ZStream(
+            GeminiCliStreamEvent.LogLine("{garbled json"),
+            GeminiCliStreamEvent.Error(
+              message = Some("Invalid stream: The model returned an empty response or malformed tool call"),
+              code = None,
+              errorType = None,
+            ),
+          )
+
+      val provider =
+        GeminiCliProvider.make(LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro"), stubExecutor)
+
+      for
+        raw  <- Ref.make(Chunk.empty[String])
+        errs <- Ref.make(Chunk.empty[String])
+        rec   = new Collecting(raw, errs)
+        exit <- ZIO.scoped {
+                  StreamRecorder.current.locallyScoped(rec) *>
+                    provider.executeStream("hi").runCollect.exit
+                }
+        rs   <- raw.get
+        es   <- errs.get
+      yield assertTrue(
+        exit.isFailure, // the empty-stream error still fails the stream as before
+        rs.exists(_.contains("garbled json")),
+        es.exists(_.contains("Invalid stream")),
+      )
+    },
     suite("executeStream event handling")(
       test("Init event populates metadata for subsequent chunks") {
         val config   = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
