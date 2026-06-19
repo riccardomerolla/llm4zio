@@ -31,13 +31,15 @@
   * The gates are code, not prompts: build/test commands decide pass/fail, the RED check
   * rejects vacuous tests, and the final verify fails the flow unless the spec is satisfied.
   *
+  * The coder follows a bundled, library-defined `craftSkill` (test integrity, real wiring, domain
+  * language, effect shape) — methodology carried in the script, not an ambient agent skill.
+  *
   * Seats: default to all-gemini, per-role (Pro reasoning, Flash coder + reviewers). Set
   * LLM4ZIO_CODER=claude|codex|gemini|pi to run the WHOLE pipeline — reasoning, coder, and
-  * reviewers — on that one provider instead (handy when gemini is unavailable).
-  * `Reviewers.tddDiscipline` ships in llm4zio 3.5.0, so until that release run via
-  * `examples/seed.sh pipeline --local` (publishes the in-tree build).
+  * reviewers — on that one provider instead (handy when gemini is unavailable). Implement review
+  * rounds add the opt-in `Reviewers.tddDiscipline` lens (llm4zio 3.5.0+).
   *
-  * Seed a starter:  examples/seed.sh pipeline           # or --local until 3.5.0 is published
+  * Seed a starter:  examples/seed.sh pipeline
   * Run:             scala-cli run pipeline.sc -- "Support hashtags: 'add <text> #tag' stores tags, 'list --tag <tag>' filters, and a 'tags' command lists every tag with its count"
   *
   * Requires `gemini` logged in (plus the agent for LLM4ZIO_CODER if set) and `mvn` on PATH.
@@ -57,11 +59,27 @@ import llm4zio.runner.*
 val ProModel   = "gemini-3-pro-preview"
 val FlashModel = "gemini-2.5-flash"
 
+// A library-defined skill bundled in the script (not an ambient codex/claude/IDE skill): the
+// test-first delivery methodology every coder turn follows. Prepended to the coder's system prompt.
+val craftSkill =
+  """SKILL — test-first delivery. Apply this on every turn:
+    |- Outside-in: the committed spec's acceptance criteria define "done"; make them pass without weakening them.
+    |- Keep tests honest: never weaken, delete, or disable a test to reach green; test setup establishes
+    |  preconditions, never the expected answer; a test must fail before the code exists and pass after.
+    |- Wire it for real: "done" means the production code changed, not just tests, and the behaviour is
+    |  reachable through the real entry points — not proven by a stubbed or self-satisfying fixture.
+    |- Speak the domain: tests, scenario names, and criteria use business vocabulary and concrete, named
+    |  values — not status codes, internal method names, or vague terms.
+    |- Mind effects: keep a pure core with side effects at the edges; an operation that claims to be
+    |  read-only must not mutate, and a dry-run/preview returns a plan rather than performing the change.
+    |- Output only the change plus a terminating test run — no narration.""".stripMargin
+
 val specInstructions =
   """You are a specification writer. Turn the change request into a precise spec for this repo:
     |context, goals, non-goals, and a numbered list of testable acceptance criteria
-    |(Given/When/Then). Explore the repo as needed. Plain Markdown, no task list — the plan
-    |comes later, from this spec.""".stripMargin
+    |(Given/When/Then) in the project's domain vocabulary, each with at least one concrete, named
+    |example. Explore the repo as needed. Plain Markdown, no task list — the plan comes later,
+    |from this spec.""".stripMargin
 
 val designInstructions =
   """You are a software architect. From the spec below, write a SHORT design note (about one
@@ -173,8 +191,8 @@ flow(
     coderChat <- Chat.start(
                    coder,
                    system = Some(
-                     "You implement one task at a time in the current repo. The committed spec is the" +
-                       " contract; the tests encode it — make them pass without weakening them."
+                     craftSkill +
+                       "\n\nImplement one task at a time in the current repo; the committed spec is the contract."
                    ),
                  )
     _         <- stage("Acceptance") {
