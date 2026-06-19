@@ -89,4 +89,25 @@ object FlowRecorderSpec extends ZIOSpecDefault:
         )
       }
     } @@ TestAspect.withLiveClock,
+    test("install with a rawTerminalSink tees raw provider lines to file AND sink; tracePath points at the file") {
+      import llm4zio.observability.StreamRecorder
+      ZIO.scoped {
+        for
+          dir     <- ZIO.attemptBlocking(Files.createTempDirectory("install-tee")).orDie
+          hub     <- FlowEvents.hub()
+          sinkBuf <- Ref.make(Chunk.empty[String])
+          rec     <-
+            FlowRecorder.install(hub, dir, keep = 20, rawTerminalSink = Some((l: String) => sinkBuf.update(_ :+ l)))
+          ambient <- StreamRecorder.current.get
+          _       <- ambient.rawLine("gemini-cli", None, "raw-y")
+          _       <- ZIO.sleep(20.millis)
+          sb      <- sinkBuf.get
+          lines   <- ZIO.attemptBlocking(linesOf(rec.tracePath)).orDie
+        yield assertTrue(
+          rec.tracePath.getFileName.toString.startsWith("trace-"),
+          sb.exists(_.contains("raw-y")), // teed to the sink
+          lines.exists(_.contains("raw-y")), // still in the file
+        )
+      }
+    } @@ TestAspect.withLiveClock,
   )
