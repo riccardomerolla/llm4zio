@@ -5,17 +5,20 @@
 /** Reverse-engineer THIS repository (llm4zio) into documentation — a read-only comprehension
   * pipeline. This file lives at the repo root and is meant to document llm4zio itself.
   *
-  *   Discover → Architecture → Domain model → ADRs → Reverse-spec → Review
+  *   Discover → Architecture → Domain model → ADRs → Reverse-spec → Review → Address review
   *
   * The read-only reasoning seat explores the repo and generates each artifact; the runtime — not an
   * agent — writes and commits the files on a `docs/reverse-engineer` branch, one commit per phase.
   *
-  *   - Discover      → docs/discovery.md
-  *   - Architecture  → docs/architecture.md      (quality attributes + C4-style Mermaid)
-  *   - Domain model  → docs/domain-model.md       (Mermaid)
-  *   - ADRs          → docs/adr/NNNN-title.md      (status / context / decision / alternatives / consequences)
-  *   - Reverse-spec  → specs/reverse-spec.md       (Given/When/Then capabilities)
-  *   - Review        → docs/review.md              (advisory completeness/accuracy audit; never fails)
+  *   - Discover       → docs/discovery.md
+  *   - Architecture   → docs/architecture.md      (quality attributes + C4-style Mermaid)
+  *   - Domain model   → docs/domain-model.md       (Mermaid)
+  *   - ADRs           → docs/adr/NNNN-title.md      (status / context / decision / alternatives / consequences)
+  *   - Reverse-spec   → specs/reverse-spec.md       (Given/When/Then capabilities)
+  *   - Review         → docs/review.md              (advisory completeness/accuracy audit, then consumed below)
+  *   - Address review → applies the audit's findings back to the prose docs, then DELETES docs/review.md
+  *                      and commits — a self-correcting pass, so the final tree has corrected docs and
+  *                      no leftover audit file.
   *
   * Resume vs update: by default a re-run SKIPS artifacts that already exist (a crashed run resumes).
   * Set LLM4ZIO_DOCS_UPDATE=1 to instead REGENERATE each doc from its previous version as a starting
@@ -274,6 +277,28 @@ flow(
       }
     }
 
+  // Apply the review's findings to one prose document, in place (no commit — the Address stage
+  // commits once for the whole pass). A document the review names nothing for comes back unchanged.
+  def reviseDoc(rel: String, instructions: String, review: String): IO[FlowError, Unit] =
+    val path = workDir.resolve(rel)
+    exists(path).flatMap {
+      case false => ZIO.unit
+      case true  =>
+        for
+          current <- readFile(path)
+          raw     <- Planner.brief(
+                       reasoning,
+                       "Apply the review findings to the document below: correct every inaccuracy and fill" +
+                         " every coverage gap the review names for THIS document, keep what is already correct," +
+                         " and add no claim that isn't grounded in the code (re-verify against the repo). If" +
+                         " the review names nothing for this document, return it unchanged.\n\nREVIEW FINDINGS:\n" +
+                         review + s"\n\nDOCUMENT ($rel):\n$current",
+                       s"$comprehensionSkill\n\n$instructions",
+                     )
+          _       <- writeFile(path, stripNarration(raw))
+        yield ()
+    }
+
   for
     _         <- stage("Branch")(git.checkoutOrCreate(branch))
     _         <- stage("Ignore build cache") {
@@ -339,4 +364,26 @@ flow(
                    reviewInstructions,
                    s"Discovery:\n$discovery\n\nArchitecture:\n$architect\n\nDomain model:\n$domain\n\nReverse-spec:\n$spec",
                  )
+    // Self-correct: read the audit, apply its findings to the prose docs, then drop the audit so the
+    // final tree carries corrected docs and no review file. One commit closes the loop.
+    _         <- stage("Address review") {
+                   val reviewPath = workDir.resolve("docs/review.md")
+                   exists(reviewPath).flatMap {
+                     case false => ZIO.unit
+                     case true  =>
+                       for
+                         review <- readFile(reviewPath)
+                         _      <- ZIO.foreachDiscard(
+                                     List(
+                                       "docs/discovery.md"     -> discoverInstructions,
+                                       "docs/architecture.md"  -> architectureInstructions,
+                                       "docs/domain-model.md"  -> domainInstructions,
+                                       "specs/reverse-spec.md" -> reverseSpecInstructions,
+                                     )
+                                   ) { case (rel, instr) => reviseDoc(rel, instr, review) }
+                         _      <- deleteFile(reviewPath)
+                         _      <- git.commitAll("docs: address review findings, drop the audit").unit
+                       yield ()
+                   }
+                 }
   yield ()
