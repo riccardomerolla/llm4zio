@@ -73,11 +73,20 @@ inThisBuild(List(
     // Scala 3.8 deprecated -Xfatal-warnings; tpolecat still emits it and the
     // deprecation warning itself fails under -Werror. Silence just that message.
     "-Wconf:msg=-Xfatal-warnings is a deprecated alias:silent",
+    // The magnolia-derived JSON codec for the generic `Verdict[A]` emits an unavoidable
+    // erased-type-test warning from magnolia's own inlined source. Silence by source, not globally.
+    "-Wconf:src=.*magnolia1.*:silent",
   ),
   semanticdbEnabled := true,
 ))
 
-lazy val It = config("it") extend Test
+// Scaladoc resolves `[[Name]]` as a member of the current scope, so cross-file links to top-level
+// types warn ("Couldn't resolve a member …") when building the publish javadoc.jar. Applied per
+// project (after the tpolecat auto-plugin) so it survives scope delegation; scoped to `doc` because
+// scalac rejects this scaladoc-only flag under -Werror.
+val quietDocLinks = Compile / doc / scalacOptions += "-no-link-warnings"
+
+lazy val It = config("it").extend(Test)
 
 // ── llm4zio-core ──────────────────────────────────────────────────────────────
 // The LLM plumbing: Connector/LlmService, providers (API + CLI), streaming,
@@ -86,7 +95,7 @@ lazy val It = config("it") extend Test
 // (see .claude/plans/orca-shaped-shedding.md).
 lazy val llm4zioCore = (project in file("modules/llm4zio-core"))
   .configs(It)
-  .settings(inConfig(It)(Defaults.testSettings): _*)
+  .settings(inConfig(It)(Defaults.testSettings)*)
   .settings(
     name        := "llm4zio-core",
     description := "ZIO-native LLM library — provider plumbing, streaming, tools, structured output",
@@ -94,6 +103,7 @@ lazy val llm4zioCore = (project in file("modules/llm4zio-core"))
     libraryDependencies ++= llm4zioDeps,
     testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
     It / testFrameworks ++= (Test / testFrameworks).value,
+    quietDocLinks,
   )
 
 // ── llm4zio-flow ──────────────────────────────────────────────────────────────
@@ -103,7 +113,7 @@ lazy val llm4zioCore = (project in file("modules/llm4zio-core"))
 lazy val llm4zioFlow = (project in file("modules/llm4zio-flow"))
   .dependsOn(llm4zioCore)
   .configs(It)
-  .settings(inConfig(It)(Defaults.testSettings): _*)
+  .settings(inConfig(It)(Defaults.testSettings)*)
   .settings(
     name        := "llm4zio-flow",
     description := "ZIO-native agentic flow layer for llm4zio — plan, review, git/gh, resumable runs",
@@ -111,6 +121,7 @@ lazy val llm4zioFlow = (project in file("modules/llm4zio-flow"))
     libraryDependencies ++= zioCoreDeps ++ Seq(zioJsonDep) ++ zioLoggingDeps ++ zioTestDeps,
     testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
     It / testFrameworks ++= (Test / testFrameworks).value,
+    quietDocLinks,
   )
 
 // ── llm4zio-runner ────────────────────────────────────────────────────────────
@@ -120,7 +131,7 @@ lazy val llm4zioFlow = (project in file("modules/llm4zio-flow"))
 lazy val llm4zioRunner = (project in file("modules/llm4zio-runner"))
   .dependsOn(llm4zioFlow, llm4zioCore)
   .configs(It)
-  .settings(inConfig(It)(Defaults.testSettings): _*)
+  .settings(inConfig(It)(Defaults.testSettings)*)
   .settings(
     name        := "llm4zio-runner",
     description := "Entry point, terminal renderer, and example flows for llm4zio",
@@ -128,6 +139,7 @@ lazy val llm4zioRunner = (project in file("modules/llm4zio-runner"))
     libraryDependencies ++= zioCoreDeps ++ Seq(zioJsonDep, zioHttpDep, fansiDep) ++ zioLoggingDeps ++ zioTestDeps,
     testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
     It / testFrameworks ++= (Test / testFrameworks).value,
+    quietDocLinks,
   )
 
 lazy val root = (project in file("."))
