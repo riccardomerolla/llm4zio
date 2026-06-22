@@ -1,6 +1,6 @@
 package llm4zio.runner
 
-import java.nio.file.Path
+import java.nio.file.{ Files, Path }
 
 import zio.*
 import zio.json.JsonCodec
@@ -49,6 +49,44 @@ object ScriptSpec extends ZIOSpecDefault:
       for exit <- Llm4zio.script(Nil, claude)(ZIO.unit).exit
       yield assertTrue(exit.causeOption.flatMap(_.failureOption).exists(_.isInstanceOf[Llm4zio.ScriptUsage]))
     },
+    test("script fails fast with ScriptUsage when --repo points to a non-existent directory") {
+      for exit <- Llm4zio.script(List("--repo", "/no/such/repo", "do it"), claude)(ZIO.unit).exit
+      yield assertTrue(exit.causeOption.flatMap(_.failureOption).exists(_.isInstanceOf[Llm4zio.ScriptUsage]))
+    },
+    suite("readPrompt")(
+      test("reads the prompt file verbatim when --prompt-file is given (file wins over the default)") {
+        for
+          dir <- ZIO.attemptBlocking(Files.createTempDirectory("flowargs")).orDie
+          file = dir.resolve("spec.md")
+          _   <- ZIO.attemptBlocking(Files.writeString(file, "line1\nline2\n")).orDie
+          out <- Llm4zio.readPrompt(FlowArgs(promptFile = Some(file)), Some("dflt"))
+        yield assertTrue(out == "line1\nline2\n")
+      },
+      test("the prompt file wins over positional text") {
+        for
+          dir <- ZIO.attemptBlocking(Files.createTempDirectory("flowargs")).orDie
+          file = dir.resolve("spec.md")
+          _   <- ZIO.attemptBlocking(Files.writeString(file, "from-file")).orDie
+          out <- Llm4zio.readPrompt(FlowArgs(promptText = Some("typed"), promptFile = Some(file)), None)
+        yield assertTrue(out == "from-file")
+      },
+      test("fails with ScriptUsage when the prompt file cannot be read") {
+        for exit <- Llm4zio.readPrompt(FlowArgs(promptFile = Some(Path.of("/no/such/spec.md"))), None).exit
+        yield assertTrue(exit.causeOption.flatMap(_.failureOption).exists(_.isInstanceOf[Llm4zio.ScriptUsage]))
+      },
+      test("prefers positional text over the default") {
+        for out <- Llm4zio.readPrompt(FlowArgs(promptText = Some("typed")), Some("dflt"))
+        yield assertTrue(out == "typed")
+      },
+      test("falls back to the default when no source is given") {
+        for out <- Llm4zio.readPrompt(FlowArgs(), Some("dflt"))
+        yield assertTrue(out == "dflt")
+      },
+      test("fails with ScriptUsage when no source and no default are available") {
+        for exit <- Llm4zio.readPrompt(FlowArgs(), None).exit
+        yield assertTrue(exit.causeOption.flatMap(_.failureOption).exists(_.isInstanceOf[Llm4zio.ScriptUsage]))
+      },
+    ),
     suite("scriptReasoning")(
       test("defaults to coder.copy(readOnly = true) when no explicit reasoning connector is given") {
         assertTrue(Llm4zio.scriptReasoning(claude, None) == claude.copy(readOnly = true))

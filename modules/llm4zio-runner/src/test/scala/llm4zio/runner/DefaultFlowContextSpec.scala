@@ -41,4 +41,12 @@ object DefaultFlowContextSpec extends ZIOSpecDefault:
           ctx.coder.isInstanceOf[EventTappingService],
         )
     },
+    test("make threads a workspace distinct from the repo workDir into the context") {
+      val reasoning = MockProvider.make(LlmConfig(LlmProvider.Mock, "r"))
+      val coder     = MockProvider.make(LlmConfig(LlmProvider.Mock, "c"))
+      for bundle <- DefaultFlowContext.make(reasoning, coder, Path.of("/tmp/repo"), workspace = Path.of("/tmp/control"))
+      yield
+        val (ctx, _) = bundle
+        assertTrue(ctx.workDir == Path.of("/tmp/repo"), ctx.workspace == Path.of("/tmp/control"))
+    },
   )

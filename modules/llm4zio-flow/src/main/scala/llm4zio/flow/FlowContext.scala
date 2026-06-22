@@ -26,6 +26,10 @@ final case class FlowContext(
   userPrompt: String = "",
   // The repository the flow operates on; tools and connectors are rooted here.
   workDir: Path = Path.of(".").toAbsolutePath.normalize,
+  // llm4zio's own home (the launch directory): where `.llm4zio/` bookkeeping and sidecar artifacts live. Like `workDir`
+  // it defaults to the cwd, so in the common case (a flow run from inside the repo) the two coincide — a flat,
+  // backward-compatible layout. The runner sets both; they differ only when a flow targets an external `--repo`.
+  workspace: Path = Path.of(".").toAbsolutePath.normalize,
 ):
   /** Expose the event sink as a given so `stage`/`fail` resolve it implicitly. */
   given FlowEvents = events

@@ -1,6 +1,6 @@
 package llm4zio.runner
 
-import java.nio.file.Path
+import java.nio.file.{ Files, Path }
 
 import zio.*
 import zio.http.Client
@@ -47,6 +47,7 @@ object Llm4zio:
     reviewers: List[ConnectorConfig] = Nil,
     usageLimit: UsageLimitPolicy = UsageLimitPolicy.off,
     verbosity: Option[Verbosity] = None,
+    workspace: Path = Path.of(".").toAbsolutePath.normalize,
   )(
     body: FlowContext => ZIO[Any, Any, Any]
   ): ZIO[Any, Throwable, Unit] =
@@ -68,7 +69,16 @@ object Llm4zio:
                        traceKeep    = TraceKeepEnv.parse(sys.env.get("LLM4ZIO_TRACE_KEEP"))
                        level        = verbosity.getOrElse(VerbosityEnv.parse(sys.env.get("LLM4ZIO_VERBOSITY")))
                        autoResume   = AutoResumeEnv.parse(sys.env.get("LLM4ZIO_AUTO_RESUME"))
-                       bundle      <- DefaultFlowContext.build(reasoning, coder, workDir, reviewers, policy, retries, flakyRetries)
+                       bundle      <- DefaultFlowContext.build(
+                                        reasoning,
+                                        coder,
+                                        workDir,
+                                        reviewers,
+                                        policy,
+                                        retries,
+                                        flakyRetries,
+                                        workspace,
+                                      )
                        (ctx, hub)   = bundle
                        tracker     <- CostTracker.make
                        // Two fire-and-forget subscribers on the bounded event hub. Both drain fast
@@ -79,7 +89,7 @@ object Llm4zio:
                        // At debug, raw provider lines are teed here through the same surface lock the animator/tree use,
                        // so a high-volume stream-json firehose can pace debug output (bounded by the hub's back-pressure).
                        rawSink      = Option.when(level == Verbosity.Debug)((l: String) => surface.log(palette.raw(l)))
-                       recorder    <- FlowRecorder.install(hub, workDir.resolve(".llm4zio"), traceKeep, rawSink)
+                       recorder    <- FlowRecorder.install(hub, Workspace.llm4zioDir(workspace, workDir), traceKeep, rawSink)
                        _           <- ZIO.when(level == Verbosity.Debug)(
                                         surface.log(palette.info(s"trace: ${recorder.tracePath}"))
                                       )
@@ -123,13 +133,31 @@ object Llm4zio:
     */
   final case class ScriptUsage(usage: String) extends RuntimeException(usage)
 
+  private val promptUsage = """usage: scala-cli run <script>.sc -- "<prompt>""""
+
   /** First non-blank CLI arg, else the script's default, else a usage error. */
   def resolvePrompt(args: List[String], defaultPrompt: Option[String] = None): Either[String, String] =
     args.headOption
       .map(_.trim)
       .filter(_.nonEmpty)
       .orElse(defaultPrompt)
-      .toRight("""usage: scala-cli run <script>.sc -- "<prompt>"""")
+      .toRight(promptUsage)
+
+  /** Resolve the final prompt string from parsed args + the script default, reading the file when
+    * `--prompt-file`/`@file` was given. Precedence: prompt file > positional text > script default > usage error. The
+    * file's contents become the prompt **verbatim**. A missing/unreadable file is a [[ScriptUsage]] (exit 2), not a
+    * flow failure.
+    */
+  def readPrompt(args: FlowArgs, defaultPrompt: Option[String]): IO[ScriptUsage, String] =
+    args.promptFile match
+      case Some(path) =>
+        ZIO
+          .attemptBlocking(Files.readString(path))
+          .mapError(e => ScriptUsage(s"could not read prompt file $path: ${e.getMessage}"))
+      case None       =>
+        args.promptText.orElse(defaultPrompt) match
+          case Some(prompt) => ZIO.succeed(prompt)
+          case None         => ZIO.fail(ScriptUsage(promptUsage))
 
   /** The reasoning connector a script uses: the explicit one, else the coder's read-only twin. */
   private[runner] def scriptReasoning(coder: CliConnectorConfig, explicit: Option[ConnectorConfig]): ConnectorConfig =
@@ -155,13 +183,31 @@ object Llm4zio:
     reviewers: List[ConnectorConfig] = Nil,
     usageLimit: UsageLimitPolicy = UsageLimitPolicy.off,
     verbosity: Option[Verbosity] = None,
-    workDir: Path = Path.of(".").toAbsolutePath.normalize,
+    workspace: Path = Path.of(".").toAbsolutePath.normalize,
   )(
     body: FlowContext ?=> ZIO[Any, FlowError, Any]
   ): ZIO[Any, Throwable, Unit] =
-    resolvePrompt(args, defaultPrompt) match
+    FlowArgs.parse(args) match
       case Left(usage)   => ZIO.fail(ScriptUsage(usage))
-      case Right(prompt) =>
-        run(workDir, scriptReasoning(coder, reasoning), coder, reviewers, usageLimit, verbosity)(
-          withPrompt(prompt)(body)
-        )
+      case Right(parsed) =>
+        for
+          prompt <- readPrompt(parsed, defaultPrompt)
+          repo   <- resolveRepo(parsed, workspace)
+          _      <- run(repo, scriptReasoning(coder, reasoning), coder, reviewers, usageLimit, verbosity, workspace)(
+                      withPrompt(prompt)(body)
+                    )
+        yield ()
+
+  /** The repository a script operates on: the `--repo` directory (resolved against the workspace) when given, else the
+    * workspace itself. A `--repo` that is not an existing directory is a [[ScriptUsage]] (exit 2) — fail fast before
+    * any connector or git work.
+    */
+  private[runner] def resolveRepo(parsed: FlowArgs, workspace: Path): IO[ScriptUsage, Path] =
+    parsed.repo match
+      case None       => ZIO.succeed(workspace)
+      case Some(repo) =>
+        val resolved = workspace.resolve(repo).normalize
+        ZIO.attemptBlocking(Files.isDirectory(resolved)).orElseSucceed(false).flatMap { isDir =>
+          if isDir then ZIO.succeed(resolved)
+          else ZIO.fail(ScriptUsage(s"--repo is not a directory: $resolved"))
+        }

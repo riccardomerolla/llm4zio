@@ -21,3 +21,13 @@ def reviewers(using ctx: FlowContext): List[LlmService] = ctx.reviewers
 def userPrompt(using ctx: FlowContext): String = ctx.userPrompt
 
 def workDir(using ctx: FlowContext): Path = ctx.workDir
+
+def workspace(using ctx: FlowContext): Path = ctx.workspace
+
+/** The resumable plan file for `prompt`, under this flow's bookkeeping directory — `workspace/.llm4zio` when the repo
+  * is the workspace, else the repo-namespaced `workspace/.llm4zio/<repo-id>`. The context-aware counterpart to
+  * [[Plan.defaultPath]]: a script writes `planPath(userPrompt)` and gets the right location whether it runs inside the
+  * repo or against an external `--repo`.
+  */
+def planPath(prompt: String)(using ctx: FlowContext): Path =
+  Plan.defaultPath(prompt, Workspace.llm4zioDir(ctx.workspace, ctx.workDir))

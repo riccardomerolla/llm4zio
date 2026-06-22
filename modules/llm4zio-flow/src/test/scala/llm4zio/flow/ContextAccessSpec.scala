@@ -51,6 +51,19 @@ object ContextAccessSpec extends ZIOSpecDefault:
       val ctx = ctxWith(FlowEvents.noop)
       assertTrue(ctx.userPrompt == "add multiply", ctx.workDir == dir)
     },
+    test("the bare workspace accessor returns the context's workspace, distinct from workDir") {
+      val ctx           = ctxWith(FlowEvents.noop).copy(workspace = Path.of("/tmp/control"))
+      given FlowContext = ctx
+      assertTrue(workspace == Path.of("/tmp/control"), workDir == dir)
+    },
+    test("planPath resolves the plan file under the workspace bookkeeping dir for the repo") {
+      val ctx           = ctxWith(FlowEvents.noop).copy(workspace = Path.of("/tmp/control"), workDir = Path.of("/tmp/repo"))
+      given FlowContext = ctx
+      assertTrue(
+        planPath("add multiply") ==
+          Plan.defaultPath("add multiply", Workspace.llm4zioDir(Path.of("/tmp/control"), Path.of("/tmp/repo")))
+      )
+    },
     test("bare-name accessors return the context members") {
       val ctx           = ctxWith(FlowEvents.noop)
       given FlowContext = ctx

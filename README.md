@@ -65,7 +65,7 @@ flow(args, defaultPrompt = Some("Add a multiply function to the calculator crate
 scala-cli run implement.sc -- "Add a multiply function to the calculator crate"
 ```
 
-Seven worked flows live under [`examples/`](examples/). Seed a starter and run
+Worked flows live under [`examples/`](examples/). Seed a starter and run
 with one command:
 
 | Example | What it shows |
@@ -78,6 +78,7 @@ with one command:
 | `issue-pr.sc` | Autonomous issue → assess → implement+review → push → open PR (GitHub). |
 | `implement-enhanced.sc` | Plan self-review + codebase brief, format/lint after every edit. |
 | `sdd.sc` | Spec-driven development: Spec → tests-first → implement → verify; per-role gemini models; mvn as the gate. |
+| `handoff-plan.sc` / `handoff-build.sc` | Two-invocation, human-gated hand-off: requirements → spec/plan → **approve** → implement (see [below](#phased-hand-off-with-human-approval)). |
 | `local.sc` | Fully local — reasoning on LM Studio, coding on pi (local model); no cloud, no API key. |
 
 ```bash
@@ -87,6 +88,76 @@ examples/seed.sh implement --local --run    # run against your in-tree build
 
 For editing flow scripts with code-completion, the
 [Metals](https://scalameta.org/metals/) VS Code extension works well.
+
+---
+
+## Inputs, and running outside the repo
+
+A flow takes its prompt and target repo from a small, fixed set of CLI flags
+(anything else, a script reads from `args` itself):
+
+| Flag | Meaning |
+|---|---|
+| `"<prompt>"` (positional) | The prompt, verbatim. |
+| `--prompt-file <path>` / `@<path>` | Read the prompt from a file — a whole Markdown spec works as-is. |
+| `--repo <path>` / `-C <path>` | Operate on a repo other than the current directory. |
+
+A flow runs in the current directory by default, so the simplest way to keep
+llm4zio's files out of a target repo is to **run the script from outside it**:
+
+```bash
+cd /path/to/target-repo
+scala-cli run /path/to/flows/implement.sc -- "Add a multiply function"
+```
+
+The coding agent is rooted in the repo and never sees the `.sc` (or scala-cli's
+`.scala-build/`) — so there's no Scala source to confuse it in a Java/Rust/…
+project. Or point `--repo` at the target from a dedicated control directory:
+
+```bash
+cd ~/llm4zio-control
+scala-cli run implement.sc -- --repo ~/projects/calculator "Add a multiply function"
+```
+
+With `--repo`, llm4zio's bookkeeping (`.llm4zio/`: plans, traces, logs) stays in
+the control directory, namespaced per repo as `.llm4zio/<repo-id>/`, so one
+control directory drives many repos without collisions and nothing llm4zio
+touches the target's tree. In a flow body `workDir` is the repo and `workspace`
+is the control directory; `planPath(userPrompt)` resolves the resumable plan
+under the right one.
+
+---
+
+## Phased hand-off with human approval
+
+For an enterprise pipeline — requirements → spec/plan → **human approval** →
+implement — split the work across **separate invocations** and let the files on
+disk be the contract. The approval signal is a checkbox a reviewer flips in the
+artifact they are already reading:
+
+1. **Plan** (run 1): draft the spec/plan and stop. Write the draft through
+   `ApprovalGate.withDraftMarker(spec)` (it appends `- [ ] Approved`) and persist
+   the plan with `PlanStore.recoverOrCreate(planPath(userPrompt))(…)`.
+2. **Review** (out of band): a human edits the spec and flips the line to
+   `- [x] Approved` — `git blame` records who and when, when the file is tracked.
+3. **Implement** (run 2): feed the approved spec with `--prompt-file specs/<id>.md`
+   and gate before doing any work:
+
+   ```scala
+   ApprovalGate.gate(specPath, interaction) *> implementTaskLoop(planPath(userPrompt), plan)(…)
+   ```
+
+   In CI the gate halts with `awaiting approval: set '- [x] Approved' in <path>`
+   and a non-zero exit; at an interactive terminal it asks (and flips the marker
+   on a yes). PR-based approval composes the same way — gate on `gh` PR state
+   instead of the marker.
+
+Because the script runs from outside the repo (or via `--repo`), the spec and
+plan live in your control directory by default, not the repo — unless you
+deliberately commit the spec into the repo for in-PR review.
+
+Worked example: [`handoff-plan.sc`](examples/handoff-plan.sc) →
+[`handoff-build.sc`](examples/handoff-build.sc) (`examples/seed.sh handoff`).
 
 ---
 
@@ -204,6 +275,7 @@ Top-level, via `import llm4zio.flow.*`:
 | `implementTaskLoop(planPath, plan)(perTask)` | Run each incomplete task through `perTask`, persisting progress to `planPath` after each (resumable). |
 | `reviewAndFixLoop(reviewers, reasoning, coder, task, diff, …)` | Run reviewers over the diff, hand findings to the coder to fix, re-review; `format` runs before each round, optional `lint`. |
 | `withUsageLimitRetry(policy)(flow)` | Re-enter `flow` after sleeping out a provider usage cap. |
+| `ApprovalGate.gate(path, interaction)` | Human approval between phases: proceed if the artifact carries `- [x] Approved`, else ask (interactive TTY) or halt with guidance (CI). Use `ApprovalGate.withDraftMarker` when writing a draft. |
 
 **Planning** (`Planner`):
 
@@ -230,6 +302,13 @@ failure into a finding); `ReviewerSelector.allEveryRound` (default) or
 
 **PR**: `summarisePr(reasoning, diff, context?)` folds a diff into a
 `PrSummary(title, body)` for `ctx.gh.createPr`.
+
+**Diagrams** (`Mermaid`): `Mermaid.fromEvents(events)` / `Mermaid.fromTrace(path)`
+render a flow's stages as a Mermaid flowchart (repeated stages collapse to one
+node with a count; failures styled distinctly). `Mermaid.document(diagram)` wraps
+it as a `.flow.md` (a fenced `mermaid` block + a shareable `Mermaid.liveUrl`
+link). The diagram reflects what the flow actually did — generate it from a
+recorded `trace-*.jsonl` after a run.
 
 ---
 

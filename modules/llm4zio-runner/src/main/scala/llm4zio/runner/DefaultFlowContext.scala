@@ -23,6 +23,7 @@ object DefaultFlowContext:
     retries: Int = 3,
     flakyRetries: Int = 6,
     coderCapabilities: ConnectorCapabilities = ConnectorCapabilities(),
+    workspace: Path = Path.of(".").toAbsolutePath.normalize,
   ): UIO[(FlowContext, FlowEvents.Hub)] =
     FlowEvents.hub().map { hub =>
       given FlowEvents = hub
@@ -45,6 +46,7 @@ object DefaultFlowContext:
           reviewersT,
           coderCapabilities,
           workDir = workDir,
+          workspace = workspace,
         ),
         hub,
       )
@@ -61,6 +63,7 @@ object DefaultFlowContext:
     usageLimit: UsageLimitPolicy = UsageLimitPolicy.off,
     retries: Int = 3,
     flakyRetries: Int = 6,
+    workspace: Path = Path.of(".").toAbsolutePath.normalize,
   ): ZIO[HttpClient, LlmError, (FlowContext, FlowEvents.Hub)] =
     ZIO.serviceWithZIO[HttpClient] { http =>
       val registry = ConnectorFactories.createRegistry(http, LiveCliProcessExecutor.instance)
@@ -68,7 +71,17 @@ object DefaultFlowContext:
         reasoningC <- registry.resolve(prepare(reasoning, workDir))
         coderC     <- registry.resolveCli(coder.copy(workingDir = Some(workDir.toString)))
         reviewers  <- ZIO.foreach(reviewerCfgs)(cfg => registry.resolve(prepare(cfg, workDir)))
-        bundle     <- make(reasoningC, coderC, workDir, reviewers, usageLimit, retries, flakyRetries, coderC.capabilities)
+        bundle     <- make(
+                        reasoningC,
+                        coderC,
+                        workDir,
+                        reviewers,
+                        usageLimit,
+                        retries,
+                        flakyRetries,
+                        coderC.capabilities,
+                        workspace,
+                      )
       yield bundle
     }
 
