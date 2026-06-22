@@ -3,6 +3,7 @@ package llm4zio.flow
 import java.nio.file.{ Files, Path }
 
 import scala.jdk.CollectionConverters.*
+import scala.util.Using
 
 import zio.*
 import zio.test.*
@@ -12,7 +13,30 @@ import llm4zio.core.TokenUsage
 object FlowRecorderSpec extends ZIOSpecDefault:
 
   private def linesOf(p: Path): List[String] =
-    Files.readAllLines(p).asScala.toList.filter(_.nonEmpty)
+    if Files.exists(p) then Files.readAllLines(p).asScala.toList.filter(_.nonEmpty) else Nil
+
+  /** Non-empty lines of the single `trace-*.jsonl` in `dir`, or Nil if none yet. */
+  private def traceLines(dir: Path): ZIO[Any, Throwable, List[String]] =
+    ZIO.attemptBlocking {
+      Using.resource(Files.list(dir)) { s =>
+        s.iterator.asScala
+          .find { p =>
+            val n = p.getFileName.toString; n.startsWith("trace-") && n.endsWith(".jsonl")
+          }
+          .map(linesOf)
+          .getOrElse(Nil)
+      }
+    }
+
+  /** Poll `read` until `p` holds — the forked hub subscriber drains asynchronously, so a fixed sleep races under load.
+    * Bounded (≈3s) so a genuinely-stuck recorder fails the assertion fast instead of hanging. Deterministic.
+    */
+  private def eventually[A](read: => ZIO[Any, Throwable, A])(p: A => Boolean): UIO[A] =
+    def loop(remaining: Int): UIO[A] =
+      read.orDie.flatMap(a =>
+        if p(a) || remaining <= 0 then ZIO.succeed(a) else ZIO.sleep(5.millis) *> loop(remaining - 1)
+      )
+    loop(600)
 
   def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("FlowRecorder")(
     test("serializes high-level and low-level events to JSONL in monotonic seq order") {
@@ -59,9 +83,8 @@ object FlowRecorderSpec extends ZIOSpecDefault:
           _   <- rec.consume(hub)
           _   <- hub.publish(FlowEvent.StageStarted("design"))
           _   <- hub.publish(FlowEvent.StageCompleted("design"))
-          // give the forked subscriber a moment to drain
-          _   <- ZIO.sleep(50.millis)
-          ls  <- ZIO.attemptBlocking(linesOf(file)).orDie
+          // poll until the forked subscriber has drained both events (deterministic, no fixed sleep)
+          ls  <- eventually(ZIO.attemptBlocking(linesOf(file)))(_.length == 2)
         yield assertTrue(ls.exists(_.contains("\"design\"")), ls.length == 2)
       }
     } @@ TestAspect.withLiveClock,
@@ -73,14 +96,10 @@ object FlowRecorderSpec extends ZIOSpecDefault:
           hub     <- FlowEvents.hub()
           rec     <- FlowRecorder.install(hub, dir, keep = 20)
           ambient <- StreamRecorder.current.get
-          _       <- hub.publish(FlowEvent.StageStarted("specify"))
-          _       <- ZIO.sleep(50.millis)
+          _       <- hub.publish(FlowEvent.StageStarted("specify")) // drained by the forked subscriber
+          _       <- ambient.rawLine("gemini-cli", None, "raw-x")   // ambient low-level channel (synchronous)
+          lines   <- eventually(traceLines(dir))(ls => ls.exists(_.contains("specify")) && ls.exists(_.contains("raw-x")))
           files   <- ZIO.attemptBlocking(Files.list(dir).iterator.asScala.map(_.getFileName.toString).toList).orDie
-          // also exercise the ambient low-level channel
-          _       <- ambient.rawLine("gemini-cli", None, "raw-x")
-          _       <- ZIO.sleep(20.millis)
-          trace    = files.find(n => n.startsWith("trace-") && n.endsWith(".jsonl")).get
-          lines   <- ZIO.attemptBlocking(linesOf(dir.resolve(trace))).orDie
         yield assertTrue(
           ambient eq rec,
           files.exists(n => n.startsWith("trace-") && n.endsWith(".jsonl")),
@@ -93,16 +112,18 @@ object FlowRecorderSpec extends ZIOSpecDefault:
       import llm4zio.observability.StreamRecorder
       ZIO.scoped {
         for
-          dir     <- ZIO.attemptBlocking(Files.createTempDirectory("install-tee")).orDie
-          hub     <- FlowEvents.hub()
-          sinkBuf <- Ref.make(Chunk.empty[String])
-          rec     <-
+          dir        <- ZIO.attemptBlocking(Files.createTempDirectory("install-tee")).orDie
+          hub        <- FlowEvents.hub()
+          sinkBuf    <- Ref.make(Chunk.empty[String])
+          rec        <-
             FlowRecorder.install(hub, dir, keep = 20, rawTerminalSink = Some((l: String) => sinkBuf.update(_ :+ l)))
-          ambient <- StreamRecorder.current.get
-          _       <- ambient.rawLine("gemini-cli", None, "raw-y")
-          _       <- ZIO.sleep(20.millis)
-          sb      <- sinkBuf.get
-          lines   <- ZIO.attemptBlocking(linesOf(rec.tracePath)).orDie
+          ambient    <- StreamRecorder.current.get
+          _          <- ambient.rawLine("gemini-cli", None, "raw-y")
+          // poll until the line is teed to both the sink and the file
+          both       <- eventually(ZIO.attemptBlocking(linesOf(rec.tracePath)).zip(sinkBuf.get)) { (lines, sb) =>
+                          sb.exists(_.contains("raw-y")) && lines.exists(_.contains("raw-y"))
+                        }
+          (lines, sb) = both
         yield assertTrue(
           rec.tracePath.getFileName.toString.startsWith("trace-"),
           sb.exists(_.contains("raw-y")), // teed to the sink

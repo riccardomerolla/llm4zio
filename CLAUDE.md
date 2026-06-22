@@ -64,7 +64,7 @@ llm4zio.core         LlmService, Connector{,Api,Cli}, Models (Message, LlmChunk,
 llm4zio.providers    OpenAI/Anthropic/GeminiApi/LmStudio/Ollama (API),
                      ClaudeCli/Codex/Copilot/GeminiCli/OpenCode/Pi (CLI), Mock, HttpClient
 llm4zio.tools        Tool, AnyTool, JsonSchema, tool-calling executor
-llm4zio.observability  lightweight tracing/metrics hooks
+llm4zio.observability  StreamRecorder — the ambient stream-recording hook the flow trace recorder installs
 llm4zio.flow         the flow layer (see modules table)
 llm4zio.runner       flow entry point, Connectors presets (claude/codex/gemini), Llm4zio.run/script, TerminalListener, ExampleFlow
 ```
