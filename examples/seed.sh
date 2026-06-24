@@ -9,7 +9,7 @@
 #
 # Examples: implement, implement-interactive, implement-enhanced, implement-enhanced-pr,
 #           implement-live, epic, issue-pr, issue-pr-bugfix, sdd, pipeline, reverse-engineer,
-#           handoff, local, local-claude
+#           handoff, local, local-claude, judge-gate, judge-suite
 #
 # `handoff` is a two-phase, human-gated example (handoff-plan.sc → approve → handoff-build.sc);
 # seeding it prints the two-invocation workflow instead of running a single script.
@@ -39,9 +39,23 @@ case "$EXAMPLE" in
   handoff)               STARTER="todo-java";          PROMPT="Add due dates: 'add <text> --due YYYY-MM-DD', mark overdue items in 'list', and a 'due' command showing items due today" ;;
   local)                 STARTER="calculator-rs";      PROMPT="Add a multiply function to the calculator crate" ;;
   local-claude)          STARTER="calculator-rs";      PROMPT="Add a multiply function to the calculator crate" ;;
+  judge-gate)            STARTER="calculator-rs";      PROMPT="Add multiply and divide functions to the calculator crate; divide must return an error on divide-by-zero" ;;
+  judge-suite)           STARTER="";                   PROMPT="" ;; # offline harness — no starter; intercepted below
   *) echo "unknown example: $EXAMPLE" >&2; exit 2 ;;
 esac
 SCRIPT_NAME="$EXAMPLE.sc"
+
+# `judge-suite` is an offline eval harness — it scores a built-in dataset with no repo, so
+# there's nothing to seed. Print how to run it and exit (mirrors `handoff`'s print-and-exit).
+if [ "$EXAMPLE" = "judge-suite" ]; then
+  echo
+  echo "judge-suite.sc is an offline LLM-as-a-Judge harness — no starter repo needed."
+  echo "Run it directly (needs a logged-in agent CLI / API for the judge):"
+  echo "  scala-cli run $SCRIPT_DIR/judge-suite.sc"
+  echo
+  echo "Swap the judge backend with LLM4ZIO_CODER=claude|codex|gemini|pi (default claude)."
+  exit 0
+fi
 
 LOCAL=0; RUN=0; DEST=""
 for arg in "$@"; do

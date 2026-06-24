@@ -20,6 +20,8 @@ Documentation lives in each script's header comment.
 | `reverse-engineer.sc`     | Read-only: discover → architecture → domain → ADRs → reverse-spec → review; docs an existing repo | todo-java |
 | `local.sc`                | Fully local — reasoning on LM Studio, coding on pi (local model); no cloud/API key | calculator-rs |
 | `local-claude.sc`         | Fully local — reasoning on LM Studio, coding on Claude Code routed to LM Studio; no cloud/API key | calculator-rs |
+| `judge-gate.sc`           | LLM-as-a-Judge quality gate: a per-task score loop (correctness/scope/safety, bar = 2) replaces the review loop and gates each commit | calculator-rs |
+| `judge-suite.sc`          | Offline LLM-as-a-Judge eval harness: scores a built-in retail-chatbot dataset, Layer 1 (`noPii`) + Layer 2 composed via `Evaluator.all`, each case judged 3× for variance | — (no starter) |
 | `ado-spec.sc`             | Azure DevOps: card→Refine → draft spec onto the work item → Spec Review (needs ADO) | — |
 | `ado-implement.sc`        | Azure DevOps: card→Approved → spec→tests→implement → PR linked to the work item (needs ADO) | — |
 
