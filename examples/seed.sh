@@ -105,9 +105,7 @@ scripts share a default requirement; add --prompt-file <file> to both to use you
   # 3) refuse to build until approved, then implement:
   scala-cli run $BUILD_SCRIPT -- --repo $DEST
 
-The spec + plan land in the current directory (the workspace), never in $DEST. These scripts use the
-3.9.0 API; until that release, run against your in-tree build: 'sbt publishLocal', then in each script
-add '//> using repository ivy2Local' and pin the published version.
+The spec + plan land in the current directory (the workspace), never in $DEST.
 
 Requires: JDK 21+, scala-cli, maven (the todo-java starter), and an agent CLI logged in.
 EOF
