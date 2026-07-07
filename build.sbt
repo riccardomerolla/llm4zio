@@ -142,8 +142,29 @@ lazy val llm4zioRunner = (project in file("modules/llm4zio-runner"))
     quietDocLinks,
   )
 
+// ── llm4zio-java ──────────────────────────────────────────────────────────────
+// The Java authoring surface: a blocking, exception-based facade (authored in
+// Scala, Java-shaped signatures) so a flow can be written in a .java file and run
+// like the .sc examples. `crossPaths := false` publishes a clean, Java-idiomatic
+// coordinate (io.github.riccardomerolla:llm4zio-java, no _3 suffix).
+// See .claude/plans/java-authoring-surface.md.
+lazy val llm4zioJava = (project in file("modules/llm4zio-java"))
+  .dependsOn(llm4zioRunner, llm4zioFlow, llm4zioCore)
+  .configs(It)
+  .settings(inConfig(It)(Defaults.testSettings)*)
+  .settings(
+    name        := "llm4zio-java",
+    description := "Java authoring surface for llm4zio — write a flow in a .java file, run it like the .sc examples",
+    crossPaths  := false,
+    libraryDependencySchemes += "dev.zio" %% "zio-json" % VersionScheme.Always,
+    libraryDependencies ++= zioCoreDeps ++ Seq(zioJsonDep, zioHttpDep, fansiDep) ++ zioLoggingDeps ++ zioTestDeps,
+    testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
+    It / testFrameworks ++= (Test / testFrameworks).value,
+    quietDocLinks,
+  )
+
 lazy val root = (project in file("."))
-  .aggregate(llm4zioCore, llm4zioFlow, llm4zioRunner)
+  .aggregate(llm4zioCore, llm4zioFlow, llm4zioRunner, llm4zioJava)
   .settings(
     name           := "llm4zio",
     publish / skip := true,

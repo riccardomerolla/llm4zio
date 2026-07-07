@@ -25,6 +25,9 @@ Documentation lives in each script's header comment.
 | `ado-spec.sc`             | Azure DevOps: card→Refine → draft spec onto the work item → Spec Review (needs ADO) | — |
 | `ado-implement.sc`        | Azure DevOps: card→Approved → spec→tests→implement → PR linked to the work item (needs ADO) | — |
 
+Flows can also be authored in **Java** and run the same way — see [`java/`](java/)
+(the `llm4zio-java` facade: blocking, exception-based, one `JavaFlow` handle).
+
 ## Running one
 
 ```bash

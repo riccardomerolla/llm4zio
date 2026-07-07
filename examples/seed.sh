@@ -6,6 +6,7 @@
 #   examples/seed.sh <example> /path/to/dir   # explicit dest
 #   examples/seed.sh <example> --local        # sbt publishLocal + pin the local version
 #   examples/seed.sh <example> --run          # seed, then run the flow
+#   examples/seed.sh <example> --java         # use the Java-authored flow (examples/java/*.java)
 #
 # Examples: implement, implement-interactive, implement-enhanced, implement-enhanced-pr,
 #           implement-live, epic, issue-pr, issue-pr-bugfix, sdd, pipeline, reverse-engineer,
@@ -57,15 +58,28 @@ if [ "$EXAMPLE" = "judge-suite" ]; then
   exit 0
 fi
 
-LOCAL=0; RUN=0; DEST=""
+LOCAL=0; RUN=0; JAVA=0; DEST=""
 for arg in "$@"; do
   case "$arg" in
     --local) LOCAL=1 ;;
     --run)   RUN=1 ;;
+    --java)  JAVA=1 ;;
     --*)     echo "unknown flag: $arg" >&2; exit 2 ;;
     *)       DEST="$arg" ;;
   esac
 done
+
+# --java: swap the .sc for its Java-authored counterpart under examples/java/ (kebab-case → PascalCase,
+# e.g. issue-pr-bugfix → IssuePrBugfix.java). Not every example has one — fail with the available list.
+if [ "$JAVA" -eq 1 ]; then
+  PASCAL="$(printf '%s' "$EXAMPLE" | awk -F- '{ for (i = 1; i <= NF; i++) printf toupper(substr($i,1,1)) substr($i,2) }')"
+  SCRIPT_NAME="java/$PASCAL.java"
+  if [ ! -f "$SCRIPT_DIR/$SCRIPT_NAME" ]; then
+    echo "no Java counterpart for '$EXAMPLE' — available:" >&2
+    ls "$SCRIPT_DIR/java/" | grep '\.java$' | sed 's/^/  /' >&2
+    exit 2
+  fi
+fi
 
 if [ -z "$DEST" ]; then
   tmp="${TMPDIR:-/tmp}"
@@ -126,9 +140,11 @@ if [ "$LOCAL" -eq 1 ]; then
   echo "Pinning script to local version $version"
   # Pin the local version on a copy OUTSIDE the repo (never mutate the source example, never add a .sc to $DEST).
   FLOW_DIR="$(mktemp -d "${TMPDIR:-/tmp}/llm4zio-$EXAMPLE-flow.XXXXXXXX")"
-  cp "$SCRIPT_DIR/$SCRIPT_NAME" "$FLOW_DIR/$SCRIPT_NAME"
-  RUN_SCRIPT="$FLOW_DIR/$SCRIPT_NAME"
-  sed -i.bak -E "s#(io\.github\.riccardomerolla::llm4zio-runner:)[^\"]+#\1$version#" "$RUN_SCRIPT"
+  FLOW_FILE="$(basename "$SCRIPT_NAME")"
+  cp "$SCRIPT_DIR/$SCRIPT_NAME" "$FLOW_DIR/$FLOW_FILE"
+  RUN_SCRIPT="$FLOW_DIR/$FLOW_FILE"
+  # .sc examples depend on llm4zio-runner (:: cross coordinate); .java ones on llm4zio-java (single colon, crossPaths off).
+  sed -i.bak -E "s#(io\.github\.riccardomerolla::llm4zio-runner:)[^\"]+#\1$version#; s#(io\.github\.riccardomerolla:llm4zio-java:)[^\"]+#\1$version#" "$RUN_SCRIPT"
   rm -f "$RUN_SCRIPT.bak"
   if ! grep -q 'using repository ivy2Local' "$RUN_SCRIPT"; then
     printf '%s\n' '//> using repository ivy2Local' | cat - "$RUN_SCRIPT" > "$RUN_SCRIPT.tmp"

@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.12.0] - 2026-07-07
+
+### Added
+
+- **`llm4zio-java` — a Java authoring surface** (new published artifact,
+  `io.github.riccardomerolla:llm4zio-java`, no Scala suffix): write an agentic flow in a
+  single `.java` file and run it like the `.sc` examples (`scala-cli run Implement.java`).
+  A blocking, exception-based facade over the flow layer:
+  - `Llm4zioJava.flow(args, defaultPrompt, [coder, [reasoning, [reviewers,]]] body)` runs the
+    Java body inside the runner's scoped session — live progress tree, cost summary, trace
+    recorder, resumable plans, `--repo`/`--prompt-file` flags, all identical to the `.sc` surface.
+  - One `JavaFlow` handle replaces the implicit `FlowContext` + bare-name accessors:
+    `stage`, `git()`/`gh()`/`withAdo(...)`, `startChat`/`ask`, plan
+    recover/save/load/delete, `planFrom`/`reviewedPlan`/`briefedPlan`/`brief`,
+    `assessThenPlan`/`triage`/`summarisePr`, `implementTaskLoop`, `reviewAndFixLoop`
+    (with lint-gate + parallelism variants), `lint`, `judge`/`evaluate`/`runSuite`,
+    `adrs`, `fail`/`info`.
+  - Typed errors: catastrophic failures throw unchecked `Llm4zioException` carrying an
+    `ErrorCategory`; recoverable outcomes are values with `is*` predicates
+    (`CommitResult`, `BuildResult`, `JavaAssessment`) — Scala 3 parameterless enum cases
+    are not reachable as constants from Java, so the facade exposes predicates.
+  - Helper objects for the Scala-isms Java can't touch: `Connectors` (presets +
+    `withModel`/`withEnv`/`readOnly`), `Plans`, `Evals`, `Reviewers`, `Refs`, `Adrs`.
+- **15 Java examples** under `examples/java/` — parity with every non-interactive `.sc`
+  flow (implement, enhanced ± PR, epic, issue-pr, issue-pr-bugfix, sdd, pipeline,
+  reverse-engineer, judge-gate, judge-suite, ado-spec, ado-implement, local,
+  local-claude). `examples/seed.sh --java` seeds + runs them;
+  `scripts/verify-java-examples.sh` compile-verifies all of them against the in-tree build.
+
+### Fixed
+
+- Java examples pin `//> using scala` explicitly: without it scala-cli builds a Java-only
+  project whose zinc analysis can't load Scala 3 enum classfiles
+  (`ClassNotFoundException: scala.reflect.Enum` inside bloop, surfacing as a compile hang).
+
 ## [3.4.1] - 2026-06-17
 
 ### Fixed
