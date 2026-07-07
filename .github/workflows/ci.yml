@@ -44,13 +44,11 @@ jobs:
         uses: sbt/setup-sbt@v1
 
       - name: Check, test, integration-test
-        # One sbt invocation for the whole build: separate `sbt ...` steps each spawn/attach a server, and a second
-        # invocation attaching to the first step's lingering server can die instantly (0-output exit 1). A single
-        # server lifecycle avoids that. `check` = scalafix+scalafmt; sbt 2.x `test` is incremental, so `testFull`
-        # forces a full run; It/testFull runs the integration suites.
-        # `--batch` keeps sbt in-process (no server / sbtn thin client) — the client↔server handshake is what
-        # wedged the v3.12.0 tag run; the publish job already runs `--batch` for the same reason.
-        run: sbt --batch --no-colors "; check ; testFull ; llm4zioFlow/It/testFull ; llm4zioRunner/It/testFull"
+        # One `--batch` sbt invocation for the whole build: batch mode keeps sbt in-process (no server / sbtn thin
+        # client) — the client↔server handshake wedged the v3.12.0 tag run for 3h37m, and multiple non-batch `sbt`
+        # steps have their own attach-to-lingering-server failure modes. `check` = scalafix+scalafmt; sbt 2.x `test`
+        # is incremental, so `testFull` forces a full run; the It/testFull tasks run every module's integration suite.
+        run: sbt --batch --no-colors "; check ; testFull ; llm4zioFlow/It/testFull ; llm4zioRunner/It/testFull ; llm4zioJava/It/testFull"
 
   publish:
     name: Publish to Maven Central

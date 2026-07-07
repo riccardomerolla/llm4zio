@@ -6,8 +6,9 @@ import java.util.function.{ Consumer, Supplier }
 
 import scala.jdk.CollectionConverters.{ ListHasAsScala, SeqHasAsJava }
 
-import zio.{ Runtime, Unsafe, ZIO }
+import zio.{ Runtime, ZIO }
 
+import llm4zio.core.LlmService
 import llm4zio.eval.*
 import llm4zio.flow.*
 import llm4zio.runner.Ado
@@ -20,6 +21,11 @@ import llm4zio.runner.Ado
   */
 final class JavaFlow private[javaapi] (runtime: Runtime[Any], ctx: FlowContext):
   private val events = ctx.events
+
+  /** The service review rounds run on: the first extra reviewer when configured (the cheap read-only seat, matching the
+    * `.sc` flows' `reviewers.headOption.getOrElse(reasoning)`), else the reasoning connector.
+    */
+  private def reviewService: LlmService = ctx.reviewers.headOption.getOrElse(ctx.reasoning)
 
   // ── context accessors ────────────────────────────────────────────────────────
 
@@ -60,21 +66,22 @@ final class JavaFlow private[javaapi] (runtime: Runtime[Any], ctx: FlowContext):
 
   /** Run `body` as a named stage: emit `StageStarted`, run the body on this (blocking) thread, then emit
     * `StageCompleted` on success or `StageFailed` on a thrown exception, re-throwing it. The Java counterpart of the
-    * `.sc` `stage(name)(effect)` combinator — same event protocol, blocking shape.
+    * `.sc` `stage(name)(effect)` combinator — same event protocol (including `describeError` rendering), blocking
+    * shape. Interruption is not a stage failure: when the thread is being cancelled no `StageFailed` is published (the
+    * `.sc` combinator likewise skips it for non-typed failures), and publishing would deadlock on an interrupted thread
+    * anyway.
     */
   def stage[A](name: String, body: Supplier[A]): A =
-    Unsafe.unsafe { implicit u =>
-      Bridge.run(runtime, events.publish(FlowEvent.StageStarted(name)))
-      try
-        val result = body.get()
-        Bridge.run(runtime, events.publish(FlowEvent.StageCompleted(name)))
-        result
-      catch
-        case t: Throwable =>
-          val detail = Option(t.getMessage).getOrElse(t.toString)
-          Bridge.run(runtime, events.publish(FlowEvent.StageFailed(name, detail)))
-          throw t // scalafix:ok DisableSyntax.throw
-    }
+    Bridge.runSync(runtime, events.publish(FlowEvent.StageStarted(name)))
+    try
+      val result = body.get()
+      Bridge.runSync(runtime, events.publish(FlowEvent.StageCompleted(name)))
+      result
+    catch
+      case t: Throwable =>
+        if !Thread.currentThread().isInterrupted then
+          Bridge.runSync(runtime, events.publish(FlowEvent.StageFailed(name, describeError(t))))
+        throw t // scalafix:ok DisableSyntax.throw
 
   /** Void-bodied stage. A Java lambda whose body is a void call (e.g. `() -> flow.git().checkoutOrCreate(id)`) is a
     * `Runnable`, not a `Supplier`, so this overload is what such a stage resolves to.
@@ -154,7 +161,9 @@ final class JavaFlow private[javaapi] (runtime: Runtime[Any], ctx: FlowContext):
   def recoverOrCreatePlan(path: Path, create: Supplier[Plan]): Plan =
     Bridge.runSync(
       runtime,
-      PlanStore.recoverOrCreate(path)(ZIO.attemptBlocking(create.get()).mapError(Llm4zioException.toFlowError)),
+      PlanStore.recoverOrCreate(path)(
+        ZIO.attemptBlockingInterrupt(create.get()).mapError(Llm4zioException.toFlowError)
+      ),
     )
 
   // ── loops ────────────────────────────────────────────────────────────────────
@@ -167,7 +176,7 @@ final class JavaFlow private[javaapi] (runtime: Runtime[Any], ctx: FlowContext):
     Bridge.runSync(
       runtime,
       llm4zio.flow.implementTaskLoop(path, plan) { task =>
-        ZIO.attemptBlocking(perTask.accept(task)).mapError(Llm4zioException.toFlowError)
+        ZIO.attemptBlockingInterrupt(perTask.accept(task)).mapError(Llm4zioException.toFlowError)
       },
     )
 
@@ -186,20 +195,7 @@ final class JavaFlow private[javaapi] (runtime: Runtime[Any], ctx: FlowContext):
     taskTitle: String,
     diff: Supplier[String],
     parallelism: Int,
-  ): Unit =
-    given FlowEvents = events
-    val rs           = reviewers.asScala.toList
-    val _            = Bridge.runSync(
-      runtime,
-      llm4zio.flow.reviewAndFixLoop(
-        rs,
-        ctx.reasoning,
-        chat.underlying,
-        taskTitle,
-        ZIO.attemptBlocking(diff.get()).mapError(Llm4zioException.toFlowError),
-        parallelism = parallelism,
-      ),
-    )
+  ): Unit = runReviewLoop(reviewers, chat, taskTitle, diff, None, parallelism)
 
   /** As [[reviewAndFixLoop]], with a lint/build gate run before each review round: if `lintCommand` (e.g.
     * `["mvn","-q","test"]`, run in the work dir) fails, its findings go straight to the fixer and the LLM reviewers are
@@ -213,18 +209,27 @@ final class JavaFlow private[javaapi] (runtime: Runtime[Any], ctx: FlowContext):
     lintCommand: java.util.List[String],
     parallelism: Int,
   ): Unit =
+    val gate = llm4zio.flow.Reviewers.lintCommand(lintCommand.asScala.toList, ctx.workDir)
+    runReviewLoop(reviewers, chat, taskTitle, diff, Some(gate), parallelism)
+
+  private def runReviewLoop(
+    reviewers: java.util.List[Reviewer],
+    chat: JavaChat,
+    taskTitle: String,
+    diff: Supplier[String],
+    lint: Option[zio.IO[FlowError, ReviewResult]],
+    parallelism: Int,
+  ): Unit =
     given FlowEvents = events
-    val rs           = reviewers.asScala.toList
-    val gate         = llm4zio.flow.Reviewers.lintCommand(lintCommand.asScala.toList, ctx.workDir)
     val _            = Bridge.runSync(
       runtime,
       llm4zio.flow.reviewAndFixLoop(
-        rs,
-        ctx.reasoning,
+        reviewers.asScala.toList,
+        reviewService,
         chat.underlying,
         taskTitle,
-        ZIO.attemptBlocking(diff.get()).mapError(Llm4zioException.toFlowError),
-        lint = Some(gate),
+        ZIO.attemptBlockingInterrupt(diff.get()).mapError(Llm4zioException.toFlowError),
+        lint = lint,
         parallelism = parallelism,
       ),
     )
@@ -270,7 +275,7 @@ final class JavaFlow private[javaapi] (runtime: Runtime[Any], ctx: FlowContext):
     val _ = Bridge.runSync(
       runtime,
       Ado.withTool() { ado =>
-        ZIO.attemptBlocking(body.accept(new JavaAdo(runtime, ado))).mapError(Llm4zioException.toFlowError)
+        ZIO.attemptBlockingInterrupt(body.accept(new JavaAdo(runtime, ado))).mapError(Llm4zioException.toFlowError)
       },
     )
 

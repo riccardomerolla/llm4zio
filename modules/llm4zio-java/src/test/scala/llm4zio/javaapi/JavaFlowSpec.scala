@@ -3,12 +3,15 @@ package llm4zio.javaapi
 import java.nio.file.Path
 import java.util.function.Supplier
 
+import zio.json.{ DecoderOps, JsonCodec }
+import zio.stream.{ Stream, ZStream }
 import zio.test.*
-import zio.{ Scope, ZIO }
+import zio.{ IO, Ref, Scope, UIO, ZIO }
 
-import llm4zio.core.{ LlmConfig, LlmProvider }
+import llm4zio.core.*
 import llm4zio.flow.*
 import llm4zio.providers.MockProvider
+import llm4zio.tools.{ AnyTool, JsonSchema }
 
 /** The Java-facing handle. These exercise it the way Java code does — synchronous, blocking calls — while asserting the
   * same progress-event protocol the `.sc` surface produces. The handle runs on the live runtime captured per test.
@@ -20,6 +23,17 @@ object JavaFlowSpec extends ZIOSpecDefault:
 
   private def ctx(events: FlowEvents): FlowContext =
     FlowContext(reasoning = mock, coder = mock, git = GitTool(dir), gh = GhTool(dir), events = events, workDir = dir)
+
+  /** Counts structured calls and answers every review with a clean ReviewResult. */
+  final private class CountingReviewService(hits: Ref[Int]) extends LlmService:
+    def executeStream(prompt: String): Stream[LlmError, LlmChunk]                              = ZStream.empty
+    def executeStreamWithHistory(messages: List[Message]): Stream[LlmError, LlmChunk]          = ZStream.empty
+    def executeWithTools(prompt: String, tools: List[AnyTool]): IO[LlmError, ToolCallResponse] =
+      ZIO.dieMessage("unused")
+    def executeStructured[A: JsonCodec](prompt: String, schema: JsonSchema): IO[LlmError, A]   =
+      hits.update(_ + 1) *>
+        ZIO.fromEither("""{"issues":[]}""".fromJson[A]).mapError(e => LlmError.ParseError(e, "{}"))
+    def isAvailable: UIO[Boolean]                                                              = ZIO.succeed(true)
 
   def spec: Spec[Environment & Scope, Any] = suite("JavaFlow")(
     test("stage publishes StageStarted then StageCompleted around a successful body, returning its value") {
@@ -101,6 +115,26 @@ object JavaFlowSpec extends ZIOSpecDefault:
                     flow.loadPlan(tmp)
                   }
       yield assertTrue(loaded.isPresent, loaded.get.epicId == "epic-1", loaded.get.tasks.size == 1)
+    },
+    test("reviewAndFixLoop runs reviews on the first extra reviewer seat, not the reasoning connector") {
+      for
+        events        <- FlowEvents.collecting
+        rt            <- ZIO.runtime[Any]
+        reviewerHits  <- Ref.make(0)
+        reasoningHits <- Ref.make(0)
+        reviewerSeat   = new CountingReviewService(reviewerHits)
+        reasoningSeat  = new CountingReviewService(reasoningHits)
+        flowCtx        = ctx(events).copy(reasoning = reasoningSeat, reviewers = List(reviewerSeat))
+        flow           = new JavaFlow(rt, flowCtx)
+        _             <- ZIO.attemptBlocking {
+                           val chat = flow.startChat("impl")
+                           // fully qualified: the file's `import llm4zio.flow.*` would otherwise shadow the
+                           // same-package javaapi.Reviewers with the flow-layer object of the same name
+                           flow.reviewAndFixLoop(llm4zio.javaapi.Reviewers.minimal(), chat, "First step", () => "a diff")
+                         }
+        onReviewer    <- reviewerHits.get
+        onReasoning   <- reasoningHits.get
+      yield assertTrue(onReviewer > 0, onReasoning == 0)
     },
     test("deletePlan removes the persisted plan file") {
       for

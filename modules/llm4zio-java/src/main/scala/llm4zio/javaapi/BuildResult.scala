@@ -1,10 +1,10 @@
 package llm4zio.javaapi
 
-/** The outcome of waiting on a PR's CI, mirroring `llm4zio.flow.BuildOutcome`. Scala 3 parameterless enum cases aren't
-  * reachable as `BuildResult.Success` from Java, so a Java flow branches via the `is*` predicate methods (`if
-  * (status.isSuccess()) …`) rather than `==` on a case.
+/** The outcome of waiting on a PR's CI, mirroring `llm4zio.flow.BuildOutcome`. Extends `java.lang.Enum`, so it compiles
+  * to a real Java enum: Java branches with `status == BuildResult.Success` or an exhaustive `switch`. The `is*`
+  * predicates are kept for source compatibility.
   */
-enum BuildResult:
+enum BuildResult extends java.lang.Enum[BuildResult]:
   case Success, Failure, Pending, TimedOut
 
   def isSuccess: Boolean  = this == BuildResult.Success

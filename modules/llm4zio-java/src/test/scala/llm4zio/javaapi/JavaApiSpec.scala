@@ -39,6 +39,22 @@ object JavaApiSpec extends ZIOSpecDefault:
         !BuildResult.TimedOut.isSuccess,
       )
     },
+    test("withEnv merges onto existing env vars instead of replacing them") {
+      val step1 =
+        Connectors.withEnv(Connectors.claude(), java.util.Map.of("ANTHROPIC_BASE_URL", "http://localhost:1234"))
+      val step2 = Connectors.withEnv(step1, java.util.Map.of("ANTHROPIC_AUTH_TOKEN", "lmstudio"))
+      assertTrue(
+        step2.envVars.get("ANTHROPIC_BASE_URL").contains("http://localhost:1234"),
+        step2.envVars.get("ANTHROPIC_AUTH_TOKEN").contains("lmstudio"),
+      )
+    },
+    test("outcome enums compile to real Java enums (cases reachable as constants, switchable)") {
+      assertTrue(
+        BuildResult.Success.isInstanceOf[java.lang.Enum[?]],
+        CommitResult.Committed.isInstanceOf[java.lang.Enum[?]],
+        ErrorCategory.Aborted.isInstanceOf[java.lang.Enum[?]],
+      )
+    },
     test("CommitResult predicates identify exactly their own case") {
       assertTrue(
         CommitResult.Committed.isCommitted,

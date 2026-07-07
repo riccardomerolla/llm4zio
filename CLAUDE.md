@@ -45,13 +45,17 @@ modules/
                     #   over Proc (zio-process), FlowContext, implementTaskLoop
   llm4zio-runner/   # flow() script entry point (examples/*.sc), Llm4zio.run embedding entry,
                     #   TerminalListener, Connectors presets, worked ExampleFlow
+  llm4zio-java/     # the Java authoring surface: a blocking, exception-based facade
+                    #   (Scala-authored, Java-shaped) so flows can be written in .java
+                    #   files (examples/java/*.java) and run via scala-cli
 ```
 
-Dependency direction: `runner → flow → core`. Never the reverse.
+Dependency direction: `java → runner → flow → core`. Never the reverse.
 
 Published artifacts (Maven Central, `io.github.riccardomerolla`):
-`llm4zio-core`, `llm4zio-flow`, `llm4zio-runner`. The root project is
-`publish / skip := true`.
+`llm4zio-core`, `llm4zio-flow`, `llm4zio-runner`, and `llm4zio-java`
+(`crossPaths := false`, so its coordinate has no `_3` suffix). The root project
+is `publish / skip := true`.
 
 ---
 
@@ -66,7 +70,10 @@ llm4zio.providers    OpenAI/Anthropic/GeminiApi/LmStudio/Ollama (API),
 llm4zio.tools        Tool, AnyTool, JsonSchema, tool-calling executor
 llm4zio.observability  StreamRecorder — the ambient stream-recording hook the flow trace recorder installs
 llm4zio.flow         the flow layer (see modules table)
-llm4zio.runner       flow entry point, Connectors presets (claude/codex/gemini), Llm4zio.run/script, TerminalListener, ExampleFlow
+llm4zio.runner       flow entry point, Connectors presets (claude/codex/gemini), Llm4zio.run/script/unsafeMain, TerminalListener, ExampleFlow
+llm4zio.javaapi      the Java facade: Llm4zioJava.flow entry, JavaFlow handle, Bridge (blocking boundary),
+                     Llm4zioException/ErrorCategory, outcome enums (BuildResult/CommitResult), helper objects
+                     (Connectors/Plans/Evals/Reviewers/Refs/Adrs)
 ```
 
 ---
@@ -92,7 +99,9 @@ llm4zio.runner       flow entry point, Connectors presets (claude/codex/gemini),
   `import zio.*` brings `zio.Task`, which shadows the library's `flow.Task` in
   *type* position; import `zio.ZIO` (or specific names) in files that name `Task`.
 - **Script surface.** Examples are flat `examples/*.sc` files: `llm4zio.runner.flow(args) { body }`
-  holds the library's only `unsafeRun`; the body is `FlowContext ?=> ZIO[Any, FlowError, Any]`.
+  frames the body over `Llm4zio.unsafeMain`, the one process-entry `unsafeRun` shared with the Java
+  surface (`Llm4zioJava.flow`); the `.javaapi.Bridge` additionally collapses effects at the Java
+  boundary per call. The body is `FlowContext ?=> ZIO[Any, FlowError, Any]`.
   Bare names (`git`, `gh`, `coder`, `reasoning`, `userPrompt`, `workDir`) summon the context;
   `FlowEvents` derives from `FlowContext` via the companion given. Embedders use `Llm4zio.run`.
 - **TDD.** Every behaviour is driven by a test first; integration tests that spawn

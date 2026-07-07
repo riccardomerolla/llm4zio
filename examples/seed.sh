@@ -21,8 +21,21 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 EXAMPLE="${1:-}"
-[ -n "$EXAMPLE" ] || { echo "usage: examples/seed.sh <example> [dest] [--local] [--run]" >&2; exit 2; }
+[ -n "$EXAMPLE" ] || { echo "usage: examples/seed.sh <example> [dest] [--local] [--run] [--java]" >&2; exit 2; }
 shift
+
+# Parse flags FIRST, so special-case examples below (judge-suite, handoff) still see and honour
+# them — an early print-and-exit must not silently swallow --java or an unknown flag.
+LOCAL=0; RUN=0; JAVA=0; DEST=""
+for arg in "$@"; do
+  case "$arg" in
+    --local) LOCAL=1 ;;
+    --run)   RUN=1 ;;
+    --java)  JAVA=1 ;;
+    --*)     echo "unknown flag: $arg" >&2; exit 2 ;;
+    *)       DEST="$arg" ;;
+  esac
+done
 
 # example → starter project + demo prompt ("" = the flow needs a real argument, e.g. an issue ref)
 case "$EXAMPLE" in
@@ -46,29 +59,6 @@ case "$EXAMPLE" in
 esac
 SCRIPT_NAME="$EXAMPLE.sc"
 
-# `judge-suite` is an offline eval harness — it scores a built-in dataset with no repo, so
-# there's nothing to seed. Print how to run it and exit (mirrors `handoff`'s print-and-exit).
-if [ "$EXAMPLE" = "judge-suite" ]; then
-  echo
-  echo "judge-suite.sc is an offline LLM-as-a-Judge harness — no starter repo needed."
-  echo "Run it directly (needs a logged-in agent CLI / API for the judge):"
-  echo "  scala-cli run $SCRIPT_DIR/judge-suite.sc"
-  echo
-  echo "Swap the judge backend with LLM4ZIO_CODER=claude|codex|gemini|pi (default claude)."
-  exit 0
-fi
-
-LOCAL=0; RUN=0; JAVA=0; DEST=""
-for arg in "$@"; do
-  case "$arg" in
-    --local) LOCAL=1 ;;
-    --run)   RUN=1 ;;
-    --java)  JAVA=1 ;;
-    --*)     echo "unknown flag: $arg" >&2; exit 2 ;;
-    *)       DEST="$arg" ;;
-  esac
-done
-
 # --java: swap the .sc for its Java-authored counterpart under examples/java/ (kebab-case → PascalCase,
 # e.g. issue-pr-bugfix → IssuePrBugfix.java). Not every example has one — fail with the available list.
 if [ "$JAVA" -eq 1 ]; then
@@ -79,6 +69,19 @@ if [ "$JAVA" -eq 1 ]; then
     ls "$SCRIPT_DIR/java/" | grep '\.java$' | sed 's/^/  /' >&2
     exit 2
   fi
+fi
+
+# `judge-suite` is an offline eval harness — it scores a built-in dataset with no repo, so
+# there's nothing to seed. Print how to run it (the .java counterpart when --java) and exit
+# (mirrors `handoff`'s print-and-exit).
+if [ "$EXAMPLE" = "judge-suite" ]; then
+  echo
+  echo "$(basename "$SCRIPT_NAME") is an offline LLM-as-a-Judge harness — no starter repo needed."
+  echo "Run it directly (needs a logged-in agent CLI / API for the judge):"
+  echo "  scala-cli run $SCRIPT_DIR/$SCRIPT_NAME"
+  echo
+  echo "Swap the judge backend with LLM4ZIO_CODER=claude|codex|gemini|pi (default claude)."
+  exit 0
 fi
 
 if [ -z "$DEST" ]; then

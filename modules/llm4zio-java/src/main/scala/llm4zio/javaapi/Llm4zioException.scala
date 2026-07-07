@@ -1,13 +1,16 @@
 package llm4zio.javaapi
 
+import java.io.{ PrintWriter, StringWriter }
+
 import llm4zio.flow.FlowError
 
-/** The category of a catastrophic flow failure, mirroring the cases of `llm4zio.flow.FlowError`. (Scala 3 parameterless
-  * enum cases aren't reachable as `ErrorCategory.X` from Java — a Java caller reads `getCategory().name()` /
-  * `.ordinal`, or compares via the `is*` predicates below.)
+/** The category of a catastrophic flow failure, mirroring the cases of `llm4zio.flow.FlowError` (plus
+  * [[ErrorCategory.Interrupted]] for cancellation and [[ErrorCategory.Unknown]] for defects). Extends `java.lang.Enum`,
+  * so it compiles to a real Java enum — Java callers reference `ErrorCategory.Aborted` as a constant and `switch` over
+  * it natively. The `is*` predicates are kept for source compatibility.
   */
-enum ErrorCategory:
-  case Persistence, PlanParse, Aborted, Process, Llm, Unknown
+enum ErrorCategory extends java.lang.Enum[ErrorCategory]:
+  case Persistence, PlanParse, Aborted, Process, Llm, Interrupted, Unknown
 
   /** True when this is the [[ErrorCategory.Aborted]] category — the one a Java flow most often branches on. */
   def isAborted: Boolean = this == ErrorCategory.Aborted
@@ -38,7 +41,9 @@ object Llm4zioException:
 
   /** Reverse of [[from]]: collapse a Throwable thrown out of a Java flow body back into a typed [[FlowError]], so the
     * runner's failure rendering (✖ banner, exit codes) sees a flow-layer error. A non-[[Llm4zioException]] (a bug in
-    * the Java body) maps to [[FlowError.Llm]].
+    * the Java body — an NPE, an UncheckedIOException, …) maps to [[FlowError.Process]] per the recoverable-vs-
+    * catastrophic split, keeping the exception class in the message and the full stack trace in the detail so the
+    * failure stays debuggable from the trace/log.
     */
   def toFlowError(t: Throwable): FlowError = t match
     case e: Llm4zioException =>
@@ -48,5 +53,11 @@ object Llm4zioException:
         case ErrorCategory.Aborted     => FlowError.Aborted(e.getMessage)
         case ErrorCategory.Process     => FlowError.Process(e.getMessage, "")
         case ErrorCategory.Llm         => FlowError.Llm(e.getMessage)
+        case ErrorCategory.Interrupted => FlowError.Aborted("interrupted")
         case ErrorCategory.Unknown     => FlowError.Llm(e.getMessage)
-    case other               => FlowError.Llm(Option(other.getMessage).getOrElse(other.toString))
+    case other               => FlowError.Process(other.toString, stackTrace(other))
+
+  private def stackTrace(t: Throwable): String =
+    val sw = new StringWriter
+    t.printStackTrace(new PrintWriter(sw))
+    sw.toString

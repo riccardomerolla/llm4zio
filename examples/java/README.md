@@ -57,11 +57,11 @@ login is enough. The issue-pr flows additionally need `gh` authenticated and a r
   project "mixed", which analyses fine; your code stays 100% Java.
 - **Errors**: catastrophic failures throw the unchecked `Llm4zioException`, carrying a
   typed `ErrorCategory` (`e.getCategory().name()`, `e.getCategory().isAborted()`).
-- **Recoverable outcomes are values with `is*` predicates**, not exceptions:
-  `flow.git().commitAll(msg).isCommitted()`, `flow.gh().waitForBuild(pr, t).isSuccess()`,
-  `flow.assessThenPlan(p).isBlocked()` (then `.getReason()` / `.getPlan()`). Scala 3
-  enum *cases* aren't reachable as `Enum.Case` constants from Java, so the facade
-  exposes predicates instead.
+- **Recoverable outcomes are values**, not exceptions. The outcome enums are real Java
+  enums — compare or `switch` directly (`result == CommitResult.Committed`,
+  `switch (flow.gh().waitForBuild(pr, t)) { case Success -> …; … }`), or use the `is*`
+  predicates (`.isCommitted()`, `.isSuccess()`). For the payload-carrying
+  `flow.assessThenPlan(p)`, branch with `.isBlocked()` then `.getReason()` / `.getPlan()`.
 - **Multi-case results with payloads** (e.g. `Triage`) work with ordinary Java
   pattern-matching, because payload cases compile to nested classes:
   ```java

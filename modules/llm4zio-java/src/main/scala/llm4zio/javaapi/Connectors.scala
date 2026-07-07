@@ -36,7 +36,7 @@ object Connectors:
 
   /** Add environment variables to a CLI coder (e.g. routing Claude Code at a local server). */
   def withEnv(config: CliConnectorConfig, env: java.util.Map[String, String]): CliConnectorConfig =
-    config.copy(envVars = env.asScala.toMap)
+    config.copy(envVars = config.envVars ++ env.asScala)
 
   /** Make a CLI config read-only (the planning/review seat). */
   def readOnly(config: CliConnectorConfig): CliConnectorConfig = config.copy(readOnly = true)
