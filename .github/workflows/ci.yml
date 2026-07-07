@@ -23,6 +23,10 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
+    # A wedged build must fail fast, not burn a runner for hours: the v3.12.0 tag run hung 3h37m
+    # right after "started sbt server" (sbtn client↔server handshake wedge) before being cancelled.
+    # Healthy runs take ~4–10 minutes.
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -44,13 +48,16 @@ jobs:
         # invocation attaching to the first step's lingering server can die instantly (0-output exit 1). A single
         # server lifecycle avoids that. `check` = scalafix+scalafmt; sbt 2.x `test` is incremental, so `testFull`
         # forces a full run; It/testFull runs the integration suites.
-        run: sbt "; check ; testFull ; llm4zioFlow/It/testFull ; llm4zioRunner/It/testFull"
+        # `--batch` keeps sbt in-process (no server / sbtn thin client) — the client↔server handshake is what
+        # wedged the v3.12.0 tag run; the publish job already runs `--batch` for the same reason.
+        run: sbt --batch --no-colors "; check ; testFull ; llm4zioFlow/It/testFull ; llm4zioRunner/It/testFull"
 
   publish:
     name: Publish to Maven Central
     needs: [ test ]
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v4
