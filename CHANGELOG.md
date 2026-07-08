@@ -5,6 +5,44 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.12.1] - 2026-07-08
+
+### Fixed
+
+- **Java flows can be stopped.** Ctrl-C/SIGTERM on a Java-authored flow previously hung
+  until the whole flow finished and orphaned the coder CLI subprocess: the body ran in a
+  non-interruptible blocking region and every facade call forked an unparented root
+  fiber. The body (and all callback wrappers) now run via `attemptBlockingInterrupt`,
+  and `Bridge` cancels the underlying fiber when the calling thread is interrupted —
+  finalizers run, the coder subprocess is killed, and the flow unwinds promptly with the
+  new `ErrorCategory.Interrupted`.
+- Reviewer connectors passed to `Llm4zioJava.flow(…, reviewers, …)` are actually used:
+  review rounds run on the first extra reviewer (the cheap read-only seat, as in the
+  `.sc` flows) instead of always on the reasoning connector.
+- `Connectors.withEnv` merges onto existing env vars instead of replacing them (chained
+  calls silently dropped earlier entries — e.g. the LM Studio routing).
+- A plain Java exception thrown from a flow body maps to `FlowError.Process` with the
+  exception class in the message and the stack trace in the detail (was an opaque
+  `FlowError.Llm(message)` with no class, no stack).
+- `JavaFlow.stage` no longer reports interruption as a stage failure, and renders
+  failure details via the flow layer's `describeError` — traces match the `.sc` surface.
+- `seed.sh`: flags are parsed before per-example intercepts, so `judge-suite --java`
+  points at `JudgeSuite.java` (was silently ignored) and unknown flags are rejected
+  everywhere; the usage string documents `--java`.
+- `scripts/verify-java-examples.sh` no longer aborts mid-loop under `set -e` (quiet or
+  noise-only failure logs, `head` SIGPIPE), and `--skip-publish` reads the version
+  recorded by the last publish instead of guessing from the ivy cache's mtimes.
+
+### Changed
+
+- `BuildResult`, `CommitResult`, and `ErrorCategory` extend `java.lang.Enum`: they are
+  real Java enums now — reference cases as constants (`BuildResult.Success`) and
+  `switch` exhaustively. The `is*` predicates remain for source compatibility.
+- `Llm4zio.unsafeMain` (runner): the process-entry `unsafeRun` shared by the `.sc`
+  `flow()` and `Llm4zioJava.flow` — the Ctrl-C/exit-code contract lives in one place.
+- CI runs `llm4zioJava/It/testFull` and uses batch-mode sbt with a 30-minute job
+  timeout (a wedged sbt client/server handshake once held a release runner for 3h37m).
+
 ## [3.12.0] - 2026-07-07
 
 ### Added
