@@ -51,6 +51,22 @@ object AdoToolSpec extends ZIOSpecDefault:
         r.body.exists(_.contains("spec drafted")),
       )
     },
+    test("createWorkItemReq is a json-patch POST to the typed create endpoint") {
+      val r = cfg.createWorkItemReq(
+        "Task",
+        "Port fee calculation",
+        Map("System.Description" -> "R5-R7", "Microsoft.VSTS.Common.AcceptanceCriteria" -> "AC1"),
+      )
+      assertTrue(
+        r.method == "POST",
+        r.url == "https://dev.azure.com/acme/Widgets/_apis/wit/workitems/$Task?api-version=7.1",
+        r.contentType == "application/json-patch+json",
+        r.body.exists(b =>
+          b.contains("/fields/System.Title") && b.contains("Port fee calculation") &&
+          b.contains("/fields/System.Description") && b.contains("R5-R7")
+        ),
+      )
+    },
     test("createPrReq posts source/target refs, title and body") {
       val r = cfg.createPrReq("refs/heads/llm4zio/wi-7", "refs/heads/main", "Title", "Body")
       assertTrue(

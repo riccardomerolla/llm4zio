@@ -1,0 +1,222 @@
+-- ------------------------------------------------------------------
+--  PaymentRouting.esql - MERIDIAN SAVINGS BANK - ESB PAYMENT HUB
+--  Backs PaymentRouting.msgflow (broker MERIDBRK, exec group PAYHUB).
+--  Sits between the channel front ends (branch teller, web banking)
+--  and the mainframe: validated payments are routed to the CICS
+--  bridge (internal book transfers) or the SEPA gateway; everything
+--  else goes to the reject queue with a coded reason.
+--  MAINT: 2009-03  P.NDIAYE     ORIGINAL (WMB 6.1)
+--  MAINT: 2014-11  S.KOWALCZYK  SEPA PRIORITY/REPORTING THRESHOLDS
+--  MAINT: 2019-02  D.RUIZ       ROUTING TABLE MOVED TO SHARED ROW
+-- ------------------------------------------------------------------
+
+DECLARE RoutingTable SHARED ROW;
+DECLARE XferSeqNo    SHARED INTEGER 0;
+
+-- Structural IBAN check only: 2-letter country, 2-digit check digits,
+-- plausible overall length. Mod-97 verification is the scheme's job.
+CREATE FUNCTION IsWellFormedIban(IN iban CHARACTER) RETURNS BOOLEAN
+BEGIN
+    IF iban IS NULL OR LENGTH(iban) < 15 OR LENGTH(iban) > 34 THEN
+        RETURN FALSE;
+    END IF;
+    IF TRANSLATE(SUBSTRING(iban FROM 1 FOR 2),
+                 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', '') <> '' THEN
+        RETURN FALSE;
+    END IF;
+    IF TRANSLATE(SUBSTRING(iban FROM 3 FOR 2), '0123456789', '') <> '' THEN
+        RETURN FALSE;
+    END IF;
+    RETURN TRUE;
+END;
+
+CREATE COMPUTE MODULE ValidatePayment_Compute
+    CREATE FUNCTION Main() RETURNS BOOLEAN
+    BEGIN
+        DECLARE pay      REFERENCE TO InputRoot.XMLNSC.Payment;
+        DECLARE debtor   CHARACTER pay.Debtor.AccountNumber;
+        DECLARE credIban CHARACTER COALESCE(pay.Creditor.IBAN, '');
+        DECLARE credAcct CHARACTER COALESCE(pay.Creditor.AccountNumber, '');
+        DECLARE amount   DECIMAL   pay.Amount;
+        DECLARE currency CHARACTER pay.Currency;
+
+        -- V02: debtor account is mandatory and must be exactly 10 digits
+        --      (the ACCOUNT master key format, see cobol/copybooks/ACCTREC.cpy)
+        IF debtor IS NULL OR LENGTH(debtor) <> 10
+           OR TRANSLATE(debtor, '0123456789', '') <> '' THEN
+            CALL Reject('V02', 'DEBTOR ACCOUNT MISSING OR NOT 10 DIGITS');
+            RETURN FALSE;
+        END IF;
+
+        -- V03: creditor is mandatory - either an IBAN or an account number;
+        --      an IBAN, when present, must at least look like one
+        IF credIban = '' AND credAcct = '' THEN
+            CALL Reject('V03', 'CREDITOR MISSING - NO IBAN AND NO ACCOUNT');
+            RETURN FALSE;
+        END IF;
+        IF credIban <> '' AND NOT IsWellFormedIban(credIban) THEN
+            CALL Reject('V03', 'CREDITOR IBAN MALFORMED');
+            RETURN FALSE;
+        END IF;
+
+        -- V01: amount must be present and strictly positive, and the
+        --      currency one of the three the hub is licensed to clear
+        IF amount IS NULL OR amount <= 0 THEN
+            CALL Reject('V01', 'AMOUNT MISSING OR NOT POSITIVE');
+            RETURN FALSE;
+        END IF;
+        IF currency IS NULL OR currency NOT IN ('EUR', 'USD', 'GBP') THEN
+            CALL Reject('V01', 'CURRENCY NOT ONE OF EUR/USD/GBP');
+            RETURN FALSE;
+        END IF;
+
+        SET OutputRoot = InputRoot;
+        RETURN TRUE;
+    END;
+
+    -- Wrap the untouched original payload in a reject envelope so the
+    -- repair desk sees exactly what the channel sent, plus the reason.
+    CREATE PROCEDURE Reject(IN reasonCode CHARACTER, IN reasonText CHARACTER)
+    BEGIN
+        SET OutputRoot.MQMD = InputRoot.MQMD;
+        SET OutputRoot.XMLNSC.PaymentReject.RejectedBy      = 'ValidatePayment_Compute';
+        SET OutputRoot.XMLNSC.PaymentReject.ReasonCode      = reasonCode;
+        SET OutputRoot.XMLNSC.PaymentReject.ReasonText      = reasonText;
+        SET OutputRoot.XMLNSC.PaymentReject.RejectTime      = CURRENT_TIMESTAMP;
+        SET OutputRoot.XMLNSC.PaymentReject.OriginalPayment = InputRoot.XMLNSC.Payment;
+        PROPAGATE TO TERMINAL 'out1' DELETE NONE;
+    END;
+END MODULE;
+
+CREATE COMPUTE MODULE RoutePayment_Compute
+    CREATE FUNCTION Main() RETURNS BOOLEAN
+    BEGIN
+        DECLARE pay      REFERENCE TO InputRoot.XMLNSC.Payment;
+        DECLARE currency CHARACTER pay.Currency;
+        DECLARE amount   DECIMAL   pay.Amount;
+        DECLARE credAcct CHARACTER COALESCE(pay.Creditor.AccountNumber, '');
+        DECLARE credIban CHARACTER COALESCE(pay.Creditor.IBAN, '');
+        DECLARE payType  CHARACTER;
+        DECLARE route    CHARACTER;
+
+        CALL EnsureRoutingTable();
+
+        -- Classification: every Meridian book account lives in the '55'
+        -- number range, so a creditor account starting '55' is an
+        -- internal (on-us) transfer regardless of anything else.
+        IF SUBSTRING(credAcct FROM 1 FOR 2) = '55' THEN
+            SET payType = 'INTERNAL';
+        ELSEIF credIban <> '' THEN
+            SET payType = 'SCT';        -- candidate SEPA credit transfer
+        ELSE
+            SET payType = 'XBORDER';    -- off-us, non-IBAN: no live leg
+        END IF;
+
+        SET route = THE(SELECT ITEM r.Target
+                        FROM   RoutingTable.Route[] AS r
+                        WHERE  r.Currency = currency
+                        AND    r.PayType  = payType);
+
+        CASE COALESCE(route, 'REJECT')
+        WHEN 'MAINFRAME' THEN
+            CALL BuildMainframeRequest(pay);
+            PROPAGATE TO TERMINAL 'out' DELETE NONE;
+        WHEN 'SEPA' THEN
+            CALL BuildSepaTransfer(pay, amount);
+            PROPAGATE TO TERMINAL 'out1' DELETE NONE;
+        ELSE
+            SET OutputRoot.MQMD = InputRoot.MQMD;
+            SET OutputRoot.XMLNSC.PaymentReject.RejectedBy      = 'RoutePayment_Compute';
+            SET OutputRoot.XMLNSC.PaymentReject.ReasonCode      = 'R01';
+            SET OutputRoot.XMLNSC.PaymentReject.ReasonText      =
+                'UNSUPPORTED ROUTE FOR ' || currency || '/' || payType;
+            SET OutputRoot.XMLNSC.PaymentReject.RejectTime      = CURRENT_TIMESTAMP;
+            SET OutputRoot.XMLNSC.PaymentReject.OriginalPayment = InputRoot.XMLNSC.Payment;
+            PROPAGATE TO TERMINAL 'out2' DELETE NONE;
+        END CASE;
+
+        RETURN FALSE;
+    END;
+
+    -- Static routing table: currency + payment type -> target leg.
+    -- Ops change routing by redeploying the BAR, not via a database.
+    CREATE PROCEDURE EnsureRoutingTable()
+    BEGIN
+        ROUTING_TABLE_INIT: BEGIN ATOMIC
+            IF NOT EXISTS(RoutingTable.Route[]) THEN
+                CALL AddRoute('EUR', 'INTERNAL', 'MAINFRAME');
+                CALL AddRoute('USD', 'INTERNAL', 'MAINFRAME');
+                CALL AddRoute('GBP', 'INTERNAL', 'MAINFRAME');
+                CALL AddRoute('EUR', 'SCT',      'SEPA');
+                CALL AddRoute('USD', 'SCT',      'REJECT');  -- USD wires not live
+                CALL AddRoute('GBP', 'SCT',      'REJECT');  -- UK FPS: on the roadmap since 2015
+                CALL AddRoute('EUR', 'XBORDER',  'REJECT');
+                CALL AddRoute('USD', 'XBORDER',  'REJECT');
+                CALL AddRoute('GBP', 'XBORDER',  'REJECT');
+            END IF;
+        END ROUTING_TABLE_INIT;
+    END;
+
+    CREATE PROCEDURE AddRoute(IN currency CHARACTER, IN payType CHARACTER,
+                              IN target CHARACTER)
+    BEGIN
+        DECLARE r REFERENCE TO RoutingTable;
+        CREATE LASTCHILD OF RoutingTable AS r NAME 'Route';
+        SET r.Currency = currency;
+        SET r.PayType  = payType;
+        SET r.Target   = target;
+    END;
+
+    -- CICS-bound request: a one-to-one image of the XFERREC copybook
+    -- (cobol/copybooks/XFERREC.cpy) - the CICS bridge transaction MXFR
+    -- re-uses the nightly batch XFER_REQUEST layout unchanged.
+    CREATE PROCEDURE BuildMainframeRequest(IN pay REFERENCE)
+    BEGIN
+        DECLARE seq INTEGER;
+        SEQ_ALLOC: BEGIN ATOMIC
+            SET XferSeqNo = XferSeqNo + 1;
+            SET seq = XferSeqNo;
+        END SEQ_ALLOC;
+
+        SET OutputRoot.MQMD          = InputRoot.MQMD;
+        SET OutputRoot.MQMD.Format   = MQFMT_STRING;
+        SET OutputRoot.MQMD.ReplyToQ = 'MERID.CICS.RESP';
+        SET OutputRoot.MQMD.Priority = 5;
+
+        SET OutputRoot.XMLNSC.XFER_REQUEST.XFER_SEQ_NO   = seq;
+        SET OutputRoot.XMLNSC.XFER_REQUEST.XFER_SRC_ACCT = pay.Debtor.AccountNumber;
+        SET OutputRoot.XMLNSC.XFER_REQUEST.XFER_TGT_ACCT = pay.Creditor.AccountNumber;
+        SET OutputRoot.XMLNSC.XFER_REQUEST.XFER_AMOUNT   = CAST(pay.Amount AS DECIMAL(11, 2));
+        SET OutputRoot.XMLNSC.XFER_REQUEST.XFER_CHANNEL  =
+            CASE pay.Channel
+                WHEN 'BRANCH' THEN 'BRN'
+                WHEN 'WEB'    THEN 'TEL'   -- copybook predates the web
+                ELSE               'TEL'   -- channel: web rides the old
+            END;                           -- telebank code
+        SET OutputRoot.XMLNSC.XFER_REQUEST.XFER_REQ_DATE =
+            CAST(CURRENT_DATE AS CHARACTER FORMAT 'yyyyMMdd');
+        SET OutputRoot.XMLNSC.XFER_REQUEST.XFER_MEMO     =
+            SUBSTRING(COALESCE(pay.Remittance, '') || SPACE(25) FROM 1 FOR 25);
+    END;
+
+    CREATE PROCEDURE BuildSepaTransfer(IN pay REFERENCE, IN amount DECIMAL)
+    BEGIN
+        SET OutputRoot.MQMD        = InputRoot.MQMD;
+        SET OutputRoot.MQMD.Format = MQFMT_STRING;
+
+        SET OutputRoot.XMLNSC.SepaCreditTransfer.MsgId    = pay.PaymentId;
+        SET OutputRoot.XMLNSC.SepaCreditTransfer.DbtrAcct = pay.Debtor.AccountNumber;
+        SET OutputRoot.XMLNSC.SepaCreditTransfer.CdtrIban = pay.Creditor.IBAN;
+        SET OutputRoot.XMLNSC.SepaCreditTransfer.CdtrName = pay.Creditor.Name;
+        SET OutputRoot.XMLNSC.SepaCreditTransfer.InstdAmt = amount;
+        SET OutputRoot.XMLNSC.SepaCreditTransfer.Ccy      = 'EUR';
+
+        -- Payments-desk operating memo (2014-11), not a scheme rule:
+        -- at or above 10 000.00 the transfer goes out on the priority
+        -- leg; at or above 12 500.00 it also trips regulatory reporting.
+        SET OutputRoot.XMLNSC.SepaCreditTransfer.PRIORITY =
+            CASE WHEN amount >= 10000.00 THEN 'H' ELSE 'N' END;
+        SET OutputRoot.XMLNSC.SepaCreditTransfer.REPT     =
+            CASE WHEN amount >= 12500.00 THEN 'Y' ELSE 'N' END;
+    END;
+END MODULE;

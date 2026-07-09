@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Meridian Savings Bank - HomeBank II internet banking
+  Deployment descriptor (Servlet 2.4 / J2EE 1.4, WebSphere 6 target).
+  login.jsp (logon flow, security team) is not retained in this extract.
+-->
+<web-app xmlns="http://java.sun.com/xml/ns/j2ee"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://java.sun.com/xml/ns/j2ee
+                             http://java.sun.com/xml/ns/j2ee/web-app_2_4.xsd"
+         version="2.4">
+
+  <display-name>Meridian HomeBank II</display-name>
+
+  <servlet>
+    <servlet-name>AccountServlet</servlet-name>
+    <servlet-class>com.meridian.web.AccountServlet</servlet-class>
+  </servlet>
+
+  <servlet>
+    <servlet-name>TransferServlet</servlet-name>
+    <servlet-class>com.meridian.web.TransferServlet</servlet-class>
+  </servlet>
+
+  <servlet-mapping>
+    <servlet-name>AccountServlet</servlet-name>
+    <url-pattern>/accounts</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
+    <servlet-name>TransferServlet</servlet-name>
+    <url-pattern>/transfer</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
+    <servlet-name>TransferServlet</servlet-name>
+    <url-pattern>/transfer/confirm</url-pattern>
+  </servlet-mapping>
+
+  <session-config>
+    <session-timeout>15</session-timeout>
+  </session-config>
+
+  <welcome-file-list>
+    <welcome-file>login.jsp</welcome-file>
+  </welcome-file-list>
+
+  <resource-ref>
+    <description>DB2P connection pool (ACCOUNT, XFER_REQUEST)</description>
+    <res-ref-name>jdbc/MeridianDB2</res-ref-name>
+    <res-type>javax.sql.DataSource</res-type>
+    <res-auth>Container</res-auth>
+  </resource-ref>
+
+</web-app>

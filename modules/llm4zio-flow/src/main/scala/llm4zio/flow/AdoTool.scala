@@ -77,6 +77,18 @@ final case class AdoConfig(
       Some(AdoConfig.CommentBody(text).toJson),
     )
 
+  /** A json-patch POST creating a work item of `workItemType` (the endpoint is literally `workitems/$<Type>`). */
+  def createWorkItemReq(workItemType: String, title: String, fields: Map[String, String]): AdoRequest =
+    val ops = Json.Arr(
+      (("System.Title" -> title) +: fields.toSeq).map((k, v) => AdoConfig.addOp(s"/fields/$k", Json.Str(v)))*
+    )
+    AdoRequest(
+      "POST",
+      s"$witBase/workitems/$$$workItemType?api-version=$apiVersion",
+      Some(ops.toJson),
+      contentType = "application/json-patch+json",
+    )
+
   def createPrReq(sourceRef: String, targetRef: String, title: String, description: String): AdoRequest =
     AdoRequest(
       "POST",
@@ -149,6 +161,12 @@ final class AdoTool(config: AdoConfig, http: HttpClient, timeout: Duration = 30.
     readWorkItem(id).flatMap(wi => setFields(id, Map("System.Tags" -> (wi.tags :+ tag).distinct.mkString("; "))))
 
   def comment(id: Int, text: String): IO[FlowError, Unit] = run(config.commentReq(id, text)).unit
+
+  /** Create a work item (e.g. a Task per plan task, or an improvement from a review); returns its id. */
+  def createWorkItem(workItemType: String, title: String, fields: Map[String, String]): IO[FlowError, Int] =
+    run(config.createWorkItemReq(workItemType, title, fields))
+      .flatMap(j => ZIO.fromEither(AdoTool.parseWorkItem(j)).mapError(FlowError.Process("ado parse work item", _)))
+      .map(_.id)
 
   def createPr(sourceRef: String, targetRef: String, title: String, body: String): IO[FlowError, AdoPullRequest] =
     run(config.createPrReq(sourceRef, targetRef, title, body))

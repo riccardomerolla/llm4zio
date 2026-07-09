@@ -24,6 +24,10 @@ Documentation lives in each script's header comment.
 | `judge-suite.sc`          | Offline LLM-as-a-Judge eval harness: scores a built-in retail-chatbot dataset, Layer 1 (`noPii`) + Layer 2 composed via `Evaluator.all`, each case judged 3× for variance | — (no starter) |
 | `ado-spec.sc`             | Azure DevOps: card→Refine → draft spec onto the work item → Spec Review (needs ADO) | — |
 | `ado-implement.sc`        | Azure DevOps: card→Approved → spec→tests→implement → PR linked to the work item (needs ADO) | — |
+| `modernize-extract.sc`    | Legacy modernization 1/4: reverse-engineer the estate into a spec pack; SpecChecks + judge gate; halts for human approval | fixtures/legacy-bank |
+| `modernize-seed.sc`       | Legacy modernization 2/4: approval-gated, deterministic seeding of the target repo (scaffold, specs, features, plan) | fixtures/scaffolds |
+| `modernize-implement.sc`  | Legacy modernization 3/4: RED-gated tests-first per task, pack lenses + command gates, final spec-compliance judge, PR | — (seeded target) |
+| `modernize-review.sc`     | Legacy modernization 4/4: roster review vs the spec pack → fix specs + plan increment + lessons appended to the PACK | — (seeded target) |
 
 Flows can also be authored in **Java** and run the same way — see [`java/`](java/)
 (the `llm4zio-java` facade: blocking, exception-based, one `JavaFlow` handle).
@@ -49,3 +53,10 @@ and a repo with a remote.
 
 The `ado-*` examples target Azure DevOps instead of a local starter and are run by a
 pipeline (or locally with `LLM4ZIO_ADO_*` env vars + a PAT) — see [docs/azure-devops.md](../docs/azure-devops.md).
+
+The `modernize-*` examples are a four-phase pipeline over TWO repos (a legacy estate and a
+target), parameterized by a **modernization pack** under [`packs/`](packs/) — four ship:
+`cobol-springboot`, `jsp-nextjs`, `jsp-bff-nextjs`, `ace-integration` — and demoed against
+the synthetic estate under [`fixtures/`](fixtures/): `examples/seed.sh modernize --local`
+seeds both repos and prints the workflow (`LLM4ZIO_PACK` picks the pair) — see
+[docs/legacy-modernization.md](../docs/legacy-modernization.md).

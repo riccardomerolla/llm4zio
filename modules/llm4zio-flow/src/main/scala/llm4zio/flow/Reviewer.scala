@@ -46,13 +46,19 @@ object Reviewer:
     * by `---` lines. The roster resources are baked into the jar, so absence is a packaging error, not a runtime case.
     */
   def fromResource(slug: String): Reviewer =
-    val src        = Source.fromResource(s"llm4zio/review/reviewers/$slug.md")
-    val text       =
+    val src  = Source.fromResource(s"llm4zio/review/reviewers/$slug.md")
+    val text =
       try src.mkString
       finally src.close()
+    parse(slug, text)
+
+  /** Parse the reviewer file format — optional `---`-delimited frontmatter (`files` scope) + body prompt — from any
+    * source (classpath roster, pack directory).
+    */
+  def parse(name: String, text: String): Reviewer =
     val parts      = text.split("---\n", 3)
     val (fm, body) = if parts.length == 3 then (parts(1), parts(2).trim) else ("", text.trim)
     val files      = fm.linesIterator.collectFirst {
       case l if l.trim.startsWith("files:") => l.split("files:", 2)(1).trim
     }
-    Reviewer(slug, body, files.filter(_.nonEmpty))
+    Reviewer(name, body, files.filter(_.nonEmpty))

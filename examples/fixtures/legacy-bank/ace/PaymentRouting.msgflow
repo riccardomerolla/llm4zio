@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ecore:EPackage xmi:version="2.0"
+    xmlns:xmi="http://www.omg.org/XMI"
+    xmlns:ComIbmCompute.msgnode="ComIbmCompute.msgnode"
+    xmlns:ComIbmMQInput.msgnode="ComIbmMQInput.msgnode"
+    xmlns:ComIbmMQOutput.msgnode="ComIbmMQOutput.msgnode"
+    xmlns:ecore="http://www.eclipse.org/emf/2002/Ecore"
+    xmlns:eflow="http://www.ibm.com/wbi/2005/eflow"
+    xmlns:utility="http://www.ibm.com/wbi/2005/eflow_utility"
+    nsURI="PaymentRouting.msgflow"
+    nsPrefix="PaymentRouting.msgflow">
+  <eClassifiers xmi:type="eflow:FCMComposite" name="FCMComposite_1">
+    <eSuperTypes href="http://www.ibm.com/wbi/2005/eflow#//FCMBlock"/>
+    <translation xmi:type="utility:TranslatableString"
+        key="PaymentRouting"
+        bundleName="PaymentRouting"
+        pluginId="MERID_ESB_PAYMENTS"/>
+    <colorGraphic16 xmi:type="utility:GIFFileGraphic"
+        resourceName="platform:/plugin/MERID_ESB_PAYMENTS/icons/full/obj16/PaymentRouting.gif"/>
+    <colorGraphic32 xmi:type="utility:GIFFileGraphic"
+        resourceName="platform:/plugin/MERID_ESB_PAYMENTS/icons/full/obj30/PaymentRouting.gif"/>
+    <shortDescription xmi:type="utility:ConstantString"
+        string="Meridian payment hub: channel payments to CICS / SEPA / reject"/>
+    <longDescription xmi:type="utility:ConstantString"
+        string="Reads channel payment requests from MERID.PAY.IN (branch teller and web banking front ends), validates them, and routes each payment to the mainframe CICS bridge, the SEPA gateway, or the reject queue. Validation and routing rules live in PaymentRouting.esql."/>
+    <composition>
+      <nodes xmi:type="ComIbmMQInput.msgnode:FCMComposite_1"
+          xmi:id="FCMComposite_1_1"
+          location="61,181"
+          queueName="MERID.PAY.IN"
+          messageDomainProperty="XMLNSC"
+          validateMaster="contentAndValue">
+        <translation xmi:type="utility:ConstantString" string="Payment Input"/>
+      </nodes>
+      <nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1"
+          xmi:id="FCMComposite_1_2"
+          location="216,181"
+          computeExpression="esql://routine/#ValidatePayment_Compute.Main"
+          computeMode="destinationAndMessage">
+        <translation xmi:type="utility:ConstantString" string="Validate Payment"/>
+      </nodes>
+      <nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1"
+          xmi:id="FCMComposite_1_3"
+          location="371,181"
+          computeExpression="esql://routine/#RoutePayment_Compute.Main"
+          computeMode="destinationAndMessage">
+        <translation xmi:type="utility:ConstantString" string="Route Payment"/>
+      </nodes>
+      <nodes xmi:type="ComIbmMQOutput.msgnode:FCMComposite_1"
+          xmi:id="FCMComposite_1_4"
+          location="541,96"
+          queueName="MERID.CICS.REQ">
+        <translation xmi:type="utility:ConstantString" string="Mainframe Request"/>
+      </nodes>
+      <nodes xmi:type="ComIbmMQOutput.msgnode:FCMComposite_1"
+          xmi:id="FCMComposite_1_5"
+          location="541,181"
+          queueName="MERID.SEPA.OUT">
+        <translation xmi:type="utility:ConstantString" string="SEPA Output"/>
+      </nodes>
+      <nodes xmi:type="ComIbmMQOutput.msgnode:FCMComposite_1"
+          xmi:id="FCMComposite_1_6"
+          location="541,286"
+          queueName="MERID.PAY.REJ">
+        <translation xmi:type="utility:ConstantString" string="Reject Output"/>
+      </nodes>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_1"
+          sourceNode="FCMComposite_1_1" targetNode="FCMComposite_1_2"
+          sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_2"
+          sourceNode="FCMComposite_1_2" targetNode="FCMComposite_1_3"
+          sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_3"
+          sourceNode="FCMComposite_1_2" targetNode="FCMComposite_1_6"
+          sourceTerminalName="OutTerminal.out1" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_4"
+          sourceNode="FCMComposite_1_3" targetNode="FCMComposite_1_4"
+          sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_5"
+          sourceNode="FCMComposite_1_3" targetNode="FCMComposite_1_5"
+          sourceTerminalName="OutTerminal.out1" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_6"
+          sourceNode="FCMComposite_1_3" targetNode="FCMComposite_1_6"
+          sourceTerminalName="OutTerminal.out2" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_7"
+          sourceNode="FCMComposite_1_3" targetNode="FCMComposite_1_6"
+          sourceTerminalName="OutTerminal.failure" targetTerminalName="InTerminal.in"/>
+    </composition>
+    <propertyOrganizer/>
+    <stickyBoard/>
+  </eClassifiers>
+</ecore:EPackage>

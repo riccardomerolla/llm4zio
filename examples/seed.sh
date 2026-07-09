@@ -10,15 +10,44 @@
 #
 # Examples: implement, implement-interactive, implement-enhanced, implement-enhanced-pr,
 #           implement-live, epic, issue-pr, issue-pr-bugfix, sdd, pipeline, reverse-engineer,
-#           handoff, local, local-claude, judge-gate, judge-suite
+#           handoff, local, local-claude, judge-gate, judge-suite, modernize
 #
 # `handoff` is a two-phase, human-gated example (handoff-plan.sc → approve → handoff-build.sc);
 # seeding it prints the two-invocation workflow instead of running a single script.
+# `modernize` is the four-phase legacy-modernization pipeline (extract → approve → seed →
+# implement → review); seeding it creates a legacy estate + an empty target repo and prints
+# the workflow.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# sbt publishLocal, exporting PUBLISHED_VERSION with the version sbt ACTUALLY published — never guess
+# from the ivy cache with `ls -t`, which silently pins a stale prior publish if this run is a no-op,
+# fails, or a long-lived sbt server is reporting an outdated sbt-dynver version (run `sbt shutdown`
+# if the version looks wrong).
+publish_local() {
+  echo "Publishing llm4zio locally (sbt publishLocal)…"
+  if ! publishLog="$( cd "$REPO_ROOT" && sbt -batch -Dsbt.log.noformat=true publishLocal 2>&1 )"; then
+    printf '%s\n' "$publishLog" >&2
+    echo "sbt publishLocal failed" >&2; exit 1
+  fi
+  PUBLISHED_VERSION="$(printf '%s\n' "$publishLog" | grep -oE 'llm4zio-runner_3/[^/]+' | sed 's#.*/##' | tail -1)"
+  [ -n "$PUBLISHED_VERSION" ] || { echo "could not parse the published version from sbt publishLocal output" >&2; exit 1; }
+}
+
+# Pin a script COPY (never the source example) to $PUBLISHED_VERSION and add the ivy2Local repo.
+# .sc examples depend on llm4zio-runner (:: cross coordinate); .java ones on llm4zio-java (single
+# colon, crossPaths off).
+pin_local() {
+  sed -i.bak -E "s#(io\.github\.riccardomerolla::llm4zio-runner:)[^\"]+#\1$PUBLISHED_VERSION#; s#(io\.github\.riccardomerolla:llm4zio-java:)[^\"]+#\1$PUBLISHED_VERSION#" "$1"
+  rm -f "$1.bak"
+  if ! grep -q 'using repository ivy2Local' "$1"; then
+    printf '%s\n' '//> using repository ivy2Local' | cat - "$1" > "$1.tmp"
+    mv "$1.tmp" "$1"
+  fi
+}
 
 EXAMPLE="${1:-}"
 [ -n "$EXAMPLE" ] || { echo "usage: examples/seed.sh <example> [dest] [--local] [--run] [--java]" >&2; exit 2; }
@@ -55,6 +84,7 @@ case "$EXAMPLE" in
   local-claude)          STARTER="calculator-rs";      PROMPT="Add a multiply function to the calculator crate" ;;
   judge-gate)            STARTER="calculator-rs";      PROMPT="Add multiply and divide functions to the calculator crate; divide must return an error on divide-by-zero" ;;
   judge-suite)           STARTER="";                   PROMPT="" ;; # offline harness — no starter; intercepted below
+  modernize)             STARTER="";                   PROMPT="" ;; # four-phase pipeline — two repos; intercepted below
   *) echo "unknown example: $EXAMPLE" >&2; exit 2 ;;
 esac
 SCRIPT_NAME="$EXAMPLE.sc"
@@ -89,6 +119,64 @@ if [ -z "$DEST" ]; then
   DEST="$(mktemp -d "${tmp%/}/llm4zio-$EXAMPLE.XXXXXXXX")"
 fi
 mkdir -p "$DEST"
+
+# `modernize` is the four-phase legacy-modernization pipeline over TWO repos: a synthetic
+# mainframe estate (read) and an empty target (written). Seed both and print the workflow
+# (mirrors `handoff`'s print-and-exit). Pick the pair with LLM4ZIO_PACK (default
+# cobol-springboot; also: jsp-nextjs, jsp-bff-nextjs, ace-integration). With --local the four
+# flow scripts are pinned to a fresh sbt publishLocal — needed until the release they pin
+# reaches Maven Central.
+if [ "$EXAMPLE" = "modernize" ]; then
+  LEGACY="$DEST/legacy"; TARGET="$DEST/target"
+  mkdir -p "$LEGACY" "$TARGET"
+  cp -R "$SCRIPT_DIR/fixtures/legacy-bank/." "$LEGACY/"
+  ( cd "$LEGACY" \
+      && git init -q -b main \
+      && git add -A \
+      && git -c user.email=seed@llm4zio.dev -c user.name=llm4zio commit -q -m "Seed legacy-bank estate" )
+  ( cd "$TARGET" && git init -q -b main )
+  PACK="${LLM4ZIO_PACK:-$SCRIPT_DIR/packs/cobol-springboot}"
+  RUN_BASE="$SCRIPT_DIR"
+  if [ "$LOCAL" -eq 1 ]; then
+    publish_local
+    echo "Pinning flow scripts to local version $PUBLISHED_VERSION"
+    tmp="${TMPDIR:-/tmp}"
+    RUN_BASE="$(mktemp -d "${tmp%/}/llm4zio-modernize-flow.XXXXXXXX")"
+    for s in modernize-extract modernize-seed modernize-implement modernize-review; do
+      cp "$SCRIPT_DIR/$s.sc" "$RUN_BASE/$s.sc"
+      pin_local "$RUN_BASE/$s.sc"
+    done
+  fi
+  cat <<EOF
+
+Legacy estate ready at:  $LEGACY   (synthetic COBOL/JCL/DB2 — Meridian Savings)
+Empty target repo at:    $TARGET
+Modernization pack:      $PACK
+
+Four phases, human approval between extract and seed:
+
+  export LLM4ZIO_PACK=$PACK
+
+  # 1) reverse-engineer the estate into a judged spec pack (halts unapproved):
+  scala-cli run $RUN_BASE/modernize-extract.sc -- --repo $LEGACY
+
+  # 2) review $LEGACY/docs/modernization/README.md and flip "- [ ] Approved" to "- [x] Approved"
+
+  # 3) seed the target from the approved pack (refuses while unapproved):
+  LLM4ZIO_LEGACY_REPO=$LEGACY scala-cli run $RUN_BASE/modernize-seed.sc -- --repo $TARGET
+
+  # 4) implement the plan, gated until green (RED-gated tests-first, pack gates, judge):
+  scala-cli run $RUN_BASE/modernize-implement.sc -- --repo $TARGET
+
+  # 5) review the increment: fix specs + plan increment + lessons back into the pack:
+  scala-cli run $RUN_BASE/modernize-review.sc -- --repo $TARGET
+
+Requires: JDK 21+, scala-cli, maven, and gemini logged in (LLM4ZIO_CODER=claude|codex|pi to swap).
+Azure DevOps is optional: export SYSTEM_COLLECTIONURI/LLM4ZIO_ADO_* + a PAT to light up work
+items and PR creation — see docs/azure-devops.md. See docs/legacy-modernization.md for the tour.
+EOF
+  exit 0
+fi
 
 # The flow script lives OUTSIDE the seeded repo, so the CLI coding agent — rooted in $DEST —
 # never reads Scala source sitting in a Java/Rust/… project (which burns tokens and confuses it).
@@ -130,29 +218,15 @@ EOF
 fi
 
 if [ "$LOCAL" -eq 1 ]; then
-  echo "Publishing llm4zio locally (sbt publishLocal)…"
-  # Capture the output (don't hide failures) and read the version sbt ACTUALLY published from it — never guess from
-  # the ivy cache with `ls -t`, which silently pins a stale prior publish if this run is a no-op, fails, or a
-  # long-lived sbt server is reporting an outdated sbt-dynver version (run `sbt shutdown` if the version looks wrong).
-  if ! publishLog="$( cd "$REPO_ROOT" && sbt -batch -Dsbt.log.noformat=true publishLocal 2>&1 )"; then
-    printf '%s\n' "$publishLog" >&2
-    echo "sbt publishLocal failed" >&2; exit 1
-  fi
-  version="$(printf '%s\n' "$publishLog" | grep -oE 'llm4zio-runner_3/[^/]+' | sed 's#.*/##' | tail -1)"
-  [ -n "$version" ] || { echo "could not parse the published version from sbt publishLocal output" >&2; exit 1; }
-  echo "Pinning script to local version $version"
+  publish_local
+  echo "Pinning script to local version $PUBLISHED_VERSION"
   # Pin the local version on a copy OUTSIDE the repo (never mutate the source example, never add a .sc to $DEST).
-  FLOW_DIR="$(mktemp -d "${TMPDIR:-/tmp}/llm4zio-$EXAMPLE-flow.XXXXXXXX")"
+  tmp="${TMPDIR:-/tmp}"
+  FLOW_DIR="$(mktemp -d "${tmp%/}/llm4zio-$EXAMPLE-flow.XXXXXXXX")"
   FLOW_FILE="$(basename "$SCRIPT_NAME")"
   cp "$SCRIPT_DIR/$SCRIPT_NAME" "$FLOW_DIR/$FLOW_FILE"
   RUN_SCRIPT="$FLOW_DIR/$FLOW_FILE"
-  # .sc examples depend on llm4zio-runner (:: cross coordinate); .java ones on llm4zio-java (single colon, crossPaths off).
-  sed -i.bak -E "s#(io\.github\.riccardomerolla::llm4zio-runner:)[^\"]+#\1$version#; s#(io\.github\.riccardomerolla:llm4zio-java:)[^\"]+#\1$version#" "$RUN_SCRIPT"
-  rm -f "$RUN_SCRIPT.bak"
-  if ! grep -q 'using repository ivy2Local' "$RUN_SCRIPT"; then
-    printf '%s\n' '//> using repository ivy2Local' | cat - "$RUN_SCRIPT" > "$RUN_SCRIPT.tmp"
-    mv "$RUN_SCRIPT.tmp" "$RUN_SCRIPT"
-  fi
+  pin_local "$RUN_SCRIPT"
 fi
 
 echo

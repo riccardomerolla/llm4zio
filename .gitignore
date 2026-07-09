@@ -27,7 +27,7 @@ migration.db
 gateway.db
 data/.worktrees/
 .worktrees/
-plan.md
+/plan.md
 
 # Claude Code local session state (plans, worktrees, settings)
 .claude/

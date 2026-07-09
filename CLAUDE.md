@@ -41,8 +41,9 @@ modules/
                     #   streaming, tool-calling, structured output, observability
   llm4zio-flow/     # the agentic flow layer (orca-shaped, ZIO-native):
                     #   Plan/Task, PlanStore (resumable plain-file), Chat,
-                    #   FlowEvent + stage/fail, fixLoop + Review, GitTool/GhTool
-                    #   over Proc (zio-process), FlowContext, implementTaskLoop
+                    #   FlowEvent + stage/fail, fixLoop + Review, GitTool/GhTool/AdoTool
+                    #   over Proc (zio-process), FlowContext, implementTaskLoop,
+                    #   Pack + SpecChecks (modernization packs: knowledge as data dirs)
   llm4zio-runner/   # flow() script entry point (examples/*.sc), Llm4zio.run embedding entry,
                     #   TerminalListener, Connectors presets, worked ExampleFlow
   llm4zio-java/     # the Java authoring surface: a blocking, exception-based facade
@@ -98,6 +99,10 @@ llm4zio.javaapi      the Java facade: Llm4zioJava.flow entry, JavaFlow handle, B
 - **`-Werror` / `-Wunused:all`** — unused imports are fatal. NB: a wildcard
   `import zio.*` brings `zio.Task`, which shadows the library's `flow.Task` in
   *type* position; import `zio.ZIO` (or specific names) in files that name `Task`.
+- **Packs are data.** The `modernize-*.sc` pipeline is estate-agnostic; everything
+  estate-specific (prompts, judge rubrics, coverage regexes, gate commands, lessons)
+  lives in a `flow.Pack` directory under `examples/packs/`, demoed against the
+  synthetic estate in `examples/fixtures/` — see `docs/legacy-modernization.md`.
 - **Script surface.** Examples are flat `examples/*.sc` files: `llm4zio.runner.flow(args) { body }`
   frames the body over `Llm4zio.unsafeMain`, the one process-entry `unsafeRun` shared with the Java
   surface (`Llm4zioJava.flow`); the `.javaapi.Bridge` additionally collapses effects at the Java

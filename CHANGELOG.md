@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.13.0] - 2026-07-09
+
+### Added
+
+- **Legacy-modernization flow suite** — four pack-parameterized example flows taking a
+  legacy estate to a modern target through judged reverse-engineering, a human approval
+  gate, gated implementation, and a review that feeds lessons back into future runs:
+  `modernize-extract.sc` (spec pack + layered gate: deterministic `SpecChecks` +
+  LLM-as-a-Judge, halts for human approval), `modernize-seed.sc` (approval-gated,
+  deterministic target seeding), `modernize-implement.sc` (RED-gated tests-first per
+  task, pack lenses + command gates, final spec-compliance judge, ADO/GitHub PR), and
+  `modernize-review.sc` (fix specs + plan increment + lessons appended into the pack).
+  Tour in `docs/legacy-modernization.md`; `examples/seed.sh modernize [--local]` seeds
+  a two-repo demo.
+- **`flow.Pack`** — modernization knowledge as a versioned data directory: `pack.md`
+  manifest (source kind, scaffold ref, gate commands, judge rubrics, coverage-unit
+  regexes, seed destinations), `prompts/*.md`, `reviewers/*.md` lenses (shared format
+  with the shipped roster via the new `Reviewer.parse`), and `lessons.md` with
+  `Pack.appendLesson` for the review-flow feedback loop.
+- **`flow.SpecChecks`** — deterministic extraction gates: coverage-unit enumeration of
+  a legacy source tree checked against a traceability matrix, and Gherkin sanity
+  checks; results are `ReviewResult`s so they compose with `fixLoop`.
+- **`AdoTool.createWorkItem`** — create typed work items (seed: one per plan task;
+  review: one per fix spec), completing the optional Azure DevOps wiring of the
+  modernization flows.
+- **Four shipped packs + a synthetic estate** — `cobol-springboot`, `jsp-nextjs`,
+  `jsp-bff-nextjs`, `ace-integration` under `examples/packs/`, exercised against the
+  "Meridian Savings" fixture estate (COBOL/JCL + DB2, a Servlet 2.4/JSP webapp, an ACE
+  payment-routing msgflow/ESQL) and target scaffolds (`spring-boot-service`,
+  `nextjs-spa`, `spring-bff`) under `examples/fixtures/`.
+- `examples/seed.sh modernize` honors `LLM4ZIO_PACK` for pair selection, and `--local`
+  now works for the multi-script pipeline (publishes locally and pins all four flows).
+
 ## [3.12.1] - 2026-07-08
 
 ### Fixed
