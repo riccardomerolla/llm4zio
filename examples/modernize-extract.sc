@@ -1,4 +1,4 @@
-//> using dep "io.github.riccardomerolla::llm4zio-runner:3.13.0"
+//> using dep "io.github.riccardomerolla::llm4zio-runner:3.13.1"
 //> using scala "3.8.3"
 //> using jvm 21
 
@@ -21,6 +21,12 @@
   *     committed as an explicit DRAFT and the flow HALTS for human triage.
   *   - Even a clean pack only gets an UNCHECKED `- [ ] Approved` marker: a human reviews
   *     `docs/modernization/README.md`, flips it, and runs modernize-seed.sc.
+  *
+  * Resumable: the draft spec pack is committed BEFORE the gate, and a rerun that finds an
+  * existing `docs/modernization/specs/` skips the (expensive) extraction and goes straight to
+  * the gate — delete the directory to force a fresh extraction. On large estates cap the
+  * judge's source context with LLM4ZIO_JUDGE_SOURCES_LIMIT (chars, default 400000; the flow
+  * reports when it truncates).
   *
   * Pack:  LLM4ZIO_PACK=<dir> (default packs/cobol-springboot, resolved against the launch dir).
   * Run:   scala-cli run modernize-extract.sc -- --repo ~/estates/meridian-legacy
@@ -86,6 +92,35 @@ def gatherSources(root: Path, regex: String): IO[FlowError, String] =
 def gatherSpecPack(modDir: Path): IO[FlowError, String] =
   gatherSources(modDir, """.*\.(md|feature)""")
 
+/** Bound the legacy-source context handed to the judge: a production estate can exceed the model's context and
+  * come back as an empty response. Head + tail keeps both the entry points and the trailing programs visible.
+  */
+val JudgeSourcesLimit: Int =
+  sys.env.get("LLM4ZIO_JUDGE_SOURCES_LIMIT").flatMap(_.toIntOption).getOrElse(400_000)
+
+def capForJudge(sources: String)(using ctx: FlowContext): zio.UIO[String] =
+  if sources.length <= JudgeSourcesLimit then ZIO.succeed(sources)
+  else
+    val head = JudgeSourcesLimit * 3 / 4
+    val tail = JudgeSourcesLimit - head
+    ctx.events
+      .publish(FlowEvent.Info(
+        s"judge source context truncated: ${sources.length} -> $JudgeSourcesLimit chars " +
+          "(raise LLM4ZIO_JUDGE_SOURCES_LIMIT or narrow the pack's 'sources:' regex)"
+      ))
+      .as(s"${sources.take(head)}\n\n… [truncated for the judge] …\n\n${sources.takeRight(tail)}")
+
+/** True when a previous run already produced spec documents — rerun goes straight to the gate. */
+def specPackExists(modDir: Path): zio.UIO[Boolean] =
+  ZIO.attemptBlocking {
+    val specs = modDir.resolve("specs")
+    Files.isDirectory(specs) && {
+      val stream = Files.list(specs)
+      try stream.iterator().asScala.exists(_.getFileName.toString.endsWith(".md"))
+      finally stream.close()
+    }
+  }.orDie
+
 def extractionAsk(pack: Pack): String =
   s"""Reverse-engineer this repository into a spec pack under $ModDir/ (create it):
      |
@@ -120,7 +155,7 @@ def gateEvaluate(pack: Pack, judge: Evaluator[Sample])(using ctx: FlowContext): 
     coverage <- SpecChecks.coverage(workDir, pack.coverage, trace)
     features <- SpecChecks.features(modDir.resolve("features"))
     specText <- gatherSpecPack(modDir)
-    sources  <- gatherSources(workDir, pack.sources.getOrElse(""".*"""))
+    sources  <- gatherSources(workDir, pack.sources.getOrElse(""".*""")).flatMap(capForJudge)
     scored   <- judge
                   .evaluate(Sample(response = specText, context = Some(sources), query = Some(userPrompt)))
                   .mapError(e => FlowError.Llm(e.message, Some(e)))
@@ -177,7 +212,17 @@ flow(
                ).flatten.mkString("\n\n")
     analyst <- Chat.start(coder, system = Some(system))
     judge    = Judge.of(reasoning, pack.judgeDimensions)
-    _       <- stage("Extract")(analyst.ask(extractionAsk(pack)).unit)
+    resumed <- specPackExists(modDir)
+    _       <- stage("Extract") {
+                 if resumed then
+                   summon[FlowEvents].publish(FlowEvent.Info(
+                     s"resuming: spec pack found under $ModDir — skipping extraction (delete it to re-extract)"
+                   ))
+                 else analyst.ask(extractionAsk(pack)).unit
+               }
+    // Commit the (ungated) draft immediately: extraction is the expensive step, and a gate failure or
+    // crash must not cost it. The Gate/Commit stages amend the picture with the verdict afterwards.
+    _       <- stage("Draft")(git.commitAll(s"modernize(${pack.name}): spec pack draft (ungated)").unit)
     result  <- stage("Gate")(fixLoop(gateEvaluate(pack, judge), r => analyst.ask(fixAsk(r)).unit, MaxRounds))
     _       <- ZIO.when(result.isClean)(stage("Plan") {
                  for

@@ -148,6 +148,7 @@ install), and `spring-bff` (monorepo, gated by `scripts/test.sh`).
 3. Add lenses for the failure modes your reviewers actually catch.
 4. Leave `lessons.md` empty — the review flow fills it.
 
-The scripts require llm4zio ≥ 3.13.0 (`flow.Pack`, `flow.SpecChecks`,
-`AdoTool.createWorkItem`); until that release is on Maven Central, run against a
-local build via `sbt publishLocal` and pin the version in the script headers.
+The scripts pin the released llm4zio version in their headers (`flow.Pack`,
+`flow.SpecChecks`, `AdoTool.createWorkItem` arrived in 3.13.0; the empty-response
+retry, raw-output surfacing, and extract resumability in 3.13.1). To run against an
+unreleased local build, use `examples/seed.sh modernize --local`.

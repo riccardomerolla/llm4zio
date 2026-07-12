@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.13.1] - 2026-07-12
+
+### Fixed
+
+- **A blank structured-output response is retried instead of killing the flow.** The gemini
+  CLI intermittently returns a valid envelope with EMPTY response text; that surfaced as
+  `ParseError("no JSON candidate found in output")` — opaque, and never retried
+  (`TransientRetry` deliberately skips parse errors). `StructuredOutputs.parseFromText` now
+  classifies a blank response as the `"empty response"` `ProviderError` that the
+  flaky-stream retry budget already recognises, so judge/planner structured calls get up to
+  6 fresh-process retries before failing.
+- **Structured-output failures show what the model actually returned.** `describeError`
+  (stage failures, terminal, trace) renders a bounded head+tail snippet of the raw provider
+  output carried by `LlmError.ParseError` — previously the content was captured but never
+  surfaced anywhere.
+- **modernize-extract.sc is resumable and production-hardened**: the draft spec pack is
+  committed BEFORE the gate (a gate failure no longer costs the extraction); a rerun that
+  finds an existing `docs/modernization/specs/` skips extraction and goes straight to the
+  gate; and the judge's legacy-source context is bounded (`LLM4ZIO_JUDGE_SOURCES_LIMIT`,
+  default 400000 chars, truncation reported) so production-sized estates can't blow the
+  model context into empty responses.
+
 ## [3.13.0] - 2026-07-09
 
 ### Added

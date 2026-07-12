@@ -37,6 +37,14 @@ object StructuredOutputs:
     * '{' got 'W'" from the raw text that started with a CLI stderr warning.
     */
   def parseFromText[A: JsonCodec](raw: String, @scala.annotation.unused schema: JsonSchema): IO[LlmError, A] =
+    if raw.isBlank then
+      // A blank response is a provider flake (gemini intermittently returns an envelope with empty text), not a
+      // parse problem: fail with the "empty response" ProviderError so TransientRetry's flaky-stream budget retries
+      // it on a fresh process — a ParseError here would fail straight through and kill the flow on one blip.
+      ZIO.fail(LlmError.ProviderError("empty response from provider — no text to parse as structured output", None))
+    else parseNonBlank(raw)
+
+  private def parseNonBlank[A: JsonCodec](raw: String): IO[LlmError, A] =
     val candidates = jsonCandidates(raw)
     val attempts   = candidates.map(candidate => candidate -> candidate.fromJson[A])
     attempts.collectFirst { case (_, Right(value)) => value } match

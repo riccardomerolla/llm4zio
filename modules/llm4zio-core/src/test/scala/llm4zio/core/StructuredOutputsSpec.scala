@@ -56,6 +56,26 @@ object StructuredOutputsSpec extends ZIOSpecDefault:
         )
       )
     },
+    test("parseFromText classifies a blank response as a retriable empty-response ProviderError") {
+      // The gemini CLI intermittently returns a valid envelope with an EMPTY response text. That used to surface as
+      // ParseError("no JSON candidate found in output") — opaque, and never retried (TransientRetry skips ParseError).
+      // A blank response is a provider flake, not a parse problem: fail with the "empty response" ProviderError that
+      // TransientRetry's flaky-stream budget already recognises.
+      for
+        empty <- StructuredOutputs.parseFromText[TriagePick]("", emptySchema).exit
+        blank <- StructuredOutputs.parseFromText[TriagePick](" \n\t ", emptySchema).exit
+      yield assert(empty)(
+        Assertion.fails(
+          Assertion.isSubtype[LlmError.ProviderError](
+            Assertion.hasField[LlmError.ProviderError, String](
+              "message",
+              _.message,
+              Assertion.containsString("empty response"),
+            )
+          )
+        )
+      ) && assert(blank)(Assertion.fails(Assertion.isSubtype[LlmError.ProviderError](Assertion.anything)))
+    },
     test("jsonCandidates finds objects after non-JSON preambles") {
       val candidates = StructuredOutputs.jsonCandidates(
         """noise noise {"a":1} more noise {"b":2}"""

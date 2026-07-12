@@ -127,6 +127,18 @@ object TransientRetrySpec extends ZIOSpecDefault:
         TransientRetry.isTransient(LlmError.ProviderError("connection reset", None)),
       )
     },
+    test("an empty structured response is classified flaky — structured judge calls get fresh-process retries") {
+      // StructuredOutputs.parseFromText fails a BLANK response with this ProviderError (not ParseError) precisely so
+      // the flaky budget picks it up: gemini intermittently returns an envelope with empty text, and a fresh CLI
+      // process almost always recovers. A real parse mismatch (non-empty text, wrong shape) stays non-retriable.
+      val emptyStructured =
+        LlmError.ProviderError("empty response from provider — no text to parse as structured output", None)
+      assertTrue(
+        TransientRetry.isFlakyStream(emptyStructured),
+        !TransientRetry.isTransient(emptyStructured),
+        !TransientRetry.isFlakyStream(LlmError.ParseError("wrong shape", """{"a":1}""")),
+      )
+    },
     test("a flaky stream is retried on its own budget, independent of maxRetries") {
       // maxRetries = 0 (transient budget exhausted) but flakyRetries = 2 => two flaky retries still happen.
       for

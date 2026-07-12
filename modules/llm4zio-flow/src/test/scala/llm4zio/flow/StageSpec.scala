@@ -38,6 +38,23 @@ object StageSpec extends ZIOSpecDefault:
         ),
       )
     },
+    test("describeError surfaces a bounded raw-output snippet from a wrapped ParseError") {
+      // A structured-output parse failure used to render only its message, hiding WHAT the CLI actually returned.
+      // The raw output rides in LlmError.ParseError; stage failures must show a bounded snippet of it.
+      val raw   = "warning banner\n<html>Quota exceeded for gemini-2.5-pro</html>"
+      val err   = FlowError.Llm(
+        "Failed to parse response as structured output: nope",
+        Some(llm4zio.core.LlmError.ParseError("nope", raw)),
+      )
+      val text  = describeError(err)
+      val short = describeError(FlowError.Llm("m", Some(llm4zio.core.LlmError.ParseError("m", "x" * 10000))))
+      assertTrue(
+        text.contains("Quota exceeded for gemini-2.5-pro"),
+        text.contains("raw output"),
+        short.length < 2000,
+        short.contains("10000 chars"),
+      )
+    },
     test("fail publishes Aborted and fails with FlowError.Aborted") {
       for
         ev  <- FlowEvents.collecting
