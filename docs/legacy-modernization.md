@@ -114,6 +114,26 @@ each script, or set `LLM4ZIO_CODER=claude|codex|gemini|pi` to run a whole flow o
 one provider. Cross-provider judging (e.g. Claude judging Gemini's extraction) is
 one config swap.
 
+## Token & cost traceability
+
+Every flow run appends one structured record to an append-only ledger —
+`<workspace>/.llm4zio/[<repo-id>/]costs.jsonl` — carrying the run's tokens and
+estimated cost as (stage × agent × model) cells plus totals, the run id (joins the
+trace file), the repo, a 120-char prompt head + hash, and the pricing-table
+version. The console footer renders and forgets; the ledger is never pruned.
+
+Set `LLM4ZIO_RUN_LABEL` (e.g. `meridian-acctxfr`) before running the phases to
+stamp a correlation key: five extract iterations plus seed/implement/review then
+aggregate as one effort. Report with:
+
+```bash
+scala-cli run costs.sc -- meridian-acctxfr
+```
+
+which lists each run and rolls costs up per stage (the Gate's judge vs the
+analyst, per model) — `flow.CostLedger` is the library API when you want the raw
+records.
+
 ## Azure DevOps
 
 Optional and detected from the environment (`Ado.configFrom`): when

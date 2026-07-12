@@ -28,6 +28,7 @@ Documentation lives in each script's header comment.
 | `modernize-seed.sc`       | Legacy modernization 2/4: approval-gated, deterministic seeding of the target repo (scaffold, specs, features, plan) | fixtures/scaffolds |
 | `modernize-implement.sc`  | Legacy modernization 3/4: RED-gated tests-first per task, pack lenses + command gates, final spec-compliance judge, PR | — (seeded target) |
 | `modernize-review.sc`     | Legacy modernization 4/4: roster review vs the spec pack → fix specs + plan increment + lessons appended to the PACK | — (seeded target) |
+| `costs.sc`                | Cross-run token & cost report over the append-only `costs.jsonl` ledger every flow writes; group by LLM4ZIO_RUN_LABEL, roll up per stage/agent/model | — (reads the workspace) |
 
 Flows can also be authored in **Java** and run the same way — see [`java/`](java/)
 (the `llm4zio-java` facade: blocking, exception-based, one `JavaFlow` handle).

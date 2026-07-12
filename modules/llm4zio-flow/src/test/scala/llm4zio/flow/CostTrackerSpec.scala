@@ -40,6 +40,42 @@ object CostTrackerSpec extends ZIOSpecDefault:
         s <- t.summary
       yield assertTrue(s.contains("Total: $0.00"))
     },
+    test("attributes tokens to the innermost open stage, and to '(no stage)' outside any") {
+      for
+        t     <- CostTracker.make
+        _     <- t.record(FlowEvent.TokensUsed("reasoning", Some("m"), TokenUsage(10, 1, 11)))
+        _     <- t.record(FlowEvent.StageStarted("Extract"))
+        _     <- t.record(FlowEvent.TokensUsed("coder", Some("m"), TokenUsage(100, 10, 110)))
+        _     <- t.record(FlowEvent.StageStarted("task 1"))
+        _     <- t.record(FlowEvent.TokensUsed("coder", Some("m"), TokenUsage(5, 1, 6)))
+        _     <- t.record(FlowEvent.StageCompleted("task 1"))
+        _     <- t.record(FlowEvent.TokensUsed("coder", Some("m"), TokenUsage(1, 1, 2)))
+        _     <- t.record(FlowEvent.StageCompleted("Extract"))
+        _     <- t.record(FlowEvent.StageStarted("Gate"))
+        _     <- t.record(FlowEvent.TokensUsed("reasoning", Some("m"), TokenUsage(50, 5, 55)))
+        _     <- t.record(FlowEvent.StageFailed("Gate", "boom"))
+        _     <- t.record(FlowEvent.TokensUsed("reasoning", Some("m"), TokenUsage(2, 2, 4)))
+        cells <- t.cells
+      yield assertTrue(
+        cells.find(c => c.stage == "Extract" && c.agent == "coder").exists(c => c.prompt == 101 && c.completion == 11),
+        cells.exists(c => c.stage == "task 1" && c.agent == "coder" && c.prompt == 5),
+        cells.exists(c => c.stage == "Gate" && c.agent == "reasoning" && c.prompt == 50),
+        cells.filter(_.stage == "(no stage)").map(_.prompt).sum == 12L,
+      )
+    },
+    test("cells carry a per-cell cost estimate for priced models and none for unknown ones") {
+      for
+        t     <- CostTracker.make
+        _     <- t.record(FlowEvent.StageStarted("Judge"))
+        _     <-
+          t.record(FlowEvent.TokensUsed("reasoning", Some("gemini-2.5-pro"), TokenUsage(1_000_000, 100_000, 1_100_000)))
+        _     <- t.record(FlowEvent.TokensUsed("coder", None, TokenUsage(10, 1, 11)))
+        cells <- t.cells
+      yield assertTrue(
+        cells.find(_.model == "gemini-2.5-pro").flatMap(_.costUsd).exists(c => math.abs(c - 2.25) < 0.0001),
+        cells.find(_.model == "(unknown)").exists(_.costUsd.isEmpty),
+      )
+    },
     test("shows cached tokens when present and sums them across records") {
       for
         t <- CostTracker.make

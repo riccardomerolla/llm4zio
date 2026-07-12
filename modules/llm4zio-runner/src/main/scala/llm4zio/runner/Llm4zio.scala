@@ -116,7 +116,20 @@ object Llm4zio:
                              case Exit.Success(_)     =>
                                TerminalListener.awaitDrained(hub, consumed, 3.seconds)
                            }
-                           .ensuring(tracker.summary.flatMap(s => surface.log("\n" + s)))
+                           // The footer renders and forgets; the cost ledger is the durable record: one structured
+                           // JSON line per run (stage × agent × model cells), appended next to the traces and never
+                           // pruned — LLM4ZIO_RUN_LABEL stamps a correlation key for cross-run aggregation.
+                           .ensuring(
+                             tracker.summary.flatMap(s => surface.log("\n" + s)) *>
+                               CostLedger.write(
+                                 Workspace.llm4zioDir(workspace, workDir),
+                                 tracker,
+                                 recorder.runId,
+                                 Workspace.repoId(workspace, workDir).getOrElse(workDir.getFileName.toString),
+                                 sys.env.get("LLM4ZIO_RUN_LABEL").map(_.trim).filter(_.nonEmpty),
+                                 ctx.userPrompt,
+                               )
+                           )
                        }
                      yield ()
                    }

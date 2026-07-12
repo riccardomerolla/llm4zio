@@ -156,6 +156,7 @@ Modernization pack:      $PACK
 Four phases, human approval between extract and seed:
 
   export LLM4ZIO_PACK=$PACK
+  export LLM4ZIO_RUN_LABEL=meridian-demo   # correlates all phases in the cost ledger (see costs.sc)
 
   # 1) reverse-engineer the estate into a judged spec pack (halts unapproved):
   scala-cli run $RUN_BASE/modernize-extract.sc -- --repo $LEGACY

@@ -15,7 +15,7 @@ import llm4zio.observability.StreamRecorder
   */
 final class FlowRecorder private (
   path: Path,
-  runId: String,
+  val runId: String,
   seq: Ref[Long],
   lock: Semaphore,
   degraded: Ref[Boolean],

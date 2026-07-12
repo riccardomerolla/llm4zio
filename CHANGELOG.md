@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.14.0] - 2026-07-12
+
+### Added
+
+- **Durable token & cost traceability.** The console footer's numbers now persist: every
+  flow run appends one structured record to an append-only ledger
+  (`<workspace>/.llm4zio/[<repo-id>/]costs.jsonl`, never pruned) with per-(stage, agent,
+  model) `CostCell`s — tokens, cached tokens, and the PriceList estimate captured at run
+  time — plus run totals, the run id (joins the trace file), repo, a 120-char prompt head +
+  hash, an optional `LLM4ZIO_RUN_LABEL` correlation key, and the pricing-table version.
+  `CostTracker` attributes usage to the innermost open stage from the event hub; runs with
+  no token usage write nothing; a ledger write failure never fails the flow.
+- **`flow.CostLedger`** — the schema (`CostRecord`/`CostCell`) plus `append`/`load`
+  (malformed-line tolerant) and `mergeCells` cross-run roll-up.
+- **`examples/costs.sc`** — cross-run report: groups by label (or repo), lists runs, rolls
+  costs up per stage and per agent/model. `seed.sh modernize` now exports a demo
+  `LLM4ZIO_RUN_LABEL` so the four phases aggregate as one effort.
+- `PriceList.asOf` — the pricing-table version, shown in the footer footnote and stamped
+  into ledger records.
+
 ## [3.13.1] - 2026-07-12
 
 ### Fixed

@@ -6,6 +6,11 @@ import llm4zio.core.TokenUsage
   * id. Estimates only — clearly flagged in the summary. Update as pricing changes.
   */
 object PriceList:
+  /** When the pricing table below was last refreshed — shown in the footer footnote and stamped into cost-ledger
+    * records so historical estimates stay interpretable after rates change.
+    */
+  val asOf: String = "2026-06"
+
   /** (model-id prefix, USD per 1M input tokens, USD per 1M output tokens). */
   private val rates: List[(String, Double, Double)] = List(
     ("claude-opus-4", 15.0, 75.0),
