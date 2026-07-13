@@ -500,6 +500,198 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
         !GeminiCliProvider.isKnownStderrNoise("Error: connection refused"),
       )
     },
+    test("isKnownStderrNoise filters terminal-cosmetics and ripgrep chatter (real gemini 0.45 stderr)") {
+      assertTrue(
+        GeminiCliProvider.isKnownStderrNoise(
+          "Warning: Limited color support detected (TERM=screen). Some visual elements may not render correctly."
+        ),
+        GeminiCliProvider.isKnownStderrNoise("in tmux, add to ~/.tmux.conf:"),
+        GeminiCliProvider.isKnownStderrNoise("""      set -g default-terminal "tmux-256color""""),
+        GeminiCliProvider.isKnownStderrNoise("""      set -ga terminal-overrides ",*256col*:Tc""""),
+        GeminiCliProvider.isKnownStderrNoise(
+          "Warning: True color (24-bit) support not detected. Using a terminal with true color enabled..."
+        ),
+        GeminiCliProvider.isKnownStderrNoise("Ripgrep is not available. Falling back to GrepTool."),
+        // the quota diagnostic must NEVER be classified as noise — it is the only place the real reason appears
+        !GeminiCliProvider.isKnownStderrNoise(
+          "Error when talking to Gemini API Full report available at: /tmp/x.json TerminalQuotaError: " +
+            "You have exhausted your capacity on this model. Your quota will reset after 21h1m53s."
+        ),
+      )
+    },
+    suite("stderr quota diagnostics")(
+      {
+        val quotaLine  =
+          "Error when talking to Gemini API Full report available at: /tmp/gemini-client-error.json " +
+            "TerminalQuotaError: You have exhausted your capacity on this model. Your quota will reset after 21h1m53s."
+        val stackLines = Chunk(
+          "    at classifyGoogleError (file:///root/.nvm/versions/node/v24.15.0/lib/node_modules/...js:297639:18)",
+          "    at retryWithBackoff (file:///root/.nvm/versions/node/v24.15.0/lib/node_modules/...js:298310:31)",
+        )
+        Seq(
+          test("quotaDiagnostic finds the TerminalQuotaError line among stack-trace noise") {
+            assertTrue(
+              GeminiCliExecutor.quotaDiagnostic(stackLines.prepended(quotaLine)) == Some(quotaLine),
+              GeminiCliExecutor.quotaDiagnostic(stackLines).isEmpty,
+              GeminiCliExecutor.quotaDiagnostic(Chunk.empty).isEmpty,
+            )
+          },
+          test("withStderrDiagnostic folds the quota reason into the stdout catch-all error event") {
+            val catchAll = GeminiCliStreamEvent.Error(
+              message = Some("[API Error: An unknown error occurred.]"),
+              code = None,
+              errorType = None,
+            )
+            GeminiCliExecutor.withStderrDiagnostic(catchAll, stackLines.prepended(quotaLine)) match
+              case GeminiCliStreamEvent.Error(Some(msg), _, _) =>
+                assertTrue(
+                  msg.contains("An unknown error occurred"),
+                  msg.contains("exhausted your capacity"),
+                  msg.contains("reset after 21h1m53s"),
+                )
+              case _                                           => assertTrue(false)
+          },
+          test("withStderrDiagnostic folds the quota reason into an error result event") {
+            val errResult = GeminiCliStreamEvent.Result(status = Some("error"), errorMessage = None, stats = None)
+            GeminiCliExecutor.withStderrDiagnostic(errResult, Chunk(quotaLine)) match
+              case GeminiCliStreamEvent.Result(_, Some(msg), _) => assertTrue(msg.contains("exhausted your capacity"))
+              case _                                            => assertTrue(false)
+          },
+          test("withStderrDiagnostic leaves events alone when stderr carries no quota signal") {
+            val catchAll = GeminiCliStreamEvent.Error(Some("[API Error: An unknown error occurred.]"), None, None)
+            assertTrue(GeminiCliExecutor.withStderrDiagnostic(catchAll, stackLines) == catchAll)
+          },
+          test("withStderrDiagnostic does not double up an already quota-flavoured message") {
+            val quotaErr =
+              GeminiCliStreamEvent.Error(Some("You have exhausted your capacity on this model."), None, None)
+            assertTrue(GeminiCliExecutor.withStderrDiagnostic(quotaErr, Chunk(quotaLine)) == quotaErr)
+          },
+          test(
+            "validateStreamExit: exit 0 with quota stderr and NO assistant text fails with UsageLimitError + resetAt"
+          ) {
+            for
+              result <- GeminiCliExecutor
+                          .validateStreamExit(0, Chunk(quotaLine), sawAssistantText = false, turnLimit = None)
+                          .exit
+            yield assertTrue(
+              result.causeOption.flatMap(_.failureOption).exists {
+                case LlmError.UsageLimitError(resetAt, "gemini", msg) =>
+                  resetAt.isDefined && msg.contains("exhausted your capacity")
+                case _                                                => false
+              }
+            )
+          },
+          test("validateStreamExit: exit 0 with quota stderr but assistant text seen succeeds (fallback worked)") {
+            for
+              result <- GeminiCliExecutor
+                          .validateStreamExit(0, Chunk(quotaLine), sawAssistantText = true, turnLimit = None)
+                          .exit
+            yield assertTrue(result == Exit.succeed(()))
+          },
+          test("validateStreamExit: clean exit 0 without quota stderr succeeds") {
+            for
+              result <-
+                GeminiCliExecutor.validateStreamExit(0, stackLines, sawAssistantText = false, turnLimit = None).exit
+            yield assertTrue(result == Exit.succeed(()))
+          },
+          test("validateStreamExit: nonzero exit with quota stderr fails with the typed usage-limit error") {
+            for
+              result <- GeminiCliExecutor
+                          .validateStreamExit(1, Chunk(quotaLine), sawAssistantText = false, turnLimit = None)
+                          .exit
+            yield assertTrue(
+              result.causeOption.flatMap(_.failureOption).exists {
+                case _: LlmError.UsageLimitError => true
+                case _                           => false
+              }
+            )
+          },
+          test("validateStreamExit: nonzero exit without quota stderr surfaces the captured stderr in the error") {
+            for
+              result <-
+                GeminiCliExecutor
+                  .validateStreamExit(1, Chunk("something exploded"), sawAssistantText = false, turnLimit = None)
+                  .exit
+            yield assertTrue(
+              result.causeOption.flatMap(_.failureOption).exists {
+                case LlmError.ProviderError(msg, _) => msg.contains("something exploded")
+                case _                              => false
+              }
+            )
+          },
+          test("validateStreamExit: exit 53 keeps its turn-limit meaning even with quota-looking stderr") {
+            for
+              result <- GeminiCliExecutor
+                          .validateStreamExit(53, Chunk(quotaLine), sawAssistantText = false, turnLimit = Some(3))
+                          .exit
+            yield assertTrue(
+              result.causeOption.flatMap(_.failureOption).contains(LlmError.TurnLimitError(Some(3)))
+            )
+          },
+        )
+      }*
+    ),
+    test("executeStream classifies a quota error event with a long reset into UsageLimitError with resetAt") {
+      val config   = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
+      val executor = new MockGeminiCliExecutor(
+        streamEvents = List(
+          GeminiCliStreamEvent.Error(
+            message = Some(
+              "[API Error: An unknown error occurred.] — TerminalQuotaError: You have exhausted your capacity " +
+                "on this model. Your quota will reset after 21h1m53s."
+            ),
+            code = None,
+            errorType = None,
+          )
+        )
+      )
+      val provider = GeminiCliProvider.make(config, executor)
+      for
+        result <- provider.executeStream("hi").runCollect.exit
+      yield assertTrue(
+        result.causeOption.exists(_.failures.exists {
+          case LlmError.UsageLimitError(resetAt, "gemini", _) => resetAt.isDefined
+          case _                                              => false
+        })
+      )
+    },
+    test("executeStream warns when the CLI serves a different model than requested") {
+      val config   = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-flash")
+      val executor = new MockGeminiCliExecutor(
+        streamEvents = List(
+          GeminiCliStreamEvent.Init(model = Some("gemini-2.5-pro"), sessionId = Some("s1")),
+          GeminiCliStreamEvent.Message(role = Some("assistant"), content = Some("hi"), delta = true),
+          GeminiCliStreamEvent.Result(status = Some("success"), errorMessage = None, stats = None),
+        )
+      )
+      val provider = GeminiCliProvider.make(config, executor)
+      (for
+        _    <- provider.executeStream("hi").runDrain
+        logs <- ZTestLogger.logOutput
+      yield assertTrue(
+        logs.exists(e =>
+          e.logLevel == LogLevel.Warning &&
+          e.message().contains("serving model 'gemini-2.5-pro'") &&
+          e.message().contains("gemini-2.5-flash")
+        )
+      )).provideLayer(ZTestLogger.default)
+    },
+    test("executeStream does not warn when the served model matches the requested one") {
+      val config   = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-flash")
+      val executor = new MockGeminiCliExecutor(
+        streamEvents = List(
+          GeminiCliStreamEvent.Init(model = Some("gemini-2.5-flash"), sessionId = Some("s1")),
+          GeminiCliStreamEvent.Result(status = Some("success"), errorMessage = None, stats = None),
+        )
+      )
+      val provider = GeminiCliProvider.make(config, executor)
+      (for
+        _    <- provider.executeStream("hi").runDrain
+        logs <- ZTestLogger.logOutput
+      yield assertTrue(
+        !logs.exists(e => e.logLevel == LogLevel.Warning && e.message().contains("serving model"))
+      )).provideLayer(ZTestLogger.default)
+    },
     test("a JSON-looking but unparseable stream line is logged at WARN, not lost at trace") {
       val config   = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
       val executor = new MockGeminiCliExecutor(

@@ -28,14 +28,18 @@ object Llm4zio:
       .map(_.message)
       .orElse(cause.dieOption.map(_.getMessage))
       .getOrElse(if cause.isInterrupted then "interrupted" else "unknown error")
-    base + geminiCatchAllHint(base)
+    base + failureHint(base)
 
-  // gemini repeatedly returns a generic catch-all ("an unknown error occurred") for what is usually
-  // quota/rate-limit exhaustion. classify() leaves it unclassified (a transient ProviderError), so the
-  // typed error stays unchanged — here, purely presentationally, we append an actionable hint.
-  private def geminiCatchAllHint(message: String): String =
+  // Purely presentational, appended to the ✖ banner (the typed error stays unchanged):
+  //   - a classified quota/usage-limit failure gets the two actionable ways out (wait, or switch model);
+  //   - gemini's generic catch-all ("an unknown error occurred") — usually quota/rate-limit exhaustion the CLI
+  //     didn't attribute — gets the same pointer, hedged.
+  private def failureHint(message: String): String =
     val lower = message.toLowerCase
-    if lower.contains("an unknown error occurred") then
+    if lower.contains("exhausted your capacity") || lower.contains("usage limit") || lower.contains("quota") then
+      " — provider quota/usage limit exhausted. Set LLM4ZIO_USAGE_WAIT (e.g. 24h) to wait out the reset and " +
+        "resume, or point the flow at a model with remaining quota."
+    else if lower.contains("an unknown error occurred") then
       " — gemini repeatedly returned its catch-all error; this is often quota/rate-limit exhaustion." +
         " Check your gemini quota, or set LLM4ZIO_USAGE_WAIT to wait and resume."
     else ""

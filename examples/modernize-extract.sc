@@ -33,6 +33,10 @@
   *
   * Seats (all-gemini defaults; LLM4ZIO_CODER=claude|codex|gemini|pi swaps the whole flow):
   * analyst + reasoning + judge on the Pro model — extraction quality is the product here.
+  *
+  * Quota: if gemini exhausts the model's quota the flow fails fast with the reset time
+  * (set LLM4ZIO_USAGE_WAIT=24h to wait it out and auto-resume, or point ProModel at a model
+  * with remaining quota). A WARN is logged if the CLI serves a different model than requested.
   */
 
 import java.nio.charset.StandardCharsets

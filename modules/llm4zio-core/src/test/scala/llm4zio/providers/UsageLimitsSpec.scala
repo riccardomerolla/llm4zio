@@ -31,6 +31,35 @@ object UsageLimitsSpec extends ZIOSpecDefault:
         case Some(LlmError.RateLimitError(Some(d))) => assertTrue(d == zio.Duration.fromSeconds(2))
         case _                                      => assertTrue(false)
     },
+    test("gemini composite 'reset after 21h1m53s' → UsageLimitError with a concrete resetAt") {
+      // The real TerminalQuotaError line gemini prints to stderr when a model's daily quota is exhausted.
+      val text =
+        "Error when talking to Gemini API Full report available at: /tmp/gemini-client-error.json " +
+          "TerminalQuotaError: You have exhausted your capacity on this model. Your quota will reset after 21h1m53s."
+      UsageLimits.classify("gemini", text, now, zone) match
+        case Some(LlmError.UsageLimitError(Some(at), "gemini", msg)) =>
+          assertTrue(at == now.plusSeconds(21L * 3600 + 60 + 53), msg == text)
+        case _                                                       => assertTrue(false)
+    },
+    test("gemini 'reset after 45m' → UsageLimitError (beyond the short-reset window)") {
+      val text = "You have exhausted your capacity on this model. Your quota will reset after 45m."
+      UsageLimits.classify("gemini", text, now, zone) match
+        case Some(LlmError.UsageLimitError(Some(at), "gemini", _)) =>
+          assertTrue(at == now.plusSeconds(45L * 60))
+        case _                                                     => assertTrue(false)
+    },
+    test("gemini 'reset after 90s' stays a short RateLimitError") {
+      val text = "Your quota will reset after 90s."
+      UsageLimits.classify("gemini", text, now, zone) match
+        case Some(LlmError.RateLimitError(Some(d))) => assertTrue(d == zio.Duration.fromSeconds(90))
+        case _                                      => assertTrue(false)
+    },
+    test("gemini 'reset after 500ms' is not misread as 500 minutes") {
+      val text = "Your quota will reset after 500ms."
+      UsageLimits.classify("gemini", text, now, zone) match
+        case Some(LlmError.RateLimitError(Some(d))) => assertTrue(d == zio.Duration.fromMillis(500))
+        case _                                      => assertTrue(false)
+    },
     test("gemini 'exhausted your capacity' (no reset) → UsageLimitError, resetAt None") {
       val text = "You have exhausted your capacity on this model."
       UsageLimits.classify("gemini", text, now, zone) match

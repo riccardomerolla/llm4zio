@@ -67,6 +67,40 @@ object TransientRetrySpec extends ZIOSpecDefault:
         )
       },
     ),
+    suite("transientDelay")(
+      test("honors a provider-named retryAfter longer than the backoff (gemini 'reset after 45s')") {
+        assertTrue(
+          TransientRetry.transientDelay(LlmError.RateLimitError(Some(45.seconds)), 1.second) == 45.seconds
+        )
+      },
+      test("keeps the backoff when it is already longer than retryAfter") {
+        assertTrue(TransientRetry.transientDelay(LlmError.RateLimitError(Some(1.second)), 4.seconds) == 4.seconds)
+      },
+      test("caps a pathological retryAfter at two minutes") {
+        assertTrue(TransientRetry.transientDelay(LlmError.RateLimitError(Some(21.hours)), 1.second) == 2.minutes)
+      },
+      test("non-rate-limit transients use the plain backoff") {
+        assertTrue(
+          TransientRetry.transientDelay(LlmError.ProviderError("connection reset", None), 3.seconds) == 3.seconds,
+          TransientRetry.transientDelay(LlmError.RateLimitError(None), 3.seconds) == 3.seconds,
+        )
+      },
+    ),
+    test("a usage-limit failure fails straight through — no transient or flaky retries, no notices") {
+      // A quota-exhausted provider (e.g. gemini "quota will reset after 21h") cannot be retried back to life;
+      // the typed UsageLimitError must reach the wait layers (LLM4ZIO_USAGE_WAIT) or the user immediately.
+      for
+        events          <- FlowEvents.collecting
+        given FlowEvents = events
+        attempts        <- Ref.make(0)
+        cap              = LlmError.UsageLimitError(None, "gemini", "You have exhausted your capacity on this model.")
+        svc              = FlakyService(attempts, failTimes = 99, cap)
+        retry            = TransientRetry(svc, maxRetries = 3, baseDelay = Duration.Zero)
+        result          <- retry.executeStream("hi").runCollect.exit
+        tries           <- attempts.get
+        infos           <- events.recorded
+      yield assertTrue(result.isFailure, tries == 1, infos.isEmpty)
+    },
     test("retries a transient stream failure then succeeds, emitting a visible retry notice each time") {
       for
         events          <- FlowEvents.collecting
