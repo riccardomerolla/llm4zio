@@ -41,7 +41,8 @@ final class TransientRetry(
         case e if TransientRetry.isFlakyStream(e) && fN < flakyRetries =>
           notice(s"flaky $what (fresh retry)", fN, flakyRetries, e) *> ZIO.sleep(flakyDelay) *> loop(tN, fN + 1)
         case e if TransientRetry.isTransient(e) && tN < maxRetries     =>
-          notice(s"transient error ($what)", tN, maxRetries, e) *> ZIO.sleep(backoff(tN)) *> loop(tN + 1, fN)
+          notice(s"transient error ($what)", tN, maxRetries, e) *>
+            ZIO.sleep(TransientRetry.transientDelay(e, backoff(tN))) *> loop(tN + 1, fN)
       }
     loop(0, 0)
 
@@ -52,7 +53,10 @@ final class TransientRetry(
           ZStream.fromZIO(notice(s"flaky $what (fresh retry)", fN, flakyRetries, e) *> ZIO.sleep(flakyDelay)).drain ++
             loop(tN, fN + 1)
         case e if TransientRetry.isTransient(e) && tN < maxRetries     =>
-          ZStream.fromZIO(notice(s"transient error ($what)", tN, maxRetries, e) *> ZIO.sleep(backoff(tN))).drain ++
+          ZStream.fromZIO(
+            notice(s"transient error ($what)", tN, maxRetries, e) *>
+              ZIO.sleep(TransientRetry.transientDelay(e, backoff(tN)))
+          ).drain ++
             loop(tN + 1, fN)
       }
     loop(0, 0)
@@ -78,6 +82,22 @@ final class TransientRetry(
   override def isAvailable: UIO[Boolean] = underlying.isAvailable
 
 object TransientRetry:
+
+  /** Longest provider-named `retryAfter` honored before a transient retry. Longer waits are usage-cap territory —
+    * classified as [[LlmError.UsageLimitError]] and handled by the wait layers — so the cap only guards against a
+    * pathological header stalling the flow.
+    */
+  private val maxHonoredRetryAfter: Duration = 2.minutes
+
+  /** The wait before a transient retry: the exponential backoff, unless the provider named a longer `retryAfter` (e.g.
+    * gemini "quota will reset after 45s") — sleeping 1s+2s+4s against a 45s window burns the whole retry budget on
+    * failures that were never going to succeed.
+    */
+  def transientDelay(e: LlmError, backoff: Duration): Duration = e match
+    case LlmError.RateLimitError(Some(retryAfter)) =>
+      val honored = if retryAfter.compareTo(maxHonoredRetryAfter) > 0 then maxHonoredRetryAfter else retryAfter
+      if honored.compareTo(backoff) > 0 then honored else backoff
+    case _                                         => backoff
 
   /** Flaky-stream class: gemini intermittently closes the stream with no candidates or a half-formed function call.
     * Non-deterministic; a fresh process (which a retried stream spawns) almost always succeeds, so this gets its own,

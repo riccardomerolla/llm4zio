@@ -66,6 +66,9 @@ object GeminiCliExecutionContext:
 
 object GeminiCliExecutor:
 
+  /** Cap on captured (non-noise) stderr lines per process — enough for gemini's error report + stack trace. */
+  private val stderrCaptureLimit = 200
+
   private[providers] def validateExitCode(
     exitCode: Int,
     stderr: String,
@@ -80,8 +83,89 @@ object GeminiCliExecutor:
         ZIO.logWarning(s"Gemini CLI turn limit exceeded (exit 53): $stderr") *>
           ZIO.fail(LlmError.TurnLimitError(turnLimit))
       case _  =>
+        // Classify before falling back to a generic ProviderError: a quota-driven death (gemini prints the reason —
+        // with its reset time — to stderr) must surface as the typed usage-limit error, not a retriable-looking blob.
         ZIO.logError(s"Gemini CLI exited with code $exitCode: $stderr") *>
-          ZIO.fail(LlmError.ProviderError(s"Gemini CLI exited with code $exitCode: $stderr", None))
+          Clock.instant.flatMap { now =>
+            ZIO.fail(
+              UsageLimits
+                .classify("gemini", stderr, now, ZoneId.systemDefault)
+                .getOrElse(LlmError.ProviderError(s"Gemini CLI exited with code $exitCode: $stderr", None))
+            )
+          }
+
+  /** The first captured stderr line carrying a quota/usage-limit signal. Gemini prints the real reason for a dead turn
+    * — e.g. `TerminalQuotaError: You have exhausted your capacity on this model. Your quota will reset after 21h1m53s.`
+    * — to stderr only, while stdout gets a catch-all error event or nothing at all; this line is what lets
+    * [[UsageLimits.classify]] type the failure (with a concrete reset time) instead of burning retries.
+    */
+  private[providers] def quotaDiagnostic(stderr: Chunk[String]): Option[String] =
+    stderr.find(UsageLimits.isGeminiQuota).map(_.trim)
+
+  /** Fold the stderr quota diagnostic (when one exists) into a fatal stream event's message, so downstream
+    * classification sees gemini's real reason instead of the stdout catch-all. Events whose message already carries a
+    * quota signal pass through unchanged; non-fatal events pass through unchanged.
+    */
+  private[providers] def withStderrDiagnostic(
+    event: GeminiCliStreamEvent,
+    stderr: Chunk[String],
+  ): GeminiCliStreamEvent =
+    quotaDiagnostic(stderr) match
+      case None       => event
+      case Some(diag) =>
+        def merged(base: Option[String]): Option[String] =
+          base.map(_.trim).filter(_.nonEmpty) match
+            case Some(m) if UsageLimits.isGeminiQuota(m) => Some(m)
+            case Some(m)                                 => Some(s"$m — $diag")
+            case None                                    => Some(diag)
+        event match
+          case GeminiCliStreamEvent.Error(message, code, errorType)                                 =>
+            GeminiCliStreamEvent.Error(merged(message), code, errorType)
+          case GeminiCliStreamEvent.Result(status, errorMessage, stats) if status.contains("error") =>
+            GeminiCliStreamEvent.Result(status, merged(errorMessage), stats)
+          case other                                                                                => other
+
+  /** Exit-time validation for the stream path, over the captured stderr. Two shapes beyond [[validateExitCode]]:
+    *   - quota exhaustion with a nonzero exit → the typed usage-limit error, not a generic ProviderError;
+    *   - quota exhaustion with exit 0 and NO assistant text → gemini died of quota but "succeeded": without this the
+    *     empty stream surfaces downstream as a retriable "empty response" and burns the whole flaky-retry + auto-resume
+    *     budget against a wall that will not move for hours.
+    * Exits 42/53 keep their specific meanings (rejected input / turn limit) regardless of stderr.
+    */
+  private[providers] def validateStreamExit(
+    exitCode: Int,
+    stderr: Chunk[String],
+    sawAssistantText: Boolean,
+    turnLimit: Option[Int],
+  ): IO[LlmError, Unit] =
+    def classifiedQuota(diag: String): IO[LlmError, Nothing] =
+      Clock.instant.flatMap { now =>
+        val err = UsageLimits
+          .classify("gemini", diag, now, ZoneId.systemDefault)
+          .getOrElse(LlmError.UsageLimitError(resetAt = None, provider = "gemini", message = diag))
+        ZIO.logWarning(s"Gemini CLI quota exhausted (from stderr): $diag") *> ZIO.fail(err)
+      }
+    val stderrText                                           = stderr.mkString("\n").trim
+    exitCode match
+      case 0       =>
+        quotaDiagnostic(stderr) match
+          case Some(diag) if !sawAssistantText => classifiedQuota(diag)
+          case _                               => ZIO.unit
+      case 42 | 53 =>
+        validateExitCode(
+          exitCode,
+          if stderrText.nonEmpty then stderrText else s"Gemini stream process exited with code $exitCode",
+          turnLimit,
+        )
+      case _       =>
+        quotaDiagnostic(stderr) match
+          case Some(diag) => classifiedQuota(diag)
+          case None       =>
+            validateExitCode(
+              exitCode,
+              if stderrText.nonEmpty then stderrText else s"Gemini stream process exited with code $exitCode",
+              turnLimit,
+            )
 
   /** Environment variables injected into every spawned gemini process.
     *
@@ -188,38 +272,58 @@ object GeminiCliExecutor:
       ): ZStream[Any, LlmError, GeminiCliStreamEvent] =
         ZStream.unwrapScoped {
           for
-            _       <- ZIO.logDebug(
-                         s"Starting Gemini stream: ${geminiArgv(config, executionContext, "stream-json").mkString(" ")}"
-                       )
-            process <- geminiCmd(prompt, config, executionContext, "stream-json").run.mapError(startError)
-            // Drain stderr: benign chatter at debug, anything else at WARN (so a stderr-only failure isn't lost).
-            // Killing the child first on teardown (finalizer below, registered last ⇒ runs first) closes this stream
-            // so the drain fiber can never wedge scope shutdown.
-            _       <- process.stderr.linesStream
-                         .foreach(line =>
-                           val shown = line.take(500) + (if line.length > 500 then "..." else "")
-                           if GeminiCliProvider.isKnownStderrNoise(line) then ZIO.logDebug(s"Gemini stderr: $shown")
-                           else ZIO.logWarning(s"Gemini stderr: $shown")
-                         )
-                         .ignore
-                         .forkScoped
-            _       <- ZIO.addFinalizer(process.killForcibly.ignore)
+            _          <- ZIO.logDebug(
+                            s"Starting Gemini stream: ${geminiArgv(config, executionContext, "stream-json").mkString(" ")}"
+                          )
+            process    <- geminiCmd(prompt, config, executionContext, "stream-json").run.mapError(startError)
+            stderrRef  <- Ref.make(Chunk.empty[String])
+            sawText    <- Ref.make(false)
+            // Drain stderr: benign chatter at debug, anything else at WARN — and captured (bounded), because gemini
+            // prints the real reason for a dead turn (e.g. TerminalQuotaError with the quota reset time) to stderr
+            // only, while stdout carries a catch-all error or nothing. Killing the child first on teardown
+            // (finalizer below, registered last ⇒ runs first) closes this stream so the drain fiber can never wedge
+            // scope shutdown.
+            errDrain   <- process.stderr.linesStream
+                            .foreach { line =>
+                              val shown = line.take(500) + (if line.length > 500 then "..." else "")
+                              if GeminiCliProvider.isKnownStderrNoise(line) then ZIO.logDebug(s"Gemini stderr: $shown")
+                              else
+                                ZIO.logWarning(s"Gemini stderr: $shown") *>
+                                  stderrRef.update(c =>
+                                    if c.size < GeminiCliExecutor.stderrCaptureLimit then c :+ line else c
+                                  )
+                            }
+                            .ignore
+                            .forkScoped
+            _          <- ZIO.addFinalizer(process.killForcibly.ignore)
+            // Fatal events and the exit check consult stderr for the quota diagnostic; the write races the stdout
+            // pipe, so give the drain a moment to reach EOF (gemini exits right after a fatal error) before reading.
+            awaitStderr = errDrain.join.timeout(2.seconds).ignore
           yield process.stdout.linesStream
             .mapError(e => LlmError.ProviderError(s"Failed to read gemini stream output: ${e.getMessage}", Some(e)))
             .tap(line =>
               ZIO.logDebug(s"Gemini stream output: ${line.take(500)}${if line.length > 500 then "..." else ""}")
             )
-            .map(GeminiCliProvider.parseStreamEvent) ++
+            .map(GeminiCliProvider.parseStreamEvent)
+            .mapZIO {
+              case msg @ GeminiCliStreamEvent.Message(role, content, _)
+                   if role.exists(_.equalsIgnoreCase("assistant")) && content.exists(_.trim.nonEmpty) =>
+                sawText.set(true).as(msg)
+              case err: GeminiCliStreamEvent.Error                                             =>
+                awaitStderr *> stderrRef.get.map(GeminiCliExecutor.withStderrDiagnostic(err, _))
+              case res @ GeminiCliStreamEvent.Result(status, _, _) if status.contains("error") =>
+                awaitStderr *> stderrRef.get.map(GeminiCliExecutor.withStderrDiagnostic(res, _))
+              case other                                                                       => ZIO.succeed(other)
+            } ++
             ZStream.fromZIO(
-              process.exitCode
-                .mapError(e => LlmError.ProviderError(s"Process wait failed: ${e.getMessage}", Some(e)))
-                .flatMap(exit =>
-                  GeminiCliExecutor.validateExitCode(
-                    exit.code,
-                    s"Gemini stream process exited with code ${exit.code}",
-                    executionContext.turnLimit,
-                  )
-                )
+              for
+                exit    <- process.exitCode
+                             .mapError(e => LlmError.ProviderError(s"Process wait failed: ${e.getMessage}", Some(e)))
+                _       <- awaitStderr // process is gone; let the capture reach EOF before reading
+                stderr  <- stderrRef.get
+                hadText <- sawText.get
+                _       <- GeminiCliExecutor.validateStreamExit(exit.code, stderr, hadText, executionContext.turnLimit)
+              yield ()
             ).drain
         }
     }
@@ -353,6 +457,12 @@ object GeminiCliProvider:
     val l = line.trim
     l.isEmpty ||
     l.contains("256-color support not detected") ||
+    l.contains("color support detected") || // "Warning: Limited color support detected (TERM=...)"
+    l.contains("support not detected") ||   // "True color (24-bit) support not detected..."
+    l.contains("tmux") ||                   // the ~/.tmux.conf suggestion lines that follow
+    l.startsWith("set -g ") ||              // tmux.conf snippet continuation
+    l.startsWith("set -ga ") ||
+    l.startsWith("Ripgrep is not available") ||
     l.startsWith("YOLO mode is enabled") ||
     l.startsWith("Shell cwd was reset to") ||
     l.startsWith("Loaded cached") ||
@@ -433,11 +543,20 @@ object GeminiCliProvider:
                 case GeminiCliStreamEvent.LogLine(line)                                                   =>
                   ZIO.logTrace(s"Gemini stream non-JSON output: ${line.trim}")
                 case GeminiCliStreamEvent.Init(model, sessionId)                                          =>
+                  // A session serving a different model than the one we passed with -m (CLI routing / fallback /
+                  // user settings) is exactly the "I asked for flash, why is it burning pro quota?" surprise —
+                  // surface it at WARN instead of burying it at debug.
                   ZIO.logDebug(
                     s"Gemini stream initialized${model.fold("")(m =>
                         s" with model=$m"
                       )}${sessionId.fold("")(id => s", session=$id")}"
-                  )
+                  ) *>
+                    ZIO.foreachDiscard(model.filter(m => !m.equalsIgnoreCase(config.model)))(m =>
+                      ZIO.logWarning(
+                        s"Gemini CLI is serving model '$m' but '${config.model}' was requested — " +
+                          "the CLI routed or fell back (check `gemini` settings and model quota)"
+                      )
+                    )
                 case GeminiCliStreamEvent.Message(role, _, delta)                                         =>
                   ZIO.logDebug(s"Gemini stream message event role=${role.getOrElse("unknown")}, delta=$delta")
                 case GeminiCliStreamEvent.ToolUse(toolName, toolId, _)                                    =>

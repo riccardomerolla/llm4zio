@@ -114,6 +114,26 @@ each script, or set `LLM4ZIO_CODER=claude|codex|gemini|pi` to run a whole flow o
 one provider. Cross-provider judging (e.g. Claude judging Gemini's extraction) is
 one config swap.
 
+llm4zio passes the configured model to the CLI (`gemini -m <model>`), but the CLI
+can still route or fall back to a different model (its own settings, `auto`
+routing, tier fallbacks); the run logs a WARN when the session's serving model
+differs from the requested one — that's the first thing to check when a flash-pinned
+flow is unexpectedly burning pro quota.
+
+### Provider quota exhaustion
+
+When gemini exhausts a model's quota mid-flow it often reports the reason
+(`TerminalQuotaError: … Your quota will reset after 21h1m53s`) only on the CLI's
+stderr while stdout carries a catch-all error or nothing. llm4zio classifies that
+stderr diagnostic into a typed usage-limit error with the concrete reset time, so
+the flow **fails fast with the reason instead of burning its retry budget**. Two
+ways out:
+
+- `LLM4ZIO_USAGE_WAIT=24h` (or `on`) — sleep until the reported reset, then
+  auto-resume the flow (extract is resumable: the committed draft pack is reused).
+- Point the seats at a model with remaining quota (e.g. swap the `ProModel` val
+  to `gemini-2.5-flash`) and rerun.
+
 ## Token & cost traceability
 
 Every flow run appends one structured record to an append-only ledger —

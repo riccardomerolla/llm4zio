@@ -30,4 +30,17 @@ object BannerSpec extends ZIOSpecDefault:
       val msg = Llm4zio.failMessage(Cause.fail(FlowError.Llm("something else broke", None)))
       assertTrue(!msg.toLowerCase.contains("quota"), !msg.contains("LLM4ZIO_USAGE_WAIT"))
     },
+    test("failMessage appends the wait-or-switch hint for a classified quota exhaustion") {
+      val msg = Llm4zio.failMessage(
+        Cause.fail(FlowError.Llm(
+          "You have exhausted your capacity on this model. Your quota will reset after 21h1m53s.",
+          None,
+        ))
+      )
+      assertTrue(
+        msg.contains("exhausted your capacity"),
+        msg.contains("LLM4ZIO_USAGE_WAIT"),
+        msg.contains("remaining quota"),
+      )
+    },
   )
