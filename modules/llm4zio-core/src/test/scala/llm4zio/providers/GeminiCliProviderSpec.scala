@@ -878,13 +878,8 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
             val args = GeminiCliExecutor.buildGeminiArgs(config, ctxN, "stream-json")
             assertTrue(!args.contains("-s"))
           },
-          test("includes --turn-limit when turnLimit is set") {
+          test("never emits --turn-limit, even when turnLimit is set (gemini has no such flag)") {
             val ctxT = GeminiCliExecutionContext(turnLimit = Some(5))
-            val args = GeminiCliExecutor.buildGeminiArgs(config, ctxT, "stream-json")
-            assertTrue(args.contains("--turn-limit"), args.contains("5"))
-          },
-          test("no --turn-limit when turnLimit is None") {
-            val ctxT = GeminiCliExecutionContext(turnLimit = None)
             val args = GeminiCliExecutor.buildGeminiArgs(config, ctxT, "stream-json")
             assertTrue(!args.contains("--turn-limit"))
           },
@@ -932,20 +927,20 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
         val args   = GeminiCliExecutor.buildGeminiArgs(config, ctx, "json")
         assertTrue(!args.contains("-s"))
       },
-      test("includes --turn-limit when configured") {
-        val config = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
-        val ctx    = GeminiCliExecutionContext(turnLimit = Some(5))
-        val args   = GeminiCliExecutor.buildGeminiArgs(config, ctx, "json")
-        assertTrue(
-          args.contains("--turn-limit"),
-          args.contains("5"),
-        )
+      // Gemini has NO --turn-limit flag (yargs strict mode dies with exit 1 "Unknown arguments") —
+      // the cap is the `model.maxSessionTurns` SETTING, injected per process via
+      // GEMINI_CLI_SYSTEM_DEFAULTS_PATH. Regression: v3.15.0 shipped the flag and broke every
+      // turn-limited run against a real CLI.
+      test("never emits --turn-limit into argv, configured or not") {
+        val config   = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
+        val withT    = GeminiCliExecutor.buildGeminiArgs(config, GeminiCliExecutionContext(turnLimit = Some(5)), "json")
+        val withoutT = GeminiCliExecutor.buildGeminiArgs(config, GeminiCliExecutionContext(), "json")
+        assertTrue(!withT.contains("--turn-limit"), !withT.contains("5"), !withoutT.contains("--turn-limit"))
       },
-      test("omits --turn-limit when not configured") {
-        val config = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
-        val ctx    = GeminiCliExecutionContext()
-        val args   = GeminiCliExecutor.buildGeminiArgs(config, ctx, "json")
-        assertTrue(!args.contains("--turn-limit"))
+      test("turnLimitSettingsJson is the model.maxSessionTurns settings payload") {
+        assertTrue(
+          GeminiCliExecutor.turnLimitSettingsJson(48) == """{"model":{"maxSessionTurns":48}}"""
+        )
       },
       test("includes --include-directories for each includeDirectories entry") {
         val config = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
@@ -996,6 +991,18 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
       test("omits GEMINI_SANDBOX when sandbox is None") {
         val env = GeminiCliExecutor.geminiProcessEnv(GeminiCliExecutionContext(sandbox = None))
         assertTrue(!env.contains("GEMINI_SANDBOX"), env.get("GEMINI_CLI_TRUST_WORKSPACE").contains("true"))
+      },
+      test("points GEMINI_CLI_SYSTEM_DEFAULTS_PATH at the turn-limit settings file when one is given") {
+        val settings = java.nio.file.Paths.get("/tmp/llm4zio-gemini-max-turns-48.json")
+        val env      = GeminiCliExecutor.geminiProcessEnv(GeminiCliExecutionContext(turnLimit = Some(48)), Some(settings))
+        assertTrue(
+          env.get("GEMINI_CLI_SYSTEM_DEFAULTS_PATH").contains(settings.toString),
+          env.get("GEMINI_CLI_TRUST_WORKSPACE").contains("true"),
+        )
+      },
+      test("omits GEMINI_CLI_SYSTEM_DEFAULTS_PATH when no settings file is given") {
+        val env = GeminiCliExecutor.geminiProcessEnv(GeminiCliExecutionContext(turnLimit = Some(48)), None)
+        assertTrue(!env.contains("GEMINI_CLI_SYSTEM_DEFAULTS_PATH"))
       },
     ),
     suite("executeStream metadata and tool observability")(
@@ -1410,16 +1417,13 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
           !argv.contains("--include-directories")
         )
       },
-      test("buildArgv includes --turn-limit when set") {
+      test("buildArgv never emits --turn-limit (gemini has no such flag)") {
         val executor  = new MockGeminiCliExecutor()
         val config    = LlmConfig(LlmProvider.GeminiCli, "gemini-2.5-flash")
         val connector = GeminiCliProvider.make(config, executor)
         val ctx       = CliContext(worktreePath = "/workspace", repoPath = "/repo", turnLimit = Some(10))
         val argv      = connector.buildArgv("fix the bug", ctx)
-        assertTrue(
-          argv.contains("--turn-limit"),
-          argv.contains("10"),
-        )
+        assertTrue(!argv.contains("--turn-limit"), !argv.contains("10"))
       },
       test("buildInteractiveArgv does not include -p or prompt") {
         val executor  = new MockGeminiCliExecutor()

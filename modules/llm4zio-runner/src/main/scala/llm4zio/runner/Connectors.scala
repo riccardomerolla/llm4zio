@@ -31,9 +31,10 @@ extension (config: CliConnectorConfig)
   /** Pin a specific model, e.g. `claude.withModel("opus")`. */
   def withModel(name: String): CliConnectorConfig = config.copy(model = Some(name))
 
-  /** Bound the agent's tool-call turns per ask (gemini `--turn-limit`). A headless agent that finishes its work and
-    * then keeps emitting no-op commands burns quota unbounded without this; past the limit the turn fails with the
-    * typed `LlmError.TurnLimitError`, so the flow decides (files already written usually mean the work survived).
+  /** Bound the agent's tool-call turns per ask (gemini: the `model.maxSessionTurns` setting, injected per process —
+    * gemini has no CLI flag for this). A headless agent that finishes its work and then keeps emitting no-op commands
+    * burns quota unbounded without this; past the limit the turn fails with the typed `LlmError.TurnLimitError`, so the
+    * flow decides (files already written usually mean the work survived).
     */
   def withTurnLimit(turns: Int): CliConnectorConfig = config.copy(turnLimit = Some(turns))
 

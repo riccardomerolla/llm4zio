@@ -1,5 +1,7 @@
 package llm4zio.providers
 
+import java.nio.charset.StandardCharsets
+import java.nio.file.{ Files, Path }
 import java.time.ZoneId
 
 import zio.*
@@ -66,7 +68,7 @@ object GeminiCliExecutionContext:
 
   /** Project the generic CLI config onto gemini's execution context. Every gemini-relevant field a flow can set on
     * [[llm4zio.core.CliConnectorConfig]] must be mapped here — `turnLimit` was once dropped in the factory, so a
-    * configured `--turn-limit` never reached the process and a confused headless gemini could burn turns unbounded.
+    * configured turn cap never reached the process and a confused headless gemini could burn turns unbounded.
     */
   def from(cfg: CliConnectorConfig): GeminiCliExecutionContext =
     GeminiCliExecutionContext(
@@ -187,11 +189,40 @@ object GeminiCliExecutor:
     *
     * `GEMINI_SANDBOX` selects the sandbox backend when a concrete one is configured (see [[GeminiSandbox.envValue]]);
     * the `Default` case emits `-s` only and lets gemini pick, so no env var is set.
+    *
+    * `GEMINI_CLI_SYSTEM_DEFAULTS_PATH` points at the turn-limit settings file when a cap is configured: gemini has NO
+    * `--turn-limit` flag (yargs strict mode exits 1 with "Unknown arguments"), the cap is the `model.maxSessionTurns`
+    * SETTING. The system-DEFAULTS layer has the lowest settings precedence, so a user's or an org's own settings —
+    * including their own `maxSessionTurns` — still win, and nothing in the target repo is touched.
     */
-  private[providers] def geminiProcessEnv(ctx: GeminiCliExecutionContext): Map[String, String] =
+  private[providers] def geminiProcessEnv(
+    ctx: GeminiCliExecutionContext,
+    turnLimitSettings: Option[Path] = None,
+  ): Map[String, String] =
     val trust   = Map("GEMINI_CLI_TRUST_WORKSPACE" -> "true")
     val sandbox = ctx.sandbox.flatMap(GeminiSandbox.envValue).map("GEMINI_SANDBOX" -> _).toMap
-    trust ++ sandbox
+    val turnCap = turnLimitSettings.map(p => "GEMINI_CLI_SYSTEM_DEFAULTS_PATH" -> p.toString).toMap
+    trust ++ sandbox ++ turnCap
+
+  /** The system-defaults settings payload that caps a session's turns. Tripping the cap raises gemini's
+    * `FatalTurnLimitedError` (exit 53), which [[validateExitCode]] types as `LlmError.TurnLimitError`.
+    */
+  private[providers] def turnLimitSettingsJson(turns: Int): String =
+    s"""{"model":{"maxSessionTurns":$turns}}"""
+
+  /** Materialize the settings file behind `GEMINI_CLI_SYSTEM_DEFAULTS_PATH` for `ctx`, if a cap is configured: a tiny
+    * JSON in the system temp dir, one per limit value, rewritten on every spawn (idempotent, nothing to clean up).
+    */
+  private[providers] def turnLimitSettingsFile(ctx: GeminiCliExecutionContext): IO[LlmError, Option[Path]] =
+    ZIO.foreach(ctx.turnLimit) { turns =>
+      ZIO
+        .attemptBlocking {
+          val path = Path.of(java.lang.System.getProperty("java.io.tmpdir"), s"llm4zio-gemini-max-turns-$turns.json")
+          Files.write(path, turnLimitSettingsJson(turns).getBytes(StandardCharsets.UTF_8))
+          path
+        }
+        .mapError(e => LlmError.ProviderError(s"Failed to write gemini turn-limit settings: ${e.getMessage}", Some(e)))
+    }
 
   private[providers] def buildGeminiArgs(
     config: LlmConfig,
@@ -205,9 +236,10 @@ object GeminiCliExecutor:
     // The -s flag enables sandbox mode. The backend is controlled separately via
     // GEMINI_SANDBOX env var injected in startProcess (see GeminiSandbox.envValue).
     // Default sandbox: -s is emitted but no env var is set, letting gemini pick the backend.
+    // NB: ctx.turnLimit deliberately emits NO argv — gemini has no --turn-limit flag; the cap goes
+    // via the settings file behind GEMINI_CLI_SYSTEM_DEFAULTS_PATH (see geminiProcessEnv).
     val sandboxArgs    = ctx.sandbox.map(_ => "-s").toList
-    val turnLimitArgs  = ctx.turnLimit.toList.flatMap(n => List("--turn-limit", n.toString))
-    baseArgs ++ includeDirArgs ++ sandboxArgs ++ turnLimitArgs
+    baseArgs ++ includeDirArgs ++ sandboxArgs
 
   val default: GeminiCliExecutor =
     new GeminiCliExecutor {
@@ -228,11 +260,12 @@ object GeminiCliExecutor:
         config: LlmConfig,
         ctx: GeminiCliExecutionContext,
         outputFormat: String,
+        turnLimitSettings: Option[Path],
       ): Command =
         val argv    = geminiArgv(config, ctx, outputFormat)
         val base    = Command(argv.head, argv.tail*)
         val withCwd = ctx.cwd.fold(base)(p => base.workingDirectory(java.nio.file.Paths.get(p).toFile))
-        val env     = GeminiCliExecutor.geminiProcessEnv(ctx)
+        val env     = GeminiCliExecutor.geminiProcessEnv(ctx, turnLimitSettings)
         val withEnv = if env.isEmpty then withCwd else withCwd.env(env)
         withEnv.stdin(ProcessInput.fromUTF8String(prompt))
 
@@ -255,8 +288,9 @@ object GeminiCliExecutor:
         ZIO.scoped {
           for
             _       <- ZIO.logDebug(s"Starting Gemini: ${geminiArgv(config, executionContext, "json").mkString(" ")}")
+            turnCap <- GeminiCliExecutor.turnLimitSettingsFile(executionContext)
             process <- ZIO.acquireRelease(
-                         geminiCmd(prompt, config, executionContext, "json").run.mapError(startError)
+                         geminiCmd(prompt, config, executionContext, "json", turnCap).run.mapError(startError)
                        )(p => p.killForcibly.ignore)
             errF    <- process.stderr.string.fork
             output  <-
@@ -286,7 +320,8 @@ object GeminiCliExecutor:
             _          <- ZIO.logDebug(
                             s"Starting Gemini stream: ${geminiArgv(config, executionContext, "stream-json").mkString(" ")}"
                           )
-            process    <- geminiCmd(prompt, config, executionContext, "stream-json").run.mapError(startError)
+            turnCap    <- GeminiCliExecutor.turnLimitSettingsFile(executionContext)
+            process    <- geminiCmd(prompt, config, executionContext, "stream-json", turnCap).run.mapError(startError)
             stderrRef  <- Ref.make(Chunk.empty[String])
             sawText    <- Ref.make(false)
             // Drain stderr: benign chatter at debug, anything else at WARN — and captured (bounded), because gemini
@@ -518,8 +553,9 @@ object GeminiCliProvider:
       override def buildArgv(prompt: String, ctx: CliContext): List[String] =
         val base = List("gemini", "--yolo")
         val dirs = if ctx.repoPath.nonEmpty then List("--include-directories", ctx.repoPath) else Nil
-        val turn = ctx.turnLimit.map(l => List("--turn-limit", l.toString)).getOrElse(Nil)
-        base ++ dirs ++ turn ++ List("-p", prompt)
+        // ctx.turnLimit emits NO argv: gemini has no --turn-limit flag (unknown args exit 1). This
+        // argv-only path cannot inject the maxSessionTurns settings env, so the cap doesn't apply here.
+        base ++ dirs ++ List("-p", prompt)
 
       override def buildInteractiveArgv(ctx: CliContext): List[String] =
         val base = List("gemini", "--yolo")

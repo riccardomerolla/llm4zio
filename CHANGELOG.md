@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.15.1] - 2026-07-14
+
+### Fixed
+
+- **Gemini turn cap: `--turn-limit` does not exist.** v3.15.0's turn-limit wiring passed a
+  `--turn-limit` flag that no gemini CLI version accepts — yargs strict mode kills the
+  process with exit 1 `Unknown arguments: turn-limit, turnLimit`, so every turn-limited
+  run (including modernize-extract.sc's analyst seat) failed to spawn. The cap is
+  gemini's `model.maxSessionTurns` **setting**: the provider now writes a tiny settings
+  file to the system temp dir and points `GEMINI_CLI_SYSTEM_DEFAULTS_PATH` at it per
+  spawned process — lowest settings precedence, so user/workspace/org settings still
+  win, and nothing in the target repo is touched. Tripping the cap still surfaces as
+  gemini's exit 53 (`FatalTurnLimitedError`) → typed `LlmError.TurnLimitError`.
+  Verified against gemini-cli 0.47.0 (args accepted, settings file honored).
+  Note: the argv-only `CliConnector.buildArgv` path cannot inject env, so the cap does
+  not apply there.
+
 ## [3.15.0] - 2026-07-14
 
 Production feedback round 2 (Gemini CLI vs a real estate): the extract phase restarted
