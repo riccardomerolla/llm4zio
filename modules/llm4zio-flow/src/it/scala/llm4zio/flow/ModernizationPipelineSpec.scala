@@ -57,9 +57,13 @@ object ModernizationPipelineSpec extends ZIOSpecDefault:
   def spec = suite("modernization pipeline")(
     test("the cobol-springboot pack loads and its coverage rules enumerate the fixture estate") {
       for
-        pack  <- Pack.load(packDir())
-        units <- SpecChecks.coverageUnits(fixtureDir(), pack.coverage)
+        pack     <- Pack.load(packDir())
+        units    <- SpecChecks.coverageUnits(fixtureDir(), pack.coverage)
+        programs <- SpecChecks.matchingFiles(fixtureDir(), pack.programs.getOrElse(".*"))
       yield assertTrue(
+        // programs excludes copybooks: one spec per program/job is what per-unit extraction iterates over.
+        pack.programs.contains(""".*\.(cbl|CBL|jcl|JCL)"""),
+        programs == List("cobol/ACCTXFR.cbl", "cobol/INTCALC.cbl", "jcl/XFERDLY.jcl"),
         pack.name == "cobol-springboot",
         pack.gate("test").contains(List("mvn", "-q", "-B", "test")),
         pack.judgeDimensions.map(_.name) == List("completeness", "faithfulness", "testability"),
@@ -74,12 +78,17 @@ object ModernizationPipelineSpec extends ZIOSpecDefault:
     test("every shipped pack loads and enumerates its slice of the fixture estate") {
       val estate = repoRoot.resolve("examples/fixtures/legacy-bank")
       for
-        jspNext  <- Pack.load(repoRoot.resolve("examples/packs/jsp-nextjs"))
-        jspBff   <- Pack.load(repoRoot.resolve("examples/packs/jsp-bff-nextjs"))
-        ace      <- Pack.load(repoRoot.resolve("examples/packs/ace-integration"))
-        jspUnits <- SpecChecks.coverageUnits(estate, jspNext.coverage)
-        aceUnits <- SpecChecks.coverageUnits(estate, ace.coverage)
+        jspNext     <- Pack.load(repoRoot.resolve("examples/packs/jsp-nextjs"))
+        jspBff      <- Pack.load(repoRoot.resolve("examples/packs/jsp-bff-nextjs"))
+        ace         <- Pack.load(repoRoot.resolve("examples/packs/ace-integration"))
+        jspUnits    <- SpecChecks.coverageUnits(estate, jspNext.coverage)
+        aceUnits    <- SpecChecks.coverageUnits(estate, ace.coverage)
+        acePrograms <- SpecChecks.matchingFiles(estate, ace.programs.orElse(ace.sources).getOrElse(".*"))
       yield assertTrue(
+        // ace ships no `programs:` — the sources fallback IS its program list.
+        ace.programs.isEmpty,
+        acePrograms == List("ace/PaymentRouting.esql", "ace/PaymentRouting.msgflow"),
+        jspNext.programs.contains(""".*\.(jsp|java)"""),
         List(jspNext, jspBff, ace).forall(p =>
           p.scaffold.exists(rel => Files.exists(p.dir.resolve(rel).normalize))
         ),
@@ -116,6 +125,57 @@ object ModernizationPipelineSpec extends ZIOSpecDefault:
         clean.isClean,
         dirty.issues.map(_.title) == List("uncovered cobol-paragraph: 2300-CHECK-FUNDS"),
       )
+    },
+    test("per-program extraction: completed programs are skipped on rerun and fragments rebuild a gate-clean traceability index") {
+      ZIO.scoped {
+        for
+          root      <- tempDir
+          pack      <- Pack.load(packDir())
+          // Copy the fixture estate into a work dir, as extract.sc sees it.
+          _         <- ZIO.attemptBlocking {
+                         Files.walk(fixtureDir()).forEach { p =>
+                           val dest = root.resolve(fixtureDir().relativize(p).toString)
+                           if Files.isDirectory(p) then Files.createDirectories(dest)
+                           else { Option(dest.getParent).foreach(Files.createDirectories(_)); Files.copy(p, dest) }
+                           ()
+                         }
+                       }.orDie
+          programs  <- SpecChecks.matchingFiles(root, pack.programs.orElse(pack.sources).getOrElse(".*"))
+          modDir     = root.resolve("docs/modernization")
+
+          // -- extract.sc's per-program loop, run 1: "extracts" only the first program then crashes.
+          // The resume unit is the spec file: a program with specs/<NAME>.md is never re-extracted.
+          name       = (rel: String) => rel.substring(rel.lastIndexOf('/') + 1).takeWhile(_ != '.')
+          extracted <- Ref.make(List.empty[String])
+          extractOne = (rel: String) =>
+                         for
+                           units <- SpecChecks.coverageUnits(root.resolve(rel).getParent, pack.coverage)
+                           lines  = units.values.flatten.map(u => s"$u — ${name(rel)}.md R1").mkString("\n")
+                           _     <- write(modDir, s"specs/${name(rel)}.md", s"# ${name(rel)}\nR1 ...")
+                           _     <- write(modDir, s"traceability/${name(rel)}.md", lines)
+                           _     <- extracted.update(rel :: _)
+                         yield ()
+          notDone    = (rel: String) => ZIO.attemptBlocking(!Files.exists(modDir.resolve(s"specs/${name(rel)}.md"))).orDie
+          _         <- ZIO.foreachDiscard(programs.take(1))(extractOne)
+
+          // -- run 2 (resume): only the remaining programs are extracted.
+          _         <- ZIO.foreachDiscard(programs)(rel => ZIO.whenZIO(notDone(rel))(extractOne(rel)))
+          runs      <- extracted.get
+
+          // -- the deterministic index rebuild: fragments concatenate into the traceability the gate checks.
+          fragments <- ZIO.foreach(programs)(rel =>
+                         ZIO.attemptBlocking(Files.readString(modDir.resolve(s"traceability/${name(rel)}.md"))).orDie
+                       )
+          _         <- write(modDir, "traceability.md", fragments.mkString("\n"))
+          trace     <- ZIO.attemptBlocking(Files.readString(modDir.resolve("traceability.md"))).orDie
+          coverage  <- SpecChecks.coverage(root, pack.coverage, trace)
+        yield assertTrue(
+          programs == List("cobol/ACCTXFR.cbl", "cobol/INTCALC.cbl", "jcl/XFERDLY.jcl"),
+          runs.size == programs.size, // each program extracted exactly once across both runs
+          runs.distinct.size == programs.size,
+          coverage.isClean,
+        )
+      }
     },
     test("extract→seed handoff: the approval gate blocks a draft pack, a human approves, the target seeds and resumes") {
       ZIO.scoped {

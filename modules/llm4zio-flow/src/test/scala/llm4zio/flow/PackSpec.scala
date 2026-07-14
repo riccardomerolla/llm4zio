@@ -189,6 +189,27 @@ object PackSpec extends ZIOSpecDefault:
         )
       }
     },
+    test("load parses the optional programs regex — the spec-worthy subset of sources") {
+      val manifest =
+        """# Pack: cobol-springboot
+          |
+          |source: cobol
+          |sources: .*\.(cbl|cpy|jcl)
+          |programs: .*\.(cbl|jcl)
+          |""".stripMargin
+      ZIO.scoped {
+        for
+          dir      <- tempDir
+          _        <- write(dir, "pack.md", manifest)
+          pack     <- Pack.load(dir)
+          _        <- write(dir, "pack.md", minimalManifest)
+          defaults <- Pack.load(dir)
+        yield assertTrue(
+          pack.programs.contains(""".*\.(cbl|jcl)"""),
+          defaults.programs.isEmpty,
+        )
+      }
+    },
     test("load fails typed on a missing manifest and on a malformed one") {
       ZIO.scoped {
         for

@@ -31,6 +31,12 @@ extension (config: CliConnectorConfig)
   /** Pin a specific model, e.g. `claude.withModel("opus")`. */
   def withModel(name: String): CliConnectorConfig = config.copy(model = Some(name))
 
+  /** Bound the agent's tool-call turns per ask (gemini `--turn-limit`). A headless agent that finishes its work and
+    * then keeps emitting no-op commands burns quota unbounded without this; past the limit the turn fails with the
+    * typed `LlmError.TurnLimitError`, so the flow decides (files already written usually mean the work survived).
+    */
+  def withTurnLimit(turns: Int): CliConnectorConfig = config.copy(turnLimit = Some(turns))
+
 object Connectors:
   /** The coder selected by `LLM4ZIO_CODER` (claude|codex|gemini|pi), defaulting to [[claude]] — the
     * swap-backend-without-editing-the-script knob every example used to hand-roll.

@@ -20,6 +20,9 @@ final case class Pack(
   source: String,
   scaffold: Option[String],
   sources: Option[String],
+  // The spec-worthy subset of `sources` (relative-path regex): the files that each get their own behavioural spec
+  // in a per-unit extraction (programs and jobs, not copybooks/descriptors). Falls back to `sources` when unset.
+  programs: Option[String],
   specsDir: String,
   featuresDir: String,
   gates: Map[String, List[String]],
@@ -117,6 +120,7 @@ object Pack:
                 source = source,
                 scaffold = fields.get("scaffold"),
                 sources = fields.get("sources"),
+                programs = fields.get("programs"),
                 specsDir = fields.getOrElse("specs-dir", "docs/specs"),
                 featuresDir = fields.getOrElse("features-dir", "features"),
                 gates = section(sections, "Gates").map(namedListItems).getOrElse(Map.empty).map { (k, v) =>

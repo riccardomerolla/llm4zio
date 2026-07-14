@@ -3,6 +3,7 @@
 source: jsp
 scaffold: ../../fixtures/scaffolds/nextjs-spa
 sources: .*\.(jsp|java|xml)
+programs: .*\.(jsp|java)
 specs-dir: docs/specs
 features-dir: features
 

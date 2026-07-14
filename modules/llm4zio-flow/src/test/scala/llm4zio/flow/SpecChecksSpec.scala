@@ -36,6 +36,18 @@ object SpecChecksSpec extends ZIOSpecDefault:
       |""".stripMargin
 
   def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("SpecChecks")(
+    test("matchingFiles enumerates matching files as sorted relative paths") {
+      ZIO.scoped {
+        for
+          dir   <- tempDir
+          _     <- write(dir, "src/INTCALC.cbl", cobol)
+          _     <- write(dir, "src/ACCTXFR.cbl", cobol)
+          _     <- write(dir, "copybooks/ACCTREC.cpy", "       01  ACCT-REC.\n")
+          _     <- write(dir, "jobs/XFERDLY.jcl", "//STEP010 EXEC PGM=ACCTXFR\n")
+          files <- SpecChecks.matchingFiles(dir, """.*\.(cbl|jcl)""")
+        yield assertTrue(files == List("jobs/XFERDLY.jcl", "src/ACCTXFR.cbl", "src/INTCALC.cbl"))
+      }
+    },
     test("coverage is clean when every source unit appears in the traceability text") {
       ZIO.scoped {
         for

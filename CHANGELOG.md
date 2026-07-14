@@ -5,6 +5,46 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.15.0] - 2026-07-14
+
+Production feedback round 2 (Gemini CLI vs a real estate): the extract phase restarted
+from scratch after a flaky stream, the gate burned six identical mega-prompt retries on
+deterministic empty responses, and a finished gemini turn looped on no-op shell commands.
+
+### Added
+
+- **Per-program, resumable extraction** (`modernize-extract.sc`). The monolithic
+  "reverse-engineer the repository" ask is gone: the pack's new `programs:` regex
+  (falling back to `sources:`) enumerates the spec-worthy files
+  (`SpecChecks.matchingFiles`), and each program gets its own analyst turn, commit, and
+  artifacts (`specs/`, `features/`, `traceability/<NAME>.md`, `mapping/<NAME>.md`). A
+  rerun skips programs whose spec exists — a flaky stream costs one program's turn, not
+  the estate. `traceability.md`/`mapping.md` are regenerated deterministically from the
+  fragments before every gate round.
+- **Per-program judging with a shrinking-context ladder.** Each gate judge call sees one
+  program's source + spec (capped by `LLM4ZIO_JUDGE_SOURCES_LIMIT`), instead of the
+  whole estate + the whole spec pack in one prompt. An empty judge response that
+  survives the flaky retries is treated as deterministic (context overflow) and retried
+  at half, then quarter context instead of verbatim. Later fix rounds re-judge only the
+  programs that scored sub-bar.
+- **`withTurnLimit` connector preset extension** — bound a CLI agent's tool-call turns
+  per ask (gemini `--turn-limit`); the extract analyst runs under it, so a wedged
+  headless agent that keeps emitting no-op `run_shell_command` comments after finishing
+  is cut off. A turn-limit trip after the program's spec landed keeps the work.
+- **`Pack.programs`** — optional manifest field: the spec-worthy subset of `sources`
+  (programs and jobs, not copybooks). The cobol and jsp packs set it; ace falls back.
+
+### Fixed
+
+- **`turnLimit` never reached the gemini process.** The gemini CLI factory dropped
+  `CliConnectorConfig.turnLimit` when building the execution context, so no flow could
+  bound a gemini turn. The mapping is now total (`GeminiCliExecutionContext.from`).
+- **Empty structured responses are diagnosable.** The gemini CLI's "empty response"
+  error now carries the served model, prompt size, and token usage (`output_tokens=0`
+  vs no usage reported), so a deterministic context overflow, a silent quota death, and
+  a genuine flake can be told apart from the flow log. The retry classification keeps
+  matching.
+
 ## [3.14.0] - 2026-07-12
 
 ### Added

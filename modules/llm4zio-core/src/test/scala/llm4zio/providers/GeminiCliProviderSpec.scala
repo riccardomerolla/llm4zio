@@ -283,6 +283,74 @@ object GeminiCliProviderSpec extends ZIOSpecDefault:
         response <- provider.executeStructured[StructuredReply]("test prompt", Json.Obj())
       yield assertTrue(response.summary == "uppercase-fence")
     },
+    test("executeStructured on an empty response fails with diagnostics but stays retry-classifiable") {
+      final case class StructuredReply(summary: String) derives JsonCodec
+
+      val config   = LlmConfig(
+        provider = LlmProvider.GeminiCli,
+        model = "gemini-2.5-pro",
+      )
+      // The deterministic-empty shape seen against production estates: a "successful" turn that produced
+      // zero assistant text (context overflow / silent quota) — only the final Result event arrives.
+      val executor = new MockGeminiCliExecutor(
+        streamEvents = List(
+          GeminiCliStreamEvent.Init(model = Some("gemini-2.5-pro"), sessionId = Some("s1")),
+          GeminiCliStreamEvent.Result(
+            status = Some("success"),
+            errorMessage = None,
+            stats = Some(GeminiCliProvider.GeminiStreamStats(
+              total_tokens = Some(90000),
+              input_tokens = Some(90000),
+              output_tokens = Some(0),
+            )),
+          ),
+        )
+      )
+      val provider = GeminiCliProvider.make(config, executor)
+      val prompt   = "judge this spec pack " * 100
+
+      for
+        err <- provider.executeStructured[StructuredReply](prompt, Json.Obj()).flip
+      yield assertTrue(
+        // The substring TransientRetry.isFlakyStream keys on must survive the enrichment.
+        err.message.contains("empty response"),
+        err.message.contains("model=gemini-2.5-pro"),
+        err.message.contains("chars"),
+        err.message.contains("output_tokens=0"),
+      )
+    },
+    test("executeStructured on an empty response without usage stats reports the absence") {
+      final case class StructuredReply(summary: String) derives JsonCodec
+
+      val config   = LlmConfig(provider = LlmProvider.GeminiCli, model = "gemini-2.5-pro")
+      val executor = new MockGeminiCliExecutor(
+        streamEvents = List(
+          GeminiCliStreamEvent.Result(status = Some("success"), errorMessage = None, stats = None)
+        )
+      )
+      val provider = GeminiCliProvider.make(config, executor)
+
+      for
+        err <- provider.executeStructured[StructuredReply]("test prompt", Json.Obj()).flip
+      yield assertTrue(
+        err.message.contains("empty response"),
+        err.message.contains("no token usage reported"),
+      )
+    },
+    test("GeminiCliExecutionContext.from maps workingDir, readOnly, and turnLimit off the CLI config") {
+      val cfg = CliConnectorConfig(
+        ConnectorId.GeminiCli,
+        workingDir = Some("/repo"),
+        readOnly = true,
+        turnLimit = Some(7),
+      )
+      val ctx = GeminiCliExecutionContext.from(cfg)
+      assertTrue(
+        ctx.cwd == Some("/repo"),
+        ctx.readOnly,
+        ctx.turnLimit == Some(7),
+      )
+    },
     test("extractResponse returns final response from Gemini headless JSON") {
       val output =
         """{"response":"# Architecture Analysis\n\n## Recommended Improvements\nUse smaller modules.","stats":{"turns":1}}"""

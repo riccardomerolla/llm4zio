@@ -36,8 +36,8 @@ versioned directory, not code:
 
 ```
 packs/cobol-springboot/
-  pack.md          # manifest: source kind, scaffold ref, gate commands, judge rubrics,
-                   #   coverage-unit regexes, seed destinations
+  pack.md          # manifest: source kind, scaffold ref, sources/programs regexes,
+                   #   gate commands, judge rubrics, coverage-unit regexes, seed destinations
   prompts/*.md     # analysis / spec / bdd / plan / implement / review templates
   reviewers/*.md   # pack-specific reviewer lenses (same format as the shipped roster)
   lessons.md       # accumulated lessons — appended by review, injected by extract/implement
@@ -57,16 +57,34 @@ program, BDD `.feature` files, a traceability matrix, a data/interface mapping,
 and (once the gate passes) a proposed task plan in the canonical `Plan.render`
 Markdown.
 
+Extraction is **per program**, so real estates are resumable and bounded:
+
+- the pack's `programs:` regex (falling back to `sources:`) enumerates the
+  spec-worthy files (`SpecChecks.matchingFiles`) — programs and jobs, not
+  copybooks;
+- each program gets its own analyst turn, its own commit, and its own artifacts:
+  `specs/<NAME>.md`, `features/<name>.feature`, `traceability/<NAME>.md`,
+  `mapping/<NAME>.md`. A rerun skips every program whose spec exists — a flaky
+  stream or crash costs one program's turn, not the estate. Delete a
+  `specs/<NAME>.md` to re-extract just that program;
+- `traceability.md` and `mapping.md` are **generated** from the per-program
+  fragments before every gate round — fix findings in the fragments, never in
+  the indexes;
+- every analyst turn runs under a turn limit (gemini `--turn-limit`, exposed as
+  `withTurnLimit`), so a wedged headless agent cannot burn quota on no-op
+  commands; if the limit trips after the spec landed, the flow keeps the work.
+
 The gate is layered, and **nothing auto-approves**:
 
 | Layer | Mechanism | What it proves |
 | ----- | --------- | -------------- |
-| 1 — deterministic | `SpecChecks.coverage`: every COBOL paragraph / JCL step enumerated from the source (pack regexes) appears in the traceability matrix; `SpecChecks.features`: the Gherkin parses and has steps | "How do you KNOW every paragraph was covered" |
-| 2 — LLM-as-a-Judge | `Judge` on `reasoning` scores completeness / faithfulness / testability against the pack's rubrics, full marks required | Nothing invented, nothing vague |
+| 1 — deterministic | `SpecChecks.coverage`: every COBOL paragraph / JCL step enumerated from the source (pack regexes) appears in the traceability matrix; `SpecChecks.features`: the Gherkin parses and has steps; traceability + mapping indexes exist | "How do you KNOW every paragraph was covered" |
+| 2 — LLM-as-a-Judge | `Judge` on `reasoning` scores completeness / faithfulness / testability against the pack's rubrics, full marks required — **per program**, each judge call bounded to one program's source + spec (`LLM4ZIO_JUDGE_SOURCES_LIMIT` caps it, default 400k chars; an empty response retries at half, then quarter context) | Nothing invented, nothing vague — and no estate-sized prompt to blow the model context |
 | 3 — human | `ApprovalGate` draft marker in `docs/modernization/README.md` | A person signs off before any target repo is touched |
 
-`fixLoop` feeds failures back to the analyst (3 rounds); a still-dirty pack is
-committed as an explicit **draft** and the flow halts for human triage.
+`fixLoop` feeds failures back to the analyst (3 rounds); later rounds re-judge
+only the programs that scored sub-bar. A still-dirty pack is committed as an
+explicit **draft** and the flow halts for human triage.
 
 ## Phase 2 — seed (rooted at the target repo)
 

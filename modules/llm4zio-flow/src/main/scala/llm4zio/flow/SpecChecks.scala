@@ -12,6 +12,21 @@ import zio.{ IO, ZIO }
   */
 object SpecChecks:
 
+  /** Every regular file under `root` whose relative path matches `regex`, as sorted `/`-separated relative paths — how
+    * a flow enumerates an estate's spec-worthy units ([[Pack.programs]]) for per-unit, resumable extraction.
+    */
+  def matchingFiles(root: Path, regex: String): IO[FlowError, List[String]] =
+    ZIO
+      .attemptBlocking {
+        val fileRegex = regex.r
+        val stream    = Files.walk(root)
+        val files     =
+          try stream.iterator().asScala.filter(Files.isRegularFile(_)).toList
+          finally stream.close()
+        files.map(relative(root, _)).filter(fileRegex.matches).sorted
+      }
+      .mapError(e => FlowError.Persistence(s"failed to enumerate files under $root", Some(e)))
+
   /** Enumerate coverage units under `root`, per rule: every file whose relative path matches `rule.files` is scanned
     * line by line with `rule.unit` (first capture group, or the whole match). Units are distinct BY NAME across the
     * rule's files, in file order — a name shared by two programs counts once, so this check is a floor ("the matrix

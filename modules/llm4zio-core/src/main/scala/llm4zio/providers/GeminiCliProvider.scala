@@ -64,6 +64,17 @@ final case class GeminiCliExecutionContext(
 object GeminiCliExecutionContext:
   val default: GeminiCliExecutionContext = GeminiCliExecutionContext()
 
+  /** Project the generic CLI config onto gemini's execution context. Every gemini-relevant field a flow can set on
+    * [[llm4zio.core.CliConnectorConfig]] must be mapped here — `turnLimit` was once dropped in the factory, so a
+    * configured `--turn-limit` never reached the process and a confused headless gemini could burn turns unbounded.
+    */
+  def from(cfg: CliConnectorConfig): GeminiCliExecutionContext =
+    GeminiCliExecutionContext(
+      cwd = cfg.workingDir,
+      turnLimit = cfg.turnLimit,
+      readOnly = cfg.readOnly,
+    )
+
 object GeminiCliExecutor:
 
   /** Cap on captured (non-noise) stderr lines per process — enough for gemini's error report + stack trace. */
@@ -715,10 +726,26 @@ object GeminiCliProvider:
         prompt: String,
         schema: JsonSchema,
       ): IO[LlmError, (A, Option[TokenUsage], Option[String])] =
+        val hinted = StructuredOutputs.withSchemaHint(prompt, schema)
         for
-          resp   <- Streaming.collect(executeStream(StructuredOutputs.withSchemaHint(prompt, schema)))
+          resp   <- Streaming.collect(executeStream(hinted))
           parsed <- StructuredOutputs.parseFromText[A](resp.content, schema)
+                      .mapError(enrichEmptyResponse(_, hinted, resp))
         yield (parsed, resp.usage, resp.metadata.get("model"))
+
+      /** An empty structured response is retried on the flaky budget, but when it is *deterministic* (context overflow,
+        * silent quota) those retries all fail identically and the bare message hides the cause. Fold the turn's
+        * observable facts — served model, prompt size, token usage — into the error so the failure is diagnosable from
+        * the flow log. The "empty response" substring must survive: retry classification keys on it.
+        */
+      private def enrichEmptyResponse(e: LlmError, prompt: String, resp: LlmResponse): LlmError = e match
+        case LlmError.ProviderError(msg, cause) if msg.contains("empty response") =>
+          val model = resp.metadata.getOrElse("model", config.model)
+          val usage = resp.usage.fold("no token usage reported")(u =>
+            s"input_tokens=${u.prompt}, output_tokens=${u.completion}"
+          )
+          LlmError.ProviderError(s"$msg (model=$model, prompt=${prompt.length} chars, $usage)", cause)
+        case other                                                                => other
 
       override def isAvailable: UIO[Boolean] =
         executor.checkGeminiInstalled.fold(_ => false, _ => true)

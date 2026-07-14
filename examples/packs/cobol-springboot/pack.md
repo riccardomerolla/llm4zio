@@ -3,6 +3,7 @@
 source: cobol
 scaffold: ../../fixtures/scaffolds/spring-boot-service
 sources: .*\.(cbl|CBL|cpy|CPY|jcl|JCL)
+programs: .*\.(cbl|CBL|jcl|JCL)
 specs-dir: docs/specs
 features-dir: src/test/resources/features
 

@@ -31,6 +31,13 @@ object ConnectorsSpec extends ZIOSpecDefault:
         pi.withModel("lmstudio/foo").model == Some("lmstudio/foo"),
       )
     },
+    test("withTurnLimit bounds the agent's turns and composes with withModel") {
+      assertTrue(
+        gemini.withTurnLimit(40).turnLimit == Some(40),
+        gemini.withModel("gemini-2.5-pro").withTurnLimit(40).model == Some("gemini-2.5-pro"),
+        gemini.withModel("gemini-2.5-pro").withTurnLimit(40).turnLimit == Some(40),
+      )
+    },
     test("coderFromEnv honours LLM4ZIO_CODER and defaults to claude") {
       assertTrue(
         Connectors.coderFromEnv(Map.empty) == claude,
