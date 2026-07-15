@@ -37,4 +37,23 @@ object LiveCliProcessExecutorSpec extends ZIOSpecDefault:
       for result <- LiveCliProcessExecutor.instance.runWithStdin(List("cat"), ".", Map.empty, "one\ntwo")
       yield assertTrue(result.exitCode == 0, result.stdout == List("one", "two"))
     },
+    test("run captures stderr alongside stdout") {
+      val argv = List("sh", "-c", "echo out-line; echo err-line 1>&2")
+      for result <- LiveCliProcessExecutor.instance.run(argv, ".", Map.empty)
+      yield assertTrue(result.stdout == List("out-line"), result.stderr == List("err-line"))
+    },
+    test("runStreaming fails with the captured stderr when the process exits non-zero") {
+      val argv = List("sh", "-c", "echo out-line; echo boom 1>&2; exit 7")
+      for res <- LiveCliProcessExecutor.instance.runStreaming(argv, ".", Map.empty).runCollect.either
+      yield assertTrue(
+        res.isLeft,
+        res.left.toOption.exists(_.message.contains("boom")),
+        res.left.toOption.exists(_.message.contains("7")),
+      )
+    },
+    test("runStreaming succeeds and emits all lines when the process exits zero") {
+      val argv = List("sh", "-c", "echo one; echo two")
+      for lines <- LiveCliProcessExecutor.instance.runStreaming(argv, ".", Map.empty).runCollect
+      yield assertTrue(lines.toList == List("one", "two"))
+    },
   ) @@ TestAspect.sequential @@ TestAspect.withLiveClock @@ TestAspect.timeout(30.seconds)

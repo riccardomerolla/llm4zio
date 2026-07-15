@@ -17,6 +17,8 @@ object ConnectorsSpec extends ZIOSpecDefault:
         gemini.flags == Map.empty,
         pi.connectorId == ConnectorId.Pi,
         pi.flags.isEmpty,
+        antigravity.connectorId == ConnectorId.AntigravityCli,
+        antigravity.flags == Map("mode" -> "accept-edits"),
       )
     },
     test("lmStudio is a local API reasoning seat") {
@@ -44,6 +46,7 @@ object ConnectorsSpec extends ZIOSpecDefault:
         Connectors.coderFromEnv(Map("LLM4ZIO_CODER" -> "codex")) == codex,
         Connectors.coderFromEnv(Map("LLM4ZIO_CODER" -> "gemini")) == gemini,
         Connectors.coderFromEnv(Map("LLM4ZIO_CODER" -> "pi")) == pi,
+        Connectors.coderFromEnv(Map("LLM4ZIO_CODER" -> "agy")) == antigravity,
         Connectors.coderFromEnv(Map("LLM4ZIO_CODER" -> "anything-else")) == claude,
       )
     },

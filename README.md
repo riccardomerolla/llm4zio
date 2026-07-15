@@ -18,7 +18,9 @@ It is the ZIO counterpart to VirtusLab's
 takes the same values — thin, readable, no ceremony, errors as data — and
 expresses them in `ZIO[R, E, A]`, with first-class **direct-API providers**
 (OpenAI, Anthropic, Gemini, Ollama, LM Studio) alongside **CLI coding agents**
-(claude, codex, gemini, pi, opencode, copilot).
+(claude, codex, gemini, pi, opencode, copilot, antigravity/`agy`). gemini-cli is
+deprecated for retail use in favor of Antigravity (`agy`) — it remains fully
+supported for the enterprise customer that still depends on it.
 
 llm4zio is both a **library** you embed in a ZIO app and a way to run single-file
 **flow scripts** with one [scala-cli](https://scala-cli.virtuslab.org) command —
@@ -230,10 +232,15 @@ carry model + flags:
 - **API providers** (`ApiConnector`): `OpenAI`, `Anthropic`, `GeminiApi`,
   `LmStudio`, `Ollama` — streaming, structured output, usage reporting.
 - **CLI coding agents** (`CliConnector`): `ClaudeCli`, `Codex`, `GeminiCli`,
-  `Pi`, `OpenCode`, `Copilot` — claude declares full interactive/ask-user/approval
-  support; gemini is interactive but can't expose an ask-user tool in headless
-  mode (`capabilities.askUser = false`); pi runs headless via `pi -p --mode json`
-  (YOLO by default — edits unattended); opencode/copilot are continuation-only.
+  `Pi`, `OpenCode`, `Copilot`, `AntigravityCli` — claude declares full
+  interactive/ask-user/approval support; gemini is interactive but can't expose
+  an ask-user tool in headless mode (`capabilities.askUser = false`); pi runs
+  headless via `pi -p --mode json` (YOLO by default — edits unattended);
+  opencode/copilot are continuation-only; antigravity (`agy`) is interactive but,
+  like gemini, exposes no ask-user tool in headless mode, and has no structured
+  JSON output — `completeStream` just line-chunks its plain-text stdout.
+  gemini-cli is deprecated for retail use in favor of antigravity, staying
+  supported for the enterprise customer that depends on it.
 - `Mock` — deterministic, for tests.
 
 **Role split.** Reasoning (planning, review, structured output) runs over
@@ -246,8 +253,9 @@ a CLI agent. A single all-CLI backend (e.g. all-claude) is fine: it does both.
 
 > [!WARNING]
 > The example flows auto-approve the coder's edits (`claude --permission-mode
-> acceptEdits`, `codex --sandbox workspace-write`, `gemini -y`): write-capable
-> turns edit files and run shell commands without prompting.
+> acceptEdits`, `codex --sandbox workspace-write`, `gemini -y`, `agy --mode
+> accept-edits`): write-capable turns edit files and run shell commands without
+> prompting.
 
 For an unattended run the practical safety boundary is **process isolation** —
 run the flow in a sandbox (e.g. [Docker
@@ -355,7 +363,7 @@ into a per-run log file.
 Colour and animation auto-disable when stdout isn't a terminal; set `NO_COLOR=1`
 to force plain output.
 
-**Environment knobs:** `LLM4ZIO_CODER` (claude\|codex\|gemini\|pi),
+**Environment knobs:** `LLM4ZIO_CODER` (claude\|codex\|gemini\|pi\|agy),
 `LLM4ZIO_RETRIES` (transient-retry count; `0` = fail fast),
 `LLM4ZIO_USAGE_WAIT` (`off`\|`on`\|`<n>h`\|`<n>m`), `LLM4ZIO_FORMAT` /
 `LLM4ZIO_LINT` (project formatter / lint for the review loop).

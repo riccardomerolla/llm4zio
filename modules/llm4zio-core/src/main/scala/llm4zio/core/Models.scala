@@ -32,23 +32,26 @@ case class ConnectorId(value: String) derives JsonCodec
 
 object ConnectorId:
   // API
-  val OpenAI: ConnectorId    = ConnectorId("openai")
-  val Anthropic: ConnectorId = ConnectorId("anthropic")
-  val GeminiApi: ConnectorId = ConnectorId("gemini-api")
-  val LmStudio: ConnectorId  = ConnectorId("lm-studio")
-  val Ollama: ConnectorId    = ConnectorId("ollama")
+  val OpenAI: ConnectorId         = ConnectorId("openai")
+  val Anthropic: ConnectorId      = ConnectorId("anthropic")
+  val GeminiApi: ConnectorId      = ConnectorId("gemini-api")
+  val LmStudio: ConnectorId       = ConnectorId("lm-studio")
+  val Ollama: ConnectorId         = ConnectorId("ollama")
   // CLI
-  val ClaudeCli: ConnectorId = ConnectorId("claude-cli")
-  val GeminiCli: ConnectorId = ConnectorId("gemini-cli")
-  val OpenCode: ConnectorId  = ConnectorId("opencode")
-  val Codex: ConnectorId     = ConnectorId("codex")
-  val Copilot: ConnectorId   = ConnectorId("copilot")
-  val Pi: ConnectorId        = ConnectorId("pi")
+  val ClaudeCli: ConnectorId      = ConnectorId("claude-cli")
+  val GeminiCli: ConnectorId      = ConnectorId("gemini-cli")
+  val OpenCode: ConnectorId       = ConnectorId("opencode")
+  val Codex: ConnectorId          = ConnectorId("codex")
+  val Copilot: ConnectorId        = ConnectorId("copilot")
+  val Pi: ConnectorId             = ConnectorId("pi")
+  // Google's Antigravity CLI (argv binary `agy`) — the retail successor to gemini-cli; gemini-cli remains
+  // maintained for the enterprise customer that still depends on it.
+  val AntigravityCli: ConnectorId = ConnectorId("antigravity-cli")
   // Test
-  val Mock: ConnectorId      = ConnectorId("mock")
+  val Mock: ConnectorId           = ConnectorId("mock")
 
   val allApi: List[ConnectorId] = List(OpenAI, Anthropic, GeminiApi, LmStudio, Ollama)
-  val allCli: List[ConnectorId] = List(ClaudeCli, GeminiCli, OpenCode, Codex, Copilot, Pi)
+  val allCli: List[ConnectorId] = List(ClaudeCli, GeminiCli, OpenCode, Codex, Copilot, Pi, AntigravityCli)
   val all: List[ConnectorId]    = allApi ++ allCli :+ Mock
 
 enum ConnectorKind derives JsonCodec:

@@ -31,6 +31,10 @@ object ConnectorCapabilitiesSpec extends ZIOSpecDefault:
       val cp = CopilotConnector.make(CliConnectorConfig(ConnectorId.Copilot), noopExec).capabilities
       assertTrue(!oc.interactiveSessions, !oc.askUser, !cp.interactiveSessions, !cp.askUser)
     },
+    test("antigravity is interactive-capable but cannot ask_user (headless, no exposed tool-calling)") {
+      val c = AntigravityConnector.make(CliConnectorConfig(ConnectorId.AntigravityCli), noopExec).capabilities
+      assertTrue(c.interactiveSessions, !c.askUser, !c.approval)
+    },
     test("an API connector defaults to streaming + structured + usage, with no interactive/ask-user/approval") {
       val m = MockProvider.make(LlmConfig(LlmProvider.Mock, "mock")).capabilities
       assertTrue(

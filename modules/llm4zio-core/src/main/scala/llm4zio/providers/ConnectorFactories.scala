@@ -8,18 +8,19 @@ object ConnectorFactories:
 
   def createRegistry(http: HttpClient, cli: CliProcessExecutor): ConnectorRegistry =
     ConnectorRegistryLive(Map(
-      ConnectorId.OpenAI    -> apiFactory(ConnectorId.OpenAI, cfg => OpenAIProvider.make(cfg, http)),
-      ConnectorId.Anthropic -> apiFactory(ConnectorId.Anthropic, cfg => AnthropicProvider.make(cfg, http)),
-      ConnectorId.GeminiApi -> apiFactory(ConnectorId.GeminiApi, cfg => GeminiApiProvider.make(cfg, http)),
-      ConnectorId.LmStudio  -> apiFactory(ConnectorId.LmStudio, cfg => LmStudioProvider.make(cfg, http)),
-      ConnectorId.Ollama    -> apiFactory(ConnectorId.Ollama, cfg => OllamaProvider.make(cfg, http)),
-      ConnectorId.ClaudeCli -> cliFactory(ConnectorId.ClaudeCli, cfg => ClaudeCliConnector.make(cfg, cli)),
-      ConnectorId.OpenCode  -> cliFactory(ConnectorId.OpenCode, cfg => OpenCodeCliConnector.make(cfg, cli)),
-      ConnectorId.GeminiCli -> geminiCliFactory(),
-      ConnectorId.Codex     -> cliFactory(ConnectorId.Codex, cfg => CodexConnector.make(cfg, cli)),
-      ConnectorId.Copilot   -> cliFactory(ConnectorId.Copilot, cfg => CopilotConnector.make(cfg, cli)),
-      ConnectorId.Pi        -> cliFactory(ConnectorId.Pi, cfg => PiConnector.make(cfg, cli)),
-      ConnectorId.Mock      -> apiFactory(ConnectorId.Mock, cfg => MockProvider.make(cfg)),
+      ConnectorId.OpenAI         -> apiFactory(ConnectorId.OpenAI, cfg => OpenAIProvider.make(cfg, http)),
+      ConnectorId.Anthropic      -> apiFactory(ConnectorId.Anthropic, cfg => AnthropicProvider.make(cfg, http)),
+      ConnectorId.GeminiApi      -> apiFactory(ConnectorId.GeminiApi, cfg => GeminiApiProvider.make(cfg, http)),
+      ConnectorId.LmStudio       -> apiFactory(ConnectorId.LmStudio, cfg => LmStudioProvider.make(cfg, http)),
+      ConnectorId.Ollama         -> apiFactory(ConnectorId.Ollama, cfg => OllamaProvider.make(cfg, http)),
+      ConnectorId.ClaudeCli      -> cliFactory(ConnectorId.ClaudeCli, cfg => ClaudeCliConnector.make(cfg, cli)),
+      ConnectorId.OpenCode       -> cliFactory(ConnectorId.OpenCode, cfg => OpenCodeCliConnector.make(cfg, cli)),
+      ConnectorId.GeminiCli      -> geminiCliFactory(),
+      ConnectorId.Codex          -> cliFactory(ConnectorId.Codex, cfg => CodexConnector.make(cfg, cli)),
+      ConnectorId.Copilot        -> cliFactory(ConnectorId.Copilot, cfg => CopilotConnector.make(cfg, cli)),
+      ConnectorId.Pi             -> cliFactory(ConnectorId.Pi, cfg => PiConnector.make(cfg, cli)),
+      ConnectorId.AntigravityCli -> cliFactory(ConnectorId.AntigravityCli, cfg => AntigravityConnector.make(cfg, cli)),
+      ConnectorId.Mock           -> apiFactory(ConnectorId.Mock, cfg => MockProvider.make(cfg)),
     ))
 
   val live: ZLayer[HttpClient & CliProcessExecutor, Nothing, ConnectorRegistry] =

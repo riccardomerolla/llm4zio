@@ -19,13 +19,18 @@ object LiveCliProcessExecutor:
         case Nil         => ZIO.fail(LlmError.InvalidRequestError("empty argv"))
         case cmd :: args =>
           (for
-            process <- command(cmd, args, cwd, envVars).run
-            linesF  <- process.stdout.lines.fork
-            exit    <- process.exitCode
-            lines   <- linesF.join
-          yield ProcessResult(lines.toList, exit.code))
+            process  <- command(cmd, args, cwd, envVars).run
+            outF     <- process.stdout.lines.fork
+            errF     <- process.stderr.lines.fork
+            exit     <- process.exitCode
+            lines    <- outF.join
+            errLines <- errF.join
+          yield ProcessResult(lines.toList, exit.code, errLines.toList))
             .mapError(t => LlmError.ProviderError(s"$cmd failed: ${t.getMessage}", None))
 
+    // stdout is streamed live for responsiveness; stderr is captured in full so a non-zero exit can be reported with
+    // the real reason instead of silently draining to an empty stream (agy, unlike codex/pi, has no in-band JSONL
+    // error event on stdout — its only failure signal is stderr + exit code).
     override def runStreaming(
       argv: List[String],
       cwd: String,
@@ -35,7 +40,19 @@ object LiveCliProcessExecutor:
         case Nil         => ZStream.fail(LlmError.InvalidRequestError("empty argv"))
         case cmd :: args =>
           ZStream
-            .unwrap(command(cmd, args, cwd, envVars).run.map(_.stdout.linesStream))
+            .unwrap(
+              for
+                process <- command(cmd, args, cwd, envVars).run
+                errF    <- process.stderr.lines.fork
+              yield process.stdout.linesStream ++
+                ZStream.fromZIO(process.exitCode.zip(errF.join)).flatMap { (exit, errLines) =>
+                  if exit.code == 0 then ZStream.empty
+                  else
+                    ZStream.fail[Throwable](
+                      new RuntimeException(s"$cmd exited with code ${exit.code}: ${errLines.mkString("\n")}")
+                    )
+                }
+            )
             .mapError(t => LlmError.ProviderError(s"$cmd failed: ${t.getMessage}", None))
 
     override def runWithStdin(argv: List[String], cwd: String, envVars: Map[String, String], stdin: String)

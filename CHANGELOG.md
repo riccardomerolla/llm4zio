@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.16.0] - 2026-07-15
+
+### Added
+
+- **Antigravity CLI connector (`agy`).** A new `AntigravityConnector`/`ConnectorId.AntigravityCli`
+  ("antigravity-cli") targets Google's Antigravity CLI, the retail successor to gemini-cli. Unlike
+  gemini, `agy --print` has no structured JSON output mode — it prints plain text to stdout and
+  exits, with error text on stderr only and a generic non-zero exit code (no gemini-style 42/53
+  taxonomy). `completeStream` line-chunks stdout; `--mode plan`/`--mode accept-edits` maps directly
+  to `readOnly`, mirroring gemini's `--approval-mode`. Because agy does **not** treat the process
+  cwd as its workspace (a `--print` write otherwise lands in agy's own scratch project), the
+  connector passes `--add-dir <workingDir>` so a coder's edits reach the target repo. Selectable via
+  `LLM4ZIO_CODER=agy` or the `Connectors.antigravity` preset. Verified against `agy` 1.1.2 with an
+  end-to-end `implement.sc` run (plan → implement → review loop → commit, all on agy).
+- `CliProcessExecutor.ProcessResult` gained an optional `stderr` field (default `Nil`, so no existing
+  construction site changes), and `LiveCliProcessExecutor.runStreaming` now fails with the captured
+  stderr text when the process exits non-zero instead of silently draining to an empty stream — a
+  prerequisite for the antigravity connector's plain-text (non-JSON) failure diagnostics.
+
+### Deprecated
+
+- **gemini-cli is deprecated for retail use in favor of Antigravity (`agy`).** No code changes: gemini-cli
+  remains fully supported and maintained for the enterprise customer that depends on it. New flows
+  aimed at retail should default to `Connectors.antigravity` / `LLM4ZIO_CODER=agy`.
+
 ## [3.15.1] - 2026-07-14
 
 ### Fixed

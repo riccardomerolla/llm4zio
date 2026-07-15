@@ -43,4 +43,8 @@ trait CliProcessExecutor:
       LlmError.InvalidRequestError(s"${argv.headOption.getOrElse("process")} does not support bidirectional sessions")
     )
 
-final case class ProcessResult(stdout: List[String], exitCode: Int)
+/** `stderr` defaults to empty: only [[LiveCliProcessExecutor]]'s `run`/`runStreaming` populate it today (the paths
+  * `AntigravityConnector` needs, since agy prints its error text to stderr only). The stdin-fed variants and every
+  * existing construction site pass just `(stdout, exitCode)`, which still compiles against this default.
+  */
+final case class ProcessResult(stdout: List[String], exitCode: Int, stderr: List[String] = Nil)

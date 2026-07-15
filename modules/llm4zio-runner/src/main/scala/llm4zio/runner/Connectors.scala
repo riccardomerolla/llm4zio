@@ -20,6 +20,13 @@ val gemini: CliConnectorConfig =
 val pi: CliConnectorConfig =
   CliConnectorConfig(ConnectorId.Pi)
 
+/** Google's Antigravity CLI (argv binary `agy`) — the retail successor to [[gemini]]; `gemini` itself stays available
+  * and maintained for the enterprise customer still depending on it. `--mode accept-edits` is agy's headless
+  * auto-approve equivalent to gemini's built-in `-y`.
+  */
+val antigravity: CliConnectorConfig =
+  CliConnectorConfig(ConnectorId.AntigravityCli, flags = Map("mode" -> "accept-edits"))
+
 /** LM Studio's local OpenAI-compatible server (default port 1234) — a reasoning/structured-output seat that needs no
   * cloud or API key. Set the model with `.copy(model = Some("..."))`. Pair with a local coder (e.g. `pi`) for a
   * fully-local flow.
@@ -39,7 +46,7 @@ extension (config: CliConnectorConfig)
   def withTurnLimit(turns: Int): CliConnectorConfig = config.copy(turnLimit = Some(turns))
 
 object Connectors:
-  /** The coder selected by `LLM4ZIO_CODER` (claude|codex|gemini|pi), defaulting to [[claude]] — the
+  /** The coder selected by `LLM4ZIO_CODER` (claude|codex|gemini|pi|agy), defaulting to [[claude]] — the
     * swap-backend-without-editing-the-script knob every example used to hand-roll.
     */
   def coderFromEnv(env: Map[String, String] = sys.env): CliConnectorConfig =
@@ -47,4 +54,5 @@ object Connectors:
       case "codex"  => codex
       case "gemini" => gemini
       case "pi"     => pi
+      case "agy"    => antigravity
       case _        => claude

@@ -21,10 +21,10 @@ object ConnectorSmokeSpec extends ZIOSpecDefault:
 
   def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("Connector Smoke Tests")(
     suite("Registry wiring")(
-      test("all 12 connectors registered") {
+      test("all 13 connectors registered") {
         val registry = ConnectorFactories.createRegistry(mockHttp, mockCli)
         for ids <- registry.available
-        yield assertTrue(ids.length == 12)
+        yield assertTrue(ids.length == 13)
       },
       test("resolving Mock API connector returns healthy") {
         val registry = ConnectorFactories.createRegistry(mockHttp, mockCli)
@@ -52,6 +52,15 @@ object ConnectorSmokeSpec extends ZIOSpecDefault:
         for connector <- registry.resolve(config)
         yield assertTrue(
           connector.id == ConnectorId.GeminiCli,
+          connector.kind == ConnectorKind.Cli,
+        )
+      },
+      test("resolving AntigravityCli connector succeeds") {
+        val registry = ConnectorFactories.createRegistry(mockHttp, mockCli)
+        val config   = CliConnectorConfig(ConnectorId.AntigravityCli, Some("Gemini 3.5 Flash (Low)"))
+        for connector <- registry.resolve(config)
+        yield assertTrue(
+          connector.id == ConnectorId.AntigravityCli,
           connector.kind == ConnectorKind.Cli,
         )
       },

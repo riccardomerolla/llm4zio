@@ -55,4 +55,19 @@ object ReadOnlySpec extends ZIOSpecDefault:
       val rw  = GeminiCliExecutor.buildGeminiArgs(cfg, GeminiCliExecutionContext(readOnly = false), "stream-json")
       assertTrue(ro.containsSlice(List("--approval-mode", "plan")), !ro.contains("-y"), rw.contains("-y"))
     },
+    test("antigravity readOnly → --mode plan, overriding the configured accept-edits flag") {
+      val argv = AntigravityConnector
+        .make(
+          CliConnectorConfig(ConnectorId.AntigravityCli, flags = Map("mode" -> "accept-edits"), readOnly = true),
+          noopExec,
+        )
+        .buildArgv("p", ctx)
+      assertTrue(argv.containsSlice(List("--mode", "plan")), !argv.contains("accept-edits"))
+    },
+    test("antigravity without readOnly keeps the configured mode flag") {
+      val argv = AntigravityConnector
+        .make(CliConnectorConfig(ConnectorId.AntigravityCli, flags = Map("mode" -> "accept-edits")), noopExec)
+        .buildArgv("p", ctx)
+      assertTrue(argv.containsSlice(List("--mode", "accept-edits")))
+    },
   )

@@ -22,6 +22,7 @@ object ConnectorIdSpec extends ZIOSpecDefault:
         ConnectorId.OpenCode.value == "opencode",
         ConnectorId.Codex.value == "codex",
         ConnectorId.Copilot.value == "copilot",
+        ConnectorId.AntigravityCli.value == "antigravity-cli",
       )
     },
     test("ConnectorKind enum values") {
