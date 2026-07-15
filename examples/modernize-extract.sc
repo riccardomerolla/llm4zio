@@ -1,4 +1,4 @@
-//> using dep "io.github.riccardomerolla::llm4zio-runner:3.16.0"
+//> using dep "io.github.riccardomerolla::llm4zio-runner:3.17.0"
 //> using scala "3.8.3"
 //> using jvm 21
 
@@ -32,10 +32,14 @@
   *     PER PROGRAM against the pack's rubrics — each judge call sees one program's source and its
   *     spec, so a production estate can't blow the model context. Full marks required. An empty
   *     judge response is retried at half, then quarter context before giving up (deterministic
-  *     context overflows shrink instead of repeating). Later rounds re-judge only the programs
-  *     that scored sub-bar.
-  *   - `fixLoop` feeds failures back to the analyst up to MaxRounds; a still-dirty pack is
-  *     committed as an explicit DRAFT and the flow HALTS for human triage.
+  *     context overflows shrink instead of repeating).
+  *   - The gate is RESUMABLE per program: every verdict persists in `gate/<NAME>.json`
+  *     (`flow.ReviewCache`), fingerprinted over the source + spec + feature + rubric it judged.
+  *     Unchanged content reuses its stored verdict with no LLM call — a crash, quota death, or
+  *     auto-resume re-entry re-judges only what changed. Delete `gate/` to force a full re-judge.
+  *   - `fixLoop` feeds failures back to the analyst up to MaxRounds — one bounded fix turn per
+  *     sub-bar program (own commit) plus one residual turn for estate-wide findings; a still-dirty
+  *     pack is committed as an explicit DRAFT and the flow HALTS for human triage.
   *   - Even a clean pack only gets an UNCHECKED `- [ ] Approved` marker: a human reviews
   *     `docs/modernization/README.md`, flips it, and runs modernize-seed.sc.
   *
@@ -56,7 +60,7 @@ import java.nio.file.{ Files, Path }
 
 import scala.jdk.CollectionConverters.*
 
-import zio.{ IO, Ref, UIO, ZIO }
+import zio.{ IO, UIO, ZIO }
 
 import llm4zio.core.LlmError
 import llm4zio.eval.*
@@ -245,7 +249,11 @@ def judgeWithShrink(judge: Evaluator[Sample], sample: Sample)(using ctx: FlowCon
       }
   attempt(JudgeSourcesLimit, List(JudgeSourcesLimit / 2, JudgeSourcesLimit / 4))
 
-/** Judge ONE program: its spec + feature as the response, its own source as the ground truth. */
+/** Judge ONE program — resumably: its verdict persists in `gate/<NAME>.json`, fingerprinted over the
+  * source, spec, feature, and rubric it judged. Unchanged content reuses the stored verdict with NO
+  * LLM call, so a crash, quota death, or auto-resume re-entry re-judges only what actually changed.
+  * Delete a `gate/<NAME>.json` (or the whole `gate/` dir) to force a re-judge.
+  */
 def judgeProgram(pack: Pack, judge: Evaluator[Sample], rel: String)(using ctx: FlowContext): IO[FlowError, (String, ReviewResult)] =
   val name   = programName(rel)
   val modDir = workDir.resolve(ModDir)
@@ -253,18 +261,27 @@ def judgeProgram(pack: Pack, judge: Evaluator[Sample], rel: String)(using ctx: F
     spec    <- readFileOr(modDir.resolve("specs").resolve(s"$name.md"), "")
     feature <- readFileOr(modDir.resolve("features").resolve(s"${name.toLowerCase}.feature"), "")
     source  <- readFileOr(workDir.resolve(rel), "")
-    scored  <- judgeWithShrink(judge, Sample(response = s"$spec\n\n$feature", context = Some(source), query = Some(userPrompt)))
-  yield name -> judgeIssues(scored, pack.judgeDimensions, name)
+    rubric   = pack.judgeDimensions.map(d => s"${d.name} (0..${d.maxScore}): ${d.rubric}").mkString("\n")
+    result  <- ReviewCache.cached(
+                 modDir.resolve("gate").resolve(s"$name.json"),
+                 ReviewCache.fingerprint(source, spec, feature, rubric),
+               ) {
+                 ctx.events.publish(FlowEvent.Info(s"judging $name")) *>
+                   judgeWithShrink(judge, Sample(response = s"$spec\n\n$feature", context = Some(source), query = Some(userPrompt)))
+                     .map(judgeIssues(_, pack.judgeDimensions, name))
+               }
+  yield name -> result
 
 /** One evaluation of the spec pack: indexes rebuilt, deterministic SpecChecks, then the per-program
-  * judge — all programs on the first round, only the previously sub-bar ones after (their fixes are
-  * what changed; re-judging the whole estate every round is the old token bonfire).
+  * judge over the verdict cache — every program is consulted every round, but only programs whose
+  * files changed since their last verdict cost a judge call. An untouched dirty program keeps its
+  * stored findings ("you didn't change the files, the findings stand") instead of a fresh roll of
+  * the dice.
   */
 def gateEvaluate(
   pack: Pack,
   judge: Evaluator[Sample],
   programs: List[String],
-  dirty: Ref[Option[Set[String]]],
 )(using ctx: FlowContext
 ): IO[FlowError, ReviewResult] =
   val modDir = workDir.resolve(ModDir)
@@ -274,28 +291,60 @@ def gateEvaluate(
     coverage <- SpecChecks.coverage(workDir, pack.coverage, trace)
     features <- SpecChecks.features(modDir.resolve("features"))
     docs     <- requiredDocs(modDir)
-    toJudge  <- dirty.get.map(_.fold(programs)(d => programs.filter(rel => d.contains(programName(rel)))))
-    judged   <- ZIO.foreach(toJudge)(rel => judgeProgram(pack, judge, rel))
-    _        <- dirty.set(Some(judged.collect { case (name, r) if !r.isClean => name }.toSet))
+    judged   <- ZIO.foreach(programs)(rel => judgeProgram(pack, judge, rel))
   yield Reviewers.merge(coverage :: features :: docs :: judged.map(_._2))
 
-def fixAsk(result: ReviewResult): String =
-  val lines = result.issues.map(i => s"- [${i.severity}] ${i.title}: ${i.description}").mkString("\n")
-  s"""The spec pack did not clear its quality gate. Fix these findings by editing the per-program
-     |files under $ModDir/ (specs/, features/, traceability/<PROGRAM>.md, mapping/<PROGRAM>.md).
-     |$ModDir/traceability.md and $ModDir/mapping.md are REGENERATED from the fragments — do not
-     |edit them directly. Fix the findings in place, then stop:
-     |$lines""".stripMargin
+/** `judge[ACCTXFR]: …` → `ACCTXFR` — the program a gate finding belongs to, when it names one. */
+val JudgeIssueProgram = """judge\[([^\]]+)\]: .*""".r
 
-/** One fix turn on a fresh chat (the findings carry all the context; replaying history re-burns it). */
-def fixOnce(pack: Pack, system: String)(result: ReviewResult)(using ctx: FlowContext): IO[FlowError, Unit] =
+def issueProgram(issue: ReviewIssue): Option[String] = issue.title match
+  case JudgeIssueProgram(name) => Some(name)
+  case _                       => None
+
+def issueLines(issues: List[ReviewIssue]): String =
+  issues.map(i => s"- [${i.severity}] ${i.title}: ${i.description}").mkString("\n")
+
+def programFixAsk(name: String, rel: String, issues: List[ReviewIssue]): String =
+  s"""The spec pack for ONE program did not clear its quality gate: $name (source: $rel).
+     |Fix these findings by editing ONLY this program's files — $ModDir/specs/$name.md,
+     |$ModDir/features/${name.toLowerCase}.feature, $ModDir/traceability/$name.md,
+     |$ModDir/mapping/$name.md — against the source at $rel. Then stop:
+     |${issueLines(issues)}""".stripMargin
+
+def globalFixAsk(issues: List[ReviewIssue]): String =
+  s"""The spec pack did not clear its estate-wide quality gate. Fix these findings by editing the
+     |per-program files under $ModDir/ (specs/, features/, traceability/<PROGRAM>.md,
+     |mapping/<PROGRAM>.md). $ModDir/traceability.md and $ModDir/mapping.md are REGENERATED from the
+     |fragments — do not edit them directly. Fix the findings in place, then stop:
+     |${issueLines(issues)}""".stripMargin
+
+/** Fix turns mirror the judge: one bounded turn per sub-bar program (fresh chat, own commit — a crash
+  * mid-round keeps the programs already fixed), plus a single residual turn for estate-wide findings
+  * (coverage gaps, malformed features, missing indexes). Editing a program's files changes its
+  * fingerprint, so exactly the programs touched here get re-judged next round.
+  */
+def fixOnce(pack: Pack, system: String, programs: List[String])(result: ReviewResult)(using ctx: FlowContext): IO[FlowError, Unit] =
   val recover: PartialFunction[FlowError, IO[FlowError, Unit]] =
     case FlowError.Llm(_, Some(_: LlmError.TurnLimitError)) =>
-      ctx.events.publish(FlowEvent.Info("turn limit hit during a fix round — re-evaluating what was written"))
+      ctx.events.publish(FlowEvent.Info("turn limit hit during a fix turn — re-evaluating what was written"))
+  val relOf            = programs.map(rel => programName(rel) -> rel).toMap
+  val (scoped, global) = result.issues.partition(i => issueProgram(i).exists(relOf.contains))
+  val byProgram        = scoped.groupBy(i => issueProgram(i).getOrElse("")).toList.sortBy(_._1)
+  def turn(ask: String, commitMsg: String): IO[FlowError, Unit] =
+    for
+      chat <- Chat.start(coder, system = Some(system))
+      _    <- chat.ask(ask).unit.catchSome(recover)
+      _    <- git.commitAll(commitMsg).unit
+    yield ()
   for
-    chat <- Chat.start(coder, system = Some(system))
-    _    <- chat.ask(fixAsk(result)).unit.catchSome(recover)
-    _    <- git.commitAll(s"modernize(${pack.name}): gate fixes").unit
+    _ <- ZIO.foreachDiscard(byProgram) { (name, issues) =>
+           ctx.events.publish(FlowEvent.Info(s"fixing $name — ${issues.size} finding(s)")) *>
+             turn(programFixAsk(name, relOf(name), issues), s"modernize(${pack.name}): gate fixes $name")
+         }
+    _ <- ZIO.when(global.nonEmpty)(
+           ctx.events.publish(FlowEvent.Info(s"fixing estate-wide findings — ${global.size}")) *>
+             turn(globalFixAsk(global), s"modernize(${pack.name}): gate fixes (estate-wide)")
+         )
   yield ()
 
 /** Clean pack → tell the human where to approve; dirty pack → halt with the committed draft. */
@@ -321,6 +370,7 @@ def indexFor(pack: Pack, verdict: String): String =
      |- features/ — BDD acceptance scenarios
      |- traceability.md — source-unit → spec coverage matrix (generated from traceability/)
      |- mapping.md — data & interface mapping (generated from mapping/)
+     |- gate/ — cached per-program judge verdicts (delete to force re-judging)
      |- plan.md — proposed implementation tasks (parsed by modernize-seed.sc)
      |
      |Review everything, then flip the marker below and run modernize-seed.sc.""".stripMargin
@@ -354,8 +404,7 @@ flow(
     _        <- stage("Draft")(
                   rebuildIndexes(modDir) *> git.commitAll(s"modernize(${pack.name}): spec pack draft (ungated)").unit
                 )
-    dirty    <- Ref.make(Option.empty[Set[String]])
-    result   <- stage("Gate")(fixLoop(gateEvaluate(pack, judge, programs, dirty), fixOnce(pack, system), MaxRounds))
+    result   <- stage("Gate")(fixLoop(gateEvaluate(pack, judge, programs), fixOnce(pack, system, programs), MaxRounds))
     _        <- ZIO.when(result.isClean)(stage("Plan") {
                   for
                     specText <- gatherSpecPack(modDir)

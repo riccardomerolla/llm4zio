@@ -82,9 +82,21 @@ The gate is layered, and **nothing auto-approves**:
 | 2 — LLM-as-a-Judge | `Judge` on `reasoning` scores completeness / faithfulness / testability against the pack's rubrics, full marks required — **per program**, each judge call bounded to one program's source + spec (`LLM4ZIO_JUDGE_SOURCES_LIMIT` caps it, default 400k chars; an empty response retries at half, then quarter context) | Nothing invented, nothing vague — and no estate-sized prompt to blow the model context |
 | 3 — human | `ApprovalGate` draft marker in `docs/modernization/README.md` | A person signs off before any target repo is touched |
 
-`fixLoop` feeds failures back to the analyst (3 rounds); later rounds re-judge
-only the programs that scored sub-bar. A still-dirty pack is committed as an
-explicit **draft** and the flow halts for human triage.
+The gate is **resumable per program**, like extraction: every verdict persists
+in `docs/modernization/gate/<NAME>.json` (`flow.ReviewCache`), fingerprinted
+over the source + spec + feature + rubric it judged. A matching fingerprint
+reuses the stored verdict with no LLM call, so a crash, quota death, or
+auto-resume re-entry re-judges only the programs whose files actually changed —
+and an untouched dirty program keeps its stored findings instead of a fresh
+roll of the dice. The verdict files commit with the draft (resume survives
+machines); delete `gate/` to force a full re-judge.
+
+`fixLoop` feeds failures back to the analyst (3 rounds) — one bounded fix turn
+per sub-bar program (own commit), plus a single residual turn for estate-wide
+findings (coverage gaps, malformed features, missing indexes). Fixing a
+program's files changes its fingerprint, so exactly the programs touched get
+re-judged next round. A still-dirty pack is committed as an explicit **draft**
+and the flow halts for human triage.
 
 ## Phase 2 — seed (rooted at the target repo)
 

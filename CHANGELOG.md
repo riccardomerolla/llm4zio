@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.17.0] - 2026-07-15
+
+### Added
+
+- **`flow.ReviewCache`** — a durable, content-addressed cache for `ReviewResult`s: one
+  verdict per plain JSON file, stamped with a SHA-256 fingerprint of the content it was
+  rendered against (`ReviewCache.fingerprint`, length-prefixed parts). A matching
+  fingerprint reuses the stored verdict without re-evaluating; changed content — or a
+  deleted file — re-evaluates and overwrites. Corrupt files fall through to evaluate;
+  failed evaluations cache nothing.
+- **The extraction Gate is now resumable per program** (`modernize-extract.sc`). Judge
+  verdicts persist in `docs/modernization/gate/<NAME>.json`, fingerprinted over the
+  program's source + spec + feature + rubric, and commit with the draft pack: a crash,
+  quota death, or auto-resume re-entry re-judges only the programs whose files changed,
+  and an untouched dirty program keeps its stored findings instead of a fresh roll of
+  the dice. This replaces the previous in-memory dirty-set (which lost all verdicts on
+  any restart). Delete `gate/` to force a full re-judge.
+- **Per-program fix turns.** Gate findings go back to the analyst as one bounded turn
+  per sub-bar program (fresh chat, own commit — a crash mid-round keeps the programs
+  already fixed), plus a single residual turn for estate-wide findings (coverage gaps,
+  malformed features, missing indexes) — replacing the one estate-sized fix mega-ask.
+
 ## [3.16.0] - 2026-07-15
 
 ### Added
