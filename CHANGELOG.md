@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.18.0] - 2026-07-16
+
+### Added
+
+- **Benchmark harness: `examples/modernize-bench.sc`.** Runs the whole modernization task
+  (fixture copy → per-program extract → gate → plan → seed → implement → verify → score)
+  as ONE flow in a fresh temp dir, under one tool per invocation
+  (`LLM4ZIO_CODER=gemini|claude|codex`, models pinned per provider and overridable), and
+  appends one self-contained JSON line per run to `bench-results.jsonl`. No approval gate;
+  run-to-completion — dirty gates and failed builds are metrics, not stop conditions
+  (`outcome: failed-<phase>` keeps the partial row). Internal loops are all-in-provider;
+  final quality scores are self-graded unless `LLM4ZIO_BENCH_JUDGE=provider:model` pins
+  one fixed examiner across runs.
+- **`flow.Bench`** — the benchmark record schema (`BenchRecord` + phases/counters/quality,
+  schema-versioned, JSON round-trip tested) and the live event tap: a pure
+  `Bench.observe` fold attributes tokens and robustness notices (flaky/transient retries,
+  auto-resumes, turn-limit trips, empty-response shrinks) to the innermost open stage,
+  and `Bench.tap` subscribes it to the flow's hub with drain-aware `get`/`reset` so phase
+  snapshots never miss in-flight events.
+- **`flow.BenchReport` + `examples/bench-report.sc`** — deterministic (no-LLM) aggregation:
+  malformed-tolerant load, sections per (pack, fixture fingerprint) so different tasks
+  never merge, per-provider median + min–max spread, best ✅ / worst ⚠️ crowns with the
+  gap (metric directions: lower/higher/neutral — est. cost and LOC are never crowned),
+  judge scores crowned only when every run had the same examiner, failures list, machines
+  footnote, and `--project N` linear per-program extrapolation to an N-program estate.
+
 ## [3.17.0] - 2026-07-15
 
 ### Added

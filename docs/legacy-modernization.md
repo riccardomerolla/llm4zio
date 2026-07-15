@@ -184,6 +184,48 @@ which lists each run and rolls costs up per stage (the Gate's judge vs the
 analyst, per model) — `flow.CostLedger` is the library API when you want the raw
 records.
 
+## Benchmarking the tools against the same task
+
+`modernize-bench.sc` runs the WHOLE conversion (fixture copy → per-program
+extract → gate → plan → seed → implement → verify → score) as one flow in a
+fresh temp directory, under one tool per invocation
+(`LLM4ZIO_CODER=gemini|claude|codex`), and appends one self-contained JSON line
+per run to `bench-results.jsonl`. It is deliberately **not** the product
+pipeline: there is no human approval gate, and internal gates never stop a run
+— a dirty gate, a failed build, a dead provider are all *recorded* as metrics
+(`outcome: failed-<phase>` keeps the partial row).
+
+Per line (`flow.BenchRecord`, schema-versioned): provenance (models requested
+AND served, examiner identity, tool + llm4zio versions, pack, fixture content
+fingerprint, machine block), per-phase duration / tokens / est. cost /
+robustness counters (flaky + transient retries, auto-resumes, turn-limit trips,
+empty-response shrinks — summed as "self-healing actions"), and a final quality
+block: `mvn verify` outcome, test counts from surefire, traceability coverage
+%, scenario counts, LOC, and judged scores. Internal loops run all-in-provider
+(self-correction is part of the benchmark); the final scores are self-graded
+unless `LLM4ZIO_BENCH_JUDGE=provider:model` pins one fixed examiner for every
+run — only then are judged scores cross-comparable, and the report says so.
+
+`bench-report.sc` (pure Scala, no LLM — same inputs, same bytes) aggregates any
+set of `bench-results.jsonl` files, sections them by (pack, fixture
+fingerprint) so different tasks are never merged, and renders `benchmark.md`:
+best ✅ / worst ⚠️ per metric with the gap, median + spread over repeated runs,
+failures, machines footnote (durations are compared across machines as-is —
+read them with that in mind), and with `--project N` the linear per-program
+extrapolation to an N-program estate:
+
+```bash
+cd examples
+LLM4ZIO_CODER=gemini scala-cli run modernize-bench.sc
+LLM4ZIO_CODER=claude scala-cli run modernize-bench.sc
+LLM4ZIO_CODER=codex  scala-cli run modernize-bench.sc
+scala-cli run bench-report.sc -- bench-results.jsonl --project 500
+```
+
+Model defaults: `gemini-2.5-pro` / `claude-opus-4-8` / `gpt-5.5`
+(`LLM4ZIO_BENCH_MODEL` overrides); `LLM4ZIO_BENCH_RUNS=N` loops runs;
+`LLM4ZIO_RUN_LABEL` correlates lines collected from different machines.
+
 ## Azure DevOps
 
 Optional and detected from the environment (`Ado.configFrom`): when

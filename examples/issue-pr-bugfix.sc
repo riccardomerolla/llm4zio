@@ -1,4 +1,4 @@
-//> using dep "io.github.riccardomerolla::llm4zio-runner:3.17.0"
+//> using dep "io.github.riccardomerolla::llm4zio-runner:3.18.0"
 //> using scala "3.8.3"
 //> using jvm 21
 
