@@ -195,6 +195,32 @@ object BenchReportSpec extends ZIOSpecDefault:
         md.contains("4.0h"),
       )
     },
+    test("missing phase costs are estimated at report time from recorded tokens × the requested model") {
+      // Iteration-1 rows recorded costUsd: None (unpriceable at run time) but DID record tokens and the
+      // requested model — the report can and should do that math itself, flagged as a report-time estimate.
+      val base     = rec("codex", "r1", 8_000, tokens = 0)
+      val unpriced = base.copy(
+        modelRequested = "gpt-5.5",
+        phases = List(
+          // 1M in @ $5 + 100k out @ $30 = $8.00 — costUsd absent, tokens present
+          BenchPhase("Extract", 8_000, BenchTokens(prompt = 1_000_000, completion = 100_000), None, BenchCounters()),
+          // no tokens at all → still unpriceable, must stay "–", not a fake 0.00
+          BenchPhase("Implement", 1_000, BenchTokens(), None, BenchCounters()),
+        ),
+      )
+      val stored   = rec("claude", "r2", 9_000, tokens = 500) // costUsd Some(1.0) stored at run time wins
+      val md       = BenchReport.render(List(unpriced, stored))
+      val headline = md.linesIterator.find(_.startsWith("| Est. cost")).getOrElse("")
+      val implRow  = md.linesIterator.toList.dropWhile(!_.startsWith("### Implement")).find(_.startsWith(
+        "| Est. cost"
+      )).getOrElse("")
+      assertTrue(
+        headline.contains("8.00*"),
+        headline.contains("1.00"),
+        implRow.contains("–"),
+        md.contains("estimated at report time"),
+      )
+    },
     test("machines are footnoted") {
       val md = BenchReport.render(List(
         rec("gemini", "r1", 8_000, 1_000_000, hostname = "mac-a"),

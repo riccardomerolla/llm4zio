@@ -1,4 +1,4 @@
-//> using dep "io.github.riccardomerolla::llm4zio-runner:3.18.1"
+//> using dep "io.github.riccardomerolla::llm4zio-runner:3.18.2"
 //> using scala "3.8.3"
 //> using jvm 21
 
@@ -47,7 +47,7 @@ import llm4zio.eval.*
 import llm4zio.flow.*
 import llm4zio.runner.*
 
-val Llm4zioVersion = "3.18.1"
+val Llm4zioVersion = "3.18.2"
 val MaxGateRounds  = 3
 val ImplFixRounds  = 2
 val AnalystTurns   = 48

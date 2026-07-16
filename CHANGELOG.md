@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.18.2] - 2026-07-16
+
+### Added
+
+- **Report-time cost estimation.** A run records per-phase tokens and the requested
+  model even when its run-time cost estimate is absent — `bench-report.sc` now does that
+  math itself: stored `costUsd` wins when present; otherwise a phase with tokens is
+  priced from tokens × the requested model and marked with `*` (footnoted — mixed-model
+  phases are approximated at the requested model's rate). Zero-token phases stay `–`:
+  a fake 0.00 would claim precision the record does not carry. This retro-prices
+  iteration-1 codex rows; claude's zero-token phases remain unpriceable (no tokens were
+  recorded before 3.18.1).
+
 ## [3.18.1] - 2026-07-16
 
 First real benchmark iteration (claude vs codex vs a non-terminating gemini) exposed

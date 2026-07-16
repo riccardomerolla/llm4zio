@@ -8,6 +8,8 @@ import scala.jdk.CollectionConverters.*
 import zio.json.*
 import zio.{ UIO, ZIO }
 
+import llm4zio.core.TokenUsage
+
 /** Pure aggregation + markdown rendering over [[BenchRecord]] lines — the deterministic (no-LLM) engine behind
   * `bench-report.sc`. Records are sectioned by (pack, fixture fingerprint) so different tasks are never compared;
   * within a section providers are compared column-wise, best/worst crowned per metric direction, and judged scores are
@@ -100,12 +102,56 @@ object BenchReport:
   private def outputTokens(r: BenchRecord): Double = r.phases.map(_.tokens.completion).sum.toDouble
   private def cachedReads(r: BenchRecord): Double  = r.phases.map(_.tokens.cached).sum.toDouble
 
+  // ── cost: stored run-time estimate first, report-time math as fallback ───────────────────────────────
+  //
+  // A run records per-phase tokens and the requested model even when its run-time cost estimate is absent
+  // (unpriced model, unstamped cells) — the report can do that math itself. Fallback values carry a `*`:
+  // they assume the whole phase ran on the requested model, which approximates mixed-model phases (a fixed
+  // examiner in Score). Zero-token phases stay unpriced — a fake 0.00 would claim precision the record lacks.
+
+  private def clampInt(l: Long): Int = math.min(l, Int.MaxValue.toLong).toInt
+
+  private def phaseCost(r: BenchRecord)(p: BenchPhase): Option[(Double, Boolean)] =
+    p.costUsd.map((_, false)).orElse {
+      if p.tokens.total + p.tokens.cached > 0 then
+        PriceList
+          .costUsd(
+            r.modelRequested,
+            TokenUsage(
+              clampInt(p.tokens.prompt),
+              clampInt(p.tokens.completion),
+              clampInt(p.tokens.total),
+              Some(clampInt(p.tokens.cached)).filter(_ > 0),
+            ),
+          )
+          .map((_, true))
+      else None
+    }
+
+  private def recordCost(r: BenchRecord): Option[(Double, Boolean)] =
+    val costs = r.phases.flatMap(phaseCost(r))
+    Option.when(costs.nonEmpty)((costs.map(_._1).sum, costs.exists(_._2)))
+
+  private def costCell(values: List[(Double, Boolean)]): String =
+    if values.isEmpty then "–"
+    else
+      val nums = values.map(_._1)
+      val star = if values.exists(_._2) then "*" else ""
+      val base = fmtUsd(median(nums)) + star
+      if nums.size > 1 && nums.distinct.size > 1 then s"$base (${fmtUsd(nums.min)}–${fmtUsd(nums.max)})" else base
+
+  private def estCostRow(
+    providers: List[String],
+    byProvider: Map[String, List[BenchRecord]],
+    of: BenchRecord => Option[(Double, Boolean)],
+  ): String =
+    s"| Est. cost (USD) | ${providers.map(p => costCell(byProvider(p).flatMap(of(_)))).mkString(" | ")} |  |"
+
   private def headlineRows(judgesComparable: Boolean): List[Row] = List(
     Row("Total time", Direction.Lower, fmtMs, r => Some(r.totalMs.toDouble)),
     Row("Total tokens", Direction.Lower, fmtTokens, r => Some(allTokens(r))),
     Row("Output tokens", Direction.Lower, fmtTokens, r => Some(outputTokens(r))),
     Row("Cached reads", Direction.Neutral, fmtTokens, r => Some(cachedReads(r))),
-    Row("Est. cost (USD)", Direction.Neutral, fmtUsd, _.totalCostUsd),
     Row("Self-healing actions", Direction.Lower, fmtInt, r => Some(r.selfHealing.toDouble)),
     Row(
       "Gate cleared",
@@ -138,7 +184,6 @@ object BenchReport:
     List(
       Row("Duration", Direction.Lower, fmtMs, of(_)(p => Some(p.ms.toDouble))),
       Row("Tokens", Direction.Lower, fmtTokens, of(_)(p => Some((p.tokens.total + p.tokens.cached).toDouble))),
-      Row("Est. cost (USD)", Direction.Neutral, fmtUsd, of(_)(_.costUsd)),
       Row("Self-healing actions", Direction.Lower, fmtInt, of(_)(p => Some(p.counters.selfHealing.toDouble))),
     )
 
@@ -182,11 +227,24 @@ object BenchReport:
     parts += s"# Benchmark — $pack @ ${fingerprint.take(8)}"
     parts += s"_Runs: $runsLine · ${judgeLine}_"
     parts += "## Headline"
-    parts += table(outcomeRow(providers, byProvider) :: Nil, headlineRows(judgesComparable), providers, byProvider)
+    parts += table(
+      outcomeRow(providers, byProvider) :: Nil,
+      headlineRows(judgesComparable),
+      providers,
+      byProvider,
+      trailingRows = List(estCostRow(providers, byProvider, recordCost)),
+    )
     parts += "## Phases"
     phases.foreach { phase =>
       parts += s"### $phase"
-      parts += table(Nil, phaseRows(phase), providers, byProvider)
+      parts += table(
+        Nil,
+        phaseRows(phase),
+        providers,
+        byProvider,
+        trailingRows =
+          List(estCostRow(providers, byProvider, r => r.phases.find(_.name == phase).flatMap(phaseCost(r)))),
+      )
     }
     parts += "## Quality"
     parts += table(Nil, qualityRows, providers, byProvider)
@@ -197,6 +255,9 @@ object BenchReport:
       parts += "## Failures"
       parts += failures.map(r => s"- ${r.provider} ${r.runId}: ${r.outcome}").mkString("\n")
     project.foreach(n => parts += projection(n, providers, byProvider))
+    if records.exists(r => recordCost(r).exists(_._2)) then
+      parts += "_\\* Cost estimated at report time from recorded tokens × the requested model (no run-time " +
+        "estimate was stored; mixed-model phases are approximated at the requested model's rate)._"
     parts += machinesFootnote(records)
     parts.result().mkString("\n\n")
 
@@ -214,11 +275,12 @@ object BenchReport:
     rows: List[Row],
     providers: List[String],
     byProvider: Map[String, List[BenchRecord]],
+    trailingRows: List[String] = Nil,
   ): String =
     val header    = s"| Metric | ${providers.mkString(" | ")} | Gap (best→worst) |"
     val separator = s"| --- |${providers.map(_ => " --- |").mkString} --- |"
     val body      = rows.map(renderRow(_, providers, byProvider))
-    (header :: separator :: extraRows ::: body).mkString("\n")
+    (header :: separator :: extraRows ::: body ::: trailingRows).mkString("\n")
 
   private def renderRow(row: Row, providers: List[String], byProvider: Map[String, List[BenchRecord]]): String =
     val stats                                             = providers.map { p =>
@@ -261,10 +323,10 @@ object BenchReport:
     val rows                                                                          = List(
       Row("Tokens / program", Direction.Neutral, fmtTokens, perProgram(totalTokens)),
       Row("Time / program", Direction.Neutral, fmtMs, perProgram(totalMs)),
-      Row("Est. cost / program (USD)", Direction.Neutral, fmtUsd, perProgram(_.totalCostUsd)),
+      Row("Est. cost / program (USD)", Direction.Neutral, fmtUsd, perProgram(recordCost(_).map(_._1))),
       Row("Projected tokens", Direction.Neutral, fmtTokens, scaled(totalTokens)),
       Row("Projected time", Direction.Neutral, fmtMs, scaled(totalMs)),
-      Row("Projected est. cost (USD)", Direction.Neutral, fmtUsd, scaled(_.totalCostUsd)),
+      Row("Projected est. cost (USD)", Direction.Neutral, fmtUsd, scaled(recordCost(_).map(_._1))),
     )
     s"## Projection @ $programs programs\n\n" +
       table(Nil, rows, providers, byProvider) +
