@@ -1,4 +1,4 @@
-//> using dep "io.github.riccardomerolla::llm4zio-runner:3.18.2"
+//> using dep "io.github.riccardomerolla::llm4zio-runner:3.19.0"
 //> using scala "3.8.3"
 //> using jvm 21
 
@@ -25,6 +25,13 @@
   *   LLM4ZIO_BENCH_JUDGE=provider[:model]   fixed examiner (e.g. gemini:gemini-2.5-pro)
   *   LLM4ZIO_BENCH_RUNS=N                   runs per invocation (default 1)
   *   LLM4ZIO_BENCH_PHASE_TIMEOUT=minutes    wall-clock bound per phase (default 60)
+  *   LLM4ZIO_BENCH_DIR=<dir>                pin the bench root; point at a previous run's root to
+  *                                          RESUME it — completed programs, cached gate verdicts,
+  *                                          the plan, the seeded target, and completed implement
+  *                                          tasks are skipped; the record is flagged `resumed ♻`
+  *                                          (incremental time/tokens). Force redo by deleting the
+  *                                          artifact (specs/<NAME>.md, gate/, plan.md,
+  *                                          run-N/.bench-recorded).
   *   LLM4ZIO_BENCH_FIXTURE=<dir>            estate to convert (default fixtures/legacy-bank)
   *   LLM4ZIO_PACK=<dir>                     modernization pack (default packs/cobol-springboot)
   *   LLM4ZIO_RUN_LABEL=<key>                correlates runs across machines/providers
@@ -47,7 +54,7 @@ import llm4zio.eval.*
 import llm4zio.flow.*
 import llm4zio.runner.*
 
-val Llm4zioVersion = "3.18.2"
+val Llm4zioVersion = "3.19.0"
 val MaxGateRounds  = 3
 val ImplFixRounds  = 2
 val AnalystTurns   = 48
@@ -465,8 +472,16 @@ def toolVersion(provider: String): UIO[Option[String]] =
     .catchAll(_ => ZIO.none)
 
 // ── the bench root (created before the flow so the context roots git/coder inside it) ─────────
+//
+// Fresh temp dir by default (pristine benchmark semantics). LLM4ZIO_BENCH_DIR pins the root instead:
+// point it at a previous run's directory to RESUME after a crash/timeout — completed programs, cached
+// gate verdicts, the plan, the seeded target, and completed implement tasks are all skipped; the run
+// continues from wherever it died, and its record is flagged `resumed` (incremental time/tokens).
 
-val benchRoot: Path = Files.createTempDirectory("llm4zio-bench-").toAbsolutePath.normalize
+val benchRoot: Path =
+  sys.env.get("LLM4ZIO_BENCH_DIR").map(_.trim).filter(_.nonEmpty) match
+    case Some(dir) => Files.createDirectories(Path.of(dir).toAbsolutePath.normalize)
+    case None      => Files.createTempDirectory("llm4zio-bench-").toAbsolutePath.normalize
 
 flow(
   Array("--repo", benchRoot.toString) ++ args,
@@ -512,6 +527,7 @@ flow(
     val targetDir = root.resolve("target")
     for
       _           <- tap.reset
+      resumedRun  <- dirExists(root)
       startedAt   <- Clock.instant
       runId       <- FlowTrace.runId.map(id => s"$id-r$i")
       phasesRef   <- Ref.make(List.empty[BenchPhase])
@@ -534,10 +550,20 @@ flow(
                      ).flatten.mkString("\n\n")
 
       _ <- benchPhase("Estate", tap, phasesRef, failedRef) {
-             for
-               n <- copyTree(fixtureDir, legacyDir)
-               _ <- git.commitAll(s"bench: baseline estate ($n files)").unit
-             yield Map("files" -> n.toString)
+             ZIO.ifZIO(dirExists(legacyDir))(
+               // Resuming: same task only — a different estate under the same root would corrupt the comparison.
+               for
+                 existing <- gatherSources(legacyDir, pack.sources.getOrElse(""".*""")).map(ReviewCache.fingerprint(_))
+                 _        <- ZIO.when(existing != fingerprint)(ZIO.fail(FlowError.Aborted(
+                               s"$rootRel/legacy holds a DIFFERENT estate than the fixture — refusing to resume into it"
+                             )))
+                 _        <- events.publish(FlowEvent.Info(s"resume: estate already in place at $rootRel/legacy"))
+               yield Map("resumed" -> "true"),
+               for
+                 n <- copyTree(fixtureDir, legacyDir)
+                 _ <- git.commitAll(s"bench: baseline estate ($n files)").unit
+               yield Map("files" -> n.toString),
+             )
            }
       _ <- benchPhase("Extract", tap, phasesRef, failedRef) {
              for
@@ -560,28 +586,40 @@ flow(
              yield Map("cleared" -> result.isClean.toString, "openIssues" -> result.issues.size.toString)
            }
       _ <- benchPhase("Plan", tap, phasesRef, failedRef) {
-             for
-               specText <- gatherSources(modDir, """.*\.(md|feature)""")
-               plan     <- Planner.from(
-                             reasoning,
-                             capText(specText, JudgeSourcesLimit),
-                             Planner.defaultInstructions + "\n\n" + pack.prompt("plan").getOrElse(""),
-                           )
-               _        <- writeFile(modDir.resolve("plan.md"), plan.render)
-             yield Map("tasks" -> plan.tasks.size.toString)
+             ZIO.ifZIO(fileExists(modDir.resolve("plan.md")))(
+               events.publish(FlowEvent.Info("resume: plan.md exists — skipping planning (delete it to re-plan)"))
+                 .as(Map("resumed" -> "true")),
+               for
+                 specText <- gatherSources(modDir, """.*\.(md|feature)""")
+                 plan     <- Planner.from(
+                               reasoning,
+                               capText(specText, JudgeSourcesLimit),
+                               Planner.defaultInstructions + "\n\n" + pack.prompt("plan").getOrElse(""),
+                             )
+                 _        <- writeFile(modDir.resolve("plan.md"), plan.render)
+               yield Map("tasks" -> plan.tasks.size.toString),
+             )
            }
       _ <- benchPhase("Seed", tap, phasesRef, failedRef) {
-             val scaffold = pack.scaffold.map(rel => pack.dir.resolve(rel).normalize)
-             for
-               _  <- ZIO.foreachDiscard(scaffold.toList)(copyTree(_, targetDir).unit)
-               n1 <- copyTree(modDir.resolve("specs"), targetDir.resolve(pack.specsDir))
-               n2 <- copyTree(modDir.resolve("features"), targetDir.resolve(pack.featuresDir))
-               _  <- ZIO.foreachDiscard(List("traceability.md", "mapping.md"))(f =>
-                       copyFile(modDir.resolve(f), targetDir.resolve(pack.specsDir).resolve(f)).unit
-                     )
-               _  <- copyFile(modDir.resolve("plan.md"), targetDir.resolve("docs/modernization/plan.md"))
-               _  <- git.commitAll("bench: seed target").unit
-             yield Map("files" -> (n1 + n2).toString)
+             // The seeded plan is the implement loop's progress ledger — re-copying the draft over it would
+             // UNCHECK completed tasks and redo them. A present target plan means "already seeded": skip.
+             ZIO.ifZIO(fileExists(targetDir.resolve("docs/modernization/plan.md")))(
+               events.publish(FlowEvent.Info("resume: target already seeded — skipping"))
+                 .as(Map("resumed" -> "true")),
+               {
+                 val scaffold = pack.scaffold.map(rel => pack.dir.resolve(rel).normalize)
+                 for
+                   _  <- ZIO.foreachDiscard(scaffold.toList)(copyTree(_, targetDir).unit)
+                   n1 <- copyTree(modDir.resolve("specs"), targetDir.resolve(pack.specsDir))
+                   n2 <- copyTree(modDir.resolve("features"), targetDir.resolve(pack.featuresDir))
+                   _  <- ZIO.foreachDiscard(List("traceability.md", "mapping.md"))(f =>
+                           copyFile(modDir.resolve(f), targetDir.resolve(pack.specsDir).resolve(f)).unit
+                         )
+                   _  <- copyFile(modDir.resolve("plan.md"), targetDir.resolve("docs/modernization/plan.md"))
+                   _  <- git.commitAll("bench: seed target").unit
+                 yield Map("files" -> (n1 + n2).toString)
+               },
+             )
            }
       _ <- benchPhase("Implement", tap, phasesRef, failedRef) {
              val planFile = targetDir.resolve("docs/modernization/plan.md")
@@ -687,20 +725,34 @@ flow(
                                fixtureFingerprint = fingerprint,
                                machine = machineInfo,
                                outcome = failed.fold("completed")(p => s"failed-$p"),
+                               resumed = resumedRun,
                                totalMs = java.time.Duration.between(startedAt, finishedAt).toMillis,
                                phases = phases,
                                quality = quality,
                              )
                _          <- appendLine(resultsOut, record.toJson)
+               _          <- writeFile(root.resolve(".bench-recorded"), record.runId)
                _          <- events.publish(FlowEvent.Info(s"bench record appended to $resultsOut (${record.outcome})"))
+               _          <- ZIO.when(failed.isDefined)(events.publish(FlowEvent.Info(
+                               s"run $i did not complete — resume it with LLM4ZIO_BENCH_DIR=$workDir " +
+                                 s"(finished work is skipped; delete $rootRel/.bench-recorded first)"
+                             )))
              yield ()
            }
     yield ()
 
+  def runOrSkip(tap: Bench.Tap, i: Int): IO[FlowError, Unit] =
+    // A run whose record already landed must not append a duplicate row on resume.
+    ZIO.ifZIO(fileExists(workDir.resolve(s"run-$i").resolve(".bench-recorded")))(
+      events.publish(FlowEvent.Info(s"run-$i already recorded — skipping (delete run-$i/.bench-recorded to redo)")),
+      oneRun(tap, i),
+    )
+
   ZIO.scoped {
     for
       tap    <- Bench.tap(events)
+      _      <- events.publish(FlowEvent.Info(s"bench root: $workDir — resume later with LLM4ZIO_BENCH_DIR=$workDir"))
       _      <- stage("Repo")(git.init *> git.config("user.email", "bench@llm4zio") *> git.config("user.name", "llm4zio-bench"))
-      _      <- ZIO.foreachDiscard(1 to runs)(i => oneRun(tap, i))
+      _      <- ZIO.foreachDiscard(1 to runs)(i => runOrSkip(tap, i))
     yield s"bench-results.jsonl (${runs} run(s), provider=$Provider)"
   }

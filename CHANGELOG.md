@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.19.0] - 2026-07-16
+
+### Added
+
+- **Resumable benchmark runs.** A crashed/timed-out 4-hour bench run no longer starts
+  over: `LLM4ZIO_BENCH_DIR=<previous run's root>` resumes it — completed programs
+  (specs), cached gate verdicts, the plan, the seeded target, and completed implement
+  tasks are all skipped, so the run continues from wherever it died. The root is printed
+  at start and in the failure hint. Guards: the Estate phase refuses to resume onto a
+  different estate (fixture fingerprint check); re-seeding never overwrites the plan the
+  implement loop tracks; a `run-N/.bench-recorded` marker prevents duplicate rows.
+  Resumed records carry `resumed: true` (old lines decode as false) and the report marks
+  them `♻` with a footnote — their durations/tokens measure only the work after resume.
+  Force a redo by deleting the artifact (`specs/<NAME>.md`, `gate/`, `plan.md`, the
+  marker).
+
 ## [3.18.2] - 2026-07-16
 
 ### Added

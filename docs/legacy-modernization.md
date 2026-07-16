@@ -229,6 +229,12 @@ Model defaults: `gemini-2.5-pro` / `claude-opus-4-8` / `gpt-5.5`
 wall clock so a provider that can neither finish nor fail still yields a
 `failed-<phase>` row.
 
+Runs are **resumable**: the bench prints its root at start; if a 4-hour run
+dies, rerun with `LLM4ZIO_BENCH_DIR=<that root>` and everything already done —
+extracted programs, cached gate verdicts, the plan, the seeded target,
+completed implement tasks — is skipped. Resumed records are flagged `♻` in the
+report (their time/tokens are incremental, not comparable with fresh runs).
+
 Token accounting differs per CLI — claude reports prompt tokens net of cache
 reads, codex reports the full prompt and no cache figure — so the report's
 "Total tokens" includes cache reads, "Output tokens" is the one directly

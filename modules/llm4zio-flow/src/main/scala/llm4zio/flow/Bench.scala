@@ -94,6 +94,9 @@ final case class BenchRecord(
   fixtureFingerprint: String,
   machine: BenchMachine,
   outcome: String,
+  // A resumed run (LLM4ZIO_BENCH_DIR pointed at a previous run's root) only measures the work done AFTER
+  // resuming — its durations/tokens are incremental, not comparable to fresh runs. The report flags it.
+  resumed: Boolean = false,
   totalMs: Long,
   phases: List[BenchPhase],
   quality: Option[BenchQuality],

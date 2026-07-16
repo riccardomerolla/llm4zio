@@ -258,15 +258,20 @@ object BenchReport:
     if records.exists(r => recordCost(r).exists(_._2)) then
       parts += "_\\* Cost estimated at report time from recorded tokens × the requested model (no run-time " +
         "estimate was stored; mixed-model phases are approximated at the requested model's rate)._"
+    if records.exists(_.resumed) then
+      parts += "_♻ resumed run — durations and tokens measure only the work done after resuming; " +
+        "not comparable with fresh runs._"
     parts += machinesFootnote(records)
     parts.result().mkString("\n\n")
 
-  /** Outcome is a text row (never crowned): the outcome string, or `x/y completed` across repeated runs. */
+  /** Outcome is a text row (never crowned): the outcome string, or `x/y completed` across repeated runs. Resumed runs
+    * carry `♻` — their durations/tokens only measure the work after resume.
+    */
   private def outcomeRow(providers: List[String], byProvider: Map[String, List[BenchRecord]]): String =
     val cells = providers.map { p =>
       val runs = byProvider(p)
-      if runs.size == 1 then runs.head.outcome
-      else s"${runs.count(_.completed)}/${runs.size} completed"
+      val base = if runs.size == 1 then runs.head.outcome else s"${runs.count(_.completed)}/${runs.size} completed"
+      if runs.exists(_.resumed) then s"$base ♻" else base
     }
     s"| Outcome | ${cells.mkString(" | ")} |  |"
 

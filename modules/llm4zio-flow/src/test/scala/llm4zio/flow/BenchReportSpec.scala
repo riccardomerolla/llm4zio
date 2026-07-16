@@ -221,6 +221,18 @@ object BenchReportSpec extends ZIOSpecDefault:
         md.contains("estimated at report time"),
       )
     },
+    test("resumed runs are marked in the outcome row and footnoted as not time/token-comparable") {
+      val fresh   = rec("gemini", "r1", 8_000, 1_000_000)
+      val resumed = rec("claude", "r2", 3_000, 200_000).copy(resumed = true)
+      val md      = BenchReport.render(List(fresh, resumed))
+      val outcome = md.linesIterator.find(_.startsWith("| Outcome")).getOrElse("")
+      assertTrue(
+        outcome.contains("completed ♻"),
+        md.contains("♻ resumed run"),
+        // a fresh-only report carries no resume footnote
+        !BenchReport.render(List(fresh)).contains("♻"),
+      )
+    },
     test("machines are footnoted") {
       val md = BenchReport.render(List(
         rec("gemini", "r1", 8_000, 1_000_000, hostname = "mac-a"),

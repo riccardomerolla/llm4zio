@@ -59,6 +59,14 @@ object BenchSpec extends ZIOSpecDefault:
       val json = record.toJson
       assertTrue(json.fromJson[BenchRecord] == Right(record))
     },
+    test("a resumed record round-trips, and lines written before the field existed decode as not-resumed") {
+      val resumed  = record.copy(resumed = true)
+      val oldShape = record.toJson.replace("\"resumed\":false,", "") // a 3.18.x line — no `resumed` field
+      assertTrue(
+        resumed.toJson.fromJson[BenchRecord] == Right(resumed),
+        oldShape.fromJson[BenchRecord].map(_.resumed) == Right(false),
+      )
+    },
     test(
       "observe attributes tokens to the OUTERMOST open stage — nested task stages must not swallow a phase's tokens"
     ) {
