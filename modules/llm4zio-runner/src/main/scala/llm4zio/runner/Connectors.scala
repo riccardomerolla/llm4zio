@@ -27,6 +27,21 @@ val pi: CliConnectorConfig =
 val antigravity: CliConnectorConfig =
   CliConnectorConfig(ConnectorId.AntigravityCli, flags = Map("mode" -> "accept-edits"))
 
+// xAI's grok CLI. The connector itself adds --always-approve (or --permission-mode plan when readOnly),
+// so no edit-enabling flag is needed here. Auth: `grok login` or XAI_API_KEY.
+val grok: CliConnectorConfig =
+  CliConnectorConfig(ConnectorId.Grok)
+
+// Cursor's CLI (binary `cursor-agent`). The connector adds --force (edits apply) unless readOnly,
+// where print mode only proposes changes. Auth: `cursor-agent login` or CURSOR_API_KEY.
+val cursor: CliConnectorConfig =
+  CliConnectorConfig(ConnectorId.Cursor)
+
+// opencode. The connector adds --auto (auto-approve permissions) or the built-in read-only `plan` agent
+// when readOnly. Models are `provider/model`, e.g. .withModel("anthropic/claude-sonnet-5").
+val opencode: CliConnectorConfig =
+  CliConnectorConfig(ConnectorId.OpenCode)
+
 /** LM Studio's local OpenAI-compatible server (default port 1234) — a reasoning/structured-output seat that needs no
   * cloud or API key. Set the model with `.copy(model = Some("..."))`. Pair with a local coder (e.g. `pi`) for a
   * fully-local flow.
@@ -46,13 +61,16 @@ extension (config: CliConnectorConfig)
   def withTurnLimit(turns: Int): CliConnectorConfig = config.copy(turnLimit = Some(turns))
 
 object Connectors:
-  /** The coder selected by `LLM4ZIO_CODER` (claude|codex|gemini|pi|agy), defaulting to [[claude]] — the
-    * swap-backend-without-editing-the-script knob every example used to hand-roll.
+  /** The coder selected by `LLM4ZIO_CODER` (claude|codex|gemini|pi|agy|grok|cursor|opencode), defaulting to [[claude]]
+    * — the swap-backend-without-editing-the-script knob every example used to hand-roll.
     */
   def coderFromEnv(env: Map[String, String] = sys.env): CliConnectorConfig =
     env.getOrElse("LLM4ZIO_CODER", "claude") match
-      case "codex"  => codex
-      case "gemini" => gemini
-      case "pi"     => pi
-      case "agy"    => antigravity
-      case _        => claude
+      case "codex"    => codex
+      case "gemini"   => gemini
+      case "pi"       => pi
+      case "agy"      => antigravity
+      case "grok"     => grok
+      case "cursor"   => cursor
+      case "opencode" => opencode
+      case _          => claude

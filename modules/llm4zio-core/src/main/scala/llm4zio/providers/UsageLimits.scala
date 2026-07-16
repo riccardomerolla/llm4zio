@@ -24,10 +24,10 @@ object UsageLimits:
 
   def classify(provider: String, text: String, now: Instant, zone: ZoneId): Option[LlmError] =
     provider match
-      case "codex"  => wallClock(text, codexAt, now, zone).map(at => LlmError.UsageLimitError(Some(at), provider, text))
-      case "claude" =>
+      case "codex"                        => wallClock(text, codexAt, now, zone).map(at => LlmError.UsageLimitError(Some(at), provider, text))
+      case "claude"                       =>
         wallClock(text, claudeAt, now, zone).map(at => LlmError.UsageLimitError(Some(at), provider, text))
-      case "gemini" =>
+      case "gemini"                       =>
         text match
           // Most specific first: an explicit "reset after <duration>" yields a concrete wait.
           case geminiReset(spec)        =>
@@ -38,7 +38,12 @@ object UsageLimits:
             // Capacity/quota exhaustion without a duration: resetAt = None so wait-layers fall back to pollInterval.
             Some(LlmError.UsageLimitError(resetAt = None, provider = "gemini", message = text))
           case _                        => None
-      case _        => None
+      // No documented reset-time format yet: keyword-only, resetAt = None routes wait layers to
+      // pollInterval + heartbeat. Tighten to concrete reset parsing once real limit messages are captured.
+      case "grok" | "cursor" | "opencode" =>
+        if isGenericQuota(text) then Some(LlmError.UsageLimitError(resetAt = None, provider = provider, message = text))
+        else None
+      case _                              => None
 
   private def resetDuration(spec: String): Duration =
     resetComponent.findAllMatchIn(spec).foldLeft(Duration.Zero) { (acc, m) =>
@@ -62,6 +67,14 @@ object UsageLimits:
   private[providers] def isGeminiQuota(text: String): Boolean =
     val lower = text.toLowerCase(Locale.US)
     geminiQuotaSignals.exists(lower.contains)
+
+  /** Provider-agnostic quota/credit-cap signals for CLIs whose limit-message format is not yet pinned down. */
+  private val genericQuotaSignals =
+    geminiQuotaSignals ++ List("usage limit", "out of credits", "too many requests")
+
+  private def isGenericQuota(text: String): Boolean =
+    val lower = text.toLowerCase(Locale.US)
+    genericQuotaSignals.exists(lower.contains)
 
   private def wallClock(text: String, re: scala.util.matching.Regex, now: Instant, zone: ZoneId): Option[Instant] =
     re.findFirstMatchIn(text).flatMap { m =>

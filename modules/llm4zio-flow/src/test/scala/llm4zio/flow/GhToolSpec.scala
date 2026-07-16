@@ -24,11 +24,24 @@ object GhToolSpec extends ZIOSpecDefault:
         PullRequest.fromUrl("not a url").isEmpty,
       )
     },
-    test("outcomeFromExit maps gh pr checks exit codes") {
+    test("outcomeFromChecksJson derives the outcome from statusCheckRollup") {
+      def rollup(items: String*) = s"""{"statusCheckRollup":[${items.mkString(",")}]}"""
+      val passedRun              = """{"__typename":"CheckRun","status":"COMPLETED","conclusion":"SUCCESS"}"""
+      val failedRun              = """{"__typename":"CheckRun","status":"COMPLETED","conclusion":"FAILURE"}"""
+      val runningRun             = """{"__typename":"CheckRun","status":"IN_PROGRESS","conclusion":""}"""
+      val okContext              = """{"__typename":"StatusContext","state":"SUCCESS"}"""
+      val failContext            = """{"__typename":"StatusContext","state":"FAILURE"}"""
+      val pendingContext         = """{"__typename":"StatusContext","state":"PENDING"}"""
       assertTrue(
-        GhTool.outcomeFromExit(0) == BuildOutcome.Success,
-        GhTool.outcomeFromExit(8) == BuildOutcome.Pending,
-        GhTool.outcomeFromExit(1) == BuildOutcome.Failure,
+        GhTool.outcomeFromChecksJson(rollup(passedRun, okContext)) == Right(BuildOutcome.Success),
+        GhTool.outcomeFromChecksJson(rollup(passedRun, failedRun)) == Right(BuildOutcome.Failure),
+        GhTool.outcomeFromChecksJson(rollup(failContext)) == Right(BuildOutcome.Failure),
+        // pending wins over failure: wait for the full picture before declaring the build red
+        GhTool.outcomeFromChecksJson(rollup(failedRun, runningRun)) == Right(BuildOutcome.Pending),
+        GhTool.outcomeFromChecksJson(rollup(pendingContext)) == Right(BuildOutcome.Pending),
+        // no checks configured → nothing to wait on
+        GhTool.outcomeFromChecksJson(rollup()) == Right(BuildOutcome.Success),
+        GhTool.outcomeFromChecksJson("not json").isLeft,
       )
     },
     test("arg-builders target the right repo/number") {
@@ -41,7 +54,9 @@ object GhToolSpec extends ZIOSpecDefault:
           List("issue", "comment", "42", "--repo", "acme/widgets", "--body", "hi"),
         GhTool.prPatchArgs(pr, "T", "B") ==
           List("api", "--method", "PATCH", "repos/acme/widgets/pulls/7", "-f", "title=T", "-f", "body=B"),
-        GhTool.prChecksArgs(pr) == List("pr", "checks", "7", "--repo", "acme/widgets"),
+        // a --json read: a network blip is a non-zero exit (retryable), never mistaken for a red build
+        GhTool.prChecksArgs(pr) ==
+          List("pr", "view", "7", "--repo", "acme/widgets", "--json", "statusCheckRollup"),
       )
     },
     test("parseIssue decodes gh's title/body/author.login JSON") {

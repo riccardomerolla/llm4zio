@@ -30,7 +30,7 @@ def withUsageLimitRetry[R, A](
             events.publish(FlowEvent.Info(
               s"⏳ usage limit (${u.provider}) — sleeping ${math.max(1, sleepFor.toMinutes)}m, re-entering"
             )) *>
-              ZIO.sleep(sleepFor) *>
+              UsageLimitWait.sleep(u.provider, sleepFor, u.resetAt, policy.heartbeat) *>
               loop(attempt + 1, waited + sleepFor)
         }
     }

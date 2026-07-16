@@ -20,6 +20,8 @@ object ConnectorFactories:
       ConnectorId.Copilot        -> cliFactory(ConnectorId.Copilot, cfg => CopilotConnector.make(cfg, cli)),
       ConnectorId.Pi             -> cliFactory(ConnectorId.Pi, cfg => PiConnector.make(cfg, cli)),
       ConnectorId.AntigravityCli -> cliFactory(ConnectorId.AntigravityCli, cfg => AntigravityConnector.make(cfg, cli)),
+      ConnectorId.Grok           -> cliFactory(ConnectorId.Grok, cfg => GrokCliConnector.make(cfg, cli)),
+      ConnectorId.Cursor         -> cliFactory(ConnectorId.Cursor, cfg => CursorConnector.make(cfg, cli)),
       ConnectorId.Mock           -> apiFactory(ConnectorId.Mock, cfg => MockProvider.make(cfg)),
     ))
 

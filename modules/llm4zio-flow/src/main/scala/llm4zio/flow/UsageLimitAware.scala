@@ -29,7 +29,7 @@ final class UsageLimitAware(underlying: LlmService, policy: UsageLimitPolicy)(us
             if waited + sleepFor > policy.maxWait then ZIO.fail(err)
             else
               events.publish(FlowEvent.Info(notice(err, sleepFor))) *>
-                ZIO.sleep(sleepFor) *>
+                UsageLimitWait.sleep(err.provider, sleepFor, err.resetAt, policy.heartbeat) *>
                 loop(waited + sleepFor)
           }
       }

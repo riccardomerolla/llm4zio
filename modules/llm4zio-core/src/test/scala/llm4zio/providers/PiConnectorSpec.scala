@@ -100,7 +100,8 @@ object PiConnectorSpec extends ZIOSpecDefault:
       yield assertTrue(
         argv.containsSlice(List("pi", "-p", "--mode", "json")),
         argv.containsSlice(List("--model", "lmstudio/foo")),
-        argv.containsSlice(List("--tools", "read,grep,find,ls")),
+        // pi 0.80.x built-in tools are read/bash/edit/write — `read` is the only read-only one.
+        argv.containsSlice(List("--tools", "read")),
       )
     },
     test("a pi error event surfaces in metadata") {

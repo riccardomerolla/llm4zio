@@ -47,11 +47,17 @@ object ConnectorId:
   // Google's Antigravity CLI (argv binary `agy`) — the retail successor to gemini-cli; gemini-cli remains
   // maintained for the enterprise customer that still depends on it.
   val AntigravityCli: ConnectorId = ConnectorId("antigravity-cli")
+  // xAI's grok CLI (headless via `grok -p --output-format streaming-json`).
+  val Grok: ConnectorId           = ConnectorId("grok")
+  // Cursor's CLI (argv binary `cursor-agent`; bare `agent` collides with grok's). Headless via
+  // `cursor-agent -p --output-format stream-json`.
+  val Cursor: ConnectorId         = ConnectorId("cursor")
   // Test
   val Mock: ConnectorId           = ConnectorId("mock")
 
   val allApi: List[ConnectorId] = List(OpenAI, Anthropic, GeminiApi, LmStudio, Ollama)
-  val allCli: List[ConnectorId] = List(ClaudeCli, GeminiCli, OpenCode, Codex, Copilot, Pi, AntigravityCli)
+  val allCli: List[ConnectorId] =
+    List(ClaudeCli, GeminiCli, OpenCode, Codex, Copilot, Pi, AntigravityCli, Grok, Cursor)
   val all: List[ConnectorId]    = allApi ++ allCli :+ Mock
 
 enum ConnectorKind derives JsonCodec:

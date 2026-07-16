@@ -74,6 +74,36 @@ object UsageLimitAwareSpec extends ZIOSpecDefault:
         out    <- fiber.join
       yield assertTrue(out == "ok")
     },
+    test("emits heartbeat pulses during a long wait") {
+      for
+        events  <- FlowEvents.collecting
+        now     <- Clock.instant
+        fails   <- Ref.make(List[LlmError](usageErr(now.plusSeconds(7200)))) // 2h out
+        svc      = UsageLimitAware(ScriptedService(fails), UsageLimitPolicy.patient)(using events)
+        fiber   <- svc.executeStructured[String]("go", Json.Obj()).fork
+        _       <- TestClock.adjust(2.hours + 1.minute)
+        out     <- fiber.join
+        emitted <- events.recorded
+        pulses   = emitted.collect { case FlowEvent.Info(m) if m.contains("still waiting") => m }
+      yield assertTrue(
+        out == "ok",
+        // total sleep = 120m reset + 30s buffer; 5m cadence ⇒ pulses after 5m..120m, none after the final 30s chunk
+        pulses.size == 24,
+        pulses.head.contains("codex"),
+      )
+    },
+    test("short waits emit no heartbeat pulses") {
+      for
+        events  <- FlowEvents.collecting
+        fails   <- Ref.make(List[LlmError](LlmError.UsageLimitError(None, "codex", "limit")))
+        svc      = UsageLimitAware(ScriptedService(fails), UsageLimitPolicy.patient)(using events) // pollInterval = 2m
+        fiber   <- svc.executeStructured[String]("go", Json.Obj()).fork
+        _       <- TestClock.adjust(2.minutes + 1.second)
+        out     <- fiber.join
+        emitted <- events.recorded
+        pulses   = emitted.collect { case FlowEvent.Info(m) if m.contains("still waiting") => m }
+      yield assertTrue(out == "ok", pulses.isEmpty)
+    },
     test("unknown resetAt: gives up when pollInterval exceeds maxWait") {
       val tight = UsageLimitPolicy(enabled = true, maxWait = 2.minutes, pollInterval = 3.minutes)
       for

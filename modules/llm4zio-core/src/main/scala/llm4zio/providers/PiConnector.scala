@@ -11,11 +11,12 @@ object PiConnector:
     new CliConnector:
       private val cwd: String = config.workingDir.getOrElse(".")
 
-      // `--model X` when set, then read-only restricts the toolset (pi has no plan mode), then passthrough
-      // flags from config.flags (empty value → bare `--flag`), sorted for determinism.
+      // `--model X` when set, then read-only restricts the toolset (pi has no plan mode; its 0.80.x built-ins
+      // are read/bash/edit/write, so `read` is the only read-only one), then passthrough flags from
+      // config.flags (empty value → bare `--flag`), sorted for determinism.
       private def extraArgs: List[String] =
         val modelArgs   = config.model.toList.flatMap(m => List("--model", m))
-        val readOnlyArg = if config.readOnly then List("--tools", "read,grep,find,ls") else Nil
+        val readOnlyArg = if config.readOnly then List("--tools", "read") else Nil
         val flagArgs    = config.flags.toList.sortBy(_._1).flatMap {
           case (k, v) if v.isEmpty => List(s"--$k")
           case (k, v)              => List(s"--$k", v)

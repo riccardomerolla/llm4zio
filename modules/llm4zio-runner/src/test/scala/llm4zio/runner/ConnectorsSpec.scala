@@ -19,6 +19,14 @@ object ConnectorsSpec extends ZIOSpecDefault:
         pi.flags.isEmpty,
         antigravity.connectorId == ConnectorId.AntigravityCli,
         antigravity.flags == Map("mode" -> "accept-edits"),
+        // grok/cursor/opencode carry their edit-enabling flag in the connector itself
+        // (--always-approve / --force / --auto), so the presets stay bare.
+        grok.connectorId == ConnectorId.Grok,
+        grok.flags.isEmpty,
+        cursor.connectorId == ConnectorId.Cursor,
+        cursor.flags.isEmpty,
+        opencode.connectorId == ConnectorId.OpenCode,
+        opencode.flags.isEmpty,
       )
     },
     test("lmStudio is a local API reasoning seat") {
@@ -47,6 +55,9 @@ object ConnectorsSpec extends ZIOSpecDefault:
         Connectors.coderFromEnv(Map("LLM4ZIO_CODER" -> "gemini")) == gemini,
         Connectors.coderFromEnv(Map("LLM4ZIO_CODER" -> "pi")) == pi,
         Connectors.coderFromEnv(Map("LLM4ZIO_CODER" -> "agy")) == antigravity,
+        Connectors.coderFromEnv(Map("LLM4ZIO_CODER" -> "grok")) == grok,
+        Connectors.coderFromEnv(Map("LLM4ZIO_CODER" -> "cursor")) == cursor,
+        Connectors.coderFromEnv(Map("LLM4ZIO_CODER" -> "opencode")) == opencode,
         Connectors.coderFromEnv(Map("LLM4ZIO_CODER" -> "anything-else")) == claude,
       )
     },

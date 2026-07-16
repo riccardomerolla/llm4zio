@@ -161,6 +161,8 @@ ways out:
 
 - `LLM4ZIO_USAGE_WAIT=24h` (or `on`) — sleep until the reported reset, then
   auto-resume the flow (extract is resumable: the committed draft pack is reused).
+  While sleeping, a "⏳ still waiting" heartbeat is emitted every 5 minutes
+  (`UsageLimitPolicy.heartbeat`) so the run is visibly waiting, not stuck.
 - Point the seats at a model with remaining quota (e.g. swap the `ProModel` val
   to `gemini-2.5-flash`) and rerun.
 

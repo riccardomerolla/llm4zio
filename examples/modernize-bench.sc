@@ -20,8 +20,10 @@
   *     LLM4ZIO_BENCH_JUDGE pins one fixed examiner for all runs.
   *
   * Tool selection and models (requested AND served are recorded):
-  *   LLM4ZIO_CODER=gemini|claude|codex|pi   (default gemini)
-  *   defaults: gemini-2.5-pro / claude-opus-4-8 / gpt-5.5 — override with LLM4ZIO_BENCH_MODEL.
+  *   LLM4ZIO_CODER=gemini|claude|codex|pi|grok|cursor|opencode   (default gemini)
+  *   defaults: gemini-2.5-pro / claude-opus-4-8 / gpt-5.5 / grok-4.5 — override with LLM4ZIO_BENCH_MODEL.
+  *   Token honesty: cursor's stream reports no usage and opencode's carries no model id, so those seats
+  *   show unpriced/absent tokens rather than estimates.
   *   LLM4ZIO_BENCH_JUDGE=provider[:model]   fixed examiner (e.g. gemini:gemini-2.5-pro)
   *   LLM4ZIO_BENCH_RUNS=N                   runs per invocation (default 1)
   *   LLM4ZIO_BENCH_PHASE_TIMEOUT=minutes    wall-clock bound per phase (default 60)
@@ -74,13 +76,17 @@ def defaultModel(provider: String): Option[String] = provider match
   case "claude" => Some("claude-opus-4-8")
   case "codex"  => Some("gpt-5.5")
   case "gemini" => Some("gemini-2.5-pro")
-  case _        => None
+  case "grok"   => Some("grok-4.5")
+  case _        => None // cursor/opencode/pi run their user-configured default model
 
 def presetFor(provider: String): CliConnectorConfig = provider match
-  case "claude" => claude
-  case "codex"  => codex
-  case "pi"     => pi
-  case _        => gemini
+  case "claude"   => claude
+  case "codex"    => codex
+  case "pi"       => pi
+  case "grok"     => grok
+  case "cursor"   => cursor
+  case "opencode" => opencode
+  case _          => gemini
 
 def cfgFor(provider: String, model: Option[String]): CliConnectorConfig =
   val base   = presetFor(provider)
@@ -463,10 +469,13 @@ def machineInfo: BenchMachine =
 
 def toolVersion(provider: String): UIO[Option[String]] =
   val bin = provider match
-    case "claude" => "claude"
-    case "codex"  => "codex"
-    case "pi"     => "pi"
-    case _        => "gemini"
+    case "claude"   => "claude"
+    case "codex"    => "codex"
+    case "pi"       => "pi"
+    case "grok"     => "grok"
+    case "cursor"   => "cursor-agent"
+    case "opencode" => "opencode"
+    case _          => "gemini"
   Command(bin, "--version").string
     .map(out => Some(out.trim.linesIterator.nextOption.getOrElse("").take(60)).filter(_.nonEmpty))
     .catchAll(_ => ZIO.none)

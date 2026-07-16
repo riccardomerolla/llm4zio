@@ -21,10 +21,10 @@ object ConnectorSmokeSpec extends ZIOSpecDefault:
 
   def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("Connector Smoke Tests")(
     suite("Registry wiring")(
-      test("all 13 connectors registered") {
+      test("all 15 connectors registered") {
         val registry = ConnectorFactories.createRegistry(mockHttp, mockCli)
         for ids <- registry.available
-        yield assertTrue(ids.length == 13)
+        yield assertTrue(ids.length == 15)
       },
       test("resolving Mock API connector returns healthy") {
         val registry = ConnectorFactories.createRegistry(mockHttp, mockCli)

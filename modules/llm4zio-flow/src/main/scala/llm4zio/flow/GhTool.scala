@@ -78,9 +78,17 @@ final class GhTool(workDir: Path):
   def updatePr(pr: PullRequest, title: String, body: String): IO[FlowError, Unit] =
     Proc.runOrFail("gh", GhTool.prPatchArgs(pr, title, body), workDir).unit
 
-  /** One-shot check of a PR's CI state (maps `gh pr checks` exit code). */
+  /** Read the PR's check rollup via `gh pr view --json statusCheckRollup`. A `--json` read makes a transient gh/GitHub
+    * blip a non-zero exit (retried with backoff, like [[readIssue]]) instead of conflating it with a red build the way
+    * `gh pr checks` exit codes do.
+    */
   def prChecks(pr: PullRequest): IO[FlowError, BuildOutcome] =
-    Proc.run("gh", GhTool.prChecksArgs(pr), workDir).map(r => GhTool.outcomeFromExit(r.exitCode))
+    Proc
+      .runOrFail("gh", GhTool.prChecksArgs(pr), workDir)
+      .flatMap(json =>
+        ZIO.fromEither(GhTool.outcomeFromChecksJson(json)).mapError(e => FlowError.Process("gh pr view", e))
+      )
+      .retry(GhTool.transientRead)
 
   /** Poll the PR's checks until they reach a terminal state or `timeout`. */
   def waitForBuild(pr: PullRequest, timeout: Duration): IO[FlowError, BuildOutcome] =
@@ -131,14 +139,40 @@ object GhTool:
     )
 
   def prChecksArgs(pr: PullRequest): List[String] =
-    List("pr", "checks", pr.number.toString, "--repo", s"${pr.owner}/${pr.repo}")
+    List("pr", "view", pr.number.toString, "--repo", s"${pr.owner}/${pr.repo}", "--json", "statusCheckRollup")
 
-  /** `gh pr checks` exit codes: 0 = all passed, 8 = still pending, else failing. */
-  def outcomeFromExit(exitCode: Int): BuildOutcome =
-    exitCode match
-      case 0 => BuildOutcome.Success
-      case 8 => BuildOutcome.Pending
-      case _ => BuildOutcome.Failure
+  // A rollup entry is either a CheckRun (status/conclusion) or a StatusContext (state); Option fields absorb
+  // whichever half is absent.
+  private case class GhCheck(
+    status: Option[String] = None,
+    conclusion: Option[String] = None,
+    state: Option[String] = None,
+  ) derives JsonCodec
+  private case class GhChecksJson(statusCheckRollup: List[GhCheck] = Nil) derives JsonCodec
+
+  private val failingConclusions = Set("FAILURE", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "STARTUP_FAILURE")
+  private val pendingStates      = Set("PENDING", "EXPECTED")
+  private val failingStates      = Set("FAILURE", "ERROR")
+
+  /** Derive the build outcome from a `statusCheckRollup` payload: any still-running check ⇒ Pending (wait for the full
+    * picture before declaring red), else any failing conclusion/state ⇒ Failure, else Success. An empty rollup (no
+    * checks configured) is Success — there is nothing to wait on.
+    */
+  def outcomeFromChecksJson(json: String): Either[String, BuildOutcome] =
+    json.fromJson[GhChecksJson].map { parsed =>
+      val checks  = parsed.statusCheckRollup
+      val pending = checks.exists(c =>
+        c.status.exists(s => !s.equalsIgnoreCase("COMPLETED")) ||
+        c.state.exists(s => pendingStates.contains(s.toUpperCase(java.util.Locale.US)))
+      )
+      val failed  = checks.exists(c =>
+        c.conclusion.exists(x => failingConclusions.contains(x.toUpperCase(java.util.Locale.US))) ||
+        c.state.exists(x => failingStates.contains(x.toUpperCase(java.util.Locale.US)))
+      )
+      if pending then BuildOutcome.Pending
+      else if failed then BuildOutcome.Failure
+      else BuildOutcome.Success
+    }
 
   private case class GhAuthor(login: String) derives JsonCodec
   private case class GhIssueJson(title: String, body: String, author: GhAuthor) derives JsonCodec

@@ -21,6 +21,20 @@ object PriceListSpec extends ZIOSpecDefault:
         PriceList.costUsd("gpt-5.5", TokenUsage(0, 100_000, 100_000)).contains(3.0),
       )
     },
+    test("prices claude-fable-5 ($10/M in, $50/M out)") {
+      assertTrue(
+        PriceList.costUsd("claude-fable-5", TokenUsage(1_000_000, 0, 1_000_000)).contains(10.0),
+        PriceList.costUsd("claude-fable-5", TokenUsage(0, 1_000_000, 1_000_000)).contains(50.0),
+      )
+    },
+    test("prices grok models (grok-4.5: $2/M in, $6/M out; grok-4.3: $1.25/M in)") {
+      assertTrue(
+        PriceList.costUsd("grok-4.5", TokenUsage(1_000_000, 0, 1_000_000)).contains(2.0),
+        PriceList.costUsd("grok-4.5", TokenUsage(0, 1_000_000, 1_000_000)).contains(6.0),
+        PriceList.costUsd("grok-4.3", TokenUsage(1_000_000, 0, 1_000_000)).contains(1.25),
+        PriceList.costUsd("grok-build-0.1", TokenUsage(1_000_000, 0, 1_000_000)).contains(1.0),
+      )
+    },
     test("prices cache reads at 10% of the input rate") {
       // opus 4: $15/M in → cached reads at $1.50/M. 1M cached, nothing else = $1.50
       val cachedOnly = PriceList.costUsd("claude-opus-4-8", TokenUsage(0, 0, 0, cached = Some(1_000_000)))

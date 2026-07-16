@@ -86,4 +86,32 @@ object UsageLimitsSpec extends ZIOSpecDefault:
     test("unrecognized text → None") {
       assertTrue(UsageLimits.classify("codex", "some unrelated failure", now, zone).isEmpty)
     },
+    // grok/cursor/opencode have no documented reset-time format yet, so classification is keyword-only:
+    // resetAt = None routes the wait layers to pollInterval + heartbeat.
+    test("grok/cursor/opencode 429 rate-limit keywords → UsageLimitError with resetAt None") {
+      assertTrue(
+        List("grok", "cursor", "opencode").forall { p =>
+          UsageLimits.classify(p, "Error: 429 Too Many Requests — rate limit exceeded", now, zone) match
+            case Some(LlmError.UsageLimitError(None, provider, _)) => provider == p
+            case _                                                 => false
+        }
+      )
+    },
+    test("grok 'out of credits' → UsageLimitError") {
+      UsageLimits.classify("grok", "Your team has run out of credits.", now, zone) match
+        case Some(LlmError.UsageLimitError(None, "grok", _)) => assertTrue(true)
+        case _                                               => assertTrue(false)
+    },
+    test("cursor 'usage limit' → UsageLimitError") {
+      UsageLimits.classify("cursor", "You have hit your usage limit.", now, zone) match
+        case Some(LlmError.UsageLimitError(None, "cursor", _)) => assertTrue(true)
+        case _                                                 => assertTrue(false)
+    },
+    test("new-provider unrelated text → None") {
+      assertTrue(
+        UsageLimits.classify("cursor", "some unrelated failure", now, zone).isEmpty,
+        UsageLimits.classify("grok", "compile error in Main.scala", now, zone).isEmpty,
+        UsageLimits.classify("opencode", "network unreachable", now, zone).isEmpty,
+      )
+    },
   )
