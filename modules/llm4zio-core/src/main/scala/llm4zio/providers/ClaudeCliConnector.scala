@@ -3,10 +3,12 @@ package llm4zio.providers
 import java.time.ZoneId
 
 import zio.*
+import zio.json.JsonCodec
 import zio.json.ast.Json
 import zio.stream.ZStream
 
 import llm4zio.core.*
+import llm4zio.tools.JsonSchema
 
 object ClaudeCliConnector:
   def make(config: CliConnectorConfig, executor: CliProcessExecutor): CliConnector =
@@ -67,6 +69,23 @@ object ClaudeCliConnector:
                   .getOrElse(LlmError.ProviderError(s"claude exited with code ${result.exitCode}: $raw", None)))
               }
           }
+
+      override def executeStructured[A: JsonCodec](prompt: String, schema: JsonSchema): IO[LlmError, A] =
+        executeStructuredWithUsage[A](prompt, schema).map(_._1)
+
+      /** Structured calls ride the STREAM path: the non-streaming `complete` reports no token usage, which is how a
+        * claude reasoning seat's judge/planner calls billed zero tokens in the cost ledger and the bench record. The
+        * stream also carries the served model (init event), stamped onto the usage chunk.
+        */
+      override def executeStructuredWithUsage[A: JsonCodec](
+        prompt: String,
+        schema: JsonSchema,
+      ): IO[LlmError, (A, Option[TokenUsage], Option[String])] =
+        Streaming.collect(completeStream(StructuredOutputs.withSchemaHint(prompt, schema))).flatMap { reply =>
+          StructuredOutputs
+            .parseFromText[A](reply.content, schema)
+            .map(a => (a, reply.usage, reply.metadata.get("model")))
+        }
 
       // Stream via `claude -p --output-format stream-json --verbose`, parsing JSONL events into the shared
       // LlmChunk metadata contract. Prompt is fed via stdin to avoid hitting ARG_MAX on large prompts.

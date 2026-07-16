@@ -53,12 +53,21 @@ object CodexConnector:
               ))
           }
 
+      // Codex's JSONL stream never names the model it served, so cost cells key on "" (unpriceable) and served-model
+      // provenance comes back empty. Stamp the configured model onto usage chunks — `codex exec -m X` runs X or fails,
+      // it does not route silently, so requested is a faithful stand-in.
+      private def stampModel(chunk: LlmChunk): LlmChunk =
+        if chunk.usage.isDefined && !chunk.metadata.contains("model") then
+          chunk.copy(metadata = chunk.metadata ++ config.model.map("model" -> _))
+        else chunk
+
       // Stream via `codex exec --json`, parsing the JSONL event stream into the shared LlmChunk metadata contract.
       // Prompt is fed via stdin to avoid hitting ARG_MAX on large prompts.
       override def completeStream(prompt: String): ZStream[Any, LlmError, LlmChunk] =
         val argv = List("codex", "exec", "--json") ++ extraArgs
         executor.runStreamingWithStdin(argv, cwd, config.envVars, prompt)
           .mapConcat(CodexConnector.parseStreamLine)
+          .map(stampModel)
           .mapZIO { chunk =>
             chunk.metadata.get("codexError") match
               case Some(msg) =>
@@ -83,7 +92,7 @@ object CodexConnector:
         if !CodexConnector.enforceable(schema) then
           complete(StructuredOutputs.withSchemaHint(prompt, schema))
             .flatMap(text => StructuredOutputs.parseFromText[A](text, schema))
-            .map(a => (a, None, None))
+            .map(a => (a, None, config.model))
         else
           ZIO.scoped {
             for
@@ -105,7 +114,7 @@ object CodexConnector:
                            cwd,
                            config.envVars,
                            prompt,
-                         ).mapConcat(CodexConnector.parseStreamLine)
+                         ).mapConcat(CodexConnector.parseStreamLine).map(stampModel)
                        )
               // codex surfaces request failures (e.g. a bad schema or a model error) as error/turn.failed events,
               // which carry no agent_message — fail with codex's reason instead of an opaque "no JSON candidate".
@@ -117,7 +126,7 @@ object CodexConnector:
                          }
                        }
               out   <- StructuredOutputs.parseFromText[A](reply.content, schema)
-            yield (out, reply.usage, reply.metadata.get("model"))
+            yield (out, reply.usage, reply.metadata.get("model").orElse(config.model))
           }
 
   /** Parse one codex `--json` line into zero or more chunks. Stateless. */

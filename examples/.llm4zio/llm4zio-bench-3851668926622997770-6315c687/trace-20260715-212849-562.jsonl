@@ -1,0 +1,9 @@
+{"seq":0,"ts":"2026-07-15T19:28:49.575763Z","runId":"20260715-212849-562","kind":"StageStarted","fields":{"stage":"Repo"}}
+{"seq":1,"ts":"2026-07-15T19:28:49.630323Z","runId":"20260715-212849-562","kind":"StageCompleted","fields":{"stage":"Repo"}}
+{"seq":2,"ts":"2026-07-15T19:28:49.653288Z","runId":"20260715-212849-562","kind":"StageStarted","fields":{"stage":"Estate"}}
+{"seq":3,"ts":"2026-07-15T19:28:49.715983Z","runId":"20260715-212849-562","kind":"StageCompleted","fields":{"stage":"Estate"}}
+{"seq":4,"ts":"2026-07-15T19:28:49.719485Z","runId":"20260715-212849-562","kind":"StageStarted","fields":{"stage":"Extract"}}
+{"seq":5,"ts":"2026-07-15T19:28:49.723887Z","runId":"20260715-212849-562","kind":"Info","fields":{"message":"extracting cobol/ACCTXFR.cbl (1/3)"}}
+{"seq":6,"ts":"2026-07-15T19:29:05.816468Z","runId":"20260715-212849-562","kind":"TokensUsed","fields":{"model":"claude-opus-4-8","completion":"0","prompt":"0","agent":"coder","total":"0"}}
+{"seq":7,"ts":"2026-07-15T19:29:06.340266Z","runId":"20260715-212849-562","kind":"AssistantMessage","fields":{"text":"Failed to authenticate. API Error: 401 Invalid authentication credentials"}}
+{"seq":8,"ts":"2026-07-15T19:29:06.374738Z","runId":"20260715-212849-562","kind":"Info","fields":{"message":"extracting cobol/INTCALC.cbl (2/3)"}}

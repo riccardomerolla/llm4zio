@@ -29,6 +29,8 @@ object BenchReportSpec extends ZIOSpecDefault:
     judgeScore: Int = 2,
     programs: Int = 3,
     hostname: String = "host1",
+    completionTokens: Long = 0,
+    cachedTokens: Long = 0,
   ): BenchRecord =
     BenchRecord(
       schema = BenchRecord.CurrentSchema,
@@ -51,7 +53,7 @@ object BenchReportSpec extends ZIOSpecDefault:
         BenchPhase(
           "Extract",
           totalMs,
-          BenchTokens(prompt = tokens, completion = 0),
+          BenchTokens(prompt = tokens, completion = completionTokens, cached = cachedTokens),
           costUsd = Some(1.0),
           counters = BenchCounters(flakyRetries = 1),
         )
@@ -166,6 +168,22 @@ object BenchReportSpec extends ZIOSpecDefault:
         // 9s / 3 = 3s per program; × 500 = 1500s = 25m
         md.contains("25.0m"),
         md.contains("Linear extrapolation"),
+      )
+    },
+    test("token accounting: totals include cache reads, output tokens are crowned, cached reads never are") {
+      // Claude reports prompt NET of cache reads (prompt 45, cached 1M) while codex reports the full prompt —
+      // a prompt+completion "total" makes claude look 100× cheaper on tokens than it was. Totals must include
+      // cached; output tokens are the only cross-CLI-comparable figure, so they get their own crowned row.
+      val claudeish = rec("claude", "r1", 8_000, tokens = 45_000, completionTokens = 55_000, cachedTokens = 1_000_000)
+      val codexish  = rec("codex", "r2", 12_000, tokens = 1_300_000, completionTokens = 100_000)
+      val md        = BenchReport.render(List(claudeish, codexish))
+      val cachedRow = md.linesIterator.find(_.startsWith("| Cached reads")).getOrElse("")
+      assertTrue(
+        // 45k + 55k + 1M = 1.1M vs 1.3M + 100k = 1.4M — same order of magnitude, not 100× apart
+        md.contains("| Total tokens | **1.1M ✅** | 1.4M ⚠️ |"),
+        md.contains("| Output tokens | **55.0k ✅** | 100.0k ⚠️ |"),
+        cachedRow.contains("1.0M"),
+        !cachedRow.contains("✅"),
       )
     },
     test("boolean gaps render as counts and long durations as hours") {

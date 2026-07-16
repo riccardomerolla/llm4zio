@@ -88,36 +88,63 @@ object ClaudeCliConnectorSpec extends ZIOSpecDefault:
       val connector = ClaudeCliConnector.make(CliConnectorConfig(ConnectorId.ClaudeCli), new MockCliExec())
       assertTrue(connector.isInstanceOf[LlmService])
     },
-    test("executeStructured parses a JSON pick out of the shell stdout") {
-      val mock      = new MockCliExec(responses =
-        Map(
-          List("claude", "--print") ->
-            ProcessResult(List("""{"lane":"Frontend","rationale":"UI change"}"""), 0)
-        )
+    test("executeStructured parses a JSON pick out of the stream-json output") {
+      val lines = List(
+        """{"type":"system","subtype":"init","model":"claude-opus-4-8"}""",
+        """{"type":"assistant","message":{"content":[{"type":"text","text":"{\"lane\":\"Frontend\",\"rationale\":\"UI change\"}"}]}}""",
+        """{"type":"result","usage":{"input_tokens":120,"output_tokens":45}}""",
       )
-      val connector = ClaudeCliConnector.make(CliConnectorConfig(ConnectorId.ClaudeCli), mock)
-      for pick <- connector.executeStructured[TriagePick]("triage prompt", zio.json.ast.Json.Obj())
-      yield assertTrue(pick == TriagePick("Frontend", "UI change"))
+      for
+        seenArgv  <- Ref.make(List.empty[String])
+        seenStdin <- Ref.make("")
+        connector  = ClaudeCliConnector.make(
+                       CliConnectorConfig(ConnectorId.ClaudeCli),
+                       new StdinCapturingExec(seenArgv, seenStdin, lines),
+                     )
+        pick      <- connector.executeStructured[TriagePick]("triage prompt", zio.json.ast.Json.Obj())
+        argv      <- seenArgv.get
+      yield assertTrue(
+        pick == TriagePick("Frontend", "UI change"),
+        // Structured calls must ride the stream path — the non-streaming path reports no usage,
+        // which is how the reasoning seat's judge/planner calls billed 0 tokens in the ledger.
+        argv.containsSlice(List("--output-format", "stream-json")),
+      )
     },
-    test("executeStructured tolerates a fenced JSON block in the shell output") {
-      val mock      = new MockCliExec(responses =
-        Map(
-          List("claude", "--print") ->
-            ProcessResult(
-              List(
-                "Here is your triage:",
-                "```json",
-                """{"lane":"Backend","rationale":"server work"}""",
-                "```",
-                "Done.",
-              ),
-              0,
-            )
-        )
+    test("executeStructured tolerates a fenced JSON block in the streamed text") {
+      val lines = List(
+        """{"type":"assistant","message":{"content":[{"type":"text","text":"Here is your triage:\n```json\n{\"lane\":\"Backend\",\"rationale\":\"server work\"}\n```\nDone."}]}}""",
+        """{"type":"result","usage":{"input_tokens":10,"output_tokens":5}}""",
       )
-      val connector = ClaudeCliConnector.make(CliConnectorConfig(ConnectorId.ClaudeCli), mock)
-      for pick <- connector.executeStructured[TriagePick]("triage prompt", zio.json.ast.Json.Obj())
+      for
+        seenArgv  <- Ref.make(List.empty[String])
+        seenStdin <- Ref.make("")
+        connector  = ClaudeCliConnector.make(
+                       CliConnectorConfig(ConnectorId.ClaudeCli),
+                       new StdinCapturingExec(seenArgv, seenStdin, lines),
+                     )
+        pick      <- connector.executeStructured[TriagePick]("triage prompt", zio.json.ast.Json.Obj())
       yield assertTrue(pick == TriagePick("Backend", "server work"))
+    },
+    test("executeStructuredWithUsage carries the stream's token usage and served model") {
+      val lines = List(
+        """{"type":"system","subtype":"init","model":"claude-opus-4-8"}""",
+        """{"type":"assistant","message":{"content":[{"type":"text","text":"{\"lane\":\"Frontend\",\"rationale\":\"UI change\"}"}]}}""",
+        """{"type":"result","usage":{"input_tokens":120,"output_tokens":45,"cache_read_input_tokens":1000}}""",
+      )
+      for
+        seenArgv             <- Ref.make(List.empty[String])
+        seenStdin            <- Ref.make("")
+        connector             = ClaudeCliConnector.make(
+                                  CliConnectorConfig(ConnectorId.ClaudeCli),
+                                  new StdinCapturingExec(seenArgv, seenStdin, lines),
+                                )
+        (pick, usage, model) <-
+          connector.executeStructuredWithUsage[TriagePick]("triage prompt", zio.json.ast.Json.Obj())
+      yield assertTrue(
+        pick == TriagePick("Frontend", "UI change"),
+        usage.exists(u => u.prompt == 120 && u.completion == 45 && u.cached.contains(1000)),
+        model.contains("claude-opus-4-8"),
+      )
     },
     test("healthCheck returns Healthy when claude is installed") {
       val mock      = new MockCliExec(responses =

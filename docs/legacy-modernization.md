@@ -224,7 +224,16 @@ scala-cli run bench-report.sc -- bench-results.jsonl --project 500
 
 Model defaults: `gemini-2.5-pro` / `claude-opus-4-8` / `gpt-5.5`
 (`LLM4ZIO_BENCH_MODEL` overrides); `LLM4ZIO_BENCH_RUNS=N` loops runs;
-`LLM4ZIO_RUN_LABEL` correlates lines collected from different machines.
+`LLM4ZIO_RUN_LABEL` correlates lines collected from different machines;
+`LLM4ZIO_BENCH_PHASE_TIMEOUT` (minutes, default 60) bounds each phase's
+wall clock so a provider that can neither finish nor fail still yields a
+`failed-<phase>` row.
+
+Token accounting differs per CLI — claude reports prompt tokens net of cache
+reads, codex reports the full prompt and no cache figure — so the report's
+"Total tokens" includes cache reads, "Output tokens" is the one directly
+cross-CLI-comparable figure (crowned), and "Cached reads" is informational.
+Cost estimates price cache reads at 10% of the input rate.
 
 ## Azure DevOps
 

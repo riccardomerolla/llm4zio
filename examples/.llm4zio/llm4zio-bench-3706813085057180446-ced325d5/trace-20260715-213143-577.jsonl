@@ -1,0 +1,9 @@
+{"seq":0,"ts":"2026-07-15T19:31:43.590780Z","runId":"20260715-213143-577","kind":"StageStarted","fields":{"stage":"Repo"}}
+{"seq":1,"ts":"2026-07-15T19:31:43.645153Z","runId":"20260715-213143-577","kind":"StageCompleted","fields":{"stage":"Repo"}}
+{"seq":2,"ts":"2026-07-15T19:31:43.670970Z","runId":"20260715-213143-577","kind":"StageStarted","fields":{"stage":"Estate"}}
+{"seq":3,"ts":"2026-07-15T19:31:43.734273Z","runId":"20260715-213143-577","kind":"StageCompleted","fields":{"stage":"Estate"}}
+{"seq":4,"ts":"2026-07-15T19:31:43.738560Z","runId":"20260715-213143-577","kind":"StageStarted","fields":{"stage":"Extract"}}
+{"seq":5,"ts":"2026-07-15T19:31:43.742106Z","runId":"20260715-213143-577","kind":"Info","fields":{"message":"extracting cobol/ACCTXFR.cbl (1/3)"}}
+{"seq":6,"ts":"2026-07-15T19:31:51.254765Z","runId":"20260715-213143-577","kind":"TokensUsed","fields":{"model":"claude-opus-4-8","completion":"0","prompt":"0","agent":"coder","total":"0"}}
+{"seq":7,"ts":"2026-07-15T19:31:51.781872Z","runId":"20260715-213143-577","kind":"AssistantMessage","fields":{"text":"Failed to authenticate. API Error: 401 OAuth access token has expired. Re-authenticate to continue."}}
+{"seq":8,"ts":"2026-07-15T19:31:51.813355Z","runId":"20260715-213143-577","kind":"Info","fields":{"message":"extracting cobol/INTCALC.cbl (2/3)"}}

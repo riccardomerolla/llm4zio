@@ -128,10 +128,12 @@ object Bench:
   /** Bucket for tokens/notices observed outside any open stage. */
   val Unstaged: String = "(none)"
 
-  /** Fold one flow event into the observation. Tokens and robustness notices are attributed to the innermost open
-    * stage. The robustness counters key on the stable message prefixes the library and the modernize flows emit (`⟳
-    * flaky…` / `⟳ transient…` from TransientRetry, `↻ auto-resume` from AutoResume, `turn limit hit` and `shrinking to`
-    * from the flows) — if those ever feel fragile, promote them to structured events.
+  /** Fold one flow event into the observation. Tokens and robustness notices are attributed to the OUTERMOST open stage
+    * — the benchmark's phases are the top-level stages, and library loops open nested per-task stages
+    * (`implementTaskLoop` wraps each task in `stage(task.title)`) that would otherwise swallow a phase's tokens. The
+    * robustness counters key on the stable message prefixes the library and the modernize flows emit (`⟳ flaky…` / `⟳
+    * transient…` from TransientRetry, `↻ auto-resume` from AutoResume, `turn limit hit` and `shrinking to` from the
+    * flows) — if those ever feel fragile, promote them to structured events.
     */
   def observe(o: BenchObservation, event: FlowEvent): BenchObservation = event match
     case FlowEvent.StageStarted(s)             => o.copy(openStages = s :: o.openStages)
@@ -159,7 +161,7 @@ object Bench:
     else if message.contains("shrinking to") then Some(c => c.copy(shrinks = c.shrinks + 1))
     else None
 
-  private def currentStage(o: BenchObservation): String = o.openStages.headOption.getOrElse(Unstaged)
+  private def currentStage(o: BenchObservation): String = o.openStages.lastOption.getOrElse(Unstaged)
 
   private def dropFirst(stages: List[String], stage: String): List[String] = stages.indexOf(stage) match
     case -1 => stages
@@ -171,7 +173,10 @@ object Bench:
   def phase(o: BenchObservation, stage: String, ms: Long, detail: Map[String, String] = Map.empty): BenchPhase =
     val costs = o.cells.collect {
       case ((s, model), t) if s == stage =>
-        PriceList.costUsd(model, TokenUsage(t.prompt.toInt, t.completion.toInt, t.total.toInt))
+        PriceList.costUsd(
+          model,
+          TokenUsage(t.prompt.toInt, t.completion.toInt, t.total.toInt, Some(t.cached.toInt).filter(_ > 0)),
+        )
     }.flatten
     BenchPhase(
       name = stage,

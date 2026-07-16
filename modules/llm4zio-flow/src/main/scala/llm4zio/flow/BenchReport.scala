@@ -92,9 +92,19 @@ object BenchReport:
       scores.map(_.score).sum.toDouble / scores.map(_.max).sum.max(1) * 100
     )
 
+  // Token accounting differs per CLI: claude reports prompt NET of cache reads, codex reports the full prompt and no
+  // cache figure. The total must include cached to stay comparable; output tokens are the one figure every CLI
+  // reports the same way, so they carry their own crowned row; cache reads are informational.
+  private def allTokens(r: BenchRecord): Double    =
+    r.phases.map(p => p.tokens.prompt + p.tokens.completion + p.tokens.cached).sum.toDouble
+  private def outputTokens(r: BenchRecord): Double = r.phases.map(_.tokens.completion).sum.toDouble
+  private def cachedReads(r: BenchRecord): Double  = r.phases.map(_.tokens.cached).sum.toDouble
+
   private def headlineRows(judgesComparable: Boolean): List[Row] = List(
     Row("Total time", Direction.Lower, fmtMs, r => Some(r.totalMs.toDouble)),
-    Row("Total tokens", Direction.Lower, fmtTokens, r => Some(r.totalTokens.toDouble)),
+    Row("Total tokens", Direction.Lower, fmtTokens, r => Some(allTokens(r))),
+    Row("Output tokens", Direction.Lower, fmtTokens, r => Some(outputTokens(r))),
+    Row("Cached reads", Direction.Neutral, fmtTokens, r => Some(cachedReads(r))),
     Row("Est. cost (USD)", Direction.Neutral, fmtUsd, _.totalCostUsd),
     Row("Self-healing actions", Direction.Lower, fmtInt, r => Some(r.selfHealing.toDouble)),
     Row(
@@ -127,7 +137,7 @@ object BenchReport:
       r.phases.find(_.name == phase).flatMap(get)
     List(
       Row("Duration", Direction.Lower, fmtMs, of(_)(p => Some(p.ms.toDouble))),
-      Row("Tokens", Direction.Lower, fmtTokens, of(_)(p => Some(p.tokens.total.toDouble))),
+      Row("Tokens", Direction.Lower, fmtTokens, of(_)(p => Some((p.tokens.total + p.tokens.cached).toDouble))),
       Row("Est. cost (USD)", Direction.Neutral, fmtUsd, of(_)(_.costUsd)),
       Row("Self-healing actions", Direction.Lower, fmtInt, of(_)(p => Some(p.counters.selfHealing.toDouble))),
     )
@@ -246,7 +256,7 @@ object BenchReport:
       yield v / n
     def scaled(of: BenchRecord => Option[Double])(r: BenchRecord): Option[Double]     =
       perProgram(of)(r).map(_ * programs)
-    val totalTokens: BenchRecord => Option[Double]                                    = r => Some(r.totalTokens.toDouble)
+    val totalTokens: BenchRecord => Option[Double]                                    = r => Some(allTokens(r))
     val totalMs: BenchRecord => Option[Double]                                        = r => Some(r.totalMs.toDouble)
     val rows                                                                          = List(
       Row("Tokens / program", Direction.Neutral, fmtTokens, perProgram(totalTokens)),

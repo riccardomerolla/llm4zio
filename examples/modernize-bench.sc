@@ -1,4 +1,4 @@
-//> using dep "io.github.riccardomerolla::llm4zio-runner:3.18.0"
+//> using dep "io.github.riccardomerolla::llm4zio-runner:3.18.1"
 //> using scala "3.8.3"
 //> using jvm 21
 
@@ -24,6 +24,7 @@
   *   defaults: gemini-2.5-pro / claude-opus-4-8 / gpt-5.5 — override with LLM4ZIO_BENCH_MODEL.
   *   LLM4ZIO_BENCH_JUDGE=provider[:model]   fixed examiner (e.g. gemini:gemini-2.5-pro)
   *   LLM4ZIO_BENCH_RUNS=N                   runs per invocation (default 1)
+  *   LLM4ZIO_BENCH_PHASE_TIMEOUT=minutes    wall-clock bound per phase (default 60)
   *   LLM4ZIO_BENCH_FIXTURE=<dir>            estate to convert (default fixtures/legacy-bank)
   *   LLM4ZIO_PACK=<dir>                     modernization pack (default packs/cobol-springboot)
   *   LLM4ZIO_RUN_LABEL=<key>                correlates runs across machines/providers
@@ -39,17 +40,24 @@ import scala.jdk.CollectionConverters.*
 
 import zio.json.*
 import zio.process.Command
-import zio.{ Clock, IO, Ref, UIO, ZIO }
+import zio.{ Clock, Duration, IO, Ref, UIO, ZIO }
 
 import llm4zio.core.{ CliConnectorConfig, LlmError }
 import llm4zio.eval.*
 import llm4zio.flow.*
 import llm4zio.runner.*
 
-val Llm4zioVersion = "3.18.0"
+val Llm4zioVersion = "3.18.1"
 val MaxGateRounds  = 3
 val ImplFixRounds  = 2
 val AnalystTurns   = 48
+val ReasonerTurns  = 16 // gemini judge/planner seat: a wedged plan-mode session gets cut, not ground
+
+/** Wall-clock bound per phase (minutes): a provider that can neither finish nor fail — endless flaky
+  * retries, "my job is done" text loops — records `failed-<phase>` instead of hanging the benchmark.
+  */
+val PhaseTimeout: Duration =
+  Duration.fromSeconds(sys.env.get("LLM4ZIO_BENCH_PHASE_TIMEOUT").flatMap(_.toLongOption).getOrElse(60L) * 60)
 
 // ── seats ─────────────────────────────────────────────────────────────────────────────────────
 
@@ -74,7 +82,8 @@ def cfgFor(provider: String, model: Option[String]): CliConnectorConfig =
 
 val CoderModel: Option[String] = sys.env.get("LLM4ZIO_BENCH_MODEL").filter(_.nonEmpty).orElse(defaultModel(Provider))
 val coderCfg                   = cfgFor(Provider, CoderModel)
-val reasoningCfg               = coderCfg.copy(readOnly = true, turnLimit = None)
+val reasoningCfg               =
+  coderCfg.copy(readOnly = true, turnLimit = if Provider == "gemini" then Some(ReasonerTurns) else None)
 
 /** LLM4ZIO_BENCH_JUDGE=provider[:model] — the fixed examiner; absent = self-graded final scores. */
 val FixedJudge: Option[(String, String)] =
@@ -477,7 +486,10 @@ flow(
     eff: IO[FlowError, Map[String, String]]
   ): UIO[Unit] =
     ZIO.unlessZIO(failed.get.map(_.isDefined)) {
-      stage(name)(eff).either.timed.flatMap { (elapsed, res) =>
+      val bounded = eff.timeoutFail(
+        FlowError.Aborted(s"phase timed out after ${PhaseTimeout.toMinutes}m (LLM4ZIO_BENCH_PHASE_TIMEOUT)")
+      )(PhaseTimeout)
+      stage(name)(bounded).either.timed.flatMap { (elapsed, res) =>
         val detail = res.toOption.getOrElse(Map.empty) ++ res.left.toOption.map(e => "error" -> e.message.take(300))
         for
           o <- tap.get // drains in-flight events, so the phase's trailing tokens are counted
@@ -593,6 +605,9 @@ flow(
                plan  <- PlanStore.load(planFile).someOrFail(FlowError.Aborted(s"no plan at $planFile"))
                _     <- implementTaskLoop(planFile, plan)(implementTask(plan))
                after <- PlanStore.load(planFile)
+               // Task completion is persisted into the SEEDED plan (the loop's source of truth); sync it back to
+               // the draft under docs/modernization so both copies agree when a human inspects the run dir.
+               _     <- copyFile(planFile, modDir.resolve("plan.md"))
              yield Map("tasks" -> plan.tasks.size.toString, "completed" -> after.fold("0")(_.tasks.count(_.completed).toString))
            }
       _ <- benchPhase("Verify", tap, phasesRef, failedRef) {

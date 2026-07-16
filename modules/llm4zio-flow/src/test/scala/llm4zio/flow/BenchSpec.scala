@@ -59,13 +59,17 @@ object BenchSpec extends ZIOSpecDefault:
       val json = record.toJson
       assertTrue(json.fromJson[BenchRecord] == Right(record))
     },
-    test("observe attributes tokens to the innermost open stage and collects served models") {
+    test(
+      "observe attributes tokens to the OUTERMOST open stage — nested task stages must not swallow a phase's tokens"
+    ) {
+      // Regression: implementTaskLoop wraps each task in stage(task.title); with innermost attribution the whole
+      // Implement phase recorded 0 tokens because everything was keyed under task titles the record never reads.
       val events = List(
         FlowEvent.StageStarted("Extract"),
         FlowEvent.TokensUsed("coder", Some("gemini-2.5-pro"), usage(1000, 200, Some(50))),
-        FlowEvent.StageStarted("Inner"),
+        FlowEvent.StageStarted("Inner task"),
         FlowEvent.TokensUsed("coder", Some("gemini-2.5-pro"), usage(10, 5)),
-        FlowEvent.StageCompleted("Inner"),
+        FlowEvent.StageCompleted("Inner task"),
         FlowEvent.TokensUsed("reasoning", None, usage(100, 30)),
         FlowEvent.StageCompleted("Extract"),
         FlowEvent.TokensUsed("coder", Some("gemini-2.5-flash"), usage(7, 3)),
@@ -73,8 +77,8 @@ object BenchSpec extends ZIOSpecDefault:
       val obs    = events.foldLeft(BenchObservation())(Bench.observe)
       assertTrue(
         obs.openStages.isEmpty,
-        obs.stageTokens("Extract") == BenchTokens(1100, 230, 50),
-        obs.stageTokens("Inner") == BenchTokens(10, 5, 0),
+        obs.stageTokens("Extract") == BenchTokens(1110, 235, 50),
+        obs.stageTokens("Inner task") == BenchTokens(0, 0, 0),
         obs.stageTokens(Bench.Unstaged) == BenchTokens(7, 3, 0),
         obs.modelsServed == Set("gemini-2.5-pro", "gemini-2.5-flash"),
       )

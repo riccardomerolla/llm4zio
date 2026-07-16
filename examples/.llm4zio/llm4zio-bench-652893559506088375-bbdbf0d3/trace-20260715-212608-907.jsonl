@@ -1,0 +1,25 @@
+{"seq":0,"ts":"2026-07-15T19:26:08.920950Z","runId":"20260715-212608-907","kind":"StageStarted","fields":{"stage":"Repo"}}
+{"seq":1,"ts":"2026-07-15T19:26:08.974177Z","runId":"20260715-212608-907","kind":"StageCompleted","fields":{"stage":"Repo"}}
+{"seq":2,"ts":"2026-07-15T19:26:08.998775Z","runId":"20260715-212608-907","kind":"StageStarted","fields":{"stage":"Estate"}}
+{"seq":3,"ts":"2026-07-15T19:26:09.061899Z","runId":"20260715-212608-907","kind":"StageCompleted","fields":{"stage":"Estate"}}
+{"seq":4,"ts":"2026-07-15T19:26:09.065816Z","runId":"20260715-212608-907","kind":"StageStarted","fields":{"stage":"Extract"}}
+{"seq":5,"ts":"2026-07-15T19:26:09.070061Z","runId":"20260715-212608-907","kind":"Info","fields":{"message":"extracting cobol/ACCTXFR.cbl (1/3)"}}
+{"seq":6,"ts":"2026-07-15T19:26:18.338743Z","runId":"20260715-212608-907","kind":"TokensUsed","fields":{"model":"claude-opus-4-8","completion":"0","prompt":"0","agent":"coder","total":"0"}}
+{"seq":7,"ts":"2026-07-15T19:26:18.861439Z","runId":"20260715-212608-907","kind":"AssistantMessage","fields":{"text":"Failed to authenticate. API Error: 401 Invalid authentication credentials"}}
+{"seq":8,"ts":"2026-07-15T19:26:18.894251Z","runId":"20260715-212608-907","kind":"Info","fields":{"message":"extracting cobol/INTCALC.cbl (2/3)"}}
+{"seq":9,"ts":"2026-07-15T19:26:25.637020Z","runId":"20260715-212608-907","kind":"TokensUsed","fields":{"model":"claude-opus-4-8","completion":"0","prompt":"0","agent":"coder","total":"0"}}
+{"seq":10,"ts":"2026-07-15T19:26:26.159312Z","runId":"20260715-212608-907","kind":"AssistantMessage","fields":{"text":"Failed to authenticate. API Error: 401 Invalid authentication credentials"}}
+{"seq":11,"ts":"2026-07-15T19:26:26.188486Z","runId":"20260715-212608-907","kind":"Info","fields":{"message":"extracting jcl/XFERDLY.jcl (3/3)"}}
+{"seq":12,"ts":"2026-07-15T19:26:31.732831Z","runId":"20260715-212608-907","kind":"TokensUsed","fields":{"model":"claude-opus-4-8","completion":"0","prompt":"0","agent":"coder","total":"0"}}
+{"seq":13,"ts":"2026-07-15T19:26:32.261336Z","runId":"20260715-212608-907","kind":"AssistantMessage","fields":{"text":"Failed to authenticate. API Error: 401 Invalid authentication credentials"}}
+{"seq":14,"ts":"2026-07-15T19:26:32.293568Z","runId":"20260715-212608-907","kind":"StageCompleted","fields":{"stage":"Extract"}}
+{"seq":15,"ts":"2026-07-15T19:26:32.295791Z","runId":"20260715-212608-907","kind":"StageStarted","fields":{"stage":"Gate"}}
+{"seq":16,"ts":"2026-07-15T19:26:32.309607Z","runId":"20260715-212608-907","kind":"Info","fields":{"message":"judging ACCTXFR"}}
+{"seq":17,"ts":"2026-07-15T19:26:37.960526Z","runId":"20260715-212608-907","kind":"Info","fields":{"message":"⟳ transient error (structured) — retry 1/3: claude exited with code 1: Failed to authenticate. API Error: 401 OAuth access token has expired. Re-authenticate to continue."}}
+{"seq":18,"ts":"2026-07-15T19:26:47.072535Z","runId":"20260715-212608-907","kind":"Info","fields":{"message":"⟳ transient error (structured) — retry 2/3: claude exited with code 1: Failed to authenticate. API Error: 401 Invalid authentication credentials"}}
+{"seq":19,"ts":"2026-07-15T19:26:56.095587Z","runId":"20260715-212608-907","kind":"Info","fields":{"message":"⟳ transient error (structured) — retry 3/3: claude exited with code 1: Failed to authenticate. API Error: 401 OAuth access token has expired. Re-authenticate to continue."}}
+{"seq":20,"ts":"2026-07-15T19:27:06.900977Z","runId":"20260715-212608-907","kind":"StageFailed","fields":{"stage":"Gate","message":"claude exited with code 1: Failed to authenticate. API Error: 401 OAuth access token has expired. Re-authenticate to continue."}}
+{"seq":21,"ts":"2026-07-15T19:27:06.901610Z","runId":"20260715-212608-907","kind":"Info","fields":{"message":"phase Gate failed — skipping to Record: claude exited with code 1: Failed to authenticate. API Error: 401 OAuth access token has expired. Re-authenticate to continue."}}
+{"seq":22,"ts":"2026-07-15T19:27:06.904700Z","runId":"20260715-212608-907","kind":"StageStarted","fields":{"stage":"Record"}}
+{"seq":23,"ts":"2026-07-15T19:27:06.992661Z","runId":"20260715-212608-907","kind":"Info","fields":{"message":"bench record appended to /Users/riccardo/git/github/riccardomerolla/llm4zio/examples/bench-results.jsonl (failed-Gate)"}}
+{"seq":24,"ts":"2026-07-15T19:27:06.992946Z","runId":"20260715-212608-907","kind":"StageCompleted","fields":{"stage":"Record"}}

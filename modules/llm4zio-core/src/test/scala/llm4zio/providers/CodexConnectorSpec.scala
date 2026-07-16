@@ -176,6 +176,34 @@ object CodexConnectorSpec extends ZIOSpecDefault:
         chunks.exists(_.usage.exists(_.prompt == 900)),
       )
     },
+    test("usage chunks are stamped with the configured model (codex's stream never reports one)") {
+      // Without this, cost cells key on model "" (unpriceable) and the bench record's modelsServed is empty.
+      val line = """{"type":"turn.completed","usage":{"input_tokens":900,"output_tokens":30}}"""
+      for
+        seenArgv  <- Ref.make(List.empty[String])
+        seenStdin <- Ref.make("")
+        conn       = CodexConnector.make(
+                       CliConnectorConfig(ConnectorId.Codex, model = Some("gpt-5.5")),
+                       new RecordingExec(seenArgv, seenStdin, line),
+                     )
+        chunks    <- conn.completeStream("go").runCollect
+      yield assertTrue(
+        chunks.exists(c => c.usage.isDefined && c.metadata.get("model").contains("gpt-5.5"))
+      )
+    },
+    test("executeStructuredWithUsage returns the configured model alongside usage") {
+      val line =
+        """{"type":"item.completed","item":{"type":"agent_message","text":"{\"summary\":\"x\"}"}}"""
+      for
+        seenArgv  <- Ref.make(List.empty[String])
+        seenStdin <- Ref.make("")
+        conn       = CodexConnector.make(
+                       CliConnectorConfig(ConnectorId.Codex, model = Some("gpt-5.5")),
+                       new RecordingExec(seenArgv, seenStdin, line),
+                     )
+        result    <- conn.executeStructuredWithUsage[ReplyStub]("go", SchemaDerivation.derive[ReplyStub])
+      yield assertTrue(result._1 == ReplyStub("x"), result._3.contains("gpt-5.5"))
+    },
     test("completeStream passes prompt via stdin, NOT in argv") {
       for
         seenArgv  <- Ref.make(List.empty[String])

@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.18.1] - 2026-07-16
+
+First real benchmark iteration (claude vs codex vs a non-terminating gemini) exposed
+four measurement defects and two robustness gaps.
+
+### Fixed
+
+- **The Implement phase billed 0 tokens for every provider.** `implementTaskLoop` wraps
+  each task in its own stage, and the bench tap attributed tokens to the *innermost*
+  open stage — 2+ hours of implementation tokens were keyed under task titles the record
+  never reads. Attribution is now to the **outermost** open stage.
+- **Claude's judge/planner/scorer calls billed 0 tokens.** `ClaudeCliConnector` never
+  overrode `executeStructuredWithUsage`, so structured calls took the non-streaming path
+  that reports no usage. They now ride the stream (usage + served model captured), like
+  gemini and codex.
+- **Codex cost was unpriceable and `modelsServed` came back empty.** Codex's JSONL
+  stream never names its model, so cost cells keyed on `""`. Usage chunks are now
+  stamped with the configured model (`codex exec -m X` runs X or fails — no silent
+  routing), and `PriceList` gains the OpenAI codex rate (`gpt-5.5`: $5/M in, $30/M out).
+- **Token totals were apples-to-oranges across CLIs.** Claude reports prompt tokens net
+  of cache reads; codex reports the full prompt (a +10,000% artifact in the first
+  report). The report's "Total tokens" now includes cache reads, plus two new rows:
+  **Output tokens** (the one cross-CLI-comparable figure — crowned) and **Cached reads**
+  (informational). `PriceList` prices cache reads at 10% of the input rate.
+
+### Added
+
+- **`LLM4ZIO_BENCH_PHASE_TIMEOUT` (minutes, default 60).** A provider that can neither
+  finish nor fail — endless flaky retries, "my job is done" text loops (gemini's Gate) —
+  now records `failed-<phase>` and still writes its benchmark row instead of hanging.
+- The bench's gemini reasoning seat (judge/planner) runs under a turn cap, so a wedged
+  plan-mode session gets cut with a typed error instead of grinding.
+- The completed plan is synced back from the seeded copy to `docs/modernization/plan.md`
+  after Implement, so both copies agree when inspecting a run dir.
+
 ## [3.18.0] - 2026-07-16
 
 ### Added
