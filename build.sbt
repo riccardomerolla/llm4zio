@@ -171,6 +171,8 @@ lazy val llm4zioJava = (project in file("modules/llm4zio-java"))
 // the operator surface. See .claude/plans/bank-modernization-master-plan.md.
 lazy val llm4zioModernize = (project in file("modules/llm4zio-modernize"))
   .dependsOn(llm4zioRunner, llm4zioFlow, llm4zioCore)
+  .configs(It)
+  .settings(inConfig(It)(Defaults.testSettings)*)
   .settings(
     name                 := "llm4zio-modernize",
     description          := "The llm4zio legacy-modernization pipeline as a runnable product",

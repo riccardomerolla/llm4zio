@@ -27,6 +27,8 @@ jobs:
         run: |
           mkdir -p _site_src
           cp -R docs/* _site_src/
+          # internal working notes; code fences in them break Jekyll's Liquid pass
+          rm -rf _site_src/superpowers _site_src/findings _site_src/deep-dive
           [ -f examples/benchmark.md ] && cp examples/benchmark.md _site_src/benchmark.md || true
           [ -f _site_src/index.md ] || cp _site_src/legacy-modernization.md _site_src/index.md
       - uses: actions/jekyll-build-pages@v1
