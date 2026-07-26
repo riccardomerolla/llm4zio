@@ -37,6 +37,7 @@ import java.nio.file.{ Files, Path }
 
 import scala.jdk.CollectionConverters.*
 
+import zio.json.*
 import zio.{ IO, ZIO }
 
 import llm4zio.flow.*
@@ -151,6 +152,10 @@ flow(
                                    .matchingFiles(specPack.resolve("gate"), """.*\.json""")
                                    .orElseSucceed(Nil) // pre-3.13 spec packs have no gate/ directory
                     verdicts  <- Provenance.hashFiles(specPack.resolve("gate"), gateFiles)
+                    seats     <- ZIO
+                                   .attemptBlocking(Files.readString(specPack.resolve("seats.json")))
+                                   .map(_.fromJson[Map[String, String]].getOrElse(Map.empty))
+                                   .orElseSucceed(Map.empty) // pre-3.23 spec packs have no seats sidecar
                     now       <- zio.Clock.instant
                     _         <- Provenance.write(
                                    workDir.resolve(ModDir).resolve("provenance.json"),
@@ -160,7 +165,7 @@ flow(
                                      llm4zioVersion = Llm4zioVersion,
                                      createdAt = now.toString,
                                      approvedBy = sys.env.get("LLM4ZIO_APPROVER"),
-                                     seats = Map.empty, // extract-side seat recording is a Wave 1 follow-up
+                                     seats = seats,
                                      specs = hashes,
                                      gateVerdicts = verdicts.map((f, h) => f.stripSuffix(".json") -> h),
                                      equivalenceReport = None,

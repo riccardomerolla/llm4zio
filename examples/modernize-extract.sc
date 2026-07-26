@@ -73,16 +73,25 @@ val MaxRounds    = 3
 val ModDir       = "docs/modernization"
 val AnalystTurns = 48               // per-program turn budget — bounds a wedged agent, generous for real work
 
+val CoderKind = sys.env.get("LLM4ZIO_CODER").map(_.trim.toLowerCase).filter(_.nonEmpty).getOrElse("gemini")
+
 val (coderCfg, reasoningCfg) =
-  sys.env.get("LLM4ZIO_CODER").map(_.trim.toLowerCase).filter(_.nonEmpty) match
-    case None | Some("gemini") =>
+  CoderKind match
+    case "gemini" =>
       (
         gemini.withModel(ProModel).withTurnLimit(AnalystTurns),
         gemini.withModel(ProModel).copy(readOnly = true),
       )
-    case Some(_)               =>
+    case _        =>
       val agent = Connectors.coderFromEnv()
       (agent, agent.copy(readOnly = true))
+
+/** The seats this extraction ran on, recorded as a sidecar (`seats.json`) so seed can carry them into
+  * provenance.json — the models that produced the specs are part of the evidence chain.
+  */
+val seatNames: Map[String, String] =
+  val analyst = if CoderKind == "gemini" then s"gemini:$ProModel" else CoderKind
+  Map("analyst" -> analyst, "reasoning" -> analyst, "judge" -> analyst)
 
 def fileExists(path: Path): UIO[Boolean] =
   ZIO.attemptBlocking(Files.exists(path)).orDie
@@ -417,6 +426,10 @@ flow(
     // not cost it. The Gate/Commit stages amend the picture with the verdict afterwards.
     _        <- stage("Draft")(
                   rebuildIndexes(modDir) *> writeRules(pack, workDir, modDir) *>
+                    writeFile(
+                      modDir.resolve("seats.json"),
+                      seatNames.toList.sorted.map((k, v) => s"  \"$k\": \"$v\"").mkString("{\n", ",\n", "\n}\n"),
+                    ) *>
                     git.commitAll(s"modernize(${pack.name}): spec pack draft (ungated)").unit
                 )
     result   <- stage("Gate")(fixLoop(gateEvaluate(pack, judge, programs), fixOnce(pack, system, programs), MaxRounds))
