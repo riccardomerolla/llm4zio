@@ -1,4 +1,4 @@
-//> using dep "io.github.riccardomerolla::llm4zio-runner:3.25.0"
+//> using dep "io.github.riccardomerolla::llm4zio-runner:3.26.0"
 //> using scala "3.8.3"
 //> using jvm 21
 
@@ -144,6 +144,16 @@ def capText(text: String, limit: Int): String =
   else
     val head = limit * 3 / 4
     s"${text.take(head)}\n\n… [truncated] …\n\n${text.takeRight(limit - head)}"
+
+/** The `- PROG` entries of `## Wave: <name>` in the survey's wave plan. */
+def wavePrograms(planText: String, wave: String): List[String] =
+  val lines = planText.linesIterator.toList
+  lines
+    .dropWhile(_.trim != s"## Wave: $wave")
+    .drop(1)
+    .takeWhile(l => !l.trim.startsWith("## "))
+    .map(_.trim)
+    .collect { case l if l.startsWith("- ") => l.drop(2).trim }
 
 /** `cobol/ACCTXFR.cbl` → `ACCTXFR`: the program name that keys every per-program artifact. */
 def programName(rel: String): String =
@@ -437,9 +447,23 @@ flow(
                   pack.lessons.map(l => s"Lessons from previous modernization runs — apply them:\n$l"),
                 ).flatten.mkString("\n\n")
     judge     = Judge.of(reasoning, pack.judgeDimensions)
-    programs <- stage("Inventory")(
+    all      <- stage("Inventory")(
                   SpecChecks.matchingFiles(workDir, pack.programs.orElse(pack.sources).getOrElse(""".*"""))
                 )
+    programs <- sys.env.get("LLM4ZIO_WAVE").map(_.trim).filter(_.nonEmpty) match
+                  case None       => ZIO.succeed(all)
+                  case Some(wave) => // survey's wave plan scopes this run — and must be human-approved first
+                    for
+                      _     <- stage("Wave")(
+                                 ApprovalGate.gate(modDir.resolve("wave-plan.md"), Interaction.noninteractive)
+                               )
+                      text  <- readFileOr(modDir.resolve("wave-plan.md"), "")
+                      names  = wavePrograms(text, wave).toSet
+                      scoped = all.filter(rel => names.contains(programName(rel)))
+                      _     <- ZIO.when(scoped.isEmpty)(
+                                 fail(s"wave '$wave' matches no programs in $ModDir/wave-plan.md")
+                               )
+                    yield scoped
     _        <- ZIO.when(programs.isEmpty)(
                   fail(s"no source units matched the pack's programs/sources regex under $workDir")
                 )

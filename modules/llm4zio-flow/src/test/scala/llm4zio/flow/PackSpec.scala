@@ -264,6 +264,35 @@ object PackSpec extends ZIOSpecDefault:
         yield assertTrue(pack.equivalence == ComparisonPolicy(Equiv.Ordering.PerKey, Set.empty))
       }
     },
+    test("load parses Survey sections — the dependency-edge regexes the survey flow scans with") {
+      val manifest =
+        s"""$minimalManifest
+           |## Survey: calls
+           |
+           |files: .*\\.cbl
+           |unit: CALL '([A-Z0-9]+)'
+           |
+           |## Survey: exec-pgm
+           |
+           |files: .*\\.jcl
+           |unit: EXEC PGM=([A-Z0-9]+)
+           |""".stripMargin
+      ZIO.scoped {
+        for
+          dir      <- tempDir
+          _        <- write(dir, "pack.md", manifest)
+          pack     <- Pack.load(dir)
+          _        <- write(dir, "pack.md", minimalManifest)
+          defaults <- Pack.load(dir)
+        yield assertTrue(
+          pack.survey == List(
+            CoverageRule("calls", """.*\.cbl""", """CALL '([A-Z0-9]+)'"""),
+            CoverageRule("exec-pgm", """.*\.jcl""", """EXEC PGM=([A-Z0-9]+)"""),
+          ),
+          defaults.survey.isEmpty,
+        )
+      }
+    },
     test("load fails typed on a missing manifest and on a malformed one") {
       ZIO.scoped {
         for

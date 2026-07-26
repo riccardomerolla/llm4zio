@@ -1,4 +1,4 @@
-//> using dep "io.github.riccardomerolla::llm4zio-runner:3.25.0"
+//> using dep "io.github.riccardomerolla::llm4zio-runner:3.26.0"
 //> using scala "3.8.3"
 //> using jvm 21
 
@@ -44,7 +44,7 @@ import llm4zio.flow.*
 import llm4zio.runner.*
 
 val ModDir         = "docs/modernization"
-val Llm4zioVersion = "3.25.0" // keep in step with the `using dep` header pin
+val Llm4zioVersion = "3.26.0" // keep in step with the `using dep` header pin
 
 def writeFile(path: Path, content: String): IO[FlowError, Unit] =
   ZIO

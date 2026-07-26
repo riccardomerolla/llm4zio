@@ -1,21 +1,39 @@
 # Legacy modernization flows
 
-Five pack-parameterized flows that take a legacy estate (mainframe COBOL/JCL + DB2,
+Six pack-parameterized flows that take a legacy estate (mainframe COBOL/JCL + DB2,
 old J2EE/JSP, IBM ACE message flows) to a modern target (Spring Boot on a PaaS,
-Next.js SPA) through judged reverse-engineering, a human approval gate, gated
-implementation behind an **enforced clean-room wall**, a per-rule **equivalence
-proof**, and a review that feeds lessons back into future runs.
+Kafka Streams, Next.js SPA) through a deterministic estate survey, judged
+reverse-engineering, a human approval gate, gated implementation behind an
+**enforced clean-room wall**, a per-rule **equivalence proof**, and a review that
+feeds lessons back into future runs. Running a pilot on your own estate? Start
+with the [pilot playbook](pilot-playbook.md).
 
 ```
-modernize-extract.sc ──▶ (human approves) ──▶ modernize-seed.sc ──▶ modernize-implement.sc
-     legacy repo                                  target repo            target repo
-                                                                              │
-                              ┌── fix specs + plan ◀── modernize-verify.sc ◀──┘
-                              ▼                            target repo
-                     modernize-implement.sc ──▶ … ──▶ modernize-review.sc
-                                                          target repo
-                                                     lessons → the pack
+modernize-survey.sc ──▶ (human approves waves) ──▶ modernize-extract.sc ──▶ (human approves)
+     legacy repo                                        legacy repo
+        ──▶ modernize-seed.sc ──▶ modernize-implement.sc
+                target repo            target repo
+                                            │
+            ┌── fix specs + plan ◀── modernize-verify.sc ◀──┘
+            ▼                            target repo
+   modernize-implement.sc ──▶ … ──▶ modernize-review.sc
+                                        target repo
+                                   lessons → the pack
 ```
+
+## Phase 0 — survey (rooted at the legacy repo)
+
+`modernize-survey.sc` answers "what do we have, what depends on what, in what
+order" — deterministic-first (`flow.Survey`): one inventory node per source file
+(size = lines + coverage units), one dependency edge per `## Survey:` regex match
+(`CALL`, `COPY`, `EXEC PGM=`) → `inventory.md` + `graph.json`, committed and
+auditable at any estate size. The LLM enters only for what regexes cannot decide:
+classifying each unit **rewrite / retire / wrap** (wrap = keep + front with an
+API; building wraps is out of scope), resolving dynamic `CALL` variables, and
+proposing dependency-coherent **waves**. The wave plan lands with an unchecked
+approval marker — and when `bench-results.jsonl` exists from `modernize-bench.sc`
+runs, it carries a per-wave **cost projection from measured runs**. After
+approval, `LLM4ZIO_WAVE=wave-1` scopes extraction to that wave's programs.
 
 The clean-room split is enforced, not just practiced: only extract and its gate ever
 touch legacy source; implement/verify/review refuse to start if anything matching the
