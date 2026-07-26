@@ -162,6 +162,29 @@ with a deterministic diff, behind the wall (no legacy source in reach):
   (rerun `modernize-implement.sc`), then the flow **halts non-green** so a pipeline
   can gate on it.
 
+### Captured vectors from the real COBOL (the golden adapter)
+
+For the synthetic estate the captured tier is not hypothetical:
+`tools/cobol-capture.sc` executes the actual 1988 `ACCTXFR` batch under
+GnuCOBOL (`brew install gnucobol`) — each `EXEC SQL` block rewritten into a
+call to the `DBSHIM.cbl` stand-ins, zoned-decimal overpunch and record-format
+mainframe idioms preserved — and records what the program really does as
+captured-tier vectors:
+
+```bash
+cd examples
+scala-cli run tools/cobol-capture.sc -- \
+  --cobol fixtures/legacy-bank/cobol \
+  --probes fixtures/legacy-bank/probes/ACCTXFR.probes.jsonl \
+  --out <target>/docs/modernization/vectors/ACCTXFR.captured.jsonl
+```
+
+The shipped probe set covers the fee schedule, the same-customer waiver, the
+overdraft floor, the daily limit, and the reject paths. For a real estate the
+same JSONL contract is the hand-off point: the bank's own capture tooling
+(recorded mainframe runs) writes the vectors; llm4zio never needs mainframe
+access.
+
 ### The sabotage demo
 
 The 30-second trust argument, after a green run: break a rule in the generated Java
