@@ -67,7 +67,7 @@ object ModernizationPipelineSpec extends ZIOSpecDefault:
         pack.name == "cobol-springboot",
         pack.gate("test").contains(List("mvn", "-q", "-B", "test")),
         pack.judgeDimensions.map(_.name) == List("completeness", "faithfulness", "testability"),
-        pack.lenses.map(_.name).sorted == List("cobol-fidelity", "traceability"),
+        pack.lenses.map(_.name).sorted == List("cobol-fidelity", "pattern-conformance", "traceability"),
         pack.lessons.exists(_.contains("BigDecimal")),
         pack.scaffold.exists(rel => Files.exists(packDir().resolve(rel).normalize.resolve("pom.xml"))),
         units("cobol-paragraph").size == 25, // 21 in ACCTXFR + 8 in INTCALC, 4 names shared between the two
