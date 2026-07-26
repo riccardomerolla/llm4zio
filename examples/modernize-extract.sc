@@ -1,4 +1,4 @@
-//> using dep "io.github.riccardomerolla::llm4zio-runner:3.26.0"
+//> using dep "io.github.riccardomerolla::llm4zio-runner:4.0.0"
 //> using scala "3.8.3"
 //> using jvm 21
 
@@ -222,7 +222,7 @@ def tagPatterns(source: Path, fragment: Path, cards: List[PatternCard]): IO[Flow
       val matched = Patterns.matching(Files.readString(source), cards)
       if matched.nonEmpty then
         Option(fragment.getParent).foreach(Files.createDirectories(_))
-        Files.write(
+        val _ = Files.write(
           fragment,
           s"\nPatterns: ${matched.map(_.id).mkString(", ")}\n".getBytes(java.nio.charset.StandardCharsets.UTF_8),
           java.nio.file.StandardOpenOption.CREATE,

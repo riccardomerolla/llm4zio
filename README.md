@@ -21,6 +21,18 @@ Start at [docs/legacy-modernization.md](docs/legacy-modernization.md), or run th
 examples/seed.sh modernize
 ```
 
+For bank platform teams the pipeline also ships as a **product** — no Scala to
+edit: the `llm4zio-modernize` artifact carries all six phases behind one
+subcommand main (`survey|extract|seed|implement|verify|review`), configured by
+your pack + env/`modernize.conf`:
+
+```bash
+cs launch io.github.riccardomerolla:llm4zio-modernize_3:4.0.0 -- survey -- --repo ~/estates/your-legacy
+```
+
+or, air-gapped/CI, the OCI image `ghcr.io/riccardomerolla/llm4zio-modernize`.
+The operator's guide is [docs/pilot-playbook.md](docs/pilot-playbook.md).
+
 Under it sits the general-purpose library: llm4zio lets you programmatically
 define software-development workflows where AI agents do the coding. If you want
 AI-generated code to always be reviewed by another agent, don't coerce the

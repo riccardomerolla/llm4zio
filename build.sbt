@@ -163,8 +163,26 @@ lazy val llm4zioJava = (project in file("modules/llm4zio-java"))
     quietDocLinks,
   )
 
+// ── llm4zio-modernize ─────────────────────────────────────────────────────────
+// The modernization pipeline as a product: the six flows (survey → extract →
+// seed → implement → verify → review) behind one subcommand main, so a bank
+// platform team runs the pipeline without editing Scala (`cs launch` / OCI).
+// The .sc examples remain the authoring/customization surface; this module is
+// the operator surface. See .claude/plans/bank-modernization-master-plan.md.
+lazy val llm4zioModernize = (project in file("modules/llm4zio-modernize"))
+  .dependsOn(llm4zioRunner, llm4zioFlow, llm4zioCore)
+  .settings(
+    name                 := "llm4zio-modernize",
+    description          := "The llm4zio legacy-modernization pipeline as a runnable product",
+    Compile / mainClass  := Some("llm4zio.modernize.Main"),
+    libraryDependencySchemes += "dev.zio" %% "zio-json" % VersionScheme.Always,
+    libraryDependencies ++= zioCoreDeps ++ Seq(zioJsonDep, zioHttpDep, fansiDep) ++ zioLoggingDeps ++ zioTestDeps,
+    testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
+    quietDocLinks,
+  )
+
 lazy val root = (project in file("."))
-  .aggregate(llm4zioCore, llm4zioFlow, llm4zioRunner, llm4zioJava)
+  .aggregate(llm4zioCore, llm4zioFlow, llm4zioRunner, llm4zioJava, llm4zioModernize)
   .settings(
     name           := "llm4zio",
     publish / skip := true,

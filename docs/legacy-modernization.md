@@ -276,6 +276,31 @@ ways out:
 - Point the seats at a model with remaining quota (e.g. swap the `ProModel` val
   to `gemini-2.5-flash`) and rerun.
 
+## The operator surface: llm4zio-modernize
+
+The six flows also ship as a published module with a subcommand main —
+`llm4zio-modernize survey|extract|seed|implement|verify|review` — so an
+operator runs the pipeline without editing Scala: `cs launch
+io.github.riccardomerolla:llm4zio-modernize_3:<version> -- <phase> -- --repo
+<dir>`, or the `ghcr.io/riccardomerolla/llm4zio-modernize` OCI image
+(air-gapped/CI; JDK + git + maven + the resolved classpath baked in).
+Configuration is env-first with `./modernize.conf` (KEY=value) filling gaps —
+deployment choices (seats, models, endpoints) live there, estate knowledge
+stays in the pack. The `.sc` scripts remain the authoring surface and the two
+stay in lockstep (the module is a direct port of the scripts).
+
+### The local-model lane (on-prem extraction)
+
+Only extract and its gate judge ever read legacy source, so those are the
+seats to pin on-prem when source is protected: any OpenAI-compatible endpoint
+works for the API seats (vLLM/TGI on bank GPU infra — the `LmStudio`/`OpenAI`
+connectors take a base URL), and `LLM4ZIO_CODER=opencode` runs the analyst on
+a local-model-backed CLI coder. Benchmark the lane before claiming numbers:
+point `modernize-bench.sc` at the local seat exactly like any other coder —
+its judged extraction scores (coverage %, completeness/faithfulness) are the
+evidence that a 30–70B open-weight model holds up on your estate; publish
+nothing you have not measured.
+
 ## Token & cost traceability
 
 Every flow run appends one structured record to an append-only ledger —

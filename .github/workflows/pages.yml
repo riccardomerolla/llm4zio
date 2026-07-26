@@ -1,0 +1,46 @@
+name: Docs & benchmark page
+
+# Publishes docs/ (plus the current benchmark.md from examples/) to GitHub Pages.
+# Benchmark numbers are refreshed manually per release — bench runs burn real
+# provider quota, so CI never runs them.
+on:
+  push:
+    branches: [main]
+    paths: ["docs/**", "examples/benchmark.md", ".github/workflows/pages.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Assemble site sources
+        run: |
+          mkdir -p _site_src
+          cp -R docs/* _site_src/
+          [ -f examples/benchmark.md ] && cp examples/benchmark.md _site_src/benchmark.md || true
+          [ -f _site_src/index.md ] || cp _site_src/legacy-modernization.md _site_src/index.md
+      - uses: actions/jekyll-build-pages@v1
+        with:
+          source: ./_site_src
+          destination: ./_site
+      - uses: actions/upload-pages-artifact@v3
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

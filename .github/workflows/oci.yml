@@ -1,0 +1,55 @@
+name: OCI image
+
+# Builds and pushes ghcr.io/riccardomerolla/llm4zio-modernize:<version> after a
+# release tag. Maven Central sync can lag the publish job, so the build retries
+# resolution for up to ~20 minutes before giving up.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "llm4zio version to package (e.g. 4.0.0)"
+        required: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  oci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Resolve version
+        id: v
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+        run: |
+          V="${INPUT_VERSION:-${GITHUB_REF_NAME#v}}"
+          echo "$V" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$' \
+            || { echo "refusing suspicious version '$V'" >&2; exit 1; }
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+      - name: Wait for Maven Central sync
+        run: |
+          V="${{ steps.v.outputs.version }}"
+          URL="https://repo1.maven.org/maven2/io/github/riccardomerolla/llm4zio-modernize_3/$V/llm4zio-modernize_3-$V.pom"
+          for i in $(seq 1 40); do
+            if curl -sfo /dev/null "$URL"; then echo "available"; exit 0; fi
+            echo "not yet on Central ($i/40) — sleeping 30s"; sleep 30
+          done
+          echo "artifact never appeared on Central" >&2; exit 1
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          build-args: |
+            LLM4ZIO_VERSION=${{ steps.v.outputs.version }}
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/llm4zio-modernize:${{ steps.v.outputs.version }}
+            ghcr.io/${{ github.repository_owner }}/llm4zio-modernize:latest
