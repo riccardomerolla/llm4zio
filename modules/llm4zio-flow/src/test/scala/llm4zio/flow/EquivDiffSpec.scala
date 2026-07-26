@@ -50,4 +50,29 @@ object EquivDiffSpec extends ZIOSpecDefault:
           List(Mismatch.FieldDiff("record output:TRANSOUT", "fee", expected = "2.50", actual = "0.00"))
       )
     },
+    test("under PerKey, cross-key interleaving is free but order within one key is behaviour") {
+      val perKey = ComparisonPolicy(Equiv.Ordering.PerKey, ignore = Set.empty)
+      val a1     = Observation.Message("payments", "ACC1", Map("step" -> "debit"))
+      val a2     = Observation.Message("payments", "ACC1", Map("step" -> "credit"))
+      val b1     = Observation.Message("payments", "ACC2", Map("step" -> "debit"))
+      assertTrue(
+        Equiv.diff(List(a1, a2, b1), List(b1, a1, a2), perKey).isEmpty,
+        Equiv.diff(List(a1, a2, b1), List(a2, a1, b1), perKey).nonEmpty,
+      )
+    },
+    test("under PerKey, a differing message field pairs as a FieldDiff carrying topic and key") {
+      val perKey   = ComparisonPolicy(Equiv.Ordering.PerKey, ignore = Set.empty)
+      val expected = Observation.Message("payments", "ACC1", Map("status" -> "ROUTED", "amount" -> "9.00"))
+      val actual   = Observation.Message("payments", "ACC1", Map("status" -> "ROUTED", "amount" -> "9.90"))
+      assertTrue(
+        Equiv.diff(List(expected), List(actual), perKey) ==
+          List(Mismatch.FieldDiff("message payments ACC1", "amount", expected = "9.00", actual = "9.90"))
+      )
+    },
+    test("ignored fields scrub message payloads too") {
+      val perKey   = ComparisonPolicy(Equiv.Ordering.PerKey, ignore = Set("TS"))
+      val expected = Observation.Message("payments", "ACC1", Map("status" -> "ROUTED", "TS" -> "10:00:00"))
+      val actual   = Observation.Message("payments", "ACC1", Map("status" -> "ROUTED", "TS" -> "10:00:09"))
+      assertTrue(Equiv.diff(List(expected), List(actual), perKey).isEmpty)
+    },
   )

@@ -55,12 +55,17 @@ object Equiv:
     /** A database mutation: `op` (insert/update/delete) on `table`, addressed by `key`, writing `set`. */
     @jsonHint("db") case DbMutation(table: String, op: String, key: Map[String, String], set: Map[String, String])
 
+    /** An emitted event on a stream: `topic` + correlation `key` identify the partition-ordered lane. */
+    @jsonHint("message") case Message(topic: String, key: String, fields: Map[String, String])
+
   object Observation:
     given JsonCodec[Observation] = DeriveJsonCodec.gen[Observation]
 
-  /** Whether observation order is part of the behaviour being proven (batch report lines) or not (DB rows). */
+  /** Whether observation order is part of the behaviour being proven: everywhere (batch report lines), nowhere (DB
+    * rows), or within each identity/correlation key (event streams — Kafka guarantees order per key only).
+    */
   enum Ordering:
-    case Ordered, Unordered
+    case Ordered, Unordered, PerKey
 
   /** One way a replay's actual observations diverged from a vector's expected ones. */
   enum Mismatch:
@@ -83,12 +88,14 @@ object Equiv:
     val act = actual.map(scrub(_, policy.ignore))
     policy.ordering match
       case Ordering.Ordered =>
-        val positional = exp.zip(act).flatMap { (e, a) =>
-          if e == a then Nil
-          else if identityOf(e) == identityOf(a) then fieldDiffs(e, a)
-          else List(Mismatch.Missing(e), Mismatch.Unexpected(a))
+        positionalDiff(exp, act)
+
+      case Ordering.PerKey =>
+        val expGroups = exp.groupBy(identityOf)
+        val actGroups = act.groupBy(identityOf)
+        (expGroups.keySet ++ actGroups.keySet).toList.sorted.flatMap { key =>
+          positionalDiff(expGroups.getOrElse(key, Nil), actGroups.getOrElse(key, Nil))
         }
-        positional ++ exp.drop(act.size).map(Mismatch.Missing(_)) ++ act.drop(exp.size).map(Mismatch.Unexpected(_))
 
       case Ordering.Unordered =>
         val (unmatched, leftover)   = exp.foldLeft((List.empty[Observation], act)) {
@@ -135,13 +142,27 @@ object Equiv:
               )
         }
 
+  /** Element-wise comparison of two same-order sequences: exact matches cancel, same-identity pairs yield field diffs,
+    * everything else is Missing/Unexpected — the [[Ordering.Ordered]] semantics, reused per key group.
+    */
+  private def positionalDiff(exp: List[Observation], act: List[Observation]): List[Mismatch] =
+    val paired = exp.zip(act).flatMap { (e, a) =>
+      if e == a then Nil
+      else if identityOf(e) == identityOf(a) then fieldDiffs(e, a)
+      else List(Mismatch.Missing(e), Mismatch.Unexpected(a))
+    }
+    paired ++ exp.drop(act.size).map(Mismatch.Missing(_)) ++ act.drop(exp.size).map(Mismatch.Unexpected(_))
+
   private def scrub(o: Observation, ignore: Set[String]): Observation = o match
     case Observation.Record(kind, fields)            => Observation.Record(kind, fields -- ignore)
     case Observation.DbMutation(table, op, key, set) => Observation.DbMutation(table, op, key -- ignore, set -- ignore)
+    case Observation.Message(topic, key, fields)     => Observation.Message(topic, key, fields -- ignore)
 
-  /** The stable identity mismatched observations pair by — field values excluded, keys included. */
+  /** The stable identity mismatched observations pair by (and PerKey groups by) — field values excluded, keys included.
+    */
   private def identityOf(o: Observation): String = o match
     case Observation.Record(kind, _)               => s"record $kind"
+    case Observation.Message(topic, key, _)        => s"message $topic $key"
     case Observation.DbMutation(table, op, key, _) =>
       val addr = key.toList.sorted.map((k, v) => s"$k=$v").mkString(",")
       s"db $table $op $addr"
@@ -149,6 +170,7 @@ object Equiv:
   private def fieldDiffs(e: Observation, a: Observation): List[Mismatch] =
     val (expected, actual) = (e, a) match
       case (Observation.Record(_, ef), Observation.Record(_, af))                     => (ef, af)
+      case (Observation.Message(_, _, ef), Observation.Message(_, _, af))             => (ef, af)
       case (Observation.DbMutation(_, _, _, es), Observation.DbMutation(_, _, _, as)) => (es, as)
       case _                                                                          => (Map.empty[String, String], Map.empty[String, String])
     (expected.keySet ++ actual.keySet).toList.sorted.flatMap { field =>

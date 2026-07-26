@@ -40,6 +40,7 @@ seeding (default `cobol-springboot`):
 | `jsp-nextjs` | J2EE servlets + JSP | client-only Next.js SPA (S3 static export) |
 | `jsp-bff-nextjs` | J2EE servlets + JSP | Spring Boot BFF + Next.js SPA monorepo |
 | `ace-integration` | IBM ACE msgflow + ESQL | Spring Boot integration service |
+| `ace-kafka` | IBM ACE msgflow + ESQL | Kafka Streams topology (per-key equivalence, TopologyTestDriver replay) |
 
 ## The pack: modernization knowledge as data
 

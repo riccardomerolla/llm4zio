@@ -159,9 +159,10 @@ object Pack:
   /** `- ordering: …` / `- ignore: a, b` list items of the Equivalence section. */
   private def equivalencePolicy(body: String): ComparisonPolicy =
     val fields   = namedListItems(body)
-    val ordering =
-      if fields.get("ordering").map(_.toLowerCase).contains("unordered") then Equiv.Ordering.Unordered
-      else Equiv.Ordering.Ordered
+    val ordering = fields.get("ordering").map(_.toLowerCase) match
+      case Some("unordered") => Equiv.Ordering.Unordered
+      case Some("per-key")   => Equiv.Ordering.PerKey
+      case _                 => Equiv.Ordering.Ordered
     val ignore   = fields.get("ignore").fold(Set.empty[String])(_.split(",").map(_.trim).filter(_.nonEmpty).toSet)
     ComparisonPolicy(ordering, ignore)
 
