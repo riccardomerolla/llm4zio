@@ -33,6 +33,9 @@ final case class Pack(
   equivalence: ComparisonPolicy,
   judgeDimensions: List[Dimension],
   coverage: List[CoverageRule],
+  // Dependency-edge regexes (`## Survey: <name>` sections) the survey flow scans the estate with:
+  // each match in a file becomes an edge from that file's unit to the captured name.
+  survey: List[CoverageRule],
   prompts: Map[String, String],
   lenses: List[Reviewer],
   lessons: Option[String],
@@ -135,6 +138,7 @@ object Pack:
                 equivalence = section(sections, "Equivalence").fold(ComparisonPolicy.default)(equivalencePolicy),
                 judgeDimensions = section(sections, "Judge").fold(List.empty[Dimension])(dimensions),
                 coverage = coverageRules(sections),
+                survey = prefixedRules(sections, "## Survey: "),
                 prompts = Map.empty,
                 lenses = Nil,
                 lessons = None,
@@ -175,14 +179,18 @@ object Pack:
 
   /** Every `## Coverage: <name>` section, each carrying `files:` and `unit:` regexes. */
   private def coverageRules(sections: List[String]): List[CoverageRule] =
+    prefixedRules(sections, "## Coverage: ")
+
+  /** Every `## <prefix><name>` section carrying `files:` and `unit:` regexes — the shape Coverage and Survey share. */
+  private def prefixedRules(sections: List[String], prefix: String): List[CoverageRule] =
     sections.flatMap { s =>
       val lines = s.linesIterator.toList
-      lines.headOption.map(_.trim).filter(_.startsWith("## Coverage: ")).flatMap { header =>
+      lines.headOption.map(_.trim).filter(_.startsWith(prefix)).flatMap { header =>
         val fields = keyValues(lines.tail)
         for
           files <- fields.get("files")
           unit  <- fields.get("unit")
-        yield CoverageRule(header.drop("## Coverage: ".length).trim, files, unit)
+        yield CoverageRule(header.drop(prefix.length).trim, files, unit)
       }
     }
 

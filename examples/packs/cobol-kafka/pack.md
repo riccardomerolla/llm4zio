@@ -34,3 +34,18 @@ unit: ^ {7}(\d{4}-[A-Z0-9-]+)\.
 
 files: .*\.(jcl|JCL)
 unit: ^//([A-Z0-9]+) +EXEC
+
+## Survey: calls
+
+files: .*\.(cbl|CBL)
+unit: CALL '([A-Z0-9]+)'
+
+## Survey: copies
+
+files: .*\.(cbl|CBL)
+unit: ^ {6}[ ]*COPY +([A-Z0-9]+)
+
+## Survey: exec-pgm
+
+files: .*\.(jcl|JCL)
+unit: EXEC +PGM=([A-Z0-9]+)
