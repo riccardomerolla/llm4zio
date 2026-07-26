@@ -61,5 +61,5 @@ object Main:
         loadConf()
         phases(cmd)(rest.toArray)
       case _                                   =>
-        println(usage)
+        System.err.println(usage)
         sys.exit(2)
