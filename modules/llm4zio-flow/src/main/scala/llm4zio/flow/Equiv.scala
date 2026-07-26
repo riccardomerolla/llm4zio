@@ -106,6 +106,35 @@ object Equiv:
           }
         diffs ++ missing.map(Mismatch.Missing(_)) ++ extra.map(Mismatch.Unexpected(_))
 
+  /** What replaying one vector produced: observations to diff, or a crash (a recoverable, typed value — one bad vector
+    * must not kill an estate-sized run; the flow records it and moves on).
+    */
+  enum Replayed:
+    case Observed(actual: List[Observation])
+    case Crashed(exitCode: Int, problem: String)
+
+  /** Feed `vector` (as JSON) to the pack's replay command on stdin and parse the observation array it prints — the
+    * transport-blind boundary between the verify flow and the target implementation. A non-zero exit is a
+    * [[Replayed.Crashed]] value; stdout that is not an observation array fails typed (a broken replay contract).
+    */
+  def replayVector(command: List[String], root: Path, vector: EquivVector): IO[FlowError, Replayed] =
+    command match
+      case Nil          => ZIO.fail(FlowError.Process("replay", "empty replay command"))
+      case head :: tail =>
+        Proc.runWithInput(head, tail, root, vector.toJson).flatMap { r =>
+          if !r.ok then ZIO.succeed(Replayed.Crashed(r.exitCode, r.problem))
+          else
+            ZIO
+              .fromEither(r.stdout.fromJson[List[Observation]])
+              .mapBoth(
+                e =>
+                  FlowError.PlanParse(
+                    s"replay output for ${vector.program}/${vector.id} is not an observation array: $e"
+                  ),
+                Replayed.Observed(_),
+              )
+        }
+
   private def scrub(o: Observation, ignore: Set[String]): Observation = o match
     case Observation.Record(kind, fields)            => Observation.Record(kind, fields -- ignore)
     case Observation.DbMutation(table, op, key, set) => Observation.DbMutation(table, op, key -- ignore, set -- ignore)

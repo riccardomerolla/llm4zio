@@ -79,4 +79,53 @@ object EquivSpec extends ZIOSpecDefault:
         })
       }
     },
-  )
+    test("replayVector pipes the vector to the command's stdin and parses the observation array") {
+      val script =
+        """#!/bin/sh
+          |cat > /dev/null
+          |echo '[{"type":"record","kind":"output:TRANSOUT","fields":{"status":"POSTED","fee":"2.50"}}]'
+          |""".stripMargin
+      ZIO.scoped {
+        for
+          dir    <- tempDir
+          _      <- ZIO.attemptBlocking {
+                      val p = dir.resolve("replay.sh")
+                      Files.writeString(p, script)
+                      p.toFile.setExecutable(true)
+                    }.orDie
+          result <- Equiv.replayVector(List("./replay.sh"), dir, transfer)
+        yield assertTrue(
+          result == Equiv.Replayed.Observed(
+            List(Equiv.Observation.Record("output:TRANSOUT", Map("status" -> "POSTED", "fee" -> "2.50")))
+          )
+        )
+      }
+    },
+    test("replayVector reports a crashed replay as a typed value — one bad vector must not kill the run") {
+      ZIO.scoped {
+        for
+          dir    <- tempDir
+          result <- Equiv.replayVector(List("false"), dir, transfer)
+        yield assertTrue(result match
+          case Equiv.Replayed.Crashed(code, _) => code != 0
+          case _                               => false)
+      }
+    },
+    test("replayVector fails typed when the replay output is not an observation array — a broken contract") {
+      val script = "#!/bin/sh\ncat > /dev/null\necho 'not json'\n"
+      ZIO.scoped {
+        for
+          dir    <- tempDir
+          _      <- ZIO.attemptBlocking {
+                      val p = dir.resolve("replay.sh")
+                      Files.writeString(p, script)
+                      p.toFile.setExecutable(true)
+                    }.orDie
+          result <- Equiv.replayVector(List("./replay.sh"), dir, transfer).either
+        yield assertTrue(result.left.exists {
+          case FlowError.PlanParse(_) => true
+          case _                      => false
+        })
+      }
+    },
+  ) @@ TestAspect.withLiveClock

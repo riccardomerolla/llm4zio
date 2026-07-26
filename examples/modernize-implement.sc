@@ -1,10 +1,14 @@
-//> using dep "io.github.riccardomerolla::llm4zio-runner:3.19.0"
+//> using dep "io.github.riccardomerolla::llm4zio-runner:3.23.0"
 //> using scala "3.8.3"
 //> using jvm 21
 
-/** Legacy-modernization phase 3 of 4: implement the seeded plan, gated until green.
+/** Legacy-modernization phase 3 of 5: implement the seeded plan, gated until green.
   *
-  *   modernize-extract.sc → (human approves) → modernize-seed.sc → modernize-implement.sc → modernize-review.sc
+  *   modernize-extract.sc → (human approves) → modernize-seed.sc → modernize-implement.sc
+  *     → modernize-verify.sc → modernize-review.sc
+  *
+  * The clean-room wall is ENFORCED here: the flow refuses to start if anything in the target
+  * workspace matches the pack's legacy `sources:` regex — the coder is driven by specs alone.
   *
   * Runs ROOTED AT THE TARGET REPO (`--repo <target>`), resuming the plan modernize-seed.sc
   * committed at `docs/modernization/plan.md` (PlanStore — a crashed or halted run picks up at the
@@ -38,6 +42,25 @@ val ProModel    = "gemini-2.5-pro"   // point these at whatever your `gemini` CL
 val FlashModel  = "gemini-3.5-flash"
 val JudgeRounds = 2
 val ModDir      = "docs/modernization"
+
+/** The enforced clean-room wall: refuse to run with legacy source inside the target workspace, so the
+  * coder provably works from the specs alone.
+  */
+def assertWall(pack: Pack, root: java.nio.file.Path, events: FlowEvents): IO[FlowError, Unit] =
+  pack.sources match
+    case None        => events.publish(FlowEvent.Info("pack has no sources regex — wall check skipped"))
+    case Some(regex) =>
+      Wall.check(root, regex).flatMap {
+        case Wall.Result.Clean           =>
+          events.publish(FlowEvent.Info("clean-room wall: no legacy source in the target workspace"))
+        case Wall.Result.Breached(paths) =>
+          val shown = paths.take(10).mkString(", ")
+          val more  = if paths.size > 10 then s" (+${paths.size - 10} more)" else ""
+          ZIO.fail(FlowError.Aborted(
+            s"clean-room wall breached — legacy source inside the target workspace: $shown$more. " +
+              "The implementation must be driven by the specs alone; remove the files and rerun."
+          ))
+      }
 
 val (coderCfg, reasoningCfg, reviewerCfg) =
   sys.env.get("LLM4ZIO_CODER").map(_.trim.toLowerCase).filter(_.nonEmpty) match
@@ -136,6 +159,7 @@ flow(
 
   for
     pack     <- stage("Pack")(Pack.load(packDir))
+    _        <- stage("Wall")(assertWall(pack, workDir, events))
     plan     <- PlanStore
                   .load(planFile)
                   .someOrFail(FlowError.Aborted(s"no plan at $planFile — run modernize-seed.sc first"))
