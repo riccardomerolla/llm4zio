@@ -249,6 +249,21 @@ object PackSpec extends ZIOSpecDefault:
         )
       }
     },
+    test("load parses per-key ordering — the event-stream equivalence policy") {
+      val manifest =
+        s"""$minimalManifest
+           |## Equivalence
+           |
+           |- ordering: per-key
+           |""".stripMargin
+      ZIO.scoped {
+        for
+          dir  <- tempDir
+          _    <- write(dir, "pack.md", manifest)
+          pack <- Pack.load(dir)
+        yield assertTrue(pack.equivalence == ComparisonPolicy(Equiv.Ordering.PerKey, Set.empty))
+      }
+    },
     test("load fails typed on a missing manifest and on a malformed one") {
       ZIO.scoped {
         for

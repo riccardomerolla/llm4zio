@@ -36,7 +36,10 @@ object EquivSpec extends ZIOSpecDefault:
   private val captured = transfer.copy(
     id = "mainframe-run-042",
     tier = Equiv.Tier.Captured,
-    observations = List(Equiv.Observation.Record("output:TRANSOUT", Map("status" -> "POSTED", "fee" -> "2.50"))),
+    observations = List(
+      Equiv.Observation.Record("output:TRANSOUT", Map("status" -> "POSTED", "fee" -> "2.50")),
+      Equiv.Observation.Message("payments.routed", "ACC1", Map("status" -> "ROUTED")),
+    ),
   )
 
   def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("Equiv")(
@@ -63,6 +66,7 @@ object EquivSpec extends ZIOSpecDefault:
             lines.size == 2,
             lines.head.contains("\"tier\":\"generated\""),
             lines(1).contains("\"tier\":\"captured\""),
+            lines(1).contains("\"type\":\"message\""),
           )
       }
     },

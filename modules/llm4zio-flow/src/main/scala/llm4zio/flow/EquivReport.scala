@@ -59,6 +59,8 @@ object EquivReport:
   private def observation(o: Observation): String = o match
     case Observation.Record(kind, fields)            =>
       s"record $kind ${fields.toList.sorted.map((k, v) => s"$k=$v").mkString(", ")}"
+    case Observation.Message(topic, key, fields)     =>
+      s"message $topic $key ${fields.toList.sorted.map((k, v) => s"$k=$v").mkString(", ")}"
     case Observation.DbMutation(table, op, key, set) =>
       val addr   = key.toList.sorted.map((k, v) => s"$k=$v").mkString(",")
       val values = set.toList.sorted.map((k, v) => s"$k=$v").mkString(", ")
