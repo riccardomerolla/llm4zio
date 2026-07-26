@@ -41,6 +41,7 @@ seeding (default `cobol-springboot`):
 | `jsp-bff-nextjs` | J2EE servlets + JSP | Spring Boot BFF + Next.js SPA monorepo |
 | `ace-integration` | IBM ACE msgflow + ESQL | Spring Boot integration service |
 | `ace-kafka` | IBM ACE msgflow + ESQL | Kafka Streams topology (per-key equivalence, TopologyTestDriver replay) |
+| `cobol-kafka` | COBOL/JCL batch + DB2 | Kafka Streams topology — the batch-window kill (records → keyed events, accumulators → state stores) |
 
 ## The pack: modernization knowledge as data
 
@@ -61,6 +62,24 @@ new pack — the shipped four packs are worked examples. Packs are git-versioned
 bank's modernization know-how is reviewable, diffable, and grows run over run.
 `Pack.load` is the library entry
 ([Pack.scala](../modules/llm4zio-flow/src/main/scala/llm4zio/flow/Pack.scala)).
+
+## Pattern cards: curated modernization knowledge
+
+Alongside per-estate `lessons.md` (run-accumulated) live **pattern cards** —
+universal, curated translations of known legacy idioms, as data (`flow.Patterns`):
+`examples/patterns/` ships ~25 COBOL→Java cards (COMP-3 → BigDecimal/HALF_UP,
+REDEFINES → sealed variants, 88-levels → enums, cursor loops → pageable queries…)
+and the `cobol-kafka` pack adds ~10 batch→streaming cards (records → keyed events,
+commit intervals → idempotence, accumulators → keyed state stores). Each card is a
+Markdown file whose frontmatter `match:` regex fires on legacy source:
+
+- **extract** runs the matchers per program and deterministically tags the
+  program's traceability fragment (`Patterns: PAT-…`) — selection is regex-decided,
+  never model-decided;
+- **implement** injects exactly the cited cards into the coder's brief — bounded
+  context, and the briefs say why each card is there;
+- a **`pattern-conformance` reviewer lens** checks the code against the cited
+  cards — advisory only, never a gate: patterns are heuristics and the specs win.
 
 ## Phase 1 — extract (rooted at the legacy repo)
 

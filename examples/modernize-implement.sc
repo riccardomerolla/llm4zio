@@ -1,4 +1,4 @@
-//> using dep "io.github.riccardomerolla::llm4zio-runner:3.24.0"
+//> using dep "io.github.riccardomerolla::llm4zio-runner:3.25.0"
 //> using scala "3.8.3"
 //> using jvm 21
 
@@ -169,9 +169,19 @@ flow(
                   Reviewers.lintCommand(_, workDir)
                 )
     _        <- stage("Branch")(git.checkoutOrCreate(plan.epicId))
+    cards    <- Patterns
+                  .load(packDir.resolve("patterns"))
+                  .zipWith(Patterns.load(workspace.resolve("patterns")))(_ ++ _)
+    specText <- gatherSpecs(workDir, pack.specsDir)
+    cited     = Patterns.tagged(specText) // extraction tagged the fragments; specs cite the ids
+    playbook  = cards.filter(c => cited.contains(c.id))
     system    = List(
                   pack.prompt("implement"),
                   pack.lessons.map(l => s"Lessons from previous modernization runs — apply them:\n$l"),
+                  Option.when(playbook.nonEmpty)(
+                    "Pattern cards cited by the specs — the translation playbook (advisory, the specs win):\n\n" +
+                      playbook.map(c => s"### ${c.id}\n${c.body}").mkString("\n\n")
+                  ),
                 ).flatten.mkString("\n\n")
     coderChat <- Chat.start(coder, system = Some(system))
     _         <- implementTaskLoop(planFile, plan) { task =>
