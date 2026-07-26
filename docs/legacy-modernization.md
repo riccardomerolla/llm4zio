@@ -1,17 +1,29 @@
 # Legacy modernization flows
 
-Four pack-parameterized flows that take a legacy estate (mainframe COBOL/JCL + DB2,
+Five pack-parameterized flows that take a legacy estate (mainframe COBOL/JCL + DB2,
 old J2EE/JSP, IBM ACE message flows) to a modern target (Spring Boot on a PaaS,
 Next.js SPA) through judged reverse-engineering, a human approval gate, gated
-implementation, and a review that feeds lessons back into future runs.
+implementation behind an **enforced clean-room wall**, a per-rule **equivalence
+proof**, and a review that feeds lessons back into future runs.
 
 ```
-modernize-extract.sc ──▶ (human approves) ──▶ modernize-seed.sc ──▶ modernize-implement.sc ──▶ modernize-review.sc
-     legacy repo                                  target repo            target repo                 target repo
-                                                                                ▲                        │
-                                                                                └── fix specs + plan ─────┘
-                                                                                    lessons → the pack
+modernize-extract.sc ──▶ (human approves) ──▶ modernize-seed.sc ──▶ modernize-implement.sc
+     legacy repo                                  target repo            target repo
+                                                                              │
+                              ┌── fix specs + plan ◀── modernize-verify.sc ◀──┘
+                              ▼                            target repo
+                     modernize-implement.sc ──▶ … ──▶ modernize-review.sc
+                                                          target repo
+                                                     lessons → the pack
 ```
+
+The clean-room split is enforced, not just practiced: only extract and its gate ever
+touch legacy source; implement/verify/review refuse to start if anything matching the
+pack's `sources:` regex is inside the target workspace (`flow.Wall`), and
+`docs/modernization/provenance.json` — written by seed, extended by verify — records
+what crossed the wall and on whose authority: spec-pack file hashes (plain sha256,
+`shasum`-checkable), gate verdict digests, the approver (`LLM4ZIO_APPROVER`), and the
+equivalence report hash. That file is the evidence chain a risk committee files.
 
 Try it end-to-end against the synthetic estate:
 
@@ -43,8 +55,8 @@ packs/cobol-springboot/
   lessons.md       # accumulated lessons — appended by review, injected by extract/implement
 ```
 
-The four flows never change per estate; supporting a new pair means authoring a
-new pack — the shipped four are worked examples. Packs are git-versioned, so a
+The five flows never change per estate; supporting a new pair means authoring a
+new pack — the shipped four packs are worked examples. Packs are git-versioned, so a
 bank's modernization know-how is reviewable, diffable, and grows run over run.
 `Pack.load` is the library entry
 ([Pack.scala](../modules/llm4zio-flow/src/main/scala/llm4zio/flow/Pack.scala)).
@@ -121,7 +133,44 @@ gate, an LLM-as-a-Judge scores the whole branch diff against the committed specs
 to Azure DevOps when configured, GitHub otherwise, and degrade to an Info event
 when neither is.
 
-## Phase 4 — review (rooted at the target repo)
+## Phase 4 — verify (rooted at the target repo)
+
+`modernize-verify.sc` proves the implementation equivalent to its specs — per rule,
+with a deterministic diff, behind the wall (no legacy source in reach):
+
+- **Vectors, generated-first.** For each spec'd program with no vector file yet,
+  `reasoning` generates equivalence vectors from the spec + BDD scenarios (happy
+  path, each boundary, each reject) into `docs/modernization/vectors/<PROGRAM>.jsonl`
+  — resumable per program; delete a file to regenerate. The JSONL is the **capture
+  interchange format**: a bank's own tooling drops recorded legacy runs into the same
+  directory as `"tier":"captured"` vectors. *Generated vectors prove spec
+  conformance; captured vectors prove behavioural equivalence* — the report keeps the
+  two claims in separate columns and never sums them.
+- **Replay, transport-blind.** Every vector is piped (JSON on stdin) into the pack's
+  `replay:` command, which drives the target however the pack decides (the
+  cobol-springboot scaffold ships `scripts/replay.sh` → a `ReplayHarness` the
+  implement phase builds as part of its contract) and prints the observations as a
+  JSON array.
+- **Diff, deterministic.** `Equiv.diff` compares expected vs actual observations
+  under the pack's `## Equivalence` policy (`ordering: ordered|unordered`,
+  `ignore:` fields such as timestamps). No LLM decides equivalence.
+- **Report, per rule.** `docs/modernization/equivalence.md` speaks the auditor's
+  language: every rule from the spec pack's `rules.txt` (enumerated deterministically
+  by extract — the target side never could, that would need legacy source) with
+  proven/FAILING/UNEXERCISED status. Its hash lands in provenance.json.
+- **Triage, bounded.** Mismatches are distilled into fix specs + appended plan tasks
+  (rerun `modernize-implement.sc`), then the flow **halts non-green** so a pipeline
+  can gate on it.
+
+### The sabotage demo
+
+The 30-second trust argument, after a green run: break a rule in the generated Java
+(e.g. change the transfer fee rounding), rerun `modernize-verify.sc`, and watch the
+exact spec rule go **FAILING** with the field-level diff (`fee expected 2.50, actual
+2.60`), a fix spec filed, and a plan task appended. Green checkmarks demo a happy
+path; a red diff that names the violated rule demos the gate.
+
+## Phase 5 — review (rooted at the target repo)
 
 `modernize-review.sc` finds and routes — it does not fix. The full reviewer roster
 plus the pack lenses read the branch diff against the spec pack; `reasoning`

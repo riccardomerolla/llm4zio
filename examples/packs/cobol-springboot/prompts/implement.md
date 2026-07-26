@@ -15,3 +15,17 @@ Non-negotiables when porting COBOL semantics:
   rejections) — never log-and-forget.
 - Follow the scaffold's existing package layout and idioms; standard Spring Data JPA;
   no new frameworks.
+
+Replay harness (equivalence verification — part of the contract, same rules as tests):
+
+- The scaffold ships scripts/replay.sh; it runs com.meridian.replay.ReplayHarness,
+  which YOU implement: read one equivalence vector as JSON on stdin, print a JSON
+  array of observations on stdout — nothing else on stdout, ever.
+- The vector's "inputs" is a flat string map keyed by the specs' COBOL field names
+  ("XFER-AMOUNT", "FROM-ACCT", …) plus "state:"-prefixed pre-existing state
+  ("state:FROM-BALANCE"). Arrange that state (in-memory/H2), execute the use case
+  once, and emit every domain side effect:
+    {"type":"record","kind":"output:<name>","fields":{...}}
+    {"type":"db","table":"<TABLE>","op":"insert|update|delete","key":{...},"set":{...}}
+- Amounts as plain scale-2 decimal strings, status and reason codes verbatim from the
+  specs. A rejected execution emits its reject record and no ledger mutations.
