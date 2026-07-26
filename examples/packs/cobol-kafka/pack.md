@@ -1,0 +1,36 @@
+# Pack: cobol-kafka
+
+source: cobol
+scaffold: ../../fixtures/scaffolds/kafka-streams-service
+sources: .*\.(cbl|CBL|cpy|CPY|jcl|JCL)
+programs: .*\.(cbl|CBL|jcl|JCL)
+specs-dir: docs/specs
+features-dir: src/test/resources/features
+replay: scripts/replay.sh
+
+## Gates
+
+- build: mvn -q -B test-compile
+- test: mvn -q -B test
+- verify: mvn -q -B verify
+
+## Judge
+
+- completeness (0..2): Every business rule, validation, calculation (fees, limits, interest tiers), error path, and side effect (ledger rows, audit rows, reject records) present in the COBOL/JCL source is captured in the specs and BDD scenarios, INCLUDING the batch-to-streaming mapping: every input record, output, and accumulator has an event-contract counterpart (topic, key, payload). Score 2 only if nothing material is missing.
+- faithfulness (0..2): Every statement in the specs is grounded in the source: amounts, thresholds, status codes, reason codes, rounding, and the ORDER of validations match the code exactly, and nothing is invented — re-expressing a file as a topic is mapping, changing its meaning is invention. Score 2 only if fully source-grounded.
+- testability (0..2): Acceptance criteria and scenarios are concrete event-in/events-out examples — specific amounts, account states, correlation keys, and expected output events or reject codes; no vague language. Score 2 only if every scenario is directly encodable as a TopologyTestDriver test.
+
+## Equivalence
+
+- ordering: per-key
+- ignore: TIMESTAMP, TS, PROCESSED_AT
+
+## Coverage: cobol-paragraph
+
+files: .*\.(cbl|CBL)
+unit: ^ {7}(\d{4}-[A-Z0-9-]+)\.
+
+## Coverage: jcl-step
+
+files: .*\.(jcl|JCL)
+unit: ^//([A-Z0-9]+) +EXEC

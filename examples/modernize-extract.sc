@@ -1,4 +1,4 @@
-//> using dep "io.github.riccardomerolla::llm4zio-runner:3.24.0"
+//> using dep "io.github.riccardomerolla::llm4zio-runner:3.25.0"
 //> using scala "3.8.3"
 //> using jvm 21
 
@@ -183,7 +183,9 @@ def turnLimitRecovery(spec: Path, rel: String)(using ctx: FlowContext): PartialF
 /** One analyst turn per program, skipping programs whose spec already exists and committing each one —
   * the resume unit is a single program, so a flaky stream or crash costs one turn, not the estate.
   */
-def extractPrograms(pack: Pack, system: String, programs: List[String])(using ctx: FlowContext): IO[FlowError, Unit] =
+def extractPrograms(pack: Pack, system: String, programs: List[String], cards: List[PatternCard])(using
+  ctx: FlowContext
+): IO[FlowError, Unit] =
   val modDir = workDir.resolve(ModDir)
   ZIO.foreachDiscard(programs.zipWithIndex) { (rel, i) =>
     val name     = programName(rel)
@@ -195,10 +197,30 @@ def extractPrograms(pack: Pack, system: String, programs: List[String])(using ct
         _    <- ctx.events.publish(FlowEvent.Info(s"extracting $rel $progress"))
         chat <- Chat.start(coder, system = Some(system))
         _    <- chat.ask(programAsk(pack, rel, name)).unit.catchSome(turnLimitRecovery(spec, rel))
+        _    <- tagPatterns(workDir.resolve(rel), modDir.resolve("traceability").resolve(s"$name.md"), cards)
         _    <- git.commitAll(s"modernize(${pack.name}): spec $name").unit
       yield (),
     )
   }
+
+/** Deterministically tag the program's traceability fragment with the pattern cards its SOURCE matches —
+  * implement injects exactly the cited cards into its briefs, so selection is regex-decided, not model-decided.
+  */
+def tagPatterns(source: Path, fragment: Path, cards: List[PatternCard]): IO[FlowError, Unit] =
+  ZIO
+    .attemptBlocking {
+      val matched = Patterns.matching(Files.readString(source), cards)
+      if matched.nonEmpty then
+        Option(fragment.getParent).foreach(Files.createDirectories(_))
+        Files.write(
+          fragment,
+          s"\nPatterns: ${matched.map(_.id).mkString(", ")}\n".getBytes(java.nio.charset.StandardCharsets.UTF_8),
+          java.nio.file.StandardOpenOption.CREATE,
+          java.nio.file.StandardOpenOption.APPEND,
+        )
+      ()
+    }
+    .mapError(e => FlowError.Persistence(s"failed to tag patterns on $fragment", Some(e)))
 
 /** Write `rules.txt` — every coverage unit enumerated from the legacy source, one per line. Deterministic;
   * this is the rule universe modernize-verify.sc reports equivalence against (the target side never
@@ -421,7 +443,10 @@ flow(
     _        <- ZIO.when(programs.isEmpty)(
                   fail(s"no source units matched the pack's programs/sources regex under $workDir")
                 )
-    _        <- stage("Extract")(extractPrograms(pack, system, programs))
+    cards    <- Patterns
+                  .load(packDir.resolve("patterns"))
+                  .zipWith(Patterns.load(workspace.resolve("patterns")))(_ ++ _)
+    _        <- stage("Extract")(extractPrograms(pack, system, programs, cards))
     // Commit the (ungated) draft: extraction is the expensive step, and a gate failure or crash must
     // not cost it. The Gate/Commit stages amend the picture with the verdict afterwards.
     _        <- stage("Draft")(
