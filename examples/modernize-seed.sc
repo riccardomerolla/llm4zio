@@ -1,10 +1,11 @@
-//> using dep "io.github.riccardomerolla::llm4zio-runner:3.19.0"
+//> using dep "io.github.riccardomerolla::llm4zio-runner:3.23.0"
 //> using scala "3.8.3"
 //> using jvm 21
 
-/** Legacy-modernization phase 2 of 4: seed the target repo from the APPROVED spec pack.
+/** Legacy-modernization phase 2 of 5: seed the target repo from the APPROVED spec pack.
   *
-  *   modernize-extract.sc → (human approves) → modernize-seed.sc → modernize-implement.sc → modernize-review.sc
+  *   modernize-extract.sc → (human approves) → modernize-seed.sc → modernize-implement.sc
+  *     → modernize-verify.sc → modernize-review.sc
   *
   * Runs ROOTED AT THE TARGET REPO (`--repo <target>`), reading the spec pack out of the legacy
   * repo (`LLM4ZIO_LEGACY_REPO`). This phase is deliberately deterministic — no LLM calls:
@@ -19,7 +20,11 @@
   *   4. The proposed plan is materialized at `docs/modernization/plan.md` — extract.sc wrote it
   *      in the canonical `Plan.render` Markdown, so this phase re-parses it as a hard validation
   *      and modernize-implement.sc resumes it with `PlanStore`.
-  *   5. Azure DevOps (optional): when ADO env vars are present (SYSTEM_COLLECTIONURI /
+  *   5. The PROVENANCE MANIFEST (`docs/modernization/provenance.json`) is written and committed:
+  *      the clean-room receipt — spec-pack file hashes (plain sha256, `shasum`-checkable), gate
+  *      verdict digests, pack, llm4zio version, and the approver (`LLM4ZIO_APPROVER`, when set).
+  *      modernize-verify.sc appends the equivalence-report hash to it later.
+  *   6. Azure DevOps (optional): when ADO env vars are present (SYSTEM_COLLECTIONURI /
   *      LLM4ZIO_ADO_* + PAT), one Task work item is created per plan task, carrying the task
   *      description as acceptance criteria. Absent config = skipped with an Info event.
   *
@@ -32,12 +37,14 @@ import java.nio.file.{ Files, Path }
 
 import scala.jdk.CollectionConverters.*
 
+import zio.json.*
 import zio.{ IO, ZIO }
 
 import llm4zio.flow.*
 import llm4zio.runner.*
 
-val ModDir = "docs/modernization"
+val ModDir         = "docs/modernization"
+val Llm4zioVersion = "3.23.0" // keep in step with the `using dep` header pin
 
 def writeFile(path: Path, content: String): IO[FlowError, Unit] =
   ZIO
@@ -121,7 +128,7 @@ flow(
                   for
                     n1 <- copyTree(specPack.resolve("specs"), workDir.resolve(pack.specsDir))
                     n2 <- copyTree(specPack.resolve("features"), workDir.resolve(pack.featuresDir))
-                    _  <- ZIO.foreachDiscard(List("traceability.md", "mapping.md")) { f =>
+                    _  <- ZIO.foreachDiscard(List("traceability.md", "mapping.md", "rules.txt")) { f =>
                             copyFile(specPack.resolve(f), workDir.resolve(pack.specsDir).resolve(f))
                           }
                   yield n1 + n2
@@ -137,8 +144,39 @@ flow(
                     _      <- writeFile(workDir.resolve(ModDir).resolve("plan.md"), parsed.render)
                   yield parsed
                 }
+    _        <- stage("Provenance") {
+                  for
+                    specFiles <- SpecChecks.matchingFiles(workDir.resolve(pack.specsDir), """.*\.md""")
+                    hashes    <- Provenance.hashFiles(workDir, specFiles.map(f => s"${pack.specsDir}/$f"))
+                    gateFiles <- SpecChecks
+                                   .matchingFiles(specPack.resolve("gate"), """.*\.json""")
+                                   .orElseSucceed(Nil) // pre-3.13 spec packs have no gate/ directory
+                    verdicts  <- Provenance.hashFiles(specPack.resolve("gate"), gateFiles)
+                    seats     <- ZIO
+                                   .attemptBlocking(Files.readString(specPack.resolve("seats.json")))
+                                   .map(_.fromJson[Map[String, String]].getOrElse(Map.empty))
+                                   .orElseSucceed(Map.empty) // pre-3.23 spec packs have no seats sidecar
+                    now       <- zio.Clock.instant
+                    _         <- Provenance.write(
+                                   workDir.resolve(ModDir).resolve("provenance.json"),
+                                   Provenance(
+                                     schema = 1,
+                                     pack = pack.name,
+                                     llm4zioVersion = Llm4zioVersion,
+                                     createdAt = now.toString,
+                                     approvedBy = sys.env.get("LLM4ZIO_APPROVER"),
+                                     seats = seats,
+                                     specs = hashes,
+                                     gateVerdicts = verdicts.map((f, h) => f.stripSuffix(".json") -> h),
+                                     equivalenceReport = None,
+                                     fixSpecs = Nil,
+                                   ),
+                                 )
+                  yield ()
+                }
     _        <- stage("Commit")(
-                  git.commitAll(s"modernize(${pack.name}): seed specs, features, and plan ($seeded file(s))").unit
+                  git.commitAll(s"modernize(${pack.name}): seed specs, features, plan, and provenance " +
+                    s"($seeded file(s))").unit
                 )
     _        <- stage("Boards") {
                   Ado.configFrom(sys.env) match

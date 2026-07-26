@@ -1,10 +1,11 @@
-//> using dep "io.github.riccardomerolla::llm4zio-runner:3.19.0"
+//> using dep "io.github.riccardomerolla::llm4zio-runner:3.23.0"
 //> using scala "3.8.3"
 //> using jvm 21
 
-/** Legacy-modernization phase 1 of 4: reverse-engineer the legacy estate into a judged spec pack.
+/** Legacy-modernization phase 1 of 5: reverse-engineer the legacy estate into a judged spec pack.
   *
-  *   modernize-extract.sc → (human approves) → modernize-seed.sc → modernize-implement.sc → modernize-review.sc
+  *   modernize-extract.sc → (human approves) → modernize-seed.sc → modernize-implement.sc
+  *     → modernize-verify.sc → modernize-review.sc
   *
   * Runs ROOTED AT THE LEGACY REPO (`--repo <legacy>`): a coder-as-analyst explores the COBOL/JCL
   * (or JSP, or ACE — whatever the pack says) in place and writes the spec pack under
@@ -72,16 +73,25 @@ val MaxRounds    = 3
 val ModDir       = "docs/modernization"
 val AnalystTurns = 48               // per-program turn budget — bounds a wedged agent, generous for real work
 
+val CoderKind = sys.env.get("LLM4ZIO_CODER").map(_.trim.toLowerCase).filter(_.nonEmpty).getOrElse("gemini")
+
 val (coderCfg, reasoningCfg) =
-  sys.env.get("LLM4ZIO_CODER").map(_.trim.toLowerCase).filter(_.nonEmpty) match
-    case None | Some("gemini") =>
+  CoderKind match
+    case "gemini" =>
       (
         gemini.withModel(ProModel).withTurnLimit(AnalystTurns),
         gemini.withModel(ProModel).copy(readOnly = true),
       )
-    case Some(_)               =>
+    case _        =>
       val agent = Connectors.coderFromEnv()
       (agent, agent.copy(readOnly = true))
+
+/** The seats this extraction ran on, recorded as a sidecar (`seats.json`) so seed can carry them into
+  * provenance.json — the models that produced the specs are part of the evidence chain.
+  */
+val seatNames: Map[String, String] =
+  val analyst = if CoderKind == "gemini" then s"gemini:$ProModel" else CoderKind
+  Map("analyst" -> analyst, "reasoning" -> analyst, "judge" -> analyst)
 
 def fileExists(path: Path): UIO[Boolean] =
   ZIO.attemptBlocking(Files.exists(path)).orDie
@@ -189,6 +199,18 @@ def extractPrograms(pack: Pack, system: String, programs: List[String])(using ct
       yield (),
     )
   }
+
+/** Write `rules.txt` — every coverage unit enumerated from the legacy source, one per line. Deterministic;
+  * this is the rule universe modernize-verify.sc reports equivalence against (the target side never
+  * re-enumerates it: doing so would need legacy source, which the clean-room wall forbids).
+  */
+def writeRules(pack: Pack, root: java.nio.file.Path, modDir: java.nio.file.Path): IO[FlowError, Unit] =
+  SpecChecks
+    .coverageUnits(root, pack.coverage)
+    .flatMap { units =>
+      val all = units.values.flatten.toList.distinct.sorted
+      ZIO.when(all.nonEmpty)(writeFile(modDir.resolve("rules.txt"), all.mkString("", "\n", "\n"))).unit
+    }
 
 /** Rebuild `traceability.md` and `mapping.md` from their per-program fragments. Deterministic and
   * idempotent — runs before every gate round, so fixes belong in the fragments, never the indexes.
@@ -370,6 +392,7 @@ def indexFor(pack: Pack, verdict: String): String =
      |- features/ — BDD acceptance scenarios
      |- traceability.md — source-unit → spec coverage matrix (generated from traceability/)
      |- mapping.md — data & interface mapping (generated from mapping/)
+     |- rules.txt — every coverage unit, one per line (the rule universe modernize-verify.sc reports against)
      |- gate/ — cached per-program judge verdicts (delete to force re-judging)
      |- plan.md — proposed implementation tasks (parsed by modernize-seed.sc)
      |
@@ -402,7 +425,12 @@ flow(
     // Commit the (ungated) draft: extraction is the expensive step, and a gate failure or crash must
     // not cost it. The Gate/Commit stages amend the picture with the verdict afterwards.
     _        <- stage("Draft")(
-                  rebuildIndexes(modDir) *> git.commitAll(s"modernize(${pack.name}): spec pack draft (ungated)").unit
+                  rebuildIndexes(modDir) *> writeRules(pack, workDir, modDir) *>
+                    writeFile(
+                      modDir.resolve("seats.json"),
+                      seatNames.toList.sorted.map((k, v) => s"  \"$k\": \"$v\"").mkString("{\n", ",\n", "\n}\n"),
+                    ) *>
+                    git.commitAll(s"modernize(${pack.name}): spec pack draft (ungated)").unit
                 )
     result   <- stage("Gate")(fixLoop(gateEvaluate(pack, judge, programs), fixOnce(pack, system, programs), MaxRounds))
     _        <- ZIO.when(result.isClean)(stage("Plan") {

@@ -26,6 +26,11 @@ final case class Pack(
   specsDir: String,
   featuresDir: String,
   gates: Map[String, List[String]],
+  // The replay command (whitespace-tokenized): reads one vector JSON on stdin, emits normalized observations JSON
+  // on stdout — how the verify flow drives the target implementation without llm4zio knowing the transport.
+  replay: Option[List[String]],
+  // How the verify flow compares observations (`## Equivalence` section; defaults to ordered, nothing ignored).
+  equivalence: ComparisonPolicy,
   judgeDimensions: List[Dimension],
   coverage: List[CoverageRule],
   prompts: Map[String, String],
@@ -126,6 +131,8 @@ object Pack:
                 gates = section(sections, "Gates").map(namedListItems).getOrElse(Map.empty).map { (k, v) =>
                   k -> v.split("\\s+").toList
                 },
+                replay = fields.get("replay").map(_.split("\\s+").toList),
+                equivalence = section(sections, "Equivalence").fold(ComparisonPolicy.default)(equivalencePolicy),
                 judgeDimensions = section(sections, "Judge").fold(List.empty[Dimension])(dimensions),
                 coverage = coverageRules(sections),
                 prompts = Map.empty,
@@ -148,6 +155,15 @@ object Pack:
   /** `- name: value` list items of a section body, in order. */
   private def namedListItems(body: String): Map[String, String] =
     body.linesIterator.collect { case ListItem(name, value) => name.trim -> value.trim }.toMap
+
+  /** `- ordering: …` / `- ignore: a, b` list items of the Equivalence section. */
+  private def equivalencePolicy(body: String): ComparisonPolicy =
+    val fields   = namedListItems(body)
+    val ordering =
+      if fields.get("ordering").map(_.toLowerCase).contains("unordered") then Equiv.Ordering.Unordered
+      else Equiv.Ordering.Ordered
+    val ignore   = fields.get("ignore").fold(Set.empty[String])(_.split(",").map(_.trim).filter(_.nonEmpty).toSet)
+    ComparisonPolicy(ordering, ignore)
 
   /** `- name (0..max): rubric` list items of the Judge section, in order. */
   private def dimensions(body: String): List[Dimension] =

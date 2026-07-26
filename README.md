@@ -5,13 +5,27 @@
 [![ZIO 2](https://img.shields.io/badge/ZIO-2.1-blue)](https://zio.dev/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Deterministic, AI-driven development flows — ZIO-native.
+**Clean-room legacy modernization with enforced gates and equivalence proof** —
+built on a ZIO-native library for deterministic, AI-driven development flows.
 
-llm4zio lets you programmatically define software-development workflows where AI
-agents do the coding. If you want AI-generated code to always be reviewed by
-another agent, don't coerce the agents — express that requirement in code. Don't
-spend tokens on formatting, committing, or opening PRs; an ordinary `ZIO`
-program handles all of that.
+llm4zio's flagship application is a five-phase **legacy-modernization pipeline**
+(COBOL/JCL, J2EE/JSP, IBM ACE → Spring Boot, Next.js): judged spec extraction, a
+human approval gate, spec-driven implementation behind an *enforced* clean-room
+wall, and a per-rule **equivalence proof** — every run leaves an evidence chain
+(gate verdicts, provenance manifest, equivalence report, cost ledger) an auditor
+can file. Estate-specific knowledge lives in versioned data ("packs"), not code.
+Start at [docs/legacy-modernization.md](docs/legacy-modernization.md), or run the
+10-minute demo against the synthetic bank estate:
+
+```bash
+examples/seed.sh modernize
+```
+
+Under it sits the general-purpose library: llm4zio lets you programmatically
+define software-development workflows where AI agents do the coding. If you want
+AI-generated code to always be reviewed by another agent, don't coerce the
+agents — express that requirement in code. Don't spend tokens on formatting,
+committing, or opening PRs; an ordinary `ZIO` program handles all of that.
 
 It is the ZIO counterpart to VirtusLab's
 [orca](https://github.com/VirtusLab/orca). orca is direct-style (Ox); llm4zio

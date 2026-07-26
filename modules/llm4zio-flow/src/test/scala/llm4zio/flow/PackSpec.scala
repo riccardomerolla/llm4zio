@@ -210,6 +210,45 @@ object PackSpec extends ZIOSpecDefault:
         )
       }
     },
+    test("load parses the optional replay command — how verify drives the target implementation") {
+      val manifest =
+        s"""$minimalManifest
+           |replay: scripts/replay.sh --batch
+           |""".stripMargin
+      ZIO.scoped {
+        for
+          dir      <- tempDir
+          _        <- write(dir, "pack.md", manifest)
+          pack     <- Pack.load(dir)
+          _        <- write(dir, "pack.md", minimalManifest)
+          defaults <- Pack.load(dir)
+        yield assertTrue(
+          pack.replay.contains(List("scripts/replay.sh", "--batch")),
+          defaults.replay.isEmpty,
+        )
+      }
+    },
+    test("load parses the Equivalence section into a comparison policy, defaulting when absent") {
+      val manifest =
+        s"""$minimalManifest
+           |## Equivalence
+           |
+           |- ordering: unordered
+           |- ignore: TS, LEDGER_ID
+           |""".stripMargin
+      ZIO.scoped {
+        for
+          dir      <- tempDir
+          _        <- write(dir, "pack.md", manifest)
+          pack     <- Pack.load(dir)
+          _        <- write(dir, "pack.md", minimalManifest)
+          defaults <- Pack.load(dir)
+        yield assertTrue(
+          pack.equivalence == ComparisonPolicy(Equiv.Ordering.Unordered, Set("TS", "LEDGER_ID")),
+          defaults.equivalence == ComparisonPolicy.default,
+        )
+      }
+    },
     test("load fails typed on a missing manifest and on a malformed one") {
       ZIO.scoped {
         for

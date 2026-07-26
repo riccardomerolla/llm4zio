@@ -1,11 +1,12 @@
-//> using dep "io.github.riccardomerolla::llm4zio-runner:3.19.0"
+//> using dep "io.github.riccardomerolla::llm4zio-runner:3.23.0"
 //> using scala "3.8.3"
 //> using jvm 21
 
-/** Legacy-modernization phase 4 of 4: review the delivered increment, produce fix specs, and
+/** Legacy-modernization phase 5 of 5: review the delivered increment, produce fix specs, and
   * feed lessons back into the pack.
   *
-  *   modernize-extract.sc → (human approves) → modernize-seed.sc → modernize-implement.sc → modernize-review.sc
+  *   modernize-extract.sc → (human approves) → modernize-seed.sc → modernize-implement.sc
+  *     → modernize-verify.sc → modernize-review.sc
   *
   * Runs ROOTED AT THE TARGET REPO (`--repo <target>`) on the implementation branch. This flow
   * FINDS and ROUTES — it does not fix:
@@ -42,6 +43,23 @@ import llm4zio.runner.*
 val ProModel   = "gemini-2.5-pro"   // point these at whatever your `gemini` CLI offers
 val FlashModel = "gemini-3.5-flash"
 val ModDir     = "docs/modernization"
+
+/** The enforced clean-room wall: refuse to run with legacy source inside the target workspace. */
+def assertWall(pack: Pack, root: Path, events: FlowEvents): IO[FlowError, Unit] =
+  pack.sources match
+    case None        => events.publish(FlowEvent.Info("pack has no sources regex — wall check skipped"))
+    case Some(regex) =>
+      Wall.check(root, regex).flatMap {
+        case Wall.Result.Clean           =>
+          events.publish(FlowEvent.Info("clean-room wall: no legacy source in the target workspace"))
+        case Wall.Result.Breached(paths) =>
+          val shown = paths.take(10).mkString(", ")
+          val more  = if paths.size > 10 then s" (+${paths.size - 10} more)" else ""
+          ZIO.fail(FlowError.Aborted(
+            s"clean-room wall breached — legacy source inside the target workspace: $shown$more. " +
+              "The review must judge spec-driven work only; remove the files and rerun."
+          ))
+      }
 
 val (coderCfg, reasoningCfg, reviewerCfg) =
   sys.env.get("LLM4ZIO_CODER").map(_.trim.toLowerCase).filter(_.nonEmpty) match
@@ -138,6 +156,7 @@ flow(
 
   for
     pack     <- stage("Pack")(Pack.load(packDir))
+    _        <- stage("Wall")(assertWall(pack, workDir, events))
     base     <- git.defaultBase
     diff     <- git.diffVsBase(base)
     _        <- ZIO.when(diff.isBlank)(

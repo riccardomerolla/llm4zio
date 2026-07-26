@@ -14,9 +14,9 @@
 #
 # `handoff` is a two-phase, human-gated example (handoff-plan.sc → approve → handoff-build.sc);
 # seeding it prints the two-invocation workflow instead of running a single script.
-# `modernize` is the four-phase legacy-modernization pipeline (extract → approve → seed →
-# implement → review); seeding it creates a legacy estate + an empty target repo and prints
-# the workflow.
+# `modernize` is the five-phase legacy-modernization pipeline (extract → approve → seed →
+# implement → verify → review); seeding it creates a legacy estate + an empty target repo and
+# prints the workflow.
 
 set -euo pipefail
 
@@ -120,10 +120,10 @@ if [ -z "$DEST" ]; then
 fi
 mkdir -p "$DEST"
 
-# `modernize` is the four-phase legacy-modernization pipeline over TWO repos: a synthetic
+# `modernize` is the five-phase legacy-modernization pipeline over TWO repos: a synthetic
 # mainframe estate (read) and an empty target (written). Seed both and print the workflow
 # (mirrors `handoff`'s print-and-exit). Pick the pair with LLM4ZIO_PACK (default
-# cobol-springboot; also: jsp-nextjs, jsp-bff-nextjs, ace-integration). With --local the four
+# cobol-springboot; also: jsp-nextjs, jsp-bff-nextjs, ace-integration). With --local the five
 # flow scripts are pinned to a fresh sbt publishLocal — needed until the release they pin
 # reaches Maven Central.
 if [ "$EXAMPLE" = "modernize" ]; then
@@ -142,7 +142,7 @@ if [ "$EXAMPLE" = "modernize" ]; then
     echo "Pinning flow scripts to local version $PUBLISHED_VERSION"
     tmp="${TMPDIR:-/tmp}"
     RUN_BASE="$(mktemp -d "${tmp%/}/llm4zio-modernize-flow.XXXXXXXX")"
-    for s in modernize-extract modernize-seed modernize-implement modernize-review; do
+    for s in modernize-extract modernize-seed modernize-implement modernize-verify modernize-review; do
       cp "$SCRIPT_DIR/$s.sc" "$RUN_BASE/$s.sc"
       pin_local "$RUN_BASE/$s.sc"
     done
@@ -153,7 +153,7 @@ Legacy estate ready at:  $LEGACY   (synthetic COBOL/JCL/DB2 — Meridian Savings
 Empty target repo at:    $TARGET
 Modernization pack:      $PACK
 
-Four phases, human approval between extract and seed:
+Five phases, human approval between extract and seed:
 
   export LLM4ZIO_PACK=$PACK
   export LLM4ZIO_RUN_LABEL=meridian-demo   # correlates all phases in the cost ledger (see costs.sc)
@@ -169,7 +169,10 @@ Four phases, human approval between extract and seed:
   # 4) implement the plan, gated until green (RED-gated tests-first, pack gates, judge):
   scala-cli run $RUN_BASE/modernize-implement.sc -- --repo $TARGET
 
-  # 5) review the increment: fix specs + plan increment + lessons back into the pack:
+  # 5) prove equivalence: generated vectors → replay → per-rule report (halts non-green):
+  scala-cli run $RUN_BASE/modernize-verify.sc -- --repo $TARGET
+
+  # 6) review the increment: fix specs + plan increment + lessons back into the pack:
   scala-cli run $RUN_BASE/modernize-review.sc -- --repo $TARGET
 
 Requires: JDK 21+, scala-cli, maven, and gemini logged in (LLM4ZIO_CODER=claude|codex|pi to swap).
