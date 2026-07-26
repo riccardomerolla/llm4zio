@@ -4,32 +4,30 @@ object ImplementFlow:
 
   /** Legacy-modernization phase 3 of 5: implement the seeded plan, gated until green.
     *
-    *   modernize-extract.sc → (human approves) → modernize-seed.sc → modernize-implement.sc
-    *     → modernize-verify.sc → modernize-review.sc
+    * modernize-extract.sc → (human approves) → modernize-seed.sc → modernize-implement.sc → modernize-verify.sc →
+    * modernize-review.sc
     *
-    * The clean-room wall is ENFORCED here: the flow refuses to start if anything in the target
-    * workspace matches the pack's legacy `sources:` regex — the coder is driven by specs alone.
+    * The clean-room wall is ENFORCED here: the flow refuses to start if anything in the target workspace matches the
+    * pack's legacy `sources:` regex — the coder is driven by specs alone.
     *
-    * Runs ROOTED AT THE TARGET REPO (`--repo <target>`), resuming the plan modernize-seed.sc
-    * committed at `docs/modernization/plan.md` (PlanStore — a crashed or halted run picks up at the
-    * first incomplete task; task completion is persisted into the committed plan file itself, so
-    * progress is auditable in git history).
+    * Runs ROOTED AT THE TARGET REPO (`--repo <target>`), resuming the plan modernize-seed.sc committed at
+    * `docs/modernization/plan.md` (PlanStore — a crashed or halted run picks up at the first incomplete task; task
+    * completion is persisted into the committed plan file itself, so progress is auditable in git history).
     *
     * The sdd.sc harness, pack-parameterized:
-    *   - Task 1 encodes the seeded BDD scenarios as FAILING acceptance tests — gated on the pack's
-    *     `build` command, then required RED (green new tests encode nothing → the flow fails).
-    *   - Every later task implements toward green: `reviewAndFixLoop` runs the pack's `test`
-    *     command as the lint gate plus `Reviewers.minimal` and the PACK'S OWN LENSES (e.g.
-    *     cobol-fidelity: BigDecimal/HALF_UP, validation order, reason codes) on the flash reviewer.
+    *   - Task 1 encodes the seeded BDD scenarios as FAILING acceptance tests — gated on the pack's `build` command,
+    *     then required RED (green new tests encode nothing → the flow fails).
+    *   - Every later task implements toward green: `reviewAndFixLoop` runs the pack's `test` command as the lint gate
+    *     plus `Reviewers.minimal` and the PACK'S OWN LENSES (e.g. cobol-fidelity: BigDecimal/HALF_UP, validation order,
+    *     reason codes) on the flash reviewer.
     *   - One commit per task; non-convergence halts with the plan persisted — fix or rerun.
-    *   - Final gate: the pack's `verify` command must be clean, then an LLM-as-a-Judge on
-    *     `reasoning` scores the WHOLE branch diff against the committed spec pack
-    *     (spec-compliance + scenario-coverage, full marks or the flow fails after a bounded
-    *     feedback round).
-    *   - Push + PR: Azure DevOps when configured, GitHub otherwise; a missing forge/remote
-    *     degrades to an Info event so the local demo still completes.
+    *   - Final gate: the pack's `verify` command must be clean, then an LLM-as-a-Judge on `reasoning` scores the WHOLE
+    *     branch diff against the committed spec pack (spec-compliance + scenario-coverage, full marks or the flow fails
+    *     after a bounded feedback round).
+    *   - Push + PR: Azure DevOps when configured, GitHub otherwise; a missing forge/remote degrades to an Info event so
+    *     the local demo still completes.
     *
-    * Run:  scala-cli run modernize-implement.sc -- --repo ~/services/meridian-transfers
+    * Run: scala-cli run modernize-implement.sc -- --repo ~/services/meridian-transfers
     */
 
   import zio.{ IO, ZIO }
@@ -38,13 +36,13 @@ object ImplementFlow:
   import llm4zio.flow.*
   import llm4zio.runner.*
 
-  val ProModel: String    = "gemini-2.5-pro"   // point these at whatever your `gemini` CLI offers
-  val FlashModel: String  = "gemini-3.5-flash"
-  val JudgeRounds: Int = 2
-  val ModDir: String      = "docs/modernization"
+  val ProModel: String   = "gemini-2.5-pro" // point these at whatever your `gemini` CLI offers
+  val FlashModel: String = "gemini-3.5-flash"
+  val JudgeRounds: Int   = 2
+  val ModDir: String     = "docs/modernization"
 
-  /** The enforced clean-room wall: refuse to run with legacy source inside the target workspace, so the
-    * coder provably works from the specs alone.
+  /** The enforced clean-room wall: refuse to run with legacy source inside the target workspace, so the coder provably
+    * works from the specs alone.
     */
   def assertWall(pack: Pack, root: java.nio.file.Path, events: FlowEvents): IO[FlowError, Unit] =
     pack.sources match
@@ -110,8 +108,8 @@ object ImplementFlow:
       }
       .mapError(e => FlowError.Persistence("failed to read the committed specs", Some(e)))
 
-  /** Judge the branch diff against the committed specs; feed sub-bar reasoning back to the coder,
-    * re-verify, re-judge — bounded by `JudgeRounds`, failing the flow if the bar is never cleared.
+  /** Judge the branch diff against the committed specs; feed sub-bar reasoning back to the coder, re-verify, re-judge —
+    * bounded by `JudgeRounds`, failing the flow if the bar is never cleared.
     */
   def specComplianceLoop(
     coderChat: Chat,
@@ -159,31 +157,31 @@ object ImplementFlow:
       val reviewSvc = reviewers.headOption.getOrElse(reasoning)
 
       for
-        pack     <- stage("Pack")(Pack.load(packDir))
-        _        <- stage("Wall")(assertWall(pack, workDir, events))
-        plan     <- PlanStore
-                      .load(planFile)
-                      .someOrFail(FlowError.Aborted(s"no plan at $planFile — run modernize-seed.sc first"))
-        buildGate = pack.gate("build").fold(ZIO.succeed(ReviewResult(Nil)))(Reviewers.lintCommand(_, workDir))
-        testGate  = pack.gate("test").fold(ZIO.succeed(ReviewResult(Nil)))(Reviewers.lintCommand(_, workDir))
-        verGate   = pack.gate("verify").orElse(pack.gate("test")).fold(ZIO.succeed(ReviewResult(Nil)))(
-                      Reviewers.lintCommand(_, workDir)
-                    )
-        _        <- stage("Branch")(git.checkoutOrCreate(plan.epicId))
-        cards    <- Patterns
-                      .load(packDir.resolve("patterns"))
-                      .zipWith(Patterns.load(workspace.resolve("patterns")))(_ ++ _)
-        specText <- gatherSpecs(workDir, pack.specsDir)
-        cited     = Patterns.tagged(specText) // extraction tagged the fragments; specs cite the ids
-        playbook  = cards.filter(c => cited.contains(c.id))
-        system    = List(
-                      pack.prompt("implement"),
-                      pack.lessons.map(l => s"Lessons from previous modernization runs — apply them:\n$l"),
-                      Option.when(playbook.nonEmpty)(
-                        "Pattern cards cited by the specs — the translation playbook (advisory, the specs win):\n\n" +
-                          playbook.map(c => s"### ${c.id}\n${c.body}").mkString("\n\n")
-                      ),
-                    ).flatten.mkString("\n\n")
+        pack      <- stage("Pack")(Pack.load(packDir))
+        _         <- stage("Wall")(assertWall(pack, workDir, events))
+        plan      <- PlanStore
+                       .load(planFile)
+                       .someOrFail(FlowError.Aborted(s"no plan at $planFile — run modernize-seed.sc first"))
+        buildGate  = pack.gate("build").fold(ZIO.succeed(ReviewResult(Nil)))(Reviewers.lintCommand(_, workDir))
+        testGate   = pack.gate("test").fold(ZIO.succeed(ReviewResult(Nil)))(Reviewers.lintCommand(_, workDir))
+        verGate    = pack.gate("verify").orElse(pack.gate("test")).fold(ZIO.succeed(ReviewResult(Nil)))(
+                       Reviewers.lintCommand(_, workDir)
+                     )
+        _         <- stage("Branch")(git.checkoutOrCreate(plan.epicId))
+        cards     <- Patterns
+                       .load(packDir.resolve("patterns"))
+                       .zipWith(Patterns.load(workspace.resolve("patterns")))(_ ++ _)
+        specText  <- gatherSpecs(workDir, pack.specsDir)
+        cited      = Patterns.tagged(specText) // extraction tagged the fragments; specs cite the ids
+        playbook   = cards.filter(c => cited.contains(c.id))
+        system     = List(
+                       pack.prompt("implement"),
+                       pack.lessons.map(l => s"Lessons from previous modernization runs — apply them:\n$l"),
+                       Option.when(playbook.nonEmpty)(
+                         "Pattern cards cited by the specs — the translation playbook (advisory, the specs win):\n\n" +
+                           playbook.map(c => s"### ${c.id}\n${c.body}").mkString("\n\n")
+                       ),
+                     ).flatten.mkString("\n\n")
         coderChat <- Chat.start(coder, system = Some(system))
         _         <- implementTaskLoop(planFile, plan) { task =>
                        val testsTask = plan.tasks.headOption.contains(task)
@@ -208,15 +206,16 @@ object ImplementFlow:
                          _ <- git.commitAll(s"${plan.epicId}: ${task.title}").unit
                        yield ()
                      }
-        _         <- stage("Verify") {
-                       verGate.flatMap { r =>
-                         if r.isClean then ZIO.unit
-                         else
-                           fail(
-                             s"verify gate failed:\n${r.issues.map(i => s"${i.title}\n${i.description}".strip).mkString("\n\n")}"
-                           )
-                       }
-                     }
+        _         <-
+          stage("Verify") {
+            verGate.flatMap { r =>
+              if r.isClean then ZIO.unit
+              else
+                fail(
+                  s"verify gate failed:\n${r.issues.map(i => s"${i.title}\n${i.description}".strip).mkString("\n\n")}"
+                )
+            }
+          }
         specText  <- gatherSpecs(workDir, pack.specsDir)
         _         <- stage("Judge")(
                        specComplianceLoop(coderChat, Judge.of(reasoning, complianceDims), verGate, specText, plan.epicId)

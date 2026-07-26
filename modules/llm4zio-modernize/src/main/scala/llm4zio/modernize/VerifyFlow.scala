@@ -2,37 +2,36 @@ package llm4zio.modernize
 
 object VerifyFlow:
 
-  /** Legacy-modernization phase 4 of 5: prove the implementation equivalent to its specs — per rule,
-    * with a deterministic diff, and an auditor-facing report.
+  /** Legacy-modernization phase 4 of 5: prove the implementation equivalent to its specs — per rule, with a
+    * deterministic diff, and an auditor-facing report.
     *
-    *   modernize-extract.sc → (human approves) → modernize-seed.sc → modernize-implement.sc
-    *     → modernize-verify.sc → modernize-review.sc
+    * modernize-extract.sc → (human approves) → modernize-seed.sc → modernize-implement.sc → modernize-verify.sc →
+    * modernize-review.sc
     *
-    * Runs ROOTED AT THE TARGET REPO (`--repo <target>`) on the implementation branch, behind the
-    * clean-room wall (no legacy source may be present — verification is against specs and vectors,
-    * never against the original code):
+    * Runs ROOTED AT THE TARGET REPO (`--repo <target>`) on the implementation branch, behind the clean-room wall (no
+    * legacy source may be present — verification is against specs and vectors, never against the original code):
     *
-    *   1. VECTORS, generated-first: for each spec'd program with no vector file yet, `reasoning`
-    *      generates equivalence vectors from the spec + BDD scenarios (boundary values included) into
-    *      `docs/modernization/vectors/<PROGRAM>.jsonl` — resumable per program like extraction; delete
-    *      a file to regenerate it. Captured-tier vectors (recorded legacy runs, `"tier":"captured"`)
-    *      can be dropped into the same directory by the bank's own capture tooling — same JSONL format.
-    *   2. REPLAY, transport-blind: every vector is piped (JSON on stdin) into the pack's `replay:`
-    *      command, which drives the target implementation and prints the resulting observations as a
-    *      JSON array (the `Equiv.Observation` encoding: `{"type":"record",...}` / `{"type":"db",...}`).
-    *   3. DIFF, deterministic: `Equiv.diff` compares expected vs actual observations under the pack's
-    *      `## Equivalence` policy (ordering, ignored fields). No LLM decides equivalence.
-    *   4. REPORT, per rule: `docs/modernization/equivalence.md` — every rule from the spec pack's
-    *      rules.txt with generated/captured columns kept separate (never summed) and unexercised
-    *      rules listed loudly. The report's hash is appended to provenance.json.
-    *   5. TRIAGE, bounded: mismatches are distilled by `reasoning` into fix specs under
-    *      `docs/specs/fixes/` + appended plan tasks — rerun modernize-implement.sc to pick them up.
-    *      The flow then HALTS non-green so a pipeline can gate on it.
+    *   1. VECTORS, generated-first: for each spec'd program with no vector file yet, `reasoning` generates equivalence
+    *      vectors from the spec + BDD scenarios (boundary values included) into
+    *      `docs/modernization/vectors/<PROGRAM>.jsonl` — resumable per program like extraction; delete a file to
+    *      regenerate it. Captured-tier vectors (recorded legacy runs, `"tier":"captured"`) can be dropped into the same
+    *      directory by the bank's own capture tooling — same JSONL format.
+    *   2. REPLAY, transport-blind: every vector is piped (JSON on stdin) into the pack's `replay:` command, which
+    *      drives the target implementation and prints the resulting observations as a JSON array (the
+    *      `Equiv.Observation` encoding: `{"type":"record",...}` / `{"type":"db",...}`).
+    *   3. DIFF, deterministic: `Equiv.diff` compares expected vs actual observations under the pack's `## Equivalence`
+    *      policy (ordering, ignored fields). No LLM decides equivalence.
+    *   4. REPORT, per rule: `docs/modernization/equivalence.md` — every rule from the spec pack's rules.txt with
+    *      generated/captured columns kept separate (never summed) and unexercised rules listed loudly. The report's
+    *      hash is appended to provenance.json.
+    *   5. TRIAGE, bounded: mismatches are distilled by `reasoning` into fix specs under `docs/specs/fixes/` + appended
+    *      plan tasks — rerun modernize-implement.sc to pick them up. The flow then HALTS non-green so a pipeline can
+    *      gate on it.
     *
-    * Generated vectors prove SPEC CONFORMANCE; captured vectors prove BEHAVIOURAL EQUIVALENCE.
-    * The report keeps the two claims separate — do not let anyone sum them.
+    * Generated vectors prove SPEC CONFORMANCE; captured vectors prove BEHAVIOURAL EQUIVALENCE. The report keeps the two
+    * claims separate — do not let anyone sum them.
     *
-    * Run:  scala-cli run modernize-verify.sc -- --repo ~/services/meridian-transfers
+    * Run: scala-cli run modernize-verify.sc -- --repo ~/services/meridian-transfers
     */
 
   import java.nio.charset.StandardCharsets
@@ -58,12 +57,17 @@ object VerifyFlow:
         val agent = Connectors.coderFromEnv()
         (agent, agent.copy(readOnly = true))
 
-  /** The model-facing vector shape: flat maps only, so structured output stays schema-simple. `kind` is
-    * "record" (an emitted record: `channel` names it, `fields` carries it) or "db" (a mutation: `channel`
-    * is the table, `op` insert/update/delete, `key` addresses the row, `fields` is what's written).
+  /** The model-facing vector shape: flat maps only, so structured output stays schema-simple. `kind` is "record" (an
+    * emitted record: `channel` names it, `fields` carries it) or "db" (a mutation: `channel` is the table, `op`
+    * insert/update/delete, `key` addresses the row, `fields` is what's written).
     */
-  case class GenObservation(kind: String, channel: String, op: String, key: Map[String, String], fields: Map[String, String])
-    derives JsonCodec
+  case class GenObservation(
+    kind: String,
+    channel: String,
+    op: String,
+    key: Map[String, String],
+    fields: Map[String, String],
+  ) derives JsonCodec
   case class GenVector(id: String, rules: List[String], inputs: Map[String, String], observations: List[GenObservation])
     derives JsonCodec
   case class GenVectors(vectors: List[GenVector]) derives JsonCodec
@@ -146,8 +150,8 @@ object VerifyFlow:
     title.toLowerCase.replaceAll("[^a-z0-9]+", "-").stripPrefix("-").stripSuffix("-").take(60)
 
   def generatePrompt(pack: Pack, program: String, spec: String, feature: String, rules: List[String]): String =
-    val packBrief  = pack.prompt("vectors").getOrElse("")
-    val ruleSlice  = rules.mkString("\n")
+    val packBrief = pack.prompt("vectors").getOrElse("")
+    val ruleSlice = rules.mkString("\n")
     s"""$packBrief
        |
        |Generate equivalence test vectors for the program $program from its behavioural spec and BDD
@@ -239,136 +243,142 @@ object VerifyFlow:
       val events     = summon[FlowEvents]
 
       for
-        pack     <- stage("Pack")(Pack.load(packDir))
-        _        <- stage("Wall")(assertWall(pack, workDir, events))
-        specsDir  = workDir.resolve(pack.specsDir)
-        rulesTxt <- readFileOr(specsDir.resolve("rules.txt"), "")
-        universe  = rulesTxt.linesIterator.map(_.strip).filter(_.nonEmpty).toList
-        _        <- ZIO.when(universe.isEmpty)(
-                      events.publish(FlowEvent.Info(
-                        "no rules.txt in the spec pack (extracted before 3.23.0?) — the report will use the " +
-                          "vectors' own rules and cannot flag unexercised ones"
-                      ))
-                    )
-        programs <- stage("Programs")(specPrograms(specsDir))
-        _        <- ZIO.when(programs.isEmpty)(
-                      ZIO.fail(FlowError.Aborted(s"no specs under $specsDir — run modernize-seed.sc first"))
-                    )
-        _        <- stage("Vectors") { // generated-first, resumable per program: delete a file to regenerate
-                      ZIO.foreachDiscard(programs) { program =>
-                        val file = vectorsDir.resolve(s"$program.jsonl")
-                        ZIO
-                          .attemptBlocking(Files.exists(file))
-                          .orDie
-                          .flatMap {
-                            case true  => events.publish(FlowEvent.Info(s"vectors exist for $program — skipping"))
-                            case false =>
-                              for
-                                spec    <- readFileOr(specsDir.resolve(s"$program.md"), "")
-                                feature <- featureFor(workDir.resolve(pack.featuresDir), program)
-                                gen     <- reasoning
-                                             .executeStructured[GenVectors](
-                                               generatePrompt(pack, program, spec, feature, universe),
-                                               SchemaDerivation.derive[GenVectors],
-                                             )
-                                             .mapError(e => FlowError.Llm(e.message, Some(e)))
-                                vectors <- ZIO.foreach(gen.vectors) { g =>
-                                             ZIO.fromEither(toVector(program, g)).mapError(FlowError.PlanParse(_))
-                                           }
-                                _       <- ZIO.when(vectors.isEmpty)(
-                                             ZIO.fail(FlowError.Aborted(s"generator produced no vectors for $program"))
-                                           )
-                                _       <- VectorStore.write(file, vectors)
-                                _       <- events.publish(FlowEvent.Info(s"${vectors.size} vector(s) generated for $program"))
-                              yield ()
-                          }
-                      }
-                    }
+        pack      <- stage("Pack")(Pack.load(packDir))
+        _         <- stage("Wall")(assertWall(pack, workDir, events))
+        specsDir   = workDir.resolve(pack.specsDir)
+        rulesTxt  <- readFileOr(specsDir.resolve("rules.txt"), "")
+        universe   = rulesTxt.linesIterator.map(_.strip).filter(_.nonEmpty).toList
+        _         <- ZIO.when(universe.isEmpty)(
+                       events.publish(FlowEvent.Info(
+                         "no rules.txt in the spec pack (extracted before 3.23.0?) — the report will use the " +
+                           "vectors' own rules and cannot flag unexercised ones"
+                       ))
+                     )
+        programs  <- stage("Programs")(specPrograms(specsDir))
+        _         <- ZIO.when(programs.isEmpty)(
+                       ZIO.fail(FlowError.Aborted(s"no specs under $specsDir — run modernize-seed.sc first"))
+                     )
+        _         <- stage("Vectors") { // generated-first, resumable per program: delete a file to regenerate
+                       ZIO.foreachDiscard(programs) { program =>
+                         val file = vectorsDir.resolve(s"$program.jsonl")
+                         ZIO
+                           .attemptBlocking(Files.exists(file))
+                           .orDie
+                           .flatMap {
+                             case true  => events.publish(FlowEvent.Info(s"vectors exist for $program — skipping"))
+                             case false =>
+                               for
+                                 spec    <- readFileOr(specsDir.resolve(s"$program.md"), "")
+                                 feature <- featureFor(workDir.resolve(pack.featuresDir), program)
+                                 gen     <- reasoning
+                                              .executeStructured[GenVectors](
+                                                generatePrompt(pack, program, spec, feature, universe),
+                                                SchemaDerivation.derive[GenVectors],
+                                              )
+                                              .mapError(e => FlowError.Llm(e.message, Some(e)))
+                                 vectors <- ZIO.foreach(gen.vectors) { g =>
+                                              ZIO.fromEither(toVector(program, g)).mapError(FlowError.PlanParse(_))
+                                            }
+                                 _       <- ZIO.when(vectors.isEmpty)(
+                                              ZIO.fail(FlowError.Aborted(s"generator produced no vectors for $program"))
+                                            )
+                                 _       <- VectorStore.write(file, vectors)
+                                 _       <- events.publish(FlowEvent.Info(s"${vectors.size} vector(s) generated for $program"))
+                               yield ()
+                           }
+                       }
+                     }
         replayCmd <- ZIO
                        .fromOption(pack.replay)
                        .orElseFail(FlowError.Aborted(
                          s"pack '${pack.name}' has no replay: command — add one (reads a vector JSON on stdin, " +
                            "prints the resulting observations as a JSON array on stdout)"
                        ))
-        verdicts <- stage("Replay") {
-                      for
-                        files   <- SpecChecks.matchingFiles(vectorsDir, """.*\.jsonl""").orElseSucceed(Nil)
-                        vectors <- ZIO.foreach(files.sorted)(f => VectorStore.read(vectorsDir.resolve(f))).map(_.flatten)
-                        _       <- ZIO.when(vectors.isEmpty)(
-                                     ZIO.fail(FlowError.Aborted(s"no vectors under $vectorsDir — nothing to replay"))
-                                   )
-                        result  <- ZIO.foreach(vectors) { v =>
-                                     Equiv.replayVector(replayCmd, workDir, v).flatMap {
-                                       case Equiv.Replayed.Crashed(code, problem) =>
-                                         events
-                                           .publish(FlowEvent.Info(
-                                             s"replay failed for ${v.program}/${v.id} (exit $code): ${problem.take(300)}"
-                                           ))
-                                           .as(VectorVerdict(v, v.observations.map(Equiv.Mismatch.Missing(_))))
-                                       case Equiv.Replayed.Observed(actual)       =>
-                                         ZIO.succeed(VectorVerdict(v, Equiv.diff(v.observations, actual, pack.equivalence)))
-                                     }
-                                   }
-                      yield result
-                    }
-        allRules  = if universe.nonEmpty then universe else verdicts.flatMap(_.vector.rules).distinct.sorted
-        failing   = verdicts.filterNot(_.passed)
-        _        <- stage("Report") {
-                      writeFile(workDir.resolve(ModDir).resolve("equivalence.md"), EquivReport.render(verdicts, allRules))
-                    }
-        _        <- ZIO.when(failing.nonEmpty)(stage("Triage") {
-                      for
-                        specText <- readFileOr(specsDir.resolve("traceability.md"), "")
-                        specs    <- ZIO.foreach(programs)(p => readFileOr(specsDir.resolve(s"$p.md"), ""))
-                        outcome  <- reasoning
-                                      .executeStructured[VerifyOutcome](
-                                        triagePrompt(pack, failing, (specText :: specs).mkString("\n\n")),
-                                        SchemaDerivation.derive[VerifyOutcome],
-                                      )
-                                      .mapError(e => FlowError.Llm(e.message, Some(e)))
-                        _        <- ZIO.foreachDiscard(outcome.fixes) { f =>
-                                      writeFile(specsDir.resolve("fixes").resolve(s"fix-${slug(f.title)}.md"),
-                                        s"# ${f.title}\n\n${f.spec}\n")
-                                    }
-                        _        <- ZIO.when(outcome.fixes.nonEmpty) {
-                                      PlanStore
-                                        .load(planFile)
-                                        .someOrFail(FlowError.Aborted(s"no plan at $planFile — run modernize-seed.sc first"))
-                                        .flatMap { plan =>
-                                          val increment = outcome.fixes.map(f => Task(f.taskTitle, f.taskDescription))
-                                          PlanStore.save(planFile, plan.copy(tasks = plan.tasks ++ increment)) *>
-                                            events.publish(FlowEvent.Info(
-                                              s"${increment.size} fix task(s) appended — rerun modernize-implement.sc"
+        verdicts  <- stage("Replay") {
+                       for
+                         files   <- SpecChecks.matchingFiles(vectorsDir, """.*\.jsonl""").orElseSucceed(Nil)
+                         vectors <-
+                           ZIO.foreach(files.sorted)(f => VectorStore.read(vectorsDir.resolve(f))).map(_.flatten)
+                         _       <- ZIO.when(vectors.isEmpty)(
+                                      ZIO.fail(FlowError.Aborted(s"no vectors under $vectorsDir — nothing to replay"))
+                                    )
+                         result  <- ZIO.foreach(vectors) { v =>
+                                      Equiv.replayVector(replayCmd, workDir, v).flatMap {
+                                        case Equiv.Replayed.Crashed(code, problem) =>
+                                          events
+                                            .publish(FlowEvent.Info(
+                                              s"replay failed for ${v.program}/${v.id} (exit $code): ${problem.take(300)}"
                                             ))
-                                        }
+                                            .as(VectorVerdict(v, v.observations.map(Equiv.Mismatch.Missing(_))))
+                                        case Equiv.Replayed.Observed(actual)       =>
+                                          ZIO.succeed(VectorVerdict(
+                                            v,
+                                            Equiv.diff(v.observations, actual, pack.equivalence),
+                                          ))
+                                      }
                                     }
-                      yield ()
-                    })
-        _        <- stage("Provenance") {
-                      val manifest = workDir.resolve(ModDir).resolve("provenance.json")
-                      ZIO
-                        .attemptBlocking(Files.exists(manifest))
-                        .orDie
-                        .flatMap {
-                          case false => events.publish(FlowEvent.Info("no provenance.json — seeded before 3.23.0; skipping"))
-                          case true  =>
-                            Provenance
-                              .hashFiles(workDir, List(s"$ModDir/equivalence.md"))
-                              .flatMap(h => Provenance.extend(manifest)(_.copy(equivalenceReport = h.values.headOption)))
-                              .unit
-                        }
-                    }
-        gCount    = verdicts.count(_.vector.tier == Equiv.Tier.Generated)
-        cCount    = verdicts.count(_.vector.tier == Equiv.Tier.Captured)
-        summary   = s"${verdicts.count(_.passed)}/${verdicts.size} vectors green ($gCount generated, $cCount captured)"
-        _        <- stage("Commit")(
-                      git.commitAll(s"modernize(${pack.name}): verify — $summary" +
-                        (if failing.nonEmpty then s"; ${failing.size} failing triaged" else "")).unit
-                    )
-        _        <- ZIO.when(failing.nonEmpty)(
-                      ZIO.fail(FlowError.Aborted(
-                        s"equivalence not proven: ${failing.size} failing vector(s) — see $ModDir/equivalence.md; " +
-                          "fix specs filed, rerun modernize-implement.sc"
-                      ))
-                    )
+                       yield result
+                     }
+        allRules   = if universe.nonEmpty then universe else verdicts.flatMap(_.vector.rules).distinct.sorted
+        failing    = verdicts.filterNot(_.passed)
+        _         <- stage("Report") {
+                       writeFile(workDir.resolve(ModDir).resolve("equivalence.md"), EquivReport.render(verdicts, allRules))
+                     }
+        _         <- ZIO.when(failing.nonEmpty)(stage("Triage") {
+                       for
+                         specText <- readFileOr(specsDir.resolve("traceability.md"), "")
+                         specs    <- ZIO.foreach(programs)(p => readFileOr(specsDir.resolve(s"$p.md"), ""))
+                         outcome  <- reasoning
+                                       .executeStructured[VerifyOutcome](
+                                         triagePrompt(pack, failing, (specText :: specs).mkString("\n\n")),
+                                         SchemaDerivation.derive[VerifyOutcome],
+                                       )
+                                       .mapError(e => FlowError.Llm(e.message, Some(e)))
+                         _        <- ZIO.foreachDiscard(outcome.fixes) { f =>
+                                       writeFile(
+                                         specsDir.resolve("fixes").resolve(s"fix-${slug(f.title)}.md"),
+                                         s"# ${f.title}\n\n${f.spec}\n",
+                                       )
+                                     }
+                         _        <- ZIO.when(outcome.fixes.nonEmpty) {
+                                       PlanStore
+                                         .load(planFile)
+                                         .someOrFail(FlowError.Aborted(s"no plan at $planFile — run modernize-seed.sc first"))
+                                         .flatMap { plan =>
+                                           val increment = outcome.fixes.map(f => Task(f.taskTitle, f.taskDescription))
+                                           PlanStore.save(planFile, plan.copy(tasks = plan.tasks ++ increment)) *>
+                                             events.publish(FlowEvent.Info(
+                                               s"${increment.size} fix task(s) appended — rerun modernize-implement.sc"
+                                             ))
+                                         }
+                                     }
+                       yield ()
+                     })
+        _         <- stage("Provenance") {
+                       val manifest = workDir.resolve(ModDir).resolve("provenance.json")
+                       ZIO
+                         .attemptBlocking(Files.exists(manifest))
+                         .orDie
+                         .flatMap {
+                           case false => events.publish(FlowEvent.Info("no provenance.json — seeded before 3.23.0; skipping"))
+                           case true  =>
+                             Provenance
+                               .hashFiles(workDir, List(s"$ModDir/equivalence.md"))
+                               .flatMap(h => Provenance.extend(manifest)(_.copy(equivalenceReport = h.values.headOption)))
+                               .unit
+                         }
+                     }
+        gCount     = verdicts.count(_.vector.tier == Equiv.Tier.Generated)
+        cCount     = verdicts.count(_.vector.tier == Equiv.Tier.Captured)
+        summary    = s"${verdicts.count(_.passed)}/${verdicts.size} vectors green ($gCount generated, $cCount captured)"
+        _         <- stage("Commit")(
+                       git.commitAll(s"modernize(${pack.name}): verify — $summary" +
+                         (if failing.nonEmpty then s"; ${failing.size} failing triaged" else "")).unit
+                     )
+        _         <- ZIO.when(failing.nonEmpty)(
+                       ZIO.fail(FlowError.Aborted(
+                         s"equivalence not proven: ${failing.size} failing vector(s) — see $ModDir/equivalence.md; " +
+                           "fix specs filed, rerun modernize-implement.sc"
+                       ))
+                     )
       yield summary

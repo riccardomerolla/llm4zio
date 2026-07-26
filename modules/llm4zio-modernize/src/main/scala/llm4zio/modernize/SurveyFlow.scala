@@ -2,30 +2,27 @@ package llm4zio.modernize
 
 object SurveyFlow:
 
-  /** Legacy-modernization phase 0 of 5: survey the estate — inventory, dependency graph, triage,
-    * and a human-approved wave plan with a cost projection.
+  /** Legacy-modernization phase 0 of 5: survey the estate — inventory, dependency graph, triage, and a human-approved
+    * wave plan with a cost projection.
     *
-    *   modernize-survey.sc → (human approves waves) → modernize-extract.sc → … → modernize-review.sc
+    * modernize-survey.sc → (human approves waves) → modernize-extract.sc → … → modernize-review.sc
     *
-    * Runs ROOTED AT THE LEGACY REPO (`--repo <legacy>`). Banks stall before extraction because
-    * nobody can answer "what do we have, what depends on what, in what order do we migrate" —
-    * this phase answers all three, deterministic-first:
+    * Runs ROOTED AT THE LEGACY REPO (`--repo <legacy>`). Banks stall before extraction because nobody can answer "what
+    * do we have, what depends on what, in what order do we migrate" — this phase answers all three,
+    * deterministic-first:
     *
-    *   1. GRAPH (deterministic, `flow.Survey` — no LLM): one node per file matching the pack's
-    *      `sources:` regex (size = lines + coverage units), one edge per `## Survey:` rule match
-    *      (CALL / COPY / EXEC PGM=…). Written as `docs/modernization/inventory.md` (auditable
-    *      Markdown) + `graph.json` (machine-readable), committed.
-    *   2. TRIAGE (LLM, bounded to the graph): `reasoning` classifies each unit
-    *      rewrite | retire | wrap (wrap = keep and front with an API — classified here,
-    *      implementing wraps is out of scope), resolves what the regexes could not (dynamic CALL
-    *      variables), and proposes dependency-coherent WAVES.
-    *   3. WAVE PLAN (human-gated): `docs/modernization/wave-plan.md` carries the waves, the
-    *      per-unit dispositions, and — when `bench-results.jsonl` exists next to the scripts — a
-    *      per-wave cost/duration projection from real measured runs (`bench-report --project`).
-    *      The plan gets an UNCHECKED approval marker: a person reviews, flips it, and only then
-    *      does extraction start. Scope extraction to one wave with LLM4ZIO_WAVE=<name>.
+    *   1. GRAPH (deterministic, `flow.Survey` — no LLM): one node per file matching the pack's `sources:` regex (size =
+    *      lines + coverage units), one edge per `## Survey:` rule match (CALL / COPY / EXEC PGM=…). Written as
+    *      `docs/modernization/inventory.md` (auditable Markdown) + `graph.json` (machine-readable), committed.
+    *   2. TRIAGE (LLM, bounded to the graph): `reasoning` classifies each unit rewrite | retire | wrap (wrap = keep and
+    *      front with an API — classified here, implementing wraps is out of scope), resolves what the regexes could not
+    *      (dynamic CALL variables), and proposes dependency-coherent WAVES.
+    *   3. WAVE PLAN (human-gated): `docs/modernization/wave-plan.md` carries the waves, the per-unit dispositions, and
+    *      — when `bench-results.jsonl` exists next to the scripts — a per-wave cost/duration projection from real
+    *      measured runs (`bench-report --project`). The plan gets an UNCHECKED approval marker: a person reviews, flips
+    *      it, and only then does extraction start. Scope extraction to one wave with LLM4ZIO_WAVE=<name>.
     *
-    * Run:  scala-cli run modernize-survey.sc -- --repo ~/estates/meridian-legacy
+    * Run: scala-cli run modernize-survey.sc -- --repo ~/estates/meridian-legacy
     */
 
   import java.nio.charset.StandardCharsets
@@ -48,8 +45,8 @@ object SurveyFlow:
         val agent = Connectors.coderFromEnv()
         (agent, agent.copy(readOnly = true))
 
-  /** One unit's disposition: rewrite (full modernization), retire (dead — decommission), or wrap
-    * (keep on the mainframe, front with an API; implementing the wrap is out of scope here).
+  /** One unit's disposition: rewrite (full modernization), retire (dead — decommission), or wrap (keep on the
+    * mainframe, front with an API; implementing the wrap is out of scope here).
     */
   case class NodeTriage(name: String, disposition: String, rationale: String) derives JsonCodec
 
@@ -126,34 +123,34 @@ object SurveyFlow:
       val events  = summon[FlowEvents]
 
       for
-        pack      <- stage("Pack")(Pack.load(packDir))
-        _         <- ZIO.when(pack.survey.isEmpty)(
-                       ZIO.fail(FlowError.Aborted(
-                         s"pack '${pack.name}' has no '## Survey:' sections — add the dependency-edge regexes " +
-                           "(CALL/COPY/EXEC PGM…) the graph should be built from"
-                       ))
-                     )
-        graph     <- stage("Graph") {
-                       for
-                         g <- Survey.graph(
-                                workDir,
-                                sources = pack.sources.getOrElse(""".*"""),
-                                units = pack.coverage,
-                                edges = pack.survey,
-                              )
-                         _ <- writeFile(modDir.resolve("inventory.md"), Survey.renderInventory(g))
-                         _ <- writeFile(modDir.resolve("graph.json"), g.toJsonPretty)
-                         _ <- events.publish(FlowEvent.Info(s"${g.nodes.size} unit(s), ${g.edges.size} edge(s)"))
-                       yield g
-                     }
-        outcome   <- stage("Triage") {
-                       reasoning
-                         .executeStructured[SurveyOutcome](
-                           triagePrompt(graph, Survey.renderInventory(graph)),
-                           SchemaDerivation.derive[SurveyOutcome],
-                         )
-                         .mapError(e => FlowError.Llm(e.message, Some(e)))
-                     }
+        pack       <- stage("Pack")(Pack.load(packDir))
+        _          <- ZIO.when(pack.survey.isEmpty)(
+                        ZIO.fail(FlowError.Aborted(
+                          s"pack '${pack.name}' has no '## Survey:' sections — add the dependency-edge regexes " +
+                            "(CALL/COPY/EXEC PGM…) the graph should be built from"
+                        ))
+                      )
+        graph      <- stage("Graph") {
+                        for
+                          g <- Survey.graph(
+                                 workDir,
+                                 sources = pack.sources.getOrElse(""".*"""),
+                                 units = pack.coverage,
+                                 edges = pack.survey,
+                               )
+                          _ <- writeFile(modDir.resolve("inventory.md"), Survey.renderInventory(g))
+                          _ <- writeFile(modDir.resolve("graph.json"), g.toJsonPretty)
+                          _ <- events.publish(FlowEvent.Info(s"${g.nodes.size} unit(s), ${g.edges.size} edge(s)"))
+                        yield g
+                      }
+        outcome    <- stage("Triage") {
+                        reasoning
+                          .executeStructured[SurveyOutcome](
+                            triagePrompt(graph, Survey.renderInventory(graph)),
+                            SchemaDerivation.derive[SurveyOutcome],
+                          )
+                          .mapError(e => FlowError.Llm(e.message, Some(e)))
+                      }
         projection <- stage("Projection") {
                         val bench = workspace.resolve("bench-results.jsonl")
                         ZIO
@@ -178,16 +175,16 @@ object SurveyFlow:
                               }
                           }
                       }
-        planMd     = renderWavePlan(outcome, graph, projection)
-        _         <- stage("Wave plan")(
-                       writeFile(modDir.resolve("wave-plan.md"), ApprovalGate.withDraftMarker(planMd))
-                     )
-        _         <- stage("Commit")(
-                       git.commitAll(s"modernize(${pack.name}): survey — ${graph.nodes.size} unit(s), " +
-                         s"${outcome.waves.size} wave(s) proposed").unit
-                     )
-        _         <- events.publish(FlowEvent.Info(
-                       s"review $ModDir/wave-plan.md, flip '- [x] Approved', then run modernize-extract.sc " +
-                         "(LLM4ZIO_WAVE=<name> scopes it to one wave)"
-                     ))
+        planMd      = renderWavePlan(outcome, graph, projection)
+        _          <- stage("Wave plan")(
+                        writeFile(modDir.resolve("wave-plan.md"), ApprovalGate.withDraftMarker(planMd))
+                      )
+        _          <- stage("Commit")(
+                        git.commitAll(s"modernize(${pack.name}): survey — ${graph.nodes.size} unit(s), " +
+                          s"${outcome.waves.size} wave(s) proposed").unit
+                      )
+        _          <- events.publish(FlowEvent.Info(
+                        s"review $ModDir/wave-plan.md, flip '- [x] Approved', then run modernize-extract.sc " +
+                          "(LLM4ZIO_WAVE=<name> scopes it to one wave)"
+                      ))
       yield s"units=${graph.nodes.size} waves=${outcome.waves.size}"

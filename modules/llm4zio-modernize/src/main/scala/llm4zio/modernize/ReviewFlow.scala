@@ -2,29 +2,28 @@ package llm4zio.modernize
 
 object ReviewFlow:
 
-  /** Legacy-modernization phase 5 of 5: review the delivered increment, produce fix specs, and
-    * feed lessons back into the pack.
+  /** Legacy-modernization phase 5 of 5: review the delivered increment, produce fix specs, and feed lessons back into
+    * the pack.
     *
-    *   modernize-extract.sc → (human approves) → modernize-seed.sc → modernize-implement.sc
-    *     → modernize-verify.sc → modernize-review.sc
+    * modernize-extract.sc → (human approves) → modernize-seed.sc → modernize-implement.sc → modernize-verify.sc →
+    * modernize-review.sc
     *
-    * Runs ROOTED AT THE TARGET REPO (`--repo <target>`) on the implementation branch. This flow
-    * FINDS and ROUTES — it does not fix:
+    * Runs ROOTED AT THE TARGET REPO (`--repo <target>`) on the implementation branch. This flow FINDS and ROUTES — it
+    * does not fix:
     *
-    *   1. The full reviewer roster (`Reviewers.all`) PLUS the pack's own lenses read the branch
-    *      diff against the committed spec pack; an advisory judge quantifies spec compliance.
+    *   1. The full reviewer roster (`Reviewers.all`) PLUS the pack's own lenses read the branch diff against the
+    *      committed spec pack; an advisory judge quantifies spec compliance.
     *   2. `reasoning` distills the findings into three routed outputs:
-    *      - FIX specs (implementation violates the spec) → documents under `docs/specs/fixes/`
-    *        + appended as new tasks to `docs/modernization/plan.md` — rerunning
-    *        modernize-implement.sc picks them up (the loop the gates promised).
+    *      - FIX specs (implementation violates the spec) → documents under `docs/specs/fixes/` + appended as new tasks
+    *        to `docs/modernization/plan.md` — rerunning modernize-implement.sc picks them up (the loop the gates
+    *        promised).
     *      - IMPROVEMENTS (compliant but worth follow-up) → documents under `docs/specs/fixes/`.
-    *      - LESSONS (generalizable to future runs) → `Pack.appendLesson` into the PACK's
-    *        lessons.md — extract.sc and implement.sc inject lessons into their briefs, so the
-    *        next modernization of this estate kind starts smarter. Commit the pack change like
-    *        any other reviewed edit.
+    *      - LESSONS (generalizable to future runs) → `Pack.appendLesson` into the PACK's lessons.md — extract.sc and
+    *        implement.sc inject lessons into their briefs, so the next modernization of this estate kind starts
+    *        smarter. Commit the pack change like any other reviewed edit.
     *   3. Azure DevOps (optional): one work item per fix spec when ADO env vars are present.
     *
-    * Run:  scala-cli run modernize-review.sc -- --repo ~/services/meridian-transfers
+    * Run: scala-cli run modernize-review.sc -- --repo ~/services/meridian-transfers
     */
 
   import java.nio.charset.StandardCharsets
@@ -40,7 +39,7 @@ object ReviewFlow:
   import llm4zio.flow.*
   import llm4zio.runner.*
 
-  val ProModel: String   = "gemini-2.5-pro"   // point these at whatever your `gemini` CLI offers
+  val ProModel: String   = "gemini-2.5-pro" // point these at whatever your `gemini` CLI offers
   val FlashModel: String = "gemini-3.5-flash"
   val ModDir: String     = "docs/modernization"
 

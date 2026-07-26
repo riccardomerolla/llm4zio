@@ -4,17 +4,17 @@ import java.nio.file.{ Files, Paths }
 
 import scala.jdk.CollectionConverters.*
 
-/** Environment for the modernization flows: real env vars win, `modernize.conf` (loaded into system
-  * properties by [[Main]]) fills the gaps — packs stay estate knowledge, the conf is deployment choices
-  * (seats, models, endpoints), different owners, different repos.
+/** Environment for the modernization flows: real env vars win, `modernize.conf` (loaded into system properties by
+  * [[Main]]) fills the gaps — packs stay estate knowledge, the conf is deployment choices (seats, models, endpoints),
+  * different owners, different repos.
   */
 object Env:
-  def get(name: String): Option[String]                     = sys.env.get(name).orElse(sys.props.get(s"llm4zio.$name"))
-  def getOrElse(name: String, fallback: => String): String  = get(name).getOrElse(fallback)
+  def get(name: String): Option[String]                    = sys.env.get(name).orElse(sys.props.get(s"llm4zio.$name"))
+  def getOrElse(name: String, fallback: => String): String = get(name).getOrElse(fallback)
 
-/** The modernization pipeline as a product: six flows behind one subcommand main, configured entirely by
-  * the pack + env/`modernize.conf` — the operator never edits Scala. The `.sc` examples remain the
-  * authoring surface; this is the `cs launch` / OCI surface.
+/** The modernization pipeline as a product: six flows behind one subcommand main, configured entirely by the pack +
+  * env/`modernize.conf` — the operator never edits Scala. The `.sc` examples remain the authoring surface; this is the
+  * `cs launch` / OCI surface.
   */
 object Main:
 
@@ -61,5 +61,5 @@ object Main:
         loadConf()
         phases(cmd)(rest.toArray)
       case _                                   =>
-        System.err.println(usage)
+        System.err.print(usage + "\n")
         sys.exit(2)
