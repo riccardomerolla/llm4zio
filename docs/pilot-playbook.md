@@ -28,6 +28,21 @@ guarantees there is no source left to leak — implement/verify/review refuse to
 start if any file matching the pack's `sources:` regex is present in the
 target.
 
+## Two ways to run the pipeline
+
+Everything below shows the `.sc` scripts (clone the repo, `scala-cli run …`) —
+the authoring surface, best when you are customizing flows. The **operator
+surface** is the published product, no repo clone and no Scala:
+
+```bash
+cs launch io.github.riccardomerolla:llm4zio-modernize_3:4.0.0 -- <phase> -- --repo <dir>
+```
+
+or the OCI image for air-gapped/CI use
+(`ghcr.io/riccardomerolla/llm4zio-modernize`). Both read the same env vars,
+plus `./modernize.conf` (KEY=value) for whatever env leaves unset — keep seats
+and endpoints in the conf, estate knowledge in the pack.
+
 ## The six phases
 
 ```bash
