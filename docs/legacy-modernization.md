@@ -27,10 +27,16 @@ modernize-survey.sc ──▶ (human approves waves) ──▶ modernize-extract
 order" — deterministic-first (`flow.Survey`): one inventory node per source file
 (size = lines + coverage units), one dependency edge per `## Survey:` regex match
 (`CALL`, `COPY`, `EXEC PGM=`) → `inventory.md` + `graph.json`, committed and
-auditable at any estate size. The LLM enters only for what regexes cannot decide:
-classifying each unit **rewrite / retire / wrap** (wrap = keep + front with an
-API; building wraps is out of scope), resolving dynamic `CALL` variables, and
-proposing dependency-coherent **waves**. The wave plan lands with an unchecked
+auditable at any estate size. The LLM enters only for what regexes cannot decide.
+First a **graph-refine** pass: complex estates defeat the regexes (dynamic
+`CALL WS-PGM` variables, JCL symbolic parameters, PROC expansions), so `reasoning`
+reads the sources and proposes the missed links — each needs the establishing
+source statement as evidence, `Survey.merge` drops anything not between known
+units or already found, and survivors land in `graph.json` with an `llm-` kind
+(audit trail in `graph-refine.md`; `LLM4ZIO_GRAPH_REFINE=off` skips the pass).
+Then triage: classifying each unit **rewrite / retire / wrap** (wrap = keep +
+front with an API; building wraps is out of scope) and proposing
+dependency-coherent **waves**. The wave plan lands with an unchecked
 approval marker — and when `bench-results.jsonl` exists from `modernize-bench.sc`
 runs, it carries a per-wave **cost projection from measured runs**. After
 approval, `LLM4ZIO_WAVE=wave-1` scopes extraction to that wave's programs.
