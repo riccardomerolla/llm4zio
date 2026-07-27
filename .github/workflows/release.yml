@@ -1,10 +1,21 @@
 name: Release
 
 # Cuts a release without a manually pushed tag: dispatch with a version, and the
-# workflow gates on the full test battery, tags HEAD of the branch it ran on,
-# publishes to Maven Central, pushes the tag, and creates the GitHub release.
-# Exists because sandboxed agent sessions (and anyone without a local clone) can
-# merge to main but cannot push tags — same reason oci.yml is dispatchable.
+# workflow gates on the full test battery, tags, publishes to Maven Central,
+# pushes the tag, and creates the GitHub release. Exists because sandboxed agent
+# sessions (and anyone without a local clone) can merge to main but cannot push
+# tags — same reason oci.yml is dispatchable.
+#
+# Two jobs on purpose, like ci.yml: a second `sbt` invocation in the same job
+# attaches to the warm sbt server left by the first one, whose environment
+# predates the step's `env:` — the v4.1.0 dispatch ran `ci-release` inside the
+# test step's server, sbt-ci-release saw no PGP/SONATYPE vars, printed
+# "No access to secret variables, doing nothing", and exited 0 in 0s. A fresh
+# runner per sbt invocation makes the step env the process env.
+#
+# Re-dispatching an already-tagged version is supported: the run builds exactly
+# the commit the existing tag points at, skips the tag push, and updates the
+# existing GitHub release — so a publish that failed after tagging is retryable.
 #
 # The tag is pushed with GITHUB_TOKEN, which by design does not re-trigger the
 # tag-push workflows (ci.yml publish, oci.yml) — no double publish. Dispatch
@@ -25,24 +36,26 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  release:
-    name: Tag, publish, release
+  test:
+    name: Test
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      - name: Validate version and tag availability
+      - name: Checkout release target
+        # An existing v<version> tag wins over HEAD: re-releases build exactly
+        # what the tag points at. Also validates the version format.
         env:
           INPUT_VERSION: ${{ github.event.inputs.version }}
         run: |
           echo "$INPUT_VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$' \
             || { echo "refusing suspicious version '$INPUT_VERSION'" >&2; exit 1; }
-          if git ls-remote --exit-code origin "refs/tags/v$INPUT_VERSION" >/dev/null 2>&1; then
-            echo "tag v$INPUT_VERSION already exists on origin" >&2; exit 1
+          if git rev-parse -q --verify "refs/tags/v$INPUT_VERSION" >/dev/null; then
+            git checkout "v$INPUT_VERSION"
           fi
 
       - name: Setup Java
@@ -60,16 +73,46 @@ jobs:
         # a dispatched release must gate on green even if HEAD never went through a PR.
         run: sbt --batch --no-colors "; check ; testFull ; llm4zioFlow/It/testFull ; llm4zioRunner/It/testFull ; llm4zioJava/It/testFull"
 
-      - name: Tag HEAD
-        # Local (unpushed) tag first: sbt-dynver derives 4.1.0 from it for ci-release.
-        # The push happens only after a successful publish, so a failed run leaves
-        # no half-released tag on origin.
+  publish:
+    name: Tag, publish, release
+    needs: [ test ]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Resolve tag
+        # Existing tag → build its commit, don't re-push. No tag → annotate HEAD
+        # locally; sbt-dynver derives the version from it, and the push happens
+        # only after a successful publish so a failed run leaves origin clean.
+        id: tag
         env:
           INPUT_VERSION: ${{ github.event.inputs.version }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "v$INPUT_VERSION" -m "Release v$INPUT_VERSION"
+          echo "$INPUT_VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$' \
+            || { echo "refusing suspicious version '$INPUT_VERSION'" >&2; exit 1; }
+          if git rev-parse -q --verify "refs/tags/v$INPUT_VERSION" >/dev/null; then
+            git checkout "v$INPUT_VERSION"
+            echo "created=false" >> "$GITHUB_OUTPUT"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -a "v$INPUT_VERSION" -m "Release v$INPUT_VERSION"
+            echo "created=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: 'sbt'
+
+      - name: Setup SBT
+        uses: sbt/setup-sbt@v1
 
       - name: Import GPG key
         uses: crazy-max/ghaction-import-gpg@v7
@@ -78,14 +121,27 @@ jobs:
           passphrase: ${{ secrets.PGP_PASSPHRASE }}
 
       - name: Publish to Maven Central
+        # CI_COMMIT_TAG: sbt-ci-release detects a tag build from CI env vars
+        # (GITHUB_REF & co.), not from the local git tag — a workflow_dispatch
+        # runs on refs/heads/*, so without this it takes the snapshot path
+        # ("No tag push, publishing SNAPSHOT") and never releases the bundle.
         run: sbt --batch --no-colors ci-release
         env:
+          CI_COMMIT_TAG: v${{ github.event.inputs.version }}
           PGP_PASSPHRASE: ${{ secrets.PGP_PASSPHRASE }}
           PGP_SECRET: ${{ secrets.PGP_SECRET }}
           SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
           SONATYPE_USERNAME: ${{ secrets.SONATYPE_USERNAME }}
 
+      - name: Guard against a silent no-op publish
+        # `ci-release` exits 0 on its "doing nothing" guard paths; a release run
+        # that uploaded nothing must fail loudly, not create a tag and release.
+        run: |
+          test -d target/sonatype-staging && find target/sonatype-staging -name '*.pom' | grep -q . \
+            || { echo "ci-release produced no staged artifacts — publish did not happen" >&2; exit 1; }
+
       - name: Push tag
+        if: steps.tag.outputs.created == 'true'
         env:
           INPUT_VERSION: ${{ github.event.inputs.version }}
         run: git push origin "refs/tags/v$INPUT_VERSION"
@@ -97,4 +153,5 @@ jobs:
           tag: v${{ github.event.inputs.version }}
           name: Release v${{ github.event.inputs.version }}
           body: "See CHANGELOG.md for detailed release notes."
+          allowUpdates: true
           token: ${{ secrets.GITHUB_TOKEN }}
