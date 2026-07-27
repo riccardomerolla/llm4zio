@@ -27,7 +27,7 @@ subcommand main (`survey|extract|seed|implement|verify|review`), configured by
 your pack + env/`modernize.conf`:
 
 ```bash
-cs launch io.github.riccardomerolla:llm4zio-modernize_3:4.0.0 -- survey -- --repo ~/estates/your-legacy
+cs launch io.github.riccardomerolla:llm4zio-modernize_3:4.1.0 -- survey -- --repo ~/estates/your-legacy
 ```
 
 or, air-gapped/CI, the OCI image `ghcr.io/riccardomerolla/llm4zio-modernize`.

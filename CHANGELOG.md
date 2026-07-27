@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.1.0] - 2026-07-27
+
+### Added
+
+- **Survey graph refine (LLM, evidence-gated).** Complex estates defeat the survey
+  regexes — dynamic `CALL WS-PGM` variables, JCL symbolic parameters (`EXEC PGM=&PGM`),
+  PROC expansions leave real dependencies unlinked. `modernize-survey` (script and
+  `llm4zio-modernize` phase) now runs a GRAPH REFINE stage between the deterministic
+  graph and triage: `reasoning` (read-only, rooted at the legacy repo) reads the sources
+  and proposes the edges the regexes missed, each with the establishing source statement
+  as evidence. The new `flow.Survey.merge` validates the proposals — self-loops, edges
+  naming units outside the inventory, and links the regexes already found are dropped —
+  and survivors land in `graph.json` with an `llm-` kind prefix so LLM-derived links
+  stay distinguishable (the inventory footnotes them). Kept AND dropped proposals, with
+  evidence, are written to `docs/modernization/graph-refine.md` as the audit trail.
+  Skip the pass with `LLM4ZIO_GRAPH_REFINE=off`.
+
+### Changed
+
+- **Example version pins synced.** All `examples/*.sc`, `examples/java/*.java`,
+  `README.md`, and `docs/pilot-playbook.md` now pin 4.1.0 (they had drifted across
+  3.19.0 and 4.0.0).
+
 ## [3.19.0] - 2026-07-16
 
 ### Added

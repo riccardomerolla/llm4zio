@@ -98,4 +98,45 @@ object SurveySpec extends ZIOSpecDefault:
         )
       }
     },
+    test("merge keeps refined edges between known units and tags their kind llm-") {
+      val merged = Survey.merge(baseGraph, List(SurveyEdge("ACCTXFR", "INTCALC", "dynamic-call")))
+      assertTrue(
+        merged.edges.contains(SurveyEdge("ACCTXFR", "INTCALC", "llm-dynamic-call")),
+        merged.edges.contains(SurveyEdge("XFERDLY", "ACCTXFR", "exec-pgm")),
+      )
+    },
+    test("merge drops self-loops, edges naming unknown units, and links the regexes already found") {
+      val merged = Survey.merge(
+        baseGraph,
+        List(
+          SurveyEdge("ACCTXFR", "ACCTXFR", "dynamic-call"), // self-loop
+          SurveyEdge("ACCTXFR", "NOWHERE", "dynamic-call"), // unknown target
+          SurveyEdge("GHOST", "INTCALC", "dynamic-call"),   // unknown source
+          SurveyEdge("XFERDLY", "ACCTXFR", "proc-step"),    // already found deterministically
+          SurveyEdge("ACCTXFR", "INTCALC", "dynamic-call"), // kept
+          SurveyEdge("ACCTXFR", "INTCALC", "control-card"), // duplicate endpoints of a kept edge
+        ),
+      )
+      assertTrue(merged.edges == baseGraph.edges :+ SurveyEdge("ACCTXFR", "INTCALC", "llm-dynamic-call"))
+    },
+    test("merge does not double-prefix a kind already tagged llm-") {
+      val merged = Survey.merge(baseGraph, List(SurveyEdge("ACCTXFR", "INTCALC", "llm-dynamic-call")))
+      assertTrue(merged.edges.contains(SurveyEdge("ACCTXFR", "INTCALC", "llm-dynamic-call")))
+    },
+    test("renderInventory footnotes LLM-refined edges only when present") {
+      val merged = Survey.merge(baseGraph, List(SurveyEdge("ACCTXFR", "INTCALC", "dynamic-call")))
+      assertTrue(
+        Survey.renderInventory(merged).contains("LLM graph-refine"),
+        !Survey.renderInventory(baseGraph).contains("LLM graph-refine"),
+      )
+    },
+  )
+
+  private val baseGraph = SurveyGraph(
+    nodes = List(
+      SurveyNode("jobs/XFERDLY.jcl", "XFERDLY", 1, 1),
+      SurveyNode("cobol/ACCTXFR.cbl", "ACCTXFR", 5, 1),
+      SurveyNode("cobol/INTCALC.cbl", "INTCALC", 4, 1),
+    ),
+    edges = List(SurveyEdge("XFERDLY", "ACCTXFR", "exec-pgm")),
   )

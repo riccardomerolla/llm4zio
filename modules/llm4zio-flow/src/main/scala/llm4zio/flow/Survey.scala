@@ -69,17 +69,34 @@ object Survey:
       }
       .mapError(e => FlowError.Persistence(s"failed to survey $root", Some(e)))
 
+  /** Merge LLM-refined edges into a regex-derived graph — the refine bookend for estates where the survey regexes
+    * cannot see every link (dynamic `CALL WS-PGM` variables, JCL symbolic parameters, PROC expansions). Refined edges
+    * are validated, not trusted: self-loops, edges naming units the inventory does not contain, and links the
+    * deterministic pass already found (same from/to, any kind) are all dropped. What survives lands with its kind
+    * prefixed `llm-`, so LLM-derived links stay distinguishable from regex-derived ones in `graph.json` and the
+    * inventory.
+    */
+  def merge(graph: SurveyGraph, refined: List[SurveyEdge]): SurveyGraph =
+    val known    = graph.nodes.map(_.name).toSet
+    val existing = graph.edges.map(e => (e.from, e.to)).toSet
+    val kept     = refined
+      .filter(e => e.from != e.to && known(e.from) && known(e.to) && !existing((e.from, e.to)))
+      .distinctBy(e => (e.from, e.to))
+      .map(e => e.copy(kind = if e.kind.startsWith("llm-") then e.kind else s"llm-${e.kind}"))
+    graph.copy(edges = graph.edges ++ kept)
+
   /** The inventory as Markdown: one row per node with size and degree signals; nodes nothing references and that
     * reference nothing are flagged `unreferenced` — the deterministic retire-candidate floor (entry points like jobs
     * have outgoing edges, so they never trip it).
     */
   def renderInventory(graph: SurveyGraph): String =
-    val rows = graph.nodes.sortBy(_.name).map { n =>
+    val rows    = graph.nodes.sortBy(_.name).map { n =>
       val in    = graph.incoming(n.name).size
       val out   = graph.outgoing(n.name).size
       val flags = if in == 0 && out == 0 then "unreferenced — retire candidate?" else ""
       s"| ${n.name} | ${n.path} | ${n.lines} | ${n.units} | $in | $out | $flags |"
     }
+    val refined = graph.edges.count(_.kind.startsWith("llm-"))
     (List(
       "# Estate inventory",
       "",
@@ -89,6 +106,13 @@ object Survey:
       "",
       s"${graph.nodes.size} unit(s), ${graph.edges.size} edge(s). Edges and counts are regex-derived",
       "(`## Survey:` / `## Coverage:` rules in the pack) — deterministic, auditable, re-runnable.",
+    ) ++ (
+      if refined == 0 then Nil
+      else
+        List(
+          s"$refined edge(s) with an `llm-` kind came from the LLM graph-refine step — source-grounded",
+          "links the regexes missed; evidence in `graph-refine.md`.",
+        )
     )).mkString("", "\n", "\n")
 
   /** `cobol/ACCTXFR.cbl` → `ACCTXFR`. */
