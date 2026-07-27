@@ -136,8 +136,10 @@ jobs:
       - name: Guard against a silent no-op publish
         # `ci-release` exits 0 on its "doing nothing" guard paths; a release run
         # that uploaded nothing must fail loudly, not create a tag and release.
+        # The bundle lands in target/sona-staging (sbt-sonatype's dir name) — the
+        # v4.1.0 run published fine and then failed here on the misspelled path.
         run: |
-          test -d target/sonatype-staging && find target/sonatype-staging -name '*.pom' | grep -q . \
+          test -d target/sona-staging && find target/sona-staging -name '*.pom' | grep -q . \
             || { echo "ci-release produced no staged artifacts — publish did not happen" >&2; exit 1; }
 
       - name: Push tag
