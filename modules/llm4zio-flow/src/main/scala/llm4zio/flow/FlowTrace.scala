@@ -82,15 +82,16 @@ object FlowTrace:
     ZIO
       .attemptBlocking {
         if Files.isDirectory(dir) then
-          val traces = Files
-            .list(dir)
-            .iterator
-            .asScala
-            .filter { p =>
-              val n = p.getFileName.toString
-              n.startsWith("trace-") && n.endsWith(".jsonl")
-            }
-            .toList
+          val listing = Files.list(dir)
+          val traces  =
+            try
+              listing.iterator.asScala
+                .filter { p =>
+                  val n = p.getFileName.toString
+                  n.startsWith("trace-") && n.endsWith(".jsonl")
+                }
+                .toList
+            finally listing.close()
           traces
             .sortBy(p => -Files.getLastModifiedTime(p).toMillis)
             .drop(math.max(0, keep))

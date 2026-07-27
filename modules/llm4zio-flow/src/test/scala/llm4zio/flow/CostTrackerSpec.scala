@@ -1,12 +1,23 @@
 package llm4zio.flow
 
-import zio.Scope
+import zio.*
 import zio.test.*
 
 import llm4zio.core.TokenUsage
 
 object CostTrackerSpec extends ZIOSpecDefault:
   def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("CostTracker")(
+    test("consume subscribes before returning, so an event published immediately after is recorded") {
+      ZIO.scoped {
+        for
+          t    <- CostTracker.make
+          hub  <- FlowEvents.hub()
+          _    <- t.consume(hub)
+          _    <- hub.publish(FlowEvent.TokensUsed("coder", Some("m"), TokenUsage(10, 2, 12)))
+          seen <- t.cells.repeatUntil(_.nonEmpty).timeout(5.seconds)
+        yield assertTrue(seen.exists(_.nonEmpty))
+      }
+    } @@ TestAspect.withLiveClock,
     test("accumulates per agent and per model and renders a summary") {
       for
         t <- CostTracker.make

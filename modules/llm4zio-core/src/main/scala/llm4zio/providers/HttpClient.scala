@@ -103,8 +103,15 @@ object HttpClient:
   ): ZStream[HttpClient, LlmError, String] =
     ZStream.serviceWithStream[HttpClient](_.postJsonStreamSSE(url, body, headers, timeout))
 
+  /** The non-streaming methods use the batched client (whole body in memory, connection handled for us); the streaming
+    * path must NOT — `batched` materializes a streaming body before returning, so SSE chunks would all arrive at once
+    * after the provider finishes generating. `client(request)` is zio-http's streaming execution: it resumes as soon as
+    * the response head arrives and manages the connection in the passed `Scope`.
+    */
   val live: ZLayer[Client, Nothing, HttpClient] =
-    ZLayer.fromFunction((client: Client) => fromRequestExecutor(request => client.batched(request)))
+    ZLayer.fromFunction((client: Client) =>
+      fromRequestExecutor(request => client.batched(request), request => client(request))
+    )
 
   /** zio-http client Config with the **idle timeout disabled**. zio-http's default idle timeout (50s) closes a
     * connection that has seen no traffic for that long — but a slow local model (e.g. a 20–30B model in LM Studio that
@@ -120,7 +127,16 @@ object HttpClient:
   val reliableClient: ZLayer[Any, Throwable, Client] =
     (ZLayer.succeed(reliableClientConfig) ++ ZLayer.succeed(NettyConfig.default) ++ DnsResolver.default) >>> Client.live
 
+  /** Single-executor variant for mocks and tests: the streaming path reuses `execute` (a mock Response with a
+    * stream-backed Body still streams).
+    */
   private[providers] def fromRequestExecutor(execute: Request => Task[Response]): HttpClient =
+    fromRequestExecutor(execute, request => execute(request))
+
+  private[providers] def fromRequestExecutor(
+    execute: Request => Task[Response],
+    executeStreaming: Request => ZIO[Scope, Throwable, Response],
+  ): HttpClient =
     new HttpClient {
       override def get(
         url: String,
@@ -231,7 +247,11 @@ object HttpClient:
         headers: Map[String, String],
         timeout: Duration,
       ): ZStream[Any, LlmError, String] =
-        ZStream.unwrap {
+        // unwrapScoped ties the connection's Scope to the stream's lifetime; the response resumes on headers, so
+        // chunks flow as the provider emits them. The per-request `timeout` bounds time-to-response-head and then
+        // each inter-chunk gap (a stalled stream still fails) — not the total generation time, which for a healthy
+        // long generation may now legitimately exceed it.
+        ZStream.unwrapScoped {
           for
             urlObj   <- ZIO
                           .fromEither(URL.decode(url).left.map(err =>
@@ -244,7 +264,7 @@ object HttpClient:
                             .addHeader(Header.ContentType(MediaType.application.json)),
                           headers,
                         )
-            response <- execute(request)
+            response <- executeStreaming(request)
                           .timeoutFail(LlmError.TimeoutError(timeout))(timeout)
                           .mapError {
                             case llm: LlmError => llm
@@ -257,6 +277,7 @@ object HttpClient:
                 .via(ZPipeline.utf8Decode)
                 .via(ZPipeline.splitLines)
                 .mapError(err => LlmError.ProviderError(s"Failed to read streaming response from $url", Some(err)))
+                .timeoutFail(LlmError.TimeoutError(timeout))(timeout)
             case 401 | 403                               =>
               ZStream.fail(LlmError.AuthenticationError(url))
             case 429                                     =>

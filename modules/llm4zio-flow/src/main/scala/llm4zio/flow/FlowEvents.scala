@@ -16,7 +16,7 @@ enum FlowEvent:
   case AssistantMessage(text: String)
   case TokensUsed(agent: String, model: Option[String], usage: TokenUsage)
 
-/** Sink for [[FlowEvent]]s. Flows publish; listeners (a terminal renderer, a Telegram bridge, a test) consume. Default
+/** Sink for [[FlowEvent]]s. Flows publish; listeners (a terminal renderer, a trace recorder, a test) consume. Default
   * is [[FlowEvents.noop]].
   */
 trait FlowEvents:

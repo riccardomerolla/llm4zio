@@ -70,4 +70,44 @@ object ChatSpec extends ZIOSpecDefault:
         res  <- chat.ask("x").either
       yield assertTrue(res == Left(FlowError.Llm("boom", Some(LlmError.ProviderError("boom")))))
     },
+    test("a failed ask leaves the history unchanged (no dangling user turn to replay)") {
+      final class FailingService extends LlmService:
+        def executeStream(prompt: String): Stream[LlmError, LlmChunk]                              = ZStream.empty
+        def executeStreamWithHistory(messages: List[Message]): Stream[LlmError, LlmChunk]          =
+          ZStream.fail(LlmError.ProviderError("boom"))
+        def executeWithTools(prompt: String, tools: List[AnyTool]): IO[LlmError, ToolCallResponse] =
+          ZIO.dieMessage("unused")
+        def executeStructured[A: JsonCodec](prompt: String, schema: JsonSchema): IO[LlmError, A]   =
+          ZIO.dieMessage("unused")
+        def isAvailable: UIO[Boolean]                                                              = ZIO.succeed(true)
+      for
+        chat <- Chat.start(FailingService(), manageGit = true)
+        res  <- chat.ask("hi").either
+        msgs <- chat.messages
+      yield assertTrue(res.isLeft, msgs.isEmpty)
+    },
+    test("concurrent asks are single-flight: turns never interleave and each call sees the prior pair committed") {
+      final class SlowRecording(calls: Ref[List[List[Message]]]) extends LlmService:
+        def executeStream(prompt: String): Stream[LlmError, LlmChunk]                              = ZStream.empty
+        def executeStreamWithHistory(messages: List[Message]): Stream[LlmError, LlmChunk]          =
+          ZStream
+            .fromZIO(calls.update(_ :+ messages) *> ZIO.sleep(50.millis))
+            .as(LlmChunk(delta = "ok", finishReason = Some("stop")))
+        def executeWithTools(prompt: String, tools: List[AnyTool]): IO[LlmError, ToolCallResponse] =
+          ZIO.dieMessage("unused")
+        def executeStructured[A: JsonCodec](prompt: String, schema: JsonSchema): IO[LlmError, A]   =
+          ZIO.dieMessage("unused")
+        def isAvailable: UIO[Boolean]                                                              = ZIO.succeed(true)
+      for
+        calls <- Ref.make(List.empty[List[Message]])
+        chat  <- Chat.start(SlowRecording(calls), manageGit = true)
+        _     <- chat.ask("one").zipPar(chat.ask("two"))
+        seen  <- calls.get
+        msgs  <- chat.messages
+      yield assertTrue(
+        msgs.map(_.role) == List(MessageRole.User, MessageRole.Assistant, MessageRole.User, MessageRole.Assistant),
+        // the second round-trip's history contains the completed first pair, not a dangling user turn
+        seen.map(_.size).sorted == List(1, 3),
+      )
+    } @@ TestAspect.withLiveClock,
   )

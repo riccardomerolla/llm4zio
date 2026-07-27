@@ -1,6 +1,7 @@
 package llm4zio.flow
 
 import zio.*
+import zio.stream.ZStream
 
 import llm4zio.core.TokenUsage
 
@@ -57,9 +58,14 @@ final class CostTracker private (
         }
     }
 
-  /** Fork a subscriber that records every event from `hub` until the scope closes. */
+  /** Fork a subscriber that records every event from `hub` until the scope closes. Subscribes synchronously before
+    * forking so no event published after the call is missed (a lazy `ZStream.fromHub` would race with early publishes).
+    */
   def consume(hub: FlowEvents.Hub): ZIO[Scope, Nothing, Unit] =
-    hub.stream.foreach(record).forkScoped.unit
+    for
+      queue <- hub.subscribe
+      _     <- ZStream.fromQueue(queue).foreach(record).forkScoped
+    yield ()
 
   val summary: UIO[String] =
     for
