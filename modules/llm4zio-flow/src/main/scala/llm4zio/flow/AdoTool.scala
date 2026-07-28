@@ -7,6 +7,7 @@ import zio.*
 import zio.json.*
 import zio.json.ast.Json
 
+import llm4zio.core.Capability
 import llm4zio.providers.HttpClient
 
 /** A pure REST request: method + URL + optional body + content type. Built by [[AdoConfig]], executed by [[AdoTool]].
@@ -130,52 +131,77 @@ object AdoConfig:
   private case class ThreadComment(content: String, commentType: Int) derives JsonCodec
   private case class ThreadBody(comments: List[ThreadComment], status: Int) derives JsonCodec
 
-/** Thin effectful Azure DevOps client over [[HttpClient]] (mirrors [[GhTool]]'s shape). */
-final class AdoTool(config: AdoConfig, http: HttpClient, timeout: Duration = 30.seconds):
+/** Thin effectful Azure DevOps client over [[HttpClient]] (mirrors [[GhTool]]'s shape).
+  *
+  * Capabilities (issue #716): board reads require [[Caps.AdoRead]]; board/PR mutations require [[Caps.AdoWrite]]; the
+  * ambient [[llm4zio.core.Grants]] are checked before any REST call.
+  */
+final class AdoTool(
+  config: AdoConfig,
+  http: HttpClient,
+  timeout: Duration = 30.seconds,
+  events: FlowEvents = FlowEvents.noop,
+):
 
   private def run(req: AdoRequest): IO[FlowError, String] =
     http
       .send(req.method, req.url, req.body, Map(config.authHeader), req.contentType, timeout)
       .mapError(e => FlowError.Process(s"ado ${req.method} ${req.url}", e.message))
 
+  private def readOp[A](op: String)(body: IO[FlowError, A]): IO[FlowError, A]  =
+    Caps.guarded(Capability.AdoRead, op, events)(body)
+  private def writeOp[A](op: String)(body: IO[FlowError, A]): IO[FlowError, A] =
+    Caps.guarded(Capability.AdoWrite, op, events)(body)
+
   /** Read a work item (title, description, acceptance criteria, state, tags). */
-  def readWorkItem(id: Int): IO[FlowError, WorkItem] =
-    run(config.readWorkItemReq(id))
-      .flatMap(j => ZIO.fromEither(AdoTool.parseWorkItem(j)).mapError(FlowError.Process("ado parse work item", _)))
+  def readWorkItem(id: Int)(using Caps.AdoRead): IO[FlowError, WorkItem] =
+    readOp("ado readWorkItem"):
+      run(config.readWorkItemReq(id))
+        .flatMap(j => ZIO.fromEither(AdoTool.parseWorkItem(j)).mapError(FlowError.Process("ado parse work item", _)))
 
   /** Ids of work items matching a WIQL query — the dispatcher's poll. */
-  def wiqlIds(query: String): IO[FlowError, List[Int]] =
-    run(config.wiqlReq(query))
-      .flatMap(j => ZIO.fromEither(AdoTool.parseWiqlIds(j)).mapError(FlowError.Process("ado parse wiql", _)))
+  def wiqlIds(query: String)(using Caps.AdoRead): IO[FlowError, List[Int]] =
+    readOp("ado wiql"):
+      run(config.wiqlReq(query))
+        .flatMap(j => ZIO.fromEither(AdoTool.parseWiqlIds(j)).mapError(FlowError.Process("ado parse wiql", _)))
 
-  def setFields(id: Int, fields: Map[String, String]): IO[FlowError, Unit] = run(config.setFieldsReq(id, fields)).unit
+  def setFields(id: Int, fields: Map[String, String])(using Caps.AdoWrite): IO[FlowError, Unit] =
+    writeOp("ado setFields")(run(config.setFieldsReq(id, fields)).unit)
 
-  def setState(id: Int, state: String): IO[FlowError, Unit] = setFields(id, Map("System.State" -> state))
+  def setState(id: Int, state: String)(using Caps.AdoWrite): IO[FlowError, Unit] =
+    setFields(id, Map("System.State" -> state))
 
   /** Write the drafted/edited spec into the work item's Acceptance Criteria field. */
-  def setAcceptanceCriteria(id: Int, text: String): IO[FlowError, Unit] =
+  def setAcceptanceCriteria(id: Int, text: String)(using Caps.AdoWrite): IO[FlowError, Unit] =
     setFields(id, Map("Microsoft.VSTS.Common.AcceptanceCriteria" -> text))
 
   /** Add a tag without clobbering the others (reads current, appends, writes the whole field). */
-  def addTag(id: Int, tag: String): IO[FlowError, Unit] =
+  def addTag(id: Int, tag: String)(using Caps.AdoWrite): IO[FlowError, Unit] =
     readWorkItem(id).flatMap(wi => setFields(id, Map("System.Tags" -> (wi.tags :+ tag).distinct.mkString("; "))))
 
-  def comment(id: Int, text: String): IO[FlowError, Unit] = run(config.commentReq(id, text)).unit
+  def comment(id: Int, text: String)(using Caps.AdoWrite): IO[FlowError, Unit] =
+    writeOp("ado comment")(run(config.commentReq(id, text)).unit)
 
   /** Create a work item (e.g. a Task per plan task, or an improvement from a review); returns its id. */
-  def createWorkItem(workItemType: String, title: String, fields: Map[String, String]): IO[FlowError, Int] =
-    run(config.createWorkItemReq(workItemType, title, fields))
-      .flatMap(j => ZIO.fromEither(AdoTool.parseWorkItem(j)).mapError(FlowError.Process("ado parse work item", _)))
-      .map(_.id)
+  def createWorkItem(workItemType: String, title: String, fields: Map[String, String])(using Caps.AdoWrite)
+    : IO[FlowError, Int] =
+    writeOp("ado createWorkItem"):
+      run(config.createWorkItemReq(workItemType, title, fields))
+        .flatMap(j => ZIO.fromEither(AdoTool.parseWorkItem(j)).mapError(FlowError.Process("ado parse work item", _)))
+        .map(_.id)
 
-  def createPr(sourceRef: String, targetRef: String, title: String, body: String): IO[FlowError, AdoPullRequest] =
-    run(config.createPrReq(sourceRef, targetRef, title, body))
-      .flatMap(j => ZIO.fromEither(AdoTool.parsePr(j, config)).mapError(FlowError.Process("ado parse pr", _)))
+  def createPr(sourceRef: String, targetRef: String, title: String, body: String)(using Caps.AdoWrite)
+    : IO[FlowError, AdoPullRequest] =
+    writeOp("ado createPr"):
+      run(config.createPrReq(sourceRef, targetRef, title, body))
+        .flatMap(j => ZIO.fromEither(AdoTool.parsePr(j, config)).mapError(FlowError.Process("ado parse pr", _)))
 
   /** Link a PR to a work item (so the board shows the development link). */
-  def linkPr(workItemId: Int, pr: AdoPullRequest): IO[FlowError, Unit] = run(config.linkPrReq(workItemId, pr)).unit
+  def linkPr(workItemId: Int, pr: AdoPullRequest)(using Caps.AdoWrite): IO[FlowError, Unit] =
+    writeOp("ado linkPr")(run(config.linkPrReq(workItemId, pr)).unit)
 
-  def prThread(prId: Int, text: String): IO[FlowError, Unit] = run(config.prThreadReq(prId, text)).unit
+  def prThread(prId: Int, text: String)(using Caps.AdoWrite): IO[FlowError, Unit] =
+    writeOp("ado prThread")(run(config.prThreadReq(prId, text)).unit)
 
 object AdoTool:
   private case class WiJson(id: Int, fields: Map[String, Json]) derives JsonCodec

@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.2.0] - 2026-07-28
+
+### Added
+
+- **Tracked capabilities** (issue #716, ADR 0021 — after Odersky's *Tracked
+  Capabilities for Safer Agents* and lampepfl/tacit). A hybrid of compile-time
+  witnesses and a runtime gate, on stable Scala 3 + ZIO only:
+  - `flow.restricted[C]` declares a flow's powers once as a type
+    (`Caps.GitRead & Caps.Reasoning`): exactly those witnesses enter the body's
+    scope — `git.push` without `Caps.GitPush` is a **compile error** — and the
+    same `C` derives the runtime `Grants` the whole flow executes under, so the
+    two layers cannot drift. A `refine` parameter narrows value-level data (the
+    `Exec` allowlist); `strictPolicy = true` refuses to start when the coder
+    cannot enforce a restriction. Plain `flow()` is unchanged: full grants,
+    existing scripts compile as before.
+  - Runtime: an ambient `FiberRef[Grants]` (parent-wins join, narrow-only
+    `Grants.restricted`) checked by every `GitTool`/`GhTool`/`AdoTool` method
+    before spawning anything (`FlowError.CapabilityDenied`), and by
+    `ToolRegistry` for model-chosen calls — denials return to the model in the
+    value channel, with an optional `maxDenials` budget; `Tool` gains
+    `requires: Set[Capability]`.
+  - Audit trail: `CapabilityUsed` / `CapabilityDenied` /
+    `CapabilityUnenforceable` / `Declassified` flow events — denials render at
+    every verbosity and land in traces.
+  - `CoderPolicy`: grants translate onto the coder CLI best-effort (claude
+    `--disallowed-tools` deny patterns for ungranted push/PR/board writes);
+    inexpressible restrictions surface as `CapabilityUnenforceable`.
+  - `Classified[A]`: accident-proof sensitive values — redacted `toString`, no
+    codec, audited witness-gated `declassify`; `Classified.env` seals secrets
+    at the source.
+  - Docs: `docs/capabilities.md` (model + trust boundary),
+    `docs/zio-developers.md` (concept map + embedding), and
+    `examples/restricted-flow.sc` (a survey flow that provably cannot push).
+  - Escape hatch, loud by design: `Caps.unsafe.all(using Unsafe)`.
+
 ## [4.1.0] - 2026-07-27
 
 ### Added

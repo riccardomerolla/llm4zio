@@ -2,6 +2,10 @@ package llm4zio.modernize
 
 object SeedFlow:
 
+  // Modernize flows are full-power library flows (branch/commit/push/PR); the mint is the entry-point grant.
+  // Capability-parametric variants can narrow this later — every bypass is greppable via Caps.grantAll.
+  private[modernize] given llm4zio.flow.Caps.All = llm4zio.flow.Caps.grantAll
+
   /** Legacy-modernization phase 2 of 5: seed the target repo from the APPROVED spec pack.
     *
     * modernize-extract.sc → (human approves) → modernize-seed.sc → modernize-implement.sc → modernize-verify.sc →

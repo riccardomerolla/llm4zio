@@ -10,7 +10,7 @@ import llm4zio.flow.FlowError
   * it natively. The `is*` predicates are kept for source compatibility.
   */
 enum ErrorCategory extends java.lang.Enum[ErrorCategory]:
-  case Persistence, PlanParse, Aborted, Process, Llm, Interrupted, Unknown
+  case Persistence, PlanParse, Aborted, Process, Llm, Interrupted, Unknown, CapabilityDenied
 
   /** True when this is the [[ErrorCategory.Aborted]] category — the one a Java flow most often branches on. */
   def isAborted: Boolean = this == ErrorCategory.Aborted
@@ -29,11 +29,12 @@ object Llm4zioException:
   /** Map a typed [[FlowError]] to the Java-facing exception. */
   def from(error: FlowError): Llm4zioException =
     val category = error match
-      case _: FlowError.Persistence => ErrorCategory.Persistence
-      case _: FlowError.PlanParse   => ErrorCategory.PlanParse
-      case _: FlowError.Aborted     => ErrorCategory.Aborted
-      case _: FlowError.Process     => ErrorCategory.Process
-      case _: FlowError.Llm         => ErrorCategory.Llm
+      case _: FlowError.Persistence      => ErrorCategory.Persistence
+      case _: FlowError.PlanParse        => ErrorCategory.PlanParse
+      case _: FlowError.Aborted          => ErrorCategory.Aborted
+      case _: FlowError.Process          => ErrorCategory.Process
+      case _: FlowError.Llm              => ErrorCategory.Llm
+      case _: FlowError.CapabilityDenied => ErrorCategory.CapabilityDenied
     val cause    = error match
       case FlowError.Persistence(_, c) => c
       case _                           => None
@@ -48,13 +49,16 @@ object Llm4zioException:
   def toFlowError(t: Throwable): FlowError = t match
     case e: Llm4zioException =>
       e.getCategory match
-        case ErrorCategory.Persistence => FlowError.Persistence(e.getMessage, Option(e.getCause))
-        case ErrorCategory.PlanParse   => FlowError.PlanParse(e.getMessage)
-        case ErrorCategory.Aborted     => FlowError.Aborted(e.getMessage)
-        case ErrorCategory.Process     => FlowError.Process(e.getMessage, "")
-        case ErrorCategory.Llm         => FlowError.Llm(e.getMessage)
-        case ErrorCategory.Interrupted => FlowError.Aborted("interrupted")
-        case ErrorCategory.Unknown     => FlowError.Llm(e.getMessage)
+        case ErrorCategory.Persistence      => FlowError.Persistence(e.getMessage, Option(e.getCause))
+        case ErrorCategory.PlanParse        => FlowError.PlanParse(e.getMessage)
+        case ErrorCategory.Aborted          => FlowError.Aborted(e.getMessage)
+        case ErrorCategory.Process          => FlowError.Process(e.getMessage, "")
+        case ErrorCategory.Llm              => FlowError.Llm(e.getMessage)
+        case ErrorCategory.Interrupted      => FlowError.Aborted("interrupted")
+        case ErrorCategory.Unknown          => FlowError.Llm(e.getMessage)
+        // The typed capability/operation cannot be reconstructed from a message; Aborted keeps the failure fatal
+        // with the denial story intact in the message.
+        case ErrorCategory.CapabilityDenied => FlowError.Aborted(e.getMessage)
     case other               => FlowError.Process(other.toString, stackTrace(other))
 
   private def stackTrace(t: Throwable): String =

@@ -5,6 +5,8 @@ import java.nio.file.Path
 import zio.*
 import zio.json.{ DecoderOps, JsonCodec }
 
+import llm4zio.core.Capability
+
 /** A GitHub issue, as read via `gh`. */
 final case class Issue(title: String, body: String, author: String)
 
@@ -25,8 +27,17 @@ object PullRequest:
 enum BuildOutcome:
   case Success, Failure, Pending, TimedOut
 
-/** Thin GitHub CLI (`gh`) wrapper over zio-process, bound to a working directory. */
-final class GhTool(workDir: Path):
+/** Thin GitHub CLI (`gh`) wrapper over zio-process, bound to a working directory.
+  *
+  * Capabilities (issue #716): reads require [[Caps.GhRead]], publishing operations (PR create/edit/comment) require
+  * [[Caps.GhWrite]]; the ambient [[llm4zio.core.Grants]] are checked before spawning `gh`.
+  */
+final class GhTool(workDir: Path, events: FlowEvents = FlowEvents.noop):
+
+  private def read[A](op: String)(body: IO[FlowError, A]): IO[FlowError, A]  =
+    Caps.guarded(Capability.GhRead, op, events)(body)
+  private def write[A](op: String)(body: IO[FlowError, A]): IO[FlowError, A] =
+    Caps.guarded(Capability.GhWrite, op, events)(body)
 
   /** Open a pull request, or return the existing open PR for the current branch if one is already there. Find-or-create
     * makes the step idempotent, so a re-run (e.g. auto-resume) past PR creation does not fail with "a pull request
@@ -37,8 +48,9 @@ final class GhTool(workDir: Path):
     body: String,
     base: Option[String] = None,
     draft: Boolean = false,
+  )(using Caps.GhWrite
   ): IO[FlowError, PullRequest] =
-    findOpenPr.flatMap {
+    write("gh pr create")(findOpenPr).flatMap {
       case Some(existing) =>
         ZIO.logInfo(s"reusing existing PR ${existing.shortRef}").as(existing)
       case None           =>
@@ -58,40 +70,42 @@ final class GhTool(workDir: Path):
   /** Read an issue via `gh issue view --json`. Idempotent, so a transient gh/GitHub blip (e.g. a dropped GraphQL
     * connection) is retried a few times with backoff rather than aborting the flow.
     */
-  def readIssue(ref: IssueRef): IO[FlowError, Issue] =
-    Proc
-      .runOrFail("gh", GhTool.issueViewArgs(ref), workDir)
-      .flatMap(json => ZIO.fromEither(GhTool.parseIssue(json)).mapError(e => FlowError.Process("gh issue view", e)))
-      .retry(GhTool.transientRead)
+  def readIssue(ref: IssueRef)(using Caps.GhRead): IO[FlowError, Issue] =
+    read("gh issue view"):
+      Proc
+        .runOrFail("gh", GhTool.issueViewArgs(ref), workDir)
+        .flatMap(json => ZIO.fromEither(GhTool.parseIssue(json)).mapError(e => FlowError.Process("gh issue view", e)))
+        .retry(GhTool.transientRead)
 
   /** Comment on an issue. */
-  def writeIssueComment(ref: IssueRef, body: String): IO[FlowError, Unit] =
-    Proc.runOrFail("gh", GhTool.issueCommentArgs(ref, body), workDir).unit
+  def writeIssueComment(ref: IssueRef, body: String)(using Caps.GhWrite): IO[FlowError, Unit] =
+    write("gh issue comment")(Proc.runOrFail("gh", GhTool.issueCommentArgs(ref, body), workDir).unit)
 
   /** Comment on a pull request. */
-  def writePrComment(pr: PullRequest, body: String): IO[FlowError, Unit] =
-    Proc.runOrFail("gh", GhTool.prCommentArgs(pr, body), workDir).unit
+  def writePrComment(pr: PullRequest, body: String)(using Caps.GhWrite): IO[FlowError, Unit] =
+    write("gh pr comment")(Proc.runOrFail("gh", GhTool.prCommentArgs(pr, body), workDir).unit)
 
   /** Update a PR's title + body via a REST PATCH (`gh api`), which — unlike `gh pr edit` — works on repos with Projects
     * (classic) sunset. See [[GhTool.prPatchArgs]].
     */
-  def updatePr(pr: PullRequest, title: String, body: String): IO[FlowError, Unit] =
-    Proc.runOrFail("gh", GhTool.prPatchArgs(pr, title, body), workDir).unit
+  def updatePr(pr: PullRequest, title: String, body: String)(using Caps.GhWrite): IO[FlowError, Unit] =
+    write("gh pr edit")(Proc.runOrFail("gh", GhTool.prPatchArgs(pr, title, body), workDir).unit)
 
   /** Read the PR's check rollup via `gh pr view --json statusCheckRollup`. A `--json` read makes a transient gh/GitHub
     * blip a non-zero exit (retried with backoff, like [[readIssue]]) instead of conflating it with a red build the way
     * `gh pr checks` exit codes do.
     */
-  def prChecks(pr: PullRequest): IO[FlowError, BuildOutcome] =
-    Proc
-      .runOrFail("gh", GhTool.prChecksArgs(pr), workDir)
-      .flatMap(json =>
-        ZIO.fromEither(GhTool.outcomeFromChecksJson(json)).mapError(e => FlowError.Process("gh pr view", e))
-      )
-      .retry(GhTool.transientRead)
+  def prChecks(pr: PullRequest)(using Caps.GhRead): IO[FlowError, BuildOutcome] =
+    read("gh pr checks"):
+      Proc
+        .runOrFail("gh", GhTool.prChecksArgs(pr), workDir)
+        .flatMap(json =>
+          ZIO.fromEither(GhTool.outcomeFromChecksJson(json)).mapError(e => FlowError.Process("gh pr view", e))
+        )
+        .retry(GhTool.transientRead)
 
   /** Poll the PR's checks until they reach a terminal state or `timeout`. */
-  def waitForBuild(pr: PullRequest, timeout: Duration): IO[FlowError, BuildOutcome] =
+  def waitForBuild(pr: PullRequest, timeout: Duration)(using Caps.GhRead): IO[FlowError, BuildOutcome] =
     def loop: IO[FlowError, BuildOutcome] =
       prChecks(pr).flatMap {
         case BuildOutcome.Pending => ZIO.sleep(15.seconds) *> loop

@@ -11,6 +11,9 @@ import llm4zio.providers.MockProvider
 
 object ExampleFlowSpec extends ZIOSpecDefault:
 
+  // Privileged mint: the embedded example is exercised full-grant, like plain flow().
+  private given llm4zio.flow.Caps.All = llm4zio.flow.Caps.grantAll
+
   private val tempDir: ZIO[Scope, Nothing, Path] =
     ZIO.acquireRelease(ZIO.attempt(Files.createTempDirectory("llm4zio-runner-")).orDie)(d =>
       ZIO.attempt {

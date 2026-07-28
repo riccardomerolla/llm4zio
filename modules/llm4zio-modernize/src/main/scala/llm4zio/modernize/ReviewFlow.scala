@@ -2,6 +2,10 @@ package llm4zio.modernize
 
 object ReviewFlow:
 
+  // Modernize flows are full-power library flows (branch/commit/push/PR); the mint is the entry-point grant.
+  // Capability-parametric variants can narrow this later — every bypass is greppable via Caps.grantAll.
+  private[modernize] given llm4zio.flow.Caps.All = llm4zio.flow.Caps.grantAll
+
   /** Legacy-modernization phase 5 of 5: review the delivered increment, produce fix specs, and feed lessons back into
     * the pack.
     *

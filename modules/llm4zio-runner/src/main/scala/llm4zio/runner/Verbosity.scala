@@ -15,7 +15,12 @@ enum Verbosity:
   def renders(event: FlowEvent): Boolean = event match
     case _: FlowEvent.StageStarted | _: FlowEvent.StageCompleted | _: FlowEvent.StageFailed | _: FlowEvent.Aborted =>
       true
+    // Safety signals always render, at every level — a denial or an unenforceable restriction must never be silent.
+    case _: FlowEvent.CapabilityDenied | _: FlowEvent.CapabilityUnenforceable                                      =>
+      true
     case _: FlowEvent.Info | _: FlowEvent.ToolUse | _: FlowEvent.AssistantMessage                                  =>
+      this != Verbosity.Quiet
+    case _: FlowEvent.CapabilityUsed | _: FlowEvent.Declassified                                                   =>
       this != Verbosity.Quiet
     case _: FlowEvent.TokensUsed                                                                                   =>
       this == Verbosity.Verbose || this == Verbosity.Debug

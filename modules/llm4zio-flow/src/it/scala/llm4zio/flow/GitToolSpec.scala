@@ -7,6 +7,9 @@ import java.nio.file.{ Files, Path }
 
 object GitToolSpec extends ZIOSpecDefault:
 
+  // Privileged mint: integration specs exercise the tools directly with every capability granted.
+  private given Caps.All = Caps.grantAll
+
   private val tempDir: ZIO[Scope, Nothing, Path] =
     ZIO.acquireRelease(ZIO.attempt(Files.createTempDirectory("llm4zio-git-")).orDie)(d =>
       ZIO.attempt {
@@ -133,3 +136,4 @@ object GitToolSpec extends ZIOSpecDefault:
       }
     },
   ) @@ TestAspect.sequential
+

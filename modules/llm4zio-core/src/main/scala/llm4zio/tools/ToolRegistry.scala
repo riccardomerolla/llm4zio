@@ -61,16 +61,25 @@ object ToolRegistry:
         for
           validated   <- validate(call)
           (tool, args) = validated
-          result      <- tool.execute(args)
-                           .mapBoth(
-                             err => LlmError.ToolError(tool.name, err.message),
-                             identity,
-                           )
-                           .either
-        yield ToolResult(
-          toolCallId = call.id,
-          result = result.left.map(toMessage),
-        )
+          grants      <- Grants.current
+          missing      = tool.requires.filterNot(grants.allows)
+          result      <-
+            // A denial goes back to the model in the value channel — probing a boundary is expected behavior and
+            // must not fail the agentic loop. The tool body never runs.
+            if missing.nonEmpty then
+              val violation = ToolExecutionError.SandboxViolation(
+                s"Tool '${tool.name}' requires ungranted capabilities: ${missing.toList.map(_.toString).sorted.mkString(", ")}"
+              )
+              ZIO.succeed(ToolResult(toolCallId = call.id, result = Left(violation.message), denied = true))
+            else
+              tool.execute(args)
+                .mapBoth(
+                  err => LlmError.ToolError(tool.name, err.message),
+                  identity,
+                )
+                .either
+                .map(r => ToolResult(toolCallId = call.id, result = r.left.map(toMessage)))
+        yield result
 
       override def executeAll(calls: List[ToolCall]): IO[LlmError, List[ToolResult]] =
         ZIO.foreach(calls)(execute)
@@ -207,7 +216,10 @@ object ToolProviderMapper:
       }))
     )
 
-case class ToolLoopConfig(maxIterations: Int = 8)
+// maxDenials: capability-denial budget — None (default) lets the model keep probing denied tools until it gives up
+// or hits maxIterations; Some(n) aborts the loop once n denials have accumulated, so a model stuck on a boundary
+// can't burn the whole iteration budget.
+case class ToolLoopConfig(maxIterations: Int = 8, maxDenials: Option[Int] = None)
 
 object ToolCallingExecutor:
   def run(
@@ -217,7 +229,15 @@ object ToolCallingExecutor:
     registry: ToolRegistry,
     config: ToolLoopConfig = ToolLoopConfig(),
   ): IO[LlmError, LlmResponse] =
-    loop(prompt = prompt, tools = tools, llmService = llmService, registry = registry, iteration = 0, config = config)
+    loop(
+      prompt = prompt,
+      tools = tools,
+      llmService = llmService,
+      registry = registry,
+      iteration = 0,
+      denials = 0,
+      config = config,
+    )
 
   private def loop(
     prompt: String,
@@ -225,6 +245,7 @@ object ToolCallingExecutor:
     llmService: LlmService,
     registry: ToolRegistry,
     iteration: Int,
+    denials: Int,
     config: ToolLoopConfig,
   ): IO[LlmError, LlmResponse] =
     if iteration >= config.maxIterations then
@@ -245,16 +266,23 @@ object ToolCallingExecutor:
             )
           else
             for
-              results   <- registry.executeAll(response.toolCalls)
-              nextPrompt = buildFollowUpPrompt(prompt, response, results)
-              continued <- loop(
-                             prompt = nextPrompt,
-                             tools = tools,
-                             llmService = llmService,
-                             registry = registry,
-                             iteration = iteration + 1,
-                             config = config,
-                           )
+              results     <- registry.executeAll(response.toolCalls)
+              totalDenials = denials + results.count(_.denied)
+              _           <- ZIO
+                               .fail(LlmError.InvalidRequestError(
+                                 s"Tool loop exceeded the capability-denial budget (${config.maxDenials.getOrElse(0)})"
+                               ))
+                               .when(config.maxDenials.exists(totalDenials >= _))
+              nextPrompt   = buildFollowUpPrompt(prompt, response, results)
+              continued   <- loop(
+                               prompt = nextPrompt,
+                               tools = tools,
+                               llmService = llmService,
+                               registry = registry,
+                               iteration = iteration + 1,
+                               denials = totalDenials,
+                               config = config,
+                             )
             yield continued
       yield finalResponse
 

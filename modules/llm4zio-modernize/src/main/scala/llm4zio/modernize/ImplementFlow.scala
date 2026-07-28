@@ -2,6 +2,10 @@ package llm4zio.modernize
 
 object ImplementFlow:
 
+  // Modernize flows are full-power library flows (branch/commit/push/PR); the mint is the entry-point grant.
+  // Capability-parametric variants can narrow this later — every bypass is greppable via Caps.grantAll.
+  private[modernize] given llm4zio.flow.Caps.All = llm4zio.flow.Caps.grantAll
+
   /** Legacy-modernization phase 3 of 5: implement the seeded plan, gated until green.
     *
     * modernize-extract.sc → (human approves) → modernize-seed.sc → modernize-implement.sc → modernize-verify.sc →

@@ -2,6 +2,10 @@ package llm4zio.modernize
 
 object SurveyFlow:
 
+  // Modernize flows are full-power library flows (branch/commit/push/PR); the mint is the entry-point grant.
+  // Capability-parametric variants can narrow this later — every bypass is greppable via Caps.grantAll.
+  private[modernize] given llm4zio.flow.Caps.All = llm4zio.flow.Caps.grantAll
+
   /** Legacy-modernization phase 0 of 5: survey the estate — inventory, dependency graph, triage, and a human-approved
     * wave plan with a cost projection.
     *

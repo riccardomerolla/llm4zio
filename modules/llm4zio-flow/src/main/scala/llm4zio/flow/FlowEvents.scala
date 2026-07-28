@@ -15,6 +15,11 @@ enum FlowEvent:
   case ToolUse(tool: String, args: String)
   case AssistantMessage(text: String)
   case TokensUsed(agent: String, model: Option[String], usage: TokenUsage)
+  // Capability audit trail (issue #716). Used is emitted only for publish-grade operations (push, PR/comment, exec).
+  case CapabilityUsed(capability: String, operation: String)
+  case CapabilityDenied(capability: String, operation: String)
+  case CapabilityUnenforceable(detail: String)
+  case Declassified(label: String)
 
 /** Sink for [[FlowEvent]]s. Flows publish; listeners (a terminal renderer, a trace recorder, a test) consume. Default
   * is [[FlowEvents.noop]].

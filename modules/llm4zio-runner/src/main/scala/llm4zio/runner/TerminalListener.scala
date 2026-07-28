@@ -16,16 +16,20 @@ object TerminalListener:
     // a crafted byte stream can't drive the terminal (cursor moves, screen clears, title sets) or corrupt the tree.
     val s = TerminalSafe.sanitize
     event match
-      case FlowEvent.StageStarted(stage)         => palette.stageStart(s(stage))
-      case FlowEvent.StageCompleted(stage)       => palette.stageDone(s(stage))
-      case FlowEvent.StageFailed(stage, detail)  => palette.fail(s"${s(stage)} — ${s(detail)}")
-      case FlowEvent.Aborted(message)            => palette.fail(s"aborted: ${s(message)}")
-      case FlowEvent.Info(message)               => palette.info(s(message))
-      case FlowEvent.ToolUse(tool, args)         => palette.toolCall(s(tool), s(args))
+      case FlowEvent.StageStarted(stage)             => palette.stageStart(s(stage))
+      case FlowEvent.StageCompleted(stage)           => palette.stageDone(s(stage))
+      case FlowEvent.StageFailed(stage, detail)      => palette.fail(s"${s(stage)} — ${s(detail)}")
+      case FlowEvent.Aborted(message)                => palette.fail(s"aborted: ${s(message)}")
+      case FlowEvent.Info(message)                   => palette.info(s(message))
+      case FlowEvent.ToolUse(tool, args)             => palette.toolCall(s(tool), s(args))
       // Keep the assistant's own line breaks (sanitize preserves tabs/newlines); the renderer hang-indents the block.
-      case FlowEvent.AssistantMessage(text)      => palette.assistant(s(text).strip)
-      case FlowEvent.TokensUsed(agent, _, usage) =>
+      case FlowEvent.AssistantMessage(text)          => palette.assistant(s(text).strip)
+      case FlowEvent.TokensUsed(agent, _, usage)     =>
         palette.info(s"tokens: ${s(agent)} ${usage.prompt} in / ${usage.completion} out")
+      case FlowEvent.CapabilityUsed(cap, op)         => palette.info(s"capability ${s(cap)}: ${s(op)}")
+      case FlowEvent.CapabilityDenied(cap, op)       => palette.fail(s"capability denied: ${s(cap)} for ${s(op)}")
+      case FlowEvent.CapabilityUnenforceable(detail) => palette.fail(s"capability unenforceable: ${s(detail)}")
+      case FlowEvent.Declassified(label)             => palette.info(s"declassified: ${s(label)}")
 
   /** Indent a (possibly multi-line) rendered entry under its tree depth: the first line at `depth`, continuation lines
     * hung two columns further so wrapped prose aligns under the text rather than the glyph. Single-line entries are

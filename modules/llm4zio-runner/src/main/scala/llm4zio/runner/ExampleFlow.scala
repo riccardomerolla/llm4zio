@@ -15,6 +15,9 @@ import llm4zio.flow.*
   */
 object ExampleFlow:
 
+  // The embedded example runs full-grant, like plain flow(): the runner is the entry point, so it mints the witness.
+  private given Caps.All = Caps.grantAll
+
   def run(
     ctx: FlowContext,
     repoDir: Path,

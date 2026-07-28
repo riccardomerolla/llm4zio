@@ -10,6 +10,10 @@ import llm4zio.flow.{ BuildOutcome, GhTool, Issue, IssueRef, PullRequest }
   */
 final class JavaGh private[javaapi] (runtime: Runtime[Any], gh: GhTool):
 
+  // The Java facade is full-grant in v4.2 (runtime default Grants.all through the Bridge); a Grants builder is the
+  // v4.3 fast-follow. The mint below is the facade's entry-point grant, greppable by design.
+  private[javaapi] given llm4zio.flow.Caps.All = llm4zio.flow.Caps.grantAll
+
   /** Read an issue by `owner/repo#number` reference. */
   def readIssue(ref: IssueRef): Issue = Bridge.runSync(runtime, gh.readIssue(ref))
 

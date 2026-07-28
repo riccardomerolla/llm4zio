@@ -4,6 +4,10 @@ import scala.util.matching.Regex
 
 object ExtractFlow:
 
+  // Modernize flows are full-power library flows (branch/commit/push/PR); the mint is the entry-point grant.
+  // Capability-parametric variants can narrow this later — every bypass is greppable via Caps.grantAll.
+  private[modernize] given llm4zio.flow.Caps.All = llm4zio.flow.Caps.grantAll
+
   /** Legacy-modernization phase 1 of 5: reverse-engineer the legacy estate into a judged spec pack.
     *
     * modernize-extract.sc → (human approves) → modernize-seed.sc → modernize-implement.sc → modernize-verify.sc →

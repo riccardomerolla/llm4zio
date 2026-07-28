@@ -12,6 +12,9 @@ import llm4zio.tools.{ AnyTool, JsonSchema }
 
 object ContextAccessSpec extends ZIOSpecDefault:
 
+  // Privileged mint: bare-name accessors now require witnesses; tests grant everything.
+  private given Caps.All = Caps.grantAll
+
   /** Inert service — these tests never call the LLM. */
   final class StubService extends LlmService:
     def executeStream(prompt: String): Stream[LlmError, LlmChunk]                              = ZStream.empty

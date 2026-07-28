@@ -9,6 +9,10 @@ import llm4zio.flow.{ AdoPullRequest, AdoTool, WorkItem }
   */
 final class JavaAdo private[javaapi] (runtime: Runtime[Any], ado: AdoTool):
 
+  // The Java facade is full-grant in v4.2 (runtime default Grants.all through the Bridge); a Grants builder is the
+  // v4.3 fast-follow. The mint below is the facade's entry-point grant, greppable by design.
+  private[javaapi] given llm4zio.flow.Caps.All = llm4zio.flow.Caps.grantAll
+
   /** Read a work item by id. */
   def readWorkItem(id: Int): WorkItem = Bridge.runSync(runtime, ado.readWorkItem(id))
 

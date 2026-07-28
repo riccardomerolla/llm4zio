@@ -7,6 +7,8 @@ import zio.*
 import zio.json.*
 import zio.json.ast.Json
 
+import llm4zio.core.Capability
+
 enum ToolExecutionError derives JsonCodec:
   case InvalidSchema(message: String)
   case InvalidParameters(message: String)
@@ -37,6 +39,9 @@ case class Tool(
   execute: Json => IO[ToolExecutionError, Json],
   tags: Set[String] = Set.empty,
   sandbox: ToolSandbox = ToolSandbox.WorkspaceReadWrite,
+  // Capabilities an invocation needs (issue #716). Checked against the ambient Grants by ToolRegistry.execute;
+  // empty means ungated. ToolSandbox above stays descriptive metadata — path-scoping is not enforceable here.
+  requires: Set[Capability] = Set.empty,
 )
 
 object Tool:
@@ -58,6 +63,9 @@ type AnyTool = Tool
 case class ToolResult(
   toolCallId: String,
   result: Either[String, Json],
+  // True when the result is a capability denial (Grants gating) rather than an ordinary tool error — the
+  // denial-budget signal for the tool loop.
+  denied: Boolean = false,
 ) derives JsonCodec
 
 type JsonSchema = Json

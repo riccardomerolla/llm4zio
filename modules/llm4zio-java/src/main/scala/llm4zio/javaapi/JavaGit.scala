@@ -9,6 +9,10 @@ import llm4zio.flow.GitTool
   */
 final class JavaGit private[javaapi] (runtime: Runtime[Any], git: GitTool):
 
+  // The Java facade is full-grant in v4.2 (runtime default Grants.all through the Bridge); a Grants builder is the
+  // v4.3 fast-follow. The mint below is the facade's entry-point grant, greppable by design.
+  private[javaapi] given llm4zio.flow.Caps.All = llm4zio.flow.Caps.grantAll
+
   /** Check out `name`, creating it from HEAD if it doesn't exist. */
   def checkoutOrCreate(name: String): Unit = Bridge.runSync(runtime, git.checkoutOrCreate(name))
 

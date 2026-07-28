@@ -15,6 +15,9 @@ import zio.test.*
   */
 object ModernizationPipelineSpec extends ZIOSpecDefault:
 
+  // Privileged mint: integration specs exercise the tools directly with every capability granted.
+  private given Caps.All = Caps.grantAll
+
   /** The llm4zio checkout root — walks up from user.dir so it works from sbt root or module dir. */
   private lazy val repoRoot: Path =
     @tailrec def up(p: Path): Path =

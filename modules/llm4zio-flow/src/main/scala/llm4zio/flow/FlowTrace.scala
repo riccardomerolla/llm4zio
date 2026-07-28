@@ -24,14 +24,18 @@ object TraceEvent:
   def fromFlow(e: FlowEvent): TraceEvent = FromFlow(e)
 
   private def flowKind(e: FlowEvent): String = e match
-    case _: FlowEvent.StageStarted     => "StageStarted"
-    case _: FlowEvent.StageCompleted   => "StageCompleted"
-    case _: FlowEvent.StageFailed      => "StageFailed"
-    case _: FlowEvent.Aborted          => "Aborted"
-    case _: FlowEvent.Info             => "Info"
-    case _: FlowEvent.ToolUse          => "ToolUse"
-    case _: FlowEvent.AssistantMessage => "AssistantMessage"
-    case _: FlowEvent.TokensUsed       => "TokensUsed"
+    case _: FlowEvent.StageStarted            => "StageStarted"
+    case _: FlowEvent.StageCompleted          => "StageCompleted"
+    case _: FlowEvent.StageFailed             => "StageFailed"
+    case _: FlowEvent.Aborted                 => "Aborted"
+    case _: FlowEvent.Info                    => "Info"
+    case _: FlowEvent.ToolUse                 => "ToolUse"
+    case _: FlowEvent.AssistantMessage        => "AssistantMessage"
+    case _: FlowEvent.TokensUsed              => "TokensUsed"
+    case _: FlowEvent.CapabilityUsed          => "CapabilityUsed"
+    case _: FlowEvent.CapabilityDenied        => "CapabilityDenied"
+    case _: FlowEvent.CapabilityUnenforceable => "CapabilityUnenforceable"
+    case _: FlowEvent.Declassified            => "Declassified"
 
   private def flowFields(e: FlowEvent): Map[String, String] = e match
     case FlowEvent.StageStarted(stage)             => Map("stage" -> stage)
@@ -48,6 +52,10 @@ object TraceEvent:
         "completion" -> usage.completion.toString,
         "total"      -> usage.total.toString,
       ) ++ model.map("model" -> _)
+    case FlowEvent.CapabilityUsed(cap, op)         => Map("capability" -> cap, "operation" -> op)
+    case FlowEvent.CapabilityDenied(cap, op)       => Map("capability" -> cap, "operation" -> op)
+    case FlowEvent.CapabilityUnenforceable(detail) => Map("detail" -> detail)
+    case FlowEvent.Declassified(label)             => Map("label" -> label)
 
 /** The on-disk shape of one trace line. Flat by design so zio-json can derive an encoder without codecs for
   * `LlmError`/`TokenUsage`.

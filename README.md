@@ -277,11 +277,22 @@ a CLI agent. A single all-CLI backend (e.g. all-claude) is fine: it does both.
 
 ## Coding-agent safety
 
+**Tracked capabilities** (4.2, after Odersky's *Tracked Capabilities for Safer
+Agents*): declare a flow's powers once as a type and the compiler blocks the
+rest — `flow.restricted[Caps.GitRead & Caps.Reasoning](args) { … }` cannot
+commit, push, or open a PR (`git.push` is a compile error without the
+`Caps.GitPush` witness), while an ambient runtime gate catches everything a
+lexical token can't, including the model's own tool choices — every denial
+audited in the trace. Plain `flow()` grants everything, exactly as before. See
+[`docs/capabilities.md`](docs/capabilities.md) and
+[`examples/restricted-flow.sc`](examples/restricted-flow.sc).
+
 > [!WARNING]
 > The example flows auto-approve the coder's edits (`claude --permission-mode
 > acceptEdits`, `codex --sandbox workspace-write`, `gemini -y`, `agy --mode
 > accept-edits`): write-capable turns edit files and run shell commands without
-> prompting.
+> prompting. Capability grants are translated onto the coder best-effort
+> (claude deny-lists); the coder-side *guarantee* remains process isolation.
 
 For an unattended run the practical safety boundary is **process isolation** —
 run the flow in a sandbox (e.g. [Docker
@@ -438,6 +449,10 @@ sbt "llm4zioFlow/It/test"    # integration (spawns real git; no network)
 ## Documentation
 
 - [`examples/`](examples/) — seven runnable flows, the fastest way in.
+- [`docs/capabilities.md`](docs/capabilities.md) — tracked capabilities: the
+  safety model, `flow.restricted`, `Classified`, and the trust boundary.
+- [`docs/zio-developers.md`](docs/zio-developers.md) — the concept map for ZIO
+  application developers and the embedding path.
 - [`CLAUDE.md`](CLAUDE.md) — architecture, conventions, build/test recipes; the
   same file AI assistants pick up.
 - [`CHANGELOG.md`](CHANGELOG.md) — release history.
