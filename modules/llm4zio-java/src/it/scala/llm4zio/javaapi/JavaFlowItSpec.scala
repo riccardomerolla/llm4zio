@@ -17,6 +17,9 @@ import llm4zio.providers.MockProvider
   */
 object JavaFlowItSpec extends ZIOSpecDefault:
 
+  // Privileged mint: the Java facade is exercised full-grant, like the Bridge grants it in production.
+  private given llm4zio.flow.Caps.All = llm4zio.flow.Caps.grantAll
+
   private val tempDir: ZIO[Scope, Nothing, Path] =
     ZIO.acquireRelease(ZIO.attempt(Files.createTempDirectory("llm4zio-java-")).orDie)(d =>
       ZIO.attempt(Files.walk(d).sorted(java.util.Comparator.reverseOrder()).forEach(Files.delete(_))).orDie
