@@ -77,6 +77,12 @@ val AnalystTurns: Int = sys.env.get("LLM4ZIO_ANALYST_TURNS").flatMap(_.trim.toIn
 
 val CoderKind = sys.env.get("LLM4ZIO_CODER").map(_.trim.toLowerCase).filter(_.nonEmpty).getOrElse("gemini")
 
+/** Max files named in one program's include closure. A program pulling more than this gets a bounded, visible
+  * subset rather than an unbounded read.
+  */
+val MaxClosureFiles: Int =
+  sys.env.get("LLM4ZIO_MAX_CLOSURE_FILES").flatMap(_.trim.toIntOption).filter(_ > 0).getOrElse(40)
+
 val (coderCfg, reasoningCfg) =
   CoderKind match
     case "gemini" =>
@@ -151,7 +157,27 @@ def programName(rel: String): String =
   val dot  = base.lastIndexOf('.')
   if dot > 0 then base.take(dot) else base
 
-def programAsk(pack: Pack, rel: String, name: String): String =
+/** The transitive dependency closure of `program` as repo-relative paths, breadth-first, excluding the program
+  * itself. A `seen` set is required, not optional bookkeeping: COBOL copybook graphs genuinely contain cycles
+  * (a copybook that COPYs something which eventually COPYs back, directly or through a chain), and without it
+  * this walk would never terminate on a real estate. Truncated to `maxFiles` so a program pulling hundreds of
+  * copybooks still gets a bounded, visible subset instead of an unbounded read.
+  */
+def closureFor(graph: SurveyGraph, program: String, maxFiles: Int): List[String] =
+  val pathOf = graph.nodes.map(n => n.name -> n.path).toMap
+  def walk(frontier: List[String], seen: Set[String], acc: List[String]): List[String] =
+    if frontier.isEmpty || acc.size >= maxFiles then acc.take(maxFiles)
+    else
+      val next = frontier.flatMap(f => graph.edges.filter(_.from == f).map(_.to)).distinct.filterNot(seen)
+      walk(next, seen ++ next, acc ++ next.flatMap(pathOf.get))
+  walk(List(program), Set(program), Nil)
+
+def programAsk(pack: Pack, rel: String, name: String, closure: List[String]): String =
+  val reads =
+    if closure.isEmpty then s"Read $rel. It has no resolved dependencies."
+    else
+      s"""Read $rel and EXACTLY these resolved dependencies — do not go looking for others:
+         |${closure.map(f => s"- $f").mkString("\n")}""".stripMargin
   s"""Extract the behavioural spec for ONE source unit of this repository: $rel
      |
      |Write exactly these files (create directories as needed):
@@ -169,8 +195,9 @@ def programAsk(pack: Pack, rel: String, name: String): String =
      |- $ModDir/mapping/$name.md — data & interface mapping for $rel: tables/record layouts → target
      |  entities; files/screens/queues → target service contracts.
      |
-     |Read $rel and anything it references (copybooks, includes, called programs) for context, but
-     |spec ONLY $rel and do not modify legacy sources. Write the four files, then stop.""".stripMargin
+     |$reads
+     |
+     |Spec ONLY $rel and do not modify legacy sources. Write the four files, then stop.""".stripMargin
 
 /** A turn-limit trip after the spec landed is the wedged-agent tail, not a failure — keep the work. */
 def turnLimitRecovery(spec: Path, rel: String)(using ctx: FlowContext): PartialFunction[FlowError, IO[FlowError, Unit]] =
@@ -183,7 +210,13 @@ def turnLimitRecovery(spec: Path, rel: String)(using ctx: FlowContext): PartialF
 /** One analyst turn per program, skipping programs whose spec already exists and committing each one —
   * the resume unit is a single program, so a flaky stream or crash costs one turn, not the estate.
   */
-def extractPrograms(pack: Pack, system: String, programs: List[String], cards: List[PatternCard])(using
+def extractPrograms(
+  pack: Pack,
+  system: String,
+  programs: List[String],
+  cards: List[PatternCard],
+  graph: SurveyGraph,
+)(using
   ctx: FlowContext
 ): IO[FlowError, Unit] =
   val modDir = workDir.resolve(ModDir)
@@ -196,7 +229,10 @@ def extractPrograms(pack: Pack, system: String, programs: List[String], cards: L
       for
         _    <- ctx.events.publish(FlowEvent.Info(s"extracting $rel $progress"))
         chat <- Chat.start(coder, system = Some(system))
-        _    <- chat.ask(programAsk(pack, rel, name)).unit.catchSome(turnLimitRecovery(spec, rel))
+        _    <- chat
+                  .ask(programAsk(pack, rel, name, closureFor(graph, name, MaxClosureFiles)))
+                  .unit
+                  .catchSome(turnLimitRecovery(spec, rel))
         _    <- tagPatterns(workDir.resolve(rel), modDir.resolve("traceability").resolve(s"$name.md"), cards)
         _    <- git.commitAll(s"modernize(${pack.name}): spec $name").unit
       yield (),
@@ -412,6 +448,7 @@ flow(
 ):
   val packDir = workspace.resolve(sys.env.getOrElse("LLM4ZIO_PACK", "packs/cobol-springboot"))
   val modDir  = workDir.resolve(ModDir)
+  val events  = summon[FlowEvents]
 
   for
     pack     <- stage("Pack")(Pack.load(packDir))
@@ -444,7 +481,17 @@ flow(
     cards    <- Patterns
                   .load(packDir.resolve("patterns"))
                   .zipWith(Patterns.load(workspace.resolve("patterns")))(_ ++ _)
-    _        <- stage("Extract")(extractPrograms(pack, system, programs, cards))
+    graph    <- stage("Graph")(
+                  if pack.survey.isEmpty then
+                    events
+                      .publish(FlowEvent.Info(
+                        "pack has no '## Survey:' edge regexes — the analyst gets no resolved closure"
+                      ))
+                      .as(SurveyGraph(Nil, Nil))
+                  else
+                    Survey.graph(workDir, pack.sources.getOrElse(""".*"""), pack.coverage, pack.survey)
+                )
+    _        <- stage("Extract")(extractPrograms(pack, system, programs, cards, graph))
     // Commit the (ungated) draft: extraction is the expensive step, and a gate failure or crash must
     // not cost it. The Gate/Commit stages amend the picture with the verdict afterwards.
     _        <- stage("Draft")(
