@@ -49,4 +49,29 @@ object ContextSpec extends ZIOSpecDefault:
       // No env var set in the test JVM, and no llm4zio.* system property.
       assertTrue(Context.budget == 400_000)
     },
+    test("capped publishes an event and records the truncation") {
+      for
+        events          <- FlowEvents.collecting
+        given FlowEvents = events
+        out             <- Context.capped("specs", "x" * 1000, 100)
+        seen            <- events.recorded
+        recs            <- Context.truncations
+      yield assertTrue(
+        out.length <= 100,
+        seen.exists { case FlowEvent.Info(m) => m.contains("specs") && m.contains("1000"); case _ => false },
+        recs.size == 1,
+        recs.head.label == "specs",
+        recs.head.originalChars == 1000,
+        recs.head.keptChars <= 100,
+      )
+    },
+    test("capped records nothing when the text fits") {
+      for
+        events          <- FlowEvents.collecting
+        given FlowEvents = events
+        out             <- Context.capped("specs", "small", 100)
+        seen            <- events.recorded
+        recs            <- Context.truncations
+      yield assertTrue(out == "small", seen.isEmpty, recs.isEmpty)
+    },
   )

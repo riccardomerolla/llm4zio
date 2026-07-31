@@ -1,5 +1,7 @@
 package llm4zio.flow
 
+import zio.{ Chunk, FiberRef, UIO, Unsafe, ZIO }
+
 /** Context budgeting for LLM prompts: bound what a call ships, and make every truncation visible.
   *
   * Budgets are in CHARACTERS, not tokens — deterministic, no tokenizer dependency, and what the flows already used.
@@ -41,3 +43,29 @@ object Context:
       .flatMap(_.trim.toIntOption)
       .filter(_ > 0)
       .getOrElse(400_000)
+
+  /** One recorded truncation: what was shortened, and by how much. */
+  final case class Truncation(label: String, originalChars: Int, keptChars: Int):
+    def render: String = s"$label: $originalChars → $keptChars chars"
+
+  /** Fiber-local truncation log. Fiber-local (not global) so concurrent flows don't cross-contaminate, and so a phase
+    * reads back exactly what its own calls truncated. Written ONLY by [[capped]] and [[withShrink]].
+    */
+  private val recorded: FiberRef[Chunk[Truncation]] =
+    Unsafe.unsafe(implicit u => FiberRef.unsafe.make(Chunk.empty[Truncation]))
+
+  /** Truncations recorded on this fiber so far. Phases write these into `provenance.json`. */
+  def truncations: UIO[Chunk[Truncation]] = recorded.get
+
+  private def record(t: Truncation): UIO[Unit] = recorded.update(_ :+ t)
+
+  /** [[cap]], publishing a [[FlowEvent.Info]] and recording the truncation when one happens. `label` names what was
+    * shortened, so the event and the provenance entry are readable ("specs", "branch diff", "judge context").
+    */
+  def capped(label: String, text: String, limit: Int)(using events: FlowEvents): UIO[String] =
+    val out = cap(text, limit)
+    if !out.truncated then ZIO.succeed(out.text)
+    else
+      events.publish(
+        FlowEvent.Info(s"⚠ context: $label truncated ${out.originalChars} → ${out.text.length} chars")
+      ) *> record(Truncation(label, out.originalChars, out.text.length)).as(out.text)
