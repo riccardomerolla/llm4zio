@@ -210,6 +210,23 @@ object PackSpec extends ZIOSpecDefault:
         )
       }
     },
+    test("programFiles parses and substitutes <NAME>, with a case-insensitive default") {
+      ZIO.scoped {
+        for
+          dir       <- tempDir
+          _         <-
+            write(dir, "with/pack.md", "# Pack: demo\n\nsource: cobol\nprogramFiles: src/main/java/.*<NAME>.*\\.java\n")
+          _         <- write(dir, "without/pack.md", "# Pack: demo\n\nsource: cobol\n")
+          withField <- Pack.load(dir.resolve("with"))
+          noField   <- Pack.load(dir.resolve("without"))
+        yield assertTrue(
+          withField.filesFor("ACCTXFR") == """src/main/java/.*ACCTXFR.*\.java""",
+          noField.filesFor("ACCTXFR") == """.*(?i)\QACCTXFR\E.*""",
+          // the default really is case-insensitive
+          "src/main/java/Acctxfr.java".matches(noField.filesFor("ACCTXFR")),
+        )
+      }
+    },
     test("load parses the optional replay command — how verify drives the target implementation") {
       val manifest =
         s"""$minimalManifest

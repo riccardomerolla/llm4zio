@@ -23,6 +23,9 @@ final case class Pack(
   // The spec-worthy subset of `sources` (relative-path regex): the files that each get their own behavioural spec
   // in a per-unit extraction (programs and jobs, not copybooks/descriptors). Falls back to `sources` when unset.
   programs: Option[String],
+  // Regex template locating a program's TARGET implementation files (relative paths), `<NAME>` substituted with the
+  // program name. The seam that makes per-program judging possible. Defaults to a case-insensitive name match.
+  programFiles: Option[String],
   specsDir: String,
   featuresDir: String,
   gates: Map[String, List[String]],
@@ -47,6 +50,12 @@ final case class Pack(
 
   /** The prompt template `prompts/<name>.md`, if the pack ships one. */
   def prompt(name: String): Option[String] = prompts.get(name)
+
+  /** The relative-path regex for `program`'s implementation files: the pack's `programFiles:` template with `<NAME>`
+    * substituted, or a case-insensitive "path contains the program name" fallback.
+    */
+  def filesFor(program: String): String =
+    programFiles.fold(s".*(?i)${java.util.regex.Pattern.quote(program)}.*")(_.replace("<NAME>", program))
 
 object Pack:
   private val HeaderPrefix  = "# Pack: "
@@ -129,6 +138,7 @@ object Pack:
                 scaffold = fields.get("scaffold"),
                 sources = fields.get("sources"),
                 programs = fields.get("programs"),
+                programFiles = fields.get("programFiles"),
                 specsDir = fields.getOrElse("specs-dir", "docs/specs"),
                 featuresDir = fields.getOrElse("features-dir", "features"),
                 gates = section(sections, "Gates").map(namedListItems).getOrElse(Map.empty).map { (k, v) =>
