@@ -108,6 +108,27 @@ object GitToolSpec extends ZIOSpecDefault:
         )
       }
     },
+    test("diffVsBase scopes to the given paths, and an empty path list yields nothing") {
+      ZIO.scoped {
+        for
+          dir     <- tempDir
+          git     <- newRepo(dir)
+          _       <- git.createBranch("feature/scoped")
+          _       <- write(dir, "a.txt", "alpha")
+          _       <- write(dir, "b.txt", "beta")
+          _       <- git.commitAll("add a and b")
+          all     <- git.diffVsBase("main")
+          onlyA   <- git.diffVsBase("main", List("a.txt"))
+          neither <- git.diffVsBase("main", Nil)
+        yield assertTrue(
+          all.contains("a.txt"),
+          all.contains("b.txt"),
+          onlyA.contains("a.txt"),
+          !onlyA.contains("b.txt"),
+          neither.isEmpty,
+        )
+      }
+    },
     test("defaultBase falls back to main when there is no remote") {
       ZIO.scoped {
         for

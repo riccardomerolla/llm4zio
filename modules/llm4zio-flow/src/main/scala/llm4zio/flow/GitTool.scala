@@ -85,6 +85,19 @@ final class GitTool(workDir: Path, events: FlowEvents = FlowEvents.noop):
     val range = if threeDot then s"$base...HEAD" else s"$base..HEAD"
     read("git diffVsBase")(execOrFail("diff", range))
 
+  /** Diff vs `base` restricted to `paths` — the per-program / per-lens scoping primitive. An EMPTY `paths` list returns
+    * the empty string rather than the whole diff: bare `git diff <range> --` means "everything", which would silently
+    * defeat every caller that scopes by a computed, possibly-empty file set.
+    */
+  def diffVsBase(base: String, paths: List[String], threeDot: Boolean)(using Caps.GitRead): IO[FlowError, String] =
+    if paths.isEmpty then ZIO.succeed("")
+    else
+      val range = if threeDot then s"$base...HEAD" else s"$base..HEAD"
+      read("git diffVsBase (scoped)")(execOrFail(List("diff", range, "--") ++ paths*))
+
+  def diffVsBase(base: String, paths: List[String])(using Caps.GitRead): IO[FlowError, String] =
+    diffVsBase(base, paths, threeDot = true)
+
   /** Names of files changed vs `base` — for reviewer file-scoping. */
   def changedFilesVsBase(base: String, threeDot: Boolean = true)(using Caps.GitRead): IO[FlowError, List[String]] =
     val range = if threeDot then s"$base...HEAD" else s"$base..HEAD"
