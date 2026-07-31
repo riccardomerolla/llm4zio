@@ -568,10 +568,15 @@ In `GitTool.scala`, directly below the existing `diffVsBase`:
     * silently defeat every caller that scopes by a computed, possibly-empty file set.
     */
   def diffVsBase(base: String, paths: List[String], threeDot: Boolean)(using Caps.GitRead): IO[FlowError, String] =
-    if paths.isEmpty then ZIO.succeed("")
-    else
-      val range = if threeDot then s"$base...HEAD" else s"$base..HEAD"
-      read("git diffVsBase (scoped)")(execOrFail(List("diff", range, "--") ++ paths*))
+    // The empty-paths check lives INSIDE read(...), not before it. Caps.guarded is the runtime half of capability
+    // enforcement — the `using Caps.GitRead` token is erased and enforces nothing on its own. Short-circuiting ahead
+    // of the guard would let a flow with narrowed Grants get a silent "" success instead of CapabilityDenied, a hole
+    // in the audit trail every other GitRead method closes.
+    read("git diffVsBase (scoped)"):
+      if paths.isEmpty then ZIO.succeed("")
+      else
+        val range = if threeDot then s"$base...HEAD" else s"$base..HEAD"
+        execOrFail(List("diff", range, "--") ++ paths*)
 
   def diffVsBase(base: String, paths: List[String])(using Caps.GitRead): IO[FlowError, String] =
     diffVsBase(base, paths, threeDot = true)
