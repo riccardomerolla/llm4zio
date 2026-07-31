@@ -276,7 +276,7 @@ git commit -m "fix(flow): don't retry deterministic 400s; classify context overf
 
 **Interfaces:**
 - Consumes: `Context.cap`, `Context.Capped` (Task 1); `FlowEvents`, `FlowEvent.Info`.
-- Produces: `Context.Truncation(label: String, originalChars: Int, keptChars: Int)`, `Context.capped(label: String, text: String, limit: Int)(using FlowEvents): UIO[String]`, `Context.truncations: UIO[Chunk[Truncation]]`, `Context.recordTruncation(t: Truncation): UIO[Unit]`.
+- Produces: `Context.Truncation(label: String, originalChars: Int, keptChars: Int)` (with `render: String`), `Context.capped(label: String, text: String, limit: Int)(using FlowEvents): UIO[String]`, `Context.truncations: UIO[Chunk[Truncation]]`. The writer is **private** (`private def record`) — deliberately not public API, so no call site can record without truncating.
 
 `capped` and `withShrink` (Task 4) are the **only** writers to the recorder, so no call site can forget to record a truncation.
 
