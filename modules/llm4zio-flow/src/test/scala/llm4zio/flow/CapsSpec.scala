@@ -67,6 +67,25 @@ object CapsSpec extends ZIOSpecDefault:
         },
       )
     },
+    test("diffVsBase's empty-path fast path still runs through the capability guard") {
+      given Caps.All = Caps.grantAll
+      for
+        dir    <- ZIO.attemptBlocking(Files.createTempDirectory("caps-spec")).orDie
+        events <- FlowEvents.collecting
+        git     = GitTool(
+                    dir,
+                    events,
+                  ) // not a git repo: if the guard let the empty-paths branch run unguarded, denial would never fire
+        res    <- Grants.restricted(Grants.none)(git.diffVsBase("main", Nil)).either
+        seen   <- events.recorded
+      yield assertTrue(
+        res == Left(FlowError.CapabilityDenied(Capability.GitRead, "git diffVsBase (scoped)")),
+        seen.exists {
+          case FlowEvent.CapabilityDenied(cap, op) => cap == "GitRead" && op == "git diffVsBase (scoped)"
+          case _                                   => false
+        },
+      )
+    },
     test("a granted write on a real repo still works (guard is transparent when allowed)") {
       given Caps.All = Caps.grantAll
       for

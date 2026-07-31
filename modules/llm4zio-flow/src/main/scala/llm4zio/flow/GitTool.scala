@@ -88,12 +88,19 @@ final class GitTool(workDir: Path, events: FlowEvents = FlowEvents.noop):
   /** Diff vs `base` restricted to `paths` — the per-program / per-lens scoping primitive. An EMPTY `paths` list returns
     * the empty string rather than the whole diff: bare `git diff <range> --` means "everything", which would silently
     * defeat every caller that scopes by a computed, possibly-empty file set.
+    *
+    * The empty-paths check lives INSIDE `read(...)`, not before it — do not hoist it back out as a "free" early return.
+    * `(using Caps.GitRead)` is a compile-time-only witness, erased at runtime; `read`/`Caps.guarded` is the only thing
+    * that actually consults the ambient `Grants` and fails typed + audits a denial. A pre-guard early return would let
+    * `diffVsBase(base, Nil)` silently succeed with `""` under grants that deny `GitRead` — no `CapabilityDenied`, no
+    * audit event — exactly the hole every other `GitRead` method is guaranteed not to have.
     */
   def diffVsBase(base: String, paths: List[String], threeDot: Boolean)(using Caps.GitRead): IO[FlowError, String] =
-    if paths.isEmpty then ZIO.succeed("")
-    else
-      val range = if threeDot then s"$base...HEAD" else s"$base..HEAD"
-      read("git diffVsBase (scoped)")(execOrFail(List("diff", range, "--") ++ paths*))
+    read("git diffVsBase (scoped)"):
+      if paths.isEmpty then ZIO.succeed("")
+      else
+        val range = if threeDot then s"$base...HEAD" else s"$base..HEAD"
+        execOrFail(List("diff", range, "--") ++ paths*)
 
   def diffVsBase(base: String, paths: List[String])(using Caps.GitRead): IO[FlowError, String] =
     diffVsBase(base, paths, threeDot = true)

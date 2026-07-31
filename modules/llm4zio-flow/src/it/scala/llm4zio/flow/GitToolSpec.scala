@@ -111,20 +111,29 @@ object GitToolSpec extends ZIOSpecDefault:
     test("diffVsBase scopes to the given paths, and an empty path list yields nothing") {
       ZIO.scoped {
         for
-          dir     <- tempDir
-          git     <- newRepo(dir)
-          _       <- git.createBranch("feature/scoped")
-          _       <- write(dir, "a.txt", "alpha")
-          _       <- write(dir, "b.txt", "beta")
-          _       <- git.commitAll("add a and b")
-          all     <- git.diffVsBase("main")
-          onlyA   <- git.diffVsBase("main", List("a.txt"))
-          neither <- git.diffVsBase("main", Nil)
+          dir      <- tempDir
+          git      <- newRepo(dir)
+          _        <- git.createBranch("feature/scoped")
+          _        <- write(dir, "a.txt", "alpha")
+          _        <- write(dir, "b.txt", "beta")
+          // A dash-leading name pins the `--` separator by observable behavior, not by code inspection: without
+          // `--`, git parses "-dashed.txt" as an unrecognized option and exits non-zero (execOrFail then fails the
+          // effect), so this path would break the test if the separator were ever dropped.
+          _        <- write(dir, "-dashed.txt", "dashcontent")
+          _        <- git.commitAll("add a, b, and a dash-leading file")
+          all      <- git.diffVsBase("main")
+          onlyA    <- git.diffVsBase("main", List("a.txt"))
+          onlyDash <- git.diffVsBase("main", List("-dashed.txt"))
+          neither  <- git.diffVsBase("main", Nil)
         yield assertTrue(
           all.contains("a.txt"),
           all.contains("b.txt"),
           onlyA.contains("a.txt"),
           !onlyA.contains("b.txt"),
+          onlyDash.contains("-dashed.txt"),
+          onlyDash.contains("dashcontent"),
+          !onlyDash.contains("a.txt"),
+          !onlyDash.contains("b.txt"),
           neither.isEmpty,
         )
       }
