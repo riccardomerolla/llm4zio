@@ -102,6 +102,13 @@ object TransientRetry:
   /** Flaky-stream class: gemini intermittently closes the stream with no candidates or a half-formed function call.
     * Non-deterministic; a fresh process (which a retried stream spawns) almost always succeeds, so this gets its own,
     * more generous budget with a short fixed backoff — distinct from rate-limit-flavoured transients.
+    *
+    * NB an empty response is AMBIGUOUS: gemini returns one both for a random mid-stream flake and for a prompt too
+    * large to start on. This classifier sees only the error message, never the prompt size, so it cannot tell the two
+    * apart — and deliberately treats both as flaky, since a fresh process fixes the common (flake) case. The
+    * oversized-prompt case is resolved a layer up, by `Context.withShrink`, which retries at a smaller budget rather
+    * than an identical one. Do not "fix" this by routing empty responses into [[isContextOverflow]]: that would trade a
+    * frequent real recovery (the flake) for a rarer one (the overflow), breaking the common case.
     */
   def isFlakyStream(e: LlmError): Boolean = e match
     case LlmError.ProviderError(message, _) =>

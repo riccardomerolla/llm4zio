@@ -232,4 +232,54 @@ object TransientRetrySpec extends ZIOSpecDefault:
         !TransientRetry.isContextOverflow(unavail),
       )
     },
+    test(
+      "behavioural: the real 400 INVALID_ARGUMENT log message is not retried by the pipeline — one attempt, no notice, error unchanged"
+    ) {
+      // Pins the wiring, not just the predicate: if a future edit reorders the catchSome guards or drops the
+      // `if !isDeterministic4xx(message)` clause, this fails even though the pure isTransient/isContextOverflow
+      // tests above would not catch it.
+      val msg = """Gemini CLI returned an error: [API Error: [{
+                  |  "error": {
+                  |    "code": 400,
+                  |    "message": "The input token count exceeds the maximum number of tokens allowed 1048576.",
+                  |    "status": "INVALID_ARGUMENT"
+                  |  }
+                  |}]]""".stripMargin
+      val err = LlmError.ProviderError(msg, None)
+      for
+        events          <- FlowEvents.collecting
+        given FlowEvents = events
+        attempts        <- Ref.make(0)
+        svc              = FlakyService(attempts, failTimes = 99, err)
+        retry            = TransientRetry(svc, maxRetries = 3, baseDelay = Duration.Zero)
+        result          <- retry.executeStream("hi").runCollect.exit
+        tries           <- attempts.get
+        infos           <- events.recorded
+      yield assertTrue(
+        result.isFailure,
+        result.causeOption.exists(_.failureOption.contains(err)), // propagates unchanged, not just "some" failure
+        tries == 1,                                               // no retry: the underlying service is invoked exactly once
+        infos.isEmpty,                                            // no "transient error" / "flaky" notice published
+      )
+    },
+    test(
+      "behavioural contrast: a genuine transient (503 service unavailable) through the same pipeline IS retried and recovers"
+    ) {
+      // Same shape as the test above, same pipeline, different message — pins the distinction so a test that only
+      // asserts "not retried" can't pass by accident from an overly broad guard that stops retrying everything.
+      for
+        events          <- FlowEvents.collecting
+        given FlowEvents = events
+        attempts        <- Ref.make(0)
+        svc              = FlakyService(attempts, failTimes = 1, LlmError.ProviderError("503 service unavailable", None))
+        retry            = TransientRetry(svc, maxRetries = 2, baseDelay = Duration.Zero)
+        out             <- retry.executeStream("hi").runCollect
+        tries           <- attempts.get
+        infos           <- events.recorded
+      yield assertTrue(
+        out.map(_.delta).mkString == "ok",
+        tries == 2, // 1 transient failure + 1 success
+        infos.collect { case FlowEvent.Info(m) if m.contains("transient error") => m }.size == 1,
+      )
+    },
   )
