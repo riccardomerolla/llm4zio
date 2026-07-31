@@ -15,7 +15,7 @@ object ContextSpec extends ZIOSpecDefault:
         !out.truncated,
       )
     },
-    test("cap keeps head and tail with an elision marker") {
+    test("cap keeps head and tail with an elision marker, never exceeding the limit") {
       val text = ("h" * 100) + ("t" * 100)
       val out  = Context.cap(text, 40)
       assertTrue(
@@ -24,14 +24,15 @@ object ContextSpec extends ZIOSpecDefault:
         out.text.startsWith("h"),
         out.text.endsWith("t"),
         out.text.contains("[truncated]"),
-        // head is 3/4 of the limit, tail the remainder
-        out.text.takeWhile(_ == 'h').length == 30,
-        out.text.reverse.takeWhile(_ == 't').length == 10,
+        // The marker counts against the limit: room = 40 - 19 = 21, head = 21*3/4 = 15, tail = 6.
+        out.text.length == 40,
+        out.text.takeWhile(_ == 'h').length == 15,
+        out.text.reverse.takeWhile(_ == 't').length == 6,
       )
     },
     test("cap handles a limit smaller than the marker without crashing") {
       val out = Context.cap("x" * 50, 4)
-      assertTrue(out.truncated, out.text.nonEmpty)
+      assertTrue(out.truncated, out.text.nonEmpty, out.text.length <= 4)
     },
     test("budget falls back to the 400k default") {
       // No env var set in the test JVM, and no llm4zio.* system property.

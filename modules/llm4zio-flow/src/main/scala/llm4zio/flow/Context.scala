@@ -12,17 +12,21 @@ object Context:
   /** The result of [[cap]]: the (possibly shortened) text plus what it cost. */
   final case class Capped(text: String, originalChars: Int, truncated: Boolean)
 
-  /** Bound `text` to `limit` characters, keeping the head (3/4) and the tail (1/4) so both the entry points and the
-    * trailing rules survive — the middle is where boilerplate lives. Text at or under the limit is returned untouched.
-    * The marker itself sits on top of `limit` (matching the `capText` prior art this generalises), so a truncated
-    * result is `limit` chars of original content plus the marker's small, fixed overhead — never open-ended.
+  /** Bound `text` to `limit` characters — the result is NEVER longer than `limit`, marker included. Keeps the head (3/4
+    * of the remaining room) and the tail (1/4) so both the entry points and the trailing rules survive; the middle is
+    * where boilerplate lives. Text at or under the limit is returned untouched.
+    *
+    * NB the marker counts against `limit`. `ExtractFlow.capText`, the prior art this generalises, let the marker sit on
+    * top — a ~19-char overshoot. That was an accident, not a design choice, and callers here reason about fitting under
+    * a hard provider ceiling, so a method called `cap` must actually cap.
     */
   def cap(text: String, limit: Int): Capped =
     if text.length <= limit then Capped(text, text.length, truncated = false)
     else if limit <= Marker.length then Capped(text.take(math.max(limit, 1)), text.length, truncated = true)
     else
-      val head = limit * 3 / 4
-      val tail = limit - head
+      val room = limit - Marker.length
+      val head = room * 3 / 4
+      val tail = room - head
       Capped(s"${text.take(head)}$Marker${text.takeRight(tail)}", text.length, truncated = true)
 
   /** The default character budget: `LLM4ZIO_CONTEXT_BUDGET`, else the deprecated `LLM4ZIO_JUDGE_SOURCES_LIMIT`, else
