@@ -18,11 +18,12 @@ object Context:
     *
     * NB the marker counts against `limit`. `ExtractFlow.capText`, the prior art this generalises, let the marker sit on
     * top — a ~19-char overshoot. That was an accident, not a design choice, and callers here reason about fitting under
-    * a hard provider ceiling, so a method called `cap` must actually cap.
+    * a hard provider ceiling, so a method called `cap` must actually cap. For `limit <= 0` — reachable once a caller's
+    * remaining budget is exhausted — the closest achievable result is the empty string, since length can't go negative.
     */
   def cap(text: String, limit: Int): Capped =
     if text.length <= limit then Capped(text, text.length, truncated = false)
-    else if limit <= Marker.length then Capped(text.take(math.max(limit, 1)), text.length, truncated = true)
+    else if limit <= Marker.length then Capped(text.take(math.max(limit, 0)), text.length, truncated = true)
     else
       val room = limit - Marker.length
       val head = room * 3 / 4

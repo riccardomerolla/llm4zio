@@ -34,6 +34,17 @@ object ContextSpec extends ZIOSpecDefault:
       val out = Context.cap("x" * 50, 4)
       assertTrue(out.truncated, out.text.nonEmpty, out.text.length <= 4)
     },
+    test("cap never exceeds the limit, including at and below zero") {
+      val zero = Context.cap("ab", 0)
+      val neg  = Context.cap("ab", -5)
+      assertTrue(
+        zero.text.isEmpty,
+        zero.truncated,
+        zero.originalChars == 2,
+        neg.text.isEmpty,
+        neg.truncated,
+      )
+    },
     test("budget falls back to the 400k default") {
       // No env var set in the test JVM, and no llm4zio.* system property.
       assertTrue(Context.budget == 400_000)
