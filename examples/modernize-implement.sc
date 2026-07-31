@@ -32,6 +32,10 @@
   * Run:  scala-cli run modernize-implement.sc -- --repo ~/services/meridian-transfers
   */
 
+import java.nio.file.{ Files, Path }
+
+import scala.jdk.CollectionConverters.*
+
 import zio.{ IO, ZIO }
 
 import llm4zio.eval.*
@@ -82,11 +86,36 @@ val complianceDims = List(
   ),
 )
 
-def judgeFeedback(below: List[DimensionScore]): String =
-  val lines = below.map(d => s"- ${d.name} (${d.score}/2): ${d.reasoning}").mkString("\n")
+def judgeFeedback(findings: ReviewResult): String =
+  val lines = findings.issues.map(i => s"- ${i.title}: ${i.description}").mkString("\n")
   s"""The final spec-compliance review scored the branch below the bar. Close these gaps without
      |weakening any test, then stop:
      |$lines""".stripMargin
+
+/** The spec'd programs: top-level `<NAME>.md` files under the pack's specs dir, indexes aside. */
+def specPrograms(specsDir: Path): IO[FlowError, List[String]] =
+  ZIO
+    .attemptBlocking {
+      if !Files.isDirectory(specsDir) then Nil
+      else
+        val stream = Files.list(specsDir)
+        try
+          stream
+            .iterator()
+            .asScala
+            .filter(p => Files.isRegularFile(p) && p.getFileName.toString.endsWith(".md"))
+            .map(_.getFileName.toString.stripSuffix(".md"))
+            .filterNot(Set("traceability", "mapping", "README"))
+            .toList
+            .sorted
+        finally stream.close()
+    }
+    .mapError(e => FlowError.Persistence(s"failed to list specs under $specsDir", Some(e)))
+
+def readFileOr(path: Path, fallback: String): IO[FlowError, String] =
+  ZIO
+    .attemptBlocking(if Files.exists(path) then Files.readString(path) else fallback)
+    .mapError(e => FlowError.Persistence(s"failed to read $path", Some(e)))
 
 /** Concatenate the committed specs + features — the judge's contract text. */
 def gatherSpecs(root: java.nio.file.Path, specsDir: String): IO[FlowError, String] =
@@ -110,38 +139,195 @@ def gatherSpecs(root: java.nio.file.Path, specsDir: String): IO[FlowError, Strin
     }
     .mapError(e => FlowError.Persistence("failed to read the committed specs", Some(e)))
 
-/** Judge the branch diff against the committed specs; feed sub-bar reasoning back to the coder,
-  * re-verify, re-judge — bounded by `JudgeRounds`, failing the flow if the bar is never cleared.
+/** One bounded estate-wide pass: the traceability index plus the changed-file NAMES (never contents). Per-program
+  * judging (`ProgramJudge` below) cannot see cross-program problems — a rule that moved between programs, a
+  * scenario orphaned when two programs were merged — because each of its calls only ever sees one program's slice
+  * of the diff. This pass is the compensating check. Carrying file names instead of their contents is what keeps
+  * it affordable regardless of estate size: the traceability index already says what should live where, so the
+  * judge only needs to see which files moved, not what's in them.
+  */
+def traceabilityPass(
+  judge: Evaluator[Sample],
+  dims: List[Dimension],
+  specsDir: Path,
+  base: String,
+)(using ctx: FlowContext
+): IO[FlowError, ReviewResult] =
+  for
+    trace   <- readFileOr(specsDir.resolve("traceability.md"), "")
+    changed <- git.changedFilesVsBase(base)
+    names    = changed.mkString("\n")
+    result  <- Context.withShrink("judge[traceability]") { cap =>
+                 for
+                   t <- Context.capped("traceability", trace, cap)
+                   r <- judge
+                          .evaluate(Sample(
+                            response = s"Files changed on this branch:\n$names",
+                            context = Some(t),
+                            query = Some(userPrompt),
+                          ))
+                          .mapError(e => FlowError.Llm(e.message, Some(e)))
+                 yield r
+               }
+  yield
+    val subBar = result.scores.filter(s => s.score < dims.find(_.name == s.name).fold(2)(_.maxScore))
+    ReviewResult(
+      subBar.map(s => ReviewIssue(Severity.Critical, s"judge[traceability]: ${s.name} scored ${s.score}", s.reasoning)),
+      "judge:traceability",
+    )
+
+/** Per-program spec-compliance judging — mirrors `llm4zio.modernize.ProgramJudge`. That module isn't on this
+  * script's classpath (only core/flow/runner/java are published; `modernize` is the operator-surface module), so
+  * the logic is duplicated here rather than imported. A whole-branch judge call carries every spec and every diff
+  * hunk in the estate — what blows a provider's input window. Judging one program at a time against only that
+  * program's slice of the diff keeps each call small, and — wrapped in `ReviewCache` — makes the gate resumable.
+  */
+object ProgramJudge:
+
+  /** Partition `changed` by which program's file regex matches. A file matching several programs is judged with
+    * each of them; the remainder is returned separately for the unassigned pass.
+    */
+  def groupFiles(pack: Pack, programs: List[String], changed: List[String]): (Map[String, List[String]], List[String]) =
+    val byProgram  = programs.map(p => p -> changed.filter(_.matches(pack.filesFor(p)))).toMap
+    val assigned   = byProgram.values.flatten.toSet
+    val unassigned = changed.filterNot(assigned.contains)
+    (byProgram, unassigned)
+
+  /** Judge every program whose files changed, plus one pass over the unassigned remainder. Each verdict is cached
+    * at `gateDir/<NAME>.json`, fingerprinted over the spec, the diff slice, and the rubric it judged.
+    */
+  def judgeAll(
+    pack: Pack,
+    judge: Evaluator[Sample],
+    dims: List[Dimension],
+    gateDir: Path,
+    base: String,
+    programs: List[String],
+    specFor: String => IO[FlowError, String],
+    query: String,
+  )(using ctx: FlowContext
+  ): IO[FlowError, ReviewResult] =
+    for
+      changed              <- git.changedFilesVsBase(base)
+      (byProgram, leftover) = groupFiles(pack, programs, changed)
+      active                = programs.filter(p => byProgram.getOrElse(p, Nil).nonEmpty)
+      perProgram           <- ZIO.foreach(active)(p =>
+                                judgeOne(judge, dims, gateDir, base, p, byProgram(p), specFor, query)
+                              )
+      residual             <- ZIO.when(leftover.nonEmpty)(
+                                judgeUnassigned(judge, dims, gateDir, base, leftover, specFor, programs, query)
+                              )
+    yield Reviewers.merge(perProgram ++ residual.toList)
+
+  private def judgeOne(
+    judge: Evaluator[Sample],
+    dims: List[Dimension],
+    gateDir: Path,
+    base: String,
+    program: String,
+    files: List[String],
+    specFor: String => IO[FlowError, String],
+    query: String,
+  )(using ctx: FlowContext
+  ): IO[FlowError, ReviewResult] =
+    for
+      spec   <- specFor(program)
+      diff   <- git.diffVsBase(base, files)
+      rubric  = dims.map(d => s"${d.name} (0..${d.maxScore}): ${d.rubric}").mkString("\n")
+      result <- ReviewCache.cached(gateDir.resolve(s"$program.json"), ReviewCache.fingerprint(spec, diff, rubric)) {
+                  ctx.events.publish(FlowEvent.Info(s"judging $program")) *>
+                    Context.withShrink(s"judge[$program]") { cap =>
+                      for
+                        s <- Context.capped(s"spec[$program]", spec, cap)
+                        d <- Context.capped(s"diff[$program]", diff, cap)
+                        r <- judge
+                               .evaluate(Sample(response = d, context = Some(s), query = Some(query)))
+                               .mapError(e => FlowError.Llm(e.message, Some(e)))
+                      yield r
+                    }.map(issues(_, dims, program))
+                }
+    yield result
+
+  private def judgeUnassigned(
+    judge: Evaluator[Sample],
+    dims: List[Dimension],
+    gateDir: Path,
+    base: String,
+    files: List[String],
+    specFor: String => IO[FlowError, String],
+    programs: List[String],
+    query: String,
+  )(using ctx: FlowContext
+  ): IO[FlowError, ReviewResult] =
+    for
+      diff   <- git.diffVsBase(base, files)
+      specs  <- ZIO.foreach(programs)(specFor).map(_.mkString("\n\n"))
+      rubric  = dims.map(d => s"${d.name} (0..${d.maxScore}): ${d.rubric}").mkString("\n")
+      result <- ReviewCache.cached(gateDir.resolve("unassigned.json"), ReviewCache.fingerprint(specs, diff, rubric)) {
+                  ctx.events.publish(FlowEvent.Info(s"judging ${files.size} unassigned file(s)")) *>
+                    Context.withShrink("judge[unassigned]") { cap =>
+                      for
+                        s <- Context.capped("spec[unassigned]", specs, cap)
+                        d <- Context.capped("diff[unassigned]", diff, cap)
+                        r <- judge
+                               .evaluate(Sample(response = d, context = Some(s), query = Some(query)))
+                               .mapError(e => FlowError.Llm(e.message, Some(e)))
+                      yield r
+                    }.map(issues(_, dims, "unassigned"))
+                }
+    yield result
+
+  /** Sub-bar dimensions as Critical review issues, titled with the program they belong to. */
+  private def issues(scored: EvalResult, dims: List[Dimension], program: String): ReviewResult =
+    val subBar = scored.scores.filter(s => s.score < dims.find(_.name == s.name).fold(2)(_.maxScore))
+    ReviewResult(
+      subBar.map(s => ReviewIssue(Severity.Critical, s"judge[$program]: ${s.name} scored ${s.score}", s.reasoning)),
+      s"judge:$program",
+    )
+
+/** Judge the branch diff against the committed specs: one `ProgramJudge` pass per program's own slice of the
+  * diff, plus one bounded `traceabilityPass` over the whole estate. Feeds sub-bar reasoning back to the coder,
+  * re-verifies, re-judges — bounded by `JudgeRounds`, failing the flow if the bar is never cleared.
   */
 def specComplianceLoop(
   system: String,
   judge: Evaluator[Sample],
   verGate: IO[FlowError, ReviewResult],
-  specText: String,
+  pack: Pack,
   epicId: String,
 )(using ctx: FlowContext
 ): IO[FlowError, Unit] =
+  val specsDir = workDir.resolve(pack.specsDir)
+  val gateDir  = workDir.resolve(ModDir).resolve("gate")
   def round(n: Int): IO[FlowError, Unit] =
     for
-      base   <- git.defaultBase
-      diff   <- git.diffVsBase(base)
-      result <- judge
-                  .evaluate(Sample(response = diff, context = Some(specText), query = Some(userPrompt)))
-                  .mapError(e => FlowError.Llm(e.message, Some(e)))
-      below   = result.scores.filter(_.score < 2)
-      _      <- if below.isEmpty then ctx.events.publish(FlowEvent.Info("spec-compliance judge: branch cleared the bar"))
-                else if n >= JudgeRounds then
-                  fail(
-                    s"spec-compliance judge not cleared after $JudgeRounds round(s):\n" +
-                      below.map(d => s"- ${d.name} ${d.score}/2: ${d.reasoning}").mkString("\n")
+      base     <- git.defaultBase
+      programs <- specPrograms(specsDir)
+      perProg  <- ProgramJudge.judgeAll(
+                    pack,
+                    judge,
+                    complianceDims,
+                    gateDir,
+                    base,
+                    programs,
+                    p => readFileOr(specsDir.resolve(s"$p.md"), ""),
+                    userPrompt,
                   )
-                else
-                  Chat.start(coder, system = Some(system)).flatMap(_.ask(judgeFeedback(below))) *>
-                    verGate.flatMap(r =>
-                      ZIO.unless(r.isClean)(fail("verify gate broke while addressing judge feedback")).unit
-                    ) *>
-                    git.commitAll(s"$epicId: address spec-compliance feedback").unit *>
-                    round(n + 1)
+      trace    <- traceabilityPass(judge, complianceDims, specsDir, base)
+      merged    = Reviewers.merge(List(perProg, trace))
+      _        <- if merged.isClean then ctx.events.publish(FlowEvent.Info("spec-compliance judge: branch cleared the bar"))
+                  else if n >= JudgeRounds then
+                    fail(
+                      s"spec-compliance judge not cleared after $JudgeRounds round(s):\n" +
+                        merged.issues.map(i => s"- ${i.title}: ${i.description}").mkString("\n")
+                    )
+                  else
+                    Chat.start(coder, system = Some(system)).flatMap(_.ask(judgeFeedback(merged))) *>
+                      verGate.flatMap(r =>
+                        ZIO.unless(r.isClean)(fail("verify gate broke while addressing judge feedback")).unit
+                      ) *>
+                      git.commitAll(s"$epicId: address spec-compliance feedback").unit *>
+                      round(n + 1)
     yield ()
   round(1)
 
@@ -216,9 +402,8 @@ flow(
                        )
                    }
                  }
-    specText  <- gatherSpecs(workDir, pack.specsDir)
     _         <- stage("Judge")(
-                   specComplianceLoop(system, Judge.of(reasoning, complianceDims), verGate, specText, plan.epicId)
+                   specComplianceLoop(system, Judge.of(reasoning, complianceDims), verGate, pack, plan.epicId)
                  )
     _         <- stage("Publish") {
                    val push = git.push("origin", plan.epicId)
