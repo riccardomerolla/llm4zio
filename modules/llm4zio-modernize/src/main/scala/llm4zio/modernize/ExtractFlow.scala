@@ -55,8 +55,8 @@ object ExtractFlow:
     *
     * Quota: if gemini exhausts the model's quota the flow fails fast with the reset time (set LLM4ZIO_USAGE_WAIT=24h to
     * wait it out and auto-resume, or point ProModel at a model with remaining quota). A WARN is logged if the CLI
-    * serves a different model than requested. Judge context is bounded per program by LLM4ZIO_JUDGE_SOURCES_LIMIT
-    * (chars, default 400000).
+    * serves a different model than requested. Judge context is bounded per program by LLM4ZIO_CONTEXT_BUDGET (chars,
+    * default 400000; the deprecated LLM4ZIO_JUDGE_SOURCES_LIMIT alias still works).
     */
 
   import java.nio.charset.StandardCharsets
@@ -74,7 +74,8 @@ object ExtractFlow:
   val ProModel: String  = "gemini-2.5-pro" // point these at whatever your `gemini` CLI offers
   val MaxRounds: Int    = 3
   val ModDir: String    = "docs/modernization"
-  val AnalystTurns: Int = 48               // per-program turn budget — bounds a wedged agent, generous for real work
+  // per-program turn budget — bounds a wedged agent, generous for real work
+  val AnalystTurns: Int = Env.get("LLM4ZIO_ANALYST_TURNS").flatMap(_.trim.toIntOption).filter(_ > 0).getOrElse(48)
 
   val CoderKind: String = Env.get("LLM4ZIO_CODER").map(_.trim.toLowerCase).filter(_.nonEmpty).getOrElse("gemini")
 
@@ -135,18 +136,6 @@ object ExtractFlow:
   /** Concatenate the spec pack the analyst wrote — the planner's input. */
   def gatherSpecPack(modDir: Path): IO[FlowError, String] =
     gatherSources(modDir, """.*\.(md|feature)""")
-
-  /** Bound a judge/planner input: past the limit keep head + tail so both the entry points and the trailing rules stay
-    * visible. Oversized prompts are gemini's deterministic-empty-response path.
-    */
-  val JudgeSourcesLimit: Int =
-    Env.get("LLM4ZIO_JUDGE_SOURCES_LIMIT").flatMap(_.toIntOption).getOrElse(400_000)
-
-  def capText(text: String, limit: Int): String =
-    if text.length <= limit then text
-    else
-      val head = limit * 3 / 4
-      s"${text.take(head)}\n\n… [truncated] …\n\n${text.takeRight(limit - head)}"
 
   /** The `- PROG` entries of `## Wave: <name>` in the survey's wave plan. */
   def wavePrograms(planText: String, wave: String): List[String] =
@@ -289,29 +278,6 @@ object ExtractFlow:
       s"judge:$program",
     )
 
-  def isEmptyResponse(e: FlowError): Boolean = e match
-    case FlowError.Llm(message, _) => message.contains("empty response")
-    case _                         => false
-
-  /** Evaluate with a shrinking context ladder: an empty judge response that survives the in-run flaky retries is
-    * usually DETERMINISTIC (context overflow) — repeating the same prompt cannot succeed, so retry at half, then
-    * quarter context instead.
-    */
-  def judgeWithShrink(judge: Evaluator[Sample], sample: Sample)(using ctx: FlowContext): IO[FlowError, EvalResult] =
-    def capped(cap: Int): Sample                                      =
-      sample.copy(context = sample.context.map(capText(_, cap)), response = capText(sample.response, cap))
-    def attempt(cap: Int, rest: List[Int]): IO[FlowError, EvalResult] =
-      judge
-        .evaluate(capped(cap))
-        .mapError(e => FlowError.Llm(e.message, Some(e)))
-        .catchSome {
-          case e if isEmptyResponse(e) && rest.nonEmpty =>
-            ctx.events.publish(
-              FlowEvent.Info(s"judge returned empty at cap $cap chars — shrinking to ${rest.head}: ${e.message}")
-            ) *> attempt(rest.head, rest.tail)
-        }
-    attempt(JudgeSourcesLimit, List(JudgeSourcesLimit / 2, JudgeSourcesLimit / 4))
-
   /** Judge ONE program — resumably: its verdict persists in `gate/<NAME>.json`, fingerprinted over the source, spec,
     * feature, and rubric it judged. Unchanged content reuses the stored verdict with NO LLM call, so a crash, quota
     * death, or auto-resume re-entry re-judges only what actually changed. Delete a `gate/<NAME>.json` (or the whole
@@ -331,11 +297,15 @@ object ExtractFlow:
                    ReviewCache.fingerprint(source, spec, feature, rubric),
                  ) {
                    ctx.events.publish(FlowEvent.Info(s"judging $name")) *>
-                     judgeWithShrink(
-                       judge,
-                       Sample(response = s"$spec\n\n$feature", context = Some(source), query = Some(userPrompt)),
-                     )
-                       .map(judgeIssues(_, pack.judgeDimensions, name))
+                     Context.withShrink(s"judge[$name]") { cap =>
+                       for
+                         src <- Context.capped(s"source[$name]", source, cap)
+                         out <- Context.capped(s"spec[$name]", s"$spec\n\n$feature", cap)
+                         r   <- judge
+                                  .evaluate(Sample(response = out, context = Some(src), query = Some(userPrompt)))
+                                  .mapError(e => FlowError.Llm(e.message, Some(e)))
+                       yield r
+                     }.map(judgeIssues(_, pack.judgeDimensions, name))
                  }
     yield name -> result
 
@@ -500,9 +470,10 @@ object ExtractFlow:
         _        <- ZIO.when(result.isClean)(stage("Plan") {
                       for
                         specText <- gatherSpecPack(modDir)
+                        capped   <- Context.capped("spec pack", specText, Context.budget)
                         plan     <- Planner.from(
                                       reasoning,
-                                      capText(specText, JudgeSourcesLimit),
+                                      capped,
                                       Planner.defaultInstructions + "\n\n" + pack.prompt("plan").getOrElse(""),
                                     )
                         _        <- writeFile(modDir.resolve("plan.md"), plan.render)
