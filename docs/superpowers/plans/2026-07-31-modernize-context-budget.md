@@ -831,19 +831,21 @@ object ProgramJudge:
       changed              <- git.changedFilesVsBase(base)
       (byProgram, leftover) = groupFiles(pack, programs, changed)
       active                = programs.filter(p => byProgram.getOrElse(p, Nil).nonEmpty)
-      perProgram           <- ZIO.foreach(active)(p => judgeOne(pack, judge, dims, gateDir, base, p, specFor, query))
+      perProgram           <- ZIO.foreach(active)(p =>
+                                judgeOne(judge, dims, gateDir, base, p, byProgram(p), specFor, query)
+                              )
       residual             <- ZIO.when(leftover.nonEmpty)(
                                 judgeUnassigned(pack, judge, dims, gateDir, base, leftover, specFor, programs, query)
                               )
     yield Reviewers.merge(perProgram ++ residual.toList)
 
   private def judgeOne(
-    pack: Pack,
     judge: Evaluator[Sample],
     dims: List[Dimension],
     gateDir: Path,
     base: String,
     program: String,
+    files: List[String],
     specFor: String => IO[FlowError, String],
     query: String,
   )(using ctx: FlowContext
@@ -851,8 +853,9 @@ object ProgramJudge:
     given FlowEvents = ctx.events
     for
       spec   <- specFor(program)
-      files   = List(pack.filesFor(program))
-      diff   <- git.changedFilesVsBase(base).flatMap(c => git.diffVsBase(base, c.filter(_.matches(files.head))))
+      // `files` comes from groupFiles — do NOT re-derive it here; judgeAll already computed the grouping and
+      // re-running changedFilesVsBase per program would be N+1 git invocations for the same answer.
+      diff   <- git.diffVsBase(base, files)
       rubric  = dims.map(d => s"${d.name} (0..${d.maxScore}): ${d.rubric}").mkString("\n")
       result <- ReviewCache.cached(gateDir.resolve(s"$program.json"), ReviewCache.fingerprint(spec, diff, rubric)) {
                   ctx.events.publish(FlowEvent.Info(s"judging $program")) *>
@@ -1391,7 +1394,9 @@ Add a `readFileOr` helper to `ImplementFlow` if it does not already have one —
 
 - [ ] **Step 3: Rewrite `specComplianceLoop` to judge per program**
 
-Replace the body of `round(n)` so it calls `ProgramJudge.judgeAll` plus `traceabilityPass` instead of one whole-branch `judge.evaluate`, and delete `gatherSpecs` (nothing else uses it):
+Replace the body of `round(n)` so it calls `ProgramJudge.judgeAll` plus `traceabilityPass` instead of one whole-branch `judge.evaluate`.
+
+**Keep `gatherSpecs`.** It has two call sites and only one goes away. The first (before `Chat.start`) feeds `cited = Patterns.tagged(specText)` for pattern-card selection and must stay; only the second, immediately before the Judge stage, is deleted. Do not remove the `gatherSpecs` definition itself.
 
 ```scala
   def specComplianceLoop(
@@ -1457,7 +1462,7 @@ Update the Judge stage call site:
                      )
 ```
 
-Delete the now-unused `specText <- gatherSpecs(...)` bindings (there are two, before the Judge stage and earlier for `Patterns.tagged`). **Keep the earlier one** — `cited = Patterns.tagged(specText)` still needs it for pattern-card selection. Only the second, pre-Judge binding goes.
+Delete only the second `specText <- gatherSpecs(...)` binding, the one immediately before the Judge stage. The earlier binding and the `gatherSpecs` definition both stay (see the note in Step 3).
 
 - [ ] **Step 4: Mirror into `examples/modernize-implement.sc`**
 
