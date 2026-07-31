@@ -57,7 +57,7 @@ object ContextSpec extends ZIOSpecDefault:
         !out.truncated,
       )
     },
-    test("cap keeps head and tail with an elision marker") {
+    test("cap keeps head and tail with an elision marker, never exceeding the limit") {
       val text = ("h" * 100) + ("t" * 100)
       val out  = Context.cap(text, 40)
       assertTrue(
@@ -66,9 +66,10 @@ object ContextSpec extends ZIOSpecDefault:
         out.text.startsWith("h"),
         out.text.endsWith("t"),
         out.text.contains("[truncated]"),
-        // head is 3/4 of the limit, tail the remainder
-        out.text.takeWhile(_ == 'h').length == 30,
-        out.text.reverse.takeWhile(_ == 't').length == 10,
+        // The marker counts against the limit: room = 40 - 19 = 21, head = 21*3/4 = 15, tail = 6.
+        out.text.length == 40,
+        out.text.takeWhile(_ == 'h').length == 15,
+        out.text.reverse.takeWhile(_ == 't').length == 6,
       )
     },
     test("cap handles a limit smaller than the marker without crashing") {
@@ -106,8 +107,13 @@ object Context:
   /** The result of [[cap]]: the (possibly shortened) text plus what it cost. */
   final case class Capped(text: String, originalChars: Int, truncated: Boolean)
 
-  /** Bound `text` to `limit` characters, keeping the head (3/4) and the tail (1/4) so both the entry points and the
-    * trailing rules survive — the middle is where boilerplate lives. Text at or under the limit is returned untouched.
+  /** Bound `text` to `limit` characters — the result is NEVER longer than `limit`, marker included. Keeps the head
+    * (3/4 of the remaining room) and the tail (1/4) so both the entry points and the trailing rules survive; the
+    * middle is where boilerplate lives. Text at or under the limit is returned untouched.
+    *
+    * NB the marker counts against `limit`. `ExtractFlow.capText`, the prior art this generalises, let the marker sit
+    * on top — a ~19-char overshoot. That was an accident, not a design choice, and callers here reason about fitting
+    * under a hard provider ceiling, so a method called `cap` must actually cap.
     */
   def cap(text: String, limit: Int): Capped =
     if text.length <= limit then Capped(text, text.length, truncated = false)
