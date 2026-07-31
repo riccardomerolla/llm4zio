@@ -65,6 +65,20 @@ object ContextSpec extends ZIOSpecDefault:
         recs.head.label == "specs",
         recs.head.originalChars == 1000,
         recs.head.keptChars <= 100,
+        recs.head.kind == Context.Kind.Capped,
+      )
+    },
+    test("Truncation.render distinguishes real truncation from a retried budget ceiling") {
+      // capped's numbers are literal text sizes; withShrink's numbers are attempted ceilings, not text size. A
+      // provenance.json reader must be able to tell the two apart, so the rendered strings must differ.
+      val capped = Context.Truncation("specs", 1000, 500, Context.Kind.Capped).render
+      val shrunk = Context.Truncation("judge", 1000, 500, Context.Kind.Shrunk).render
+      assertTrue(
+        capped != shrunk,
+        capped.contains("truncated"),
+        !capped.contains("ceiling"),
+        shrunk.contains("ceiling"),
+        shrunk.contains("lower budget"),
       )
     },
     test("capped records nothing when the text fits") {
@@ -96,7 +110,7 @@ object ContextSpec extends ZIOSpecDefault:
       yield assertTrue(
         out == "ok@500",
         seen == List(1000, 500),
-        recs.exists(_.label == "judge"),
+        recs.exists(r => r.label == "judge" && r.kind == Context.Kind.Shrunk),
       )
     },
     test("withShrink retries on an empty response too") {
@@ -122,6 +136,26 @@ object ContextSpec extends ZIOSpecDefault:
                              .withShrink("judge", start = 1000)(_ => ZIO.fail(FlowError.Llm(overflow.message, Some(overflow))))
                              .either
       yield assertTrue(
+        res.isLeft,
+        res.left.exists(_.message.contains("LLM4ZIO_CONTEXT_BUDGET")),
+      )
+    },
+    test("withShrink reaches the 0-length rung without hanging when start is small enough") {
+      // start = 3 walks 3, 3/2 = 1, 3/4 = 0 — a real reachable ladder, not a hypothetical. f(0) must still be
+      // invoked (not skipped), and exhausting the ladder there must fail cleanly rather than loop or throw.
+      val overflow = LlmError.ProviderError("input token count exceeds the limit", None)
+      for
+        events          <- FlowEvents.collecting
+        given FlowEvents = events
+        calls           <- Ref.make(List.empty[Int])
+        res             <- Context
+                             .withShrink("judge", start = 3) { cap =>
+                               calls.update(_ :+ cap) *> ZIO.fail(FlowError.Llm(overflow.message, Some(overflow)))
+                             }
+                             .either
+        seen            <- calls.get
+      yield assertTrue(
+        seen == List(3, 1, 0),
         res.isLeft,
         res.left.exists(_.message.contains("LLM4ZIO_CONTEXT_BUDGET")),
       )

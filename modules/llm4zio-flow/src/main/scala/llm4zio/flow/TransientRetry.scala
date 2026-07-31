@@ -129,20 +129,26 @@ object TransientRetry:
       "exceeds the maximum number of tokens",
     ).exists(m.contains)
 
+  /** The message signatures of a prompt-too-large failure, in one place: [[isContextOverflow]] matches them on a typed
+    * [[LlmError]], and `Context.withShrink` matches them on a bare message string when no typed cause survived. Two
+    * copies of this list would drift.
+    */
+  def isContextOverflowMessage(message: String): Boolean =
+    val m = message.toLowerCase
+    List(
+      "exceeds the maximum number of tokens",
+      "input token count exceeds",
+      "context length exceeded",
+      "maximum context length",
+      "prompt is too long",
+      "request too large",
+    ).exists(m.contains)
+
   /** The prompt was larger than the model's input window. Deterministic: the same prompt always fails, so it is NOT
     * transient — it routes to [[Context.withShrink]], which retries at a smaller budget.
     */
   def isContextOverflow(e: LlmError): Boolean = e match
-    case LlmError.ProviderError(message, _) =>
-      val m = message.toLowerCase
-      List(
-        "exceeds the maximum number of tokens",
-        "input token count exceeds",
-        "context length exceeded",
-        "maximum context length",
-        "prompt is too long",
-        "request too large",
-      ).exists(m.contains)
+    case LlmError.ProviderError(message, _) => isContextOverflowMessage(message)
     case _                                  => false
 
   /** Transient = worth retrying: timeouts, short rate limits, and provider errors whose message points at a server-side

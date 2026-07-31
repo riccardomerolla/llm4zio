@@ -44,9 +44,28 @@ object Context:
       .filter(_ > 0)
       .getOrElse(400_000)
 
-  /** One recorded truncation: what was shortened, and by how much. */
-  final case class Truncation(label: String, originalChars: Int, keptChars: Int):
-    def render: String = s"$label: $originalChars → $keptChars chars"
+  /** Which kind of shrinking produced a [[Truncation]] — the two are NOT interchangeable, and `provenance.json` readers
+    * must be able to tell them apart.
+    */
+  enum Kind:
+    /** Real text was shortened: `originalChars` and `keptChars` are literal character counts. */
+    case Capped
+
+    /** A retry budget was lowered after an oversized prompt failed: the numbers are attempted CEILINGS, not the size of
+      * any actual text. The prompt that failed was larger than `originalChars`; what finally succeeded was at most
+      * `keptChars`.
+      */
+    case Shrunk
+
+  /** One recorded truncation: what was shortened, and by how much. `kind` disambiguates [[capped]]'s literal char
+    * counts from [[withShrink]]'s attempted budget ceilings — conflating them would misreport how much content a
+    * clean-room audit actually lost.
+    */
+  final case class Truncation(label: String, originalChars: Int, keptChars: Int, kind: Kind):
+    def render: String = kind match
+      case Kind.Capped => s"$label: truncated $originalChars → $keptChars chars"
+      case Kind.Shrunk =>
+        s"$label: retried at a lower budget, $originalChars → $keptChars chars (ceilings, not text size)"
 
   /** Fiber-local truncation log. Fiber-local (not global) so concurrent flows don't cross-contaminate, and so a phase
     * reads back exactly what its own calls truncated. Written ONLY by [[capped]] and [[withShrink]].
@@ -68,17 +87,19 @@ object Context:
     else
       events.publish(
         FlowEvent.Info(s"⚠ context: $label truncated ${out.originalChars} → ${out.text.length} chars")
-      ) *> record(Truncation(label, out.originalChars, out.text.length)).as(out.text)
+      ) *> record(Truncation(label, out.originalChars, out.text.length, Kind.Capped)).as(out.text)
 
   /** True for the two failure classes a smaller prompt can fix: a deterministic context overflow, and the empty
-    * response gemini returns when a prompt is too large for it to even start.
+    * response gemini returns when a prompt is too large for it to even start. The overflow check delegates to
+    * [[TransientRetry.isContextOverflowMessage]] — the same phrasing list [[TransientRetry.isContextOverflow]] matches
+    * on a typed cause — so a message-only failure (no surviving typed `LlmError`) is still caught; keeping a second,
+    * shorter copy here previously let four of the six overflow phrasings slip through unmatched.
     */
   private def shrinkable(e: FlowError): Boolean = e match
     case FlowError.Llm(message, cause) =>
       cause.exists(TransientRetry.isContextOverflow) ||
-      message.toLowerCase.contains("empty response") ||
-      message.toLowerCase.contains("input token count exceeds") ||
-      message.toLowerCase.contains("exceeds the maximum number of tokens")
+      TransientRetry.isContextOverflowMessage(message) ||
+      message.toLowerCase.contains("empty response")
     case _                             => false
 
   /** Run `f` at `start` characters; on a shrinkable failure retry at 1/2, then 1/4, then give up. Repeating the same
@@ -94,15 +115,21 @@ object Context:
     f: Int => IO[FlowError, A]
   )(using events: FlowEvents
   ): IO[FlowError, A] =
-    def attempt(cap: Int, rest: List[Int]): IO[FlowError, A] =
-      f(cap).catchSome {
+    def attempt(atChars: Int, rest: List[Int]): IO[FlowError, A] =
+      f(atChars).catchSome {
         case e if shrinkable(e) && rest.nonEmpty =>
           events.publish(
-            FlowEvent.Info(s"⚠ context: $label did not fit at $cap chars — shrinking to ${rest.head}: ${e.message}")
-          ) *> record(Truncation(label, cap, rest.head)) *> attempt(rest.head, rest.tail)
+            FlowEvent.Info(
+              s"⚠ context: $label did not fit at $atChars chars — shrinking to ${rest.head}: ${e.message}"
+            )
+          ) *> record(Truncation(label, atChars, rest.head, Kind.Shrunk)) *> attempt(rest.head, rest.tail)
         case e if shrinkable(e)                  =>
+          // cause = None deliberately: AutoResume.shouldResume only re-enters the whole flow when a FlowError.Llm
+          // carries Some(cause), and would classify a "empty response" cause as flaky (isFlakyStream) and resumable.
+          // Keeping the cause here would make AutoResume re-run the flow from the top, replaying this exact,
+          // permanently-failing budget sequence forever — reintroducing the crash this ladder exists to fix.
           ZIO.fail(FlowError.Llm(
-            s"$label exceeded the model's input limit even after shrinking to $cap chars — " +
+            s"$label exceeded the model's input limit even after shrinking to $atChars chars — " +
               s"lower LLM4ZIO_CONTEXT_BUDGET or scope this phase further (cause: ${e.message})",
             None,
           ))
