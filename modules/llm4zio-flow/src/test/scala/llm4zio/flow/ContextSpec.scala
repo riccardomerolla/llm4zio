@@ -1,0 +1,40 @@
+package llm4zio.flow
+
+import zio.Scope
+import zio.test.*
+
+object ContextSpec extends ZIOSpecDefault:
+
+  def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("Context")(
+    test("cap returns text at or under the limit untouched") {
+      val short = "abcdef"
+      val out   = Context.cap(short, 10)
+      assertTrue(
+        out.text == short,
+        out.originalChars == 6,
+        !out.truncated,
+      )
+    },
+    test("cap keeps head and tail with an elision marker") {
+      val text = ("h" * 100) + ("t" * 100)
+      val out  = Context.cap(text, 40)
+      assertTrue(
+        out.truncated,
+        out.originalChars == 200,
+        out.text.startsWith("h"),
+        out.text.endsWith("t"),
+        out.text.contains("[truncated]"),
+        // head is 3/4 of the limit, tail the remainder
+        out.text.takeWhile(_ == 'h').length == 30,
+        out.text.reverse.takeWhile(_ == 't').length == 10,
+      )
+    },
+    test("cap handles a limit smaller than the marker without crashing") {
+      val out = Context.cap("x" * 50, 4)
+      assertTrue(out.truncated, out.text.nonEmpty)
+    },
+    test("budget falls back to the 400k default") {
+      // No env var set in the test JVM, and no llm4zio.* system property.
+      assertTrue(Context.budget == 400_000)
+    },
+  )
