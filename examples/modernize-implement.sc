@@ -114,7 +114,7 @@ def gatherSpecs(root: java.nio.file.Path, specsDir: String): IO[FlowError, Strin
   * re-verify, re-judge — bounded by `JudgeRounds`, failing the flow if the bar is never cleared.
   */
 def specComplianceLoop(
-  coderChat: Chat,
+  system: String,
   judge: Evaluator[Sample],
   verGate: IO[FlowError, ReviewResult],
   specText: String,
@@ -136,7 +136,7 @@ def specComplianceLoop(
                       below.map(d => s"- ${d.name} ${d.score}/2: ${d.reasoning}").mkString("\n")
                   )
                 else
-                  coderChat.ask(judgeFeedback(below)) *>
+                  Chat.start(coder, system = Some(system)).flatMap(_.ask(judgeFeedback(below))) *>
                     verGate.flatMap(r =>
                       ZIO.unless(r.isClean)(fail("verify gate broke while addressing judge feedback")).unit
                     ) *>
@@ -183,28 +183,28 @@ flow(
                       playbook.map(c => s"### ${c.id}\n${c.body}").mkString("\n\n")
                   ),
                 ).flatten.mkString("\n\n")
-    coderChat <- Chat.start(coder, system = Some(system))
     _         <- implementTaskLoop(planFile, plan) { task =>
                    val testsTask = plan.tasks.headOption.contains(task)
                    for
-                     _ <- coderChat.ask(plan.taskPrompt(task))
-                     _ <- reviewAndFixLoop(
-                            Reviewers.minimal ++ pack.lenses,
-                            reviewSvc,
-                            coderChat,
-                            task.title,
-                            git.diffAll,
-                            lint = Some(if testsTask then buildGate else testGate),
-                            parallelism = 1, // gemini free tier 429s under concurrent reviewers
-                          )
-                     _ <- ZIO.when(testsTask) {
-                            testGate.flatMap { r =>
-                              ZIO.when(r.isClean)(
-                                fail("the new acceptance tests pass before any implementation — they encode nothing")
-                              )
-                            }
-                          }
-                     _ <- git.commitAll(s"${plan.epicId}: ${task.title}").unit
+                     coderChat <- Chat.start(coder, system = Some(system))
+                     _         <- coderChat.ask(plan.taskPrompt(task))
+                     _         <- reviewAndFixLoop(
+                                    Reviewers.minimal ++ pack.lenses,
+                                    reviewSvc,
+                                    coderChat,
+                                    task.title,
+                                    git.diffAll,
+                                    lint = Some(if testsTask then buildGate else testGate),
+                                    parallelism = 1, // gemini free tier 429s under concurrent reviewers
+                                  )
+                     _         <- ZIO.when(testsTask) {
+                                    testGate.flatMap { r =>
+                                      ZIO.when(r.isClean)(
+                                        fail("the new acceptance tests pass before any implementation — they encode nothing")
+                                      )
+                                    }
+                                  }
+                     _         <- git.commitAll(s"${plan.epicId}: ${task.title}").unit
                    yield ()
                  }
     _         <- stage("Verify") {
@@ -218,7 +218,7 @@ flow(
                  }
     specText  <- gatherSpecs(workDir, pack.specsDir)
     _         <- stage("Judge")(
-                   specComplianceLoop(coderChat, Judge.of(reasoning, complianceDims), verGate, specText, plan.epicId)
+                   specComplianceLoop(system, Judge.of(reasoning, complianceDims), verGate, specText, plan.epicId)
                  )
     _         <- stage("Publish") {
                    val push = git.push("origin", plan.epicId)

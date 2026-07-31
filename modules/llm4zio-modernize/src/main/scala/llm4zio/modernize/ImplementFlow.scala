@@ -116,7 +116,7 @@ object ImplementFlow:
     * bounded by `JudgeRounds`, failing the flow if the bar is never cleared.
     */
   def specComplianceLoop(
-    coderChat: Chat,
+    system: String,
     judge: Evaluator[Sample],
     verGate: IO[FlowError, ReviewResult],
     specText: String,
@@ -138,7 +138,7 @@ object ImplementFlow:
                         below.map(d => s"- ${d.name} ${d.score}/2: ${d.reasoning}").mkString("\n")
                     )
                   else
-                    coderChat.ask(judgeFeedback(below)) *>
+                    Chat.start(coder, system = Some(system)).flatMap(_.ask(judgeFeedback(below))) *>
                       verGate.flatMap(r =>
                         ZIO.unless(r.isClean)(fail("verify gate broke while addressing judge feedback")).unit
                       ) *>
@@ -161,56 +161,56 @@ object ImplementFlow:
       val reviewSvc = reviewers.headOption.getOrElse(reasoning)
 
       for
-        pack      <- stage("Pack")(Pack.load(packDir))
-        _         <- stage("Wall")(assertWall(pack, workDir, events))
-        plan      <- PlanStore
-                       .load(planFile)
-                       .someOrFail(FlowError.Aborted(s"no plan at $planFile — run modernize-seed.sc first"))
-        buildGate  = pack.gate("build").fold(ZIO.succeed(ReviewResult(Nil)))(Reviewers.lintCommand(_, workDir))
-        testGate   = pack.gate("test").fold(ZIO.succeed(ReviewResult(Nil)))(Reviewers.lintCommand(_, workDir))
-        verGate    = pack.gate("verify").orElse(pack.gate("test")).fold(ZIO.succeed(ReviewResult(Nil)))(
-                       Reviewers.lintCommand(_, workDir)
-                     )
-        _         <- stage("Branch")(git.checkoutOrCreate(plan.epicId))
-        cards     <- Patterns
-                       .load(packDir.resolve("patterns"))
-                       .zipWith(Patterns.load(workspace.resolve("patterns")))(_ ++ _)
-        specText  <- gatherSpecs(workDir, pack.specsDir)
-        cited      = Patterns.tagged(specText) // extraction tagged the fragments; specs cite the ids
-        playbook   = cards.filter(c => cited.contains(c.id))
-        system     = List(
-                       pack.prompt("implement"),
-                       pack.lessons.map(l => s"Lessons from previous modernization runs — apply them:\n$l"),
-                       Option.when(playbook.nonEmpty)(
-                         "Pattern cards cited by the specs — the translation playbook (advisory, the specs win):\n\n" +
-                           playbook.map(c => s"### ${c.id}\n${c.body}").mkString("\n\n")
-                       ),
-                     ).flatten.mkString("\n\n")
-        coderChat <- Chat.start(coder, system = Some(system))
-        _         <- implementTaskLoop(planFile, plan) { task =>
-                       val testsTask = plan.tasks.headOption.contains(task)
-                       for
-                         _ <- coderChat.ask(plan.taskPrompt(task))
-                         _ <- reviewAndFixLoop(
-                                Reviewers.minimal ++ pack.lenses,
-                                reviewSvc,
-                                coderChat,
-                                task.title,
-                                git.diffAll,
-                                lint = Some(if testsTask then buildGate else testGate),
-                                parallelism = 1, // gemini free tier 429s under concurrent reviewers
-                              )
-                         _ <- ZIO.when(testsTask) {
-                                testGate.flatMap { r =>
-                                  ZIO.when(r.isClean)(
-                                    fail("the new acceptance tests pass before any implementation — they encode nothing")
-                                  )
-                                }
-                              }
-                         _ <- git.commitAll(s"${plan.epicId}: ${task.title}").unit
-                       yield ()
-                     }
-        _         <-
+        pack     <- stage("Pack")(Pack.load(packDir))
+        _        <- stage("Wall")(assertWall(pack, workDir, events))
+        plan     <- PlanStore
+                      .load(planFile)
+                      .someOrFail(FlowError.Aborted(s"no plan at $planFile — run modernize-seed.sc first"))
+        buildGate = pack.gate("build").fold(ZIO.succeed(ReviewResult(Nil)))(Reviewers.lintCommand(_, workDir))
+        testGate  = pack.gate("test").fold(ZIO.succeed(ReviewResult(Nil)))(Reviewers.lintCommand(_, workDir))
+        verGate   = pack.gate("verify").orElse(pack.gate("test")).fold(ZIO.succeed(ReviewResult(Nil)))(
+                      Reviewers.lintCommand(_, workDir)
+                    )
+        _        <- stage("Branch")(git.checkoutOrCreate(plan.epicId))
+        cards    <- Patterns
+                      .load(packDir.resolve("patterns"))
+                      .zipWith(Patterns.load(workspace.resolve("patterns")))(_ ++ _)
+        specText <- gatherSpecs(workDir, pack.specsDir)
+        cited     = Patterns.tagged(specText) // extraction tagged the fragments; specs cite the ids
+        playbook  = cards.filter(c => cited.contains(c.id))
+        system    = List(
+                      pack.prompt("implement"),
+                      pack.lessons.map(l => s"Lessons from previous modernization runs — apply them:\n$l"),
+                      Option.when(playbook.nonEmpty)(
+                        "Pattern cards cited by the specs — the translation playbook (advisory, the specs win):\n\n" +
+                          playbook.map(c => s"### ${c.id}\n${c.body}").mkString("\n\n")
+                      ),
+                    ).flatten.mkString("\n\n")
+        _        <- implementTaskLoop(planFile, plan) { task =>
+                      val testsTask = plan.tasks.headOption.contains(task)
+                      for
+                        coderChat <- Chat.start(coder, system = Some(system))
+                        _         <- coderChat.ask(plan.taskPrompt(task))
+                        _         <- reviewAndFixLoop(
+                                       Reviewers.minimal ++ pack.lenses,
+                                       reviewSvc,
+                                       coderChat,
+                                       task.title,
+                                       git.diffAll,
+                                       lint = Some(if testsTask then buildGate else testGate),
+                                       parallelism = 1, // gemini free tier 429s under concurrent reviewers
+                                     )
+                        _         <- ZIO.when(testsTask) {
+                                       testGate.flatMap { r =>
+                                         ZIO.when(r.isClean)(
+                                           fail("the new acceptance tests pass before any implementation — they encode nothing")
+                                         )
+                                       }
+                                     }
+                        _         <- git.commitAll(s"${plan.epicId}: ${task.title}").unit
+                      yield ()
+                    }
+        _        <-
           stage("Verify") {
             verGate.flatMap { r =>
               if r.isClean then ZIO.unit
@@ -220,32 +220,32 @@ object ImplementFlow:
                 )
             }
           }
-        specText  <- gatherSpecs(workDir, pack.specsDir)
-        _         <- stage("Judge")(
-                       specComplianceLoop(coderChat, Judge.of(reasoning, complianceDims), verGate, specText, plan.epicId)
-                     )
-        _         <- stage("Publish") {
-                       val push = git.push("origin", plan.epicId)
-                       val pr   = Ado.configFrom(sys.env) match
-                         case Right(_) =>
-                           Ado.withTool() { ado =>
-                             ado
-                               .createPr(
-                                 s"refs/heads/${plan.epicId}",
-                                 "refs/heads/main",
-                                 s"modernize: ${plan.epicId}",
-                                 s"Implements the approved spec pack. Plan: $ModDir/plan.md — all gates green.",
-                               )
-                               .flatMap(p => events.publish(FlowEvent.Info(s"ADO PR: ${p.webUrl}")))
-                           }
-                         case Left(_)  =>
-                           gh.createPr(
-                             plan.epicId,
-                             body = s"Implements the approved spec pack. Plan: $ModDir/plan.md — all gates green.",
-                             base = Some("main"),
-                           ).flatMap(p => events.publish(FlowEvent.Info(s"PR: ${p.url}")))
-                       (push *> pr).catchAll(e =>
-                         events.publish(FlowEvent.Info(s"publish skipped (no remote/forge configured): ${e.message}"))
-                       )
-                     }
+        specText <- gatherSpecs(workDir, pack.specsDir)
+        _        <- stage("Judge")(
+                      specComplianceLoop(system, Judge.of(reasoning, complianceDims), verGate, specText, plan.epicId)
+                    )
+        _        <- stage("Publish") {
+                      val push = git.push("origin", plan.epicId)
+                      val pr   = Ado.configFrom(sys.env) match
+                        case Right(_) =>
+                          Ado.withTool() { ado =>
+                            ado
+                              .createPr(
+                                s"refs/heads/${plan.epicId}",
+                                "refs/heads/main",
+                                s"modernize: ${plan.epicId}",
+                                s"Implements the approved spec pack. Plan: $ModDir/plan.md — all gates green.",
+                              )
+                              .flatMap(p => events.publish(FlowEvent.Info(s"ADO PR: ${p.webUrl}")))
+                          }
+                        case Left(_)  =>
+                          gh.createPr(
+                            plan.epicId,
+                            body = s"Implements the approved spec pack. Plan: $ModDir/plan.md — all gates green.",
+                            base = Some("main"),
+                          ).flatMap(p => events.publish(FlowEvent.Info(s"PR: ${p.url}")))
+                      (push *> pr).catchAll(e =>
+                        events.publish(FlowEvent.Info(s"publish skipped (no remote/forge configured): ${e.message}"))
+                      )
+                    }
       yield plan.epicId
