@@ -121,12 +121,47 @@ object ReviewFlow:
   def slug(title: String): String =
     title.toLowerCase.replaceAll("[^a-z0-9]+", "-").stripPrefix("-").stripSuffix("-").take(60)
 
-  def distillPrompt(packReviewPrompt: String, findings: ReviewResult, scored: EvalResult, diff: String): String =
+  /** The spec'd programs: top-level `<NAME>.md` files under the pack's specs dir, indexes aside. Copied verbatim from
+    * `ImplementFlow`/`VerifyFlow` — flows deliberately do not depend on each other.
+    */
+  def specPrograms(specsDir: Path): IO[FlowError, List[String]] =
+    ZIO
+      .attemptBlocking {
+        if !Files.isDirectory(specsDir) then Nil
+        else
+          val stream = Files.list(specsDir)
+          try
+            stream
+              .iterator()
+              .asScala
+              .filter(p => Files.isRegularFile(p) && p.getFileName.toString.endsWith(".md"))
+              .map(_.getFileName.toString.stripSuffix(".md"))
+              .filterNot(Set("traceability", "mapping", "README"))
+              .toList
+              .sorted
+          finally stream.close()
+      }
+      .mapError(e => FlowError.Persistence(s"failed to list specs under $specsDir", Some(e)))
+
+  def readFileOr(path: Path, fallback: String): IO[FlowError, String] =
+    ZIO
+      .attemptBlocking(if Files.exists(path) then Files.readString(path) else fallback)
+      .mapError(e => FlowError.Persistence(s"failed to read $path", Some(e)))
+
+  /** Distill the raw reviewer findings and per-program judge issues into routed fixes/improvements/lessons.
+    *
+    * Deliberately does NOT re-append the branch diff: `findings` and `scored` already quote the offending code
+    * (`ReviewIssue.description`), so a third full copy of the same diff on top of them was pure waste — this phase used
+    * to ship `specText` + `diff` once per lens, once to the judge, AND again here. If a future finding turns out to
+    * need more surrounding context than its issue description carries, scope that at the source (a wider match in
+    * `Reviewer.files`, or a bigger slice from `ProgramJudge`) rather than reintroducing the whole diff here.
+    */
+  def distillPrompt(packReviewPrompt: String, findings: ReviewResult, scored: ReviewResult): String =
     val findingLines = findings.issues.map(i => s"- [${i.severity}] ${i.title}: ${i.description}").mkString("\n")
-    val scoreLines   = scored.scores.map(s => s"- ${s.name}: ${s.score}/2 — ${s.reasoning}").mkString("\n")
+    val scoreLines   = scored.issues.map(i => s"- ${i.title}: ${i.description}").mkString("\n")
     s"""$packReviewPrompt
        |
-       |Below are the raw reviewer findings and judge scores for a modernization increment.
+       |Below are the raw reviewer findings and judge results for a modernization increment.
        |Distill them:
        |- "fixes": findings where the implementation VIOLATES the committed specs. Each gets a
        |  short spec document (Markdown: what is wrong, the spec rule it violates, the expected
@@ -139,11 +174,8 @@ object ReviewFlow:
        |Reviewer findings:
        |$findingLines
        |
-       |Judge scores:
-       |$scoreLines
-       |
-       |Diff under review:
-       |$diff""".stripMargin
+       |Judge findings:
+       |$scoreLines""".stripMargin
 
   def run(args: Array[String]): Unit =
     flow(
@@ -172,28 +204,59 @@ object ReviewFlow:
                       val roster = (Reviewers.all ++ pack.lenses).filter(_.matches(files))
                       ZIO
                         .foreach(roster) { r => // sequential: gemini free tier 429s under concurrent reviewers
-                          r.asService(reviewSvc)
-                            .executeStructured[ReviewResult](
-                              Reviewers.reviewPrompt(s"modernization increment vs committed specs\n\n$specText", diff),
-                              Reviewers.schema,
-                            )
-                            .mapError(e => FlowError.Llm(e.message, Some(e)))
+                          // Scope the diff to what this lens actually cares about — `files = None` means "no scope",
+                          // not "unbounded"; it still sees the whole diff, just capped like everything else below.
+                          val scoped = r.files.fold(files)(regex => files.filter(_.matches(regex)))
+                          for
+                            lensDiff <- git.diffVsBase(base, scoped)
+                            result   <- Context.withShrink(s"review[${r.name}]") { cap =>
+                                          for
+                                            s <- Context.capped(s"specs[${r.name}]", specText, cap)
+                                            d <- Context.capped(s"diff[${r.name}]", lensDiff, cap)
+                                            o <- r.asService(reviewSvc)
+                                                   .executeStructured[ReviewResult](
+                                                     Reviewers.reviewPrompt(
+                                                       s"modernization increment vs committed specs\n\n$s",
+                                                       d,
+                                                     ),
+                                                     Reviewers.schema,
+                                                   )
+                                                   .mapError(e => FlowError.Llm(e.message, Some(e)))
+                                          yield o
+                                        }
+                          yield result
                         }
                         .map(Reviewers.merge)
                     }
         scored   <- stage("Judge") {
-                      Judge
-                        .of(reasoning, complianceDims)
-                        .evaluate(Sample(response = diff, context = Some(specText), query = Some(userPrompt)))
-                        .mapError(e => FlowError.Llm(e.message, Some(e)))
+                      for
+                        programs <- specPrograms(workDir.resolve(pack.specsDir))
+                        result   <- ProgramJudge.judgeAll(
+                                      pack,
+                                      Judge.of(reasoning, complianceDims),
+                                      complianceDims,
+                                      workDir.resolve(ModDir).resolve("gate"),
+                                      base,
+                                      programs,
+                                      p => readFileOr(workDir.resolve(pack.specsDir).resolve(s"$p.md"), ""),
+                                      userPrompt,
+                                    )
+                      yield result
                     }
         outcome  <- stage("Distill") {
-                      reasoning
-                        .executeStructured[ReviewOutcome](
-                          distillPrompt(pack.prompt("review").getOrElse(""), findings, scored, diff),
-                          SchemaDerivation.derive[ReviewOutcome],
-                        )
-                        .mapError(e => FlowError.Llm(e.message, Some(e)))
+                      Context.withShrink("distill") { cap =>
+                        Context
+                          .capped(
+                            "distill prompt",
+                            distillPrompt(pack.prompt("review").getOrElse(""), findings, scored),
+                            cap,
+                          )
+                          .flatMap { prompt =>
+                            reasoning
+                              .executeStructured[ReviewOutcome](prompt, SchemaDerivation.derive[ReviewOutcome])
+                              .mapError(e => FlowError.Llm(e.message, Some(e)))
+                          }
+                      }
                     }
         _        <- stage("Fix specs") {
                       val all = outcome.fixes.map(("fix", _)) ++ outcome.improvements.map(("improvement", _))
