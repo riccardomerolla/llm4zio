@@ -1,7 +1,9 @@
 package llm4zio.flow
 
-import zio.Scope
+import zio.*
 import zio.test.*
+
+import llm4zio.core.LlmError
 
 object ContextSpec extends ZIOSpecDefault:
 
@@ -73,5 +75,55 @@ object ContextSpec extends ZIOSpecDefault:
         seen            <- events.recorded
         recs            <- Context.truncations
       yield assertTrue(out == "small", seen.isEmpty, recs.isEmpty)
+    },
+    test("withShrink retries at half budget after a context overflow and records the shrink") {
+      val overflow = LlmError.ProviderError(
+        """[API Error: {"error":{"code":400,"message":"The input token count exceeds the maximum """ +
+          """number of tokens allowed 1048576.","status":"INVALID_ARGUMENT"}}]""",
+        None,
+      )
+      for
+        events          <- FlowEvents.collecting
+        given FlowEvents = events
+        calls           <- Ref.make(List.empty[Int])
+        out             <- Context.withShrink("judge", start = 1000) { cap =>
+                             calls.update(_ :+ cap) *>
+                               (if cap > 500 then ZIO.fail(FlowError.Llm(overflow.message, Some(overflow)))
+                                else ZIO.succeed(s"ok@$cap"))
+                           }
+        seen            <- calls.get
+        recs            <- Context.truncations
+      yield assertTrue(
+        out == "ok@500",
+        seen == List(1000, 500),
+        recs.exists(_.label == "judge"),
+      )
+    },
+    test("withShrink retries on an empty response too") {
+      val empty = LlmError.ProviderError("Invalid stream: empty response", None)
+      for
+        events          <- FlowEvents.collecting
+        given FlowEvents = events
+        calls           <- Ref.make(0)
+        out             <- Context.withShrink("judge", start = 1000) { cap =>
+                             calls.updateAndGet(_ + 1).flatMap { n =>
+                               if n == 1 then ZIO.fail(FlowError.Llm(empty.message, Some(empty)))
+                               else ZIO.succeed(s"ok@$cap")
+                             }
+                           }
+      yield assertTrue(out == "ok@500")
+    },
+    test("withShrink fails with a budget-naming message once the ladder is exhausted") {
+      val overflow = LlmError.ProviderError("input token count exceeds the limit", None)
+      for
+        events          <- FlowEvents.collecting
+        given FlowEvents = events
+        res             <- Context
+                             .withShrink("judge", start = 1000)(_ => ZIO.fail(FlowError.Llm(overflow.message, Some(overflow))))
+                             .either
+      yield assertTrue(
+        res.isLeft,
+        res.left.exists(_.message.contains("LLM4ZIO_CONTEXT_BUDGET")),
+      )
     },
   )

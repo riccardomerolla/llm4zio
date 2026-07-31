@@ -1,6 +1,6 @@
 package llm4zio.flow
 
-import zio.{ Chunk, FiberRef, UIO, Unsafe, ZIO }
+import zio.*
 
 /** Context budgeting for LLM prompts: bound what a call ships, and make every truncation visible.
   *
@@ -69,3 +69,42 @@ object Context:
       events.publish(
         FlowEvent.Info(s"⚠ context: $label truncated ${out.originalChars} → ${out.text.length} chars")
       ) *> record(Truncation(label, out.originalChars, out.text.length)).as(out.text)
+
+  /** True for the two failure classes a smaller prompt can fix: a deterministic context overflow, and the empty
+    * response gemini returns when a prompt is too large for it to even start.
+    */
+  private def shrinkable(e: FlowError): Boolean = e match
+    case FlowError.Llm(message, cause) =>
+      cause.exists(TransientRetry.isContextOverflow) ||
+      message.toLowerCase.contains("empty response") ||
+      message.toLowerCase.contains("input token count exceeds") ||
+      message.toLowerCase.contains("exceeds the maximum number of tokens")
+    case _                             => false
+
+  /** Run `f` at `start` characters; on a shrinkable failure retry at 1/2, then 1/4, then give up. Repeating the same
+    * oversized prompt cannot succeed, so shrinking is the only retry that makes sense for this failure class — this is
+    * why context overflow is deliberately excluded from [[TransientRetry]]'s budget.
+    *
+    * Each shrink publishes a [[FlowEvent.Info]] and is recorded like any other truncation.
+    */
+  def withShrink[A](
+    label: String,
+    start: Int = budget,
+  )(
+    f: Int => IO[FlowError, A]
+  )(using events: FlowEvents
+  ): IO[FlowError, A] =
+    def attempt(cap: Int, rest: List[Int]): IO[FlowError, A] =
+      f(cap).catchSome {
+        case e if shrinkable(e) && rest.nonEmpty =>
+          events.publish(
+            FlowEvent.Info(s"⚠ context: $label did not fit at $cap chars — shrinking to ${rest.head}: ${e.message}")
+          ) *> record(Truncation(label, cap, rest.head)) *> attempt(rest.head, rest.tail)
+        case e if shrinkable(e)                  =>
+          ZIO.fail(FlowError.Llm(
+            s"$label exceeded the model's input limit even after shrinking to $cap chars — " +
+              s"lower LLM4ZIO_CONTEXT_BUDGET or scope this phase further (cause: ${e.message})",
+            None,
+          ))
+      }
+    attempt(start, List(start / 2, start / 4))
