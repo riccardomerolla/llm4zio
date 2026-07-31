@@ -206,4 +206,30 @@ object TransientRetrySpec extends ZIOSpecDefault:
         exit            <- rt.executeStream("p").runCollect.exit
       yield assertTrue(exit.isFailure)
     },
+    test("a 400 INVALID_ARGUMENT token-count error is not transient and is a context overflow") {
+      val msg = """Gemini CLI returned an error: [API Error: [{
+                  |  "error": {
+                  |    "code": 400,
+                  |    "message": "The input token count exceeds the maximum number of tokens allowed 1048576.",
+                  |    "status": "INVALID_ARGUMENT"
+                  |  }
+                  |}]]""".stripMargin
+      val err = LlmError.ProviderError(msg, None)
+      assertTrue(
+        !TransientRetry.isTransient(err),
+        TransientRetry.isContextOverflow(err),
+      )
+    },
+    test("genuine transients are still transient and are not context overflows") {
+      val unknown = LlmError.ProviderError("[API Error: An unknown error occurred.]", None)
+      val unavail = LlmError.ProviderError("503 service unavailable", None)
+      val reset   = LlmError.ProviderError("connection reset by peer", None)
+      assertTrue(
+        TransientRetry.isTransient(unknown),
+        TransientRetry.isTransient(unavail),
+        TransientRetry.isTransient(reset),
+        !TransientRetry.isContextOverflow(unknown),
+        !TransientRetry.isContextOverflow(unavail),
+      )
+    },
   )

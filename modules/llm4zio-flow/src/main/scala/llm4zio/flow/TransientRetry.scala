@@ -109,14 +109,43 @@ object TransientRetry:
       List("empty response", "malformed tool call", "invalid stream").exists(m.contains)
     case _                                  => false
 
+  /** Deterministic client errors that a retry can never fix. Gemini wraps EVERY error in `[API Error: {...}]`,
+    * including 400s, so the `"api error"` substring in [[isTransient]] would otherwise swallow them.
+    */
+  private def isDeterministic4xx(message: String): Boolean =
+    val m = message.toLowerCase
+    List(
+      "invalid_argument",
+      "\"code\": 400",
+      "\"code\":400",
+      "code=400",
+      "exceeds the maximum number of tokens",
+    ).exists(m.contains)
+
+  /** The prompt was larger than the model's input window. Deterministic: the same prompt always fails, so it is NOT
+    * transient — it routes to [[Context.withShrink]], which retries at a smaller budget.
+    */
+  def isContextOverflow(e: LlmError): Boolean = e match
+    case LlmError.ProviderError(message, _) =>
+      val m = message.toLowerCase
+      List(
+        "exceeds the maximum number of tokens",
+        "input token count exceeds",
+        "context length exceeded",
+        "maximum context length",
+        "prompt is too long",
+        "request too large",
+      ).exists(m.contains)
+    case _                                  => false
+
   /** Transient = worth retrying: timeouts, short rate limits, and provider errors whose message points at a server-side
     * / network blip. Deliberately conservative so genuine failures (bad request, parse, config, usage cap) are NOT
     * masked. Flaky-stream signals ([[isFlakyStream]]) are intentionally excluded here — they have their own budget.
     */
   def isTransient(e: LlmError): Boolean = e match
-    case _: LlmError.TimeoutError           => true
-    case _: LlmError.RateLimitError         => true
-    case LlmError.ProviderError(message, _) =>
+    case _: LlmError.TimeoutError                                           => true
+    case _: LlmError.RateLimitError                                         => true
+    case LlmError.ProviderError(message, _) if !isDeterministic4xx(message) =>
       val m = message.toLowerCase
       List(
         "connection reset",
@@ -140,4 +169,4 @@ object TransientRetry:
         " 503",
         " 504",
       ).exists(m.contains)
-    case _                                  => false
+    case _                                                                  => false
