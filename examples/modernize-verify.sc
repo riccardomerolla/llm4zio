@@ -198,7 +198,11 @@ def toVector(program: String, g: GenVector): Either[String, EquivVector] =
       )
     }
 
-def triagePrompt(pack: Pack, failing: List[VectorVerdict], specText: String): String =
+/** One triage call per program (not one for the whole estate): mismatches already carry `v.vector.program`, so this
+  * groups rather than redesigns. Carrying only `program`'s own spec — instead of concatenating every spec in the
+  * estate — is what keeps this prompt inside a real estate's context budget.
+  */
+def triagePrompt(pack: Pack, program: String, failing: List[VectorVerdict], specText: String): String =
   val details = failing
     .map { v =>
       val ms = v.mismatches
@@ -208,22 +212,22 @@ def triagePrompt(pack: Pack, failing: List[VectorVerdict], specText: String): St
           case Equiv.Mismatch.Unexpected(o)              => s"  - unexpected: $o"
         }
         .mkString("\n")
-      s"- ${v.vector.program} ${v.vector.id} (rules: ${v.vector.rules.mkString(", ")})\n$ms"
+      s"- ${v.vector.id} (rules: ${v.vector.rules.mkString(", ")})\n$ms"
     }
     .mkString("\n")
   s"""${pack.prompt("review").getOrElse("")}
      |
-     |The equivalence harness replayed test vectors against the implementation and found the
-     |mismatches below. For each DISTINCT root cause produce one fix: a short spec document
-     |(Markdown: the rule violated, expected vs actual behaviour, the failing vector ids) and a
-     |plan task (title + description naming the spec rules). Group mismatches sharing a cause.
-     |If a mismatch reveals a wrong or ambiguous SPEC rather than wrong code, say so explicitly
-     |in that fix document — spec gaps go back to extraction, not to the coder.
+     |The equivalence harness replayed test vectors for the program $program against the
+     |implementation and found the mismatches below. For each DISTINCT root cause produce one fix:
+     |a short spec document (Markdown: the rule violated, expected vs actual behaviour, the failing
+     |vector ids) and a plan task (title + description naming the spec rules). Group mismatches
+     |sharing a cause. If a mismatch reveals a wrong or ambiguous SPEC rather than wrong code, say
+     |so explicitly in that fix document — spec gaps go back to extraction, not to the coder.
      |
      |Mismatches:
      |$details
      |
-     |Specs under test:
+     |Spec for $program:
      |$specText""".stripMargin
 
 flow(
@@ -316,25 +320,38 @@ flow(
                   writeFile(workDir.resolve(ModDir).resolve("equivalence.md"), EquivReport.render(verdicts, allRules))
                 }
     _        <- ZIO.when(failing.nonEmpty)(stage("Triage") {
+                  // One triage call PER PROGRAM, each carrying only that program's spec — not the whole estate's
+                  // specs in one prompt, which is what blows a real estate's context budget.
+                  val byProgram = failing.groupBy(_.vector.program).toList.sortBy(_._1)
                   for
-                    specText <- readFileOr(specsDir.resolve("traceability.md"), "")
-                    specs    <- ZIO.foreach(programs)(p => readFileOr(specsDir.resolve(s"$p.md"), ""))
-                    outcome  <- reasoning
-                                  .executeStructured[VerifyOutcome](
-                                    triagePrompt(pack, failing, (specText :: specs).mkString("\n\n")),
-                                    SchemaDerivation.derive[VerifyOutcome],
-                                  )
-                                  .mapError(e => FlowError.Llm(e.message, Some(e)))
-                    _        <- ZIO.foreachDiscard(outcome.fixes) { f =>
+                    outcomes <- ZIO.foreach(byProgram) { (program, vs) =>
+                                  for
+                                    spec    <- readFileOr(specsDir.resolve(s"$program.md"), "")
+                                    outcome <- Context.withShrink(s"triage[$program]") { cap =>
+                                                 Context
+                                                   .capped(s"spec[$program]", spec, cap)
+                                                   .flatMap { s =>
+                                                     reasoning
+                                                       .executeStructured[VerifyOutcome](
+                                                         triagePrompt(pack, program, vs, s),
+                                                         SchemaDerivation.derive[VerifyOutcome],
+                                                       )
+                                                       .mapError(e => FlowError.Llm(e.message, Some(e)))
+                                                   }
+                                               }
+                                  yield outcome
+                                }
+                    allFixes  = outcomes.flatMap(_.fixes)
+                    _        <- ZIO.foreachDiscard(allFixes) { f =>
                                   writeFile(specsDir.resolve("fixes").resolve(s"fix-${slug(f.title)}.md"),
                                     s"# ${f.title}\n\n${f.spec}\n")
                                 }
-                    _        <- ZIO.when(outcome.fixes.nonEmpty) {
+                    _        <- ZIO.when(allFixes.nonEmpty) {
                                   PlanStore
                                     .load(planFile)
                                     .someOrFail(FlowError.Aborted(s"no plan at $planFile — run modernize-seed.sc first"))
                                     .flatMap { plan =>
-                                      val increment = outcome.fixes.map(f => Task(f.taskTitle, f.taskDescription))
+                                      val increment = allFixes.map(f => Task(f.taskTitle, f.taskDescription))
                                       PlanStore.save(planFile, plan.copy(tasks = plan.tasks ++ increment)) *>
                                         events.publish(FlowEvent.Info(
                                           s"${increment.size} fix task(s) appended — rerun modernize-implement.sc"

@@ -3,31 +3,9 @@ package llm4zio.modernize
 import zio.Scope
 import zio.test.*
 
-import llm4zio.flow.*
-
 object ProgramJudgeSpec extends ZIOSpecDefault:
 
-  private def packWith(template: Option[String]): Pack =
-    Pack(
-      name = "test",
-      source = "cobol",
-      scaffold = None,
-      sources = None,
-      programs = None,
-      programFiles = template,
-      specsDir = "docs/specs",
-      featuresDir = "features",
-      gates = Map.empty,
-      replay = None,
-      equivalence = ComparisonPolicy.default,
-      judgeDimensions = Nil,
-      coverage = Nil,
-      survey = Nil,
-      prompts = Map.empty,
-      lenses = Nil,
-      lessons = None,
-      dir = java.nio.file.Path.of("."),
-    )
+  import TestPacks.packWith
 
   def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("ProgramJudge")(
     test("groupFiles assigns changed files to programs and collects the remainder") {
