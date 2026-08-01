@@ -18,6 +18,7 @@
 import llm4zio.flow.*
 import llm4zio.runner.*
 
+
 flow.restricted[Caps.GitRead & Caps.Reasoning](
   args,
   defaultPrompt = Some("summarize what changed on this branch and flag anything risky"),

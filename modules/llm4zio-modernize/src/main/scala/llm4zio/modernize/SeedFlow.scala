@@ -48,7 +48,9 @@ object SeedFlow:
   import llm4zio.runner.*
 
   val ModDir: String         = "docs/modernization"
-  val Llm4zioVersion: String = "3.26.0" // keep in step with the `using dep` header pin
+  // Written verbatim into provenance.json as the tool version that produced the evidence, so a stale value here
+  // misstates the clean-room receipt. Keep in step with the release tag and the `using dep` header pins.
+  val Llm4zioVersion: String = "4.3.0"
 
   def writeFile(path: Path, content: String): IO[FlowError, Unit] =
     ZIO

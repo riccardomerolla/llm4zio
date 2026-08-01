@@ -1,4 +1,4 @@
-//> using dep "io.github.riccardomerolla::llm4zio-runner:4.1.0"
+//> using dep "io.github.riccardomerolla::llm4zio-runner:4.3.0"
 //> using scala "3.8.3"
 //> using jvm 21
 
@@ -56,7 +56,13 @@ import llm4zio.eval.*
 import llm4zio.flow.*
 import llm4zio.runner.*
 
-val Llm4zioVersion = "4.1.0"
+// The runtime capability mint for a script: `flow(...)`'s own `Caps.All` given is scoped to the lambda passed to it,
+// so top-level `def`s in this file (which call `git.*`) need their own. Static witness only — the ambient `Grants`
+// FiberRef still gates every call at runtime, so this widens nothing. Every bypass is greppable via `Caps.grantAll`.
+given llm4zio.flow.Caps.All = llm4zio.flow.Caps.grantAll
+
+
+val Llm4zioVersion = "4.3.0"
 val MaxGateRounds  = 3
 val ImplFixRounds  = 2
 val AnalystTurns   = 48
