@@ -87,6 +87,77 @@ bank's modernization know-how is reviewable, diffable, and grows run over run.
 `Pack.load` is the library entry
 ([Pack.scala](../modules/llm4zio-flow/src/main/scala/llm4zio/flow/Pack.scala)).
 
+### `programFiles:` — locating a program's target code
+
+Per-program judging (below) needs to know which files in the **target** repo implement
+a given legacy program. That mapping is estate knowledge, so it lives in the manifest:
+
+```
+programFiles: src/main/java/.*<NAME>.*\.java
+```
+
+`<NAME>` is substituted with the program name. Omit it and the default is a
+case-insensitive "path contains the program name" match, with the name regex-quoted so
+a program called `ACC.TXFR` matches only itself.
+
+Worth checking against a real target repo early: if your generated code doesn't carry
+the legacy program name in its path, the default matches nothing, every changed file
+lands in the "unassigned" bucket, and per-program judging degrades to one budgeted
+whole-diff call. That still works — it just loses the benefit.
+
+## Context budget: what happens when a prompt is too big
+
+A real estate will, eventually, produce a prompt larger than the model's input window.
+Gemini answers that with a hard `400 INVALID_ARGUMENT`, and previously that killed the
+phase. Now it degrades instead, and the degradation is recorded.
+
+Each phase keeps its calls small structurally — extract judges one program at a time,
+implement and review judge per program against that program's slice of the diff, verify
+triages per program, and each reviewer lens sees only the files it matched. The budget
+is the backstop for what still doesn't fit.
+
+| Variable | Default | Effect |
+| -------- | ------- | ------ |
+| `LLM4ZIO_CONTEXT_BUDGET` | `400000` | Characters any single prompt may carry (~115k tokens at ~3.5 chars/token for code). |
+| `LLM4ZIO_JUDGE_SOURCES_LIMIT` | — | Deprecated alias for the above; still honoured, so existing runbooks keep working. |
+| `LLM4ZIO_ANALYST_TURNS` | `48` | Per-program turn budget for the extract analyst. |
+| `LLM4ZIO_MAX_CLOSURE_FILES` | `40` | Max dependencies named in one program's resolved include closure. |
+
+When a call still doesn't fit, `Context.withShrink` retries it at half, then a quarter of
+the budget — retrying an oversized prompt *identically* can never succeed, so the ladder
+retries it *smaller*. If it still fails, the error names `LLM4ZIO_CONTEXT_BUDGET` so the
+knob is obvious.
+
+**Every truncation is recorded.** Each one publishes a `FlowEvent.Info` at the time, and
+the implement / verify / review phases append them to `provenance.json` under
+`contextTruncations`. A gate verdict rendered on a partially-read spec pack says so in
+the evidence chain, not only in a console log that nobody kept. Two kinds are
+distinguished, because they mean different things:
+
+- `truncated 900 → 400 chars` — real text was shortened; the numbers are literal
+  character counts.
+- `retried at a lower budget, 400000 → 200000 chars (ceilings, not text size)` — a
+  retry budget was lowered after an oversized prompt failed; the numbers are attempted
+  ceilings, and the prompt that failed was larger than the first figure.
+
+Manifests written before this field simply have no `contextTruncations` key and still
+load — the field is defaulted, so an existing evidence chain doesn't fail a gate on a
+schema it predates.
+
+### Why the extract analyst gets a resolved file list
+
+Extract used to tell the analyst to *"read `$rel` and anything it references"* with a
+48-turn budget. That is up to 48 rounds of the coding agent pulling files into **its
+own** context inside a single turn — growth that no prompt-side cap can reach, and the
+reason extract could blow a 1M-token window while its own 400k-character cap sat
+untouched at ~115k tokens.
+
+Extract now resolves the dependency closure itself, breadth-first over the pack's
+`## Survey:` edge regexes (the same CALL / COPY / EXEC PGM patterns the survey flow
+uses), and names the exact files. A pack with no `## Survey:` sections still works —
+the closure is empty, the prompt says so, and an `Info` event records that the analyst
+got no closure.
+
 ## Pattern cards: curated modernization knowledge
 
 Alongside per-estate `lessons.md` (run-accumulated) live **pattern cards** —

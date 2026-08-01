@@ -25,9 +25,11 @@ object ImplementFlow:
     *     plus `Reviewers.minimal` and the PACK'S OWN LENSES (e.g. cobol-fidelity: BigDecimal/HALF_UP, validation order,
     *     reason codes) on the flash reviewer.
     *   - One commit per task; non-convergence halts with the plan persisted — fix or rerun.
-    *   - Final gate: the pack's `verify` command must be clean, then an LLM-as-a-Judge on `reasoning` scores the WHOLE
-    *     branch diff against the committed spec pack (spec-compliance + scenario-coverage, full marks or the flow fails
-    *     after a bounded feedback round).
+    *   - Final gate: the pack's `verify` command must be clean, then an LLM-as-a-Judge on `reasoning` scores the branch
+    *     PER PROGRAM — each program's specs against that program's slice of the diff (`ProgramJudge`, `ReviewCache`-
+    *     backed so a rerun re-judges only what changed) — plus one bounded estate-wide pass over the traceability index
+    *     and the changed-file NAMES, which catches the cross-program breakage per-program judging cannot see. Full
+    *     marks or the flow fails after a bounded feedback round.
     *   - Push + PR: Azure DevOps when configured, GitHub otherwise; a missing forge/remote degrades to an Info event so
     *     the local demo still completes.
     *

@@ -100,9 +100,16 @@ llm4zio.javaapi      the Java facade: Llm4zioJava.flow entry, JavaFlow handle, B
   `import zio.*` brings `zio.Task`, which shadows the library's `flow.Task` in
   *type* position; import `zio.ZIO` (or specific names) in files that name `Task`.
 - **Packs are data.** The `modernize-*.sc` pipeline is estate-agnostic; everything
-  estate-specific (prompts, judge rubrics, coverage regexes, gate commands, lessons)
-  lives in a `flow.Pack` directory under `examples/packs/`, demoed against the
-  synthetic estate in `examples/fixtures/` — see `docs/legacy-modernization.md`.
+  estate-specific (prompts, judge rubrics, coverage regexes, gate commands, lessons,
+  and `programFiles:` — the regex locating a program's target implementation files,
+  which is what makes per-program judging possible) lives in a `flow.Pack` directory
+  under `examples/packs/`, demoed against the synthetic estate in `examples/fixtures/`
+  — see `docs/legacy-modernization.md`.
+- **Bounded prompts.** Every LLM call in the modernize pipeline is budgeted through
+  `flow.Context` (`cap` / `capped` / `withShrink`, `LLM4ZIO_CONTEXT_BUDGET`, default
+  400k chars). Oversized prompts shrink (full → ½ → ¼) rather than failing, and every
+  truncation is published as an event *and* recorded in `provenance.json`. Prefer
+  decomposing a call (per program, per file) over raising the budget.
 - **Script surface.** Examples are flat `examples/*.sc` files: `llm4zio.runner.flow(args) { body }`
   frames the body over `Llm4zio.unsafeMain`, the one process-entry `unsafeRun` shared with the Java
   surface (`Llm4zioJava.flow`); the `.javaapi.Bridge` additionally collapses effects at the Java
