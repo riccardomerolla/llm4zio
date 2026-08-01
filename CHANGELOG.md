@@ -5,6 +5,71 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.3.0] - 2026-08-01
+
+### Fixed
+
+- **Bounded context for the modernization pipeline.** Every phase could die
+  against a provider's input-token ceiling (Gemini: a hard
+  `400 INVALID_ARGUMENT` at 1M tokens). Four independent causes, all fixed:
+  - *Unbounded prompt assembly* — Implement and Review sent the whole spec pack
+    and the whole branch diff in a single judge call (Review sent that pair N+2
+    times: once per reviewer lens, once to the judge, and again inside the
+    distill step). Verify concatenated every program's spec into one triage
+    prompt. All now decompose per program, and each reviewer lens sees only the
+    diff of the files it matched.
+  - *Chat history accumulation* — `ImplementFlow` reused one `Chat` across every
+    task. `Chat` replays its full message list on each `ask`, so task N carried
+    all N-1 prior tasks. Now one chat per task; the repo, not the transcript,
+    carries state between them.
+  - *Inner CLI-agent accumulation* — the extract analyst was told to "read
+    anything it references" with a 48-turn budget, so the coding agent pulled
+    files into its own context inside a single turn. This is why extract could
+    blow a 1M-token window while its own cap sat untouched at ~115k. It now
+    receives a deterministically resolved include closure, walked breadth-first
+    over the pack's `## Survey:` edge regexes.
+  - *Misclassified retry* — `TransientRetry` matched the substring `"api error"`,
+    and Gemini wraps every error including deterministic 400s in
+    `[API Error: …]`, so an unfixable failure was retried three times and
+    reported as transient.
+
+### Added
+
+- **`flow.Context`** — the context-budget primitive: `cap` (never returns more
+  than its limit; the elision marker counts against it), `capped` (caps,
+  publishes a `FlowEvent`, records the truncation), and `withShrink` — a
+  full → ½ → ¼ ladder that retries an oversized prompt *smaller* rather than
+  identically, and on exhaustion fails with a message naming the knob.
+  Configured by `LLM4ZIO_CONTEXT_BUDGET` (chars, default 400000), with
+  `LLM4ZIO_JUDGE_SOURCES_LIMIT` kept as a deprecated alias.
+- **Truncation is always recorded.** Fiber-local, written only by `capped` and
+  `withShrink` so no call site can truncate without recording, surfaced as a
+  `FlowEvent.Info`, and appended to `provenance.json` under
+  `contextTruncations` by the implement / verify / review phases. Two kinds are
+  rendered distinctly — real character counts versus attempted budget ceilings —
+  so a clean-room reader cannot mistake one for the other. The field is
+  defaulted, so manifests written before it still load.
+- `GitTool.diffVsBase(base, paths)` — path-scoped diff. An empty path list
+  yields `""`, never the whole diff, and the capability guard runs either way.
+- `Pack.programFiles` — regex template locating a program's target
+  implementation files (`<NAME>` substituted; case-insensitive name match by
+  default), the seam that makes per-program judging possible.
+- `TransientRetry.isContextOverflow` / `isContextOverflowMessage`, and a
+  deterministic-4xx guard so a 400 is never retried.
+- A spec'd program with no matching changed file is now a Critical gate finding
+  rather than a silent pass — which also surfaces a mis-set `programFiles:`
+  immediately.
+- `LLM4ZIO_ANALYST_TURNS` and `LLM4ZIO_MAX_CLOSURE_FILES` knobs.
+
+### Changed
+
+- `examples/*.sc` now carry the documented `Caps.unsafe.all` mint, so scripts
+  with top-level `def`s calling `git.*` compile again; dependency pins bumped to
+  4.3.0. `restricted-flow.sc` deliberately keeps no mint — it exists to
+  demonstrate `flow.restricted`.
+- `SeedFlow.Llm4zioVersion`, written verbatim into `provenance.json` as the tool
+  version that produced the evidence, no longer reports a stale value.
+
 ## [4.2.0] - 2026-07-28
 
 ### Added

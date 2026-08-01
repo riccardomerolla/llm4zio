@@ -3,6 +3,8 @@ package llm4zio.modernize
 import zio.Scope
 import zio.test.*
 
+import llm4zio.flow.Severity
+
 object ProgramJudgeSpec extends ZIOSpecDefault:
 
   import TestPacks.packWith
@@ -41,6 +43,25 @@ object ProgramJudgeSpec extends ZIOSpecDefault:
         byProgram("ACCTXFR") == changed,
         byProgram("BALINQ") == changed,
         unassigned.isEmpty,
+      )
+    },
+    test("a spec'd program with no matching changed file is a Critical, not a silent pass") {
+      // Without this, a program that was spec'd but never implemented contributes no issue at all, so the merged
+      // verdict can be clean — a bar the old whole-branch judge would have failed. It is also how a mis-set
+      // `programFiles:` template announces itself instead of quietly halving coverage.
+      val pack           = packWith(None)
+      val changed        = List("src/main/java/Acctxfr.java")
+      val (byProgram, _) = ProgramJudge.groupFiles(pack, List("ACCTXFR", "BALINQ"), changed)
+      val untouched      = List("ACCTXFR", "BALINQ").filter(p => byProgram(p).isEmpty)
+      val result         = ProgramJudge.unimplementedForTest(untouched)
+      assertTrue(
+        untouched == List("BALINQ"),
+        !result.isClean,
+        result.issues.size == 1,
+        result.issues.head.severity == Severity.Critical,
+        result.issues.head.title.contains("BALINQ"),
+        result.issues.head.description.contains("programFiles"),
+        ProgramJudge.unimplementedForTest(Nil).isClean,
       )
     },
   )

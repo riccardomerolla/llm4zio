@@ -55,14 +55,35 @@ object ProgramJudge:
     for
       changed              <- git.changedFilesVsBase(base)
       (byProgram, leftover) = groupFiles(pack, programs, changed)
-      active                = programs.filter(p => byProgram.getOrElse(p, Nil).nonEmpty)
+      (active, untouched)   = programs.partition(p => byProgram(p).nonEmpty)
       perProgram           <- ZIO.foreach(active)(p =>
                                 judgeOne(judge, dims, gateDir, base, p, byProgram(p), specFor, query)
                               )
       residual             <- ZIO.when(leftover.nonEmpty)(
                                 judgeUnassigned(judge, dims, gateDir, base, leftover, specFor, programs, query)
                               )
-    yield Reviewers.merge(perProgram ++ residual.toList)
+    yield Reviewers.merge(perProgram ++ residual.toList :+ unimplemented(untouched))
+
+  /** A spec'd program with NO matching changed file is a deterministic gate failure, not a silent pass. Skipping it
+    * would let the branch clear a bar the old whole-branch judge would have failed, with only the LLM traceability pass
+    * as a backstop. It also surfaces a mis-set `programFiles:` immediately — the top documented risk of the per-program
+    * design — instead of quietly degrading coverage.
+    */
+  private[modernize] def unimplementedForTest(programs: List[String]): ReviewResult = unimplemented(programs)
+
+  private def unimplemented(programs: List[String]): ReviewResult =
+    ReviewResult(
+      programs.map(p =>
+        ReviewIssue(
+          Severity.Critical,
+          s"judge[$p]: spec'd but no implementation files changed",
+          s"$p has a committed spec but no file on this branch matches the pack's programFiles regex for it. " +
+            "Either the program is unimplemented, or the pack's `programFiles:` template does not match this " +
+            "repo's layout — check that before assuming the former.",
+        )
+      ),
+      "judge:unimplemented",
+    )
 
   private def judgeOne(
     judge: Evaluator[Sample],

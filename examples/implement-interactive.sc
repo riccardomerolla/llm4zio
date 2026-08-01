@@ -16,8 +16,9 @@ import llm4zio.runner.*
 
 // The runtime capability mint for a script: `flow(...)`'s own `Caps.All` given is scoped to the lambda passed to it,
 // so top-level `def`s in this file (which call `git.*`) need their own. Static witness only — the ambient `Grants`
-// FiberRef still gates every call at runtime, so this widens nothing. Every bypass is greppable via `Caps.grantAll`.
-given llm4zio.flow.Caps.All = llm4zio.flow.Caps.grantAll
+// FiberRef still gates every call at runtime, so this widens nothing. `Caps.grantAll` is package-private, so a
+// script uses the documented public hatch `Caps.unsafe.all` — deliberately loud and greppable.
+given llm4zio.flow.Caps.All = zio.Unsafe.unsafe(implicit u => llm4zio.flow.Caps.unsafe.all)
 
 
 flow(args, defaultPrompt = Some("Make the calculator crate more useful")):

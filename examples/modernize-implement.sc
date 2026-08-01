@@ -47,8 +47,9 @@ import llm4zio.runner.*
 
 // The runtime capability mint for a script: `flow(...)`'s own `Caps.All` given is scoped to the lambda passed to it,
 // so top-level `def`s in this file (which call `git.*`) need their own. Static witness only — the ambient `Grants`
-// FiberRef still gates every call at runtime, so this widens nothing. Every bypass is greppable via `Caps.grantAll`.
-given llm4zio.flow.Caps.All = llm4zio.flow.Caps.grantAll
+// FiberRef still gates every call at runtime, so this widens nothing. `Caps.grantAll` is package-private, so a
+// script uses the documented public hatch `Caps.unsafe.all` — deliberately loud and greppable.
+given llm4zio.flow.Caps.All = zio.Unsafe.unsafe(implicit u => llm4zio.flow.Caps.unsafe.all)
 
 
 val ProModel    = "gemini-2.5-pro"   // point these at whatever your `gemini` CLI offers
@@ -168,13 +169,10 @@ def traceabilityPass(
     names    = changed.mkString("\n")
     result  <- Context.withShrink("judge[traceability]") { cap =>
                  for
-                   t <- Context.capped("traceability", trace, cap)
+                   t <- Context.capped("traceability", trace, cap / 2)
+                   n <- Context.capped("changed files", s"Files changed on this branch:\n$names", cap / 2)
                    r <- judge
-                          .evaluate(Sample(
-                            response = s"Files changed on this branch:\n$names",
-                            context = Some(t),
-                            query = Some(userPrompt),
-                          ))
+                          .evaluate(Sample(response = n, context = Some(t), query = Some(userPrompt)))
                           .mapError(e => FlowError.Llm(e.message, Some(e)))
                  yield r
                }
@@ -219,14 +217,32 @@ object ProgramJudge:
     for
       changed              <- git.changedFilesVsBase(base)
       (byProgram, leftover) = groupFiles(pack, programs, changed)
-      active                = programs.filter(p => byProgram.getOrElse(p, Nil).nonEmpty)
+      (active, untouched)   = programs.partition(p => byProgram(p).nonEmpty)
       perProgram           <- ZIO.foreach(active)(p =>
                                 judgeOne(judge, dims, gateDir, base, p, byProgram(p), specFor, query)
                               )
       residual             <- ZIO.when(leftover.nonEmpty)(
                                 judgeUnassigned(judge, dims, gateDir, base, leftover, specFor, programs, query)
                               )
-    yield Reviewers.merge(perProgram ++ residual.toList)
+    yield Reviewers.merge(perProgram ++ residual.toList :+ unimplemented(untouched))
+
+  /** A spec'd program with NO matching changed file is a deterministic gate failure, not a silent pass. Skipping it
+    * would let the branch clear a bar the old whole-branch judge would have failed. It also surfaces a mis-set
+    * `programFiles:` immediately — the top documented risk of the per-program design.
+    */
+  private def unimplemented(programs: List[String]): ReviewResult =
+    ReviewResult(
+      programs.map(p =>
+        ReviewIssue(
+          Severity.Critical,
+          s"judge[$p]: spec'd but no implementation files changed",
+          s"$p has a committed spec but no file on this branch matches the pack's programFiles regex for it. " +
+            "Either the program is unimplemented, or the pack's `programFiles:` template does not match this " +
+            "repo's layout — check that before assuming the former.",
+        )
+      ),
+      "judge:unimplemented",
+    )
 
   private def judgeOne(
     judge: Evaluator[Sample],
@@ -434,7 +450,13 @@ flow(
     _         <- stage("Judge")(
                    specComplianceLoop(system, Judge.of(reasoning, complianceDims), verGate, pack, plan.epicId)
                  )
-    _         <- stage("Provenance")(recordTruncations(workDir.resolve(ModDir).resolve("provenance.json")))
+    // Provenance must be written AND committed before Publish: nothing commits after this point, and Publish
+    // pushes the branch as-is — an uncommitted manifest would leave the truncation evidence out of the very PR
+    // the bank reviews.
+    _         <- stage("Provenance")(
+                   recordTruncations(workDir.resolve(ModDir).resolve("provenance.json")) *>
+                     git.commitAll(s"${plan.epicId}: record context truncations").unit
+                 )
     _         <- stage("Publish") {
                    val push = git.push("origin", plan.epicId)
                    val pr   = Ado.configFrom(sys.env) match

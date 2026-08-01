@@ -27,7 +27,7 @@ subcommand main (`survey|extract|seed|implement|verify|review`), configured by
 your pack + env/`modernize.conf`:
 
 ```bash
-cs launch io.github.riccardomerolla:llm4zio-modernize_3:4.1.0 -- survey -- --repo ~/estates/your-legacy
+cs launch io.github.riccardomerolla:llm4zio-modernize_3:4.3.0 -- survey -- --repo ~/estates/your-legacy
 ```
 
 or, air-gapped/CI, the OCI image `ghcr.io/riccardomerolla/llm4zio-modernize`.
@@ -68,7 +68,7 @@ from the environment (e.g. `ANTHROPIC_API_KEY`).
 Save this as `implement.sc` and run it with your task:
 
 ```scala
-//> using dep "io.github.riccardomerolla::llm4zio-runner:3.0.0"
+//> using dep "io.github.riccardomerolla::llm4zio-runner:4.3.0"
 //> using scala "3.8.3"
 //> using jvm 21
 

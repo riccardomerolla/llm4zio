@@ -278,12 +278,24 @@ object VerifyFlow:
                                for
                                  spec    <- readFileOr(specsDir.resolve(s"$program.md"), "")
                                  feature <- featureFor(workDir.resolve(pack.featuresDir), program)
-                                 gen     <- reasoning
-                                              .executeStructured[GenVectors](
-                                                generatePrompt(pack, program, spec, feature, universe),
-                                                SchemaDerivation.derive[GenVectors],
-                                              )
-                                              .mapError(e => FlowError.Llm(e.message, Some(e)))
+                                 // `universe` is every rule in the estate's rules.txt, sent once per program, so
+                                 // this is the largest prompt the phase builds — budget it like the rest.
+                                 gen     <- Context.withShrink(s"vectors[$program]") { cap =>
+                                              Context
+                                                .capped(
+                                                  s"vectors[$program]",
+                                                  generatePrompt(pack, program, spec, feature, universe),
+                                                  cap,
+                                                )
+                                                .flatMap { prompt =>
+                                                  reasoning
+                                                    .executeStructured[GenVectors](
+                                                      prompt,
+                                                      SchemaDerivation.derive[GenVectors],
+                                                    )
+                                                    .mapError(e => FlowError.Llm(e.message, Some(e)))
+                                                }
+                                            }
                                  vectors <- ZIO.foreach(gen.vectors) { g =>
                                               ZIO.fromEither(toVector(program, g)).mapError(FlowError.PlanParse(_))
                                             }
@@ -340,13 +352,17 @@ object VerifyFlow:
                          outcomes <- ZIO.foreach(byProgram) { (program, vs) =>
                                        for
                                          spec    <- readFileOr(specsDir.resolve(s"$program.md"), "")
+                                         // Cap the WHOLE rendered prompt, not just the spec: the mismatch detail
+                                         // block is unbounded too (a program with a large captured-vector set),
+                                         // and shrinking one ingredient while another grows leaves the ladder
+                                         // failing all three rungs and then advising a knob that cannot help.
                                          outcome <- Context.withShrink(s"triage[$program]") { cap =>
                                                       Context
-                                                        .capped(s"spec[$program]", spec, cap)
-                                                        .flatMap { s =>
+                                                        .capped(s"triage[$program]", triagePrompt(pack, program, vs, spec), cap)
+                                                        .flatMap { prompt =>
                                                           reasoning
                                                             .executeStructured[VerifyOutcome](
-                                                              triagePrompt(pack, program, vs, s),
+                                                              prompt,
                                                               SchemaDerivation.derive[VerifyOutcome],
                                                             )
                                                             .mapError(e => FlowError.Llm(e.message, Some(e)))

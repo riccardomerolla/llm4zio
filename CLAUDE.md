@@ -108,7 +108,8 @@ llm4zio.javaapi      the Java facade: Llm4zioJava.flow entry, JavaFlow handle, B
 - **Bounded prompts.** Every LLM call in the modernize pipeline is budgeted through
   `flow.Context` (`cap` / `capped` / `withShrink`, `LLM4ZIO_CONTEXT_BUDGET`, default
   400k chars). Oversized prompts shrink (full → ½ → ¼) rather than failing, and every
-  truncation is published as an event *and* recorded in `provenance.json`. Prefer
+  truncation is published as an event, and the implement / verify / review phases append it to
+  `provenance.json` (survey and extract run before a manifest exists). Prefer
   decomposing a call (per program, per file) over raising the budget.
 - **Script surface.** Examples are flat `examples/*.sc` files: `llm4zio.runner.flow(args) { body }`
   frames the body over `Llm4zio.unsafeMain`, the one process-entry `unsafeRun` shared with the Java

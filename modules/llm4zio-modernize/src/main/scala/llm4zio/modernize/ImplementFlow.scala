@@ -181,15 +181,15 @@ object ImplementFlow:
       trace   <- readFileOr(specsDir.resolve("traceability.md"), "")
       changed <- git.changedFilesVsBase(base)
       names    = changed.mkString("\n")
+      // Both parts are capped, not just the index: on a full-estate branch the changed-file NAME list alone can run
+      // to five figures of lines. Capping one ingredient while the other grows leaves the ladder unable to shrink
+      // the thing that actually overflowed.
       result  <- Context.withShrink("judge[traceability]") { cap =>
                    for
-                     t <- Context.capped("traceability", trace, cap)
+                     t <- Context.capped("traceability", trace, cap / 2)
+                     n <- Context.capped("changed files", s"Files changed on this branch:\n$names", cap / 2)
                      r <- judge
-                            .evaluate(Sample(
-                              response = s"Files changed on this branch:\n$names",
-                              context = Some(t),
-                              query = Some(userPrompt),
-                            ))
+                            .evaluate(Sample(response = n, context = Some(t), query = Some(userPrompt)))
                             .mapError(e => FlowError.Llm(e.message, Some(e)))
                    yield r
                  }
@@ -324,7 +324,13 @@ object ImplementFlow:
         _        <- stage("Judge")(
                       specComplianceLoop(system, Judge.of(reasoning, complianceDims), verGate, pack, plan.epicId)
                     )
-        _        <- stage("Provenance")(recordTruncations(workDir.resolve(ModDir).resolve("provenance.json")))
+        // Provenance must be written AND committed before Publish: nothing commits after this point, and Publish
+        // pushes the branch as-is — an uncommitted manifest would leave the truncation evidence out of the very PR
+        // the bank reviews, then get swept into a later phase's commit under an unrelated message.
+        _        <- stage("Provenance")(
+                      recordTruncations(workDir.resolve(ModDir).resolve("provenance.json")) *>
+                        git.commitAll(s"${plan.epicId}: record context truncations").unit
+                    )
         _        <- stage("Publish") {
                       val push = git.push("origin", plan.epicId)
                       val pr   = Ado.configFrom(sys.env) match

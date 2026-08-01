@@ -35,7 +35,7 @@ the authoring surface, best when you are customizing flows. The **operator
 surface** is the published product, no repo clone and no Scala:
 
 ```bash
-cs launch io.github.riccardomerolla:llm4zio-modernize_3:4.1.0 -- <phase> -- --repo <dir>
+cs launch io.github.riccardomerolla:llm4zio-modernize_3:4.3.0 -- <phase> -- --repo <dir>
 ```
 
 or the OCI image for air-gapped/CI use
