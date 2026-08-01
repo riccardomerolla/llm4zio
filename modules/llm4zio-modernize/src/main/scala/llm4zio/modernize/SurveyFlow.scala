@@ -214,12 +214,18 @@ object SurveyFlow:
                             .as(graph)
                         else
                           for
-                            r     <- reasoning
-                                       .executeStructured[GraphRefinement](
-                                         refinePrompt(graph),
-                                         SchemaDerivation.derive[GraphRefinement],
-                                       )
-                                       .mapError(e => FlowError.Llm(e.message, Some(e)))
+                            r     <- Context.withShrink("survey refine") { cap =>
+                                       Context
+                                         .capped("graph", refinePrompt(graph), cap)
+                                         .flatMap { prompt =>
+                                           reasoning
+                                             .executeStructured[GraphRefinement](
+                                               prompt,
+                                               SchemaDerivation.derive[GraphRefinement],
+                                             )
+                                             .mapError(e => FlowError.Llm(e.message, Some(e)))
+                                         }
+                                     }
                             merged = Survey.merge(graph, r.edges.map(e => SurveyEdge(e.from, e.to, e.kind)))
                             kept   = merged.edges.filter(_.kind.startsWith("llm-"))
                             _     <- writeFile(modDir.resolve("graph-refine.md"), renderRefine(r, kept))
@@ -233,12 +239,18 @@ object SurveyFlow:
                           yield merged
                       }
         outcome    <- stage("Triage") {
-                        reasoning
-                          .executeStructured[SurveyOutcome](
-                            triagePrompt(refined, Survey.renderInventory(refined)),
-                            SchemaDerivation.derive[SurveyOutcome],
-                          )
-                          .mapError(e => FlowError.Llm(e.message, Some(e)))
+                        // Survey's two prompts scale with UNIT COUNT, not file contents, so they are the least likely
+                        // of the phases to trip the budget — cap and record only. Chunking the graph by connected
+                        // component is deliberately deferred until the cap is observed to actually fire.
+                        Context.withShrink("survey triage") { cap =>
+                          Context
+                            .capped("inventory", triagePrompt(refined, Survey.renderInventory(refined)), cap)
+                            .flatMap { prompt =>
+                              reasoning
+                                .executeStructured[SurveyOutcome](prompt, SchemaDerivation.derive[SurveyOutcome])
+                                .mapError(e => FlowError.Llm(e.message, Some(e)))
+                            }
+                        }
                       }
         projection <- stage("Projection") {
                         val bench = workspace.resolve("bench-results.jsonl")
