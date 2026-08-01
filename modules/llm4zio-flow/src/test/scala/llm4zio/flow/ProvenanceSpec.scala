@@ -37,6 +37,26 @@ object ProvenanceSpec extends ZIOSpecDefault:
   )
 
   def spec: Spec[Environment & (TestEnvironment & Scope), Any] = suite("Provenance")(
+    test("a manifest written before contextTruncations existed still parses, and extend can add them") {
+      // Pre-4.3.0 manifests have no contextTruncations key. The field is defaulted precisely so an existing
+      // evidence chain keeps loading rather than failing a gate on a schema it predates.
+      val legacy =
+        """{"schema":1,"pack":"p","llm4zioVersion":"4.2.0","createdAt":"now","approvedBy":null,
+          |"seats":{},"specs":{},"gateVerdicts":{},"equivalenceReport":null,"fixSpecs":[]}""".stripMargin
+      ZIO.scoped {
+        for
+          dir  <- tempDir
+          path <- write(dir, "provenance.json", legacy)
+          p    <- Provenance.load(path)
+          ext  <- Provenance.extend(path)(_.copy(contextTruncations = List("specs: 900 → 400 chars")))
+          re   <- Provenance.load(path)
+        yield assertTrue(
+          p.contextTruncations.isEmpty,
+          ext.contextTruncations.size == 1,
+          re.contextTruncations == List("specs: 900 → 400 chars"),
+        )
+      }
+    },
     test("write/load round-trips the manifest") {
       ZIO.scoped {
         for

@@ -383,10 +383,16 @@ object VerifyFlow:
                          .flatMap {
                            case false => events.publish(FlowEvent.Info("no provenance.json — seeded before 3.23.0; skipping"))
                            case true  =>
-                             Provenance
-                               .hashFiles(workDir, List(s"$ModDir/equivalence.md"))
-                               .flatMap(h => Provenance.extend(manifest)(_.copy(equivalenceReport = h.values.headOption)))
-                               .unit
+                             for
+                               h  <- Provenance.hashFiles(workDir, List(s"$ModDir/equivalence.md"))
+                               ts <- Context.truncations
+                               _  <- Provenance.extend(manifest)(p =>
+                                       p.copy(
+                                         equivalenceReport = h.values.headOption,
+                                         contextTruncations = p.contextTruncations ++ ts.map(_.render).toList,
+                                       )
+                                     )
+                             yield ()
                          }
                      }
         gCount     = verdicts.count(_.vector.tier == Equiv.Tier.Generated)

@@ -370,7 +370,16 @@ flow(
                       case true  =>
                         Provenance
                           .hashFiles(workDir, List(s"$ModDir/equivalence.md"))
-                          .flatMap(h => Provenance.extend(manifest)(_.copy(equivalenceReport = h.values.headOption)))
+                          .flatMap(h =>
+                            Context.truncations.flatMap(ts =>
+                              Provenance.extend(manifest)(p =>
+                                p.copy(
+                                  equivalenceReport = h.values.headOption,
+                                  contextTruncations = p.contextTruncations ++ ts.map(_.render).toList,
+                                )
+                              )
+                            )
+                          )
                           .unit
                     }
                 }

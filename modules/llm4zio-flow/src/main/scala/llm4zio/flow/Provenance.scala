@@ -23,6 +23,10 @@ final case class Provenance(
   gateVerdicts: Map[String, String],
   equivalenceReport: Option[String],
   fixSpecs: List[String],
+  // Context truncations recorded while producing this evidence ([[Context.Truncation.render]]). A gate verdict
+  // rendered on a partially-read spec pack says so HERE — that visibility is the whole reason truncation is allowed
+  // at all. Defaulted so manifests written before this field still parse.
+  contextTruncations: List[String] = Nil,
 ) derives JsonCodec
 
 object Provenance:

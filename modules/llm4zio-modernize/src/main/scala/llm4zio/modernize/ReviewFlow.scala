@@ -143,6 +143,26 @@ object ReviewFlow:
       }
       .mapError(e => FlowError.Persistence(s"failed to list specs under $specsDir", Some(e)))
 
+  /** Append this fiber's recorded context truncations to the manifest, so a verdict rendered on a partially-read spec
+    * pack says so in the evidence chain rather than only in the console log. A repo seeded before provenance existed
+    * simply has no manifest — skip rather than fail, the same way the verify flow does.
+    */
+  def recordTruncations(manifest: Path): IO[FlowError, Unit] =
+    ZIO
+      .attemptBlocking(Files.exists(manifest))
+      .orDie
+      .flatMap {
+        case false => ZIO.unit
+        case true  =>
+          Context.truncations.flatMap { ts =>
+            ZIO.when(ts.nonEmpty)(
+              Provenance
+                .extend(manifest)(p => p.copy(contextTruncations = p.contextTruncations ++ ts.map(_.render).toList))
+                .unit
+            )
+          }.unit
+      }
+
   def readFileOr(path: Path, fallback: String): IO[FlowError, String] =
     ZIO
       .attemptBlocking(if Files.exists(path) then Files.readString(path) else fallback)
@@ -289,6 +309,7 @@ object ReviewFlow:
                               "review and commit the pack change"
                           ))
                     }
+        _        <- stage("Provenance")(recordTruncations(workDir.resolve(ModDir).resolve("provenance.json")))
         _        <- stage("Commit")(
                       git.commitAll(s"modernize(${pack.name}): review — ${outcome.fixes.size} fix(es), " +
                         s"${outcome.improvements.size} improvement(s)").unit
